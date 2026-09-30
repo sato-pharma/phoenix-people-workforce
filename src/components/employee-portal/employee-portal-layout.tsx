@@ -251,12 +251,6 @@ type EmployeePortalNavItem = {
 type EmployeePortalNavSection = {
   hideTitle?: boolean;
   items: EmployeePortalNavItem[];
-  /**
-   * A premium, unmissable launcher rather than an ordinary section — one row, drawn as the VIP
-   * button (owner, 2026-09-30: Phoenix CRM is "the star of the system"). A premium section never
-   * folds and hides its own header, so the single row it carries is the whole thing you see.
-   */
-  premium?: boolean;
   title: string;
   /** "Pinned" and "Recent" are drawn from the real sections; their copies of a row never light up. */
   virtual?: "pinned" | "recent";
@@ -270,7 +264,6 @@ type EmployeePortalNavSection = {
  */
 function sectionRailIcon(title: string): typeof Activity {
   if (title === "Training Manager") return ClipboardCheck;
-  if (title === "Phoenix CRM") return Sparkles;
   if (title === "My Workspace") return Home;
   if (title === "Social") return UsersRound;
   if (title === "Approvals Hub") return FileCheck2;
@@ -384,26 +377,13 @@ function buildEmployeePortalSections({
       ],
     },
     {
-      // ── Phoenix CRM — THE STAR OF THE SYSTEM (owner, 2026-09-30) ──────────────────────────────
-      // Lifted out of My Workspace to sit ABOVE it, in its own band, drawn as a premium VIP launcher
-      // so it is unmistakably the flagship module. `hideTitle` drops the redundant header (the one row
-      // already carries the name), `premium` makes EmployeePortalMenu render it as the VIP button, and
-      // a premium band never folds. The row is gated by the module's OWN gate, `phoenixCrmEntryAvailable`
-      // (the phoenix_crm permission, a territory of his own or beneath him, and his line opened) — so
-      // the empty-section filter below drops the whole band for anyone the gate refuses. Its native
-      // mirror is native-module-directory.ts (NATIVE_MODULE_SECTION_ORDER + MODULE_PLACEMENT), held
-      // level by tests/mobile-module-directory.test.ts.
-      title: "Phoenix CRM",
-      hideTitle: true,
-      premium: true,
-      items: [
-        ...(showPhoenixCrmTab ? [{ href: "/employee-portals/field-crm", label: "Phoenix CRM", icon: ClipboardList }] : []),
-      ],
-    },
-    {
       title: "My Workspace",
       items: [
         ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
+        // Phoenix CRM moved here from Field Activity at the owner's word (2026-09-29). Gated by
+        // `phoenixCrmEntryAvailable` — the phoenix_crm permission, a territory of his own or beneath
+        // him, and his line opened in phoenix_crm_line_rollout; the page enforces the same again.
+        ...(showPhoenixCrmTab ? [{ href: "/employee-portals/field-crm", label: "Phoenix CRM", icon: ClipboardList }] : []),
         // Interview Calendar — the interview-calendar access flag (a DM/NSM/HR seat by role, or
         // anyone the owner shared it with).
         ...(showInterviewCalendarTab ? [{ href: "/employee-portals/interview-calendar", label: "Interview Calendar", icon: CalendarClock }] : []),
@@ -1063,9 +1043,7 @@ function EmployeePortalMenu({
           const isActiveSection = !section.virtual && section.title === activeSectionTitle;
           // The section you are in never folds away — folding it would hide the very row that says
           // where you are. A filter opens everything, so a match is never hidden in a folded section.
-          // A premium band (Phoenix CRM, the star) never folds either — the whole point is that it is
-          // always in view.
-          const canFold = !isActiveSection && !filtering && !section.premium;
+          const canFold = !isActiveSection && !filtering;
           const folded = canFold && collapsedSections.includes(section.title);
           const sectionId = `employee-portal-${mode}-section-${sectionSlug(section.title)}`;
           const badged = section.items.flatMap((item) => (item.navBadge ? [item.navBadge] : []));
@@ -1134,48 +1112,6 @@ function EmployeePortalMenu({
                   // exactly what the owner's standing rule forbids. The pin star follows the same rule:
                   // it appears IN PLACE of the icon on hover, so no row gets a pixel wider.
                   const RowIcon = locked ? Lock : item.icon;
-                  // THE STAR OF THE SYSTEM (owner, 2026-09-30). The premium band draws its one row as a
-                  // clean, CENTRED launcher on a dark glowing face — the module's icon and name centred
-                  // together, no badge word, no decoration. The dark face and its soft glow say premium;
-                  // the row says only the name. In pin mode (phone) it falls through to the ordinary pin
-                  // switch below like every other row.
-                  if (section.premium && !pinMode) {
-                    return (
-                      <div className="group/row relative" data-active-row={active ? "true" : undefined} key={item.href}>
-                        <Link
-                          aria-busy={pending || undefined}
-                          aria-current={active ? "page" : undefined}
-                          aria-label={locked ? `${item.label} — locked` : item.label}
-                          title={locked ? `${item.label} — temporarily locked by the system administrator` : undefined}
-                          className={`ep-crm-launch group flex items-center gap-3 px-4 ${
-                            isMobile ? "py-4" : "py-3.5"
-                          } transition-transform duration-150 hover:-translate-y-px focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 ${
-                            locked ? "opacity-90" : ""
-                          }`}
-                          href={item.href}
-                          onClick={(event) => handleNavigate(event, item.href)}
-                          prefetch
-                        >
-                          {/* A soft light that drifts across the dark face — the subtle, catchy motion.
-                              Decoration only; it and the glow are off under prefers-reduced-motion. */}
-                          <span
-                            aria-hidden="true"
-                            className="ep-crm-gloss pointer-events-none absolute inset-y-0 left-0 w-1/4 -skew-x-12 bg-white/20 blur-md motion-reduce:hidden"
-                          />
-                          {/* "Phoenix CRM" sits hard at the LEFT (owner, 2026-09-30); the module's icon
-                              trails on the right as a quiet accent, never pushing the name off the edge. */}
-                          <span className={`ep-crm-word ${locked ? "opacity-80" : ""}`}>
-                            {item.label}
-                          </span>
-                          {pending ? (
-                            <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white employee-portal-nav-pending-dot" />
-                          ) : (
-                            <RowIcon className={`ml-auto h-[18px] w-[18px] shrink-0 ${locked ? "text-amber-200" : "text-white/85"}`} />
-                          )}
-                        </Link>
-                      </div>
-                    );
-                  }
                   if (pinMode) {
                     // Pin mode: a tap pins or unpins, and opens nothing. The star takes the icon's
                     // place, as the desktop hover star does, so no label loses a pixel of width.
@@ -1925,13 +1861,9 @@ export function EmployeePortalSidebar({
                 const badged = section.items.flatMap((item) => (item.navBadge ? [item.navBadge] : []));
                 return (
                   <Link
-                    aria-label={section.premium ? `${section.title} — the flagship module` : section.title}
+                    aria-label={section.title}
                     className={`flex h-10 w-[52px] shrink-0 items-center justify-center rounded transition ${
-                      section.premium
-                        ? "bg-[linear-gradient(150deg,#FF8A47_0%,#F05A1A_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_0_18px_rgba(240,90,26,0.6)] hover:brightness-105"
-                        : active
-                          ? "bg-white/10 text-white"
-                          : "text-white/58 hover:bg-white/8 hover:text-white"
+                      active ? "bg-white/10 text-white" : "text-white/58 hover:bg-white/8 hover:text-white"
                     }`}
                     data-portal-rail-link=""
                     href={firstItem.href}

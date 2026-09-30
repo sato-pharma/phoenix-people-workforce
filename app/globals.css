@@ -745,64 +745,6 @@ html:has(.admin-shell) {
   60%       { box-shadow: 0 0 0 7px rgba(245, 158, 11, 0); }
 }
 
-/* ═══ Phoenix CRM — the flagship "VIP" launcher (owner, 2026-09-30: the star of
-   the system; "premium … not big but catchy") ══════════════════════════════════
-   A deep navy face sits inside a luminous gradient frame that slowly ORBITS, with
-   a glossy orange icon chip and a gold kicker — unmistakably the premium module,
-   not just another orange row. Every animation is off under prefers-reduced-motion
-   (the list further down). */
-.ep-crm-launch {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  background: #101d33;
-  box-shadow:
-    0 18px 34px -10px rgba(240, 90, 26, 0.50),
-    0 6px 16px rgba(10, 20, 40, 0.35);
-}
-.ep-crm-launch::before {            /* the orbiting gradient frame */
-  content: "";
-  position: absolute;
-  inset: -65%;
-  z-index: 0;
-  background: conic-gradient(from 0deg,
-    #F05A1A, #FDBA74, #F0891A, #6b3410, #F05A1A, #FFE0B8, #F0651C, #F05A1A);
-  animation: ep-crm-orbit 6s linear infinite;
-}
-.ep-crm-launch::after {             /* the dark face, inset to reveal the frame */
-  content: "";
-  position: absolute;
-  inset: 1.5px;
-  z-index: 1;
-  background:
-    radial-gradient(120% 140% at 0% 0%, rgba(240, 90, 26, 0.30) 0%, rgba(240, 90, 26, 0) 46%),
-    linear-gradient(150deg, #16233c 0%, #1e2f4e 55%, #13203a 100%);
-}
-.ep-crm-launch > * { position: relative; z-index: 2; }
-@keyframes ep-crm-orbit { to { transform: rotate(1turn); } }
-
-/* A thin gloss that travels along the button every few seconds. */
-.ep-crm-gloss { animation: ep-crm-gloss-slide 5.5s ease-in-out infinite; }
-@keyframes ep-crm-gloss-slide {
-  0%, 60%   { transform: translateX(-120%) skewX(-14deg); opacity: 0; }
-  66%        { opacity: 0.55; }
-  86%, 100% { transform: translateX(430%) skewX(-14deg);  opacity: 0; }
-}
-
-/* The Phoenix CRM wordmark — set in Cormorant Garamond, a refined serif (owner's
-   pick, 2026-09-30), clean white with a faint warm glow so the name reads as a
-   premium engraved plate. The typeface carries the premium; no gradient or
-   shimmer on the letters. The @font-face is in app/layout.tsx. */
-.ep-crm-word {
-  font-family: "Cormorant Garamond", Georgia, "Times New Roman", serif;
-  font-weight: 700;
-  font-size: 21px;
-  line-height: 1.1;
-  letter-spacing: 0.015em;
-  color: #ffffff;
-  text-shadow: 0 1px 12px rgba(240, 90, 26, 0.25);
-}
-
 /* Nav-badge "alarm" pump — scale beat layered on top of the breathe-orange ring
    below, for a pending-count badge that a manager can't miss in the sidebar. */
 @keyframes nav-badge-alarm-pump {
@@ -1234,8 +1176,6 @@ html:has(.admin-shell) {
   .ep-progress-shimmer::after,
   .ep-count-reveal,
   .ep-fade-in-up,
-  .ep-crm-launch::before,
-  .ep-crm-gloss,
   .employee-portal-page-transition,
   .employee-portal-route-loading,
   .employee-portal-skeleton,
