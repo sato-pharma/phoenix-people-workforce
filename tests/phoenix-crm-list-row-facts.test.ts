@@ -209,6 +209,29 @@ export function runPhoenixCrmListRowFactsTests() {
     }
     // 🔴 The old board's sixth column scored a rep's check-in against the brick. It stays off.
     assert.doesNotMatch(board, /Confidence|brickDistanceKm/, "Confidence is a check on the rep and never reaches his List");
+
+    // 🔴 THE AREA IS NOT SAID TWICE. The group heading already names brick AND area, and the address
+    //    carries the vendor's own region words — a third naming, in a third vocabulary, is what the
+    //    owner was looking at ("you duplicated the wrong areas and regions").
+    assert.ok(!board.includes("{facts.area.text}"), "the Brick column prints the brick alone");
+
+    // 🔴 THE FULL ADDRESS IS CLICKABLE, and only when there is something to drive to.
+    assert.ok(board.includes("<AddressText href={facts.mapsHref}"), "the table's address is the clickable one");
+    assert.ok(board.includes('rel="noreferrer"') && board.includes('target="_blank"'), "and it opens away from his day");
+    assert.ok(board.includes("if (!href) {"), "a placeholder is never a link");
+
+    // 🔴 A SHARED CUSTOMER IS HIGHLIGHTED, and the row says who and why (owner, 2026-09-30). Pinned
+    //    here because it cannot be shown on demand: sharing is rare by construction — 214 real pairs
+    //    company-wide — and the rep whose List this was measured on has none, which is the honest
+    //    answer and not a silent failure (the loader logs one, and the preview logged zero).
+    assert.ok(board.includes('<tr className={shared ? "bg-violet-50" : undefined}'), "a shared row is violet, as the old board had it");
+    assert.ok(board.includes("const shared = (customer.sharedWith?.length ?? 0) > 0;"), "and it is the same field the old board reads");
+    assert.ok(board.includes("{describeSharing(shared)}"), "the small line names WHO and on what basis — the match is an inference a reader may overrule");
+    assert.equal((board.match(/<SharedLine customer=\{customer\} \/>/g) ?? []).length, 2, "on the table row AND the phone card");
+
+    // 🔴 NO "Not validated yet" PILL ON A ROW THAT CARRIES A VALIDATE BUTTON (owner, same session:
+    //    "since it has a Validate button beside it, then for sure it is not validated. Be smart").
+    assert.ok(!board.includes("PENDING_PILL"), "the button IS the status; a pill repeating it says nothing new");
     // The widths are a table-fixed grid totalling 100%, so the row fits rather than scrolling.
     const widths = /columns=\{\[([^\]]+)\]\}/.exec(board)?.[1] ?? "";
     const total = [...widths.matchAll(/(\d+)%/g)].reduce((sum, match) => sum + Number(match[1]), 0);
