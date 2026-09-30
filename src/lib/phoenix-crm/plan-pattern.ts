@@ -104,6 +104,29 @@ export function planPatternGroups(weekdays: readonly PlanWeekday[], short = true
   return [...byWeeks.values()].sort((left, right) => right.weeks.length - left.weeks.length || right.days.length - left.days.length);
 }
 
+/** One line of the column read as a table: a single day, and the weeks it is planned in. */
+export type PlanPatternRow = { day: string; weeks: number[]; weeksLabel: string };
+
+/**
+ * 🔴 ONE ROW PER DAY, DAY AND WEEKS IN THEIR OWN COLUMNS (owner, 2026-09-30: "in the column which is
+ * called Usually planned, its cell — it is a table: put day, put week corresponding. Make it a table,
+ * make it more tidy than this").
+ *
+ * `planPatternGroups` above folds days that share a set of weeks onto one line, which is the tidiest
+ * SENTENCE but not the tidiest TABLE: the day chips wrap, and the weeks they belong to sit underneath
+ * them rather than beside them, so the eye has to pair the two by position. Read as rows — the day in
+ * a fixed left column, its weeks in a fixed right one — every pairing is on one line and the days all
+ * start at the same x. The field week's own order (Saturday first) comes through from `planWeekdays`.
+ */
+export function planPatternRows(weekdays: readonly PlanWeekday[], short = true): PlanPatternRow[] {
+  const names = short ? DAY_SHORT : DAY_NAMES;
+  return weekdays.map((entry) => ({
+    day: names[entry.weekday] ?? "?",
+    weeks: entry.weeks,
+    weeksLabel: describeWeeks(entry.weeks),
+  }));
+}
+
 export function describePlanPattern(weekdays: readonly PlanWeekday[], short = true): string | null {
   if (weekdays.length === 0) return null;
   const names = short ? DAY_SHORT : DAY_NAMES;

@@ -132,7 +132,62 @@ export function rankValidateNext(customers: readonly ListCustomer[]): ValidateNe
   return picks.map((pick) => ({ ...pick, reasons: validateNextReasons(pick) }));
 }
 
-/** The first `count` of the ranking — what the Validate next strip shows. */
+/** The first `count` of the ranking. */
 export function validateNextTop(customers: readonly ListCustomer[], count = VALIDATE_NEXT_COUNT): ValidateNextPick[] {
   return rankValidateNext(customers).slice(0, Math.max(0, count));
+}
+
+/**
+ * 🔴 VISITS ALREADY SAVED AGAINST A CUSTOMER NOBODY HAS VALIDATED YET (owner, 2026-09-30: "in To
+ * validate, put the already-visited first and highlight them").
+ *
+ * This is the ranking's FIRST key, on its own, because the List's rows need it one customer at a
+ * time rather than as a sorted three. Those visits count in nothing while he is unvalidated and all
+ * of them start counting the moment he is — so validating him turns work the rep has ALREADY done
+ * into numbers, and nothing else on the list pays back as fast.
+ */
+export function hasVisitsWaitingToCount(customer: ListCustomer): boolean {
+  return (customer.referenceHistory?.visits ?? 0) > 0;
+}
+
+/** How many customers a brick marks. Three is a morning's validating, not a wall of colour. */
+export const VALIDATE_FIRST_PER_BRICK = 3;
+
+/** One brick's rows in the order they are drawn, and which of them carry the mark. */
+export type VisitsWaitingOrder = { rows: ListCustomer[]; marked: ReadonlySet<string> };
+
+/**
+ * The brick's rows with the few that pay back MOST first, and only those marked.
+ *
+ * 🔴 ONLY THE MOST, NEVER ALL OF THEM (owner, 2026-09-30: "mark only the ones with the most visits
+ * waiting, not all 88"). The first build marked every customer with any saved visit — and on the
+ * territory it was measured against that was 88 of 88, so the whole list went amber and the mark
+ * told the rep nothing. A highlight everything carries is not a highlight.
+ *
+ * 🔴 AND IT REFUSES TO MARK WHEN THE COUNT DOES NOT DISTINGUISH. If every candidate in the brick has
+ * the SAME number of visits waiting, there is no "most" — marking three of them would be picking
+ * names out of a hat and dressing it as a recommendation. The brick then marks none, which is the
+ * honest answer and the guard against the 88-of-88 failure coming back in a new shape.
+ *
+ * 🔴 PER BRICK, APPLIED AFTER THE NEIGHBOURHOOD PASS. It is handed ONE group's rows, so it can never
+ * lift a customer out from under his brick heading: validating happens at the clinic, and a list that
+ * sent the rep between towns to chase a highlight would cost him the trip it is trying to save. Each
+ * brick marks its own best, so wherever he is working today, the marks there are the ones worth doing
+ * first.
+ *
+ * Inside the marked few the order IS by visits waiting, most first — that is what he asked to see.
+ * Everyone else keeps the order the neighbourhood pass gave them, so a block of people who stand
+ * together stays together behind them.
+ */
+export function visitsWaitingFirst(rows: readonly ListCustomer[]): VisitsWaitingOrder {
+  const waiting = (customer: ListCustomer): number => customer.referenceHistory?.visits ?? 0;
+  const candidates = rows.filter((customer) => hasVisitsWaitingToCount(customer));
+  const counts = new Set(candidates.map((customer) => waiting(customer)));
+  // Nothing waiting, or every candidate carrying the same count: there is no "most" to point at.
+  if (candidates.length === 0 || counts.size < 2) return { marked: new Set(), rows: [...rows] };
+
+  const ranked = [...candidates].sort((left, right) => waiting(right) - waiting(left));
+  const top = ranked.slice(0, VALIDATE_FIRST_PER_BRICK);
+  const marked = new Set(top.map((customer) => customer.customerId));
+  return { marked, rows: [...top, ...rows.filter((customer) => !marked.has(customer.customerId))] };
 }

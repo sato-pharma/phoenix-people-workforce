@@ -22,7 +22,7 @@
  * can hand it a second one.
  */
 
-import { useCallback, useId, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useId, useMemo, useState, type ReactNode } from "react";
 import { SlidersHorizontal } from "lucide-react";
 
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
@@ -57,7 +57,8 @@ import {
 } from "@/lib/phoenix-crm/customer-list-grouping";
 import { clusterRows, describeSharing, findNeighbours, type NearbyContact } from "@/lib/crm/location-confidence";
 import { factInk, gradeInk, listRowFacts, rowPoint } from "@/lib/phoenix-crm/list-row-facts";
-import { planPatternGroups } from "@/lib/phoenix-crm/plan-pattern";
+import { visitsWaitingFirst } from "@/lib/phoenix-crm/validate-next";
+import { planPatternRows } from "@/lib/phoenix-crm/plan-pattern";
 import { listRowAction, requestKindLabel, type ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
 import type { ListCustomer } from "@/lib/phoenix-crm/view-types";
 import { brickTintMap, type BrickTint } from "@/components/phoenix-crm/brick-tints";
@@ -198,14 +199,24 @@ function GroupHeading({
 }
 
 /** The row's pills — the same standing chip an active customer carries on the board, or the pending mark. */
-function rowPills(customer: ListCustomer, variant: CustomerListVariant): ReactNode {
+function rowPills(customer: ListCustomer, variant: CustomerListVariant, marked = false): ReactNode {
   if (variant === "pending") {
     // 🔴 NO "Not validated yet" PILL HERE (owner, 2026-09-30): "you don't have to show the column of
     // not-validated-yet, because since it has a Validate button beside it, then for sure it is not
     // validated. Be smart." The button IS the status — a pill repeating it is a second thing to read
     // that says nothing the row did not already say. It stays on the screens that have NO button to
     // say it: the visit form's customer card and the pending strip, where PENDING_PILL still lives.
-    return waitingPills(customer);
+    //
+    // 🔴 ONE PILL DOES EARN ITS PLACE HERE, AND ONLY ON A MARKED ROW: why this row is first and
+    // amber. It says what validating BUYS him — visits he has already made start counting — in plain
+    // words about his own work, never a count of what he has not done (Golden rule #1). It reads the
+    // brick's `marked` set rather than the customer, so it can never spread to every row again.
+    return (
+      <>
+        {marked ? <CrmPill tone="orange">Validate first</CrmPill> : null}
+        {waitingPills(customer)}
+      </>
+    );
   }
   if (variant === "outside") {
     // Met and validated at the door, not on the list: he counts once the add is approved.
@@ -371,26 +382,50 @@ function AddressText({ href, text }: { href: string | null; text: string }) {
  * and it carries no count of whether the rep actually went — nothing on his own List judges him.
  * With no plan in the mirror it says so plainly rather than inventing a pattern or leaving a blank.
  */
+/**
+ * 🔴 EVERY COLUMN THE SAME WIDTH, AND EVERY CELL RULED (owner, 2026-09-30: "the table is fucked up,
+ * must be symmetric — the columns at the same size, the height and the width of the one cell").
+ *
+ * The widths were hand-tuned per column — 22 / 13 / 7 / 13 / 21 / 14 / 10 — so no two cells were the
+ * same size and the grid read as seven different boxes in a row. Seven equal tracks on the same
+ * `table-fixed` layout still total 100%, so the fits-the-screen rule is untouched: the row fits its
+ * column at every size and never scrolls sideways.
+ */
+const EQUAL_COLUMNS = ["14.28%", "14.28%", "14.28%", "14.29%", "14.29%", "14.28%", "14.30%"];
+
+/**
+ * The rule between two columns. A table with no vertical rules is a set of paragraphs that happen to
+ * line up; with them, a cell is visibly a cell. `first:border-l-0` keeps the outer edge clean, and
+ * `align-top` starts every cell in a row at the same y so a tall one never floats its neighbours.
+ */
+const GRID_CELL = "border-l border-slate-200 align-top";
+
+/** No brick marks anything outside To validate, so every other variant shares one empty set. */
+const EMPTY_MARKS: ReadonlySet<string> = new Set();
+
 function PlanPatternCell({ customer }: { customer: ListCustomer }) {
-  const groups = planPatternGroups(customer.planPattern ?? []);
-  if (groups.length === 0) return <span className="text-phx-2xs font-semibold italic text-slate-400">No plan recorded</span>;
+  const rows = planPatternRows(customer.planPattern ?? []);
+  if (rows.length === 0) return <span className="text-phx-2xs font-semibold italic text-slate-400">No plan recorded</span>;
   return (
-    <span className="grid gap-1.5">
-      {groups.map((group) => (
-        <span className="grid gap-0.5" key={group.weeks.join(",")}>
-          {/* The days as chips, so the eye lands on a weekday rather than reading a sentence. */}
-          <span className="flex flex-wrap gap-0.5">
-            {group.days.map((day) => (
-              <span
-                className="border border-slate-300 bg-slate-50 px-1 py-px text-phx-3xs font-black uppercase tracking-[0.06em] text-slate-700"
-                key={day}
-              >
-                {day}
-              </span>
-            ))}
+    // 🔴 THE CELL IS ITSELF A LITTLE TABLE (owner, 2026-09-30: "it is a table: put day, put week
+    // corresponding — make it a table, make it more tidy than this"). It was day chips that wrapped,
+    // with the weeks they belonged to on the line BELOW them, so a reader paired day and week by
+    // position and a four-day customer wrapped into a block. Two fixed tracks — the day, then its
+    // weeks — put every pairing on one line, start every day at the same x down the whole column,
+    // and let the weeks text wrap on its own without ever moving a day.
+    // 🔴 AND IT IS RULED, NOT JUST ALIGNED (owner, same day: "I told you to add borders between the
+    // Usually planned — add borders"). Alignment alone still read as loose text in a column: without
+    // a rule between one day and the next, four days ran together as a paragraph. The wrapper draws
+    // the top and left edges and every cell draws its own bottom and right, so the lines meet exactly
+    // once and no edge is drawn twice.
+    <span className="grid grid-cols-[auto_minmax(0,1fr)] border-l border-t border-slate-200">
+      {rows.map((row) => (
+        <Fragment key={row.day}>
+          <span className="border-b border-r border-slate-200 bg-slate-50 px-1.5 py-1 text-center text-phx-3xs font-black uppercase tracking-[0.06em] text-slate-700">
+            {row.day}
           </span>
-          <span className="break-words text-phx-2xs font-semibold text-slate-500">{group.weeksLabel}</span>
-        </span>
+          <span className="break-words border-b border-r border-slate-200 px-1.5 py-1 text-phx-2xs font-semibold text-slate-500">{row.weeksLabel}</span>
+        </Fragment>
       ))}
     </span>
   );
@@ -695,7 +730,12 @@ export function CustomerListBoard({
             // under each other (owner, 2026-09-30). Scoped to THIS group, so numbering — and
             // therefore colour — restarts in every brick, and a comparison never crosses a heading.
             const neighbourhoods = neighbourhoodsIn(rawEntry.rows);
-            const entry = { ...rawEntry, rows: neighbourhoods.rows };
+            // 🔴 Only the few with the MOST visits waiting are marked, per brick (owner, 2026-09-30:
+            // "mark only the ones with the most visits waiting, not all 88"). A brick whose
+            // candidates all carry the same count marks none — there is no "most" to point at.
+            const waitingFirst = variant === "pending" ? visitsWaitingFirst(neighbourhoods.rows) : null;
+            const entry = { ...rawEntry, rows: waitingFirst?.rows ?? neighbourhoods.rows };
+            const markedForValidating = waitingFirst?.marked ?? EMPTY_MARKS;
             return (
               <div key={entry.group.key}>
                 <GroupHeading
@@ -709,11 +749,16 @@ export function CustomerListBoard({
                   <>
                     <CrmCardsOnPhone>
                       {entry.rows.map((customer) => (
+                        // The phone says the same thing the row does: the card carries the amber
+                        // rail and tint when validating this customer starts visits counting. The
+                        // order is already the row order — both read `entry.rows`.
                         <CrmCard
+                          accent={markedForValidating.has(customer.customerId) ? "border-l-amber-500" : undefined}
                           actions={rowAction(customer)}
+                          className={markedForValidating.has(customer.customerId) ? "bg-amber-50" : undefined}
                           key={customer.customerId}
                           meta={cardMetaText(customer)}
-                          status={rowPills(customer, variant)}
+                          status={rowPills(customer, variant, markedForValidating.has(customer.customerId))}
                           title={<span dir="auto">{customer.name}</span>}
                         >
                           {/* The same facts the table prints, folded to a phone's one column — and
@@ -766,31 +811,31 @@ export function CustomerListBoard({
                         The widths total 100% on a `table-fixed` grid, so the row fits its column at
                         every size rather than scrolling sideways (the fits-the-screen golden rule);
                         the phone gets the cards above instead. */}
-                    <CrmTable columns={["22%", "13%", "7%", "13%", "21%", "14%", "10%"]}>
+                    <CrmTable columns={EQUAL_COLUMNS}>
                       <thead>
                         <tr>
-                          <th className={crmThClassName} scope="col">
+                          <th className={`${crmThClassName} ${GRID_CELL} first:border-l-0`} scope="col">
                             Customer
                           </th>
-                          <th className={crmThClassName} scope="col">
+                          <th className={`${crmThClassName} ${GRID_CELL} first:border-l-0`} scope="col">
                             Specialty
                           </th>
-                          <th className={crmThClassName} scope="col">
+                          <th className={`${crmThClassName} ${GRID_CELL} first:border-l-0`} scope="col">
                             List
                           </th>
-                          <th className={crmThClassName} scope="col">
+                          <th className={`${crmThClassName} ${GRID_CELL} first:border-l-0`} scope="col">
                             Brick
                           </th>
-                          <th className={crmThClassName} scope="col">
+                          <th className={`${crmThClassName} ${GRID_CELL} first:border-l-0`} scope="col">
                             {DETAIL_HEADER[variant]}
                           </th>
                           {/* 🔴 What the iReports360 plans already say about him — not a target and
                               not an instruction, which is why the heading is "Usually planned" and
                               never "Frequency". */}
-                          <th className={crmThClassName} scope="col">
+                          <th className={`${crmThClassName} ${GRID_CELL} first:border-l-0`} scope="col">
                             Usually planned
                           </th>
-                          <th className={crmThClassName} scope="col">
+                          <th className={`${crmThClassName} ${GRID_CELL} first:border-l-0`} scope="col">
                             <span className="sr-only">Actions</span>
                           </th>
                         </tr>
@@ -799,6 +844,7 @@ export function CustomerListBoard({
                         {entry.rows.map((customer) => {
                           const facts = listRowFacts(customer);
                           const shared = (customer.sharedWith?.length ?? 0) > 0;
+                          const ready = markedForValidating.has(customer.customerId);
                           const near = neighbourhoods.of.get(customer.customerId) ?? null;
                           const nearTint = near?.cluster == null ? null : NEIGHBOUR_TINTS[near.cluster % NEIGHBOUR_TINTS.length];
                           return (
@@ -808,8 +854,17 @@ export function CustomerListBoard({
                             // Violet is reserved for exactly this across both boards; it can sit on
                             // a row here with nothing to fight, because this board spends its brick
                             // colour on the HEADING and never on a row.
-                            <tr className={shared ? "bg-violet-50" : undefined} key={customer.customerId}>
-                              <td className={crmTdClassName}>
+                            // 🔴 AND ONE WITH VISITS ALREADY SAVED IS HIGHLIGHTED TOO, IN AMBER
+                            // ("put the already-visited first and highlight them"). Two marks can
+                            // land on one row, so they are given two different things to hold: the
+                            // shared rule keeps the row's violet, which it has had since this board
+                            // was built, and ready-to-count takes the amber RAIL on the first cell
+                            // plus its own pill. A row that is both still says both, and neither
+                            // colour is ever painted over the other.
+                            <tr className={shared ? "bg-violet-50" : ready ? "bg-amber-50" : undefined} key={customer.customerId}>
+                              <td
+                                className={`${crmTdClassName} ${GRID_CELL} first:border-l-0 ${ready ? "border-l-[3px] border-l-amber-500 first:border-l-[3px]" : ""}`}
+                              >
                                 <p className="font-black text-slate-950">
                                   <span dir="auto">{customer.name}</span>
                                 </p>
@@ -819,20 +874,20 @@ export function CustomerListBoard({
                                     reason to be stated rather than implied, because the match is an
                                     inference a reader must be able to overrule. */}
                                 <SharedLine customer={customer} />
-                                <div className="mt-1 flex flex-wrap gap-1">{rowPills(customer, variant)}</div>
+                                <div className="mt-1 flex flex-wrap gap-1">{rowPills(customer, variant, ready)}</div>
                               </td>
-                              <td className={`${crmTdClassName} ${factInk(facts.speciality)}`}>
+                              <td className={`${crmTdClassName} ${GRID_CELL} ${factInk(facts.speciality)}`}>
                                 <span className="break-words" dir="auto">
                                   {facts.speciality.text}
                                 </span>
                               </td>
-                              <td className={crmTdClassName}>
+                              <td className={`${crmTdClassName} ${GRID_CELL} first:border-l-0`}>
                                 {/* 🔴 AM and PM are the two lists, printed apart and never summed. */}
                                 <span className="text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500">
                                   {listText(customer.listType)}
                                 </span>
                               </td>
-                              <td className={`${crmTdClassName} ${factInk(facts.brick)}`}>
+                              <td className={`${crmTdClassName} ${GRID_CELL} ${factInk(facts.brick)}`}>
                                 {/* 🔴 THE BRICK ONLY. Its AREA is NOT repeated here (owner,
                                     2026-09-30: "you duplicated the wrong areas and regions"): the
                                     group heading this row sits under already names brick AND area,
@@ -847,7 +902,7 @@ export function CustomerListBoard({
                               {/* 🔴 The neighbourhood wash lands on the ADDRESS cell and nowhere
                                   else — that is the thing being compared. A row standing alone
                                   carries no colour, which is itself the answer. */}
-                              <td className={`${crmTdClassName} ${nearTint?.fill ?? ""} ${factInk(facts.address)}`}>
+                              <td className={`${crmTdClassName} ${GRID_CELL} ${nearTint?.fill ?? ""} ${factInk(facts.address)}`}>
                                 <AddressText href={facts.mapsHref} text={variant === "dropped" ? detailText(customer, variant) : facts.address.text} />
                                 <NearbyLine neighbourhood={near} />
                                 {variant === "active" || variant === "outside" ? (
@@ -863,10 +918,10 @@ export function CustomerListBoard({
                                 ) : null}
                                 <p className="mt-0.5 break-words text-phx-2xs font-semibold leading-4 text-slate-500">{monthText(customer, variant)}</p>
                               </td>
-                              <td className={crmTdClassName}>
+                              <td className={`${crmTdClassName} ${GRID_CELL} first:border-l-0`}>
                                 <PlanPatternCell customer={customer} />
                               </td>
-                              <td className={crmTdClassName}>
+                              <td className={`${crmTdClassName} ${GRID_CELL} first:border-l-0`}>
                                 {/* The column's full width — the board's Actions column does the same. */}
                                 <div className="grid gap-1.5 [&>button]:w-full">{rowAction(customer)}</div>
                               </td>
