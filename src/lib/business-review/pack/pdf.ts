@@ -105,6 +105,19 @@ const CELL_PAD_PX = 16.6; // 2.2mm of padding either side
  */
 const CHAR_PX = 7.57;
 const CHART_MARGIN_PX = 15.7; // .chart's own margin-top
+/**
+ * The section head the budget above was measured with: a ONE-line title and a note of up to TWO
+ * lines. A longer head pushes the table down by exactly its extra lines, and nothing used to take
+ * that from the page — measured 2026-10-01 on the first real double-visit page, whose title (a
+ * manager's full name) wrapped to two lines and whose note ran to three: its chart was then grown
+ * to fill a page that was ~60px shorter than assumed, and the last row printed over the footer.
+ * Both estimates err wide on purpose — over-counting costs a row, under-counting clips one.
+ */
+const TITLE_CHAR_PX = 14.7; // 20pt display face, ~0.55 em a glyph
+const TITLE_LINE_PX = 29.3; // 20pt × line-height 1.1
+const NOTE_WIDTH_PX = 907.1; // .note max-width, 240mm
+const NOTE_CHAR_PX = 5.4; // 7.8pt italic, ~0.52 em a glyph
+const NOTE_LINE_PX = 15.6; // 7.8pt × line-height 1.5
 const CHART_CAP_PX = 26.0; // the note under a chart that plots fewer than the table holds
 /**
  * One wrapped line held back. A percentage would not help: the way this estimate goes wrong is one
@@ -113,9 +126,19 @@ const CHART_CAP_PX = 26.0; // the note under a chart that plots fewer than the t
  */
 const HEADROOM_PX = EXTRA_LINE_PX;
 
+/**
+ * The weights a section's columns are laid out on: its own hint when it carries one of the right
+ * length (the one-page summary's sentences), else names get the room and figures do not.
+ */
+function columnWeights(section: PackSection): number[] {
+  return section.weights && section.weights.length === section.align.length
+    ? section.weights
+    : section.align.map((a) => (a === "left" ? 2.4 : 1));
+}
+
 /** Characters one line of a column holds, from the same weights `colgroup` lays the columns out on. */
 function columnChars(section: PackSection): number[] {
-  const weights = section.align.map((a) => (a === "left" ? 2.4 : 1));
+  const weights = columnWeights(section);
   const total = weights.reduce((sum, w) => sum + w, 0);
   return weights.map((w) => Math.max(((w / total) * CONTENT_PX - CELL_PAD_PX) / CHAR_PX, 4));
 }
@@ -138,6 +161,13 @@ function headerHeightPx(section: PackSection, chars: readonly number[]): number 
     if (n > lines) lines = n;
   });
   return HEADER_PX + (lines - 1) * HEADER_LINE_PX;
+}
+
+/** What a section's head takes beyond the one-line title and two-line note the budget assumes. */
+function headExtraPx(section: PackSection): number {
+  const titleLines = Math.max(1, Math.ceil((section.title.length * TITLE_CHAR_PX) / CONTENT_PX));
+  const noteLines = Math.max(1, Math.ceil((section.note.length * NOTE_CHAR_PX) / NOTE_WIDTH_PX));
+  return (titleLines - 1) * TITLE_LINE_PX + Math.max(0, noteLines - 2) * NOTE_LINE_PX;
 }
 
 function chartHeightPx(chart: PackChart): number {
@@ -254,7 +284,7 @@ function cellHtml(value: PackCell): string {
 
 /** Column widths as percentages — names get the room, figures do not. Matches the deck's rule. */
 function colgroup(section: PackSection): string {
-  const weights = section.align.map((a) => (a === "left" ? 2.4 : 1));
+  const weights = columnWeights(section);
   const total = weights.reduce((sum, w) => sum + w, 0);
   return `<colgroup>${weights.map((w) => `<col style="width:${((w / total) * 100).toFixed(3)}%">`).join("")}</colgroup>`;
 }
@@ -655,17 +685,27 @@ export function packDocumentHtml(pack: SalesReviewPack): string {
     const chartPx = chart ? chartHeightPx(chart) : 0;
     const inline = chart != null && chartPx <= budget * 0.45;
     const ownPage = chart != null && !inline ? 1 : 0;
-    const tableParts = paginateByHeight(section, shown, inline ? budget - chartPx : budget, budget);
+    // The head only stands on the section's FIRST page — continuation pages carry a one-line note.
+    const head = headExtraPx(section);
+    const tableParts = paginateByHeight(
+      section,
+      shown,
+      (inline ? budget - chartPx : budget) - (ownPage ? 0 : head),
+      budget,
+    );
     const parts = tableParts.length + ownPage;
     // Then give the chart whatever that page has LEFT. On its own page that is the whole budget; on
     // a page it shares, only what a table ending early leaves behind — and nothing at all when the
     // rows already run on, where growing it would push them off the page it was just fitted to.
     const chars = columnChars(section);
     const firstPageRows = (tableParts[0] ?? []).reduce((sum, row) => sum + rowHeightPx(row, chars), 0);
+    // A taller head than the budget assumes means the page's true bottom is only estimated, so the
+    // chart stays at its own size there rather than being grown into a guess (a 13px overrun was
+    // measured on the real double-visit page even with the head subtracted).
     const chartTargetPx =
       ownPage === 1
-        ? budget
-        : tableParts.length === 1
+        ? budget - head
+        : tableParts.length === 1 && head === 0
           ? Math.max(budget - firstPageRows - CHART_MARGIN_PX, chartPx)
           : 0;
     if (ownPage && chart) {

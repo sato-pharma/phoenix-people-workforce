@@ -23,8 +23,9 @@
 
 import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
 
-import type { ConcentrationFacts } from "../concentration";
+import type { ConcentrationFacts, ReviewSalesDetail } from "../concentration";
 import { describeSpread } from "../concentration";
+import type { FieldLinkFacts } from "../field-link";
 import { isResignedStatus, leaverLabel } from "../employment-status";
 import { REVIEW_FLOOR } from "../period";
 import { periodColumnLabel, periodLabel, windowLabel } from "../period-format";
@@ -32,7 +33,24 @@ import { comparisonBasisFor, deltaPct, deltaPoints, formatDelta } from "../previ
 import type { ReviewPersonRow } from "../sources/roles";
 import { describeSpecialtyMix, type SpecialtyMix } from "../specialty-mix";
 import type { AreaSummary, DmSummary, Slice } from "../types";
+import {
+  areaWorkSection,
+  awarenessSection,
+  brickWorkSection,
+  buildLinkContext,
+  classAMissedSection,
+  costToServeSection,
+  directOrdersSection,
+  dvFocusSections,
+  plainForRep,
+  requestsSection,
+  summarySection,
+  teamScorecardSection,
+} from "./link-sections";
 import { metricById, type PackSubject, type ReviewMetricId } from "./metrics";
+import { sumSlices } from "./slices";
+
+export { sumSlices };
 
 /**
  * An area, plus the line it sits on when the pack spans more than one.
@@ -90,6 +108,13 @@ export type PackSection = {
   rows: PackCell[][];
   /** Drawn above the table by the PDF and the deck. Absent where a picture would say nothing. */
   chart?: PackChart | null;
+  /**
+   * Relative column widths for the PDF, for the one case its alignment rule misjudges: a column of
+   * whole SENTENCES beside a short label (the one-page summary), which the rule would split 50/50.
+   * Absent everywhere else, so every other section lays out exactly as before. The deck sizes its
+   * columns by their content and needs no hint.
+   */
+  weights?: number[];
 };
 
 export type SalesReviewPack = {
@@ -115,6 +140,17 @@ export type PackInput = {
   concentration: ConcentrationFacts | null;
   /** False when the CRM holds no rows for this window — then activity says so, never 0. */
   visitsAvailable: boolean;
+  /**
+   * The linked field facts — the reps' lists, visits, ride days, direct orders, marketing requests
+   * and awareness activities, read for THIS viewer's scope. Null (or absent) when no linked metric
+   * was ticked or the read failed; every linked section is then dropped, never drawn as zero.
+   */
+  fieldLink?: FieldLinkFacts | null;
+  /**
+   * The scope's own Monthly Closing customer rows — its lines and its areas, El Qema already masked
+   * — for the brick table. Null when the closing's detail was not read.
+   */
+  brickSales?: readonly Pick<ReviewSalesDetail, "brickId" | "brickName" | "channel" | "value">[] | null;
 };
 
 const NO_VISIT_DATA = "no CRM rows in this window";
@@ -128,8 +164,15 @@ export function buildSalesReviewPack(input: PackInput): SalesReviewPack {
   const add = (section: PackSection | null) => {
     if (section && section.rows.length > 0) sections.push(section);
   };
+  // The linked facts, computed ONCE, so the one-page summary and the tables after it read the same
+  // builder results and cannot disagree (owner, 2026-10-01). Null when none was read.
+  const link = buildLinkContext(input);
 
-  // First, because it is the slide a company or multi-line review opens on.
+  // The period in plain sentences opens every pack — for a rep it is the page he reads first.
+  if (wanted.has("review-summary")) {
+    add(summarySection(input, link));
+  }
+  // Then the slide a company or multi-line review opens on.
   if (wanted.has("line-comparison")) {
     add(lineComparison(input));
   }
@@ -160,6 +203,16 @@ export function buildSalesReviewPack(input: PackInput): SalesReviewPack {
   if (wanted.has("channel-split") && input.concentration) {
     add(channels(input.concentration));
   }
+  // The work laid beside the money (owner, 2026-10-01): bricks, areas, and the class A to-do list.
+  if (wanted.has("brick-work")) {
+    add(brickWorkSection(input, link));
+  }
+  if (wanted.has("area-work")) {
+    add(areaWorkSection(input, link));
+  }
+  if (wanted.has("class-a-missed")) {
+    add(classAMissedSection(input, link));
+  }
   if (wanted.has("visits-split")) {
     add(visitsSplit(input));
   }
@@ -173,11 +226,17 @@ export function buildSalesReviewPack(input: PackInput): SalesReviewPack {
     add(doubleVisitsByArea(input));
     add(doubleVisitsByManager(input));
   }
+  if (wanted.has("dv-focus")) {
+    for (const section of dvFocusSections(input, link)) add(section);
+  }
   if (wanted.has("rep-rows")) {
     add(repRows(input));
   }
   if (wanted.has("role-activity")) {
     add(roleActivity(input));
+  }
+  if (wanted.has("team-scorecard")) {
+    add(teamScorecardSection(input, link));
   }
   if (wanted.has("customers-per-month")) {
     add(customersPerMonth(input));
@@ -189,6 +248,18 @@ export function buildSalesReviewPack(input: PackInput): SalesReviewPack {
   }
   if (wanted.has("marketing-vs-trend")) {
     add(marketingVsTrend(input));
+  }
+  if (wanted.has("direct-orders")) {
+    add(directOrdersSection(input, link));
+  }
+  if (wanted.has("requests-return")) {
+    add(requestsSection(input, link));
+  }
+  if (wanted.has("awareness")) {
+    add(awarenessSection(input, link));
+  }
+  if (wanted.has("cost-to-serve")) {
+    add(costToServeSection(input, link));
   }
 
   // Catalogue order, whatever order the caller ticked them in — so two people exporting the same
@@ -203,7 +274,9 @@ export function buildSalesReviewPack(input: PackInput): SalesReviewPack {
   return {
     coverageNote: input.coverageNote,
     generatedAt: input.generatedAt ?? new Date().toISOString(),
-    sections,
+    // "Built on maturity level" (owner, 2026-10-01): a medical rep reads every figure his territory
+    // answers, in his own voice — the same numbers, plainer words. See link-sections.ts.
+    sections: input.subject.level === "rep" ? sections.map(plainForRep) : sections,
     subject: input.subject,
   };
 }
@@ -532,33 +605,8 @@ function spend({ dms }: PackInput): PackSection {
 // The owner: "show the full data … as he filters, the pack is exported." Every builder below reads
 // data this scope already loaded; none recomputes a figure the engine owns.
 
-/**
- * Total any set of slices by the review's own rule: sum(sales), sum(target), and achievement as the
- * GRADED actual over the target, as a percentage, null when there is no target.
- *
- * It is `totalAreas` in canonical.ts restated for slices that are not whole areas — one product
- * across areas, one month across areas. canonical.ts reaches the database, so it cannot be imported
- * here; a test pins this against it instead, because a second rule would be a second opinion about
- * achievement.
- */
-export function sumSlices(slices: readonly (Slice | null | undefined)[]): Slice {
-  let sales = 0;
-  let target = 0;
-  let graded = 0;
-  for (const slice of slices) {
-    if (!slice) continue;
-    sales += num(slice.sales);
-    target += num(slice.target);
-    graded += num(slice.graded);
-  }
-  const round2 = (n: number) => Math.round(n * 100) / 100;
-  return {
-    ach: target !== 0 ? round2((graded / target) * 100) : null,
-    graded: round2(graded),
-    sales: round2(sales),
-    target: round2(target),
-  };
-}
+// `sumSlices` — the one rule for totalling achievement — lives in ./slices.ts so the linked
+// sections read it without importing this file; it is re-exported at the top of this module.
 
 /** A Line cell only when the pack spans more than one line; a column of one repeated value is noise. */
 function lineCells(withLine: boolean, label: string | null | undefined): PackCell[] {

@@ -131,8 +131,10 @@ export function runBusinessReviewPackMetricsTests() {
     const heavy = REVIEW_METRICS.filter((m) => m.needsClosingDetail).map((m) => m.id);
     assert.deepEqual(
       heavy.sort(),
-      ["brick-spread", "channel-split", "customer-concentration"],
-      "exactly the three that cannot be answered from the review's own sales source",
+      // The brick table (owner, 2026-10-01) lays the closing's own brick sales beside the CRM list,
+      // so it reads the same customer-grain rows — and only at the levels small enough to read.
+      ["brick-spread", "brick-work", "channel-split", "customer-concentration"],
+      "exactly the four that cannot be answered from the review's own sales source",
     );
   }
 
