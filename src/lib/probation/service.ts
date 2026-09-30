@@ -433,6 +433,41 @@ export function isProbationSchemaMissing(error: unknown) {
   );
 }
 
+/**
+ * Is the shared notification outbox genuinely ABSENT — as opposed to one of its COLUMNS being gone?
+ *
+ * 🔴 THE REMINDER WRITES MUST NOT USE `isProbationSchemaMissing`. That predicate was written for
+ * probation's OWN tables during the window before their migration landed, and one of the things it
+ * matches is the bare phrase `schema cache` — which is exactly how PostgREST words a missing COLUMN:
+ * "Could not find the 'x' column of 'notification_events' in the schema cache" (PGRST204). So a
+ * dropped or renamed column on the outbox made every "probation feedback is due" and "decision
+ * overdue" row silently fail to be created: no manager told, no row to find, and nothing red
+ * anywhere. Found by the org select-audit, 2026-09-30.
+ *
+ * This tolerates only the one case the original was reaching for — the TABLE not being there — and
+ * says so positively rather than by exclusion, so a new PostgREST wording cannot quietly widen it.
+ * A missing column now throws, which is what the caller wants: a notification nobody receives is
+ * worse than a visible failure.
+ */
+export function isNotificationOutboxMissing(error: unknown) {
+  const message = errorMessage(error).toLowerCase();
+  const code = String(
+    (typeof error === "object" && error && "code" in error ? (error as { code?: unknown }).code : "") ?? "",
+  ).toUpperCase();
+
+  // A COLUMN is never the table. Both spellings, before anything else can match them.
+  if (code === "PGRST204" || code === "42703") return false;
+  if (/could not find the '[^']*' column/.test(message)) return false;
+  if (message.includes("column") && message.includes("does not exist")) return false;
+
+  return (
+    code === "PGRST205" ||
+    code === "42P01" ||
+    (message.includes("could not find the table") && message.includes("notification_events")) ||
+    (message.includes("relation") && message.includes("notification_events") && message.includes("does not exist"))
+  );
+}
+
 function asIso(value: string | null | undefined) {
   return value ? new Date(value).toISOString() : null;
 }
@@ -884,7 +919,9 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
   const { error } = await getSupabaseAdmin()
     .from("notification_events")
     .upsert(rows, { onConflict: "event_key", ignoreDuplicates: true });
-  if (error && !isProbationSchemaMissing(error)) throw error;
+  // The OUTBOX, not a probation table: a missing COLUMN here must never be swallowed, or every
+  // "feedback is due" reminder stops being created with nothing red. See isNotificationOutboxMissing.
+  if (error && !isNotificationOutboxMissing(error)) throw error;
 }
 
 /**
@@ -1005,7 +1042,9 @@ async function ensureOverdueProbationReminderEvents(
   const { error } = await getSupabaseAdmin()
     .from("notification_events")
     .upsert(rows, { onConflict: "event_key", ignoreDuplicates: true });
-  if (error && !isProbationSchemaMissing(error)) throw error;
+  // The OUTBOX, not a probation table: a missing COLUMN here must never be swallowed, or every
+  // "decision overdue" reminder stops being created with nothing red. See isNotificationOutboxMissing.
+  if (error && !isNotificationOutboxMissing(error)) throw error;
 }
 
 async function ensureSystemProbationReview(employee: EmployeeScopeRow, probationEndDate: string) {
