@@ -2060,6 +2060,7 @@ import { runProtectedFileGuardTests } from "./protected-file-guard.test.ts";
 import { runTestRegistrationCheckTests } from "./test-registration-check.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
 import { runRollupPrsTests } from "./rollup-prs.test.ts";
+import { runWaitPrTests } from "./wait-pr.test.ts";
 import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
 import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
 import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
@@ -7459,6 +7460,11 @@ await runTest(
 await runTest(
   "rollup-prs.mjs groups the open PRs into the fewest SAFE merges and writes nothing by default: two disjoint small PRs roll up, sharing one file keeps them apart (tests/run-tests.ts merges cleanly into a four-argument call), a migration or protected file or frozen path is never folded in, a SUPERSEDED bot PR does not disqualify the PR that supersedes it (which regressed on its first run), a lone small PR proposes nothing, a wide PR rides along but never forms a roll-up on its own, a PR whose REQUIRED checks are QUEUED or IN_PROGRESS stays rollable but reads as NOT settled so --apply waits for it before the branch is created and builds only from the members that finished green (measured 2026-09-30: #4896 was built over #4894 while its checks were queued, #4894 then went red, and the roll-up held the green #4895 hostage), and `gh pr merge` appears nowhere in the script because merging stays the owner's word",
   runRollupPrsTests,
+);
+
+await runTest(
+  "wait-pr.mjs is the ONE merge wait, and every failure it replaces was a confident wrong answer rather than a crash: every line names the PR (a sed-drifted wait verified #4912 while its log said #4923), a SETTLED RED exits 3 and never says GREEN (a backgrounded task's notification reports the shell's status, so a red exiting 0 is announced as success), --green keeps waiting THROUGH a concluded red because only a new push can change it (a settle-wait on the already-red #4925 returned the failure instantly, reading as a verdict on a fresh run), running out of readings gives up loudly with what it last saw, only the REQUIRED checks count so a red `mobile` cannot hold a merge, the gate is read from branch protection and no check name is hardcoded, and a --ship verdict that is not SHIPPED exits non-zero",
+  runWaitPrTests,
 );
 
 await runTest(
