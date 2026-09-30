@@ -43,7 +43,10 @@ overrides:
   # production deploys, not merely an open alert.
   # Floors: 1.x -> 1.1.21, 2.x -> 2.1.7, 5.x -> 5.0.12. Same allow-but-resolve-below shape as every
   # other note in this file. Each line stays inside its OWN major on purpose - forcing all instances
-  # to 5.x breaks eslint, which is what the auditConfig note at the foot of this file records.
+  # to 5.x breaks eslint (minimatch@3.1.5's braceExpand() calls an `expand` export 5.x removed).
+  # Keeping to each major also retired the last `auditConfig` suppression in this file: GHSA-mh99
+  # patches separately per line (1.1.17 / 2.1.3 / 3.0.3 / 5.0.8), so these floors cleared it as a side
+  # effect. The note at the foot of this file records that, and why nothing should re-add an ignore.
   "brace-expansion@1": ^1.1.21
   "brace-expansion@2": ^2.1.7
   # The advisory covers `>=4.0.0 <5.0.9` and patches at `>=5.0.9`, i.e. the 4.x line's fix ships
@@ -289,29 +292,31 @@ allowBuilds:
   tesseract.js: false
   unrs-resolver: true
 
-# GHSA-mh99-v99m-4gvg (brace-expansion DoS via unbounded glob-pattern expansion, patched
-# at 5.0.8): three separate brace-expansion instances exist in the graph (1.1.16, 2.1.2,
-# 5.0.8-via-minimatch@10.2.5) behind eslint's config-array, Sentry's/shadcn's bundler
-# tooling, AND exceljs's zip handling (archiver/unzipper -> glob@7.2.3 -> minimatch@3.1.5).
-# Forcing all instances to 5.x broke eslint outright (minimatch@3.1.5's braceExpand() calls
-# an `expand` export removed in brace-expansion 5.x) — confirmed by reproducing locally.
-# Ignoring rather than force-upgrading: the exploit requires an attacker-controlled glob
-# pattern reaching brace-expansion's expand(); exceljs's use here is internal zip-archive
-# path handling during XLSX read/write, never a user-supplied pattern string, so this
-# app's exposure is not realistically exploitable. Revisit once eslint's config-array,
-# Sentry's bundler-plugin-core, and archiver's own dependency chain bump their minimatch
-# pins to a brace-expansion-5.x-compatible release.
+# 🔴 THERE IS NO `auditConfig` HERE ANY MORE, AND THAT IS DELIBERATE — DO NOT ADD ONE BACK TO QUIET A
+# RED AUDIT. This file suppressed exactly one advisory, GHSA-mh99-v99m-4gvg (brace-expansion DoS via
+# unbounded glob-pattern expansion), and the suppression was RETIRED on 2026-09-30 because it had
+# stopped masking anything.
 #
-# GHSA-qhr7-859c-m2p7 and GHSA-6j4f-fj2g-mc7p (both HIGH, "brace-expansion DoS via uncontrolled
-# recursion on nested brace groups", patched >=1.1.20 / >=2.1.6 and >=1.1.19 / >=2.1.5) were
-# ignored here as a stopgap on 2026-09-30 and RETIRED once #4847 raised the override floors to
-# `brace-expansion@1: ^1.1.21` / `@2: ^2.1.7` and regenerated the lockfile — pnpm-lock.yaml now
-# resolves 1.1.21 and 2.1.7, both above every patch floor, so `pnpm audit` no longer reports
-# either. GHSA-mh99 stays ignored: its only fix is the brace-expansion-5.x jump that breaks
-# eslint (see the note above), and the 1.x/2.x lines cannot take it.
-auditConfig:
-  ignoreGhsas:
-    - GHSA-mh99-v99m-4gvg
+# Its justification had gone quietly out of date, which is the interesting part. The note said
+# GHSA-mh99's "only fix is the brace-expansion-5.x jump", that forcing every instance to 5.x breaks
+# eslint (true — minimatch@3.1.5's braceExpand() calls an `expand` export 5.x removed, reproduced
+# locally at the time), and therefore that the 1.x and 2.x lines "cannot take it". That last step is
+# what was wrong: the advisory patches SEPARATELY IN EACH LINE, at 1.1.17, 2.1.3, 3.0.3 and 5.0.8 —
+# so the 5.x jump was never the only fix, and the per-major floors raised for two *different*
+# advisories (#4847: `@1: ^1.1.21`, `@2: ^2.1.7`, `@5: ^5.0.12`) had already cleared this one as a
+# side effect. Every resolved instance now sits above its own line's patch floor.
+#
+# Verified before removal rather than argued: OSV reports no advisory against brace-expansion 1.1.21,
+# 2.1.7 or 5.0.12, and `pnpm audit --audit-level=high --prod` — the exact command `validate` runs —
+# answers "No known vulnerabilities found", exit 0, WITH the ignore and WITHOUT it, measured on the
+# self-hosted box against f37bdea8f. So the entry was suppressing nothing and only hiding whether it
+# still needed to.
+#
+# The reason to care about a dead suppression: `pnpm audit` is a required gate, and an `ignoreGhsas`
+# entry is the one thing that can make it answer green about a package it has actually flagged. Left
+# in place it ages into exactly the blind spot the gate exists to remove — and nothing re-tests
+# whether it is still needed, because a suppression has no expiry. If a future advisory genuinely
+# cannot be fixed, raise the override floor for its own major line first; that is what worked here.
 
 # Hoist the canvas addon to the root node_modules so Next's standalone build can actually LOAD it.
 #
