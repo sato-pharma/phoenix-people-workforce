@@ -29,12 +29,27 @@ export type PhoenixCrmVisitKind = "single" | "double" | "chain";
 
 export type PhoenixCrmPlanStatus = "draft" | "submitted" | "approved" | "returned";
 
-export type PhoenixCrmRequestKind = "grade" | "drop";
+/**
+ * grade: one step, the district manager. drop, add and restore: the district manager, then SFE
+ * (owner, 2026-09-29). An add admits a customer the rep met outside his list; a restore brings one
+ * back from the Archive.
+ */
+export type PhoenixCrmRequestKind = "grade" | "drop" | "add" | "restore";
+
+/** Who decides a two-step request next. Null once it is decided, and always null for a grade. */
+export type PhoenixCrmRequestStage = "manager" | "sfe";
+
+/**
+ * pending: carried over from iReports360, not validated yet. active: validated, on the list.
+ * outside: met and validated at the door, not on the list until the district manager and SFE admit him
+ * (owner, 2026-09-29). dropped: in the Archive.
+ */
+export type PhoenixCrmCustomerStatus = "active" | "pending" | "outside" | "dropped";
 
 export type PhoenixCrmRequestStatus = "pending" | "approved" | "refused" | "withdrawn";
 
 /** A visit's location check against the customer's validated place. A far visit still saves. */
-export type PhoenixCrmLocationFlag = "ok" | "far" | "weak_gps";
+export type PhoenixCrmLocationFlag = "ok" | "far" | "weak_gps" | "no_place";
 
 /** One window in which a customer receives visits. */
 export type PhoenixCrmTiming = {

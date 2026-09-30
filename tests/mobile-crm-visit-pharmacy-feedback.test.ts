@@ -31,6 +31,7 @@ function visitBody(patch: Record<string, unknown>): Record<string, unknown> {
     kind: "single",
     products: ["Satoprazole"],
     pharmacyName: "El Ezaby — Nasr City",
+    comment: "Discussed the new dose.",
     photoPath: "phoenix-crm/visits/seat/photo.jpg",
     lat: 30.05,
     lon: 31.23,
@@ -40,18 +41,22 @@ function visitBody(patch: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function runMobileCrmVisitPharmacyFeedbackTests(): void {
-  // ── The server contract: the pharmacy name is required, so the phone MUST send it ───────────────
+  // ── The server contract: the pharmacy name travels when sent, and is OPTIONAL ──────────────────
+  //
+  // Owner, 2026-09-29: the pharmacy stock check stays on the visit but never blocks it. So the
+  // server now ACCEPTS a visit with no pharmacy (it was the refusal that stranded the phone before
+  // #4341's fix), and one the phone does send is carried through untouched.
   {
     const ok = parseVisitDraft(visitBody({}));
     assert.equal(ok.ok, true, "a visit with a pharmacy name is accepted");
     if (ok.ok) assert.equal(ok.value.pharmacyName, "El Ezaby — Nasr City", "the pharmacy name is carried through");
 
     const missing = parseVisitDraft(visitBody({ pharmacyName: "" }));
-    assert.equal(missing.ok, false, "no pharmacy name is refused — this is the exact error the phone used to hit on every save");
-    if (!missing.ok) assert.match(missing.error, /pharmacy/i, "and it is the pharmacy error");
+    assert.equal(missing.ok, true, "no pharmacy name is accepted — the stock check is optional since 2026-09-29");
+    if (missing.ok) assert.equal(missing.value.pharmacyName, null, "and it is stored as no pharmacy, never an empty name");
 
     const blank = parseVisitDraft(visitBody({ pharmacyName: "   " }));
-    assert.equal(blank.ok, false, "a whitespace-only pharmacy name is refused too");
+    assert.equal(blank.ok, true, "a whitespace-only pharmacy name is simply no pharmacy");
   }
 
   // ── The stock answers travel with it, filtered to the two real values ───────────────────────────
@@ -91,10 +96,26 @@ export function runMobileCrmVisitPharmacyFeedbackTests(): void {
     // numbered the SAME. A later step adds another section and the same thing happens again. Now the
     // web's own step titles are the expected list, so the phone can only fail this by DIVERGING.
     const titles = (text: string, pattern: RegExp) => [...text.matchAll(pattern)].map((match) => match[1]).filter((title) => /^\d+ · /.test(title));
-    const web = titles(source("src/components/phoenix-crm/visits-tab.tsx"), /<CrmBlock[^>]*title="([^"]+)"/g);
+    // Since 2026-09-29 the web's form lives in visit-log-form.tsx and has NO photo step ("Log visit" is
+    // one tap). Since 2026-09-30 the web's Comment follows its Products — the comment became required,
+    // and the required steps lead — while the phone keeps its own order until its form is next rebuilt.
+    // So what is pinned is that the two carry the SAME steps under the SAME names, each numbered 1, 2,
+    // 3… in its own order with no gap; only a trailing photo step may follow on the phone.
+    const web = titles(source("src/components/phoenix-crm/visit-log-form.tsx"), /<CrmBlock[^>]*title="([^"]+)"/g);
     const phone = titles(code, /<CrmSection title="([^"]+)"/g);
     assert.ok(web.length >= 6, `the web form's steps must actually be found — got ${web.length}`);
-    assert.deepEqual(phone, web, "the phone's steps are numbered and named exactly as the web form's");
+    const named = (list: string[]) => list.map((title) => title.replace(/^\d+ · /, "")).sort();
+    const phoneShared = phone.filter((title) => !/Live photo/.test(title));
+    assert.deepEqual(named(phoneShared), named(web), "the two forms carry the same steps, named alike");
+    for (const [app, list] of [["web", web], ["phone", phone]] as const) {
+      assert.deepEqual(
+        list.map((title) => Number(/^(\d+) · /.exec(title)?.[1])),
+        list.map((_, index) => index + 1),
+        `${app}: the steps are numbered 1, 2, 3… in order, with no gap`,
+      );
+    }
+    assert.ok(phone.slice(phoneShared.length).every((title) => /Live photo/.test(title)), "anything more on the phone is its photo step, at the end");
+    assert.equal(web.some((title) => /photo/i.test(title)), false, "the web's visit has no photo step");
     assert.ok(phone.includes("4 · Pharmacy you took feedback from"), "and the pharmacy section is one of them, at 4");
     assert.ok(code.includes("Does this pharmacy have these products?"), "the stock grid asks the same question as the web");
 

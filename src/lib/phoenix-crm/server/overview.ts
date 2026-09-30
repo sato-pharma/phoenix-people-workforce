@@ -47,6 +47,12 @@ export type PhoenixCrmOverview = {
     isManager: boolean;
   };
   cairoToday: string;
+  /**
+   * The visit day: the Cairo date of now minus 2 hours, so until 02:00 it is the day that just ended
+   * (owner, 2026-09-29). The Visits tab shows it while its own day is still loading — the calendar
+   * date there read "Wednesday" at 01:54 on the walk of 2026-09-30.
+   */
+  visitDay: string;
   tabs: PhoenixCrmTabs;
   /** Every territory the viewer reads; the Super Admin's test pickers use the same list. */
   territories: TerritorySummary[];
@@ -56,7 +62,10 @@ export type PhoenixCrmOverview = {
   visitSeatIds: string[];
   /** Held territories whose line has not opened yet, with the sentence saying when it opens. */
   waiting: Array<{ territory: TerritorySummary; message: string }>;
-  /** Grade and drop requests, and submitted plans, waiting for this viewer's decision. */
+  /**
+   * List requests (a grade, a drop, an add, a bring-back) at a step this viewer decides, and submitted
+   * plans, waiting for this viewer's decision.
+   */
   waitingForYou: { requests: number; plans: number; isTest: boolean };
   /** Why the viewer has nothing to open yet, in one sentence; null when the module is open for them. */
   closedMessage: string | null;
@@ -92,12 +101,17 @@ async function countWaiting(
   isTest: boolean,
   seatIds: string[] | null,
   fromWeek: string | null = null,
+  stage: "reviewer" | "sfe" | null = null,
 ): Promise<number> {
   const supabase = getSupabaseAdmin();
   const count = (seatPart: string[] | null) => {
     let query = supabase.from(table).select("id", { count: "exact", head: true }).eq("status", status).eq("is_test", isTest);
     if (seatPart) query = query.in("seat_id", seatPart);
     if (fromWeek) query = query.gte("week_start", fromWeek);
+    // A list request waits on the step it is ON (2026-09-29): a grade change and the first step of a
+    // drop, an add or a bring-back are the territory's reviewer's; the second step is the SFE Manager's.
+    if (stage === "reviewer") query = query.or("stage.is.null,stage.eq.manager");
+    if (stage === "sfe") query = query.eq("stage", "sfe");
     return query;
   };
   if (seatIds === null) {
@@ -132,9 +146,17 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     ? null
     : scope.filter((seat) => canReviewTerritory(viewer, seat, viewer.isTestPersona)).map((seat) => seat.seatId);
 
-  const [names, requests, plans] = await Promise.all([
+  // The SFE step of a list request is the SFE Manager's across his whole scope (real entries only; the
+  // Super Admin's test count above already holds every step).
+  const sfeSeatIds =
+    !viewer.isSuperAdmin && !viewer.isTestPersona && viewer.isSfeManager && viewer.canApprove ? scope.map((seat) => seat.seatId) : [];
+
+  const [names, reviewerRequests, sfeRequests, plans] = await Promise.all([
     loadPeopleNames([viewer.hrId, ...territoryPeople(viewer.org, [...scope, ...viewer.waitingTerritories])]),
-    reviewSeatIds !== null && reviewSeatIds.length === 0 ? 0 : countWaiting("phoenix_crm_list_requests", "pending", waitingIsTest, reviewSeatIds),
+    reviewSeatIds !== null && reviewSeatIds.length === 0
+      ? 0
+      : countWaiting("phoenix_crm_list_requests", "pending", waitingIsTest, reviewSeatIds, null, reviewSeatIds === null ? null : "reviewer"),
+    sfeSeatIds.length === 0 ? 0 : countWaiting("phoenix_crm_list_requests", "pending", false, sfeSeatIds, null, "sfe"),
     reviewSeatIds !== null && reviewSeatIds.length === 0
       ? 0
       : countWaiting("phoenix_crm_plans", "submitted", waitingIsTest, reviewSeatIds, plannableWeeks(viewer.cairoToday)[0]),
@@ -169,6 +191,7 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       isManager: viewer.managerSeats.length > 0,
     },
     cairoToday: viewer.cairoToday,
+    visitDay: viewer.visitDay,
     tabs,
     territories,
     ownSeatIds,
@@ -181,7 +204,7 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       territory: describeTerritory(viewer.org, seat, names),
       message: lineOpeningText(viewer, seat),
     })),
-    waitingForYou: { requests, plans, isTest: waitingIsTest },
+    waitingForYou: { requests: reviewerRequests + sfeRequests, plans, isTest: waitingIsTest },
     closedMessage: closedMessage(viewer),
   };
 }

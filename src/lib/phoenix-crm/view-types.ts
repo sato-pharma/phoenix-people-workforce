@@ -24,15 +24,20 @@ export type {
   ListPlace,
   ListReferenceEntry,
   ListRequest,
+  PlaceReading,
   SeatReadiness,
   TerritoryListView,
   ValidateResult,
 } from "@/lib/phoenix-crm/server/list";
+export type { PlaceMoveResult, PlaceMoveTarget } from "@/lib/phoenix-crm/server/place-move";
+export type { PlannedActivityDraft, PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
+export type { DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 export type { DoctorDirectoryRow, DoctorDirectoryView } from "@/lib/phoenix-crm/server/doctors";
 export type { TodayView } from "@/lib/phoenix-crm/server/today";
 export type { TeamRequest, TeamTerritoryRow, TeamUnplannedVisit, TeamView } from "@/lib/phoenix-crm/server/team";
 export type { UnplannedVisitView } from "@/lib/phoenix-crm/server/unplanned";
 export type {
+  PlanCopySourceView,
   PlanDayView,
   PlanItemView,
   PlannerView,

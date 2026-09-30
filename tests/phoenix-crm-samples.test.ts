@@ -70,7 +70,12 @@ export function runPhoenixCrmSamplesTests(): void {
   // owner's intent lives in, and it is silent when broken: a stock table would compile, deploy, and
   // only show up as a rep being told he has none left.
   {
-    for (const path of ["src/lib/phoenix-crm/samples.ts", "src/lib/phoenix-crm/server/visits.ts", "src/components/phoenix-crm/visits-tab.tsx"]) {
+    for (const path of [
+      "src/lib/phoenix-crm/samples.ts",
+      "src/lib/phoenix-crm/server/visits.ts",
+      "src/components/phoenix-crm/visits-tab.tsx",
+      "src/components/phoenix-crm/visit-log-form.tsx",
+    ]) {
       const code = source(path);
       assert.doesNotMatch(code, /\b(stock_balance|sampleBalance|samplesRemaining|allocat\w*Sample|issuedSamples)\b/i, `${path} keeps a sample balance`);
       assert.doesNotMatch(code, /samples?\w*\s*-=|-=\s*\w*samples?/i, `${path} subtracts from a sample count`);
@@ -160,8 +165,12 @@ export function runPhoenixCrmSamplesTests(): void {
     assert.ok(visits.includes("samples: describeSamples(parseSamplesGiven(row.samples_given))"), "and the card reads it back ready to print");
     assert.ok(source("src/lib/phoenix-crm/entry-rules.ts").includes("samplesGiven: parseSamplesGiven(body.samplesGiven)"));
 
-    for (const [name, path] of [["web", "src/components/phoenix-crm/visits-tab.tsx"], ["phone", "mobile/src/features/crm/visits-screen.tsx"]] as const) {
-      const code = source(path);
+    // The web app's visit is two files since the one-tap rebuild (2026-09-29): the form that records
+    // what he left (visit-log-form.tsx) and the day list that prints it back (visits-tab.tsx).
+    const webFiles: readonly string[] = ["src/components/phoenix-crm/visit-log-form.tsx", "src/components/phoenix-crm/visits-tab.tsx"];
+    const phoneFiles: readonly string[] = ["mobile/src/features/crm/visits-screen.tsx"];
+    for (const [name, paths] of [["web", webFiles], ["phone", phoneFiles]] as const) {
+      const code = paths.map((path) => source(path)).join("\n");
       assert.ok(code.includes("SAMPLE_MATERIALS"), `${name}: the three materials are offered`);
       assert.ok(code.includes("bumpSample"), `${name}: one button per item, each tap one more`);
       assert.ok(code.includes("samplesGiven: samples"), `${name}: and the payload carries them`);

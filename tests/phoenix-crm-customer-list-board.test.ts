@@ -15,9 +15,9 @@ import {
 import type { ListCustomer, ListPlace } from "../src/lib/phoenix-crm/server/list.ts";
 
 /**
- * Phoenix CRM — the grouping and filtering that give the List tab's three customer parts (To
- * validate, Customers, Left the list) the same look as the board (owner, 2026-09-25: "make all the
- * list tabs have the same features and tweaks").
+ * Phoenix CRM — the grouping and filtering that give the List tab's customer parts (To validate,
+ * Your list, Outside the list and the Archive since 2026-09-29) the same look as the board (owner,
+ * 2026-09-25: "make all the list tabs have the same features and tweaks").
  *
  * The screens are React, but the part a test can hold to is pure: one group per brick, unmapped
  * localities kept apart and named, a stable order the colour is keyed off, and the same six filters.
@@ -45,6 +45,10 @@ function place(overrides: Partial<ListPlace> = {}): ListPlace {
     photoPath: "",
     capturedAt: "2026-09-01T00:00:00Z",
     clockOff: false,
+    pointSource: "photo",
+    pinReading: null,
+    photoReading: null,
+    moved: null,
     ...overrides,
   };
 }
@@ -59,6 +63,8 @@ function customer(overrides: Partial<ListCustomer> = {}): ListCustomer {
     origin: "reference",
     referenceContactCrmId: null,
     status: "active",
+    section: "your_list",
+    potentialGrade: null,
     validatedAt: null,
     validatedByName: null,
     reference: null,
@@ -72,6 +78,7 @@ function customer(overrides: Partial<ListCustomer> = {}): ListCustomer {
     pendingGradeRequestId: null,
     pendingGrade: null,
     pendingDropRequestId: null,
+    waiting: [],
     primaryPharmacyName: null,
     pharmacies: [],
     ...overrides,

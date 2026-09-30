@@ -1524,6 +1524,11 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }], exact: true },
       { href: "/employee-portals/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile" }] },
       { href: "/employee-portals/private-calendar", icon: CalendarDays, label: "Private Calendar", permissions: [{ resource: "employee_profile" }] },
+      // My Milestones — the rep's own service-anniversary and Sato-Pharma birthday keepsake cards,
+      // self-scoped and downloadable by him (owner, 2026-09-30). Medical-Rep only; catalogued so
+      // Cmd/Ctrl+K finds it and the tab carries its own title. The page gates by role predicate, and
+      // employee_profile:read (which the rep holds) is the permission the name-only guard reads here.
+      { href: "/employee-portals/milestones", icon: Award, label: "My Milestones", permissions: [{ resource: "employee_profile" }], roles: ["Medical Rep"] },
       { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
       // Training Manager added 2026-08-25. He has held `organogram: ["read"]` and passed
       // canAccessCompanyOrganogram the whole time — the page itself even names him in its
@@ -1624,12 +1629,13 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/sales-vs-target", icon: Gauge, label: "Sales vs Target", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Make It Happen — roles mirror showMakeItHappenTab; the enforcing gate is canUseMakeItHappen.
       { href: "/employee-portals/make-it-happen", icon: Sparkles, label: "Make It Happen", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
-      // Portal counterpart of /business-review, scoped per viewer. Medical Rep is deliberately
-      // absent — the owner ruled this module is managers-only. CEO/SFE Manager/Super Admin reach it
+      // Portal counterpart of /business-review, scoped per viewer. The Medical Rep is included since
+      // 2026-09-30 (owner) — the module was opened to a rep on 2026-09-26, own list only and
+      // downward-only, and this surfaces the sidebar link. CEO/SFE Manager/Super Admin reach it
       // through the admin entry instead, since that is the shell they land in.
       // The real gate is the access map in src/lib/business-review/portal-scope.ts; this list is
       // UX only, and a role here with no seat in that map still resolves to no access.
-      { href: "/employee-portals/business-review", icon: LayoutDashboard, label: "Business Review", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      { href: "/employee-portals/business-review", icon: LayoutDashboard, label: "Business Review", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // RETIRED 2026-08-28 (owner's instruction, in the conversation): "Doctor Coverage" and
       // "Doctor Coverage Settings" were listed here for the seven portal-mode sales roles. Both are
       // withdrawn along with the admin twins — see the retirement note on crmPageItems below for

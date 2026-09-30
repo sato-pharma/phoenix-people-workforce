@@ -246,7 +246,10 @@ function runScreenTests() {
   // The wall the owner removed: a plan is never refused because the list is not finished.
   const plans = source("src/lib/phoenix-crm/server/plans.ts");
   assert.doesNotMatch(plans, /phoenix_crm_list_not_ready/, "nothing about the rep's list refuses a plan any more");
-  assert.doesNotMatch(source("src/components/phoenix-crm/plan-tab.tsx"), /phoenix_crm_list_not_ready/);
+  // The Plan board replaced plan-tab.tsx on 2026-09-29; the wall stays gone from every file of it.
+  for (const file of ["plan-board.tsx", "plan-week-panel.tsx", "plan-day-panel.tsx"]) {
+    assert.doesNotMatch(source(`src/components/phoenix-crm/${file}`), /phoenix_crm_list_not_ready/, `${file} never waits on the list`);
+  }
 
   // A pending customer is not stale. Stale blocks submitting, and he is planned on purpose.
   assert.match(
@@ -259,7 +262,11 @@ function runScreenTests() {
   const customer = source("src/components/phoenix-crm/list-customer.tsx");
   const pendingBranch = customer.indexOf('customer.status === "pending"');
   assert.ok(pendingBranch > 0, "the customer's page knows a pending customer");
-  assert.match(customer, /\{!active && !pending \? <CrmPill>Left the list<\/CrmPill> : null\}/, '"Left the list" is shown only to a customer that actually left it');
+  // Since 2026-09-29 a customer can also wait OUTSIDE the list (met on an out-of-list visit), so "not
+  // active and not pending" is no longer "left": the Archive pill keys on the one status that means it.
+  assert.match(customer, /const archived = customer\.status === "dropped";/, "the Archive is exactly the dropped status");
+  assert.match(customer, /\{archived \? <CrmPill>In the Archive<\/CrmPill> : null\}/, "the Archive pill is shown only to a customer that is actually in it");
+  assert.doesNotMatch(customer, /\{!active && !pending \? <CrmPill>/, "a customer waiting outside the list is never shown as having left it");
 
   // The one sentence, said once and shared, so four screens cannot drift apart.
   const labels = source("src/components/phoenix-crm/labels.ts");
@@ -300,7 +307,7 @@ function runScreenTests() {
   assert.match(drop, /<CrmPill tone="orange">\{PENDING_PILL\}<\/CrmPill>/, "and the screen says which kind of customer this is, in the same words as everywhere else");
 
   // The module's locked look, still: no horizontal scroll, no ellipsis, no rounded corner.
-  for (const file of ["src/components/phoenix-crm/list-tab.tsx", "src/components/phoenix-crm/list-customer.tsx", "src/components/phoenix-crm/plan-tab.tsx", "src/components/phoenix-crm/list-screens.tsx"]) {
+  for (const file of ["src/components/phoenix-crm/list-tab.tsx", "src/components/phoenix-crm/list-customer.tsx", "src/components/phoenix-crm/plan-board.tsx", "src/components/phoenix-crm/plan-week-panel.tsx", "src/components/phoenix-crm/plan-day-panel.tsx", "src/components/phoenix-crm/list-screens.tsx"]) {
     const body = source(file);
     for (const banned of [/\btruncate\b/, /\bline-clamp-/, /\boverflow-x-auto\b/, /\brounded-(?!none\b)/]) {
       assert.doesNotMatch(body, banned, `${file} breaks the module's look`);
@@ -428,7 +435,8 @@ function runPendingReachableTests() {
   assert.match(coverage, /c\.status = 'active' or c\.status_changed_at >= \(b\.month_start/, "a dropped customer still belongs to the month he was dropped in");
 
   // ── Rule 4: the visit form knows the word ──────────────────────────────────────────────────────
-  const visits = source("src/components/phoenix-crm/visits-tab.tsx");
+  // The Add flow was split out of visits-tab.tsx on 2026-09-29: the picker and the form are read together.
+  const visits = ["visit-customer-picker.tsx", "visit-log-form.tsx"].map((file) => source(`src/components/phoenix-crm/${file}`)).join("\n");
   assert.match(
     visits,
     /customer\.pending \? pendingVisitsText\(customer\.visitsThisMonth\) : monthVisitsText\(customer\.visitsThisMonth, customer\.target\)/,
@@ -457,12 +465,12 @@ function runPendingReachableTests() {
   assert.match(listTab, /switch \(current\.name\) \{/, "every screen is dispatched from `current`");
   assert.match(listTab, /if \(validateHandoff\) onPendingValidateDone\?\.\(\);\s+setScreen\(next\);/, "moving anywhere deliberately ends the hand-off, or the tab sticks on it");
 
-  // Offered only where there is something to validate: a customer the rep added himself has no
-  // iReports360 entry, so `referenceContactCrmId` is null and no button appears.
-  assert.match(
-    visits,
-    /onStartValidate && saved\.validate !== null/,
-    "Validate now is offered only when the customer he just visited is pending AND has a reference entry",
+  // The "Validate now" nudge after a visit is GONE (owner, 2026-09-29): a visit needs no photo, and
+  // validating happens on the List, once and for good — never offered from the visit flow.
+  assert.doesNotMatch(
+    source("src/components/phoenix-crm/visits-tab.tsx"),
+    /saved\.validate !== null/,
+    "the visit flow no longer hands the rep to Validate after saving",
   );
   assert.match(
     source("src/lib/phoenix-crm/server/visits.ts"),

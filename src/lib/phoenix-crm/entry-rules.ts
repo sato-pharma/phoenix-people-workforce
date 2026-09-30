@@ -6,7 +6,10 @@
  *     on the spot, and at least one timing. Reference customers and brand-new ones go the same way.
  *   - A new customer's grade: the rep proposes, the district manager approves.
  *   - Dropping a customer needs a reason and the district manager's approval.
- *   - Each visit records the location check, the products discussed, a live photo and a comment.
+ *   - Each visit records the location check, the products discussed and a comment — the comment
+ *     REQUIRED since 2026-09-30, typed or spoken (owner: "visit comment is required"). Since 2026-09-29
+ *     it needs NO photo: "Log visit" is one tap, the server stamps the time and the location is read
+ *     silently (owner: "the medical rep just presses; in the back end we take his location").
  *   - A double visit is the rep with the district manager; a chain visit adds a senior manager
  *     (regional or national). Both count for everyone on them straight away, with no confirmation.
  *
@@ -30,6 +33,8 @@ export type EntryRuleResult<T> = { ok: true; value: T } | { ok: false; error: st
 export const CUSTOMER_NAME_MAX = 120;
 export const PLACE_TEXT_MAX = 200;
 export const VISIT_COMMENT_MAX = 1000;
+/** Owner, 2026-09-30: "visit comment is required" — typed or spoken, never left empty. */
+export const VISIT_COMMENT_REQUIRED = "Write what happened on the visit — type it or speak it.";
 export const DROP_REASON_MAX = 500;
 export const VISIT_PRODUCTS_MAX = 12;
 export const PHARMACY_NAME_MAX = 120;
@@ -58,6 +63,19 @@ const DROP_REASON_KEYS = new Set<string>(DROP_REASONS.map((reason) => reason.key
 export function dropReasonLabel(key: string | null): string | null {
   if (!key) return null;
   return DROP_REASONS.find((reason) => reason.key === key)?.label ?? null;
+}
+
+/**
+ * The district manager's read of a new customer's potential, set when he approves an add (owner,
+ * 2026-09-29). Stored and shown ONLY: frequency, targets and every KPI read the A/B/C grade.
+ */
+export const POTENTIAL_GRADES = ["AA", "AB", "AC", "BA", "BB", "BC"] as const;
+
+export type PotentialGrade = (typeof POTENTIAL_GRADES)[number];
+
+export function parsePotentialGrade(value: unknown): PotentialGrade | null {
+  const grade = String(value ?? "").trim().toUpperCase();
+  return (POTENTIAL_GRADES as readonly string[]).includes(grade) ? (grade as PotentialGrade) : null;
 }
 
 export function parseGrade(value: unknown): PhoenixCrmGrade | null {
@@ -117,9 +135,18 @@ export type CapturedFix = {
   photoCapturedAt: string | null;
 };
 
-export function parseCapturedFix(raw: Record<string, unknown>): EntryRuleResult<CapturedFix> {
+const NO_FIX_AT_THE_PLACE = "Your location was not captured. Allow location on your phone and capture it again at the clinic.";
+
+/**
+ * The one-tap visit takes its location silently. When there is none — location switched off or
+ * refused — the save is refused in plain words about HIS OWN work (Golden Rule #1 hides checks, never
+ * a save that did not happen): what to switch on, and nothing about any check.
+ */
+export const NO_FIX_FOR_A_VISIT = "Turn on location for Phoenix, then tap Log visit again.";
+
+export function parseCapturedFix(raw: Record<string, unknown>, noFixMessage = NO_FIX_AT_THE_PLACE): EntryRuleResult<CapturedFix> {
   if (!isUsableFix(raw.lat, raw.lon)) {
-    return { ok: false, error: "Your location was not captured. Allow location on your phone and capture it again at the clinic." };
+    return { ok: false, error: noFixMessage };
   }
   // Not `Number(...)`, which reads "" and " " as 0: a phone that reported no accuracy was saved as a
   // perfect 0 m fix and shown to the manager as "within 0 m". A blank accuracy is unknown.
@@ -173,6 +200,21 @@ export type PlaceDraft = CapturedFix & {
   timings: PhoenixCrmTiming[];
 };
 
+/**
+ * The place's FIXED point: the photo's own reading, else the pin (owner, 2026-09-29 — "the photo + the
+ * location of photo is the more trustable", his ruling for marketing and direct orders the same day).
+ * Both raw readings are stored beside it; this only chooses which one the address, brick, area and
+ * region are resolved from, and which one every later visit is measured against.
+ */
+export type PlacePoint = { lat: number; lon: number; accuracyMeters: number | null; source: "photo" | "pin" };
+
+export function placePoint(fix: CapturedFix): PlacePoint {
+  if (fix.photoLat !== null && fix.photoLon !== null) {
+    return { lat: fix.photoLat, lon: fix.photoLon, accuracyMeters: fix.photoAccuracyMeters, source: "photo" };
+  }
+  return { lat: fix.lat, lon: fix.lon, accuracyMeters: fix.accuracyMeters, source: "pin" };
+}
+
 export function parsePlaceDraft(raw: unknown): EntryRuleResult<PlaceDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const photoPath = String(body.photoPath ?? "").trim();
@@ -199,15 +241,29 @@ export type NewCustomerDraft = {
   proposedGrade: PhoenixCrmGrade;
 };
 
-export function parseNewCustomer(raw: unknown): EntryRuleResult<NewCustomerDraft> {
+/**
+ * A customer the rep met who is not on his list: AM or PM chosen BY HAND (owner, 2026-09-29 — "it is
+ * not AM because he entered it in the morning; let him choose it"), the name and the speciality.
+ */
+export type OutsideCustomerDraft = Omit<NewCustomerDraft, "proposedGrade">;
+
+export function parseOutsideCustomer(raw: unknown): EntryRuleResult<OutsideCustomerDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const listType = parseListType(body.listType);
   if (!listType) return { ok: false, error: "Choose AM or PM." };
   const name = cleanText(body.name, CUSTOMER_NAME_MAX);
   if (!name || name.length < 3) return { ok: false, error: "Write the customer's full name." };
+  return { ok: true, value: { listType, name, speciality: cleanText(body.speciality, 80) } };
+}
+
+/** "Add new customer": the same, plus the grade he proposes — the district manager, then SFE, decide. */
+export function parseNewCustomer(raw: unknown): EntryRuleResult<NewCustomerDraft> {
+  const base = parseOutsideCustomer(raw);
+  if (!base.ok) return base;
+  const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const proposedGrade = parseGrade(body.proposedGrade);
-  if (!proposedGrade) return { ok: false, error: "Propose a grade (A, B or C). Your district manager approves it." };
-  return { ok: true, value: { listType, name, speciality: cleanText(body.speciality, 80), proposedGrade } };
+  if (!proposedGrade) return { ok: false, error: "Propose a grade (A, B or C). Your district manager and SFE approve it." };
+  return { ok: true, value: { ...base.value, proposedGrade } };
 }
 
 export type DropDraft = { reason: DropReason; note: string | null };
@@ -229,12 +285,20 @@ export type VisitDraft = CapturedFix & {
   managerHrId: string | null;
   seniorHrId: string | null;
   products: string[];
-  /** The pharmacy the rep took feedback from before the doctor; he types it, so it is free text. */
-  pharmacyName: string;
+  /**
+   * The pharmacy the rep took feedback from before the customer; he types it, so it is free text.
+   * OPTIONAL since 2026-09-29 (owner): the box stays, but a visit is never blocked on it.
+   */
+  pharmacyName: string | null;
   /** His answer, per line product, of whether that pharmacy stocks it. Products left blank are absent. */
   productAvailability: Record<string, ProductAvailability>;
   comment: string | null;
-  photoPath: string;
+  /**
+   * The photo slot, when the caller still takes one. The one-tap Log visit sends none (owner,
+   * 2026-09-29) and the server's own clock dates the visit; a caller that sends one is served exactly
+   * as before.
+   */
+  photoPath: string | null;
   /**
    * An optional spoken note, kept as audio and transcribed never.
    *
@@ -246,16 +310,18 @@ export type VisitDraft = CapturedFix & {
   voiceNoteSeconds: number | null;
   voiceNoteBytes: number | null;
   /**
-   * The kind of visit the rep CHOSE on the first step: "planned" offers only today's plan, "unplanned"
-   * opens his whole list and asks him why he went.
+   * The kind of visit the rep CHOSE on the first step (owner, 2026-09-29): "planned" offers only
+   * today's sent plan; "out_of_plan" is someone on his list who is not on today's plan, and needs his
+   * reason and the manager's then SFE's approval; "out_of_list" is someone not on his list at all, whom
+   * he validates on the spot and who counts once the district manager and SFE admit him. A caller that
+   * still says "unplanned" means out_of_plan.
    *
    * It is what he said, never what is true. The server resolves the truth from the plan's own history
-   * inside phoenix_crm_save_visit, and a phone claiming "planned" for a doctor who was not on a sent
-   * plan is filed as unplanned regardless. It is carried only so the reason below can be asked for
-   * HERE, before the photo, instead of coming back as a refusal after it.
+   * and the customer's own status inside phoenix_crm_save_visit. It is carried only so the reason below
+   * can be asked for HERE, before the save, instead of coming back as a refusal after it.
    */
-  visitType: "planned" | "unplanned";
-  /** His written "why I went", when he chose unplanned. */
+  visitType: "planned" | "out_of_plan" | "out_of_list";
+  /** His written "why I went", when he chose out of plan. */
   unplannedReason: string | null;
   /**
    * The objection the doctor raised and what the rep will do next — both optional, both chips.
@@ -339,6 +405,13 @@ export function parseProductAvailability(raw: unknown): Record<string, ProductAv
   return out;
 }
 
+/** The kind of visit he chose; "unplanned", from a caller one release behind, is out of plan. */
+export function parseVisitType(value: unknown): VisitDraft["visitType"] {
+  if (value === "out_of_list") return "out_of_list";
+  if (value === "out_of_plan" || value === "unplanned") return "out_of_plan";
+  return "planned";
+}
+
 export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   if (!isUuid(body.customerId)) return { ok: false, error: "Choose the customer you visited." };
@@ -351,8 +424,8 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   }
   if (kind === "chain" && !seniorHrId) return { ok: false, error: "Choose the senior manager who was on the visit." };
 
+  // Optional (owner, 2026-09-29): the box stays on the form, and a visit is never blocked on it.
   const pharmacyName = cleanText(body.pharmacyName, PHARMACY_NAME_MAX);
-  if (!pharmacyName) return { ok: false, error: "Write the pharmacy you took feedback from." };
 
   const productsRaw = Array.isArray(body.products) ? body.products : [];
   const products = [...new Set(productsRaw.map((product) => cleanText(product, 80)).filter((product): product is string => Boolean(product)))];
@@ -362,18 +435,19 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   const productAvailability = parseProductAvailability(body.productAvailability);
 
   const commentText = String(body.comment ?? "").trim();
+  if (!commentText) return { ok: false, error: VISIT_COMMENT_REQUIRED };
   if (commentText.length > VISIT_COMMENT_MAX) return { ok: false, error: `The comment is longer than ${VISIT_COMMENT_MAX} characters.` };
 
-  const photoPath = String(body.photoPath ?? "").trim();
-  if (!photoPath) return { ok: false, error: "Take a live photo of the clinic sign or door." };
-  const fix = parseCapturedFix(body);
+  // No photo on the one-tap visit; a caller that still sends one keeps its path.
+  const photoPath = cleanText(body.photoPath, 200);
+  const fix = parseCapturedFix(body, NO_FIX_FOR_A_VISIT);
   if (!fix.ok) return fix;
 
-  // The kind he chose. Asked for the reason here, before the photo, so an off-plan visit never gets as
-  // far as the camera without one — the server still decides which kind it really was.
-  const visitType = body.visitType === "unplanned" ? "unplanned" : "planned";
+  // The kind he chose. The reason is asked for here, before the save, so an off-plan visit never gets
+  // as far as the server without one — the server still decides which kind it really was.
+  const visitType = parseVisitType(body.visitType);
   let unplannedReason: string | null = null;
-  if (visitType === "unplanned") {
+  if (visitType === "out_of_plan") {
     const reason = parseUnplannedReason(body.unplannedReason);
     if (!reason.ok) return { ok: false, error: reason.error };
     unplannedReason = reason.value;

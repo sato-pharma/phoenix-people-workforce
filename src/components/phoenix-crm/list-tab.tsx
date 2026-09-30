@@ -10,8 +10,22 @@
  *   - a pending customer is planned and visited exactly like any other. Nothing about the list ever
  *     stops the rep. He simply counts in no metric until he is validated, and the visits already saved
  *     against him start counting the moment he is;
- *   - the list stays with the territory; accounts (AM) and doctors in their clinics (PM), no pharmacies;
+ *   - the list stays with the territory; AM and PM, no pharmacies;
  *   - a timetable shows who receives on each day, the way the rep's own sheet did.
+ *
+ * Owner, 2026-09-29 — the rep's flow rebuilt (src/lib/phoenix-crm/list-request-rules.ts):
+ *   - there is NO "Add visit" anywhere on the List. A visit starts from Visits, Today or the portal's "+";
+ *   - every customer row carries ONE button: Validate while the customer is not validated, Open once he
+ *     is (`listRowAction`);
+ *   - the list reads in sections — The list (the board) · To validate · Your list · Outside the list ·
+ *     Requests · Archive · Timetable — each customer in the section the server put him in
+ *     (`ListCustomer.section`, from `listSectionOf`).
+ *
+ * Owner, 2026-09-30 — "the best-appearing and easiest CRM, yet controlled":
+ *   - the figure the rep acts on, what is still to validate, leads the block above the list; the rest
+ *     is context a size down, and AM and PM are always said apart;
+ *   - "Validate next" puts the three customers most worth his next stop above the list, ranked by the
+ *     pure `rankValidateNext` (src/lib/phoenix-crm/validate-next.ts), each with its one Validate button.
  */
 
 import type { ReactNode } from "react";
@@ -21,18 +35,20 @@ import { Plus, Search } from "lucide-react";
 import { RepsListTiles } from "@/components/crm/reps-list-board";
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
 import { useCrmGet } from "@/components/phoenix-crm/api";
-import { CustomerListBoard } from "@/components/phoenix-crm/customer-list-board";
+import { CustomerListBoard, CustomerRowAction, type CustomerListVariant } from "@/components/phoenix-crm/customer-list-board";
 import { cairoStamp, countText, dayLabel, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
-import { placeName, territoryLine } from "@/components/phoenix-crm/labels";
+import { listText, placeName, territoryLine } from "@/components/phoenix-crm/labels";
 import { CustomerScreen } from "@/components/phoenix-crm/list-customer";
 import {
   AddPlaceScreen,
+  AddRequestScreen,
   DropScreen,
   EditDetailsScreen,
   EditPlaceScreen,
   GradeScreen,
   listBoardUrl,
   listUrl,
+  RestoreRequestScreen,
   SavedScreen,
   ValidateScreen,
   type ListNotice,
@@ -41,6 +57,7 @@ import {
   type SavedPlace,
 } from "@/components/phoenix-crm/list-screens";
 import { releaseCapturedPhoto, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
+import { PlaceMoveScreen } from "@/components/phoenix-crm/place-move-screen";
 import type { PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card";
 import {
@@ -54,14 +71,12 @@ import {
   CrmNote,
   CrmPanel,
   CrmPill,
-  CrmStat,
-  CrmStatGrid,
   crmInputClassName,
 } from "@/components/phoenix-crm/ui";
-import type { PendingValidate, PendingVisit } from "@/components/phoenix-crm/visits-tab";
 import type { RepsListContact } from "@/lib/crm/reps-list";
 import type { RepsListBoard } from "@/lib/crm/reps-list-board";
 import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import type { ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
 import {
   formatTimingWindow,
   PHOENIX_CRM_WEEKDAY_NAMES,
@@ -70,13 +85,21 @@ import {
   windowsForWeekday,
 } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmListType, PhoenixCrmSeason, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+import { isValidateNextCandidate, validateNextTop } from "@/lib/phoenix-crm/validate-next";
 import type { ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
-type ListSection = "board" | "validate" | "customers" | "timetable" | "requests" | "left";
+/** The parts of the list home, in the order the owner named them (2026-09-29). */
+type HomeSection = "board" | "to_validate" | "your_list" | "outside" | "requests" | "archive" | "timetable";
 type TypeFilter = "all" | PhoenixCrmListType;
 
-/** Accounts first, then doctors, the way the rep's day starts. */
+/**
+ * A visit just saved on a customer who is not validated yet, handed back to this tab's Validate screen
+ * (the page passes it on). It carries no photo by design: validating takes its own signboard photo.
+ */
+type ValidateHandoff = { seatId: string; test: boolean; contactCrmId: number };
+
+/** AM first, then PM, the way the rep's day starts. */
 const LIST_TYPES: readonly PhoenixCrmListType[] = ["AM", "PM"];
 
 function matchesQuery(query: string, parts: ReadonlyArray<string | null>): boolean {
@@ -99,7 +122,6 @@ function pairText(counts: Record<PhoenixCrmListType, number>): string {
 export function ListTab({
   cairoToday,
   onPendingValidateDone,
-  onStartVisit,
   onWorkChange,
   pendingValidate,
   seatId,
@@ -108,27 +130,29 @@ export function ListTab({
   cairoToday: string;
   /** The Validate hand-off was opened, saved, or left behind: the page may let it go. */
   onPendingValidateDone?: () => void;
-  /** Add Visit with the photo a place was just saved with. Absent where visits are not entered. */
-  onStartVisit?: (visit: PendingVisit) => void;
+  /**
+   * Accepted and ignored since 2026-09-29, so the page that renders this tab still compiles: the List
+   * starts no visit (owner — a visit starts from Visits, Today or the portal's "+").
+   */
+  onStartVisit?: unknown;
   /** A customer entry opened or closed: the page keeps this tab as it is while another tab is open. */
   onWorkChange?: (working: boolean) => void;
   /** A visit was just saved on a pending customer and he chose to validate him now. */
-  pendingValidate?: PendingValidate | null;
+  pendingValidate?: ValidateHandoff | null;
   seatId: string;
   test: boolean;
 }) {
   const resource = useCrmGet<TerritoryListView>(listUrl(seatId, test), "list");
   const [screen, setScreen] = useState<ListScreen>({ name: "home" });
   const [notice, setNotice] = useState<ListNotice | null>(null);
-  const [section, setSection] = useState<ListSection | null>(null);
+  const [section, setSection] = useState<HomeSection | null>(null);
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [weekday, setWeekday] = useState<number | null>(null);
   const [season, setSeason] = useState<PhoenixCrmSeason | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
-  const handedOffPhoto = useRef<CapturedPhoto | null>(null);
 
-  // A hand-off belongs to one territory in one mode, exactly as Add Visit's does.
+  // A hand-off belongs to one territory in one mode, exactly as the visit form's does.
   const validateHandoff = pendingValidate && pendingValidate.seatId === seatId && pendingValidate.test === test ? pendingValidate : null;
   // He saved a visit on a pending customer and pressed Validate now: that outranks whatever screen this
   // tab was left on, because the hand-off is the only reason the tab was opened. Every screen below is
@@ -144,12 +168,10 @@ export function ListTab({
     onWorkChange?.(working);
   }, [onWorkChange, working]);
 
-  // Leaving the saved screen, or the tab closing on it, lets its photo go, unless it went on to a visit.
+  // Leaving the saved screen, or the tab closing on it, lets its photo go: the List hands it to nothing.
   useEffect(() => {
     if (!savedPhoto) return;
-    return () => {
-      if (handedOffPhoto.current !== savedPhoto) releaseCapturedPhoto(savedPhoto);
-    };
+    return () => releaseCapturedPhoto(savedPhoto);
   }, [savedPhoto]);
 
   function scrollToTop() {
@@ -193,23 +215,13 @@ export function ListTab({
     go({ name: "add-place", customerId, draft });
   }
 
-  function startVisit(saved: SavedPlace, photo: CapturedPhoto) {
-    if (!onStartVisit) return;
-    // The photo goes on to Add Visit; the page lets it go when the visit is saved or put aside.
-    handedOffPhoto.current = photo;
-    if (validateHandoff) onPendingValidateDone?.();
-    setScreen({ name: "home" });
-    setNotice(null);
-    onStartVisit({ seatId, test, customerId: saved.customerId, customerName: saved.customerName, photo, validatedAtMs: saved.savedAtMs });
-  }
-
-  /** Add a visit on a customer straight from his row, with no photo to carry: he takes one at the door. */
-  function visitCustomer(customer: ListCustomer) {
-    if (!onStartVisit) return;
-    if (validateHandoff) onPendingValidateDone?.();
-    setScreen({ name: "home" });
-    setNotice(null);
-    onStartVisit({ seatId, test, customerId: customer.customerId, customerName: customer.name, photo: null, validatedAtMs: Date.now() });
+  /** The one button on a customer's row: Validate, or Open. */
+  function rowAction(customer: ListCustomer, action: ListRowAction) {
+    if (action === "validate" && customer.referenceContactCrmId !== null) {
+      go({ name: "validate", contactCrmId: customer.referenceContactCrmId });
+      return;
+    }
+    openCustomer(customer.customerId);
   }
 
   const view = resource.data;
@@ -240,38 +252,52 @@ export function ListTab({
             customerId={current.customerId}
             notice={notice}
             onBack={home}
+            onLeave={listChanged}
             onNotice={showNotice}
             onOpen={(next) => go(next)}
-            onVisitCustomer={onStartVisit ? visitCustomer : undefined}
           />
         );
         break;
-      case "validate":
+      case "validate": {
+        const { contactCrmId } = current;
         body = (
           <ValidateScreen
             {...base}
-            key={`validate-${current.contactCrmId}`}
+            key={`validate-${contactCrmId}`}
             onAddPlaceInstead={addPlaceInstead}
+            onAskToDrop={(customerId) => go({ name: "drop", customerId, contactCrmId: null })}
             onBack={home}
             onSaved={placeSaved}
-            subject={{ mode: "reference", contactCrmId: current.contactCrmId }}
+            subject={{ mode: "reference", contactCrmId }}
           />
         );
         break;
+      }
       case "new":
         body = <ValidateScreen {...base} key="new" onAddPlaceInstead={addPlaceInstead} onBack={home} onSaved={placeSaved} subject={{ mode: "new" }} />;
         break;
       case "restore": {
         const { customerId, from } = current;
         body = (
-          <ValidateScreen
+          <RestoreRequestScreen
             {...base}
-            backLabel={from === "customer" ? "Customer" : "List"}
+            customerId={customerId}
             key={`restore-${customerId}`}
-            onAddPlaceInstead={addPlaceInstead}
             onBack={from === "customer" ? () => openCustomer(customerId) : home}
-            onSaved={placeSaved}
-            subject={{ mode: "restore", customerId }}
+            onDone={(next) => customerChanged(customerId, next)}
+          />
+        );
+        break;
+      }
+      case "add-request": {
+        const { customerId } = current;
+        body = (
+          <AddRequestScreen
+            {...base}
+            customerId={customerId}
+            key={`add-request-${customerId}`}
+            onBack={() => openCustomer(customerId)}
+            onDone={(next) => customerChanged(customerId, next)}
           />
         );
         break;
@@ -285,7 +311,7 @@ export function ListTab({
             initialDraft={current.draft}
             key={`add-place-${customerId}`}
             onBack={() => {
-              // The draft may hold a photo taken on Add a new customer; this screen let it go already.
+              // The draft may hold a photo taken on Add new customer; this screen let it go already.
               openCustomer(customerId);
             }}
             onSaved={placeSaved}
@@ -300,6 +326,22 @@ export function ListTab({
             {...base}
             customerId={customerId}
             key={`edit-place-${placeId}`}
+            onBack={() => openCustomer(customerId)}
+            onDone={(next) => customerChanged(customerId, next)}
+            placeId={placeId}
+          />
+        );
+        break;
+      }
+      case "move-place": {
+        // The Super Admin's and the SFE Manager's alone: the customer's page offers it only where
+        // `view.canMovePlaces`, and the screen refuses to draw for anyone else.
+        const { customerId, placeId } = current;
+        body = (
+          <PlaceMoveScreen
+            {...base}
+            customerId={customerId}
+            key={`move-place-${placeId}`}
             onBack={() => openCustomer(customerId)}
             onDone={(next) => customerChanged(customerId, next)}
             placeId={placeId}
@@ -349,16 +391,7 @@ export function ListTab({
       }
       case "saved": {
         const { photo, saved } = current;
-        body = (
-          <SavedScreen
-            onBack={home}
-            onOpenCustomer={() => openCustomer(saved.customerId)}
-            onStartVisit={onStartVisit ? () => startVisit(saved, photo) : null}
-            photo={photo}
-            saved={saved}
-            view={view}
-          />
-        );
+        body = <SavedScreen onBack={home} onOpenCustomer={() => openCustomer(saved.customerId)} photo={photo} saved={saved} view={view} />;
         break;
       }
       default:
@@ -370,7 +403,7 @@ export function ListTab({
             onOpen={(next) => go(next)}
             onRequestChanged={(message) => showNotice({ tone: "info", title: message })}
             onRetry={resource.reload}
-            onVisitCustomer={onStartVisit ? visitCustomer : undefined}
+            onRowAction={rowAction}
             query={query}
             season={season}
             section={section}
@@ -405,7 +438,7 @@ function ListHome({
   onOpen,
   onRequestChanged,
   onRetry,
-  onVisitCustomer,
+  onRowAction,
   query,
   season,
   section,
@@ -427,15 +460,15 @@ function ListHome({
   onOpen: (screen: ListScreen) => void;
   onRequestChanged: (message: string) => void;
   onRetry: () => void;
-  /** Add a visit on this customer. Absent where visits are not entered from this page. */
-  onVisitCustomer?: (customer: ListCustomer) => void;
+  /** A customer row's one button: Validate, or Open. */
+  onRowAction: (customer: ListCustomer, action: ListRowAction) => void;
   query: string;
   season: PhoenixCrmSeason | null;
-  section: ListSection | null;
+  section: HomeSection | null;
   seatId: string;
   setQuery: (next: string) => void;
   setSeason: (next: PhoenixCrmSeason) => void;
-  setSection: (next: ListSection) => void;
+  setSection: (next: HomeSection) => void;
   setTypeFilter: (next: TypeFilter) => void;
   setWeekday: (next: number) => void;
   test: boolean;
@@ -443,20 +476,22 @@ function ListHome({
   view: TerritoryListView;
   weekday: number | null;
 }) {
-  // A customer carried over from iReports360 is a real customer from day one, pending until the rep
-  // validates him at the clinic. He is planned and visited like anyone else; he counts in nothing yet.
-  const pending = view.customers.filter((customer) => customer.status === "pending");
-  const active = view.customers.filter((customer) => customer.status === "active");
-  const dropped = view.customers.filter((customer) => customer.status === "dropped");
+  // Each customer sits in the section the server put him in — `listSectionOf`, the one place that
+  // decision is made. A carried-over customer is pending until the rep validates him at the clinic:
+  // planned and visited like anyone else, counting in nothing yet.
+  const pending = view.customers.filter((customer) => customer.section === "to_validate");
+  const active = view.customers.filter((customer) => customer.section === "your_list");
+  const outside = view.customers.filter((customer) => customer.section === "outside");
+  const archived = view.customers.filter((customer) => customer.section === "archive");
   const waiting = view.requests.filter((request) => request.status === "pending");
+  const decidable = waiting.filter((request) => request.canDecide);
   const hasReference = view.reference.length > 0 || pending.length > 0;
 
   // The board is where the list opens (owner, 2026-09-24: "I don't need the My List separated, I need
-  // it in Phoenix CRM"), unless something is actually waiting on the rep or the manager — a validation
-  // to finish or a request to decide outranks a reading view, as it did before the board arrived.
-  const defaultSection: ListSection =
-    view.canEdit && pending.length > 0 ? "validate" : view.canReview && waiting.length > 0 ? "requests" : "board";
-  const current: ListSection = section === "validate" && !hasReference ? "board" : (section ?? defaultSection);
+  // it in Phoenix CRM"), unless something is actually waiting on the viewer — a validation to finish or
+  // a request to decide outranks a reading view, as it did before the board arrived.
+  const defaultSection: HomeSection = view.canEdit && pending.length > 0 ? "to_validate" : decidable.length > 0 ? "requests" : "board";
+  const current: HomeSection = section === "to_validate" && !hasReference ? "board" : (section ?? defaultSection);
 
   const needle = query.trim().toLowerCase();
   const typeMatches = (listType: PhoenixCrmListType) => typeFilter === "all" || typeFilter === listType;
@@ -464,12 +499,17 @@ function ListHome({
   const sectionOptions = [
     { value: "board" as const, label: "The list", note: "By brick · AM · PM · pharmacies" },
     ...(hasReference
-      ? [{ value: "validate" as const, label: "To validate", note: pending.length > 0 ? `${countText(pending.length)} to go` : "All done" }]
+      ? [{ value: "to_validate" as const, label: "To validate", note: pending.length > 0 ? `${countText(pending.length)} to go` : "All done" }]
       : []),
-    { value: "customers" as const, label: "Customers", note: pairText(countByType(active)) },
+    { value: "your_list" as const, label: "Your list", note: pairText(countByType(active)) },
+    { value: "outside" as const, label: "Outside the list", note: outside.length > 0 ? `${countText(outside.length)} waiting` : "None waiting" },
+    {
+      value: "requests" as const,
+      label: "Requests",
+      note: decidable.length > 0 ? `${countText(decidable.length)} for you to decide` : waiting.length > 0 ? `${countText(waiting.length)} waiting` : "None waiting",
+    },
+    { value: "archive" as const, label: "Archive", note: countText(archived.length) },
     { value: "timetable" as const, label: "Timetable", note: "Who receives when" },
-    { value: "requests" as const, label: "Requests", note: waiting.length > 0 ? `${countText(waiting.length)} waiting` : "None waiting" },
-    { value: "left" as const, label: "Left the list", note: countText(dropped.length) },
   ];
 
   return (
@@ -478,7 +518,7 @@ function ListHome({
         view.canEdit ? (
           <CrmButton onClick={() => onOpen({ name: "new" })} variant="primary">
             <Plus aria-hidden className="h-4 w-4" />
-            Add a new customer
+            Add new customer
           </CrmButton>
         ) : null
       }
@@ -497,12 +537,19 @@ function ListHome({
 
       <ReadinessBlock pending={pending} view={view} />
 
+      {/* Where he chooses what to do next — To validate, and The list he opens on — the three worth his
+          next stop sit right under the figure that counts them, above the seven-part chooser that would
+          otherwise push them below a phone's first screen. The rep's alone: he is the one who validates. */}
+      {current === "to_validate" || current === "board" ? (
+        <ValidateNextStrip canValidate={view.canEdit} customers={view.customers} onRowAction={onRowAction} />
+      ) : null}
+
       <CrmBlock className="border-t border-slate-100" title="Which part of the list">
-        <CrmChoice columns={3} label="Which part of the list" onChange={setSection} options={sectionOptions} value={current} />
+        <CrmChoice columns={4} label="Which part of the list" onChange={setSection} options={sectionOptions} value={current} />
       </CrmBlock>
 
-      {/* Only the Timetable reads this pair now. The board and the three customer parts (To validate,
-          Customers, Left the list) each carry their own filter row — brick, list, grade, specialty,
+      {/* Only the Timetable reads this pair. The board and the customer parts (To validate, Your list,
+          Outside the list, Archive) each carry their own filter row — brick, list, grade, specialty,
           activity and a search box — so this shared pair would be a second search box asking which one
           is live. The Timetable is a weekly grid, not a customer list, so it keeps the simple pair. */}
       {current === "timetable" ? (
@@ -539,16 +586,48 @@ function ListHome({
         </CrmBlock>
       ) : null}
 
-      {current === "board" ? (
-        <BoardSection onOpen={onOpen} onStartVisit={onVisitCustomer} seatId={seatId} test={test} view={view} />
+      {current === "board" ? <BoardSection onRowAction={onRowAction} seatId={seatId} test={test} view={view} /> : null}
+
+      {current === "to_validate" ? (
+        <CustomerSection
+          customers={pending}
+          empty={{ title: "Every customer is validated", message: "Every customer carried over from iReports360 is validated or in the Archive." }}
+          exportTitle="To validate"
+          onRowAction={onRowAction}
+          variant="pending"
+          view={view}
+        />
       ) : null}
 
-      {current === "validate" ? (
-        <PendingSection customers={pending} onOpen={onOpen} onStartVisit={onVisitCustomer} view={view} />
+      {current === "your_list" ? (
+        <CustomerSection
+          customers={active}
+          empty={{
+            title: "No customers validated yet",
+            message: view.canEdit
+              ? "A customer shows here once validated at the clinic with a signboard photo, the location and the days and hours."
+              : "A customer shows here once the rep validates it at the clinic.",
+          }}
+          exportTitle="Your list"
+          onRowAction={onRowAction}
+          variant="active"
+          view={view}
+        />
       ) : null}
 
-      {current === "customers" ? (
-        <CustomersSection customers={active} onOpen={onOpen} onStartVisit={onVisitCustomer} view={view} />
+      {current === "outside" ? (
+        <CustomerSection
+          customers={outside}
+          empty={{
+            title: "Nobody is waiting outside the list",
+            message:
+              "A customer met on an out-of-list visit, or added with Add new customer, waits here — validated at the door — until the district manager and SFE add the customer to the list.",
+          }}
+          exportTitle="Outside the list"
+          onRowAction={onRowAction}
+          variant="outside"
+          view={view}
+        />
       ) : null}
 
       {current === "timetable" ? (
@@ -567,7 +646,19 @@ function ListHome({
 
       {current === "requests" ? <RequestsSection onChanged={onRequestChanged} seatId={seatId} test={test} view={view} /> : null}
 
-      {current === "left" ? <LeftSection customers={dropped} onOpen={onOpen} view={view} /> : null}
+      {current === "archive" ? (
+        <CustomerSection
+          customers={archived}
+          empty={{
+            title: "The Archive is empty",
+            message: "A customer dropped from the list, or dropped instead of added to it, is kept here. SFE manages the Archive.",
+          }}
+          exportTitle="Archive"
+          onRowAction={onRowAction}
+          variant="dropped"
+          view={view}
+        />
+      ) : null}
     </CrmPanel>
   );
 }
@@ -587,14 +678,14 @@ function customerMatches(needle: string, customer: ListCustomer): boolean {
 // ── The list, as the board holds it ─────────────────────────────────────────────────────────────
 
 /**
- * My List, inside Phoenix CRM — grouped by brick, contacts and pharmacies on their own tabs, with
- * the CRM's own buttons on every row.
+ * My List, inside Phoenix CRM — grouped by brick, AM, PM and pharmacies on their own tabs.
  *
  * Owner, 2026-09-24: "I don't need the My List separated, I need it in Phoenix CRM. The same, exactly
- * the same — but have the options of validate, or add visit, or open... the breakdown of the PM list
- * and the AM, pharmacies and bricks... when there are visits I need the breakdown to be also not
- * visited... two tabs, contacts and pharmacies... the tabs coloured the same bricks... the insights
- * showing. I don't need the confidence column."
+ * the same … the breakdown of the PM list and the AM, pharmacies and bricks … when there are visits I
+ * need the breakdown to be also not visited … the tabs coloured the same bricks … the insights showing.
+ * I don't need the confidence column." Kept by the owner on 2026-09-29, when its customer rows lost
+ * every button but one: Validate while not validated, Open once validated. Its pharmacy rows stay
+ * read-only.
  *
  * TWO READS OF ONE TERRITORY, JOINED ON THE CONTACT'S CRM ID. The board (`/list/board`) is the
  * iReports360 mirror: it knows the bricks, the pharmacies, and who has not been visited this month.
@@ -603,14 +694,12 @@ function customerMatches(needle: string, customer: ListCustomer): boolean {
  * question, which is why both are read rather than one being taught to do both jobs.
  */
 function BoardSection({
-  onOpen,
-  onStartVisit,
+  onRowAction,
   seatId,
   test,
   view,
 }: {
-  onOpen: (screen: ListScreen) => void;
-  onStartVisit?: (customer: ListCustomer) => void;
+  onRowAction: (customer: ListCustomer, action: ListRowAction) => void;
   seatId: string;
   test: boolean;
   view: TerritoryListView;
@@ -637,7 +726,7 @@ function BoardSection({
           // Not an error and not an empty list: the seat has nobody in it, so there is no rep whose
           // list this would be. Saying that is the finding — "no contacts" would blame the CRM.
           <CrmEmpty
-            message="The brick view belongs to the rep holding the seat. Nobody holds this one, so there is no list to group. The customers themselves are under Customers, unchanged."
+            message="The brick view belongs to the rep holding the seat. Nobody holds this one, so there is no list to group. The customers themselves are under Your list, unchanged."
             title="No rep in this territory"
           />
         )}
@@ -646,13 +735,11 @@ function BoardSection({
   }
 
   /**
-   * The three buttons, on a row.
+   * The row's one button.
    *
-   * A PHARMACY GETS OPEN ALONE (owner's choice, 2026-09-24). The CRM's list is accounts and doctors —
-   * it holds no pharmacies at all — so there is no customer to validate and no visit screen that
-   * would take one. Rather than print three buttons that refuse, the cell says where the row came
-   * from. The pharmacies are on the board because the owner asked to see them, and seeing them is
-   * what the tab is for.
+   * A PHARMACY IS READ-ONLY (owner's choice, 2026-09-24, kept 2026-09-29). The CRM's list is AM and PM
+   * customers — it holds no pharmacies at all — so there is nothing to validate or open; the cell says
+   * where the row came from instead. The pharmacies are on the board because the owner asked to see them.
    */
   const rowActions = (row: RepsListContact) => {
     const customer = byContact.get(row.contactCrmId);
@@ -663,30 +750,10 @@ function BoardSection({
         </p>
       );
     }
-    const pending = customer.status === "pending";
-    // Side by side on a phone card, where the row is wide. In the table's Actions column they stack,
-    // each the column's full width, so three buttons read as one tidy list instead of a ragged pile.
+    // Side by side on a phone card; the column's full width in the table's Actions column.
     return (
       <div className="flex flex-wrap gap-1.5 md:grid md:[&>button]:w-full">
-        {/* Validate only where there is something to validate and the viewer is the rep. A manager
-            reading his rep's list sees Open alone, which is exactly what he can do. */}
-        {pending && view.canEdit && customer.referenceContactCrmId !== null ? (
-          <CrmButton
-            onClick={() => onOpen({ name: "validate", contactCrmId: customer.referenceContactCrmId as number })}
-            size="sm"
-            variant="primary"
-          >
-            Validate
-          </CrmButton>
-        ) : null}
-        {onStartVisit && customer.status !== "dropped" ? (
-          <CrmButton onClick={() => onStartVisit(customer)} size="sm">
-            Add a visit
-          </CrmButton>
-        ) : null}
-        <CrmButton onClick={() => onOpen({ name: "customer", customerId: customer.customerId })} size="sm">
-          Open
-        </CrmButton>
+        <CustomerRowAction canValidate={view.canEdit} customer={customer} onAction={onRowAction} />
       </div>
     );
   };
@@ -728,149 +795,205 @@ function ReadinessBlock({ pending, view }: { pending: ReadonlyArray<ListCustomer
       <CrmBlock>
         <CrmNote title="No iReports360 list for this territory" tone="info">
           {view.canEdit
-            ? "Add the territory's customers as new customers: a live photo at the clinic, the location and the days and hours. Weekly plans use the customers on this list."
-            : "The rep adds the territory's customers as new customers, each with a live photo at the clinic, the location and the days and hours."}
+            ? "Add the territory's customers with Add new customer: a signboard photo at the clinic, the location and the days and hours. Your district manager, then SFE, add each one to your list."
+            : "The rep adds the territory's customers with Add new customer, each validated at the clinic; the district manager, then SFE, add each one to the list."}
         </CrmNote>
       </CrmBlock>
     );
   }
 
   const reference = countByType(view.reference);
+  const validated = countByType(view.reference.filter((entry) => entry.state === "validated"));
+  // How much of the reference list is validated, for the bar under the lead figure. Capped, so a list
+  // re-read mid-change can never draw a bar past its own end.
+  const donePercent = readiness.total > 0 ? Math.min(100, Math.round((readiness.validated / readiness.total) * 100)) : 0;
+  const allDone = toGo === 0;
+
   return (
     <CrmBlock title="The list">
-      <CrmStatGrid>
-        <CrmStat label="Reference list" note={pairText(reference)} value={countText(readiness.total)} />
-        <CrmStat label="Validated" note={`of ${countText(readiness.total)}`} tone={readiness.validated > 0 ? "good" : "neutral"} value={countText(readiness.validated)} />
-        <CrmStat label="To validate" note={pairText(countByType(pending))} tone={toGo > 0 ? "warn" : "good"} value={countText(toGo)} />
-        <CrmStat label="Drops waiting" note={`${plural(readiness.dropped, "customer", "customers")} dropped`} value={countText(readiness.dropPending)} />
-      </CrmStatGrid>
+      {/* ONE NUMBER LEADS. What is still to validate is the only figure on this block the rep acts on,
+          so it is the big one, with its bar and its one sentence; the reference list, what is validated
+          and the drops waiting are the context beside it, a size down. AM and PM are said apart in
+          every figure (`pairText`), never added into one. */}
+      <div className="grid min-w-0 gap-2 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <div className={cn("min-w-0 border border-l-[3px] border-slate-200/80 bg-white px-4 py-3.5", allDone ? "border-l-emerald-500" : "border-l-orange-500")}>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">To validate</p>
+          <div className="mt-1.5 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <p className={cn("text-4xl font-black leading-none tracking-tight", allDone ? "text-emerald-700" : "text-slate-950")}>{countText(toGo)}</p>
+            <p className="break-words text-sm font-black text-slate-600">{allDone ? "Every customer is validated" : pairText(countByType(pending))}</p>
+          </div>
+          {readiness.total > 0 ? (
+            <div className="mt-3">
+              <div
+                aria-label="Validated so far"
+                aria-valuemax={readiness.total}
+                aria-valuemin={0}
+                aria-valuenow={readiness.validated}
+                className="h-1.5 w-full bg-slate-100"
+                role="progressbar"
+              >
+                <div className="h-full bg-emerald-500 transition-[width]" style={{ width: `${donePercent}%` }} />
+              </div>
+              <p className="mt-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{`${donePercent}% of the list validated`}</p>
+            </div>
+          ) : null}
+          <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
+            {allDone
+              ? `${readiness.readyAt ? `Ready since ${cairoStamp(readiness.readyAt)}. ` : ""}Customers who appear on the iReports360 list later show under To validate, and can be planned and visited straight away.`
+              : view.canEdit
+                ? "Plan and visit them as normal. Validate each one at the clinic — signboard photo, location, days and hours — and the visits already saved start counting."
+                : "The rep plans and visits them as normal. Each one starts counting once the rep validates it at the clinic."}
+          </p>
+        </div>
 
-      <div className="mt-3 grid gap-2">
-        {toGo === 0 ? (
-          <CrmNote title="Every customer is validated" tone="good">
-            {readiness.readyAt ? `Ready since ${cairoStamp(readiness.readyAt)}. ` : null}
-            Customers who appear on the iReports360 list later show under To validate, and can be planned and visited straight away.
-          </CrmNote>
-        ) : (
-          <CrmNote title={`${countText(toGo)} not validated yet`} tone="info">
-            {view.canEdit
-              ? "Plan them and visit them as normal — nothing here holds your week up. Validate each one at the clinic with a live photo, the location and its days and hours, and the visits you have already saved against it start counting."
-              : "The rep plans and visits them as normal. Each one starts counting once the rep validates it at the clinic."}
-          </CrmNote>
-        )}
-        {view.referenceSource && !view.referenceSource.isCurrent ? (
-          <CrmNote tone="info">
-            This reference list is the one {view.referenceSource.name ?? "the previous rep"} worked in iReports360. The list stays with the territory.
-          </CrmNote>
-        ) : null}
+        <div className="grid min-w-0 grid-cols-3 gap-2">
+          <ListFigure label="Reference list" note={pairText(reference)} value={countText(readiness.total)} />
+          <ListFigure good={readiness.validated > 0} label="Validated" note={pairText(validated)} value={countText(readiness.validated)} />
+          <ListFigure
+            label="Drops waiting"
+            note={`${plural(readiness.dropped, "customer", "customers")} in the Archive`}
+            value={countText(readiness.dropPending)}
+          />
+        </div>
       </div>
+
+      {view.referenceSource && !view.referenceSource.isCurrent ? (
+        <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
+          This reference list is the one {view.referenceSource.name ?? "the previous rep"} worked in iReports360. The list stays with the territory.
+        </p>
+      ) : null}
     </CrmBlock>
   );
 }
 
 /**
- * The customers carried over from iReports360 that the rep has not validated yet.
- *
- * Owner, 2026-09-22: two buttons — Validate, and Add a visit. He plans them and visits them like
- * anyone else; validating is what makes them, and the visits already saved against them, count.
+ * A context figure beside the lead one — `CrmStat`'s look (square, a 3px left bar, the label above),
+ * a size down, so three sit side by side on a 375px phone without the lead figure losing its place.
  */
-function PendingSection({
-  customers,
-  onOpen,
-  onStartVisit,
-  view,
-}: {
-  customers: ReadonlyArray<ListCustomer>;
-  onOpen: (screen: ListScreen) => void;
-  onStartVisit?: (customer: ListCustomer) => void;
-  view: TerritoryListView;
-}) {
-  if (customers.length === 0) {
-    return (
-      <div className="border-t border-slate-100">
-        <CrmEmpty
-          message="Every customer carried over from iReports360 is validated or has left the list."
-          title="Every customer is validated"
-        />
-      </div>
-    );
-  }
-
+function ListFigure({ good = false, label, note, value }: { good?: boolean; label: string; note: string; value: string }) {
   return (
-    <CustomerListBoard
-      customers={customers}
-      exportTitle="To validate"
-      repName={view.territory.repName ?? view.territory.name}
-      rowActions={(customer) => (
-        <>
-          {view.canEdit && customer.referenceContactCrmId !== null ? (
-            <CrmButton
-              onClick={() => onOpen({ name: "validate", contactCrmId: customer.referenceContactCrmId as number })}
-              size="sm"
-              variant="primary"
-            >
-              Validate
-            </CrmButton>
-          ) : null}
-          {view.canEdit && onStartVisit ? (
-            <CrmButton onClick={() => onStartVisit(customer)} size="sm">
-              Add a visit
-            </CrmButton>
-          ) : null}
-          <CrmButton onClick={() => onOpen({ name: "customer", customerId: customer.customerId })} size="sm">
-            Open
-          </CrmButton>
-        </>
-      )}
-      variant="pending"
-    />
+    <div className={cn("min-w-0 border border-l-[3px] border-slate-200/80 bg-white px-2.5 py-2.5 sm:px-3", good ? "border-l-emerald-500" : "border-l-slate-300")}>
+      <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className={cn("mt-1.5 break-words text-xl font-black leading-tight", good ? "text-emerald-700" : "text-slate-950")}>{value}</p>
+      <p className="mt-0.5 break-words text-phx-2xs font-semibold leading-4 text-slate-500 sm:text-xs sm:leading-5">{note}</p>
+    </div>
   );
 }
 
-function CustomersSection({
+/**
+ * VALIDATE NEXT — the three customers most worth the rep's next stop.
+ *
+ * Owner, 2026-09-30 ("the best-appearing and easiest CRM, yet controlled"). A carried-over list can
+ * hold dozens still to validate, and the board below groups them by brick and name, which says nothing
+ * about which one is worth going to first. `validateNextTop` (src/lib/phoenix-crm/validate-next.ts)
+ * answers it from the list the screen already holds: visits already saved first — they start counting
+ * the moment he validates — then grade A, then the brick where one trip validates the most. Each card
+ * says which of those put it there, in plain words about his own work, never a distance, a reading or
+ * a check (Golden rule #1).
+ *
+ * ONE BUTTON PER CARD, and it is the row's own `CustomerRowAction`, so the strip can never offer what
+ * the list itself would not — no "Add visit", no second action. The ranking only ever returns
+ * customers the Validate screen opens on, so that button reads Validate.
+ */
+function ValidateNextStrip({
+  canValidate,
   customers,
-  onOpen,
-  onStartVisit,
+  onRowAction,
+}: {
+  /** The viewer is the territory's rep. Nobody else validates, so nobody else is shown the strip. */
+  canValidate: boolean;
+  customers: ReadonlyArray<ListCustomer>;
+  onRowAction: (customer: ListCustomer, action: ListRowAction) => void;
+}) {
+  const picks = canValidate ? validateNextTop(customers) : [];
+  if (picks.length === 0) return null;
+  // Out of the customers the ranking could offer — not every one To validate: one he already asked to
+  // drop is not waiting on him, and "Top 1 of 3" over two of those would read as two he forgot.
+  const offered = customers.filter(isValidateNextCandidate).length;
+  const heading = picks.length < offered ? `Top ${picks.length} of ${countText(offered)}` : `${plural(picks.length, "customer", "customers")} to go`;
+
+  return (
+    <CrmBlock
+      actions={<span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{heading}</span>}
+      className="border-t border-slate-100"
+      title="Validate next"
+    >
+      <p className="-mt-1 mb-3 break-words text-xs font-semibold leading-5 text-slate-500">
+        Visits already saved first, then grade A, then the brick where one trip validates the most.
+      </p>
+      <ol aria-label="Validate next" className="grid min-w-0 gap-2 md:grid-cols-3">
+        {picks.map((pick, index) => (
+          <li className="flex min-w-0 flex-col border border-l-[3px] border-slate-200 border-l-orange-500 bg-white px-3.5 py-3" key={pick.customer.customerId}>
+            <div className="flex min-w-0 items-start gap-2.5">
+              <span
+                aria-hidden
+                className="flex h-6 w-6 shrink-0 items-center justify-center border border-orange-200 bg-orange-50 text-xs font-black text-orange-700"
+              >
+                {index + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <h4 className="break-words text-sm font-black text-slate-950" dir="auto">
+                  {pick.customer.name}
+                </h4>
+                <p className="mt-0.5 break-words text-xs font-semibold leading-5 text-slate-500">
+                  {listText(pick.customer.listType)} · {pick.customer.grade ? `Grade ${pick.customer.grade}` : "No grade"}
+                  {pick.brickName ? (
+                    <>
+                      {" · Brick "}
+                      <bdi>{pick.brickName}</bdi>
+                    </>
+                  ) : null}
+                </p>
+              </div>
+            </div>
+            <p className="mt-2.5 break-words text-xs font-black leading-5 text-orange-800">{pick.reasons[0]}</p>
+            {pick.reasons.length > 1 ? (
+              <p className="break-words text-xs font-semibold leading-5 text-slate-500">{pick.reasons.slice(1).join(" · ")}</p>
+            ) : null}
+            <div className="mt-auto grid pt-3 [&>button]:w-full">
+              <CustomerRowAction canValidate={canValidate} customer={pick.customer} onAction={onRowAction} />
+            </div>
+          </li>
+        ))}
+      </ol>
+    </CrmBlock>
+  );
+}
+
+/**
+ * One customer part of the list — To validate, Your list, Outside the list or the Archive — drawn the
+ * board's way, each row carrying its one button (Validate or Open).
+ */
+function CustomerSection({
+  customers,
+  empty,
+  exportTitle,
+  onRowAction,
+  variant,
   view,
 }: {
   customers: ReadonlyArray<ListCustomer>;
-  onOpen: (screen: ListScreen) => void;
-  onStartVisit?: (customer: ListCustomer) => void;
+  empty: { title: string; message: string };
+  exportTitle: string;
+  onRowAction: (customer: ListCustomer, action: ListRowAction) => void;
+  variant: CustomerListVariant;
   view: TerritoryListView;
 }) {
   if (customers.length === 0) {
     return (
       <div className="border-t border-slate-100">
-        <CrmEmpty
-          message={
-            view.canEdit
-              ? "A customer shows here once validated at the clinic with a live photo, the location and the days and hours."
-              : "A customer shows here once the rep validates it at the clinic."
-          }
-          title="No customers validated yet"
-        />
+        <CrmEmpty message={empty.message} title={empty.title} />
       </div>
     );
   }
-
   return (
     <CustomerListBoard
+      canValidate={view.canEdit}
       customers={customers}
-      exportTitle="Customers"
+      exportTitle={exportTitle}
+      onRowAction={onRowAction}
       repName={view.territory.repName ?? view.territory.name}
-      rowActions={(customer) => (
-        <>
-          {view.canEdit && onStartVisit ? (
-            <CrmButton onClick={() => onStartVisit(customer)} size="sm">
-              Add a visit
-            </CrmButton>
-          ) : null}
-          <CrmButton onClick={() => onOpen({ name: "customer", customerId: customer.customerId })} size="sm">
-            Open
-          </CrmButton>
-        </>
-      )}
-      variant="active"
+      variant={variant}
     />
   );
 }
@@ -1018,6 +1141,11 @@ function TimetableSection({
   );
 }
 
+/**
+ * The territory's requests — a grade change (the district manager's one step), and the drops, adds and
+ * bring-backs that go to the district manager, then SFE — each with the step it is on. Deciding is
+ * offered where the server says this viewer decides that step (`request.canDecide`).
+ */
 function RequestsSection({
   onChanged,
   seatId,
@@ -1041,7 +1169,7 @@ function RequestsSection({
     <div className="divide-y divide-slate-100 border-t border-slate-100">
       {requests.map((request) => (
         <RequestCard
-          canDecide={view.canReview}
+          canDecide
           canWithdraw={view.canEdit}
           key={request.requestId}
           onChanged={onChanged}
@@ -1051,47 +1179,5 @@ function RequestsSection({
         />
       ))}
     </div>
-  );
-}
-
-function LeftSection({
-  customers,
-  onOpen,
-  view,
-}: {
-  customers: ReadonlyArray<ListCustomer>;
-  onOpen: (screen: ListScreen) => void;
-  view: TerritoryListView;
-}) {
-  if (customers.length === 0) {
-    return (
-      <div className="border-t border-slate-100">
-        <CrmEmpty message="A customer shows here after the district manager approves its drop." title="No customer has left the list" />
-      </div>
-    );
-  }
-  return (
-    <CustomerListBoard
-      customers={customers}
-      exportTitle="Left the list"
-      repName={view.territory.repName ?? view.territory.name}
-      rowActions={(customer) => (
-        <>
-          {view.canEdit ? (
-            <CrmButton
-              onClick={() => onOpen({ name: "restore", customerId: customer.customerId, from: "list" })}
-              size="sm"
-              variant="primary"
-            >
-              Bring back to the list
-            </CrmButton>
-          ) : null}
-          <CrmButton onClick={() => onOpen({ name: "customer", customerId: customer.customerId })} size="sm">
-            Open
-          </CrmButton>
-        </>
-      )}
-      variant="dropped"
-    />
   );
 }

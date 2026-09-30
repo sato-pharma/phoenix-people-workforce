@@ -18,6 +18,11 @@
  * Per-week re-approval after the month is approved is free: the month leaves each week its own status
  * and version, so editing one approved week flips just that week back to submitted through the existing
  * weekly `transitionPlan`, and the month stays approved.
+ *
+ * Owner, 2026-09-29: this is now THE plan screen — "monthly or weekly, and the weeks roll up into the
+ * month". The month sits on top as Week 1..N; each week carries its own plan, its own due date (the
+ * Thursday before it) and its own send / approve buttons, so a rep who plans a week at a time and one
+ * who sends the whole month use the same board.
  */
 
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
@@ -32,6 +37,8 @@ import {
   monthlyPlanDueOn,
   monthStartOf,
   plannableMonths,
+  weeklyPlanDueOn,
+  weekNumberInMonth,
 } from "@/lib/phoenix-crm/calendar";
 import { cleanText, parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { checkDaySpread } from "@/lib/phoenix-crm/geo";
@@ -45,7 +52,7 @@ import {
   type MonthlyCallRate,
   type MonthlyListMeter,
 } from "@/lib/phoenix-crm/monthly-plan-rules";
-import { isUuid, PLAN_DECISION_NOTE_MAX, planStatusLabel } from "@/lib/phoenix-crm/plan-rules";
+import { isPlanEditable, isUuid, PLAN_DECISION_NOTE_MAX, planStatusLabel } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   assertCanReturnPlan,
@@ -61,21 +68,24 @@ import {
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { ensureReferenceCustomers, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
+import { ensureReferenceCustomers, loadMonthVisitCounts, loadPlannerReferences, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
+import { loadPlanActivities } from "@/lib/phoenix-crm/server/plan-activities";
 import {
   buildDays,
   ITEM_COLUMNS,
   isStaleItem,
   listTypeOf,
   loadPlanItemRows,
+  mapPlan,
   PLAN_COLUMNS,
   planPeople,
   REVIEW_ITEM_COLUMNS,
   statusOf,
   territoryReadiness,
   type PlanDayView,
+  type PlanSummary,
   type TerritoryReadiness,
 } from "@/lib/phoenix-crm/server/plans";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
@@ -165,9 +175,24 @@ export type MonthlyDoctorRow = DoctorMonthTally & {
 /** A field-week of the month, with its own status and its days (the derived weekly plan). */
 export type MonthlyWeekView = {
   weekStart: string;
+  /** "Week 1", "Week 2"… of this month. */
+  weekNumber: number;
   status: PhoenixCrmPlanStatus | null;
   statusLabel: string;
   days: PlanDayView[];
+  /** The week's own plan, once it has one — its version is what a save or a send checks. */
+  plan: PlanSummary | null;
+  /** The Thursday before the week: when it is due if it is sent on its own. */
+  dueOn: string;
+  dueOnLabel: string;
+  /** The due date has passed and the week is still not sent. A late week is accepted, and stamped. */
+  overdue: boolean;
+  /** The week still has a day the rep may change. */
+  open: boolean;
+  canSubmit: boolean;
+  canReopen: boolean;
+  canApprove: boolean;
+  canReturn: boolean;
 };
 
 export type MonthlyPlannerView = {
@@ -239,12 +264,14 @@ export async function loadMonthlyPlanner(
   const headerRow = headerResult.data as Row | null;
   const planRows = (planRowsResult.data ?? []) as Row[];
 
-  const [itemRows, names] = await Promise.all([
+  const [itemRows, names, activities, references] = await Promise.all([
     loadPlanItemRows(
       planRows.map((row) => String(row.id)),
       ITEM_COLUMNS,
     ),
-    loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...planPeople(headerRow ? [headerRow] : [])]),
+    loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...planPeople(headerRow ? [headerRow, ...planRows] : planRows)]),
+    loadPlanActivities(planRows.map((row) => String(row.id))),
+    loadPlannerReferences(seat.seatId, isTest, customers),
   ]);
 
   const settings = viewer.config.settings;
@@ -271,6 +298,7 @@ export async function loadMonthlyPlanner(
       speciality: textOrNull(row.speciality),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       pending: row.status === "pending",
+      reference: references.get(customerId) ?? null,
       places: (placesByCustomer.get(customerId) ?? []).map((place) => ({
         placeId: place.placeId,
         label: place.label,
@@ -312,15 +340,33 @@ export async function loadMonthlyPlanner(
     list.push(row);
     itemsByPlan.set(planId, list);
   }
+  const repForWeeks = canWriteAsRep(viewer, seat, isTest) && Boolean(seat.lineCode);
+  const reviewerForWeeks = canReviewTerritory(viewer, seat, isTest);
+  const returnerForWeeks = canReturnTerritoryPlan(viewer, seat, isTest);
   const weekViews: MonthlyWeekView[] = weeks.map((weekStart) => {
     const planRow = planRows.find((row) => String(row.week_start) === weekStart) ?? null;
     const weekStatus = planRow ? statusOf(planRow.status) : null;
     const weekItems = planRow ? itemsByPlan.get(String(planRow.id)) ?? [] : [];
+    const days = buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan, activities });
+    const weekPlan = planRow ? mapPlan(planRow, names) : null;
+    const dueOn = weekPlan?.dueOn ?? weeklyPlanDueOn(weekStart);
+    const open = editablePlanDays(weekStart, today).length > 0;
+    const staleOpen = days.some((day) => day.editable && day.items.some((item) => item.stale));
     return {
       weekStart,
+      weekNumber: weekNumberInMonth(weekStart),
       status: weekStatus,
       statusLabel: planStatusLabel(weekStatus),
-      days: buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan }),
+      days,
+      plan: weekPlan,
+      dueOn,
+      dueOnLabel: formatPhoenixLongDate(dueOn),
+      overdue: open && today > dueOn && (weekStatus === null || weekStatus === "draft" || weekStatus === "returned"),
+      open,
+      canSubmit: repForWeeks && open && weekStatus !== null && isPlanEditable(weekStatus) && weekItems.length > 0 && !staleOpen,
+      canReopen: repForWeeks && open && (weekStatus === "submitted" || weekStatus === "approved"),
+      canApprove: reviewerForWeeks && weekStatus === "submitted",
+      canReturn: open && returnerForWeeks && (weekStatus === "submitted" || weekStatus === "approved"),
     };
   });
 

@@ -1,0 +1,565 @@
+"use client";
+
+/**
+ * Phoenix CRM — one week of the plan board (owner, 2026-09-29).
+ *
+ * A week is due the Thursday before it when it is sent on its own; sent with the month, it is judged
+ * against the month's date. A late week is ACCEPTED and STAMPED — never refused, because a rep who
+ * cannot plan cannot work. The week carries its own status, its own due date, its own late stamp and
+ * its own buttons: Send this week and Take it back for the rep, Approve and Return for the reviewer
+ * (the SFE Manager can Return). Nothing here sends or approves on its own — every one of them is a
+ * press, and Send and Take back ask once more before they go.
+ *
+ * Its six days sit under it as tabs; the day on screen is PlanDayPanel.
+ *
+ * Beside each copy sits its suggestion (owner, 2026-09-30): "Suggest the week" beside "Copy last week",
+ * "Suggest this day" beside "Copy a day". Both go through `onCopied`, the board's one way into the
+ * draft, so a suggestion is reviewed and saved exactly like a copy. The rep sees them on his own plan
+ * only; on a week or day he cannot change they stay on screen, disabled, with the reason in words.
+ *
+ * The week and the day on screen each carry an orange bar and a tick in their chooser, so on a long
+ * page he never has to work out which week he is changing.
+ */
+
+import { useState, type ReactNode } from "react";
+import { Check } from "lucide-react";
+
+import { cairoStamp, countText, dayLabel, plural, weekLabel } from "@/components/phoenix-crm/format";
+import type { BrickTint } from "@/components/phoenix-crm/brick-tints";
+import { PlanCopyMenu, PlanSuggestMenu, type CopiedPlacements, type SuggestContext } from "@/components/phoenix-crm/plan-copy-menu";
+import { PlanDayPanel } from "@/components/phoenix-crm/plan-day-panel";
+import { decisionBusy, PlanDecision, type PlanDecisionAction } from "@/components/phoenix-crm/plan-decision";
+import { CrmBlock, CrmButton, CrmChoice, CrmFacts, CrmNote, CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
+import { dayActivityLabel } from "@/lib/phoenix-crm/day-activities";
+import type { DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
+import type { PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
+import { daySuggestBlock, weekSuggestBlock, type SuggestBlock, type SuggestInput } from "@/lib/phoenix-crm/plan-suggest";
+import {
+  dayCounts,
+  dayFullness,
+  indexCustomers,
+  resolveDayRows,
+  type DailyCaps,
+  type DayFullness,
+  type DraftProblem,
+  type PlannedActivity,
+} from "@/lib/phoenix-crm/plan-week-draft";
+import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
+import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
+import type { MonthlyWeekView, PlanDayView } from "@/lib/phoenix-crm/view-types";
+
+export const PLAN_STATUS_TONE: Record<PhoenixCrmPlanStatus | "none", PillTone> = {
+  none: "neutral",
+  draft: "neutral",
+  submitted: "warn",
+  approved: "good",
+  returned: "bad",
+};
+
+/** What a week's own button is doing. */
+export type WeekBusy = "send" | "reopen" | PlanDecisionAction;
+
+/** Why a week's draft is held on the page. */
+export type WeekHold = "changed" | "unchecked";
+
+/** "Sat 10 Oct has 16 PM. A day holds 15 PM at most." — a problem the server would refuse, said to the rep. */
+export function problemText(problem: DraftProblem): string {
+  const day = dayLabel(problem.date);
+  if (problem.kind === "morning") return `${day} is a morning for AM only. Take ${problem.name} off it.`;
+  return `${day} has ${problem.count} ${problem.listType}. A day holds ${problem.cap} ${problem.listType} at most.`;
+}
+
+/** A week or day option: the one on screen carries a tick, so it reads without the colour too. */
+export function ChoiceLabel({ children, chosen }: { children: ReactNode; chosen: boolean }) {
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+      {chosen ? <Check aria-hidden className="h-4 w-4 shrink-0 text-orange-600" /> : null}
+      <span className="min-w-0 break-words">{children}</span>
+    </span>
+  );
+}
+
+/** Why the rep cannot change the week, said under a suggestion button that is off. */
+function weekClosedReason(week: MonthlyWeekView): string {
+  if (!week.open) return "This week has passed.";
+  if (week.status === "submitted") return "This week is sent for review. Take it back to change it.";
+  if (week.status === "approved") return "This week is approved. Take it back to change it.";
+  return "This week cannot be changed now.";
+}
+
+function weekSuggestReason(block: SuggestBlock | null): string | null {
+  if (block === null) return null;
+  if (block === "passed") return "Every day of this week has passed.";
+  if (block === "activity") return "Every day left this week is taken by another activity.";
+  return "Every day left this week already has its target placed.";
+}
+
+function daySuggestReason(block: SuggestBlock | null, date: string, activity: PlannedActivity | null): string | null {
+  if (block === null) return null;
+  const name = dayLabel(date);
+  if (block === "passed") return "This day has passed.";
+  if (block === "activity") {
+    return `${activity ? dayActivityLabel(activity.activityType) : "Another activity"} takes the whole of ${name}. Make it a half day to plan visits too.`;
+  }
+  return `${name} already has its target placed${activity?.halfDay ? " beside its half-day activity" : ""}.`;
+}
+
+/**
+ * "2 AM · 15 PM" on a day's button — never added together; a Thursday morning reads AM alone. A list
+ * at its cap turns emerald where it stands, so the eye finds the full ones without reading a word.
+ */
+function DayPair({ counts, full, listTypes }: { counts: Record<PhoenixCrmListType, number>; full: DayFullness; listTypes: ReadonlyArray<PhoenixCrmListType> }) {
+  const figure = (listType: PhoenixCrmListType) => (
+    <span className={full[listType] ? "font-black text-emerald-700" : undefined}>
+      {countText(counts[listType])} {listType}
+    </span>
+  );
+  return listTypes.includes("PM") || counts.PM > 0 ? (
+    <>
+      {figure("AM")} · {figure("PM")}
+    </>
+  ) : (
+    figure("AM")
+  );
+}
+
+export function PlanWeekPanel({
+  activities,
+  busy,
+  caps,
+  customers,
+  dirty,
+  editable,
+  filter,
+  filterOptions,
+  hold,
+  idPrefix,
+  items,
+  locked,
+  onActivity,
+  onCopied,
+  onDay,
+  onDecide,
+  onFilter,
+  onKeepMine,
+  onPlace,
+  onQuery,
+  onRemove,
+  onReopen,
+  onSend,
+  onShowLatest,
+  problems,
+  query,
+  reviewerSentence,
+  seatId,
+  selectedDay,
+  showProblems,
+  showSpread,
+  suggest,
+  test,
+  tints,
+  today,
+  viewerIsRep,
+  week,
+}: {
+  /** The week's drafted activities (editable weeks only). */
+  activities: ReadonlyArray<PlannedActivity>;
+  busy: WeekBusy | null;
+  caps: DailyCaps;
+  customers: ReadonlyArray<PlannerCustomer>;
+  dirty: boolean;
+  /** The rep may still change this week: it is his, open, and a draft or returned. */
+  editable: boolean;
+  filter: DoctorFilter;
+  filterOptions: {
+    bricks: ReadonlyArray<{ value: string; label: string }>;
+    grades: ReadonlyArray<PhoenixCrmGrade>;
+    specialities: ReadonlyArray<string>;
+  };
+  /** The week's draft is held on the page through a save that failed or crossed another. */
+  hold: WeekHold | null;
+  idPrefix: string;
+  /** The week's drafted placements (editable weeks only). */
+  items: ReadonlyArray<PlanItemDraft>;
+  locked: boolean;
+  onActivity: (date: string, next: Omit<PlannedActivity, "planDate"> | null) => void;
+  onCopied: (placements: CopiedPlacements) => void;
+  onDay: (date: string) => void;
+  onDecide: (action: PlanDecisionAction, note: string) => Promise<boolean>;
+  onFilter: (next: DoctorFilter) => void;
+  onKeepMine: () => void;
+  onPlace: (item: PlanItemDraft) => void;
+  onQuery: (next: string) => void;
+  onRemove: (date: string, customerId: string) => void;
+  onReopen: () => void;
+  onSend: () => void;
+  onShowLatest: () => void;
+  problems: ReadonlyArray<DraftProblem>;
+  query: string;
+  /** "Ahmed Samir reviews it." */
+  reviewerSentence: string;
+  seatId: string;
+  selectedDay: PlanDayView;
+  showProblems: boolean;
+  showSpread: boolean;
+  /** The grade numbers and the month so far, for the two suggestions — null for anyone but the rep. */
+  suggest: SuggestContext | null;
+  test: boolean;
+  tints: ReadonlyMap<string, BrickTint>;
+  today: string;
+  viewerIsRep: boolean;
+  week: MonthlyWeekView;
+}) {
+  const [confirm, setConfirm] = useState<"send" | "reopen" | null>(null);
+
+  const byId = indexCustomers(customers);
+  const { plan } = week;
+  const status = plan?.status ?? null;
+  const dayCountsOf = (day: PlanDayView): Record<PhoenixCrmListType, number> =>
+    editable && day.editable ? dayCounts(resolveDayRows(day, items, byId)) : day.counts;
+  const totals = week.days.reduce(
+    (sum, day) => {
+      const counts = dayCountsOf(day);
+      return { AM: sum.AM + counts.AM, PM: sum.PM + counts.PM };
+    },
+    { AM: 0, PM: 0 },
+  );
+  const placed = totals.AM + totals.PM;
+  const editingDay = editable && selectedDay.editable;
+  const target = { week, items };
+
+  // The two suggestions read the same draft a copy does, and land through the same onCopied.
+  const suggestInput: SuggestInput | null = suggest && editable ? { week, items, activities, customers, caps, ...suggest } : null;
+  const dayActivity = editingDay ? (activities.find((entry) => entry.planDate === selectedDay.date) ?? null) : null;
+  const weekReason = !suggest
+    ? null
+    : editable
+      ? weekSuggestReason(weekSuggestBlock({ week, items, activities, customers, caps, dayTargets: suggest.dayTargets }))
+      : weekClosedReason(week);
+  const dayReason = !suggest
+    ? null
+    : editable
+      ? daySuggestReason(
+          daySuggestBlock({ day: selectedDay, items, activity: dayActivity, customers, caps, dayTargets: suggest.dayTargets }),
+          selectedDay.date,
+          dayActivity,
+        )
+      : weekClosedReason(week);
+
+  const facts: Array<{ label: string; value: string }> = [{ label: "Due", value: week.dueOnLabel }];
+  if (plan?.submittedAt) {
+    facts.push({
+      label: "Last sent for review",
+      value: `${cairoStamp(plan.submittedAt)}${plan.submittedByName ? ` · ${plan.submittedByName}` : ""}${plan.submittedVia === "month" ? " · with the month" : ""}`,
+    });
+  }
+  if (plan?.decidedAt && (status === "approved" || status === "returned")) {
+    facts.push({
+      label: status === "approved" ? "Approved" : "Returned",
+      value: `${cairoStamp(plan.decidedAt)}${plan.decidedByName ? ` · ${plan.decidedByName}` : ""}${plan.decidedBySfe ? " (SFE Manager)" : ""}`,
+    });
+  }
+
+  return (
+    <div className="min-w-0">
+      <CrmBlock
+        actions={
+          <span className="flex max-w-full flex-wrap gap-1">
+            <CrmPill tone={PLAN_STATUS_TONE[status ?? "none"]}>{week.statusLabel}</CrmPill>
+            {plan?.submittedLate ? <CrmPill tone="warn">Sent late</CrmPill> : null}
+            {week.overdue ? <CrmPill tone="bad">Overdue</CrmPill> : null}
+            {!week.open ? <CrmPill>Passed</CrmPill> : null}
+            {dirty ? <CrmPill tone="orange">Unsaved changes</CrmPill> : null}
+          </span>
+        }
+        className="border-l-4 border-t border-slate-100 border-l-orange-500"
+        title={`Week ${week.weekNumber}`}
+      >
+        <p className="break-words text-lg font-black leading-tight text-slate-950">{weekLabel(week.weekStart)}</p>
+        <p className="mt-1 break-words text-sm font-bold text-slate-700">
+          {countText(totals.AM)} AM · {countText(totals.PM)} PM placed this week
+        </p>
+        <div className="mt-3">
+          <CrmFacts facts={facts} />
+        </div>
+
+        {/* The deadline, said once where he is working. Never a block: a late week is accepted and stamped. */}
+        {viewerIsRep && week.overdue ? (
+          <CrmNote className="mt-3" title={`This week was due ${week.dueOnLabel}`} tone="warn">
+            Send it as soon as it is ready. It will still be accepted, and it will be marked as sent late.
+          </CrmNote>
+        ) : null}
+        {plan?.submittedLate ? (
+          <CrmNote className="mt-3" title="Sent late" tone="warn">
+            This week was due {week.dueOnLabel} and was sent {plan.submittedAt ? cairoStamp(plan.submittedAt) : "after it"}.
+          </CrmNote>
+        ) : null}
+        {plan?.decisionNote && (status === "returned" || status === "approved") ? (
+          <CrmNote className="mt-3" title={status === "returned" ? "What to change" : "Manager's note"} tone={status === "returned" ? "warn" : "good"}>
+            <span className="block whitespace-pre-line">{plan.decisionNote}</span>
+          </CrmNote>
+        ) : null}
+
+        {editable ? (
+          confirm === "send" ? (
+            <div className="mt-3 grid min-w-0 gap-2 border border-orange-200 bg-orange-50/40 px-3.5 py-3">
+              <p className="text-sm font-black text-slate-950">Send this week for review?</p>
+              <p className="break-words text-sm font-medium leading-6 text-slate-600">
+                {countText(totals.AM)} AM · {countText(totals.PM)} PM across the week.{dirty ? " Your changes are saved first." : ""} {reviewerSentence} Until
+                then, you can take it back to change it.
+              </p>
+              {problems.length > 0 ? (
+                <CrmNote title="Fix these first" tone="bad">
+                  <ProblemList onDay={onDay} problems={problems} />
+                </CrmNote>
+              ) : null}
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                <CrmButton
+                  busy={busy === "send"}
+                  disabled={locked || problems.length > 0 || hold === "changed"}
+                  onClick={() => {
+                    setConfirm(null);
+                    onSend();
+                  }}
+                  variant="primary"
+                >
+                  Send
+                </CrmButton>
+                <CrmButton disabled={busy === "send"} onClick={() => setConfirm(null)}>
+                  Not yet
+                </CrmButton>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
+              <CrmButton busy={busy === "send"} disabled={locked || placed === 0} onClick={() => setConfirm("send")} variant="primary">
+                {status === "returned" ? "Send this week again" : "Send this week"}
+              </CrmButton>
+              {placed === 0 ? <span className="text-xs font-semibold leading-5 text-slate-500">Place at least one customer before sending the week.</span> : null}
+            </div>
+          )
+        ) : null}
+
+        {week.canReopen && plan ? (
+          confirm === "reopen" ? (
+            <div className="mt-3 grid min-w-0 gap-2 border border-slate-200 bg-slate-50 px-3.5 py-3">
+              <p className="text-sm font-black text-slate-950">Take this week back?</p>
+              <p className="break-words text-sm font-medium leading-6 text-slate-600">
+                {status === "approved"
+                  ? "It is approved. Taking it back makes it a draft again, and it needs a new approval once you send it."
+                  : "It leaves the manager's review until you send it again."}
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                <CrmButton
+                  busy={busy === "reopen"}
+                  disabled={locked}
+                  onClick={() => {
+                    setConfirm(null);
+                    onReopen();
+                  }}
+                  variant="danger"
+                >
+                  Take it back
+                </CrmButton>
+                <CrmButton disabled={busy === "reopen"} onClick={() => setConfirm(null)}>
+                  {status === "approved" ? "Keep it approved" : "Keep it sent"}
+                </CrmButton>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
+              <CrmButton busy={busy === "reopen"} disabled={locked} onClick={() => setConfirm("reopen")}>
+                Take this week back to change it
+              </CrmButton>
+            </div>
+          )
+        ) : null}
+      </CrmBlock>
+
+      {hold === "changed" ? (
+        <CrmBlock className="border-t border-slate-100">
+          <CrmNote title="This week changed since you started" tone="bad">
+            <span className="block">
+              It was saved on another screen, or a save of yours went through before its answer came back. Your ticks are still on this page.
+            </span>
+            <span className="mt-2 grid gap-2 sm:flex sm:flex-wrap">
+              <CrmButton disabled={locked} onClick={onKeepMine} size="sm" variant="primary">
+                Keep my ticks
+              </CrmButton>
+              <CrmButton disabled={locked} onClick={onShowLatest} size="sm">
+                Show the saved week
+              </CrmButton>
+            </span>
+          </CrmNote>
+        </CrmBlock>
+      ) : null}
+      {hold === "unchecked" ? (
+        <CrmBlock className="border-t border-slate-100">
+          <CrmNote title="Phoenix could not confirm the save" tone="warn">
+            Your ticks are kept on this page. Check the connection, then save again.
+          </CrmNote>
+        </CrmBlock>
+      ) : null}
+      {showProblems && problems.length > 0 ? (
+        <CrmBlock className="border-t border-slate-100">
+          <CrmNote title={problems.length === 1 ? "Fix this before saving" : `Fix these ${problems.length} before saving`} tone="bad">
+            <ProblemList currentDate={selectedDay.date} onDay={onDay} problems={problems} />
+          </CrmNote>
+        </CrmBlock>
+      ) : null}
+
+      {editable || suggest ? (
+        <CrmBlock className="border-t border-slate-100" title={editable ? "Suggest or copy the week" : "Suggest the week"}>
+          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+            {suggest ? (
+              <PlanSuggestMenu
+                blockedReason={weekReason}
+                disabled={locked}
+                input={suggestInput}
+                key={`suggest-${week.weekStart}`}
+                onPlace={onCopied}
+                scope={{ kind: "week" }}
+              />
+            ) : null}
+            {editable ? (
+              <PlanCopyMenu
+                caps={caps}
+                customers={customers}
+                disabled={locked}
+                key={week.weekStart}
+                onPlace={onCopied}
+                scope={{ kind: "week", target }}
+                seatId={seatId}
+                test={test}
+              />
+            ) : null}
+          </div>
+        </CrmBlock>
+      ) : null}
+
+      <CrmBlock className="border-t border-slate-100" title="Days">
+        <CrmChoice
+          columns={3}
+          label="Day"
+          onChange={onDay}
+          options={week.days.map((day) => {
+            const activityType =
+              editable && day.editable ? activities.find((entry) => entry.planDate === day.date)?.activityType : day.activity?.activityType;
+            const counts = dayCountsOf(day);
+            const full = dayFullness(counts, caps, day.listTypes);
+            return {
+              value: day.date,
+              label: <ChoiceLabel chosen={day.date === selectedDay.date}>{dayLabel(day.date)}</ChoiceLabel>,
+              note: (
+                <>
+                  {day.date === today ? "Today · " : null}
+                  <DayPair counts={counts} full={full} listTypes={day.listTypes} />
+                  {activityType ? ` · ${dayActivityLabel(activityType)}` : null}
+                </>
+              ),
+              tone: full.day ? ("good" as const) : undefined,
+            };
+          })}
+          value={selectedDay.date}
+        />
+      </CrmBlock>
+
+      <PlanDayPanel
+        activity={dayActivity}
+        caps={caps}
+        copyMenu={
+          editingDay ? (
+            <PlanCopyMenu
+              caps={caps}
+              customers={customers}
+              disabled={locked}
+              key={selectedDay.date}
+              onPlace={onCopied}
+              scope={{ kind: "day", target, date: selectedDay.date }}
+              seatId={seatId}
+              test={test}
+            />
+          ) : undefined
+        }
+        customers={customers}
+        day={selectedDay}
+        editing={editingDay}
+        filter={filter}
+        filterOptions={filterOptions}
+        idPrefix={`${idPrefix}-${week.weekStart}`}
+        items={items}
+        key={selectedDay.date}
+        locked={locked}
+        onActivity={(next) => onActivity(selectedDay.date, next)}
+        onFilter={onFilter}
+        onPlace={onPlace}
+        onQuery={onQuery}
+        onRemove={(customerId) => onRemove(selectedDay.date, customerId)}
+        query={query}
+        showSpread={showSpread}
+        suggestMenu={
+          suggest ? (
+            <PlanSuggestMenu
+              blockedReason={dayReason}
+              disabled={locked}
+              input={suggestInput}
+              key={`suggest-${selectedDay.date}`}
+              onPlace={onCopied}
+              scope={{ kind: "day", date: selectedDay.date }}
+            />
+          ) : undefined
+        }
+        tints={tints}
+        today={today}
+      />
+
+      {plan ? (
+        <PlanDecision
+          approved={status === "approved"}
+          busy={decisionBusy(busy)}
+          canApprove={week.canApprove}
+          canReturn={week.canReturn}
+          idPrefix={`${idPrefix}-${week.weekStart}`}
+          key={`${plan.planId}|${plan.version}`}
+          locked={locked}
+          onDecide={onDecide}
+          subject="week"
+        />
+      ) : null}
+
+      {editable && placed > 0 ? (
+        <CrmBlock className="border-t border-slate-100">
+          <p className="break-words text-xs font-semibold leading-5 text-slate-500">
+            {plural(week.days.filter((day) => dayCountsOf(day).AM + dayCountsOf(day).PM > 0).length, "day", "days")} of {countText(week.days.length)} planned.
+            Send the week when it is ready, or send the whole month from the top.
+          </p>
+        </CrmBlock>
+      ) : null}
+    </div>
+  );
+}
+
+function ProblemList({
+  currentDate = null,
+  onDay,
+  problems,
+}: {
+  currentDate?: string | null;
+  onDay: (date: string) => void;
+  problems: ReadonlyArray<DraftProblem>;
+}) {
+  return (
+    <ul className="mt-1 grid min-w-0 gap-1.5">
+      {problems.map((problem, position) => (
+        <li className="flex min-w-0 flex-wrap items-center gap-2" key={`${problem.date}-${position}`}>
+          <span className="min-w-0 flex-1 basis-56 break-words">{problemText(problem)}</span>
+          {problem.date !== currentDate ? (
+            <CrmButton onClick={() => onDay(problem.date)} size="sm">
+              Open {dayLabel(problem.date)}
+            </CrmButton>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}

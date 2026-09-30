@@ -49,21 +49,36 @@ export function runPhoenixCrmVisitDwellTests(): void {
   // pins that the only mention in visits.ts lies inside saveVisit. What is checked HERE is the thing
   // that sweep cannot see: that no screen puts a DURATION into words, under any name.
   {
-    for (const path of ["src/components/phoenix-crm/visits-tab.tsx", "mobile/src/features/crm/visits-screen.tsx"]) {
+    // Phrases that could only ever be about timing HIM. Deliberately not a bare /\bseconds?\b/: the
+    // voice note's own `seconds` prop is a recording's length and has nothing to do with this, and
+    // /\btook you\b/ matched "what took you there" on the off-plan reason box — a false positive that
+    // would have made the guard the thing people edit rather than obey.
+    const TIMING_WORDS = [
+      /\bhow long\b/i,
+      /\byou (were|spent|took)\b[^\n]{0,24}\b(second|minute|hour)/i,
+      /\btoo (quick|fast|short)\b/i,
+      /\btimed\b/i,
+      /\bstopwatch\b/i,
+      /\bvisit duration\b/i,
+      /\bdwell\b/i,
+    ];
+    // Every screen of the web Add visit flow since the one-tap rebuild (2026-09-29): the form lives in
+    // visit-log-form.tsx, and the steps before it in their own files. None may put a duration into words.
+    for (const path of [
+      "src/components/phoenix-crm/visits-tab.tsx",
+      "src/components/phoenix-crm/visit-start.tsx",
+      "src/components/phoenix-crm/visit-customer-picker.tsx",
+      "src/components/phoenix-crm/out-of-list-entry.tsx",
+      "src/components/phoenix-crm/use-silent-fix.ts",
+    ]) {
       const code = source(path);
-      // Phrases that could only ever be about timing HIM. Deliberately not a bare /\bseconds?\b/:
-      // the voice note's own `seconds` prop is a recording's length and has nothing to do with this,
-      // and /\btook you\b/ matched "what took you there" on the off-plan reason box — a false positive
-      // that would have made the guard the thing people edit rather than obey.
-      for (const banned of [
-        /\bhow long\b/i,
-        /\byou (were|spent|took)\b[^\n]{0,24}\b(second|minute|hour)/i,
-        /\btoo (quick|fast|short)\b/i,
-        /\btimed\b/i,
-        /\bstopwatch\b/i,
-        /\bvisit duration\b/i,
-        /\bdwell\b/i,
-      ]) {
+      for (const banned of TIMING_WORDS) {
+        assert.doesNotMatch(code, banned, `${path} tells the rep his visit is being timed`);
+      }
+    }
+    for (const path of ["src/components/phoenix-crm/visit-log-form.tsx", "mobile/src/features/crm/visits-screen.tsx"]) {
+      const code = source(path);
+      for (const banned of TIMING_WORDS) {
         assert.doesNotMatch(code, banned, `${path} tells the rep his visit is being timed`);
       }
       // What it DOES do: a ref set in an EFFECT, read once in the event handler, and passed into the

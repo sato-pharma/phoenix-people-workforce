@@ -8,7 +8,8 @@
  *     finished first);
  *   - the rep places the customers and the system only assists: each customer's timings show, the
  *     day's suggestions put uncovered customers first (suggestions.ts, run on the phone from the
- *     planner data), a customer placed on a day the customer does not receive asks for a reason, and customers
+ *     planner data), a customer placed on a day his saved hours do not cover is never blocked (owner,
+ *     2026-09-30), and customers
  *     far apart on one day are highlighted when the plan reaches the manager;
  *   - a plan day holds at most 15 doctors and 5 accounts (settings) — the plan's only hard limit;
  *   - the district manager approves; the SFE Manager sees every plan and can return one; the system
@@ -18,17 +19,30 @@
  * two screens never overwrite each other (supabase/migrations/20260916150000_phoenix_crm.sql). Once a
  * week is over (after its Thursday, Cairo) its plan stays as it stood: it cannot be sent, reopened or
  * returned, since the rep could no longer act on a return; a late approval still records.
+ *
+ * Owner, 2026-09-29 — the plan rebuilt as one board: the month on top as Week 1..N, a week's days, a
+ * day's customers ticked by brick with its other activities on top.
+ *   - a week sent on its own is due the Thursday before it (`weeklyPlanDueOn`); sent with the month it
+ *     is judged against the month's own date. A late plan is ACCEPTED and STAMPED, never refused — the
+ *     stamp is written by `phoenix_crm_plan_transition` from the server's clock;
+ *   - a day can carry one planned activity (a meeting, a conference, a sales day…), saved beside the
+ *     day's customers (plan-activities.ts);
+ *   - "Copy last month / last week / a day" are drafts built on the phone from `loadPlanCopySource`
+ *     and saved through this same `savePlan`, so a copied day passes every rule a ticked one does.
  */
 
+import { addDaysIso } from "@/lib/crm/dates";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import {
   editablePlanDays,
   fieldWeekDays,
   isFieldWeekStart,
+  isIsoDay,
   isRamadanDay,
   monthStartOf,
   planDayListTypes,
   plannableWeeks,
+  weeklyPlanDueOn,
 } from "@/lib/phoenix-crm/calendar";
 import { summarizeReadiness } from "@/lib/phoenix-crm/coverage";
 import { cleanText, parseGrade } from "@/lib/phoenix-crm/entry-rules";
@@ -59,9 +73,23 @@ import {
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { ensureReferenceCustomers, loadMonthVisitCounts, loadReadiness, loadReference, loadTerritoryCustomers, mapTimings } from "@/lib/phoenix-crm/server/list";
+import {
+  ensureReferenceCustomers,
+  loadMonthVisitCounts,
+  loadPlannerReferences,
+  loadReadiness,
+  loadReference,
+  loadTerritoryCustomers,
+  mapTimings,
+} from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
+import {
+  loadPlanActivities,
+  parsePlanActivities,
+  savePlanActivities,
+  type PlannedActivityRow,
+} from "@/lib/phoenix-crm/server/plan-activities";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
@@ -84,8 +112,10 @@ export function statusOf(value: unknown): PhoenixCrmPlanStatus {
 
 // ── Reading plans ───────────────────────────────────────────────────────────────────────────────
 
+// ONE string literal, never joined with `+`: the Supabase client reads the select list at the TYPE level,
+// and a joined string is a plain `string`, which types every row as an error (TS2352 in CI, 2026-09-30).
 export const PLAN_COLUMNS =
-  "id, seat_id, week_start, status, version, submitted_at, submitted_by_hr_id, decided_at, decided_by_hr_id, decided_by_role, decision_note, created_by_hr_id, updated_at, is_test";
+  "id, seat_id, week_start, status, version, submitted_at, submitted_by_hr_id, decided_at, decided_by_hr_id, decided_by_role, decision_note, created_by_hr_id, updated_at, is_test, due_on, submitted_late, submitted_via";
 
 /** Each item with its customer and place as they are now, so a customer who left the list shows. */
 export const ITEM_COLUMNS =
@@ -111,13 +141,19 @@ export type PlanSummary = {
   decidedBySfe: boolean;
   decisionNote: string | null;
   updatedAt: string;
+  /** When the week was due: the Thursday before it, or the month's own date when it went with the month. */
+  dueOn: string;
+  /** Sent after it was due. Stamped from the server's clock at submit; nothing was refused. */
+  submittedLate: boolean;
+  /** Sent on its own, or as part of the month. Null until sent. */
+  submittedVia: "week" | "month" | null;
 };
 
 export function planPeople(rows: ReadonlyArray<Row>): Array<string | null> {
   return rows.flatMap((row) => [textOrNull(row.submitted_by_hr_id), textOrNull(row.decided_by_hr_id)]);
 }
 
-function mapPlan(row: Row, names: PeopleNames): PlanSummary {
+export function mapPlan(row: Row, names: PeopleNames): PlanSummary {
   const status = statusOf(row.status);
   const submittedBy = textOrNull(row.submitted_by_hr_id);
   const decidedBy = textOrNull(row.decided_by_hr_id);
@@ -134,6 +170,9 @@ function mapPlan(row: Row, names: PeopleNames): PlanSummary {
     decidedBySfe: row.decided_by_role === "sfe_manager",
     decisionNote: textOrNull(row.decision_note),
     updatedAt: String(row.updated_at),
+    dueOn: textOrNull(row.due_on) ?? weeklyPlanDueOn(String(row.week_start)),
+    submittedLate: row.submitted_late === true,
+    submittedVia: row.submitted_via === "week" || row.submitted_via === "month" ? row.submitted_via : null,
   };
 }
 
@@ -210,6 +249,8 @@ export type PlanDayView = {
   ramadan: boolean;
   /** Today or later: the rep may still change it. */
   editable: boolean;
+  /** The other activity planned for the day (a meeting, a sales day…), shown at the top of it. */
+  activity: PlannedActivityRow | null;
   items: PlanItemView[];
   counts: Record<PhoenixCrmListType, number>;
   spanKm: number;
@@ -248,6 +289,7 @@ export function buildDays(input: {
   itemRows: ReadonlyArray<Row>;
   farApartKm: number;
   isRamadan: (isoDay: string) => boolean;
+  activities?: ReadonlyMap<string, PlannedActivityRow>;
 }): PlanDayView[] {
   const byDay = new Map<string, Row[]>();
   for (const row of input.itemRows) {
@@ -314,6 +356,7 @@ export function buildDays(input: {
       listTypes: planDayListTypes(date),
       ramadan,
       editable: date >= input.cairoToday,
+      activity: input.activities?.get(date) ?? null,
       items,
       counts,
       spanKm: spread.spanKm,
@@ -339,15 +382,17 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   throwIfError(planRowsResult.error);
   const planRows = (planRowsResult.data ?? []) as Row[];
   const planRow = planRows.find((row) => String(row.week_start) === weekStart) ?? null;
-  const [itemRows, names] = await Promise.all([
+  const [itemRows, names, activities, references] = await Promise.all([
     planRow ? loadPlanItemRows([String(planRow.id)], ITEM_COLUMNS) : Promise.resolve([] as Row[]),
     loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...planPeople(planRows)]),
+    loadPlanActivities(planRow ? [String(planRow.id)] : []),
+    loadPlannerReferences(seat.seatId, isTest, customers),
   ]);
 
   const settings = viewer.config.settings;
   const isRamadan = (isoDay: string) => isRamadanDay(isoDay, viewer.config.ramadanOverrides);
   const plan = planRow ? mapPlan(planRow, names) : null;
-  const days = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan });
+  const days = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities });
 
   const plannerCustomers: PlannerCustomer[] = customers.map((row) => {
     const customerId = String(row.id);
@@ -359,6 +404,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
       speciality: textOrNull(row.speciality),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       pending: row.status === "pending",
+      reference: references.get(customerId) ?? null,
       places: (placesByCustomer.get(customerId) ?? []).map((place) => ({
         placeId: place.placeId,
         label: place.label,
@@ -507,6 +553,18 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
       })),
     },
   });
+  // The day's other activities ride on the same save, once the plan row exists. A caller that sends
+  // none (one release behind) leaves them exactly as they were.
+  if (Array.isArray(body.activities)) {
+    await savePlanActivities({
+      seatId: seat.seatId,
+      actorHrId: viewer.hrId,
+      isTest,
+      weekStart,
+      editableDays,
+      activities: parsePlanActivities(body.activities, open),
+    });
+  }
   return {
     planId: String(result.plan_id),
     status: statusOf(result.status),
@@ -760,4 +818,52 @@ export async function loadPlanReviews(viewer: PhoenixCrmViewer, raw: { test: unk
     rows,
     farApartKm,
   };
+}
+
+// ── What a copy copies FROM ─────────────────────────────────────────────────────────────────────
+
+/** The longest window one copy reads: a whole month's field-weeks and a little either side. */
+const COPY_SOURCE_MAX_DAYS = 45;
+
+export type PlanCopySourceView = {
+  from: string;
+  to: string;
+  /** Every customer placed on a day in the window, on the territory's own Phoenix plans. */
+  placements: Array<{ planDate: string; customerId: string }>;
+};
+
+/**
+ * The placements a "Copy last month", "Copy last week" or "Copy a day" replays (owner, 2026-09-29).
+ *
+ * Read from the territory's OWN Phoenix plans whatever their status — a copy is a draft the rep reviews,
+ * and a week he never sent is still what he planned. Placing them is the pure plan-copy.ts on the
+ * phone, and saving them is the ordinary `savePlan`, so every copied day passes the same rules a ticked
+ * one does. The first month, with no Phoenix month before it, falls back to the iReports360 plan
+ * (plan-history.ts).
+ */
+export async function loadPlanCopySource(
+  viewer: PhoenixCrmViewer,
+  raw: { seatId: unknown; test: unknown; from: unknown; to: unknown },
+): Promise<PlanCopySourceView> {
+  const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+  if (!isIsoDay(raw.from) || !isIsoDay(raw.to) || raw.from > raw.to) throw validationError("Choose what to copy again.");
+  const from = raw.from;
+  const to = raw.to;
+  if (addDaysIso(from, COPY_SOURCE_MAX_DAYS) < to) throw validationError("Choose what to copy again.");
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_plans")
+    .select("id")
+    .eq("seat_id", seat.seatId)
+    .eq("is_test", isTest)
+    .gte("week_start", addDaysIso(from, -6))
+    .lte("week_start", to);
+  throwIfError(error);
+  const planIds = ((data ?? []) as Row[]).map((row) => String(row.id));
+  const rows = planIds.length === 0 ? [] : await loadPlanItemRows(planIds, "id, plan_date, customer_id");
+  const placements = rows
+    .map((row) => ({ planDate: String(row.plan_date), customerId: String(row.customer_id) }))
+    .filter((placement) => placement.planDate >= from && placement.planDate <= to)
+    .sort((left, right) => left.planDate.localeCompare(right.planDate) || left.customerId.localeCompare(right.customerId));
+  return { from, to, placements };
 }

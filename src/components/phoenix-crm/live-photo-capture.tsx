@@ -5,8 +5,8 @@
  *
  * The owner's rule for a customer (2026-09-16): a live photo, the location captured at the place,
  * and the timings. The same capture serves every visit. So there is no gallery button — only the
- * camera — and one Start opens the camera and the location together, because a photo without a
- * location proves nothing about a place.
+ * camera — and Open the camera reads the location with it, because a photo without a location
+ * proves nothing about a place.
  *
  * Same evidence as every other Phoenix live photo (direct-order storefronts, marketing captures):
  * the time, the street address, the Phoenix brick, area and region and the coordinates are burned
@@ -16,6 +16,15 @@
  * moment, so the server compares two clocks read seconds apart: a photo taken in a basement with no
  * signal and uploaded twenty minutes later is not marked "phone clock off". A failed upload keeps the
  * photo on the phone and sends it again to the same slot.
+ *
+ * THE PHOTO'S OWN LOCATION, NEVER SHOWN AS A MEASUREMENT (owner, 2026-09-29, 2026-09-30). The camera
+ * reads its own location while it is open, and the shutter reads it again fresh; the photo carries
+ * that reading (`shutter*`), burned into the picture too. The Capture-location pin is NOT taken here:
+ * it is its own button (capture-location.tsx), so the place is read twice, once by the photo and
+ * once by GPS. The server keeps both and fixes the place on the photo's. The rep reads that the
+ * photo's location is found and nothing else — no accuracy, no "rough signal", nothing that says a
+ * reading is judged (Golden Rule #1). The measurements are the Super Admin's and the SFE Manager's,
+ * on the place-move screen.
  */
 
 import type { ReactNode } from "react";
@@ -33,7 +42,6 @@ import {
   wrapWatermarkText,
 } from "@/components/outstation/evidence-watermark";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
-import { formatDistance } from "@/lib/phoenix-crm/geo";
 import type { PhotoSlot } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +54,7 @@ const FIX_STALE_MS = 15_000;
 export type CapturedPhoto = {
   path: string;
   previewUrl: string;
+  /** The photo's own reading — the one burned into it. Never the Capture-location pin. */
   lat: number;
   lon: number;
   accuracyMeters: number | null;
@@ -57,15 +66,13 @@ export type CapturedPhoto = {
   zone: string | null;
   locationLabel: string;
   /**
-   * The PHOTO’s own position, read fresh at the shutter - NOT a copy of the fix above.
+   * The PHOTO’s own position, as the server reads it: a fresh reading taken as the shutter fires,
+   * else the camera's own running reading from the moment before (the one stamped on the picture).
+   * Both belong to the photo — neither is the Capture-location pin, which is its own button.
    *
-   * The fix above comes from the running watch and may be up to 15 seconds old by design. This
-   * one is taken as the shutter fires, so the two together answer whether the camera was still
-   * where the pin said. Added 2026-09-29 at the owner’s instruction.
-   *
-   * All four null when the browser refused or timed out. The capture NEVER waits on them: a rep
-   * in a clinic doorway with no signal saves his visit exactly as before, and null means NOT
-   * MEASURED - never that the photo and the pin agree.
+   * The fresh read NEVER holds the capture up and never refuses it: capped at 8 s, and when it
+   * does not come the camera's own reading stands. Added 2026-09-29 at the owner’s instruction; the
+   * camera's reading became the fallback on 2026-09-30, when the pin moved to its own button.
    */
   shutterLat: number | null;
   shutterLon: number | null;
@@ -93,17 +100,23 @@ type Shot = {
   slot: PhotoSlot | null;
   deviceClock: string | null;
   /**
-   * The shutter’s own reading, taken in takePhoto and read again in upload.
+   * The photo's own reading (the fresh shutter read, else the camera's), set in takePhoto and read
+   * again in upload.
    *
    * It rides on the Shot rather than in component state because a retake replaces the whole Shot:
    * state would let a fix from the discarded photo attach itself to the new one.
    */
   shutterFix: ShutterFix;
-  /** When the shutter fired. Null when no position came back, so the pair is never half-real. */
+  /** When that reading was taken. */
   shutterCapturedAt: string | null;
 };
 
 type Stage = "idle" | "starting" | "live" | "stamping" | "uploading" | "failed";
+
+/** A shutter reading that came back with a position. */
+function hasPosition(fix: ShutterFix): fix is ShutterFix & { latitude: number; longitude: number } {
+  return fix.latitude !== null && fix.longitude !== null;
+}
 
 function canvasJpeg(canvas: HTMLCanvasElement, quality: number): Promise<Blob | null> {
   return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), "image/jpeg", quality));
@@ -139,8 +152,14 @@ function textField(record: Record<string, unknown> | null, key: string): string 
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function accuracyText(meters: number | null): string {
-  return meters === null ? "accuracy unknown" : `within ${formatDistance(Math.round(meters))}`;
+/** What the rep reads once the location is in: that it is captured, and where — never how well. */
+export function capturedLocationText(address: string | null): string {
+  return address ? `Location captured · ${address}` : "Location captured";
+}
+
+/** Under the photo just taken: that it carries its location, and where — never how well. */
+export function photoLocationText(address: string | null): string {
+  return address ? `Photo location · ${address}` : "Photo location found";
 }
 
 async function sendToSlot(slot: PhotoSlot, blob: Blob): Promise<void> {
@@ -170,7 +189,6 @@ export function LivePhotoCapture({
   test,
   title,
   value,
-  weakGpsMeters,
 }: {
   disabled?: boolean;
   hint?: ReactNode;
@@ -181,7 +199,11 @@ export function LivePhotoCapture({
   /** The first line burned into the photo, e.g. "Phoenix CRM visit: Dr Ahmed Samir". */
   title: string;
   value: CapturedPhoto | null;
-  weakGpsMeters: number;
+  /**
+   * Accepted and ignored since 2026-09-29. It drove the "location is rough" line, which told the rep
+   * his reading was being judged (Golden Rule #1). Kept optional so every caller still compiles.
+   */
+  weakGpsMeters?: number;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -243,7 +265,7 @@ export function LivePhotoCapture({
           stopCamera();
           setStage("idle");
           setLocationNote(null);
-          setError("Location is blocked for Phoenix. Allow location for this site in the phone's settings, then press Start again.");
+          setError("Location is blocked for Phoenix. Allow location for this site in the phone's settings, then press Open the camera again.");
           return;
         }
         setLocationNote("Still finding your location. Stand outside or near a window");
@@ -277,12 +299,12 @@ export function LivePhotoCapture({
       const name = cameraError instanceof DOMException ? cameraError.name : "";
       setError(
         name === "NotAllowedError" || name === "PermissionDeniedError"
-          ? "The camera is blocked for Phoenix. Allow the camera for this site in the phone's settings, then press Start again."
+          ? "The camera is blocked for Phoenix. Allow the camera for this site in the phone's settings, then press Open the camera again."
           : name === "NotFoundError" || name === "OverconstrainedError"
             ? "No camera was found on this phone."
             : name === "NotSupportedError"
               ? "This browser cannot open the camera. Open Phoenix in Chrome or Safari."
-              : "The camera could not start. Close any other app using it, then press Start again.",
+              : "The camera could not start. Close any other app using it, then press Open the camera again.",
       );
     }
   }
@@ -373,9 +395,19 @@ export function LivePhotoCapture({
     // refusal or a timeout leaves it null and the visit saves exactly as before.
     const shutterFix = await readShutterFix();
     stopLocation();
+    // The photo's reading: the fresh one when it came, else the camera's own from a moment before.
+    // Either is the PHOTO's — the Capture-location pin is a separate button (owner, 2026-09-30).
+    const photoFix: Fix = hasPosition(shutterFix)
+      ? { lat: shutterFix.latitude, lon: shutterFix.longitude, accuracyMeters: shutterFix.accuracy, at: takenAt }
+      : usedFix;
 
-    const payload = await fetchEvidenceLocation(LOCATION_ENDPOINT, usedFix.lat, usedFix.lon, usedFix.accuracyMeters);
-    const stamp = readEvidenceLocationStamp(payload, usedFix.lat, usedFix.lon, usedFix.accuracyMeters);
+    // The stamp burned into the photo is read by the REP in the preview, so it names the place and the
+    // coordinates but never the accuracy (Golden Rule #1 — accuracy is a signal only the Super Admin
+    // and the SFE Manager read). The accuracy itself still travels in the saved place, untouched.
+    // It burns the CAMERA's running reading with that reading's OWN time beside the shutter time, so
+    // the gap between them is legible on the image itself (pinned by capture-trust).
+    const payload = await fetchEvidenceLocation(LOCATION_ENDPOINT, usedFix.lat, usedFix.lon, null);
+    const stamp = readEvidenceLocationStamp(payload, usedFix.lat, usedFix.lon, null);
     const detail = payload?.location && typeof payload.location === "object" ? (payload.location as Record<string, unknown>) : null;
     const components = detail?.components && typeof detail.components === "object" ? (detail.components as Record<string, unknown>) : null;
 
@@ -387,7 +419,7 @@ export function LivePhotoCapture({
     const blob = await jpegUnder(canvas, MAX_UPLOAD_BYTES);
     if (!blob) {
       setStage("idle");
-      setError("This phone could not save the photo. Press Start and take it again.");
+      setError("This phone could not save the photo. Press Open the camera and take it again.");
       return;
     }
     if (shot) URL.revokeObjectURL(shot.previewUrl);
@@ -400,8 +432,8 @@ export function LivePhotoCapture({
       locationLabel: stamp.label,
       slot: null,
       deviceClock: null,
-      shutterFix,
-      shutterCapturedAt: shutterFix.latitude === null ? null : new Date().toISOString(),
+      shutterFix: { latitude: photoFix.lat, longitude: photoFix.lon, accuracy: photoFix.accuracyMeters },
+      shutterCapturedAt: photoFix.at,
     };
     setShot(next);
     await upload(next);
@@ -416,7 +448,6 @@ export function LivePhotoCapture({
   }
 
   const showVideo = !value && (stage === "starting" || stage === "live");
-  const weak = Boolean(fix && fix.accuracyMeters !== null && fix.accuracyMeters > weakGpsMeters);
   const previewUrl = value?.previewUrl ?? shot?.previewUrl ?? null;
 
   // A flex column rather than a grid: the shutter row below is sticky, and a sticky box travels within
@@ -443,13 +474,9 @@ export function LivePhotoCapture({
         // always within reach however far down the form the camera was opened.
         <div className="sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 grid gap-2 bg-white py-2 lg:bottom-0">
           {fix ? (
-            <p className={cn("flex min-w-0 items-start gap-2 text-sm font-bold", weak ? "text-amber-800" : "text-emerald-700")}>
+            <p className="flex min-w-0 items-start gap-2 text-sm font-bold text-emerald-700">
               <LocateFixed aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
-              <span className="min-w-0 break-words">
-                {weak
-                  ? `Location is rough (${accuracyText(fix.accuracyMeters)}). Wait a few seconds for it to sharpen, or step outside.`
-                  : `Location found (${accuracyText(fix.accuracyMeters)}).`}
-              </span>
+              <span className="min-w-0 break-words">Photo location found</span>
             </p>
           ) : (
             <p className="flex min-w-0 items-start gap-2 text-sm font-bold text-slate-600">
@@ -473,7 +500,7 @@ export function LivePhotoCapture({
       {!value && stage === "idle" ? (
         <CrmButton disabled={disabled} onClick={() => void start()} variant="primary">
           <Camera aria-hidden className="h-4 w-4" />
-          Start camera and location
+          Open the camera
         </CrmButton>
       ) : null}
 
@@ -509,9 +536,7 @@ export function LivePhotoCapture({
           <span className="block w-full overflow-hidden rounded-none border border-slate-200 bg-slate-950">
             <ZoomablePhoto alt="The live photo" className="block max-h-[50svh] w-full object-contain" src={value.previewUrl} />
           </span>
-          <p className="break-words text-xs font-semibold leading-5 text-slate-600">
-            {value.locationLabel} · {accuracyText(value.accuracyMeters)}
-          </p>
+          <p className="break-words text-xs font-semibold leading-5 text-slate-600">{photoLocationText(value.address)}</p>
           <CrmButton disabled={disabled} onClick={retake} size="sm" variant="secondary">
             <RotateCcw aria-hidden className="h-4 w-4" />
             Take the photo again

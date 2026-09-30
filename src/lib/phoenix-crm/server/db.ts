@@ -66,6 +66,17 @@ const REFUSALS: Record<string, Refusal> = {
   unplanned_not_found: { status: 404, message: "This visit is no longer waiting for a decision. Reload the page." },
   unplanned_decided: { status: 409, message: "This visit was already decided. Reload the page." },
   unplanned_wrong_stage: { status: 409, message: "This visit has moved on to the next step. Reload the page." },
+  // The rep's flow rebuilt, 2026-09-29 (supabase/migrations/20260929235106_phoenix_crm_list_admission.sql).
+  archived: {
+    status: 409,
+    message: "This customer is in the Archive. Open him there and ask to bring him back to your list.",
+  },
+  request_wrong_stage: { status: 409, message: "This request has moved on to the next step. Reload the page." },
+  potential_grade_required: { status: 400, message: "Choose the customer's potential (AA to BC) before approving." },
+  not_outside: { status: 409, message: "This customer is no longer waiting outside the list. Reload the page." },
+  not_archived: { status: 409, message: "This customer is not in the Archive. Reload the page." },
+  not_on_list: { status: 409, message: "This customer is not on your list yet. Ask to add him to your list first." },
+  move_reason_required: { status: 400, message: "Write why the place is moved (at least 10 characters)." },
 };
 
 function messageOf(error: unknown): string {

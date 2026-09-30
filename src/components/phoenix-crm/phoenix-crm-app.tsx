@@ -18,8 +18,14 @@
  * fresh when it comes back: a customer validated on the List is on the Plan straight away. A tab
  * holding work (Add Visit or a customer entry under way, unsaved plan or settings changes) stays as it
  * is behind the others, and changing the territory or test mode asks before it lets that work go.
+ *
+ * Owner, 2026-09-29: the portal's "+" offers a rep "Add visit" and "Make weekly plan". They land here
+ * as `?tab=visits&add=visit` and `?tab=plan&add=week`, and the page answers them WITHOUT reloading —
+ * the tab opens and the screen starts the Add flow or opens the week to plan, never dropping work
+ * already under way. The `add` word is taken off the address once read, so the next tap is a new ask.
  */
 
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { crmGet, crmUrl, messageOf } from "@/components/phoenix-crm/api";
@@ -27,7 +33,7 @@ import { DoctorsTab } from "@/components/phoenix-crm/doctors-tab";
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { ListTab } from "@/components/phoenix-crm/list-tab";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
-import { MonthlyPlanTab } from "@/components/phoenix-crm/month-screen";
+import { PlanBoard } from "@/components/phoenix-crm/plan-board";
 import { ReportsTab } from "@/components/phoenix-crm/reports-tab";
 import { SettingsTab } from "@/components/phoenix-crm/settings-tab";
 import { TeamTab } from "@/components/phoenix-crm/team-tab";
@@ -100,7 +106,7 @@ type HoldingTab = Exclude<TabKey, "reports" | "doctors" | "today">;
 const HELD_WORK: Record<HoldingTab, string> = {
   visits: "the visit being added",
   list: "the customer entry under way",
-  plan: "the unsaved changes to the weekly plan",
+  plan: "the unsaved changes to the plan",
   team: "the unsaved changes to the plan opened from Team",
   settings: "the unsaved settings",
 };
@@ -129,6 +135,13 @@ type Move =
 
 function isTabKey(value: string | null): value is TabKey {
   return value !== null && (TAB_ORDER as readonly string[]).includes(value);
+}
+
+/** What the portal's "+" asks for: start a visit, or plan a week. Anything else is no ask. */
+type AddIntent = "visit" | "week";
+
+function addIntentOf(value: string | null): AddIntent | null {
+  return value === "visit" || value === "week" ? value : null;
 }
 
 function isSeatTab(key: TabKey): key is SeatTab {
@@ -237,6 +250,14 @@ export function PhoenixCrmApp({
   const [holding, setHolding] = useState<ReadonlySet<HoldingTab>>(() => new Set<HoldingTab>());
   const [asking, setAsking] = useState<{ move: Move; work: HoldingTab[] } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // The portal's "+": each ask bumps a counter the screen watches, so a second tap is a second ask
+  // even when the address reads the same, and nothing remounts to answer it.
+  const searchParams = useSearchParams();
+  const addParam = addIntentOf(searchParams?.get("add") ?? null);
+  const tabParam = searchParams?.get("tab") ?? null;
+  const [seenAddress, setSeenAddress] = useState<{ add: AddIntent | null; tab: string | null }>({ add: null, tab: tabParam });
+  const [addVisitNonce, setAddVisitNonce] = useState(0);
+  const [planWeekNonce, setPlanWeekNonce] = useState(0);
   const topRef = useRef<HTMLDivElement>(null);
   const refreshRun = useRef(0);
   const refreshedAt = useRef(0);
@@ -261,6 +282,19 @@ export function PhoenixCrmApp({
       },
     );
   }, []);
+
+  // The "+" ask is read once: the word comes off the address, so the next tap on the same action is a
+  // change the page sees. The tab stays in the address, as `openTab` keeps it.
+  useEffect(() => {
+    if (addParam === null) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("add");
+      window.history.replaceState(null, "", url);
+    } catch {
+      // The address keeps the word; a second tap then reads as no change, and the tab is still open.
+    }
+  }, [addParam]);
 
   // A page left open in the background (a manager between visits) reads what waits for them again
   // when it comes back into view.
@@ -294,6 +328,22 @@ export function PhoenixCrmApp({
   const { viewer } = overview;
   const test = viewer.isTestPersona || (viewer.isSuperAdmin && testMode);
   const tabs = allowedTabs(overview.tabs);
+
+  // The address changed under the page (the "+" menu, or a link to another tab): answered here, while
+  // rendering, from what the address said last time — state derived from a prop, never an effect.
+  if (seenAddress.add !== addParam || seenAddress.tab !== tabParam) {
+    setSeenAddress({ add: addParam, tab: tabParam });
+    if (addParam !== null && addParam !== seenAddress.add) {
+      const target: TabKey = addParam === "visit" ? "visits" : "plan";
+      if (tabs.includes(target)) {
+        setTab(target);
+        if (addParam === "visit") setAddVisitNonce((value) => value + 1);
+        else setPlanWeekNonce((value) => value + 1);
+      }
+    } else if (tabParam !== seenAddress.tab && isTabKey(tabParam) && tabs.includes(tabParam)) {
+      setTab(tabParam);
+    }
+  }
   const activeTab: TabKey = tabs.includes(tab) ? tab : (tabs[0] ?? "visits");
   const seats: Record<SeatTab, string | null> = {
     today: seatOf(overview, "today", chosenSeat),
@@ -408,11 +458,6 @@ export function PhoenixCrmApp({
   /** The Validate screen opened from that hand-off was saved or backed out of. No photo to release. */
   function pendingValidateDone() {
     setPendingValidate(null);
-  }
-
-  /** Visits entered on this territory, where the List offers Add Visit after a place is saved. */
-  function entersVisits(seatId: string): boolean {
-    return (test && viewer.isSuperAdmin) || (!viewer.isSuperAdmin && overview.visitSeatIds.includes(seatId));
   }
 
   function settingsChanged(change: "numbers" | "line" | "ramadan") {
@@ -700,6 +745,7 @@ export function PhoenixCrmApp({
       return (
         <TodayTab
           key={`${seatId}|${test}`}
+          onOpenPlan={() => openTab("plan")}
           // A2: the Add-visit button REUSES the module's existing hand-off, so Add Visit opens with the
           // customer already chosen and there is no new plumbing and no new step in his day. The photo
           // is null because this is not the validate-then-visit path.
@@ -708,6 +754,11 @@ export function PhoenixCrmApp({
             // out a REUSED validation photo. There is no photo on this path, so it is simply now.
             startVisit({ customerId, customerName, photo: null, seatId, test, validatedAtMs: Date.now() })
           }
+          onStartVisit={() => {
+            openTab("visits");
+            setAddVisitNonce((value) => value + 1);
+            scrollToTop();
+          }}
           seatId={seatId}
           test={test}
         />
@@ -716,8 +767,12 @@ export function PhoenixCrmApp({
     if (key === "visits") {
       return (
         <VisitsTab
-          cairoToday={cairoToday}
+          addNonce={addVisitNonce}
+          // Answered once: a Visits tab let go and remounted later must not see the same ask again.
+          onAddHandled={() => setAddVisitNonce(0)}
+          openingDay={overview.visitDay}
           key={`${seatId}|${test}`}
+          onOpenList={() => openTab("list")}
           onPendingVisitDone={pendingVisitDone}
           onStartValidate={startValidate}
           onWorkChange={holdReporters.visits}
@@ -733,7 +788,6 @@ export function PhoenixCrmApp({
           cairoToday={cairoToday}
           key={`${seatId}|${test}`}
           onPendingValidateDone={pendingValidateDone}
-          onStartVisit={entersVisits(seatId) ? startVisit : undefined}
           onWorkChange={holdReporters.list}
           pendingValidate={pendingValidate}
           seatId={seatId}
@@ -742,13 +796,14 @@ export function PhoenixCrmApp({
       );
     }
     return (
-      <MonthlyPlanTab
+      <PlanBoard
         key={`${seatId}|${test}`}
         onChanged={refreshOverview}
         onDirtyChange={holdReporters.plan}
         onOpenList={() => requestMove({ kind: "seat", seatId, tab: "list" })}
         seatId={seatId}
         test={test}
+        weekNonce={planWeekNonce}
       />
     );
   }

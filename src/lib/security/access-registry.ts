@@ -753,6 +753,13 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/primary-pharmacy", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/update", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // Moving or removing a validated place: the Super Admin and the SFE Manager only (owner, 2026-09-29),
+  // `approve` at the route and the movers' own check in the service.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/move", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  // The rep drops a customer he met outside his list (no approval: he was never on it).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/outside/drop", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // The SFE Manager brings a customer back from the Archive himself.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/archive/bring-back", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/requests", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/requests/withdraw", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/requests/decide", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
@@ -765,6 +772,8 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/plans/reviews", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // Last month's iReports360 plan as a read-only reference for "Copy last month".
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/plans/history", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // The territory's own Phoenix plans between two days, as what "Copy last month / week / a day" replays.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/plans/copy-source", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // The monthly plan sits above the weekly plan; the rep builds and sends it (`create`), a manager
   // approves or returns it (`approve`) — same split as the weekly plan's own routes above.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/monthly-plans", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
@@ -1693,6 +1702,12 @@ export const accessRegistry = [
   // handed around. That is a publishing right.
   sessionApi({ methods: ["GET"], pattern: "/api/milestones/due", permission: { resource: "milestones", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/milestones/card", permission: { resource: "milestones", action: "export" } }),
+  // The rep's OWN card, self-scoped (owner, 2026-09-30). Not the publishing right above: it builds
+  // ONLY the caller's own card (access.hrId, never a hrId off the wire), so it needs no `milestones`
+  // grant — it is gated by the domain helper canUseEmployeePortalMilestones (Medical Rep), which is
+  // why permission is null and guard is domain-helper. It does not record a print row, so it is not a
+  // mutation and needs no CSRF.
+  sessionApi({ csrfExemptReason: "Self-scoped read: builds only the caller's own keepsake card, records no row, sets no cookie.", guard: "domain-helper", methods: ["POST"], pattern: "/api/milestones/my-card", permission: null }),
   // A whole window of cards as one PDF, one card per page. Same publishing right as the single card,
   // and a mutation (it records a print row per card), so csrfRequired. Prints from the record only —
   // it carries no handed-in photograph.

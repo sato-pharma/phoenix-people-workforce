@@ -23,6 +23,10 @@ import { normalizeArea } from "../src/lib/phoenix-crm/suggestions.ts";
  * screen could reach. So the candidates a rep picked from read geographically while the day he was
  * about to drive read alphabetically, and the phone had neither. This pins the shared helper, the two
  * orders, and the two hand-kept copies that would otherwise drift in silence.
+ *
+ * Owner, 2026-09-29: plan-tab.tsx is gone. The plan board's day (plan-day-panel.tsx) now IS the
+ * brick-grouped list — "each day lists the customers grouped by brick with tick boxes" — so the pin on
+ * the planned day moved there with it.
  */
 
 type Row = { name: string; brick: string | null };
@@ -99,22 +103,34 @@ export function runPhoenixCrmBrickGroupsTests(): void {
     );
   }
 
-  // ── The planned day is grouped, and carries no spread flag with it ──────────────────────────────
+  // ── The plan board's day is grouped by brick, and carries no spread flag with it ────────────────
+  //
+  // The day's tick list is an INDEX he looks customers up in, so its groups read alphabetically; the
+  // day read back (a passed day, a sent week, a manager's reading) groups the same way. Each group
+  // wears its brick's colour from the shared palette, keyed off the WHOLE list so a brick never
+  // changes colour as he filters.
   {
-    const plan = source("src/components/phoenix-crm/plan-tab.tsx");
-    assert.ok(plan.includes("function dayBricks("), "the day's clustering is named, not inlined");
-    assert.ok(plan.includes('clusterByBrick(rows, (row) => row.brick, "first-appearance")'), "the planned day reads as a route");
-    assert.ok(plan.includes("{dayBricks(state.rows)"), "and the day screen actually renders the groups");
-    // Every DayRow carries a brick, or a whole class of rows would silently fall into "No brick".
-    assert.equal((plan.match(/\n\s+brick: /g) ?? []).length >= 4, true, "every DayRow constructor sets its brick");
+    const day = source("src/components/phoenix-crm/plan-day-panel.tsx");
+    const board = source("src/components/phoenix-crm/plan-board.tsx");
+    assert.ok(day.includes('clusterByBrick(rows, (row) => row.brick, "alphabetical")'), "the day's customers are grouped by brick");
+    assert.ok(day.includes('clusterByBrick(rows, (item) => item.brickName, "alphabetical")'), "and so is a day read back");
+    assert.ok(
+      day.includes("const brick = fit.place?.brick ?? reference?.brick ?? null;"),
+      "every row carries the brick of the place it is planned at — or, not validated yet, iReports360's brick (owner, 2026-09-30) — else it falls into No brick",
+    );
+    assert.ok(day.includes("tints.get(group.key)"), "each group is tinted by its brick");
+    assert.ok(board.includes("brickTintMap(bricks.map((brick) => brick.value))"), "from the shared palette");
+    assert.ok(board.includes("const bricks = plannerBricks(view.customers);"), "keyed off the whole list, not the filtered one");
 
     // 🔴 The heading is LAYOUT. The far-apart spread stays behind `showSpread`, which is false for a
     // rep on his own plan — grouping his day must not become a way to show him the distances.
-    const start = plan.indexOf("{dayBricks(state.rows)");
-    const block = plan.slice(start, start + 1200);
+    const start = day.indexOf('clusterByBrick(rows, (row) => row.brick, "alphabetical")');
+    const block = day.slice(start, start + 1500);
     for (const word of [/nearestKm/, /spanKm/, /isolated/, /farApartKm/]) {
       assert.equal(word.test(block), false, `the brick heading must not carry a spread flag: ${word}`);
     }
+    assert.match(day, /showSpread && !editing && day\.farApart/, "a day's spread shows only on a reading of a sent plan, and only where showSpread allows");
+    assert.match(board, /const showSpread = !view\.viewerIsRep \|\| view\.viewerIsReviewer;/, "and showSpread is false for a rep on his own plan");
   }
 
   // ── The phone's picker groups too ───────────────────────────────────────────────────────────────

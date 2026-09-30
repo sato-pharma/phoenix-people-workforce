@@ -15,6 +15,7 @@ import {
   parseNewCustomer,
   parsePlaceDraft,
   parseVisitDraft,
+  VISIT_COMMENT_REQUIRED,
 } from "../src/lib/phoenix-crm/entry-rules.ts";
 import { checkDaySpread, checkVisitLocation, distanceMeters, formatDistance, isUsableFix } from "../src/lib/phoenix-crm/geo.ts";
 import {
@@ -349,28 +350,32 @@ function runPlanRuleTests() {
     "Thursday 8 Oct is a morning: it holds AM only, so Dr Mona Adel cannot go there.",
     "no exception reason puts a PM customer on Thursday",
   );
-  assert.equal(
-    refusalOf(resolvePlan([item("2026-10-04", DOCTOR, DOCTOR_PLACE)])),
-    "Dr Mona Adel does not receive visits on Sunday. Choose a reason for Sunday 4 Oct.",
-    "a day the customer does not receive asks for a reason",
+  // NEVER BLOCKED BY HOURS (owner, 2026-09-30: "does not receive on Wednesday — never block, because the
+  // rep didn't add his time"). A day his saved hours do not cover is placed and asks nothing.
+  assert.deepEqual(
+    valueOf(resolvePlan([item("2026-10-04", DOCTOR, DOCTOR_PLACE)])),
+    [{ ...item("2026-10-04", DOCTOR, DOCTOR_PLACE), listType: "PM", receives: false, startMinute: null }],
+    "a day his saved hours do not cover is accepted with no reason",
   );
-  assert.equal(
-    refusalOf(resolvePlan([item("2026-10-04", DOCTOR, DOCTOR_PLACE, "other")])),
-    "Write a note on why Dr Mona Adel is on Sunday 4 Oct.",
+  assert.deepEqual(
+    valueOf(resolvePlan([item("2026-10-04", DOCTOR, DOCTOR_PLACE, "other")])),
+    [{ ...item("2026-10-04", DOCTOR, DOCTOR_PLACE), listType: "PM", receives: false, startMinute: null }],
+    "an Other with no note keeps the customer and drops the empty reason",
   );
   assert.deepEqual(
     valueOf(resolvePlan([item("2026-10-04", DOCTOR, DOCTOR_PLACE, "another_place")])),
     [{ ...item("2026-10-04", DOCTOR, DOCTOR_PLACE, "another_place"), listType: "PM", receives: false, startMinute: null }],
-    "with a reason the planner allows it: it asks, it does not block",
+    "a reason an older caller still sends is kept",
   );
   assert.deepEqual(
     valueOf(resolvePlan([item("2026-10-04", DOCTOR, DOCTOR_PLACE)], planCustomers(), { ramadan: true })),
     [{ ...item("2026-10-04", DOCTOR, DOCTOR_PLACE), listType: "PM", receives: true, startMinute: 1260 }],
     "in Ramadan the special visit time decides who receives",
   );
-  assert.equal(
-    refusalOf(resolvePlan([item(WEEK, DOCTOR, DOCTOR_PLACE)], planCustomers(), { ramadan: true })),
-    "Dr Mona Adel does not receive visits on Saturday. Choose a reason for Saturday 3 Oct.",
+  assert.deepEqual(
+    valueOf(resolvePlan([item(WEEK, DOCTOR, DOCTOR_PLACE)], planCustomers(), { ramadan: true })),
+    [{ ...item(WEEK, DOCTOR, DOCTOR_PLACE), listType: "PM", receives: false, startMinute: null }],
+    "and a Ramadan day with no Ramadan hours saved is accepted just the same",
   );
 
   // ── The daily maximums: 15 doctors and 5 accounts, apart ────────────────────────────────────────
@@ -613,7 +618,7 @@ function runEntryRuleTests() {
   assert.equal(refusalOf(parseNewCustomer({ listType: "pm", name: " Al " })), "Write the customer's full name.");
   assert.equal(
     refusalOf(parseNewCustomer({ listType: "pm", name: "Dr Mona Adel" })),
-    "Propose a grade (A, B or C). Your district manager approves it.",
+    "Propose a grade (A, B or C). Your district manager and SFE approve it.",
     "a new customer's grade is the rep's proposal, decided by the district manager",
   );
   assert.deepEqual(valueOf(parseNewCustomer({ listType: "am", name: "  Al   Shorouk Hospital ", proposedGrade: "a", speciality: " " })), {
@@ -629,7 +634,7 @@ function runEntryRuleTests() {
 
   // A visit: the customer, who was on it, the products, the pharmacy feedback, the comment, a live
   // photo and the location.
-  const visit = { customerId: DOCTOR.toUpperCase(), kind: "single", products: ["Lacto Advanced"], pharmacyName: "El Ezaby", comment: "", photoPath: "seat/visit.jpg", lat: 30.05, lon: 31.23, accuracyMeters: 12 };
+  const visit = { customerId: DOCTOR.toUpperCase(), kind: "single", products: ["Lacto Advanced"], pharmacyName: "El Ezaby", comment: "Discussed the new dose.", photoPath: "seat/visit.jpg", lat: 30.05, lon: 31.23, accuracyMeters: 12 };
   assert.equal(refusalOf(parseVisitDraft({ ...visit, customerId: "dr-mona" })), "Choose the customer you visited.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, kind: "triple" })), "Choose who was on the visit.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, kind: "double" })), "Choose the district manager who was on the visit.");
@@ -637,11 +642,23 @@ function runEntryRuleTests() {
   assert.equal(refusalOf(parseVisitDraft({ ...visit, products: [] })), "Choose the products you discussed.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, products: ["", "  "] })), "Choose the products you discussed.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, products: Array.from({ length: 13 }, (_, n) => `Product ${n}`) })), "Choose at most 12 products.");
-  assert.equal(refusalOf(parseVisitDraft({ ...visit, pharmacyName: "  " })), "Write the pharmacy you took feedback from.", "the pharmacy the feedback came from is required");
-  assert.equal(refusalOf(parseVisitDraft({ ...visit, pharmacyName: undefined })), "Write the pharmacy you took feedback from.");
+  // Owner, 2026-09-29: the pharmacy stock check is OPTIONAL — the box stays, a visit is never blocked on it.
+  assert.equal(valueOf(parseVisitDraft({ ...visit, pharmacyName: "  " })).pharmacyName, null, "a blank pharmacy is no pharmacy, never a refusal");
+  assert.equal(valueOf(parseVisitDraft({ ...visit, pharmacyName: undefined })).pharmacyName, null);
   assert.equal(refusalOf(parseVisitDraft({ ...visit, comment: "x".repeat(1001) })), "The comment is longer than 1000 characters.");
-  assert.equal(refusalOf(parseVisitDraft({ ...visit, photoPath: " " })), PHOTO, "every visit carries a live photo");
-  assert.equal(refusalOf(parseVisitDraft({ ...visit, lat: 0, lon: 0 })), LOCATION, "every visit carries its location check");
+  // Required since 2026-09-30 (owner: "visit comment is required") — empty, blank or missing is refused.
+  for (const comment of ["", "   ", undefined, null]) {
+    assert.equal(refusalOf(parseVisitDraft({ ...visit, comment })), VISIT_COMMENT_REQUIRED, `a visit with comment ${JSON.stringify(comment)} is refused`);
+  }
+  // …and "Log visit" is one tap with NO photo; a caller that still sends one keeps its path.
+  assert.equal(valueOf(parseVisitDraft({ ...visit, photoPath: " " })).photoPath, null, "a visit needs no photo since 2026-09-29");
+  assert.equal(valueOf(parseVisitDraft(visit)).photoPath, "seat/visit.jpg", "a caller one release behind is served as before");
+  assert.equal(
+    refusalOf(parseVisitDraft({ ...visit, lat: 0, lon: 0 })),
+    "Turn on location for Phoenix, then tap Log visit again.",
+    "every visit still carries its location — read silently, and a missing one is said plainly as his own step",
+  );
+  assert.notEqual(PHOTO, LOCATION, "the validation screen keeps its own two sentences");
 
   const single = valueOf(parseVisitDraft({ ...visit, kind: undefined, managerHrId: "T-3", seniorHrId: "T-2", products: ["Lacto Advanced", " Lacto   Advanced ", "Royanoxicam"], pharmacyName: "  Seif  Pharmacy ", comment: "  good  " }));
   assert.equal(single.kind, "single");
@@ -663,7 +680,7 @@ function runEntryRuleTests() {
   assert.deepEqual([double.managerHrId, double.seniorHrId], ["T-3", null], "a double visit is the rep and one manager");
   const chain = valueOf(parseVisitDraft({ ...visit, kind: "chain", managerHrId: "T-3", seniorHrId: "T-2" }));
   assert.deepEqual([chain.managerHrId, chain.seniorHrId], ["T-3", "T-2"]);
-  assert.equal(chain.comment, null);
+  assert.equal(chain.comment, "Discussed the new dose.", "the comment is kept as written");
 
   assert.equal(deviceClockSkewMinutes("2026-10-03T12:20:00Z", new Date("2026-10-03T12:00:00Z")), 20);
   assert.equal(deviceClockSkewMinutes(null, new Date()), null);

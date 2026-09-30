@@ -1,6 +1,7 @@
 /**
- * Phoenix CRM — the managers' Team view: each territory's list readiness and the grade and drop
- * requests waiting for a decision. (The week's plans to review come from plans.ts loadPlanReviews.)
+ * Phoenix CRM — the managers' Team view: each territory's list readiness and the list requests (a
+ * grade, a drop, an add, a bring-back) waiting for a decision. (The week's plans to review come from
+ * plans.ts loadPlanReviews.)
  *
  * Owner, 2026-09-16:
  *   - a new doctor's grade, a grade change and a drop need the district manager's approval; the system
@@ -15,11 +16,17 @@
  *
  * Scope runs downward only. Readiness is measured on real entries; test mode (the Super Admin) lists
  * test requests only.
+ *
+ * Owner, 2026-09-30 ("the easiest CRM, yet controlled"): each territory also carries the rep's visit
+ * day so far — his sent plan's progress AM and PM apart and what he logged — read for every territory
+ * in three batched queries (loadTeamToday), never one per rep.
  */
 
+import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
-import { canReviewTerritory, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { loadReadiness, loadRequestRows, mapRequestRow, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
+import { canDecideListRequest, canReviewTerritory, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { throwIfError } from "@/lib/phoenix-crm/server/db";
+import { loadReadiness, loadRequestRows, mapRequestRow, requestPeople, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import {
@@ -29,6 +36,16 @@ import {
   unplannedPeople,
   type UnplannedVisitView,
 } from "@/lib/phoenix-crm/server/unplanned";
+import {
+  emptyTeamToday,
+  summarizeTeamToday,
+  teamClockOf,
+  type TeamTodayFigures,
+  type TeamTodayPlanned,
+  type TeamTodayVisit,
+} from "@/lib/phoenix-crm/team-today";
+import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type TeamTerritoryRow = {
   territory: TerritorySummary;
@@ -37,7 +54,84 @@ export type TeamTerritoryRow = {
   pendingRequests: number;
   /** The viewer decides this territory's requests and approves its plans. */
   canReview: boolean;
+  /** The rep's visit day so far — his plan's progress AM and PM apart, and what he logged. */
+  today: TeamTodayFigures & { lastVisitClock: string | null };
 };
+
+type Row = Record<string, unknown>;
+
+/**
+ * A bounded `in (...)` per query: an SFE Manager reads every territory in the company. Forty seats keep
+ * each reply under PostgREST's 1,000-row cap even on a full day — at most 5 AM + 15 PM planned stops
+ * a seat is 800 plan items, and a day's visits run to the same order.
+ */
+const SEAT_CHUNK = 40;
+
+function chunks<T>(items: ReadonlyArray<T>, size: number): T[][] {
+  const out: T[][] = [];
+  for (let index = 0; index < items.length; index += size) out.push(items.slice(index, index + size));
+  return out;
+}
+
+function listTypeOf(value: unknown): PhoenixCrmListType {
+  return value === "AM" ? "AM" : "PM";
+}
+
+function withClock(figures: TeamTodayFigures): TeamTodayFigures & { lastVisitClock: string | null } {
+  return { ...figures, lastVisitClock: figures.lastVisitAt ? teamClockOf(figures.lastVisitAt) : null };
+}
+
+/**
+ * Every territory's visit day in THREE batched reads, never one per rep: the week's sent plans, their
+ * items for the day, and the day's visits. "Sent" is submitted or approved — the same test the rep's
+ * own Today and Planned visit use, so a manager and his rep never read two different plans.
+ */
+async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, date: string): Promise<Map<string, TeamTodayFigures>> {
+  const supabase = getSupabaseAdmin();
+  const seatsWithPlan = new Set<string>();
+  const planned: TeamTodayPlanned[] = [];
+  const visits: TeamTodayVisit[] = [];
+  for (const part of chunks(seatIds, SEAT_CHUNK)) {
+    const [plans, dayVisits] = await Promise.all([
+      supabase
+        .from("phoenix_crm_plans")
+        .select("id, seat_id")
+        .in("seat_id", part)
+        .eq("is_test", isTest)
+        .eq("week_start", fieldWeekStart(date))
+        .in("status", ["submitted", "approved"]),
+      supabase
+        .from("phoenix_crm_visits")
+        .select("seat_id, customer_id, list_type, captured_at")
+        .in("seat_id", part)
+        .eq("is_test", isTest)
+        .eq("visit_date", date),
+    ]);
+    throwIfError(plans.error);
+    throwIfError(dayVisits.error);
+    const seatByPlan = new Map<string, string>();
+    for (const row of (plans.data ?? []) as Row[]) {
+      seatByPlan.set(String(row.id), String(row.seat_id));
+      seatsWithPlan.add(String(row.seat_id));
+    }
+    if (seatByPlan.size > 0) {
+      const items = await supabase
+        .from("phoenix_crm_plan_items")
+        .select("plan_id, customer_id, list_type")
+        .in("plan_id", [...seatByPlan.keys()])
+        .eq("plan_date", date);
+      throwIfError(items.error);
+      for (const row of (items.data ?? []) as Row[]) {
+        const seatId = seatByPlan.get(String(row.plan_id));
+        if (seatId) planned.push({ seatId, customerId: String(row.customer_id), listType: listTypeOf(row.list_type) });
+      }
+    }
+    for (const row of (dayVisits.data ?? []) as Row[]) {
+      visits.push({ seatId: String(row.seat_id), customerId: String(row.customer_id), listType: listTypeOf(row.list_type), capturedAt: String(row.captured_at) });
+    }
+  }
+  return summarizeTeamToday({ seatIds, seatsWithPlan, planned, visits });
+}
 
 export type TeamRequest = ListRequest & { seatId: string; territoryName: string; canDecide: boolean };
 
@@ -73,10 +167,12 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   const seats: OrgSeat[] = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const seatIds = seats.map((seat) => seat.seatId);
 
-  const [readiness, requestRows, unplannedRows] = await Promise.all([
+  const [readiness, requestRows, unplannedRows, todayBySeat] = await Promise.all([
     isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
     seatIds.length === 0 ? Promise.resolve([]) : loadRequestRows(seatIds, isTest, { pendingOnly: true }),
     loadUnplannedRows(seatIds, isTest),
+    // The VISIT day (until 02:00 the day that just ended), the same day the rep's own Today shows.
+    seatIds.length === 0 ? Promise.resolve(new Map<string, TeamTodayFigures>()) : loadTeamToday(seatIds, isTest, viewer.visitDay),
   ]);
 
   const pendingBySeat = new Map<string, number>();
@@ -85,12 +181,19 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     pendingBySeat.set(seatId, (pendingBySeat.get(seatId) ?? 0) + 1);
   }
   // Test mode shows only the territories the Super Admin has tried; real mode shows every territory in
-  // scope. A territory whose only waiting item is an off-plan visit still belongs in the test list.
+  // scope. A territory whose only waiting item is an off-plan visit — or only a day being worked —
+  // still belongs in the test list.
   const unplannedSeats = new Set(unplannedRows.map((row) => String(row.seat_id)));
-  const rowSeats = isTest ? seats.filter((seat) => pendingBySeat.has(seat.seatId) || unplannedSeats.has(seat.seatId)) : seats;
+  const workedToday = (seatId: string) => {
+    const figures = todayBySeat.get(seatId);
+    return Boolean(figures && (figures.planSent || figures.amLogged > 0 || figures.pmLogged > 0));
+  };
+  const rowSeats = isTest
+    ? seats.filter((seat) => pendingBySeat.has(seat.seatId) || unplannedSeats.has(seat.seatId) || workedToday(seat.seatId))
+    : seats;
   const names = await loadPeopleNames([
     ...territoryPeople(viewer.org, rowSeats),
-    ...requestRows.flatMap((row) => [row.requested_by_hr_id as string | null, row.decided_by_hr_id as string | null]),
+    ...requestPeople(requestRows),
     ...unplannedPeople(unplannedRows),
   ]);
 
@@ -102,6 +205,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       readiness: isTest ? null : (readiness.get(seat.seatId) as SeatReadiness),
       pendingRequests: pendingBySeat.get(seat.seatId) ?? 0,
       canReview: canReviewTerritory(viewer, seat, isTest),
+      today: withClock(todayBySeat.get(seat.seatId) ?? emptyTeamToday()),
     }),
   );
   territories.sort(
@@ -117,11 +221,15 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     .map((row): TeamRequest => {
       const seatId = String(row.seat_id);
       const seat = seatsById.get(seatId) as OrgSeat;
+      const request = mapRequestRow(row, names);
       return {
-        ...mapRequestRow(row, names),
+        ...request,
         seatId,
         territoryName: summaries.get(seatId)?.name ?? "Territory",
-        canDecide: canReviewTerritory(viewer, seat, isTest),
+        // The step it is ON decides who may press the button (2026-09-29): a grade change and the
+        // first step of a drop, an add or a bring-back are the territory's reviewer's; the second step
+        // is the SFE Manager's. Everyone else in scope reads it and no more.
+        canDecide: canDecideListRequest(viewer, seat, isTest, request.stage),
       };
     })
     .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.requestedAt.localeCompare(right.requestedAt));

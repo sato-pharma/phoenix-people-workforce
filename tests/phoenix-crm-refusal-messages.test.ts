@@ -83,7 +83,8 @@ export function runPhoenixCrmRefusalMessagesTests(): void {
   // refusal and a real visit can never be entered. The web screen always did this; the phone did
   // not, and the phone is where the recording is made.
   for (const [what, path] of [
-    ["the web visit form", "src/components/phoenix-crm/visits-tab.tsx"],
+    // Its own file since the one-tap rebuild (2026-09-29).
+    ["the web visit form", "src/components/phoenix-crm/visit-log-form.tsx"],
     ["the phone's visit form", "mobile/src/features/crm/visits-screen.tsx"],
   ] as const) {
     const source = stripComments(readFileSync(new URL(path, ROOT), "utf8"));
