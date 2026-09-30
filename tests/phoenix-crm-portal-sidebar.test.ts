@@ -122,8 +122,8 @@ export function runPhoenixCrmPortalSidebarTests() {
 
   assert.match(
     layout,
-    /\.\.\.\(showPhoenixCrmTab \? \[\{ href: "\/employee-portals\/field-crm", label: "Phoenix CRM", icon: ClipboardList \}\] : \[\]\),/,
-    "the rail row points at the portal address, under the module's own name",
+    /\.\.\.\(showPhoenixCrmTab\s*\?\s*\[\{ href: "\/employee-portals\/field-crm", label: "Phoenix CRM", icon: ClipboardList, highlight: true as const \}\]\s*:\s*\[\]\),/,
+    "the rail row points at the portal address, under the module's own name, and carries the highlight",
   );
 
   // ── 3. Every page that builds its own portal chrome asks the gate ──────────────────────────────
@@ -169,4 +169,48 @@ export function runPhoenixCrmPortalSidebarTests() {
   const shortLabels = PORTAL_NAV_REGISTRY.map((row) => row.label);
   const duplicated = shortLabels.filter((label) => label === entry.label);
   assert.equal(duplicated.length, 1, `"${entry.label}" is not shared with another portal destination`);
+
+  // ── 5. It is the sidebar's ONE standout row, and the highlight costs the row no width ─────────
+  //
+  // The owner asked for "a special highlight in side bar" (2026-09-30), hours after the premium
+  // launcher built for the same want was called awful and reverted whole (#4958). So the shape of
+  // the answer matters as much as the fact of it, and three things are pinned here.
+
+  // A standout is only a standout while it is alone. A second highlighted row is the failure mode:
+  // nothing about it errors, the sidebar simply stops having a flagship.
+  assert.equal(
+    (layout.match(/highlight: true as const/g) ?? []).length,
+    1,
+    "exactly ONE sidebar row carries the highlight — a second one and neither is a standout",
+  );
+
+  // The row keeps its square edges: the owner's no-round-corners rule, and the reason the highlighted
+  // row drops the `rounded` its siblings still carry.
+  assert.match(
+    layout,
+    /\$\{highlighted \? "" : "rounded"\}/,
+    "the highlighted row is square-edged, per the no-round-corners rule",
+  );
+
+  // A padlock outranks a flagship: "you cannot open this" must not be dressed as the best row here.
+  assert.match(
+    layout,
+    /const highlighted = item\.highlight === true && !locked;/,
+    "a locked row keeps its padlock treatment rather than the highlight",
+  );
+
+  // The rail lives OUTSIDE the link, absolutely positioned and click-through. This is the assertion
+  // that matters structurally: the portal's label span has no `truncate`, so a node added INSIDE the
+  // row's flex line pushes a long label onto a second line — and wrapping is what the owner's
+  // no-horizontal-scroll rule forbids. Proven by position, not by reading the class alone.
+  const railClass = 'className="pointer-events-none absolute inset-y-0 left-0 w-[2px] bg-[#F05A1A]"';
+  const labelAt = layout.indexOf('<span className={locked ? "opacity-70" : undefined}>{item.label}</span>');
+  assert.ok(labelAt > 0, "the row still renders its label span");
+  const linkClosesAt = layout.indexOf("</Link>", labelAt);
+  const railAt = layout.indexOf(railClass);
+  assert.ok(railAt > 0, "the highlighted row draws an orange rail on its left edge");
+  assert.ok(
+    railAt > linkClosesAt && linkClosesAt > labelAt,
+    "the rail sits AFTER the link, outside the row's flex line — inside it, it would add width and wrap a long label",
+  );
 }
