@@ -55,7 +55,6 @@ export async function runPhoenixCrmBrickTintsTests(): Promise<void> {
     for (const path of [
       "src/components/phoenix-crm/customer-list-board.tsx",
       "src/components/phoenix-crm/visit-customer-picker.tsx",
-      "src/components/phoenix-crm/today-tab.tsx",
     ]) {
       const text = stripComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"));
       assert.ok(text.includes("brick-tints"), `${path} must take the palette from the one module`);

@@ -174,11 +174,13 @@ export function runPhoenixCrmTodayTests(): void {
     }
 
     // The screen says it, and offers no way to send from here.
-    const tab = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/today-tab.tsx", import.meta.url), "utf8"));
-    assert.ok(tab.includes("message={view.emptyReason ?? undefined}"), "the screen says which state the plan is in");
-    assert.ok(!tab.includes("planNote"), "in ONE box, never a second one beside the empty state");
-    assert.ok(!tab.includes("plans/submit"), "and Today never sends a plan");
-    assert.ok(!/Send this week/.test(tab), "nor offers to");
+    // 🔴 THERE IS NO TODAY SCREEN ANY MORE (owner, 2026-09-30) — the rule is read by the rep's
+    // LANDING panel, which renders nothing at all when there is no approved day, so an unapproved
+    // plan shows no panel rather than a sentence in a box.
+    const panel = stripCommentsCompact(readFileSync(new URL("../src/components/employee-portal/rep-today-plan-panel.tsx", import.meta.url), "utf8"));
+    assert.ok(panel.includes("if (!plan) return null;"), "no day, no panel — never an empty square");
+    assert.ok(!panel.includes("plans/submit"), "and the panel never sends a plan");
+    assert.ok(!/Send this week/.test(panel), "nor offers to");
 
     // Nor does Add visit: the step that sent an unapproved week is gone from the flow.
     const flow = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/visits-tab.tsx", import.meta.url), "utf8"));
@@ -216,23 +218,25 @@ export function runPhoenixCrmTodayTests(): void {
     assert.ok(loader.includes("const reference = place ? null : (references.get(customerId) ?? null);"), "a validated customer never reads the reference");
   }
 
-  // ── The shell opens on it, and a manager with a decision still lands on Team ────────────────────
+  // ── WHAT THE APP OPENS ON, NOW THAT TODAY IS RETIRED ───────────────────────────────────────────
+  //
+  // 🔴 The module opened on Today and the Super Admin's bar carried eight tabs. Both are gone: the
+  // owner retired Today from Phoenix CRM on 2026-09-30 (its replacement is the rep's landing panel),
+  // and the portal's modules are separate pages with no bar at all. A manager with a decision waiting
+  // still has to reach Team first, which is what this keeps.
   {
     const app = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/phoenix-crm-app.tsx", import.meta.url), "utf8"));
     const start = app.indexOf("function openingTab(");
     assert.notEqual(start, -1);
     const body = app.slice(start, start + 800);
-    const team = body.indexOf('decisions > 0) return "team"');
-    const today = body.indexOf('return "today"');
-    assert.notEqual(team, -1, "the Team branch is still there");
-    assert.notEqual(today, -1, "and the app opens on Today");
-    assert.ok(team < today, "a manager with a real decision waiting lands on Team FIRST — Today must not take that away from him");
+    assert.notEqual(body.indexOf('decisions > 0) return "team"'), -1, "the Team branch is still there");
+    assert.ok(!body.includes('return "today"'), "and nothing opens on Today any more");
 
-    // 🔴 Eight tabs need an eighth grid, or the Super Admin's bar wraps onto a shrunken second line.
-    assert.ok(app.includes('8: "grid-cols-2 sm:grid-cols-4 lg:grid-cols-8"'), "the eighth tab count has its own grid");
     const order = /const TAB_ORDER: readonly TabKey\[\] = \[([^\]]+)\]/.exec(app)?.[1] ?? "";
-    assert.equal(order.split(",").length, 8, "TAB_ORDER and TAB_COLUMNS must agree, or the bar has no grid at its own width");
-    assert.ok(order.trimStart().startsWith('"today"'), "Today is the first tab");
+    assert.equal(order.split(",").length, 7, "TAB_ORDER and TAB_COLUMNS must agree, or the bar has no grid at its own width");
+    assert.ok(!order.includes('"today"'), "🔴 Today is not a tab — do not add it back; its replacement is RepTodayPlanPanel");
+    assert.ok(app.includes('7: "grid-cols-3 sm:grid-cols-4 lg:grid-cols-7"'), "seven tabs have their own grid");
+    assert.ok(!app.includes("today-tab"), "and the retired screen is gone from the shell");
   }
 
   // ── The screen shows him nothing that judges him ────────────────────────────────────────────────
@@ -240,7 +244,7 @@ export function runPhoenixCrmTodayTests(): void {
   // This is the assertion that stops Today quietly becoming the place the distances live: it is the
   // rep's most-opened screen, which makes it the most tempting one.
   {
-    for (const path of ["src/lib/phoenix-crm/server/today.ts", "src/lib/phoenix-crm/today-rules.ts", "src/components/phoenix-crm/today-tab.tsx"]) {
+    for (const path of ["src/lib/phoenix-crm/server/today.ts", "src/lib/phoenix-crm/today-rules.ts", "src/components/employee-portal/rep-today-plan-panel.tsx"]) {
       const code = source(path);
       for (const word of [/distance/i, /accuracy/i, /\bfar\b/i, /spread/i, /integrity/i, /\bflagg?ed\b/i, /suspic/i]) {
         assert.equal(word.test(code), false, `${path} must not carry ${word} onto the rep's own day`);
@@ -248,32 +252,58 @@ export function runPhoenixCrmTodayTests(): void {
     }
   }
 
-  // ── The dashboard: AM and PM as two sections, never one total (owner, 2026-09-29) ───────────────
+  // ── THE REP'S LANDING PANEL — WHAT REPLACED TODAY (owner, 2026-09-30) ──────────────────────────
   //
-  // "A dashboard of today's visits, done and not done" — and the call-rate rule says AM and PM are
-  // never summed or averaged. The old screen's "Planned today" tile counted `view.stops.length`, one
-  // number over both lists; that is exactly the total this pins out.
+  // 🔴 His own spec, retiring the module: "you will retire it from Phoenix CRM, and make something
+  // like it — of course NOT a big tool like this — in the rep's landing page. For example you put the
+  // BRICKS as headers, if MORE THAN ONE brick, and under each brick the customers planned to be
+  // visited today. When he has visited one it is coloured GREEN; if not visited it is not coloured.
+  // And a very small PLUS sign that redirects him to enter a visit for that person."
+  //
+  // So this pins the four things he named, and the two page rules the panel inherits.
   {
-    const tab = source("src/components/phoenix-crm/today-tab.tsx");
-    assert.ok(tab.includes('const LIST_TYPES: readonly PhoenixCrmListType[] = ["AM", "PM"];'), "the plan is drawn as an AM section and a PM section, AM first");
-    assert.ok(tab.includes("LIST_TYPES.map((listType)"), "one section per list type");
-    assert.equal(
-      /(done|planned)(Am|Pm)\s*\+\s*[\w.]*(done|planned)(Am|Pm)|value=\{`\$\{view\.stops\.length\}`\}/.test(tab),
-      false,
-      "AM and PM are never added into one figure",
-    );
-    assert.ok(tab.includes("view.alsoVisited.map"), "the visits off the plan are shown beside it");
-    assert.ok(tab.includes("unplannedKindLabel(extra.offKind)"), "each with its kind — out of plan or out of list");
-    assert.ok(tab.includes("view.plannedActivity") && tab.includes("view.dayActivity"), "and the day's activity, planned and recorded");
+    const panel = source("src/components/employee-portal/rep-today-plan-panel.tsx");
 
-    // 🔴 The envelope is opened ONCE. The route answers `{ today: TodayView }` and `useCrmGet(url,
-    // "today")` already returns what sits under that key; the first screen typed the answer as
-    // `{ today: TodayView }` and read `.today` again — always undefined, so Today never left its
-    // loading state and nothing anywhere said why.
-    const route = source("app/api/phoenix-crm/today/route.ts");
-    assert.ok(route.includes("NextResponse.json({ today, success: true })"), "the route answers under the key `today`");
-    assert.ok(tab.includes('useCrmGet<TodayView>(crmUrl("/api/phoenix-crm/today", { seatId, test }), "today")'), "the screen reads that key once");
-    assert.equal(/data\?\.today|<\{ today: TodayView \}>/.test(tab), false, "and never opens the envelope a second time");
+    // 1. Bricks as headers, ONLY when there is more than one.
+    assert.ok(panel.includes("const showBrickHeaders = plan.bricks.length > 1;"), "bricks head the list only when there is more than one");
+    assert.ok(panel.includes("{showBrickHeaders ? ("), "and the header is conditional on it");
+
+    // 2. Green when visited, nothing when not — carried by a tick as well as the colour, so it
+    //    survives a grey screenshot and a colour-blind reader.
+    assert.match(panel, /stop\.done\s*\?[\s\S]{0,160}bg-emerald-50/, "a visited customer is green");
+    assert.match(panel, /:\s*"flex min-w-0 items-center gap-2 border border-slate-200 bg-white/, "and one not visited carries no colour at all");
+    assert.ok(panel.includes("<Check aria-hidden"), "the tick says it too");
+
+    // 3. The very small plus, into Add visit on that person.
+    assert.ok(panel.includes("function addVisitHref(stop: RepTodayStop)"), "the plus has one address");
+    assert.match(panel, /\?customer=\$\{encodeURIComponent\(stop\.customerId\)\}/, "which names the customer");
+    assert.ok(panel.includes('phoenixCrmModulePath(PHOENIX_CRM_PORTAL_BASE, "visits")'), "and points at the Visits module's own page");
+    assert.ok(panel.includes('className="flex h-7 w-7'), "very small, and still a comfortable tap");
+    assert.ok(panel.includes("<Plus aria-hidden"), "and it is a plus sign");
+    assert.ok(panel.includes("stop.done || !canAdd ? null :"), "no plus on one he has already done");
+
+    // 4. 🔴 AM and PM APART, never summed — the call-rate golden rule reaches this panel's counts.
+    assert.match(panel, /\{plan\.amDone\} of \{plan\.amPlanned\} AM/);
+    assert.match(panel, /\{plan\.pmDone\} of \{plan\.pmPlanned\} PM/);
+    assert.equal(/(am|pm)(Done|Planned)\s*\+\s*[\w.]*(am|pm)(Done|Planned)/i.test(panel), false, "AM and PM are never added into one figure");
+
+    // The landing page's own rules: no empty square, and nothing that judges him.
+    assert.ok(panel.includes("if (!plan) return null;"), "no day, no panel — never the empty square he has sworn at");
+    assert.doesNotMatch(panel, /distance|accuracy|integrity|flag|far from/i, "and nothing on it judges him (golden rule #1)");
+    assert.doesNotMatch(panel, /rounded(?!-none)/, "square corners, written out");
+    assert.doesNotMatch(panel, /…|truncate/, "and nothing is cut off");
+
+    // The loader never throws onto the landing page, and reads HIS OWN territory.
+    const loader = source("src/lib/phoenix-crm/server/rep-landing.ts");
+    assert.ok(loader.includes("const [own] = viewer.ownTerritories;"), "his own territory, not a manager's board");
+    assert.ok(loader.includes("if (view.stops.length === 0) return null;"), "no stops, no panel");
+    assert.match(loader, /catch \(error\) \{/, "and a failed read never takes the landing page down with it");
+
+    // It is wired in, for the rep and through the one switch.
+    const centre = source("src/components/employee-portal/portal-command-center.tsx");
+    assert.ok(centre.includes("<RepTodayPlanPanel plan={repTodayPlan} />"), "the rep's landing page draws it");
+    const home = source("app/employee-portals/page.tsx");
+    assert.ok(home.includes("const repTodayPlan = await loadRepTodayPlan(access);"), "and the page loads it");
   }
 
   console.log("phoenix-crm today: OK");

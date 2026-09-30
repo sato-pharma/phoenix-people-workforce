@@ -31,7 +31,7 @@ export const PHOENIX_CRM_PORTAL_BASE = "/employee-portals/field-crm";
  * build. `server/page.ts` carries a compile-time check that this union and `keyof PhoenixCrmTabs`
  * still agree, so adding a tab without giving it a card cannot compile.
  */
-export type PhoenixCrmModuleKey = "today" | "visits" | "list" | "plan" | "team" | "doctors" | "reports" | "settings";
+export type PhoenixCrmModuleKey = "visits" | "list" | "plan" | "team" | "doctors" | "reports" | "settings";
 
 export type PhoenixCrmModule = {
   key: PhoenixCrmModuleKey;
@@ -56,7 +56,6 @@ export type PhoenixCrmModule = {
  * then the reading. `settings` is last because it is the Super Admin's.
  */
 export const PHOENIX_CRM_MODULES: readonly PhoenixCrmModule[] = [
-  { key: "today", slug: "today", label: "Today", blurb: "Your approved day — who to see, where they are, and one tap to add each visit." },
   { key: "visits", slug: "visits", label: "Visits", blurb: "Add a visit, and read back the ones you entered today." },
   { key: "list", slug: "list", label: "List", blurb: "Your customers: validate them at the clinic, keep their days and hours, ask to add or drop." },
   { key: "plan", slug: "plan", label: "Plan", blurb: "Build the month and its weeks, and send them for approval." },

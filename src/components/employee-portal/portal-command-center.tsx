@@ -24,6 +24,7 @@ import {
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
+import { RepTodayPlanPanel } from "@/components/employee-portal/rep-today-plan-panel";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
 import { NsmCommandCenter } from "@/components/employee-portal/dashboards/nsm-command-center";
@@ -33,6 +34,7 @@ import { PlanAdherenceDashboardCard } from "@/components/weekly-planning/plan-ad
 import type { AccessContext } from "@/lib/auth/permissions";
 import { MyInterviewsCard } from "@/components/employee-portal/my-interviews-card";
 import type { PortalHomeSnapshot, PortalMyInterview } from "@/lib/employee-portal/home-snapshot";
+import type { RepTodayPlan } from "@/lib/phoenix-crm/server/rep-landing";
 import type { PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import { currentCairoDateParts, PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
@@ -1070,7 +1072,7 @@ const REP_TOOLS: { href: string; label: string }[] = [
   { href: "/employee-portals/expenses", label: "Outstation expenses" },
 ];
 
-function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
+function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: RepTodayPlan | null; snapshot: PortalHomeSnapshot }) {
   const {
     shell,
     pendingVacationCount,
@@ -1135,6 +1137,10 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
     <div className="mx-auto w-full space-y-2" dir="auto">
       <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} myInterviews={snapshot.myInterviews} />
       <PortalContextBar context="Field Performance" role="Medical Representative" />
+
+      {/* His day, first — it is the one thing on this page he ACTS on. Renders nothing when there is
+          no approved plan for today, so it can never be the empty square he has sworn at. */}
+      <RepTodayPlanPanel plan={repTodayPlan} />
 
       {/* Four measurements, no ornament. Coverage and frequency stand apart on purpose: they
           disagree by design — production has run 68% coverage against 39% frequency in one month —
@@ -1583,7 +1589,16 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
  * below renders as its first element. Do not reintroduce a wrapper here: whatever is added would
  * land above the identity card again.
  */
-export function PortalCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
+export function PortalCommandCenter({
+  access,
+  repTodayPlan = null,
+  snapshot,
+}: {
+  access?: AccessContext;
+  /** The rep's planned day — what replaced the Phoenix CRM Today module (owner, 2026-09-30). */
+  repTodayPlan?: RepTodayPlan | null;
+  snapshot: PortalHomeSnapshot;
+}) {
   switch (snapshot.role) {
     case "Product Manager":
     case "Group Product Manager":
@@ -1597,6 +1612,6 @@ export function PortalCommandCenter({ snapshot, access }: { snapshot: PortalHome
     case "Regional Manager":
       return <RmCommandCenter snapshot={snapshot} access={access} />;
   }
-  if (snapshot.role.toLowerCase() === "medical rep") return <MedicalRepCommandCenter snapshot={snapshot} />;
+  if (snapshot.role.toLowerCase() === "medical rep") return <MedicalRepCommandCenter repTodayPlan={repTodayPlan} snapshot={snapshot} />;
   return <StandardCommandCenter snapshot={snapshot} />;
 }

@@ -37,7 +37,6 @@ import { PlanBoard } from "@/components/phoenix-crm/plan-board";
 import { ReportsTab } from "@/components/phoenix-crm/reports-tab";
 import { SettingsTab } from "@/components/phoenix-crm/settings-tab";
 import { TeamTab } from "@/components/phoenix-crm/team-tab";
-import { TodayTab } from "@/components/phoenix-crm/today-tab";
 import {
   CrmBlock,
   CrmButton,
@@ -57,10 +56,9 @@ import { cn } from "@/lib/utils";
 
 type TabKey = keyof PhoenixCrmTabs;
 
-const TAB_ORDER: readonly TabKey[] = ["today", "visits", "list", "plan", "team", "doctors", "reports", "settings"];
+const TAB_ORDER: readonly TabKey[] = ["visits", "list", "plan", "team", "doctors", "reports", "settings"];
 
 const TAB_LABELS: Record<TabKey, string> = {
-  today: "Today",
   visits: "Visits",
   list: "List",
   plan: "Plan",
@@ -95,13 +93,13 @@ const TAB_COLUMNS: Record<number, string> = {
 };
 
 /** The tabs that show one territory, chosen with the picker above them. */
-type SeatTab = "today" | "visits" | "list" | "plan";
+type SeatTab = "visits" | "list" | "plan";
 
-const SEAT_TABS: readonly SeatTab[] = ["today", "visits", "list", "plan"];
+const SEAT_TABS: readonly SeatTab[] = ["visits", "list", "plan"];
 
 /** The tabs that can hold work the page keeps while another tab is open. Reports and Doctors hold none. */
 /** Today holds none either: it is a read, and every action on it opens another tab. */
-type HoldingTab = Exclude<TabKey, "reports" | "doctors" | "today">;
+type HoldingTab = Exclude<TabKey, "reports" | "doctors">;
 
 /** Each tab's work, as the question before letting it go names it. */
 const HELD_WORK: Record<HoldingTab, string> = {
@@ -171,7 +169,6 @@ function openingTab(overview: PhoenixCrmOverview, requested: string | null): Tab
   if (tabs.team && !viewer.isSuperAdmin && visitSeatIds.length === 0) return "team";
   // A2 (owner, 2026-09-26): he opens the app onto his DAY, not onto a tab bar. A manager with a real
   // decision waiting still lands on Team — the two branches above run first on purpose.
-  if (tabs.today && visitSeatIds.length > 0) return "today";
   return allowed[0] ?? "visits";
 }
 
@@ -366,7 +363,6 @@ export function PhoenixCrmApp({
   }
   const activeTab: TabKey = tabs.includes(tab) ? tab : (tabs[0] ?? "visits");
   const seats: Record<SeatTab, string | null> = {
-    today: seatOf(overview, "today", chosenSeat),
     list: seatOf(overview, "list", chosenSeat),
     plan: seatOf(overview, "plan", chosenSeat),
     visits: seatOf(overview, "visits", chosenSeat),
@@ -448,8 +444,6 @@ export function PhoenixCrmApp({
       if ((viewer.isSuperAdmin && move.test) === test) return [];
       return (["visits", "list", "plan", "team"] as const).filter(isHeld);
     }
-    // Today is a SeatTab but not a HoldingTab — it is a read, and nothing on it can be lost.
-    //
     // The guard is re-typed for SeatTab rather than reused as-is: `isHoldingTab` takes a TabKey and
     // narrows to HoldingTab, which is NOT a subtype of SeatTab (it also holds team and settings), so
     // `filter` cannot pick its narrowing overload and hands back SeatTab[] with no complaint until
@@ -816,29 +810,6 @@ export function PhoenixCrmApp({
         <CrmPanel eyebrow={TAB_LABELS[key]} title={TAB_LABELS[key]}>
           <CrmEmpty message="A territory shows here once its line opens in Phoenix CRM." title="No territory to show" />
         </CrmPanel>
-      );
-    }
-    if (key === "today") {
-      return (
-        <TodayTab
-          key={`${seatId}|${test}`}
-          onOpenPlan={() => openTab("plan")}
-          // A2: the Add-visit button REUSES the module's existing hand-off, so Add Visit opens with the
-          // customer already chosen and there is no new plumbing and no new step in his day. The photo
-          // is null because this is not the validate-then-visit path.
-          onAddVisit={(customerId, customerName) =>
-            // `validatedAtMs` is the phone's clock at the hand-off, which Add Visit uses only to time
-            // out a REUSED validation photo. There is no photo on this path, so it is simply now.
-            startVisit({ customerId, customerName, photo: null, seatId, test, validatedAtMs: Date.now() })
-          }
-          onStartVisit={() => {
-            openTab("visits");
-            setAddVisitNonce((value) => value + 1);
-            scrollToTop();
-          }}
-          seatId={seatId}
-          test={test}
-        />
       );
     }
     if (key === "visits") {

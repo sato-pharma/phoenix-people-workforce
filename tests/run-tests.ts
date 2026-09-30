@@ -1641,7 +1641,6 @@ import { runPhoenixCrmPortalIntentTests } from "./phoenix-crm-portal-intent.test
 import { runPhoenixCrmTeamTodayTests } from "./phoenix-crm-team-today.test.ts";
 import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blocked.test.ts";
 import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
-import { runPhoenixCrmTodayGlanceTests } from "./phoenix-crm-today-glance.test.ts";
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
 import { runPhoenixCrmPlanSuggestTests } from "./phoenix-crm-plan-suggest.test.ts";
@@ -5643,11 +5642,6 @@ await runTest(
 await runTest(
   "Phoenix CRM split modules (owner, 2026-09-30, given priority): the sidebar opens a CHOOSER and never a module, each module is its own page with its own address, ?tab= and ?add= are forwarded not dropped, a module he may not open is a sentence not a 404, and the module list cannot drift from the overview's tab flags",
   runPhoenixCrmSplitModulesTests,
-);
-
-await runTest(
-  "Phoenix CRM Today at a glance (owner, 2026-09-30: the best-appearing and easiest CRM): AM and PM progress apart, never summed; Next up picks who receives now, then soonest, then no hours, then not today, the plan's brick order breaking ties; its Log visit is the row's own hand-off; nothing on it judges the rep",
-  runPhoenixCrmTodayGlanceTests,
 );
 
 await runTest(

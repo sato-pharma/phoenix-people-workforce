@@ -35,7 +35,6 @@ function source(path: string): string {
 }
 
 const ALL: Record<PhoenixCrmModuleKey, boolean> = {
-  today: true,
   visits: true,
   list: true,
   plan: true,
@@ -50,8 +49,8 @@ export function runPhoenixCrmSplitModulesTests(): void {
   {
     assert.deepEqual(
       PHOENIX_CRM_MODULE_KEYS,
-      ["today", "visits", "list", "plan", "team", "doctors", "reports", "settings"],
-      "the rep's day first, then the work he does on it, then the reading, and Settings last",
+      ["visits", "list", "plan", "team", "doctors", "reports", "settings"],
+      "the work he does first, then the reading, and Settings last — `today` was RETIRED (owner, 2026-09-30)",
     );
     assert.equal(PHOENIX_CRM_MODULES.length, PHOENIX_CRM_MODULE_KEYS.length);
     for (const entry of PHOENIX_CRM_MODULES) {
@@ -98,7 +97,7 @@ export function runPhoenixCrmSplitModulesTests(): void {
   {
     assert.deepEqual(allowedPhoenixCrmModules(ALL).map((entry) => entry.key), PHOENIX_CRM_MODULE_KEYS);
     const rep = { ...ALL, team: false, settings: false, "doctors": false };
-    assert.deepEqual(allowedPhoenixCrmModules(rep).map((entry) => entry.key), ["today", "visits", "list", "plan", "reports"]);
+    assert.deepEqual(allowedPhoenixCrmModules(rep).map((entry) => entry.key), ["visits", "list", "plan", "reports"]);
     const none = Object.fromEntries(PHOENIX_CRM_MODULE_KEYS.map((key) => [key, false])) as Record<PhoenixCrmModuleKey, boolean>;
     assert.deepEqual(allowedPhoenixCrmModules(none), [], "and nothing at all when he holds nothing");
   }
