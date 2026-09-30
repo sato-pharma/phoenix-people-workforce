@@ -77,6 +77,11 @@ function customer(overrides: Partial<ListCustomer> = {}): ListCustomer {
     tier: 0,
     pendingGradeRequestId: null,
     pendingGrade: null,
+    // 🔴 EVERY field of ListCustomer must be listed here, even the ones this fixture does not
+    // care about: the trailing `...overrides` is a Partial, so its type carries `| undefined`, and a
+    // field supplied ONLY by the spread makes the whole object stop being assignable. Three rounds of
+    // red CI in one afternoon (sharedWith + observed, then planPattern, then referenceHistory) were
+    // each this and nothing else. Widening ListCustomer? Add the field here in the same change.
     pendingDropRequestId: null,
     waiting: [],
     primaryPharmacyName: null,
@@ -86,6 +91,7 @@ function customer(overrides: Partial<ListCustomer> = {}): ListCustomer {
     sharedWith: null,
     observed: null,
     planPattern: null,
+    referenceHistory: null,
     ...overrides,
   };
 }
