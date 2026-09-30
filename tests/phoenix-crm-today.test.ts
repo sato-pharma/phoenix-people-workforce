@@ -8,7 +8,7 @@ import {
   compareTodayStops,
   NO_HOURS_YET,
   NO_PLACE_YET,
-  planUnsentNote,
+  planStatusNote,
   stopWhereLine,
   todayByBrick,
   todayEmptyReason,
@@ -115,71 +115,79 @@ export function runPhoenixCrmTodayTests(): void {
 
   // ── An empty day says WHY, in his own terms ─────────────────────────────────────────────────────
   {
-    assert.equal(todayEmptyReason({ hasPlan: true, isFieldDay: false, stops: 0 }), "Today is not a field day.");
-    assert.match(String(todayEmptyReason({ hasPlan: false, isFieldDay: true, stops: 0 })), /No plan has been sent/);
-    assert.equal(todayEmptyReason({ hasPlan: true, isFieldDay: true, stops: 0 }), "Nobody is planned for today.");
-    assert.equal(todayEmptyReason({ hasPlan: true, isFieldDay: true, stops: 3 }), null, "a day with stops says nothing at all");
+    assert.equal(todayEmptyReason({ status: "approved", isFieldDay: false, stops: 0 }), "Today is not a field day.");
+    assert.match(String(todayEmptyReason({ status: null, isFieldDay: true, stops: 0 })), /No plan has been sent/);
+    // 🔴 ONE SENTENCE, NEVER TWO: Today shows the APPROVED plan only, so an unapproved plan ALWAYS
+    // has zero stops — this reason and the plan’s status note therefore always fired together and the
+    // screen carried both. The note IS the reason now.
+    assert.match(String(todayEmptyReason({ status: "submitted", isFieldDay: true, stops: 0 })), /still pending approval/);
+    assert.match(String(todayEmptyReason({ status: "draft", isFieldDay: true, stops: 0 })), /has not been sent yet/);
+    assert.match(String(todayEmptyReason({ status: "returned", isFieldDay: true, stops: 0 })), /sent back to you/);
+    assert.equal(todayEmptyReason({ status: "approved", isFieldDay: true, stops: 0 }), "Nobody is planned for today.");
+    assert.equal(todayEmptyReason({ status: "approved", isFieldDay: true, stops: 3 }), null, "a day with stops says nothing at all");
+    assert.equal(todayEmptyReason({ status: null, isFieldDay: true, stops: 3 }), null, "stops outrank every reason");
   }
 
-  // ── THE DAY HE PLANNED IS SHOWN WHATEVER THE PLAN'S STATUS (owner, 2026-09-30) ─────────────────
+  // ── TODAY SHOWS THE APPROVED PLAN, AND NOTHING ELSE (owner, 2026-09-30) ────────────────────────
   //
-  // "in today show me my today plan am/pm/ph, list all drs of today with timing and location." It
-  // read a SENT plan only, so the moment a rep touched his week after sending it the plan went back
-  // to `draft` and Today answered "No plan has been sent for this week yet" — with 1 AM and 15 PM
-  // sitting on that very day. His own work, hidden from him, on the screen he drives the day from.
+  // His own words, overruling the same day's earlier attempt: "what appears in the today tab is the
+  // approved plan — the approved plan ONLY. If not approved, show that the plan is still pending
+  // approval." Today had briefly shown the day for a plan in any state, with a button to send it from
+  // here; both are gone. Today is the day he has been CLEARED to work.
   //
-  // 🔴 SHOWING IT IS NOT COUNTING IT. What makes a visit count as PLANNED is still decided server
-  // side against a plan that reached `submitted`/`approved` BEFORE the visit's captured_at — that is
-  // `plannedCustomerIds`, a different reader, and it must keep its status filter or the rep can place
-  // a customer at the door and have it count. This screen only shows and offers Add visit.
+  // 🔴 AND THIS IS WHAT CLOSES THE OUT-OF-PLAN TRAP HE FOUND — by construction, not by a special case.
+  // Every customer Today can show sits on an APPROVED plan, and `plannedCustomerIds` counts
+  // submitted AND approved, so approved is a SUBSET of what the server counts as planned: the visit
+  // route cannot reach the out-of-plan reason screen from a Today row at all.
   {
     const visits = stripCommentsCompact(readFileSync(new URL("../src/lib/phoenix-crm/server/visits.ts", import.meta.url), "utf8"));
+    const loader = stripCommentsCompact(readFileSync(new URL("../src/lib/phoenix-crm/server/today.ts", import.meta.url), "utf8"));
 
+    // Today's reader reports the STATUS and never decides for itself.
     const start = visits.indexOf("export async function plannedCustomersOn");
     assert.notEqual(start, -1, "plannedCustomersOn is exported");
     const body = visits.slice(start, visits.indexOf("\n}", start));
-    assert.ok(body.includes("hasPlan: false"), "a week with no plan at all is still its own answer");
-    assert.ok(
-      !body.includes('.in("status", ["submitted", "approved"])'),
-      "Today must not filter the plan by status — a draft day is still his day",
-    );
-    assert.ok(body.includes('.select("id, status")'), "it reads the status");
-    assert.ok(
-      body.includes('sent: status === "submitted" || status === "approved"'),
-      "and reports whether it is sent, so the screen can say so without hiding the day",
-    );
+    assert.ok(body.includes("status: PhoenixCrmPlanStatus | null"), "it hands back the status");
+    assert.ok(!body.includes('.in("status"'), "and filters nothing itself");
 
-    // The counting reader keeps its filter. This is the half that must never loosen.
+    // The loader shows stops for an APPROVED plan only.
+    assert.ok(loader.includes('const approvedIds = planned.status === "approved" ? planned.customerIds : [];'), "the approved plan only");
+    assert.ok(loader.includes("for (const customerId of approvedIds) {"), "and the stops are built from it");
+    assert.ok(!/for \(const customerId of planned\.customerIds\)/.test(loader), "never from the plan's rows regardless of status");
+    assert.ok(loader.includes("status: planned.status,"), "and the empty reason names which state an unapproved plan is in");
+
+    // 🔴 The counting reader is untouched and still wider than Today, which is what makes the trap
+    // impossible: approved ⊂ {submitted, approved}.
     const counting = visits.indexOf("async function plannedCustomerIds");
-    assert.notEqual(counting, -1, "plannedCustomerIds is still there");
     const countingBody = visits.slice(counting, visits.indexOf("\n}", counting));
-    assert.ok(
-      countingBody.includes('"submitted"') && countingBody.includes('"approved"'),
-      "what COUNTS as planned still requires a sent plan",
-    );
-  }
+    assert.ok(countingBody.includes('.in("status", ["submitted", "approved"])'), "what COUNTS as planned still takes either");
 
-  // ── The reason, and the note that replaces hiding the day ──────────────────────────────────────
-  {
-    // A day with stops says nothing at all, whether or not the week is sent.
-    assert.equal(todayEmptyReason({ hasPlan: true, isFieldDay: true, stops: 3 }), null);
-    assert.equal(todayEmptyReason({ hasPlan: false, isFieldDay: true, stops: 3 }), null, "stops outrank every reason");
-    assert.match(String(todayEmptyReason({ hasPlan: false, isFieldDay: true, stops: 0 })), /No plan has been sent/);
-    assert.equal(todayEmptyReason({ hasPlan: true, isFieldDay: true, stops: 0 }), "Nobody is planned for today.");
-    assert.equal(todayEmptyReason({ hasPlan: true, isFieldDay: false, stops: 5 }), "Today is not a field day.");
+    // Each status earns its own sentence. `submitted` is his wording; the other two are named as
+    // themselves, because "pending approval" would be untrue of a plan nobody has yet.
+    assert.equal(planStatusNote("approved"), null, "an approved plan says nothing — the day speaks");
+    assert.equal(planStatusNote(null), null, "and no plan at all is the empty reason's job, not this one");
+    assert.match(String(planStatusNote("submitted")), /still pending approval/, "his own words for a plan waiting on someone");
+    assert.match(String(planStatusNote("draft")), /has not been sent yet/, "a draft is not pending anything");
+    assert.match(String(planStatusNote("returned")), /sent back to you/, "and a returned plan is waiting on HIM");
+    for (const status of ["draft", "submitted", "returned"] as const) {
+      assert.doesNotMatch(String(planStatusNote(status)), /Send this week/, "the sending lives on Plan, never here");
+    }
 
-    // The note fires only where it is true, and it never fires on an empty day — there the reason
-    // already says it, and two sentences saying the same thing is what the walk of 2026-09-30 removed.
-    assert.equal(planUnsentNote({ hasPlan: true, sent: false, stops: 16 }), "This week is still a draft. Your day is below — send the week on Plan when it is ready.");
-    assert.equal(planUnsentNote({ hasPlan: true, sent: true, stops: 16 }), null, "a sent week says nothing");
-    assert.equal(planUnsentNote({ hasPlan: true, sent: false, stops: 0 }), null, "an empty day has no day to introduce");
-    assert.equal(planUnsentNote({ hasPlan: false, sent: false, stops: 0 }), null);
-
+    // The screen says it, and offers no way to send from here.
     const tab = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/today-tab.tsx", import.meta.url), "utf8"));
-    assert.ok(tab.includes("{view.unsentNote ?"), "the screen says it");
-    // It is a note, never a gate: nothing about the draft may disable Add visit or the rows.
-    assert.ok(!/unsentNote[^\n]*\?\s*null\s*:/.test(tab), "the note never stands in place of the day");
-    assert.ok(!/disabled=\{[^}]*unsentNote/.test(tab), "and it never disables anything");
+    assert.ok(tab.includes("message={view.emptyReason ?? undefined}"), "the screen says which state the plan is in");
+    assert.ok(!tab.includes("planNote"), "in ONE box, never a second one beside the empty state");
+    assert.ok(!tab.includes("plans/submit"), "and Today never sends a plan");
+    assert.ok(!/Send this week/.test(tab), "nor offers to");
+
+    // Nor does Add visit: the step that sent an unapproved week is gone from the flow.
+    const flow = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/visits-tab.tsx", import.meta.url), "utf8"));
+    assert.ok(!flow.includes("send_week"), "no send-the-week step");
+    assert.ok(!flow.includes("plans/submit"), "and Add visit never sends a plan either");
+    const route = flow.slice(flow.indexOf("function routeFor("), flow.indexOf("\n}", flow.indexOf("function routeFor(")));
+    assert.ok(route.includes('if (customer.plannedToday) return { name: "form"'), "an approved customer goes straight to the form");
+    assert.ok(route.includes('return { name: "reason"'), "and someone genuinely off the plan still gives a reason");
+    assert.ok(!route.includes("plannedTodayUnsent"), "with no draft branch left");
   }
 
   // ── A CUSTOMER NOT VALIDATED YET STILL READS AS A PLACE ON THE ROUTE ───────────────────────────

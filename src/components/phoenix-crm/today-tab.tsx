@@ -14,7 +14,6 @@ import {
   CrmEmpty,
   CrmLoadError,
   CrmLoading,
-  CrmNote,
   CrmPanel,
   CrmPill,
   CrmTable,
@@ -515,20 +514,6 @@ export function TodayTab({
       {resource.error ? <CrmLoadError message={resource.error} onRetry={resource.reload} /> : null}
 
       <DayGlance view={view} />
-
-      {/*
-        His week is still a draft. The day is shown and every Add visit works — the note only says
-        the sending is outstanding, and links him to the one screen that does it. Never a refusal:
-        whether a visit COUNTS as planned is the server's decision against the sent plan, not this
-        screen's (owner, 2026-09-30).
-      */}
-      {view.unsentNote ? (
-        <div className="border-t border-slate-100 px-4 pt-4 sm:px-5">
-          <CrmNote tone="warn">
-            <span className="break-words">{view.unsentNote}</span>
-          </CrmNote>
-        </div>
-      ) : null}
 
       {view.stops.length === 0 ? (
         <div className="border-t border-slate-100">

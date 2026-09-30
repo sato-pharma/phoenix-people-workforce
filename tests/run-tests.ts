@@ -1642,6 +1642,7 @@ import { runPhoenixCrmStartGuideTests } from "./phoenix-crm-start-guide.test.ts"
 import { runPhoenixCrmPortalIntentTests } from "./phoenix-crm-portal-intent.test.ts";
 import { runPhoenixCrmTeamTodayTests } from "./phoenix-crm-team-today.test.ts";
 import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blocked.test.ts";
+import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
 import { runPhoenixCrmTodayGlanceTests } from "./phoenix-crm-today-glance.test.ts";
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
@@ -5652,6 +5653,11 @@ await runTest(
 await runTest(
   "Phoenix CRM answers the portal's + (owner, 2026-09-29: Add visit and Make weekly plan for a medical rep, first in the menu). The links name a tab and an ask the page reads; the page answers with a counter the tab watches, never a remount, so a visit half entered survives a stray tap; and the ask comes off the address once read, so the second tap on the same action is a change the page sees",
   runPhoenixCrmPortalIntentTests,
+);
+
+await runTest(
+  "Phoenix CRM split modules (owner, 2026-09-30, given priority): the sidebar opens a CHOOSER and never a module, each module is its own page with its own address, ?tab= and ?add= are forwarded not dropped, a module he may not open is a sentence not a 404, and the module list cannot drift from the overview's tab flags",
+  runPhoenixCrmSplitModulesTests,
 );
 
 await runTest(
