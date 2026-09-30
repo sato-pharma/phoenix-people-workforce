@@ -797,4 +797,54 @@ export function runRollupPrsTests(): void {
     assert.doesNotMatch(source, /Close the originals once this merges\./, "the hand-off note is retired");
     assert.match(source, /--settle\\` closes them/, "and the roll-up body names the command that does it");
   }
+
+  // ── 11. --apply puts the folder back on the branch it found, on SUCCESS as well as on failure ──
+  //
+  // `abandon()` restored `startedOn`; the happy path did not. So every run that WORKED left its
+  // folder parked on the roll-up branch, and the runs that failed were the tidy ones. On 2026-09-30
+  // that stranded the SHARED PRIMARY CHECKOUT on `codex/rollup-20260930-1000` — clean, silent, and
+  // read by every session that used the primary afterwards, where a bare `git` command resolves
+  // against whatever is checked out. Three more local `codex/rollup-*` branches were left the same
+  // way, and `new-session.mjs --remove` judges a worktree by the branch it finds checked out.
+  //
+  // This is pinned on the SOURCE because the restore is the last effect of a script whose whole body
+  // is top-level effects against a live repository and GitHub; the fixture harness above deliberately
+  // refuses `--apply`, so there is no run in which to observe it.
+  {
+    const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    const push = source.indexOf("git(['push', '--quiet', '--set-upstream', 'origin', branch]");
+    assert.notEqual(push, -1, "the push is still how the branch reaches origin");
+
+    // Between the push and `gh pr create`, and nowhere later. `gh()` exits the process on a GitHub
+    // failure, so a restore written after the PR call is skipped exactly when the build half-worked —
+    // pushed, no PR, folder moved. Nothing from the push onwards needs the branch checked out: the PR
+    // is created with `--head`, and a superseded PR is closed by number.
+    const create = source.indexOf("'pr', 'create', '--repo'");
+    assert.ok(create > push, "the PR is still created after the push");
+    const between = source.slice(push, create);
+    assert.match(
+      between,
+      /git\(\['switch', '--quiet', startedOn\], \{ cwd: root, allowFail: true \}\)/,
+      "after pushing, --apply must switch the folder back to the branch it started on — before the PR "
+        + "call, because gh() exits the process on failure and would skip a restore written below it",
+    );
+
+    // It must not be able to fail a roll-up that is already pushed and open, and it must not go quiet
+    // if it cannot happen — a folder moving with nothing announcing it IS the defect.
+    assert.match(between, /allowFail: true/, "a restore that cannot happen must not fail a pushed roll-up");
+    assert.match(between, /could not switch .* back to/, "and it must say so rather than move the folder in silence");
+
+    // The branch is pushed and carries an open PR, so unlike `abandon()` the success path deletes
+    // nothing: `branch -D` here would throw away the local copy of a branch under review.
+    assert.doesNotMatch(between, /'branch', '-D'/, "the success path must never delete the roll-up branch it just pushed");
+
+    // And `abandon()` keeps its own restore — this change adds a second one, it does not move the first.
+    const abandonStart = source.indexOf("function abandon(lines)");
+    assert.notEqual(abandonStart, -1);
+    assert.match(
+      source.slice(abandonStart, abandonStart + 600),
+      /git\(\['switch', '--quiet', startedOn\]/,
+      "the abandon path must still put the folder back too",
+    );
+  }
 }
