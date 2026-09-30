@@ -286,7 +286,34 @@ export function CrmStatGrid({ children, className }: { children: ReactNode; clas
   return <div className={cn("grid grid-cols-2 gap-2 md:grid-cols-4", className)}>{children}</div>;
 }
 
-export type CrmChoiceOption<T extends string> = { value: T; label: ReactNode; note?: ReactNode; disabled?: boolean };
+/**
+ * How full something is, as one square hairline — the shape Today's AM and PM bars already use, so a
+ * filling list reads the same everywhere: ORANGE while it fills, EMERALD the moment it is full.
+ */
+export function CrmFillBar({ full, label, of, value }: { full: boolean; label: string; of: number; value: number }) {
+  const percent = of > 0 ? Math.min(100, Math.round((value / of) * 100)) : 0;
+  return (
+    <div
+      aria-label={label}
+      aria-valuemax={of}
+      aria-valuemin={0}
+      aria-valuenow={value}
+      className="h-1.5 min-w-0 border border-slate-200 bg-slate-100"
+      role="progressbar"
+    >
+      <div className={cn("h-full transition-[width] duration-500", full ? "bg-emerald-600" : "bg-orange-500")} style={{ width: `${percent}%` }} />
+    </div>
+  );
+}
+
+export type CrmChoiceOption<T extends string> = {
+  value: T;
+  label: ReactNode;
+  note?: ReactNode;
+  disabled?: boolean;
+  /** "good" lights the option with an emerald rail and a soft bloom off it — a plan day that is full. */
+  tone?: "good";
+};
 
 /** A one-of-several pick that wraps onto more rows instead of scrolling sideways. */
 export function CrmChoice<T extends string>({
@@ -315,6 +342,10 @@ export function CrmChoice<T extends string>({
             className={cn(
               "min-h-11 min-w-0 rounded-none border px-3 py-2 text-left text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
               selected ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+              // Full: a 3px emerald rail with the colour blooming off it and fading away, never a
+              // flat fill — and the orange of the option he is on still wins.
+              option.tone === "good" &&
+                cn("border-l-[3px] border-l-emerald-500", selected ? "bg-orange-50" : "bg-gradient-to-r from-emerald-50 via-emerald-50/40 to-white"),
             )}
             disabled={option.disabled}
             key={option.value}

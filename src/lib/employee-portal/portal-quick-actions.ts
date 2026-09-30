@@ -18,7 +18,16 @@
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 
 /** The actions the portal offers. The id is what a component maps to an icon. */
-export type PortalQuickActionKey = "vacation" | "expense" | "direct-order" | "report-it" | "support";
+export type PortalQuickActionKey = "crm-visit" | "crm-plan" | "vacation" | "expense" | "direct-order" | "report-it" | "support";
+
+/**
+ * Phoenix CRM's two quick actions (owner, 2026-09-29: "the + in the bottom bar and the top bar — Add
+ * visit and Make weekly plan; Phoenix CRM is the module medical reps use most"). They open the module on
+ * the right screen through its own address (`?tab=…&add=…`, read by phoenix-crm-app.tsx); nothing is
+ * saved by the tap.
+ */
+export const PHOENIX_CRM_ADD_VISIT_HREF = "/employee-portals/field-crm?tab=visits&add=visit";
+export const PHOENIX_CRM_WEEKLY_PLAN_HREF = "/employee-portals/field-crm?tab=plan&add=week";
 
 export type PortalQuickAction = {
   /** The section this action lands in — the command bar shows it beside the label. */
@@ -43,7 +52,28 @@ export type PortalQuickAction = {
  * sidebar), and the flags are the same thing the row itself reads.
  */
 export function portalQuickActions(visibility: EmployeePortalNavVisibility): PortalQuickAction[] {
+  // A medical rep with Phoenix CRM open gets its two actions FIRST — they are what he starts most.
+  const phoenixCrm: PortalQuickAction[] =
+    visibility.showPhoenixCrmTab && visibility.showMedicalRepExpensesTab
+      ? [
+        {
+          hint: "Phoenix CRM",
+          href: PHOENIX_CRM_ADD_VISIT_HREF,
+          id: "crm-visit",
+          keywords: "visit customer call crm log",
+          label: "Add visit",
+        },
+        {
+          hint: "Phoenix CRM",
+          href: PHOENIX_CRM_WEEKLY_PLAN_HREF,
+          id: "crm-plan",
+          keywords: "plan week weekly schedule crm",
+          label: "Make weekly plan",
+        },
+      ]
+      : [];
   return [
+    ...phoenixCrm,
     {
       hint: "Leave & HR",
       href: "/employee-portals/vacation-request",

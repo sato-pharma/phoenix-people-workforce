@@ -33,7 +33,7 @@ import { logError } from "@/lib/observability/log";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
 
 export const PHOENIX_CRM_NOTIFICATION_MODULE = "phoenix_crm";
@@ -46,7 +46,7 @@ export type PhoenixCrmNotice =
       org: OrgIndex;
       seat: OrgSeat;
       requestId: string;
-      requestKind: "grade" | "drop";
+      requestKind: PhoenixCrmRequestKind;
       requesterHrId: string;
       customerName: string;
       listType: PhoenixCrmListType;
@@ -57,7 +57,7 @@ export type PhoenixCrmNotice =
       kind: "request_decided";
       seat: OrgSeat;
       requestId: string;
-      requestKind: "grade" | "drop";
+      requestKind: PhoenixCrmRequestKind;
       status: "approved" | "refused";
       deciderHrId: string;
       requesterHrId: string;
@@ -144,6 +144,26 @@ type Delivery = {
   subjectHrId: string | null;
 };
 
+/**
+ * The event each kind of waiting list request is sent as. One `eventType:` literal a line, on purpose:
+ * tests/phoenix-crm-email-block.test.ts reads every event type the module sends from those lines, so a
+ * template string would hide the add and bring-back notices from its email check.
+ */
+const REQUEST_WAITING: Record<PhoenixCrmRequestKind, { eventType: string }> = {
+  grade: {
+    eventType: "grade_request_waiting",
+  },
+  drop: {
+    eventType: "drop_request_waiting",
+  },
+  add: {
+    eventType: "add_request_waiting",
+  },
+  restore: {
+    eventType: "restore_request_waiting",
+  },
+};
+
 async function describe(notice: PhoenixCrmNotice): Promise<Delivery | null> {
   const territory = territoryName(notice.seat);
 
@@ -153,14 +173,26 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | null> {
     const names = await loadPeopleNames([notice.requesterHrId]);
     const rep = nameOf(names, notice.requesterHrId, "A rep");
     const customer = `${notice.customerName} (${notice.listType})`;
-    const grade = notice.requestKind === "grade";
+    const kind = notice.requestKind;
     return {
       recipients: [reviewer.hrId],
-      eventType: grade ? "grade_request_waiting" : "drop_request_waiting",
-      title: grade ? `Grade to approve for ${notice.customerName}` : `Drop to approve for ${notice.customerName}`,
-      message: grade
-        ? `${rep} proposes grade ${notice.proposedGrade ?? "—"} for ${customer} on ${territory}. Approve or refuse it in Phoenix CRM.`
-        : `${rep} asks to take ${customer} off the ${territory} list. Reason: ${dropReasonLabel(notice.dropReason) ?? "not given"}. Approve or refuse it in Phoenix CRM.`,
+      eventType: REQUEST_WAITING[kind].eventType,
+      title:
+        kind === "grade"
+          ? `Grade to approve for ${notice.customerName}`
+          : kind === "drop"
+            ? `Drop to approve for ${notice.customerName}`
+            : kind === "add"
+              ? `Customer to add for ${notice.customerName}`
+              : `Bring back to approve for ${notice.customerName}`,
+      message:
+        kind === "grade"
+          ? `${rep} proposes grade ${notice.proposedGrade ?? "—"} for ${customer} on ${territory}. Approve or refuse it in Phoenix CRM.`
+          : kind === "drop"
+            ? `${rep} asks to take ${customer} off the ${territory} list. Reason: ${dropReasonLabel(notice.dropReason) ?? "not given"}. Approve or refuse it in Phoenix CRM; SFE decides after you.`
+            : kind === "add"
+              ? `${rep} asks to add ${customer} to the ${territory} list, proposing grade ${notice.proposedGrade ?? "—"}. Confirm the grade, set the potential and approve or refuse it in Phoenix CRM; SFE decides after you.`
+              : `${rep} asks to bring ${customer} back to the ${territory} list from the Archive. Approve or refuse it in Phoenix CRM; SFE decides after you.`,
       tab: "team",
       recordId: notice.requestId,
       idempotencyKey: `phoenix_crm:request:${notice.requestId}:created`,
@@ -175,12 +207,17 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | null> {
     const what =
       notice.requestKind === "grade"
         ? `grade ${notice.proposedGrade ?? "—"} for ${notice.customerName}`
-        : `taking ${notice.customerName} off your list`;
+        : notice.requestKind === "drop"
+          ? `taking ${notice.customerName} off your list`
+          : notice.requestKind === "add"
+            ? `adding ${notice.customerName} to your list`
+            : `bringing ${notice.customerName} back to your list`;
     const note = notice.note ? ` Note: ${notice.note}` : "";
+    const subject = { grade: "grade", drop: "drop", add: "add to list", restore: "bring back" }[notice.requestKind];
     return {
       recipients: [notice.requesterHrId],
       eventType: approved ? "request_approved" : "request_refused",
-      title: `${approved ? "Approved" : "Refused"}: ${notice.requestKind === "grade" ? "grade" : "drop"} for ${notice.customerName}`,
+      title: `${approved ? "Approved" : "Refused"}: ${subject} for ${notice.customerName}`,
       message: `${decider} ${approved ? "approved" : "refused"} ${what} on ${territory}.${note}`,
       tab: "list",
       recordId: notice.requestId,

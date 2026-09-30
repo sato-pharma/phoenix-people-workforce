@@ -30,6 +30,44 @@
 /** What the rep picks on the first step of Add Visit, before he picks the doctor. */
 export type VisitTypeChoice = "planned" | "unplanned";
 
+/**
+ * The two ways a visit can be off the plan (owner, 2026-09-29):
+ *
+ *   OUT OF PLAN — someone on his list who is not on today's sent plan. He writes why, and the visit
+ *                 counts once his manager and then SFE approve it (everything above).
+ *   OUT OF LIST — someone not on his list at all. He validates the customer on the spot (live photo,
+ *                 location, days and hours), and the district manager and SFE approve the CUSTOMER,
+ *                 not the visit: it counts once the customer is admitted, in the month it happened,
+ *                 and never if he is dropped. No reason is asked and no approval row is raised.
+ */
+export type UnplannedKind = "out_of_plan" | "out_of_list";
+
+export function isUnplannedKind(value: unknown): value is UnplannedKind {
+  return value === "out_of_plan" || value === "out_of_list";
+}
+
+export function unplannedKindLabel(kind: UnplannedKind): string {
+  return kind === "out_of_list" ? "Out of list" : "Out of plan";
+}
+
+/** What the rep is told on an out-of-list visit. The customer's own admission is what it waits on. */
+export const OUT_OF_LIST_REP_NOTE = "Out of your list. It counts once this customer is added to your list.";
+
+/**
+ * The out-of-list visit's note, from where its CUSTOMER has got to — the visit has no approval of its
+ * own. Waiting outside (or with the request on its way): not counting yet. Admitted: it counts, in the
+ * month it happened. In the Archive: it never will.
+ */
+export function outOfListVisitNote(customerStatus: string | null): { label: string; note: string } {
+  if (customerStatus === "active") {
+    return { label: "Added to your list — it counts", note: "Out of your list when you went; the customer was added since, so it counts." };
+  }
+  if (customerStatus === "dropped") {
+    return { label: "Not added — it does not count", note: "This customer was not added to your list, so this visit does not count." };
+  }
+  return { label: "Waiting to be added to your list", note: OUT_OF_LIST_REP_NOTE };
+}
+
 /** Where an off-plan visit's approval has got to. */
 export type UnplannedVisitStatus = "manager_pending" | "sfe_pending" | "approved" | "refused";
 

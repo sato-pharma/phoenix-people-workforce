@@ -1636,6 +1636,17 @@ import { runPhoenixCrmMonthlyPlanTests } from "./phoenix-crm-monthly-plan.test.t
 import { runPhoenixCrmPlanFiltersTests } from "./phoenix-crm-plan-filters.test.ts";
 import { runPhoenixCrmPlanCopyTests } from "./phoenix-crm-plan-copy.test.ts";
 import { runPhoenixCrmStartGuideTests } from "./phoenix-crm-start-guide.test.ts";
+import { runPhoenixCrmPortalIntentTests } from "./phoenix-crm-portal-intent.test.ts";
+import { runPhoenixCrmTeamTodayTests } from "./phoenix-crm-team-today.test.ts";
+import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blocked.test.ts";
+import { runPhoenixCrmTodayGlanceTests } from "./phoenix-crm-today-glance.test.ts";
+import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
+import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
+import { runPhoenixCrmPlanSuggestTests } from "./phoenix-crm-plan-suggest.test.ts";
+import { runPhoenixCrmListAdmissionTests } from "./phoenix-crm-list-admission.test.ts";
+import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
+import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
+import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.ts";
 import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
@@ -2085,6 +2096,7 @@ import { runPortalCandidatesProxyRedirectTests } from "./portal-candidates-proxy
 import { runOpenVacancyManagerFollowsSeatTests } from "./open-vacancy-manager-follows-seat.test.ts";
 import { runDevPreviewRoleGuardTests } from "./dev-preview-role-guard.test.ts";
 import { runDevPreviewLaunchReplayTests } from "./dev-preview-launch-replay.test.ts";
+import { runDevPreviewTestAccountTests } from "./dev-preview-test-account.test.ts";
 import { runMedicalRepExpenseViewerTests } from "./medical-rep-expense-viewer.test.ts";
 import { runPortalShellRolesTests } from "./portal-shell-roles.test.ts";
 
@@ -5610,8 +5622,63 @@ await runTest(
 );
 
 await runTest(
-  "Phoenix CRM's start guide is a system document (the one page a District Manager sends a rep, in English and Arabic, generated from the house identity module rather than kept as a file somebody made once — built after a rep on production recorded NINE voice notes across a working day, every one reaching the bucket and not one attached to a saved visit, because the photo is what records a visit and he never took one. The English button names stay English on the Arabic page because they are English on his screen, and EVERY one is isolated in <bdi> and unbreakable: an English run inside an Arabic paragraph drags the neutral punctuation beside it to the wrong end, and a split \"Unplanned visit\" is a name he has to reassemble before he can match it. The Arabic page stays Arabic-led, the corners stay square, and the BLIND half is left to the derived surface in phoenix-crm-blind-half rather than copied weakly here)",
+  "Phoenix CRM's start guide is a system document (the one page a District Manager sends a rep, in English and Arabic, generated from the house identity module rather than kept as a file somebody made once — built after a rep on production recorded NINE voice notes across a working day, every one reaching the bucket and not one attached to a saved visit, because the photo was then what recorded a visit and he never took one — since 2026-09-29 a visit needs no photo and the guide leads on the one-tap Log visit instead. The English button names stay English on the Arabic page because they are English on his screen, and EVERY one is isolated in <bdi> and unbreakable: an English run inside an Arabic paragraph drags the neutral punctuation beside it to the wrong end, and a split \"Unplanned visit\" is a name he has to reassemble before he can match it. The Arabic page stays Arabic-led, the corners stay square, and the BLIND half is left to the derived surface in phoenix-crm-blind-half rather than copied weakly here)",
   runPhoenixCrmStartGuideTests,
+);
+
+await runTest(
+  "Phoenix CRM answers the portal's + (owner, 2026-09-29: Add visit and Make weekly plan for a medical rep, first in the menu). The links name a tab and an ask the page reads; the page answers with a counter the tab watches, never a remount, so a visit half entered survives a stray tap; and the ask comes off the address once read, so the second tap on the same action is a change the page sees",
+  runPhoenixCrmPortalIntentTests,
+);
+
+await runTest(
+  "Phoenix CRM Today at a glance (owner, 2026-09-30: the best-appearing and easiest CRM): AM and PM progress apart, never summed; Next up picks who receives now, then soonest, then no hours, then not today, the plan's brick order breaking ties; its Log visit is the row's own hand-off; nothing on it judges the rep",
+  runPhoenixCrmTodayGlanceTests,
+);
+
+await runTest(
+  "Phoenix CRM visit form ease (owner, 2026-09-30): one Log visit held in a sticky bar that names the next missing thing from the save's own check, the required Comment right after Products, optional steps marked, today's receiving customers first in the picker, 44px targets, square corners",
+  runPhoenixCrmVisitFormEaseTests,
+);
+
+await runTest(
+  "Phoenix CRM Validate next (owner, 2026-09-30): the customers still to validate ranked so the most useful come first - visits already saved, then grade, then the brick with most waiting - one Validate per card, never Add visit, never a distance",
+  runPhoenixCrmValidateNextTests,
+);
+
+await runTest(
+  "Phoenix CRM plan suggestions (owner, 2026-09-30): Suggest this day and Suggest the week fill the DRAFT like a copy - customers who receive that weekday and are still owed visits, one brick before the next, AM and PM caps apart, nobody twice on a day - and nothing is saved or sent until the rep saves",
+  runPhoenixCrmPlanSuggestTests,
+);
+
+await runTest(
+  "Phoenix CRM Team today (owner, 2026-09-30: easiest, yet controlled): each rep's visit day on his managers' Team tab - the sent plan's progress AM and PM apart and what he logged - read in batches, never per rep, and carrying no integrity signal",
+  runPhoenixCrmTeamTodayTests,
+);
+
+await runTest(
+  "Phoenix CRM plan never blocks on hours: a tick places a customer on any day and asks nothing, the day shows every day and hour he receives in its own column, the 'Day full' word is gone, and a customer not validated yet carries a small inline word with iReports360's brick and address (owner, 2026-09-30)",
+  runPhoenixCrmPlanNeverBlockedTests,
+);
+
+await runTest(
+  "Phoenix CRM admits a customer to a rep's list only through the district manager, then SFE (owner, 2026-09-29): every status maps to one List section and one row action (Validate or Open, never Add visit), the moves a page offers come from list-request-rules and never a rule re-derived on a screen, a never-admitted archived customer is offered Request to add rather than a bring-back, the manager's step of an add sends the A/B/C he confirmed and the potential he set, and the database refuses an add approved without a potential and a decision on a step that has moved on",
+  runPhoenixCrmListAdmissionTests,
+);
+
+await runTest(
+  "Phoenix CRM moves a validated place only for the Super Admin and the SFE Manager (owner, 2026-09-29: the location is fixed forever): the service checks the mover before it reads anything, a move needs a written reason of ten characters or more, the new point is resolved by the same function a validation uses, every visit to the customer is measured again, a test account never moves one, and the database writes an audited place_moved event with the point before and after",
+  runPhoenixCrmPlaceMoveTests,
+);
+
+await runTest(
+  "Phoenix CRM plans on one board (owner, 2026-09-29): every field-week of a month is plannable by the month's own due date for every month of 2026-2028 (the three-week window made the rest of October unplannable on the day it was due), a week sent alone is due the Thursday before it, Copy last month replays Week N's weekday onto Week N's weekday and never every Saturday, copying a week or a day keeps the caps and the editable days, the week draft sends its day activities and counts them as unsaved work, and nothing on the board approves or sends by itself",
+  runPhoenixCrmPlanBoardTests,
+);
+
+await runTest(
+  "Phoenix CRM logs a visit in one tap (owner, 2026-09-29): the visit day is the Cairo date of the instant minus two hours, so 01:59 is still yesterday and 02:00 is today on both sides of Egypt's clock change, the same arithmetic as phoenix_crm_save_visit; a draft needs no photo and no pharmacy, \"unplanned\" from a caller one release behind means out of plan, an out-of-list visit needs no reason, a missing location is said as the rep's own step to turn it on; and the rep's visit screens carry no date input, no photo capture, no AM/PM choice and no distance, accuracy or Take care wording",
+  runPhoenixCrmOneTapVisitTests,
 );
 
 await runTest(
@@ -7627,6 +7694,11 @@ await runTest(
 await runTest(
   "a repeated dev-preview launch lands on the preview, never on a raw forbidden page: /api/dev-auth/preview answers a preview session asking for the very preview it is already in with that preview's landing page, minting nothing, and every other non-Super-Admin caller still gets the 403; the picker locks Launch after the first click (the 2026-09-21 double launch during a slow first compile)",
   runDevPreviewLaunchReplayTests,
+);
+
+await runTest(
+  "a test account opened through the dev sign-in is a test account: /api/dev-auth?testLogin=TEST-… opens only an active test account, links it by the real sign-in's own rule, and the dev cookie carries the testPersona link through the heartbeat refresh, so its saves go to the test world and never as the real person it mirrors (owner, 2026-09-30)",
+  runDevPreviewTestAccountTests,
 );
 
 await runTest(

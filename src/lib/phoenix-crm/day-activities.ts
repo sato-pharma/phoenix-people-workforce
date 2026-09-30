@@ -24,13 +24,18 @@
  * for attendance and for pay. Nothing here may grow into a second one.
  */
 
+/**
+ * In the order the rep sees them (owner, 2026-09-29): his four first — "meeting, conference, health
+ * day, sales day" — then the three that were already here, which he chose to keep.
+ */
 export const PHOENIX_CRM_DAY_ACTIVITIES = [
   { key: "meeting", label: "Meeting" },
-  { key: "training", label: "Training" },
   { key: "conference", label: "Conference" },
+  { key: "health_day", label: "Health day" },
+  { key: "sales_day", label: "Sales day" },
+  { key: "training", label: "Training" },
   { key: "admin_work", label: "Admin work" },
   { key: "travel", label: "Travelling" },
-  { key: "health_day", label: "Health day" },
 ] as const;
 
 export type PhoenixCrmDayActivity = (typeof PHOENIX_CRM_DAY_ACTIVITIES)[number]["key"];

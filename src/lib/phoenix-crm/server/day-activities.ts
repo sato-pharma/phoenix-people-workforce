@@ -63,7 +63,7 @@ export async function loadDayActivities(
   raw: { seatId: unknown; test: unknown; from?: unknown; to?: unknown },
 ): Promise<{ rows: DayActivityRow[] }> {
   const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
-  const to = isIsoDay(raw.to) ? raw.to : viewer.cairoToday;
+  const to = isIsoDay(raw.to) ? raw.to : viewer.visitDay;
   const from = isIsoDay(raw.from) ? raw.from : to;
 
   const { data, error } = await getSupabaseAdmin()
@@ -86,8 +86,9 @@ export async function loadDayActivities(
  * enters a VISIT on a rep's territory (he was there, with him) but never a day activity, which is a
  * statement about how the rep spent his own day.
  *
- * The date is the viewer's Cairo today and is not taken from the body: back-dating a day activity is
- * the same hole as back-dating a visit, and the module closed that one already.
+ * The date is the viewer's VISIT day and is not taken from the body: back-dating a day activity is
+ * the same hole as back-dating a visit, and the module closed that one already. Since 2026-09-29 that
+ * day runs until 02:00 the next morning, exactly as a visit's does (`viewer.visitDay`).
  */
 export async function saveDayActivity(
   viewer: PhoenixCrmViewer,
@@ -99,7 +100,7 @@ export async function saveDayActivity(
     await callPhoenixCrm("phoenix_crm_save_day_activity", {
       p: {
         actor_hr_id: viewer.hrId,
-        activity_date: viewer.cairoToday,
+        activity_date: viewer.visitDay,
         is_test: isTest,
         seat_id: seat.seatId,
       },
@@ -112,7 +113,7 @@ export async function saveDayActivity(
 
   const result = (await callPhoenixCrm("phoenix_crm_save_day_activity", {
     p: {
-      activity_date: viewer.cairoToday,
+      activity_date: viewer.visitDay,
       activity_type: parsed.value.activityType,
       actor_hr_id: viewer.hrId,
       half_day: parsed.value.halfDay,

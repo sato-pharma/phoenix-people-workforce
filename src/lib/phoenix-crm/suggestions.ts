@@ -32,6 +32,21 @@ export type PlannerPlace = {
   timings: PhoenixCrmTiming[];
 };
 
+/**
+ * Where a customer not validated yet sits, shown on the plan board in the place a validated customer's
+ * clinic would fill (owner, 2026-09-30: "in their blank put brick and address").
+ *
+ * 🔴 THE BRICK AND AREA ARE THE ORGANOGRAM'S, NEVER iReports360's (owner, 2026-09-30: "there is a big
+ * mismatch between area and region names — audit and follow the organogram"). iReports360 keeps its own
+ * vocabulary in `crm_contacts.zone` and `.city`, and it is a DIFFERENT one: measured on production that
+ * day, of 18,954 customers on a mapped brick only 729 — 3.8% — carried an area name the organogram
+ * agrees with, 9,688 disagreed ("Monofia III" for Menoufia 2, "El Menia II" for Minia 2, "Behira II"
+ * for Behira 2, "Delta West" for Delta (1)) and 8,537 had none at all; 37 of 39 areas disagreed. So
+ * `zone` and `city` are never shown. The brick and area come from the sales master, which agrees with
+ * the organogram on all 40 area names, and `address` is iReports360's town text only.
+ */
+export type PlannerReference = { brick: string | null; area: string | null; address: string | null };
+
 export type PlannerCustomer = {
   customerId: string;
   name: string;
@@ -42,6 +57,8 @@ export type PlannerCustomer = {
   /** Carried over from iReports360 and not validated yet: no place and no days and hours. */
   pending: boolean;
   places: PlannerPlace[];
+  /** iReports360's brick and address while he is not validated yet; null once he has a place. */
+  reference?: PlannerReference | null;
 };
 
 export type PlacedOnDay = {
