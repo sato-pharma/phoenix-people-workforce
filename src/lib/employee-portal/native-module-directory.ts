@@ -40,6 +40,7 @@ import { resolveLockedModuleForPath } from "@/lib/navigation/module-catalog";
 /** The sidebar's section titles, in the sidebar's order (buildEmployeePortalSections). */
 export const NATIVE_MODULE_SECTION_ORDER = [
   "Training Manager",
+  "Phoenix CRM",
   "My Workspace",
   "Social",
   "Approvals Hub",
@@ -69,13 +70,16 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/training-manager/coaching": { icon: "easel-outline", section: "Training Manager" },
   "/employee-portals/training-manager/create-coaching-report": { icon: "create-outline", section: "Training Manager" },
   "/employee-portals/training-manager/field-coaching": { icon: "walk-outline", section: "Training Manager" },
+  // ── Phoenix CRM ───────────────────────────────────────────────────────────────────────────────
+  // Its own band above My Workspace on the sidebar (owner, 2026-09-30), so its own section here too,
+  // or the drift test fails on the mismatch.
+  "/employee-portals/field-crm": { icon: "briefcase-outline", section: "Phoenix CRM" },
   // ── My Workspace ──────────────────────────────────────────────────────────────────────────────
   "/employee-portals/interview-calendar": { icon: "videocam-outline", section: "My Workspace" },
   "/employee-portals/organogram": { icon: "business-outline", section: "My Workspace" },
   "/employee-portals/employee-360": { icon: "id-card-outline", section: "My Workspace" },
   "/employee-portals/business-cards": { icon: "id-card-outline", section: "Social" },
   "/employee-portals/milestones": { icon: "ribbon-outline", section: "Social" },
-  "/employee-portals/field-crm": { icon: "briefcase-outline", section: "My Workspace" },
   "/employee-portals/business-review": { icon: "analytics-outline", section: "My Workspace" },
   "/employee-portals/plans": { icon: "calendar-outline", section: "My Workspace" },
   "/employee-portals/plans/calendar": { icon: "calendar-number-outline", section: "My Workspace" },

@@ -203,14 +203,98 @@ export function runPhoenixCrmPortalSidebarTests() {
   // that matters structurally: the portal's label span has no `truncate`, so a node added INSIDE the
   // row's flex line pushes a long label onto a second line — and wrapping is what the owner's
   // no-horizontal-scroll rule forbids. Proven by position, not by reading the class alone.
-  const railClass = 'className="pointer-events-none absolute inset-y-0 left-0 w-[2px] bg-[#F05A1A]"';
-  const labelAt = layout.indexOf('<span className={locked ? "opacity-70" : undefined}>{item.label}</span>');
-  assert.ok(labelAt > 0, "the row still renders its label span");
+  const railClass = 'className="pointer-events-none absolute inset-y-0 left-0 w-[4px] bg-[#F05A1A]"';
+  // Anchored on the label EXPRESSION rather than the span's full class attribute — those classes are
+  // styling and move with the look, and a pin that breaks when styling moves teaches the next reader
+  // to treat this file's failures as noise. But it is SCOPED to the real row first: pin mode renders
+  // its own `<span>{item.label}</span>` further up, and an unscoped search lands there and answers
+  // questions about a different element entirely.
+  const rowAt = layout.indexOf('<div className="group/row relative" data-active-row=');
+  assert.ok(rowAt > 0, "the sidebar still renders its rows through one wrapper");
+  const labelAt = layout.indexOf(">{item.label}</span>", rowAt);
+  assert.ok(labelAt > rowAt, "the row still renders its label span");
   const linkClosesAt = layout.indexOf("</Link>", labelAt);
   const railAt = layout.indexOf(railClass);
   assert.ok(railAt > 0, "the highlighted row draws an orange rail on its left edge");
   assert.ok(
     railAt > linkClosesAt && linkClosesAt > labelAt,
     "the rail sits AFTER the link, outside the row's flex line — inside it, it would add width and wrap a long label",
+  );
+
+  // ── 6. The highlight carries NO FILL at rest — the one thing the owner rejected twice ──────────
+  //
+  // The first version rested on `#FFF6F0`, the hover tint one shade off the ACTIVE row's `#FFF0E7`,
+  // and he turned it down on sight: "you are highlighting it the same". A permanent pale-orange row
+  // says *you are here* on a page you are not on, which is worse than no highlight — it makes the
+  // sidebar lie about where you are. He then picked option D from four rendered mockups: a heavy
+  // orange rail, orange type, no fill. So the absence of a resting background is the RULE here, and
+  // the obvious-looking "improvement" of adding a tint back is precisely what this catches.
+  const highlightDecl = /const NAV_HIGHLIGHT_CLASS = "([^"]*)";/.exec(layout);
+  assert.ok(highlightDecl, "the standout row's resting face is still declared in one place");
+  const restingClasses = highlightDecl[1].split(/\s+/).filter((cls) => cls && !cls.startsWith("hover:"));
+  assert.deepEqual(
+    restingClasses.filter((cls) => cls.startsWith("bg-")),
+    [],
+    "the standout row carries NO fill at rest — a resting tint is the ACTIVE state's own signal, and it was rejected twice",
+  );
+  assert.ok(
+    restingClasses.includes("text-[#F05A1A]"),
+    "with no fill, the orange type is what carries the highlight",
+  );
+
+  // ── 7. The Phoenix logo sits BEFORE the name, in the icon's place ──────────────────────────────
+  //
+  // Owner, 2026-09-30: "before the Phoenix CRM, put the logo". It takes the icon's PLACE rather than
+  // joining it, which is what keeps the row no wider than a sibling — the same reason the padlock
+  // replaces the icon instead of sitting beside it.
+  const logoAt = layout.indexOf("src={systemAssets.iconLogo}");
+  assert.ok(logoAt > 0, "the standout row renders the Phoenix logo from the documented brand asset");
+  assert.ok(logoAt < labelAt, "the logo comes BEFORE the row's name");
+  assert.ok(
+    logoAt < layout.indexOf("<RowIcon"),
+    "the logo is the highlighted row's own mark and RowIcon is the other branch — the row never carries both",
+  );
+
+  // ── 9. The premium polish is DEPTH, and it costs the row no width ─────────────────────────────
+  //
+  // Owner, 2026-09-30: "it needs a more premium polish". The lever is depth — a white face, a warm
+  // hairline, one soft orange shadow — because the two other levers are closed: corners must stay
+  // square (and the standing note on restoring premium polish from history says to take the depth
+  // ONLY, never the radius), and a resting tint is the active row's signal, pinned above.
+  //
+  // It is a LAYER behind the link rather than a border on it. A border on the row would push the
+  // label a pixel off the siblings' left edge and widen the row; this cannot.
+  const plateAt = layout.indexOf('className="pointer-events-none absolute inset-0 border border-[#F3D8C4] bg-white shadow-');
+  assert.ok(plateAt > 0, "the standout row is lifted by a plate: a white face, a warm hairline and a soft orange shadow");
+  const linkOpensAt = layout.lastIndexOf("<Link", labelAt);
+  assert.ok(
+    plateAt < linkOpensAt,
+    "the plate is drawn BEFORE the link, so it paints behind the row rather than over its text",
+  );
+  const plateEndsAt = layout.indexOf("/>", plateAt);
+  assert.ok(
+    !layout.slice(plateAt, plateEndsAt).includes("rounded"),
+    "the plate is square — the premium treatment takes the depth only, never the radius",
+  );
+
+  // ── 8. Phoenix CRM is its own band, ABOVE My Workspace ────────────────────────────────────────
+  //
+  // Owner, 2026-09-30: "move it above the workspace, my workspace". Three places have to agree or the
+  // band is half-built: the section itself, the collapsed rail's icon map (the collapsed sidebar is
+  // NOTHING but that strip of icons), and the native module mirror — the last of which has its own
+  // drift test.
+  const crmBandAt = layout.indexOf('title: "Phoenix CRM",');
+  const workspaceAt = layout.indexOf('title: "My Workspace",');
+  assert.ok(crmBandAt > 0 && workspaceAt > 0, "both bands are still built");
+  assert.ok(crmBandAt < workspaceAt, "the Phoenix CRM band sits ABOVE My Workspace");
+  assert.match(
+    layout,
+    /title: "Phoenix CRM",\s*\n\s*hideTitle: true,/,
+    "the band has no header — the one row already carries the name, and a headerless band cannot fold away",
+  );
+  assert.match(
+    layout,
+    /if \(title === "Phoenix CRM"\) return ClipboardList;/,
+    "the collapsed rail can name the band — without an entry it would draw the fallback glyph",
   );
 }
