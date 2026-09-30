@@ -33,6 +33,21 @@ export function runRemoteCheckTests(): void {
       "here is only useful because it runs the same command the required `checks` job runs.",
   );
 
+  // 2b — and it must run COLD, or the PASS is a cache read rather than a check. `tsconfig.json` sets
+  // `"incremental": true`, and the box KEEPS its working directory between runs, so without this flag
+  // `tsc` answers from `tsconfig.tsbuildinfo`. CI checks out fresh and is therefore cold by
+  // construction — which is precisely why a warm pass here does not predict it. Measured 2026-09-30:
+  // `PASS in 12s` on b04b2e80a, whose required `checks` job then went RED on two TS2322 errors,
+  // against the ~112s a cold run takes. This finishes what assertion 2 promises: matching CI heap
+  // does not make a green here mean what a green in CI means if the run never looked at the code.
+  assert.ok(
+    /tsc --noEmit[^"']*--incremental false/.test(SRC),
+    "the remote typecheck no longer forces `--incremental false`. tsconfig sets `incremental: true` " +
+      "and the box reuses its working directory, so tsc answers from tsconfig.tsbuildinfo and reports " +
+      "a PASS for code it never rechecked — a false green in the one tool that exists to replace the " +
+      "local typecheck (AGENTS.md §5: a warm incremental cache lies).",
+  );
+
   // 3 — it must not use the runner's own working directory. A CI job owns ~/actions-runner/_work
   // and cleans it between runs; sharing it makes a real CI run fail for reasons nobody can
   // reproduce, and a persistent runner already has stale-state hazards of its own.

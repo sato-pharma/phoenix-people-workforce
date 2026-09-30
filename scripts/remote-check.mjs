@@ -57,10 +57,20 @@ const WORK = REMOTE_ROOT + "/work";
 // so a result here means the same thing a CI result means. It also takes ci.yml's typecheck lock
 // (/tmp/phx-typecheck.lock), so it waits for a CI typecheck on the box instead of running beside it —
 // two `tsc` runs on this 7.7 GB box is what the lock exists to stop (owner, 2026-09-30).
+//
+// 🔴 THE TYPECHECK RUNS COLD, AND WITHOUT `--incremental false` THIS SCRIPT RETURNED A FALSE GREEN.
+// `tsconfig.json` sets `"incremental": true`, and this box KEEPS its working directory between runs,
+// so `tsc` reused `tsconfig.tsbuildinfo` and answered from the cache instead of rechecking. CI cannot
+// do that — it checks out fresh, so it holds no build info and is cold by construction. Measured
+// 2026-09-30: `PASS in 12s` here on b04b2e80a, whose required `checks` job then went RED on two
+// TS2322 errors in test fixtures, and `PASS in 11s` on the commit that fixed them — against the
+// ~112s a cold run takes. That is AGENTS.md §5 ("a warm incremental cache lies") arriving through the
+// one tool that exists to REPLACE the local typecheck, which makes the false pass worse than no
+// answer: it was trusted, and it sent a branch to CI believing it was clean.
 const CHECKS = {
   lint: "corepack pnpm run lint",
   typecheck:
-    "flock -w 1200 /tmp/phx-typecheck.lock env NODE_OPTIONS=--max-old-space-size=6144 ./node_modules/.bin/tsc --noEmit --pretty false",
+    "flock -w 1200 /tmp/phx-typecheck.lock env NODE_OPTIONS=--max-old-space-size=6144 ./node_modules/.bin/tsc --noEmit --incremental false --pretty false",
   test: "corepack pnpm run test",
   build: "corepack pnpm run build",
 };
