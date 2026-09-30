@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Award, Cake, CalendarHeart, Check, Download, ImageUp, Loader2, RotateCcw, Sparkles, UserX } from "lucide-react";
+import { Award, Cake, Check, Download, ImageUp, Loader2, RotateCcw, Sparkles, UserX } from "lucide-react";
 
 import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
 import { SURFACE_CLASS, SectionCard } from "@/components/sales/target-visuals";
@@ -307,18 +307,21 @@ export function MyMilestones({ entries, photoUrl }: Props) {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
         {/* ── The tailored timeline — every milestone on one screen, in order ────────────────────── */}
         <section className="overflow-hidden border border-slate-200 bg-white shadow-sm">
-          {/* Navy header band — the portal's premium chrome. */}
-          <div className="bg-slate-950 px-4 py-4 sm:px-5">
-            <span className="inline-flex items-center gap-1.5 bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.16em] text-white/80 ring-1 ring-white/20">
-              <CalendarHeart className="size-3.5" aria-hidden /> My Milestones
-            </span>
-            <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">Your Sato Pharma journey</h2>
-            <p className="mt-1 text-xs font-semibold text-slate-300">
-              {nextUp
-                ? `Next: ${nextUp.label} — ${whenLabel(nextUp.daysAway).toLowerCase()}`
-                : `${entries.length} milestone${entries.length === 1 ? "" : "s"}`}
+          {/* A slim strip — the page shell above already carries the "My Milestones" title, so this
+              carries only what it does not: the next milestone and the colour legend. No second big
+              header (the owner spotted the duplication, 2026-09-30). */}
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 border-b border-slate-200 bg-slate-50 px-4 py-2.5 sm:px-5">
+            <p className="text-xs font-black text-slate-900">
+              {nextUp ? (
+                <>
+                  <span className="text-slate-500">Next:</span> <span className="text-orange-600">{nextUp.label}</span>
+                  <span className="font-semibold text-slate-500"> · {whenLabel(nextUp.daysAway).toLowerCase()}</span>
+                </>
+              ) : (
+                `${entries.length} milestone${entries.length === 1 ? "" : "s"}`
+              )}
             </p>
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-300">
+            <div className="flex items-center gap-x-4 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
               <span className="inline-flex items-center gap-1.5"><span className="size-2.5 bg-orange-500" aria-hidden /> Anniversary</span>
               <span className="inline-flex items-center gap-1.5"><span className="size-2.5 bg-rose-500" aria-hidden /> Birthday</span>
             </div>

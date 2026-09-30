@@ -41,6 +41,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 import { readProtectionContexts } from './required-check-names.mjs';
+import { rollupBranchName } from './rollup-branch-name.mjs';
 
 const REPO = 'Gawish-1997/phoenix-people-workforce';
 
@@ -431,9 +432,30 @@ if (!apply || group.length < 2) process.exit(0);
 
 // ---------------------------------------------------------------------------- build it
 
-const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-const branch = `codex/rollup-${stamp}`;
+// The name must be unique across HISTORY, not just among live branches — see rollup-branch-name.mjs
+// for why a reused name turns `--head <branch> --state merged` into a lookup that returns the wrong PR.
+// Anything we cannot determine counts as TAKEN: an unknown must never read as free here.
 const root = git(['rev-parse', '--show-toplevel']);
+const branch = rollupBranchName({
+  now: new Date(),
+  isTaken: (name) => {
+    if (git(['rev-parse', '--verify', '--quiet', `refs/heads/${name}`], { cwd: root, allowFail: true }) !== null) return true;
+    const remote = git(['ls-remote', '--heads', 'origin', name], { cwd: root, allowFail: true });
+    if (remote === null || remote.length > 0) return true;
+    // ANY state, not just merged: a closed roll-up PR makes the same lookup ambiguous.
+    // gh() with allowFail returns '' on FAILURE, never null, while a successful --json call always
+    // returns at least '[]'. So an empty string is a failed call and counts as TAKEN — reading it as
+    // '[]' would turn "GitHub was unreachable" into "the name is free", which is the one direction
+    // that matters here.
+    const prs = gh(['pr', 'list', '--repo', REPO, '--head', name, '--state', 'all', '--json', 'number'], { allowFail: true });
+    if (!prs) return true;
+    try {
+      return JSON.parse(prs).length > 0;
+    } catch {
+      return true;
+    }
+  },
+});
 
 git(['fetch', '--quiet', 'origin', 'main'], { cwd: root });
 git(['switch', '--quiet', '--create', branch, 'origin/main'], { cwd: root });
