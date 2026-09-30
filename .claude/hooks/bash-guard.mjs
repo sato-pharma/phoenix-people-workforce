@@ -13,7 +13,10 @@
 //       runs whatever its size, and 110 of them landed in one day on 2026-09-29 while 41% of
 //       the week's merges touched 3 files or fewer. It refuses SIZE only: nothing here delays
 //       a merge or counts how many have run (the owner cut a cooldown the same evening —
-//       merges go when they are ready). PHX_MERGE_OK=1 stands it down for one command.
+//       merges go when they are ready). An ALREADY-OPEN, ALREADY-GREEN PR goes straight through
+//       from 2026-10-01 — its PR run is paid, so there is nothing left to save (owner: "make the
+//       merge guard stop blocking an already-green PR"). PHX_MERGE_OK=1 stands it down for one
+//       command.
 //   C12 a `git push` whose working tree holds a SECRET — gitleaks, same binary and flags as CI,
 //       run BEFORE the push so a key never reaches the remote history at all. Replaces the
 //       per-PR secret-scan (owner, 2026-09-29), which billed a full minute on ~186 runs a day
@@ -1044,13 +1047,30 @@ try {
   // a finished PR of any size merges the moment it is green. The only thing refused is shipping a
   // change too small to have been worth its own two CI runs.
   //
-  // `PHX_MERGE_OK=1 <cmd>` (`$env:PHX_MERGE_OK=1; <cmd>` in PowerShell) allows one merge through —
-  // for the urgent one-file fix, the locked file, the migration that needs its own approval, and
-  // for a PR that is ALREADY open and green: its run is paid, closing refunds nothing, and a
-  // rebuild later costs a second PR run on top of the same `main` run. The clause is about what
-  // is OPENED, not about throwing away work that is already built.
-  // That is why this denies rather than blocks outright: a guard with no way past it gets deleted
-  // instead of used.
+  // 🔴 AN ALREADY-OPEN, ALREADY-GREEN PR GOES STRAIGHT THROUGH — no stand-down, no click (owner,
+  // 2026-10-01: "make the merge guard stop blocking an already-green PR"). Until then the only way
+  // past this on a small PR was `PHX_MERGE_OK=1`, and the auto-mode classifier refuses THAT as a
+  // `[Safety Bypass Flag]` — so the two guards deadlocked and a 3-file PR could not be merged by a
+  // session at all. Measured 2026-10-01 on #4988: both refusals fired, the denial then tightened the
+  // session's own Bash (a plain `git status` came back `[Auto-Mode Bypass]`), and the owner had to
+  // press Squash and merge himself. The clause never meant that: once the PR is green its run is
+  // ALREADY PAID, so refusing the merge saves nothing and only risks the work being rebuilt later at
+  // the cost of a second PR run. This clause is about what is OPENED.
+  //
+  // So the size refusal now applies only while the PR is still NOT green — which is exactly when
+  // "fold it into a wider branch" is still possible, because the branch has not shipped yet.
+  //
+  // `CLEAN` alone counts as green: GitHub sets it when the PR is mergeable AND every REQUIRED check
+  // has passed. `UNSTABLE` (a non-required check red — `mobile` and `secret-scan` no longer gate
+  // here) is deliberately NOT accepted: something is red and deserves a look, and the stand-down
+  // still covers it. And if the state cannot be read at all, TODAY'S REFUSAL STANDS rather than
+  // failing open — otherwise one `gh` hiccup would retire the clause silently, which is the failure
+  // mode a guard cannot report on itself.
+  //
+  // `PHX_MERGE_OK=1 <cmd>` (`$env:PHX_MERGE_OK=1; <cmd>` in PowerShell) still allows one merge
+  // through — for the urgent one-file fix, the locked file, the migration that needs its own
+  // approval. That is why this denies rather than blocks outright: a guard with no way past it gets
+  // deleted instead of used.
   //
   // FAILS OPEN in every direction: an unreachable `gh`, a PR number it cannot parse, a merge of the
   // CURRENT branch with no number at all — every one of them allows the merge. A guard that blocks
@@ -1098,7 +1118,48 @@ try {
         } catch {
           // gh missing, offline, or the PR not readable — allow. Never block on our own blind spot.
         }
-        if (changedFiles !== null && changedFiles < minFiles) {
+        // Asked ONLY when the size check is about to refuse, in a call of its own that never
+        // mentions `changedFiles` — so a stub that answers the size question and nothing else leaves
+        // this unanswerable, and the refusal below stands exactly as it did before.
+        // 🔴 NO `--jq` HERE, DELIBERATELY. `shell: true` on Windows concatenates the arguments
+        // UNESCAPED (node's own DEP0190), so a jq expression like `.state + "/" + .mergeStateStatus`
+        // reaches gh as three stray positional arguments and the call exits 1 — every time, on this
+        // machine. That failure is indistinguishable from "cannot read", so the exemption would have
+        // refused every green PR while looking like it worked. The raw JSON needs no quoting.
+        const readMergeState = () => {
+          const out = execFileSync('gh', ['pr', 'view', prNumber, '--json', 'state,mergeStateStatus'], {
+            cwd: input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd(),
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+            timeout: 20000,
+            shell: process.platform === 'win32',
+          });
+          const parsed = JSON.parse(String(out).trim() || '{}');
+          return (
+            String(parsed.state ?? '').toUpperCase() + '/' + String(parsed.mergeStateStatus ?? '').toUpperCase()
+          );
+        };
+
+        const alreadyGreen = () => {
+          try {
+            let state = readMergeState();
+            // GitHub computes mergeability lazily and answers UNKNOWN until it has — which is the
+            // normal reading for a minute or two after `main` moves, i.e. exactly when a session is
+            // merging. Without this retry a green PR is refused for a reason that is about GitHub's
+            // bookkeeping and nothing else. One retry, once, so the hook stays fast.
+            if (state === 'OPEN/UNKNOWN') {
+              Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);
+              state = readMergeState();
+            }
+            return state === 'OPEN/CLEAN';
+          } catch {
+            // Unreadable: keep the refusal. The stand-down is the way past a blind spot here,
+            // because failing open would retire the clause on any transient gh error.
+            return false;
+          }
+        };
+
+        if (changedFiles !== null && changedFiles < minFiles && !alreadyGreen()) {
           deny(
             'C10 — PR #' +
               prNumber +
@@ -1115,11 +1176,13 @@ try {
               'Fold this into the branch carrying the rest of the task and merge once: the fix, ' +
               'its test, its doc, the follow-up already in view. Nothing here delays a merge — ' +
               'a finished PR of any real size goes the moment it is green.\n\n' +
-              '🔴 BUT IF THIS PR IS ALREADY OPEN AND GREEN, MERGE IT WITH THE STAND-DOWN ' +
-              'RATHER THAN CLOSING IT. Its PR run is already paid and closing refunds nothing: ' +
-              'merging costs one more run on `main`, while closing and rebuilding the work later ' +
-              'costs a fresh PR run AND that same `main` run. This clause is about what you OPEN, ' +
-              'not about abandoning work already built and verified.\n\n' +
+              '🔴 THIS PR IS NOT GREEN YET — that is the only reason you are reading this. An ' +
+              'already-open PR whose required checks have all passed (GitHub `CLEAN`) goes ' +
+              'straight through from 2026-10-01, with no stand-down: its PR run is already paid, ' +
+              'so refusing the merge saves nothing. You are being stopped while folding is still ' +
+              'possible, because this branch has not shipped. NEVER CLOSE IT to satisfy this ' +
+              'clause — closing refunds nothing and rebuilding the work later costs a fresh PR ' +
+              'run AND the same `main` run. This clause is about what you OPEN.\n\n' +
               'TO SEE WHERE IT CAN GO, run:\n  node scripts/rollup-prs.mjs\n' +
               'It reads every open PR and groups the ones whose file sets are DISJOINT into one ' +
               'branch. A migration, a protected file or a frozen path is never folded in, and a ' +
