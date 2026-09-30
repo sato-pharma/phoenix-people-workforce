@@ -158,8 +158,74 @@ jobs:
             exit 0
           fi
 
+          # ── NAME THE SUITE THAT REFUSED IT, rather than telling a human to go and look ──────────
+          #
+          # Until 2026-09-30 this step's own error text said "READ THE CHECK SUITES ON main HEAD FIRST
+          # — gh api …/check-suites", plus which four apps to ignore. That instruction was correct and
+          # it was still a manual step, at 4am, by someone who has to know that `queued` on `sentry`
+          # means nothing and `failure` on a Dependabot `dynamic` run means everything. It cost a
+          # two-hour diagnosis on 2026-09-30 for a withheld deploy whose cause was one line of JSON.
+          #
+          # The classification is the same one `.claude/skills/ship/verify-shipped.mjs` applies
+          # (`classifyWithheld`): a BAD conclusion is failure / cancelled / timed_out /
+          # action_required / startup_failure, and `sentry`, `claude`, `vercel` and `railway-app` are
+          # excluded because they sit at `queued` FOREVER on every commit and do not hold the gate —
+          # measured on two commits that deployed normally. Chasing those four is the single most
+          # common wasted move during one of these.
+          #
+          # BOTH commits are asked about on purpose. The withheld deploy belongs to the settled ref,
+          # but a later merge carries production forward, so if production is behind the settled ref
+          # then HEAD did not ship either and a failure on either commit can be the reason.
+          #
+          # 🔴 BEST-EFFORT, AND IT MUST STAY THAT WAY. Every call is `|| true` and every branch still
+          # produces a line, because an alarm must never fail because the thing describing it failed —
+          # the same rule the streak line downstream is built on. `set -euo pipefail` is in force here,
+          # so an unguarded curl would abort the step and lose the alert entirely.
+          classify_suites() {
+            local sha="$1" label="$2" json
+            json=$(api "https://api.github.com/repos/${REPO}/commits/${sha}/check-suites?per_page=100" 2>/dev/null || true)
+            if [ -z "$json" ]; then
+              printf '%s %s: check suites unreadable' "$label" "${sha:0:9}"
+              return 0
+            fi
+            printf '%s' "$json" | jq -r --arg label "$label" --arg sha "${sha:0:9}" '
+              # 🔴 AN UNREADABLE ANSWER MUST NOT READ AS A CLEAN ONE. Without this first branch a 200
+              # carrying an unexpected shape — `{}`, or `{"message":"Not Found"}` — falls through every
+              # filter and prints "every gating suite GREEN", i.e. it actively tells the reader the gate
+              # did not refuse the deploy when nothing was actually read. Verified by feeding it `{}`.
+              if (.check_suites | type) != "array" or (.check_suites | length) == 0 then
+                "\($label) \($sha): NO check suites reported — unreadable, do NOT read this as clean"
+              else
+              ( [ .check_suites[]
+                  | select(((.app.slug // "") | IN("sentry","claude","vercel","railway-app")) | not) ] ) as $gating
+              | ( [ $gating[] | select((.conclusion // "") | IN("failure","cancelled","timed_out","action_required","startup_failure")) ] ) as $bad
+              | if ($bad | length) > 0 then
+                  "\($label) \($sha): REFUSED BY " + ([ $bad[] | "\(.app.slug // "?")=\(.conclusion)" ] | join(", "))
+                elif ([ $gating[] | select((.status // "") != "completed") ] | length) > 0 then
+                  "\($label) \($sha): still running — " + ([ $gating[] | select((.status // "") != "completed") | "\(.app.slug // "?")=\(.status)" ] | join(", "))
+                elif ($gating | length) == 0 then
+                  "\($label) \($sha): only the never-gating apps reported — unreadable, do NOT read this as clean"
+                else
+                  "\($label) \($sha): every gating suite GREEN — the gate did not refuse this one"
+                end
+              end' 2>/dev/null || printf '%s %s: check suites unparseable' "$label" "${sha:0:9}"
+          }
+
+          SUITES_REF="$(classify_suites "$REF_SHA" "settled_ref" || true)"
+          SUITES_HEAD=""
+          [ "$HEAD_SHA" != "$REF_SHA" ] && SUITES_HEAD="$(classify_suites "$HEAD_SHA" "main HEAD" || true)"
+          SUITE_VERDICT="$SUITES_REF"
+          [ -n "$SUITES_HEAD" ] && SUITE_VERDICT=$(printf '%s | %s' "$SUITES_REF" "$SUITES_HEAD")
+          echo "suite verdict: $SUITE_VERDICT"
+
           echo "DRIFT_SCOPE=PRODUCTION" >> "$GITHUB_ENV"
-          echo "::error::Production is NOT serving a main commit that is already ${SETTLE_MINUTES} minutes old. settled_ref=$REF_SHA main=$HEAD_SHA production=${LIVE_SHA:-<unreachable>}. READ THE CHECK SUITES ON main HEAD FIRST — gh api repos/${REPO}/commits/$HEAD_SHA/check-suites — because ANY failed or cancelled suite withholds the deploy, not just ci.yml, so a green ci.yml proves nothing on its own. Ignore sentry, claude, vercel and railway-app: they sit at queued forever on every commit and do not hold the gate. If every suite is green, this is the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch): railway status --project dc218ad3-99b7-4aff-be38-953a57524a71 --environment production --json, then inspect .environments.edges[0].node.serviceInstances.edges[].node.latestDeployment.meta.branch — it must read \"main\"."
+          # Multiline-safe delimiter form: a bare `K=V` breaks the file if the value ever gains a newline.
+          {
+            echo "DRIFT_SUITES<<DRIFT_SUITES_EOF"
+            printf '%s\n' "$SUITE_VERDICT"
+            echo "DRIFT_SUITES_EOF"
+          } >> "$GITHUB_ENV"
+          echo "::error::Production is NOT serving a main commit that is already ${SETTLE_MINUTES} minutes old. settled_ref=$REF_SHA main=$HEAD_SHA production=${LIVE_SHA:-<unreachable>}. WHY THE DEPLOY WAS WITHHELD, already read for you: ${SUITE_VERDICT}. A named REFUSED BY is the cause — fix that workflow, and note that re-running it green does NOT resurrect the skipped deploy; the next merge carries production forward. If every gating suite is GREEN, this is instead the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch): railway status --project dc218ad3-99b7-4aff-be38-953a57524a71 --environment production --json, then inspect .environments.edges[0].node.serviceInstances.edges[].node.latestDeployment.meta.branch — it must read \"main\". The raw data is gh api repos/${REPO}/commits/\$SHA/check-suites; sentry, claude, vercel and railway-app sit at queued forever and never hold the gate."
           exit 1
 
       # STAGING, once it has a branch of its own (added 2026-09-27, dormant until then).
@@ -409,7 +475,14 @@ jobs:
             if [ "${DRIFT_SCOPE:-PRODUCTION}" = "STAGING" ]; then
               TEXT=$(printf '%s\n\nStaging is not serving its source branch HEAD, 3 minutes after first noticing.\n\nCHECK THIS FIRST: staging deploys from the staging branch, which is published ONLY from CI-green main commits by staging-branch-sync.yml. A sync that stopped firing leaves staging serving an ever-older commit with nothing red anywhere. Read: gh run list --workflow=staging-branch-sync.yml --limit 5, then git ls-remote origin refs/heads/staging\n\nIf that branch IS current, then the Railway staging source was changed - check the staging service settings.\n\nPRODUCTION IS NOT IMPLICATED: this check compares staging against its OWN branch, and production has a separate check in the same workflow.\n\nAccount: docs/deployment.md, "The deploy gate".\n\n%s' "$HEADER" "$RUN_URL")
             else
-              TEXT=$(printf '%s\n\nProduction is not serving main HEAD, 3 minutes after first noticing.\n\nCHECK THIS FIRST, it is now the most likely cause: production deploys are GATED on the commit (Railway Wait for CI). ANY failed or cancelled check suite on main HEAD withholds the deploy — not just ci.yml — and Railway then marks it SKIPPED within MINUTES of that conclusion, with nothing turning red. So read every suite, not the CI run: gh api repos/%s/commits/MAIN_HEAD/check-suites\n\nAND CHECK WHETHER THIS ALARM IS ITS OWN CAUSE: a scheduled run of this workflow attaches its OWN check suite to main HEAD, so a false alarm here withholds the very deploy it is measuring. That is what happened on cd9e0be03 (2026-09-27), and it is why the reference is now a settled commit rather than HEAD.\n\nIf every suite on that commit is green, then this is the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch) — check railway status for the production service source branch.\n\nAccount: docs/deployment.md, "The deploy gate".\n\n%s' "$HEADER" "$REPO" "$RUN_URL")
+              # 🔴 THE ANSWER LEADS, NOT THE COMMAND TO FIND IT. This body used to say "read every
+              # suite, not the CI run: gh api …/check-suites" — correct, and still a manual step for
+              # whoever is awake. The production step above now classifies the suites itself and
+              # leaves the verdict in DRIFT_SUITES, so the alert names the workflow that refused the
+              # deploy. The raw command stays at the bottom as the way to check the classification,
+              # not as the way to do it by hand. The fallback keeps the alert intact if the
+              # classification could not be read — an alarm must never be worth less than nothing.
+              TEXT=$(printf '%s\n\nProduction is not serving main HEAD, 3 minutes after first noticing.\n\nWHY — ALREADY READ FOR YOU: %s\n\nA named "REFUSED BY" IS the cause. Production deploys are GATED on the commit (Railway Wait for CI): ANY failed or cancelled check suite withholds it, not just ci.yml, and Railway marks it SKIPPED within MINUTES of that conclusion with nothing turning red. Fix that workflow — but note re-running it green does NOT resurrect the skipped deploy, and NEVER railway redeploy or re-merge: the next merge carries production forward on its own.\n\nIf it reads "every gating suite GREEN" instead, the gate did not refuse this one, and it is the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch) — check railway status for the production service source branch.\n\nAND CHECK WHETHER THIS ALARM IS ITS OWN CAUSE: a scheduled run of this workflow attaches its OWN check suite to main HEAD, so a false alarm here withholds the very deploy it is measuring. That is what happened on cd9e0be03 (2026-09-27), and it is why the reference is now a settled commit rather than HEAD.\n\nTo check the classification above: gh api repos/%s/commits/SHA/check-suites — sentry, claude, vercel and railway-app sit at queued forever and never hold the gate.\n\nAccount: docs/deployment.md, "The deploy gate".\n\n%s' "$HEADER" "${DRIFT_SUITES:-could not be classified — read the suites by hand}" "$REPO" "$RUN_URL")
             fi
           fi
           HTTP=$(curl -sS --max-time 20 -X POST \
