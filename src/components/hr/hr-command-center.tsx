@@ -50,6 +50,7 @@ import {
   BriefcaseBusiness,
   ChevronDown,
   Fingerprint,
+  FileSearch,
   FileSpreadsheet,
   HeartPulse,
   Hourglass,
@@ -76,6 +77,12 @@ import { type HrFunctionKey } from "@/lib/auth/hr-functions";
 import type { HrCommandCenterData, HrCommandGroup, HrCommandTile } from "@/lib/hr/command-center";
 
 const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
+  // `cv_lookup` contributes no tiles and no charts (SOURCES_BY_FUNCTION.cv_lookup — a candidate
+  // figure here would show the size of the pool to the one seat the pool is withheld from), so
+  // buildGroups never emits a group for it and this icon is never drawn. It is declared anyway
+  // because the Record is exhaustive: a missing key is a runtime crash on the page HR opens every
+  // morning, and leaving it out "because nothing renders it" bets on a function never earning a tile.
+  cv_lookup: FileSearch,
   engagement_retention: HeartPulse,
   hr_communication: Mail,
   hr_governance: ShieldCheck,

@@ -101,20 +101,46 @@ function runRouteTests() {
 
   const gate = route.indexOf('requireRecruitmentAccess(request, "candidates", "read")');
   const predicate = route.indexOf("canOpenWhatsAppApplications(access)");
-  const load = route.indexOf("loadCandidateApplication(id)");
-  const build = route.indexOf("buildWhatsAppApplicationPdf(");
+  // 🔴 THE BYTES MOVED OUT OF THIS ROUTE ON 2026-09-30, AND THE FACTS BELOW MOVED WITH THEM — each
+  // is now asserted against the file that actually holds it. CV Lookup
+  // (app/api/recruitment/cv-lookup) became a second sender of the same file under a different gate
+  // (`cv_lookup:read`, for a seat that holds no candidates grant), and two copies of the builder
+  // would let "the CV with its application" mean two different documents depending on which screen
+  // opened it. Nothing this route is still responsible for moved: the gate, the predicate, the id
+  // check, the export limit, the headers and the base64 form are all still asserted here, in order.
+  const build = route.indexOf("buildCandidateApplicationFile(id)");
   assert.ok(gate >= 0 && predicate > gate, "the candidates gate, then the shared predicate");
   assert.ok(route.indexOf("isUuid(id)") > predicate, "a malformed id is a 404 after the gate");
-  assert.ok(route.indexOf("assertExportRateLimit(") < load, "the export limit is charged before anything is built");
-  assert.ok(load < build, "the application is loaded before Chromium starts");
-  assert.ok(route.includes("hasWhatsApp"), "whether they applied on WhatsApp is passed through to the builder");
-  assert.ok(
-    /hasWhatsApp\s*\n?\s*\?\s*applicationFileName\(application\.row\.name\)\s*\n?\s*:\s*candidateApplicationFileName\(application\.row\.name\)/.test(route),
-    "the file names itself for what it is",
-  );
+  assert.ok(build > 0, "the route builds the file through the shared builder");
+  assert.ok(route.indexOf("assertExportRateLimit(") < build, "the export limit is charged before anything is built");
   assert.ok(route.includes('"Cache-Control": "private, no-store"'), "a person's CV is never cached");
   assert.ok(route.includes('searchParams.get("format") === "base64"'), "the print page's text form is served");
   assert.ok(route.includes('scope: "export:recruitment:candidate-application"'));
+
+  // The builder itself: the application is loaded before Chromium starts, and the file still names
+  // itself for what it is.
+  const builder = stripComments(read("src/lib/recruitment/candidate-application-build.ts"));
+  const load = builder.indexOf("loadCandidateApplication(candidateId)");
+  const pdf = builder.indexOf("buildWhatsAppApplicationPdf(");
+  assert.ok(load >= 0 && load < pdf, "the application is loaded before Chromium starts");
+  assert.ok(builder.includes("hasWhatsApp"), "whether they applied on WhatsApp is passed through to the builder");
+  assert.ok(
+    /hasWhatsApp\s*\n?\s*\?\s*applicationFileName\(application\.row\.name\)\s*\n?\s*:\s*candidateApplicationFileName\(application\.row\.name\)/.test(builder),
+    "the file names itself for what it is",
+  );
+
+  // ONE builder, asserted from BOTH ends — the whole point of the extraction is that the screening
+  // page and CV Lookup cannot drift apart.
+  const lookupRoute = stripComments(read("app/api/recruitment/cv-lookup/[id]/application/route.ts"));
+  assert.ok(
+    lookupRoute.includes("buildCandidateApplicationFile(id)"),
+    "CV Lookup must send the SAME file through the SAME builder — a second copy is how two doors " +
+      "start handing over different documents",
+  );
+  assert.ok(
+    lookupRoute.includes('requireRecruitmentAccess(request, "cv_lookup", "read")') && !lookupRoute.includes('"candidates"'),
+    "and it must do it on its OWN gate: the seat CV Lookup exists for holds no candidates grant",
+  );
 }
 
 function runRegistryTests() {
