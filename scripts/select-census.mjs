@@ -377,9 +377,25 @@ export function censusOfFile(file, rawSource, { table, schema = 'public', root }
       // others, only the FIRST argument is the payload.
       const obj = site.kind === 'delete' ? null : /^\s*\{([\s\S]*)\}\s*$/.exec(splitTopLevel(payload)[0] ?? '');
       if (obj) {
-        site.writeKeys = splitTopLevel(obj[1])
+        const entries = splitTopLevel(obj[1]);
+        site.writeKeys = entries
           .map((kv) => /^\s*["']?([A-Za-z_]\w*)["']?\s*:/.exec(kv)?.[1] ?? (IDENT.test(kv.trim()) ? kv.trim() : null))
           .filter(Boolean);
+        // 🔴 A SPREAD CARRIES COLUMNS THIS CANNOT SEE, AND DROPPING IT SILENTLY IS THE WORST
+        // FAILURE THIS TOOL HAS — worse than refusing to answer. `.insert({ ...row, created_at })`
+        // listed `created_at` alone and reported `resolved: true` with an empty note, so an audit
+        // read the site as fully checked and never probed the six columns `row` actually writes.
+        // Measured 2026-09-30 across the 71 tables of the recruitment and attendance audits: 12
+        // write sites like this, including `deductions_decisions` (money) and `v2_excuse_requests`.
+        // A column that is never NAMED is a column that is never PROBED, so the audit comes back
+        // clean while the hole is still open. The contract of this file is that anything it cannot
+        // resolve is UNRESOLVED, never clean — so say so, and keep the keys it could read.
+        if (entries.some((kv) => /^\s*\.\.\./.test(kv))) {
+          site.resolved = false;
+          site.note =
+            'write payload spreads another object (`...x`) — the keys listed are only the LITERAL ' +
+            'ones; the spread’s columns are NOT checked';
+        }
       } else if (payload.trim() && site.kind === 'write' && !truncated) {
         site.resolved = false;
         site.note = 'write payload is not an object literal — its columns are NOT checked';
@@ -396,8 +412,16 @@ export function censusOfFile(file, rawSource, { table, schema = 'public', root }
       } else {
         const ev = evaluateExpression(firstArg, source, file, root);
         site.select = ev.value || firstArg.trim();
-        site.resolved = ev.resolved;
-        if (ev.note) site.note = ev.note;
+        // 🔴 NEVER UPGRADE `resolved` BACK TO TRUE. A write carries BOTH halves —
+        // `.insert(payload).select("*")` — and this line used to assign the SELECT's verdict over
+        // the payload's, so a site whose payload could not be read reported `resolved: true` while
+        // still carrying the note that says its columns are NOT checked. A consumer that trusts the
+        // flag (every one of them does) then counts it as checked. Measured 2026-09-30: 17 such
+        // sites across the 71 tables of the recruitment and attendance audits, among them
+        // `deductions_decisions`, `employee_resignations` and `ats_candidates`. Unresolved is
+        // sticky: once any half of a site is unreadable, the site is unreadable.
+        site.resolved = site.resolved && ev.resolved;
+        if (ev.note && !site.note) site.note = ev.note;
         if (ev.resolved) Object.assign(site, parseSelect(ev.value));
       }
     } else if (site.kind === 'read') {
