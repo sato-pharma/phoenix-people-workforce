@@ -388,6 +388,8 @@ function buildEmployeePortalSections({
         ...(showOrganogramTab ? [{ href: "/employee-portals/organogram", label: "Organogram", icon: Building2 }] : []),
         // Open to every role, self-scoped (see src/lib/employee-360/access.ts).
         { href: "/employee-portals/employee-360", label: "Employee 360", icon: IdCard },
+        // Open to every employee: their own business card, editable name/number, and a request to HR.
+        { href: "/employee-portals/business-cards", label: "Business Cards", icon: IdCard },
         ...(showBusinessReviewTab ? [{ href: "/employee-portals/business-review", label: "Business Review", icon: ChartColumnBig }] : []),
         // Private Calendar — self-scoped; every portal role since 2026-08-01, kept behind its flag so
         // Modules Control can still curate it per role or person.

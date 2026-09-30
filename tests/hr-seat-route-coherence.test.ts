@@ -264,6 +264,7 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
   "/hr/attendance/device-user-mapping": 'canAccessAttendanceSetup(access, "read") — true for Operations, the only seat offered it',
   "/hr/attendance/policies": 'canAccessAttendanceSetup(access, "read") — true for Operations, the only seat offered it',
   "/hr/admin/support-requests": "hoisted const canRead = await canAccess(access, support_requests, read) — true for both",
+  "/hr/admin/business-card-requests": "hoisted const canRead = await canAccess(access, business_card_requests, read) — true for both",
   "/hr/offers": "destructured Promise.all, gate is !canRead = offers:read — true for Advisory, the only seat offered it",
   "/hr/hiring-documents": "destructured Promise.all, gate is isHrAuthorityRole && employee_documents:read — true for both",
   "/hr/hiring-pack": "destructured Promise.all, gate is isHrAuthorityRole && employee_documents:read — true for both",
