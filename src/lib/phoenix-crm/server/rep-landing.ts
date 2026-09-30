@@ -5,7 +5,7 @@ import { logError } from "@/lib/observability/log";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmToday } from "@/lib/phoenix-crm/server/today";
 import { addressWithoutTheBrick, stopWhereLine, todayByBrick } from "@/lib/phoenix-crm/today-rules";
-import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 /**
  * Phoenix CRM — the rep's day, small enough to live on his LANDING page.
@@ -30,6 +30,14 @@ export type RepTodayStop = {
   customerId: string;
   name: string;
   listType: PhoenixCrmListType;
+  /**
+   * 🔴 THE GRADE AND THE SPECIALITY GO ON EVERY ROW (owner, recording the old CRM on 2026-09-29:
+   * its dashboard "shows him my visits of today, with the specialities, with the grades"). The grade
+   * is the A/B/C on his own list — the one his frequency is counted against — so it is his own work,
+   * never a judgement of him. Both come straight off the day's stops; nothing is read twice.
+   */
+  grade: PhoenixCrmGrade | null;
+  speciality: string | null;
   /**
    * Where and when, on one line — the place, and today's receiving hours. His ask of the same
    * morning: "list all of today with timing and location". Carries NOTHING that judges him: no
@@ -118,6 +126,10 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
         customerId: stop.customerId,
         name: stop.name,
         listType: stop.listType,
+        // `grade` is optional on a stop (one built before the Next-up card read it), so a missing one
+        // is "no grade" here, and the row says so rather than leaving a gap.
+        grade: stop.grade ?? null,
+        speciality: stop.speciality,
         // 🔴 NEITHER THE BRICK NOR THE AREA GOES ON A ROW (owner, 2026-09-30, looking at it: "you
         // don't have to write Menoufia, because she already knows this is her area — and the Bagour
         // is duplicated"). Both are constant for the whole panel: the area is HIS OWN territory, and

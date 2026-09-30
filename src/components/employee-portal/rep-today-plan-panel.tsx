@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Check, Plus } from "lucide-react";
 
+import { gradeSpecialityText } from "@/components/phoenix-crm/labels";
 import { PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import type { RepTodayPlan, RepTodayBrick, RepTodayStop } from "@/lib/phoenix-crm/server/rep-landing";
 
@@ -97,6 +98,14 @@ function StopRow({ canAdd, stop }: { canAdd: boolean; stop: RepTodayStop }) {
           dir="auto"
         >
           {stop.name}
+        </span>
+        {/* Who he is, then where and when — the grade and speciality on a line of their own (owner,
+            2026-09-29, of the old CRM's dashboard: "with the specialities, with the grades"). Not
+            folded into the line below: two Arabic parts joined by " · " inside one line swap places
+            on screen, so each line keeps its own `dir="auto"`. Semibold, as every Phoenix CRM screen
+            prints this same line. */}
+        <span className="mt-0.5 block break-words text-phx-xs font-semibold leading-snug text-slate-500" dir="auto">
+          {gradeSpecialityText(stop)}
         </span>
         <span className="mt-0.5 block break-words text-phx-xs leading-snug text-slate-500" dir="auto">
           {stop.where}
