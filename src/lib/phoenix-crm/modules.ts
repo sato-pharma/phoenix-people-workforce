@@ -1,5 +1,3 @@
-import type { PhoenixCrmTabs } from "@/lib/phoenix-crm/server/overview";
-
 /**
  * Phoenix CRM — the modules, and the route each one lives at.
  *
@@ -26,7 +24,14 @@ import type { PhoenixCrmTabs } from "@/lib/phoenix-crm/server/overview";
  */
 export const PHOENIX_CRM_PORTAL_BASE = "/employee-portals/field-crm";
 
-export type PhoenixCrmModuleKey = keyof PhoenixCrmTabs;
+/**
+ * 🔴 WRITTEN OUT, NOT DERIVED FROM `PhoenixCrmTabs`. The boundary test keeps every rule module under
+ * `src/lib/phoenix-crm/` free of `server/` imports so the rules stay usable without a database — and
+ * an `import type` counts, because the rule is about the dependency, not about what survives the
+ * build. `server/page.ts` carries a compile-time check that this union and `keyof PhoenixCrmTabs`
+ * still agree, so adding a tab without giving it a card cannot compile.
+ */
+export type PhoenixCrmModuleKey = "today" | "visits" | "list" | "plan" | "team" | "doctors" | "reports" | "settings";
 
 export type PhoenixCrmModule = {
   key: PhoenixCrmModuleKey;
@@ -59,7 +64,7 @@ export function isPhoenixCrmModuleKey(value: string | null | undefined): value i
 }
 
 /** The modules this viewer may open, in the chooser's order. Never a module his role cannot reach. */
-export function allowedPhoenixCrmModules(tabs: PhoenixCrmTabs): PhoenixCrmModule[] {
+export function allowedPhoenixCrmModules(tabs: Record<PhoenixCrmModuleKey, boolean>): PhoenixCrmModule[] {
   return PHOENIX_CRM_MODULES.filter((module) => tabs[module.key]);
 }
 

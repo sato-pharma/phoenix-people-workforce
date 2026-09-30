@@ -13,10 +13,23 @@ import { isForbiddenError } from "@/lib/auth/server";
 import { ApiError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { PHOENIX_CRM_PORTAL_BASE } from "@/lib/phoenix-crm/modules";
+import { PHOENIX_CRM_PORTAL_BASE, type PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 import { loadPhoenixCrmOverview, type PhoenixCrmOverview } from "@/lib/phoenix-crm/server/overview";
 
 export const PHOENIX_CRM_PORTAL_PATH = PHOENIX_CRM_PORTAL_BASE;
+
+/**
+ * The chooser's module list and the overview's tab flags must name the SAME modules.
+ *
+ * `modules.ts` writes its union out by hand, because the boundary test keeps the rule modules free of
+ * `server/` imports. These two lines are what stops the pair drifting: add a tab to `PhoenixCrmTabs`
+ * without giving it a card, or a card without a tab, and this file stops compiling. They cost nothing
+ * at runtime — both are types.
+ */
+type ModuleKeysCoverTabs = PhoenixCrmModuleKey extends keyof PhoenixCrmOverview["tabs"] ? true : never;
+type TabsCoverModuleKeys = keyof PhoenixCrmOverview["tabs"] extends PhoenixCrmModuleKey ? true : never;
+const MODULES_AND_TABS_AGREE: [ModuleKeysCoverTabs, TabsCoverModuleKeys] = [true, true];
+void MODULES_AND_TABS_AGREE;
 export const PHOENIX_CRM_ADMIN_PATH = "/admin/field-crm";
 
 export type PhoenixCrmPageLoad =
