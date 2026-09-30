@@ -161,7 +161,10 @@ export function runPhoenixCrmSplitModulesTests(): void {
 
     // Every hand-off that used to switch tabs in place now NAVIGATES, carrying its subject.
     assert.match(shell, /if \(single\) \{\s*window\.location\.assign\(moduleHref\(next, carry\)\);/, "openTab navigates");
-    assert.match(shell, /openTab\("visits", \{ customer: visit\.customerId, name: visit\.customerName \}\);/, "Today sends the customer in the address");
+    // 🔴 Today's own hand-off is GONE, not broken: the module was retired on 2026-09-30 and nothing
+    // inside Phoenix CRM hands a customer across pages any more. What does it now is the rep's
+    // LANDING panel, by a plain link, pinned in tests/phoenix-crm-today.test.ts.
+    assert.ok(!shell.includes("function startVisit("), "no in-page customer hand-off is left to make");
     assert.match(shell, /openTab\("list", \{ validate: String\(validate\.contactCrmId\), name: validate\.customerName \}\);/, "and Add visit sends the entry to Validate");
     // Rebuilt on the FIRST paint, never in an effect — otherwise the tab opens on its own start
     // screen and the rep has to find the customer again.
