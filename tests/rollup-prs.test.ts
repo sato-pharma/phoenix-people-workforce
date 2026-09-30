@@ -732,6 +732,32 @@ export function runRollupPrsTests(): void {
       /NEVER HAND HIM MORE THAN ONE MERGE AT A TIME/,
       "AGENTS.md must still carry the one-merge-at-a-time rule verbatim in §6.",
     );
+
+    // 🔴 AND THE WINDOW, because "do not merge the members separately" is unusable without it.
+    // Measured 2026-09-30: roll-up #4911 opened at ~13:16 with a warning comment on each member, and
+    // lost #4910 at 13:17:55 and #4909 at 13:18:55 — the first 90 seconds after being warned. With
+    // that morning's #4814 that is three members lost in one day, every one of them told in writing.
+    // An earlier reading of the same day put the window at ten minutes and concluded a roll-up should
+    // be built once its members went green; that is backwards, and these assertions are what stop the
+    // shorter, correct figure being trimmed back out of the one file every session auto-loads.
+    assert.match(
+      agents,
+      /MERGED BEFORE ITS MEMBERS, NOT MERELY BUILT BEFORE THEM/,
+      "AGENTS.md §6 must say a roll-up is MERGED before its members, not merely built before them — "
+        + "they merged 90 seconds after being warned, so the window is what makes the rule usable.",
+    );
+    assert.match(
+      agents,
+      /the comment is a courtesy, never a guard/,
+      "and it must say the comment does not enforce it — three sessions were each told on their own PR "
+        + "and each merged anyway, so a session reading only the warning would go on trusting it.",
+    );
+    assert.match(
+      agents,
+      /if they land first, CLOSE it — never merge it/,
+      "and it must say what to do once the members have landed: a roll-up whose members merged replaces "
+        + "no merges and is byte-identical on main, so merging it is an empty squash paying a full main run.",
+    );
   }
 
   // ── 8. --apply is refused against a snapshot, and the script never merges ────────────────────

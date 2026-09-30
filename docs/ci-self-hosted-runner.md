@@ -192,6 +192,46 @@ when one part is urgent and the rest is not.
 the invoice is the only authority and the owner read it as **$300.88**. Measure minutes, report
 minutes.
 
+### 🔴 A roll-up must be merged before its members — measured 2026-09-30
+
+AGENTS.md §6 already said not to merge a roll-up's members separately. What it did not say is how
+long you have, and the answer turned out to be **about three minutes**.
+
+**The arc, all on 2026-09-30, Cairo:**
+
+| | |
+| --- | --- |
+| 12:59 | `rollup-prs.mjs` names #4910 + #4909 + #4907 — 3 merges → 1, ~56 billable minutes |
+| ~13:16 | `--apply` builds it, #4911 opens, and **a comment is left on each member** warning it off |
+| 13:17:55 | **#4910 merged separately** — 90 seconds later |
+| 13:18:55 | **#4909 merged separately** |
+| 13:2x | #4911's `validate` passes and `checks` goes red — on #4907's *own* typecheck, byte-identical on its own run |
+| — | #4911 closed: one unmerged member left, so it replaced no merges. One CI run spent, none saved |
+
+That morning #4814 had already gone the same way, four minutes after roll-up #4821 was built and
+commented on. **Three members lost across two roll-ups in one day.**
+
+**So the comment is a courtesy, not a guard.** Three sessions were each told in writing on their own
+PR and each merged anyway — not carelessness: a session reads its PR as green and its instruction as
+"merge it", and a comment is not something GitHub enforces. Nothing available makes it one.
+
+**What follows, and why it is NOT "wait for green".** An earlier reading of this day put the window
+at about ten minutes and concluded a roll-up should be built once its members went green. That is
+backwards — by the time they are green they are minutes from being merged. Build it the moment the
+tool names one and put it to the owner in the same turn; `--apply`'s own 25-minute members-checks
+wait, added the same day, already covers the risk of building over an unfinished member, so there is
+nothing left to wait for.
+
+🔴 **And if the members land first, close the roll-up — never merge it.** It then replaces no merges,
+and its files are byte-identical on `main`, which is the `carried` verdict: merging is an empty
+squash paying a full `main` run to ship nothing. `--settle` is the right ending, and
+`tests/rollup-prs.test.ts` §4b exists because the script once proposed rolling an already-carried PR
+up a second time.
+
+**The day did end with the mechanism working.** At 16:01 another session's roll-up, #4917, carried
+two PRs cleanly and `--settle` closed the originals 55 seconds after it merged. The difference was
+the members-checks wait landing in between.
+
 ## 🔴 Where the money actually is — and why the run COUNT lies
 
 **Counting runs gives the wrong answer, and a session acted on it.** On 2026-09-27 the owner was told
