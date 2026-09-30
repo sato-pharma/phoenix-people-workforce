@@ -167,6 +167,33 @@ export async function runCvLookupTests() {
       "Database's own drift, which cost this seat an unintended screen.",
   );
 
+  // ── 3b · A HIT OFFERS BOTH THE FILE AND THE BOOKING ──────────────────────────────────────────
+  //
+  // "Schedule interview" reaches any screen that shows a CV (owner, 2026-09-18: "from any screen,
+  // any CV"), and CV Lookup is one of them (owner, 2026-09-30). Pinned as the SHARED button, not as
+  // the words on a button: a hand-rolled copy on this screen would be a second scheduling path with
+  // its own idea of who may book, and `ScheduleInterviewButton` is what carries the gate and the
+  // dialog. It draws nothing for a viewer who cannot book, so this screen must NOT restate that
+  // condition itself.
+  const view = read("src/components/recruitment/cv-lookup-search.tsx");
+  assert.match(
+    view,
+    /import \{ ScheduleInterviewButton \} from "@\/components\/recruitment\/interview-calendar\/schedule-interview-button"/,
+    "CV Lookup must use the SHARED Schedule interview button — a local copy is a second booking path.",
+  );
+  assert.match(view, /<ScheduleInterviewButton\b/, "…and actually draw it on a hit.");
+  assert.ok(
+    !/canBookInterviews|useInterviewCalendarMe|interview-calendar\/me/.test(view),
+    "CV Lookup must not re-ask who may book: the shared button owns that gate, and a second copy of " +
+      "the condition is how one of them goes stale.",
+  );
+  // The candidate it books is the one on the row — an id, a name, and what they applied for.
+  assert.match(
+    view,
+    /candidate=\{\{\s*id: hit\.candidateId,\s*jobTitle: hit\.appliedFor \|\| null,\s*name: hit\.name\s*\}\}/,
+    "the booking must carry the hit's own id, name and applied-for title onto the calendar.",
+  );
+
   // ── 4 · THE PAGE LOADS NO CANDIDATES ─────────────────────────────────────────────────────────
   //
   // Asserted against the page's IMPORTS and its CALLS, not against the whole file: the page's own

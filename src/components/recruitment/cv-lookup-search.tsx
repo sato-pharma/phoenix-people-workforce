@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileSearch, Loader2, Search } from "lucide-react";
+import { CalendarPlus, Download, FileSearch, Loader2, Search } from "lucide-react";
 import * as React from "react";
 
 import { AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
@@ -12,6 +12,7 @@ import {
   PortalResponsiveDataList,
   portalInputClassName,
 } from "@/components/employee-portal/portal-primitives";
+import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
 import { Button } from "@/components/ui/button";
 import { cairoDate } from "@/lib/format/cairo-datetime";
 import type { CvLookupHit } from "@/lib/recruitment/cv-lookup";
@@ -154,18 +155,46 @@ export function CvLookupSearch() {
     }
   }, []);
 
-  const openButton = (hit: CvLookupHit) => (
-    <Button
-      className="gap-2"
-      disabled={openingId === hit.candidateId}
-      onClick={() => void openApplication(hit)}
-      size="sm"
-      type="button"
-      variant="outline"
-    >
-      {openingId === hit.candidateId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-      CV + application
-    </Button>
+  /**
+   * The two things a hit offers: read the person, then book them.
+   *
+   * SCHEDULE INTERVIEW IS THE SHARED BUTTON, not a second implementation — the owner's 2026-09-18
+   * rule is that it reaches "any screen, any CV", and `ScheduleInterviewButton` carries the gate
+   * and the dialog with it. It draws NOTHING for somebody who cannot book, so this screen never has
+   * to ask the question: the two seats that hold `cv_lookup` are the Super Admin and HR Operations,
+   * and `isInterviewCalendarOwner` admits exactly those two, so in practice it always draws here —
+   * but the gate stays where it belongs rather than being restated as a condition this file owns.
+   *
+   * `renderTrigger` draws the press in THIS screen's kit. The shared button's own default is the
+   * workstation `Action`, and a workstation control sitting beside the outline Button above would
+   * read as a different kind of thing — the same reason the screening strip passes its own trigger.
+   *
+   * Stacked, not side by side: the CV column is 16% of a `table-fixed` table, and two buttons in a
+   * row there is how a cell starts clipping. The fit harness measures both.
+   */
+  const rowActions = (hit: CvLookupHit) => (
+    <div className="flex flex-col items-start gap-1.5">
+      <Button
+        className="gap-2"
+        disabled={openingId === hit.candidateId}
+        onClick={() => void openApplication(hit)}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        {openingId === hit.candidateId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+        CV + application
+      </Button>
+      <ScheduleInterviewButton
+        candidate={{ id: hit.candidateId, jobTitle: hit.appliedFor || null, name: hit.name }}
+        renderTrigger={({ open, title }) => (
+          <Button className="gap-2" onClick={open} size="sm" title={title} type="button" variant="outline">
+            <CalendarPlus className="h-4 w-4" />
+            Schedule interview
+          </Button>
+        )}
+      />
+    </div>
   );
 
   return (
@@ -224,7 +253,7 @@ export function CvLookupSearch() {
         <CvLookupResultsView
           hits={result.hits}
           query={result.query}
-          renderAction={openButton}
+          renderAction={rowActions}
           truncated={result.truncated}
         />
       ) : null}
