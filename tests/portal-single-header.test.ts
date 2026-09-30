@@ -127,17 +127,39 @@ const SHELL_OWNS_THE_HEADER: ReadonlyArray<{ page: string; components: readonly 
     ],
     page: "app/employee-portals/territory-management/page.tsx",
   },
+  // Employee 360 has TWO portal entry points and they share one view, so both are asserted: a prop
+  // added to one page and forgotten on the other is exactly the half-fix this registry exists to
+  // catch. It was recorded here as a deliberate NON-row until 2026-09-30, on the grounds that nothing
+  // rendered twice; the owner then asked for the demotion anyway ("change the employee 360 h1 to an
+  // h2"), which is the stronger reading — a screen reader announces a second <h1> as the page's name,
+  // so a viewer who cannot see the layout is told the employee's name is the page.
+  {
+    components: [
+      {
+        componentGate: /\{chrome === "admin" \? \(/,
+        file: "src/components/employee-360/employee-360-view.tsx",
+        h1: "gated",
+        pagePasses: /chrome=["']portal["']/,
+        why: "app/(admin)/employee-360/[hrId]/page.tsx renders this view BARE, and its own three <h1>s"
+          + " are all in not-found/error branches, so on the admin SUCCESS path this is the page's ONLY"
+          + " <h1>. An unconditional demotion would leave that page with no top-level heading.",
+      },
+    ],
+    page: "app/employee-portals/employee-360/[hrId]/page.tsx",
+  },
+  {
+    components: [
+      {
+        componentGate: /\{chrome === "admin" \? \(/,
+        file: "src/components/employee-360/employee-360-view.tsx",
+        h1: "gated",
+        pagePasses: /chrome=["']portal["']/,
+        why: "The second portal entry point onto the same view — see the row above.",
+      },
+    ],
+    page: "app/employee-portals/employee-360/page.tsx",
+  },
 ];
-
-/**
- * 🔴 DELIBERATELY NOT A ROW: `src/components/employee-360/employee-360-view.tsx`.
- *
- * It contains an `<h1>` under a shell that passes `title="Employee 360"`, which a grep for `<h1>`
- * reports as this defect. It is not one — the heading is `{subject.displayName}`, the PERSON being
- * looked at, not the page. Nothing is printed twice, and there is nothing for a viewer to see wrong.
- * There is a semantic argument for demoting it to `<h2>` under the shell's page title; that is a
- * different change, it was not asked for, and adding a row here would force it. Audited 2026-09-30.
- */
 
 // 🔴 THE `<h1>` CHECK IS THE LOAD-BEARING ONE; THIS LIST IS THE SECOND FENCE, NOT THE FIRST.
 // `bg-slate-900` is deliberately ABSENT: Report It uses it for buttons, table header rows and the
