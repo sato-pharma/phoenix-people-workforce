@@ -100,33 +100,55 @@ export function requiredCheckState(statusCheckRollup, required) {
  * never promote a pending member to green. That direction matters more than it looks — the whole point
  * of the wait is that a member is carried only once its checks have been SEEN to pass.
  *
+ * 🔴 AND A MEMBER CAN CHANGE UNDER THE WAIT, WHICH IS THE SAME BUG ONE STEP LATER. The checks are
+ * re-read live while the commit to be merged was captured before the wait, so a member whose branch is
+ * pushed meanwhile hands back GREEN CHECKS FOR A DIFFERENT COMMIT — and the roll-up then carries a
+ * commit nothing verified, which is exactly what waiting was supposed to stop. It is not a rare race:
+ * on 2026-09-30 #4907's head moved twice inside fifteen minutes while its checks ran. Its file set was
+ * measured on the old head too, so a new push can also break the disjointness the group was chosen for.
+ * `reread` therefore answers `{ stale: '<why>' }` when the PR is no longer the thing we measured — a
+ * moved head, or a PR that is no longer open — and a stale member stops being waited on and is never
+ * built from. It is not refused, only out of date: the next run measures it afresh.
+ *
  * @param {object} input
  * @param {ReadonlyArray<{ number: number, red?: ReadonlyArray<string>, pending?: ReadonlyArray<string> }>} input.members
  * @param {number} input.timeoutMs how long to keep waiting, from the first call to `now()`.
  * @param {number} input.pollMs how long to sleep between reads.
- * @param {(number: number) => ({ red: string[], pending: string[] } | null)} input.reread one member's
- *   checks, read again; `null` when the read failed.
+ * @param {(number: number) => ({ red: string[], pending: string[] } | { stale: string } | null)} input.reread
+ *   one member's checks, read again; `{ stale }` when the PR is no longer what was measured, and `null`
+ *   when the read failed.
  * @param {(ms: number) => void} input.sleep
  * @param {() => number} [input.now]
  * @param {(progress: { left: Array<{ number: number, pending: string[] }>, msLeft: number }) => void} [input.onPoll]
- * @returns {Array<{ number: number, red: string[], pending: string[] }>} the final reading per member.
+ * @returns {Array<{ number: number, red: string[], pending: string[], stale: string | null }>} the final
+ *   reading per member.
  */
 export function waitForRequiredChecks({ members, timeoutMs, pollMs, reread, sleep, now = () => Date.now(), onPoll }) {
   const state = (members ?? []).map((m) => ({
     number: m.number,
     red: [...(m.red ?? [])],
     pending: [...(m.pending ?? [])],
+    stale: null,
   }));
   const deadline = now() + timeoutMs;
-  // A member that has already gone red is never waited on: nothing it reports later can make it
-  // buildable, and re-reading it would only slow the wait down for the members that can still settle.
-  const stillRunning = () => state.filter((m) => m.red.length === 0 && m.pending.length > 0);
+  // A member that has already gone red, or gone stale, is never waited on again: nothing it reports
+  // later can make it buildable, and re-reading it would only slow the wait for the ones that can
+  // still settle.
+  const stillRunning = () => state.filter((m) => m.red.length === 0 && m.stale === null && m.pending.length > 0);
 
   while (stillRunning().length > 0 && now() < deadline) {
     sleep(pollMs);
     for (const member of stillRunning()) {
       const fresh = reread(member.number);
       if (!fresh) continue;
+      if (fresh.stale) {
+        member.stale = fresh.stale;
+        continue;
+      }
+      // An answer that is neither stale nor two lists is NO NEWS, exactly like a failed read. It must
+      // never be read as a verdict: the empty-list reading of a malformed answer says "finished, and
+      // nothing is red", which is the one direction that would carry an unverified member.
+      if (!Array.isArray(fresh.red) || !Array.isArray(fresh.pending)) continue;
       member.red = fresh.red;
       member.pending = fresh.pending;
     }
@@ -150,13 +172,17 @@ export function waitForRequiredChecks({ members, timeoutMs, pollMs, reread, slee
  *     rule, now also covering a PR that was green-looking only because nothing had run yet;
  *   * a required check never finished inside the wait -> LEAVE IT OUT too, and say that it is a
  *     TIMEOUT rather than a failure. The PR is fine; we simply will not bet a roll-up on a check we
- *     have not seen, and it rolls up on the next run for free.
+ *     have not seen, and it rolls up on the next run for free;
+ *   * the PR is no longer what was measured — its head moved, or it stopped being open -> LEAVE IT
+ *     OUT, and say STALE. This one outranks the other three, because a green reading taken after the
+ *     head moved describes a commit the build would not merge; the sha, the checks and the file set
+ *     have to be the same PR or they are not evidence about anything.
  *
  * Dropping members is always safe: the group was chosen for DISJOINT file sets, and every subset of a
  * disjoint set is disjoint. What is not safe is carrying one whose verdict we never saw.
  *
- * @param {ReadonlyArray<{ number: number, red?: ReadonlyArray<string>, pending?: ReadonlyArray<string> }>} members
- * @returns {{ carry: number[], dropped: Array<{ number: number, kind: 'red' | 'pending', why: string }> }}
+ * @param {ReadonlyArray<{ number: number, red?: ReadonlyArray<string>, pending?: ReadonlyArray<string>, stale?: string | null }>} members
+ * @returns {{ carry: number[], dropped: Array<{ number: number, kind: 'red' | 'pending' | 'stale', why: string }> }}
  */
 export function membersReadyToBuild(members) {
   const carry = [];
@@ -164,7 +190,14 @@ export function membersReadyToBuild(members) {
   for (const member of members ?? []) {
     const red = member?.red ?? [];
     const pending = member?.pending ?? [];
-    if (red.length > 0) {
+    if (member?.stale) {
+      dropped.push({
+        number: member.number,
+        kind: 'stale',
+        why: `${member.stale} — the checks we waited for describe a different commit, so it is not `
+          + 'refused, only out of date, and the next run measures it afresh',
+      });
+    } else if (red.length > 0) {
       dropped.push({
         number: member.number,
         kind: 'red',
