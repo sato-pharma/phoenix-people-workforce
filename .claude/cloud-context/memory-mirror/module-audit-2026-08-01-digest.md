@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 40984f77-33d2-45f9-94fe-bf7b1b13be9d
-  modified: 2026-09-26T02:06:50.248Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 This is the **compressed** form of the 2026-08-01 module audit's raw finder digest. The exhaustive
@@ -107,8 +107,9 @@ code). What is kept is the durable system map and the audit's own meta-critique.
   `ai/openai-client.ts` is the single OpenAI choke point.
 - **tests-ci-docs** [solid] — the verification harness: a hand-rolled unit suite (`tests/run-tests.ts`), a
   Playwright e2e suite, and the Actions workflows. ⚠ CI specifics here are point-in-time and now stale
-  (AGENTS.md is the live source: 6 required checks, `test` split from `validate` on 2026-09-17, merge is
-  branch-protected). Its three most-dangerous untested areas were: business-review-s1 portal scope; every
+  (the protection API is the live source, not AGENTS.md and not this line: **2** required checks as of
+  2026-10-01 — `validate` and `checks` — after #4527 folded `lint`/`typecheck`/`test` into `checks`
+  and 2026-09-29 dropped `mobile` and `secret-scan`; merge is branch-protected). Its three most-dangerous untested areas were: business-review-s1 portal scope; every
   browser-level approval workflow (the e2e suite has NEVER completed in CI); `src/lib/uploads` spreadsheet
   parsing (feeds payroll/sales/coaching/employee importers).
 

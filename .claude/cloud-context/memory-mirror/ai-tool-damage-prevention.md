@@ -78,8 +78,8 @@ Before any commit: confirm `git branch --show-current` is NOT `main`.
 **Rule 2 — CI is the gate. Do NOT run a local full validation.**
 **This rule said "run `npm run check:harden` before every commit" until 2026-08-23. It is now wrong twice over:**
 the gate was retired 2026-08-18 at the owner's instruction, and `check:harden` no longer exists in `package.json`.
-Push the branch and let the PR answer — `validate`, `lint`, `typecheck` and `secret-scan` are required checks and
-block the merge. Do NOT reintroduce it, and do NOT invent a replacement "quick subset" of lint+typecheck before
+Push the branch and let the PR answer — `validate` and `checks` are the required checks and
+block the merge. *(Corrected 2026-10-01 — the gate is TWO, `validate` and `checks`; read the protection API, never this line.)* Do NOT reintroduce it, and do NOT invent a replacement "quick subset" of lint+typecheck before
 pushing. AGENTS.md §7 is the standing rule; see [[local-validation-gates-are-gone-ci-is-the-gate]]. Migrations and
 production deploys are the two things CI never sees — those still get a check immediately before the action.
 

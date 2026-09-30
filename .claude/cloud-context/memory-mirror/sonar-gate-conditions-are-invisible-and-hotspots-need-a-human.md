@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 2d66b5e6-1a1a-44ee-8e95-86506c216715
-  modified: 2026-08-22T22:18:47.128Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 When `sonarqube` fails on a PR, **do not infer which condition failed — you cannot see it, and
@@ -48,9 +48,12 @@ the durable resolution is removing that condition from the custom quality gate (
 owner-only). 🔴 **This line used to say "`sast-scan` still runs and still gates, so security analysis
 is not lost." That is FALSE and it was a false reassurance about security coverage — corrected
 2026-08-23.** Semgrep's `sast-scan` was deliberately never restored (4m14s per PR vs gitleaks' 13s)
-and **no longer runs at all**; the repo says so itself in `.github/workflows/sonarqube.yml:53` and
-`.github/workflows/security-scan.yml:16`, and it is not among the four required checks
-(`validate`, `lint`, `typecheck`, `secret-scan` — verified live against the branch-protection API).
+and **no longer runs at all**, and it is not among the required checks — which are **TWO** as of
+2026-10-01, `validate` and `checks` (read live against the branch-protection API; this line used to
+name four, `validate`/`lint`/`typecheck`/`secret-scan`, and #4527 folded the middle two into
+`checks` while `secret-scan` was dropped from protection on 2026-09-29). **The `sonarqube.yml`
+reference this paragraph used to cite is also gone** — the whole workflow was deleted in `9b12f4dd5`
+(#3484, *remove SonarQube Cloud entirely*, 2026-09-08), which makes the claim stronger, not weaker.
 So dropping the Security Hotspots condition really does drop that coverage; what remains is gitleaks
 secret scanning plus Sonar's own advisory analysis. See
 [[github-personal-account-no-ghas-oss-scanning]]. Note the
