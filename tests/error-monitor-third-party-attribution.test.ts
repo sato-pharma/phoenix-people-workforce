@@ -99,7 +99,18 @@ export function runErrorMonitorThirdPartyAttributionTests() {
 
   // ── The DOM-rewriter probe ──────────────────────────────────────────────────
   // A clean page writes NOTHING, so an ordinary error row is unchanged.
-  const clean = { fontElementCount: 0, hasMicrosoftTranslateAttribute: false, htmlClassName: "h-full antialiased", htmlLang: "en" };
+  // The app's OWN attributes, not empty arrays: `app/layout.tsx` serves lang + class on <html> and
+  // class on <body>, the display-scale script writes documentElement.style, and the portal's modals
+  // write body.style.overflow. A fixture that left them out would pass while the allow-list was
+  // broken, which is the one thing this clean case has to prove.
+  const clean = {
+    bodyAttributeNames: ["class", "style"],
+    fontElementCount: 0,
+    hasMicrosoftTranslateAttribute: false,
+    htmlAttributeNames: ["lang", "class", "style"],
+    htmlClassName: "h-full antialiased",
+    htmlLang: "en",
+  };
   assert.deepEqual(describeDomRewriters(clean), []);
 
   // Google Translate, which is what Chrome, Chrome iOS and Samsung Internet all invoke.
@@ -123,7 +134,72 @@ export function runErrorMonitorThirdPartyAttributionTests() {
 
   // A translated page usually trips several at once, and every one is recorded.
   assert.deepEqual(
-    describeDomRewriters({ fontElementCount: 12, hasMicrosoftTranslateAttribute: false, htmlClassName: "translated-ltr", htmlLang: "ar" }),
+    describeDomRewriters({ ...clean, fontElementCount: 12, htmlClassName: "translated-ltr", htmlLang: "ar" }),
     ["google-translate", "fontTags=12", "lang=ar"],
   );
+
+  // ── Foreign attributes on <html>/<body>: the marker that names error #412's mutator ─────────
+  // 🔴 WHY THIS EXISTS. #412 is a RECOVERED hydration error — React re-renders the subtree on the
+  // client, so the page works and nothing turns red. It started 2026-09-15, reached 8 people on two
+  // portal routes, and 22 of its 23 events were Firefox. Its own client context said
+  // `readyState=complete`, whose documented meaning in report-client-error.ts is that the DOM was
+  // mutated from OUTSIDE React, and every one of those rows came back clean on the four translator
+  // markers above — a real negative, since the reporter omits the field only when the probe returns
+  // []. So the mutator was something none of the existing markers could name. An extension stamping
+  // <html> or <body> is the known cause of that shape, and Grammarly's is one of the best-known
+  // causes of a React hydration mismatch anywhere.
+  //
+  // The 2026-09-08 `translate="no"` opt-out (#3487) is NOT the precedent to follow here — it was a
+  // fix applied to a plausible cause and the owner removed it three days later (#3670) because it
+  // cost every Arabic-speaking reader the translate offer and silenced nothing measurable. #3629's
+  // probe is the precedent: make the next occurrence SAY what did it.
+  assert.deepEqual(
+    describeDomRewriters({ ...clean, htmlAttributeNames: ["lang", "class", "style", "data-darkreader-mode", "data-darkreader-scheme"] }),
+    ["dark-reader"],
+    "Dark Reader is reported ONCE by name however many of its attributes are present",
+  );
+  assert.deepEqual(
+    describeDomRewriters({ ...clean, bodyAttributeNames: ["class", "style", "data-gr-ext-installed", "data-new-gr-c-s-check-loaded"] }),
+    ["grammarly"],
+    "Grammarly writes two attributes and both belong to one named mutator",
+  );
+  assert.deepEqual(
+    describeDomRewriters({ ...clean, bodyAttributeNames: ["class", "cz-shortcut-listen"] }),
+    ["colorzilla"],
+  );
+
+  // An UNKNOWN attribute is listed verbatim rather than counted — the next extension nobody has
+  // heard of is precisely the one worth reading, and `foreignAttrs=2` would say nothing about it.
+  assert.deepEqual(
+    describeDomRewriters({ ...clean, htmlAttributeNames: ["lang", "class", "data-someext-v3"] }),
+    ["foreignAttrs=data-someext-v3"],
+  );
+  // Sorted and de-duplicated, so the same page produces the same string on every load and a census
+  // can group it. Two elements contributing the same name must not print it twice.
+  assert.deepEqual(
+    describeDomRewriters({
+      ...clean,
+      bodyAttributeNames: ["class", "zeta-attr", "shared-attr"],
+      htmlAttributeNames: ["lang", "shared-attr", "alpha-attr"],
+    }),
+    ["foreignAttrs=alpha-attr|shared-attr|zeta-attr"],
+  );
+  // A named mutator and an unknown one both report, names first.
+  assert.deepEqual(
+    describeDomRewriters({ ...clean, htmlAttributeNames: ["lang", "data-darkreader-mode", "data-mystery"] }),
+    ["dark-reader", "foreignAttrs=data-mystery"],
+  );
+
+  // 🔴 THE ALLOW-LIST MUST HOLD, and `style` is the one that matters: the app writes
+  // documentElement.style (display scale) and body.style.overflow (every portal modal). If `style`
+  // were ever dropped from it, every error row from a page with an open modal would accuse an
+  // extension that was never there — and a probe that cries wolf is one the next session stops
+  // believing, which is the failure this whole file exists to avoid.
+  assert.deepEqual(describeDomRewriters({ ...clean, bodyAttributeNames: ["class", "style"] }), []);
+  assert.deepEqual(describeDomRewriters({ ...clean, htmlAttributeNames: ["lang", "class", "style"] }), []);
+  // Case and whitespace: HTML lower-cases attribute names, but a probe fed from anywhere else need
+  // not, and `STYLE` is still the app's own.
+  assert.deepEqual(describeDomRewriters({ ...clean, htmlAttributeNames: [" LANG ", "Class", "STYLE"] }), []);
+  // An absent <body> mid-stream reports nothing rather than throwing.
+  assert.deepEqual(describeDomRewriters({ ...clean, bodyAttributeNames: [] }), []);
 }
