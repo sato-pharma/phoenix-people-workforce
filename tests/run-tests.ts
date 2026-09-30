@@ -1352,6 +1352,7 @@ import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runCiRunnerSwitchTests } from "./ci-runner-switch.test.ts";
 import { runRemoteCheckTests } from "./remote-check.test.ts";
+import { runCiTypecheckLockTests } from "./ci-typecheck-lock.test.ts";
 import { runCiPrSkipsBuildAndSmokeTests } from "./ci-pr-skips-build-and-smoke.test.ts";
 import { runStagingBranchSyncGuardTests } from "./staging-branch-sync-guard.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
@@ -4540,6 +4541,10 @@ await runTest("CI <-> package.json gate parity (a check:* in the gate must run i
 await runTest(
   "the self-hosted runner takes EVERY same-repo PR (owner, 2026-09-30): six byte-identical runs-on lines, no branch-name clause, main and forks and dispatches can never be self-hosted, an unset label resolves hosted rather than queueing for ever, and the retired repo-wide vars.CI_RUNNER never comes back",
   runCiRunnerSwitchTests,
+);
+await runTest(
+  "one typecheck at a time on the self-hosted CI box: ci.yml's Typecheck step takes /tmp/phx-typecheck.lock in the same shell as tsc with a bounded wait that falls through, remote-check takes the same lock, and where flock exists a held lock makes the step wait then run while a free one runs at once",
+  runCiTypecheckLockTests,
 );
 await runTest(
   "remote-check runs the heavy checks on the CI box and never locally: no local spawn but ssh/git, ci.yml's 6144MB heap, its own directory rather than the runner's _work, no GitHub credential on the box, a warning for uncommitted work, and the remote exit code",
