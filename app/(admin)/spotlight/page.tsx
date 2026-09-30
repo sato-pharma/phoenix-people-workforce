@@ -24,7 +24,10 @@ export const dynamic = "force-dynamic";
 export default async function SpotlightPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") {
-    redirect(resolveLandingPathForRole(access.role));
+    // A portal-mode viewer (a medical rep) belongs on his own self-only spotlight, not the
+    // company-wide admin surface — the portal twin, backed by tests/portal-twin-forwarding.test.ts.
+    // A rep without spotlight_self is turned back to his landing by the twin page's own gate.
+    redirect("/employee-portals/spotlight");
   }
   try {
     await assertPermission(access, "spotlight", "read");

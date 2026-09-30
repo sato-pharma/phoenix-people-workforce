@@ -302,6 +302,7 @@ function buildEmployeePortalSections({
   showRepsListTab = false,
   showKpisTab = false,
   showMedicalRepExpensesTab = false,
+  showSpotlightTab = false,
   showDsmsPerformanceTab = false,
   showTeamCalendarTab = false,
   showTeamExpensesTab = false,
@@ -447,6 +448,9 @@ function buildEmployeePortalSections({
         // Read-only Targets. /sales/targets keeps the authoring tools and bounces portal roles away;
         // a Medical Rep is served their own targets only (owner, 2026-09-16).
         ...(showTargetsTab ? [{ href: "/employee-portals/targets", label: "Targets", icon: Target }] : []),
+        // Spotlight (self) — the rep's own recognition sheet (owner, 2026-09-30). Kept in sync with
+        // the registry entry in employee-portal-nav-registry.ts by the bottom-nav test.
+        ...(showSpotlightTab ? [{ href: "/employee-portals/spotlight", label: "Spotlight", icon: Sparkles }] : []),
       ],
     },
     {

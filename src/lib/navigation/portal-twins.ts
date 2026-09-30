@@ -149,6 +149,10 @@ const TWIN_RULES: readonly TwinRule[] = [
   // is where they belong.
   { from: "/admin/private-calendars", to: "/employee-portals/private-calendar" },
   { from: "/organogram", to: "/employee-portals/organogram" },
+  // Spotlight: the admin page at /spotlight is Super Admin + CEO, company-wide; a portal-mode viewer
+  // (a medical rep) is sent to his own self-only twin (owner, 2026-09-30). Backed by the redirect in
+  // the admin page's portal branch, which tests/portal-twin-forwarding.test.ts checks in both directions.
+  { from: "/spotlight", to: "/employee-portals/spotlight" },
   { from: "/probation", to: "/employee-portals/probation" },
   { from: "/recruitment/contact-review", to: "/employee-portals/contact-review" },
   // The interview calendar. Shared with a portal-mode person (a manager sitting in on interviews),
