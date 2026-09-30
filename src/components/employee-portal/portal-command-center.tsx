@@ -23,6 +23,7 @@ import {
 
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
+import { RepKpiMonthPicker } from "@/components/employee-portal/rep-kpi-month-picker";
 import { RepTodayPlanPanel } from "@/components/employee-portal/rep-today-plan-panel";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
@@ -36,7 +37,7 @@ import type { PortalHomeSnapshot, PortalMyInterview } from "@/lib/employee-porta
 import type { RepTodayPlan } from "@/lib/phoenix-crm/server/rep-landing";
 import type { PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
-import { currentCairoDateParts, PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 export function egp(n: number) {
   return new Intl.NumberFormat("en-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
@@ -1075,6 +1076,8 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
     monthlySalesTrend,
     mrFieldKpis,
     doubleVisitPulse,
+    kpiMonth,
+    kpiMonthOptions,
     // `earlyBirdStars` is deliberately NOT read here any more — see the note where the card was.
   } = snapshot;
 
@@ -1100,26 +1103,41 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
   const monthShort = (m: number) =>
     new Date(Date.UTC(2000, m - 1, 1)).toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase();
 
-  // mrSalesAchievement is the CURRENT Cairo month, and it is null until that month's Monthly
-  // Closing is PUBLISHED — which never happens while the month is still running (owner rule). So
-  // during the live month it is always null here, and the card falls back to the newest published
-  // ("closed") month and labels which month is on screen. It switches to the current month only
-  // once the owner publishes that month's closing.
-  const cairoNow = currentCairoDateParts();
+  // THE MONTH ON SCREEN. `kpiMonth` is the running Cairo month unless the rep picked another one
+  // from the month box above these tiles (owner, 2026-10-01), and it drives all four of them — the
+  // three CRM measures and achievement — so they can never describe two different windows.
+  const selectedYear = Number(kpiMonth.slice(0, 4));
+  const selectedMonth = Number(kpiMonth.slice(5, 7));
+
+  // mrSalesAchievement is the SELECTED month, and it is null until that month's Monthly Closing is
+  // PUBLISHED — which never happens while the month is still running (owner rule). So a running
+  // month is always null here, and the card falls back to the newest published ("closed") month and
+  // labels which month is on screen, because a tile with a number available that prints none is the
+  // empty square the owner banned. A published month with NO TARGET is treated the same way: its
+  // achievement is 0 by arithmetic, not by performance, and drawing it would read as a collapse.
   const latestClosed = closed.length > 0 ? closed[closed.length - 1] : null;
-  const priorClosed = closed.length > 1 ? closed[closed.length - 2] : null;
-  const achFromCurrent = mrSalesAchievement != null;
-  const achValue = mrSalesAchievement ?? latestClosed;
+  const achFromSelected = mrSalesAchievement != null && mrSalesAchievement.targetValue > 0;
+  const achValue = achFromSelected ? mrSalesAchievement : latestClosed;
   const achPct = achValue ? Math.max(0, Math.round(achValue.achievementPercent)) : null;
-  const achMonth = achFromCurrent
-    ? monthName(cairoNow.month, cairoNow.year)
+  const achMonth = achFromSelected
+    ? monthName(selectedMonth, selectedYear)
     : latestClosed
       ? monthName(latestClosed.month, latestClosed.year)
       : null;
-  // Month on month, only when both months being compared are real closed months.
+  // Month on month, against the published month immediately before whichever month the tile ended up
+  // showing. Keyed on the month on screen rather than on "am I on the fallback": a picked month that
+  // IS published used to lose its delta for no reason other than which branch it arrived by.
+  const achIndex = achValue
+    ? closed.findIndex(
+        (t) =>
+          t.year === (achFromSelected ? selectedYear : latestClosed?.year) &&
+          t.month === (achFromSelected ? selectedMonth : latestClosed?.month),
+      )
+    : -1;
+  const achPrior = achIndex > 0 ? closed[achIndex - 1] : null;
   const achDelta =
-    !achFromCurrent && latestClosed && priorClosed
-      ? Math.round(latestClosed.achievementPercent) - Math.round(priorClosed.achievementPercent)
+    achIndex >= 0 && achPrior
+      ? Math.round(closed[achIndex].achievementPercent) - Math.round(achPrior.achievementPercent)
       : null;
 
   const missedDoctors = kpis?.hasMeasurablePlan ? kpis.missedDoctors : 0;
@@ -1137,6 +1155,12 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
       <div className="@container">
         <div className={`grid gap-2 ${repTodayPlan ? "@3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}`}>
           <div className="min-w-0 space-y-2">
+            {/* The month these four tiles are showing, and the box that changes it (owner, 2026-10-01).
+                It sits directly ABOVE them and nowhere else on the page, because it governs exactly
+                these four — not his day, not his double visits, not the alert rows, all of which stay
+                on the real calendar. One row, one label, one control: no hero, no sentence. */}
+            <RepKpiMonthPicker month={kpiMonth} options={kpiMonthOptions} />
+
             {/* Four measurements, no ornament. Coverage and frequency stand apart on purpose: they
                 disagree by design — production has run 68% coverage against 39% frequency in one month —
                 and any blend of them hides exactly the gap they exist to expose.

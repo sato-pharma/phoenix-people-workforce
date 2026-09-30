@@ -11,7 +11,25 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 
 export const dynamic = "force-dynamic";
 
-export default async function EmployeePortalsHomePage() {
+/**
+ * `?kpiMonth=YYYY-MM` — the month the Medical Rep's keycards are showing.
+ *
+ * It rides in the URL rather than in component state, for the same reason the KPIs board's whole
+ * selection does: every change re-runs the gates above server-side, so no month can be picked past
+ * the access check, and the back button and a pasted link both work. The value is handed over RAW —
+ * `getPortalHomeSnapshot` validates it against the one month list and falls back to the running
+ * month — so there is deliberately no second opinion here about what a month may be.
+ */
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+/** First value only: a repeated `?kpiMonth=a&kpiMonth=b` must resolve to one month, not an array. */
+function one(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function EmployeePortalsHomePage({ searchParams }: PageProps) {
   const access = await resolveAuthenticatedPageAccess();
   const mode = resolveNavigationMode(access);
 
@@ -28,9 +46,11 @@ export default async function EmployeePortalsHomePage() {
     throw error;
   }
 
+  const params = (await searchParams) ?? {};
+
   let snapshot;
   try {
-    snapshot = await getPortalHomeSnapshot(access);
+    snapshot = await getPortalHomeSnapshot(access, { kpiMonth: one(params.kpiMonth) });
   } catch (error) {
     logPortalFailure(
       { route: "/employee-portals", module: "home-snapshot", role: access.role, hrId: access.hrId },

@@ -2,7 +2,7 @@ import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { queryVisitsLimited } from "@/lib/crm/reads";
 import { cairoTodayIso } from "@/lib/crm/dates";
-import { getKpisBoard } from "@/lib/crm/kpis-board";
+import { getKpisBoard, kpiMonthOptions } from "@/lib/crm/kpis-board";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { devSafePromiseAllSettled } from "@/lib/utils/dev-safe-promise-all";
 import { isReviewPeriod, windowLabel } from "@/lib/business-review/period-format";
@@ -72,12 +72,17 @@ import {
  * the earlier `uploaded` gate, which let that unfinished September through because a distributor
  * import batch (the `DirectReq` pseudo-distributor) existed for the month.
  */
-async function loadMrCanonicalSales(hrId: string): Promise<{
+async function loadMrCanonicalSales(hrId: string, period?: string): Promise<{
   current: { achievementPercent: number; salesValue: number; targetValue: number } | null;
   trend: Array<{ year: number; month: number; achievementPercent: number; salesValue: number; targetValue: number }> | null;
 }> {
   const { year, month } = currentCairoDateParts();
-  const currentPeriod = `${year}-${String(month).padStart(2, "0")}`;
+  // `period` is THE MONTH ON SCREEN, not always the running one. The rep's landing keycards carry a
+  // month picker since 2026-10-01 (owner: "I want to be able in overview landing page to choose the
+  // month of the KPIs"), and on the 1st of a month the running month has nothing in it at all — no
+  // published closing, no visits — so every keycard read empty until he could name the month he
+  // wanted. When he names one, `current` means the month he named, and the window ends there.
+  const currentPeriod = period ?? `${year}-${String(month).padStart(2, "0")}`;
   const window = await loadEmployeeMonthlyAchievement([hrId], SALES_HISTORY_FLOOR, currentPeriod);
   const points = publishedPointsOnly(window.byHrId.get(hrId) ?? []);
   if (points.length === 0) return { current: null, trend: null };
@@ -401,6 +406,24 @@ export type PortalHomeSnapshot = {
    * is NOT a 0% performer.
    */
   mrFieldKpis: MrFieldKpis | null;
+  /**
+   * The month every Medical Rep keycard on the landing page is showing, `YYYY-MM` — coverage,
+   * frequency, the call rate AND achievement, so the four of them can never describe four different
+   * windows. It is the running Cairo month unless the rep picked another one (owner, 2026-10-01).
+   *
+   * Validated against `kpiMonthOptions` here and nowhere else: the value arrives off the URL, so the
+   * page hands it over raw and this is the ONE gate that decides what a month may be. A month the
+   * list does not hold falls back to the running month rather than reaching a query.
+   */
+  kpiMonth: string;
+  /**
+   * The months the picker offers — newest first, stopping at the CRM data floor. Built on the server
+   * from `kpiMonthOptions`, the same list the KPIs board's own picker uses, and carried as plain data
+   * because the picker is a client component and that module's dependency chain reaches the Supabase
+   * admin client (see the note in components/crm/kpis-period-picker.tsx: importing it in the browser
+   * bundle 500s at runtime while `tsc` stays happy).
+   */
+  kpiMonthOptions: Array<{ label: string; value: string }>;
   mrPendingExpenseCount: number | null;
   /** Product / Group Product Manager only: the PM's own marketing requests still in flight + upcoming pay dates. */
   pmMarketing: { myPendingRequests: number; upcoming: UpcomingMarketingActivity[] } | null;
@@ -800,9 +823,14 @@ export type MrHomeStats = {
  * sides lower-cased: production hr ids are mixed case, and a plain equality check silently
  * under-returns.
  */
-async function loadMrFieldKpis(access: AccessContext, hrId: string): Promise<MrFieldKpis | null> {
+async function loadMrFieldKpis(access: AccessContext, hrId: string, month: string): Promise<MrFieldKpis | null> {
+  // `month` is the month on screen; `todayIso` stays Cairo TODAY whatever month that is. Both are
+  // needed and they are not interchangeable: `repsPlansRange` scores a window that is entirely in
+  // the past to its own end (so a picked September is the whole of September), a window still
+  // running only as far as it has run, and it needs the real date to tell those apart. Passing the
+  // picked month as `todayIso` would score a past month as though it were still mid-flight.
   const todayIso = cairoTodayIso();
-  const board = await getKpisBoard({ access, month: todayIso.slice(0, 7), todayIso });
+  const board = await getKpisBoard({ access, month, todayIso });
   const wanted = hrId.toLowerCase();
   const row =
     board.reps.find((r) => (r.agentHrId ?? "").toLowerCase() === wanted) ??
@@ -982,7 +1010,17 @@ async function loadMyUpcomingInterviews(access: AccessContext): Promise<PortalMy
   }));
 }
 
-export async function getPortalHomeSnapshot(access: AccessContext): Promise<PortalHomeSnapshot> {
+export async function getPortalHomeSnapshot(
+  access: AccessContext,
+  options?: {
+    /**
+     * The month the rep picked for his landing keycards, straight off the URL and unvalidated.
+     * Anything the month list does not hold — a typo, a month before the CRM data floor, a future
+     * month, an array from a repeated query parameter — falls back to the running Cairo month.
+     */
+    kpiMonth?: string | null;
+  },
+): Promise<PortalHomeSnapshot> {
   const shell = await getEmployeePortalShellData(access);
   const hrId = normalizeHrId(access.hrId) ?? "";
   const role = access.role ?? "";
@@ -1003,10 +1041,28 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
   const { year: currentYear, month: currentMonth } = currentCairoDateParts(now);
   const ninetyDaysAgo = currentCairoDateOnlyIso(new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000));
 
+  // THE MONTH THE KEYCARDS ARE SHOWING — one value, read once, handed to every keycard read below,
+  // so coverage, frequency, the call rate and achievement can never end up describing four
+  // different windows. The picker rides in the URL exactly as the KPIs board's own does, and the
+  // month list is the same `kpiMonthOptions` that board offers rather than a second opinion on which
+  // months exist. Validation is membership of that list and nothing else: it already stops at the
+  // CRM data floor and starts at the running month, so a future month, a month before the floor and
+  // a typo are all refused by the same test, and the fallback is the running month — never an error
+  // page, because a landing page that 500s over a query string is worse than one showing this month.
+  //
+  // The list and the fallback are both taken off `today`, deliberately: deriving either from
+  // anywhere else lets the two disagree for the three Cairo hours in which UTC still reads last month.
+  const kpiMonths = kpiMonthOptions(today);
+  const runningMonth = today.slice(0, 7);
+  const requestedKpiMonth = (options?.kpiMonth ?? "").trim();
+  const kpiMonth = kpiMonths.some((option) => option.value === requestedKpiMonth)
+    ? requestedKpiMonth
+    : runningMonth;
+
   // One canonical load serves BOTH the hero and the 4-month trend — they are the same window.
-  const mrSalesPromise = isMr && hrId ? loadMrCanonicalSales(hrId) : Promise.resolve(null);
+  const mrSalesPromise = isMr && hrId ? loadMrCanonicalSales(hrId, kpiMonth) : Promise.resolve(null);
   const fieldKpisPromise: Promise<MrFieldKpis | null> =
-    isMr && hrId ? loadMrFieldKpis(access, hrId).catch(() => null) : Promise.resolve(null);
+    isMr && hrId ? loadMrFieldKpis(access, hrId, kpiMonth).catch(() => null) : Promise.resolve(null);
   const roleExtrasPromise = getRoleSpecificExtras(access, role, hrId);
   const dvFocusPromise: Promise<DoubleVisitPortalFocus | null> = DV_FOCUS_ROLES.has(role)
     ? getDoubleVisitPortalFocus(access).catch(() => null)
@@ -1219,6 +1275,8 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     monthlySalesTrend,
     doubleVisitPulse,
     mrFieldKpis,
+    kpiMonth,
+    kpiMonthOptions: kpiMonths,
     mrPendingExpenseCount,
     ...roleExtras,
     plansAwaitingManagerApproval,

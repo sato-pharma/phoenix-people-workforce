@@ -1895,6 +1895,7 @@ import { runPortalBottomNavGodmodeTests } from "./portal-bottom-nav-godmode.test
 import { runAdminFilenameCellsNeverEllipsiseTests } from "./admin-filename-cells-never-ellipsise.test.ts";
 import { runSectionCardHeaderFitsAPhoneTests } from "./section-card-header-fits-a-phone.test.ts";
 import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-phone.test.ts";
+import { runPortalRepKpiMonthTests } from "./portal-rep-kpi-month.test.ts";
 import { runSalesCommandBandFitsALaptopTests } from "./sales-command-band-fits-a-laptop.test.ts";
 
 import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.test.ts";
@@ -6735,6 +6736,10 @@ await runTest(
   runSectionCardHeaderFitsAPhoneTests,
 );
 await runTest("portal tile grids are single-column on a phone (a PremiumNavTile floor is 172px; two columns give 146px at 320px)", runPortalToolsGridFitsAPhoneTests);
+await runTest(
+  "a Medical Rep picks the month his landing keycards show, and a picked past month scores whole",
+  runPortalRepKpiMonthTests,
+);
 await runTest(
   "sales page headers fit a 1024px laptop (the ring and aside sit beside the headline only from xl)",
   runSalesCommandBandFitsALaptopTests,
