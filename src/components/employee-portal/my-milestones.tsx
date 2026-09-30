@@ -314,11 +314,11 @@ export function MyMilestones({ entries, photoUrl }: Props) {
   const shareLink = useCallback(async (): Promise<string | null> => {
     if (!selected) return null;
     try {
-      const response = await fetch("/api/milestones/my-card", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ period: selected.spec, on: selected.on, withoutPhoto, format: "share-link" }),
-      });
+      // A GET: minting the link is a read (it renders nothing), so a test account previewing the rep
+      // may run it where a POST would be refused as a write.
+      const params = new URLSearchParams({ period: selected.spec, on: selected.on });
+      if (withoutPhoto) params.set("withoutPhoto", "1");
+      const response = await fetch(`/api/milestones/my-card?${params.toString()}`, { method: "GET" });
       if (!response.ok) return null;
       const data = (await response.json().catch(() => null)) as { shareUrl?: unknown } | null;
       return typeof data?.shareUrl === "string" ? data.shareUrl : null;

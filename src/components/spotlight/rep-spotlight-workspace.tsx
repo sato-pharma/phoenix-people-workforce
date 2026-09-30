@@ -501,13 +501,11 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
                           filename: `sato-spotlight-${from}${to === from ? "" : `_${to}`}.png`,
                         })}
                         getPageUrl={async () => {
-                          // Mint the public, expiring link so LinkedIn and Facebook show the sheet.
+                          // A GET: minting the link is a read, so a test account previewing the rep
+                          // may run it where the POST render is refused as a write.
                           try {
-                            const response = await fetch("/api/spotlight/me/sheet", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ from, to, format: "share-link" }),
-                            });
+                            const qs = new URLSearchParams({ from, to }).toString();
+                            const response = await fetch(`/api/spotlight/me/sheet?${qs}`, { method: "GET" });
                             if (!response.ok) return null;
                             const data = (await response.json().catch(() => null)) as { shareUrl?: unknown } | null;
                             return typeof data?.shareUrl === "string" ? data.shareUrl : null;

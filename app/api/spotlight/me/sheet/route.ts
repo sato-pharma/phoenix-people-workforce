@@ -31,8 +31,7 @@ export async function POST(request: Request) {
     }
 
     const payload = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-    const format =
-      payload?.format === "png" ? "png" : payload?.format === "share-link" ? "share-link" : "pdf";
+    const format = payload?.format === "png" ? "png" : "pdf";
     await assertExportRateLimit({
       actor: access.loginId ?? access.hrId,
       request,
@@ -49,18 +48,6 @@ export async function POST(request: Request) {
         { error: spotlight.reason ?? `The spotlight sheet is available at ${spotlight.threshold}% and above.` },
         { status: 403 },
       );
-    }
-
-    // A public, expiring link to this sheet — only ever for an ELIGIBLE period (the gate above), so a
-    // link can never outlive the achievement. Minted from the caller's own resolved range.
-    if (format === "share-link") {
-      const token = issueShareCardToken({
-        kind: "spotlight",
-        hrId: access.hrId,
-        from: spotlight.from,
-        to: spotlight.to,
-      });
-      return Response.json({ shareUrl: shareCardPublicUrl(token) }, { headers: { "Cache-Control": "no-store" } });
     }
 
     const stem = `sato-spotlight-${spotlight.from}${spotlight.to === spotlight.from ? "" : `_${spotlight.to}`}`;
@@ -100,5 +87,51 @@ export async function POST(request: Request) {
       );
     }
     return Response.json({ error: clientSafeErrorMessage(error, "Spotlight sheet failed to render.") }, { status: 500 });
+  }
+}
+
+/**
+ * Mint the PUBLIC, expiring share link for the caller's OWN spotlight (so LinkedIn/Facebook show it).
+ *
+ * A GET on purpose: minting writes NOTHING (no render), so it is a read — which is also why a test
+ * account previewing the rep experience may run it, where the POST render is refused as a write. Still
+ * behind `spotlight_self` and the SAME eligibility gate as the render, so a link is only ever minted
+ * for a period that has actually been earned, and can never outlive the achievement.
+ */
+export async function GET(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    // Minting a public link to the sheet is an export-grade action (it exposes it), gated exactly like
+    // the sheet render — the same permission the registry entry declares for this route.
+    await assertPermission(access, "spotlight_self", "export");
+    if (!access.hrId) {
+      return Response.json({ error: "This spotlight is for medical representatives." }, { status: 403 });
+    }
+
+    const params = new URL(request.url).searchParams;
+    const range = parseRepSpotlightRange({ from: params.get("from"), to: params.get("to") });
+    const spotlight = await loadRepSpotlight(access.hrId, range);
+    if (!spotlight.eligible || !spotlight.result) {
+      return Response.json(
+        { error: spotlight.reason ?? `The spotlight sheet is available at ${spotlight.threshold}% and above.` },
+        { status: 403 },
+      );
+    }
+
+    const token = issueShareCardToken({
+      kind: "spotlight",
+      hrId: access.hrId,
+      from: spotlight.from,
+      to: spotlight.to,
+    });
+    return Response.json({ shareUrl: shareCardPublicUrl(token) }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return Response.json({ error: "This spotlight is for medical representatives." }, { status: 403 });
+    }
+    if (error instanceof RepSpotlightError) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
+    return Response.json({ error: clientSafeErrorMessage(error, "Your share link could not be created.") }, { status: 500 });
   }
 }

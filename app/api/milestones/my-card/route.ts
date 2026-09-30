@@ -99,9 +99,7 @@ export async function POST(request: Request) {
           ? "png"
           : body?.format === "focus"
             ? "focus"
-            : body?.format === "share-link"
-              ? "share-link"
-              : "pdf";
+            : "pdf";
     const photoUpload = readUpload(body?.photoUpload);
 
     // The subject is the caller, always — never a hrId off the wire.
@@ -120,20 +118,6 @@ export async function POST(request: Request) {
       photoFocus: readFocus(body?.photoFocus),
       photoUpload,
     });
-
-    // A public, expiring link to THIS card, so LinkedIn and Facebook can scrape the actual picture.
-    // Minted from the caller's own resolved spec + date — never an hr id off the wire. No Chromium
-    // runs here; the picture is rendered only when the link itself is opened.
-    if (format === "share-link") {
-      const token = issueShareCardToken({
-        kind: "milestone",
-        hrId,
-        spec: built.periodSpec,
-        on: formatPlainDateIso(built.on),
-        withoutPhoto,
-      });
-      return Response.json({ shareUrl: shareCardPublicUrl(token) }, { headers: { "Cache-Control": "no-store" } });
-    }
 
     if (format === "html") {
       const html = milestoneCardHtml(built.input, { variant, autoLayout: true });
@@ -195,6 +179,70 @@ export async function POST(request: Request) {
     }
     return Response.json(
       { error: clientSafeErrorMessage(error, "Your milestone card could not be produced.") },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * Mint the PUBLIC, expiring share link for the caller's OWN card (so LinkedIn/Facebook can scrape it).
+ *
+ * A GET on purpose: minting a link writes NOTHING (no render, no ledger), so it is a read — which is
+ * also why a test account previewing the rep experience may run it, where the POST render routes are
+ * refused as writes. Self-scoped: the subject is always `access.hrId`, resolved server-side; the query
+ * carries only the card's own parameters, never an hr id.
+ */
+export async function GET(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    if (!access.hrId) {
+      return Response.json({ error: "Sign in to share your milestone card." }, { status: 401 });
+    }
+    if (!canUseEmployeePortalMilestones(access.role)) {
+      return Response.json({ error: "Milestone cards are available to medical reps only." }, { status: 403 });
+    }
+
+    const params = new URL(request.url).searchParams;
+    const spec = (params.get("period") ?? "").trim() || "1m";
+    const onParam = params.get("on");
+    const on: PlainDate | null = onParam ? parsePlainDate(onParam) : null;
+    const withoutPhoto = params.get("withoutPhoto") === "1";
+    const hrId = access.hrId;
+
+    // Resolve the concrete spec + date the card uses so the link renders the same card. `withoutPhoto:
+    // true` skips the portrait load — minting needs no photo, only the resolved period and date.
+    const built = await buildMilestoneCardInput({
+      hrId,
+      spec,
+      on,
+      withoutPhoto: true,
+      photoFocus: null,
+      photoUpload: null,
+    });
+    const token = issueShareCardToken({
+      kind: "milestone",
+      hrId,
+      spec: built.periodSpec,
+      on: formatPlainDateIso(built.on),
+      withoutPhoto,
+    });
+    return Response.json({ shareUrl: shareCardPublicUrl(token) }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return Response.json({ error: "Milestone cards are available to medical reps only." }, { status: 403 });
+    }
+    if (
+      error instanceof MilestoneEmployeeNotFoundError ||
+      error instanceof MilestoneHireDateMissingError ||
+      error instanceof MilestoneBirthDateMissingError
+    ) {
+      return Response.json({ error: error.message }, { status: 404 });
+    }
+    if (error instanceof MilestoneSpecError) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
+    return Response.json(
+      { error: clientSafeErrorMessage(error, "Your share link could not be created.") },
       { status: 500 },
     );
   }
