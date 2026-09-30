@@ -21,10 +21,11 @@ relevant section here first.
 required status checks** (`validate`, `checks`) that **DO gate every merge** — a PR cannot land
 until both are green on its head commit.
 
-🔴 **`mobile` AND `secret-scan` STILL RUN AND STILL REPORT — NEITHER BLOCKS A MERGE.** They
-were demoted on 2026-09-29, minutes before #4800 took `secret-scan` off the pull request entirely
-(gitleaks moved into the pre-push hook, where a key never reaches GitHub at all). So a red Expo
-typecheck no longer stops a PR: read both on the commit rather than assuming the gate caught them.
+🔴 **`mobile` STILL REPORTS AND NO LONGER BLOCKS; `secret-scan` DOES NOT REPORT ON A PR AT ALL.**
+Both were demoted on 2026-09-29, minutes before #4800 took `secret-scan` off the pull request
+entirely (gitleaks moved into the pre-push hook, `bash-guard.mjs` clause C12, where a key never
+reaches GitHub at all). So a red Expo typecheck no longer stops a PR — read it on the commit rather
+than assuming the gate caught it — and a PR with no `secret-scan` row is correct, not uncovered.
 
 🔴 **THE COUNT IS THE PART THAT ROTS. It has been 4, then 5, then 6, then 4, and is 2 — and after
 every single change the docs kept stating the old one.** On 2026-09-27 PR #4527 folded `lint`,

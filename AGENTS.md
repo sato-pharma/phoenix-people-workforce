@@ -565,11 +565,11 @@ the build was gated off pull requests. Beside the typecheck instead of behind it
 protection does not require reads on a PR exactly like one that gates (#3950). `lint`, `typecheck` and
 `test` still do not exist as check names. A doc naming any of them as a job or a check name is stale —
 but **a pinned test now belongs in `validate`, not `checks`**.
-🔴 **`mobile` and `secret-scan` STILL RUN BUT NO LONGER GATE** (protection read live 2026-09-29).
-`mobile` is the Expo app's `npm ci` + typecheck when `mobile/` changed; `secret-scan` lives in
-`security-scan.yml`. Both report on the PR and **neither blocks the merge**, so a red one is now a
-thing to READ and judge, not something that will stop a bad merge on your behalf — and "all required
-checks green" no longer says anything about either.
+🔴 **`mobile` REPORTS, NEVER GATES; `secret-scan` IS NOT ON A PR AT ALL** (read live 2026-10-01).
+`mobile` is the Expo typecheck, skipped unless `mobile/` changed, and red never blocks a merge.
+`security-scan.yml` lost its `pull_request` trigger 2026-09-29 — gitleaks moved into
+`bash-guard.mjs` **C12**, which refuses the push — so its absence is CORRECT, never a coverage gap:
+never wait for it or dispatch one. Account: `docs/testing.md`.
 🔴 **NEVER TAKE "PINNED BY A REQUIRED CHECK" ON TRUST, AND NEVER COUNT TO A NUMBER A DOC GAVE YOU —
 read the protection API.** Both halves cost real incidents: the 2026-09-17 split left `test` OUT of
 protection until 09-18, so every locked-rule test went red without blocking a merge; and the

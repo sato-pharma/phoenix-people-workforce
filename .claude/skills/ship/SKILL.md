@@ -58,12 +58,18 @@ As of **2026-09-29** that returns **two**: **`validate`, `checks`** (`enforce_ad
 the three former jobs to stop paying per-job minute rounding four times, so **`lint`, `typecheck` and
 `test` still do not exist as check names** — and the suite deliberately did not become a `test` job
 again, because a job named like a retired gate reads as gating when it does not (#3950). Anything in `gh pr checks` that protection
-does not name — `sast-scan` or `full-e2e` reading `skipping` — is not a gate and not a failure.
+does not name — `mobile` or `full-e2e` reading `skipping` — is not a gate and not a failure.
 
-🔴 **`mobile` and `secret-scan` are in that category NOW.** They were required until 2026-09-29 and
-are not any more; both still run and still report. So they are yours to READ and judge — a red Expo
-typecheck or a secret-scan finding will not stop the merge, and **"all required checks are green" no
-longer says anything about either one.** Look at them before merging anyway.
+🔴 **`mobile` is in that category NOW. `secret-scan` is not in the list at all — do not look for
+it.** `mobile` was required until 2026-09-29 and is not any more; it still reports, skipping when
+nothing under `mobile/` changed, so a red Expo typecheck is yours to READ and judge before merging
+and will not stop the merge on your behalf. `secret-scan` went further in the same change:
+`security-scan.yml` lost its `pull_request` trigger, so it cannot appear on a PR at all and its
+absence is **not a gap in coverage** — gitleaks moved onto the machine, into `bash-guard.mjs` clause
+**C12**, which refuses the push before a key ever reaches GitHub, and the workflow still runs daily
+at 05:17 UTC. Never wait for it and never dispatch one to complete the set. Measured on #5005
+(2026-10-01): one workflow run on the head — `ci.yml` — and four check runs, `validate`, `checks`,
+`mobile` skipped, `full-e2e` skipped.
 
 Why this is written as a live read and not a list: on 2026-09-17 `test` left `validate` for its own
 job and nobody added the name, so for a day a red unit suite showed four green required checks and
