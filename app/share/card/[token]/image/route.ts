@@ -35,7 +35,7 @@ export async function GET(request: Request, context: { params: Promise<{ token: 
     // handle to unlimited Chromium renders.
     await assertExportRateLimit({ actor: `share:${token.slice(0, 16)}`, request, scope: "share:card:image" });
 
-    let png: Uint8Array;
+    let png: ArrayBuffer;
     if (payload.k === "milestone") {
       const built = await buildMilestoneCardInput({
         hrId: payload.hr,
@@ -45,14 +45,14 @@ export async function GET(request: Request, context: { params: Promise<{ token: 
         photoFocus: null,
         photoUpload: null,
       });
-      png = new Uint8Array((await renderMilestoneCardImage(built.input, "trim")).png);
+      png = new Uint8Array((await renderMilestoneCardImage(built.input, "trim")).png).buffer;
     } else {
       const range = parseRepSpotlightRange({ from: payload.from, to: payload.to });
       const spotlight = await loadRepSpotlight(payload.hr, range);
       // A link must never outlive the achievement it celebrates — if the month is no longer eligible
       // (unpublished, retargeted, fell below the floor), the link stops resolving.
       if (!spotlight.eligible || !spotlight.result) return new Response("Not found", { status: 404 });
-      png = new Uint8Array(await renderRepSpotlightPng(spotlight.result));
+      png = new Uint8Array(await renderRepSpotlightPng(spotlight.result)).buffer;
     }
 
     return new Response(png, {
