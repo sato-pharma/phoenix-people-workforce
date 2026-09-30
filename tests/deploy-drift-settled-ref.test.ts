@@ -114,11 +114,50 @@ export function runDeployDriftSettledRefTests() {
   }
 
   // 7 — the alarm must not send the reader to ci.yml alone, which was green during the incident.
+  //
+  // 🔴 THIS PIN WAS STRENGTHENED ON 2026-09-30, NOT RELAXED. It used to require the literal sentence
+  // "ANY failed or cancelled check suite on main HEAD withholds the deploy", which was the best the
+  // alert could do while it only WARNED the reader. The workflow now classifies the suites itself and
+  // names the one that refused the deploy, so the pin asserts that stronger property instead — the
+  // warning alone is no longer sufficient to pass. If the classification is ever removed and the
+  // wording reverts to a warning, these assertions fail.
   assert.ok(
-    /ANY failed or cancelled check suite on main HEAD withholds the deploy/.test(source),
+    /ANY failed or cancelled check suite withholds it, not just ci\.yml/.test(source),
     "The production alert still implies a red ci.yml is the cause. ANY failed suite on the commit " +
       "withholds the deploy — during the 2026-09-27 incident ci.yml was fully green and the only " +
       "red suite was this workflow's own run.",
+  );
+
+  assert.ok(
+    /REFUSED BY/.test(source) && /classify_suites/.test(source),
+    "The workflow no longer classifies the check suites itself. Until 2026-09-30 the alert told the " +
+      "reader to run `gh api …/check-suites` and which four apps to ignore — correct, and still a " +
+      "manual step at 4am for someone who has to know that `queued` on sentry means nothing while " +
+      "`failure` on a Dependabot run means everything. That cost a two-hour diagnosis on 2026-09-30 " +
+      "for a withheld deploy whose cause was one line of JSON. The alarm must NAME the suite.",
+  );
+
+  assert.ok(
+    /DRIFT_SUITES/.test(source),
+    "The classified verdict is computed but never reaches the alert. Naming the suite only in the job " +
+      "log is the same manual step one click further away — the Telegram message is what wakes " +
+      "somebody, so the answer has to travel in it.",
+  );
+
+  assert.ok(
+    /unreadable, do NOT read this as clean/.test(source),
+    "The suite classifier can report an unreadable answer as a clean one. A 200 carrying an " +
+      "unexpected shape (`{}`, or `{\"message\":\"Not Found\"}`, or only the never-gating apps) falls " +
+      "through every filter and prints 'every gating suite GREEN' — actively telling the reader the " +
+      "gate did not refuse the deploy when nothing was read at all. Verified by feeding it `{}`; that " +
+      "is the same fail-direction defect as a vulnerability scan reporting a graph it never parsed.",
+  );
+
+  assert.ok(
+    /"sentry","claude","vercel","railway-app"/.test(source),
+    "The classifier no longer excludes the four third-party suites that sit at `queued` FOREVER on " +
+      "every commit. They do not hold the gate (measured on two commits that deployed normally), so " +
+      "counting them would make every alert name four innocent apps and bury the real one.",
   );
 
   assert.ok(
