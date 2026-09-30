@@ -1193,7 +1193,6 @@ function SaveBar({
   /** "Week 2 and Week 3". */
   weeks: string;
 }) {
-  const [discarding, setDiscarding] = useState(false);
   const fixesText =
     fixes > 0 ? `${plural(fixes, "planned customer", "planned customers")} ${fixes === 1 ? "is" : "are"} brought up to date with the list when you save.` : null;
 
@@ -1202,42 +1201,32 @@ function SaveBar({
     <div className="sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 mt-3 border border-orange-300 bg-white px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] sm:px-5 lg:bottom-0">
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1 basis-56">
-          <p className="break-words text-sm font-black text-slate-950">
-            {discarding ? "Discard your unsaved ticks?" : dirty ? `Unsaved changes · ${weeks}` : `The plan needs saving · ${weeks}`}
-          </p>
-          {discarding ? (
-            <p className="break-words text-xs font-semibold leading-5 text-slate-500">Each week goes back to what was last saved.</p>
-          ) : fixesText ? (
-            <p className="break-words text-xs font-semibold leading-5 text-slate-500">{fixesText}</p>
+          <p className="break-words text-sm font-black text-slate-950">{dirty ? `Unsaved changes · ${weeks}` : `The plan needs saving · ${weeks}`}</p>
+          {/*
+           * Both lines, never one instead of the other: what Discard changes will do is said BEFORE it is
+           * pressed, because there is no second press left to say it in, and the fixes sentence still has
+           * to reach a week that is unsaved AND out of date with the list — which is most of them.
+           */}
+          {fixesText ? <p className="break-words text-xs font-semibold leading-5 text-slate-500">{fixesText}</p> : null}
+          {dirty ? (
+            <p className="break-words text-xs font-semibold leading-5 text-slate-500">Discard changes puts each week back to what was last saved.</p>
           ) : null}
         </div>
-        <div className={cn("grid w-full gap-2 sm:flex sm:w-auto", discarding || dirty ? "grid-cols-2" : undefined)}>
-          {discarding ? (
-            <>
-              <CrmButton
-                disabled={locked}
-                onClick={() => {
-                  setDiscarding(false);
-                  onDiscard();
-                }}
-                variant="danger"
-              >
-                Discard
-              </CrmButton>
-              <CrmButton onClick={() => setDiscarding(false)}>Keep them</CrmButton>
-            </>
-          ) : (
-            <>
-              {dirty ? (
-                <CrmButton disabled={locked} onClick={() => setDiscarding(true)}>
-                  Discard changes
-                </CrmButton>
-              ) : null}
-              <CrmButton busy={busy} disabled={locked || blocked} onClick={onSave} variant="primary">
-                Save
-              </CrmButton>
-            </>
-          )}
+        <div className={cn("grid w-full gap-2 sm:flex sm:w-auto", dirty ? "grid-cols-2" : undefined)}>
+          {/*
+           * ONE press, on the owner's own instruction (2026-09-30): it used to ask "Discard your unsaved
+           * ticks?" and wait for a second press, which is what he read as the button doing nothing — the
+           * bar's wording changed and his ticks stayed. So the press discards, and it wears the danger
+           * variant the confirm's own button wore, because it IS the destructive act now.
+           */}
+          {dirty ? (
+            <CrmButton disabled={locked} onClick={onDiscard} variant="danger">
+              Discard changes
+            </CrmButton>
+          ) : null}
+          <CrmButton busy={busy} disabled={locked || blocked} onClick={onSave} variant="primary">
+            Save
+          </CrmButton>
         </div>
       </div>
     </div>
