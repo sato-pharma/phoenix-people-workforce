@@ -3689,6 +3689,36 @@ feature cannot be quietly deleted in a tidy-up. But nothing stops a session from
 alone, concluding that hiring papers must carry no seal mechanism at all, and proposing to rip it
 out as a rule violation — which is why the hook now names this account.
 
+## The UE Direct split is retired with the Excel-import direct orders — owner, 2026-09-30
+
+**What he was asked.** A select-audit of the sales code found `au_v_direct_region_allocation`: the
+code reads it, and no such relation exists in `public`. Behind it sits `au.direct_region_allocation`,
+a real table holding one rule — Anti Infective, geographic region `UE`, weights **UE-1 2 / UE-2 6**
+(25% / 75%). `loadDirectRegionAllocation` would read it and the allocator already prefers its weights,
+but nothing calls the loader, so the rule has never moved a single number. He was asked whether to
+wire it, and from which month.
+
+**His ruling, in his own words:** *"No, this is previously. This is previously when we used the Excel
+import direct order, but now direct orders are all from the system, from the direct order request. So
+we'll never meet this situation again. And as you see, the last time was July. Starting from August,
+you will not see this split again. So September don't split it, never."*
+
+**He is right, and it is measurable.** A split only ever reaches a Direct row with a **blank area** —
+`allocateDirectToOperationalRegions` passes an area-carrying row straight through — and blank-area
+Direct rows ended with July. Measured on production that day through `phx_monthly_closing_direct`,
+Anti Infective: **2026-07 → 8 of 8 rows blank · 2026-08 → 0 of 9 · 2026-09 → 0 of 14.** Every row
+since August carries its own area and brick, written by `direct_order_request`. 2026-07 is published
+AND locked, so the one month this could ever have changed can never be restated.
+
+**So, permanently:** do not create the `au_v_direct_region_allocation` wrapper view, do not pass
+`allocationWeights` at the closing's call site, and do not re-propose the split. 🔴 **A select-audit
+WILL flag the missing view again** — the read genuinely names a relation that is not there. That is
+expected and is not a defect to fix. Pinned by `tests/closing-organogram-regions.test.ts`, which
+fails if anything calls the loader or passes the weights.
+
+**One stale claim corrected the same day:** that test's comment said production held `UE-1 3 / UE-2 6`.
+The live rows are **2 / 6**, and always were.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.

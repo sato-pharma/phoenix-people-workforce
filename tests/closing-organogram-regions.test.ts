@@ -218,8 +218,11 @@ export function runClosingOrganogramRegionsTests() {
   );
   assert.equal(noSubmitters.find((row) => row.regionCode === "UE-1")?.salesValue, 300, "pro-rata still works");
 
-  // au.direct_region_allocation's declared weights beat anything derived from sales.
-  // Its real production row for anti_infective/UE is UE-1 weight 3, UE-2 weight 6.
+  // au.direct_region_allocation's declared weights beat anything derived from sales — the parameter
+  // still behaves, but NOTHING SUPPLIES IT and nothing ever will: the owner ruled on 2026-09-30 that
+  // this split is retired with the Excel-import era of direct orders ("so September, don't split it,
+  // never"). The weights below are a FIXTURE, not production. Production holds UE-1 2 / UE-2 6, read
+  // that day — the old comment here claimed 3 / 6, which was never true of the live rows.
   const declaredWeights = allocateDirectToOperationalRegions(
     [{ productCode: "P1", regionCode: "UE", salesUnits: 0, salesValue: 900 }],
     {
@@ -233,8 +236,28 @@ export function runClosingOrganogramRegionsTests() {
     },
   );
   const declaredByRegion = new Map(declaredWeights.map((row) => [row.regionCode, row.salesValue]));
-  assert.equal(declaredByRegion.get("UE-1"), 300, "the declared 3:6 weight wins over the sales split");
+  assert.equal(declaredByRegion.get("UE-1"), 300, "the declared 3:6 fixture weight wins over the sales split");
   assert.equal(declaredByRegion.get("UE-2"), 600, "…and UE-2 takes its declared two thirds");
+
+  // ── THE DECLARED WEIGHTS STAY UNWIRED (owner, 2026-09-30) ────────────────────────────────────
+  // A split only ever reaches a Direct row with a BLANK area, and blank-area Direct rows ended with
+  // July: measured on production that day, Anti Infective had 8 of 8 blank in 2026-07, 0 of 9 in
+  // 2026-08 and 0 of 14 in 2026-09 — every row since August carries its own area, written by
+  // `direct_order_request`. July is published and locked, so the one month this could have moved can
+  // never be restated. `loadDirectRegionAllocation` reads a view that does not exist in `public`; if
+  // anything ever calls it, that is a guaranteed-failing round trip per closing load AND a reversal
+  // of his ruling. A select-audit will keep flagging the missing view — that is expected, not a bug.
+  const regionsSource = readFileSync(new URL("../src/lib/sales/closing-organogram-regions.ts", import.meta.url), "utf8");
+  const importSource = readFileSync(new URL("../src/lib/sales/monthly-distributor-import.ts", import.meta.url), "utf8");
+  assert.equal(
+    (regionsSource.match(/loadDirectRegionAllocation/g) ?? []).length,
+    1,
+    "loadDirectRegionAllocation must appear exactly once — its own definition. A second mention means something now calls it.",
+  );
+  assert.ok(
+    !/allocationWeights\s*:/.test(importSource),
+    "the closing load must not pass allocationWeights: the owner retired this split with the Excel-import direct orders (2026-09-30)",
+  );
 
   // A region the line DOES have passes straight through.
   const untouched = allocateDirectToOperationalRegions(
