@@ -859,25 +859,50 @@ the next Ubuntu release**: NodeSource lags a new codename by months, and the fai
   `tsc` measured directly on the host, cold (`--incremental false`, no `tsbuildinfo`), peak RSS
   **5.55 GB** — which is why the 6 GB heap stands and why the swap file is not optional.
 
-  🔴 **THE FIRST RUNS SAID THE OPPOSITE — 327s and 339s for `checks` — AND THAT WAS AN ARTEFACT OF A
-  BOX THAT HAD EXISTED FOR MINUTES, NOT A PROPERTY OF THE BOX.** A persistent runner's advantage IS
-  its warm state, so its first run is its worst: the pnpm store was empty (a cold install, not the
-  0.5s above) and, once a second runner was added, `checks` and `validate` ran concurrently against
-  7.7 GB while `tsc` alone wants 5.55 GB. **Discard every measurement taken before the store is warm,
-  and take timings with one job on the box at a time.**
+  🔴 **THE OBSERVED JOBS SAID THE OPPOSITE — 324s, 327s, 339s — AND THE CAUSE IS THE ESLINT CACHE,
+  NOT THE CPU, NOT A COLD STORE, AND NOT THE SECOND RUNNER.** All three explanations were proposed on
+  2026-09-30 and all three are wrong; the row above marked "lint ~5s" is what the job gets only once
+  `ci.yml`'s cache key carries the workspace. What was actually happening:
+
+  | on the self-hosted `checks` job | | hosted |
+  | --- | --- | --- |
+  | **Lint** | **165s · 169s** | 5–6s |
+  | Typecheck | **115s · 115s** | 153–162s |
+
+  `.eslintcache` is a JSON object keyed by **absolute path**. Hosted runs write
+  `/home/runner/work/<repo>/<repo>/…`; this box works in
+  `/home/phx/actions-runner[-2]/_work/<repo>/<repo>/…`. So the restored cache matches **not one
+  file**, eslint re-lints all 6,597 — and the step logs a **cache hit** while doing it, which is why
+  nobody looked there. Two sessions measured it independently on the host: **168s / 165s with no
+  usable cache, 4.16s / 4s with one that box wrote** (3,600,957 bytes). That 160s is the entire gap.
+
+  🔴 **THE THREE WRONG DIAGNOSES, SO NOBODY RE-RUNS THEM.** *Shared-vCPU CPU* — refuted by the one
+  pure-CPU step: `tsc` is **115s here against 153–162s hosted**, measured twice independently on the
+  host (113.94s and 115s, peak RSS 5.55 GB / 5.86 GB). The box **wins** on CPU. *Cold pnpm store* —
+  refuted by `install` already reading **0.5–3s** while `checks` still took 324s, and by three
+  consecutive runs drifting only 339 → 327 → 324s, which is not a store filling. *The second runner
+  stealing CPU* — refuted by attempt 1 of run `36652062486`, which ran `checks` **solo and
+  sequential** and still took **339s**, slower than the concurrent runs. Concurrency changed nothing,
+  and a runner was briefly removed on that mistaken basis before being restored.
 
   🔴 **THE COMPARISON BASIS IS THE WHOLE MEASUREMENT, AND IT WAS GOT WRONG THREE TIMES IN ONE HOUR, IN
   BOTH DIRECTIONS.** #4837 moved the unit suite from `checks` into `validate` on 2026-09-29T23:39Z, so
   **every run before that timestamp has a different job composition and is not comparable**, and a
   `push` run's `validate` additionally carries the build and the login smoke. One draft read
   "`validate` is roughly twice as fast" off pre-split or push runs (270–365s); another compared
-  per-job self-hosted times against a whole PR's *wall clock* and got "2× slower"; a third — the
-  bullet above — compared warm hosted runs against the box's cold-store first boot. **Filter to
-  `event=pull_request`, to runs created after the last change to the job split, and to a warm box
-  before quoting any number from this page.**
+  per-job self-hosted times against a whole PR's *wall clock* and got "2× slower"; a third blamed a
+  cold store; a fourth compared observed jobs against **~145s, which was a projection assuming a
+  working ESLint cache and not an observed job at all**, and removed a runner over the difference.
+  **Filter to `event=pull_request` and to runs created after the last change to the job split — and
+  never compare an observed number against a projected one without saying which is which.**
+
+  🔴 **ONCE THE KEY LANDS, THE BOX WINS THE WAIT AND NOT ONLY THE JOB — BUT ONLY WITH BOTH RUNNERS.**
+  Wall clock is `max(checks, validate)`: about `max(145, 160) = ~160s` here against hosted's
+  `max(209, 157) = ~209s`. With one runner the two required checks serialise instead and the box
+  loses. **The cache key and the runner count are one change; do not ship or undo them separately.**
 - 🔴 **ONE RUNNER PROCESS TAKES ONE JOB, SO A SINGLE REGISTRATION SERIALISES THE TWO REQUIRED CHECKS.**
-  The first run took **508s** that way (339s then 161s, back to back) — cold store, so read that as
-  the shape of the problem, not as its cost.
+  The first run took **508s** that way (339s then 161s, back to back) — most of that 339s was the
+  ESLint cache above, so read the 508s as the shape of the problem, not as its cost.
   A **second** runner registered on the SAME box fixes it — `RUNNER_DIR=$HOME/actions-runner-2
   RUNNER_NAME=phoenix-ci-nbg1-b` with the same labels, which the setup script supports as-is. **It
   fits**: with both jobs running at once the box's lowest available RAM was **1,180 MB** and swap

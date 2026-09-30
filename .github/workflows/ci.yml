@@ -697,13 +697,27 @@ jobs:
       # unreadable to a content-strategy run, so without the discriminator the first runs after this
       # change would download and extract a cache they must then throw away, and still log
       # "Cache restored successfully". Renaming the key retires the old entries by letting them expire.
+      # 🔴 AND THE KEY CARRIES THE WORKSPACE FOR A THIRD VERSION OF THE SAME BUG, FOUND 2026-09-30.
+      # .eslintcache is a JSON object keyed by ABSOLUTE file path — read off the runner:
+      #   [{"/home/phx/actions-runner/_work/phoenix-people-workforce/phoenix-people-workforce/app/…
+      # A GitHub-hosted runner works in /home/runner/work/<repo>/<repo>; this repo's self-hosted
+      # runners work in /home/phx/actions-runner[-2]/_work/<repo>/<repo>. So a cache saved on
+      # ubuntu-latest and restored on the box matches NOT ONE path and eslint re-lints all 6,597
+      # files — while this step logs a hit, which is exactly how the 2026-08-29 mtime bug hid too.
+      # Measured on the self-hosted `checks` job: Lint 165s and 169s against 5-6s hosted. That 160s,
+      # not CPU, is the entire reason self-hosted `checks` read 324-339s — on the same box Typecheck
+      # is 115s against 153-162s hosted, i.e. the box WINS the one pure-CPU step. Lint on that box
+      # with a cache its own workspace wrote: 4.16s.
+      # ${{ runner.name }} is stable per registered runner and separates the two runner directories;
+      # hosted runner names are per-job, so they share one 'hosted' lineage and keep today's hit
+      # rate. Do not collapse this to runner.environment alone — it cannot tell -2 from the first.
       - name: Restore ESLint cache
         if: steps.detect.outputs.docs_only != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .eslintcache
-          key: eslintcache-content-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'pnpm-lock.yaml') }}
-          restore-keys: eslintcache-content-
+          key: eslintcache-${{ runner.environment == 'self-hosted' && runner.name || 'hosted' }}-content-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'pnpm-lock.yaml') }}
+          restore-keys: eslintcache-${{ runner.environment == 'self-hosted' && runner.name || 'hosted' }}-content-
 
       - name: Lint
         if: steps.detect.outputs.docs_only != 'true'
