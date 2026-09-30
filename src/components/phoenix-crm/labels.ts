@@ -30,11 +30,20 @@ export function territoryLine(territory: TerritorySummary): string {
   return `${territory.name} · ${territory.repName ?? "No rep in this territory"}`;
 }
 
-/** "PM · Grade B · Internal Medicine". */
-export function customerMetaText(customer: { listType: PhoenixCrmListType; grade: PhoenixCrmGrade | null; speciality: string | null }): string {
-  return [listText(customer.listType), customer.grade ? `Grade ${customer.grade}` : "No grade", customer.speciality]
+/**
+ * "Grade B · Internal Medicine", or "No grade" — who the customer is, without the AM or PM that
+ * `customerMetaText` opens with. It is for a row that already prints AM or PM in a column of its
+ * own, where saying it twice is noise: the rep's "Your day" panel on his landing page.
+ */
+export function gradeSpecialityText(customer: { grade: PhoenixCrmGrade | null; speciality: string | null }): string {
+  return [customer.grade ? `Grade ${customer.grade}` : "No grade", customer.speciality]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
+}
+
+/** "PM · Grade B · Internal Medicine". */
+export function customerMetaText(customer: { listType: PhoenixCrmListType; grade: PhoenixCrmGrade | null; speciality: string | null }): string {
+  return `${listText(customer.listType)} · ${gradeSpecialityText(customer)}`;
 }
 
 /** A place by what the rep called it, else its part of town or brick, else its order on the customer. */

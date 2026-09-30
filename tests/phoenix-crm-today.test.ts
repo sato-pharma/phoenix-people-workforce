@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 
 import { stripComments, stripCommentsCompact } from "./support/comment-strip.ts";
 
+import { customerMetaText, gradeSpecialityText } from "../src/components/phoenix-crm/labels.ts";
+
 import {
   addressWithoutTheBrick,
   buildTodayStops,
@@ -337,6 +339,34 @@ export function runPhoenixCrmTodayTests(): void {
       false,
       "🔴 and a pharmacy is never added into either of them — the AM · PM · Pharmacies golden rule",
     );
+
+    // 4b. 🔴 THE GRADE AND THE SPECIALITY ON EVERY ROW. Recording the old CRM on 2026-09-29, the
+    //     owner opened on its dashboard, which "shows him my visits of today, with the specialities,
+    //     with the grades" — and this panel printed only the name and the place. They come off the
+    //     day's own stops (never a second read), and they sit on a line of their own between the name
+    //     and the place: folded into the place line, two Arabic parts joined by " · " swap on screen.
+    assert.ok(landing.includes("grade: stop.grade ?? null,"), "every row carries the stop's own grade — a missing one is no grade, never undefined");
+    assert.ok(landing.includes("speciality: stop.speciality,"), "and its own speciality");
+    const nameAt = panel.indexOf("{stop.name}");
+    const identityAt = panel.indexOf("{gradeSpecialityText(stop)}");
+    const whereAt = panel.indexOf("{stop.where}");
+    assert.ok(identityAt > 0, "the row prints the grade and the speciality");
+    assert.ok(nameAt < identityAt && identityAt < whereAt, "on their own line, after the name and before the place");
+    assert.ok(
+      !panel.includes("customerMetaText("),
+      "and WITHOUT the AM or PM that customerMetaText opens with — the row's own column already says it, so it would print twice",
+    );
+    // The words are the module's own, so this row reads exactly as the rest of Phoenix CRM does.
+    assert.equal(gradeSpecialityText({ grade: "A", speciality: "Paediatrics" }), "Grade A · Paediatrics");
+    assert.equal(gradeSpecialityText({ grade: null, speciality: "Paediatrics" }), "No grade · Paediatrics", "an ungraded customer says so");
+    assert.equal(gradeSpecialityText({ grade: "B", speciality: null }), "Grade B", "no speciality leaves no dangling separator");
+    assert.equal(gradeSpecialityText({ grade: null, speciality: null }), "No grade", "and the line is never empty");
+    assert.equal(
+      customerMetaText({ grade: "B", listType: "PM", speciality: "Internal Medicine" }),
+      "PM · Grade B · Internal Medicine",
+      "the full line every other screen prints is unchanged by sharing its second half",
+    );
+    assert.equal(customerMetaText({ grade: null, listType: "AM", speciality: null }), "AM · No grade");
 
     // 5. 🔴 THE CHROME IS BORROWED, NOT INVENTED — every piece of it is lifted from the panels it now
     //    sits beside. `RepPanel`, `RepNeedRow` and the chip live in portal-command-center.tsx, which
