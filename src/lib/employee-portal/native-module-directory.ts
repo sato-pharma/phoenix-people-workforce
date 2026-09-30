@@ -102,6 +102,9 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   // ── Forecast & Target ─────────────────────────────────────────────────────────────────────────
   "/employee-portals/make-it-happen": { icon: "sparkles-outline", section: "Forecast & Target" },
   "/employee-portals/targets": { icon: "locate-outline", section: "Forecast & Target" },
+  // Filed in the same section the sidebar puts it in, beside Targets — the placement is derived from
+  // buildEmployeePortalSections, so a registry entry without one drops out of the list silently.
+  "/employee-portals/spotlight": { icon: "trophy-outline", section: "Forecast & Target" },
   // ── Recruitment ───────────────────────────────────────────────────────────────────────────────
   "/employee-portals/vacancies": { icon: "person-add-outline", section: "Recruitment" },
   "/employee-portals/recruitment-candidates": { icon: "person-circle-outline", section: "Recruitment" },
