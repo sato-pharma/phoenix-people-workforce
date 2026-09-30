@@ -159,15 +159,49 @@ const SHELL_OWNS_THE_HEADER: ReadonlyArray<{ page: string; components: readonly 
     ],
     page: "app/employee-portals/employee-360/page.tsx",
   },
+  {
+    // `h1: "never"` rather than gated, because this component's intro renders in the PORTAL ONLY:
+    // `admin-shell-employee-pages.tsx` passes `showIntro={false}` and takes its heading from
+    // `AdminPageHero`. So no shell needs an <h1> from the wizard and it should hold none.
+    components: [{ file: "src/components/outstation/mobile-outstation-wizard.tsx", h1: "never" }],
+    page: "app/employee-portals/submit-expense/page.tsx",
+  },
 ];
 
-// 🔴 THE `<h1>` CHECK IS THE LOAD-BEARING ONE; THIS LIST IS THE SECOND FENCE, NOT THE FIRST.
-// `bg-slate-900` is deliberately ABSENT: Report It uses it for buttons, table header rows and the
-// submitted-successfully panel, all of which are fine, so banning it here would fail on correct code
-// (the tighter ban lives in `tests/spotlight-portal-look.test.ts`, whose component uses none of
-// those). The removed Report It hero was `bg-slate-900` — what catches its return is the `<h1>` rule,
-// because a page header is a heading whatever colour it is painted.
-const DARK_HERO_TOKENS = ["bg-slate-950", "bg-[#08111f]"] as const;
+/**
+ * 🔴 THIS REGISTRY IS NOW THE COMPLETE SET, MEASURED RATHER THAN COLLECTED.
+ *
+ * Every page under `app/employee-portals/` that renders inside `EmployeePortalPageShell` without a
+ * `hero` was swept on 2026-09-30, and each component it imports was classified by whether its
+ * heading is gated and whether the page passes a discriminator. Six components held an `<h1>`; all
+ * six are rows here. Nothing else on the portal draws a second page title.
+ *
+ * So a NEW page failing this rule should be caught by review, not found months later by a grep — and
+ * if a sweep ever reports a seventh, read its GATE before calling it a defect. Two of the six were
+ * reported to the owner as broken that day on the strength of a `<h1>` grep alone and were already
+ * correct (`kpis-board-view.tsx` gated on `chrome`, `double-visit-analytics-workspace.tsx` on
+ * `embedded`). A grep cannot see a runtime condition.
+ */
+
+// 🔴 THE DARK-BACKGROUND BAN IS GONE FROM THIS FILE, AND ITS REMOVAL IS THE POINT OF THIS NOTE.
+//
+// It banned `bg-slate-950` and `bg-[#08111f]` in every registered component, on the theory that a
+// page hero is a dark block. Measured against the sixth row on 2026-09-30 it was redundant where it
+// passed and WRONG where it fired:
+//
+//   - Spotlight's tighter ban (900 as well) already lives in `tests/spotlight-portal-look.test.ts`,
+//     whose component has no legitimate dark surface — so this copy added nothing there.
+//   - Report It's two components paint `bg-slate-900` for buttons, table header rows and the
+//     submitted-successfully panel, which are all correct, so 900 could never be banned here anyway
+//     and 950 never appeared.
+//   - `mobile-outstation-wizard.tsx` uses `bg-slate-950` three times, for the CAMERA VIEWFINDER
+//     behind a <video>, that viewfinder's control bar, and a modal scrim at `/45` with a backdrop
+//     blur. Every one is right, and the ban failed a correct file.
+//
+// A colour was never the invariant. `<h1>` is: a page header is a heading whatever it is painted,
+// and a dark block that is not a heading is not a page header. Banning the paint instead of the
+// heading is the same mistake as grepping for `<h1>` without reading its gate — judging a thing by
+// how it looks in the source rather than by what it does.
 
 export function runPortalSingleHeaderTests(): void {
   // The premise: the shell really does paint the header. If this moves, re-derive the rule before
@@ -194,7 +228,13 @@ export function runPortalSingleHeaderTests(): void {
     );
 
     for (const guard of components) {
-      const body = read(guard.file);
+      // 🔴 EVERY MATCH IN THIS LOOP RUNS OVER CODE, NEVER OVER COMMENTS — including the `never`
+      // branch. It was raw here until 2026-09-30 and went red on its own documentation: the comment
+      // recording which heading was removed from `mobile-outstation-wizard.tsx` quotes that tag, and
+      // quoting a tag you have deleted is the most natural thing to write. This is the same failure
+      // the gated branch already had, in the other direction — there a comment made a broken page
+      // pass, here it made a correct one fail.
+      const body = stripComments(read(guard.file));
 
       if (guard.h1 === "never") {
         assert.ok(
@@ -206,13 +246,6 @@ export function runPortalSingleHeaderTests(): void {
             + " assert the prop this page passes — do not delete the row.",
         );
 
-        for (const token of DARK_HERO_TOKENS) {
-          assert.ok(
-            !body.includes(token),
-            `${guard.file} paints a dark banner (${token}) under the shell's own navy header.`
-              + " The shell owns the header.",
-          );
-        }
         continue;
       }
 
@@ -228,7 +261,7 @@ export function runPortalSingleHeaderTests(): void {
       // condition and leaving the <h1> unconditional passed every other assertion here — found by
       // break-testing rather than by reading, which is why it is pinned separately.
       assert.ok(
-        guard.componentGate.test(stripComments(body)),
+        guard.componentGate.test(body),
         `${guard.file} no longer gates its <h1> on ${guard.componentGate}, so the heading now renders`
           + ` in the portal as well as the admin shell. ${guard.why}`,
       );
