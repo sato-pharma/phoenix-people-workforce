@@ -2,6 +2,7 @@ import { runDisplayScaleTests } from "./display-scale.test.ts";
 import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.ts";
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
+import { runClosingFrozenSplitNetTests } from "./closing-frozen-split-net.test.ts";
 import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
 import { runRepTargetsTests } from "./rep-targets.test.ts";
 import { runTestWiringCompleteTests } from "./test-wiring-complete.test.ts";
@@ -2161,6 +2162,7 @@ await runTest("display scale (content-only zoom, desktop-gated, print-excluded, 
 await runTest("i18n config", runI18nConfigTests);
 await runTest("i18n Cairo date boundary (currentCairoDateOnlyIso EEST/EET rollover)", runI18nCairoDateBoundaryTests);
 await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);
+await runTest("closing frozen split net (a published month's Closing tab reads the FROZEN net, valued at the period price, = the keycard)", runClosingFrozenSplitNetTests);
 await runTest("targets view scope (read-only DM/RM/NSM by AREA code, writes stay sales:import)", runTargetsViewScopeTests);
 await runTest("rep targets (a Medical Rep's own targets: self-bounded, published sales only, units within one product)", runRepTargetsTests);
 await runTest(
