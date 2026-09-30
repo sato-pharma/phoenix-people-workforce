@@ -5,10 +5,12 @@ import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { milestoneCardHtml, type MilestoneCardVariant } from "@/lib/milestones/card";
 import {
   MilestoneSpecError,
+  formatPlainDateIso,
   milestoneCardFileName,
   parsePlainDate,
   type PlainDate,
 } from "@/lib/milestones/periods";
+import { issueShareCardToken, shareCardPublicUrl } from "@/lib/share/share-card-token";
 import { renderMilestoneCard, renderMilestoneCardImage } from "@/lib/milestones/render";
 import {
   MilestoneBirthDateMissingError,
@@ -97,7 +99,9 @@ export async function POST(request: Request) {
           ? "png"
           : body?.format === "focus"
             ? "focus"
-            : "pdf";
+            : body?.format === "share-link"
+              ? "share-link"
+              : "pdf";
     const photoUpload = readUpload(body?.photoUpload);
 
     // The subject is the caller, always — never a hrId off the wire.
@@ -116,6 +120,19 @@ export async function POST(request: Request) {
       photoFocus: readFocus(body?.photoFocus),
       photoUpload,
     });
+
+    // A public, expiring link to THIS card, so LinkedIn and Facebook can scrape the actual picture.
+    // Minted from the caller's own resolved spec + date — never an hr id off the wire. No Chromium
+    // runs here; the picture is rendered only when the link itself is opened.
+    if (format === "share-link") {
+      const token = issueShareCardToken({
+        kind: "milestone",
+        hrId,
+        spec: built.periodSpec,
+        on: formatPlainDateIso(built.on),
+      });
+      return Response.json({ shareUrl: shareCardPublicUrl(token) }, { headers: { "Cache-Control": "no-store" } });
+    }
 
     if (format === "html") {
       const html = milestoneCardHtml(built.input, { variant, autoLayout: true });

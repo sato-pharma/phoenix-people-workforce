@@ -308,6 +308,25 @@ export function MyMilestones({ entries, photoUrl }: Props) {
     }
   }, [produceCard]);
 
+  // Mint the PUBLIC, expiring link to this card so LinkedIn and Facebook can show it. The link renders
+  // the record's photo at its default framing (a link cannot carry a live drag or an upload), so
+  // WhatsApp still sends the framed picture while LinkedIn and Facebook show the tidy default.
+  const shareLink = useCallback(async (): Promise<string | null> => {
+    if (!selected) return null;
+    try {
+      const response = await fetch("/api/milestones/my-card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ period: selected.spec, on: selected.on, format: "share-link" }),
+      });
+      if (!response.ok) return null;
+      const data = (await response.json().catch(() => null)) as { shareUrl?: unknown } | null;
+      return typeof data?.shareUrl === "string" ? data.shareUrl : null;
+    } catch {
+      return null;
+    }
+  }, [selected]);
+
   if (entries.length === 0) {
     return (
       <div className={SURFACE_CLASS}>
@@ -518,6 +537,7 @@ export function MyMilestones({ entries, photoUrl }: Props) {
               <div className="border-t border-slate-100 pt-3">
                 <ShareCardBar
                   getFile={shareCard}
+                  getPageUrl={shareLink}
                   caption={milestoneShareCaption(selected.label)}
                   disabled={busy !== null}
                   heading="Share your card"

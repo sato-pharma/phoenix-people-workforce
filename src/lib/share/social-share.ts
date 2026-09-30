@@ -41,13 +41,18 @@ export function shareComposerUrl(
   const text = encodeURIComponent(caption);
   switch (target) {
     case "whatsapp":
-      // wa.me carries text only; the picture is attached from the download the button also triggers.
-      return `https://wa.me/?text=${text}`;
+      // Carry the link too when we have one, so a WhatsApp chat shows the card as a link preview.
+      return pageUrl
+        ? `https://wa.me/?text=${encodeURIComponent(`${caption}\n${pageUrl}`)}`
+        : `https://wa.me/?text=${text}`;
     case "linkedin":
-      // The feed composer prefilled with the caption; the person attaches the saved picture.
-      return `https://www.linkedin.com/feed/?shareActive=true&text=${text}`;
+      // share-offsite scrapes the page's og:image — the card shows in the post preview. Without a
+      // page URL, the feed composer prefilled with the caption; the person attaches the saved picture.
+      return pageUrl
+        ? `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(pageUrl)}`
+        : `https://www.linkedin.com/feed/?shareActive=true&text=${text}`;
     case "facebook":
-      // sharer needs a public URL; with none we open the composer so the picture can be attached.
+      // sharer scrapes the page's og:image; with none we open the composer so the picture is attached.
       return pageUrl
         ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(pageUrl)}`
         : `https://www.facebook.com/`;

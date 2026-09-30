@@ -36,17 +36,34 @@ export function runShareCardTests(): void {
   // ── The composers carry the caption, URL-encoded ──────────────────────────────────────────────
   const caption = "Celebrating my First year at Sato Pharma! 🎉 #SatoPharma";
   const encoded = encodeURIComponent(caption);
+  // Without a public link (desktop fallback): WhatsApp carries the caption, LinkedIn/Facebook open a
+  // composer for a manual picture attach.
   assert.equal(shareComposerUrl("whatsapp", caption), `https://wa.me/?text=${encoded}`);
   assert.equal(
     shareComposerUrl("linkedin", caption),
     `https://www.linkedin.com/feed/?shareActive=true&text=${encoded}`,
   );
-  // Facebook's sharer needs a public URL; with a page URL it uses it, without it opens the composer.
-  assert.equal(
-    shareComposerUrl("facebook", caption, "https://phoenix-hr.satopharma.com/x"),
-    `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent("https://phoenix-hr.satopharma.com/x")}`,
-  );
   assert.equal(shareComposerUrl("facebook", caption), "https://www.facebook.com/");
+
+  // ── WITH the public share link — the whole point: LinkedIn and Facebook scrape its og:image ────
+  const page = "https://phoenix-hr.satopharma.com/share/card/tok";
+  assert.equal(
+    shareComposerUrl("linkedin", caption, page),
+    `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(page)}`,
+    "with a link, LinkedIn uses share-offsite so the card shows in the preview",
+  );
+  assert.equal(
+    shareComposerUrl("facebook", caption, page),
+    `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(page)}`,
+    "with a link, Facebook's sharer scrapes it",
+  );
+  assert.equal(
+    shareComposerUrl("whatsapp", caption, page),
+    `https://wa.me/?text=${encodeURIComponent(`${caption}\n${page}`)}`,
+    "with a link, WhatsApp carries the caption and the link for a preview",
+  );
+  // WhatsApp Status is share-sheet only, with or without a link.
+  assert.equal(shareComposerUrl("whatsapp-status", caption, page), null);
 
   // ── The captions are warm, first-person, and name Sato Pharma ─────────────────────────────────
   assert.match(milestoneShareCaption("Two years"), /^Celebrating my Two years at Sato Pharma!/);

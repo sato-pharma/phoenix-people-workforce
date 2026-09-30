@@ -2039,6 +2039,7 @@ import { runSpotlightRepSelfTests } from "./spotlight-rep-self.test.ts";
 import { runSpotlightPortalLookTests } from "./spotlight-portal-look.test.ts";
 import { runPortalSingleHeaderTests } from "./portal-single-header.test.ts";
 import { runShareCardTests } from "./share-card.test.ts";
+import { runShareCardTokenTests } from "./share-card-token.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
@@ -7382,6 +7383,11 @@ await runTest(
 await runTest(
   "social share (milestone card + spotlight sheet): the four targets are WhatsApp / Status / LinkedIn / Facebook, Status has no web composer, and the composers carry the first-person #SatoPharma caption",
   runShareCardTests,
+);
+
+await runTest(
+  "public share-card token: round-trips a milestone/spotlight link naming its canonical subject, and refuses a forged / re-pointed / expired token (null, never throws)",
+  runShareCardTokenTests,
 );
 
 await runTest(
