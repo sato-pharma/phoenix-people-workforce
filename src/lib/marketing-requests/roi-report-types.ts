@@ -235,8 +235,32 @@ export type MarketingRoiScope = {
    *
    * Same territorial rule the owner set for marketing customers on 2026-08-19 ("they must be
    * assigned to areas"), applied to the report that reads them.
+   *
+   * NOT sufficient on its own — see `visibleAreaLineNames` below, which is the other half.
    */
   visibleAreaIds: Set<number>;
+  /**
+   * The viewer's OWN line names, lower-cased — the second half of the territory route above, and
+   * the half that was missing until 2026-09-30.
+   *
+   * AN AREA IS NOT PER LINE. `public.areas` holds the Source-of-Sales area codes with `line_id`
+   * NULL (the old per-line rows, ids 76/77, are inactive), so "Gharbia 2 (Mahalla)" is ONE row,
+   * id 1104, carried at once by the Pedia rep, the CNS rep and the Anti Infective rep on that
+   * patch. Matching on `area_id` alone therefore handed every rep on an area every OTHER line's
+   * spend on it: measured on production 2026-09-30, 46 of the 82 rep×request pairs the territory
+   * route admitted were another line's campaign, reaching 28 of the 72 active reps — and the Pedia
+   * rep on Gharbia 2 saw exactly one row, the CNS District Manager's, which is the report the owner
+   * called a fatal mistake.
+   *
+   * So the route is area AND line: a request reaches a rep only when it is also demonstrably HIS
+   * line, read from the requester's own line and the promoted products' lines (the two never
+   * disagree on production — 45 of 45 requests with a pay date). A request whose line cannot be
+   * established at all is NOT admitted here; the requester route is untouched, so nothing the
+   * hierarchy already granted him is lost.
+   *
+   * Empty for every seat but the Medical Rep, exactly like `visibleAreaIds`.
+   */
+  visibleAreaLineNames: Set<string>;
   /** the viewer may opt-in to reveal confidential products. */
   canRevealRestricted: boolean;
 };

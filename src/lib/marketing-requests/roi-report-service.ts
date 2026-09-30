@@ -13,6 +13,7 @@ import {
 import {
   computeMarketingFilterOptions,
   resolveMarketingRoiScope,
+  territoryRouteAdmitsRequest,
 } from "@/lib/marketing-requests/roi-report-scope";
 import { entryMatchesRoiFilters } from "@/lib/marketing-requests/roi-facets";
 import {
@@ -554,15 +555,16 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
     if (Number.isFinite(areaId)) customerAreaIdById.set(row.id, areaId);
   }
   /**
-   * The territory route (owner, 2026-09-18): a Medical Rep sees a request raised by anyone when its
-   * TARGET CUSTOMER sits in their own area — in practice, their District Manager's spend on their
-   * own patch. Empty for every other seat, so this is a no-op for them.
+   * The territory route (owner, 2026-09-18; narrowed to the rep's own LINE 2026-09-30): a Medical
+   * Rep sees a request raised by anyone when its TARGET CUSTOMER sits in their own area AND the
+   * request is on their own line — in practice, their District Manager's spend on their own patch.
+   * Empty for every other seat, so this is a no-op for them.
+   *
+   * The decision itself is `territoryRouteAdmitsRequest` in roi-report-scope.ts — pure, and pinned
+   * by tests/medical-rep-marketing-scope.test.ts. This closure only supplies the target's area id.
    */
-  const requestIsInViewerArea = (customerId: string) => {
-    if (scope.visibleAreaIds.size === 0) return false;
-    const areaId = customerAreaIdById.get(customerId);
-    return areaId !== undefined && scope.visibleAreaIds.has(areaId);
-  };
+  const requestIsInViewerArea = (customerId: string, requestLineNames: Iterable<string>) =>
+    territoryRouteAdmitsRequest(scope, customerAreaIdById.get(customerId) ?? null, requestLineNames);
   const typeNameById = new Map(
     ((typesResult.data ?? []) as Array<{ id: number | string; name?: string | null }>).map(
       (row) => [Number(row.id), (row.name ?? "").trim() || `Type ${row.id}`] as const,
@@ -635,11 +637,34 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
       ? rawProducts
       : rawProducts.filter((product) => !isRestrictedMarketingProduct(product.code, product.normalizedName, restrictedNames));
 
-    // Line: prefer the requester's own line, but the employee master leaves line_name unset
-    // for ~all reps, so fall back to the promoted products' line (marketing_products carry a
-    // line). A request spanning multiple lines is shown as a sorted join.
+    // Line: the promoted products' line (marketing_products carry one). A request spanning multiple
+    // lines is shown as a sorted join.
+    //
+    // An older comment here said the employee master "leaves line_name unset for ~all reps", which
+    // is why this never consulted the requester. Re-measured on production 2026-09-30 and it is no
+    // longer true: `employees.line_id` is set for all 72 active reps and all 19 District Managers,
+    // agrees 1:1 with `au.v_org_tree.line_name`, and all four `public.lines` rows are active — so the
+    // seat line resolves for every requester. It is not swapped in as the label (the products' line
+    // is what a reader of this column wants), but it IS one of the two signals the territory route
+    // below unions, and a future session should not distrust it on the strength of that old note.
     const productLines = Array.from(new Set(rawProducts.map((p) => p.line).filter((l): l is string => Boolean(l)))).sort();
     const derivedLine = productLines.length > 0 ? productLines.join(" / ") : null;
+
+    /**
+     * Which line(s) this request belongs to, for the territory route's line half. Both signals are
+     * unioned rather than ranked: the requester's own seat line and the promoted products' lines
+     * agree on all 45 production requests carrying a pay date, and either one alone has a gap the
+     * other covers. Built from `rawProducts`, never `visibleProducts`, so masking a confidential
+     * product can never widen or narrow who may see the row.
+     *
+     * A request spanning two lines is on BOTH, so the rep of either line on that patch sees it.
+     * Empty means the line is unknown — the territory route then refuses it.
+     */
+    const requestLineNames = new Set<string>();
+    for (const candidate of [requesterRow?.lineName ?? null, ...productLines]) {
+      const lineName = (candidate ?? "").trim().toLowerCase();
+      if (lineName) requestLineNames.add(lineName);
+    }
 
     // Scope gate.
     if (!scope.isCompanyWide) {
@@ -648,7 +673,12 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
         const owned = scope.visibleProductCodes;
         if (!rawProducts.some((product) => owned.has(product.code))) continue;
       } else if (scope.visibleRequesterHrIds) {
-        if (!scope.visibleRequesterHrIds.has(requesterKey) && !requestIsInViewerArea(request.customerId)) continue;
+        if (
+          !scope.visibleRequesterHrIds.has(requesterKey) &&
+          !requestIsInViewerArea(request.customerId, requestLineNames)
+        ) {
+          continue;
+        }
       } else {
         continue;
       }

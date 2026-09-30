@@ -44,10 +44,17 @@ export function RoiTrackerTabs({
   canSeeCoverage,
   canSeeRoi,
   isSuperAdmin,
+  isTerritoryScoped = false,
 }: {
   canSeeCoverage: boolean;
   canSeeRoi: boolean;
   isSuperAdmin: boolean;
+  /**
+   * Medical Rep — the one seat that reads the ROI tab through the territory route (own area AND own
+   * line since 2026-09-30). Forwarded only so the tracker's EMPTY sentence tells him the truth; it
+   * grants and withholds nothing, which stays entirely server-side in roi-report-scope.ts.
+   */
+  isTerritoryScoped?: boolean;
 }) {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<RoiTrackerTab>(() => {
@@ -76,7 +83,9 @@ export function RoiTrackerTabs({
 
   const content = (
     <>
-      {activeTab === "roi" && canSeeRoi ? <MarketingRoiLiveTracker surface="portal" /> : null}
+      {activeTab === "roi" && canSeeRoi ? (
+        <MarketingRoiLiveTracker surface="portal" territoryScoped={isTerritoryScoped} />
+      ) : null}
       {activeTab === "coverage" && canSeeCoverage ? (
         <MarketingCoverageReportWorkspace isSuperAdmin={isSuperAdmin} />
       ) : null}

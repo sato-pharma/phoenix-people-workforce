@@ -28,6 +28,12 @@ export const dynamic = "force-dynamic";
  * A Finance Manager / Financial Advisor therefore sees only the Coverage tab. Row visibility stays
  * scoped per viewer inside each component's own service — this page widens nothing.
  *
+ * `isTerritoryScoped` marks the Medical Rep, the one seat whose ROI tab is bounded by his own area
+ * AND his own LINE (owner ruling 2026-09-30, after the Pedia rep on Gharbia 2 was shown the CNS
+ * District Manager's campaign — "it doesn't mean that he is the same area that he sees, he must see
+ * his line"). It carries no authority: the bound is enforced server-side in roi-report-scope.ts and
+ * this flag only lets the tracker's EMPTY sentence say why a rep's page is blank.
+ *
  * Kept as its OWN url and page file, still separate from /admin/marketing-roi-tracker (owner rule
  * 2026-07-28: admin and portal must not share one page).
  */
@@ -67,6 +73,7 @@ export default async function EmployeePortalRoiTrackerPage() {
         canSeeCoverage={canSeeCoverage}
         canSeeRoi={canSeeRoi}
         isSuperAdmin={access.role === "Super Admin"}
+        isTerritoryScoped={access.role === "Medical Rep"}
       />
     </EmployeePortalPageShell>
   );

@@ -52,19 +52,31 @@ function emptyScope(
     visibleLineNames: null,
     visibleProductCodes: null,
     visibleAreaIds: new Set<number>(),
+    visibleAreaLineNames: new Set<string>(),
     canRevealRestricted: canViewRestrictedProducts(access.role),
     ...overrides,
   };
 }
 
 /**
- * The territory route, Medical-Rep only — owner instruction 2026-09-18.
+ * The territory route, Medical-Rep only — owner instruction 2026-09-18, narrowed to the rep's own
+ * LINE on 2026-09-30.
  *
  * A rep no longer raises marketing requests (the drafts workspace and the Approval Inbox went dark
  * for them the same day), so the requester route leaves their ROI Tracker empty. He asked for the
  * page to stay "to be able to track roi of requests his manager did in his area", so a rep also
  * sees every request whose TARGET CUSTOMER sits in their own `employees.area_id` — which is their
  * DM's spend on their patch, and not the DM's spend on a sibling rep's patch.
+ *
+ * 🔴 AN AREA IS NOT PER LINE, so the area on its own is NOT the bound the wording implies. Live
+ * `public.areas` rows carry `line_id` NULL — one "Gharbia 2 (Mahalla)" row (id 1104) is held at
+ * once by the Pedia rep, the CNS rep and the Anti Infective rep — so area-only matching showed each
+ * of them the others' campaigns. Measured on production 2026-09-30: 46 of 82 admitted pairs were
+ * another line's spend, across 28 of the 72 active reps, and the Pedia rep on Gharbia 2 saw ONE row
+ * and it was the CNS District Manager's. The owner's ruling: "he must see his line."
+ *
+ * So this returns BOTH halves, and `roi-report-service.ts` requires both to match. A rep with no
+ * line on his master record admits nothing through this route — his requester route is untouched.
  *
  * Deliberately narrow: no other seat gets an area route. A DM, RM or NSM already reaches everything
  * their subtree raised through the requester route, which is wider than one area.
@@ -73,16 +85,51 @@ function viewerAreaScope(
   access: AccessContext,
   employeeRows: EmployeeDirectoryRow[],
   viewerHrId: string | null,
-): Set<number> {
+): { areaIds: Set<number>; lineNames: Set<string> } {
   const areaIds = new Set<number>();
-  if (access.role !== "Medical Rep" || !viewerHrId) return areaIds;
+  const lineNames = new Set<string>();
+  if (access.role !== "Medical Rep" || !viewerHrId) return { areaIds, lineNames };
   for (const row of employeeRows) {
     if (normalizeHrId(row.hrId) !== viewerHrId) continue;
+    const lineName = (row.lineName ?? "").trim().toLowerCase();
+    if (lineName) lineNames.add(lineName);
     if (row.areaId === null || row.areaId === undefined) continue;
     const areaId = Number(row.areaId);
     if (Number.isFinite(areaId)) areaIds.add(areaId);
   }
-  return areaIds;
+  // Both halves or neither: an area with no line would be the 2026-09-30 leak again, and a line with
+  // no area was never a route at all.
+  if (areaIds.size === 0 || lineNames.size === 0) return { areaIds: new Set<number>(), lineNames: new Set<string>() };
+  return { areaIds, lineNames };
+}
+
+/**
+ * THE territory-route decision, in one pure place: does this request reach this viewer because of
+ * WHERE and WHAT it is, rather than who raised it?
+ *
+ * Both halves must match — the target customer's area must be the viewer's own, AND the request must
+ * be on the viewer's own line. It lives here, beside the scope that feeds it, rather than inside
+ * `getMarketingRoiReport`'s DB closure, because that is where the 2026-09-30 leak could hide: the
+ * area half alone reads as a complete rule ("requests in his area") and is not one, since live
+ * `public.areas` rows carry `line_id` NULL and one area id is shared by the Pedia, CNS and Anti
+ * Infective reps standing on that patch.
+ *
+ * `requestLineNames` is normalized here, so no caller can pass the wrong casing and silently widen
+ * the route. An empty set means the request's line is unknown, and an unknown line is never "his".
+ */
+export function territoryRouteAdmitsRequest(
+  scope: Pick<MarketingRoiScope, "visibleAreaIds" | "visibleAreaLineNames">,
+  targetAreaId: number | null | undefined,
+  requestLineNames: Iterable<string | null | undefined>,
+): boolean {
+  if (scope.visibleAreaIds.size === 0 || scope.visibleAreaLineNames.size === 0) return false;
+  if (targetAreaId === null || targetAreaId === undefined) return false;
+  if (!scope.visibleAreaIds.has(Number(targetAreaId))) return false;
+  for (const candidate of requestLineNames) {
+    const lineName = (candidate ?? "").trim().toLowerCase();
+    if (lineName && scope.visibleAreaLineNames.has(lineName)) return true;
+  }
+  return false;
 }
 
 /**
@@ -98,9 +145,11 @@ function viewerAreaScope(
  *    requests are visible (exactly `canSeeMarketingRequest`'s decision) and
  *    classifies the visible seats into DM/NSM/RSM buckets (excluding the viewer's
  *    own seat) so the per-DM / per-NSM / per-RSM filters can be offered.
- *  - A Medical Rep additionally gets a TERRITORY route (`visibleAreaIds`, owner
- *    2026-09-18): every request whose target customer sits in their own area,
- *    whoever raised it. See `viewerAreaScope` below.
+ *  - A Medical Rep additionally gets a TERRITORY route (`visibleAreaIds` +
+ *    `visibleAreaLineNames`, owner 2026-09-18, narrowed to his own line
+ *    2026-09-30): every request whose target customer sits in their own area AND
+ *    which is on their own line, whoever raised it. See `viewerAreaScope` below —
+ *    an area is shared by every line's rep, so the area alone is not the bound.
  */
 export function resolveMarketingRoiScope(
   access: AccessContext,
@@ -163,6 +212,8 @@ export function resolveMarketingRoiScope(
     }
   }
 
+  const territory = viewerAreaScope(access, employeeRows, viewerHrId);
+
   return emptyScope(access, {
     viewerHrId,
     selfOnly: scopeForRole(role) === "self",
@@ -172,7 +223,8 @@ export function resolveMarketingRoiScope(
     visibleRsmHrIds,
     visibleLineNames: visibleLineNames.size > 0 ? visibleLineNames : new Set<string>(),
     visibleProductCodes: null,
-    visibleAreaIds: viewerAreaScope(access, employeeRows, viewerHrId),
+    visibleAreaIds: territory.areaIds,
+    visibleAreaLineNames: territory.lineNames,
     canRevealRestricted,
   });
 }
