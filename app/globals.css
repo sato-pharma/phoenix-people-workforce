@@ -789,23 +789,18 @@ html:has(.admin-shell) {
   86%, 100% { transform: translateX(430%) skewX(-14deg);  opacity: 0; }
 }
 
-/* The Phoenix CRM wordmark itself — premium-polished (owner, 2026-09-30). A
-   near-white face with a soft gold highlight that drifts slowly across the
-   letters, so the name reads like an engraved plate rather than a plain label.
-   Off under prefers-reduced-motion, where it settles to a clean white. */
+/* The Phoenix CRM wordmark — set in Cormorant Garamond, a refined serif (owner's
+   pick, 2026-09-30), clean white with a faint warm glow so the name reads as a
+   premium engraved plate. The typeface carries the premium; no gradient or
+   shimmer on the letters. The @font-face is in app/layout.tsx. */
 .ep-crm-word {
-  background: linear-gradient(100deg, #ffffff 0%, #f4f7ff 34%, #FFE3B0 50%, #f4f7ff 66%, #ffffff 100%);
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  letter-spacing: 0.05em;
-  text-shadow: 0 1px 10px rgba(240, 90, 26, 0.22);
-  animation: ep-crm-word-shimmer 6s ease-in-out infinite;
-}
-@keyframes ep-crm-word-shimmer {
-  0%, 100% { background-position: 120% 0; }
-  50%       { background-position: -20% 0; }
+  font-family: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  font-size: 21px;
+  line-height: 1.1;
+  letter-spacing: 0.015em;
+  color: #ffffff;
+  text-shadow: 0 1px 12px rgba(240, 90, 26, 0.25);
 }
 
 /* Nav-badge "alarm" pump — scale beat layered on top of the breathe-orange ring
@@ -1241,7 +1236,6 @@ html:has(.admin-shell) {
   .ep-fade-in-up,
   .ep-crm-launch::before,
   .ep-crm-gloss,
-  .ep-crm-word,
   .employee-portal-page-transition,
   .employee-portal-route-loading,
   .employee-portal-skeleton,
