@@ -53,6 +53,24 @@ export async function POST(request: Request) {
 
     const pdf = await renderBusinessCardsPdf([fields], { title: `${name} — business card` });
     const pdfBytes = Buffer.from(pdf);
+
+    // `?format=base64` hands the card back as BASE64 TEXT, not an application/pdf body. A browser
+    // PDF download-manager (or the browser itself) intercepts any fetch of an application/pdf
+    // response and downloads it, so the page's own JS never receives the bytes — it surfaces as the
+    // card being force-downloaded plus a "Failed to fetch" error, and it is what broke this preview.
+    // base64-as-text gives the interceptor nothing to match on. The CV preview learned the identical
+    // lesson (src/components/recruitment/cv-preview-modal.tsx), and the recruitment print routes emit
+    // the same way. The page fetches base64 for BOTH the on-screen preview and the download.
+    if (new URL(request.url).searchParams.get("format") === "base64") {
+      return new Response(pdfBytes.toString("base64"), {
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+          "Content-Type": "text/plain; charset=utf-8",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
+
     // A fixed Content-Length keeps the ~2.7 MB card a single, known-length body rather than a
     // chunked stream, so the browser (and any proxy) reads to a definite end instead of guessing.
     return new Response(pdfBytes, {
