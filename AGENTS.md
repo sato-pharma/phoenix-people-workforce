@@ -244,7 +244,7 @@ words, incidents, measurements, pre-image tables): `docs/agents-owner-rules.md`.
 - ⏸️ **DORMANT under the mobile-app freeze at the top of §4** — do not act on this, do not raise it.
   🔴 **MANAGED GOOGLE PLAY REACHES NO REP TABLET — the store `.aab` is NOT how the mobile app ships, and the upload is DROPPED** (owner, 2026-09-28: *"drop the managed play upload since it cannot reach the fleet"*). Measured the same day: `enterprises/LC017auv4o` has **0 enrolled devices** and the package answers **404**, because the tablets are enrolled in the company's own **Headwind MDM**, which installs an **APK it hosts** and links to a configuration — and they carry no Google account by design. **The fleet artifact is `eas.json`'s `mdm` profile** (arm64 APK, `production` channel), a dispatch choice on the Mobile build workflow since #4652. Never read a green store build as fleet cover, and never re-propose the Play upload as the way to ship to reps. `managed-play-cannot-reach-the-rep-tablets`
 - 🔴 **PULL REQUESTS ARE BACK ON GITHUB-HOSTED, AND THE BOX IS A PREVIEW MACHINE ONLY** (owner, 2026-09-30: *"put PRs back on hosted and keep the box for previews only"*, reversing his own widening the same day). `CI_SELF_HOSTED` is **off** — the kill switch, not an edit to the expression, exactly as the rule below says. The `runs-on` lines are UNCHANGED, so flipping the variable back on restores widening instantly; the rule below stays as the account of how it is wired. 🔴 **IT WAS REVERSED BECAUSE THE BOX COULD NOT CARRY IT, MEASURED: `tsc` peaks at 5.55 GB and the box has 7.7 GB, so TWO concurrent `checks` jobs cannot fit** — on 2026-09-30 two typechecks (4.6 GB + 1.3 GB) put it into 3,579 MB of swap with **9 runs queued and 0 in progress**, i.e. CI stopped rather than slowed. Capped to ONE runner (`phoenix-ci-nbg1-b` stopped, masked and deregistered), one runner then SERIALISES the two required jobs at ~305s against ~209s hosted — which is why hosted won. 🔴 **AND THE RUNNER SELF-UPDATES AND DOES NOT COME BACK:** it upgraded 2.331.0 → 2.337.0, exited `no retry needed` with code 0, and `svc.sh`'s generated unit has `Restart=no`, so it read **offline** while every job queued behind the other runner. Both units now carry a `Restart=always` drop-in; **never register a runner without checking `systemctl show <unit> -p Restart`.** The box keeps serving `phx-preview` (bullet in §5). Account: `docs/ci-self-hosted-runner.md`.
-- 🔒 **EVERY SAME-REPO PULL REQUEST NOW RUNS SELF-HOSTED, AND `main` NEVER DOES** (owner, 2026-09-30: *"widen self-hosted CI to all PRs"*, superseding his own 2026-09-28 per-branch opt-in). The `startsWith(github.head_ref, 'ci-runner/')` clause is GONE from all six `runs-on` lines — **restoring it narrows his ruling and is not a cleanup.** 🔴 **`github.event_name == 'pull_request'` is now the ONLY thing keeping `main` hosted, and `main`'s CI IS the production deploy gate (§2) — never weaken it, nor the same-repo clause** (a fork PR self-hosted is arbitrary code execution on his box). 🔴 **The rollback is the KILL SWITCH, never an edit to the expression:** `gh variable set CI_SELF_HOSTED --body off`, which re-resolves on the next run ATTEMPT. 🔴 **The 2026-09-28 refusal was real and rested on a measurement that was an ARTEFACT** — `checks` read 324–339s self-hosted against ~209s hosted, which looked like slow shared vCPU and was an ESLint cache keyed by ABSOLUTE path: the restored cache matched not one file so lint ran over all 6,597 **while logging a cache hit** (168s cold vs 4s warm; `tsc` is 115s here against 153–162s hosted, so the box always won the pure-CPU step). Fixed by #4844. **Three other diagnoses were proposed that day and all three were wrong — read the account before deriving a fourth.** 🔴 **THE HARDWARE REFUSAL STANDS** (*"I WILL NOT BUY THIS"*, of two CPX32s at €70.98/month): he bought ONE box himself — never re-pitch a purchase, and never argue widening from hardware that does not exist. 🔴 **TWO RUNNERS, TWO REQUIRED JOBS — a second concurrent PR QUEUES behind the first**, so a busy hour can still be slower than hosted; that is a known trade he made, not a defect to report. Pinned by `tests/ci-runner-switch.test.ts` in the required `checks` job. Account: `docs/ci-self-hosted-runner.md`, "Widening it".
+- 🔒 **HOW THE WIDENING IS WIRED, AND THE THREE THINGS THAT STAY TRUE WITH THE SWITCH OFF.** The `runs-on` expression still reaches every same-repo pull request, so the bullet above flips it back on with one variable — which is why these survive the reversal. 🔴 **`github.event_name == 'pull_request'` is the ONLY thing keeping `main` hosted, and `main`'s CI IS the production deploy gate (§2) — never weaken it, nor the same-repo clause** (a fork PR self-hosted is arbitrary code execution on his box). 🔴 **Restoring the `startsWith(github.head_ref, 'ci-runner/')` clause narrows his 2026-09-30 ruling and is NOT a cleanup.** 🔴 **THE HARDWARE REFUSAL STANDS** (*"I WILL NOT BUY THIS"*, of two CPX32s at €70.98/month): he bought ONE box himself — never re-pitch a purchase, and never argue widening from hardware that does not exist. Pinned by `tests/ci-runner-switch.test.ts` in the required `checks` job. Account — the measured arc, the ESLint-cache artefact that made the 2026-09-28 refusal look right, the three wrong diagnoses, and the two-runner trade: `docs/ci-self-hosted-runner.md`, "Widening it".
 - Use the **`gh` CLI** for all GitHub operations, not the GitHub MCP tools.
 - Before wiring any email recipients, **ask who receives it**.
 
@@ -492,56 +492,45 @@ automatically; the local branch and worktree survive and still need approval to 
 🔴 **ONE WIDE PR, NOT FIVE NARROW ONES — EVERY MERGE COSTS ~28 BILLABLE CI MINUTES** (owner,
 2026-09-27: "you make many prs and many merges you can wider the contact of the pr to make less
 merges"). A merge pays a full CI run on the PR **and** another on `main`, ~14 billable minutes each,
-because GitHub rounds every job up to a whole minute. Measured that day: **338 pushes to `main` in 7
-days**, ≥100 PRs merged, **41% of them touching ≤3 files** and 23% changing ≤50 lines — ~28 minutes
-of billing to ship a 3-file change. That volume, not the pipeline, is the whole bill. 🔴 **THE ONLY
-AUTHORITY ON WHAT THIS COSTS IS THE INVOICE, AND IT SAYS $300.88 FOR SEPTEMBER — the highest the
-owner has ever paid** (his own statement, 2026-09-27, correcting a session that had derived ~$559
-from measured job minutes). **Never convert measured minutes into a monthly bill**: doing that
-overstated it by roughly 2x, and the billing API needs a token scope no session here has, so a
-session cannot check its own arithmetic. Measure minutes, report minutes, and anchor money to the
-invoice the owner can read. **So batch related work
-into ONE branch and ONE PR**: finish the whole task — the fix, its test, its doc, the follow-ups you
-can already see — before opening it, and push fixups in fewer, larger commits (concurrency cancels
+because GitHub rounds every job up to a whole minute. That VOLUME, not the pipeline, is the whole
+bill. 🔴 **THE ONLY AUTHORITY ON WHAT THIS COSTS IS THE INVOICE — $300.88 for September, the highest
+he has ever paid** (his own statement, 2026-09-27, correcting a session that had derived nearly twice
+that from measured job minutes). **Never convert measured minutes into a monthly bill**: the billing
+API needs a token scope no session here has, so a session cannot check its own arithmetic. Measure
+minutes, report minutes, anchor money to the invoice he can read. **So batch related work into ONE
+branch and ONE PR**: finish the whole task — the fix, its test, its doc, the follow-ups you can
+already see — before opening it, and push fixups in fewer, larger commits (concurrency cancels
 superseded PR runs, so two pushes a minute apart bill twice and verify once). Splitting is still
 right when the parts need SEPARATE approval (a migration, a locked file, a protected rule) or when
 one part is urgent and the rest is not — never merely because the change feels tidier in pieces.
 🔴 **AND A FEATURE ARRIVING IN INSTALMENTS IS STILL ONE FEATURE — HOLD THE PARTS** (owner,
-2026-09-29: *"batch the next feature into one PR, not six"*). The one-press seat hire shipped as
-**six** PRs in a morning — three of them five files or fewer — because he asked for the surfaces one
-at a time and because twice a NEW PR was opened rather than widen one already carrying his `merge
-<n> when green`. He weighed the finer approval against the ~168 billable minutes himself and chose
-the minutes. So when the next instruction is plainly the same mechanism on another surface, a
-follow-up named in the same breath, or a pin of a ruling just given, **hold it and open ONE PR when
-the feature is whole**, saying in one line that you are holding so he can override. Widening a PR
-his approval already sits on is allowed — say so plainly and let him re-confirm; it is no longer a
-reason to open a second. Account: `docs/ci-self-hosted-runner.md`, "A feature arriving in
-instalments is still ONE feature" — the measured arc, and why 54 billable minutes went on one
-5-file PR. `hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces`
+2026-09-29: *"batch the next feature into one PR, not six"*, after one shipped as six PRs in a
+morning because he asked for the surfaces one at a time). When the next instruction is plainly the
+same mechanism on another surface, a follow-up named in the same breath, or a pin of a ruling just
+given, **hold it and open ONE PR when the feature is whole**, saying in one line that you are holding
+so he can override. Widening a PR his approval already sits on is allowed — say so plainly and let
+him re-confirm; it is no longer a reason to open a second.
+`hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces`
 🔴 **NEVER HAND HIM MORE THAN ONE MERGE AT A TIME — TRIAGING OPEN PRs IS NEVER HIS JOB, AND
-CONSOLIDATING THEM IS YOURS.** He said it plainly on 2026-09-30, after a night of them piling up:
-*"i till now donot know what to do with small open prs"*. The answer is that he does nothing — he
-never decides which to merge, which to close, or what counts as small. **Before asking him to merge
-anything, run `node scripts/rollup-prs.mjs`**: it groups every open PR whose file set is DISJOINT
-from the others into one branch, reports which are SUPERSEDED (a dependabot bump another PR already
-subsumes) and which must stay SEPARATE (a migration, a protected file, a frozen path), and `--apply`
-builds the branch and opens ONE PR. It never merges; `--settle` closes only a PR already
-byte-identical on `main` — one approval replaces several. 🔴 **AND IF A ROLL-UP IS ALREADY OPEN, DO NOT MERGE ITS MEMBERS
-SEPARATELY.** #4814 was merged out from under #4821 four minutes after the roll-up was built and
-commented on it, paying ~28 billable minutes for nothing: **a comment on a PR is not enforcement**,
-which is why this rule is here rather than only in C10's refusal text. Check `gh pr list` for an open
+CONSOLIDATING THEM IS YOURS** (owner, 2026-09-30: *"i till now donot know what to do with small open
+prs"*). He does nothing: he never decides which to merge, which to close, or what counts as small.
+**Before asking him to merge anything, run `node scripts/rollup-prs.mjs`** — it groups every open PR
+whose file set is DISJOINT from the others into one branch, reports which are SUPERSEDED and which
+must stay SEPARATE (a migration, a protected file, a frozen path), and `--apply` opens ONE PR. It
+never merges; `--settle` closes only a PR already byte-identical on `main`. 🔴 **AND IF A ROLL-UP IS
+ALREADY OPEN, DO NOT MERGE ITS MEMBERS SEPARATELY** — it happened four minutes after one was built
+and commented on, because **a comment on a PR is not enforcement**. Check `gh pr list` for an open
 `codex/rollup-*` before merging anything small. Pinned by `tests/rollup-prs.test.ts`.
-🔴 **MEASURE IN MINUTES, NEVER IN RUNS, AND NEVER FROM A SAMPLE — both lie.** Re-measured
-2026-09-27 from EVERY run of the month rather than a sample: `pull_request` **60.5%** · `push` to
-`main` **39.5%** · `workflow_dispatch` **~0%**. Dispatch is a rounding error — about eight runs in the
-whole month — so "stop re-running CI" is worth single-digit dollars, and the ~$78 figure AND the ~$12
-that corrected it were both sample artefacts. `ci.yml` is **89.1%** of the bill, so nothing outside it
-is worth touching, and `main` already runs exactly once per commit. **`main`'s 39.5% is NOT
-reclaimable — it is the production deploy gate** (§2), so the only lever left that costs no safety is
-the self-hosted runner. 🔴 **The Actions runs API caps at 1,000 rows and truncates the OLDEST
-silently** — a wide query returning *exactly* 1,000 is truncated data wearing the shape of a complete
-month; count the rows and disbelieve that number. Account: `docs/ci-self-hosted-runner.md`, "Why the
-volume is what it is" and "Where the money actually is".
+🔴 **MEASURE IN MINUTES, NEVER IN RUNS, AND NEVER FROM A SAMPLE — both lie**, and two sampled dollar
+figures were published and corrected before this was re-measured from every run of the month.
+`ci.yml` is ~89% of the bill, so nothing outside it is worth touching, and `main` already runs
+exactly once per commit. **`main`'s ~40% is NOT reclaimable — it is the production deploy gate**
+(§2), so the only lever left that costs no safety is the self-hosted runner. 🔴 **The Actions runs
+API caps at 1,000 rows and truncates the OLDEST silently** — a wide query returning *exactly* 1,000
+is truncated data wearing the shape of a complete month; count the rows and disbelieve that number.
+Account for all three — the measured arc, why the run COUNT lies, and why 54 billable minutes went on
+one 5-file PR: `docs/ci-self-hosted-runner.md`, "Why the volume is what it is", "Where the money
+actually is" and "A feature arriving in instalments is still ONE feature".
 
 ## 7. Validation
 
