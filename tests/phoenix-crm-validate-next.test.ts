@@ -79,6 +79,10 @@ function customer(overrides: Partial<ListCustomer> & { brick?: string | null } =
     waiting: [],
     primaryPharmacyName: null,
     pharmacies: [],
+    // Both are nullable on ListCustomer, and null is the real "nobody else carries him" / "no
+    // observed point" answer — the same default the loader writes before the mirror is consulted.
+    sharedWith: null,
+    observed: null,
     ...rest,
   };
 }

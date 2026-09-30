@@ -865,13 +865,16 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   const sharedKeys = listCustomers
     .map((customer) => customer.referenceContactCrmId)
     .filter((id): id is number => typeof id === "number");
-  if (seat.repHrId && sharedKeys.length > 0 && !isTest) {
+  // `occupantHrId`, not `repHrId`: the seat's own field name. `loadSharedCustomersFor`'s PARAMETER is
+  // called `repHrId`, which is what the seat was read as. Null here is a vacant territory, which the
+  // comment above already treats as an ordinary "nobody" — so the guard is the same one either way.
+  if (seat.occupantHrId && sharedKeys.length > 0 && !isTest) {
     try {
       // 🔴 AND WHERE EACH DOCTOR ACTUALLY IS, averaged from the check-ins the reps have already
       // taken on him (owner, 2026-09-30). Both questions are answered against the same mirror, so
       // they are asked together rather than one page load apart.
       const [sharedByContact, observedByContact] = await Promise.all([
-        loadSharedCustomersFor(sharedKeys, seat.repHrId),
+        loadSharedCustomersFor(sharedKeys, seat.occupantHrId),
         loadObservedPointsFor(sharedKeys),
       ]);
       for (const customer of listCustomers) {
