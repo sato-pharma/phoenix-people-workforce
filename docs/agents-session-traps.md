@@ -2737,6 +2737,55 @@ Family: the same sentence as the local-suite/typecheck trap in the Validation cl
 cannot say "I did not look at this" gets read as "I looked and it was fine."* Those invent a success,
 an event and a scope; these invent a **verdict**.
 
+### Two more the same afternoon, and they are about READING rather than about that script
+
+Both were found after the four above had been written down, which is the argument for the shape over any
+instance: the four were a script's logic, these two are what a session does with a command's output, and
+nothing about the roll-up tool is involved in either. **Six, and in every one an ABSENT answer arrived in
+the shape of a NEGATIVE one.**
+
+**5 · A pipeline's exit status is the last stage's, so `| tail` turns every failure into a success.**
+`node scripts/wait-pr.mjs 4950 --timeout 15 | tail -6` reported **exit 0** while the script had exited
+**3** for `SETTLED RED`, and a backgrounded task's notification reports the shell's status — so a red PR
+was announced to the owner as a green one. It happened twice that afternoon in two different sessions,
+the other time on `| tail -3` around a refusal test that had exited 2. Both were caught only because the
+script's own stdout said what had happened; a tool that answered in its exit code alone would have been
+believed. This is the `; echo $?` trap in a shape that does not look like it, and it reaches a
+short-circuit chain too: `git cat-file -e <sha> | head -1 || echo missing` never runs the `||` branch,
+because `head` succeeded — measured here while checking the very guard described below, which left the
+guard unmeasured and nearly asserted on nothing. **Redirect and read `$?` from the command itself**
+(`cmd > out.txt 2>&1; echo $?`), or `${PIPESTATUS[0]}` where a pipe is unavoidable.
+
+**6 · A 40-character string is not a sha, and the runs API answers `total_count: 0` about a commit that
+does not exist.** §2.3 already records that the runs API answers zero silently for a SHORT sha. A WRONG
+40-char sha is worse, because it looks like the remedy. A sha assembled by padding out a 9-char prefix
+returned `0` runs while the neighbouring real commit returned `1` — a working positive control beside a
+reading that matched mode 5's tell exactly, one step from reporting a healthy merge as a withheld
+deploy. **The positive control is worthless here:** it proves the endpoint works, which was never in
+question. Two free guards, measured, either sufficient:
+
+```
+git cat-file -e 040583238ec3…28cf39b   -> exit 1   (fabricated)
+git cat-file -e 040583238a00…db98667   -> exit 0   (real)
+commits/<fabricated sha>/check-suites  -> 422 No commit found for SHA
+commits/<real sha>/check-suites        -> 5 suites
+```
+
+`git cat-file -e` costs nothing and runs before any API call; `check-suites` REFUSES an unknown commit
+instead of answering about it. Never assemble a sha from a prefix — read `mergeCommit.oid` — and when a
+zero appears, ask one of those two before believing it.
+
+### How all six were actually caught
+
+Not by review, and not by either session auditing itself. Two sessions worked this area in parallel and
+**each caught the other's, neither its own** — the first's #4937 diagnosis did not reproduce and the
+second found the real cause; the second's footprint figure was a measurement quoted after it went stale
+and the first re-derived it; the second's StatusContext over-correction was found by the first reading
+its diff; the first's line-wise comment strip was found by a ratchet the second's area already had. The
+rule that follows is not "review more carefully" — it is that a fail-open is invisible from inside the
+window that wrote it, so **ask GitHub, git or the file rather than the message, including when the
+message is your own earlier turn.**
+
 ## A TS1005 in `tests/run-tests.ts` was invisible to every local run — 2026-09-30
 
 Also 2026-09-30, and it belongs beside the above because it is the same family: a check that never
