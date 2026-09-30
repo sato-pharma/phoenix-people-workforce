@@ -1,22 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import {
-  Award,
-  Cake,
-  CalendarHeart,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  ImageUp,
-  Loader2,
-  RotateCcw,
-  Sparkles,
-  UserX,
-} from "lucide-react";
+import { Award, Cake, CalendarHeart, Check, Download, ImageUp, Loader2, RotateCcw, Sparkles, UserX } from "lucide-react";
 
 import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
 import { SURFACE_CLASS, SectionCard } from "@/components/sales/target-visuals";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import type { MyMilestoneEntry } from "@/lib/milestones/service";
 
 type Props = {
@@ -57,39 +46,13 @@ function fillOffset(fill: number, focus: number): string {
 
 const rowKey = (entry: MyMilestoneEntry) => `${entry.spec}-${entry.on}`;
 
-// ── Calendar helpers — DATE-ONLY, so they render the same on the server and in every browser. ──────
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-/** "August 2026" from a 1-based month, read at UTC midnight (no zone shift). */
-function monthLabel(year: number, month: number): string {
-  return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(
-    new Date(Date.UTC(year, month - 1, 1)),
-  );
-}
-
-const isoOf = (year: number, month: number, day: number) =>
-  `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-
-function parseIso(iso: string): { year: number; month: number; day: number } {
-  const [year, month, day] = iso.split("-").map(Number);
-  return { year, month, day };
-}
-
-/** `iso` shifted by whole days, through UTC so no DST or zone ever enters it. */
-function addDaysIso(iso: string, delta: number): string {
-  const { year, month, day } = parseIso(iso);
-  const moved = new Date(Date.UTC(year, month - 1, day) + delta * 86_400_000);
-  return isoOf(moved.getUTCFullYear(), moved.getUTCMonth() + 1, moved.getUTCDate());
-}
-
-/** The cells of a month grid, leading + trailing blanks (null) so every week is 7 wide. */
-function monthCells(year: number, month: number): (string | null)[] {
-  const startWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
-  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const cells: (string | null)[] = Array.from({ length: startWeekday }, () => null);
-  for (let day = 1; day <= days; day += 1) cells.push(isoOf(year, month, day));
-  while (cells.length % 7 !== 0) cells.push(null);
-  return cells;
+/** The day + short month of an ISO date, e.g. {day:"12", month:"Aug"} — the badge on each node. */
+function dayMonth(iso: string): { day: string; month: string } {
+  const day = String(Number(iso.slice(8, 10)));
+  // stableEnGbFormatter, never a bare Intl en-GB: CLDR 42 changed the September abbreviation from
+  // "Sep" to "Sept", so server and browser can disagree and React throws hydration error #418.
+  const month = stableEnGbFormatter({ month: "short", timeZone: "UTC" }).format(new Date(`${iso}T00:00:00Z`));
+  return { day, month };
 }
 
 const OccasionIcon = (kind: MyMilestoneEntry["kind"]) => (kind === "birthday" ? Cake : Sparkles);
@@ -97,8 +60,8 @@ const OccasionIcon = (kind: MyMilestoneEntry["kind"]) => (kind === "birthday" ? 
 /** Anniversary reads Sato-orange; a birthday reads rose — one glance tells the two apart. */
 const kindAccent = (kind: MyMilestoneEntry["kind"]) =>
   kind === "birthday"
-    ? { rail: "border-l-rose-500", chip: "border-l-[3px] border-l-rose-500 bg-rose-50 text-rose-900", dot: "bg-rose-500" }
-    : { rail: "border-l-orange-500", chip: "border-l-[3px] border-l-orange-500 bg-orange-50 text-orange-900", dot: "bg-orange-500" };
+    ? { rail: "border-l-rose-500", tint: "bg-rose-50", dot: "bg-rose-500", ink: "text-rose-600" }
+    : { rail: "border-l-orange-500", tint: "bg-orange-50", dot: "bg-orange-500", ink: "text-orange-600" };
 
 /** "Today" · "In 12 days" · "Reached" — short enough never to force a sideways scroll. */
 function whenLabel(daysAway: number): string {
@@ -116,22 +79,26 @@ const BTN_LIGHT =
   "inline-flex items-center justify-center gap-1.5 whitespace-nowrap border border-slate-300 " +
   "bg-white px-3 py-1.5 text-xs font-bold text-slate-800 transition-colors hover:bg-slate-50 " +
   "disabled:cursor-not-allowed disabled:opacity-50";
-/** Header navigation buttons, on the navy band. */
-const NAV_BTN =
-  "inline-flex h-9 min-w-9 items-center justify-center gap-1.5 border border-white/20 bg-white/10 px-2.5 " +
-  "text-xs font-bold text-white transition-colors hover:bg-white/20";
 
 /**
- * My Milestones — the rep's own keepsake cards on a premium month calendar (owner, 2026-09-30).
+ * My Milestones — the rep's own keepsake cards on a tailored timeline (owner, 2026-09-30).
  *
- * His anniversaries and Sato-Pharma birthdays sit on a real calendar; tapping one opens the card,
- * where he frames his photo, hands in a different picture (or drops to the monogram), and downloads a
- * PDF or a picture. Every request builds only HIS card through /api/milestones/my-card; nothing here
- * names anyone else. The framing is the SAME geometry as the admin editor, so what he drags is what
- * the printer cuts.
+ * NOT a month grid he has to page through — his anniversaries and Sato-Pharma birthdays are laid out
+ * on one screen, in order, grouped by year, with the next one up highlighted. Tapping one opens the
+ * card, where he frames his photo, hands in a different picture (or drops to the monogram), and
+ * downloads a PDF or a picture. Every request builds only HIS card through /api/milestones/my-card;
+ * nothing here names anyone else. The framing is the SAME geometry as the admin editor.
  */
 export function MyMilestones({ entries, photoUrl }: Props) {
-  const [selected, setSelected] = useState<MyMilestoneEntry | null>(null);
+  // The timeline reads in time order (earliest → latest); the service hands them back next-first.
+  const ordered = useMemo(() => [...entries].sort((a, b) => a.on.localeCompare(b.on)), [entries]);
+  const nextUp = useMemo(
+    () => ordered.filter((e) => e.daysAway >= 0).sort((a, b) => a.daysAway - b.daysAway)[0] ?? null,
+    [ordered],
+  );
+
+  // Open with the next milestone already chosen, so his upcoming card is ready without a click.
+  const [selected, setSelected] = useState<MyMilestoneEntry | null>(() => nextUp ?? ordered[0] ?? null);
   const [upload, setUpload] = useState<{ dataUri: string; name: string } | null>(null);
   const [withoutPhoto, setWithoutPhoto] = useState(false);
   const [focusEdit, setFocusEdit] = useState<Focus | null>(null);
@@ -147,42 +114,17 @@ export function MyMilestones({ entries, photoUrl }: Props) {
   const showFraming = Boolean(photoSrc) && !withoutPhoto;
   const fill = coverFill(natural, focusValue.zoom);
 
-  // ── The calendar's own state ─────────────────────────────────────────────────────────────────
-  // Occasions by day, "today" and the next one up — all derived from the SERVER-computed entries, so
-  // nothing reads the client clock and the first paint can never mismatch the server's.
-  const entriesByDate = useMemo(() => {
-    const map = new Map<string, MyMilestoneEntry[]>();
-    for (const entry of entries) {
-      const list = map.get(entry.on) ?? [];
+  // The timeline, grouped by calendar year — the "tailored" shape: only his dates, all on one screen.
+  const byYear = useMemo(() => {
+    const groups = new Map<string, MyMilestoneEntry[]>();
+    for (const entry of ordered) {
+      const year = entry.on.slice(0, 4);
+      const list = groups.get(year) ?? [];
       list.push(entry);
-      map.set(entry.on, list);
+      groups.set(year, list);
     }
-    return map;
-  }, [entries]);
-
-  // entries arrive soonest-upcoming first (then the recent past), so the first is the one to open on.
-  const anchor = entries[0] ?? null;
-  const todayIso = anchor ? addDaysIso(anchor.on, -anchor.daysAway) : null;
-  const nextUp = useMemo(() => entries.filter((e) => e.daysAway >= 0).sort((a, b) => a.daysAway - b.daysAway)[0] ?? null, [entries]);
-
-  const [view, setView] = useState<{ year: number; month: number }>(() => {
-    const seed = parseIso((nextUp ?? anchor)?.on ?? todayIso ?? isoOf(2026, 1, 1));
-    return { year: seed.year, month: seed.month };
-  });
-
-  const stepMonth = useCallback((delta: number) => {
-    setView((current) => {
-      const base = new Date(Date.UTC(current.year, current.month - 1 + delta, 1));
-      return { year: base.getUTCFullYear(), month: base.getUTCMonth() + 1 };
-    });
-  }, []);
-  const goToday = useCallback(() => {
-    if (!todayIso) return;
-    const { year, month } = parseIso(todayIso);
-    setView({ year, month });
-  }, [todayIso]);
-
-  const cells = useMemo(() => monthCells(view.year, view.month), [view]);
+    return [...groups.entries()];
+  }, [ordered]);
 
   // A different occasion is a different card; a fresh framing, the record's own photo, no error.
   const select = useCallback((entry: MyMilestoneEntry) => {
@@ -327,12 +269,12 @@ export function MyMilestones({ entries, photoUrl }: Props) {
         const match = /filename="([^"]+)"/.exec(disposition);
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
-        const anchor2 = document.createElement("a");
-        anchor2.href = url;
-        anchor2.download = match?.[1] ?? `${selected.label.replace(/[^\p{L}\p{N}]+/gu, "-")}.${format}`;
-        document.body.append(anchor2);
-        anchor2.click();
-        anchor2.remove();
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = match?.[1] ?? `${selected.label.replace(/[^\p{L}\p{N}]+/gu, "-")}.${format}`;
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
         URL.revokeObjectURL(url);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "The card could not be produced.");
@@ -354,132 +296,99 @@ export function MyMilestones({ entries, photoUrl }: Props) {
     );
   }
 
+  const nextKey = nextUp ? rowKey(nextUp) : null;
+
   return (
     <div className="space-y-4">
       {error ? (
         <p className="border border-red-300 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p>
       ) : null}
 
-      {/* ── The calendar ──────────────────────────────────────────────────────────────────────── */}
-      <section className="overflow-hidden border border-slate-200 bg-white shadow-sm">
-        {/* Navy header band — the portal's premium chrome. */}
-        <div className="bg-slate-950 px-4 py-4 sm:px-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <span className="inline-flex items-center gap-1.5 bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.16em] text-white/80 ring-1 ring-white/20">
-                <CalendarHeart className="size-3.5" aria-hidden /> My Milestones
-              </span>
-              <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">{monthLabel(view.year, view.month)}</h2>
-              <p className="mt-1 text-xs font-semibold text-slate-300">
-                {nextUp
-                  ? `Next: ${nextUp.label} — ${whenLabel(nextUp.daysAway).toLowerCase()}`
-                  : "Your anniversaries and birthdays at Sato Pharma"}
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button type="button" className={NAV_BTN} onClick={() => stepMonth(-1)} aria-label="Previous month">
-                <ChevronLeft className="size-4" aria-hidden />
-              </button>
-              <button type="button" className={NAV_BTN} onClick={goToday}>
-                Today
-              </button>
-              <button type="button" className={NAV_BTN} onClick={() => stepMonth(1)} aria-label="Next month">
-                <ChevronRight className="size-4" aria-hidden />
-              </button>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
+        {/* ── The tailored timeline — every milestone on one screen, in order ────────────────────── */}
+        <section className="overflow-hidden border border-slate-200 bg-white shadow-sm">
+          {/* Navy header band — the portal's premium chrome. */}
+          <div className="bg-slate-950 px-4 py-4 sm:px-5">
+            <span className="inline-flex items-center gap-1.5 bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.16em] text-white/80 ring-1 ring-white/20">
+              <CalendarHeart className="size-3.5" aria-hidden /> My Milestones
+            </span>
+            <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">Your Sato Pharma journey</h2>
+            <p className="mt-1 text-xs font-semibold text-slate-300">
+              {nextUp
+                ? `Next: ${nextUp.label} — ${whenLabel(nextUp.daysAway).toLowerCase()}`
+                : `${entries.length} milestone${entries.length === 1 ? "" : "s"}`}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-300">
+              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 bg-orange-500" aria-hidden /> Anniversary</span>
+              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 bg-rose-500" aria-hidden /> Birthday</span>
             </div>
           </div>
-          {/* Legend — one glance tells anniversary from birthday. */}
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-300">
-            <span className="inline-flex items-center gap-1.5"><span className="size-2.5 bg-orange-500" aria-hidden /> Anniversary</span>
-            <span className="inline-flex items-center gap-1.5"><span className="size-2.5 bg-rose-500" aria-hidden /> Birthday</span>
-          </div>
-        </div>
 
-        {/* Weekday row. */}
-        <div className="grid grid-cols-7 bg-slate-950/95">
-          {WEEKDAYS.map((weekday) => (
-            <div key={weekday} className="px-1 py-2.5 text-center text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
-              <span className="hidden sm:inline">{weekday}</span>
-              <span className="sm:hidden">{weekday.slice(0, 1)}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* The month grid. */}
-        <div className="grid grid-cols-7 divide-x divide-y divide-slate-100 border-t border-slate-100">
-          {cells.map((date, index) => {
-            const dayEntries = date ? entriesByDate.get(date) ?? [] : [];
-            const isToday = date != null && date === todayIso;
-            const holdsSelected = Boolean(selected && dayEntries.some((e) => rowKey(e) === rowKey(selected)));
-            return (
-              <div
-                key={date ?? `blank-${index}`}
-                className={[
-                  "flex min-h-[64px] flex-col gap-1 p-1 sm:min-h-[112px] sm:p-2",
-                  date ? "bg-white" : "bg-slate-50/60",
-                  holdsSelected ? "ring-2 ring-inset ring-orange-500" : "",
-                ].join(" ")}
-              >
-                <span className="flex items-center justify-between">
-                  <span
-                    className={[
-                      "flex size-6 items-center justify-center text-xs font-black",
-                      isToday ? "bg-orange-500 text-white" : date ? "text-slate-700" : "text-transparent",
-                    ].join(" ")}
-                  >
-                    {date ? Number(date.slice(8, 10)) : ""}
-                  </span>
-                </span>
-
-                {/* Milestone chips. Desktop: the full label; phone: a coloured dot per occasion. */}
-                <div className="hidden flex-col gap-1 sm:flex">
-                  {dayEntries.map((entry) => {
+          {/* The timeline, grouped by year. */}
+          <div className="p-4 sm:p-5">
+            {byYear.map(([year, group]) => (
+              <div key={year} className="mb-5 last:mb-0">
+                <p className="mb-2 text-sm font-black tracking-tight text-slate-900">{year}</p>
+                <ol className="relative ml-2 space-y-2 border-l-2 border-slate-200 pl-5">
+                  {group.map((entry) => {
                     const accent = kindAccent(entry.kind);
                     const Icon = OccasionIcon(entry.kind);
-                    const active = selected && rowKey(selected) === rowKey(entry);
+                    const isNext = nextKey === rowKey(entry);
+                    const isSelected = selected != null && rowKey(selected) === rowKey(entry);
+                    const past = entry.daysAway < 0;
+                    const badge = dayMonth(entry.on);
                     return (
-                      <button
-                        key={rowKey(entry)}
-                        type="button"
-                        onClick={() => select(entry)}
-                        title={`${entry.label} — ${entry.onLong}`}
-                        className={[
-                          "flex items-center gap-1 px-1.5 py-1 text-left text-phx-2xs font-black leading-tight transition-colors",
-                          accent.chip,
-                          entry.daysAway < 0 ? "opacity-70" : "",
-                          active ? "ring-1 ring-inset ring-orange-500" : "hover:brightness-95",
-                        ].join(" ")}
-                      >
-                        <Icon className="size-3 shrink-0" aria-hidden />
-                        <span className="min-w-0 break-words">{entry.label}</span>
-                      </button>
+                      <li key={rowKey(entry)} className="relative">
+                        {/* The node on the spine. */}
+                        <span
+                          aria-hidden
+                          className={[
+                            "absolute -left-[27px] top-3 flex size-3.5 items-center justify-center border-2 border-white",
+                            accent.dot,
+                            isNext ? "ring-2 ring-orange-300" : "",
+                            past ? "opacity-70" : "",
+                          ].join(" ")}
+                        >
+                          {past ? <Check className="size-2 text-white" aria-hidden /> : null}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => select(entry)}
+                          className={[
+                            "flex w-full items-center gap-3 border border-l-[3px] bg-white px-3 py-2.5 text-left transition-colors",
+                            accent.rail,
+                            isSelected ? "border-orange-500 ring-2 ring-inset ring-orange-500" : "border-slate-200 hover:bg-slate-50",
+                            past ? "opacity-90" : "",
+                          ].join(" ")}
+                        >
+                          <span className={`flex size-9 shrink-0 flex-col items-center justify-center ${accent.tint} ${accent.ink}`}>
+                            <span className="text-sm font-black leading-none">{badge.day}</span>
+                            <span className="text-[9px] font-bold uppercase leading-none">{badge.month}</span>
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-1.5">
+                              <Icon className={`size-3.5 shrink-0 ${accent.ink}`} aria-hidden />
+                              <span className="break-words text-sm font-black text-slate-900">{entry.label}</span>
+                              {isNext ? (
+                                <span className="bg-orange-500 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white">Next</span>
+                              ) : null}
+                            </span>
+                            <span className="mt-0.5 block text-phx-xs font-semibold text-slate-500">
+                              {entry.onLong} · {whenLabel(entry.daysAway)}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
                     );
                   })}
-                </div>
-                {dayEntries.length > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const first = dayEntries[0];
-                      if (first) select(first);
-                    }}
-                    aria-label={dayEntries.map((e) => e.label).join(", ")}
-                    className="mt-auto flex flex-wrap gap-0.5 sm:hidden"
-                  >
-                    {dayEntries.map((entry) => (
-                      <span key={rowKey(entry)} className={`size-2 ${kindAccent(entry.kind).dot} ${entry.daysAway < 0 ? "opacity-60" : ""}`} aria-hidden />
-                    ))}
-                  </button>
-                ) : null}
+                </ol>
               </div>
-            );
-          })}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
 
-      {/* ── The card for the chosen occasion ──────────────────────────────────────────────────── */}
-      {selected ? (
-        <div className="mx-auto w-full max-w-md">
+        {/* ── The card for the chosen occasion ──────────────────────────────────────────────────── */}
+        {selected ? (
           <SectionCard surface="portal" icon={OccasionIcon(selected.kind)} title={selected.label} subtitle={`${selected.onLong} · ${whenLabel(selected.daysAway)}`}>
             <div className="space-y-3">
               {showFraming ? (
@@ -569,14 +478,14 @@ export function MyMilestones({ entries, photoUrl }: Props) {
               </div>
             </div>
           </SectionCard>
-        </div>
-      ) : (
-        <div className={`${SURFACE_CLASS} flex items-center justify-center p-6 text-center text-sm text-slate-500`}>
-          <span className="inline-flex items-center gap-2">
-            <Award className="size-4 text-orange-500" aria-hidden /> Tap a milestone on the calendar to frame its photo and download the card.
-          </span>
-        </div>
-      )}
+        ) : (
+          <div className={`${SURFACE_CLASS} flex items-center justify-center p-6 text-center text-sm text-slate-500`}>
+            <span className="inline-flex items-center gap-2">
+              <Award className="size-4 text-orange-500" aria-hidden /> Tap a milestone to frame its photo and download the card.
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
