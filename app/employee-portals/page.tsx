@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { PortalCommandCenter } from "@/components/employee-portal/portal-command-center";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { getPortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
+import { loadRepTodayPlan } from "@/lib/phoenix-crm/server/rep-landing";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { isForbiddenError } from "@/lib/auth/server";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
@@ -43,5 +44,10 @@ export default async function EmployeePortalsHomePage() {
     );
   }
 
-  return <PortalCommandCenter snapshot={snapshot} access={access} />;
+  // The rep's day, which replaced the Phoenix CRM Today module (owner, 2026-09-30). It never throws
+  // — a closed line, a missing permission or a failed read all answer null and the panel renders
+  // nothing, because a landing page that fails to paint over one panel is worse than one panel short.
+  const repTodayPlan = await loadRepTodayPlan(access);
+
+  return <PortalCommandCenter access={access} repTodayPlan={repTodayPlan} snapshot={snapshot} />;
 }

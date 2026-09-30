@@ -116,27 +116,36 @@ export function runPortalToolsGridFitsAPhoneTests() {
     );
   }
 
-  // The Medical Rep's own tool list, which replaced this file's second tile grid on 2026-09-04.
-  // Its longest label is "Outstation expenses", so it needs the full row exactly as a tile does.
-  const toolsRender = lines.findIndex((line) => line.includes("REP_TOOLS.map("));
-  assert.notEqual(
-    toolsRender,
+  // 🔴 THE REP'S TOOL LIST IS GONE, BY THE OWNER'S OWN INSTRUCTION (2026-09-30): "remove the my
+  // tools and remove the early birds in the medical rep overview landing page and put instead of
+  // them the doctors in a polished way." So this check has no tool rail left to measure, and the
+  // thing its old failure message asked for — "re-point this test at whatever renders the rep's
+  // tools now" — would be wrong: NOTHING renders them now, deliberately. Every label it carried
+  // (CRM, My KPIs, Source of Sales, My incentive, Vacation request, My payslips, Outstation
+  // expenses) is still in the rep's sidebar, which is where he reaches them.
+  //
+  // What the block was really protecting is kept, moved onto the panel that took the column: those
+  // rows carry Arabic customer names, which cannot share a 146px column at 320px any more than
+  // "Outstation expenses" could.
+  assert.equal(
+    lines.findIndex((line) => line.includes("REP_TOOLS.map(")),
     -1,
-    `${CENTER}: REP_TOOLS is no longer rendered. That list is what replaced the second ` +
-      `<PremiumNavTile> grid on the Medical Rep landing page — re-point this test at whatever ` +
-      `renders the rep's tools now rather than dropping the check.`,
+    `${CENTER}: the rep's "My tools" rail is back. The owner removed it on 2026-09-30 and put his ` +
+      `planned day in its place — restoring it needs his word, not a tidy-up.`,
   );
-  for (let j = toolsRender; j >= 0 && j > toolsRender - 12; j -= 1) {
-    const match = lines[j].match(/className="(grid [^"]*)"/);
-    if (!match) continue;
-    const tokens = tokensOf(match[1]);
+
+  const PANEL = "src/components/employee-portal/rep-today-plan-panel.tsx";
+  const panelTokens = new Set(
+    [...stripComments(readFileSync(PANEL, "utf8")).matchAll(/className=[{"`]+([^"`]+)[`"]/g)].flatMap((match) =>
+      match[1].split(/\s+/),
+    ),
+  );
+  for (const multi of ["grid-cols-2", "grid-cols-3", "sm:grid-cols-2", "sm:grid-cols-3", "@3xl:grid-cols-2"]) {
     assert.ok(
-      tokens.has("grid-cols-1") && !tokens.has("grid-cols-2"),
-      `${CENTER}:${j + 1}: "${match[1]}" — the rep's tool list is multi-column on a phone. Its ` +
-        `rows carry labels as long as "Outstation expenses", which cannot fit a 146px column at ` +
-        `320px any more than a tile could. Give them the full row, as the <nav> form does.`,
+      !panelTokens.has(multi),
+      `${PANEL}: "${multi}" — his day is one customer per row at every width. Those rows carry ` +
+        `Arabic names and a place-and-hours line, which cannot share a column at 320px.`,
     );
-    break;
   }
 
   // The remedies the golden rule forbids, scoped to the tile itself — the rest of this file holds

@@ -37,7 +37,6 @@ import { PlanBoard } from "@/components/phoenix-crm/plan-board";
 import { ReportsTab } from "@/components/phoenix-crm/reports-tab";
 import { SettingsTab } from "@/components/phoenix-crm/settings-tab";
 import { TeamTab } from "@/components/phoenix-crm/team-tab";
-import { TodayTab } from "@/components/phoenix-crm/today-tab";
 import {
   CrmBlock,
   CrmButton,
@@ -51,16 +50,15 @@ import {
   type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
 import { VisitsTab, type PendingValidate, type PendingVisit } from "@/components/phoenix-crm/visits-tab";
-import { PHOENIX_CRM_PORTAL_BASE } from "@/lib/phoenix-crm/modules";
+import { PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import type { PhoenixCrmOverview, PhoenixCrmTabs, TerritorySummary } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
 type TabKey = keyof PhoenixCrmTabs;
 
-const TAB_ORDER: readonly TabKey[] = ["today", "visits", "list", "plan", "team", "doctors", "reports", "settings"];
+const TAB_ORDER: readonly TabKey[] = ["visits", "list", "plan", "team", "doctors", "reports", "settings"];
 
 const TAB_LABELS: Record<TabKey, string> = {
-  today: "Today",
   visits: "Visits",
   list: "List",
   plan: "Plan",
@@ -95,13 +93,13 @@ const TAB_COLUMNS: Record<number, string> = {
 };
 
 /** The tabs that show one territory, chosen with the picker above them. */
-type SeatTab = "today" | "visits" | "list" | "plan";
+type SeatTab = "visits" | "list" | "plan";
 
-const SEAT_TABS: readonly SeatTab[] = ["today", "visits", "list", "plan"];
+const SEAT_TABS: readonly SeatTab[] = ["visits", "list", "plan"];
 
 /** The tabs that can hold work the page keeps while another tab is open. Reports and Doctors hold none. */
 /** Today holds none either: it is a read, and every action on it opens another tab. */
-type HoldingTab = Exclude<TabKey, "reports" | "doctors" | "today">;
+type HoldingTab = Exclude<TabKey, "reports" | "doctors">;
 
 /** Each tab's work, as the question before letting it go names it. */
 const HELD_WORK: Record<HoldingTab, string> = {
@@ -171,7 +169,6 @@ function openingTab(overview: PhoenixCrmOverview, requested: string | null): Tab
   if (tabs.team && !viewer.isSuperAdmin && visitSeatIds.length === 0) return "team";
   // A2 (owner, 2026-09-26): he opens the app onto his DAY, not onto a tab bar. A manager with a real
   // decision waiting still lands on Team — the two branches above run first on purpose.
-  if (tabs.today && visitSeatIds.length > 0) return "today";
   return allowed[0] ?? "visits";
 }
 
@@ -227,11 +224,25 @@ function openingSentences(overview: PhoenixCrmOverview): string[] {
 export function PhoenixCrmApp({
   initialOverview,
   initialTab,
+  single = false,
   surface,
 }: {
   initialOverview: PhoenixCrmOverview;
   /** The page's `?tab=` as typed; kept only when the viewer has that tab. */
   initialTab: string | null;
+  /**
+   * ONE module, on its own page, with nothing of the others on it.
+   *
+   * 🔴 OWNER, 2026-09-30, after seeing the first split: "I don't want, when I press on any one of the
+   * ones you split, that they redirect me to the same screen that has all of them beside each other.
+   * SEPARATE THEM TOTALLY, make them separate pages." So in this mode there is no tab bar, only the
+   * one module is in the DOM at all (the others are not rendered hidden beside it), and every
+   * hand-off that used to switch tabs in place NAVIGATES to the other module's own page, carrying
+   * what it needs in the address. The way back is the chooser, linked at the top.
+   *
+   * The admin twin keeps the one-screen shape, and so does `single={false}`.
+   */
+  single?: boolean;
   /** The employee portal draws a navigation bar along the bottom of a phone; the admin shell does not. */
   surface: "admin" | "portal";
 }) {
@@ -256,6 +267,11 @@ export function PhoenixCrmApp({
   const searchParams = useSearchParams();
   const addParam = addIntentOf(searchParams?.get("add") ?? null);
   const tabParam = searchParams?.get("tab") ?? null;
+  // A hand-off that crossed a page boundary (single mode): the customer Today sent here, or the
+  // iReports360 entry Add Visit sent to the List's Validate screen.
+  const customerParam = searchParams?.get("customer") ?? null;
+  const customerNameParam = searchParams?.get("name") ?? null;
+  const validateParam = searchParams?.get("validate") ?? null;
   const [seenAddress, setSeenAddress] = useState<{ add: AddIntent | null; tab: string | null }>({ add: null, tab: tabParam });
   const [addVisitNonce, setAddVisitNonce] = useState(0);
   const [planWeekNonce, setPlanWeekNonce] = useState(0);
@@ -347,11 +363,30 @@ export function PhoenixCrmApp({
   }
   const activeTab: TabKey = tabs.includes(tab) ? tab : (tabs[0] ?? "visits");
   const seats: Record<SeatTab, string | null> = {
-    today: seatOf(overview, "today", chosenSeat),
     list: seatOf(overview, "list", chosenSeat),
     plan: seatOf(overview, "plan", chosenSeat),
     visits: seatOf(overview, "visits", chosenSeat),
   };
+  // The hand-off that crossed the page boundary, rebuilt from the address. Derived while rendering,
+  // never in an effect: the tab below must see it on its FIRST paint or it opens on its own start
+  // screen and the rep has to find the customer again.
+  const arrivedVisit: PendingVisit | null =
+    single && activeTab === "visits" && customerParam
+      ? {
+          seatId: seats.visits ?? "",
+          test,
+          customerId: customerParam,
+          customerName: customerNameParam ?? "",
+          photo: null,
+          // No photo on this path, and this only times out a REUSED validation photo — so there is
+          // nothing to age, and calling Date.now() while rendering would break the purity rule.
+          validatedAtMs: 0,
+        }
+      : null;
+  const arrivedValidate: PendingValidate | null =
+    single && activeTab === "list" && validateParam && Number.isFinite(Number(validateParam))
+      ? { seatId: seats.list ?? "", test, contactCrmId: Number(validateParam), customerName: customerNameParam ?? "" }
+      : null;
   // The Super Admin's counts are test entries: they show in test mode only.
   const waitingCount = overview.waitingForYou.isTest === test ? overview.waitingForYou.plans + overview.waitingForYou.requests : 0;
   const tabId = (key: TabKey) => `${idPrefix}-tab-${key}`;
@@ -364,7 +399,20 @@ export function PhoenixCrmApp({
     if (top && top.getBoundingClientRect().top < 0) top.scrollIntoView({ block: "start" });
   }
 
-  function openTab(next: TabKey) {
+  /** The other module's own address, with whatever the hand-off has to carry. */
+  function moduleHref(next: TabKey, carry?: Record<string, string>): string {
+    const url = new URL(phoenixCrmModulePath(PHOENIX_CRM_PORTAL_BASE, next), window.location.origin);
+    for (const [key, value] of Object.entries(carry ?? {})) if (value) url.searchParams.set(key, value);
+    return `${url.pathname}${url.search}`;
+  }
+
+  function openTab(next: TabKey, carry?: Record<string, string>) {
+    // 🔴 SEPARATE PAGES, SO THIS IS A NAVIGATION (owner, 2026-09-30). Switching the panel in place is
+    // what he objected to: it left him on one module's address looking at another's.
+    if (single) {
+      window.location.assign(moduleHref(next, carry));
+      return;
+    }
     setTab(next);
     setAsking(null);
     setNotice(null);
@@ -377,7 +425,8 @@ export function PhoenixCrmApp({
       // it behind would re-open that form every time he came back to the address.
       const url = new URL(window.location.href);
       if (surface === "portal") {
-        url.pathname = `${PHOENIX_CRM_PORTAL_BASE}/${next}`;
+        // By SLUG, never the raw key: the Directory tab's key is a retired word and the address is UI.
+        url.pathname = phoenixCrmModulePath(PHOENIX_CRM_PORTAL_BASE, next);
         url.searchParams.delete("tab");
         url.searchParams.delete("add");
       } else {
@@ -395,8 +444,6 @@ export function PhoenixCrmApp({
       if ((viewer.isSuperAdmin && move.test) === test) return [];
       return (["visits", "list", "plan", "team"] as const).filter(isHeld);
     }
-    // Today is a SeatTab but not a HoldingTab — it is a read, and nothing on it can be lost.
-    //
     // The guard is re-typed for SeatTab rather than reused as-is: `isHoldingTab` takes a TabKey and
     // narrows to HoldingTab, which is NOT a subtype of SeatTab (it also holds team and settings), so
     // `filter` cannot pick its narrowing overload and hands back SeatTab[] with no complaint until
@@ -448,13 +495,6 @@ export function PhoenixCrmApp({
     else setAsking({ move, work });
   }
 
-  function startVisit(visit: PendingVisit) {
-    if (pendingVisit && pendingVisit.photo !== visit.photo) releaseCapturedPhoto(pendingVisit.photo);
-    setPendingVisit(visit);
-    openTab("visits");
-    scrollToTop();
-  }
-
   /** Add Visit used the hand-off or put it aside; the validation photo is let go either way. */
   function pendingVisitDone() {
     releaseCapturedPhoto(pendingVisit?.photo);
@@ -463,6 +503,10 @@ export function PhoenixCrmApp({
 
   /** The other direction: a visit was just saved on a pending customer and he chose to validate now. */
   function startValidate(validate: PendingValidate) {
+    if (single) {
+      openTab("list", { validate: String(validate.contactCrmId), name: validate.customerName });
+      return;
+    }
     setPendingValidate(validate);
     openTab("list");
     scrollToTop();
@@ -579,7 +623,8 @@ export function PhoenixCrmApp({
   }
 
   function tabBar() {
-    if (tabs.length < 2) return null;
+    // 🔴 Separate pages carry no bar of the others (owner, 2026-09-30).
+    if (single || tabs.length < 2) return null;
     return (
       <div aria-label="Phoenix CRM" className={cn("grid gap-1.5", TAB_COLUMNS[tabs.length])} role="tablist">
         {tabs.map((key, index) => {
@@ -754,29 +799,6 @@ export function PhoenixCrmApp({
         </CrmPanel>
       );
     }
-    if (key === "today") {
-      return (
-        <TodayTab
-          key={`${seatId}|${test}`}
-          onOpenPlan={() => openTab("plan")}
-          // A2: the Add-visit button REUSES the module's existing hand-off, so Add Visit opens with the
-          // customer already chosen and there is no new plumbing and no new step in his day. The photo
-          // is null because this is not the validate-then-visit path.
-          onAddVisit={(customerId, customerName) =>
-            // `validatedAtMs` is the phone's clock at the hand-off, which Add Visit uses only to time
-            // out a REUSED validation photo. There is no photo on this path, so it is simply now.
-            startVisit({ customerId, customerName, photo: null, seatId, test, validatedAtMs: Date.now() })
-          }
-          onStartVisit={() => {
-            openTab("visits");
-            setAddVisitNonce((value) => value + 1);
-            scrollToTop();
-          }}
-          seatId={seatId}
-          test={test}
-        />
-      );
-    }
     if (key === "visits") {
       return (
         <VisitsTab
@@ -789,7 +811,7 @@ export function PhoenixCrmApp({
           onPendingVisitDone={pendingVisitDone}
           onStartValidate={startValidate}
           onWorkChange={holdReporters.visits}
-          pendingVisit={pendingVisit}
+          pendingVisit={arrivedVisit ?? pendingVisit}
           seatId={seatId}
           test={test}
         />
@@ -802,7 +824,7 @@ export function PhoenixCrmApp({
           key={`${seatId}|${test}`}
           onPendingValidateDone={pendingValidateDone}
           onWorkChange={holdReporters.list}
-          pendingValidate={pendingValidate}
+          pendingValidate={arrivedValidate ?? pendingValidate}
           seatId={seatId}
           test={test}
         />
@@ -859,7 +881,7 @@ export function PhoenixCrmApp({
       {startGuideLink()}
       {seatTab ? territoryPicker(seatTab) : null}
       {questionNote()}
-      {tabs.map((key) => {
+      {(single ? [activeTab] : tabs).map((key) => {
         const active = key === activeTab;
         return (
           <div
