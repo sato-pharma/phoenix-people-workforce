@@ -994,6 +994,7 @@ import { runContractRenewalWorkflowScopeCheckTests } from "./contract-renewal-wo
 import { runCustomerPharmacyMappingReadinessTests } from "./customer-pharmacy-mapping-readiness.test.ts";
 import { runCustomerPharmacyMappingActionsTests } from "./customer-pharmacy-mapping-actions.test.ts";
 import { runCvDatabaseTests } from "./cv-database.test.ts";
+import { runCvLookupTests } from "./cv-lookup.test.ts";
 import { runTransactionWorkflowAuditTests } from "./transaction-workflow-audit.test.ts";
 import { runPhase13BrowserSmokeRegressionTests } from "./phase13-browser-smoke-regression.test.ts";
 import { runPhase14ControlledMutationSmokeTests } from "./phase14-controlled-mutation-smoke.test.ts";
@@ -1352,6 +1353,8 @@ import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runCiRunnerSwitchTests } from "./ci-runner-switch.test.ts";
 import { runRemoteCheckTests } from "./remote-check.test.ts";
+import { runSelectCensusTests } from "./select-census.test.ts";
+import { runCiTypecheckLockTests } from "./ci-typecheck-lock.test.ts";
 import { runCiPrSkipsBuildAndSmokeTests } from "./ci-pr-skips-build-and-smoke.test.ts";
 import { runStagingBranchSyncGuardTests } from "./staging-branch-sync-guard.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
@@ -1645,6 +1648,7 @@ import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.t
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
 import { runPhoenixCrmPlanSuggestTests } from "./phoenix-crm-plan-suggest.test.ts";
 import { runPhoenixCrmListAdmissionTests } from "./phoenix-crm-list-admission.test.ts";
+import { runPhoenixCrmListRowFactsTests } from "./phoenix-crm-list-row-facts.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.ts";
@@ -2031,10 +2035,13 @@ import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending
 import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
 import { runSpotlightChequeGeneratorTests } from "./spotlight-cheque-generator.test.ts";
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
+import { runSpotlightRepSelfTests } from "./spotlight-rep-self.test.ts";
+import { runSpotlightPortalLookTests } from "./spotlight-portal-look.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runBusinessCardRequestsTests } from "./business-card-requests.test.ts";
+import { runBusinessCardPdfTests } from "./business-card-pdf.test.ts";
 import { runVacationBackfillHireGuardTests } from "./vacation-backfill-hire-guard.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
@@ -2043,6 +2050,7 @@ import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runScriptsAliasLoaderTests } from "./scripts-alias-loader.test.ts";
 import { runMobileFreezeTests } from "./mobile-freeze.test.ts";
 import { runProtectedFileGuardTests } from "./protected-file-guard.test.ts";
+import { runTestRegistrationCheckTests } from "./test-registration-check.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
 import { runRollupPrsTests } from "./rollup-prs.test.ts";
 import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
@@ -2142,6 +2150,8 @@ import { runPayrollAwaitingPublishTests } from "./payroll-awaiting-publish.test.
 import { runSeniorDistrictManagerTitleTests } from "./senior-district-manager-title.test.ts";
 import { runHiringDocumentsExportWorkbookTests } from "./hiring-documents-export-workbook.test.ts";
 import { runSeniorMedicalRepresentativeTitleTests } from "./senior-medical-representative-title.test.ts";
+import { runPhoenixCrmDiscardOnePressTests } from "./phoenix-crm-discard-one-press.test.ts";
+import { runRollupBranchNameTests } from "./rollup-branch-name.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3684,6 +3694,7 @@ await runTest(
 );
 await runTest("support requests notifications", runSupportRequestsNotificationsTests);
 await runTest("business card requests: employee self-service card, edit name/number only (email never), request lands on the HR queue and notifies B-10 + HR-009 by in-app/email/telegram", runBusinessCardRequestsTests);
+await runTest("business card PDF: the employee sees the real front+back Sato card and downloads a high-quality printable PDF of their OWN card, scoped to the caller (no hrId), name/mobile only", runBusinessCardPdfTests);
 await runTest("organogram empty diagnostic", runOrganogramEmptyDiagnosticTests);
 await runTest("position vacancy status integrity", runPositionVacancyStatusIntegrityTests);
 await runTest("reconcile stale-replacement vacancy area + single-seat guard", runReconcileStaleVacancyAreaGuardTests);
@@ -4065,6 +4076,7 @@ await runTest("contract renewal workflow scope check", runContractRenewalWorkflo
 await runTest("customer pharmacy mapping readiness", runCustomerPharmacyMappingReadinessTests);
 await runTest("customer pharmacy mapping actions (approve/reject)", runCustomerPharmacyMappingActionsTests);
 await runTest("cv database", runCvDatabaseTests);
+await runTest("cv lookup", runCvLookupTests);
 await runTest("transaction workflow audit", runTransactionWorkflowAuditTests);
 await runTest("phase 13 browser smoke regressions", runPhase13BrowserSmokeRegressionTests);
 await runTest("phase 14 controlled mutation smoke", runPhase14ControlledMutationSmokeTests);
@@ -4542,8 +4554,16 @@ await runTest(
   runCiRunnerSwitchTests,
 );
 await runTest(
+  "one typecheck at a time on the self-hosted CI box: ci.yml's Typecheck step takes /tmp/phx-typecheck.lock in the same shell as tsc with a bounded wait that falls through, remote-check takes the same lock, and where flock exists a held lock makes the step wait then run while a free one runs at once",
+  runCiTypecheckLockTests,
+);
+await runTest(
   "remote-check runs the heavy checks on the CI box and never locally: no local spawn but ssh/git, ci.yml's 6144MB heap, its own directory rather than the runner's _work, no GitHub credential on the box, a warning for uncommitted work, and the remote exit code",
   runRemoteCheckTests,
+);
+await runTest(
+  "the select census finds every PostgREST read and write of a table and the columns each names: an embedded relation does not swallow the columns after it, aliases/casts/JSON paths reduce to the real column, a constant select is resolved in the same file or one import away, a template with ${CONST} is resolved, .or()/.eq()/.order() filters and write keys are listed, a run-time select is UNRESOLVED rather than clean, another table or schema is not counted, and on the real tree it finds every .from(\"employees\") a raw count finds",
+  runSelectCensusTests,
 );
 await runTest(
   "staging-branch-sync's ordering guard refuses an out-of-order CI completion that would rewind what staging serves - the real `merge-base --is-ancestor` line is lifted from the live YAML and executed, so swapping its operands (which inverts the guard silently) fails here",
@@ -5672,6 +5692,11 @@ await runTest(
 await runTest(
   "Phoenix CRM admits a customer to a rep's list only through the district manager, then SFE (owner, 2026-09-29): every status maps to one List section and one row action (Validate or Open, never Add visit), the moves a page offers come from list-request-rules and never a rule re-derived on a screen, a never-admitted archived customer is offered Request to add rather than a bring-back, the manager's step of an add sends the A/B/C he confirmed and the potential he set, and the database refuses an add approved without a potential and a decision on a step that has moved on",
   runPhoenixCrmListAdmissionTests,
+);
+
+await runTest(
+  "Phoenix CRM's List is the old Reps List, and validating OVERRIDES iReports360 (owner, 2026-09-30): the captured place's address, brick and area beat the vendor's on every row, the vendor is the fallback and never the loser, a captured place with no street of its own still falls through the rep's own name for it before reverting to the vendor, every empty field prints a placeholder that names the act that fills it — and says only that nothing is recorded once he has validated — the mirror is never written to, no check on the rep reaches a cell, and the board draws the old board's Customer, Specialty, List and Brick columns without its Confidence one",
+  runPhoenixCrmListRowFactsTests,
 );
 
 await runTest(
@@ -7337,6 +7362,16 @@ await runTest(
 );
 
 await runTest(
+  "spotlight (self): a rep's own sheet over any period, measured only over PUBLISHED months at the closing's graded/target rule, gated at 90%, isolated to his own row",
+  runSpotlightRepSelfTests,
+);
+
+await runTest(
+  "spotlight (self) wears the employee portal's look: the shell owns the only header (no second dark banner), cards use the portal's card + hover lift, and the no-scroll / no-truncation / collapsing-grid rules hold",
+  runSpotlightPortalLookTests,
+);
+
+await runTest(
   "outstation meaning sheet answered (owner 2026-09-12): publishing marks the approved trips it paid at HR's edited figure, and trips before July 2026 are imported history — values only, never awaiting a decision",
   runOutstationPaidStampAndImportedHistoryTests,
 );
@@ -7409,6 +7444,11 @@ await runTest(
 await runTest(
   "the three behaviorally-locked files (incentive curve, payroll formulas, portal identity card) raise the owner's PROMPT — protected-file-guard.mjs answers a Write/Edit or a shell write of any of them, by any path spelling, with ask and never deny, stays silent on reads, look-alike names and other files, stands aside only for a current owner-typed AUTORUN arming in THIS session (announced, not awaited, per §6.1) while a stale, old-format, garbled or other session's arming still asks, is registered for Write, Edit, NotebookEdit, Bash and PowerShell, and CLAUDE.md still lists all three and names the hook",
   runProtectedFileGuardTests,
+);
+
+await runTest(
+  "a test file nothing runs is flagged the moment it is written: test-registration-check.mjs warns after a Write/Edit of a tests/*.test.ts that run-tests.ts does not import, or imports and never calls, or that exports no run…Tests function (helpers not named run…Tests are ignored), on either path separator; it stays silent for the runner, support files and non-test paths, is registered as a PostToolUse hook for Write and Edit, and uses test-wiring-complete's own two regexes verbatim so it can never disagree with CI",
+  runTestRegistrationCheckTests,
 );
 
 await runTest(
@@ -7905,6 +7945,10 @@ await runTest(
   "the Senior Medical Representative title behaves exactly like Medical Representative everywhere (job function, pay, attendance, compliance, CRM mirror, HR pay view, catalogue, import) while granting nothing new",
   runSeniorMedicalRepresentativeTitleTests,
 );
+
+await runTest("phoenix crm: no save bar takes two presses to discard", runPhoenixCrmDiscardOnePressTests);
+
+await runTest("rollup branch name: unique across history, an unknown counts as taken", runRollupBranchNameTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

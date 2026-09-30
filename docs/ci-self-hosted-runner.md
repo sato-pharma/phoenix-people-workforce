@@ -751,6 +751,19 @@ two-CPX32 purchase on 2026-09-28 (*"I WILL NOT BUY THIS"*) and bought one box hi
 it.** If depth ever matters more than the bill, the lever is another runner process on the existing
 host, measured first: see the memory arithmetic above, because `tsc` alone peaks at 5.86 GB of 7.7 GB.
 
+### One typecheck at a time — owner, 2026-09-30
+
+*"fix the CI box so two PR typechecks never run at once."* The queueing above is per JOB, and
+`checks` and `validate` are different jobs — so two PRs could still land one `checks` job on each
+runner and run two `tsc` at once. Measured that morning: 4.1 GB and 2 GB side by side with the
+preview server, 3.1 GB into swap. ci.yml's Typecheck step now takes a kernel lock
+(`/tmp/phx-typecheck.lock`, `flock`) in the same shell as `tsc`, so the second one **waits** for the
+first (~110s) while lint and the unit suite keep running. `scripts/remote-check.mjs typecheck` takes
+the same lock, so a hand-run check queues behind CI too. The wait is bounded at 20 minutes and then
+runs anyway with a warning, so a stuck holder cannot fail a PR by itself; on a GitHub-hosted runner
+the lock is always free. Pinned by `tests/ci-typecheck-lock.test.ts`, which on Linux holds the lock
+from another process and proves the step waits.
+
 ## Turning it off
 
 ```bash

@@ -29,12 +29,11 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { TableSearchInput } from "@/components/ui/sortable-table";
 import { cairoStamp } from "@/components/phoenix-crm/format";
 import {
-  customerMetaText,
+  listText,
   monthStanding,
   monthVisitsText,
   PENDING_PILL,
   pendingVisitsText,
-  referenceAddressText,
   referenceLastVisitText,
 } from "@/components/phoenix-crm/labels";
 import { placesDaysText } from "@/components/phoenix-crm/list-screens";
@@ -57,6 +56,7 @@ import {
   specialityOf,
   type CustomerGroup,
 } from "@/lib/phoenix-crm/customer-list-grouping";
+import { factInk, gradeInk, listRowFacts } from "@/lib/phoenix-crm/list-row-facts";
 import { listRowAction, requestKindLabel, type ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
 import type { ListCustomer } from "@/lib/phoenix-crm/view-types";
 import { brickTintMap, type BrickTint } from "@/components/phoenix-crm/brick-tints";
@@ -230,10 +230,21 @@ function rowPills(customer: ListCustomer, variant: CustomerListVariant): ReactNo
 }
 
 /** The detail line under a row — where he is (or was), said the way that part of the list says it. */
+/**
+ * 🔴 ONLY THE ARCHIVE STILL USES THIS. Every other variant's address now comes from `listRowFacts`,
+ * which prefers what the rep CAPTURED over what iReports360 carried (owner, 2026-09-30: "when the
+ * rep validates it, the validation will override the iReports360 data"). Before that, a pending row
+ * read the vendor's address ONLY and a validated row read its places ONLY — so neither ever fell
+ * back to the other, and a validated customer whose place had no street printed nothing.
+ */
 function detailText(customer: ListCustomer, variant: CustomerListVariant): string {
-  if (variant === "pending") return referenceAddressText(customer.reference) ?? "No address in iReports360";
   if (variant === "dropped") return customer.droppedReason ?? "Reason not recorded";
   return placesDaysText(customer);
+}
+
+/** The phone card's one meta line: the list and the grade, the two the table gives their own ink. */
+function cardMetaText(customer: ListCustomer): string {
+  return `${listText(customer.listType)} · ${listRowFacts(customer).grade.text}`;
 }
 
 /**
@@ -246,17 +257,19 @@ function monthText(customer: ListCustomer, variant: CustomerListVariant): string
   return monthVisitsText(customer.visitsThisMonth, customer.target);
 }
 
+/**
+ * The address column's heading.
+ *
+ * It said "Address in iReports360" on a row waiting to be validated and "Places and days" on a
+ * validated one, because each read one source. It now reads BOTH, capture first (owner, 2026-09-30),
+ * so a single word is the only honest heading: the column holds the best address there is for that
+ * customer, and the cell itself shows in lighter italics when nothing has filled it yet.
+ */
 const DETAIL_HEADER: Record<CustomerListVariant, string> = {
-  pending: "Address in iReports360",
-  active: "Places and days",
-  outside: "Places and days",
+  pending: "Address",
+  active: "Address",
+  outside: "Address",
   dropped: "Why it is in the Archive",
-};
-const MONTH_HEADER: Record<CustomerListVariant, string> = {
-  pending: "This month",
-  active: "This month",
-  outside: "This month",
-  dropped: "In the Archive",
 };
 
 export function CustomerListBoard({
@@ -501,11 +514,19 @@ export function CustomerListBoard({
                         <CrmCard
                           actions={rowAction(customer)}
                           key={customer.customerId}
-                          meta={customerMetaText(customer)}
+                          meta={cardMetaText(customer)}
                           status={rowPills(customer, variant)}
                           title={<span dir="auto">{customer.name}</span>}
                         >
-                          <p className="break-words text-xs font-semibold leading-5 text-slate-600">{detailText(customer, variant)}</p>
+                          {/* The same five facts the table prints, folded to a phone's one column —
+                              and through the SAME resolver, so a row cannot say one thing on a
+                              desktop and another in a pocket. */}
+                          <p className={`break-words text-xs font-semibold leading-5 ${factInk(listRowFacts(customer).address)}`} dir="auto">
+                            {variant === "dropped" ? detailText(customer, variant) : listRowFacts(customer).address.text}
+                          </p>
+                          {variant === "active" || variant === "outside" ? (
+                            <p className="break-words text-xs font-semibold leading-5 text-slate-500">{placesDaysText(customer)}</p>
+                          ) : null}
                           {variant === "pending" ? (
                             <p className="break-words text-xs font-semibold leading-5 text-slate-500">
                               Last visit in iReports360: {referenceLastVisitText(customer.reference)}
@@ -518,17 +539,38 @@ export function CustomerListBoard({
                         </CrmCard>
                       ))}
                     </CrmCardsOnPhone>
-                    <CrmTable columns={["30%", "34%", "18%", "18%"]}>
+                    {/* 🔴 THE OLD REPS LIST'S COLUMNS, on the owner's instruction of 2026-09-30:
+                        "the rep list in Phoenix CRM will be exactly the same" — Contact · Specialty ·
+                        List · Brick · Address, and the Validate button we already have beside them.
+                        They were one grey meta line under the name until then, which is not a board.
+
+                        🔴 THE OLD BOARD'S SIXTH COLUMN, CONFIDENCE, IS DELIBERATELY NOT HERE. It
+                        scored how well a rep's check-in matched the brick — a check on him — and
+                        golden rule #1 keeps every such signal off his own screens. `ListPlace` still
+                        carries `brickDistanceKm` for the Super Admin's board; it must never reach a
+                        cell here. The old board dropped Confidence whenever it spent brick colour
+                        anyway, and this board always spends brick colour.
+
+                        The widths total 100% on a `table-fixed` grid, so the row fits its column at
+                        every size rather than scrolling sideways (the fits-the-screen golden rule);
+                        the phone gets the cards above instead. */}
+                    <CrmTable columns={["24%", "16%", "8%", "16%", "22%", "14%"]}>
                       <thead>
                         <tr>
                           <th className={crmThClassName} scope="col">
                             Customer
                           </th>
                           <th className={crmThClassName} scope="col">
-                            {DETAIL_HEADER[variant]}
+                            Specialty
                           </th>
                           <th className={crmThClassName} scope="col">
-                            {MONTH_HEADER[variant]}
+                            List
+                          </th>
+                          <th className={crmThClassName} scope="col">
+                            Brick
+                          </th>
+                          <th className={crmThClassName} scope="col">
+                            {DETAIL_HEADER[variant]}
                           </th>
                           <th className={crmThClassName} scope="col">
                             <span className="sr-only">Actions</span>
@@ -536,35 +578,63 @@ export function CustomerListBoard({
                         </tr>
                       </thead>
                       <tbody>
-                        {entry.rows.map((customer) => (
-                          <tr key={customer.customerId}>
-                            <td className={crmTdClassName}>
-                              <p className="font-black text-slate-950">
-                                <span dir="auto">{customer.name}</span>
-                              </p>
-                              <p className="mt-0.5 text-xs text-slate-500">{customerMetaText(customer)}</p>
-                            </td>
-                            <td className={crmTdClassName}>
-                              <p className="break-words">{detailText(customer, variant)}</p>
-                              {variant === "pending" ? (
-                                <p className="mt-0.5 text-xs text-slate-500">
-                                  Last visit in iReports360: {referenceLastVisitText(customer.reference)}
+                        {entry.rows.map((customer) => {
+                          const facts = listRowFacts(customer);
+                          return (
+                            <tr key={customer.customerId}>
+                              <td className={crmTdClassName}>
+                                <p className="font-black text-slate-950">
+                                  <span dir="auto">{customer.name}</span>
                                 </p>
-                              ) : null}
-                              {variant === "dropped" && customer.droppedNote ? (
-                                <p className="mt-0.5 whitespace-pre-line text-xs text-slate-500">{customer.droppedNote}</p>
-                              ) : null}
-                            </td>
-                            <td className={crmTdClassName}>
-                              <div className="flex flex-wrap gap-1">{rowPills(customer, variant)}</div>
-                              <p className="mt-1 text-xs text-slate-500">{monthText(customer, variant)}</p>
-                            </td>
-                            <td className={crmTdClassName}>
-                              {/* The column's full width — the board's Actions column does the same. */}
-                              <div className="grid gap-1.5 [&>button]:w-full">{rowAction(customer)}</div>
-                            </td>
-                          </tr>
-                        ))}
+                                {/* The grade keeps its own ink, as the old board painted it. */}
+                                <p className={`mt-0.5 text-xs font-bold ${gradeInk(customer.grade)}`}>{facts.grade.text}</p>
+                                <div className="mt-1 flex flex-wrap gap-1">{rowPills(customer, variant)}</div>
+                              </td>
+                              <td className={`${crmTdClassName} ${factInk(facts.speciality)}`}>
+                                <span className="break-words" dir="auto">
+                                  {facts.speciality.text}
+                                </span>
+                              </td>
+                              <td className={crmTdClassName}>
+                                {/* 🔴 AM and PM are the two lists, printed apart and never summed. */}
+                                <span className="text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500">
+                                  {listText(customer.listType)}
+                                </span>
+                              </td>
+                              <td className={`${crmTdClassName} ${factInk(facts.brick)}`}>
+                                <p className="break-words" dir="auto">
+                                  {facts.brick.text}
+                                </p>
+                                {facts.area.source === "placeholder" ? null : (
+                                  <p className="mt-0.5 break-words text-xs text-slate-400" dir="auto">
+                                    {facts.area.text}
+                                  </p>
+                                )}
+                              </td>
+                              <td className={`${crmTdClassName} ${factInk(facts.address)}`}>
+                                <p className="break-words" dir="auto">
+                                  {variant === "dropped" ? detailText(customer, variant) : facts.address.text}
+                                </p>
+                                {variant === "active" || variant === "outside" ? (
+                                  <p className="mt-0.5 break-words text-xs text-slate-500">{placesDaysText(customer)}</p>
+                                ) : null}
+                                {variant === "pending" ? (
+                                  <p className="mt-0.5 text-xs text-slate-500">
+                                    Last visit in iReports360: {referenceLastVisitText(customer.reference)}
+                                  </p>
+                                ) : null}
+                                {variant === "dropped" && customer.droppedNote ? (
+                                  <p className="mt-0.5 whitespace-pre-line text-xs text-slate-500">{customer.droppedNote}</p>
+                                ) : null}
+                                <p className="mt-1 text-xs text-slate-500">{monthText(customer, variant)}</p>
+                              </td>
+                              <td className={crmTdClassName}>
+                                {/* The column's full width — the board's Actions column does the same. */}
+                                <div className="grid gap-1.5 [&>button]:w-full">{rowAction(customer)}</div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </CrmTable>
                   </>

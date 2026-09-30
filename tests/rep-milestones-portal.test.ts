@@ -21,6 +21,7 @@ import { listEmployeeMilestones } from "@/lib/milestones/service";
 
 export async function runRepMilestonesPortalTests() {
   const route = readFileSync(new URL("../app/api/milestones/my-card/route.ts", import.meta.url), "utf8");
+  const service = readFileSync(new URL("../src/lib/milestones/service.ts", import.meta.url), "utf8");
   const page = readFileSync(new URL("../app/employee-portals/milestones/page.tsx", import.meta.url), "utf8");
   const layout = readFileSync(new URL("../src/components/employee-portal/employee-portal-layout.tsx", import.meta.url), "utf8");
   const registry = readFileSync(new URL("../src/components/employee-portal/employee-portal-nav-registry.ts", import.meta.url), "utf8");
@@ -45,9 +46,11 @@ export async function runRepMilestonesPortalTests() {
   );
 
   // ── THE EXPORT IS SELF-SCOPED — the subject is always the caller ──────────────────────────────
-  // A rep must never be able to point the card at a colleague, so the route builds from access.hrId
-  // and must not read an hrId off the request body.
-  assert.match(route, /buildMilestoneCardInput\(\{\s*hrId:\s*access\.hrId/, "the card is built for the caller, always");
+  // A rep must never be able to point the card at a colleague, so the subject is pinned to
+  // access.hrId and the route must not read an hrId off the request body.
+  assert.match(route, /const hrId = access\.hrId/, "the subject is pinned to the caller");
+  assert.match(route, /buildMilestoneCardInput\(\{\s*\n?\s*hrId,/, "the card is built for the caller, always");
+  assert.match(route, /milestonePhotoFocus\(hrId,/, "the focus read is for the caller, always");
   assert.doesNotMatch(
     route,
     /body[?.]*\.hrId/,
@@ -59,6 +62,22 @@ export async function runRepMilestonesPortalTests() {
   // person", and its marks drive the Super Admin's "already congratulated" tick. A rep printing his
   // own keepsake is not a congratulation, so recording it would put a false tick on the admin list.
   assert.doesNotMatch(route, /recordMilestonePrint|buildMilestonePrintRow/, "a self-print never touches the shared print ledger");
+
+  // ── The rep gets the admin's photo control: PDF or picture, focus drag, upload, no-photo ───────
+  assert.match(route, /format === "png"/, "the rep can export a picture, not only a PDF");
+  assert.match(route, /format === "focus"/, "the framing box can read where the card frames the photo");
+  assert.match(route, /renderMilestoneCardImage/, "the picture export renders a PNG");
+  assert.match(route, /photoUpload/, "the rep can hand in a different picture for the card");
+  assert.match(route, /withoutPhoto/, "the rep can print the monogram plate instead of a photo");
+  assert.match(route, /photoFocus: readFocus/, "a dragged framing reaches the card");
+
+  // ── THE MISSING-PHOTO FIX: the card falls back to the bundled static photo ─────────────────────
+  // A portal photo resolves uploaded → bundled static → initials, but the card only ever read the
+  // uploaded one, so an account whose portal photo is a bundled static file exported with NO picture.
+  // The service now falls the card back to that same static file, so portal and card finally agree.
+  assert.match(service, /export async function loadMilestonePhotoBytes/, "one photo resolver feeds the card and the focus");
+  assert.match(service, /readStaticProfilePhoto/, "the card falls back to the bundled static photo");
+  assert.match(service, /employeeProfileImageForHrId/, "the static fallback reads the same file the portal shows");
 
   // ── The page gates by role predicate, never the company-wide milestones permission ────────────
   // A rep does not hold `milestones` — asserting it here would bounce him at the door (the exact

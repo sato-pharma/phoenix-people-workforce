@@ -191,13 +191,17 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
     } catch {
       repConcentration = null;
     }
+    // His own name, taken from the review's people rows (the session's AccessContext carries none),
+    // so his page and the pack he exports read as HIS and he feels seen (owner, 2026-09-30).
+    const repName =
+      repDs.people.find((p) => p.hrId.toUpperCase() === scope.hrId)?.name ?? scope.viewerName;
     return shell(
       <RepBusinessReview
         areas={mine.areas.map(withAreaBand)}
         available={available}
         concentration={repConcentration}
         coverage={coverage}
-        headline={`${repDs.meta.line} Line — ${figureLabel}`}
+        headline={`${repName} · ${repDs.meta.line} Line`}
         keyProducts={repDs.products.filter((p) => p.include).map((p) => p.product)}
         lineLabel={repDs.meta.line}
         mapGeneratedAt={resolvedAt}
@@ -210,8 +214,7 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
             selected={metrics}
           />
         }
-        restatementNotice={REVIEW_SOURCE_NOTICE}
-        scopeLabel={scope.label}
+        scopeLabel={`${repName} · ${repDs.meta.line}`}
         visitsAvailable={repDs.visits.available}
         window={window}
         windowHidden={{}}

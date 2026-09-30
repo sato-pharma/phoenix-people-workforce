@@ -12,8 +12,12 @@
 // date is the one to trust ("trust hiring date"). This module therefore never corrects it, and it
 // prints BOTH dates on the card — Joined and the milestone — so a reader can see the arithmetic.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { getEmployeeDirectory, isActiveDirectoryEmployee, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { streamEmployeePhoto } from "@/lib/employees/employee-photo";
+import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 
 import { type MilestoneCardInput } from "./card";
 import {
@@ -530,7 +534,7 @@ export async function buildMilestoneCardInput(
   let photoDataUri: string | null = null;
   if (!options.withoutPhoto) {
     try {
-      const bytes = options.photoUpload ?? (employee.hasPhoto ? (await streamEmployeePhoto(employee.hrId))?.bytes : null);
+      const bytes = await loadMilestonePhotoBytes(employee.hrId, options.photoUpload ?? null);
       if (bytes) {
         photoDataUri = await polishPortraitDataUri(bytes, {
           width: PORTRAIT_WIDTH,
@@ -614,10 +618,47 @@ export async function milestonePhotoFocus(
   upload?: Buffer | null,
 ): Promise<PortraitFocus | null> {
   try {
-    if (upload) return await portraitFocus(upload);
-    const photo = await streamEmployeePhoto(hrId);
-    if (!photo) return null;
-    return await portraitFocus(photo.bytes);
+    const bytes = await loadMilestonePhotoBytes(hrId, upload ?? null);
+    if (!bytes) return null;
+    return await portraitFocus(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The photograph the card should print, as raw bytes — the ONE place milestone photo resolution
+ * lives, so the card, the framing focus and every caller agree on which picture is used.
+ *
+ * 🔴 THE PORTAL SHOWS A PHOTO THE CARD USED TO MISS. A person's portal picture resolves
+ * `uploaded → bundled static → initials` (`resolveEmployeePhotoSrc`), but `streamEmployeePhoto` only
+ * ever returned the UPLOADED one. So an employee whose portal photo is a bundled static file
+ * (`public/images/hr/…`, `employees.photo_path` NULL, `hasPhoto` false) exported a card with NO
+ * picture while their portal clearly showed a face. This falls the card back to that same static
+ * file, so "has a picture in the portal" and "has a picture on the card" are finally the same thing.
+ *
+ * Order: a handed-in upload wins; then the uploaded bucket photo; then the bundled static photo;
+ * then null (the monogram plate). Best-effort at every step — an unreadable source is skipped, never
+ * thrown, so a card always renders.
+ */
+export async function loadMilestonePhotoBytes(
+  hrId: string,
+  upload?: Buffer | null,
+): Promise<Buffer | null> {
+  if (upload) return upload;
+  const uploaded = await streamEmployeePhoto(hrId);
+  if (uploaded?.bytes) return uploaded.bytes;
+  return readStaticProfilePhoto(hrId);
+}
+
+/** The bundled static profile photo's bytes from `public/`, or null. Never throws. */
+function readStaticProfilePhoto(hrId: string): Buffer | null {
+  const url = employeeProfileImageForHrId(hrId);
+  if (!url) return null;
+  try {
+    // "/images/hr/Adel%20El%20Sayed.jpg" → public/images/hr/Adel El Sayed.jpg
+    const relative = decodeURIComponent(url.replace(/^\/+/, ""));
+    return readFileSync(join(process.cwd(), "public", relative));
   } catch {
     return null;
   }

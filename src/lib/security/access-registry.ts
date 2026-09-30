@@ -583,6 +583,10 @@ export const accessRegistry = [
   // ── Business cards ─────────────────────────────────────────────────────────────────────────
   // POST only because the chosen people and their on-screen corrections travel in a body; it writes
   // nothing and returns a file, so the resource is read. The handler also requires an HR seat.
+  // The signed-in employee's OWN card, rendered as the print-ready PDF (front and back). Scoped to
+  // the caller — there is no hrId in the request — so employee_profile:read is the whole gate. Listed
+  // before the HR export below so the exact /mine path never falls to the employee_documents gate.
+  sessionApi({ methods: ["POST"], pattern: "/api/business-cards/mine", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Every file hands over names, work emails and mobiles in bulk, so it is an audited export.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/business-cards", permission: { resource: "employee_documents", action: "read" }, csrfRequired: true }),
   // ── Job Offers ─────────────────────────────────────────────────────────────────────────────
@@ -1181,6 +1185,22 @@ export const accessRegistry = [
   // than left to the candidates/** catch-all, which would not mark it an export. Same candidates:read gate.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/candidates/:id/application", permission: { resource: "candidates", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/candidates/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
+  // CV LOOKUP — the search-only CV access the owner asked for on 2026-09-30 (HR Operations may find
+  // a CV she searches for; she may not have the pool). TWO CONCRETE ENTRIES AND NO WILDCARD, so the
+  // inventory says exactly what this narrow surface is: a read that returns candidate identities,
+  // and a read that hands over one person's CV.
+  //
+  // `cv_lookup:read`, NOT `candidates:read`, and the difference is the entire feature — the seat
+  // behind it does not hold `candidates` and must not (see app/(admin)/cv-lookup/page.tsx). A row
+  // here naming the wrong resource is how the CV Database ended up advertising a gate it did not
+  // enforce, so these two say what the handlers assert and nothing else.
+  //
+  // The file route is an audited EXPORT: a CV leaving the building is the same event whichever
+  // door it went through, and its handler additionally writes a REQUIRED audit row naming the
+  // candidate. The search route is a plain read here — it writes its own best-effort audit row, on
+  // the owner's instruction, but a search is not an export and must not be counted as one.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/cv-lookup/:id/application", permission: { resource: "cv_lookup", action: "read" } }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/cv-lookup", permission: { resource: "cv_lookup", action: "read" } }),
   // The recruiter's OWN folder tree — folders and subfolders built by hand, and the CVs pushed into
   // them (owner request 2026-09-12). Gated on `candidates` rather than `recruitment` because of what
   // filing a CV DOES: a candidate sitting in any of these folders is hidden from the pool every
@@ -1688,6 +1708,13 @@ export const accessRegistry = [
   // bucket - the signature route holds the one mutation and checks the origin on PUT and DELETE.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/spotlight/cheques", permission: { resource: "spotlight", action: "export" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["GET", "PUT", "DELETE"], pattern: "/api/spotlight/cheques/signature", permission: { resource: "spotlight", action: "export" } }),
+  // A MEDICAL REP's OWN spotlight — a different gate (`spotlight_self`) held by the rep, never the
+  // company-wide `spotlight` above. Both routes resolve his HR id from the session and read nobody
+  // else, so this scope narrowing is enforced in the loader, not by the pattern. Owner, 2026-09-30:
+  // he filters his own achievement over any period, and the pic/PDF renders only at 90%+ against the
+  // published closing.
+  sessionApi({ methods: ["POST"], pattern: "/api/spotlight/me/preview", permission: { resource: "spotlight_self", action: "read" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/spotlight/me/sheet", permission: { resource: "spotlight_self", action: "export" } }),
   // ── Milestones ───────────────────────────────────────────────────────────────────────────────
   // The service-anniversary keepsake. SUPER ADMIN ONLY — the owner narrowed it from Super Admin +
   // CEO on 2026-09-23 ("make it only super admin. None either uh, CEO"). The due list reads every
