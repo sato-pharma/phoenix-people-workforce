@@ -65,17 +65,40 @@ permissions:
   contents: read
   actions: read # read this workflow own past runs, to count the failure streak
 
-# A new run's answer always supersedes an older one still mid-grace-period-sleep.
+# 🔴 cancel-in-progress IS FALSE, AND THAT IS THE SAME RULE AS THE `continue-on-error` BELOW.
+# A CANCELLED check suite withholds a production deploy exactly as a red one does (AGENTS.md §2.3:
+# "red, cancelled, or still queued = no deploy"). This workflow sleeps 180 seconds in a grace window
+# where a newer scheduled run or a manual dispatch would supersede it, and the cancelled suite that
+# leaves behind lands on whatever commit is `main` HEAD — so cancelling this alarm silently costs the
+# very deploy it was measuring. Superseding was never worth much here anyway: the grace re-read
+# settles the answer in three minutes, and two overlapping runs agree.
 concurrency:
   group: deploy-drift-check
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy-drift-check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # 🔴 continue-on-error PLUS AN id, NOT A BARE `exit 1` — THIS ALARM'S OWN FAILURE USED TO
+      # WITHHOLD THE DEPLOY IT MEASURES. A scheduled run attaches its check suite to whatever commit
+      # is `main` HEAD when it fires, and Railway's production trigger has Wait-for-CI on
+      # (`checkSuites: true`, read live off the deployment trigger 2026-09-30), so ANY failed suite on
+      # that commit marks its deploy `inactive` — never `success`, permanently, seconds after the
+      # suite concludes. A red drift alarm therefore DEEPENED the drift. That is not hypothetical:
+      # this file's own header records it happening to cd9e0be03 on 2026-09-27, and the fix applied
+      # then (a settled reference instead of HEAD) only made the alarm right more often — it left the
+      # mechanism in place.
+      #
+      # So the finding is REPORTED, never thrown: the step keeps its `::error::` and its `exit 1`, the
+      # runner records the step as failed, the Telegram alert still fires, and the JOB concludes
+      # success so the suite stays green. Same shape as synthetic-journeys.yml and
+      # staging-hr-drift-check.yml, whose header states the rule this now obeys: "NEITHER STEP MAY
+      # FAIL ON A FINDING … Only a BROKEN check fails."
       - name: Compare production's deployed revision against a SETTLED commit
+        id: production
+        continue-on-error: true
         if: ${{ !inputs.test_alert }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -153,7 +176,13 @@ jobs:
       # exactly the 2026-08-13 shape described in this file's header, which is the incident that
       # created this workflow. Production's check above cannot see it, because staging drifts against
       # its own branch rather than against `main`.
+      # `continue-on-error` here for the same reason as the production step above, and it also
+      # restores something the old `exit 1` took away: with production failing the job outright, this
+      # step never ran when production drifted, so a simultaneous staging drift stayed invisible until
+      # production was fixed. Now both always run and both are reported.
       - name: Compare staging's deployed revision against a SETTLED commit
+        id: staging
+        continue-on-error: true
         if: ${{ !inputs.test_alert && vars.STAGING_TRACKS_BRANCH != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -218,11 +247,64 @@ jobs:
           echo "::error::Staging is NOT serving a ${BRANCH} commit that is already ${SETTLE_MINUTES} minutes old. settled_ref=$REF_SHA ${BRANCH}=$HEAD_SHA staging=${LIVE_SHA:-<unreachable>}. Most likely the staging-branch-sync workflow has stopped advancing the branch, or Railway staging source was changed. Read: gh run list --workflow=staging-branch-sync.yml --limit 5, and git ls-remote origin refs/heads/${BRANCH}."
           exit 1
 
+      # The durable record, written OUTSIDE the check suite — a job summary a human can read on the
+      # run page, since the job's own conclusion is deliberately no longer the signal. It also owns
+      # DRIFT_SCOPE now, and that is a correctness fix rather than tidying:
+      #
+      # 🔴 BOTH COMPARISON STEPS RUN NOW, SO NEITHER MAY BE TRUSTED TO SET THE SCOPE. Before this
+      # change production's `exit 1` ended the job, so the staging step never ran when production
+      # drifted and DRIFT_SCOPE stayed PRODUCTION by accident of ordering. With both steps reported,
+      # a simultaneous staging drift would overwrite it and send PRODUCTION drift under STAGING
+      # wording — which points the reader at the staging branch and away from the production gate, at
+      # 4am. That is the exact defect the comment further down records being caught in review of
+      # #4552, and making both steps run is what would have reintroduced it. So the scope is derived
+      # from the two outcomes here, after both are known, and production wins when both drifted
+      # because production is the one that pays salaries.
+      #
+      # The silver lining of both steps running: a staging drift is no longer invisible until
+      # production is fixed.
+      - name: Report drift without withholding the deploy
+        if: ${{ always() && (steps.production.outcome == 'failure' || steps.staging.outcome == 'failure') }}
+        env:
+          PRODUCTION_OUTCOME: ${{ steps.production.outcome }}
+          STAGING_OUTCOME: ${{ steps.staging.outcome }}
+        run: |
+          set -uo pipefail
+
+          if [ "$PRODUCTION_OUTCOME" = "failure" ]; then
+            SCOPE="PRODUCTION"
+          else
+            SCOPE="STAGING"
+          fi
+          echo "DRIFT_SCOPE=${SCOPE}" >> "$GITHUB_ENV"
+
+          BOTH="no"
+          if [ "$PRODUCTION_OUTCOME" = "failure" ] && [ "$STAGING_OUTCOME" = "failure" ]; then
+            BOTH="yes"
+            echo "DRIFT_BOTH=yes" >> "$GITHUB_ENV"
+          fi
+
+          {
+            printf '## %s deploy drift detected\n\n' "$SCOPE"
+            printf 'production check: `%s`\n\n' "$PRODUCTION_OUTCOME"
+            printf 'staging check: `%s`\n\n' "$STAGING_OUTCOME"
+            if [ "$BOTH" = "yes" ]; then
+              printf 'Both environments drifted. The alert is scoped to PRODUCTION because that is the one that pays salaries; read the staging step above as well.\n\n'
+            fi
+            printf 'This job concludes **success on purpose**. A failed or cancelled check suite on `main` HEAD makes Railway withhold that commit'"'"'s production deploy permanently, so an alarm that went red would deepen the very drift it is reporting. The finding is in the step annotation above and in the Telegram alert.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::error::${SCOPE} deploy drift detected. This job still concludes success so the check suite cannot withhold a production deploy — read the failed comparison step above for the full diagnosis, and the Telegram alert for the same text."
+
       # SELF-TEST, same convention as migration-drift-check.yml: workflow_dispatch with
       # test_alert=true fires this on a run that never even checked production, so "does the
       # alarm still work?" is answerable in two minutes without waiting for real drift.
+      #
+      # 🔴 GATED ON THE STEP OUTCOMES, NOT ON `failure()`. The job now concludes success even when it
+      # finds drift, so `failure()` is permanently false here and the old gate would have made this
+      # alarm silent — turning a fix for a withheld deploy into a fix that loses the alert instead.
       - name: Notify Telegram on failure
-        if: ${{ failure() || inputs.test_alert }}
+        if: ${{ always() && (steps.production.outcome == 'failure' || steps.staging.outcome == 'failure' || inputs.test_alert) }}
         continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -254,15 +336,42 @@ jobs:
           # line out rather than breaking the alert. An alarm must never fail because the thing
           # describing it failed. jq joins on a SPACE deliberately: a tab delimiter needs IFS=$'\t',
           # and that sequence is a special replacement pattern in several editors and scripts.
+          #
+          # 🔴 THE STREAK READS A STEP, NOT THE RUN'S CONCLUSION, AND IT HAD TO CHANGE WITH THE
+          # `continue-on-error` ABOVE. This job now concludes success even when it finds drift, so
+          # `.conclusion == "failure"` — what this counted until 2026-09-30 — is permanently false and
+          # the streak would have silently pinned itself at 1 for ever. That is the precise signal
+          # whose absence the comment above says cost 21 invisible nights, so losing it as a
+          # side-effect of fixing the withheld deploy would have traded one blind spot for the other.
+          #
+          # "Did the report step RUN?" is the durable substitute: a gated step is either executed or
+          # `skipped`, and `skipped` is reported unambiguously whatever the runner does with a
+          # continue-on-error step's own conclusion — which is why this keys on skipped-ness rather
+          # than on that conclusion. `absent` covers runs older than this change, and correctly ends
+          # the streak rather than guessing about them.
+          #
+          # Cost: one extra API call per run walked, and it BREAKS on the first clean run — so the
+          # normal case is a single call, and it only walks far during a real outage, which is exactly
+          # when the number is worth paying for.
           STREAK_LINE=""
-          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .conclusion, .created_at] | join(" ")' 2>/dev/null || true)
+          REPORT_STEP="Report drift without withholding the deploy"
+          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .created_at] | join(" ")' 2>/dev/null || true)
           if [ -n "$RUNS" ]; then
             STREAK=1
             FIRST_SEEN=""
-            while read -r rid rconc rdate; do
+            while read -r rid rdate; do
               [ -z "$rid" ] && continue
               [ "$rid" = "$RUN_ID" ] && continue
-              if [ "$rconc" = "failure" ]; then
+              # 🔴 PIPED TO REAL `jq`, BECAUSE `gh api` HAS NO `--arg` FLAG. The first version of this
+              # line used `gh api --jq --arg s "$REPORT_STEP"`, which fails at ARGUMENT PARSING
+              # ("accepts 1 arg(s), received 4") before any network call — and `|| echo "absent"`
+              # swallowed it, so the streak would have broken at 1 on every run, for ever, silently.
+              # That is precisely the invisible-age defect this block exists to prevent, reintroduced
+              # by its own fix and caught only because someone ran it. `jq` does have `--arg`.
+              # `.jobs[]?.steps[]?` is deliberate too: a job with `steps: null` errors the unguarded query.
+              rconc=$(gh api "repos/${REPO}/actions/runs/${rid}/jobs" 2>/dev/null | jq -r --arg s "$REPORT_STEP" '[.jobs[]?.steps[]? | select(.name == $s)] | .[0].conclusion // "absent"' 2>/dev/null || true)
+              [ -z "$rconc" ] && rconc="absent"
+              if [ "$rconc" != "skipped" ] && [ "$rconc" != "absent" ] && [ -n "$rconc" ]; then
                 STREAK=$((STREAK + 1))
                 FIRST_SEEN="$rdate"
               else
@@ -282,6 +391,11 @@ jobs:
           else
             HEADER="${DRIFT_SCOPE:-PRODUCTION} DEPLOY DRIFT DETECTED"
             [ -n "$STREAK_LINE" ] && HEADER=$(printf '%s\n%s' "$HEADER" "$STREAK_LINE")
+            # Both environments drifting is newly VISIBLE rather than newly possible: until both
+            # comparison steps started being reported, production's failure ended the job and the
+            # staging check never ran. The body below stays production-scoped on purpose — this line
+            # is what stops the reader assuming staging is fine.
+            [ "${DRIFT_BOTH:-no}" = "yes" ] && HEADER=$(printf '%s\nSTAGING IS ALSO DRIFTING. This alert is scoped to production; read the staging step on the run page too.' "$HEADER")
             # The BODY has to follow the scope, not just the title. A STAGING-titled alert that
             # carries production wording points the reader at the production gate and at
             # `railway status --environment production`, neither of which is the cause - and it

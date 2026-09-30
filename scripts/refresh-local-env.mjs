@@ -15,6 +15,8 @@ import { existsSync, renameSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 
+import { RAILWAY_CLI_PACKAGE } from "./secret-policy.mjs";
+
 // Deliberately a small exclude-list + small override-map, NOT an exhaustive per-variable
 // bucket list — an exhaustive list needs updating every time Railway gains a variable, which
 // is exactly the maintenance gap that let 27 variables go unsynced elsewhere in this repo.
@@ -80,7 +82,7 @@ function main() {
   const npmCommand = process.platform === "win32" ? "npx.cmd" : "npx";
   const cliArgs = [
     "--yes",
-    "@railway/cli@latest",
+    RAILWAY_CLI_PACKAGE,
     "variable",
     "list",
     "--json",

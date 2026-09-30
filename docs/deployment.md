@@ -438,14 +438,20 @@ Never push directly to `main`. Work happens on a branch/PR and merges after CI p
 ## Deployment Workflow
 
 1. Develop on a branch/worktree, open a PR to `main`.
-2. `.github/workflows/ci.yml` runs on the PR — five jobs: `validate`
-   (routes/migrations/sql-backups/deductions/stale-domain checks, build, and a Playwright
-   login smoke test run against the built app **inside the CI runner**, pointed at the staging
-   Supabase project — it does not deploy or hit any live preview URL), `lint`, `typecheck`,
-   `test` (the unit suite, split out of `validate` on 2026-09-17) and `mobile` (`npm ci` plus a
-   typecheck inside `mobile/`, added 2026-09-18 and seconds long on a PR that leaves that folder
-   alone). The smoke test used to be a separate `preview-smoke` job; it now runs as a step inside
-   `validate`, so there is no separate job to wait on.
+2. `.github/workflows/ci.yml` declares three jobs that a PR could reach: `validate`
+   (routes/migrations/sql-backups/deductions/stale-domain checks, the unit suite, and on non-PR
+   events a build plus a Playwright login smoke test run against the built app **inside the CI
+   runner**, pointed at the staging Supabase project — it does not deploy or hit any live preview
+   URL), `checks` (lint and typecheck, folded into one job by #4527 on 2026-09-27 — `lint`,
+   `typecheck` and `test` are STEPS from then on, never job or check names) and `mobile` (`npm ci`
+   plus a typecheck inside `mobile/`, added 2026-09-18 and seconds long on a PR that leaves that
+   folder alone). 🔴 **On a pull request only the first two of those actually run** — `mobile`
+   carries `if: github.event_name != 'pull_request'` since 2026-09-29, and `secret-scan` in
+   `security-scan.yml` lost its `pull_request` trigger in the same change (gitleaks moved into
+   `bash-guard.mjs` clause C12, which refuses the push instead). So a PR's check list is `validate`
+   and `checks`, which is exactly the required pair. The smoke test used to be a separate
+   `preview-smoke` job; it now runs as a step inside `validate`, so there is no separate job to wait
+   on.
 3. Do **not** run a local full validation before pushing — those PR checks are the gate, and they
    are the same steps. See AGENTS.md § 7.
 4. **Apply any database migration by hand BEFORE the merge.** The Railway deploy applies none. See
@@ -455,11 +461,16 @@ Never push directly to `main`. Work happens on a branch/PR and merges after CI p
    revision, no post-deploy smoke test, and no cron wait — nothing stands between the merge and
    employees using it.
 
-> ⚠️ Branch protection does gate the merge itself: 4 required status checks (`validate`, `checks`,
-> `mobile`, `secret-scan`) must be green on the PR head commit, with
-> `enforce_admins: true`. So a merged commit has passed CI. But CI passing is the *only* gate —
-> once merged, it serves live traffic. **Never merge anything you are not willing to have serving
-> employees within minutes.**
+> ⚠️ Branch protection does gate the merge itself: 2 required status checks (`validate` and
+> `checks`) must be green on the PR head commit, with `enforce_admins: true`. 🔴 `mobile` and
+> `secret-scan` were **demoted on 2026-09-29**, and the same change took both off `pull_request` —
+> so neither blocks a merge and neither reports on a PR at all. A red Expo typecheck or a gitleaks
+> finding will not stop a bad merge on your behalf; both surface on `main`, a schedule or a dispatch
+> instead, which is a fix-forward. That list has rotted five times (4 → 5 → 6 → 4 → 2): read
+> `branches/main/protection/required_status_checks` live and count passes against what it returns,
+> never against this line. So a merged commit has passed the two checks that gate. But CI passing is
+> the *only* gate — once merged, it serves live traffic. **Never merge anything you are not willing
+> to have serving employees within minutes.**
 
 The old Cloud Run pipeline did deploy a no-traffic revision, smoke-test it, and only then promote
 it to 100%. That safety net is **gone**. Any doc, comment, or memory describing it is pre-cutover.

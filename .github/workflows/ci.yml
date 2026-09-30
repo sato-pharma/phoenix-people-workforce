@@ -176,9 +176,11 @@ jobs:
   # returns every PR to hosted on its next attempt, and `gh run rerun --failed` re-resolves it.
   #
   # It replaced the repo-wide `CI_RUNNER` variable, which had no per-branch override and moved
-  # `secret-scan` — a REQUIRED check, in security-scan.yml — along with it, in a workflow nobody
-  # flipping it was watching. `PHX_BUILD_CPUS` below still keys off `runner.environment`, which is
-  # true on ANY self-hosted runner whatever its labels, so the CPU cap is unaffected.
+  # `secret-scan` — then a required check, in security-scan.yml — along with it, in a workflow nobody
+  # flipping it was watching. (It is NOT required now, and no longer runs on a PR at all: the
+  # 2026-09-29 note above `checks` has it.) `PHX_BUILD_CPUS` below still keys off
+  # `runner.environment`, which is true on ANY self-hosted runner whatever its labels, so the CPU
+  # cap is unaffected.
   # Turn-on procedure and the label situation: docs/ci-self-hosted-runner.md.
   validate:
     runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
@@ -241,7 +243,7 @@ jobs:
           # scan (a memory slug orphaned by an AGENTS.md edit), and the long-hook docs-pointer
           # check. If those files took the docs-only fast path, the very checks that guard them
           # would skip, and a PR that grew AGENTS.md past its byte budget or orphaned a memory would
-          # go green on three of four required checks and merge — surfacing only afterwards as a red
+          # go green on the other required check and merge — surfacing only afterwards as a red
           # `main`, which still ships to production (§2.1). So they are NOT documentation for this
           # purpose: matched FIRST, they force the full suite. (Still shell, no third-party action —
           # see the note above the step.)
@@ -682,7 +684,7 @@ jobs:
           # scan (a memory slug orphaned by an AGENTS.md edit), and the long-hook docs-pointer
           # check. If those files took the docs-only fast path, the very checks that guard them
           # would skip, and a PR that grew AGENTS.md past its byte budget or orphaned a memory would
-          # go green on three of four required checks and merge — surfacing only afterwards as a red
+          # go green on the other required check and merge — surfacing only afterwards as a red
           # `main`, which still ships to production (§2.1). So they are NOT documentation for this
           # purpose: matched FIRST, they force the full suite. (Still shell, no third-party action —
           # see the note above the step.)

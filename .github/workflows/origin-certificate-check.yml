@@ -32,6 +32,14 @@ name: Origin Certificate Check
 # ALERTING. The same TELEGRAM_BOT_TOKEN / TELEGRAM_ALERT_CHAT_ID secrets and the same streak-age block
 # as deploy-drift-check.yml — the owner's existing channel, no new recipient. A schedule-triggered
 # failure notifies nobody by construction: GitHub emails the run author and a cron run has none.
+#
+# 🔴 IT REPORTS A FINDING AND STILL CONCLUDES SUCCESS (2026-09-30). The check step carries
+# `continue-on-error`, because a scheduled run's check suite lands on whatever commit is `main` HEAD
+# and Railway withholds that commit's production deploy for ever when ANY suite on it fails or is
+# cancelled — which is also why `cancel-in-progress` is now false. The full account sits above the
+# check step; the rule is staging-hr-drift-check.yml's — "NEITHER STEP MAY FAIL ON A FINDING … Only
+# a BROKEN check fails." The Telegram alert is gated on the step's outcome rather than on
+# `failure()`, which is what keeps the alarm alive once the job goes green.
 on:
   schedule:
     - cron: "17 5 * * *" # 05:17 UTC = 07:17 Cairo, daily, offset from the shared firing minutes
@@ -46,16 +54,46 @@ permissions:
   contents: read
   actions: read # read this workflow's own past runs, to count the failure streak
 
+# 🔴 cancel-in-progress WENT FALSE ON 2026-09-30, AND IT IS THE SAME RULE AS THE
+# `continue-on-error` BELOW. A CANCELLED check suite withholds a production deploy exactly as a red
+# one does (AGENTS.md §2.3: "red, cancelled, or still queued = no deploy"), and a scheduled run of
+# this workflow attaches its suite to whatever commit is `main` HEAD when it fires. So a manual
+# dispatch — fired to answer "does the alarm still work?", which is precisely what this workflow
+# invites with its test_alert input — would have cancelled an in-flight scheduled run and silently
+# cost that commit its deploy. Superseding was worth nothing here anyway: this check is a few
+# seconds of openssl and curl against three hostnames, so two overlapping runs finish immediately
+# and agree.
 concurrency:
   group: origin-certificate-check
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   origin-certificate-check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # 🔴 continue-on-error PLUS AN id, NOT A BARE `exit 1` (added 2026-09-30). This step is
+      # read-only — openssl and curl, nothing written anywhere — so its ONLY effect on the world was
+      # its own exit code, and that exit code was expensive. A scheduled run attaches its check suite
+      # to whatever commit is `main` HEAD when it fires, and Railway's production deployment trigger
+      # has Wait-for-CI on (`checkSuites: true`, read live off the trigger 2026-09-30), so ANY failed
+      # or cancelled suite on that commit marks its production deploy `inactive` — never `success`,
+      # permanently, within seconds of the suite concluding, with `ci.yml` fully green. Three
+      # production deploys were lost that way on 2026-09-30.
+      #
+      # An expiring certificate is a 90-day-horizon problem with a 21-day warning window; a withheld
+      # production deploy is immediate. Paying the second to announce the first is the wrong trade,
+      # and it is the trade this file made until now. The rule this now obeys is already stated in
+      # staging-hr-drift-check.yml's header: "NEITHER STEP MAY FAIL ON A FINDING … Only a BROKEN
+      # check fails."
+      #
+      # NOTHING ABOUT THE FINDING IS LOST. The step keeps its per-host `::error::` annotations and
+      # its `exit 1`, the runner shows the step red, /tmp/cert-summary.txt still carries the detail
+      # into the alert, the report step below writes a job summary, and Telegram still fires — on
+      # this step's outcome now, never on `failure()`. Only the JOB's conclusion changed.
       - name: Read each Railway origin certificate past Cloudflare
+        id: certificates
+        continue-on-error: true
         if: ${{ !inputs.test_alert }}
         run: |
           set -uo pipefail
@@ -117,10 +155,45 @@ jobs:
           fi
           echo "Every Railway origin certificate has more than ${WARN_DAYS} days left."
 
+      # The durable record, written OUTSIDE the check suite's verdict — a job summary a human can
+      # read on the run page, since the job's own conclusion is deliberately no longer the signal.
+      # It reprints the per-host detail the check step wrote to /tmp/cert-summary.txt, because that
+      # file is the only place the origin-vs-edge day counts survive the step's log, and the edge
+      # count is the whole reason this alarm is not derivable from a browser.
+      #
+      # This step must ALWAYS exit 0. Its `::error::` puts an annotation on the run page, which is a
+      # UI signal and not a conclusion.
+      - name: Report the expiring certificate without withholding the deploy
+        if: ${{ always() && steps.certificates.outcome == 'failure' }}
+        run: |
+          set -uo pipefail
+
+          DETAIL="$(cat /tmp/cert-summary.txt 2>/dev/null || true)"
+
+          {
+            printf '## Railway origin certificate expiring\n\n'
+            if [ -n "$DETAIL" ]; then
+              printf '```\n%s\n```\n\n' "$DETAIL"
+            else
+              printf 'No per-host summary was written, so the step failed before it could measure anything — read its log.\n\n'
+            fi
+            printf 'The browser is no help here: once a Cloudflare record is orange the padlock is Cloudflare'"'"'s own certificate while the ORIGIN certificate expires behind it, and Full (strict) turns that into a 526 with no deploy to blame. Railway proves ownership by reading the CNAME value out of DNS and the proxy hides it, so turning that record GREY in Cloudflare is the measured fix.\n\n'
+            printf 'This job concludes **success on purpose**. A failed or cancelled check suite on `main` HEAD makes Railway withhold that commit'"'"'s production deploy permanently — never `success`, seconds after the suite concludes, with `ci.yml` green — so an alarm that went red to announce a certificate 21 days from expiry would cost an immediate production deploy to do it. The finding is in the failed step above, in the annotation, and in the Telegram alert.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::error::A Railway origin certificate is expiring — read the failed check step above and the summary on this run page. This job still concludes success so its check suite cannot withhold a production deploy."
+
       # SELF-TEST, the same convention as deploy-drift-check.yml: a dispatch with test_alert=true
       # answers "does this channel still work?" without waiting for a certificate to nearly expire.
+      #
+      # 🔴 GATED ON THE STEP OUTCOME, NOT ON `failure()` — THE MOST IMPORTANT LINE IN THE 2026-09-30
+      # CHANGE. The check step now carries `continue-on-error`, so the job concludes success even when
+      # it finds an expiring certificate and `failure()` is permanently false. Left as it was, this
+      # step would simply never run again, and the fix for a withheld deploy would have silently
+      # deleted the only alarm this workflow has — a schedule-triggered failure notifies nobody by
+      # construction, which is the reason the step exists at all.
       - name: Notify Telegram on failure
-        if: ${{ failure() || inputs.test_alert }}
+        if: ${{ always() && (steps.certificates.outcome == 'failure' || inputs.test_alert) }}
         continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -142,15 +215,43 @@ jobs:
           # Delivery was never the problem — visibility of AGE was. Scoped to the same event so a
           # manual dispatch cannot reset a nightly streak. Best-effort: any failure here leaves the
           # line out rather than breaking the alert.
+          #
+          # 🔴 IT READS A STEP, NOT THE RUN'S CONCLUSION, AND IT HAD TO CHANGE WITH THE
+          # `continue-on-error` ADDED 2026-09-30. This job now concludes success even when it finds an
+          # expiring certificate, so `.conclusion == "failure"` — what this counted until then — is
+          # permanently false and the streak would have silently pinned itself at 1 for ever. Age is
+          # exactly the thing this line exists to make visible, so losing it as a side-effect of fixing
+          # the withheld deploy would have traded one blind spot for the other. A certificate
+          # renewal that has been failing for three weeks is a different problem from one noticed
+          # today, and the number is the only thing that says which this is.
+          #
+          # "Did the report step RUN?" is the durable substitute: a gated step is either executed or
+          # `skipped`, and `skipped` is reported unambiguously whatever the runner does with a
+          # continue-on-error step's own conclusion. `absent` covers runs older than this change and
+          # correctly ends the streak rather than guessing about them. Copied from
+          # deploy-drift-check.yml, where the same problem was solved the same way. It BREAKS on the
+          # first clean run, so the normal case is one extra API call.
           STREAK_LINE=""
-          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .conclusion, .created_at] | join(" ")' 2>/dev/null || true)
+          REPORT_STEP="Report the expiring certificate without withholding the deploy"
+          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .created_at] | join(" ")' 2>/dev/null || true)
           if [ -n "$RUNS" ]; then
             STREAK=1
             FIRST_SEEN=""
-            while read -r rid rconc rdate; do
+            while read -r rid rdate; do
               [ -z "$rid" ] && continue
               [ "$rid" = "$RUN_ID" ] && continue
-              if [ "$rconc" = "failure" ]; then
+              # 🔴 `jq --arg` THROUGH A PIPE, NEVER `gh api --jq --arg` — `gh api` HAS NO `--arg` FLAG.
+              # `gh api --jq` takes a single query string and nothing else, so `--jq --arg s "$X" '<query>'`
+              # makes gh read `--arg` as the query and then choke on three extra positional arguments. The
+              # command fails, `|| true` swallows it, `rconc` is empty, and the streak breaks at 1 on EVERY
+              # run — silently, for ever. That is precisely the invisible-streak defect this block exists to
+              # prevent, reintroduced by the fix for it. Confirmed against `gh api --help` 2026-09-30: the
+              # flags are --cache, -F, -H, --hostname, -i, --input, -q/--jq, -X, --paginate, -p, -f, --silent,
+              # --slurp, -t, --verbose. No --arg. Pipe to real jq instead, which does have it; jq is
+              # preinstalled on ubuntu-latest and every other step in this file already relies on that.
+              rconc=$(gh api "repos/${REPO}/actions/runs/${rid}/jobs" 2>/dev/null | jq -r --arg s "$REPORT_STEP" '[.jobs[]?.steps[]? | select(.name == $s)] | .[0].conclusion // "absent"' 2>/dev/null || true)
+              [ -z "$rconc" ] && rconc="absent"
+              if [ "$rconc" != "skipped" ] && [ "$rconc" != "absent" ] && [ -n "$rconc" ]; then
                 STREAK=$((STREAK + 1))
                 FIRST_SEEN="$rdate"
               else

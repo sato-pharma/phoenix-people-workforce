@@ -21,10 +21,33 @@ name: Attendance Weekly Digest
 # changes nothing, and a released day is never touched. It also means a missed or delayed run
 # — GitHub does not guarantee schedule punctuality — costs nothing at all.
 #
-# IT SENDS NOTHING. Employees are told about a week only when the Super Admin releases it
-# from the admin review page (owner, 2026-09-15) — never from this job. What this job CAN do
-# is settle a released day that went unanswered past its 2-working-day deadline to salary,
-# which is the owner's rule for silence, not a message.
+# IT SENDS NOTHING TO AN EMPLOYEE, EVER, AND NOTHING AT ALL ON A SUCCESSFUL RUN. Employees are told
+# about a week only when the Super Admin releases it from the admin review page (owner, 2026-09-15) —
+# never from this job, and there is no "all clear" to anybody either: a daily success message is how
+# an alert becomes furniture. What this job CAN do is settle a released day that went unanswered past
+# its 2-working-day deadline to salary, which is the owner's rule for silence, not a message.
+#
+# 🔴 ON A FAILURE IT NOW TELEGRAMS THE OWNER (added 2026-09-30). Until then this workflow had no
+# notification path of any kind, and the paragraph above said so as though that were the whole story.
+# It was not: a schedule-triggered failure notifies nobody by construction — GitHub emails the run
+# author and a cron run has none — so a route that 401'd, 500'd, or reported a day the sweep could
+# not settle went red twice a day and reached no one. That is the exact shape that cost three days
+# and 412 exposed customer names on migration-drift-check.yml (2026-08-06) and eight nights on
+# security-scan.yml in September. Here the stake is PAYROLL: the route settles unanswered attendance
+# days to salary and applies them, and the app answers 500 precisely when a day could not be settled,
+# money was taken twice, or a week could not be brought up to date.
+#
+# 🔴 AND THIS WORKFLOW IS DELIBERATELY EXCLUDED FROM THE "REPORT THE FINDING, FINISH GREEN"
+# CONVERSION THAT deploy-drift-check.yml, migration-drift-check.yml, origin-certificate-check.yml,
+# security-scan.yml, synthetic-journeys.yml AND staging-hr-drift-check.yml ALL CARRY — DO NOT TIDY IT
+# INTO LINE. Those six are READ-ONLY detectors, so their exit code was their only side effect and
+# swallowing it costs nothing. THIS ONE WRITES TO PAYROLL. A failed or half-completed settle must stay
+# a RED job: red is what makes the failure legible on the Actions list without opening a run, and there
+# is no version of "employees were paid from a sweep that half-ran" that should conclude success. The
+# cost of a red run here is understood and accepted: a check suite on `main` HEAD that fails makes
+# Railway withhold that commit's production deploy (AGENTS.md §2.3), and a withheld deploy is carried
+# forward by the next merge, whereas a silently wrong payroll row is not. If this workflow ever stops
+# writing — if the route becomes a pure read — then and only then does the conversion apply.
 on:
   schedule:
     # 03:23 UTC = 06:23 Cairo. Offset off the shared :00/:15/:30/:45 firing minute like
@@ -38,6 +61,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # read this workflow's own past runs, to count the failure streak in the alert below
 
 concurrency:
   # One at a time. A manual dispatch beside the scheduled run would be harmless — the route
@@ -94,3 +118,105 @@ jobs:
             end
           ' response.json)
           echo "::notice::${summary}"
+
+      # ── Tell a human. Added 2026-09-30; before it, a failed payroll settle reached nobody. ──────
+      #
+      # 🔴 GATED ON `failure()`, NOT ON A STEP OUTCOME, AND THAT IS THE DELIBERATE DIFFERENCE FROM
+      # EVERY SIBLING ALARM. In deploy-drift-check.yml, migration-drift-check.yml,
+      # origin-certificate-check.yml and security-scan.yml the check steps carry `continue-on-error`
+      # so the job finishes green and cannot withhold a production deploy — which makes `failure()`
+      # permanently false there, so those four had to be re-gated on `steps.<id>.outcome`. Nothing of
+      # the sort happens here: the step above has NO `continue-on-error`, the job genuinely fails, and
+      # `failure()` is therefore the correct and simplest gate. See this file's header for why the
+      # conversion does not apply to a workflow that writes to payroll. If anyone ever does add
+      # `continue-on-error` above, THIS LINE GOES SILENT — re-gate it in the same edit.
+      #
+      # Copied from migration-drift-check.yml's step rather than invented, so its three hard-won
+      # constraints travel with it. Do not undo them:
+      #   1. NO parse_mode. A lone underscore in the text opened an italic span Telegram never closed
+      #      and the whole message came back HTTP 400. An alert must never fail on format.
+      #   2. Capture the BODY, not just the status. A silent non-2xx is how that step once reported
+      #      success while delivering nothing.
+      #   3. continue-on-error PLUS exit 1. A Telegram outage must never mask — or manufacture — a
+      #      payroll verdict, but a broken alarm must never look healthy either.
+      #
+      # Failure-only, deliberately: this route runs twice a day and is idempotent, so a daily "all
+      # clear" would be two messages a day about nothing, which is how an alert becomes furniture.
+      #
+      # It uses curl against the Bot API rather than the app's sendTelegramNotification(): a workflow
+      # runner has no app runtime, no database and no service-role client. Both TELEGRAM_BOT_TOKEN
+      # (shared with the app) and TELEGRAM_ALERT_CHAT_ID are Actions secrets; the chat id is the PHX-1
+      # system-administrator connection, chosen by the owner 2026-08-09. NO new recipient is
+      # introduced here — §4 makes an email recipient a question for the owner, and this is the
+      # channel he already receives every automated alarm on.
+      - name: Notify Telegram on failure
+        if: ${{ failure() }}
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+          WF_FILE: attendance-weekly-digest.yml
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. A failed attendance settle to salary reached nobody, which is the condition this step exists to prevent."
+            exit 0
+          fi
+          # ── How old is this failure? ──────────────────────────────────────────────────────
+          # An alert that has fired identically for a week looks exactly like one firing for the first
+          # time, and this job runs TWICE a day, so a streak here climbs fast. Delivery has never been
+          # the problem in this repository; visibility of AGE has — 21 consecutive nightly runs on the
+          # drift check, 13 days on the outbox drain, 9 nights on the direct-order sweeps.
+          #
+          # 🔴 IT READS THE RUN'S CONCLUSION, WHICH IS CORRECT *HERE* AND WRONG IN THE SIBLING
+          # WORKFLOWS. Those swallow their findings, so a past run's conclusion tells you nothing and
+          # they have to ask whether a report step ran. This job really does fail, so `.conclusion ==
+          # "failure"` is the truthful, cheapest reading — one API call, no per-run walk.
+          #
+          # Scoped to runs of the SAME event: a manual dispatch fired to inspect something must not
+          # reset a scheduled streak. Best-effort by construction — it needs only `actions: read`, and
+          # any failure leaves the line out rather than breaking the alert. An alarm must never fail
+          # because the thing describing it failed. jq joins on a SPACE deliberately: a tab delimiter
+          # needs IFS=$'\t', and that sequence is a special replacement pattern in several editors.
+          STREAK_LINE=""
+          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .conclusion, .created_at] | join(" ")' 2>/dev/null || true)
+          if [ -n "$RUNS" ]; then
+            STREAK=1
+            FIRST_SEEN=""
+            while read -r rid rconc rdate; do
+              [ -z "$rid" ] && continue
+              [ "$rid" = "$RUN_ID" ] && continue
+              if [ "$rconc" = "failure" ]; then
+                STREAK=$((STREAK + 1))
+                FIRST_SEEN="$rdate"
+              else
+                break
+              fi
+            done <<< "$RUNS"
+            if [ "$STREAK" -gt 1 ]; then
+              STREAK_LINE=$(printf 'Consecutive failure #%s' "$STREAK")
+              if [ -n "$FIRST_SEEN" ]; then
+                STREAK_LINE=$(printf '%s, first seen %s' "$STREAK_LINE" "${FIRST_SEEN%%T*}")
+              fi
+              STREAK_LINE=$(printf '%s. A climbing number means nobody is acting on this.' "$STREAK_LINE")
+            fi
+          fi
+          HEADER='ATTENDANCE WEEKLY SETTLE FAILED'
+          [ -n "$STREAK_LINE" ] && HEADER=$(printf '%s\n%s' "$HEADER" "$STREAK_LINE")
+          TEXT=$(printf '%s\n\nThe twice-daily attendance job could not finish. THIS ONE TOUCHES PAY: it brings every started review week up to date, settles days left unanswered past their 2-working-day deadline to salary, and applies settled answers to payroll.\n\nThe route answers 500 when a day could not be settled, when money would be taken twice, or when a week could not be brought up to date - so a red run means one of those, or that the route never answered at all (a 401 is CRON_SECRET, a 5xx is the app).\n\nOpen the run and read the HTTP status and the response body, which are both printed. Nothing was released to any employee - only the Super Admin release does that - and the route is idempotent, so a re-run after the fix is safe.\n\nThis alarm was added 2026-09-30: until then this workflow had no notification path at all and a failed settle reached nobody.\n\n%s' "$HEADER" "$RUN_URL")
+          HTTP=$(curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${TEXT}" \
+            -o /tmp/tg-response.json -w '%{http_code}')
+          echo "telegram sendMessage HTTP ${HTTP}"
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Telegram alert FAILED to deliver (HTTP ${HTTP}). The failed attendance settle reached nobody. Response: $(cat /tmp/tg-response.json 2>/dev/null | head -c 500)"
+            exit 1
+          fi
+          echo "Telegram alert delivered."

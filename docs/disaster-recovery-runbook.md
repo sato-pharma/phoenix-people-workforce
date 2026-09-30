@@ -84,8 +84,12 @@ git push -u origin codex/revert-<short-reason>
 gh pr create --title "revert: <reason>" --body "Reverts <bad-sha> — <why>"
 ```
 
-Wait for every required check to go green (`validate`, `checks`, `mobile`, `secret-scan` —
-`gh pr checks <PR-number> --required`; don't foreground-watch, check back). Get
+Wait for every required check to go green — two of them, `validate` and `checks`
+(`gh pr checks <PR-number> --required`; don't foreground-watch, check back). Read that list live from
+`branches/main/protection/required_status_checks` rather than from this line: it has rotted five
+times. `mobile` and `secret-scan` were demoted 2026-09-29 and taken off `pull_request` in the same
+change: they block nothing and will not appear on the PR at all, so in an incident do not wait for
+them — they run on `main`, a schedule or a dispatch. Get
 explicit owner approval — merging to `main` always needs it, incident or not (AGENTS.md §6) — then:
 
 ```bash

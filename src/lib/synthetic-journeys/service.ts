@@ -88,12 +88,19 @@ function estimateRunWindow(results: JourneyResult[], meta: IngestSyntheticJourne
 function environmentFromBaseUrl(baseUrl: string): string | null {
   try {
     const host = new URL(baseUrl).host;
-    // Canonical custom domain and the Cloud Run service host both mean production.
-    if (
-      host === "phoenix-hr.satopharma.com" ||
-      host === "phoenix-hr-897559113412.europe-west3.run.app" ||
-      host.endsWith(".run.app")
-    ) {
+    // The canonical custom domain is the ONLY host that means production.
+    //
+    // The Cloud Run service-host literal and the blanket Cloud Run suffix match that used to sit
+    // beside it were removed on 2026-09-30, the cutover being long finished (AGENTS.md §3: GCP is
+    // dead, billing closed, every API answers BILLING_DISABLED). Those hostnames are not ours any
+    // more, so reading one as "production" would label a run against a host the company does not
+    // control as the real thing. Anything unrecognised now falls through to "preview", which is the
+    // honest answer — this value is a display label only (sole caller is the ingest insert below,
+    // rendered as a string by the System Issues dashboard), so nothing branches on it.
+    //
+    // 🔴 Deliberately not written out here: scripts/check-no-stale-domains.mjs scans this file for
+    // that hostname pattern, and prose quoting it would trip the very gate that keeps it gone.
+    if (host === "phoenix-hr.satopharma.com") {
       return "production";
     }
     if (host.includes("localhost") || host.includes("127.0.0.1")) return "local";

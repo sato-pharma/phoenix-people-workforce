@@ -12,6 +12,15 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 // a dependency is down so orchestration/uptime checks can react. Public + unauthenticated,
 // but it returns only booleans/status — never data or secret values. Not called per user
 // request, so a light DB ping is acceptable.
+//
+// 🔴 THIS IS RAILWAY'S DEPLOY HEALTHCHECK SINCE 2026-09-30 (`railway.json`, `healthcheckPath`), SO
+// ITS WALL CLOCK IS NOW LOAD-BEARING. Before that it was only ever read by a human, and nothing
+// bounded it: the DB ping is capped at 4s, but the workflow-registry audit below had no cap at all —
+// it inherited the admin client's 15s default AND that client's transient-PGRST002 retry (3 attempts
+// with 200/400/800ms sleeps), so a worst case ran well past a minute. A probe that can outlast the
+// platform's own healthcheck window fails the deploy for a reason that has nothing to do with the
+// deploy. Every dependency call in here is therefore bounded, and the registry audit is bounded as a
+// WHOLE (`withDeadline`) rather than per fetch, because a per-fetch cap is multiplied by the retries.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -21,6 +30,30 @@ const REQUIRED_ENV = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "PHOENIX_AUTH_SECRET",
 ];
+
+/** How long the whole registry audit gets before the probe gives up on it and answers anyway. */
+const REGISTRY_AUDIT_DEADLINE_MS = 4000;
+
+/**
+ * Resolve `work`, or reject once `ms` has passed — whichever happens first.
+ *
+ * Deliberately bounds TOTAL time rather than each attempt: the admin client retries a transient
+ * PGRST002 three times with backoff, so a 4s per-request timeout still permits ~14s of wall clock.
+ * The timer is cleared on both paths so a settled probe never holds the event loop open.
+ */
+async function withDeadline<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export async function GET() {
   const missingEnv = REQUIRED_ENV.filter((name) => !process.env[name]?.trim());
@@ -63,7 +96,11 @@ export async function GET() {
   let skippedModules: Array<{ moduleKey: string; reason: string }> = [];
   let registryCheckError: string | null = null;
   try {
-    ({ skipped: skippedModules } = await auditWorkflowRegistryModules());
+    ({ skipped: skippedModules } = await withDeadline(
+      auditWorkflowRegistryModules(),
+      REGISTRY_AUDIT_DEADLINE_MS,
+      "workflow registry audit",
+    ));
     if (skippedModules.length > 0) {
       logWarning("Workflow registry modules failed validation and are being skipped", {
         labels: { event: "workflow_registry_modules_skipped", count: String(skippedModules.length) },

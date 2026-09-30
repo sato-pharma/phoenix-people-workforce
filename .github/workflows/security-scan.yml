@@ -22,16 +22,39 @@ name: Security Scan (OSS)
 # analysis. Semgrep is restored below to close that, but on the daily schedule and on demand rather
 # than per-PR, which is what makes it affordable. The cost reasoning is on the sast-scan job.
 #
-# So this file now holds BOTH halves: secret-scan, which blocks every PR, and sast-scan, which
-# does not run on PRs at all. Read each job's own header before changing when it fires.
+# So this file now holds BOTH halves: secret-scan and sast-scan. NEITHER runs on a pull request any
+# more — secret-scan's trigger was removed 2026-09-29 (the `on:` block records why: the scan moved
+# onto the machine, into bash-guard.mjs clause C12) and sast-scan never had one. An older version of
+# this line said secret-scan "blocks every PR"; it does not, and a session reading that would believe
+# a PR gate exists where none does. Read each job's own header before changing when it fires.
 #
-# NOW BLOCKING. The original rolled out with `--exit-code 0` "for this initial rollout", which
-# meant the job could not fail no matter what it found — 40 consecutive green runs that proved
-# nothing, with findings going to an artifact nobody opened. The last run before restoration
-# reported "no leaks found", so there is no pre-existing backlog to triage and the gate can be
-# real from the start. If it ever fails, treat it as a live credential exposure: rotate the key
-# first, then scrub it — a secret that reached the remote must be considered compromised even
-# after the commit is removed.
+# 🔴 BOTH JOBS REPORT A FINDING AND STILL CONCLUDE SUCCESS (2026-09-30). Each scanning step carries
+# `continue-on-error`, because every run of this workflow is now scheduled or dispatched and its check
+# suite therefore lands on whatever commit is `main` HEAD — and Railway withholds that commit's
+# production deploy for ever when ANY suite on it fails or is cancelled (which is also why
+# `cancel-in-progress` is now false). The full account sits above `Scan for secrets`; the rule is
+# staging-hr-drift-check.yml's — "NEITHER STEP MAY FAIL ON A FINDING … Only a BROKEN check fails."
+# Both Telegram alerts are gated on their step's outcome rather than on `failure()`, which is what
+# keeps the alarms alive once the jobs go green, and secret-scan HAS an alert now: it had none at all
+# between 2026-09-29 and 2026-09-30.
+#
+# 🔴 NO LONGER BLOCKING, AND THIS PARAGRAPH USED TO CLAIM THE OPPOSITE TEN LINES ABOVE THE BLOCK THAT
+# CONTRADICTED IT. It said "NOW BLOCKING … the gate can be real from the start", which was true when
+# `--exit-code 0` was removed (the original rolled out unable to fail no matter what it found — 40
+# consecutive green runs that proved nothing, findings going to an artifact nobody opened). Two things
+# have happened since, and together they mean this job gates nothing at all:
+#
+#   2026-09-29  demoted from branch protection AND taken off `pull_request` in the same change, so it
+#               neither blocks nor even reports on a PR. gitleaks moved into `bash-guard.mjs` clause
+#               C12, which refuses the push instead — earlier and closer to the author.
+#   2026-09-30  the scanning steps gained `continue-on-error`, so a finding is REPORTED and the job
+#               still concludes success — because a red suite here withholds the production deploy of
+#               whatever commit is `main` HEAD when the schedule fires.
+#
+# 🔴 SO NOTHING STOPS A SECRET AT THE MERGE, AND THAT IS THE POINT TO CARRY AWAY: this is a detector,
+# not a gate. If it fires, treat it as a live credential exposure — ROTATE the key first, then scrub
+# it; a secret that reached the remote must be considered compromised even after the commit is
+# removed — and do not assume the finding was caught before the code shipped, because it was not.
 
 on:
   # 🔴 NOT ON pull_request SINCE 2026-09-29, AND NOT BECAUSE SECRET SCANNING WAS DROPPED.
@@ -51,9 +74,17 @@ on:
     - cron: "17 5 * * *" # daily 05:17 UTC, offset from the 07:00 migration-drift cron
   workflow_dispatch:
 
+# 🔴 cancel-in-progress WENT FALSE ON 2026-09-30, AND IT IS THE SAME RULE AS THE `continue-on-error`
+# ON THE TWO SCANNING STEPS BELOW. A CANCELLED check suite withholds a production deploy exactly as a
+# red one does (AGENTS.md §2.3: "red, cancelled, or still queued = no deploy"), and since this
+# workflow no longer runs on pull_request its runs are scheduled or dispatched — so its suite lands on
+# whatever commit is `main` HEAD at the time, never on a PR head. Cancelling one therefore cost that
+# commit its production deploy, silently, with nothing turning red. There was little to supersede
+# anyway: the daily run is once a day, and a dispatch fired against a branch is a different `github.ref`
+# and so a different concurrency group already.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -64,9 +95,16 @@ env:
   SEMGREP_VERSION: "1.171.0"
 
 jobs:
-  # This `runs-on` is byte-identical to ci.yml's four and is pinned that way — `secret-scan` is a
-  # REQUIRED check, so it must move with them and never separately. The five conditions are
-  # explained once, above ci.yml's `validate` job. Do not edit one copy alone.
+  # This `runs-on` is byte-identical to the four in ci.yml and is pinned that way by
+  # `tests/ci-runner-switch.test.ts`, which requires exactly six identical copies across the two
+  # files. Do not edit one copy alone.
+  #
+  # 🔴 Corrected 2026-09-30: this comment used to justify the pin by saying `secret-scan` is "a
+  # REQUIRED check", and it is not — it was demoted from branch protection on 2026-09-29 and taken
+  # off `pull_request` in the same change. The pin still stands, for a different reason: the six
+  # lines are one switch, and a runner label that moves on five of them and not the sixth splits the
+  # fleet silently. The reason a comment gives for a rule outlives the rule, so it is worth keeping
+  # accurate — a session reading the old text would also have believed this job gates a merge.
   secret-scan:
     runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 10
@@ -94,7 +132,38 @@ jobs:
       #
       # --redact: findings are reported by rule, file and line, never with the secret value, so
       # the run log and the summary below can never themselves become the leak.
+      #
+      # 🔴 continue-on-error PLUS AN id (added 2026-09-30), AND THIS IS THE ACCOUNT FOR BOTH SCANNING
+      # STEPS IN THIS FILE. gitleaks and Semgrep both only READ the checked-out tree — the SARIF goes
+      # to an artifact and nothing is written anywhere — so the only effect these steps had on the
+      # world besides their annotations was their exit code, and that exit code was expensive. This
+      # workflow has not run on pull_request since 2026-09-29, so every run is scheduled or dispatched
+      # and its check suite attaches to whatever commit is `main` HEAD at the time. Railway's
+      # production deployment trigger has Wait-for-CI on (`checkSuites: true`, read live off the
+      # trigger 2026-09-30), so ANY failed or cancelled suite on that commit marks its production
+      # deploy `inactive` — never `success`, permanently, within seconds of the suite concluding, with
+      # `ci.yml` fully green. Three production deploys were lost that way on 2026-09-30.
+      #
+      # So a committed-secret finding cost a production deploy to announce itself. That is backwards
+      # twice over: a leaked key needs ROTATION by a human, which no red check performs, and blocking
+      # the deploy pipeline is exactly the wrong thing to do while somebody is trying to ship the
+      # scrub. The rule is already written in staging-hr-drift-check.yml's header: "NEITHER STEP MAY
+      # FAIL ON A FINDING … Only a BROKEN check fails."
+      #
+      # 🔴 WHERE THE FINDING/BROKEN LINE FALLS HERE, PRECISELY, BECAUSE IT IS NOT WHERE YOU WOULD
+      # GUESS. `Check out repository` and `Install gitleaks` above deliberately keep NO
+      # `continue-on-error`: a failed download means nothing was measured at all, and a job that
+      # concluded success on that is the silent-green this file exists to prevent. Inside this step,
+      # however, the SCAN_STATUS guard's "gitleaks ran and produced nothing" case is now reported
+      # rather than thrown, exactly like a finding — it still `exit 1`s, so the STEP shows red and
+      # both the report step and the Telegram alert below fire on it (they key on this step's
+      # outcome, which does not distinguish the two). That is deliberate: a scan that did not run
+      # must reach a human, and it does, but it must not be able to withhold a deploy either.
+      # If the two ever need to be told apart, split them into two steps rather than removing
+      # `continue-on-error` from this one.
       - name: Scan for secrets (gitleaks)
+        id: gitleaks
+        continue-on-error: true
         run: |
           set -euo pipefail
           set +e
@@ -132,6 +201,132 @@ jobs:
           name: gitleaks-report
           path: gitleaks-report.sarif
           retention-days: 14
+
+      # The durable record, written OUTSIDE the check suite's verdict — a job summary a human can read
+      # on the run page, since the job's own conclusion is deliberately no longer the signal.
+      #
+      # It must ALWAYS exit 0. Its `::error::` puts an annotation on the run page, which is a UI
+      # signal and not a conclusion. The finding count itself is already in the scanning step's own
+      # summary block; what this adds is the ORDER OF OPERATIONS, which is the part that gets wrong at
+      # 4am: rotate first, scrub second. A key that reached the remote is compromised whatever the
+      # tree looks like afterwards.
+      - name: Report the secret-scan finding without withholding the deploy
+        if: ${{ always() && steps.gitleaks.outcome == 'failure' }}
+        run: |
+          set -uo pipefail
+
+          {
+            printf '## Secret scan finding\n\n'
+            printf 'gitleaks either found something or did not run — read the scanning step above, which prints the count and the reason.\n\n'
+            printf '**ROTATE THE CREDENTIAL FIRST.** Anything pushed to the remote must be treated as compromised, and removing the commit does not undo that. Scrub the tree second. The `gitleaks-report` artifact on this run carries rule, file and line, with values redacted.\n\n'
+            printf 'This job concludes **success on purpose**. A failed or cancelled check suite on `main` HEAD makes Railway withhold that commit'"'"'s production deploy permanently — never `success`, seconds after the suite concludes, with `ci.yml` green — so an alarm that went red would block the very pipeline somebody needs in order to ship the scrub. The finding is in the failed step above, in the annotation, and in the Telegram alert.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::error::Secret scan finding — ROTATE the credential first, then scrub the tree. Read the failed scanning step above. This job still concludes success so its check suite cannot withhold a production deploy."
+
+      # ── THE ALARM THIS JOB NEVER HAD ──────────────────────────────────────────────────
+      # 🔴 ADDED 2026-09-30, BECAUSE UNTIL TODAY A SCHEDULED SECRET-SCAN FINDING REACHED NOBODY AT
+      # ALL. The sast-scan job below carries this step and this job did not, and the comment that
+      # justified the asymmetry said secret-scan "runs on pull_request, where GitHub notifies on the
+      # PR". That was true when it was written and went STALE on 2026-09-29, when the `pull_request`
+      # trigger was removed from this workflow (see the `on:` block's own note — the scan moved onto
+      # the machine, into bash-guard.mjs clause C12). From that day this job ran ONLY on schedule and
+      # dispatch, and a schedule-triggered failure notifies nobody by construction: GitHub emails the
+      # run author, and a cron run has none. So the only automated secret detection on a private repo
+      # holding production service-role keys had no way of telling anyone what it found.
+      #
+      # That is not a hypothetical shape in this repository. migration-drift-check.yml detected six
+      # anon-readable tables on 2026-08-06 and repeated it on 08-07 and 08-08 with every run red, and
+      # it was found on 08-09 by an unrelated manual audit — three days and 412 exposed customer names
+      # later — for exactly this reason. sast-scan's own header records the same thing costing eight
+      # days in September.
+      #
+      # Copied from sast-scan's step below rather than invented, so the three hard-won constraints it
+      # carries travel with it: NO parse_mode (a lone underscore once returned HTTP 400 and lost the
+      # whole message), capture the BODY and not just the status (a silent non-2xx once reported
+      # success while delivering nothing), and continue-on-error PLUS exit 1 (a Telegram outage must
+      # never mask or manufacture a security verdict, but a broken alarm must never look healthy).
+      #
+      # 🔴 GATED ON THE STEP OUTCOME, NOT ON `failure()`. The scanning step carries
+      # `continue-on-error`, so this job concludes success even when it finds a secret and `failure()`
+      # is permanently false — a `failure()` gate here would have arrived stillborn.
+      - name: Notify Telegram on failure
+        if: ${{ always() && steps.gitleaks.outcome == 'failure' }}
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+          WF_FILE: security-scan.yml
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. The secret scan FAILED and reached nobody, which is the condition this step exists to prevent."
+            exit 0
+          fi
+          # The streak reads a STEP, not the run's conclusion, and it must: this job concludes success
+          # on a finding now, so `.conclusion == "failure"` is permanently false and the number would
+          # pin itself at 1 for ever. The report step it asks about is THIS job's, and it is named
+          # differently from sast-scan's on purpose — both jobs live in this one workflow file, so a
+          # shared step name would make each job count the other's findings as its own.
+          #
+          # Scoped to the same event so a manual dispatch cannot reset a nightly streak; counting
+          # every event once hid a 21-night run at "6". Best-effort by construction: any failure here
+          # leaves the line out rather than breaking the alert, and it BREAKS on the first clean run,
+          # so the normal case is one extra API call.
+          STREAK_LINE=""
+          REPORT_STEP="Report the secret-scan finding without withholding the deploy"
+          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .created_at] | join(" ")' 2>/dev/null || true)
+          if [ -n "$RUNS" ]; then
+            STREAK=1
+            FIRST_SEEN=""
+            while read -r rid rdate; do
+              [ -z "$rid" ] && continue
+              [ "$rid" = "$RUN_ID" ] && continue
+              # 🔴 `jq --arg` THROUGH A PIPE, NEVER `gh api --jq --arg` — `gh api` HAS NO `--arg` FLAG.
+              # `gh api --jq` takes a single query string and nothing else, so `--jq --arg s "$X" '<query>'`
+              # makes gh read `--arg` as the query and then choke on three extra positional arguments. The
+              # command fails, `|| true` swallows it, `rconc` is empty, and the streak breaks at 1 on EVERY
+              # run — silently, for ever. That is precisely the invisible-streak defect this block exists to
+              # prevent, reintroduced by the fix for it. Confirmed against `gh api --help` 2026-09-30: the
+              # flags are --cache, -F, -H, --hostname, -i, --input, -q/--jq, -X, --paginate, -p, -f, --silent,
+              # --slurp, -t, --verbose. No --arg. Pipe to real jq instead, which does have it; jq is
+              # preinstalled on ubuntu-latest and every other step in this file already relies on that.
+              rconc=$(gh api "repos/${REPO}/actions/runs/${rid}/jobs" 2>/dev/null | jq -r --arg s "$REPORT_STEP" '[.jobs[]?.steps[]? | select(.name == $s)] | .[0].conclusion // "absent"' 2>/dev/null || true)
+              [ -z "$rconc" ] && rconc="absent"
+              if [ "$rconc" != "skipped" ] && [ "$rconc" != "absent" ] && [ -n "$rconc" ]; then
+                STREAK=$((STREAK + 1))
+                FIRST_SEEN="$rdate"
+              else
+                break
+              fi
+            done <<< "$RUNS"
+            if [ "$STREAK" -gt 1 ]; then
+              STREAK_LINE=$(printf 'Consecutive failure #%s' "$STREAK")
+              if [ -n "$FIRST_SEEN" ]; then
+                STREAK_LINE=$(printf '%s, first seen %s' "$STREAK_LINE" "${FIRST_SEEN%%T*}")
+              fi
+              STREAK_LINE=$(printf '%s. A climbing number means nobody is acting on this.' "$STREAK_LINE")
+            fi
+          fi
+          HEADER='SECRET SCAN FAILED (gitleaks)'
+          [ -n "$STREAK_LINE" ] && HEADER=$(printf '%s\n%s' "$HEADER" "$STREAK_LINE")
+          TEXT=$(printf '%s\n\nThe daily secret scan over main is red. This is the ONLY automated secret detection on this repository - GitHub Advanced Security is not purchasable on a personal account - and the tree it scans holds production Supabase service-role keys.\n\nROTATE FIRST, SCRUB SECOND. A key that reached the remote is compromised whatever the tree looks like afterwards; removing the commit does not undo it.\n\nIt is either a real finding or a scan that did not run. Open the run, read the Findings count, and take the gitleaks-report artifact for rule, file and line (values are redacted).\n\nThis alarm was added 2026-09-30: this job lost its pull_request trigger the day before, and from then until now a scheduled finding reached nobody at all.\n\n%s' "$HEADER" "$RUN_URL")
+          HTTP=$(curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${TEXT}" \
+            -o /tmp/tg-response.json -w '%{http_code}')
+          echo "telegram sendMessage HTTP ${HTTP}"
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Telegram alert FAILED to deliver (HTTP ${HTTP}). The secret scan result reached nobody. Response: $(cat /tmp/tg-response.json 2>/dev/null | head -c 500)"
+            exit 1
+          fi
+          echo "Telegram alert delivered."
 
   # SAST. Restored 2026-09-08 at the owner's instruction, after the hosted code-quality scanner
   # that had been covering this ground was removed the same day, leaving the repo with no static
@@ -193,7 +388,21 @@ jobs:
       - name: Install Semgrep
         run: pip install "semgrep==${SEMGREP_VERSION}"
 
+      # 🔴 continue-on-error PLUS AN id, for the reason spelled out above `Scan for secrets` in the
+      # secret-scan job: this job only ever runs on schedule or dispatch, so its check suite attaches
+      # to whatever commit is `main` HEAD, and Railway withholds that commit's production deploy for
+      # ever when ANY suite on it fails. Semgrep reads the tree and writes its SARIF to an artifact —
+      # nothing else — so the exit code was this step's only other effect on the world, and a Semgrep
+      # finding is not worth a lost production deploy.
+      #
+      # The same nuance applies as over there: the "report with no runs" guard below, which catches a
+      # scan that did not execute, is now reported rather than thrown alongside a real finding. Both
+      # reach a human through the report step and the alert; neither can withhold a deploy. `Set up
+      # Python` and `Install Semgrep` above keep NO `continue-on-error` — if the install failed,
+      # nothing was measured.
       - name: SAST scan (Semgrep)
+        id: semgrep
+        continue-on-error: true
         run: |
           set -euo pipefail
           semgrep scan \
@@ -245,6 +454,29 @@ jobs:
           path: semgrep-report.sarif
           retention-days: 14
 
+      # The durable record, written OUTSIDE the check suite's verdict — a job summary a human can read
+      # on the run page, since the job's own conclusion is deliberately no longer the signal. It must
+      # ALWAYS exit 0; the `::error::` is a run-page annotation, not a conclusion.
+      #
+      # What it adds over the scanning step's own count is the SUPPRESSION RULE, which is the part
+      # that goes wrong under pressure: the way to clear a finding is at the line, with a reason, never
+      # by silencing the job. Semgrep still emits a suppressed result into the SARIF, so the count
+      # above already filters them and reports the suppressed number separately — a rising suppression
+      # count is meant to stay visible rather than becoming the quiet way to make this job pass.
+      - name: Report the SAST finding without withholding the deploy
+        if: ${{ always() && steps.semgrep.outcome == 'failure' }}
+        run: |
+          set -uo pipefail
+
+          {
+            printf '## SAST finding\n\n'
+            printf 'Semgrep either found something or did not run — read the scanning step above, which prints the finding count, the suppressed count and the reason.\n\n'
+            printf 'This is the only vulnerability scanner this repository has: GitHub Advanced Security is not purchasable on a personal account and CodeQL is disabled. Fix it at the line, or suppress it AT THE LINE with a `nosemgrep` comment carrying the reason (see `device-user-mapping-manager.tsx` for the shape). Do not silence the job. The `semgrep-report` artifact on this run carries rule, file and line.\n\n'
+            printf 'This job concludes **success on purpose**. A failed or cancelled check suite on `main` HEAD makes Railway withhold that commit'"'"'s production deploy permanently — never `success`, seconds after the suite concludes, with `ci.yml` green — so an alarm that went red to announce a finding would cost a production deploy to do it. The finding is in the failed step above, in the annotation, and in the Telegram alert.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::error::SAST finding — fix at the line or suppress at the line with a reason. Read the failed scanning step above. This job still concludes success so its check suite cannot withhold a production deploy."
+
       # ── THE ALARM THIS JOB WAS ALWAYS SUPPOSED TO HAVE ────────────────────────────────
       # The header above says the value of a red daily run is that "a regression surfaces within a
       # day, with a notification". The notification was never built, and it cost exactly what you
@@ -252,8 +484,15 @@ jobs:
       # THREE REAL blocking Semgrep findings, and nobody was told. They were eventually fixed by
       # #4441 and #4445 (09-26 reads 0 findings over 448 rules on 6,853 files) — but for eight days
       # the only vulnerability scanner this repository has was red, and its verdict lived in a job
-      # summary nobody opens. secret-scan needs no alarm: it runs on pull_request, where GitHub
-      # notifies on the PR. This job runs ONLY on schedule and dispatch, so silence is total.
+      # summary nobody opens. This job runs ONLY on schedule and dispatch, so silence is total.
+      #
+      # 🔴 THIS COMMENT USED TO SAY "secret-scan needs no alarm: it runs on pull_request, where GitHub
+      # notifies on the PR", AND THAT WENT STALE ON 2026-09-29 WHEN THE `pull_request` TRIGGER WAS
+      # REMOVED FROM THIS WORKFLOW. From that day secret-scan was in exactly the position described
+      # above — schedule and dispatch only, total silence — and a scheduled secret finding reached
+      # nobody at all. It has its own copy of this step now (2026-09-30); the line is corrected here
+      # rather than deleted because a reader who remembers the old justification needs to know it
+      # expired, and why.
       #
       # Copied deliberately from migration-drift-check.yml's step rather than invented: that one has
       # been delivering for weeks and carries three hard-won constraints. Do not undo them.
@@ -268,8 +507,16 @@ jobs:
       # something must not reset a nightly streak; counting every event once hid a 21-night run at
       # "6". Age is the thing that goes unseen here, not delivery — this check's own history proves
       # delivery was never the problem.
+      #
+      # 🔴 GATED ON THE STEP OUTCOME, NOT ON `failure()` — THE MOST IMPORTANT LINE IN THE 2026-09-30
+      # CHANGE. The Semgrep step now carries `continue-on-error`, so this job concludes success even
+      # when it finds something, which makes `failure()` permanently false. Left as it was, this step
+      # would simply never run again: the fix for a withheld production deploy would have silently
+      # deleted the alarm instead, putting this job straight back into the eight-day blind spot the
+      # block above records. A lost deploy is carried by the next merge; a scanner nobody hears from
+      # is not.
       - name: Notify Telegram on failure
-        if: ${{ failure() }}
+        if: ${{ always() && steps.semgrep.outcome == 'failure' }}
         continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -285,15 +532,39 @@ jobs:
             echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. The SAST scan FAILED and reached nobody, which is the condition this step exists to prevent."
             exit 0
           fi
+          # 🔴 THE STREAK READS A STEP, NOT THE RUN'S CONCLUSION, AND IT HAD TO CHANGE WITH THE
+          # `continue-on-error` ADDED 2026-09-30. This job now concludes success on a finding, so
+          # `.conclusion == "failure"` — what this counted until then — is permanently false and the
+          # number would pin itself at 1 for ever. Age is the ONLY thing this line exists to surface
+          # (eight of ten September nights, per the block above), so losing it as a side-effect of
+          # fixing the withheld deploy would have traded one blind spot for the other.
+          #
+          # The report step it asks about is THIS job's, and it is named differently from
+          # secret-scan's on purpose — both jobs live in this one workflow file, so a shared step name
+          # would make each job count the other's findings as its own. `absent` covers runs older
+          # than this change and correctly ends the streak. It BREAKS on the first clean run, so the
+          # normal case is one extra API call.
           STREAK_LINE=""
-          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .conclusion, .created_at] | join(" ")' 2>/dev/null || true)
+          REPORT_STEP="Report the SAST finding without withholding the deploy"
+          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .created_at] | join(" ")' 2>/dev/null || true)
           if [ -n "$RUNS" ]; then
             STREAK=1
             FIRST_SEEN=""
-            while read -r rid rconc rdate; do
+            while read -r rid rdate; do
               [ -z "$rid" ] && continue
               [ "$rid" = "$RUN_ID" ] && continue
-              if [ "$rconc" = "failure" ]; then
+              # 🔴 `jq --arg` THROUGH A PIPE, NEVER `gh api --jq --arg` — `gh api` HAS NO `--arg` FLAG.
+              # `gh api --jq` takes a single query string and nothing else, so `--jq --arg s "$X" '<query>'`
+              # makes gh read `--arg` as the query and then choke on three extra positional arguments. The
+              # command fails, `|| true` swallows it, `rconc` is empty, and the streak breaks at 1 on EVERY
+              # run — silently, for ever. That is precisely the invisible-streak defect this block exists to
+              # prevent, reintroduced by the fix for it. Confirmed against `gh api --help` 2026-09-30: the
+              # flags are --cache, -F, -H, --hostname, -i, --input, -q/--jq, -X, --paginate, -p, -f, --silent,
+              # --slurp, -t, --verbose. No --arg. Pipe to real jq instead, which does have it; jq is
+              # preinstalled on ubuntu-latest and every other step in this file already relies on that.
+              rconc=$(gh api "repos/${REPO}/actions/runs/${rid}/jobs" 2>/dev/null | jq -r --arg s "$REPORT_STEP" '[.jobs[]?.steps[]? | select(.name == $s)] | .[0].conclusion // "absent"' 2>/dev/null || true)
+              [ -z "$rconc" ] && rconc="absent"
+              if [ "$rconc" != "skipped" ] && [ "$rconc" != "absent" ] && [ -n "$rconc" ]; then
                 STREAK=$((STREAK + 1))
                 FIRST_SEEN="$rdate"
               else

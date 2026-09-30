@@ -82,7 +82,7 @@ status, give it its own line.
 - **git "Authentication failed" can be the credential HELPER going OOM, not a bad token** — `git-auth-failed-can-be-the-credential-helper-going-oom`
 - **F:\PHX backup is the disaster-recovery set, and a bundle restore silently returns…** — `phx-backup-disaster-recovery-set`
 - **CI jobs failing in SECONDS mean billing, not code.** — `ci-jobs-failing-in-seconds-means-billing-not-code`
-- **secret-scan is a required check — there are 4 — and it is the one that never runs…** — `github-personal-account-no-ghas-oss-scanning`
+- **secret-scan is NOT a required check — demoted 2026-09-29, and off `pull_request` since; a personal account still has no GHAS** — `github-personal-account-no-ghas-oss-scanning`
 - **gh pr checks LAGS behind the real job state.** — `gh-pr-checks-lags-behind-the-real-job-state`
 - **check-runs: 0 also means CONFLICTED** — `a-conflicted-pr-runs-no-ci-at-all`
 - **ONE new hub page trips FOUR separate CI gates.** — `adding-a-hub-page-trips-four-separate-ci-gates`

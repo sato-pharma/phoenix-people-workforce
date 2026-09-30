@@ -11,6 +11,12 @@
 // hard REJECT (a forged, replayed or absent token), but a NETWORK failure reaching Google fails OPEN
 // (logged): a genuine applicant must not be lost to a Google outage, and abuse at that moment is
 // still rate-limited. So the only thing that turns applicants away is Google itself saying "no".
+//
+// 🔴 THE SKIP IS NOW LOGGED (2026-09-30). It used to return { ok: true, skipped: true } with no log
+// and no metric, and the sole caller (app/api/public/apply/route.ts) reads only `ok` — so with the
+// secret absent from production the public form's bot protection was OFF and nothing anywhere said
+// so. Still fails OPEN, deliberately: making it fail closed would take the live careers form down
+// the moment it shipped. The change is only that the state is now visible.
 
 import { logError } from "@/lib/observability/log";
 
@@ -24,12 +30,26 @@ function minScore(): number {
   return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : DEFAULT_MIN_SCORE;
 }
 
+// Logged ONCE per process, not once per applicant: an unset secret is a standing CONFIGURATION
+// state, not an event, so a line per submission would be noise that buries it — while one line per
+// container start is enough for `railway logs | grep recaptcha_secret_unset` to answer "is the
+// public form protected right now?", which is the question that had no answer at all before.
+let loggedMissingSecret = false;
+
 export async function verifyRecaptcha(
   token: string | null | undefined,
   remoteIp?: string | null,
 ): Promise<RecaptchaResult> {
   const secret = process.env.RECRUITMENT_APPLY_RECAPTCHA_SECRET?.trim();
-  if (!secret) return { ok: true, skipped: true };
+  if (!secret) {
+    if (!loggedMissingSecret) {
+      loggedMissingSecret = true;
+      logError("reCAPTCHA is not configured — the public apply endpoint is accepting submissions with no bot check", {
+        labels: { event: "recaptcha_secret_unset" },
+      });
+    }
+    return { ok: true, skipped: true };
+  }
 
   const response = String(token ?? "").trim();
   if (!response) return { ok: false, reason: "missing_token" };

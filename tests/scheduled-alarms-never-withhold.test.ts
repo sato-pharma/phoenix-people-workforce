@@ -1,0 +1,202 @@
+// A scheduled alarm must never be able to withhold a production deploy.
+//
+// WHY THIS EXISTS, MEASURED. A production deploy is gated on that commit's check suites (Railway
+// "Wait for CI" — the production trigger reads `checkSuites: true`, confirmed live off Railway on
+// 2026-09-30). Railway withholds the deploy when ANY suite on the commit fails OR is cancelled, and a
+// withheld deploy goes `in_progress -> inactive`, never reaches `success`, and never resurrects: five
+// seconds after the bad suite concludes, permanently, with `ci.yml` green before and after.
+//
+// A `schedule:` run always runs on the default branch, so its suite lands on whatever commit is
+// `main` HEAD when it fires — a commit chosen purely by timing, belonging to somebody else's merge.
+// That cannot be fixed by moving the trigger. So an alarm that goes red pays for its own honesty with
+// a production deploy, and the worst case is circular: deploy-drift-check.yml's job is to notice that
+// production is stale, and its red suite made production staler. That happened to cd9e0be03 on
+// 2026-09-27, and staging-hr-drift-check.yml failing to parse froze production for nearly two hours
+// on 2026-09-29 (#4778). Three more deploys were lost this way on 2026-09-30.
+//
+// The rule this repo already states, in staging-hr-drift-check.yml's own header: "NEITHER STEP MAY
+// FAIL ON A FINDING … Only a BROKEN check fails." A finding is reported — annotation, job summary,
+// Telegram — while the job concludes success. A broken check (checkout failed, pnpm install failed)
+// still fails, because that is not a finding, it is the alarm itself not working.
+//
+// 🔴 THIS TEST PINS THE INVARIANT, NOT THE SPELLING. It deliberately does not hardcode step ids or
+// step names: those are free to change, and a test that pinned them would go red on a rename while
+// staying green on the thing that actually matters. What it asserts is that each alarm still has a
+// step that cannot fail the job, and that its alert is NOT gated on `failure()` alone.
+//
+// That second assertion is the subtle one and the reason this file is worth its bytes. The moment a
+// job stops concluding failure, `if: ${{ failure() }}` is permanently false — so the naive version of
+// this fix silently DELETES the alarm while looking like it hardened it. Trading a withheld deploy for
+// a lost alert is worse than the bug.
+//
+// Each invariant is asserted SEPARATELY with its own message. A single combined regex would make
+// every clause after the first unreachable — the defect that hid a dead assertion in
+// tests/next-build-cpu-cap.test.ts on 2026-09-27.
+
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+/**
+ * The alarms that must never withhold a deploy: every workflow with a `schedule:` trigger whose
+ * failure modes are FINDINGS rather than writes.
+ *
+ * 🔴 attendance-weekly-digest.yml is ABSENT ON PURPOSE and must stay absent — see EXCLUDED below.
+ */
+const ALARMS = [
+  "deploy-drift-check.yml",
+  "migration-drift-check.yml",
+  "origin-certificate-check.yml",
+  "security-scan.yml",
+  "synthetic-journeys.yml",
+  "staging-hr-drift-check.yml",
+  // Added 2026-09-30 in the same change as this test. It was built to this pattern from its first
+  // commit rather than converted into it — a ninth scheduled workflow that could go red would have
+  // paid for a secret check with the production deploys the secret check protects.
+  "secret-drift-check.yml",
+];
+
+/**
+ * The one scheduled workflow that MUST still be able to fail red, and why.
+ *
+ * attendance-weekly-digest.yml settles unanswered attendance days to salary and applies them to
+ * payroll. A write that failed halfway is not a finding to report — it is real money in an unknown
+ * state, and it must be impossible to miss. Converting it would be the obvious-looking tidy-up that
+ * makes a failed payroll run conclude green, so its exclusion is asserted rather than left to a
+ * comment.
+ */
+const EXCLUDED = "attendance-weekly-digest.yml";
+
+function workflow(file: string): string {
+  return readFileSync(resolve(".github/workflows", file), "utf8");
+}
+
+/**
+ * The block of YAML belonging to one named step, up to the next step at the same indent.
+ *
+ * Needed because "does this file contain `continue-on-error`" is the WRONG question. Seven of the
+ * eight instances in this repo sit on a NOTIFY step, where it is correct and load-bearing: a Telegram
+ * delivery that fails must not mask the real failure it was reporting. Only its presence on a step
+ * that does the WORK changes whether a finding can fail the job. An unscoped assertion here failed a
+ * workflow that was right — the test was wrong, not the YAML.
+ */
+function step(source: string, file: string, name: string): string {
+  const start = source.indexOf(`      - name: ${name}`);
+  assert.notEqual(start, -1, `${file} no longer has a step named "${name}".`);
+  const rest = source.slice(start + 1);
+  const nextAt = rest.indexOf("\n      - name: ");
+  return nextAt === -1 ? rest : rest.slice(0, nextAt);
+}
+
+export function runScheduledAlarmsNeverWithholdTests() {
+  for (const file of ALARMS) {
+    const source = workflow(file);
+
+    // 1. It is only in scope while it is actually scheduled. If a `schedule:` is ever removed the
+    //    workflow stops attaching suites to main HEAD and this whole class evaporates for it — but
+    //    then the list above is stale, and a stale list is how a real alarm quietly loses its cover.
+    assert.match(
+      source,
+      /^\s*schedule:\s*$/m,
+      `🔴 ${file} is listed here as a scheduled alarm but no longer has a schedule: trigger. Either ` +
+        "remove it from ALARMS, or restore the trigger — a list that names workflows which are no " +
+        "longer scheduled stops describing the actual risk surface.",
+    );
+
+    // 2. At least one step must be unable to fail the job. This single property is what stops the
+    //    alarm withholding the deploy it is reporting on.
+    assert.match(
+      source,
+      /^\s*continue-on-error:\s*true\s*$/m,
+      `🔴 ${file} has no step with \`continue-on-error: true\`, so a finding fails the job. That ` +
+        "failed suite lands on whatever commit is main HEAD when the schedule fires, and Railway " +
+        "then withholds that commit's production deploy permanently.",
+    );
+
+    // 3. A step that cannot fail the job needs an id, because the alert and the report are gated on
+    //    its outcome. Without one there is nothing to gate on and the failure goes completely quiet.
+    assert.match(
+      source,
+      /^\s*id:\s*\S+\s*$/m,
+      `🔴 ${file} has a continue-on-error step but no \`id:\` anywhere. The alert has to be gated on ` +
+        "`steps.<id>.outcome`, so with no id the only options are a silent failure or a red job.",
+    );
+
+    // 4. THE LOAD-BEARING ONE. Something must be gated on a per-STEP signal rather than on
+    //    `failure()`. Once the job concludes success, `failure()` never fires again — so a workflow
+    //    that still gates its alert that way has not been hardened, it has been muted.
+    //
+    //    Two spellings are accepted because this repo already uses both, and both are correct:
+    //    `steps.<id>.outcome == 'failure'` (synthetic-journeys.yml, and the conversions modelled on
+    //    it), and `steps.<id>.outputs.<name>` where the step itself triages its exit code and writes
+    //    a flag to $GITHUB_OUTPUT (staging-hr-drift-check.yml, which distinguishes exit 2 "finding"
+    //    from any other code "the check is broken"). Insisting on the first would have failed a
+    //    workflow that already implements this invariant properly — the test would have been wrong,
+    //    not the workflow.
+    assert.ok(
+      /steps\.[A-Za-z0-9_-]+\.outcome\s*==\s*'failure'/.test(source)
+        || /steps\.[A-Za-z0-9_-]+\.outputs\.[A-Za-z0-9_-]+/.test(source),
+      `🔴 ${file} gates nothing on a per-step signal — neither \`steps.<id>.outcome == 'failure'\` ` +
+        "nor a `steps.<id>.outputs.<flag>` from its own exit-code triage. If its alert is still " +
+        "gated on `failure()`, that condition is permanently false now the job concludes success: " +
+        "the alarm is silent, which is worse than the withheld deploy this change was meant to fix.",
+    );
+
+    // 5. The failure must remain visible in the Actions UI. With the conclusion deliberately green,
+    //    the annotation is the only thing a human scanning the run list would see.
+    assert.match(
+      source,
+      /::error::/,
+      `🔴 ${file} no longer emits an ::error:: annotation. Its job is deliberately green on a ` +
+        "finding, so without the annotation a failed run is indistinguishable from a clean one.",
+    );
+
+    // 6. A CANCELLED suite withholds a deploy exactly as a red one does. Several of these sleep in a
+    //    grace window where a newer run would supersede them, so cancel-in-progress is the same bug
+    //    wearing different clothes — and it is easy to add back without thinking about deploys.
+    if (/^concurrency:/m.test(source)) {
+      assert.doesNotMatch(
+        source,
+        /cancel-in-progress:\s*true/,
+        `🔴 ${file} sets \`cancel-in-progress: true\`. AGENTS.md §2.3: "red, cancelled, or still ` +
+          'queued = no deploy". A superseded run leaves a cancelled suite on main HEAD, which ' +
+          "withholds that commit's production deploy just as a failure would.",
+      );
+    }
+  }
+
+  // 7. The payroll writer must still be able to fail. This is the assertion that stops a later
+  //    session applying the pattern above uniformly and making a half-finished payroll write conclude
+  //    green.
+  assert.ok(
+    !ALARMS.includes(EXCLUDED),
+    `🔴 ${EXCLUDED} has been added to ALARMS. It settles attendance days to SALARY and applies them ` +
+      "to payroll — a failed write there is real money in an unknown state, not a finding to " +
+      "report, and it must stay red. Remove it from the list.",
+  );
+
+  const digest = workflow(EXCLUDED);
+
+  // Scoped to the step that does the WORK. `continue-on-error` on the notify step is correct and
+  // load-bearing — a Telegram delivery that fails must not mask the payroll failure it was reporting —
+  // so the file-wide form of this assertion failed a workflow that was right.
+  const settle = step(digest, EXCLUDED, "Bring the review weeks up to date");
+  assert.doesNotMatch(
+    settle,
+    /^\s*continue-on-error:\s*true\s*$/m,
+    `🔴 ${EXCLUDED}'s settle step now has \`continue-on-error: true\`. That step writes attendance ` +
+      "days to SALARY and applies them to payroll: a half-finished write is real money in an " +
+      "unknown state, not a finding to report. Whatever this was meant to fix, it must not be fixed " +
+      "by making a broken payroll run conclude green.",
+  );
+
+  // 8. …but it must still ALERT. It was the one workflow here with no notification path at all, which
+  //    meant a failed payroll settle reached nobody. Staying red is not the same as being noticed.
+  assert.match(
+    digest,
+    /TELEGRAM_BOT_TOKEN/,
+    `🔴 ${EXCLUDED} has no Telegram alert. It writes attendance days to salary, and before ` +
+      "2026-09-30 a failure reached nobody at all — red in a tab no one was watching. Failing " +
+      "loudly requires something that is actually loud.",
+  );
+}

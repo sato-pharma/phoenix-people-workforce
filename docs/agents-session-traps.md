@@ -302,21 +302,29 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
 **CI and PRs**
 
 - **CI jobs failing in SECONDS mean billing, not code.** `ci-jobs-failing-in-seconds-means-billing-not-code`
-- **`secret-scan` is a required check — there are 4 total** (`validate`, `checks`, `mobile`,
-  `secret-scan`), because a personal account has no GHAS/OSS scanning.
-  `github-personal-account-no-ghas-oss-scanning`
-  🔴 **THE LIST HAS ROTTED FOUR TIMES AND THE COUNT IS THE PART THAT ROTS: 4 → 5 (2026-08) → 6
+- 🔴 **THERE ARE TWO REQUIRED CHECKS — `validate` and `checks` — AND `secret-scan` IS NO LONGER ONE
+  OF THEM.** It is still this repo's only automated secret detection, because a personal account has
+  no GHAS/OSS scanning. `github-personal-account-no-ghas-oss-scanning`
+  🔴 **THE LIST HAS ROTTED FIVE TIMES AND THE COUNT IS THE PART THAT ROTS: 4 → 5 (2026-08) → 6
   (2026-09-18, `test` and `mobile`) → 4 (2026-09-27, #4527 folded `lint`+`typecheck`+`test` into one
-  `checks` job).** `lint`, `typecheck` and `test` are now STEPS of `checks`, not check names, so a
-  session waiting on them by name waits for something that can never report. Every time this changed,
-  the docs lagged: after 09-27 nineteen places in this repo still said six, including the `ship` and
-  `verify-context` skills that sessions follow to merge. **Read
+  `checks` job) → 2 (2026-09-29, `mobile` and `secret-scan` demoted).** `lint`, `typecheck` and
+  `test` are STEPS, not check names — `checks` carries lint and typecheck, `validate` carries the
+  unit suite — so a session waiting on them by name waits for something that can never report. Every
+  time this changed, the docs lagged: after 09-27 nineteen places in this repo still said six,
+  including the `ship` and `verify-context` skills that sessions follow to merge. **Read
   `branches/main/protection/required_status_checks` live before stating or counting anything; never
-  quote this paragraph, AGENTS.md, or a skill as the source.** **It is the one required check
-  that never runs on a `main` push** — `security-scan.yml` is `on: pull_request` + a daily `schedule`,
-  deliberately not `push` (Actions cost). Its absence from a merge commit's check-runs is CORRECT,
-  not a missed gate: it ran on the PR head against the identical tree. Do not hunt for it after a
-  merge, and do not dispatch it to "complete the set".
+  quote this paragraph, AGENTS.md, or a skill as the source.**
+  🔴 **THE 09-29 DEMOTION WAS DELIBERATE, AND IT TOOK BOTH JOBS OFF THE PULL REQUEST TOO** — those
+  two steps are always one change, because a required check whose job stops reporting leaves every
+  PR on "Expected — waiting for status" for ever. `mobile` carries
+  `if: github.event_name != 'pull_request'` and now runs on `main`, a dispatch and a schedule;
+  `security-scan.yml` lost its `pull_request` trigger entirely (the same gitleaks 8.30.1 moved into
+  `bash-guard.mjs` clause **C12**, which refuses the push, so a key never reaches GitHub at all) and
+  keeps its daily 05:17 UTC `schedule`. **So a PR's check list IS the required pair and nothing
+  else.** Their absence from a PR *and* from a merge commit is CORRECT, not a missed gate — do not
+  hunt for either afterwards and do not dispatch one to "complete the set". What it costs is real
+  and is the point: a red Expo typecheck or a gitleaks finding is now a **fix-forward on `main`**
+  that nothing stopped at the merge, so read both on the commit rather than assuming they gated it.
 - **`gh pr checks` LAGS behind the real job state.** `gh-pr-checks-lags-behind-the-real-job-state`
 - **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not
   started". `a-conflicted-pr-runs-no-ci-at-all`
@@ -333,8 +341,9 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
   neither fire into a push nor score a list that does not exist yet. 🔴 **Do NOT hard-code the
   expected number.** This paragraph said "the expected 6" until 2026-09-27, when #4527 took the real
   answer to 4 — a watcher built on that sentence now waits forever for `lint`, `typecheck` and `test`,
-  which no longer exist as checks. The count is the part of every version of this rule that has
-  rotted; the live read is the part that has not.
+  which no longer exist as checks — **and then to 2 on 2026-09-29**, when `mobile` and `secret-scan`
+  were demoted. The count is the part of every version of this rule that has rotted; the live read is
+  the part that has not.
 - **ONE new hub page trips FOUR separate CI gates.** `adding-a-hub-page-trips-four-separate-ci-gates`
 - **A red `main` still builds, ships, and serves perfectly** — `ignoreBuildErrors` (see the
   exhaustive-`Record` entry under Validation below) hides it from the product, and a green PR is not
@@ -2890,7 +2899,7 @@ it for the hook's wording. Which memory backs which hook:
 **CI and PRs**
 
 - **CI jobs failing in SECONDS mean billing, not code.**
-- **`secret-scan` is a required check — there are 4 (`validate`, `checks`, `mobile`, `secret-scan`) — and it is the one that never runs on a `main` push.** Its absence from a merge commit is CORRECT. 🔴 **`lint`, `typecheck` and `test` are STEPS of `checks` since 2026-09-27 (#4527), NOT check names — read the protection API, never a doc.**
+- 🔴 **THERE ARE TWO REQUIRED CHECKS — `validate` and `checks` — AND `secret-scan` IS NO LONGER ONE OF THEM.** `mobile` and `secret-scan` were **demoted 2026-09-29**, and the same change took both off `pull_request`: neither blocks a merge and neither reports on a PR, so their absence from a PR and from a merge commit is CORRECT. They run on `main`, a schedule or a dispatch — a finding there is a fix-forward nothing stopped at the merge. 🔴 **`lint`, `typecheck` and `test` are STEPS since 2026-09-27 (#4527), NOT check names — read `branches/main/protection/required_status_checks` live, never a doc.**
 - **`gh pr checks` LAGS behind the real job state.**
 - **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not started".
 - **ONE new hub page trips FOUR separate CI gates.**
