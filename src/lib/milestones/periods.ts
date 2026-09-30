@@ -326,6 +326,16 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+/** "September" — the month alone, so a date RANGE need not print the month twice. */
+export function monthName(month: number): string {
+  return MONTH_NAMES[month - 1] ?? String(month);
+}
+
+/** "Sep" — the three-letter form, for a 46pt seal that cannot hold "SEPTEMBER". */
+export function monthNameShort(month: number): string {
+  return monthName(month).slice(0, 3);
+}
+
 const ONES = [
   "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
   "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",

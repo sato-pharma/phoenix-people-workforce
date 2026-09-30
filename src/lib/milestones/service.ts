@@ -20,6 +20,19 @@ import { streamEmployeePhoto } from "@/lib/employees/employee-photo";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 
 import { type MilestoneCardInput } from "./card";
+import { milestoneGroupGrid, type MilestoneGroupCardInput } from "./group-card";
+import {
+  assertMilestoneGroupSize,
+  milestoneGroupCitation,
+  milestoneGroupEyebrow,
+  milestoneGroupFooterRight,
+  milestoneGroupHeadline,
+  milestoneGroupTile,
+  milestoneGroupWindow,
+  resolveMilestoneGroupOccasion,
+  MilestoneGroupOccasionError,
+  type MilestoneGroupOccasion,
+} from "./group";
 import {
   loadMilestonePrintHistory,
   loadMilestonePrintMarks,
@@ -62,6 +75,17 @@ import {
 
 /** How wide the polished portrait is rendered. The card prints it 350pt, so this is ~360 DPI. */
 const PORTRAIT_WIDTH = 1750;
+
+/**
+ * The narrowest a polished portrait is ever rendered.
+ *
+ * 🔴 A GROUP PICTURE HOLDS EVERY PORTRAIT DECODED IN MEMORY AT ONCE, and unlike the batch it cannot
+ * be chunked — it is one sheet. Twelve portraits at `PORTRAIT_WIDTH` is ~180 MB of decoded pixels in
+ * one Chromium page, for faces printed 50pt wide, where 384 DPI asks for 265 px. So a group renders
+ * each portrait at the size its own tile needs and no more, floored here so a face is never softer
+ * than the sheet it is on.
+ */
+const PORTRAIT_WIDTH_MIN = 600;
 
 export type MilestoneDueEntry = {
   hrId: string;
@@ -455,6 +479,11 @@ export type BuildMilestoneCardOptions = {
    * print the same.
    */
   photoUpload?: Buffer | null;
+  /**
+   * How wide to render the polished portrait. Omit for the single card's `PORTRAIT_WIDTH`; the group
+   * picture passes the width its own tile needs, because it holds every portrait decoded at once.
+   */
+  portraitWidth?: number | null;
 };
 
 export class MilestoneEmployeeNotFoundError extends Error {
@@ -537,7 +566,10 @@ export async function buildMilestoneCardInput(
       const bytes = await loadMilestonePhotoBytes(employee.hrId, options.photoUpload ?? null);
       if (bytes) {
         photoDataUri = await polishPortraitDataUri(bytes, {
-          width: PORTRAIT_WIDTH,
+          width: Math.min(
+            PORTRAIT_WIDTH,
+            Math.max(PORTRAIT_WIDTH_MIN, Math.round(options.portraitWidth ?? PORTRAIT_WIDTH)),
+          ),
           focus: options.photoFocus ?? null,
         });
       }
@@ -603,6 +635,126 @@ export async function buildMilestoneCardInput(
       citation: options.citation?.trim() || milestoneCitation({ firstName, spec: serviceSpec, on }),
     },
   };
+}
+
+// ── The group picture ─────────────────────────────────────────────────────────────────────────────
+
+/** One ticked row, on the wire. The same shape the batch takes, so one tick list feeds both. */
+export type MilestoneGroupCardItem = {
+  hrId: string;
+  /** `1y`, `6 months`, `b4` — whatever the row carried. */
+  spec: string | MilestoneSpec;
+  /** The date the row celebrates, when it was typed over the arithmetic. */
+  on?: PlainDate | null;
+  displayName?: string | null;
+  withoutPhoto?: boolean;
+};
+
+export type BuiltMilestoneGroupCard = {
+  input: MilestoneGroupCardInput;
+  occasion: MilestoneGroupOccasion;
+  /** One per face, in the order they print — what the print ledger is written from. */
+  members: BuiltMilestoneCard[];
+  /** The dates the faces carry, in the same order. */
+  dates: PlainDate[];
+  /** True when every face is on ONE day, which is what the masthead and the sentence then say. */
+  datesShared: boolean;
+};
+
+/**
+ * Assemble the group picture: the people, the one occasion they share, the words, the portraits.
+ *
+ * 🔴 A FACE THAT CANNOT BE BUILT FAILS THE WHOLE PICTURE. The batch deliberately skips a bad record
+ * and prints the rest, because a missing page is obvious. A group picture is the opposite: it is
+ * asked for precisely so that everybody is ON it, and a silently dropped person is a picture that
+ * looks complete and is not. So this throws, naming who — never a quietly shorter row of faces.
+ *
+ * 🔴 NO HANDED-IN PHOTOGRAPH AND NO FRAMING TRAVEL HERE, exactly as with the batch: every face comes
+ * off its own record. One person's face beside another person's name is the one mistake on this page
+ * that cannot be taken back once the picture has been sent.
+ *
+ * 🔴 THE SUB-LINE UNDER A NAME ANSWERS THE QUESTION THE GROUP RAISES. When every face is on one day,
+ * the day is in the masthead and the line under a name is that person's job title. When the dates
+ * differ, the day is what distinguishes them, so the line under each name is THAT person's own date
+ * — otherwise the picture would state one window and leave every individual date unsaid.
+ */
+export async function buildMilestoneGroupCardInput(options: {
+  items: readonly MilestoneGroupCardItem[];
+  /** Override the sentence under the date. */
+  citation?: string | null;
+}): Promise<BuiltMilestoneGroupCard> {
+  // Refused before a single portrait is fetched.
+  assertMilestoneGroupSize(options.items.length);
+
+  // The tile the grid will print each face at decides how big a portrait is worth decoding: the
+  // picture is taken at 384 DPI, so a tile `photoW` points wide needs photoW / 72 * 384 pixels.
+  const portraitWidth = Math.ceil((milestoneGroupGrid(options.items.length).photoW / 72) * 384);
+
+  const members: BuiltMilestoneCard[] = [];
+  for (const item of options.items) {
+    try {
+      members.push(
+        await buildMilestoneCardInput({
+          hrId: item.hrId,
+          spec: item.spec,
+          on: item.on ?? null,
+          displayName: item.displayName ?? null,
+          withoutPhoto: item.withoutPhoto === true,
+          portraitWidth,
+        }),
+      );
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : `Could not build a card for ${item.hrId}.`;
+      throw new MilestoneGroupOccasionError(
+        `${reason} A group picture is refused rather than printed with somebody missing from it.`,
+      );
+    }
+  }
+
+  const occasion = resolveMilestoneGroupOccasion(
+    members.map((member) => ({
+      periodSpec: member.periodSpec,
+      on: member.on,
+      displayName: member.input.displayName,
+    })),
+  );
+
+  const dates = members.map((member) => member.on);
+  const { shared } = milestoneGroupWindow(dates);
+
+  return {
+    occasion,
+    members,
+    dates,
+    datesShared: shared,
+    input: {
+      tile: milestoneGroupTile(occasion),
+      eyebrow: milestoneGroupEyebrow(occasion),
+      headline: milestoneGroupHeadline(dates),
+      footerRight: milestoneGroupFooterRight(dates),
+      citation:
+        options.citation?.trim() ||
+        milestoneGroupCitation({ occasion, count: members.length, dates }),
+      members: members.map((member) => ({
+        displayName: member.input.displayName,
+        subLine: shared ? jobTitleOf(member.input.roleLine) : formatPlainDateLong(member.on),
+        photoDataUri: member.input.photoDataUri,
+        initials: member.input.initials,
+      })),
+    },
+  };
+}
+
+/**
+ * The first segment of "HR Generalist  ·  Head Office  ·  Cairo".
+ *
+ * The group picture's caption is a fraction of the single card's width, and the whole role line at
+ * that size would shrink past reading. The job title is the part that says what somebody does, so it
+ * is the part that is kept — and nothing is cut with an ellipsis (owner rule): the other segments
+ * are not shortened, they are simply not on this piece.
+ */
+function jobTitleOf(roleLine: string): string {
+  return roleLine.split("·")[0]?.trim() ?? "";
 }
 
 /**
