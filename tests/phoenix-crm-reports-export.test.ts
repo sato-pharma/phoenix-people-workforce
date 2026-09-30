@@ -513,7 +513,9 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     }
 
     const threeViews = {
-        calendar: { days: ["2026-09-01"], isTest: false, month: "2026-09", rows: [], totals: { am: 0, pharmacies: 0, pm: 0 } },
+        // `scope` since 2026-10-01: whose month the sheet holds. Required, not optional — a
+        // calendar that cannot say whose it is would print a rep's own month under a team heading.
+        calendar: { days: ["2026-09-01"], isTest: false, month: "2026-09", rows: [], scope: "team", totals: { am: 0, pharmacies: 0, pm: 0 } },
         frequency: { includeTest: false, month: { inProgress: false, month: "2026-09", monthEnd: "2026-09-30", monthStart: "2026-09-01" }, needsOneTerritory: false, rows: [], seat: null, totals: { customers: 0, noTarget: 0, onTarget: 0, over: 0, under: 0 } },
         tracking: { days: ["2026-09-01"], includeTest: false, month: { inProgress: false, month: "2026-09", monthEnd: "2026-09-30", monthStart: "2026-09-01" }, needsOneTerritory: false, rows: [], seat: null, showsSpacing: true },
     } as Partial<ReportsPackInput>;
@@ -538,8 +540,15 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     //    whole scope, and a sheet of thousands of rows for a district is not what that means.
     assert.match(route, /frequencyRaw\.needsOneTerritory \? null : frequencyRaw/, "frequency is dropped unless one territory was chosen");
     assert.match(route, /trackingRaw\.needsOneTerritory \? null : trackingRaw/, "and so is the tracking sheet");
-    // The calendar is a manager's, by the same predicate its own service uses.
-    assert.match(route, /managerSections \? loadTeamCalendar\(/, "the team calendar is withheld from anyone who reads no team");
+    // 🔴 THE CALENDAR STOPPED BEING A MANAGER SECTION ON 2026-10-01, at the owner's instruction:
+    //    "I want the medical rep to have also his team calendar seeing only himself". This line
+    //    read `managerSections ? loadTeamCalendar(` until then, and it is CHANGED rather than
+    //    deleted — the rule it protects is the same one, that the workbook and the screen agree
+    //    about who may read a section, and it is still gated by the service's own predicate. What
+    //    moved is which predicate that is. A rep's sheet holds his own month; leaving it behind
+    //    `managerSections` would have handed him a download missing the one month view he can open.
+    assert.match(route, /readsCalendar\(viewer\) \? loadTeamCalendar\(/, "the calendar is gated by its own predicate, so the file matches the screen");
+    assert.doesNotMatch(route, /managerSections \? loadTeamCalendar\(/, "and is no longer a manager-only section");
 
     const workbook = stripComments(readFileSync("src/lib/phoenix-crm/server/reports-workbook.ts", "utf8"));
     // 🔴 THE CALENDAR CELL IS A WORD, NEVER A FIGURE — on a both-halves day a single number is

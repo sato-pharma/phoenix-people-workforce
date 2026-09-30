@@ -52,6 +52,8 @@ type CalendarView = {
   totals: VisitCountSplit;
   days: string[];
   isTest: boolean;
+  /** `own` when the reader is a rep seeing himself, `team` when he is reading other people. */
+  scope: "own" | "team";
 };
 
 /** His legend, as ink. Square edges, and one class string per shape so nothing is composed at runtime. */
@@ -173,6 +175,11 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
 
   const rows = useMemo(() => view.data?.rows ?? [], [view.data]);
   const days = useMemo(() => view.data?.days ?? [], [view.data]);
+  // A rep reads only himself here (owner, 2026-10-01), so the heading says so rather than calling
+  // one person a team. It follows the SERVICE's own `scope`, never the row count — a district
+  // manager down to one rep still reads a team, and a count would rename his screen as people
+  // join and leave.
+  const own = view.data?.scope === "own";
   const chosen = useMemo(() => {
     if (!open) return null;
     const row = rows.find((entry) => entry.seatId === open.seatId);
@@ -206,9 +213,13 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
           ))}
         </div>
       }
-      description="One row a person, one column a day. The colour says which halves of the day were worked; the figures stay apart."
+      description={
+        own
+          ? "One column a day. The colour says which halves of the day you worked; the figures stay apart."
+          : "One row a person, one column a day. The colour says which halves of the day were worked; the figures stay apart."
+      }
       eyebrow="Phoenix CRM"
-      title={`The team's month · ${monthLabel(month)}`}
+      title={`${own ? "Your month" : "The team's month"} · ${monthLabel(month)}`}
     >
       {view.error ? <CrmLoadError message={view.error} onRetry={view.reload} /> : null}
       {!view.data && !view.error ? <CrmLoading label="Reading the month" /> : null}

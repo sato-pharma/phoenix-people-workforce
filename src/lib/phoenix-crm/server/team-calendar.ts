@@ -8,7 +8,7 @@ import {
   type TeamCalendarPerson,
   type TeamCalendarRow,
 } from "@/lib/phoenix-crm/team-calendar";
-import { readsTeamReports, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsCalendar, readsTeamReports, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -33,10 +33,17 @@ import { emptyVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-coun
  * disagreeing with the rep's own day. Grouped case-insensitively for the same reason the List
  * groups them — one pharmacy must never read as two.
  *
- * 🔴 AND IT IS A MANAGER'S VIEW. Gated on `readsTeamReports`, the same predicate behind the
- * place-vs-actual report, so a plain medical rep never opens it: a month of his team laid out for
- * comparison is exactly the shape of thing Golden rule #1 keeps off his screens. Reusing that
- * predicate rather than writing a second one is what stops the two drifting apart.
+ * 🔴 A MANAGER SEES HIS TEAM AND A REP SEES HIMSELF (owner, 2026-10-01: *"I want the medical rep
+ * to have also his team calendar seeing only himself"*). Gated on `readsCalendar`, the calendar's
+ * OWN predicate — widening `readsTeamReports` instead would have handed a rep the place-vs-actual
+ * report, the exceptions board, the brick report and the adoption board along with it, which is
+ * precisely what Golden rule #1 keeps off his screens.
+ *
+ * What keeps his view his own is not a branch in here but the SCOPE: the rows are built from
+ * `scopeTerritories`, which for a rep holds his own seat and nobody else's, so there is no path by
+ * which he is shown a colleague — not by asking for one, and not by a future edit to this file.
+ * Golden rule #1 is untouched either way: his own month is his own work, like his plan and his
+ * targets, and this grid carries no distance, no flag and no integrity signal of any kind.
  */
 
 export type TeamCalendarView = {
@@ -46,6 +53,14 @@ export type TeamCalendarView = {
   /** Every day of the month, so the grid's header needs no arithmetic of its own. */
   days: string[];
   isTest: boolean;
+  /**
+   * Whose month this is. `own` for a rep reading himself, `team` for anyone reading other people.
+   *
+   * It exists so the screen can say "Your month" without guessing: a district manager with one rep
+   * left also loads one row, so counting rows would call his team view his own and would flip back
+   * and forth as people join and leave.
+   */
+  scope: "own" | "team";
 };
 
 type Row = Record<string, unknown>;
@@ -67,14 +82,17 @@ export async function loadTeamCalendar(
   viewer: PhoenixCrmViewer,
   raw: { month?: unknown; test?: unknown } = {},
 ): Promise<TeamCalendarView> {
-  if (!readsTeamReports(viewer)) throw forbiddenError("The team calendar is for managers.");
+  if (!readsCalendar(viewer)) throw forbiddenError("This calendar is for a territory you hold or manage.");
 
+  // A rep reads only himself, so the screen can say so. Read from the PREDICATE, never from how
+  // many rows came back — a manager whose team is down to one person still reads a team.
+  const scope: "own" | "team" = readsTeamReports(viewer) ? "team" : "own";
   const month = /^\d{4}-\d{2}$/.test(String(raw.month ?? "")) ? String(raw.month) : viewer.cairoToday.slice(0, 7);
   const bounds = monthBounds(month);
   const isTest = testModeFor(viewer, raw.test);
   const seats = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   if (!bounds || seats.length === 0) {
-    return { days: monthDays(month), isTest, month, rows: [], totals: emptyVisitCountSplit() };
+    return { days: monthDays(month), isTest, month, rows: [], scope, totals: emptyVisitCountSplit() };
   }
 
   const seatIds = seats.map((seat) => seat.seatId);
@@ -86,7 +104,7 @@ export async function loadTeamCalendar(
   const leave = await loadLeaveDays(seats, bounds);
 
   const rows = buildTeamCalendar(month, people, { activities, leave, visits });
-  return { days: monthDays(month), isTest, month, rows, totals: teamCalendarTotals(rows) };
+  return { days: monthDays(month), isTest, month, rows, scope, totals: teamCalendarTotals(rows) };
 }
 
 /** Who holds each seat, where it is, and the name above it — his A.Manager · TM · Line columns. */
