@@ -268,7 +268,8 @@ function CustomerRow({ customer }: { customer: DailyPlanCustomer }) {
 function DayHeader({ day, headingId, today }: { day: DailyPlanDay; headingId: string; today: string }) {
   const pills: ReactNode[] = [];
   // A day with nothing on it says so in words below; "Not sent before the day" beside an empty day would
-  // read as a failure about a day nobody planned anything for.
+  // read as a failure about a day nobody planned anything for. The download follows the same rule
+  // (writeDailyPlan in server/reports-workbook.ts) — change the two together.
   const planned = !dailyPlanDayIsEmpty(day);
   if (planned && day.state !== "none") pills.push(<CrmPill key="state" tone={STATE_TONES[day.state]}>{dailyPlanStateLabel(day.state)}</CrmPill>);
   if (planned && day.submittedLate && SENT_STATES.includes(day.state)) pills.push(<CrmPill key="late" tone="warn">Sent late</CrmPill>);
