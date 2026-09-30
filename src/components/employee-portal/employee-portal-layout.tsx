@@ -1166,14 +1166,10 @@ function EmployeePortalMenu({
                           <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-[linear-gradient(150deg,#FF8A47_0%,#F05A1A_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_5px_12px_rgba(240,90,26,0.5)]">
                             <RowIcon className={`h-[18px] w-[18px] shrink-0 ${locked ? "text-amber-100" : "text-white"}`} />
                           </span>
-                          <span className="flex min-w-0 flex-col gap-0.5">
-                            <span className="ep-crm-gold flex items-center gap-1 text-phx-4xs font-black uppercase tracking-[0.28em]">
-                              <Sparkles className="ep-crm-twinkle h-3 w-3 shrink-0 origin-center text-amber-300" />
-                              Premium
-                            </span>
-                            <span className={`text-phx-md font-black leading-tight text-white ${locked ? "opacity-80" : ""}`}>
-                              {item.label}
-                            </span>
+                          {/* No badge word (owner, 2026-09-30) — the launcher's dark glow says premium
+                              on its own; the row carries only the module's name. */}
+                          <span className={`min-w-0 text-phx-md font-black leading-tight text-white ${locked ? "opacity-80" : ""}`}>
+                            {item.label}
                           </span>
                           <span className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center bg-white/10 ring-1 ring-inset ring-white/20">
                             {pending ? (
