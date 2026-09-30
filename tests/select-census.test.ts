@@ -19,6 +19,23 @@ function write(root: string, rel: string, body: string) {
   writeFileSync(p, body);
 }
 
+/** A census call site. `scripts/select-census.mjs` is untyped JS, so this is the shape it builds. */
+type CensusEmbed = { relation: string; hint: string | null; columns: string[]; embeds: CensusEmbed[]; star: boolean };
+type CensusSite = {
+  file: string;
+  line: number;
+  kind: string;
+  select: string | null;
+  resolved: boolean;
+  note: string;
+  columns: string[];
+  embeds: CensusEmbed[];
+  star: boolean;
+  filters: string[];
+  writeKeys: string[];
+};
+const sitesOf = (census: { sites: unknown[] }): CensusSite[] => census.sites as CensusSite[];
+
 export function runSelectCensusTests() {
   // 1. The select grammar.
   assert.deepEqual(
@@ -57,7 +74,7 @@ export function runSelectCensusTests() {
       ].join("\n"),
     );
     const census = runCensus({ table: "employees", root });
-    const byLine = (n: number) => census.sites.find((s: { line: number }) => s.line === n)!;
+    const byLine = (n: number) => sitesOf(census).find((s) => s.line === n)!;
     assert.equal(census.sites.length, 6, "exactly the six public.employees sites — not employees_archive, not the au schema");
 
     assert.deepEqual(byLine(3).columns, ["hr_id", "full_name"]);
@@ -71,7 +88,7 @@ export function runSelectCensusTests() {
     assert.equal(byLine(8).resolved, false, "a select built at run time must be UNRESOLVED, never read as clean");
 
     assert.deepEqual(
-      sitesNaming(census, "hire_date").map((s: { line: number }) => s.line),
+      (sitesNaming(census, "hire_date") as CensusSite[]).map((s) => s.line),
       [4],
       "--column finds a column named only in a filter",
     );
@@ -102,9 +119,9 @@ export function runSelectCensusTests() {
       ].join("\n"),
     );
     const sr = runCensus({ table: "salary_records", root });
-    const all = (key: "columns" | "filters" | "writeKeys") => sr.sites.flatMap((s: Record<string, string[]>) => s[key]);
+    const all = (key: "columns" | "filters" | "writeKeys") => sitesOf(sr).flatMap((s) => s[key]);
     assert.deepEqual(
-      sr.sites.find((s: { line: number }) => s.line === 1)!.embeds,
+      sitesOf(sr).find((s) => s.line === 1)!.embeds,
       [{ relation: "salary_batches", hint: "inner", columns: ["year", "month", "status"], embeds: [], star: false }],
       "an order with foreignTable, and a dotted filter, belong to the EMBEDDED table",
     );
@@ -125,7 +142,7 @@ export function runSelectCensusTests() {
       `export const huge = () => db.from("employees").insert({ pad: "${"x".repeat(21000)}" });\n` +
         'export const after = () => db.from("employees").delete().eq("phantom_column", 1);\n',
     );
-    const huge = runCensus({ table: "employees", root }).sites.find((s: { file: string }) => s.file.endsWith("c.ts"))!;
+    const huge = sitesOf(runCensus({ table: "employees", root })).find((s) => s.file.endsWith("c.ts"))!;
     assert.equal(huge.resolved, false, "a chain past the cap must be UNRESOLVED");
     assert.match(huge.note, /runs past/, huge.note);
     assert.ok(!huge.filters.includes("phantom_column"), "a truncated chain must not claim the next statement's filter");
@@ -160,6 +177,6 @@ export function runSelectCensusTests() {
   // must never quietly climb. Measured 2026-09-30 on `employees`: 6 — one select built at run time
   // (`custom-variables.ts`) and five writes whose payload is not an object literal, which became
   // visible the day writes stopped being silently reported as clean.
-  const unresolved = real.sites.filter((s: { resolved: boolean }) => !s.resolved);
+  const unresolved = sitesOf(real).filter((s) => !s.resolved);
   assert.ok(unresolved.length <= 6, `too many unresolved employees selects (${unresolved.length}) — the resolver has regressed`);
 }
