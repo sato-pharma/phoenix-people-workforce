@@ -27,5 +27,8 @@ export default async function FieldActivityPage() {
 
   const todayIso = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
   const period = defaultPeriod(todayIso);
-  return <FieldActivityView defaultFrom={period.fromIso} defaultTo={period.toIso} />;
+  // `chrome="admin"` is the default, but it is passed explicitly because it is load-bearing: this
+  // page renders the view BARE, with no shell around it, so the view's own <h1> is the only title
+  // on the screen and must keep rendering here.
+  return <FieldActivityView chrome="admin" defaultFrom={period.fromIso} defaultTo={period.toIso} />;
 }
