@@ -82,6 +82,44 @@ function canShareFiles(files: File[]): boolean {
   }
 }
 
+/**
+ * Whether the OS share sheet can carry a file — checked SYNCHRONOUSLY (with an empty probe file) so the
+ * click handler can decide, before any await, whether it needs to open a composer window.
+ */
+function supportsFileShare(): boolean {
+  try {
+    return canShareFiles([new File([new Uint8Array()], "x.png", { type: "image/png" })]);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A composer must be opened INSIDE the click to keep user activation — a `window.open` after the
+ * mint's await is blocked as a popup. So we open a blank window synchronously and navigate it once the
+ * link is minted. These helpers make that flow readable.
+ */
+function openBlankPopup(): Window | null {
+  try {
+    return window.open("", "_blank");
+  } catch {
+    return null;
+  }
+}
+
+function navigatePopup(popup: Window | null, url: string) {
+  if (popup && !popup.closed) popup.location.href = url;
+  else window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function closePopup(popup: Window | null) {
+  try {
+    if (popup && !popup.closed) popup.close();
+  } catch {
+    /* nothing to do */
+  }
+}
+
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -103,29 +141,40 @@ export function ShareCardBar({ getFile, caption, getPageUrl, disabled, heading =
       setBusy(target);
       setHint(null);
       setError(null);
+
+      const fileShare = supportsFileShare();
+      // LinkedIn and Facebook always go through the PUBLIC link (its og:image shows the card on any
+      // device); WhatsApp does too on a desktop, where there is no share sheet. Those need a composer
+      // window, which MUST be opened inside the click — a window.open after the mint's await is
+      // popup-blocked. WhatsApp/Status on a phone use the OS sheet instead, so no window is opened.
+      const usesLink =
+        getPageUrl != null &&
+        (target === "linkedin" || target === "facebook" || (target === "whatsapp" && !fileShare));
+      const popup = usesLink ? openBlankPopup() : null;
+
       try {
-        // LinkedIn and Facebook read the card from the PUBLIC link's og:image, so it shows in the
-        // post preview on any device. Prefer that over the native sheet whenever a link can be minted.
-        if ((target === "linkedin" || target === "facebook") && getPageUrl) {
+        if (usesLink && getPageUrl) {
           const url = await getPageUrl();
-          if (url) {
-            const composer = shareComposerUrl(target, caption, url);
-            if (composer) window.open(composer, "_blank", "noopener,noreferrer");
+          const composer = url ? shareComposerUrl(target, caption, url) : null;
+          if (composer) {
+            navigatePopup(popup, composer);
             return;
           }
-          // Could not mint a link — fall through to the picture-attach path below.
+          // Could not mint a link — close the empty window and fall through to the picture path.
+          closePopup(popup);
         }
 
         const produced = await getFile();
         if (!produced) {
+          closePopup(popup);
           setError("The picture could not be prepared. Please try again.");
           return;
         }
-        const file = new File([produced.blob], produced.filename, { type: produced.blob.type || "image/png" });
 
-        // The reps' tablets: the OS share sheet carries the actual picture, and it is the only route
-        // to WhatsApp Status. The person taps the app they want from the sheet.
-        if (canShareFiles([file])) {
+        // The phone's OS share sheet carries the actual picture, and it is the only route to WhatsApp
+        // Status. The person taps the app they want from the sheet.
+        if (fileShare) {
+          const file = new File([produced.blob], produced.filename, { type: produced.blob.type || "image/png" });
           try {
             await (navigator as Navigator & { share: (d: ShareData) => Promise<void> }).share({
               files: [file],
@@ -133,26 +182,19 @@ export function ShareCardBar({ getFile, caption, getPageUrl, disabled, heading =
             } as ShareData);
             return;
           } catch (caught) {
-            // A cancelled share sheet is not an error; anything else falls through to the composer.
+            // A cancelled share sheet is not an error; anything else falls through to the fallback.
             if (caught instanceof DOMException && caught.name === "AbortError") return;
           }
         }
 
-        // Desktop fallback: save the picture, open the platform's own composer, tell them to attach it.
-        // A link, if one can be minted, lets the composer show the card as a preview.
-        let url: string | null = null;
-        if (getPageUrl) {
-          try {
-            url = await getPageUrl();
-          } catch {
-            url = null;
-          }
-        }
+        // Desktop last resort (WhatsApp Status, or a target with no link): save the picture and open a
+        // composer where one exists, with a one-line hint to attach it.
         saveBlob(produced.blob, produced.filename);
-        const composer = shareComposerUrl(target, caption, url ?? undefined);
+        const composer = shareComposerUrl(target, caption, undefined);
         if (composer) window.open(composer, "_blank", "noopener,noreferrer");
         setHint(shareFallbackHint(target));
       } catch {
+        closePopup(popup);
         setError("The picture could not be shared. Please try again.");
       } finally {
         setBusy(null);
