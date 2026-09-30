@@ -6,7 +6,7 @@ import path from "node:path";
 
 import { MIN_MEMBERS } from "../scripts/rollup-build-verdict.mjs";
 import { membersReadyToBuild, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
-import { ROLLUP_BRANCH_PREFIX, overlappingRollup, rollupMembers } from "../scripts/rollup-duplicate-guard.mjs";
+import { isRollupBranch, overlappingRollup, rollupMembers } from "../scripts/rollup-duplicate-guard.mjs";
 
 /**
  * `scripts/rollup-prs.mjs` groups the open PRs into the fewest SAFE merges. The bill here is driven by
@@ -925,8 +925,10 @@ export function runRollupPrsTests(): void {
     const gate = source.indexOf("overlappingRollup({ wanted: group.map");
     assert.notEqual(gate, -1, "--apply must call the duplicate guard on the group it is about to build");
     assert.ok(
-      source.includes("ROLLUP_BRANCH_PREFIX"),
-      "and it must find the open roll-ups by the prefix rollupBranchName actually produces",
+      source.includes("isRollupBranch(pr.headRefName)"),
+      "it must find the open roll-ups by the generated SHAPE, not the codex/rollup- prefix: a "
+        + "branch that merely fixes the roll-up tool is not a roll-up, and reading it as one made "
+        + "--apply refuse every build",
     );
     // The CALL, not the import: `waitForRequiredChecks` also appears in the import list at the top
     // of the script, and indexOf would have found that instead — making the ordering assertion
@@ -943,5 +945,69 @@ export function runRollupPrsTests(): void {
     assert.ok(after.includes("process.exit(1)"), "a collision must exit non-zero");
     assert.ok(after.includes("REFUSED"), "and say REFUSED, so it is not mistaken for a warning");
   }
-  assert.equal(ROLLUP_BRANCH_PREFIX, "codex/rollup-", "the prefix must match rollupBranchName's output");
+  // ── 13. A roll-up is never a MEMBER of another roll-up ───────────────────────────────────────
+  // Measured 2026-09-30: with #4920 (itself a roll-up) open, the script offered #4922 + #4920 +
+  // #4921. The duplicate guard above cannot see this — it asks whether an open roll-up CARRIES a
+  // member we want, and here the roll-up IS the member we want. Nesting merges cleanly; what it
+  // breaks is that AGENTS.md §6's "members must not be merged separately" becomes transitive with
+  // nothing tracking it, and the saving is double-counted.
+  {
+    const v = verdicts([
+      pr(1, ["src/a.ts"]),
+      pr(2, ["scripts/b.mjs"], { headRefName: "codex/rollup-20260930-1000" }),
+    ]);
+    assert.equal(v.get(1)?.kind, "rollable", "an ordinary small PR is unaffected by this rule");
+    assert.equal(
+      v.get(2)?.kind,
+      "separate",
+      `a PR on a roll-up branch must never be rollable, got ${v.get(2)?.kind}: ${v.get(2)?.why}`,
+    );
+    assert.match(
+      v.get(2)?.why ?? "",
+      /itself a roll-up/,
+      "and it must say so in words, since the reader has to decide what to do with it",
+    );
+
+    // 🔴 And a PR that FIXES the roll-up tool is not a roll-up. This exact branch name was flagged by
+    // the first version of this rule, which matched on the `codex/rollup-` prefix alone.
+    const w = verdicts([
+      pr(1, ["src/a.ts"]),
+      pr(3, ["scripts/rollup-prs.mjs"], { headRefName: "codex/rollup-dup-guard" }),
+    ]);
+    assert.equal(
+      w.get(3)?.kind,
+      "rollable",
+      `a roll-up-TOOL PR must stay rollable, got ${w.get(3)?.kind}: ${w.get(3)?.why}`,
+    );
+  }
+  // ── 14. A roll-up is recognised by its generated SHAPE, never by its prefix ──────────────────
+  // 🔴 A measured false positive, found by running this fix against the live repo while its own PR
+  // was open: `codex/rollup-dup-guard` FIXES the roll-up tool and is not a roll-up, but a prefix
+  // match called it one. That was worse than the bug being fixed — the duplicate guard would have
+  // found no `- #N —` list in its body, read 'unreadable', and so refused EVERY build for as long
+  // as any roll-up-tool PR stayed open.
+  {
+    for (const name of [
+      "codex/rollup-20260930-1000",
+      "codex/rollup-20260930-1311",
+      "codex/rollup-20260930-1000-2",
+    ]) {
+      assert.ok(isRollupBranch(name), name + " is a name rollupBranchName produces");
+    }
+    for (const name of [
+      "codex/rollup-dup-guard",
+      "codex/rollup-restore-branch",
+      "codex/rollup-pending-checks",
+      "codex/rollup-three",
+      "codex/crm-list-polish",
+      "",
+    ]) {
+      assert.equal(
+        isRollupBranch(name),
+        false,
+        JSON.stringify(name) + " fixes or mentions the roll-up tool; it is not a roll-up",
+      );
+    }
+    assert.equal(isRollupBranch(undefined), false, "a missing branch name must not throw");
+  }
 }
