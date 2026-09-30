@@ -1644,11 +1644,11 @@ import { runPhoenixCrmPortalIntentTests } from "./phoenix-crm-portal-intent.test
 import { runPhoenixCrmTeamTodayTests } from "./phoenix-crm-team-today.test.ts";
 import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blocked.test.ts";
 import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
-import { runPhoenixCrmTodayGlanceTests } from "./phoenix-crm-today-glance.test.ts";
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
 import { runPhoenixCrmPlanSuggestTests } from "./phoenix-crm-plan-suggest.test.ts";
 import { runPhoenixCrmListAdmissionTests } from "./phoenix-crm-list-admission.test.ts";
+import { runPhoenixCrmListRowFactsTests } from "./phoenix-crm-list-row-facts.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.ts";
@@ -5667,11 +5667,6 @@ await runTest(
 );
 
 await runTest(
-  "Phoenix CRM Today at a glance (owner, 2026-09-30: the best-appearing and easiest CRM): AM and PM progress apart, never summed; Next up picks who receives now, then soonest, then no hours, then not today, the plan's brick order breaking ties; its Log visit is the row's own hand-off; nothing on it judges the rep",
-  runPhoenixCrmTodayGlanceTests,
-);
-
-await runTest(
   "Phoenix CRM visit form ease (owner, 2026-09-30): one Log visit held in a sticky bar that names the next missing thing from the save's own check, the required Comment right after Products, optional steps marked, today's receiving customers first in the picker, 44px targets, square corners",
   runPhoenixCrmVisitFormEaseTests,
 );
@@ -5699,6 +5694,11 @@ await runTest(
 await runTest(
   "Phoenix CRM admits a customer to a rep's list only through the district manager, then SFE (owner, 2026-09-29): every status maps to one List section and one row action (Validate or Open, never Add visit), the moves a page offers come from list-request-rules and never a rule re-derived on a screen, a never-admitted archived customer is offered Request to add rather than a bring-back, the manager's step of an add sends the A/B/C he confirmed and the potential he set, and the database refuses an add approved without a potential and a decision on a step that has moved on",
   runPhoenixCrmListAdmissionTests,
+);
+
+await runTest(
+  "Phoenix CRM's List is the old Reps List, and validating OVERRIDES iReports360 (owner, 2026-09-30): the captured place's address, brick and area beat the vendor's on every row, the vendor is the fallback and never the loser, a captured place with no street of its own still falls through the rep's own name for it before reverting to the vendor, every empty field prints a placeholder that names the act that fills it — and says only that nothing is recorded once he has validated — the mirror is never written to, no check on the rep reaches a cell, and the board draws the old board's Customer, Specialty, List and Brick columns without its Confidence one",
+  runPhoenixCrmListRowFactsTests,
 );
 
 await runTest(

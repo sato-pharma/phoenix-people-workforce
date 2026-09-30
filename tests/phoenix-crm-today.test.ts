@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { stripComments, stripCommentsCompact } from "./support/comment-strip.ts";
 
 import {
+  addressWithoutTheBrick,
   buildTodayStops,
   compareTodayStops,
   NO_HOURS_YET,
@@ -12,6 +13,7 @@ import {
   stopWhereLine,
   todayByBrick,
   todayEmptyReason,
+  todayPharmacies,
   type PlannedStop,
   type TodayVisit,
 } from "../src/lib/phoenix-crm/today-rules.ts";
@@ -174,11 +176,13 @@ export function runPhoenixCrmTodayTests(): void {
     }
 
     // The screen says it, and offers no way to send from here.
-    const tab = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/today-tab.tsx", import.meta.url), "utf8"));
-    assert.ok(tab.includes("message={view.emptyReason ?? undefined}"), "the screen says which state the plan is in");
-    assert.ok(!tab.includes("planNote"), "in ONE box, never a second one beside the empty state");
-    assert.ok(!tab.includes("plans/submit"), "and Today never sends a plan");
-    assert.ok(!/Send this week/.test(tab), "nor offers to");
+    // 🔴 THERE IS NO TODAY SCREEN ANY MORE (owner, 2026-09-30) — the rule is read by the rep's
+    // LANDING panel, which renders nothing at all when there is no approved day, so an unapproved
+    // plan shows no panel rather than a sentence in a box.
+    const panel = stripCommentsCompact(readFileSync(new URL("../src/components/employee-portal/rep-today-plan-panel.tsx", import.meta.url), "utf8"));
+    assert.ok(panel.includes("if (!plan) return null;"), "no day, no panel — never an empty square");
+    assert.ok(!panel.includes("plans/submit"), "and the panel never sends a plan");
+    assert.ok(!/Send this week/.test(panel), "nor offers to");
 
     // Nor does Add visit: the step that sent an unapproved week is gone from the flow.
     const flow = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/visits-tab.tsx", import.meta.url), "utf8"));
@@ -216,23 +220,25 @@ export function runPhoenixCrmTodayTests(): void {
     assert.ok(loader.includes("const reference = place ? null : (references.get(customerId) ?? null);"), "a validated customer never reads the reference");
   }
 
-  // ── The shell opens on it, and a manager with a decision still lands on Team ────────────────────
+  // ── WHAT THE APP OPENS ON, NOW THAT TODAY IS RETIRED ───────────────────────────────────────────
+  //
+  // 🔴 The module opened on Today and the Super Admin's bar carried eight tabs. Both are gone: the
+  // owner retired Today from Phoenix CRM on 2026-09-30 (its replacement is the rep's landing panel),
+  // and the portal's modules are separate pages with no bar at all. A manager with a decision waiting
+  // still has to reach Team first, which is what this keeps.
   {
     const app = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/phoenix-crm-app.tsx", import.meta.url), "utf8"));
     const start = app.indexOf("function openingTab(");
     assert.notEqual(start, -1);
     const body = app.slice(start, start + 800);
-    const team = body.indexOf('decisions > 0) return "team"');
-    const today = body.indexOf('return "today"');
-    assert.notEqual(team, -1, "the Team branch is still there");
-    assert.notEqual(today, -1, "and the app opens on Today");
-    assert.ok(team < today, "a manager with a real decision waiting lands on Team FIRST — Today must not take that away from him");
+    assert.notEqual(body.indexOf('decisions > 0) return "team"'), -1, "the Team branch is still there");
+    assert.ok(!body.includes('return "today"'), "and nothing opens on Today any more");
 
-    // 🔴 Eight tabs need an eighth grid, or the Super Admin's bar wraps onto a shrunken second line.
-    assert.ok(app.includes('8: "grid-cols-2 sm:grid-cols-4 lg:grid-cols-8"'), "the eighth tab count has its own grid");
     const order = /const TAB_ORDER: readonly TabKey\[\] = \[([^\]]+)\]/.exec(app)?.[1] ?? "";
-    assert.equal(order.split(",").length, 8, "TAB_ORDER and TAB_COLUMNS must agree, or the bar has no grid at its own width");
-    assert.ok(order.trimStart().startsWith('"today"'), "Today is the first tab");
+    assert.equal(order.split(",").length, 7, "TAB_ORDER and TAB_COLUMNS must agree, or the bar has no grid at its own width");
+    assert.ok(!order.includes('"today"'), "🔴 Today is not a tab — do not add it back; its replacement is RepTodayPlanPanel");
+    assert.ok(app.includes('7: "grid-cols-3 sm:grid-cols-4 lg:grid-cols-7"'), "seven tabs have their own grid");
+    assert.ok(!app.includes("today-tab"), "and the retired screen is gone from the shell");
   }
 
   // ── The screen shows him nothing that judges him ────────────────────────────────────────────────
@@ -240,7 +246,7 @@ export function runPhoenixCrmTodayTests(): void {
   // This is the assertion that stops Today quietly becoming the place the distances live: it is the
   // rep's most-opened screen, which makes it the most tempting one.
   {
-    for (const path of ["src/lib/phoenix-crm/server/today.ts", "src/lib/phoenix-crm/today-rules.ts", "src/components/phoenix-crm/today-tab.tsx"]) {
+    for (const path of ["src/lib/phoenix-crm/server/today.ts", "src/lib/phoenix-crm/today-rules.ts", "src/components/employee-portal/rep-today-plan-panel.tsx"]) {
       const code = source(path);
       for (const word of [/distance/i, /accuracy/i, /\bfar\b/i, /spread/i, /integrity/i, /\bflagg?ed\b/i, /suspic/i]) {
         assert.equal(word.test(code), false, `${path} must not carry ${word} onto the rep's own day`);
@@ -248,32 +254,227 @@ export function runPhoenixCrmTodayTests(): void {
     }
   }
 
-  // ── The dashboard: AM and PM as two sections, never one total (owner, 2026-09-29) ───────────────
+  // ── THE REP'S LANDING PANEL — WHAT REPLACED TODAY (owner, 2026-09-30) ──────────────────────────
   //
-  // "A dashboard of today's visits, done and not done" — and the call-rate rule says AM and PM are
-  // never summed or averaged. The old screen's "Planned today" tile counted `view.stops.length`, one
-  // number over both lists; that is exactly the total this pins out.
+  // 🔴 His own spec, retiring the module: "you will retire it from Phoenix CRM, and make something
+  // like it — of course NOT a big tool like this — in the rep's landing page. For example you put the
+  // BRICKS as headers, if MORE THAN ONE brick, and under each brick the customers planned to be
+  // visited today. When he has visited one it is coloured GREEN; if not visited it is not coloured.
+  // And a very small PLUS sign that redirects him to enter a visit for that person."
+  //
+  // 🔴 AND THEN, ON SEEING THE FIRST ATTEMPT: "it became AWFUL like this. Find a way to put it to be
+  // CONTRASTING and PREMIUM POLISHED with the current overview. I recommend that you remove the Early
+  // Birds and the My Tools, and put the doctors in a premium polished, in their place." So the panel
+  // may NOT carry a look of its own: it takes the column those two held and wears the chrome of the
+  // panels it sits beside. That is what the borrowed-vocabulary block below pins — a one-off style
+  // here is the exact defect he was looking at.
+  //
+  // So this pins the four things he named, the borrowed chrome, and the page rules the panel inherits.
   {
-    const tab = source("src/components/phoenix-crm/today-tab.tsx");
-    assert.ok(tab.includes('const LIST_TYPES: readonly PhoenixCrmListType[] = ["AM", "PM"];'), "the plan is drawn as an AM section and a PM section, AM first");
-    assert.ok(tab.includes("LIST_TYPES.map((listType)"), "one section per list type");
-    assert.equal(
-      /(done|planned)(Am|Pm)\s*\+\s*[\w.]*(done|planned)(Am|Pm)|value=\{`\$\{view\.stops\.length\}`\}/.test(tab),
-      false,
-      "AM and PM are never added into one figure",
-    );
-    assert.ok(tab.includes("view.alsoVisited.map"), "the visits off the plan are shown beside it");
-    assert.ok(tab.includes("unplannedKindLabel(extra.offKind)"), "each with its kind — out of plan or out of list");
-    assert.ok(tab.includes("view.plannedActivity") && tab.includes("view.dayActivity"), "and the day's activity, planned and recorded");
+    const panel = source("src/components/employee-portal/rep-today-plan-panel.tsx");
+    const centre = source("src/components/employee-portal/portal-command-center.tsx");
+    const landing = source("src/lib/phoenix-crm/server/rep-landing.ts");
 
-    // 🔴 The envelope is opened ONCE. The route answers `{ today: TodayView }` and `useCrmGet(url,
-    // "today")` already returns what sits under that key; the first screen typed the answer as
-    // `{ today: TodayView }` and read `.today` again — always undefined, so Today never left its
-    // loading state and nothing anywhere said why.
-    const route = source("app/api/phoenix-crm/today/route.ts");
-    assert.ok(route.includes("NextResponse.json({ today, success: true })"), "the route answers under the key `today`");
-    assert.ok(tab.includes('useCrmGet<TodayView>(crmUrl("/api/phoenix-crm/today", { seatId, test }), "today")'), "the screen reads that key once");
-    assert.equal(/data\?\.today|<\{ today: TodayView \}>/.test(tab), false, "and never opens the envelope a second time");
+    // 1. Bricks as headers, ONLY when there is more than one.
+    assert.ok(panel.includes("const showBrickHeadings = plan.bricks.length > 1;"), "bricks head the list only when there is more than one");
+    assert.ok(panel.includes("{showBrickHeadings ? <BrickHeading brick={brick} /> : null}"), "and the header is conditional on it");
+    // 🔴 And the brick is said ONCE. Neither it nor the area goes on a row (owner, 2026-09-30: "you
+    //    don't have to write Menoufia … and the Bagour is duplicated"): the area is his own
+    //    territory, and the brick is a heading, or the header's word on a single-brick day.
+    assert.ok(
+      landing.includes("address: addressWithoutTheBrick(stop.reference.address, stop.brick), area: null"),
+      "the area is dropped from every row, and an address that merely repeats the brick with it",
+    );
+    assert.ok(!landing.includes("stopWhereLine(stop,"), "and the brick is never passed to the where-line");
+    // The rule itself, by behaviour: the brick is dropped only when the address OPENS with it.
+    assert.equal(addressWithoutTheBrick("الباجور، سبك الضحاك", "باجور"), "سبك الضحاك", "the leading town goes, the village stays");
+    assert.equal(addressWithoutTheBrick("الباجور", "باجور"), null, "an address that is only the brick leaves nothing");
+    assert.equal(addressWithoutTheBrick("جروان الباجور", "باجور"), "جروان الباجور", "a place that merely CONTAINS the brick is a different place and is kept");
+    assert.equal(addressWithoutTheBrick("طنطا، سجر", "باجور"), "طنطا، سجر", "another town is never dropped");
+    assert.equal(addressWithoutTheBrick(null, "باجور"), null);
+    assert.equal(addressWithoutTheBrick("الباجور", null), "الباجور", "with no brick nothing is dropped");
+    assert.ok(
+      landing.includes("soleBrick: groups.length === 1 ? (view.stops[0]?.brick ?? null) : null,"),
+      'a one-brick day names the brick from the STOP, not the group label — that label is "Brick <name>", and the header read "WED 30 SEPT · BRICK باجور"',
+    );
+    assert.ok(panel.includes("{plan.soleBrick ? `${plan.dateLabel} · ${plan.soleBrick}` : plan.dateLabel}"), "and a one-brick day still says where he is");
+
+    // 2. Green when visited, nothing when not — carried by a tick as well as the colour, so it
+    //    survives a grey screenshot and a colour-blind reader.
+    assert.match(panel, /stop\.done \? "bg-emerald-50" : "bg-white"/, "a visited customer is green");
+    assert.match(panel, /stop\.done \? "bg-emerald-500" : "bg-slate-200"/, "and one not visited carries no colour at all — its rail is neutral slate");
+    assert.ok(panel.includes('<Check aria-hidden="true"'), "the tick says it too");
+
+    // 3. The very small plus, into Add visit on that person.
+    assert.ok(panel.includes("function addVisitHref(stop: RepTodayStop)"), "the plus has one address");
+    assert.match(panel, /\?customer=\$\{encodeURIComponent\(stop\.customerId\)\}/, "which names the customer");
+    assert.ok(panel.includes('phoenixCrmModulePath(PHOENIX_CRM_PORTAL_BASE, "visits")'), "and points at the Visits module's own page");
+    assert.equal((panel.match(/h-7 w-7 shrink-0/g) ?? []).length, 2, "very small, and the tick that replaces it is the same size");
+    assert.ok(panel.includes('<Plus aria-hidden="true"'), "and it is a plus sign");
+    assert.ok(panel.includes("stop.done ? ("), "no plus on one he has already done — a tick stands there instead");
+
+    // 4. 🔴 AM · PM · PHARMACIES, THREE FIGURES APART, never summed. Two golden rules meet in this
+    //    one header: the call rate is scored AM against 2 and PM against 10, and a pharmacy is
+    //    counted apart from both. The third chip is HIS OWN ASK of that morning — "show me my today
+    //    plan am/pm/ph" — which outlived the Today module it was built for: when Today was retired
+    //    that evening the figure lost its screen, and he put it back here (2026-09-30).
+    assert.ok(panel.includes('<CountChip done={plan.amDone} label="AM" planned={plan.amPlanned} />'));
+    assert.ok(panel.includes('<CountChip done={plan.pmDone} label="PM" planned={plan.pmPlanned} />'));
+    assert.ok(
+      panel.includes('<CountChip done={plan.pharmaciesDone} label="Pharmacies" />'),
+      'the pharmacies chip carries NO planned figure — a pharmacy is feedback recorded ON a visit, so there is nothing to plan against one and no "n of m" to print',
+    );
+    assert.ok(
+      landing.includes("pharmaciesDone: view.counts.donePharmacies,"),
+      "and the figure is the day's own pharmacy count, never a second derivation on the panel",
+    );
+    assert.equal(/(am|pm)(Done|Planned)\s*\+\s*[\w.]*(am|pm)(Done|Planned)/i.test(panel), false, "AM and PM are never added into one figure");
+    assert.equal(
+      /pharmaciesDone\s*\+|\+\s*[\w.]*pharmaciesDone/i.test(panel),
+      false,
+      "🔴 and a pharmacy is never added into either of them — the AM · PM · Pharmacies golden rule",
+    );
+
+    // 5. 🔴 THE CHROME IS BORROWED, NOT INVENTED — every piece of it is lifted from the panels it now
+    //    sits beside. `RepPanel`, `RepNeedRow` and the chip live in portal-command-center.tsx, which
+    //    imports THIS file, so they cannot be imported back (a cycle) and are written out instead.
+    //    These comparisons are what stops the two copies drifting into two looks.
+    for (const [what, shape] of [
+      ["the panel shell", 'className="min-w-0 border border-slate-200 bg-white"'],
+      ["the panel title", 'className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600"'],
+      ["the header chip", "border px-1.5 py-px text-phx-2xs font-bold uppercase tracking-[0.06em] tabular-nums"],
+      ["the row rail", 'className={`w-1 self-stretch'],
+    ] as const) {
+      assert.ok(panel.includes(shape), `the panel must wear the overview's own ${what}: ${shape}`);
+      assert.ok(centre.includes(shape), `and the overview must still be the source of ${what} — if it changed there, change it in the panel too`);
+    }
+
+    // 🔴 THE HEADER IS THE ONE PIECE THAT PARTS FROM THE OVERVIEW'S, BY EXACTLY ONE CLASS. The chip
+    // rail is `shrink-0`, which makes its own `flex-wrap` inert, so the THIRD chip put 319px of
+    // content into a 284px header at 320px and the panel scrolled sideways — which the
+    // fits-the-screen golden rule forbids outright, and wrapping is the remedy it names. Measured
+    // 2026-09-30: identical at 360, 375, 390 and 412, where the chips already fit on one line.
+    //
+    // The panel's string is DERIVED from the overview's here rather than written out, so this is
+    // still the drift guard the loop above is: change the header in portal-command-center.tsx and
+    // this goes red until the panel follows.
+    const centreHeader = 'className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2"';
+    assert.ok(centre.includes(centreHeader), "the overview must still be the source of the panel header");
+    assert.ok(
+      panel.includes(centreHeader.replace("flex items-center", "flex flex-wrap items-center")),
+      "the panel header must be the overview's, plus flex-wrap — without it the third chip overflows the panel at 320px",
+    );
+    assert.ok(!panel.includes("@/components/employee-portal/portal-command-center"), "and it is NEVER imported from there — that is the cycle this duplication exists to avoid");
+
+    // The landing page's own rules: no empty square, and nothing that judges him.
+    assert.ok(panel.includes("if (!plan) return null;"), "no day, no panel — never the empty square he has sworn at");
+    // The COLUMN goes with it: a 1fr grid track holding nothing is that same empty square.
+    assert.ok(centre.includes('${repTodayPlan ? "@3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}'), "and the two-column split collapses when there is no day");
+    assert.doesNotMatch(panel, /distance|accuracy|integrity|flag|far from/i, "and nothing on it judges him (golden rule #1)");
+    assert.doesNotMatch(panel, /rounded(?!-none)/, "square corners, written out");
+    assert.doesNotMatch(panel, /…|truncate/, "and nothing is cut off");
+
+    // 🔴 A VISIT LOGGED FROM THE PANEL'S "+" TURNS THAT ROW GREEN WHEN HE COMES BACK (owner,
+    //    2026-09-30: "if it is submitted from those visits in the overview landing page, it is
+    //    automatically marked as done"). It was already true of a FRESH request — `done` is read
+    //    from the day's saved visits — and FALSE of the one navigation a rep actually makes:
+    //    forward from the "+", then Back, which the router answers out of its own cache. Measured
+    //    that day on the preview box: the row stayed white, the "+" stayed, and the header still
+    //    read "AM 0 of 1" over a visit that was already in the database.
+    const form = source("src/components/phoenix-crm/visit-log-form.tsx");
+    assert.ok(form.includes("router.refresh();"), "a saved visit must empty the router cache, or Back shows him the day as it stood before he logged it");
+    assert.ok(
+      form.indexOf("router.refresh();") > form.indexOf('crmPost<SavedVisit>("/api/phoenix-crm/visits"'),
+      "and only once the visit is actually saved",
+    );
+    // 🔴 The server-side cure was TRIED AND MEASURED NOT TO WORK: the landing page is force-dynamic,
+    //    so there is no server cache to invalidate. Re-adding it would look like the fix and be one
+    //    more thing to unpick the next time this row goes stale.
+    assert.ok(
+      !source("app/api/phoenix-crm/visits/route.ts").includes("revalidatePath("),
+      "the save route must not call revalidatePath — it does nothing for a force-dynamic page, and it is not what turns the row green",
+    );
+
+    // 🔴 EARLY BIRDS IS RETIRED FROM THE MEDICAL REP'S PAGE ONLY — his own scope, the same day:
+    // "retire early bird only from med rep accounts". Every other centre keeps the card.
+    assert.ok(!centre.includes("<EarlyBirdOfTheFortnightCard"), "the rep's landing page no longer draws the Early Bird card");
+    for (const other of [
+      "src/components/admin/ceo-phase-b.tsx",
+      "src/components/employee-portal/dashboards/dsm-command-center.tsx",
+      "src/components/employee-portal/dashboards/rm-command-center.tsx",
+      "src/components/employee-portal/dashboards/nsm-command-center.tsx",
+      "src/components/employee-portal/dashboards/marketing-manager-command-center.tsx",
+    ]) {
+      assert.ok(
+        source(other).includes("<EarlyBirdOfTheFortnightCard"),
+        `${other}: the Early Bird card must STAY. The owner retired it from the medical rep's page alone — "only from med rep accounts" — so do not follow that removal through to this one.`,
+      );
+    }
+
+    // The loader never throws onto the landing page, and reads HIS OWN territory.
+    const loader = source("src/lib/phoenix-crm/server/rep-landing.ts");
+    assert.ok(loader.includes("const [own] = viewer.ownTerritories;"), "his own territory, not a manager's board");
+    assert.ok(loader.includes("if (view.stops.length === 0) return null;"), "no stops, no panel");
+    assert.match(loader, /catch \(error\) \{/, "and a failed read never takes the landing page down with it");
+    // The day's own date is on the panel BECAUSE of the 02:00 rule, and is formatted as UTC so a
+    // Cairo calendar day is never shifted back one by the runtime's zone.
+    assert.ok(loader.includes('timeZone: "UTC",'), "the day label is formatted as UTC — it is a calendar day, not an instant");
+
+    // It is wired in, for the rep and through the one switch.
+    assert.ok(centre.includes("<RepTodayPlanPanel plan={repTodayPlan} />"), "the rep's landing page draws it");
+    const home = source("app/employee-portals/page.tsx");
+    assert.ok(home.includes("const repTodayPlan = await loadRepTodayPlan(access);"), "and the page loads it");
+  }
+
+  // ── AM · PM · PHARMACIES — the rule the third chip prints ───────────────────────────────────────
+  //
+  // 🔴 A PHARMACY IS NEVER A STOP OF ITS OWN. It is feedback recorded ON a visit
+  // (`phoenix_crm_visits.pharmacy_name`) — a customer's list type is AM or PM and nothing else — so
+  // there is nothing to plan against one and no "Add visit" for one. It is the day's pharmacy work
+  // read back, counted APART: never inside doneAm or donePm, whatever the vendor tagged.
+  //
+  // This block was written for the Today module and travelled with the figure when he moved it to
+  // the landing panel (2026-09-30). Retiring the screen a number is drawn on does not retire the
+  // rule that says how it is counted — that is exactly how this one nearly went out with the tab.
+  {
+    const built = buildTodayStops({
+      planned: [],
+      visitsToday: [
+        { customerId: "a", name: "Dr One", listType: "AM", doneAt: "09:10", pharmacyName: "El Ezaby" },
+        { customerId: "b", name: "Dr Two", listType: "PM", doneAt: "17:40", pharmacyName: "el ezaby" },
+        { customerId: "c", name: "Dr Three", listType: "PM", doneAt: "18:20", pharmacyName: "Seif" },
+        { customerId: "d", name: "Dr Four", listType: "PM", doneAt: "19:00", pharmacyName: null },
+      ],
+    });
+    assert.deepEqual(
+      built.pharmacies.map((pharmacy) => `${pharmacy.name} | ${pharmacy.fromCustomers.join(", ")} | ${pharmacy.firstAt}`),
+      ["el ezaby | Dr One, Dr Two | 09:10", "Seif | Dr Three | 18:20"],
+      "one pharmacy however it is spelled, the latest spelling wins, every customer it came from, and the first clock",
+    );
+    assert.equal(built.counts.donePharmacies, 2, "two pharmacies");
+    assert.equal(built.counts.doneAm, 1, "AM counts visits, never pharmacies");
+    assert.equal(built.counts.donePm, 3, "and neither does PM");
+    assert.equal(built.counts.doneAm + built.counts.donePm, 4, "the four visits stay four — a pharmacy is never added in");
+
+    // Called directly as well: it is exported, and the panel's figure is only as good as this.
+    assert.deepEqual(todayPharmacies([]), [], "a day with no visits has no pharmacies");
+    assert.deepEqual(
+      todayPharmacies([{ customerId: "a", name: "Dr One", listType: "AM", doneAt: "09:10", pharmacyName: "   " }]),
+      [],
+      "and a blank name is not a pharmacy",
+    );
+
+    // 🔴 The chip is hidden at zero rather than printed as "Pharmacies 0" — the landing page's own
+    // no-empty-square rule, which a figure with no denominator would otherwise walk straight past.
+    const panel = source("src/components/employee-portal/rep-today-plan-panel.tsx");
+    assert.ok(
+      panel.includes("if (planned === 0 || (planned === undefined && done === 0)) return null;"),
+      "no pharmacy visited yet, no chip",
+    );
+    assert.ok(
+      panel.includes("{planned === undefined ? `${label} ${done}` : `${label} ${done} of ${planned}`}"),
+      'a pharmacy has no denominator, so its chip reads "Pharmacies 2" and never "n of m"',
+    );
   }
 
   console.log("phoenix-crm today: OK");

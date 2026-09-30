@@ -154,7 +154,6 @@ export function runPhoenixCrmOneTapVisitTests(): void {
     // absence necessarily names it.
     for (const path of [
       "src/components/phoenix-crm/visits-tab.tsx",
-      "src/components/phoenix-crm/today-tab.tsx",
       "src/components/phoenix-crm/visit-log-form.tsx",
     ]) {
       const code = source(path);

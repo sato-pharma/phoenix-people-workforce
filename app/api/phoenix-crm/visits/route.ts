@@ -35,6 +35,10 @@ export async function POST(request: Request) {
     const viewer = await resolvePhoenixCrmViewer(access);
     const body = (await request.json()) as unknown;
     const visit = await saveVisit(viewer, body);
+    // 🔴 DO NOT ADD `revalidatePath("/employee-portals")` HERE. It was added on 2026-09-30 to make
+    // the rep's day go green when he presses Back from this form, and MEASURED not to: that page is
+    // `force-dynamic`, so there is no server cache to invalidate — the stale copy is the browser's
+    // own router cache, and only `router.refresh()` in visit-log-form.tsx empties it.
     return NextResponse.json({ visit, success: true });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not save the visit.");

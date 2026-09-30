@@ -21,9 +21,16 @@ import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+/**
+ * 🔴 THERE IS NO `today` MODULE ANY MORE (owner, 2026-09-30: "regarding the Today, you will retire it
+ * from Phoenix CRM, and make something like it — of course not a big tool like this — in the rep's
+ * landing page"). What replaced it is `RepTodayPlanPanel` on `/employee-portals`: the day's planned
+ * customers clustered by brick, green once visited, with a small "+" per row into Add visit.
+ *
+ * Do NOT add it back as a tab. The rules it read still live in `today-rules.ts` and are what the
+ * landing panel uses, so the module's logic was kept and only the SCREEN was retired.
+ */
 export type PhoenixCrmTabs = {
-  /** The rep's own day — the tab the app opens on (A2). Same reach as Visits. */
-  today: boolean;
   visits: boolean;
   list: boolean;
   plan: boolean;
@@ -167,7 +174,6 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     .sort((left, right) => left.name.localeCompare(right.name));
   const hasScope = viewer.isSuperAdmin || scope.length > 0;
   const tabs: PhoenixCrmTabs = {
-    today: hasScope,
     visits: hasScope,
     list: hasScope,
     plan: viewer.isSuperAdmin || ownSeatIds.length > 0,

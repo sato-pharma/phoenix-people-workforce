@@ -207,7 +207,16 @@ export async function runPhoenixCrmUnplannedVisitTests(): Promise<void> {
         // in the file. 400 characters clears the closing tag and the table's own opening props. It may
         // be a <CrmTable> written out, or a component that wraps one — the Visits tab's own
         // <VisitTable> is the second shape, and it is correct.
-        if (close === -1 || !/<[A-Z][A-Za-z]*Table[\s/>]/.test(after.slice(close, close + 400))) {
+        //
+        // 🔴 THE WINDOW IS MEASURED ON COLLAPSED WHITESPACE, OR A COMMENT BETWEEN THE TWO HALVES
+        // FAILS THE FILE THAT IS CORRECT. `stripComments` blanks a JSX comment's CONTENT and keeps
+        // its whitespace, so the 16-line note explaining the List's columns became ~430 characters
+        // of spaces and pushed the very <CrmTable> it was explaining out of a raw 400-character
+        // window — customer-list-board.tsx went red on 2026-09-30 with its desktop table on the next
+        // line but one. Collapsing first keeps the window honest about what is RENDERED, which is
+        // all this rule is about: any real markup between the two halves still spends the budget.
+        const beside = close === -1 ? "" : after.slice(close).replace(/\s+/g, " ").slice(0, 400);
+        if (close === -1 || !/<[A-Z][A-Za-z]*Table[\s/>]/.test(beside)) {
           problems.push(`${file}: a <CrmCardsOnPhone> block has no <CrmTable> beside it, so it renders nothing from 768px up`);
         }
       }

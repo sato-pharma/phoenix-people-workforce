@@ -112,12 +112,26 @@ export function runPhoenixCrmMobileMirrorsTests(): void {
   // in `viewer.isSuperAdmin`, `isRep` and the rest, which are booleans and are not tabs.
   const phoneTabs = tabKeys(braceBlock(read("mobile/src/lib/crm/types.ts"), "\n  tabs: {", "the phone's tabs mirror"));
 
-  assert.ok(webTabs.length >= 8, `PhoenixCrmTabs must still be read as boolean fields — found ${webTabs.join(", ") || "none"}`);
+  assert.ok(webTabs.length >= 7, `PhoenixCrmTabs must still be read as boolean fields — found ${webTabs.join(", ") || "none"}`);
+
+  // 🔴 ONE KEY IS EXPECTED ON THE PHONE AND NOT ON THE WEB, AND IT IS NOT DRIFT.
+  //
+  // The owner retired the Today MODULE from Phoenix CRM on 2026-09-30 and replaced it with a panel on
+  // the rep's landing page, so `today` left `PhoenixCrmTabs`. The phone's mirror still carries it, and
+  // the mobile app is FROZEN (AGENTS.md §4) — it may not be edited, planned or touched until he lifts
+  // that in his own words. So the two sides legitimately differ by this one key until then.
+  //
+  // The guard is NOT relaxed: every OTHER key must still match exactly, and the web may not carry a
+  // key the phone lacks, which is the direction that makes a tab silently never render on the phone.
+  const RETIRED_ON_WEB_ONLY = ["today"];
   assert.deepEqual(
-    [...phoneTabs].sort(),
+    [...phoneTabs].filter((key) => !RETIRED_ON_WEB_ONLY.includes(key)).sort(),
     [...webTabs].sort(),
     "the phone's `tabs` mirror and PhoenixCrmTabs must hold the same keys — a key on one side only is a tab that silently never renders",
   );
+  for (const key of webTabs) {
+    assert.ok(phoneTabs.includes(key), `the web has \`${key}\` and the phone does not — that tab can never render there`);
+  }
 
   // The phone's own mirror is a TYPE mirror, not a rendering promise: it carries all eight keys while
   // the shell draws six. Pinning that the two manager keys are among them is what stops a trim of the
