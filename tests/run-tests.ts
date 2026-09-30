@@ -2172,6 +2172,10 @@ import { runSeniorMedicalRepresentativeTitleTests } from "./senior-medical-repre
 import { runPhoenixCrmDiscardOnePressTests } from "./phoenix-crm-discard-one-press.test.ts";
 import { runRollupBranchNameTests } from "./rollup-branch-name.test.ts";
 import { runRollupBuildVerdictTests } from "./rollup-build-verdict.test.ts";
+import { runRailwayDeployConfigTests } from "./railway-deploy-config.test.ts";
+import { runScheduledAlarmsNeverWithholdTests } from "./scheduled-alarms-never-withhold.test.ts";
+import { runStaleDomainGateTests } from "./stale-domain-gate.test.ts";
+import { runRailwaySecretPolicyTests } from "./railway-secret-policy.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -8066,6 +8070,26 @@ await runTest("phoenix crm: no save bar takes two presses to discard", runPhoeni
 await runTest("rollup branch name: unique across history, an unknown counts as taken", runRollupBranchNameTests);
 
 await runTest("rollup build: a member merging mid-build is survived, not a crash", runRollupBuildVerdictTests);
+
+await runTest(
+  "railway deploy config: a broken deploy fails its healthcheck instead of taking production traffic",
+  runRailwayDeployConfigTests,
+);
+
+await runTest(
+  "scheduled alarms report a finding without withholding the deploy — and the payroll writer still fails red",
+  runScheduledAlarmsNeverWithholdTests,
+);
+
+await runTest(
+  "the stale-domain gate catches a dead Cloud Run host, scopes its escape hatch, and keys the extension test on the basename",
+  runStaleDomainGateTests,
+);
+
+await runTest(
+  "production secrets: the three variables that silently misdirect email or fake the revision must be ABSENT",
+  runRailwaySecretPolicyTests,
+);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

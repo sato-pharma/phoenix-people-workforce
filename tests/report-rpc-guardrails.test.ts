@@ -124,6 +124,30 @@ const RPCS_REQUIRING_TIMEOUT = [
   // outstation, marketing, leave) in one call, and it is a LANDING page: losing the timeout means
   // the Finance Manager's first screen after login is an HTTP 500, not a slow section.
   "phx_finance_command_center",
+  // The sales-reporting family, added 2026-09-30 after 61 `canceling statement due to statement
+  // timeout` errors reached real managers on the 28th and 29th — Business Review (38 events, 8
+  // distinct people), Sales vs Target (12) and Make It Happen (11), hitting DMs, NSMs, an RM and a
+  // Medical Rep. Every sibling around these twelve already carried an override; these never did, so
+  // they ran on the 8s authenticator default and were cancelled mid-query as the data grew.
+  //
+  // 🔴 The episode went quiet on 2026-09-30 with NOTHING fixing it, which is exactly why they belong
+  // in this list rather than only in a migration: a dormant ceiling reads as a solved problem, and
+  // `CREATE OR REPLACE FUNCTION` would silently drop the fix on the next recreate.
+  "phx_sales_vs_target_range",
+  "phx_sales_vs_target_cache_token",
+  "phx_sales_brick_detail",
+  "phx_sales_area_trend",
+  "phx_sales_source_breakdown",
+  "phx_sales_source_breakdown_detail",
+  "phx_sales_source_breakdown_line",
+  "phx_sales_direct_breakdown",
+  "phx_monthly_targets",
+  "phx_monthly_store_split_net",
+  // These two wrap au.f_monthly_achievement / au.f_monthly_attribution — the heaviest of the set, and
+  // the reason they carry 60s where the rest carry 45s. A nested call runs under the OUTER function's
+  // timeout, so the wrapper is what has to hold it.
+  "phx_monthly_achievement",
+  "phx_monthly_attribution",
 ] as const;
 
 function testEveryHeavyReportRpcKeepsItsTimeout() {

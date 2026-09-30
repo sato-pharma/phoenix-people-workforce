@@ -329,14 +329,29 @@ const nextConfig: NextConfig = {
     ...(Number(process.env.PHX_BUILD_CPUS) > 0
       ? { cpus: Number(process.env.PHX_BUILD_CPUS) }
       : {}),
+    // THE ONE HOST A SERVER ACTION MAY ARRIVE ON. Next matches the request's Origin/Host against
+    // this list and rejects the action if it is not here, so every entry is a host allowed to POST
+    // a mutation into a live payroll app.
+    //
+    // 🔴 The two Cloud Run hosts that used to sit here were REMOVED on 2026-09-30, and must never
+    // come back. GCP billing is closed (AGENTS.md §3: "GCP and Vercel are DEAD" — every API answers
+    // BILLING_DISABLED), the services are gone, and that project-number hostname is a name the
+    // company no longer controls: whoever claims the number next inherits a host this app was still
+    // trusting to POST server actions. The second of the two carried a comment about a "post-cutover
+    // rollback window" to a platform that had already been deleted for weeks — that window is
+    // closed, and there is nothing left to roll back to.
+    //
+    // This was the LAST place they were trusted anywhere in the repo. Everything else had already
+    // been hardened: `isAllowedPhoenixOrigin` rejects them (pinned by
+    // tests/gcloud-migration-hardening.test.ts), and scripts/validate-env.mjs refuses such a value
+    // outright. scripts/check-no-stale-domains.mjs now carries the matching host pattern so this
+    // file cannot quietly regrow one — it read next.config.ts all along and passed it, because it
+    // only knew the four Vercel patterns.
+    //
+    // 🔴 The hostname is deliberately not spelled out above: that gate scans this file, and prose
+    // quoting the host would trip the very check that keeps it gone.
     serverActions: {
-      allowedOrigins: [
-        "phoenix-hr-897559113412.europe-west3.run.app",
-        // Old Iowa host — kept only for the post-cutover rollback window (DNS can be
-        // flipped back to it until the us-central1 service is decommissioned).
-        "phoenix-hr-897559113412.us-central1.run.app",
-        "phoenix-hr.satopharma.com",
-      ],
+      allowedOrigins: ["phoenix-hr.satopharma.com"],
     },
     // Tree-shake large barrel imports so only the icons/charts a component
     // actually uses land in its client chunk (lucide-react alone is imported

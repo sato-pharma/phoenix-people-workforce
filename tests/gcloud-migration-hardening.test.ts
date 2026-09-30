@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { isAllowedPhoenixOrigin, trustedOriginForRedirect } from "../src/lib/security/origins.ts";
 import { systemDeployment } from "../src/config/system-settings.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Regression coverage for the Vercel -> Google Cloud Run migration.
@@ -80,13 +81,36 @@ export function runGcloudMigrationHardeningTests() {
     "connect-src CSP must not whitelist Sentry after its removal",
   );
 
-  // Synthetic-journey environment classification must treat the Cloud Run host as
-  // production (not 'preview').
-  const syntheticSource = readFileSync("src/lib/synthetic-journeys/service.ts", "utf8");
+  // Synthetic-journey environment classification must NOT recognise a Cloud Run host at all.
+  //
+  // INVERTED on 2026-09-30, and the inversion is the point. This assertion used to require
+  // `.run.app` to be PRESENT, because during the cutover a synthetic run against the Cloud Run
+  // service had to be labelled `production` rather than `preview`. The cutover is complete: GCP
+  // billing is closed (AGENTS.md §3 — "GCP and Vercel are DEAD", every API answers
+  // BILLING_DISABLED), the services are deleted, and `phoenix-hr-897559113412.*.run.app` is a
+  // hostname the company no longer controls. A dead host must never be trusted as production —
+  // whoever inherits that project number would otherwise have their host labelled as the real
+  // payroll app. The canonical custom domain is the only production host now, and an unrecognised
+  // host correctly falls through to `preview`.
+  //
+  // Read through stripComments so this asserts on CODE, not prose. The removal is documented in
+  // that file, and an explanation of why a host is gone naturally wants to quote the host — which
+  // would fail a raw-text guard on its own documentation. That file's comment currently avoids
+  // naming it (scripts/check-no-stale-domains.mjs scans it too), so today the strip changes
+  // nothing; it is here so the next person to expand that comment is not punished for it.
+  // See tests/support/comment-strip.ts for why the strip must be that lexer and not a regex.
+  const syntheticSource = stripComments(readFileSync("src/lib/synthetic-journeys/service.ts", "utf8"));
+  assert.doesNotMatch(
+    syntheticSource,
+    /run\.app/,
+    "synthetic-journey environment detection must no longer recognise any Cloud Run (.run.app) host: " +
+      "the GCP cutover is complete, the services are deleted, and a host the company does not " +
+      "control must never be classified as production",
+  );
   assert.match(
     syntheticSource,
-    /\.run\.app/,
-    "synthetic-journey environment detection must recognise the Cloud Run host as production",
+    /"phoenix-hr\.satopharma\.com"/,
+    "the canonical custom domain must remain the host that means production",
   );
 
   // --- Wave 1: legacy Vercel origins removed from the trust set ---

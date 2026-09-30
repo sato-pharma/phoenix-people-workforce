@@ -1,0 +1,84 @@
+# How Railway builds and runs the Phoenix Workforce web app — the service that pays real salaries.
+#
+# WHY THIS FILE EXISTS AT ALL. Until 2026-09-30 there was none, and every deploy setting for this
+# service lived only in the Railway dashboard: not reviewable in a pull request, not restorable from
+# git, not visible to anyone reading the code. That is the same class as the 2026-08-13 incident this
+# repo's `deploy-drift-check.yml` was written for — production's source silently pointing at a stale
+# branch, stranding five merged and green pull requests for hours with nothing red anywhere. A
+# dashboard-only setting drifts in silence; a file in git does not.
+#
+# 🔴 THE VALUES BELOW ARE THE ONES RAILWAY ALREADY REPORTED ON 2026-09-30, WITH ONE EXCEPTION.
+# `ON_FAILURE`/10 and one replica were already live, so committing them changes nothing and simply
+# writes down what was true. `healthcheckPath` is the exception and the point of this file.
+#
+# WHY TOML AND NOT JSON. Railway reads either. This repo's other Railway service config is
+# `infra/headwind-phoenix-actions/railway.toml`, and the reason is the same there as here: JSON
+# cannot carry a comment, and every non-obvious value in this repo is expected to say why it is what
+# it is.
+#
+# 🔴 FOUR THINGS ARE SERVICE SETTINGS, NOT FILE SETTINGS — this file cannot express them and they
+# stay set once in the Railway UI. Each has cost something before:
+#
+#   Source branch    `main`. It has silently drifted before (2026-08-13, above). `deploy-drift-check.yml`
+#                    is the only thing that watches it.
+#   Region           `europe-west4-drams3a`. 🔴 PRODUCTION MUST STAY IN EUROPE — colocated with the
+#                    Frankfurt Supabase project and near the Cairo users. The workspace's own
+#                    preferred region is `sfo`, so a NEW service is born in San Francisco unless the
+#                    region is set explicitly at creation. And `railway service scale <region>=1`
+#                    ADDS a region rather than moving one: it once produced two live replicas writing
+#                    one database. Pass the old region `=0` in the SAME command.
+#   Variables        106 of them on production, 49 on staging. GitHub is the source of truth for 48;
+#                    `scripts/sync-railway-production-secrets.mjs` writes them one way, GitHub →
+#                    Railway, and overwrites a hand fix made in the dashboard.
+#   Custom domain    `phoenix-hr.satopharma.com`, via an unproxied Cloudflare CNAME.
+#
+# 🔴 THERE ARE DELIBERATELY NO `watchPatterns`, AND THAT IS A DECISION, NOT AN OMISSION. Every merge,
+# including a docs-only one, currently pays a full production build and deploy. Excluding paths would
+# cut real CI and build time — but a watch pattern that is wrong by one line stops deploying real code
+# with nothing red to show it, which is the failure mode this repo treats as the worst of all. The
+# saving is not worth a silent no-deploy. Revisit only with a way to prove the pattern is right.
+
+[build]
+# No builder key on purpose. Railway's own builder detects the root `Dockerfile` and uses it — read
+# off the live build log on 2026-09-30 ("load build definition from Dockerfile", `node:24-alpine`,
+# and the five LegacyKeyValueFormat warnings whose line numbers match this repo's Dockerfile). The
+# service's `builder` field reads RAILPACK, which is why that had to be measured rather than assumed:
+# the two readings look contradictory and only the build log settles it.
+
+[deploy]
+# 🔴 THIS IS THE ONE BEHAVIOUR CHANGE IN THIS FILE, AND IT IS THE REASON IT WAS WRITTEN.
+# Before 2026-09-30 NO service in this project had a healthcheck — none, in either environment, and
+# no `HEALTHCHECK` in either Dockerfile either. So a container that booted and then threw on its
+# first request was promoted to 100% of traffic and Railway had nothing to fail it on: a deploy with
+# a wrong `SUPABASE_SERVICE_ROLE_KEY` would serve errors to every employee while `/api/healthz`
+# answered `{"status":"ok"}` the whole time and every check in this repo stayed green.
+#
+# `/api/readyz`, NOT `/api/healthz`. `healthz` returns the literal string "ok" with no branch in the
+# code — it cannot report anything else, so as a gate it only proves a Node process is listening.
+# `readyz` checks the four required environment variables AND pings Supabase, and answers 503 when
+# either is wrong. It is unauthenticated by declaration (`src/lib/security/access-registry.ts`) and
+# `proxy.ts` does not gate a GET, so the platform can reach it with no session.
+#
+# WHAT THIS BUYS AND WHAT IT COSTS. A broken deploy now fails its healthcheck and Railway keeps the
+# OLD version serving — nobody sees it. The cost is the other side of the same coin: a Supabase blip
+# during a deploy can fail that deploy and need a re-run. That trade was put to the owner on
+# 2026-09-30 and he chose it over liveness-only.
+healthcheckPath = "/api/readyz"
+
+# Generous on purpose, in seconds. This app preloads 1,148 route entries at start in production
+# (see next.config.ts), so a cold container is slow to first response for reasons that have nothing
+# to do with whether it is healthy. The probe itself is bounded well under this: the DB ping is capped
+# at 4s and the registry audit at 4s of total wall clock. A tight window here would fail good deploys.
+healthcheckTimeout = 300
+
+# 🔴 ON_FAILURE, NOT ALWAYS — and the retry cap is the reason to say so. After 10 consecutive crashes
+# Railway stops restarting, and nothing here raises an alarm about that; the tell is `/api/healthz`
+# ceasing to answer. ALWAYS would hide a genuine configuration failure behind an endless restart loop,
+# which is the same reasoning written down for the Headwind service.
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# One instance. This is what is already live, and it is recorded here because the way to break it is
+# a single command: `railway service scale <region>=1` ADDS a replica in that region instead of
+# moving the existing one, and two replicas of this app is not a scale-up.
+numReplicas = 1

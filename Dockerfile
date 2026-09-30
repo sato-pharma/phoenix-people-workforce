@@ -41,7 +41,7 @@ COPY . .
 # Next.js collects completely anonymous telemetry data about general usage.
 # Learn more here: https://nextjs.org/telemetry
 # Uncomment the following line in case you want to disable telemetry during the build.
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_TELEMETRY_DISABLED=1
 
 # NEXT_PUBLIC_* values are inlined into the client bundle at `next build` time, not read from
 # the container's runtime env, so they must arrive as --build-arg. Declared here and re-exported
@@ -60,9 +60,9 @@ ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_ONESIGNAL_APP_ID
-# Release identifier for the deployed build, tagging which revision a client/server error
-# came from (see app_error_events ingestion in instrumentation.ts / src/lib/error-monitor) —
-# same $SHA_TAG the deploy workflows use for the image tag.
+# 🔴 READ BY NO APPLICATION CODE — zero call sites across src/, app/ and lib/, verified 2026-09-30. The comment that stood here
+# claimed it tagged which revision a client error came from; it never did. What actually tags one is the NON-prefixed COMMIT_SHA,
+# resolved in src/lib/observability/deploy-identity.ts. Inert build-arg slot — wire it up or drop it with its docs/environment.md rows.
 ARG NEXT_PUBLIC_COMMIT_SHA
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 ENV NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
@@ -80,8 +80,8 @@ RUN pnpm run build
 FROM base AS runner
 WORKDIR /app
 
-ENV NODE_ENV production
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
 # Chromium + fonts for server-side PDF generation of offer letters (puppeteer-core drives this
 # system Chromium — we deliberately do NOT bundle Puppeteer's own Chromium, which is a glibc
@@ -166,8 +166,8 @@ USER nextjs
 
 EXPOSE 8080
 
-ENV PORT 8080
+ENV PORT=8080
 # set hostname to 0.0.0.0
-ENV HOSTNAME "0.0.0.0"
+ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]

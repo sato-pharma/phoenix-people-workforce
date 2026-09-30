@@ -4,16 +4,39 @@ import process from "node:process";
 
 import { variables as syncedVariables } from "./sync-railway-production-secrets.mjs";
 import { checkSecretShape } from "./secret-shape-rules.mjs";
+import {
+  EXPECTED_VALUES,
+  FORBIDDEN_VARIABLES,
+  RAILWAY_CLI_PACKAGE,
+  REQUIRED_VARIABLES,
+  checkCanonicalOrigins,
+  checkExpectedValues,
+  checkForbiddenVariables,
+} from "./secret-policy.mjs";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const railEnv = process.env.RAILWAY_ENVIRONMENT || "production";
 const projectId = process.env.RAILWAY_PROJECT_ID?.trim();
 const serviceName = process.env.RAILWAY_SERVICE_NAME?.trim() || process.env.RAILWAY_SERVICE_ID?.trim();
-const railwayToken = process.env.RAILWAY_TOKEN?.trim();
+// 🔴 BOTH TOKEN NAMES, BECAUSE THE TWO KINDS ARE NOT INTERCHANGEABLE AND THE CLI TELLS YOU SO BADLY.
+// Railway mints ACCOUNT tokens and PROJECT tokens, and the CLI reads them from different variable
+// names. Until 2026-09-30 this script read `RAILWAY_TOKEN` alone while its sibling
+// sync-railway-production-secrets.mjs accepted either — so an owner who only ever minted an ACCOUNT
+// token got a clean sync followed by a hard "RAILWAY_TOKEN is required" here, and the workflow's own
+// comment pointed the reader at token KIND when the problem was the NAME.
+//
+// Worse than the missing case is the present-but-wrong one: the sync script's comment records that an
+// account token supplied under `RAILWAY_TOKEN` fails as `Unauthorized`, which is indistinguishable
+// from an expired token. So the name that carries the value is preserved and passed through to the CLI
+// deliberately, rather than being normalised onto one name here — see railwayEnv() below.
+const accountToken = process.env.RAILWAY_API_TOKEN?.trim();
+const projectToken = process.env.RAILWAY_TOKEN?.trim();
+const railwayToken = accountToken || projectToken;
+const tokenVarName = accountToken ? "RAILWAY_API_TOKEN" : "RAILWAY_TOKEN";
 
 if (!railwayToken) {
-  console.error("[validate-railway-production-secrets] RAILWAY_TOKEN is required.");
+  console.error("[validate-railway-production-secrets] RAILWAY_API_TOKEN or RAILWAY_TOKEN is required.");
   process.exit(1);
 }
 if (!projectId) {
@@ -25,42 +48,21 @@ if (!serviceName) {
   process.exit(1);
 }
 
-const requiredVariables = [
-  "APP_URL",
-  "NEXT_PUBLIC_APP_URL",
-  "NEXT_PUBLIC_SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-  "SUPABASE_SERVICE_ROLE_KEY",
-  "SUPABASE_PROJECT_ID",
-  "SUPABASE_PROJECT_REF",
-  "PHOENIX_AUTH_SECRET",
-  "RESEND_API_KEY",
-  "RESEND_WEBHOOK_SECRET",
-  "OPENAI_API_KEY",
-  "TELEGRAM_BOT_TOKEN",
-  "NOTIFICATION_WEBHOOK_SECRET",
-  "CRON_SECRET",
-  "ATTENDANCE_AGENT_TOKEN",
-  // Added 2026-08-08 — code-verified to have no fallback/default, unlike the other 18 newly
-  // GitHub-tracked variables (see sync-railway-production-secrets.mjs). Safe to require here
-  // regardless of GitHub backfill status: this script checks Railway's live value, which is
-  // already correct for all 8.
-  "EMAIL_NOTIFICATIONS_ENABLED",
-  "IREPORTS360_BASE_URL",
-  "IREPORTS360_USERNAME",
-  "IREPORTS360_PASSWORD",
-  "NOTIFICATION_EMAIL_FROM",
-  "PHOENIX_APP_URL",
-  "PHOENIX_LIVE_CRM_POLL",
-  "WHATSAPP_WEBHOOK_VERIFY_TOKEN",
-];
+// The 23 names that must be present and non-empty. Moved into scripts/secret-policy.mjs on
+// 2026-09-30 so a test can compare it against sync-railway-production-secrets.mjs's own
+// `required: true` set — this script exits at import time, so nothing could import the list while
+// it lived here, and two lists that must agree and cannot be compared is how they drift.
+const requiredVariables = REQUIRED_VARIABLES;
 
 const npmCommand = process.platform === "win32" ? "npx.cmd" : "npx";
-const cliArgs = ["--yes", "@railway/cli@latest", "variable", "list", "--json", "--service", serviceName, "--environment", railEnv, "--project", projectId];
+const cliArgs = ["--yes", RAILWAY_CLI_PACKAGE, "variable", "list", "--json", "--service", serviceName, "--environment", railEnv, "--project", projectId];
 
 if (dryRun) {
-  console.log(`[validate-railway-production-secrets] dry-run: would validate ${requiredVariables.length} required Railway variables`);
+  console.log(
+    `[validate-railway-production-secrets] dry-run: would validate ${requiredVariables.length} required Railway variables,`
+      + ` assert ${FORBIDDEN_VARIABLES.length} forbidden names are absent and ${EXPECTED_VALUES.length} exact-value rules,`
+      + ` in environment ${railEnv}. No Railway call is made and no value is read.`,
+  );
   process.exit(0);
 }
 
@@ -68,7 +70,16 @@ const result = spawnSync(npmCommand, cliArgs, {
   cwd: process.cwd(),
   env: {
     ...process.env,
-    RAILWAY_TOKEN: railwayToken,
+    // Pass the token under the name it ARRIVED on, and BLANK the other one. Both matter:
+    //   - Under the wrong name the CLI answers `Unauthorized`, which reads as an expired token and
+    //     sends the reader to rotate a credential that is perfectly good.
+    //   - Leaving both set is worse than either, because this process inherits `...process.env` and
+    //     the workflow supplies BOTH names — so the CLI picks, and which one it picks is not
+    //     something this script can state. Blanking is what makes the outcome deterministic.
+    // Same handling as sync-railway-production-secrets.mjs, whose own comment records the day this
+    // cost to diagnose.
+    RAILWAY_API_TOKEN: tokenVarName === "RAILWAY_API_TOKEN" ? railwayToken : "",
+    RAILWAY_TOKEN: tokenVarName === "RAILWAY_TOKEN" ? railwayToken : "",
     RAILWAY_PROJECT_ID: projectId,
     RAILWAY_SERVICE_NAME: serviceName,
     RAILWAY_ENVIRONMENT: railEnv,
@@ -136,13 +147,36 @@ for (const name of requiredVariables) {
   if (name === "NEXT_PUBLIC_SUPABASE_ANON_KEY" || name === "SUPABASE_SERVICE_ROLE_KEY") {
     if (trimmed.length < 20) failures.push(`${name} looks too short`);
   }
-
-  // Value-shape rules (scripts/secret-shape-rules.mjs). Deliberately fed the RAW value rather
-  // than `trimmed`: surrounding whitespace, a stray newline and a leading BOM are themselves
-  // corruption worth failing on, and trimming first would hide all three. See that module's
-  // header for the 2026-09-02 incident these exist to catch.
-  failures.push(...checkSecretShape(name, value));
 }
+
+// Value-shape rules (scripts/secret-shape-rules.mjs), over EVERY variable Railway returns.
+//
+// 🔴 THIS USED TO SIT INSIDE THE requiredVariables LOOP ABOVE, WHICH MADE PART OF IT DEAD CODE.
+// GROQ_API_KEY is not a required variable — an unset one is a supported state, it only turns the
+// Firefox voice note off — so its gsk_… rule, registered on 2026-09-25 specifically because that
+// key is pasted into Railway by hand exactly the way OPENAI_API_KEY's masked paste was, could
+// never fire on the real value. The same was true of every future rule for an optional variable.
+// Hoisted 2026-09-30. Still a HARD failure, as it was: both rules in that module are
+// deterministic, not heuristic, which is the distinction between this and the warn-only
+// EMBEDDED_KEY_VALUE guess below.
+//
+// Deliberately fed the RAW value rather than a trimmed copy: surrounding whitespace, a stray
+// newline and a leading BOM are themselves corruption worth failing on, and trimming first would
+// hide all three. See that module's header for the 2026-09-02 incident these exist to catch.
+for (const [name, rawValue] of valuesByName) {
+  failures.push(...checkSecretShape(name, rawValue));
+}
+
+// Production-only policy: names that must be ABSENT, and values that must be EXACT.
+// scripts/secret-policy.mjs holds all three lists and the reason for each; every one of these
+// checks answers with nothing unless railEnv is production, because three of the forbidden names
+// are legitimately set on staging and staging's APP_ENV is "staging" by design.
+failures.push(...checkForbiddenVariables(valuesByName, railEnv));
+failures.push(...checkExpectedValues(valuesByName, railEnv));
+// Folded in from scripts/validate-env.mjs, which has never been able to run: it needs the real
+// values and is in no workflow, no ci.yml step and no npm script, so it exits 1 with nothing set.
+// This is the one place that HAS the values.
+failures.push(...checkCanonicalOrigins(valuesByName, railEnv));
 
 // Added 2026-08-08, after CLOUDFLARE_API_TOKEN and NOTIFICATION_WEBHOOK_SECRET were found on
 // Railway with a second, unrelated KEY=VALUE pair glued onto the end of the real value with no
@@ -203,4 +237,8 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`[validate-railway-production-secrets] OK — validated ${requiredVariables.length} required variables in Railway environment ${railEnv}`);
+console.log(
+  `[validate-railway-production-secrets] OK — validated ${requiredVariables.length} required variables,`
+    + ` ${FORBIDDEN_VARIABLES.length} forbidden names absent, ${EXPECTED_VALUES.length} exact-value rules,`
+    + ` and the value shape of all ${valuesByName.size} variables in Railway environment ${railEnv}`,
+);

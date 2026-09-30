@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
+import { RAILWAY_CLI_PACKAGE } from "./secret-policy.mjs";
+
 function resolveValue(names) {
   for (const name of names) {
     const value = process.env[name]?.trim();
@@ -49,7 +51,13 @@ const variables = [
     { railway: "NEXT_PUBLIC_APP_URL", github: ["NEXT_PUBLIC_APP_URL", "APP_URL"], required: true },
     { railway: "NEXT_PUBLIC_SUPABASE_URL", github: ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL"], required: true },
     { railway: "NEXT_PUBLIC_SUPABASE_ANON_KEY", github: ["NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY"], required: true },
-    { railway: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", github: ["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "SUPABASE_PUBLISHABLE_KEY"], required: true },
+    // 🔴 DEMOTED FROM required:true ON 2026-09-30, and it must stay in lockstep with
+    // scripts/secret-policy.mjs's REQUIRED_VARIABLES (tests/railway-secret-policy.test.ts fails if
+    // the two disagree). Read by ZERO lines of application code — verified across src/, app/ and
+    // scripts/ — so requiring it meant an emergency secret sync could abort over a variable whose
+    // absence changes nothing, while the credentials that DO matter went unsynced behind it.
+    // Re-promote it the day something reads it, not before.
+    { railway: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", github: ["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "SUPABASE_PUBLISHABLE_KEY"], required: false },
     { railway: "SUPABASE_SERVICE_ROLE_KEY", github: ["SUPABASE_SERVICE_ROLE_KEY", "PRODUCTION_SUPABASE_SERVICE_ROLE_KEY"], required: true },
     { railway: "SUPABASE_PROJECT_ID", github: ["SUPABASE_PROJECT_ID", "SUPABASE_PROJECT_REF"], required: true },
     { railway: "SUPABASE_PROJECT_REF", github: ["SUPABASE_PROJECT_REF", "SUPABASE_PROJECT_ID"], required: true },
@@ -177,7 +185,7 @@ function main() {
   }
 
   const npmCommand = process.platform === "win32" ? "npx.cmd" : "npx";
-  const cliArgsBase = ["--yes", "@railway/cli@latest", "variable", "set"];
+  const cliArgsBase = ["--yes", RAILWAY_CLI_PACKAGE, "variable", "set"];
   const commonArgs = ["--skip-deploys", "--service", serviceName, "--environment", railEnv, "--project", projectId];
 
   // Which variable name the CLI actually accepted. Deliberately starts null even when
@@ -255,10 +263,17 @@ function main() {
     }
 
     const cliArgs = [...cliArgsBase, `${entry.railway}=${value}`, ...commonArgs];
-    const commandDisplay = [npmCommand, ...cliArgs].join(" ");
 
     if (dryRun) {
-      console.log(`[dry-run] ${commandDisplay}`);
+      // 🔴 THE VALUE IS NEVER PRINTED. This line used to interpolate the real credential into a
+      // displayed command (`NAME=VALUE`), and five of the values this script syncs arrive from
+      // `vars.*` rather than `secrets.*` — GitHub masks a SECRET in a log and does NOT mask a
+      // variable, so a dry run of this workflow would have written them out in clear text into a
+      // log anyone with repo read access can open, and into the Actions artifact that outlives it.
+      // The name and the length are enough to tell a present value from a truncated or doubled
+      // one, which is all a dry run has to answer. Masked 2026-09-30.
+      const maskedArgs = [...cliArgsBase, `${entry.railway}=<redacted ${value.length} chars>`, ...commonArgs];
+      console.log(`[dry-run] ${[npmCommand, ...maskedArgs].join(" ")}`);
       updated += 1;
       continue;
     }

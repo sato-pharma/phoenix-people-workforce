@@ -202,9 +202,15 @@ All variables are documented in [`.env.example`](.env.example) with comments. Se
 |---|---|
 | `pnpm run ci` | The whole gate in one command — only when you actually need the answer before pushing |
 
-**CI is the gate.** Push the branch and let the PR's checks answer: `validate`, `checks`, `mobile`
-and `secret-scan` are required and block a red merge (`checks` carries lint, typecheck and the unit
-suite as steps since 2026-09-27). There is no local pre-push gate — the old
+**CI is the gate.** Push the branch and let the PR's checks answer: **two** checks are required and
+block a red merge — `validate` and `checks` (`checks` carries lint and typecheck as steps since
+2026-09-27, and `validate` carries the unit suite). `mobile` and `secret-scan` were **demoted on
+2026-09-29** and neither blocks a merge any more — and the same change took both off `pull_request`,
+so a PR shows exactly those two checks and nothing else. They still run and still report, on `main`,
+a schedule and a dispatch: read them on the commit rather than trusting them to have gated it. The
+list has rotted five times (4 → 5 → 6 → 4 → 2): read
+`branches/main/protection/required_status_checks` live before counting passes, never this paragraph.
+There is no local pre-push gate — the old
 `check:harden` script was retired on 2026-08-18 because it only duplicated, slowly, what CI was
 about to run anyway. **`check:edit` (a `typecheck` alias) joined it on 2026-09-25:** this repo has
 outgrown a local `tsc`, which now needs 4.0–4.5 GB of heap and OOMs at node's own default on a 16 GB

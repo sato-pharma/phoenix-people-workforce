@@ -18,6 +18,15 @@ name: Migration Drift Check
 # Deliberately NOT triggered by pull_request/push: a PR introducing a new migration is
 # SUPPOSED to show it unapplied at review time, and both checks look for silent drift
 # that accumulates AFTER merge — only a recurring, time-based check catches that.
+#
+# 🔴 IT REPORTS A FINDING AND STILL CONCLUDES SUCCESS (2026-09-30). Every check leg carries
+# `continue-on-error`, because a scheduled run's check suite lands on whatever commit is `main` HEAD
+# and Railway withholds that commit's production deploy for ever when ANY suite on it fails. The
+# full account sits above the first check leg; the rule is staging-hr-drift-check.yml's — "NEITHER
+# STEP MAY FAIL ON A FINDING … Only a BROKEN check fails." The four setup steps still fail the job,
+# and the Telegram alert is gated on the step outcomes rather than on `failure()`, which is what
+# keeps the alarm alive. This workflow is read-only throughout (the checks' only call is the
+# phx_ci_migration_versions RPC and the advisor API), so nothing here can leave a half-done write.
 on:
   schedule:
     - cron: "0 7 * * *" # daily, offset from the notification-outbox/probation crons
@@ -81,7 +90,35 @@ jobs:
       # the thing most likely to fail silently, and something has to watch the watcher. What it
       # should no longer do is prompt a hand-application: re-run the workflow instead, or the next
       # merge will simply re-open the same gap.
+      # 🔴 EVERY CHECK LEG BELOW CARRIES `continue-on-error` PLUS AN id, AND THIS IS THE ACCOUNT FOR
+      # ALL FIVE OF THEM (added 2026-09-30). A scheduled run attaches its check suite to whatever
+      # commit is `main` HEAD when it fires, and Railway's production deployment trigger has
+      # Wait-for-CI on (`checkSuites: true`, read live off the trigger 2026-09-30), so ANY failed —
+      # or cancelled — suite on that commit marks its production deploy `inactive` and NEVER
+      # `success`, permanently, within seconds of the suite concluding, with `ci.yml` fully green.
+      # Three production deploys were lost that way on 2026-09-30.
+      #
+      # So a DRIFT FINDING here would have cost a deploy. That is a straight inversion of this
+      # workflow's purpose: it exists because a detector nobody reads is not a detector, and going
+      # red to announce a finding would have made the announcement itself the more expensive
+      # failure. This repository already states the rule, in staging-hr-drift-check.yml's own
+      # header: "NEITHER STEP MAY FAIL ON A FINDING … Only a BROKEN check fails."
+      #
+      # WHAT STAYS THE SAME. Each leg keeps its `::error::` annotation and its non-zero exit, the
+      # runner records the STEP as failed and red in the UI, the report step below writes a job
+      # summary, and the Telegram alert still fires — gated on these step outcomes now, never on
+      # `failure()`. Only the JOB's conclusion changed, and only so the suite cannot withhold a
+      # deploy. Same shape as deploy-drift-check.yml, synthetic-journeys.yml and
+      # staging-hr-drift-check.yml.
+      #
+      # 🔴 THE FOUR SETUP STEPS ABOVE — checkout, corepack, setup-node, `pnpm install` — DELIBERATELY
+      # KEEP FAILING THE JOB, AND MUST NEVER BE GIVEN `continue-on-error`. A broken check is not a
+      # finding: if the install failed, nothing was measured, and a job that concluded success on
+      # that would be the silent-green this whole workflow exists to prevent. The distinction the
+      # pattern rests on is FINDING (reported, job green) versus BROKEN (fails, job red).
       - name: Check migrations are actually applied (staging)
+        id: migrations_staging
+        continue-on-error: true
         run: pnpm run check:migrations-applied
         env:
           NEXT_PUBLIC_SUPABASE_URL: "https://cifwmndunmlxjhyjugxa.supabase.co"
@@ -98,7 +135,14 @@ jobs:
       #
       # `always()` so a staging failure never hides the production answer — the two legs report
       # independently. Read-only: the script's only call is the phx_ci_migration_versions RPC.
+      #
+      # `continue-on-error` for the reason spelled out above the staging leg. Note it does NOT make
+      # the `always()` redundant: `always()` is what let this leg run when an earlier leg had already
+      # failed the job, and `continue-on-error` is what stops the JOB — and so the check suite —
+      # concluding failure. Two different mechanisms; dropping either one loses something.
       - name: Check migrations are actually applied (production)
+        id: migrations_production
+        continue-on-error: true
         if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY == 'true' }}
         run: pnpm run check:migrations-applied
         env:
@@ -113,8 +157,13 @@ jobs:
       # was green throughout, correctly, because it was answering the other question.
       #
       # `always()` for the same reason as the production leg above: a failure in an earlier
-      # step must never hide these answers.
+      # step must never hide these answers. `continue-on-error` for the reason above the staging
+      # migrations leg — a schema-shape finding is the single most valuable thing this workflow
+      # produces (it is what found six anon-readable tables on 2026-08-06), and it must not be
+      # payable in a lost production deploy.
       - name: Check schema shape (staging)
+        id: schema_shape_staging
+        continue-on-error: true
         if: ${{ always() }}
         run: pnpm run check:schema-shape
         env:
@@ -122,6 +171,8 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Check schema shape (production)
+        id: schema_shape_production
+        continue-on-error: true
         if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY == 'true' }}
         run: pnpm run check:schema-shape
         env:
@@ -150,8 +201,11 @@ jobs:
       # the target ref is not the one the baseline names, so pointing it at staging by
       # accident says so rather than inventing a verdict.
       #
-      # `always()` for the same reason as every leg above.
+      # `always()` for the same reason as every leg above, and `continue-on-error` for the reason
+      # above the staging migrations leg.
       - name: Check advisor baseline (production)
+        id: advisor_baseline_production
+        continue-on-error: true
         if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY == 'true' }}
         run: pnpm run check:advisor-baseline
         env:
@@ -165,6 +219,43 @@ jobs:
         if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY != 'true' }}
         run: |
           echo "::warning::PRODUCTION_SUPABASE_SERVICE_ROLE_KEY is not set — production migration drift and schema shape were NOT checked. Only staging was verified. Add the secret (production project ref ozucdzovmcqvepbozvqf) to enable the production legs."
+
+      # The durable record, written OUTSIDE the check suite's verdict — a job summary a human can
+      # read on the run page, since the job's own conclusion is deliberately no longer the signal.
+      #
+      # 🔴 IT NAMES WHICH LEG FAILED, AND THAT IS THE POINT RATHER THAN DECORATION. Five legs report
+      # independently here against two different databases, so "the database posture check failed"
+      # is not actionable on its own: a staging schema-shape failure is a broken restore, a
+      # production migration failure is an unapplied migration that may be causing a live bug, and
+      # an advisor-baseline failure is a triage document nobody updated. Before this step the only
+      # place that distinction lived was the job's step list, and the Telegram text still cannot
+      # carry it (it is built before the outcomes are known in the old shape).
+      #
+      # It also owns the exit code: this step must ALWAYS exit 0. It emits `::error::` so the run
+      # page carries an annotation, which is a UI signal and not a conclusion.
+      - name: Report the database posture finding without withholding the deploy
+        if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure') }}
+        env:
+          MIGRATIONS_STAGING: ${{ steps.migrations_staging.outcome }}
+          MIGRATIONS_PRODUCTION: ${{ steps.migrations_production.outcome }}
+          SCHEMA_SHAPE_STAGING: ${{ steps.schema_shape_staging.outcome }}
+          SCHEMA_SHAPE_PRODUCTION: ${{ steps.schema_shape_production.outcome }}
+          ADVISOR_BASELINE_PRODUCTION: ${{ steps.advisor_baseline_production.outcome }}
+        run: |
+          set -uo pipefail
+
+          {
+            printf '## Database posture finding\n\n'
+            printf '| leg | outcome |\n| --- | --- |\n'
+            printf '| migrations applied (staging) | `%s` |\n' "$MIGRATIONS_STAGING"
+            printf '| migrations applied (production) | `%s` |\n' "$MIGRATIONS_PRODUCTION"
+            printf '| schema shape (staging) | `%s` |\n' "$SCHEMA_SHAPE_STAGING"
+            printf '| schema shape (production) | `%s` |\n' "$SCHEMA_SHAPE_PRODUCTION"
+            printf '| advisor baseline (production) | `%s` |\n\n' "$ADVISOR_BASELINE_PRODUCTION"
+            printf 'This job concludes **success on purpose**. A failed or cancelled check suite on `main` HEAD makes Railway withhold that commit'"'"'s production deploy permanently — never `success`, seconds after the suite concludes, with `ci.yml` green — so an alarm that went red to announce a finding would cost a production deploy to do it. The finding is in the failed step above, in the annotation, and in the Telegram alert.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::error::Database posture finding — read the failed check leg above for the diagnosis. This job still concludes success so its check suite cannot withhold a production deploy."
 
       # ── Tell a human. This is the step whose absence caused the incident. ──────────────
       #
@@ -186,8 +277,10 @@ jobs:
       # (shared with the app) and TELEGRAM_ALERT_CHAT_ID are Actions secrets; the chat id is the
       # PHX-1 system-administrator connection, chosen by the owner 2026-08-09.
       #
-      # `continue-on-error` so a notification outage can never mask the security result itself —
-      # the job's red/green must depend on the checks, never on Telegram being up.
+      # `continue-on-error` so a notification outage can never mask the security result itself. Since
+      # 2026-09-30 the job's conclusion no longer carries the verdict at all (see the block above the
+      # first check leg), so what this now protects is the STEP-level signal: a Telegram outage must
+      # never manufacture a red step of its own next to the real finding, nor hide one.
       #
       # SELF-TEST. `workflow_dispatch` with test_alert=true fires this step on a PASSING run. An
       # alarm that has never been observed to ring is indistinguishable from a broken one, and this
@@ -195,8 +288,17 @@ jobs:
       # A bot token can be rotated, a chat id can go stale, and the daily run would keep passing
       # silently while the alert path rotted. This makes "does the alarm still work?" a question
       # anyone can answer in two minutes without waiting for a real incident.
+      #
+      # 🔴 GATED ON THE FIVE STEP OUTCOMES, NOT ON `failure()` — AND THIS IS THE SINGLE MOST
+      # IMPORTANT LINE IN THE 2026-09-30 CHANGE. Every check leg above now carries
+      # `continue-on-error`, so the job concludes success even when it finds drift, which makes
+      # `failure()` permanently false. Left as it was, this step would simply never run again: the
+      # fix for a withheld production deploy would have silently deleted the alarm instead — turning
+      # this workflow back into the thing whose absence cost three days and 412 exposed customer
+      # names on 2026-08-06, which is the incident the block above records. A lost deploy is
+      # recoverable by the next merge; a detector that stopped detecting is not.
       - name: Notify Telegram on failure
-        if: ${{ failure() || inputs.test_alert }}
+        if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure' || inputs.test_alert) }}
         continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -233,15 +335,46 @@ jobs:
           # line out rather than breaking the alert. An alarm must never fail because the thing
           # describing it failed. jq joins on a SPACE deliberately: a tab delimiter needs IFS=$'\t',
           # and that sequence is a special replacement pattern in several editors and scripts.
+          #
+          # 🔴 THE STREAK READS A STEP, NOT THE RUN'S CONCLUSION, AND IT HAD TO CHANGE WITH THE
+          # `continue-on-error` ADDED 2026-09-30. This job now concludes success even when it finds
+          # drift, so `.conclusion == "failure"` — what this counted until then — is permanently
+          # false and the streak would have silently pinned itself at 1 for ever. That is precisely
+          # the signal whose absence the block above says cost 21 invisible nights, so losing it as
+          # a side-effect of fixing the withheld deploy would have traded one blind spot for the
+          # other.
+          #
+          # "Did the report step RUN?" is the durable substitute: a gated step is either executed or
+          # `skipped`, and `skipped` is reported unambiguously whatever the runner does with a
+          # continue-on-error step's own conclusion — which is why this keys on skipped-ness rather
+          # than on that conclusion. `absent` covers runs older than this change, and correctly ends
+          # the streak rather than guessing about them. Copied from deploy-drift-check.yml, where the
+          # same problem was solved the same way.
+          #
+          # Cost: one extra API call per run walked, and it BREAKS on the first clean run — so the
+          # normal case is a single call, and it only walks far during a real outage, which is
+          # exactly when the number is worth paying for.
           STREAK_LINE=""
-          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .conclusion, .created_at] | join(" ")' 2>/dev/null || true)
+          REPORT_STEP="Report the database posture finding without withholding the deploy"
+          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .created_at] | join(" ")' 2>/dev/null || true)
           if [ -n "$RUNS" ]; then
             STREAK=1
             FIRST_SEEN=""
-            while read -r rid rconc rdate; do
+            while read -r rid rdate; do
               [ -z "$rid" ] && continue
               [ "$rid" = "$RUN_ID" ] && continue
-              if [ "$rconc" = "failure" ]; then
+              # 🔴 `jq --arg` THROUGH A PIPE, NEVER `gh api --jq --arg` — `gh api` HAS NO `--arg` FLAG.
+              # `gh api --jq` takes a single query string and nothing else, so `--jq --arg s "$X" '<query>'`
+              # makes gh read `--arg` as the query and then choke on three extra positional arguments. The
+              # command fails, `|| true` swallows it, `rconc` is empty, and the streak breaks at 1 on EVERY
+              # run — silently, for ever. That is precisely the invisible-streak defect this block exists to
+              # prevent, reintroduced by the fix for it. Confirmed against `gh api --help` 2026-09-30: the
+              # flags are --cache, -F, -H, --hostname, -i, --input, -q/--jq, -X, --paginate, -p, -f, --silent,
+              # --slurp, -t, --verbose. No --arg. Pipe to real jq instead, which does have it; jq is
+              # preinstalled on ubuntu-latest and every other step in this file already relies on that.
+              rconc=$(gh api "repos/${REPO}/actions/runs/${rid}/jobs" 2>/dev/null | jq -r --arg s "$REPORT_STEP" '[.jobs[]?.steps[]? | select(.name == $s)] | .[0].conclusion // "absent"' 2>/dev/null || true)
+              [ -z "$rconc" ] && rconc="absent"
+              if [ "$rconc" != "skipped" ] && [ "$rconc" != "absent" ] && [ -n "$rconc" ]; then
                 STREAK=$((STREAK + 1))
                 FIRST_SEEN="$rdate"
               else

@@ -1,44 +1,46 @@
 #!/usr/bin/env node
-// Deploy-time env gate: fail the production deployment if the canonical app URL is
-// missing/wrong or key public env vars are malformed. NEVER prints a secret value —
-// only pass/fail. Run in the deploy workflow with the build secrets injected into env.
+// Local/manual env gate: is the canonical app URL right, and are the public Supabase values the
+// right shape? NEVER prints a value — only pass/fail. `pnpm run validate:env`.
 //
-// The canonical origin is single-sourced from src/config/system-settings.ts
-// (systemDeployment.productionUrl) so this gate can never drift from the app.
+// 🔴 A THIN WRAPPER SINCE 2026-09-30, AND THAT IS THE WHOLE POINT OF THIS FILE NOW.
+// Its two real assertions — reject a `.run.app` host, and require the canonical origin — were the
+// only place in the repo that checked them, and it ran NOWHERE: `git grep validate-env -- .github`
+// returned nothing, it is in no `check:*` aggregate, and its name is outside the `check:` prefix that
+// `tests/ci-gate-parity.test.ts` polices. So a real gate sat unwired while the thing it guarded
+// (`APP_URL` pointing at a bare Railway host instead of the custom domain, which silently sends every
+// password-setup link, offer URL and email CTA to the wrong origin) had nothing watching it.
+//
+// The fix was not to wire this script in — it cannot run as a bare CI step, because it needs the REAL
+// production values and exits 1 with nothing set. It was to fold the assertions into
+// `scripts/validate-railway-production-secrets.mjs`, which is the one place that HAS those values,
+// and which now runs daily on a schedule (`.github/workflows/secret-drift-check.yml`).
+//
+// 🔴 SO THE RULES LIVE IN `scripts/secret-policy.mjs` AND ARE IMPORTED HERE, NOT RESTATED.
+// Two copies of one rule is exactly the drift this repo keeps paying for — a bare `nodemailer`
+// override silently swallowing a Dependabot bump, a `secret-scan` demotion that eleven docs missed.
+// Leaving the regexes duplicated in this file would have meant the wired gate and the unwired one
+// could disagree about what a valid production URL is, and only one of them would be enforced.
+//
+// Kept rather than deleted because it is the only way to run these checks against a LOCAL `.env`
+// without a Railway credential.
 
-import { readFileSync } from "node:fs";
+import { canonicalProductionOrigin, checkCanonicalOrigins } from "./secret-policy.mjs";
 
-function canonicalOrigin() {
-  const src = readFileSync("src/config/system-settings.ts", "utf8");
-  const m = src.match(/productionUrl:\s*"([^"]+)"/);
-  if (!m) {
-    console.error("[validate-env] could not read systemDeployment.productionUrl");
-    process.exit(2);
-  }
-  return m[1].replace(/\/+$/, "");
-}
-
-const CANON = canonicalOrigin();
+const CANON = canonicalProductionOrigin();
 const failures = [];
 const ok = [];
 
-function requireCanonicalUrl(name) {
-  const raw = process.env[name];
-  if (!raw || !raw.trim()) {
-    failures.push(`${name} is missing (must equal the canonical origin ${CANON})`);
-    return;
-  }
-  const v = raw.trim();
-  if (!/^https:\/\//i.test(v)) failures.push(`${name} must use https`);
-  if (/vercel\.app/i.test(v)) failures.push(`${name} must not be a vercel.app domain`);
-  if (/\.run\.app/i.test(v)) failures.push(`${name} must be the custom domain, not the raw .run.app host`);
-  if (v.replace(/\/+$/, "") !== CANON) {
-    failures.push(`${name} must equal the canonical origin (${CANON})`);
-  } else {
-    ok.push(name);
-  }
-}
+// The canonical-origin and dead-platform rules, single-sourced. `checkCanonicalOrigins` reads the
+// same value map shape the Railway validator builds, so local and production are judged identically.
+const valuesByName = new Map(
+  Object.entries(process.env)
+    .filter(([, value]) => typeof value === "string" && value.trim() !== "")
+    .map(([name, value]) => [name, value]),
+);
+failures.push(...checkCanonicalOrigins(valuesByName, "production"));
+if (valuesByName.has("NEXT_PUBLIC_APP_URL") && failures.length === 0) ok.push("NEXT_PUBLIC_APP_URL");
 
+/** Shape-only checks with no production counterpart, so they stay local to this script. */
 function requireShape(name, re, desc, { optional = false } = {}) {
   const raw = process.env[name];
   if (!raw || !raw.trim()) {
@@ -49,9 +51,6 @@ function requireShape(name, re, desc, { optional = false } = {}) {
   else ok.push(name);
 }
 
-// The one that broke email/Telegram links when it pointed at a dead vercel host.
-requireCanonicalUrl("NEXT_PUBLIC_APP_URL");
-// Supabase public config (present as build secrets).
 requireShape("NEXT_PUBLIC_SUPABASE_URL", /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i, "https://<ref>.supabase.co");
 requireShape("NEXT_PUBLIC_SUPABASE_ANON_KEY", /.{20,}/, "non-empty key", { optional: true });
 

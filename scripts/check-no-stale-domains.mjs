@@ -1,31 +1,31 @@
 #!/usr/bin/env node
-// CI gate: fail if runtime source re-introduces a stale Vercel domain or a hard
-// dependency on Vercel-specific runtime env vars after the GCP Cloud Run migration.
+// CI gate: fail if runtime source re-introduces a stale Vercel domain, a dead Cloud Run host, or a
+// hard dependency on Vercel-specific runtime env vars. A step in the required `validate` job
+// (.github/workflows/ci.yml) and in `pnpm run ci`.
 //
-// Scanned: src/, app/, next.config.ts, proxy.ts (the code that ships).
-// NOT scanned: tests/ (they intentionally assert that old vercel origins are REJECTED),
-// docs/, local-attendance-agent/, node_modules, build output.
+// Scanned: src/, app/, lib/, next.config.ts, proxy.ts, instrumentation.ts — the code that ships
+// plus the code that configures the runtime.
+// NOT scanned: tests/ (they intentionally assert that dead origins are REJECTED), scripts/ (same,
+// and it does not ship — stale-domain-rules.mjs names the four files that force this), docs/,
+// local-attendance-agent/, node_modules, build output.
 //
-// Allowed exception: `process.env.VERCEL_ENV` inside the platform-neutral
-// `isProductionRuntime()` detector in src/config/system-settings.ts — it is a tolerated
-// fallback (APP_ENV/NODE_ENV cover Cloud Run), not a dependency.
+// 🔴 THE PATTERNS, THE SCAN SURFACE AND THE OPT-OUT MARKERS ALL LIVE IN ./stale-domain-rules.mjs,
+// not here. This file walks and reports; that one decides. It was split out on 2026-09-30 so
+// tests/stale-domain-gate.test.ts can import the rules — this script exits at import time, so the
+// gate had no unit test for its entire life, which is how it came to read next.config.ts on every
+// `validate` run and pass it while that file still trusted two deleted Cloud Run hosts as Server
+// Action origins.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const ROOTS = ["src", "app"];
-const EXTRA_FILES = ["next.config.ts", "proxy.ts"];
-const EXTS = new Set([".ts", ".tsx", ".mjs", ".js", ".jsx"]);
-
-// [regex, human message]
-const FORBIDDEN = [
-  [/vercel\.app/i, "stale Vercel domain (*.vercel.app)"],
-  [/process\.env\.VERCEL\b/, "Vercel-only runtime flag (process.env.VERCEL)"],
-  [/process\.env\.VERCEL_URL\b/, "Vercel-only runtime var (process.env.VERCEL_URL)"],
-  [/process\.env\.VERCEL_PROJECT_PRODUCTION_URL\b/, "Vercel-only runtime var"],
-];
-
-const ALLOW_LINE = /platform-neutral-vercel-fallback/; // explicit opt-out marker
+import {
+  ALLOW_MARKERS,
+  EXTRA_FILES,
+  ROOTS,
+  findViolations,
+  hasScannedExtension,
+} from "./stale-domain-rules.mjs";
 
 function walk(dir, out) {
   let entries;
@@ -40,7 +40,7 @@ function walk(dir, out) {
     if (st.isDirectory()) {
       if (name === "node_modules" || name.startsWith(".")) continue;
       walk(full, out);
-    } else if (EXTS.has(full.slice(full.lastIndexOf("."))) ) {
+    } else if (hasScannedExtension(full)) {
       out.push(full);
     }
   }
@@ -60,27 +60,29 @@ for (const f of EXTRA_FILES) {
 
 const violations = [];
 for (const f of files) {
-  const text = readFileSync(f, "utf8");
-  const lines = text.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    if (ALLOW_LINE.test(line)) continue;
-    for (const [re, msg] of FORBIDDEN) {
-      if (re.test(line)) {
-        violations.push(`${f}:${i + 1}: ${msg} -> ${line.trim().slice(0, 120)}`);
-      }
-    }
+  for (const v of findViolations(f, readFileSync(f, "utf8"))) {
+    violations.push(`${v.file}:${v.line}: ${v.message} -> ${v.text}`);
   }
 }
 
 if (violations.length > 0) {
-  console.error("[check-no-stale-domains] FAILED — stale Vercel references in shipped source:");
+  console.error(
+    "[check-no-stale-domains] FAILED — stale Vercel / Cloud Run references in shipped source:",
+  );
   for (const v of violations) console.error("  " + v);
   console.error(
-    "\nRemove the reference, or (only for the documented isProductionRuntime fallback) add" +
-      " a `platform-neutral-vercel-fallback` marker comment on that line.",
+    "\nRemove the reference. Both platforms are dead (AGENTS.md §3), so a hostname left in shipped" +
+      " source is a trust decision pointing at a name the company no longer controls.\n" +
+      "\nIf a reference genuinely must stay, add the matching marker comment on that line:\n" +
+      `  ${ALLOW_MARKERS.vercel}  — the documented isProductionRuntime() Vercel fallback\n` +
+      `  ${ALLOW_MARKERS.gcp}  — a GCP / Cloud Run reference that cannot be reworded\n` +
+      "Each marker excuses only its own platform's patterns. Prefer rewording: the comments in" +
+      " next.config.ts and src/lib/synthetic-journeys/service.ts explaining these removals" +
+      " deliberately avoid spelling the hostname out, so neither of them needs a marker.",
   );
   process.exit(1);
 }
 
-console.log(`[check-no-stale-domains] OK — scanned ${files.length} files, no stale Vercel references.`);
+console.log(
+  `[check-no-stale-domains] OK — scanned ${files.length} files, no stale Vercel or Cloud Run references.`,
+);

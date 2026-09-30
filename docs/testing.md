@@ -88,28 +88,48 @@ These test against real data and require valid credentials.
 
 ## CI Integration
 
-CI runs four required checks — three from `.github/workflows/ci.yml`, one from
-`.github/workflows/security-scan.yml`. 🔴 **Read the list from
-`branches/main/protection/required_status_checks`, not from this table** — it has been wrong twice,
-and the names below changed on 2026-09-27:
+CI runs **two** required checks, `validate` and `checks`, both from `.github/workflows/ci.yml`.
+🔴 **Read the list from `branches/main/protection/required_status_checks`, not from this table** — it
+has now been wrong three times, the names changed on 2026-09-27, and the count changed again on
+2026-09-29. A gate counting passes against a number from a doc waits forever for checks that are gone.
+
+🔴 **A pull request's check list IS those two and nothing else.** `mobile` and `secret-scan` were
+demoted from protection on 2026-09-29 and taken off `pull_request` in the same change — they had to
+move together, because a required check whose job no longer reports leaves every PR waiting on
+"Expected" for ever. So their absence from a PR is CORRECT, and neither can stop a bad merge on your
+behalf: they surface on `main`, a schedule or a dispatch, which makes them fix-forward detectors
+rather than gates.
 
 | Check | Workflow | What it runs |
 |---|---|---|
-| `validate` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), `pnpm audit`, the production **build**, and the Playwright **login smoke test** — all in one job. |
-| `checks` | ci.yml | `pnpm run lint`, `pnpm exec next typegen`, `pnpm run typecheck` and the **unit/integration suite** (`pnpm run test`, i.e. `tests/run-tests.ts`) — four **steps** of one job. 🔴 **They were three separate jobs named `lint`, `typecheck` and `test` until 2026-09-27 (#4527)**, which merged them so GitHub's per-job minute rounding is paid once instead of three times (~14% fewer billable minutes). Those three names **no longer exist as check names**, so a gate waiting for them waits forever. The unit suite left `validate` for its own job on 2026-09-17 (#3950) and landed here ten days later. **Anything that says a pinned test "runs in the required `validate` job", or in a required `test` job, means this one.** |
-| `mobile` | ci.yml | `npm ci` and `npm run typecheck` inside `mobile/` — the Expo app, which keeps its own npm lockfile outside the pnpm workspace. **Added 2026-09-18 (#3974)**, after #3970 found `mobile/package-lock.json` could not be installed without `--legacy-peer-deps` and nothing in CI would ever have noticed. The job always runs and always reports; a detect step decides whether to do the work, so a PR that leaves `mobile/` alone pays about nine seconds. |
-| `secret-scan` | security-scan.yml | gitleaks (pinned v8.30.1, checksum-verified) over the checked-out tree, `--no-git --redact`, ~13s. **Blocking** — any finding fails the check. |
+| `validate` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), **the unit/integration suite** (`pnpm run test`, i.e. `tests/run-tests.ts`), `pnpm audit`, and on non-PR events the production **build** and the Playwright **login smoke test** — all in one job. 🔴 **The unit suite lives HERE.** It left for its own `test` job on 2026-09-17 (#3950), moved into `checks` on 2026-09-27, and came back here on 2026-09-30 for wall clock: `checks` was running typecheck then the suite in SERIES on one runner, ~80% of a PR's wait, while `validate` sat on ~37s of work. Beside the typecheck instead of behind it, a PR is ~163s. 🔴 **It is NOT a job called `test` and must not become one** — that is a retired check name, and a job protection does not require reads exactly like one that gates (#3950). **So anything saying a pinned test "runs in the required `validate` job" means this one, and a NEW pinned test belongs here.** |
+| `checks` | ci.yml | `pnpm run lint`, `pnpm exec next typegen` and `pnpm run typecheck` — **steps** of one job. 🔴 **They were separate jobs named `lint`, `typecheck` and `test` until 2026-09-27 (#4527)**, which merged them so GitHub's per-job minute rounding is paid once instead of three times (~14% fewer billable minutes). Those three names **no longer exist as check names**, so a gate waiting for them waits forever. |
+**Not required, and not on a pull request either — corrected 2026-09-30.** The two rows below used to
+sit in the table above as required checks. Both were demoted on 2026-09-29 and taken off
+`pull_request` in the same change, so neither reports on a PR at all:
 
-`.github/workflows/security-scan.yml` was deleted on 2026-08-08 by #1889 and restored the same day
-by #1894, which also removed the `--exit-code 0` that had made gitleaks incapable of failing (40
-consecutive green runs that proved nothing). It now runs on every PR — no path filter, so docs-only
-PRs get it too — plus daily at 05:17 UTC over `main`, and it **is** a required check. Semgrep's
-`sast-scan` was deliberately not restored (4m14s per PR against gitleaks' 13s, and Sonar covered
-overlapping ground), so SAST no longer runs at all. Since GHAS is not purchasable on a personal
-account (`security_and_analysis: null`), this job is the repo's only automated secret detection.
+| Reports on | Workflow | What it runs |
+|---|---|---|
+| `mobile` | ci.yml | `npm ci` and `npm run typecheck` over the Expo app's own npm lockfile, which sits outside the pnpm workspace. **Added 2026-09-18 (#3974)** after #3970 found that lockfile could not be installed without `--legacy-peer-deps` and nothing in CI would have noticed. 🔴 It carries `if: github.event_name != 'pull_request'` — so a red result here is a fix-forward, never something that stopped a merge. |
+| `secret-scan` | security-scan.yml | gitleaks (pinned v8.30.1, checksum-verified) over the checked-out tree, `--no-git --redact`, ~13s. 🔴 **Not blocking, on two counts:** `security-scan.yml` has no `pull_request` trigger, and since 2026-09-30 the scanning step carries `continue-on-error`, so a finding is reported while the job concludes success — a red suite there would withhold the production deploy of whatever commit is `main` HEAD when the schedule fires. |
 
-There is no longer a separate `preview-smoke` job — the login smoke test moved into
-`validate`. The full Playwright E2E suite runs only on manual `workflow_dispatch` (the
-`full-e2e` job). Per AGENTS.md §2, `main` branch protection **requires these 6 checks green before a merge can
-land** (there is no required human review — solo owner); per AGENTS.md §3 a merge to `main` then
-deploys to production immediately.
+`.github/workflows/security-scan.yml` was deleted on 2026-08-08 by #1889 and restored the same day by
+#1894, which also removed the `--exit-code 0` that had made gitleaks incapable of failing (40
+consecutive green runs that proved nothing). 🔴 **It no longer runs on a PR at all** — the trigger was
+removed on 2026-09-29 and the same gitleaks moved into `bash-guard.mjs` clause C12, which refuses the
+push instead, earlier and closer to the author. What remains is the daily 05:17 UTC run over `main`
+plus a dispatch. Semgrep's `sast-scan` **is** in the file (its own job, deliberately never a required
+check); an earlier version of this paragraph said SAST "no longer runs at all", which is wrong. Since
+GHAS is not purchasable on a personal account (`security_and_analysis: null`), these two are the
+repo's only automated secret and SAST detection — and neither one gates a merge, so a finding from
+either has already shipped by the time you read it.
+
+There is no longer a separate `preview-smoke` job — the login smoke test moved into `validate`. The
+full Playwright E2E suite runs only on manual `workflow_dispatch` (the `full-e2e` job).
+
+🔴 **`main` branch protection requires TWO checks green before a merge can land — `validate` and
+`checks` — not the 6 this paragraph claimed until 2026-09-30.** There is no required human review
+(solo owner), and per AGENTS.md §3 a merge to `main` then deploys to production as soon as that
+commit's checks finish. So the merge gate and the deploy gate are the same two checks, which is why a
+gate hard-coded to a count from a doc does not merely wait — it waits for checks that no longer exist.
+**Count passes against `branches/main/protection/required_status_checks`, read live.**

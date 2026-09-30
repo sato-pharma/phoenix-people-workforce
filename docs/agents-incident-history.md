@@ -55,7 +55,9 @@ forever. `mobile` therefore decides *inside* the job whether to do the work — 
 answers `true` for anything it cannot resolve — and on a PR that never touches `mobile/` the whole
 check costs about nine seconds.
 
-**`secret-scan` is required and blocking.** It is the gitleaks job in
+**`secret-scan` is required and blocking.** — superseded 2026-09-29: demoted to non-blocking and
+taken off `pull_request`; see this section's demotion note above and `AGENTS.md` §2.3. The rest of
+this paragraph still holds. It is the gitleaks job in
 `.github/workflows/security-scan.yml`, which #1889 deleted on 2026-08-08 believing it was optional
 and #1894 restored the same day (`3cb11791`), dropping the original `--exit-code 0` that had made
 the job incapable of failing. Semgrep's `sast-scan` was deliberately **not** restored (4m14s per PR
