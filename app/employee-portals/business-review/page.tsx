@@ -210,7 +210,6 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
             selected={metrics}
           />
         }
-        restatementNotice={REVIEW_SOURCE_NOTICE}
         scopeLabel={scope.label}
         visitsAvailable={repDs.visits.available}
         window={window}
