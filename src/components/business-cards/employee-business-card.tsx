@@ -63,12 +63,13 @@ export function EmployeeBusinessCard({
   const [note, setNote] = useState("");
   const [requests, setRequests] = useState<BusinessCardRequestRow[]>(initialRequests);
 
-  // The rendered card (the real PDF, front and back).
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  // The rendered card, front and back — drawn onto <canvas> elements (see renderCardToCanvases).
+  const [hasPreview, setHasPreview] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const urlRef = useRef<string | null>(null);
+  const pdfContainerRef = useRef<HTMLDivElement | null>(null);
+  const renderedOnceRef = useRef(false);
 
   // The request-to-HR flow.
   const [busy, setBusy] = useState(false);
@@ -99,6 +100,32 @@ export function EmployeeBusinessCard({
     return response.blob();
   }, [mobile, name]);
 
+  // Draw the card's two pages onto canvas elements. A canvas is pixels, so it ALWAYS shows —
+  // unlike an inline-framed or embedded PDF, which the browser's "download PDFs instead of opening
+  // them" setting turns into a forced download, and which mobile browsers cannot render inline at all.
+  // pdf.js (library, worker and wasm) is served as static assets from /pdfjs/ and imported natively
+  // so this app's webpack never re-bundles it — the exact same approach the CV preview uses.
+  const renderCardToCanvases = useCallback(async (bytes: Uint8Array, signal: AbortSignal) => {
+    const pdfjsUrl = "/pdfjs/pdf.min.mjs";
+    const pdfjsLib = (await import(/* webpackIgnore: true */ pdfjsUrl)) as typeof import("pdfjs-dist/legacy/build/pdf.mjs");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs";
+    const doc = await pdfjsLib.getDocument({ data: bytes, wasmUrl: "/pdfjs/wasm/" }).promise;
+    const container = pdfContainerRef.current;
+    if (signal.aborted || !container) return;
+    container.innerHTML = "";
+    for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+      if (signal.aborted) return;
+      const page = await doc.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      canvas.className = "block h-auto w-full max-w-[520px] bg-white shadow-sm";
+      container.appendChild(canvas);
+      await page.render({ canvas, viewport }).promise;
+    }
+  }, []);
+
   const refreshPreview = useCallback(async () => {
     // Supersede any preview still arriving, then own the in-flight slot.
     previewAbortRef.current?.abort();
@@ -117,13 +144,14 @@ export function EmployeeBusinessCard({
         blob = await fetchOwnCardPdf(controller.signal);
       }
       if (controller.signal.aborted) return;
-      const url = URL.createObjectURL(blob);
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-      urlRef.current = url;
-      setPdfUrl(url);
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      await renderCardToCanvases(bytes, controller.signal);
+      if (controller.signal.aborted) return;
+      renderedOnceRef.current = true;
+      setHasPreview(true);
     } catch (caught) {
       // A superseded preview is not a failure — a newer one is already on its way, so it must never
-      // replace the card on screen with a network-error message.
+      // replace the card on screen with an error message.
       if (caught instanceof Error && caught.name === "AbortError") return;
       setPreviewError(caught instanceof Error ? caught.message : "Your card could not be generated.");
     } finally {
@@ -133,18 +161,18 @@ export function EmployeeBusinessCard({
         setGenerating(false);
       }
     }
-  }, [fetchOwnCardPdf]);
+  }, [fetchOwnCardPdf, renderCardToCanvases]);
 
-  // First render is immediate; edits regenerate the preview 800ms after typing stops.
+  // First render is immediate; edits regenerate the preview 800ms after typing stops. The gate is a
+  // ref, not state, so marking the first render done does not itself re-fire this effect.
   useEffect(() => {
-    const first = urlRef.current === null;
+    const first = !renderedOnceRef.current;
     const timer = window.setTimeout(() => void refreshPreview(), first ? 0 : 800);
     return () => window.clearTimeout(timer);
   }, [refreshPreview]);
 
   useEffect(() => () => {
     previewAbortRef.current?.abort();
-    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
   }, []);
 
   async function download() {
@@ -236,32 +264,31 @@ export function EmployeeBusinessCard({
         </div>
 
         <div className="relative border border-slate-300 bg-slate-100">
-          {pdfUrl ? (
-            <iframe
-              className="h-[560px] w-full bg-slate-100"
-              src={`${pdfUrl}#toolbar=0&navpanes=0&view=FitH`}
-              title="Your business card — front and back"
-            />
-          ) : (
-            <div className="flex h-[560px] w-full items-center justify-center text-sm font-semibold text-phx-ink-soft">
+          {/* The card is drawn here as canvases — always visible, never a forced download. */}
+          <div
+            className="flex min-h-[420px] w-full flex-col items-center justify-center gap-3 p-3"
+            ref={pdfContainerRef}
+          />
+          {!hasPreview ? (
+            <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-sm font-semibold text-phx-ink-soft">
               {previewError ? previewError : "Preparing your card…"}
             </div>
-          )}
-          {generating && pdfUrl ? (
+          ) : null}
+          {generating && hasPreview ? (
             <div className="absolute right-3 top-3 flex items-center gap-1.5 bg-white/90 px-2 py-1 text-phx-xs font-semibold text-phx-ink-soft shadow">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               Updating…
             </div>
           ) : null}
         </div>
-        {previewError && pdfUrl ? (
+        {previewError && hasPreview ? (
           <p className="mt-2 text-phx-sm font-semibold text-rose-700" role="status">
             {previewError}
           </p>
         ) : null}
         <p className="mt-2 text-phx-xs text-phx-ink-soft">
-          High-quality, print-ready PDF — page one is the front, page two is the back. It shows your edits as you make
-          them.
+          Page one is the front, page two is the back — the exact card HR prints. It updates as you edit, and
+          Download saves the high-quality printable PDF.
         </p>
       </section>
 
