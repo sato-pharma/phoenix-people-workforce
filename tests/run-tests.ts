@@ -2035,6 +2035,7 @@ import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowr
 import { runSpotlightChequeGeneratorTests } from "./spotlight-cheque-generator.test.ts";
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 import { runSpotlightRepSelfTests } from "./spotlight-rep-self.test.ts";
+import { runSpotlightWearsReportItDesignTests } from "./spotlight-wears-report-it-design.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
@@ -7360,6 +7361,11 @@ await runTest(
 await runTest(
   "spotlight (self): a rep's own sheet over any period, measured only over PUBLISHED months at the closing's graded/target rule, gated at 90%, isolated to his own row",
   runSpotlightRepSelfTests,
+);
+
+await runTest(
+  "spotlight (self) wears Report It's design: the field/button primitives match it byte for byte, every structural device is present, and the square-corner / no-scroll / no-truncation rules hold",
+  runSpotlightWearsReportItDesignTests,
 );
 
 await runTest(
