@@ -25,8 +25,31 @@ export type MilestoneUnit = "day" | "month" | "year";
 /** A period measured from the hire date: `{ count: 1, unit: "month" }` is the first month. */
 export type MilestoneSpec = { count: number; unit: MilestoneUnit };
 
+/**
+ * The FIRST DAY — the day the hire date itself names, and the only period measured as ZERO elapsed
+ * time. The owner, 2026-09-30: "add a milestone for first day as a member of sato family."
+ *
+ * 🔴 IT IS `0d`, NEVER `1d`. `1d` is the day AFTER the hire date — hire plus one day — which is
+ * somebody's second morning here. The first day is hire plus nothing, so the count is zero and
+ * `milestoneDate` hands back the hire date unchanged. Zero is allowed for DAYS ALONE (see
+ * `normalizeSpec`): a zero month or a zero year is a typo, never an occasion.
+ *
+ * It is a plain `MilestoneSpec` on purpose, and NOT a separate kind the way a birthday is. A
+ * birthday cannot be dated without the birth date and the tenure; the first day needs only the hire
+ * date, which is what every other service milestone is measured from. So it rides the whole existing
+ * path — the sweep, the due list, the reminder, the group picture, the print ledger, the portal —
+ * and only the four words on the card and the sentence beneath the name are its own.
+ */
+export const FIRST_DAY_SPEC: MilestoneSpec = { count: 0, unit: "day" };
+
+/** True for the first day — the hire date itself. The one spec whose count is zero. */
+export function isFirstDaySpec(spec: MilestoneSpec): boolean {
+  return spec.unit === "day" && spec.count === 0;
+}
+
 /** What the picker offers before anyone types their own. The first two are the owner's own cases. */
 export const MILESTONE_PRESETS: readonly MilestoneSpec[] = [
+  FIRST_DAY_SPEC,
   { count: 1, unit: "month" },
   { count: 3, unit: "month" },
   { count: 6, unit: "month" },
@@ -40,8 +63,10 @@ export const MILESTONE_PRESETS: readonly MilestoneSpec[] = [
   { count: 25, unit: "year" },
 ];
 
-/** The periods a due-list sweeps when nobody named one. Days are deliberately absent: nobody
- *  celebrates an arbitrary day count on a schedule, and sweeping them would flood the list. */
+/** The periods a due-list sweeps when nobody named one. Arbitrary day counts are deliberately
+ *  absent: nobody celebrates a hundred days on a schedule, and sweeping them would flood the list.
+ *  The FIRST day is not an arbitrary count — it is the hire date — so it is swept, which is how a
+ *  new joiner reaches the due list and the reminder in the days before starting. */
 export const MILESTONE_SWEEP: readonly MilestoneSpec[] = MILESTONE_PRESETS.filter(
   (spec) => !(spec.unit === "month" && spec.count === 3),
 );
@@ -58,6 +83,7 @@ const MAX_COUNT: Record<MilestoneUnit, number> = { day: 20000, month: 600, year:
 /**
  * Read a period the way the owner types one: `1m`, `6 months`, `1y`, `3 years`, `100d`, `100 days`.
  * A bare number means months, because the first case this module was built for is a first month.
+ * `0d` (or `0 days`) is the FIRST DAY — the hire date itself; `0`, `0m` and `0y` are still refused.
  */
 export function parseMilestoneSpec(input: string | MilestoneSpec | null | undefined): MilestoneSpec {
   if (input && typeof input === "object") return normalizeSpec(input.count, input.unit);
@@ -74,6 +100,10 @@ export function parseMilestoneSpec(input: string | MilestoneSpec | null | undefi
 }
 
 function normalizeSpec(count: number, unit: MilestoneUnit): MilestoneSpec {
+  // Zero days is the FIRST DAY and nothing else — `0d` dates to the hire date itself. `0m`, `0y`
+  // and a bare `0` stay refused: a zero month is a typo, and accepting one would put a card on the
+  // hire date wearing the word "months".
+  if (count === 0 && unit === "day") return { ...FIRST_DAY_SPEC };
   if (!Number.isInteger(count) || count < 1) {
     throw new MilestoneSpecError("A period must be a whole number of days, months or years.");
   }
@@ -402,23 +432,32 @@ function unitWord(spec: MilestoneSpec): string {
   return spec.count === 1 ? spec.unit : `${spec.unit}s`;
 }
 
-/** The numeral on the commemorative tile — "01", "10", "100". */
+/**
+ * The numeral on the commemorative tile — "01", "10", "100".
+ *
+ * The first day's seal reads "01 DAY", not "00": the tile counts the day somebody is on, and
+ * nobody's first day is their zeroth. The zero lives in the arithmetic, never on the sheet.
+ */
 export function milestoneTileNumeral(spec: MilestoneSpec): string {
+  if (isFirstDaySpec(spec)) return "01";
   return spec.count < 10 ? `0${spec.count}` : String(spec.count);
 }
 
 /** The word under the numeral — "MONTH", "YEARS". Upper-cased by the card, not here. */
 export function milestoneTileUnit(spec: MilestoneSpec): string {
+  if (isFirstDaySpec(spec)) return "day";
   return unitWord(spec);
 }
 
 /** The eyebrow over the name — "One month at Sato Pharma". */
 export function milestoneEyebrow(spec: MilestoneSpec): string {
+  if (isFirstDaySpec(spec)) return "first day at Sato Pharma";
   return `${numberWords(spec.count)} ${unitWord(spec)} at Sato Pharma`;
 }
 
-/** The middle cell of the figures strip — "First month", "Three years", "100 days". */
+/** The middle cell of the figures strip — "First day", "First month", "Three years", "100 days". */
 export function milestoneStripLabel(spec: MilestoneSpec): string {
+  if (isFirstDaySpec(spec)) return "First day";
   if (spec.count === 1) return `First ${spec.unit}`;
   if (spec.unit === "day") return `${spec.count} days`;
   return `${numberWords(spec.count)} ${unitWord(spec)}`;
@@ -438,6 +477,13 @@ export function milestoneCitation(input: {
 }): string {
   const { firstName, spec, on } = input;
   const when = `On ${formatPlainDateWords(on)}`;
+
+  // The first day is the one milestone nothing has been completed for yet — so it does not say
+  // "completes". It says what the day is: the day somebody becomes one of the family.
+  if (isFirstDaySpec(spec)) {
+    return `${when}, ${firstName} joins Sato Pharma — the first day as a member of the family, and the start of everything that follows.`;
+  }
+
   const served =
     spec.unit === "day"
       ? `${spec.count} days`

@@ -214,6 +214,28 @@ export async function runMilestoneGroupCardTests() {
   );
   assert.ok(!/\bage\b|\byears old\b/i.test(birthdayCitation), "and never states an age");
 
+  // A whole intake starting together — the first day as members of the family. It must say "join",
+  // because "each complete 0 days with Sato Pharma" is what the shared service wording would print.
+  const firstDayGroup = milestoneGroupCitation({
+    occasion: { kind: "service", spec: { count: 0, unit: "day" } },
+    count: 4,
+    dates: [date("2026-10-01"), date("2026-10-01")],
+  });
+  assert.ok(
+    firstDayGroup.includes("four colleagues join Sato Pharma"),
+    "a joining group joins — nobody has completed anything on the first day",
+  );
+  assert.ok(
+    firstDayGroup.includes("first day as members of the family"),
+    "and it says what the day is",
+  );
+  assert.ok(!/\b0 days\b|complete/.test(firstDayGroup), "never 'complete 0 days'");
+  assert.equal(
+    milestoneGroupEyebrow({ kind: "service", spec: { count: 0, unit: "day" } }),
+    "first day at Sato Pharma",
+    "the eyebrow is the single card's own wording here too",
+  );
+
   assert.equal(
     milestoneGroupEyebrow(fiveYears),
     "five years at Sato Pharma",
