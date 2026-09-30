@@ -115,10 +115,17 @@ export function runPhoenixCrmTodayTests(): void {
 
   // ── An empty day says WHY, in his own terms ─────────────────────────────────────────────────────
   {
-    assert.equal(todayEmptyReason({ hasPlan: true, isFieldDay: false, stops: 0 }), "Today is not a field day.");
-    assert.match(String(todayEmptyReason({ hasPlan: false, isFieldDay: true, stops: 0 })), /No plan has been sent/);
-    assert.equal(todayEmptyReason({ hasPlan: true, isFieldDay: true, stops: 0 }), "Nobody is planned for today.");
-    assert.equal(todayEmptyReason({ hasPlan: true, isFieldDay: true, stops: 3 }), null, "a day with stops says nothing at all");
+    assert.equal(todayEmptyReason({ status: "approved", isFieldDay: false, stops: 0 }), "Today is not a field day.");
+    assert.match(String(todayEmptyReason({ status: null, isFieldDay: true, stops: 0 })), /No plan has been sent/);
+    // 🔴 ONE SENTENCE, NEVER TWO: Today shows the APPROVED plan only, so an unapproved plan ALWAYS
+    // has zero stops — this reason and the plan’s status note therefore always fired together and the
+    // screen carried both. The note IS the reason now.
+    assert.match(String(todayEmptyReason({ status: "submitted", isFieldDay: true, stops: 0 })), /still pending approval/);
+    assert.match(String(todayEmptyReason({ status: "draft", isFieldDay: true, stops: 0 })), /has not been sent yet/);
+    assert.match(String(todayEmptyReason({ status: "returned", isFieldDay: true, stops: 0 })), /sent back to you/);
+    assert.equal(todayEmptyReason({ status: "approved", isFieldDay: true, stops: 0 }), "Nobody is planned for today.");
+    assert.equal(todayEmptyReason({ status: "approved", isFieldDay: true, stops: 3 }), null, "a day with stops says nothing at all");
+    assert.equal(todayEmptyReason({ status: null, isFieldDay: true, stops: 3 }), null, "stops outrank every reason");
   }
 
   // ── TODAY SHOWS THE APPROVED PLAN, AND NOTHING ELSE (owner, 2026-09-30) ────────────────────────
@@ -147,7 +154,7 @@ export function runPhoenixCrmTodayTests(): void {
     assert.ok(loader.includes('const approvedIds = planned.status === "approved" ? planned.customerIds : [];'), "the approved plan only");
     assert.ok(loader.includes("for (const customerId of approvedIds) {"), "and the stops are built from it");
     assert.ok(!/for \(const customerId of planned\.customerIds\)/.test(loader), "never from the plan's rows regardless of status");
-    assert.ok(loader.includes("planNote: planStatusNote(planned.status),"), "and it says which state an unapproved plan is in");
+    assert.ok(loader.includes("status: planned.status,"), "and the empty reason names which state an unapproved plan is in");
 
     // 🔴 The counting reader is untouched and still wider than Today, which is what makes the trap
     // impossible: approved ⊂ {submitted, approved}.
@@ -168,7 +175,8 @@ export function runPhoenixCrmTodayTests(): void {
 
     // The screen says it, and offers no way to send from here.
     const tab = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/today-tab.tsx", import.meta.url), "utf8"));
-    assert.ok(tab.includes("{view.planNote ?"), "the screen says which state the plan is in");
+    assert.ok(tab.includes("message={view.emptyReason ?? undefined}"), "the screen says which state the plan is in");
+    assert.ok(!tab.includes("planNote"), "in ONE box, never a second one beside the empty state");
     assert.ok(!tab.includes("plans/submit"), "and Today never sends a plan");
     assert.ok(!/Send this week/.test(tab), "nor offers to");
 

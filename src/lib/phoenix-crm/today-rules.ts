@@ -246,10 +246,21 @@ export function compareTodayStops(left: PlannedStop, right: PlannedStop): number
  * Each of these is about HIS OWN WORK, which is what Golden Rule #1 keeps visible: a plan he has not
  * sent, a day the field week does not cover, a day he planned empty.
  */
-export function todayEmptyReason(input: { hasPlan: boolean; isFieldDay: boolean; stops: number }): string | null {
+export function todayEmptyReason(input: {
+  status: PhoenixCrmPlanStatus | null;
+  isFieldDay: boolean;
+  stops: number;
+}): string | null {
   if (!input.isFieldDay) return "Today is not a field day.";
   if (input.stops > 0) return null;
-  if (!input.hasPlan) return "No plan has been sent for this week yet. Open Plan to send it.";
+  // 🔴 ONE SENTENCE, NEVER TWO. Today shows the APPROVED plan only, so an unapproved plan ALWAYS has
+  // zero stops — which means this reason and the plan's own status note always fired together, and the
+  // screen carried two boxes saying the same thing. That is the defect the walk of 2026-09-30 had
+  // already removed once ("No place saved yet · No place saved yet"); the status note is the fuller
+  // answer, so it IS the reason.
+  const note = planStatusNote(input.status);
+  if (note) return note;
+  if (input.status === null) return "No plan has been sent for this week yet. Open Plan to send it.";
   return "Nobody is planned for today.";
 }
 

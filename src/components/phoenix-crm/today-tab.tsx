@@ -14,7 +14,6 @@ import {
   CrmEmpty,
   CrmLoadError,
   CrmLoading,
-  CrmNote,
   CrmPanel,
   CrmPill,
   CrmTable,
@@ -515,19 +514,6 @@ export function TodayTab({
       {resource.error ? <CrmLoadError message={resource.error} onRetry={resource.reload} /> : null}
 
       <DayGlance view={view} />
-
-      {/*
-        🔴 TODAY SHOWS THE APPROVED PLAN ONLY (owner, 2026-09-30). A plan still waiting on someone shows
-        no stops at all — just which state it is in. The sending lives on Plan, where he does it; a
-        button here was built and he removed it the same day.
-      */}
-      {view.planNote ? (
-        <div className="border-t border-slate-100 px-4 pt-4 sm:px-5">
-          <CrmNote tone="warn">
-            <span className="break-words">{view.planNote}</span>
-          </CrmNote>
-        </div>
-      ) : null}
 
       {view.stops.length === 0 ? (
         <div className="border-t border-slate-100">

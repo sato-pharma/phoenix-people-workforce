@@ -14,7 +14,6 @@ import {
   buildTodayStops,
   compareTodayStops,
   NO_PLACE_YET,
-  planStatusNote,
   todayEmptyReason,
   type PlannedStop,
   type TodayBuild,
@@ -50,10 +49,9 @@ export type TodayView = {
   canAdd: boolean;
   emptyReason: string | null;
   /**
-   * His plan for this week is not approved yet, so there is no day to show — this says which state it
-   * is in (owner, 2026-09-30). Null when it is approved, and null when he has no plan at all.
+   * Why there is nothing to show, in one sentence — including which state an unapproved plan is in
+   * (owner, 2026-09-30). One sentence, never two: `todayEmptyReason` folds the plan's status in.
    */
-  planNote: string | null;
   /** What he planned the day as, when it was not only calls — a meeting, training, a sales day. */
   plannedActivity: PlannedActivityRow | null;
   /** What he recorded the day as, if anything. A record only: it moves no figure. */
@@ -146,10 +144,9 @@ export async function loadPhoenixCrmToday(
     dayActivity,
     canSetDayActivity: canWriteAsRep(viewer, seat, isTest),
     emptyReason: todayEmptyReason({
-      hasPlan: planned.status === "approved",
+      status: planned.status,
       isFieldDay: planDayListTypes(date).length > 0,
       stops: build.stops.length,
     }),
-    planNote: planStatusNote(planned.status),
   };
 }
