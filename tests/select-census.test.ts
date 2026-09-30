@@ -219,4 +219,53 @@ export function runSelectCensusTests() {
   const fromBlanked = (censusOfFile("x/y.ts", blankComments(commented), { table: "offer_templates", root: "x" }) as CensusSite[])[0];
   assert.deepEqual(fromBlanked.writeKeys, fromRaw.writeKeys, "blankComments must be idempotent");
   assert.deepEqual(fromBlanked.filters, fromRaw.filters, "blankComments must be idempotent");
+
+  // 5. A WRITE IS NEVER "RESOLVED" WHILE ITS COLUMNS ARE UNREAD — the two ways that happened, both
+  // found 2026-09-30 by the attendance audit. This is the worst failure mode this file has, worse
+  // than refusing to answer: a site marked resolved is a site an audit counts as CHECKED, and a
+  // column that is never NAMED is a column that is never PROBED. Measured across the 71 tables of
+  // the recruitment and attendance audits: 12 sites of the first kind and 17 of the second, 28
+  // distinct sites in all, every one of which those audits had reported as clean without looking.
+  {
+    // (a) A spread carries columns this cannot see. Keep the literal keys, but say so.
+    const spread = [
+      "async function save(db, row) {",
+      '  await db.from("attendance_device_user_map").insert({',
+      "    ...row,",
+      "    created_at: now,",
+      "  });",
+      "}",
+    ].join("\n");
+    const site = (censusOfFile("x/y.ts", spread, { table: "attendance_device_user_map", root: "x" }) as CensusSite[])[0];
+    assert.equal(
+      site.resolved,
+      false,
+      "a write payload that spreads another object must be UNRESOLVED — it listed `created_at` alone " +
+        "and called itself resolved, so six columns of `row` were never probed",
+    );
+    assert.match(site.note, /spreads another object/, "the note must say WHY it is unresolved");
+    assert.deepEqual(site.writeKeys, ["created_at"], "the literal keys it COULD read are still worth reporting");
+  }
+
+  {
+    // (b) A write carries two halves. The select's verdict must never overwrite the payload's.
+    const both = [
+      "async function save(db, payload) {",
+      '  await db.from("deductions_decisions").insert(payload).select("id,candidate_id").single();',
+      "}",
+    ].join("\n");
+    const site = (censusOfFile("x/y.ts", both, { table: "deductions_decisions", root: "x" }) as CensusSite[])[0];
+    assert.equal(
+      site.resolved,
+      false,
+      "an unreadable write payload must stay UNRESOLVED even when the .select() beside it resolves — " +
+        "assigning the select's verdict over it reported `resolved: true` on a site whose own note " +
+        "said its columns were NOT checked",
+    );
+    assert.match(
+      site.note,
+      /payload is not an object literal/,
+      "the payload's note must survive — the select's note must not replace the reason the site is unreadable",
+    );
+  }
 }
