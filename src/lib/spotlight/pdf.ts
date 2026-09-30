@@ -1162,7 +1162,7 @@ export function repSpotlightDocumentHtml(result: SpotlightResult): string {
   //   · PALE and BEHIND the content, so the figure stays the payload rather than fighting a second mark.
   // One <img> (the same base64 object as the foot), so it adds no per-page raster layer.
   const watermarkStyle = `<style>
-    .rep-wm { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    .rep-wm { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%);
       width: 168mm; opacity: 0.05; z-index: 0; pointer-events: none; }
     .rep-wm img { display: block; width: 100%; height: auto; }
     .rep-wm-content { position: relative; z-index: 1; }
