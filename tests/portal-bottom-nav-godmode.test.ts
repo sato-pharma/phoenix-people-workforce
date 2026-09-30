@@ -68,6 +68,33 @@ export function runPortalBottomNavGodmodeTests() {
     ["vacation", "direct-order"],
     "New direct order appears only behind showDirectOrdersTab",
   );
+  // Phoenix CRM's two actions (owner, 2026-09-29): a medical rep with the module open gets "Add visit" and
+  // "Make weekly plan" FIRST; either flag alone offers neither — a manager reaches Phoenix CRM through
+  // its page, and a rep whose line has not opened has nothing to add yet.
+  assert.deepEqual(
+    portalQuickActions({ ...noFlags, showPhoenixCrmTab: true, showMedicalRepExpensesTab: true }).map((action) => action.id),
+    ["crm-visit", "crm-plan", "vacation"],
+    "a rep with Phoenix CRM open is offered Add visit and Make weekly plan first",
+  );
+  assert.deepEqual(
+    portalQuickActions({ ...noFlags, showPhoenixCrmTab: true }).map((action) => action.id),
+    ["vacation"],
+    "Phoenix CRM open without the medical-rep flag offers neither",
+  );
+  assert.deepEqual(
+    portalQuickActions({ ...noFlags, showMedicalRepExpensesTab: true }).map((action) => action.id),
+    ["vacation"],
+    "a medical rep whose Phoenix CRM is not open is offered neither",
+  );
+  const crmActions = portalQuickActions({ ...noFlags, showPhoenixCrmTab: true, showMedicalRepExpensesTab: true }).slice(0, 2);
+  assert.deepEqual(
+    crmActions.map((action) => action.href),
+    ["/employee-portals/field-crm?tab=visits&add=visit", "/employee-portals/field-crm?tab=plan&add=week"],
+    "each opens the module on its own screen through the page's address",
+  );
+  const widgetsSrc = readFileSync(WIDGETS, "utf8");
+  assert.match(widgetsSrc, /"crm-visit": Stethoscope/, "Add visit has its own glyph");
+  assert.match(widgetsSrc, /"crm-plan": CalendarRange/, "Make weekly plan has its own glyph");
   // The whole point of extracting the list: its hrefs must not sit in the layout, because
   // tests/employee-portal-bottom-nav.test.ts reads every href literal there and demands each be a
   // phone-bar registry entry — which a quick-action target never is.

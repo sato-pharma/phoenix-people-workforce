@@ -9,6 +9,16 @@
  *     reviewer) — never approved by the system;
  *   - the list stays with the territory when the rep changes.
  *
+ * Owner, 2026-09-29 — the rep's flow rebuilt (src/lib/phoenix-crm/list-request-rules.ts holds the
+ * customer's whole life on the list):
+ *   - a place is validated ONCE, with two readings — the Capture-location pin and the photo's own
+ *     shutter reading. The photo's reading is the fixed point; the pin is the fallback. Only the Super
+ *     Admin and the SFE Manager move a place, with a written reason (place-move.ts);
+ *   - a customer met outside the list is validated at the door and WAITS outside it; adding him, dropping
+ *     a listed one and bringing one back from the Archive go to the district manager, then SFE. The
+ *     manager confirms the A/B/C grade of an add and sets its potential (AA..BC, shown only);
+ *   - a customer's earlier visits are measured against his place once he has one (visit-locations.ts).
+ *
  * Every write goes through one database function that re-checks the rule under a per-territory lock
  * (supabase/migrations/20260916150000_phoenix_crm.sql); this file checks who may ask, shapes the entry
  * and tells the people who must act.
@@ -28,17 +38,33 @@ import {
   parseDropDraft,
   parseGrade,
   parseNewCustomer,
+  parseOutsideCustomer,
   parsePlaceDraft,
+  parsePotentialGrade,
   parseProductAvailability,
   PHARMACY_NAME_MAX,
   PLACE_TEXT_MAX,
+  placePoint,
   type PlaceDraft,
+  type PotentialGrade,
   type ProductAvailability,
 } from "@/lib/phoenix-crm/entry-rules";
-import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
-  assertReviewer,
+  archiveReasonLabel,
+  firstRequestStage,
+  isRequestStage,
+  listSectionOf,
+  requestKindLabel,
+  requestStageLabel,
+  type ListSection,
+} from "@/lib/phoenix-crm/list-request-rules";
+import { isUuid } from "@/lib/phoenix-crm/plan-rules";
+import { territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import {
+  assertListRequestApprover,
+  assertPlaceMover,
+  canDecideListRequest,
+  canMovePlaces,
   canReviewTerritory,
   canWriteAsRep,
   readTestFlag,
@@ -52,8 +78,18 @@ import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
+import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
+import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
 import { parseTimings, sortTimings } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind, PhoenixCrmRequestStatus, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+import type {
+  PhoenixCrmCustomerStatus,
+  PhoenixCrmGrade,
+  PhoenixCrmListType,
+  PhoenixCrmRequestKind,
+  PhoenixCrmRequestStage,
+  PhoenixCrmRequestStatus,
+  PhoenixCrmTiming,
+} from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
@@ -70,6 +106,10 @@ function record(raw: unknown): Row {
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function customerStatusOf(value: unknown): PhoenixCrmCustomerStatus {
+  return value === "pending" || value === "outside" || value === "dropped" ? value : "active";
 }
 
 // ── Reading ─────────────────────────────────────────────────────────────────────────────────────
@@ -93,6 +133,7 @@ export type ListPlace = {
   regionCode: string | null;
   regionName: string | null;
   zone: string | null;
+  /** The FIXED point every later visit is measured against: the photo's reading, else the pin. */
   lat: number;
   lon: number;
   accuracyMeters: number | null;
@@ -101,7 +142,19 @@ export type ListPlace = {
   capturedAt: string;
   /** The phone's clock was more than 15 minutes off the server's when the photo was taken. */
   clockOff: boolean;
+  /**
+   * Where the fixed point came from (owner, 2026-09-29): the photo's own shutter reading, the
+   * Capture-location pin when the photo had none, or a move by the Super Admin or the SFE Manager.
+   */
+  pointSource: "photo" | "pin" | "moved";
+  /** The two raw readings, kept beside the fixed point for good. Null where one was not measured. */
+  pinReading: PlaceReading | null;
+  photoReading: PlaceReading | null;
+  /** Set once the place was moved: when, and the written reason. */
+  moved: { at: string; reason: string | null } | null;
 };
+
+export type PlaceReading = { lat: number; lon: number; accuracyMeters: number | null };
 
 /** What iReports360 said about a carried-over customer, so the rep can find him before he has a place. */
 export type ListCustomerReference = {
@@ -152,8 +205,20 @@ export type ListCustomer = {
   grade: PhoenixCrmGrade | null;
   origin: "reference" | "new";
   referenceContactCrmId: number | null;
-  /** "pending": carried over from iReports360 and not validated yet. It counts in no report. */
-  status: "active" | "pending" | "dropped";
+  /**
+   * "pending": carried over from iReports360 and not validated yet. It counts in no report.
+   * "outside": met outside the list and validated at the door, waiting to be added (2026-09-29).
+   * "dropped": in the Archive.
+   */
+  status: PhoenixCrmCustomerStatus;
+  /** Which section of the List he sits in — the one place that decision is made (list-request-rules.ts). */
+  section: ListSection;
+  /**
+   * The district manager's read of his potential, set when he approved adding him. Shown only: every
+   * frequency, target and KPI reads the A/B/C grade.
+   */
+  potentialGrade: PotentialGrade | null;
+  /** Set once validated AND on the list; an outside customer keeps it empty until he is admitted. */
   validatedAt: string | null;
   validatedByName: string | null;
   /** What iReports360 holds on him; null for a customer the rep added himself. */
@@ -168,6 +233,8 @@ export type ListCustomer = {
   pendingGradeRequestId: string | null;
   pendingGrade: PhoenixCrmGrade | null;
   pendingDropRequestId: string | null;
+  /** Every request waiting on him, whatever its kind, with the step it is on. */
+  waiting: Array<{ requestId: string; kind: PhoenixCrmRequestKind; stage: PhoenixCrmRequestStage | null; stageLabel: string | null }>;
   /** The pharmacy pinned as this doctor's primary, or null. */
   primaryPharmacyName: string | null;
   /** The pharmacies feedback was taken from for this doctor, primary first, then most recent. */
@@ -207,6 +274,18 @@ export type ListRequest = {
   decidedByName: string | null;
   decidedAt: string | null;
   decisionNote: string | null;
+  /** "Add to the list", "Drop from the list"… */
+  kindLabel: string;
+  /** The step a waiting drop, add or bring-back is on; null for a grade change and once decided. */
+  stage: PhoenixCrmRequestStage | null;
+  stageLabel: string | null;
+  /** An add, once the district manager approved it: the A/B/C he confirmed and the potential he set. */
+  approvedGrade: PhoenixCrmGrade | null;
+  potentialGrade: PotentialGrade | null;
+  /** The district manager's step of a two-step request, once taken. */
+  managerDecision: { byName: string; at: string; note: string | null } | null;
+  /** The viewer decides the step this request is on (the caller sets it; the mapper cannot know). */
+  canDecide: boolean;
 };
 
 export type TerritoryListView = {
@@ -216,6 +295,13 @@ export type TerritoryListView = {
   canEdit: boolean;
   /** The viewer decides this territory's requests. */
   canReview: boolean;
+  /** The viewer may move a validated place: the Super Admin and the SFE Manager, nobody else. */
+  canMovePlaces: boolean;
+  /**
+   * The viewer decides the SFE step, so he may bring an archived customer back himself (the SFE manages
+   * the Archive, owner 2026-09-29): the SFE Manager in scope, the Super Admin in test mode.
+   */
+  canBringBack: boolean;
   readiness: ReadinessSummary & { readyAt: string | null };
   /** Whose iReports360 list the reference is; the name is null when that person is not on record. */
   referenceSource: { name: string | null; isCurrent: boolean } | null;
@@ -267,13 +353,24 @@ export function mapPlaceRow(row: Row): ListPlace {
     photoPath: String(row.photo_path),
     capturedAt: String(row.captured_at),
     clockOff: skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
+    pointSource: row.point_source === "photo" || row.point_source === "moved" ? row.point_source : "pin",
+    pinReading: readingOf(row.pin_lat, row.pin_lon, row.pin_accuracy_meters),
+    photoReading: readingOf(row.photo_lat, row.photo_lon, row.photo_accuracy_meters),
+    moved: text(row.moved_at) ? { at: String(row.moved_at), reason: text(row.move_reason) } : null,
   };
 }
 
+function readingOf(lat: unknown, lon: unknown, accuracy: unknown): PlaceReading | null {
+  const latitude = numberOrNull(lat);
+  const longitude = numberOrNull(lon);
+  return latitude === null || longitude === null ? null : { lat: latitude, lon: longitude, accuracyMeters: numberOrNull(accuracy) };
+}
+
 const PLACE_COLUMNS =
-  "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes";
+  "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes, " +
+  "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason";
 const CUSTOMER_COLUMNS =
-  "id, list_type, name, speciality, grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, primary_pharmacy_name";
+  "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, primary_pharmacy_name";
 
 /**
  * Every customer carried over from the territory's iReports360 list has a row here, pending until the
@@ -291,19 +388,26 @@ export async function ensureReferenceCustomers(seat: OrgSeat, isTest: boolean): 
   throwIfError(error);
 }
 
-/** Every customer of a territory (on the list and dropped), with its active places. */
+/**
+ * Every customer of a territory (on the list, outside it and in the Archive), with its active places.
+ *
+ * `onListOnly` keeps the list itself: validated, or carried over and waiting to be. `includeOutside`
+ * adds the customers met outside the list and waiting to be added — the visit form offers them (a
+ * second out-of-list visit to the same person), the planner deliberately does not.
+ */
 export async function loadTerritoryCustomers(
   seatId: string,
   isTest: boolean,
-  options: { onListOnly?: boolean } = {},
+  options: { onListOnly?: boolean; includeOutside?: boolean } = {},
 ): Promise<{ customers: Row[]; placesByCustomer: Map<string, ListPlace[]> }> {
   const supabase = getSupabaseAdmin();
   const [customers, places] = await Promise.all([
     fetchAllRowsKeyset<Row>(
       () => {
         let query = supabase.from("phoenix_crm_customers").select(CUSTOMER_COLUMNS).eq("seat_id", seatId).eq("is_test", isTest);
-        // On the list: validated, or carried over and waiting to be. Only a dropped customer is left out.
-        if (options.onListOnly) query = query.in("status", ["active", "pending"]);
+        // On the list: validated, or carried over and waiting to be. A dropped customer is left out, and
+        // one waiting outside the list only when the caller asks for him.
+        if (options.onListOnly) query = query.in("status", options.includeOutside ? ["active", "pending", "outside"] : ["active", "pending"]);
         return query;
       },
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
@@ -478,6 +582,31 @@ export async function loadReference(seatId: string, isTest: boolean): Promise<Re
   ]);
 }
 
+/**
+ * Where each customer NOT VALIDATED YET among `customers` sits, keyed by customer id — what the plan
+ * board shows in the place a validated customer's clinic would fill (owner, 2026-09-30).
+ *
+ * The brick and its area come from `loadBrickNames`, i.e. the sales master, which agrees with the
+ * organogram on every area name. iReports360's own `zone` and `city` are NOT read: they are a different
+ * vocabulary that disagrees with the organogram on 37 of 39 areas (see `PlannerReference`). Only its
+ * `address` — the town — is carried over.
+ */
+export async function loadPlannerReferences(seatId: string, isTest: boolean, customers: ReadonlyArray<Row>): Promise<Map<string, PlannerReference>> {
+  const pending = customers.filter((row) => row.status === "pending" && numberOrNull(row.reference_contact_crm_id) !== null);
+  const references = new Map<string, PlannerReference>();
+  if (pending.length === 0) return references;
+  const reference = await loadReference(seatId, isTest);
+  const byContact = new Map(reference.map((row) => [Number(row.contact_crm_id), row]));
+  const brickMeta = await loadBrickNames(reference.map((row) => row.brick_id).filter((brickId): brickId is string => Boolean(brickId)));
+  for (const row of pending) {
+    const entry = byContact.get(Number(row.reference_contact_crm_id));
+    if (!entry) continue;
+    const meta = entry.brick_id ? brickMeta.get(entry.brick_id) : undefined;
+    references.set(String(row.id), { brick: meta?.brickName ?? null, area: meta?.areaName ?? null, address: entry.address });
+  }
+  return references;
+}
+
 export type SeatReadiness = ReadinessSummary & { seatId: string; readyAt: string | null };
 
 /**
@@ -519,12 +648,25 @@ export async function loadReadiness(seatIds: string[], markReady = false): Promi
   return readiness;
 }
 
+function requestKindOf(value: unknown): PhoenixCrmRequestKind {
+  return value === "drop" || value === "add" || value === "restore" ? value : "grade";
+}
+
+/** The people a request row names, for one names read. */
+export function requestPeople(rows: ReadonlyArray<Row>): Array<string | null> {
+  return rows.flatMap((row) => [text(row.requested_by_hr_id), text(row.decided_by_hr_id), text(row.manager_decided_by_hr_id)]);
+}
+
 export function mapRequestRow(row: Row, names: ReadonlyMap<string, string>): ListRequest {
   const dropReason = text(row.drop_reason);
+  const kind = requestKindOf(row.kind);
+  const status = String(row.status) as PhoenixCrmRequestStatus;
+  const stage = status === "pending" && isRequestStage(row.stage) ? row.stage : null;
+  const managerBy = text(row.manager_decided_by_hr_id);
   return {
     requestId: String(row.id),
-    kind: row.kind === "drop" ? "drop" : "grade",
-    status: String(row.status) as PhoenixCrmRequestStatus,
+    kind,
+    status,
     customerId: text(row.customer_id),
     referenceContactCrmId: numberOrNull(row.reference_contact_crm_id),
     customerName: String(row.customer_name),
@@ -539,11 +681,23 @@ export function mapRequestRow(row: Row, names: ReadonlyMap<string, string>): Lis
     decidedByName: text(row.decided_by_hr_id) ? nameOf(names, text(row.decided_by_hr_id)) : null,
     decidedAt: text(row.decided_at),
     decisionNote: text(row.decision_note),
+    kindLabel: requestKindLabel(kind),
+    stage,
+    stageLabel: requestStageLabel(stage),
+    approvedGrade: parseGrade(row.approved_grade),
+    potentialGrade: parsePotentialGrade(row.potential_grade),
+    managerDecision:
+      managerBy && text(row.manager_decided_at)
+        ? { byName: nameOf(names, managerBy), at: String(row.manager_decided_at), note: text(row.manager_note) }
+        : null,
+    canDecide: false,
   };
 }
 
 const REQUEST_COLUMNS =
-  "id, seat_id, kind, status, customer_id, reference_contact_crm_id, customer_name, list_type, current_grade, proposed_grade, drop_reason, note, requested_by_hr_id, requested_at, decided_by_hr_id, decided_at, decision_note, is_test";
+  "id, seat_id, kind, status, stage, customer_id, reference_contact_crm_id, customer_name, list_type, current_grade, proposed_grade, " +
+  "approved_grade, potential_grade, drop_reason, note, requested_by_hr_id, requested_at, manager_decided_by_hr_id, manager_decided_at, " +
+  "manager_note, decided_by_hr_id, decided_at, decision_note, is_test";
 
 /** Waiting requests, and the ones decided lately, for some territories. */
 export async function loadRequestRows(seatIds: string[], isTest: boolean, options: { pendingOnly?: boolean } = {}): Promise<Row[]> {
@@ -578,12 +732,15 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
 
   const names = await loadPeopleNames([
     ...territoryPeople(viewer.org, [seat]),
-    ...requestRows.flatMap((row) => [text(row.requested_by_hr_id), text(row.decided_by_hr_id)]),
+    ...requestPeople(requestRows),
     ...customers.map((row) => text(row.validated_by_hr_id)),
     reference[0]?.source_hr_id ?? null,
   ]);
-  const requests = requestRows.map((row) => mapRequestRow(row, names));
-  const pendingByCustomer = new Map<string, { grade?: ListRequest; drop?: ListRequest }>();
+  const requests = requestRows.map((row) => {
+    const request = mapRequestRow(row, names);
+    return { ...request, canDecide: request.status === "pending" && canDecideListRequest(viewer, seat, isTest, request.stage) };
+  });
+  const pendingByCustomer = new Map<string, Partial<Record<PhoenixCrmRequestKind, ListRequest>>>();
   const pendingDropByContact = new Map<number, ListRequest>();
   for (const request of requests) {
     if (request.status !== "pending") continue;
@@ -619,16 +776,21 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     const pharmacies = (pharmaciesByCustomer.get(customerId) ?? [])
       .map((pharmacy) => ({ ...pharmacy, isPrimary: primaryKey !== null && normalizePharmacyName(pharmacy.name) === primaryKey }))
       .sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary) || right.lastFeedbackAt.localeCompare(left.lastFeedbackAt));
+    const status = customerStatusOf(row.status);
+    const origin = row.origin === "new" ? "new" : "reference";
+    const validatedAt = text(row.validated_at);
     return {
       customerId,
       listType,
       name: String(row.name),
       speciality: text(row.speciality),
       grade,
-      origin: row.origin === "new" ? "new" : "reference",
+      origin,
       referenceContactCrmId: contactCrmId,
-      status: row.status === "dropped" ? "dropped" : row.status === "pending" ? "pending" : "active",
-      validatedAt: text(row.validated_at),
+      status,
+      section: listSectionOf({ status, origin, validatedAt }),
+      potentialGrade: parsePotentialGrade(row.potential_grade),
+      validatedAt,
       validatedByName: validatedBy ? nameOf(names, validatedBy) : null,
       reference: referenceRow
         ? {
@@ -641,7 +803,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
             areaName: referenceRow.brick_id ? (referenceBrickMeta.get(referenceRow.brick_id)?.areaName ?? null) : null,
           }
         : null,
-      droppedReason: dropReasonLabel(droppedReason) ?? droppedReason,
+      droppedReason: archiveReasonLabel(droppedReason) ?? dropReasonLabel(droppedReason) ?? droppedReason,
       droppedNote: text(row.dropped_note),
       statusChangedAt: String(row.status_changed_at),
       places: placesByCustomer.get(customerId) ?? [],
@@ -651,6 +813,12 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       pendingGradeRequestId: pending?.grade?.requestId ?? null,
       pendingGrade: pending?.grade?.proposedGrade ?? null,
       pendingDropRequestId: pending?.drop?.requestId ?? null,
+      waiting: Object.values(pending ?? {}).map((request) => ({
+        requestId: request.requestId,
+        kind: request.kind,
+        stage: request.stage,
+        stageLabel: request.stageLabel,
+      })),
       primaryPharmacyName,
       pharmacies,
     };
@@ -682,6 +850,8 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     isTest,
     canEdit: canWriteAsRep(viewer, seat, isTest),
     canReview: canReviewTerritory(viewer, seat, isTest),
+    canMovePlaces: canMovePlaces(viewer, seat, isTest),
+    canBringBack: canDecideListRequest(viewer, seat, isTest, "sfe"),
     readiness: { ...summary, ready: summary.ready || Boolean(stored?.readyAt), readyAt: stored?.readyAt ?? null },
     referenceSource: source ? { name: nameOf(names, source.source_hr_id, "") || null, isCurrent: source.source_is_current } : null,
     reference: referenceEntries,
@@ -720,25 +890,51 @@ function lineCodeOf(seat: OrgSeat): string {
  * Before this the phone sent `address`, `zone` and `brick` and the row took them as given, so the
  * evidence of where a customer is could be typed over on the way. It cannot now: `PlaceDraft` no
  * longer carries them, and nothing on this path reads the body for a location.
+ *
+ * Owner, 2026-09-29: the place is captured with TWO readings — the Capture-location pin and the
+ * photo's own shutter reading — and "the photo + the location of photo is the more trustable". So
+ * the location above is resolved from `placePoint` (the photo's reading, else the pin), `lat`/`lon`
+ * hold that fixed point, and both raw readings are stored beside it for good.
  */
 async function placePayload(place: PlaceDraft): Promise<Row> {
-  const [centroids, issuedAt, located] = await Promise.all([
+  const point = placePoint(place);
+  const [issuedAt, located] = await Promise.all([photoSlotIssuedAt(place.photoPath), resolvePlaceLocation(point)]);
+  return {
+    photo_path: place.photoPath,
+    lat: point.lat,
+    lon: point.lon,
+    accuracy_meters: point.accuracyMeters,
+    point_source: point.source,
+    pin_lat: place.lat,
+    pin_lon: place.lon,
+    pin_accuracy_meters: place.accuracyMeters,
+    photo_lat: place.photoLat,
+    photo_lon: place.photoLon,
+    photo_accuracy_meters: place.photoAccuracyMeters,
+    photo_captured_at: place.photoCapturedAt,
+    device_skew_minutes: issuedAt ? deviceClockSkewMinutes(place.deviceCapturedAt, new Date(issuedAt)) : null,
+    label: place.label,
+    ...located,
+    timings: place.timings,
+  };
+}
+
+/**
+ * A point's clean address, part of town, brick, area and region — the location every place row holds,
+ * resolved here and nowhere else (a validation and a move read the same function, so they can never
+ * disagree about which brick a point is in).
+ */
+export async function resolvePlaceLocation(point: { lat: number; lon: number; accuracyMeters: number | null }): Promise<Row> {
+  const [centroids, located] = await Promise.all([
     loadBrickCentroids(),
-    photoSlotIssuedAt(place.photoPath),
     // Best-effort, exactly as the watermark treats it: a pin in the desert, a refused lookup or a
     // spent map quota leaves the clean address null. The coordinates, the photo and the brick are
     // the proof; the address is the courtesy on top of them, and a validation is never blocked on it.
-    resolveEvidenceLocation({ accuracyMeters: place.accuracyMeters, latitude: place.lat, longitude: place.lon }).catch(() => null),
+    resolveEvidenceLocation({ accuracyMeters: point.accuracyMeters, latitude: point.lat, longitude: point.lon }).catch(() => null),
   ]);
-  const brick = resolveBrickForPoint(place.lat, place.lon, centroids);
+  const brick = resolveBrickForPoint(point.lat, point.lon, centroids);
   const trusted = brick && brick.distanceKm <= BRICK_TRUST_KM ? brick : null;
   return {
-    photo_path: place.photoPath,
-    lat: place.lat,
-    lon: place.lon,
-    accuracy_meters: place.accuracyMeters,
-    device_skew_minutes: issuedAt ? deviceClockSkewMinutes(place.deviceCapturedAt, new Date(issuedAt)) : null,
-    label: place.label,
     address: located?.address ?? null,
     zone: located?.components.area ?? null,
     brick_id: trusted?.brickId ?? null,
@@ -748,7 +944,6 @@ async function placePayload(place: PlaceDraft): Promise<Row> {
     area_name: trusted?.areaName ?? null,
     region_code: trusted?.regionCode ?? null,
     region_name: trusted?.regionName ?? null,
-    timings: place.timings,
   };
 }
 
@@ -789,9 +984,27 @@ export type ValidateResult = {
   placeId: string;
   capturedAt: string;
   restored: boolean;
+  /** Kept for a caller one release behind: the request a new customer raised. Same as `requestId`. */
   gradeRequestId: string | null;
+  /** Where the customer stands now: on the list, or waiting outside it. */
+  status: PhoenixCrmCustomerStatus;
+  /** The request this validation raised — an add for "Add new customer", a bring-back — if any. */
+  requestId: string | null;
+  requestKind: PhoenixCrmRequestKind | null;
 };
 
+/**
+ * Validate a customer at the door: a live signboard photo, the two location readings and his days and
+ * hours, once and for good. Four modes:
+ *
+ *   reference — a customer carried over from iReports360 goes on the list (refused for one in the Archive);
+ *   new       — "Add new customer": he waits outside the list, and the add request (district manager
+ *               with the A/B/C grade and the potential, then SFE) is filed at once;
+ *   outside   — met on an out-of-list visit: he waits outside the list and the rep chooses later —
+ *               "Request to add" or "Drop";
+ *   restore   — kept for a caller that still sends a fresh place with "Bring back": the place is kept
+ *               and the bring-back request is filed.
+ */
 export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): Promise<ValidateResult> {
   const body = record(raw);
   const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
@@ -799,7 +1012,15 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   const place = parsePlaceDraft(body.place);
   if (!place.ok) throw validationError(place.error);
 
-  const payload: Row = { seat_id: seat.seatId, line_code: lineCode, actor_hr_id: viewer.hrId, is_test: isTest };
+  const payload: Row = {
+    seat_id: seat.seatId,
+    line_code: lineCode,
+    actor_hr_id: viewer.hrId,
+    is_test: isTest,
+    // Where a two-step request starts is read from the organogram, never from the phone: a territory
+    // with no manager seat above it begins at SFE, as an off-plan visit's approval does.
+    first_stage: firstRequestStage(territoryReviewer(viewer.org, seat.seatId) !== null),
+  };
   let proposedGrade: PhoenixCrmGrade | null = null;
   const mode = String(body.mode ?? "");
   if (mode === "reference") {
@@ -819,6 +1040,16 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
       proposed_grade: draft.value.proposedGrade,
       allow_same_name: body.allowSameName === true,
     });
+  } else if (mode === "outside") {
+    const draft = parseOutsideCustomer(body.customer);
+    if (!draft.ok) throw validationError(draft.error);
+    Object.assign(payload, {
+      mode: "outside",
+      name: draft.value.name,
+      list_type: draft.value.listType,
+      speciality: draft.value.speciality,
+      allow_same_name: body.allowSameName === true,
+    });
   } else if (mode === "restore") {
     if (!isUuid(body.customerId)) throw validationError("Choose the customer to bring back to the list.");
     payload.mode = "restore";
@@ -829,6 +1060,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   payload.place = await placePayload(place.value);
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_validate_customer", { p: payload });
+  const requestKind = text(result.request_kind);
   const validated: ValidateResult = {
     customerId: String(result.customer_id),
     customerName: String(result.customer_name),
@@ -837,29 +1069,72 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     capturedAt: String(result.captured_at),
     restored: result.restored === true,
     gradeRequestId: text(result.grade_request_id),
+    status: customerStatusOf(result.status),
+    requestId: text(result.request_id),
+    requestKind: requestKind ? requestKindOf(requestKind) : null,
   };
   // A validated place is the reference point every later visit to this customer is measured against,
   // so a spoof here is worth more to a cheat than a spoofed visit — one fake pin makes a year of
   // visits read "ok". Judged after the save, silently, exactly as a visit is.
   await judgeCaptureForPlace(viewer, seat.seatId, isTest, validated.placeId, validated.customerId, validated.capturedAt, place.value);
-  if (validated.gradeRequestId) {
-    await notifyPhoenixCrm(
-      {
-        kind: "request_created",
-        org: viewer.org,
-        seat,
-        requestId: validated.gradeRequestId,
-        requestKind: "grade",
-        requesterHrId: viewer.hrId,
-        customerName: validated.customerName,
-        listType: validated.listType,
-        proposedGrade,
-        dropReason: null,
-      },
-      isTest,
-    );
+  // His visits from before he had a place get their distance now (owner, 2026-09-29). Never the rep's
+  // to see; the managers' place-vs-actual report reads it.
+  await restampVisitLocationsQuietly({
+    seatId: seat.seatId,
+    isTest,
+    customerId: validated.customerId,
+    actorHrId: viewer.hrId,
+    settings: viewer.config.settings,
+    scope: "unplaced",
+  });
+  if (validated.requestId && validated.requestKind) {
+    await notifyRequestRaised(viewer, seat, isTest, {
+      requestId: validated.requestId,
+      requestKind: validated.requestKind,
+      stage: payload.first_stage as PhoenixCrmRequestStage,
+      customerName: validated.customerName,
+      listType: validated.listType,
+      proposedGrade,
+      dropReason: null,
+    });
   }
   return validated;
+}
+
+/**
+ * Tell the district manager a request is waiting for him. The SFE step has no push of its own — the
+ * SFE Manager holds no seat to address — and shows through the Team tab's counter instead.
+ */
+async function notifyRequestRaised(
+  viewer: PhoenixCrmViewer,
+  seat: OrgSeat,
+  isTest: boolean,
+  request: {
+    requestId: string;
+    requestKind: PhoenixCrmRequestKind;
+    stage: PhoenixCrmRequestStage | null;
+    customerName: string;
+    listType: PhoenixCrmListType;
+    proposedGrade: PhoenixCrmGrade | null;
+    dropReason: string | null;
+  },
+): Promise<void> {
+  if (request.stage === "sfe") return;
+  await notifyPhoenixCrm(
+    {
+      kind: "request_created",
+      org: viewer.org,
+      seat,
+      requestId: request.requestId,
+      requestKind: request.requestKind,
+      requesterHrId: viewer.hrId,
+      customerName: request.customerName,
+      listType: request.listType,
+      proposedGrade: request.proposedGrade,
+      dropReason: request.dropReason,
+    },
+    isTest,
+  );
 }
 
 /**
@@ -939,14 +1214,27 @@ export async function addPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<
   return added;
 }
 
-/** Editing a place's timings and details (no new photo: the change is kept in the events), or removing it. */
+/**
+ * Editing a place's timings and details (no new photo: the change is kept in the events), or removing it.
+ *
+ * The rep edits his customer's days and hours and the place's name. REMOVING a place is a change of
+ * where the customer is, so since 2026-09-29 it is the Super Admin's and the SFE Manager's alone,
+ * exactly as moving one is ("the location never changes — only the system administrator").
+ */
 export async function updatePlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ placeId: string; customerId: string }> {
   const body = record(raw);
-  const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
   if (!isUuid(body.placeId)) throw validationError("Choose the place to change.");
   const placeId = String(body.placeId).toLowerCase();
   const action = body.action === "retire" ? "retire" : body.action === "edit" ? "edit" : null;
   if (!action) throw validationError("Reload the page and try again.");
+  let access: { seat: OrgSeat; isTest: boolean };
+  if (action === "retire") {
+    access = territoryForRead(viewer, body.seatId, readTestFlag(body.test));
+    assertPlaceMover(viewer, access.seat, access.isTest);
+  } else {
+    access = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
+  }
+  const { seat, isTest } = access;
 
   const payload: Row = { seat_id: seat.seatId, actor_hr_id: viewer.hrId, is_test: isTest, place_id: placeId, action };
   if (action === "edit") {
@@ -966,15 +1254,23 @@ export async function updatePlace(viewer: PhoenixCrmViewer, raw: unknown): Promi
   return { placeId: String(result.place_id), customerId: String(result.customer_id) };
 }
 
-export async function createListRequest(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ requestId: string }> {
+/**
+ * The rep asks: a grade change (the district manager alone), or — the district manager, then SFE —
+ * to drop a listed customer, to add one waiting outside the list, or to bring one back from the Archive.
+ */
+export async function createListRequest(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ requestId: string; kind: PhoenixCrmRequestKind; stage: PhoenixCrmRequestStage | null }> {
   const body = record(raw);
   const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
   const lineCode = lineCodeOf(seat);
-  const kind = body.kind === "grade" ? "grade" : body.kind === "drop" ? "drop" : null;
+  const kind: PhoenixCrmRequestKind | null =
+    body.kind === "grade" || body.kind === "drop" || body.kind === "add" || body.kind === "restore" ? (body.kind as PhoenixCrmRequestKind) : null;
   if (!kind) throw validationError("Reload the page and try again.");
   const customerId = isUuid(body.customerId) ? String(body.customerId).toLowerCase() : null;
   const contact = Number(body.referenceContactCrmId);
-  const referenceContactCrmId = !customerId && Number.isSafeInteger(contact) && contact > 0 ? contact : null;
+  const referenceContactCrmId = !customerId && kind === "drop" && Number.isSafeInteger(contact) && contact > 0 ? contact : null;
   if (!customerId && referenceContactCrmId === null) throw validationError("Choose the customer this request is for.");
 
   const payload: Row = {
@@ -985,39 +1281,89 @@ export async function createListRequest(viewer: PhoenixCrmViewer, raw: unknown):
     kind,
     customer_id: customerId,
     reference_contact_crm_id: referenceContactCrmId,
+    first_stage: firstRequestStage(territoryReviewer(viewer.org, seat.seatId) !== null),
   };
   let proposedGrade: PhoenixCrmGrade | null = null;
   let dropReason: string | null = null;
-  if (kind === "grade") {
+  if (kind === "grade" || kind === "add") {
     proposedGrade = parseGrade(body.proposedGrade);
     if (!proposedGrade) throw validationError("Choose the grade you propose (A, B or C).");
     payload.proposed_grade = proposedGrade;
-  } else {
+  } else if (kind === "drop") {
     const drop = parseDropDraft(body);
     if (!drop.ok) throw validationError(drop.error);
     dropReason = drop.value.reason;
     payload.drop_reason = drop.value.reason;
     payload.note = drop.value.note;
+  } else {
+    payload.note = cleanText(body.note, 500);
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_create_request", { p: payload });
   const requestId = String(result.request_id);
-  await notifyPhoenixCrm(
-    {
-      kind: "request_created",
-      org: viewer.org,
-      seat,
-      requestId,
-      requestKind: kind,
-      requesterHrId: viewer.hrId,
-      customerName: String(result.customer_name),
-      listType: result.list_type === "AM" ? "AM" : "PM",
-      proposedGrade,
-      dropReason,
+  const stage = isRequestStage(result.stage) ? result.stage : null;
+  await notifyRequestRaised(viewer, seat, isTest, {
+    requestId,
+    requestKind: kind,
+    stage,
+    customerName: String(result.customer_name),
+    listType: result.list_type === "AM" ? "AM" : "PM",
+    proposedGrade,
+    dropReason,
+  });
+  return { requestId, kind, stage };
+}
+
+/**
+ * The rep drops a customer he met outside his list instead of asking to add him — no approval: the
+ * customer was never on the list, so nothing leaves it. He goes to the Archive, and the visits made to
+ * him never count.
+ */
+export async function archiveOutsideCustomer(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ customerId: string; customerName: string }> {
+  const body = record(raw);
+  const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
+  if (!isUuid(body.customerId)) throw validationError("Choose the customer to drop.");
+  const result = await callPhoenixCrm<Row>("phoenix_crm_archive_outside", {
+    p: {
+      seat_id: seat.seatId,
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      customer_id: String(body.customerId).toLowerCase(),
+      note: cleanText(body.note, 500),
     },
-    isTest,
-  );
-  return { requestId };
+  });
+  return { customerId: String(result.customer_id), customerName: String(result.customer_name) };
+}
+
+/**
+ * The SFE Manager manages the Archive (owner, 2026-09-29): he can bring a customer back to the list
+ * himself. It is filed as a bring-back request at the SFE step and decided in the same breath, so the
+ * Archive's history reads the same whoever moved the customer — a request, who decided it, and when.
+ */
+export async function sfeBringBack(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ requestId: string; customerId: string }> {
+  const body = record(raw);
+  const { seat, isTest } = territoryForRead(viewer, body.seatId, readTestFlag(body.test));
+  assertListRequestApprover(viewer, seat, isTest, "sfe");
+  if (!isUuid(body.customerId)) throw validationError("Choose the customer to bring back.");
+  const customerId = String(body.customerId).toLowerCase();
+  const note = cleanText(body.note, 500);
+  const created = await callPhoenixCrm<Row>("phoenix_crm_create_request", {
+    p: {
+      seat_id: seat.seatId,
+      line_code: lineCodeOf(seat),
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      kind: "restore",
+      customer_id: customerId,
+      first_stage: "sfe",
+      note,
+    },
+  });
+  const requestId = String(created.request_id);
+  await callPhoenixCrm<Row>("phoenix_crm_decide_request", {
+    p: { request_id: requestId, actor_hr_id: viewer.hrId, is_test: isTest, decision: "approve", note, stage: "sfe" },
+  });
+  return { requestId, customerId };
 }
 
 export async function withdrawListRequest(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ requestId: string }> {
@@ -1030,8 +1376,19 @@ export async function withdrawListRequest(viewer: PhoenixCrmViewer, raw: unknown
   return { requestId: String(result.request_id) };
 }
 
-/** The reviewing manager's decision on a grade or drop request. Refusing needs a note for the rep. */
-export async function decideListRequest(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ requestId: string; status: "approved" | "refused" }> {
+/**
+ * A decision on a list request. Refusing needs a note for the rep.
+ *
+ * A grade change is the district manager's alone. A drop, an add or a bring-back takes two steps — the
+ * district manager, then SFE — and the step being decided is read from the ROW, never from the phone;
+ * a phone that names a step only makes the database refuse if the request has already moved on (two
+ * people deciding at once). At the district manager's step of an add he confirms or changes the A/B/C
+ * grade and must set the customer's potential (AA..BC).
+ */
+export async function decideListRequest(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ requestId: string; status: "approved" | "refused" | "pending"; stage: PhoenixCrmRequestStage | null; final: boolean }> {
   const body = record(raw);
   if (!isUuid(body.requestId)) throw validationError("Choose the request to decide.");
   const decision = body.decision === "approve" ? "approve" : body.decision === "refuse" ? "refuse" : null;
@@ -1040,27 +1397,53 @@ export async function decideListRequest(viewer: PhoenixCrmViewer, raw: unknown):
   if (decision === "refuse" && !note) throw validationError("Write a note for the rep explaining why.");
 
   const requestId = String(body.requestId).toLowerCase();
-  const { data, error } = await getSupabaseAdmin().from("phoenix_crm_list_requests").select("id, seat_id, is_test").eq("id", requestId).maybeSingle();
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_list_requests")
+    .select("id, seat_id, is_test, kind, status, stage")
+    .eq("id", requestId)
+    .maybeSingle();
   throwIfError(error);
   const request = data as Row | null;
   if (!request) throw notFoundError("This request is no longer there. Reload the page.");
   const seat = viewer.org.seats.get(String(request.seat_id));
   if (!seat) throw notFoundError("This territory is no longer in the organogram. Reload the page.");
   const isTest = request.is_test === true;
-  assertReviewer(viewer, seat, isTest);
+  const rowStage = isRequestStage(request.stage) ? request.stage : null;
+  assertListRequestApprover(viewer, seat, isTest, rowStage);
+
+  const kind = requestKindOf(request.kind);
+  const approvedGrade = kind === "add" ? parseGrade(body.approvedGrade) : null;
+  const potentialGrade = kind === "add" ? parsePotentialGrade(body.potentialGrade) : null;
+  if (decision === "approve" && kind === "add" && rowStage === "manager" && !potentialGrade) {
+    throw validationError("Choose the customer's potential (AA to BC) before approving.");
+  }
+  // The step the phone saw, when it names one; otherwise the row's own — both guard the same race.
+  const stage = isRequestStage(body.stage) ? body.stage : rowStage;
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_request", {
-    p: { request_id: requestId, actor_hr_id: viewer.hrId, is_test: isTest, decision, note },
+    p: {
+      request_id: requestId,
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      decision,
+      note,
+      stage,
+      approved_grade: approvedGrade,
+      potential_grade: potentialGrade,
+    },
   });
-  const status = result.status === "approved" ? "approved" : "refused";
+  const final = result.final !== false;
+  const status = !final ? "pending" : result.status === "approved" ? "approved" : "refused";
   const requesterHrId = text(result.requested_by_hr_id);
-  if (requesterHrId) {
+  // The rep hears the ANSWER: a refusal at either step, or the final approval. The district manager's
+  // approval of the first step is not an answer yet — the request just moves on to SFE.
+  if (requesterHrId && status !== "pending") {
     await notifyPhoenixCrm(
       {
         kind: "request_decided",
         seat,
         requestId,
-        requestKind: result.kind === "drop" ? "drop" : "grade",
+        requestKind: kind,
         status,
         deciderHrId: viewer.hrId,
         requesterHrId,
@@ -1071,5 +1454,5 @@ export async function decideListRequest(viewer: PhoenixCrmViewer, raw: unknown):
       isTest,
     );
   }
-  return { requestId, status };
+  return { requestId, status, stage: isRequestStage(result.stage) ? result.stage : null, final };
 }

@@ -49,14 +49,66 @@ export function planDayListTypes(isoDay: string): PhoenixCrmListType[] {
   return ["AM", "PM"];
 }
 
-/** The weeks a rep can plan: this week while it still has a day ahead, and the next three. */
-export function plannableWeeks(cairoToday: string, weeksAhead = 3): string[] {
+/**
+ * The weeks a rep can plan: this week while it still has a day ahead, and every field-week through
+ * the end of NEXT month.
+ *
+ * Until 2026-09-29 this was "the next three weeks", and it clashed with the monthly due date: October
+ * was due on Thursday 24 September, when only the weeks of 3 and 10 October could be saved — so the
+ * rest of the month could not be planned by the day it was due, and "Copy last month" failed on it.
+ * The horizon now reaches the last field-week of next month, so a whole month is always plannable by
+ * its due date (tests/phoenix-crm-plan-board.test.ts walks every month of 2026–2028).
+ */
+export function plannableWeeks(cairoToday: string): string[] {
   const thisWeek = fieldWeekStart(cairoToday);
   const weeks: string[] = [];
   const thursday = addDaysIso(thisWeek, 5);
   if (thursday >= cairoToday) weeks.push(thisWeek);
-  for (let index = 1; index <= weeksAhead; index += 1) weeks.push(addDaysIso(thisWeek, 7 * index));
+  const nextMonthWeeks = fieldWeeksOfMonth(addDaysIso(monthEndOf(cairoToday), 1));
+  const lastWeek = nextMonthWeeks[nextMonthWeeks.length - 1] ?? addDaysIso(thisWeek, 7 * 4);
+  for (let week = addDaysIso(thisWeek, 7); week <= lastWeek; week = addDaysIso(week, 7)) weeks.push(week);
   return weeks;
+}
+
+/**
+ * When a week sent on its own is due: the Thursday before it (owner, 2026-09-29 — "if he chooses the
+ * weekly plan it is the last Thursday of every week"). A late week is accepted and stamped, never
+ * refused, exactly as a late month is. `phoenix_crm_plan_transition` writes the same arithmetic.
+ */
+export function weeklyPlanDueOn(weekStart: string): string {
+  return addDaysIso(weekStart, -2);
+}
+
+/** "Week 1", "Week 2"… — a field-week's place in the month its Saturday falls in. */
+export function weekNumberInMonth(weekStart: string): number {
+  return fieldWeeksOfMonth(weekStart).indexOf(weekStart) + 1;
+}
+
+// ── The visit day ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The visit day turns over at 02:00 Cairo, not at midnight (owner, 2026-09-29): "the visits of today
+ * are entered today, maximum 2 AM — at 2:01 I cannot enter a visit I missed". A visit logged at 01:30
+ * on Tuesday is Monday's; one at 02:00 is Tuesday's.
+ */
+export const VISIT_DAY_CUTOFF_HOURS = 2;
+
+const CAIRO_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  day: "2-digit",
+  month: "2-digit",
+  timeZone: "Africa/Cairo",
+  year: "numeric",
+});
+
+/**
+ * The Cairo visit day an instant belongs to: the Cairo date of (instant − 2 hours).
+ *
+ * The SAME arithmetic as `phoenix_crm_save_visit`'s `((captured_at - interval '2 hours') at time zone
+ * 'Africa/Cairo')::date`, so the page and the database always agree which day a visit is filed under.
+ * The subtraction is on the absolute instant, so a clock-change night moves the cutoff with the clock.
+ */
+export function cairoBusinessDay(instant: Date, cutoffHours = VISIT_DAY_CUTOFF_HOURS): string {
+  return CAIRO_DAY_FORMAT.format(new Date(instant.getTime() - cutoffHours * 60 * 60 * 1000));
 }
 
 /** The days of a week a rep may still change: today onward. A day that has passed is fixed. */
@@ -186,11 +238,11 @@ export function monthlyPlanDueOn(monthStart: string): string {
 /**
  * The months a rep can plan: the month of each week the rep can still plan (calendar.ts
  * `plannableWeeks`), so month and week stay in step — a month is plannable exactly when it holds a
- * plannable week. Today's month, and the next once the horizon reaches into it.
+ * plannable week. Today's month while it has a week ahead, and always the next.
  */
-export function plannableMonths(cairoToday: string, weeksAhead = 3): string[] {
+export function plannableMonths(cairoToday: string): string[] {
   const months: string[] = [];
-  for (const week of plannableWeeks(cairoToday, weeksAhead)) {
+  for (const week of plannableWeeks(cairoToday)) {
     const monthStart = monthStartOf(week);
     if (!months.includes(monthStart)) months.push(monthStart);
   }

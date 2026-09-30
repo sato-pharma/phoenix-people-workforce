@@ -108,7 +108,8 @@ export function runPhoenixCrmMobileManagerTests(): void {
   // ── 3. Team posts exactly what the browser posts ───────────────────────────────────────────────
   {
     const web = {
-      plan: read("src/components/phoenix-crm/plan-tab.tsx"),
+      // The browser's plan decisions live on the plan board since 2026-09-29 (plan-tab.tsx retired).
+      plan: read("src/components/phoenix-crm/plan-board.tsx"),
       request: read("src/components/phoenix-crm/request-card.tsx"),
       unplanned: read("src/components/phoenix-crm/unplanned-visit-card.tsx"),
     };

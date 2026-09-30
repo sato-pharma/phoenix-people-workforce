@@ -117,7 +117,28 @@ export function runPhoenixCrmLastVisitProductsTests(): void {
 
   // ── Both apps prefill, so the two copies cannot drift ───────────────────────────────────────────
   {
-    for (const path of ["src/components/phoenix-crm/visits-tab.tsx", "mobile/src/features/crm/visits-screen.tsx"]) {
+    // The web app: since the one-tap rebuild (2026-09-29) the customer is chosen on the steps BEFORE the
+    // form, and the form (visit-log-form.tsx) opens on him — so the products are filled in by the
+    // form's own first state, from his last visit, rather than by a picker handler.
+    {
+      const path = "src/components/phoenix-crm/visit-log-form.tsx";
+      const code = source(path);
+      const start = code.indexOf("function carriedProducts(");
+      assert.notEqual(start, -1, `${path} still carries the last visit's products`);
+      const body = code.slice(start, start + 300);
+      assert.ok(body.includes("lastVisit"), `${path} must carry the last visit's products over`);
+      assert.match(
+        code,
+        /const \[products, setProducts\] = useState<string\[\]>\(\(\) => carriedProducts\(customer\)\);/,
+        `${path} must fill the products in when the form opens, not merely read them`,
+      );
+      assert.ok(
+        code.includes("Filled in from your last visit on"),
+        `${path} must say which day they came from — a silent prefill he cannot see the source of is worse than asking`,
+      );
+    }
+    // The phone still picks the customer on its form.
+    for (const path of ["mobile/src/features/crm/visits-screen.tsx"]) {
       const code = source(path);
       const start = code.indexOf("function pickCustomer");
       assert.notEqual(start, -1, `${path} still picks a customer`);

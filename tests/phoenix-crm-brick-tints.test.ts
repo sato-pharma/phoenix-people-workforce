@@ -50,7 +50,13 @@ export async function runPhoenixCrmBrickTintsTests(): Promise<void> {
   // ── One copy, three readers ──────────────────────────────────────────────────────────────────
   {
     const palette = /border-l-(?:sky|emerald|indigo|teal|fuchsia|cyan|lime|stone)-500/;
-    for (const path of ["src/components/phoenix-crm/customer-list-board.tsx", "src/components/phoenix-crm/visits-tab.tsx"]) {
+    // The visit picker is its own file since the one-tap rebuild (2026-09-29), and Today groups the
+    // day by brick with the same hues.
+    for (const path of [
+      "src/components/phoenix-crm/customer-list-board.tsx",
+      "src/components/phoenix-crm/visit-customer-picker.tsx",
+      "src/components/phoenix-crm/today-tab.tsx",
+    ]) {
       const text = stripComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"));
       assert.ok(text.includes("brick-tints"), `${path} must take the palette from the one module`);
       assert.equal(palette.test(text), false, `${path} must not carry its own copy of the hues`);

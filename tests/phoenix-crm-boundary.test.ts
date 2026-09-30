@@ -120,6 +120,11 @@ const ROUTE_GATES: RouteGate[] = [
   post("list/primary-pharmacy", "create"),
   post("list/places", "create"),
   post("list/places/update", "create"),
+  // Moving or removing a validated place (owner, 2026-09-29): the Super Admin and the SFE Manager only.
+  post("list/places/move", "approve"),
+  // The rep drops a customer met outside his list; the SFE Manager brings one back from the Archive.
+  post("list/outside/drop", "create"),
+  post("list/archive/bring-back", "approve"),
   post("list/requests", "create"),
   post("list/requests/withdraw", "create"),
   post("list/requests/decide", "approve"),
@@ -130,6 +135,8 @@ const ROUTE_GATES: RouteGate[] = [
   get("plans/reviews"),
   // Last month's iReports360 plan, read-only, as the "Copy last month" reference (server/plan-history).
   get("plans/history"),
+  // The territory's own Phoenix plans between two days — what the three copies replay.
+  get("plans/copy-source"),
   // The monthly umbrella above the weekly plans: the whole month in the planner, and the rep's own
   // submit/reopen of the month. The days are still saved a week at a time through /plans; this never
   // writes a placement. A manager's decision on a sent month is /monthly-plans/reviews.
@@ -454,6 +461,19 @@ const LATER_MIGRATIONS = [
   // the migrations that do — liveMigrationSql applies each replacement in order and the last one
   // wins. Four columns on phoenix_crm_visits and no new table.
   "supabase/migrations/20260927200000_phoenix_crm_offline_capture.sql",
+  // The rep's flow rebuilt (owner, 2026-09-29), part one: a customer met outside the list, the
+  // two-step add / drop / bring-back, both readings of a place, and the audited move. It replaces the
+  // list's own functions and adds three; it replaces no save_visit, so it sits before the one that does.
+  "supabase/migrations/20260929235106_phoenix_crm_list_admission.sql",
+  // Part two: the one-tap visit (no photo, the server's clock, the 02:00 day), the out-of-list visit
+  // and Sales day. It REPLACES phoenix_crm_save_visit, so it is now the LAST entry that does —
+  // liveMigrationSql applies each replacement in order and the last one wins. It also recreates the
+  // countable view, still security_invoker and still `select v.*`.
+  "supabase/migrations/20260929235553_phoenix_crm_one_tap_visit.sql",
+  // Part three: the weekly due date and late stamp, and the other activities planned on a day. One
+  // new table, one new function, and the two plan transitions — still one plan-event insert each.
+  // It replaces no save_visit, so it appends safely after part two.
+  "supabase/migrations/20260929235555_phoenix_crm_plan_weeks.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

@@ -205,6 +205,21 @@ export function receivesInRange(
   return windowsForWeekday(timings, weekday, ramadan).windows.some((window) => windowOverlapsRange(window, fromMinute, toMinute));
 }
 
+/**
+ * "Sat 5:00 PM – 8:00 PM · Mon 6:00 PM" — every day a place receives, Saturday first, on a Ramadan day
+ * its Ramadan hours where it has them. The plan's hours column (owner, 2026-09-30: "add a column for
+ * timings but never block"). Empty when nothing is saved.
+ */
+export function weekTimingsText(timings: PhoenixCrmTiming[], ramadan: boolean): string {
+  return PHOENIX_CRM_WEEKDAY_ORDER.map((weekday) => {
+    const { windows } = windowsForWeekday(timings, weekday, ramadan);
+    const ordered = [...windows].sort((left, right) => left.startMinute - right.startMinute);
+    return ordered.length > 0 ? `${PHOENIX_CRM_WEEKDAY_SHORT[weekday]} ${ordered.map((window) => formatTimingWindow(window)).join(", ")}` : null;
+  })
+    .filter((part): part is string => part !== null)
+    .join(" · ");
+}
+
 /** "Sat, Mon, Tue" — the days a set of timings covers, Saturday first. */
 export function receivingDaysLabel(timings: PhoenixCrmTiming[], season: PhoenixCrmSeason = "normal"): string {
   const days = new Set(timings.filter((timing) => timing.season === season).map((timing) => timing.weekday));

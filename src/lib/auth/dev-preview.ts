@@ -14,18 +14,25 @@ import {
 export const phoenixDevPreviewCookieName = "phoenix_dev_preview";
 const devPreviewSessionSeconds = 8 * 60 * 60;
 const devPreviewSessionPrefix = "dev-preview:";
+// A TEST ACCOUNT opened through the dev sign-in (`/api/dev-auth?testLogin=TEST-…`). The prefix IS the
+// test marker: the token is signed, so it cannot be added to an ordinary preview, and it still starts
+// with `dev-preview:`, so every place that honours a preview honours this one. The owner, 2026-09-30:
+// "open a rep account … test aya" — a dev preview under the real hr id acted as the REAL person.
+const devPreviewTestPrefix = "dev-preview:test:";
 
 export function createDevPreviewSessionToken(input: {
   hrId: string | null;
   loginId: string;
   role: PhoenixRole;
+  /** True for a test account: `hrId` is then the person it MIRRORS and `loginId` its own `TEST-…` login. */
+  testPersona?: boolean;
 }) {
   return createSessionToken({
     hrId: input.hrId,
     loginId: input.loginId,
     maxAgeSeconds: devPreviewSessionSeconds,
     role: input.role,
-    sessionId: `${devPreviewSessionPrefix}${randomUUID()}`,
+    sessionId: `${input.testPersona ? devPreviewTestPrefix : devPreviewSessionPrefix}${randomUUID()}`,
     sessionVersion: 0,
   });
 }
@@ -123,10 +130,19 @@ export function accessContextFromDevPreviewToken(
     return null;
   }
 
+  // A test account reads as the person it mirrors and carries the link every test-account guard reads
+  // (src/lib/auth/test-persona.ts), exactly as a real `TEST-…` sign-in does. One with no mirror opens
+  // nothing: it would otherwise be a preview as nobody that the guards still treat as a test account.
+  const testPersona = payload.sid.startsWith(devPreviewTestPrefix);
+  if (testPersona && !payload.hrId) {
+    return null;
+  }
+
   return createAccessContext({
     hrId: payload.hrId,
     loginId: payload.loginId,
     role: parseRoleStrict(payload.role),
     source: "dev-header",
+    testPersona: testPersona ? { loginId: payload.loginId, mirrorsHrId: payload.hrId as string } : null,
   });
 }

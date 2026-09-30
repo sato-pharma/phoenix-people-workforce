@@ -103,7 +103,7 @@ export async function runPhoenixCrmUnsavedVoiceNoteTests(): Promise<void> {
   // both called `onClose` directly with no guard between them at all.
   {
     for (const [label, path] of [
-      ["web", "src/components/phoenix-crm/visits-tab.tsx"],
+      ["web", "src/components/phoenix-crm/visit-log-form.tsx"],
       ["phone", "mobile/src/features/crm/visits-screen.tsx"],
     ] as const) {
       const code = read(path);

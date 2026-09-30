@@ -96,6 +96,9 @@ export async function POST(request: Request) {
           hrId: devPreview.hrId,
           loginId: devPreview.loginId ?? "dev.preview",
           role: devPreview.role,
+          // A test account stays one across the refresh — dropping this would turn it into the REAL
+          // person it mirrors a few minutes in.
+          testPersona: Boolean(devPreview.testPersona),
         }),
       });
       return response;

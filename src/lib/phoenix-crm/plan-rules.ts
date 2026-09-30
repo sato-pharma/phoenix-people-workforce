@@ -6,8 +6,10 @@
  *     not validated yet is planned like any other — he simply has no place and no timings, and he
  *     counts in no report until he is validated. The rep places the customers; the system assists and
  *     never plans for them.
- *   - Each customer's timings show. Placing a customer on a day the customer does not receive is allowed after
- *     the rep picks an exception type (e.g. "at another place") — the planner asks, it does not block.
+ *   - Each customer's timings show. Placing a customer on a day his saved hours do not cover is NEVER
+ *     blocked and asks nothing (owner, 2026-09-30: "never block, because the rep didn't add his time"):
+ *     the hours are the rep's own entry and may simply be missing. A reason an older caller still sends
+ *     is kept; an "Other" with no note drops the empty reason, never the customer.
  *   - A plan day holds at most 15 PM doctors and 5 AM accounts (settings). These are the only hard
  *     limits, and they bind the plan only — visits are never capped.
  *   - The district manager approves; the SFE Manager sees every plan and can return one. The system
@@ -182,13 +184,9 @@ export function resolvePlanItems(input: {
         exceptionType = null;
         exceptionNote = null;
         startMinute = windows[0].startMinute;
-      } else if (!exceptionType) {
-        return {
-          ok: false,
-          error: `${customer.name} does not receive visits on ${PHOENIX_CRM_WEEKDAY_NAMES[weekday]}. Choose a reason for ${dayLabel(item.planDate)}.`,
-        };
       } else if (exceptionType === "other" && !exceptionNote) {
-        return { ok: false, error: `Write a note on why ${customer.name} is on ${dayLabel(item.planDate)}.` };
+        // Never blocked (owner, 2026-09-30): an "Other" with no note keeps the customer on the day.
+        exceptionType = null;
       }
     }
 

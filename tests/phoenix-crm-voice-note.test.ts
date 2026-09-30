@@ -42,7 +42,10 @@ const RECORDER = "src/lib/phoenix-crm/voice-recorder.ts";
 const SERVER = "src/lib/phoenix-crm/server/voice-notes.ts";
 const CONTROL = "src/components/phoenix-crm/speak.tsx";
 const PLAYER = "src/components/phoenix-crm/voice-playback.tsx";
-const FORM = "src/components/phoenix-crm/visits-tab.tsx";
+// The visit FORM (its own file since 2026-09-29, visit-log-form.tsx) sends the note; the day LIST
+// (visits-tab.tsx) plays it back. Each half is pinned where it now lives.
+const FORM = "src/components/phoenix-crm/visit-log-form.tsx";
+const DAY = "src/components/phoenix-crm/visits-tab.tsx";
 
 function recording(over: { seconds?: number; bytes?: number; mimeType?: string } = {}) {
   const bytes = over.bytes ?? 64 * 1024;
@@ -234,18 +237,19 @@ export function runPhoenixCrmVoiceNoteTests() {
   // Stated as a floor and a ratio rather than as one exact count, because an exact count is satisfied by
   // the wrong two mounts and — worse — makes the ratio below unreachable: a third, unguarded player
   // would fire the count and never the guard, leaving the rule that actually matters unproven.
-  const mounts = [...form.matchAll(/<CrmVoiceNotePlayer\b/g)].length;
-  assert.ok(mounts >= 2, `${FORM} plays the note on the card AND in the table — a note stored and never played is a write-only feature (found ${mounts})`);
+  const day = stripComments(readFileSync(DAY, "utf8"));
+  const mounts = [...day.matchAll(/<CrmVoiceNotePlayer\b/g)].length;
+  assert.ok(mounts >= 2, `${DAY} plays the note on the card AND in the table — a note stored and never played is a write-only feature (found ${mounts})`);
   assert.equal(
-    [...form.matchAll(/visit\.voiceNotePath \?/g)].length,
+    [...day.matchAll(/visit\.voiceNotePath \?/g)].length,
     mounts,
-    `${FORM} renders a player only where the row has a path — an unguarded one is a control that opens nothing`,
+    `${DAY} renders a player only where the row has a path — an unguarded one is a control that opens nothing`,
   );
 
   // It is shown beside the comment and never beside the photo: it is the comment said rather than
   // typed, while the photo is the evidence of presence. Handing a recording to the control that stands
   // for "this is where they were" is the visual half of the rule the database keeps structurally.
-  assert.doesNotMatch(form, /<CrmPhotoThumb[\s\S]{0,200}?voiceNote/, `${FORM} never hands a voice path to the photo thumb`);
+  assert.doesNotMatch(day, /<CrmPhotoThumb[\s\S]{0,200}?voiceNote/, `${DAY} never hands a voice path to the photo thumb`);
 
   // ── There is ONE control, and the form mounts it once ─────────────────────────
   // The owner asked for one option, not two sitting together. Two mounts would be the old shape back

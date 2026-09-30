@@ -130,21 +130,18 @@ export function runPhoenixCrmDictationTests() {
     );
   }
 
-  // ── The rep is told where his voice goes, on the control itself ───────────────────────────────
-  // Recognition is not on the phone: Chrome streams the audio to Google and Safari to Apple, and a
-  // visit comment carries the names of the customers seen and what was said about competitors. The
-  // owner ruled that processing acceptable AND ruled on where the rep is told — offered the privacy
-  // page on 2026-09-25, he chose the microphone: "add the processor line to the dictation mic, not
-  // the privacy page".
-  //
-  // The NOTICE ITSELF is pinned in tests/phoenix-crm-speak.test.ts, beside the one control that now
-  // renders it. What is pinned here is the decision, recorded in this module's header — the place the
-  // next session reading about dictation hits first.
+  // ── The rep is NOT told on the form, since 2026-09-30 ───────────────────────────────────────────
+  // Recognition is not on the phone: Chrome streams the audio to Google and Safari to Apple. The owner
+  // ruled that processing acceptable. On 2026-09-25 he put a processor line under the microphone; on
+  // 2026-09-30 he had it removed with the rest of the text under the Speak button ("remove this
+  // irrelevant text"). The removal itself is pinned in tests/phoenix-crm-speak.test.ts; what is pinned
+  // here is the decision, in this module's header — the place the next session reading about dictation
+  // hits first, so nobody "restores" the line to the form or to app/privacy on their own.
   const dictation = readFileSync("src/lib/phoenix-crm/dictation.ts", "utf8");
   assert.match(
     dictation,
-    /Whether the REP is told is SETTLED/,
-    "the module header records the disclosure as decided — a header that still calls it open invites the next session to 'finish' it by adding a second copy to app/privacy, which is the one place the owner ruled it out of",
+    /Whether the REP is told on the form: NO, since 2026-09-30/,
+    "the module header records the owner's latest ruling — a header still describing the 2026-09-25 notice would send the next session to put it back",
   );
   assert.doesNotMatch(
     dictation,

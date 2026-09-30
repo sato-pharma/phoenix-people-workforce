@@ -3097,7 +3097,8 @@ and the control moves out of the rep's sight rather than being softened or expla
 
 ### The two halves
 
-**EASY.** A planned visit is taps and a photo — never typing. Nothing is asked twice. No field
+**EASY.** A planned visit is taps and a photo — never typing. (Since 2026-09-29: taps and ONE tap to
+log it, with NO photo — see "The rep's flow rebuilt" below.) Nothing is asked twice. No field
 exists that the server can derive, and today it derives the date (server clock), the place, the
 brick, the area, the region and the visit type. Any new step in the rep's day is a change to his
 working life and needs the owner's word before it ships, however reasonable it looks in a diff.
@@ -3128,9 +3129,9 @@ is never shown.
 
 1. **The "Far from the place" line on the rep's own visit.** Ruled KEEP earlier the same day — "it
    is honest help" — on the reasoning that a rep with a wrong saved place should be able to see it.
-   Golden rule #1 says the opposite. Not changed pending his word; if it goes, the honest-help case
-   is served instead by letting him **correct the place**, which is work of his, rather than by
-   showing him a distance that reads as an accusation.
+   Golden rule #1 says the opposite. **SETTLED 2026-09-29: he removed it.** The rep sees no distance
+   at all; a wrong place is fixed by the Super Admin or the SFE Manager moving it (see "The rep's
+   flow rebuilt" below).
 2. **The integrity board's audience.** The 2026-09-25 rule made `/admin/phoenix-crm/integrity`
    **Super Admin only**, deliberately — "the fewer people who can open the board, the longer it keeps
    working". This rule adds the **SFE Manager**. That is a widening of an earlier decision, made
@@ -3173,7 +3174,8 @@ the month by the last Thursday of the month before, he chose "accept it, stamp i
 the Send button and over a silent reminder. So nothing refuses a plan after the date: `submitted_late`
 is read from the server's clock at submit and shown on the rep's month and on the manager's board.
 
-**The rep keeps seeing his own distance flag.** The place-vs-actual report he asked for is for the
+**The rep keeps seeing his own distance flag.** 🔴 **SUPERSEDED 2026-09-29 — he removed it; see "The
+rep's flow rebuilt" below.** The place-vs-actual report he asked for is for the
 district manager, SFE, the national sales manager and the Super Admin. Asked whether the rep should
 therefore stop seeing "Far from the place" on his own visit, he chose to keep it — "it is honest
 help". What is withheld from him is the comparison across a team, not the fact about his own visit.
@@ -3189,6 +3191,85 @@ and the rule would be theatre. The test is a plan that reached `submitted` or `a
 visit's server-issued `captured_at`. A DRAFT plan and a RETURNED plan are both still his to edit, so
 neither is authority — deliberately narrower than `phoenix_crm_report_plan_vs_actual`'s `sent_days`,
 where the day is already past and a returned plan was genuinely sent.
+
+## The rep's flow rebuilt — owner rulings, 2026-09-29
+
+He called Phoenix CRM "THE system" and said to forget the mess two weeks of layered features had made of
+it. He narrated the old iReports360 CRM in two videos (as an admin and as a rep), explained the flow in a
+long voice message, and answered twenty multiple-choice questions. The web app was rebuilt on those
+answers; nothing below is a session's inference.
+
+**Today** is the screen the app opens on: today's plan, AM and PM apart, each customer done or not, the
+visits off the plan beside it, and the day's activity.
+
+**The list.** No "Add visit" anywhere on it. A row has ONE action: Validate while the customer is not
+validated, Open once he is. Validate is once and for good: a live signboard photo, the days and hours,
+and two location readings — the Capture-location pin and the photo's own reading. On 2026-09-30,
+after walking the screens, he made the two readings two ACTS: "a live capture photo with its own
+location and a capture location button to capture the same location twice once by photo and the
+other by gps". The camera no longer takes the pin; the **Capture location** button does, fresh. He
+also ruled that day that **the visit comment is required**, typed or spoken. He chose the photo's
+reading as the fixed point ("the photo + the location of photo is the more trustable"), the same day as
+for marketing and direct orders. The location is resolved on the server into address, brick, area and
+region and **the rep can never change it**; he first said only the system administrator may, then
+widened it to the SFE Manager. Open shows the validation record; the days and hours stay editable, the
+name and speciality can still be corrected (the 2026-09-22 ruling), and a customer may have several
+clinics, each validated once and each fixed.
+
+**Admission.** "Add new customer" and an out-of-list visit both leave the customer OUTSIDE the list: the
+rep picks AM or PM by hand ("it is not AM because he entered it in the morning"), types the name and
+speciality, validates on the spot, and then — his words — "they are not approving the visit, they are
+approving this doctor to be added to the list … if dropped, then it goes to the archive … if they
+approve, this is automatically added to his list and becomes a permanent customer". The district manager
+confirms or changes the A/B/C grade (the one frequency uses) and sets a potential grade AA..BC, which he
+was explicit "will not change anything in behaviour" — it is stored and shown only. SFE decides second.
+Dropping a listed customer and bringing one back from the Archive take the same two steps; the SFE
+manages the Archive.
+
+**The visit.** The first choice is Planned · Unplanned · Meeting · Conference · Health day · Sales day ·
+Training · Admin work · Travel. Planned offers today's SENT plan only. Unplanned is Out of plan (a reason,
+the manager then SFE approve the visit, unchanged from 2026-09-26) or Out of list (above). The form keeps
+Single/Double/Chain, products and samples, comment typed or spoken, objection and next step; the
+pharmacy stock check becomes optional. **No photo, no date, no AM/PM picker: "Log visit" is one tap**,
+the server stamps the time and the location is read silently. A visit is today's only, until 02:00 the
+next morning ("maximum 2 AM — at 2:01 I cannot enter a visit I missed"); never a past or a future day.
+A visit to a customer not validated yet waits and counts in its own month once he is; his earlier visits
+then get their distance.
+
+**Blind, absolutely.** Asked about the polite own-visit line he kept on 2026-09-26, he removed it: the
+rep never sees a distance, a flag or a check. Managers, the SFE Manager and the Super Admin keep every
+measurement on their own screens.
+
+**The plan.** By month or by week, the weeks rolling into the month: the month on top as Week 1..N, a
+week's days, a day's customers ticked in brick groups with its other activities on top. Filters: the
+weekday a customer receives, brick, AM/PM, grade, speciality. Copy last month (Week N's weekday onto Week
+N's weekday), copy last week, and copy a day from the same weekday one or two weeks back. A customer not
+validated yet can be planned. The month is due the last Thursday of the month before; a week sent alone
+the Thursday before it; late is accepted and stamped. The planning window now reaches the whole of next
+month, which the old three-week window made impossible by the month's own due date.
+
+**Hours never block a plan (2026-09-30).** Reviewing the plan as `TEST-AYA`, he saw "Does not receive on
+Wednesday" and ruled: "never block, because the rep didn't add his time — add a column for timings but
+never block". The hours are the rep's OWN entry and may simply be missing, so a tick places a customer on
+any day and asks nothing: no reason prompt, no "Choose a reason" refusal on save (`plan-rules.ts`), no
+problem that holds Save or Send (`plan-week-draft.ts`), and a copy places everyone on his weekday rather
+than leaving the uncovered ones out. The day shows a **Days and hours** column of the customer's whole
+week instead. The same evening he had the "Day full" word removed from every row, the "Not validated
+yet" tag made small and inline, and the blank filled with the brick and address — the saved place's, or
+iReports360's while the customer is not validated yet. A reason an older plan already carries is kept
+and shown; a missing one is never shown as the rep's fault. **Do not bring the reason prompt back**, and
+do not "improve" it into a soft warning on the rep's tick: the whole point is that a gap in the rep's own
+data never stands between him and his plan. `tests/phoenix-crm-plan-never-blocked.test.ts`.
+
+**The portal "+"** offers a rep "Add visit" and "Make weekly plan".
+
+**What this supersedes:** "a planned visit is taps and a photo" (Golden rule #1's EASY half), "the rep
+keeps seeing his own distance flag" (2026-09-26), and every one-step drop or bring-back.
+
+**Left for the next PR, by his choice:** linking the same customer across reps, lines, marketing requests
+and direct orders (the system suggests, the Super Admin confirms each link — nothing is merged or
+reassigned), and the three reports he named from the old CRM: frequency per customer, the team calendar
+("the most important"), and the tracking sheet.
 
 ## The Business Review reads live — owner ruling, 2026-09-28
 

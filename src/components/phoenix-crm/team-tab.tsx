@@ -22,8 +22,7 @@ import { useId, useRef, useState } from "react";
 import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
 import { cairoDayOf, cairoStamp, countText, dayLabel, dayLabelWithYear, plural, weekLabel } from "@/components/phoenix-crm/format";
 import { matchesWords, PENDING_PILL } from "@/components/phoenix-crm/labels";
-import { MonthlyPlanTab } from "@/components/phoenix-crm/month-screen";
-import { PlanTab } from "@/components/phoenix-crm/plan-tab";
+import { PlanBoard } from "@/components/phoenix-crm/plan-board";
 import { RequestCard } from "@/components/phoenix-crm/request-card";
 import { UnplannedVisitCard } from "@/components/phoenix-crm/unplanned-visit-card";
 import {
@@ -51,6 +50,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { fieldWeekStart, plannableWeeks } from "@/lib/phoenix-crm/calendar";
+import { teamTodayLine, teamTodayTone } from "@/lib/phoenix-crm/team-today";
 import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 import type {
   MonthlyReviewRow,
@@ -71,8 +71,8 @@ type ReviewFilter = "waiting" | "not_sent" | "approved" | "all";
 type ListFilter = "not_ready" | "ready" | "vacant" | "all";
 type TeamNotice = { tone: NoteTone; title: string; message?: string | null };
 type OpenPlan = { seatId: string; weekStart: string };
-/** A rep’s month opened from the review board — read only, with Approve and Return on it. */
-type OpenMonth = { seatId: string; territoryName: string };
+/** A rep’s month opened from the review board — the plan board, read only, with Approve and Return on it. */
+type OpenMonth = { seatId: string; month: string };
 
 const PAGE = 25;
 
@@ -196,6 +196,28 @@ function ReadinessPill({ readiness }: { readiness: SeatReadiness | null }) {
   return readiness.ready ? <CrmPill tone="good">List ready</CrmPill> : <CrmPill tone="info">Validating</CrmPill>;
 }
 
+/**
+ * The rep's day so far, as his managers read it (owner, 2026-09-30: "easiest CRM, yet controlled"):
+ * his sent plan's progress AM and PM apart, and what he logged. His own work — never a check on his
+ * honesty, which stays with the Super Admin and the SFE Manager.
+ */
+const TODAY_TONE_SQUARE: Record<ReturnType<typeof teamTodayTone>, string> = {
+  good: "bg-emerald-500",
+  progress: "bg-orange-500",
+  idle: "bg-amber-400",
+  none: "bg-slate-300",
+};
+
+function TodayLine({ row }: { row: TeamTerritoryRow }) {
+  if (!row.territory.repHrId) return <p className="break-words text-xs font-semibold leading-5 text-slate-500">Vacant — no rep</p>;
+  return (
+    <p className="flex min-w-0 items-start gap-2 text-xs font-semibold leading-5 text-slate-700">
+      <span aria-hidden className={cn("mt-1.5 h-2 w-2 shrink-0", TODAY_TONE_SQUARE[teamTodayTone(row.today)])} />
+      <span className="min-w-0 break-words">{teamTodayLine(row.today, row.today.lastVisitClock)}</span>
+    </p>
+  );
+}
+
 function requestsText(row: TeamTerritoryRow): string {
   if (row.pendingRequests === 0) return "No request waiting";
   return `${plural(row.pendingRequests, "request", "requests")} waiting${row.canReview ? " · you decide them" : ""}`;
@@ -267,9 +289,9 @@ export function TeamTab({
     scrollToTop();
   }
 
-  function openMonthReview(seatId: string, territoryName: string) {
+  function openMonthReview(seatId: string, monthStart: string) {
     setNotice(null);
-    setOpenMonth({ seatId, territoryName });
+    setOpenMonth({ seatId, month: monthStart });
     scrollToTop();
   }
 
@@ -334,7 +356,7 @@ export function TeamTab({
     },
     {
       value: "requests",
-      label: "Grade and drop requests",
+      label: "List requests",
       note: summary
         ? summary.waitingForYou > 0
           ? `${countText(summary.waitingForYou)} waiting for you`
@@ -353,8 +375,9 @@ export function TeamTab({
   return (
     <div className="min-w-0 scroll-mt-24" ref={topRef}>
       {openMonth ? (
-        <MonthlyPlanTab
-          key={openMonth.seatId}
+        <PlanBoard
+          initialMonth={openMonth.month}
+          key={`${openMonth.seatId}|${openMonth.month}`}
           onBack={{ label: "Team", onBack: closeMonth }}
           onChanged={refresh}
           onDirtyChange={onDirtyChange}
@@ -363,11 +386,11 @@ export function TeamTab({
           test={test}
         />
       ) : openPlan ? (
-        <PlanTab
+        <PlanBoard
           initialWeekStart={openPlan.weekStart}
           key={`${openPlan.seatId}|${openPlan.weekStart}`}
+          onBack={{ label: "Team", onBack: closePlan }}
           onChanged={refresh}
-          onClose={{ label: "Team", onClose: closePlan }}
           onDirtyChange={onDirtyChange}
           onOpenList={onOpenList ? () => onOpenList(openPlan.seatId) : undefined}
           seatId={openPlan.seatId}
@@ -378,7 +401,7 @@ export function TeamTab({
           description={
             test
               ? "Test plans and test requests from any territory. You decide them yourself, and nobody is notified."
-              : "The territories beneath you: the weekly plans, grade and drop requests, and how far each customer list has come."
+              : "The territories beneath you: the plans, the list requests, and how far each customer list has come."
           }
           eyebrow={test ? "Team · test entries" : "Team"}
           title="Your team"
@@ -414,7 +437,7 @@ export function TeamTab({
                   />
                   <CrmStat
                     label="Requests waiting for you"
-                    note={summary.requestsWaiting > summary.waitingForYou ? `${countText(summary.requestsWaiting)} waiting in all` : "Grade and drop requests"}
+                    note={summary.requestsWaiting > summary.waitingForYou ? `${countText(summary.requestsWaiting)} waiting in all` : "List requests"}
                     tone={summary.waitingForYou > 0 ? "warn" : "neutral"}
                     value={countText(summary.waitingForYou)}
                   />
@@ -466,7 +489,7 @@ export function TeamTab({
             <MonthsSection
               error={months.error}
               onMonth={chooseMonth}
-              onOpen={(row) => openMonthReview(row.territory.seatId, row.territory.name)}
+              onOpen={(row) => openMonthReview(row.territory.seatId, months.data?.monthStart ?? row.plan?.monthStart ?? cairoToday)}
               onRetry={months.reload}
               test={test}
               view={months.data}
@@ -702,8 +725,8 @@ function PlansSection({
  * Every other half of monthly approval already shipped: the rule, the RPC, the API and the Approve and
  * Return buttons on the month itself. What did not exist was a way for a real manager to REACH a rep’s
  * month: the Plan tab offers a viewer only his OWN territory, so `canApprove` was true and unreachable,
- * and only the Super Admin, on a test plan, could press it. This opens the same month screen read-only,
- * exactly as the weekly board opens a week.
+ * and only the Super Admin, on a test plan, could press it. This opens the plan board on that month,
+ * read only, with Approve and Return on it — exactly as a weekly plan opens the board on its week.
  */
 function MonthsSection({
   error,
@@ -946,8 +969,8 @@ function RequestsSection({
         <CrmEmpty
           message={
             test
-              ? "Test grade and drop requests made on the List tab show here."
-              : "Grade and drop requests from the territories beneath you show here while they wait for a decision."
+              ? "Test list requests made on the List tab show here: a grade change, a drop, a new customer to add, or one to bring back."
+              : "List requests from the territories beneath you show here while they wait for a decision: a grade change, a drop, a new customer to add, or one to bring back from the Archive."
           }
           title="No requests waiting"
         />
@@ -1026,7 +1049,7 @@ function RequestsSection({
           <CrmBlock className="border-t border-slate-100" title={`Waiting for another manager · ${countText(others.length)}`}>
             <p className="break-words text-sm font-medium leading-6 text-slate-600">
               {forYou.length === 0 && requests.length === team.requests.length ? "Nothing waits for your decision. " : ""}
-              The district manager above each territory decides these.
+              Each one sits with the territory’s own manager first; a drop, an addition or a bring-back then goes on to SFE.
             </p>
           </CrmBlock>
           <div className="divide-y divide-slate-100 border-t border-slate-100">{others.slice(0, othersLimit).map(card)}</div>
@@ -1129,6 +1152,7 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
                 {row.readiness && readySince(row.readiness) ? (
                   <p className="break-words text-xs font-semibold leading-5 text-slate-500">{readySince(row.readiness)}</p>
                 ) : null}
+                <TodayLine row={row} />
                 <p className="break-words text-xs font-semibold leading-5 text-slate-500">{requestsText(row)}</p>
               </CrmCard>
             ))}
@@ -1143,7 +1167,7 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
                   Rep and manager
                 </th>
                 <th className={crmThClassName} scope="col">
-                  Customer list
+                  Customer list and today
                 </th>
                 <th className={crmThClassName} scope="col">
                   Requests
@@ -1169,9 +1193,12 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
                         <p className="mt-1">{readinessLine(row.readiness)}</p>
                         {readySince(row.readiness) ? <p className="mt-0.5 text-xs text-slate-500">{readySince(row.readiness)}</p> : null}
                       </>
-                    ) : (
-                      "—"
-                    )}
+                    ) : null}
+                    {/* The day rides in the list's own cell — the fits-the-screen rule merges columns rather
+                        than squeezing a fifth into the table. */}
+                    <div className="mt-2">
+                      <TodayLine row={row} />
+                    </div>
                   </td>
                   <td className={crmTdClassName}>{requestsText(row)}</td>
                 </tr>

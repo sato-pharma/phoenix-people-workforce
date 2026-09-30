@@ -34,7 +34,9 @@ import {
   type OrgSeat,
   type ScopeBasis,
 } from "@/lib/phoenix-crm/scope";
+import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
+import type { PhoenixCrmRequestStage } from "@/lib/phoenix-crm/types";
 import type { UnplannedVisitStage } from "@/lib/phoenix-crm/unplanned-rules";
 import { loadPhoenixCrmConfig, openLineCodes, type PhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
 
@@ -54,6 +56,12 @@ export type PhoenixCrmViewer = {
   org: OrgIndex;
   config: PhoenixCrmConfig;
   cairoToday: string;
+  /**
+   * The VISIT day: the Cairo date of now minus two hours (owner, 2026-09-29 — "the visits of today
+   * are entered today, maximum 2 AM"). Today, the visit form, planned-or-not and day activities read
+   * this; plans, reports and line openings keep the calendar day above.
+   */
+  visitDay: string;
   openLines: ReadonlySet<string>;
   /** The territories the viewer holds as the rep, in open lines. */
   ownTerritories: OrgSeat[];
@@ -105,6 +113,7 @@ export async function resolvePhoenixCrmViewer(access: AccessContext): Promise<Ph
     org,
     config,
     cairoToday,
+    visitDay: cairoBusinessDay(new Date()),
     openLines,
     ownTerritories: held.filter(isOpen),
     waitingTerritories: held.filter((seat) => !isOpen(seat)),
@@ -240,7 +249,9 @@ export function assertCanReturnPlan(viewer: PhoenixCrmViewer, seat: OrgSeat, isT
  * daily digest's recipient test — because they are the same question and a second copy of it would
  * drift. A medical rep is deliberately NOT in it: the owner ruled on 2026-09-26 that the comparison
  * ACROSS a team is the DM's, the SFE's, the NSM's and the Super Admin's, while a rep keeps every
- * figure about his own work, including the polite distance line on his own visit.
+ * figure about his own work. Since 2026-09-29 that no longer includes any distance on his own visit:
+ * the owner removed the polite "Take care" line — the rep never sees a distance, a flag or a check
+ * (see `isLocationBlind`).
  */
 export function readsTeamReports(viewer: PhoenixCrmViewer): boolean {
   return viewer.isSuperAdmin || viewer.isSfeManager || viewer.basis === "all" || viewer.managerSeats.length > 0;
@@ -358,4 +369,93 @@ export function testReadSeats(viewer: PhoenixCrmViewer, isTest: boolean, scope: 
  */
 export function reportIncludesTest(viewer: PhoenixCrmViewer, flag: unknown): boolean {
   return viewer.isTestPersona || (viewer.isSuperAdmin && readTestFlag(flag));
+}
+
+// ── The rep's own screens are blind to location ────────────────────────────────────────────────
+
+/**
+ * Whether the viewer is looking at his OWN territory's visits as its rep — and so must see no distance,
+ * no flag and no check of any kind (Golden Rule #1, made absolute by the owner on 2026-09-29, when he
+ * removed the polite "Take care — about X from the saved place" line from the rep's own visit).
+ *
+ * The territory's managers, the SFE Manager and the Super Admin keep every measurement; a test account
+ * that mirrors a rep is blind exactly as that rep would be.
+ */
+export function isLocationBlind(viewer: PhoenixCrmViewer, seat: OrgSeat): boolean {
+  if (viewer.isSuperAdmin || viewer.isSfeManager) return false;
+  return viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId);
+}
+
+// ── A list request: one step for a grade, the manager then SFE for everything else ─────────────
+
+/**
+ * Whether the viewer may decide THIS step of a list request (owner, 2026-09-29). `stage` is the row's
+ * own stage, never the phone's: null for a grade change (the territory's reviewer alone), "manager"
+ * for the first step of a drop, an add or a bring-back, "sfe" for the second — the same two
+ * authorities an off-plan visit's approval runs through (`canDecideUnplannedVisit`).
+ */
+export function canDecideListRequest(
+  viewer: PhoenixCrmViewer,
+  seat: OrgSeat,
+  isTest: boolean,
+  stage: PhoenixCrmRequestStage | null,
+): boolean {
+  if (stage === null) return canReviewTerritory(viewer, seat, isTest);
+  return canDecideUnplannedVisit(viewer, seat, isTest, stage);
+}
+
+export function assertListRequestApprover(
+  viewer: PhoenixCrmViewer,
+  seat: OrgSeat,
+  isTest: boolean,
+  stage: PhoenixCrmRequestStage | null,
+): void {
+  if (stage === null) {
+    assertReviewer(viewer, seat, isTest);
+    return;
+  }
+  if (viewer.isTestPersona) {
+    if (!isTest) throw testAccountRealEntry();
+    if (canDecideListRequest(viewer, seat, isTest, stage)) return;
+    throw forbiddenError(
+      stage === "sfe"
+        ? "This request is waiting for SFE, and only the SFE Manager decides that step."
+        : "Only the territory's reviewing manager decides this step.",
+    );
+  }
+  if (isTest) {
+    if (!viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
+    return;
+  }
+  if (viewer.isSuperAdmin) throw superAdminTestOnly();
+  if (!viewer.canApprove) throw forbiddenError("Your role cannot decide for a territory.");
+  if (canDecideListRequest(viewer, seat, isTest, stage)) return;
+  throw forbiddenError(
+    stage === "sfe"
+      ? "This request is waiting for SFE, and only the SFE Manager decides that step."
+      : "Only the territory's reviewing manager decides this step.",
+  );
+}
+
+// ── Moving a validated place: the Super Admin and the SFE Manager, nobody else ─────────────────
+
+/**
+ * Whether the viewer may MOVE a validated place (owner, 2026-09-29: "the location never changes,
+ * ever — only the system administrator", widened by him the same day to the SFE Manager).
+ *
+ * 🔴 This is the ONE real-data write the Super Admin makes in Phoenix CRM. Everywhere else his own
+ * entries are test entries (owner, 2026-09-16); a place he moves is a real place, so the move carries
+ * a written reason and an audited event (phoenix_crm_move_place). A test account never moves one.
+ */
+export function canMovePlaces(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
+  if (viewer.isTestPersona) return false;
+  if (viewer.isSuperAdmin) return viewer.canUpdate;
+  if (isTest) return false;
+  return viewer.isSfeManager && viewer.canApprove && viewer.scopeTerritories.some((entry) => entry.seatId === seat.seatId);
+}
+
+export function assertPlaceMover(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): void {
+  if (!canMovePlaces(viewer, seat, isTest)) {
+    throw forbiddenError("A validated place is fixed. Only the Super Admin and the SFE Manager can move it.");
+  }
 }

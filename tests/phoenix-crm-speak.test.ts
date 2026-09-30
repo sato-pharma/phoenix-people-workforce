@@ -3,15 +3,12 @@ import { readFileSync } from "node:fs";
 
 import {
   shouldWriteFromRecording,
-  speakAccuracyLine,
   speakAgainLine,
   speakBlockedMessage,
   speakHalves,
   speakLiveHint,
   speakLiveLabel,
   speakPartialMessage,
-  speakProcessorLine,
-  speakPromise,
   speakSupported,
   speakTextEngine,
   speakTranscribingLine,
@@ -59,7 +56,8 @@ import { stripComments } from "./support/comment-strip.ts";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CONTROL = "src/components/phoenix-crm/speak.tsx";
-const FORM = "src/components/phoenix-crm/visits-tab.tsx";
+// The visit form has been its own file since the one-tap rebuild (2026-09-29).
+const FORM = "src/components/phoenix-crm/visit-log-form.tsx";
 const MODULE = "src/lib/phoenix-crm/speak.ts";
 
 const BOTH: SpeakHalves = { text: "live", audio: true };
@@ -152,117 +150,19 @@ export function runPhoenixCrmSpeakTests() {
     "the decision names no engine at all — a browser with NO engine and a browser with a useless one are the same case here, and re-admitting an engine name is how the capability check creeps back in",
   );
 
-  // ── The button promises exactly what this browser will do ─────────────────────
-  // The failure this prevents: a rep on Firefox presses a button promising his words will be written,
-  // speaks for forty seconds, and finds an empty comment — with the recording saved and no idea the
-  // text half was never there.
-  assert.match(speakPromise(BOTH), /written into the comment/, "with both halves he is told the words are written");
-  assert.match(speakPromise(BOTH), /recording is kept/, "…and that the audio is kept — that is the whole of what he asked for");
-  assert.match(speakPromise(BOTH), /as you talk/, "the live engine writes while he speaks, and says so");
-
-  assert.match(speakPromise(AUDIO_ONLY), /recording is kept/, "the half that works is still promised");
-  assert.match(
-    speakPromise(AUDIO_ONLY),
-    /cannot turn speech into text/,
-    "a browser with no speech engine says so BEFORE he speaks — finding an empty comment afterwards is the failure this sentence exists for",
-  );
-  assert.doesNotMatch(
-    speakPromise(AUDIO_ONLY).replace(/cannot turn speech into text/, ""),
-    /written into the comment/,
-    "it never promises the words will be written where nothing can write them",
-  );
-
-  assert.match(speakPromise(TEXT_ONLY), /written into the comment/);
-  assert.match(speakPromise(TEXT_ONLY), /cannot keep a recording/, "and the mirror case says the audio will not be kept");
-  assert.doesNotMatch(
-    speakPromise(TEXT_ONLY).replace(/cannot keep a recording/, ""),
-    /recording is kept/,
-    "it never promises a recording where nothing records",
-  );
-
-  // The server engine's promise is the one that has to name WHEN, not just whether.
-  const serverPromise = speakPromise(SERVER);
-  assert.match(serverPromise, /recording is kept/, "the audio half is the same on every browser");
-  assert.match(serverPromise, /written into the comment when you stop/, "the words are promised for when they actually arrive — after Stop, not while he talks");
-  assert.match(serverPromise, /cannot write them as you talk/, "and the thing this browser cannot do is said out loud, because the live case is what a rep will have seen on another phone");
-  assert.doesNotMatch(
-    serverPromise.replace(/cannot write them as you talk/, ""),
-    /as you talk/,
-    "it never promises live words on a browser that has no engine — he would watch an empty field for a minute and press Stop thinking it failed",
-  );
-
-  // ── Which of the two to believe when they disagree ────────────────────────────
-  // Either engine mishears, and a misheard brand name in a clinical note is a sale that never happened.
-  // Said only where both halves ran, because with one half there is nothing to disagree with.
-  const accuracy = speakAccuracyLine(BOTH);
-  assert.ok(accuracy, "with both halves the rep is told which one is the record");
-  assert.match(accuracy, /read it before you save/, "the text is his to correct — it is not evidence, it is a draft the engine wrote");
-  assert.match(accuracy, /the recording is what you actually said/, "and the audio is named as the truth, because it cannot mishear him");
-  assert.equal(speakAccuracyLine(TEXT_ONLY), null, "with no recording there are not two readings to choose between");
-  assert.equal(speakAccuracyLine(AUDIO_ONLY), null);
-
-  // The server engine gets the same ruling with the true description of where the text came from: it is
-  // the service's reading OF the recording, not a second live reading of the same speech.
-  const serverAccuracy = speakAccuracyLine(SERVER);
-  assert.ok(serverAccuracy);
-  assert.match(serverAccuracy, /made of the recording/, "here the text IS a reading of the file, and the sentence says so rather than borrowing the live engine's wording");
-  assert.match(serverAccuracy, /read it before you save/, "…and it is still a draft he checks");
-  assert.match(serverAccuracy, /the recording is what you actually said/);
-
-  // ── The processor notice, on the control, naming the processors ───────────────
-  // The owner's ruling of 2026-09-25: "add the processor line to the dictation mic, not the privacy
-  // page". Recognition is not on the phone — Chrome streams the audio to Google and Safari to Apple —
-  // and a visit comment carries the names of the AM and PM customers seen and what was said about
-  // competitors. He ruled the processing acceptable AND ruled on where the rep is told.
-  const notice = speakProcessorLine(BOTH);
-  assert.ok(notice, "the control tells the rep his voice leaves the phone");
-  for (const processor of ["Google", "Apple", "Chrome", "Safari"]) {
-    assert.match(
-      notice,
-      new RegExp(processor),
-      `the notice names ${processor} — "sent to a third party" tells the rep nothing he can act on, and naming the processor is the whole point of saying it`,
-    );
+  // ── Nothing is written under the Speak button (owner, 2026-09-30) ─────────────
+  // "remove this irrelevant text" — of the three sentences that sat under it: the promise ("Speak once:
+  // …"), the accuracy line and the processor notice. It reverses his 2026-09-25 ruling that put the
+  // processor notice on the microphone. The wording module keeps none of them, so no screen can bring
+  // one back by calling it.
+  for (const gone of ["speakPromise", "speakAccuracyLine", "speakProcessorLine"]) {
+    assert.doesNotMatch(wording, new RegExp(`function ${gone}[(]`), `${gone} is gone from ${MODULE} — the rep's form says nothing under the button`);
   }
-  // 🔴 THE RETIRED PROMISE. This branch used to say the stored recording is read by NO speech service,
-  // and that sentence is now FALSE: since the handover was added a browser can start on its own engine,
-  // write nothing, and have its recording sent to Groq after all. A privacy promise that holds only on the
-  // happy path is the worst copy this notice can carry, so the condition is named instead of hidden.
   assert.doesNotMatch(
-    notice,
-    /no speech service ever reads it/,
-    "the live branch no longer promises the stored recording is read by nothing — the handover can send it, so that promise is retired and must not come back",
+    wording,
+    /Speak once|what the speech service heard|Your voice is sent to|Groq's speech service/,
+    "none of the three sentences survives anywhere in the wording module",
   );
-  assert.match(
-    notice,
-    /if this browser writes no words at all, it is sent to Groq/,
-    "it names the condition under which the stored file DOES leave — a rep on Firefox reads this line and it is his case",
-  );
-  assert.match(notice, /stored by Phoenix/, "…while still saying where the recording normally lives");
-  assert.match(speakProcessorLine(TEXT_ONLY) ?? "", /Google's on Chrome/, "the notice does not depend on the recorder being there");
-  assert.doesNotMatch(
-    speakProcessorLine(TEXT_ONLY) ?? "",
-    /Groq|recording/,
-    "with no recorder there is no stored file at all, so neither the second processor nor the recording is mentioned — a sentence about a file that will never exist is noise at the moment he decides to speak",
-  );
-  assert.equal(
-    speakProcessorLine(AUDIO_ONLY),
-    null,
-    "recording alone sends the voice to nobody — Phoenix's own storage is not a speech service, and warning about one would be false",
-  );
-
-  // THE ONE ASSERTION THAT CANNOT BE RELAXED. On the server engine the RECORDING ITSELF is what leaves
-  // the phone. Reusing the live engine's exemption here would be a flat lie about the single fact this
-  // notice exists to be honest about, and it is the copy-paste a later edit is most likely to make.
-  const serverNotice = speakProcessorLine(SERVER);
-  assert.ok(serverNotice, "a browser with no engine of its own still tells the rep where his voice goes");
-  assert.match(serverNotice, /Groq/, "and names the processor, the same as the live branch does");
-  assert.match(serverNotice, /sends the recording/, "it says the RECORDING is what is sent — that is what happens here, and it is different from the live engine");
-  assert.doesNotMatch(
-    serverNotice,
-    /no speech service ever reads it|writes no words at all/,
-    "it must NEVER claim the stored file is read by nothing, and never borrow the live branch's CONDITION either: on this engine the file is read every time, unconditionally",
-  );
-  assert.doesNotMatch(serverNotice, /Google|Apple/, "and it does not name the browser engines that this browser does not have");
 
   // ── The live panel says what is happening to the voice right now ──────────────
   assert.equal(speakLiveLabel(BOTH, 7), `Listening — 0:07 of ${formatCap()}`, "the clock is shown because the recorder's cap is what ends the session");
@@ -329,9 +229,6 @@ export function runPhoenixCrmSpeakTests() {
   // that has stopped saying anything — measured on the dictation notice on 2026-09-25.
   const control = stripComments(readFileSync(CONTROL, "utf8"));
   for (const call of [
-    "speakPromise(halves)",
-    "speakAccuracyLine(halves)",
-    "speakProcessorLine(halves)",
     "speakBlockedMessage()",
     "speakTranscribingLine()",
   ]) {
@@ -339,7 +236,7 @@ export function runPhoenixCrmSpeakTests() {
   }
   assert.doesNotMatch(
     control,
-    /Your voice is sent to|what you actually said|cannot turn speech into text|sends the recording to/,
+    /Your voice is sent to|what you actually said|cannot turn speech into text|sends the recording to|Speak once|speech service/,
     `${CONTROL} spells none of the wording itself — one copy, in src/lib/phoenix-crm/speak.ts, where the tests above can reach it`,
   );
 

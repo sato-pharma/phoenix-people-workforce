@@ -11,9 +11,9 @@
  * SO HERE, AND ONLY HERE, THE TEXT *IS* A TRANSCRIPT OF THE RECORDING. That is the opposite of the rule
  * that governs the live half, where the engine's reading and the stored audio are two independent things
  * and calling one a transcript of the other is forbidden (`../dictation.ts`, `../speak.ts`). Both
- * statements are true because they describe different mechanisms, and the copy the rep reads says which
- * one he has — `speakProcessorLine` names Google or Apple for the live engine and names this path's
- * processor for this one. Do not "unify" the two descriptions.
+ * statements are true because they describe different mechanisms. Do not "unify" the two descriptions.
+ * (The rep's form names neither processor since 2026-09-30 — the owner removed that text; see
+ * `../dictation.ts`.)
  *
  * IT TRANSCRIBES BY PATH, NEVER BY UPLOAD. The recording is already in the private bucket by the time
  * this is called, so the phone sends the path it was given and the server fetches the object itself. A

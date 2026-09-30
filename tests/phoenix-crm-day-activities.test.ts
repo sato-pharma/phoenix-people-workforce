@@ -34,21 +34,26 @@ function source(path: string): string {
   return stripComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"));
 }
 
-function sql(): string {
-  return stripSqlComments(readFileSync(new URL(`../${MIGRATION}`, import.meta.url), "utf8").replace(/\r\n/g, "\n"));
+function sql(path: string = MIGRATION): string {
+  return stripSqlComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n"));
 }
+
+/** The newest migration to restate the activity-type check: "Sales day" joined it on 2026-09-29. */
+const TYPE_CHECK_MIGRATION = "supabase/migrations/20260929235553_phoenix_crm_one_tap_visit.sql";
 
 export function runPhoenixCrmDayActivitiesTests(): void {
   // ── The vocabulary is Phoenix's own, and holds no leave ─────────────────────────────────────────
   {
     const keys = PHOENIX_CRM_DAY_ACTIVITIES.map((entry) => entry.key);
-    assert.deepEqual(keys, ["meeting", "training", "conference", "admin_work", "travel", "health_day"]);
+    // The owner's order on the visit's first screen (2026-09-29): his four, then the other three — and
+    // "Sales day" is new.
+    assert.deepEqual(keys, ["meeting", "conference", "health_day", "sales_day", "training", "admin_work", "travel"]);
 
     for (const banned of ["leave", "annual", "vacation", "sick", "casual", "absent", "holiday"]) {
       assert.equal(keys.includes(banned as never), false, `${banned} is HR's, not the CRM's — one leave record, not two`);
     }
     // And the database agrees, or the list is only half a rule.
-    const check = /check \(activity_type in \(([^)]+)\)\)/.exec(sql());
+    const check = /check \(activity_type in \(([^)]+)\)\)/.exec(sql(TYPE_CHECK_MIGRATION));
     assert.ok(check, "the column constrains its own values");
     for (const key of keys) assert.ok(check[1].includes(`'${key}'`), `${key} is allowed by the check constraint`);
     assert.equal(/leave|vacation|sick/i.test(check[1]), false, "no leave value reaches the database either");
@@ -85,7 +90,8 @@ export function runPhoenixCrmDayActivitiesTests(): void {
       "src/lib/phoenix-crm/server/reports.ts",
       "src/lib/phoenix-crm/report-rules.ts",
       "src/lib/phoenix-crm/coverage.ts",
-      "src/lib/phoenix-crm/server/today.ts",
+      // server/today.ts is deliberately NOT here since 2026-09-29: the owner asked for the day's activity
+      // "beside the plan" on Today. It SHOWS it and scores nothing — the pin after this loop holds that.
       "src/lib/phoenix-crm/today-rules.ts",
     ]) {
       const code = source(path);
@@ -94,6 +100,14 @@ export function runPhoenixCrmDayActivitiesTests(): void {
         false,
         `${path} must not read a day activity — it is a record, and it moves no figure (owner, 2026-09-26)`,
       );
+    }
+    // Today SHOWS the day's activity and nothing more: it is passed through as its own field, and the
+    // stops and the four counts are built without it.
+    {
+      const today = source("src/lib/phoenix-crm/server/today.ts");
+      const build = /buildTodayStops\(\{[\s\S]*?\}\);/.exec(today)?.[0] ?? "";
+      assert.ok(build.length > 0, "Today still builds its stops in one call");
+      assert.equal(/dayActivity|plannedActivity/.test(build), false, "the day's activity never reaches the stops or the counts");
     }
     // And the report RPCs in the newest migration touching them name no such table.
     const reports = stripSqlComments(
@@ -110,10 +124,12 @@ export function runPhoenixCrmDayActivitiesTests(): void {
     assert.match(text, /pg_advisory_xact_lock\(hashtext\('phoenix_crm:day_activity:/, "two saves on one day cannot race");
     assert.equal(/current_date/.test(text), false, "the Cairo day comes from the caller — the server runs in UTC");
 
-    // The day is the viewer's own today, never the body's: back-dating a day activity is the same
-    // hole as back-dating a visit, and the module closed that one already.
+    // The day is the viewer's own VISIT day, never the body's: back-dating a day activity is the same
+    // hole as back-dating a visit, and the module closed that one already. Since 2026-09-29 that day
+    // runs until 02:00 the next morning, exactly as a visit's does (owner: "maximum 2 AM").
     const service = stripCommentsCompact(readFileSync(new URL("../src/lib/phoenix-crm/server/day-activities.ts", import.meta.url), "utf8"));
-    assert.ok(service.includes("activity_date: viewer.cairoToday"), "the date is the server's, not the phone's");
+    assert.ok(service.includes("activity_date: viewer.visitDay"), "the date is the server's, not the phone's");
+    assert.equal(service.includes("activity_date: viewer.cairoToday"), false, "and it is the visit day, not the calendar day");
     assert.equal(/activity_date:\s*raw\./.test(service), false, "and never comes from the request body");
   }
 

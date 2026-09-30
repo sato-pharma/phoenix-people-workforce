@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -103,6 +103,38 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
 
     // Collected and asserted once: a per-name assert inside the loop reports only the first failure.
     assert.deepEqual(problems, [], problems.join("; "));
+  }
+
+  // ── Out of list: the visit is countable, the CUSTOMER's admission decides (2026-09-29) ──────────
+  //
+  // An out-of-list visit has no approval row of its own — the district manager and SFE approve the
+  // customer, not the visit. So the view admits it, and what keeps it out of every figure until he is
+  // on the list is the OTHER half of the predicate: each counting report joins the customer and reads
+  // `validated_at is not null`, which an outside customer does not have until SFE admits him. Both
+  // halves are pinned, because either one alone looks complete.
+  {
+    const oneTap = source("supabase/migrations/20260929235553_phoenix_crm_one_tap_visit.sql");
+    assert.match(oneTap, /phoenix_crm_countable_visits\s*\nwith \(security_invoker = true\)/, "the recreated view still inherits the base table's RLS");
+    assert.match(
+      oneTap,
+      /where not v\.is_unplanned or u\.status = 'approved' or v\.unplanned_kind = 'out_of_list'/,
+      "an out-of-list visit is countable, with no approval row to wait on",
+    );
+    assert.match(oneTap, /revoke all on table public\.phoenix_crm_countable_visits from public, anon, authenticated;/);
+    assert.match(oneTap, /grant select on table public\.phoenix_crm_countable_visits to service_role;/);
+
+    const migrations = readdirSync(new URL("../supabase/migrations/", import.meta.url))
+      .filter((name) => name.endsWith(".sql"))
+      .sort();
+    for (const name of ["phoenix_crm_report_manager_visits", "phoenix_crm_report_coverage", "phoenix_crm_report_visits_by_day"]) {
+      // The LATEST definition is the one production runs.
+      const latest = migrations.filter((file) => source(`supabase/migrations/${file}`).includes(`create or replace function public.${name}(`)).pop();
+      assert.ok(latest, `${name} is defined in a migration`);
+      const text = source(`supabase/migrations/${latest}`);
+      const start = text.indexOf(`create or replace function public.${name}(`);
+      const body = text.slice(start, text.indexOf("\n$$;", start));
+      assert.ok(body.includes("validated_at is not null"), `${name} (${latest}) counts a customer's visits only once he is validated and on the list`);
+    }
   }
 
   // ── The read path that is not an RPC ─────────────────────────────────────────────────────────

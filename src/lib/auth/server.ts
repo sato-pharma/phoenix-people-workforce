@@ -86,7 +86,7 @@ const anonymousAccessContext = createAccessContext({
   source: "guest",
 });
 
-type SessionUserRow = {
+export type SessionUserRow = {
   hr_id: string | null;
   is_active: boolean;
   is_test_persona?: boolean | null;
@@ -102,7 +102,7 @@ type SessionUserRow = {
  * ordinary session: a test row with no mirror, with an HR id of its own, or pointed at a role outside
  * the employee portal would otherwise sign in as something nobody chose (src/lib/auth/test-persona.ts).
  */
-function resolveTestPersonaLink(
+export function resolveTestPersonaLink(
   row: SessionUserRow,
   role: PhoenixRole,
 ): { ok: true; link: TestPersonaLink } | { ok: false; reason: string } {

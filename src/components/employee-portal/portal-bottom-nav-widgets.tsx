@@ -5,12 +5,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   CalendarDays,
+  CalendarRange,
   Headphones,
   Plus,
   ReceiptText,
   Send,
   ShieldCheck,
   SlidersHorizontal,
+  Stethoscope,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -32,6 +34,8 @@ import { useBottomNavPreference } from "./use-bottom-nav-preference";
  * action button cannot end up showing three different icons for the same action.
  */
 export const PORTAL_QUICK_ACTION_ICONS: Record<PortalQuickActionKey, LucideIcon> = {
+  "crm-plan": CalendarRange,
+  "crm-visit": Stethoscope,
   "direct-order": ReceiptText,
   expense: Send,
   "report-it": ShieldCheck,

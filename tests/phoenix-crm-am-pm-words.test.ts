@@ -107,7 +107,10 @@ export function runPhoenixCrmAmPmWordTests() {
   // Each of these carried a "Doctors · PM" / "Accounts · AM" pair that read the fact twice.
   const pairedBefore = [
     "src/components/phoenix-crm/reports-tab.tsx",
-    "src/components/phoenix-crm/plan-tab.tsx",
+    // plan-tab.tsx carried a pair until it was retired (2026-09-29); the plan board that replaced it is held to the same rule.
+    "src/components/phoenix-crm/plan-board.tsx",
+    "src/components/phoenix-crm/plan-week-panel.tsx",
+    "src/components/phoenix-crm/plan-day-panel.tsx",
     "src/components/phoenix-crm/visits-tab.tsx",
     "src/components/phoenix-crm/settings-tab.tsx",
     "src/components/phoenix-crm/doctors-tab.tsx",

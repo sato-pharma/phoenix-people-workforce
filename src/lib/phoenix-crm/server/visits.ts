@@ -14,6 +14,18 @@
  * phone's. One visit a customer a day per territory. A retry of the same visit (the phone keeps the
  * visit's id until it is saved) returns the saved visit instead of a second one.
  *
+ * Owner, 2026-09-29 — the rep's flow rebuilt:
+ *   - "Log visit" is ONE TAP. No photo, no date and no AM/PM picker: the server stamps the time when
+ *     the save arrives, and the location is read silently while the form is open. A caller that still
+ *     sends a photo is served exactly as before (its slot dates the visit);
+ *   - the visit day is TODAY until 02:00 the next morning — the Cairo date of the time minus two hours
+ *     (`viewer.visitDay`, `cairoBusinessDay`). Never a past day, never a future one;
+ *   - off the plan is two things: OUT OF PLAN (on his list, not on today's sent plan — a reason, then
+ *     the manager and SFE approve the visit) and OUT OF LIST (validated on the spot — the district
+ *     manager and SFE approve the CUSTOMER, and the visit counts once he is admitted);
+ *   - the rep NEVER sees a distance, a flag or a check on his own visit. The polite "Take care" line is
+ *     gone (`isLocationBlind`); his managers, the SFE Manager and the Super Admin keep every measure.
+ *
  * A visit may also carry a spoken note (owner, 2026-09-25), and the emphasis above is why it is worth
  * saying here: the note is audio the rep recorded, kept as audio and never transcribed, and it dates
  * NOTHING. A photo is taken where the camera is; a recording can be made in a car an hour later. So
@@ -47,7 +59,7 @@ import {
 } from "@/lib/phoenix-crm/visit-outcome";
 import { describeDayWindows, isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, resolveVisitParticipants, territoryReviewer } from "@/lib/phoenix-crm/scope";
-import { canWriteAsRep, readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canWriteAsRep, isLocationBlind, readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
@@ -60,10 +72,14 @@ import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/
 import { describeTerritory, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import {
+  isUnplannedKind,
   isUnplannedVisitStatus,
+  outOfListVisitNote,
+  OUT_OF_LIST_REP_NOTE,
   unplannedFirstStatus,
   unplannedVisitRepNote,
   unplannedVisitStatusLabel,
+  type UnplannedKind,
   type UnplannedVisitStatus,
 } from "@/lib/phoenix-crm/unplanned-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -84,25 +100,25 @@ const KIND_LABEL: Record<PhoenixCrmVisitKind, string> = {
 };
 
 /**
- * What the REP reads on his own visit — the owner's polite sign, 2026-09-26.
+ * What a MANAGER reads about a visit's location — plain and measured, never a verdict: the usual cause
+ * of a long distance is a place saved from the wrong doorway, not a rep who was not there.
  *
- * His words: "a polite small sign telling him take care, take care, you are away from the saved
- * location by, for example, five hundred meters". Care, with the distance in it, and nothing that
- * reads as a count or a verdict. "Far from", "flag" and "signal" are gone: the old wording told a
- * rep standing in the right clinic that he had done something wrong, when the usual cause is a place
- * saved from the wrong doorway months ago.
- *
- * A weak reading is about the PHONE, not about him, and is worded as such.
- *
- * The manager's place-vs-actual report is untouched and still says everything, in metres — this is
- * the rep's own screen only.
+ * 🔴 Never the rep's. The owner's polite sign on the rep's own visit (2026-09-26) was REMOVED on
+ * 2026-09-29: the rep sees no distance, no flag and no check of any kind (Golden Rule #1). His rows
+ * carry `BLIND_LOCATION` instead — see `mapVisitRow`.
  */
 export function visitLocationLabel(flag: VisitLocationFlag, distanceMeters: number | null, accuracyMeters: number | null): string {
-  if (flag === "far") return `Take care — about ${formatDistance(distanceMeters)} from this customer's saved place`;
+  if (flag === "far") return `About ${formatDistance(distanceMeters)} from this customer's saved place`;
   if (flag === "weak_gps") return `The phone was not sure where it was (within ${formatDistance(accuracyMeters)})`;
   if (flag === "no_place") return "No place saved for this customer yet";
   return distanceMeters === null ? "At the saved place" : `At the saved place (${formatDistance(distanceMeters)})`;
 }
+
+/**
+ * The location fields on the REP's own visit: kept in the response so a caller one release behind
+ * still reads a well-formed row, and saying nothing — no distance, no flag, no check.
+ */
+export const BLIND_LOCATION: { locationFlag: VisitLocationFlag; locationLabel: string } = { locationFlag: "ok", locationLabel: "Visit saved" };
 
 // ── A territory's visits ────────────────────────────────────────────────────────────────────────
 
@@ -125,7 +141,8 @@ export type VisitRow = {
   /** Which of the rep's line products that pharmacy stocks, product by product. */
   productAvailability: Record<string, ProductAvailability>;
   comment: string | null;
-  photoPath: string;
+  /** The visit's photo, on a visit saved with one. The one-tap visit (2026-09-29) has none. */
+  photoPath: string | null;
   /** The spoken note, if the rep left one. Null is the normal case: a visit never required one. */
   voiceNotePath: string | null;
   voiceNoteSeconds: number | null;
@@ -140,6 +157,13 @@ export type VisitRow = {
    * with, which is the only way he can chase it.
    */
   unplanned: { status: UnplannedVisitStatus; statusLabel: string; note: string; clarification: string } | null;
+  /** Which way the visit was off the plan, if it was: out of plan, or out of list. */
+  unplannedKind: UnplannedKind | null;
+  /**
+   * An out-of-list visit has no approval of its own: it waits on its CUSTOMER being added to the list.
+   * Where that has got to, in the rep's words. Null on every other visit.
+   */
+  outOfList: { label: string; note: string } | null;
   /**
    * What the doctor pushed back on, and what the rep said he would do next. Null on a visit that
    * answered neither, which is every visit saved before this existed.
@@ -165,9 +189,9 @@ export type VisitOutcomeView = {
 const VISIT_COLUMNS =
   "id, visit_date, captured_at, customer_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, entered_by_hr_id, products, " +
   "comment, pharmacy_name, product_availability, photo_path, voice_note_path, voice_note_seconds, " +
-  "accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, " +
+  "accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, unplanned_kind, " +
   "next_step, next_step_on, objection, objection_note, samples_given, " +
-  "customer:phoenix_crm_customers!customer_id(name), " +
+  "customer:phoenix_crm_customers!customer_id(name, status), " +
   "unplanned:phoenix_crm_unplanned_visits!visit_id(status, clarification)";
 
 function visitKind(value: unknown): PhoenixCrmVisitKind {
@@ -224,7 +248,12 @@ function visitPeople(rows: ReadonlyArray<Row>): Array<string | null> {
   ]);
 }
 
-function mapVisitRow(row: Row, names: PeopleNames): VisitRow {
+/**
+ * One visit row, as a screen reads it. `blind` is the rep's own view of his own territory
+ * (`isLocationBlind`): the location fields say nothing and the phone-clock mark is off — no distance,
+ * no flag, no check (Golden Rule #1, owner 2026-09-29).
+ */
+function mapVisitRow(row: Row, names: PeopleNames, options: { blind: boolean }): VisitRow {
   const kind = visitKind(row.kind);
   const flag = locationFlag(row.location_flag);
   const skew = numberOrNull(row.device_skew_minutes);
@@ -232,6 +261,7 @@ function mapVisitRow(row: Row, names: PeopleNames): VisitRow {
     const hrId = textOrNull(value);
     return hrId ? nameOf(names, hrId) : null;
   };
+  const unplannedKind = row.is_unplanned === true ? (isUnplannedKind(row.unplanned_kind) ? row.unplanned_kind : "out_of_plan") : null;
   return {
     visitId: String(row.id),
     visitDate: String(row.visit_date),
@@ -249,13 +279,16 @@ function mapVisitRow(row: Row, names: PeopleNames): VisitRow {
     pharmacyName: textOrNull(row.pharmacy_name),
     productAvailability: parseProductAvailability(row.product_availability),
     comment: textOrNull(row.comment),
-    photoPath: String(row.photo_path),
+    photoPath: textOrNull(row.photo_path),
     voiceNotePath: textOrNull(row.voice_note_path),
     voiceNoteSeconds: numberOrNull(row.voice_note_seconds),
-    locationFlag: flag,
-    locationLabel: visitLocationLabel(flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters)),
-    clockOff: skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
-    unplanned: row.is_unplanned === true ? visitUnplanned(row) : null,
+    ...(options.blind
+      ? BLIND_LOCATION
+      : { locationFlag: flag, locationLabel: visitLocationLabel(flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters)) }),
+    clockOff: !options.blind && skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
+    unplanned: unplannedKind === "out_of_plan" ? visitUnplanned(row) : null,
+    unplannedKind,
+    outOfList: unplannedKind === "out_of_list" ? outOfListVisitNote(textOrNull(record(row.customer).status)) : null,
     outcome: visitOutcome(row),
     samples: describeSamples(parseSamplesGiven(row.samples_given)),
   };
@@ -300,20 +333,24 @@ export type VisitDayView = {
 
 export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown; date: unknown }): Promise<VisitDayView> {
   const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
-  const date = isIsoDay(raw.date) && raw.date <= viewer.cairoToday ? raw.date : viewer.cairoToday;
+  // The visit day, not the calendar day: until 02:00 the day that just ended is still the one a rep
+  // adds to (owner, 2026-09-29). A past day is read only; a future one does not exist yet.
+  const today = viewer.visitDay;
+  const date = isIsoDay(raw.date) && raw.date <= today ? raw.date : today;
   const rows = await loadVisitRows(seat.seatId, isTest, date);
   const [names, activity] = await Promise.all([
     loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...visitPeople(rows)]),
     loadDayActivityOn(seat.seatId, isTest, date),
   ]);
+  const blind = isLocationBlind(viewer, seat);
   return {
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     date,
-    visits: rows.map((row) => mapVisitRow(row, names)),
-    canAdd: date === viewer.cairoToday && canEnterVisits(viewer, seat.seatId, isTest),
+    visits: rows.map((row) => mapVisitRow(row, names, { blind })),
+    canAdd: date === today && canEnterVisits(viewer, seat.seatId, isTest),
     dayActivity: activity,
-    canSetDayActivity: date === viewer.cairoToday && canWriteAsRep(viewer, seat, isTest),
+    canSetDayActivity: date === today && canWriteAsRep(viewer, seat, isTest),
   };
 }
 
@@ -371,6 +408,11 @@ export type VisitCustomerOption = {
    * location to compare against, and it counts in nothing until he is validated.
    */
   pending: boolean;
+  /**
+   * Met outside the list and validated at the door, waiting to be added (2026-09-29). A visit to him
+   * is an out-of-list visit: it counts once the district manager and SFE admit him.
+   */
+  outside: boolean;
   /**
    * His entry on the territory's iReports360 list, which is what the Validate screen opens on. Null
    * for a customer the rep added himself — he has no reference entry, so there is nothing to validate
@@ -539,10 +581,10 @@ async function loadLastVisits(
  * The Today screen reads this rather than the raw rows, so one visit reads the same on both screens
  * and a change to `mapVisitRow` cannot leave the two disagreeing about a name.
  */
-export async function loadVisitRowsForDay(seatId: string, isTest: boolean, date: string): Promise<VisitRow[]> {
+export async function loadVisitRowsForDay(seatId: string, isTest: boolean, date: string, options: { blind: boolean }): Promise<VisitRow[]> {
   const rows = await loadVisitRows(seatId, isTest, date);
   const names = await loadPeopleNames(visitPeople(rows));
-  return rows.map((row) => mapVisitRow(row, names));
+  return rows.map((row) => mapVisitRow(row, names, options));
 }
 
 /**
@@ -556,35 +598,42 @@ export async function plannedCustomersOn(
   seatId: string,
   isTest: boolean,
   date: string,
-): Promise<{ hasPlan: boolean; customerIds: string[] }> {
+): Promise<{ hasPlan: boolean; sent: boolean; customerIds: string[] }> {
   const supabase = getSupabaseAdmin();
   const { data: plan, error } = await supabase
     .from("phoenix_crm_plans")
-    .select("id")
+    .select("id, status")
     .eq("seat_id", seatId)
     .eq("is_test", isTest)
     .eq("week_start", fieldWeekStart(date))
-    .in("status", ["submitted", "approved"])
     .maybeSingle();
   throwIfError(error);
-  if (!plan) return { hasPlan: false, customerIds: [] };
+  if (!plan) return { hasPlan: false, sent: false, customerIds: [] };
+  const status = String((plan as Row).status ?? "");
   const items = await supabase
     .from("phoenix_crm_plan_items")
     .select("customer_id")
     .eq("plan_id", String((plan as Row).id))
     .eq("plan_date", date);
   throwIfError(items.error);
-  return { hasPlan: true, customerIds: ((items.data ?? []) as Row[]).map((row) => String(row.customer_id)) };
+  return {
+    hasPlan: true,
+    sent: status === "submitted" || status === "approved",
+    customerIds: ((items.data ?? []) as Row[]).map((row) => String(row.customer_id)),
+  };
 }
 
 export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown }): Promise<VisitFormView> {
   const { seat, isTest, enteredAs } = territoryForVisit(viewer, raw.seatId, readTestFlag(raw.test));
-  const today = viewer.cairoToday;
+  // The visit day: until 02:00 the day that just ended is still today's (owner, 2026-09-29).
+  const today = viewer.visitDay;
   const chain = managerChain(viewer.org, seat.seatId);
 
   await ensureReferenceCustomers(seat, isTest);
   const [{ customers, placesByCustomer }, visitCounts, planned, visitRows, productFamilies, pharmacies] = await Promise.all([
-    loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
+    // The list, and the customers waiting outside it: a second visit to someone met outside the list
+    // is another out-of-list visit to the same customer, never a second customer.
+    loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true, includeOutside: true }),
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
     plannedCustomerIds(seat.seatId, isTest, today),
     loadVisitRows(seat.seatId, isTest, today),
@@ -633,6 +682,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       target: gradeTarget(settings, listType, grade),
       pending: row.status === "pending",
+      outside: row.status === "outside",
       referenceContactCrmId: numberOrNull(row.reference_contact_crm_id),
     };
   });
@@ -643,7 +693,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   let blockedReason: string | null = null;
   if (!seat.lineCode) blockedReason = "This territory has no line in the organogram, so visits cannot be saved.";
   else if (products.length === 0) blockedReason = `No products are on file for ${seat.lineName ?? "this line"} yet, so a visit cannot record the products discussed.`;
-  else if (options.length === 0) blockedReason = "No customers on your list yet. Add them on the List tab first.";
+  const blind = isLocationBlind(viewer, seat);
 
   return {
     territory: describeTerritory(viewer.org, seat, names),
@@ -662,7 +712,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     pharmacies,
     rules: { visitFarMeters: settings.visitFarMeters, weakGpsMeters: settings.weakGpsMeters },
     customers: options,
-    todayVisits: visitRows.map((row) => mapVisitRow(row, names)),
+    todayVisits: visitRows.map((row) => mapVisitRow(row, names, { blind })),
     blockedReason,
   };
 }
@@ -679,6 +729,8 @@ export type SavedVisit = {
   locationLabel: string;
   /** The server's verdict, not the rep's choice — it is what he is told after the save. */
   isUnplanned: boolean;
+  /** Which way it was off the plan, if it was — out of plan, or out of list. */
+  unplannedKind: UnplannedKind | null;
   unplannedNote: string | null;
 };
 
@@ -755,7 +807,8 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       .eq("seat_id", seat.seatId)
       .eq("is_test", isTest)
       .eq("status", "active"),
-    photoSlotIssuedAt(visit.photoPath),
+    // Only a caller that still sends a photo has a slot to read; the one-tap visit has none.
+    visit.photoPath ? photoSlotIssuedAt(visit.photoPath) : Promise.resolve(null),
   ]);
   throwIfError(placesResult.error);
   const places = ((placesResult.data ?? []) as Row[]).map((row) => ({ id: String(row.id), lat: Number(row.lat), lon: Number(row.lon) }));
@@ -833,7 +886,9 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       place_id: check.placeId,
       distance_meters: distance,
       location_flag: flag,
-      device_skew_minutes: issuedAt ? deviceClockSkewMinutes(visit.deviceCapturedAt, new Date(issuedAt)) : null,
+      // Against the photo slot's issue time when there is a photo, else against the moment the save
+      // arrived — which is what dates a one-tap visit. Managers read it; the rep never does.
+      device_skew_minutes: deviceClockSkewMinutes(visit.deviceCapturedAt, issuedAt ? new Date(issuedAt) : new Date()),
       // 🔴 A1. DERIVED ABOVE, never read from `body`. The database then re-checks it against now()
       // and a one-day floor, so the value passes two independent fences before it dates anything.
       offline_captured_at: offlineCapturedAt,
@@ -861,10 +916,13 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
   }
 
   const isUnplanned = result.is_unplanned === true;
-  // An off-plan visit is the ONE visit that tells anybody (notifications.ts): it counts in nothing
-  // until it is decided, so the manager who must decide it is told. A repeat save is skipped — the
-  // first one already raised it, and the notice's idempotency key would drop the second anyway.
-  if (isUnplanned && result.duplicate !== true) {
+  const unplannedKind: UnplannedKind | null = isUnplanned ? (isUnplannedKind(result.unplanned_kind) ? result.unplanned_kind : "out_of_plan") : null;
+  // An out-of-plan visit is the ONE visit that tells anybody (notifications.ts): it counts in nothing
+  // until it is decided, so the manager who must decide it is told. An out-of-list visit raises no
+  // approval of its own — its CUSTOMER's add request is what the district manager decides. A repeat
+  // save is skipped — the first one already raised it, and the notice's idempotency key would drop
+  // the second anyway.
+  if (unplannedKind === "out_of_plan" && result.duplicate !== true) {
     await notifyPhoenixCrm(
       {
         kind: "unplanned_visit_raised",
@@ -879,15 +937,24 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       isTest,
     );
   }
+  // The rep is told his visit is saved and nothing about where he was (Golden Rule #1).
+  const location = isLocationBlind(viewer, seat)
+    ? BLIND_LOCATION
+    : { locationFlag: flag, locationLabel: visitLocationLabel(flag, distance, visit.accuracyMeters) };
   return {
     visitId: String(result.id),
     visitDate: String(result.visit_date),
     capturedAt: String(result.captured_at),
     customerId: String(result.customer_id),
     duplicate: result.duplicate === true,
-    locationFlag: flag,
-    locationLabel: visitLocationLabel(flag, distance, visit.accuracyMeters),
+    ...location,
     isUnplanned,
-    unplannedNote: isUnplanned ? unplannedVisitRepNote(unplannedFirstStatus(reviewer !== null)) : null,
+    unplannedKind,
+    unplannedNote:
+      unplannedKind === "out_of_list"
+        ? OUT_OF_LIST_REP_NOTE
+        : unplannedKind === "out_of_plan"
+          ? unplannedVisitRepNote(unplannedFirstStatus(reviewer !== null))
+          : null,
   };
 }

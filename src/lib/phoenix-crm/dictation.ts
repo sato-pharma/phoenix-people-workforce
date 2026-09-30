@@ -28,14 +28,12 @@
  * the same day sends audio to a third party too, and says so in its own notice — it is a different
  * processor, not a way of keeping the voice on the phone.)
  *
- * Whether the REP is told is SETTLED, and settled the other way from how FTP Portal does it. FTP says
- * so on a privacy page; Phoenix says it on the microphone. Offered both on 2026-09-25, the owner chose
- * the control — "add the processor line to the dictation mic, not the privacy page" — so the line
- * lives under the button, where the rep reads it at the moment he decides to speak. It is written by
- * `speakProcessorLine` in `./speak.ts` and rendered by `src/components/phoenix-crm/speak.tsx`, which
- * is now the one control for both halves. `app/privacy` is deliberately NOT the place: it covers recruitment
- * candidates only, names no processor, says nothing about employees, and nobody opens it. Do not
- * "complete" this by moving the line there or by adding a second copy.
+ * Whether the REP is told on the form: NO, since 2026-09-30. On 2026-09-25 the owner put a processor
+ * line under the microphone ("add the processor line to the dictation mic, not the privacy page"); on
+ * 2026-09-30 he had it removed with the rest of the text under the Speak button ("remove this irrelevant
+ * text"). The processing itself is unchanged and still his accepted decision above. Do not put the line
+ * back on the form, and do not move it to `app/privacy` either without his word — that page covers
+ * recruitment candidates only.
  *
  * It is strictly an accelerator. Every comment it fills can still be typed, and where the engine is
  * missing the control is not rendered at all rather than rendered inert — an inert microphone reads as

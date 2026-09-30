@@ -57,7 +57,7 @@ export function startGuideUiLabel(label: string): string {
 const ui = startGuideUiLabel;
 
 /** The labels this guide names, exactly as the visit screen spells them. */
-export const START_GUIDE_UI_LABELS = ["Visits", "Planned visit", "Unplanned visit", "Start", "Save"] as const;
+export const START_GUIDE_UI_LABELS = ["Visits", "Planned visit", "Unplanned visit", "Out of plan", "Out of list", "AM", "PM", "Log visit", "List", "Validate", "Open"] as const;
 
 interface GuideContent {
   dir: "ltr" | "rtl";
@@ -80,41 +80,44 @@ const CONTENT: Record<StartGuideLanguage, GuideContent> = {
       titleAr: "تسجيل الزيارة",
       subtitleEn: "For medical representatives",
     },
-    lead: "Your customer list is already in the app. Recording a visit is six steps and one photo.",
+    lead: "Your customer list is already in the app. Recording a visit is a few taps — no photo.",
     steps: [
       [
         "Open Visits and choose the type first",
-        `${ui("Planned visit")} offers only the customers on a plan you have already sent for today. Until you send a plan that list is empty, so choose ${ui("Unplanned visit")} and write one line saying why you went.`,
+        `${ui("Planned visit")} offers the customers on the plan you sent for today. For anybody else choose ${ui("Unplanned visit")}: ${ui("Out of plan")} is someone on your list — write one line saying why you went; ${ui("Out of list")} is someone who is not on your list yet.`,
       ],
       [
         // 🔴 "Choose the customer", NEVER "the doctor". The owner's rule of 2026-09-23 — "make it ALL
         // AM PM not doctors and accounts" — governs every screen string in this module, and this page
         // is one of them. `tests/phoenix-crm-am-pm-words.test.ts` caught the first draft of this line.
         "Choose the customer",
-        "Your list is already in the app and grouped by brick, in the order you will travel. You do not need to add anybody.",
+        "Your plan is grouped by brick, in the order you will travel. You do not need to add anybody.",
       ],
       [
-        "Press Start, and take the photo",
-        `${ui("Start")} opens the camera and your location together. Photograph the clinic sign or the door. <strong>The photo is what records the visit</strong> — without it nothing is saved.`,
+        "Someone not on your list",
+        `With ${ui("Out of list")} choose ${ui("AM")} or ${ui("PM")} yourself, write the name and the speciality, then photograph the clinic sign, press ${ui("Capture location")} and set the days and hours — once, for good. After the visit, ask on the ${ui("List")} to add him to your list.`,
       ],
       [
-        "Fill in the products you discussed",
-        "From your second visit to the same customer these come back already filled in from last time, with the date they came from. Change any of them.",
+        "Fill in the visit",
+        "Single, double or chain. The products you discussed come back filled in from last time, with the date they came from. Samples, the pharmacy stock and the next step are there if you need them.",
       ],
       [
-        "Add a voice note if you want to",
-        `Say it instead of typing it. <strong>A voice note is stored only when you press ${ui("Save")}</strong> — recording one on its own saves nothing.`,
+        "Write the comment, or say it",
+        `<strong>The comment is required.</strong> Type it, or say it and the words are written for you. A voice note is stored only when you press ${ui("Log visit")} — recording one on its own saves nothing.`,
       ],
-      ["Press Save", "That is the visit recorded."],
+      [
+        `Press ${ui("Log visit")}`,
+        "<strong>Log visit is one tap</strong>: the time is taken for you and there is no photo to take. You can log today's visits until 2 AM.",
+      ],
     ],
     notes: [
       [
-        "The first time at a new place",
-        "You capture the place once — its photo and its location. That same photo records the visit when you save within thirty minutes, so a new customer costs one photo, not two.",
+        "Validating a customer",
+        `On the ${ui("List")}, a customer not validated yet has ${ui("Validate")}: one live photo of the clinic sign (it keeps its own location), ${ui("Capture location")} for the location once more, and the days and hours — once, for good. A validated customer has ${ui("Open")}.`,
       ],
       [
-        "Your monthly plan",
-        "It is due on the last Thursday of the month before. Send it when you can: a late plan is always accepted, never refused.",
+        "Your plan",
+        "The month is due on the last Thursday of the month before; a week you send on its own, on the Thursday before it. A late plan is always accepted, never refused.",
       ],
     ],
     footer: "Sato Pharma · Phoenix CRM",
@@ -126,40 +129,43 @@ const CONTENT: Record<StartGuideLanguage, GuideContent> = {
     downloadName: "Phoenix CRM - تسجيل الزيارة.html",
     // Arabic-led: no `titleEn`, so the letterhead emits its original Arabic-only shape.
     head: { titleAr: "تسجيل الزيارة", subtitleAr: "لمندوبي الدعاية الطبية" },
-    lead: "قائمة عملائك موجودة بالفعل في التطبيق. تسجيل الزيارة ست خطوات وصورة واحدة.",
+    lead: "قائمة عملائك موجودة بالفعل في التطبيق. تسجيل الزيارة لمسات قليلة — بدون صورة.",
     steps: [
       [
         `افتح ${ui("Visits")} واختر نوع الزيارة أولاً`,
-        `تعرض ${ui("Planned visit")} العملاء الموجودين في خطة أرسلتها لهذا اليوم فقط، وحتى ترسل خطة تكون هذه القائمة فارغة. اختر ${ui("Unplanned visit")} واكتب سطراً واحداً يوضح سبب الزيارة.`,
+        `تعرض ${ui("Planned visit")} العملاء الموجودين في الخطة التي أرسلتها لهذا اليوم. لأي عميل آخر اختر ${ui("Unplanned visit")}: ${ui("Out of plan")} لعميل في قائمتك — اكتب سطراً واحداً عن سبب الزيارة، و${ui("Out of list")} لعميل ليس في قائمتك بعد.`,
       ],
       [
         // The Arabic half of the same rule. The AM/PM test reads English and would never have caught
         // this one, which is exactly why it is corrected by hand rather than left because CI was green.
         "اختر العميل",
-        "قائمتك موجودة في التطبيق ومرتبة حسب البريك، بالترتيب الذي ستتحرك به. لست بحاجة إلى إضافة أحد.",
+        "خطتك مرتبة حسب البريك، بالترتيب الذي ستتحرك به. لست بحاجة إلى إضافة أحد.",
       ],
       [
-        `اضغط ${ui("Start")} والتقط الصورة`,
-        `يفتح ${ui("Start")} الكاميرا والموقع معاً. صوّر لافتة العيادة أو بابها. <strong>الصورة هي ما يسجل الزيارة</strong> — وبدونها لا يُحفظ شيء.`,
+        "عميل ليس في قائمتك",
+        `مع ${ui("Out of list")} اختر ${ui("AM")} أو ${ui("PM")} بنفسك، واكتب الاسم والتخصص، ثم صوّر لافتة العيادة واضغط ${ui("Capture location")} وسجّل الأيام والمواعيد — مرة واحدة فقط. بعد الزيارة اطلب من ${ui("List")} إضافته إلى قائمتك.`,
       ],
       [
-        "أدخل المنتجات التي تحدثت عنها",
-        "من زيارتك الثانية للعميل نفسه تعود هذه المنتجات مُدخلة من المرة السابقة، ومعها تاريخها. غيّر منها ما تشاء.",
+        "أكمل بيانات الزيارة",
+        "زيارة فردية أو مزدوجة أو متسلسلة. المنتجات التي تحدثت عنها تعود مُدخلة من المرة السابقة ومعها تاريخها. العينات ومخزون الصيدلية والخطوة التالية موجودة إن احتجتها.",
       ],
       [
-        "أضف ملاحظة صوتية إن أردت",
-        `قلها بدلاً من كتابتها. <strong>الملاحظة الصوتية لا تُحفظ إلا عند الضغط على ${ui("Save")}</strong> — وتسجيلها وحده لا يحفظ شيئاً.`,
+        "اكتب التعليق أو قله",
+        `<strong>التعليق مطلوب.</strong> اكتبه، أو قله وتُكتب الكلمات لك. الملاحظة الصوتية لا تُحفظ إلا عند الضغط على ${ui("Log visit")} — وتسجيلها وحده لا يحفظ شيئاً.`,
       ],
-      [`اضغط ${ui("Save")}`, "بذلك تكون الزيارة قد سُجلت."],
+      [
+        `اضغط ${ui("Log visit")}`,
+        "<strong>تسجيل الزيارة ضغطة واحدة</strong>: الوقت يُسجَّل تلقائياً ولا توجد صورة. يمكنك تسجيل زيارات اليوم حتى الساعة الثانية صباحاً.",
+      ],
     ],
     notes: [
       [
-        "أول مرة في مكان جديد",
-        "تسجل المكان مرة واحدة — صورته وموقعه. وتسجل هذه الصورة نفسها الزيارة إذا حفظت خلال ثلاثين دقيقة، فالعميل الجديد يكلفك صورة واحدة لا صورتين.",
+        "اعتماد العميل",
+        `في ${ui("List")}، العميل الذي لم يُعتمد بعد عليه زر ${ui("Validate")}: صورة حية واحدة للافتة العيادة (بموقعها)، وزر ${ui("Capture location")} لالتقاط الموقع مرة أخرى، والأيام والمواعيد — مرة واحدة وإلى الأبد. العميل المعتمد عليه زر ${ui("Open")}.`,
       ],
       [
-        "خطتك الشهرية",
-        "موعدها آخر خميس من الشهر السابق. أرسلها متى استطعت: الخطة المتأخرة مقبولة دائماً ولا تُرفض.",
+        "خطتك",
+        "الخطة الشهرية موعدها آخر خميس من الشهر السابق، والأسبوع الذي ترسله وحده موعده الخميس الذي يسبقه. الخطة المتأخرة مقبولة دائماً ولا تُرفض.",
       ],
     ],
     footer: "ساتو فارما · Phoenix CRM",

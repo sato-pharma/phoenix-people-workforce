@@ -66,6 +66,13 @@ function runScreenTests() {
     assert.doesNotMatch(editor, gone, "the address and the part of town are no longer fields");
   }
   assert.doesNotMatch(editor, /Correct it if it is wrong/, "nothing invites a rep to correct the captured address");
+  // The rep reads WHERE, never how well (owner, 2026-09-29, Golden Rule #1): the location block he
+  // sees on the capture and on an edit carries no coordinates and no accuracy. The raw readings are
+  // the Super Admin's and the SFE Manager's, on the place-move screen.
+  const block = /function CapturedLocationBlock\([\s\S]*?\n\}/.exec(editor);
+  assert.ok(block, "the location block is one function");
+  assert.doesNotMatch(block[0], /Coordinates|\.lat\b|\.lon\b/, "the rep's location block shows no coordinates");
+  assert.doesNotMatch(block[0], /accuracy|within \$\{/i, "the rep's location block shows no accuracy");
 
   // The draft the screen holds carries no location either, so there is nothing to send even by hand.
   const draftState = /export type PlaceDraftState = \{([\s\S]*?)\};/.exec(editor);
@@ -94,21 +101,39 @@ function runServerTests() {
   const list = source("src/lib/phoenix-crm/server/list.ts");
 
   // 4. The server resolves the whole location itself, from the coordinates it was given.
+  //
+  //    Since 2026-09-29 the place is captured with TWO readings (the Capture-location pin and the
+  //    photo's own shutter reading) and the location is resolved from the FIXED point — the photo's
+  //    reading, else the pin (`placePoint`). The resolving moved into `resolvePlaceLocation`, which a
+  //    validation and a move (place-move.ts) both call, so the two can never disagree about a brick.
+  //    The protection is unchanged: every part comes from coordinates, none from the phone's words.
   const payload = /async function placePayload\(place: PlaceDraft\): Promise<Row> \{([\s\S]*?)\n\}/.exec(list);
   assert.ok(payload, "the server builds the place row in one place");
+  assert.match(payload[1], /const point = placePoint\(place\);/, "the fixed point is the photo's reading, else the pin — chosen by the one pure rule");
+  assert.match(payload[1], /resolvePlaceLocation\(point\)/, "the whole location is resolved from that fixed point");
+  assert.match(payload[1], /\.\.\.located,/, "and every resolved part is written into the row");
+  // Both raw readings are kept beside the fixed point, each as it was measured.
+  for (const column of ["pin_lat: place.lat", "pin_lon: place.lon", "photo_lat: place.photoLat", "photo_lon: place.photoLon"]) {
+    assert.ok(payload[1].includes(column), `the capture keeps its raw reading ${column.split(":")[0]}`);
+  }
+
+  const resolver = /export async function resolvePlaceLocation\(point: [^)]*\): Promise<Row> \{([\s\S]*?)\n\}/.exec(list);
+  assert.ok(resolver, "the location is resolved in one place");
   // Assert the two ARGUMENTS, not one verbatim call expression: the first version of this test
   // pinned the literal text `{ lat: place.lat, lon: place.lon }` and went green on a call that
   // could not compile, because resolveEvidenceLocation takes latitude/longitude. A test that
   // passes on code typecheck rejects is worse than no test — it says the layer is guarded.
-  assert.match(payload[1], /resolveEvidenceLocation\(\{[^}]*\blatitude: place\.lat\b/, "the clean address is resolved from the captured point's latitude");
-  assert.match(payload[1], /resolveEvidenceLocation\(\{[^}]*\blongitude: place\.lon\b/, "the clean address is resolved from the captured point's longitude");
-  assert.match(payload[1], /resolveBrickForPoint\(place\.lat, place\.lon, centroids\)/, "the brick is resolved from the captured point");
+  assert.match(resolver[1], /resolveEvidenceLocation\(\{[^}]*\blatitude: point\.lat\b/, "the clean address is resolved from the fixed point's latitude");
+  assert.match(resolver[1], /resolveEvidenceLocation\(\{[^}]*\blongitude: point\.lon\b/, "the clean address is resolved from the fixed point's longitude");
+  assert.match(resolver[1], /resolveBrickForPoint\(point\.lat, point\.lon, centroids\)/, "the brick is resolved from the fixed point");
   for (const column of ["area_code", "area_name", "region_code", "region_name", "brick_distance_km"]) {
-    assert.match(payload[1], new RegExp(`${column}:`), `the capture writes ${column}, so the location is separated into its parts`);
+    assert.match(resolver[1], new RegExp(`${column}:`), `the capture writes ${column}, so the location is separated into its parts`);
   }
-  // Nothing on this path may read a location off the draft again.
-  for (const banned of [/place\.address/, /place\.zone/, /place\.brick\b/]) {
-    assert.doesNotMatch(payload[1], banned, "the row takes no location from what the phone sent");
+  // Nothing on either path may read a location off the draft again.
+  for (const body of [payload[1], resolver[1]]) {
+    for (const banned of [/place\.address/, /place\.zone/, /place\.brick\b/]) {
+      assert.doesNotMatch(body, banned, "the row takes no location from what the phone sent");
+    }
   }
 
   // 5. And the edit path sends none of it, so an older phone's body reaches nothing.

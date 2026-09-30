@@ -60,15 +60,12 @@ import { reportClientError } from "@/lib/error-monitor/report-client-error";
 import { isEngineLanguageError, startDictation, type DictationHandle } from "@/lib/phoenix-crm/dictation";
 import {
   shouldWriteFromRecording,
-  speakAccuracyLine,
   speakAgainLine,
   speakBlockedMessage,
   speakHalves,
   speakLiveHint,
   speakLiveLabel,
   speakPartialMessage,
-  speakProcessorLine,
-  speakPromise,
   speakSupported,
   speakTranscribingLine,
   SPEAK_AGAIN_LABEL,
@@ -421,8 +418,6 @@ export function CrmSpeak({
   // shown as open on a form that has stopped listening — the cancel above then catches up a tick later.
   const open = listening && !disabled;
   const partial = open ? speakPartialMessage(started) : null;
-  const accuracy = speakAccuracyLine(halves);
-  const processor = speakProcessorLine(halves);
   const again = value ? speakAgainLine(halves) : null;
 
   return (
@@ -468,10 +463,7 @@ export function CrmSpeak({
               {uploading ? "Saving the recording" : transcribing ? "Writing out the words" : value ? SPEAK_AGAIN_LABEL : SPEAK_LABEL}
             </CrmButton>
             {transcribing ? <p className="mt-1.5 break-words text-xs font-medium leading-5 text-orange-700">{speakTranscribingLine()}</p> : null}
-            <p className="mt-1.5 break-words text-xs font-medium leading-5 text-slate-500">{speakPromise(halves)}</p>
-            {again ? <p className="mt-1 break-words text-xs font-medium leading-5 text-slate-500">{again}</p> : null}
-            {accuracy ? <p className="mt-1 break-words text-xs font-medium leading-5 text-slate-500">{accuracy}</p> : null}
-            {processor ? <p className="mt-1 break-words text-phx-xs font-medium leading-4 text-slate-400">{processor}</p> : null}
+            {again ? <p className="mt-1.5 break-words text-xs font-medium leading-5 text-slate-500">{again}</p> : null}
           </div>
         </div>
       )}

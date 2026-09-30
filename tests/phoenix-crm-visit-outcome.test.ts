@@ -223,7 +223,8 @@ export function runPhoenixCrmVisitOutcomeTests(): void {
     const entry = source("src/lib/phoenix-crm/entry-rules.ts");
     assert.ok(entry.includes("outcome: parseVisitOutcome(body)"), "the draft parses it");
 
-    const web = source("src/components/phoenix-crm/visits-tab.tsx");
+    // The web visit form has been its own file since the one-tap rebuild (2026-09-29).
+    const web = source("src/components/phoenix-crm/visit-log-form.tsx");
     const phone = source("mobile/src/features/crm/visits-screen.tsx");
     for (const [name, code] of [["web", web], ["phone", phone]] as const) {
       assert.ok(code.includes("VISIT_OBJECTIONS.map"), `${name}: the objections are offered`);

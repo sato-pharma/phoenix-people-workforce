@@ -26,7 +26,9 @@ import {
  *   - The plan week is the field week the company already runs on: Saturday to Wednesday, plus
  *     Thursday MORNING (accounts only), never Friday (owner rules 2026-08-02 and 2026-09-05). A week is
  *     keyed by its Saturday, and a Friday belongs to the week before it.
- *   - A day that has passed is fixed; a rep plans this week while it has a day ahead, and three more.
+ *   - A day that has passed is fixed; a rep plans this week while it has a day ahead, and every
+ *     field-week through the last one of NEXT month (owner, 2026-09-29), so a month is always wholly
+ *     plannable by its due date — tests/phoenix-crm-plan-board.test.ts walks every month of 2026–2028.
  *   - Ramadan switches every customer to the "special visit time". Its dates are the Umm al-Qura
  *     calendar, pinned in calendar.ts so the server and every phone agree — this test re-derives that
  *     table from `Intl` and fails on any drift, so a wrong or hand-edited year cannot ship.
@@ -85,15 +87,19 @@ export function runPhoenixCrmCalendarTests() {
   // ── Which weeks can be planned, and which days can still change ─────────────────────────────────
   assert.deepEqual(
     plannableWeeks("2026-09-17"),
-    ["2026-09-12", "2026-09-19", "2026-09-26", "2026-10-03"],
-    "on a Thursday this week still has today, so it is offered with the next three",
+    ["2026-09-12", "2026-09-19", "2026-09-26", "2026-10-03", "2026-10-10", "2026-10-17", "2026-10-24", "2026-10-31"],
+    "on a Thursday this week still has today, so it is offered with every field-week through the last one of next month",
   );
   assert.deepEqual(
     plannableWeeks("2026-09-18"),
-    ["2026-09-19", "2026-09-26", "2026-10-03"],
-    "on a Friday this week has no day left, so only the next three are offered",
+    ["2026-09-19", "2026-09-26", "2026-10-03", "2026-10-10", "2026-10-17", "2026-10-24", "2026-10-31"],
+    "on a Friday this week has no day left, so the horizon starts at the next Saturday",
   );
-  assert.deepEqual(plannableWeeks("2026-09-19", 1), ["2026-09-19", "2026-09-26"]);
+  assert.deepEqual(
+    plannableWeeks("2026-10-31"),
+    ["2026-10-31", "2026-11-07", "2026-11-14", "2026-11-21", "2026-11-28"],
+    "on a month's last Saturday its week is offered with every week of the next month, and none past it",
+  );
 
   assert.deepEqual(editablePlanDays("2026-09-12", "2026-09-17"), ["2026-09-17"], "a day that has passed is fixed; today can still change");
   assert.equal(editablePlanDays("2026-09-19", "2026-09-17").length, 6, "a week ahead can change in full");

@@ -120,65 +120,14 @@ export function speakSupported(halves: SpeakHalves): boolean {
   return halves.text !== "none" || halves.audio;
 }
 
-/** What pressing the button will actually do, said in terms of the halves this browser has. */
-export function speakPromise(halves: SpeakHalves): string {
-  if (halves.text === "live") {
-    return halves.audio
-      ? "Speak once: the words are written into the comment as you talk, and the recording is kept with the visit."
-      : "Speak once and the words are written into the comment as you talk. This browser cannot keep a recording.";
-  }
-  if (halves.text === "server") {
-    // "when you stop", never "as you talk". This browser writes nothing while he speaks, and a rep who
-    // was promised live words watches an empty field for a minute and presses Stop thinking it failed.
-    return "Speak once: the recording is kept with the visit, and the words are written into the comment when you stop. This browser cannot write them as you talk.";
-  }
-  return "Speak once and the recording is kept with the visit. This browser cannot turn speech into text, so type the comment as well.";
-}
-
-/**
- * Which of the two to believe when they disagree, said only where both halves ran.
- *
- * Either engine mishears, and a misheard brand name in a clinical note is a sale that never happened.
- * The recording cannot mishear anything, so it is the record and the text is a reading of it — and the
- * wording differs by engine because what the text IS differs: a parallel live reading, or the speech
- * service's reading of that same file.
+/*
+ * No sentence sits under the Speak button (owner, 2026-09-30 — "remove this irrelevant text"). The
+ * promise ("Speak once: …"), the accuracy line ("The text is what the speech service heard …") and the
+ * processor notice ("Your voice is sent to the browser's speech service …") were all removed from the
+ * rep's form at his instruction, reversing his 2026-09-25 ruling that put the processor notice on the
+ * microphone. Only what HAPPENS is said: the live panel, "Writing out the words", a half that did not
+ * start, and an error. Do not put an explanation back under the button.
  */
-export function speakAccuracyLine(halves: SpeakHalves): string | null {
-  if (!halves.audio || halves.text === "none") return null;
-  if (halves.text === "server") {
-    return "The text is what the speech service made of the recording, so read it before you save — the recording is what you actually said.";
-  }
-  return "The text is what the speech service heard, so read it before you save — the recording is what you actually said.";
-}
-
-/**
- * Where the voice goes. The owner ruled on 2026-09-25 that this belongs on the control and NOT on a
- * privacy page — "add the processor line to the dictation mic, not the privacy page" — because the rep
- * reads it at the moment he decides to speak. Do not move it, and do not add a second copy elsewhere.
- *
- * Nothing leaves the phone for a third party when only the recorder runs, so the line is not shown
- * then: the recording goes to Phoenix's own storage and to nobody else.
- *
- * THE TWO ENGINES SEND DIFFERENT THINGS AND THE LINE MUST SAY SO. The live engine streams his speech;
- * the server engine sends THE RECORDING ITSELF.
- *
- * 🔴 THE LIVE BRANCH USED TO PROMISE "no speech service ever reads it" ABOUT THE RECORDING, AND THAT
- * SENTENCE IS NOW RETIRED — do not restore it. Since `shouldWriteFromRecording` lets a live engine that
- * wrote nothing hand its recording to the server path, a browser can start on the live engine and still
- * end up sending the file. The old wording was true of the code that shipped this morning and became a
- * falsehood the moment the handover was added; a privacy promise that is true of the happy path only is
- * the worst kind of copy this notice can carry, so the condition is named instead of hidden.
- */
-export function speakProcessorLine(halves: SpeakHalves): string | null {
-  if (halves.text === "none") return null;
-  if (halves.text === "server") {
-    return "This browser cannot turn speech into text on its own, so Phoenix sends the recording to Groq's speech service to be written out. Nothing else reads it.";
-  }
-  const kept = halves.audio
-    ? " The recording is stored by Phoenix; if this browser writes no words at all, it is sent to Groq's speech service so they can be written out."
-    : "";
-  return `Your voice is sent to the browser's speech service — Google's on Chrome, Apple's on Safari — to be turned into text.${kept}`;
-}
 
 /** The heading on the live panel while the microphone is open. */
 export function speakLiveLabel(halves: SpeakHalves, elapsed: number): string {

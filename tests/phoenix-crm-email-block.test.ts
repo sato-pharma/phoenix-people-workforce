@@ -21,6 +21,10 @@ import { defaultTelegramPolicyFor } from "../src/lib/notifications/telegram-gove
 const EVENT_TYPES = [
   "grade_request_waiting",
   "drop_request_waiting",
+  // The rep's flow rebuilt (owner, 2026-09-29): adding a customer met outside the list, and bringing one
+  // back from the Archive, go to the district manager too.
+  "add_request_waiting",
+  "restore_request_waiting",
   "request_approved",
   "request_refused",
   "plan_waiting",

@@ -83,14 +83,17 @@ export function runPhoenixCrmStuckLoadingTests(): void {
   }
 
   // ── 3. The blast radius, so nobody re-narrows the fix to one screen ───────────────────────────
+  //
+  // The plan board (2026-09-29) replaced plan-tab.tsx and carries the same shape: every control is
+  // locked on the read, and the handlers return silently on the lock.
   {
-    const planTab = stripComments(readFileSync("src/components/phoenix-crm/plan-tab.tsx", "utf8"));
+    const planBoard = stripComments(readFileSync("src/components/phoenix-crm/plan-board.tsx", "utf8"));
     assert.ok(
-      /const locked = busy !== null \|\| resource\.loading;/.test(planTab),
-      "the plan tab locks every control on resource.loading — which is why a stuck load reads as a dead button",
+      /const locked = busy !== null \|\| resource\.loading;/.test(planBoard),
+      "the plan board locks every control on resource.loading — which is why a stuck load reads as a dead button",
     );
     assert.ok(
-      /if \(!view \|\| !view\.canEdit \|\| locked\) return;/.test(planTab),
+      /if \(!view \|\| locked\) return/.test(planBoard),
       "and the handlers return silently on it, so the press leaves no trace at all",
     );
   }

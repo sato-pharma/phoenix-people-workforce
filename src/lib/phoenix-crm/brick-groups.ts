@@ -7,15 +7,15 @@ import { normalizeArea } from "@/lib/phoenix-crm/suggestions";
  * brick be highlighted, the doctors in the same bricks are highlighted with the same colour … I want
  * the thing to be as easiest as it could be."
  *
- * Named `clusterByBrick` because plan-tab.tsx already owns a `groupByBrick` UI toggle of its own
+ * Named `clusterByBrick` because the retired plan-tab.tsx owned a `groupByBrick` UI toggle of its own
  * (the rep's switch for grouping the candidate list), and two things with one name in one file is how
  * a later edit picks the wrong one.
  *
- * This was a closure inside `AddCustomers` in plan-tab.tsx and could not be reached by the two other
- * screens that need it, so the rep's day read alphabetically while his candidates read
- * geographically. Lifted here so the picker, the planned day and the phone all group the same way,
- * from the same normaliser — `normalizeArea`, which is the module's one brick comparison key and
- * folds "Faisal " and "faisal" together.
+ * This was a closure inside `AddCustomers` in the retired plan-tab.tsx and could not be reached by the
+ * other screens that need it, so the rep's day read alphabetically while his candidates read
+ * geographically. Lifted here so the plan board's days (plan-day-panel.tsx), the visit picker and the
+ * phone all group the same way, from the same normaliser — `normalizeArea`, which is the module's one
+ * brick comparison key and folds "Faisal " and "faisal" together.
  *
  * ## Why the order is a parameter
  *

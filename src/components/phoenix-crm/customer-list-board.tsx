@@ -5,8 +5,8 @@
  *
  * Owner, 2026-09-25: "make all the list tabs have the same features and tweaks." The list opens on
  * "The list" board — bricks in colour, collapsible, six filters and an export — and the other parts
- * of the list (To validate, Customers, Left the list) read the same customers a plainer way. This
- * renders those three the board's way instead: grouped by brick with the same eight hues and the
+ * of the list (To validate, Your list, Outside the list, the Archive) read the same customers a plainer
+ * way. This renders those the board's way instead: grouped by brick with the same eight hues and the
  * same open/shut headings, the same filter row, and the same XLSX export.
  *
  * WHY A SECOND COMPONENT RATHER THAN THE BOARD ITSELF. The board (`RepsListContacts`) reads the
@@ -15,9 +15,15 @@
  * customers with no place yet, dropped customers the board no longer carries. Neither population is a
  * subset of the other, so the look is shared here rather than the data being forced through one pipe.
  * The palette, the square edges and the 1px rules are copied verbatim so the two read as one board.
+ *
+ * ONE BUTTON PER ROW (owner, 2026-09-29): Validate while the customer is not validated, Open once he
+ * is — never "Add visit", which starts only from Visits, Today or the portal's "+". The row renders
+ * its button itself from `listRowAction` (src/lib/phoenix-crm/list-request-rules.ts), so no section
+ * can hand it a second one.
  */
 
 import { useCallback, useId, useMemo, useState, type ReactNode } from "react";
+import { SlidersHorizontal } from "lucide-react";
 
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { TableSearchInput } from "@/components/ui/sortable-table";
@@ -33,6 +39,7 @@ import {
 } from "@/components/phoenix-crm/labels";
 import { placesDaysText } from "@/components/phoenix-crm/list-screens";
 import {
+  CrmButton,
   CrmCard,
   CrmCardsOnPhone,
   CrmPill,
@@ -50,6 +57,7 @@ import {
   specialityOf,
   type CustomerGroup,
 } from "@/lib/phoenix-crm/customer-list-grouping";
+import { listRowAction, requestKindLabel, type ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
 import type { ListCustomer } from "@/lib/phoenix-crm/view-types";
 import { brickTintMap, type BrickTint } from "@/components/phoenix-crm/brick-tints";
 
@@ -70,8 +78,54 @@ const LABEL_CLASS = "block text-phx-2xs font-black uppercase tracking-[0.16em] t
 const SELECT_CLASS =
   "h-11 w-full rounded-none border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 md:h-9";
 
-/** Which part of the list this is drawing — it decides the row's detail line, its pills and headers. */
-export type CustomerListVariant = "pending" | "active" | "dropped";
+/**
+ * Which part of the list this is drawing — it decides the row's detail line, its pills and headers.
+ * "pending" is To validate, "active" is Your list, "outside" is Outside the list, "dropped" the Archive.
+ */
+export type CustomerListVariant = "pending" | "active" | "outside" | "dropped";
+
+/**
+ * The one button a customer's row carries, for THIS viewer.
+ *
+ * `listRowAction` decides it (Validate while not validated, Open once he is). Only the territory's rep
+ * validates, and only a customer carried over from iReports360 has an entry the Validate screen opens
+ * on — so anyone else, or a row with no such entry, is offered Open, which is exactly what they can do.
+ */
+export function rowActionFor(customer: ListCustomer, canValidate: boolean): ListRowAction | null {
+  const action = listRowAction(customer);
+  if (action === "validate" && (!canValidate || customer.referenceContactCrmId === null)) return "open";
+  return action;
+}
+
+/** The row's one button. Nothing else is ever drawn beside it. */
+export function CustomerRowAction({
+  canValidate,
+  customer,
+  onAction,
+}: {
+  canValidate: boolean;
+  customer: ListCustomer;
+  onAction: (customer: ListCustomer, action: ListRowAction) => void;
+}) {
+  const action = rowActionFor(customer, canValidate);
+  if (!action) return null;
+  return (
+    <CrmButton onClick={() => onAction(customer, action)} size="sm" variant={action === "validate" ? "primary" : "secondary"}>
+      {action === "validate" ? "Validate" : "Open"}
+    </CrmButton>
+  );
+}
+
+/** A request waiting on the customer, and the step it is on: "Drop from the list · Waiting for SFE". */
+function waitingPills(customer: ListCustomer): ReactNode {
+  const steps = customer.waiting.filter((entry) => entry.kind !== "grade");
+  if (steps.length === 0) return null;
+  return steps.map((entry) => (
+    <CrmPill key={entry.requestId} tone="info">
+      {entry.stageLabel ? `${requestKindLabel(entry.kind)} · ${entry.stageLabel}` : requestKindLabel(entry.kind)}
+    </CrmPill>
+  ));
+}
 
 /**
  * A brick's colour, keyed off its place in the WHOLE list rather than the filtered or sorted one — a
@@ -148,11 +202,20 @@ function rowPills(customer: ListCustomer, variant: CustomerListVariant): ReactNo
     return (
       <>
         <CrmPill tone="orange">{PENDING_PILL}</CrmPill>
-        {customer.pendingDropRequestId ? <CrmPill tone="warn">Drop waiting</CrmPill> : null}
+        {waitingPills(customer)}
       </>
     );
   }
-  if (variant === "dropped") return null;
+  if (variant === "outside") {
+    // Met and validated at the door, not on the list: he counts once the add is approved.
+    return (
+      <>
+        <CrmPill tone="orange">Outside the list</CrmPill>
+        {customer.waiting.some((entry) => entry.kind === "add") ? waitingPills(customer) : <CrmPill>Not asked to add yet</CrmPill>}
+      </>
+    );
+  }
+  if (variant === "dropped") return waitingPills(customer);
   const standing = monthStanding(customer.visitsThisMonth, customer.target);
   return (
     <>
@@ -161,7 +224,7 @@ function rowPills(customer: ListCustomer, variant: CustomerListVariant): ReactNo
       {customer.pendingGradeRequestId ? (
         <CrmPill tone="info">{customer.pendingGrade ? `Grade ${customer.pendingGrade} proposed` : "Grade proposed"}</CrmPill>
       ) : null}
-      {customer.pendingDropRequestId ? <CrmPill tone="warn">Drop waiting</CrmPill> : null}
+      {waitingPills(customer)}
     </>
   );
 }
@@ -173,41 +236,50 @@ function detailText(customer: ListCustomer, variant: CustomerListVariant): strin
   return placesDaysText(customer);
 }
 
-/** The month line beside a row — pending never says "not visited", dropped says when it left. */
+/**
+ * The month line beside a row. Pending and outside never say "not visited" — their visits are saved and
+ * count once the customer is validated and on the list. The Archive says since when.
+ */
 function monthText(customer: ListCustomer, variant: CustomerListVariant): string {
-  if (variant === "pending") return pendingVisitsText(customer.visitsThisMonth);
-  if (variant === "dropped") return `Left the list ${cairoStamp(customer.statusChangedAt)}`;
+  if (variant === "pending" || variant === "outside") return pendingVisitsText(customer.visitsThisMonth);
+  if (variant === "dropped") return `In the Archive since ${cairoStamp(customer.statusChangedAt)}`;
   return monthVisitsText(customer.visitsThisMonth, customer.target);
 }
 
 const DETAIL_HEADER: Record<CustomerListVariant, string> = {
   pending: "Address in iReports360",
   active: "Places and days",
-  dropped: "Why it left",
+  outside: "Places and days",
+  dropped: "Why it is in the Archive",
 };
 const MONTH_HEADER: Record<CustomerListVariant, string> = {
   pending: "This month",
   active: "This month",
-  dropped: "Left the list",
+  outside: "This month",
+  dropped: "In the Archive",
 };
 
 export function CustomerListBoard({
+  canValidate,
   customers,
   exportTitle,
+  onRowAction,
   repName,
-  rowActions,
   variant,
 }: {
+  /** The viewer is the territory's rep, who validates. Anyone else is offered Open on every row. */
+  canValidate: boolean;
   /** The whole status subset for this part of the list, unfiltered — the board does its own filtering. */
   customers: readonly ListCustomer[];
-  /** The download's sheet name and title, e.g. "Customers". */
+  /** The download's sheet name and title, e.g. "Your list". */
   exportTitle: string;
+  /** The row's one button was pressed: Validate or Open (`rowActionFor`). */
+  onRowAction: (customer: ListCustomer, action: ListRowAction) => void;
   /** Whose list this is, by name — heads the export (owner's standing rule: names, never seat codes). */
   repName: string;
-  /** The section's own buttons on a row: Validate / Add a visit / Open, or Bring back / Open. */
-  rowActions: (customer: ListCustomer) => ReactNode;
   variant: CustomerListVariant;
 }) {
+  const rowAction = (customer: ListCustomer) => <CustomerRowAction canValidate={canValidate} customer={customer} onAction={onRowAction} />;
   const [brick, setBrick] = useState("");
   const [listType, setListType] = useState("");
   const [grade, setGrade] = useState("");
@@ -271,17 +343,42 @@ export function CustomerListBoard({
       visits: customer.visitsThisMonth,
       target: customer.target ?? "",
       standing: variant === "active" ? monthStanding(customer.visitsThisMonth, customer.target).label : "",
-      left_on: variant === "dropped" ? cairoStamp(customer.statusChangedAt) : "",
+      archived_on: variant === "dropped" ? cairoStamp(customer.statusChangedAt) : "",
     })),
   );
 
-  const filtersOn = [brick, listType, activity, grade, speciality, needle].filter(Boolean).length;
+  // The toggle counts only what it hides. The search stays in sight on a phone, so what it holds is
+  // already on screen and is not counted twice.
+  const filtersOn = [brick, listType, activity, grade, speciality].filter(Boolean).length;
+  const clearAll = () => {
+    setBrick("");
+    setListType("");
+    setActivity("");
+    setGrade("");
+    setSpeciality("");
+    setQuery("");
+  };
 
   return (
     <div className="space-y-3 border-t border-slate-100 px-4 py-5 sm:px-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        {/* On a phone the filter row folds behind this one toggle, which says how many filters are
-            on; from `md` up the row is always open and the toggle is gone. */}
+      {/* ONE ROW OF CONTROLS, IN TWO ORDERS. On a phone the search leads — it is what a rep reaches for
+          standing in the street — with the Filters toggle and the export beside it, and the five selects
+          fold behind the toggle, which says how many are on so a narrowed list never passes for the
+          whole one. From `md` up the selects are always open and come first, as they always did.
+          The selects' wrapper is `contents` from `md`, so they wrap in the same row as the search
+          without the search being drawn twice; `md:order-first` is what puts them ahead of it. */}
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="block w-full sm:w-64">
+          <span className={LABEL_CLASS}>Search</span>
+          <TableSearchInput
+            className="mt-1"
+            onChange={setQuery}
+            onClear={() => setQuery("")}
+            placeholder="Customer, specialty or address"
+            size="md"
+            value={query}
+          />
+        </label>
         <button
           aria-controls={filtersId}
           aria-expanded={filtersOpen}
@@ -289,74 +386,14 @@ export function CustomerListBoard({
           onClick={() => setFiltersOpen((open) => !open)}
           type="button"
         >
-          <span className="min-w-0 break-words">{filtersOn > 0 ? `Filters · ${filtersOn} on` : "Filters"}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <SlidersHorizontal aria-hidden className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+            <span className="min-w-0 break-words">{filtersOn > 0 ? `Filters · ${filtersOn} on` : "Filters"}</span>
+          </span>
           <GroupCaret open={filtersOpen} />
         </button>
-        {/* `hidden` and `flex` are never written together: which of two display utilities wins is
-            the stylesheet's order, not the class list's. */}
-        <div className={filtersOpen ? "flex flex-wrap items-end gap-3" : "hidden flex-wrap items-end gap-3 md:flex"} id={filtersId}>
-          <label className="block w-full sm:w-56">
-            <span className={LABEL_CLASS}>Brick</span>
-            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setBrick(event.target.value)} value={brick}>
-              <option value="">All bricks</option>
-              {displayOrder(allGroups).map((group) => (
-                <option key={group.key} value={group.key}>
-                  {group.mapped ? group.heading : `${group.heading} — no brick yet`}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block w-full sm:w-44">
-            <span className={LABEL_CLASS}>List</span>
-            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setListType(event.target.value)} value={listType}>
-              <option value="">PM and AM lists</option>
-              <option value="PM">PM list only</option>
-              <option value="AM">AM list only</option>
-            </select>
-          </label>
-          <label className="block w-full sm:w-52">
-            <span className={LABEL_CLASS}>This month</span>
-            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setActivity(event.target.value)} value={activity}>
-              <option value="">All activity</option>
-              <option value="unvisited">Not visited this month</option>
-              <option value="visited">Visited this month</option>
-            </select>
-          </label>
-          <label className="block w-full sm:w-40">
-            <span className={LABEL_CLASS}>Grade</span>
-            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setGrade(event.target.value)} value={grade}>
-              <option value="">All grades</option>
-              {gradeOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block w-full sm:w-56">
-            <span className={LABEL_CLASS}>Specialty</span>
-            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setSpeciality(event.target.value)} value={speciality}>
-              <option value="">All specialties</option>
-              {specialityOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block w-full sm:w-64">
-            <span className={LABEL_CLASS}>Search</span>
-            <TableSearchInput
-              className="mt-1"
-              onChange={setQuery}
-              onClear={() => setQuery("")}
-              placeholder="Customer, specialty or address"
-              size="md"
-              value={query}
-            />
-          </label>
-        </div>
         <ExportXlsxButton
+          className="h-11 md:ml-auto md:h-9"
           columns={[
             { key: "brick", label: "Brick" },
             { key: "area", label: "Area" },
@@ -368,13 +405,66 @@ export function CustomerListBoard({
             { key: "visits", label: "Visits this month", numeric: true },
             { key: "target", label: "Target", numeric: true },
             ...(variant === "active" ? [{ key: "standing", label: "Standing" }] : []),
-            ...(variant === "dropped" ? [{ key: "left_on", label: "Left the list" }] : []),
+            ...(variant === "dropped" ? [{ key: "archived_on", label: "In the Archive since" }] : []),
           ]}
           rows={exportRows}
           sheetName={exportTitle}
           subtitle={`${repName} · grouped by brick, as held by the CRM`}
           title={exportTitle}
         />
+        {/* `hidden` and `contents` are never written together: which of two display utilities wins is
+            the stylesheet's order, not the class list's. */}
+        <div className={filtersOpen ? "contents" : "hidden md:contents"} id={filtersId}>
+          <label className="block w-full sm:w-56 md:order-first">
+            <span className={LABEL_CLASS}>Brick</span>
+            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setBrick(event.target.value)} value={brick}>
+              <option value="">All bricks</option>
+              {displayOrder(allGroups).map((group) => (
+                <option key={group.key} value={group.key}>
+                  {group.mapped ? group.heading : `${group.heading} — no brick yet`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block w-full sm:w-44 md:order-first">
+            <span className={LABEL_CLASS}>List</span>
+            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setListType(event.target.value)} value={listType}>
+              <option value="">PM and AM lists</option>
+              <option value="PM">PM list only</option>
+              <option value="AM">AM list only</option>
+            </select>
+          </label>
+          <label className="block w-full sm:w-52 md:order-first">
+            <span className={LABEL_CLASS}>This month</span>
+            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setActivity(event.target.value)} value={activity}>
+              <option value="">All activity</option>
+              <option value="unvisited">Not visited this month</option>
+              <option value="visited">Visited this month</option>
+            </select>
+          </label>
+          <label className="block w-full sm:w-40 md:order-first">
+            <span className={LABEL_CLASS}>Grade</span>
+            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setGrade(event.target.value)} value={grade}>
+              <option value="">All grades</option>
+              {gradeOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block w-full sm:w-56 md:order-first">
+            <span className={LABEL_CLASS}>Specialty</span>
+            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setSpeciality(event.target.value)} value={speciality}>
+              <option value="">All specialties</option>
+              {specialityOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <p className="text-phx-2xs font-semibold text-slate-400">
@@ -383,7 +473,14 @@ export function CustomerListBoard({
       </p>
 
       {visible.length === 0 ? (
-        <p className="px-3 py-6 text-center text-xs text-slate-400">Nothing matches this filter.</p>
+        // One press back to the whole list: a filter the rep set on a phone is folded out of sight, so
+        // the way out of "nothing matches" sits where he is looking rather than behind the toggle.
+        <div className="grid justify-items-center gap-2 px-3 py-6 text-center">
+          <p className="text-xs font-semibold text-slate-500">Nothing matches this filter.</p>
+          <CrmButton onClick={clearAll} size="sm">
+            Clear the filters
+          </CrmButton>
+        </div>
       ) : (
         <div className="border border-slate-200">
           {visible.map((entry) => {
@@ -402,11 +499,11 @@ export function CustomerListBoard({
                     <CrmCardsOnPhone>
                       {entry.rows.map((customer) => (
                         <CrmCard
-                          actions={rowActions(customer)}
+                          actions={rowAction(customer)}
                           key={customer.customerId}
                           meta={customerMetaText(customer)}
                           status={rowPills(customer, variant)}
-                          title={customer.name}
+                          title={<span dir="auto">{customer.name}</span>}
                         >
                           <p className="break-words text-xs font-semibold leading-5 text-slate-600">{detailText(customer, variant)}</p>
                           {variant === "pending" ? (
@@ -442,7 +539,9 @@ export function CustomerListBoard({
                         {entry.rows.map((customer) => (
                           <tr key={customer.customerId}>
                             <td className={crmTdClassName}>
-                              <p className="font-black text-slate-950">{customer.name}</p>
+                              <p className="font-black text-slate-950">
+                                <span dir="auto">{customer.name}</span>
+                              </p>
                               <p className="mt-0.5 text-xs text-slate-500">{customerMetaText(customer)}</p>
                             </td>
                             <td className={crmTdClassName}>
@@ -461,8 +560,8 @@ export function CustomerListBoard({
                               <p className="mt-1 text-xs text-slate-500">{monthText(customer, variant)}</p>
                             </td>
                             <td className={crmTdClassName}>
-                              {/* Stacked, each the column's full width — the board's Actions column does the same. */}
-                              <div className="grid gap-1.5 [&>button]:w-full">{rowActions(customer)}</div>
+                              {/* The column's full width — the board's Actions column does the same. */}
+                              <div className="grid gap-1.5 [&>button]:w-full">{rowAction(customer)}</div>
                             </td>
                           </tr>
                         ))}

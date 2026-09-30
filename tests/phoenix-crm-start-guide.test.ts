@@ -15,8 +15,12 @@ import {
  *
  * It exists because of something measured on production: on 25 September a rep recorded NINE voice
  * notes across a full working day, every one of them reaching the bucket, and not one attached to a
- * saved visit — because the photo is what dates and records a visit, and he never took one. Nobody
- * in the company had captured a place. The guide leads on exactly those two facts.
+ * saved visit — because the photo is what dated and recorded a visit then, and he never took one.
+ * Nobody in the company had captured a place. The guide led on exactly those two facts.
+ *
+ * Since 2026-09-29 a visit needs NO photo — "Log visit" is one tap, and the server takes the time (the
+ * owner's rebuilt flow). So the guide now leads on the two facts that replaced them: logging is one
+ * tap, and a voice note is kept only with the visit it belongs to.
  *
  * WHAT THIS FILE PINS, and why each one is here rather than assumed:
  *
@@ -86,8 +90,13 @@ export async function runPhoenixCrmStartGuideTests(): Promise<void> {
     // The two facts the guide exists to deliver.
     const body = bodyOf(html);
     assert.ok(
+      /Log visit is one tap|تسجيل الزيارة ضغطة واحدة/.test(body),
+      `${language}: the page says logging a visit is one tap`,
+    );
+    assert.equal(
       /photo is what records the visit|الصورة هي ما يسجل الزيارة/.test(body),
-      `${language}: the page says the photo is what records the visit`,
+      false,
+      `${language}: the page no longer tells a rep a visit needs a photo (retired 2026-09-29)`,
     );
     assert.ok(
       /stored only when you press|لا تُحفظ إلا عند الضغط/.test(body),
