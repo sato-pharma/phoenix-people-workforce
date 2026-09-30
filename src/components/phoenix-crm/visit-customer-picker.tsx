@@ -265,6 +265,64 @@ export function VisitCustomerPicker({
 }
 
 /**
+ * "Your week is still a draft." Shown INSTEAD of the out-of-plan reason screen when the customer is
+ * on his own plan for today and the week simply has not gone for review yet.
+ *
+ * 🔴 WHY IT EXISTS (owner, 2026-09-30, on his own walk: "when I press add visit on any one of them
+ * from today, it redirects me to out of plan — how come?"). Today shows the day he planned whatever
+ * the plan's status, but a visit counts as PLANNED only against a plan that reached review BEFORE the
+ * visit's server-issued `captured_at`. So every one of his own planned customers was landing here
+ * being asked to justify, in writing, to his manager and then the SFE, why he had gone off a plan he
+ * had in fact made. The counting rule is right and does not move; this screen removes the punishment.
+ *
+ * One tap sends the week and the visit is then planned, counted, with nobody to justify it to. If he
+ * would rather not send, the off-plan route is one tap away — it never blocks him, and it never sends
+ * anything on his behalf.
+ */
+export function SendWeekFirst({
+  customer,
+  onBack,
+  onOutOfPlan,
+  onSend,
+  sending,
+  problem,
+  canSend,
+}: {
+  customer: VisitCustomerOption;
+  onBack: () => void;
+  onOutOfPlan: () => void;
+  onSend: () => void;
+  sending: boolean;
+  problem: string | null;
+  canSend: boolean;
+}) {
+  return (
+    <div className="grid min-w-0 gap-3">
+      <CrmBackBar onBack={onBack} />
+      <CrmBlock title={`${customer.name} is on your plan for today`}>
+        <div className="grid min-w-0 gap-3">
+          <p className="break-words text-sm font-semibold leading-6 text-slate-700">
+            Your week has not been sent for review yet, so this visit cannot be counted as planned. Send the week and it
+            counts — nothing else on the day changes.
+          </p>
+          {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
+          <div className="flex min-w-0 flex-wrap gap-2">
+            {canSend ? (
+              <CrmButton disabled={sending} onClick={onSend} variant="primary">
+                {sending ? "Sending the week\u2026" : "Send this week and log the visit"}
+              </CrmButton>
+            ) : null}
+            <CrmButton onClick={onOutOfPlan} variant="secondary">
+              Log it off the plan instead
+            </CrmButton>
+          </div>
+        </div>
+      </CrmBlock>
+    </div>
+  );
+}
+
+/**
  * Why he went to a customer off today's plan — asked BEFORE the visit form, so the form is the same
  * form for every visit. A sentence his manager can act on; it is his own approval, and he sees it.
  */

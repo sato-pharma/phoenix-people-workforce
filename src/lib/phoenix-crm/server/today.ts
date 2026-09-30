@@ -51,6 +51,18 @@ export type TodayView = {
   emptyReason: string | null;
   /** His week is still a draft: said above the day, never instead of it. */
   unsentNote: string | null;
+  /**
+   * The draft holding today's stops, so Today can SEND it where he is standing.
+   *
+   * 🔴 THIS IS WHAT MAKES THE DAY USABLE, NOT A CONVENIENCE (owner, 2026-09-30, on his own walk:
+   * "when I press add visit on any one of them from today, it redirects me to out of plan — how
+   * come?"). A visit counts as PLANNED only against a plan that reached review BEFORE the visit's
+   * server-issued `captured_at`, so while the week sits in draft every one of his own planned
+   * customers routes to the out-of-plan reason screen — a written reason and a manager-then-SFE
+   * approval, for keeping his plan open. The rule is right and must not loosen; what was missing was
+   * the one tap that makes it moot. Null once the week is sent, and null when there is no day to send.
+   */
+  unsentPlan: { planId: string; version: number } | null;
   /** What he planned the day as, when it was not only calls — a meeting, training, a sales day. */
   plannedActivity: PlannedActivityRow | null;
   /** What he recorded the day as, if anything. A record only: it moves no figure. */
@@ -145,5 +157,9 @@ export async function loadPhoenixCrmToday(
       stops: build.stops.length,
     }),
     unsentNote: planUnsentNote({ hasPlan: planned.hasPlan, sent: planned.sent, stops: build.stops.length }),
+    unsentPlan:
+      !planned.sent && planned.planId !== null && planned.version !== null && build.stops.length > 0
+        ? { planId: planned.planId, version: planned.version }
+        : null,
   };
 }

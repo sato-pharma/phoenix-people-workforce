@@ -1,10 +1,10 @@
 "use client";
 
 import { CalendarDays, Check, Plus } from "lucide-react";
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { brickTintMap, type BrickTint } from "@/components/phoenix-crm/brick-tints";
-import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
+import { crmPost, crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
 import { countText, dayLabelLong } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
 import {
@@ -385,6 +385,62 @@ function BrickStops({
 
 /** What the day was planned as, and what it was recorded as — a record only; it moves no figure. */
 /**
+ * His week is still a draft, and the day below it is real. One tap sends it for review from where he
+ * is standing.
+ *
+ * 🔴 THIS IS THE CURE FOR THE OUT-OF-PLAN TRAP, not a shortcut (owner, 2026-09-30, on his own walk:
+ * "when I press add visit on any one of them from today, it redirects me to out of plan — how come?").
+ * A visit counts as PLANNED only against a plan that reached review BEFORE the visit's server-issued
+ * `captured_at`, so while the week sits in draft every one of his own planned customers routes to the
+ * out-of-plan reason screen: a written reason, then his manager, then the SFE — for the crime of
+ * keeping his own plan open. That rule is correct and does not loosen here. What was missing is this
+ * button, which makes the whole question go away in one tap and never blocks him if he skips it.
+ */
+function UnsentWeek({ onSent, view }: { onSent: () => void; view: TodayView }) {
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const plan = view.unsentPlan;
+  if (!view.unsentNote) return null;
+  return (
+    <div className="border-t border-slate-100 px-4 pt-4 sm:px-5">
+      <CrmNote tone="warn">
+        <div className="grid min-w-0 gap-2">
+          <span className="break-words">{view.unsentNote}</span>
+          {failed ? <span className="break-words font-black">{failed}</span> : null}
+          {plan ? (
+            <div>
+              <CrmButton
+                disabled={sending}
+                onClick={() => {
+                  setFailed(null);
+                  setSending(true);
+                  void crmPost<unknown>(
+                    "/api/phoenix-crm/plans/submit",
+                    { planId: plan.planId, action: "submit", expectedVersion: plan.version },
+                    "plan",
+                  )
+                    .then(() => onSent())
+                    .catch((error: unknown) =>
+                      // Never a dead end: the day and every Add visit stay exactly as they were.
+                      setFailed(error instanceof Error ? error.message : "The week was not sent. Open Plan and send it there."),
+                    )
+                    .finally(() => setSending(false));
+                }}
+                size="sm"
+                variant="primary"
+              >
+                <Check aria-hidden className="h-4 w-4" />
+                {sending ? "Sending…" : "Send this week"}
+              </CrmButton>
+            </div>
+          ) : null}
+        </div>
+      </CrmNote>
+    </div>
+  );
+}
+
+/**
  * The day's PHARMACIES, beside AM and PM and never inside either (the AM · PM · Pharmacies golden
  * rule). A pharmacy is feedback recorded ON a visit, so there is nothing to plan here and no "Add
  * visit" against one — this is what he took today, read back, with the customer it came from.
@@ -517,18 +573,12 @@ export function TodayTab({
       <DayGlance view={view} />
 
       {/*
-        His week is still a draft. The day is shown and every Add visit works — the note only says
-        the sending is outstanding, and links him to the one screen that does it. Never a refusal:
-        whether a visit COUNTS as planned is the server's decision against the sent plan, not this
-        screen's (owner, 2026-09-30).
+        His week is still a draft. The day is shown and every Add visit works; the note carries the one
+        tap that sends it, because until it IS sent each of his own planned customers routes to the
+        out-of-plan reason screen. Never a refusal: whether a visit COUNTS as planned is the server's
+        decision against the sent plan, not this screen's (owner, 2026-09-30).
       */}
-      {view.unsentNote ? (
-        <div className="border-t border-slate-100 px-4 pt-4 sm:px-5">
-          <CrmNote tone="warn">
-            <span className="break-words">{view.unsentNote}</span>
-          </CrmNote>
-        </div>
-      ) : null}
+      <UnsentWeek onSent={resource.reload} view={view} />
 
       {view.stops.length === 0 ? (
         <div className="border-t border-slate-100">

@@ -143,7 +143,8 @@ export function runPhoenixCrmTodayTests(): void {
       !body.includes('.in("status", ["submitted", "approved"])'),
       "Today must not filter the plan by status — a draft day is still his day",
     );
-    assert.ok(body.includes('.select("id, status")'), "it reads the status");
+    assert.ok(body.includes('.select("id, status, version")'), "it reads the status, and the version so the week can be sent from where he stands");
+    assert.ok(body.includes("planId: String((plan as Row).id)"), "and hands back the plan it read");
     assert.ok(
       body.includes('sent: status === "submitted" || status === "approved"'),
       "and reports whether it is sent, so the screen can say so without hiding the day",
@@ -176,9 +177,17 @@ export function runPhoenixCrmTodayTests(): void {
     assert.equal(planUnsentNote({ hasPlan: false, sent: false, stops: 0 }), null);
 
     const tab = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/today-tab.tsx", import.meta.url), "utf8"));
-    assert.ok(tab.includes("{view.unsentNote ?"), "the screen says it");
+    assert.ok(tab.includes("<UnsentWeek onSent={resource.reload} view={view} />"), "the screen says it");
+    // 🔴 And it ACTS: the note carries the one tap that sends the week, because until it is sent every
+    // one of his own planned customers routes to the out-of-plan reason screen (owner, 2026-09-30).
+    const noteAt = tab.indexOf("function UnsentWeek(");
+    const note = tab.slice(noteAt, tab.indexOf("\n}", noteAt));
+    assert.ok(noteAt >= 0, "the note is one component");
+    assert.ok(note.includes('action: "submit"'), "one tap sends it");
+    assert.ok(note.includes("Send this week"), "and says so in his own words");
+    assert.ok(!/useEffect|setTimeout/.test(note), "nothing sends it for him");
+    assert.ok(note.includes("if (!view.unsentNote) return null;"), "a sent week shows nothing at all");
     // It is a note, never a gate: nothing about the draft may disable Add visit or the rows.
-    assert.ok(!/unsentNote[^\n]*\?\s*null\s*:/.test(tab), "the note never stands in place of the day");
     assert.ok(!/disabled=\{[^}]*unsentNote/.test(tab), "and it never disables anything");
   }
 
@@ -266,6 +275,72 @@ export function runPhoenixCrmTodayTests(): void {
     assert.ok(route.includes("NextResponse.json({ today, success: true })"), "the route answers under the key `today`");
     assert.ok(tab.includes('useCrmGet<TodayView>(crmUrl("/api/phoenix-crm/today", { seatId, test }), "today")'), "the screen reads that key once");
     assert.equal(/data\?\.today|<\{ today: TodayView \}>/.test(tab), false, "and never opens the envelope a second time");
+  }
+
+  // ── ADD VISIT ON A DRAFT DAY NEVER ACCUSES HIM OF GOING OFF PLAN (owner, 2026-09-30) ───────────
+  //
+  // His own words, on the day Today started showing a draft: "when I press add visit on any one of
+  // them from today, it redirects me to out of plan — how come?" Both halves were behaving as written:
+  // Today shows the day he planned whatever the plan's status, and a visit counts as PLANNED only
+  // against a plan that reached review BEFORE the visit's server-issued captured_at. Between them,
+  // every one of his sixteen planned customers landed on the out-of-plan reason screen — a written
+  // reason, then his manager, then the SFE, for keeping his own plan open.
+  //
+  // 🔴 THE COUNTING RULE DOES NOT MOVE. `plannedToday` still means a SENT plan, and `routeFor` still
+  // sends anyone genuinely off the plan to the reason screen. What changed is that a customer on his
+  // OWN UNSENT DRAFT gets the one tap that sends the week, after which the visit is planned for real.
+  {
+    const visits = stripCommentsCompact(readFileSync(new URL("../src/lib/phoenix-crm/server/visits.ts", import.meta.url), "utf8"));
+    const tab = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/visits-tab.tsx", import.meta.url), "utf8"));
+    const picker = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/visit-customer-picker.tsx", import.meta.url), "utf8"));
+
+    // The two sets are read by two different functions and must stay apart.
+    assert.ok(visits.includes("plannedTodayUnsent: !planned.has(customerId) && draftToday.has(customerId),"), "the draft set is separate from the sent set");
+    assert.ok(visits.includes("const draftToday = draftPlan.sent ? new Set<string>() : new Set(draftPlan.customerIds);"), "and is empty once the week is sent");
+
+    // 🔴 The half that must never loosen: what COUNTS still requires a sent plan.
+    const counting = visits.indexOf("async function plannedCustomerIds");
+    const countingBody = visits.slice(counting, visits.indexOf("\n}", counting));
+    assert.ok(countingBody.includes('.in("status", ["submitted", "approved"])'), "plannedCustomerIds keeps its status filter");
+    assert.ok(!countingBody.includes("draftToday"), "and knows nothing about the draft");
+
+    // The route: four branches, in this order, and the draft one sits BEFORE the reason screen.
+    const route = tab.slice(tab.indexOf("function routeFor("), tab.indexOf("\n}", tab.indexOf("function routeFor(")));
+    assert.ok(route.includes('if (customer.outside) return { name: "form"'), "outside the list goes to the form");
+    assert.ok(route.includes('if (customer.plannedToday) return { name: "form"'), "a sent plan goes to the form as planned");
+    assert.ok(route.includes('if (customer.plannedTodayUnsent) return { name: "send_week"'), "his own draft offers to send the week");
+    assert.ok(route.includes('return { name: "reason"'), "and anyone genuinely off the plan still gives a reason");
+    assert.ok(
+      route.indexOf("plannedTodayUnsent") < route.indexOf('return { name: "reason"'),
+      "the draft branch must come BEFORE the reason screen, or the trap is still there",
+    );
+    assert.ok(
+      route.indexOf("customer.plannedToday)") < route.indexOf("customer.plannedTodayUnsent"),
+      "a sent plan wins over a draft, so a sent week never detours through the send screen",
+    );
+
+    // The screen sends nothing on his behalf, and never dead-ends him.
+    // 🔴 Sliced to the NEXT export, never to the first newline-brace — that one lands on the props
+    // block’s own "}) {" and cuts the JSX out of the slice, so every assertion about the SCREEN reads
+    // the props instead and passes. It did exactly that when this was first written.
+    const screenAt = picker.indexOf("export function SendWeekFirst(");
+    assert.ok(screenAt >= 0, "the screen is its own exported component");
+    const screen = picker.slice(screenAt, picker.indexOf("export function OutOfPlanReason(", screenAt));
+    assert.ok(screen.includes("</CrmBlock>"), "and the slice reaches its JSX, or nothing below is testing the screen");
+    assert.ok(screen.includes("onSend"), "he presses it himself");
+    // 🔴 The ESCAPE, checked by its own button and not by the prop — a prop left in the signature with
+    // the button deleted reads exactly like a working escape, and did when this was first written.
+    assert.ok(screen.includes("onClick={onOutOfPlan}"), "and can always go off-plan instead");
+    assert.ok(screen.includes("Log it off the plan instead"), "in words he can find on the screen");
+    assert.ok(!/useEffect|autoSend|setTimeout/.test(screen), "nothing sends the week for him");
+    assert.doesNotMatch(screen, /distance|accuracy|flag|integrity/i, "and nothing on it judges him");
+
+    // Sending it opens the form as PLANNED — that is the whole point of the detour.
+    const step = tab.slice(tab.indexOf('case "send_week":'), tab.indexOf('case "reason":'));
+    assert.ok(step.includes('action: "submit"'), "it sends the week");
+    assert.ok(step.includes('visitType: "planned"'), "and then the visit is planned");
+    assert.ok(step.includes('name: "reason"'), "declining still reaches the reason screen");
+    assert.ok(step.includes("resource.reload()"), "and the form is re-read so plannedToday is true");
   }
 
   console.log("phoenix-crm today: OK");
