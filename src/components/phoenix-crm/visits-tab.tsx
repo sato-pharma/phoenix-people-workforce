@@ -517,6 +517,11 @@ function holdsWork(step: AddStep | null): boolean {
 /**
  * Where a customer opened straight from Today goes: on today's sent plan, the form as planned; waiting
  * outside the list, the form as out of list; anyone else on the list, the reason first.
+ *
+ * 🔴 IT CANNOT LAND A PLANNED CUSTOMER ON THE REASON SCREEN ANY MORE, and that is a consequence of the
+ * owner's own ruling of 2026-09-30 rather than a special case here: Today shows the APPROVED plan only,
+ * and every approved customer is inside the set the server counts as planned. The screen that offered
+ * to send an unapproved week from inside Add visit was built that day and removed the same day.
  */
 function routeFor(customer: VisitCustomerOption): AddStep {
   if (customer.outside) return { name: "form", customerId: customer.customerId, visitType: "out_of_list", reason: null, back: null };

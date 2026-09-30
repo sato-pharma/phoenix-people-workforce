@@ -948,3 +948,93 @@ taken `ec33c37f6` out of service with it. It had not: `85f5a7db7` is one commit 
 `ec33c37f6`, so the drop's precondition held throughout. The positions had just been printed.
 Check each commit's ancestry against what is actually serving — `git merge-base --is-ancestor
 <sha> <live revision>` — never against the shape of the story.
+
+## New hook — a succeeded deploy can leave the domain routing to nothing (2026-09-30)
+
+### What was measured
+
+Merging #4866 at 10:37:26 Cairo, with three production builds already queued, the **production
+domain and staging both stopped serving at once**:
+
+```
+$ curl -s https://phoenix-hr.satopharma.com/api/healthz          # 10:37:50 Cairo
+{"status":"error","code":404,"message":"Application not found","request_id":"gn6YuZ3iTNqIY8S4nbOCzg"}
+
+$ curl -s https://phoenix-people-workforce-staging.up.railway.app/api/healthz
+{"status":"error","code":404,"message":"Application not found","request_id":"OZKWxokPQnyiGMu2jUJq2g"}
+```
+
+Two services, two domains, two different Railway request ids, the same answer. By 10:39:47 both
+were serving again with no intervention of any kind:
+
+```
+$ curl -s https://phoenix-hr.satopharma.com/api/healthz          # 10:39:47 Cairo
+{"status":"ok","service":"phoenix-hr","revision":"bca114bb2e1f5c7b9c4ba2882d1d4b06e4067e11", ...}
+```
+
+`status.railway.com` read **Fully Operational** throughout, with 100% uptime across Edge Network
+and EU West for the preceding 90 days, and no check, run or deployment row anywhere went red.
+
+### Why it is a distinct failure mode, and not one §2.3 already had
+
+The four modes §2.3 documents are all about a deploy that never *reached* the serving position —
+**withheld** (a red or queued suite, marked `SKIPPED`), **superseded** (a newer merge landed while
+it waited), **absent** (no run and no deployment row at all), and the queue **promoting an older
+build**. Every one of them is diagnosed by reading deployment states and ancestry, and in every one
+the app keeps serving *something*.
+
+This one is the opposite shape. The deploy succeeds, the states are healthy, ancestry is fine — and
+for a couple of minutes the domain has nothing attached to answer for it. `"Application not found"`
+is Railway's **router** speaking, not the application: the request reached the edge (it carries a
+Railway `request_id`) and the edge had no service for that Host. So it cannot be seen in
+`/deployments`, cannot be seen in `check-suites`, and is invisible to every tell in §2.3.
+
+### The trap it sets for a verifier
+
+`verify-shipped.mjs` reads the live `revision` as one of its four sources. With the edge answering
+404 there is no `revision` to read, so it prints:
+
+```
+  live revision  (unreadable)  (error, -)
+  note: healthz answered with no revision - the platform variable is missing, not the deploy
+VERDICT: CANNOT TELL — a source did not answer - see the notes; do not act as if it shipped
+```
+
+`CANNOT TELL` is exit **5**. A wait loop written to continue only while the verdict is `QUEUED`
+(exit 2) therefore **stops here and reports CANNOT TELL as its final answer** — which reads as a
+failed deploy when the deploy was fine and the loop simply gave up. That happened in this session:
+the loop ended on its first attempt, 24 seconds after the merge, and had to be re-armed to continue
+through exit 5 as well as exit 2. Any loop waiting on a deploy must treat 5 as transient.
+
+### What not to do
+
+Nothing. The recovery took under two minutes and needed no action. The standing bans all apply and
+all point the same way: **never `railway redeploy`, never re-merge, never `railway service source
+connect`.** A 404 at the edge is not evidence about the deploy at all, so acting on it means acting
+on no evidence — and `source connect` has repointed production before.
+
+Classify on whether a `revision` comes back **at all**:
+
+- a `revision` that is not yours → the queue, or a supersede; read states and ancestry (§2.3).
+- **no `revision`, because the edge 404s** → this mode. Read it again a minute later.
+- a `revision` that is yours → shipped.
+
+### Evidence relocated here from the §2.3 hooks, to keep AGENTS.md inside its enforced share
+
+The hook above this one in §2.3 carried its own measurements inline. They are facts worth keeping
+and cost every request to hold, so they live here now and the rules stay there:
+
+- **The flaky-cron withholding**, 2026-09-27 on `cd9e0be03`: `checks`, `mobile` and `validate` were
+  ALL green and the deploy was withheld by `deploy-drift-check.yml`'s own scheduled run, because a
+  scheduled workflow attaches its check suite to whatever commit is `main` HEAD when it fires. Fixed,
+  and pinned by `tests/deploy-drift-settled-ref.test.ts`.
+- **The four third-party suites** — `sentry`, `claude`, `vercel`, `railway-app` — were measured
+  sitting at `queued` forever on two commits that deployed `success`, which is why they never hold
+  the gate and are never worth chasing.
+- **The benign supersede**, 2026-09-28 on `047a33388`: one `inactive` status, no `in_progress` at
+  all, and the commit was carried forward inside the next deploy.
+- **Two rows per commit, both ending `inactive`**, measured 2026-09-29 across five merges: on a
+  superseded commit BOTH rows pass through `success` first, so a session reading only terminal
+  states concludes the withheld-tell fires falsely. One nearly had that hook rewritten to remove it.
+  `/deployments/<id>/statuses` returns NEWEST FIRST, so `| last` hands back the OLDEST while looking
+  final — ask `--jq 'any(.[].state; . == "success")'` over the whole history instead.

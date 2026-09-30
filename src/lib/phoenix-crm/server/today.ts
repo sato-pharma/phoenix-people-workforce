@@ -14,7 +14,6 @@ import {
   buildTodayStops,
   compareTodayStops,
   NO_PLACE_YET,
-  planUnsentNote,
   todayEmptyReason,
   type PlannedStop,
   type TodayBuild,
@@ -49,8 +48,10 @@ export type TodayView = {
   target: { am: number; pm: number };
   canAdd: boolean;
   emptyReason: string | null;
-  /** His week is still a draft: said above the day, never instead of it. */
-  unsentNote: string | null;
+  /**
+   * Why there is nothing to show, in one sentence — including which state an unapproved plan is in
+   * (owner, 2026-09-30). One sentence, never two: `todayEmptyReason` folds the plan's status in.
+   */
   /** What he planned the day as, when it was not only calls — a meeting, training, a sales day. */
   plannedActivity: PlannedActivityRow | null;
   /** What he recorded the day as, if anything. A record only: it moves no figure. */
@@ -76,15 +77,18 @@ export async function loadPhoenixCrmToday(
   ]);
 
   const byId = new Map(customers.map((row) => [String(row.id), row]));
+  // 🔴 THE APPROVED PLAN ONLY (owner, 2026-09-30). A plan still waiting on someone shows no stops at
+  // all — `planNote` says which state it is in instead. Today is the day he has been cleared to work.
+  const approvedIds = planned.status === "approved" ? planned.customerIds : [];
   // Where the ones not validated yet sit — they have no clinic, and a day he cannot read as a route
   // is not a day he can work. Only the planned ones are looked up.
   const references = await loadPlannerReferences(
     seat.seatId,
     isTest,
-    planned.customerIds.map((customerId) => byId.get(customerId)).filter((row): row is NonNullable<typeof row> => Boolean(row)),
+    approvedIds.map((customerId) => byId.get(customerId)).filter((row): row is NonNullable<typeof row> => Boolean(row)),
   );
   const stops: PlannedStop[] = [];
-  for (const customerId of planned.customerIds) {
+  for (const customerId of approvedIds) {
     const row = byId.get(customerId);
     // Planned before the customer left the list. He is not a stop any more, and the Plan screen is
     // where that is explained — this screen is only what he is going to do today.
@@ -140,10 +144,9 @@ export async function loadPhoenixCrmToday(
     dayActivity,
     canSetDayActivity: canWriteAsRep(viewer, seat, isTest),
     emptyReason: todayEmptyReason({
-      hasPlan: planned.hasPlan,
+      status: planned.status,
       isFieldDay: planDayListTypes(date).length > 0,
       stops: build.stops.length,
     }),
-    unsentNote: planUnsentNote({ hasPlan: planned.hasPlan, sent: planned.sent, stops: build.stops.length }),
   };
 }

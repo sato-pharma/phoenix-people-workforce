@@ -51,6 +51,7 @@ import {
   type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
 import { VisitsTab, type PendingValidate, type PendingVisit } from "@/components/phoenix-crm/visits-tab";
+import { PHOENIX_CRM_PORTAL_BASE } from "@/lib/phoenix-crm/modules";
 import type { PhoenixCrmOverview, PhoenixCrmTabs, TerritorySummary } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -368,8 +369,20 @@ export function PhoenixCrmApp({
     setAsking(null);
     setNotice(null);
     try {
+      // 🔴 EACH MODULE HAS ITS OWN ADDRESS ON THE PORTAL (owner, 2026-09-30, the split modules). The
+      // switch stays IN PAGE — that is what lets the page ask before dropping work he has started —
+      // but the address follows it, so the tab he is looking at is the tab his link reopens.
+      //
+      // `?add=` is dropped on the way: it is an instruction to open something on ARRIVAL, and leaving
+      // it behind would re-open that form every time he came back to the address.
       const url = new URL(window.location.href);
-      url.searchParams.set("tab", next);
+      if (surface === "portal") {
+        url.pathname = `${PHOENIX_CRM_PORTAL_BASE}/${next}`;
+        url.searchParams.delete("tab");
+        url.searchParams.delete("add");
+      } else {
+        url.searchParams.set("tab", next);
+      }
       window.history.replaceState(null, "", url);
     } catch {
       // The address keeps the old tab; nothing on the page reads it back.

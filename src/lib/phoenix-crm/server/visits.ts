@@ -70,7 +70,7 @@ import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
 import { describeTerritory, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import {
   isUnplannedKind,
   isUnplannedVisitStatus,
@@ -598,7 +598,7 @@ export async function plannedCustomersOn(
   seatId: string,
   isTest: boolean,
   date: string,
-): Promise<{ hasPlan: boolean; sent: boolean; customerIds: string[] }> {
+): Promise<{ status: PhoenixCrmPlanStatus | null; customerIds: string[] }> {
   const supabase = getSupabaseAdmin();
   const { data: plan, error } = await supabase
     .from("phoenix_crm_plans")
@@ -608,19 +608,15 @@ export async function plannedCustomersOn(
     .eq("week_start", fieldWeekStart(date))
     .maybeSingle();
   throwIfError(error);
-  if (!plan) return { hasPlan: false, sent: false, customerIds: [] };
-  const status = String((plan as Row).status ?? "");
+  if (!plan) return { status: null, customerIds: [] };
+  const status = String((plan as Row).status ?? "") as PhoenixCrmPlanStatus;
   const items = await supabase
     .from("phoenix_crm_plan_items")
     .select("customer_id")
     .eq("plan_id", String((plan as Row).id))
     .eq("plan_date", date);
   throwIfError(items.error);
-  return {
-    hasPlan: true,
-    sent: status === "submitted" || status === "approved",
-    customerIds: ((items.data ?? []) as Row[]).map((row) => String(row.customer_id)),
-  };
+  return { status, customerIds: ((items.data ?? []) as Row[]).map((row) => String(row.customer_id)) };
 }
 
 export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown }): Promise<VisitFormView> {
