@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 
+import { VISIT_DAY_CUTOFF_HOURS } from "../src/lib/phoenix-crm/calendar.ts";
 import {
   buildPhoenixCrmStartGuide,
   isStartGuideLanguage,
@@ -150,5 +152,103 @@ export async function runPhoenixCrmStartGuideTests(): Promise<void> {
       START_GUIDE_UI_LABELS.every((label) => buildPhoenixCrmStartGuide("ar").includes(startGuideUiLabel(label))),
       "every label the guide names is actually on the Arabic page",
     );
+  }
+
+  // ── KEPT UPDATED: the page cannot quietly fall behind the screens ────────────────────────────
+  //
+  // Owner, 2026-10-01: "UPDATE AND KEEP ALWAYS UPDATED ARABIC OR EN". A guide that drifts sends a rep
+  // to a button that no longer exists, which is the whole reason this page lives beside the code
+  // rather than in a file somebody keeps. These four pins are the part a test can hold; a NEW field
+  // nobody wrote a line about is not mechanically catchable, and the module header says so plainly.
+  {
+    // 1. THE LABEL LIST IS COMPLETE. Read back out of the built pages, so a label added to the prose
+    //    without being registered is caught — and it matters: the <bdi> isolation check above can
+    //    only strip labels it knows, so an unregistered one ships bare on the Arabic page. "Capture
+    //    location" was in exactly that state before this block existed.
+    const registered = new Set<string>(START_GUIDE_UI_LABELS);
+    for (const language of START_GUIDE_LANGUAGES) {
+      const used = [...buildPhoenixCrmStartGuide(language).matchAll(/<bdi><strong>([^<]+)<\/strong><\/bdi>/g)].map(
+        (m) => m[1],
+      );
+      assert.ok(used.length > 0, `${language}: the page names at least one button`);
+      for (const label of used) {
+        assert.ok(
+          registered.has(label),
+          `${language}: "${label}" is named on the page but missing from START_GUIDE_UI_LABELS — register it, ` +
+            "or it escapes the <bdi> isolation check and ships bare on the Arabic page",
+        );
+      }
+    }
+
+    // 2. EVERY LABEL STILL EXISTS ON A REAL SCREEN. This is the pin that makes a RENAME impossible to
+    //    ship quietly: rename the button and the guide goes red in the same PR that renamed it.
+    const componentDir = new URL("../src/components/phoenix-crm/", import.meta.url);
+    const screens = readdirSync(componentDir)
+      .filter((name) => name.endsWith(".tsx") || name.endsWith(".ts"))
+      .map((name) => readFileSync(new URL(name, componentDir), "utf8"))
+      .join("\n");
+    assert.ok(screens.length > 10_000, "the screens were actually read, rather than an empty directory passing");
+    for (const label of START_GUIDE_UI_LABELS) {
+      assert.ok(
+        screens.includes(label),
+        `the guide names "${label}" but no Phoenix CRM screen contains that text any more — the button was ` +
+          "renamed or removed, and the guide now sends a rep looking for something that is not there",
+      );
+    }
+
+    // 3. THE DEADLINE IS READ, NOT TYPED. `VISIT_DAY_CUTOFF_HOURS` is the one place the 02:00 rule
+    //    lives (owner, 2026-09-29: "maximum 2 AM"); a guide that hard-codes it drifts the day it moves.
+    const en = buildPhoenixCrmStartGuide("en");
+    assert.ok(
+      en.includes(`until ${VISIT_DAY_CUTOFF_HOURS} AM`),
+      `the English page must say "until ${VISIT_DAY_CUTOFF_HOURS} AM", matching VISIT_DAY_CUTOFF_HOURS`,
+    );
+    // Arabic spells the hour as a word, so the pin is the ARABIC NUMERAL WORD for the same figure —
+    // checked against a small map rather than a digit, because the page reads "الثانية صباحاً".
+    const arabicHourWord: Record<number, string> = { 1: "الواحدة", 2: "الثانية", 3: "الثالثة", 4: "الرابعة" };
+    const hourWord = arabicHourWord[VISIT_DAY_CUTOFF_HOURS];
+    assert.ok(hourWord, `no Arabic word is known for hour ${VISIT_DAY_CUTOFF_HOURS} — add it to this map`);
+    assert.ok(
+      buildPhoenixCrmStartGuide("ar").includes(`حتى الساعة ${hourWord} صباحاً`),
+      `the Arabic page must say the same hour as the English one (${VISIT_DAY_CUTOFF_HOURS} AM)`,
+    );
+
+    // 4. NEITHER LANGUAGE IS A STEP OR A NOTE BEHIND THE OTHER. The Arabic page is the half that gets
+    //    forgotten, because the English one is the half a reviewer reads — so an English-only addition
+    //    is the exact shape of the drift the owner asked to prevent, and it is cheap to catch.
+    const counts = START_GUIDE_LANGUAGES.map((language) => {
+      const html = buildPhoenixCrmStartGuide(language);
+      return {
+        language,
+        steps: [...html.matchAll(/<span class="n">\d+<\/span>/g)].length,
+        notes: [...html.matchAll(/<div class="note">/g)].length,
+      };
+    });
+    const [first, ...rest] = counts;
+    for (const other of rest) {
+      assert.equal(
+        other.steps,
+        first.steps,
+        `${other.language} has ${other.steps} steps and ${first.language} has ${first.steps} — one language was updated alone`,
+      );
+      assert.equal(
+        other.notes,
+        first.notes,
+        `${other.language} has ${other.notes} notes and ${first.language} has ${first.notes} — one language was updated alone`,
+      );
+    }
+
+    // 5. The phone the rep types is on BOTH pages — it is the newest thing the flow asks of him
+    //    (owner, 2026-09-30, and the reason this guide was revisited at all).
+    for (const language of START_GUIDE_LANGUAGES) {
+      assert.ok(
+        buildPhoenixCrmStartGuide(language).includes(startGuideUiLabel("Phone")),
+        `${language}: the page names the Phone field the rep fills in at validation`,
+      );
+      assert.ok(
+        buildPhoenixCrmStartGuide(language).includes(startGuideUiLabel("Change the details")),
+        `${language}: and where he corrects it afterwards`,
+      );
+    }
   }
 }

@@ -7,6 +7,16 @@
  * beside the screens it describes, wears the house identity from the one module that owns it, and is
  * regenerated on every request.
  *
+ * 🔴 IT IS UPDATED IN THE SAME PR AS THE FLOW IT DESCRIBES — BOTH LANGUAGES, NEVER ONE (owner,
+ * 2026-10-01: "UPDATE AND KEEP ALWAYS UPDATED ARABIC OR EN"). A change to the rep's screens that
+ * leaves this page alone is the rot the module header above describes, and the Arabic page is the
+ * half that gets forgotten, because the English one is the half a reviewer reads. What the test can
+ * enforce mechanically, it does: every label either page names must still exist as a real string in
+ * `src/components/phoenix-crm/`, every label they use must be registered in START_GUIDE_UI_LABELS,
+ * the deadline for logging a visit is read from `VISIT_DAY_CUTOFF_HOURS` rather than typed, and both
+ * pages must carry the same count of steps and notes. What it cannot enforce is a NEW field nobody
+ * mentioned here — so adding one to the rep's flow means adding a line to both pages in that PR.
+ *
  * 🔴 NOTHING ON EITHER PAGE TELLS A REP HE IS BEING CHECKED — no distance, no accuracy, no flag, not
  * the existence of a check. That is Golden Rule #1's BLIND half (`AGENTS.md` §4), and a start guide
  * is precisely where a well-meaning sentence about "making sure you are at the clinic" would land.
@@ -56,8 +66,32 @@ export function startGuideUiLabel(label: string): string {
 
 const ui = startGuideUiLabel;
 
-/** The labels this guide names, exactly as the visit screen spells them. */
-export const START_GUIDE_UI_LABELS = ["Visits", "Planned visit", "Unplanned visit", "Out of plan", "Out of list", "AM", "PM", "Log visit", "List", "Validate", "Open"] as const;
+/**
+ * The labels this guide names, exactly as the screens spell them.
+ *
+ * 🔴 KEPT HONEST IN BOTH DIRECTIONS BY THE TEST, because a hand-kept list like this is the half that
+ * rots: every label the pages actually use must be registered here — or it escapes the `<bdi>` check
+ * and ships bare on the Arabic page — and every label registered here must still exist as a real
+ * string in `src/components/phoenix-crm/`, or the guide is sending a rep to a button that was
+ * renamed. "Capture location" sat on both pages while missing from this list, uncaught for exactly
+ * that reason.
+ */
+export const START_GUIDE_UI_LABELS = [
+  "Visits",
+  "Planned visit",
+  "Unplanned visit",
+  "Out of plan",
+  "Out of list",
+  "AM",
+  "PM",
+  "Log visit",
+  "List",
+  "Validate",
+  "Open",
+  "Capture location",
+  "Phone",
+  "Change the details",
+] as const;
 
 interface GuideContent {
   dir: "ltr" | "rtl";
@@ -95,7 +129,7 @@ const CONTENT: Record<StartGuideLanguage, GuideContent> = {
       ],
       [
         "Someone not on your list",
-        `With ${ui("Out of list")} choose ${ui("AM")} or ${ui("PM")} yourself, write the name and the speciality, then photograph the clinic sign, press ${ui("Capture location")} and set the days and hours — once, for good. After the visit, ask on the ${ui("List")} to add him to your list.`,
+        `With ${ui("Out of list")} choose ${ui("AM")} or ${ui("PM")} yourself, write the name, the speciality and his ${ui("Phone")} if you have it, then photograph the clinic sign, press ${ui("Capture location")} and set the days and hours — once, for good. After the visit, ask on the ${ui("List")} to add him to your list.`,
       ],
       [
         "Fill in the visit",
@@ -113,7 +147,7 @@ const CONTENT: Record<StartGuideLanguage, GuideContent> = {
     notes: [
       [
         "Validating a customer",
-        `On the ${ui("List")}, a customer not validated yet has ${ui("Validate")}: one live photo of the clinic sign (it keeps its own location), ${ui("Capture location")} for the location once more, and the days and hours — once, for good. A validated customer has ${ui("Open")}.`,
+        `On the ${ui("List")}, a customer not validated yet has ${ui("Validate")}: one live photo of the clinic sign (it keeps its own location), ${ui("Capture location")} for the location once more, his ${ui("Phone")} if you have it, and the days and hours — once, for good. A validated customer has ${ui("Open")}. The phone is optional: add or correct it any time with ${ui("Change the details")}.`,
       ],
       [
         "Your plan",
@@ -143,7 +177,7 @@ const CONTENT: Record<StartGuideLanguage, GuideContent> = {
       ],
       [
         "عميل ليس في قائمتك",
-        `مع ${ui("Out of list")} اختر ${ui("AM")} أو ${ui("PM")} بنفسك، واكتب الاسم والتخصص، ثم صوّر لافتة العيادة واضغط ${ui("Capture location")} وسجّل الأيام والمواعيد — مرة واحدة فقط. بعد الزيارة اطلب من ${ui("List")} إضافته إلى قائمتك.`,
+        `مع ${ui("Out of list")} اختر ${ui("AM")} أو ${ui("PM")} بنفسك، واكتب الاسم والتخصص ورقم ${ui("Phone")} إن كان معك، ثم صوّر لافتة العيادة واضغط ${ui("Capture location")} وسجّل الأيام والمواعيد — مرة واحدة فقط. بعد الزيارة اطلب من ${ui("List")} إضافته إلى قائمتك.`,
       ],
       [
         "أكمل بيانات الزيارة",
@@ -161,7 +195,7 @@ const CONTENT: Record<StartGuideLanguage, GuideContent> = {
     notes: [
       [
         "اعتماد العميل",
-        `في ${ui("List")}، العميل الذي لم يُعتمد بعد عليه زر ${ui("Validate")}: صورة حية واحدة للافتة العيادة (بموقعها)، وزر ${ui("Capture location")} لالتقاط الموقع مرة أخرى، والأيام والمواعيد — مرة واحدة وإلى الأبد. العميل المعتمد عليه زر ${ui("Open")}.`,
+        `في ${ui("List")}، العميل الذي لم يُعتمد بعد عليه زر ${ui("Validate")}: صورة حية واحدة للافتة العيادة (بموقعها)، وزر ${ui("Capture location")} لالتقاط الموقع مرة أخرى، ورقم ${ui("Phone")} إن كان معك، والأيام والمواعيد — مرة واحدة وإلى الأبد. العميل المعتمد عليه زر ${ui("Open")}. ورقم الهاتف اختياري: أضفه أو صحّحه في أي وقت من ${ui("Change the details")}.`,
       ],
       [
         "خطتك",
@@ -253,7 +287,14 @@ ${HOUSE_IDENTITY_CSS}
   bdi { white-space: nowrap; }
 
   /* Two notes side by side on paper and on a desktop; stacked on a phone, because the fits-the-screen
-     golden rule is fitting by reflowing, never by scrolling sideways. */
+     golden rule is fitting by reflowing, never by scrolling sideways.
+     🔴 THE PAGE IS ONE A4 SIDE, AND A THIRD NOTE COSTS A WHOLE WRAPPED ROW. Measured 2026-10-01 on
+     the real route at 210mm against the 269mm usable height: with two notes English is 245.2mm and
+     Arabic 243.5mm (~24mm spare); a third note pushed them to 265mm and 264.3mm — 4mm short of
+     spilling onto a second page. Shortening the third note's WORDS bought nothing, because the height came from the
+     extra row, not the sentence; the phone went into the validation note instead. So a new fact
+     belongs in an existing note, and a genuinely new note means dropping one. No test here can see
+     this — it needs a browser at 210mm. */
   .notes { display: flex; flex-wrap: wrap; gap: 7mm; margin-top: 4.5mm; }
   .note { flex: 1 1 60mm; border-top: 1.2pt solid var(--phx-doc-blue); padding-top: 2.2mm; }
   .note h3 { margin: 0 0 .9mm; color: var(--phx-doc-deep); font-size: 9.5pt; font-weight: 700; }
