@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import { Check, Plus } from "lucide-react";
 
-import { gradeSpecialityText } from "@/components/phoenix-crm/labels";
+import { gradeSpecialityParts } from "@/components/phoenix-crm/labels";
 import { PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import type { RepTodayPlan, RepTodayBrick, RepTodayStop } from "@/lib/phoenix-crm/server/rep-landing";
 
@@ -73,6 +74,27 @@ function CountChip({ done, label, planned }: { done: number; label: string; plan
 }
 
 /**
+ * A line of parts joined by " · ", each part in a `<bdi>` of its own.
+ *
+ * 🔴 JOINED AS ONE STRING, AN ARABIC PART SCRAMBLES ITS NEIGHBOURS. The bidi rules lay a mixed line
+ * out by its first letter, so "عيادة النور · 9:00 AM – 1:00 PM" read "AM – 1:00 PM 9:00 · عيادة النور"
+ * on screen — the clock split from its AM. Isolated, every part keeps its own order, and the parts
+ * run in the row's direction: place then hours, right to left under an Arabic name.
+ */
+function PartsLine({ className, parts }: { className: string; parts: readonly string[] }) {
+  return (
+    <span className={className}>
+      {parts.map((part, index) => (
+        <Fragment key={`${index}:${part}`}>
+          {index > 0 ? " · " : null}
+          <bdi>{part}</bdi>
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+/**
  * One customer, in `RepNeedRow`'s shape.
  *
  * Visited is GREEN — an emerald rail, a tinted row and a tick where the "+" was — so it still reads
@@ -90,26 +112,26 @@ function StopRow({ canAdd, stop }: { canAdd: boolean; stop: RepTodayStop }) {
       <span className="w-6 shrink-0 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-400">
         {stop.listType}
       </span>
-      <span className="min-w-0 flex-1">
+      {/* 🔴 ONE DIRECTION FOR THE WHOLE BLOCK, TAKEN FROM THE NAME. `dir="auto"` sits here and on no
+          line inside, so the name's first letter decides it: an Arabic name sets all three lines right
+          to left, a Latin one left to right. Given a `dir` each, the lines zig-zagged — the Arabic
+          name and place hugging the right edge, "Grade B" between them hugging the left. */}
+      <span className="min-w-0 flex-1" dir="auto">
         <span
           className={`block break-words text-phx-md font-semibold leading-snug ${
             stop.done ? "text-emerald-900" : "text-slate-900"
           }`}
-          dir="auto"
         >
           {stop.name}
         </span>
         {/* Who he is, then where and when — the grade and speciality on a line of their own (owner,
-            2026-09-29, of the old CRM's dashboard: "with the specialities, with the grades"). Not
-            folded into the line below: two Arabic parts joined by " · " inside one line swap places
-            on screen, so each line keeps its own `dir="auto"`. Semibold, as every Phoenix CRM screen
-            prints this same line. */}
-        <span className="mt-0.5 block break-words text-phx-xs font-semibold leading-snug text-slate-500" dir="auto">
-          {gradeSpecialityText(stop)}
-        </span>
-        <span className="mt-0.5 block break-words text-phx-xs leading-snug text-slate-500" dir="auto">
-          {stop.where}
-        </span>
+            2026-09-29, of the old CRM's dashboard: "with the specialities, with the grades").
+            Semibold, as every Phoenix CRM screen prints this same line. */}
+        <PartsLine
+          className="mt-0.5 block break-words text-phx-xs font-semibold leading-snug text-slate-500"
+          parts={gradeSpecialityParts(stop)}
+        />
+        <PartsLine className="mt-0.5 block break-words text-phx-xs leading-snug text-slate-500" parts={stop.where} />
       </span>
       {stop.done ? (
         <span

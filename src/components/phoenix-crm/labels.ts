@@ -36,9 +36,12 @@ export function territoryLine(territory: TerritorySummary): string {
  * own, where saying it twice is noise: the rep's "Your day" panel on his landing page.
  */
 export function gradeSpecialityText(customer: { grade: PhoenixCrmGrade | null; speciality: string | null }): string {
-  return [customer.grade ? `Grade ${customer.grade}` : "No grade", customer.speciality]
-    .filter((part): part is string => Boolean(part))
-    .join(" · ");
+  return gradeSpecialityParts(customer).join(" · ");
+}
+
+/** The same words as their parts, for a row that isolates each part's direction (an Arabic speciality). */
+export function gradeSpecialityParts(customer: { grade: PhoenixCrmGrade | null; speciality: string | null }): string[] {
+  return [customer.grade ? `Grade ${customer.grade}` : "No grade", customer.speciality].filter((part): part is string => Boolean(part));
 }
 
 /** "PM · Grade B · Internal Medicine". */
