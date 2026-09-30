@@ -1253,6 +1253,11 @@ const defaultPermissionMatrix: PermissionMap = {
     overview: [],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
+    // Spotlight (self): his OWN district's recognition sheet over any period he picks, and the
+    // pic/PDF only at 90%+ against the published closing (owner, 2026-09-30, extending the rep's).
+    // A DM's own achievement IS his district — the loader totals the reps under his seat, exactly as
+    // the Monthly Closing grades him (rollupAchievementByDm) — and it reaches no other district.
+    spotlight_self: ["read", "export"],
     double_visit_analytics: ["read", "export"],
     outstation: ["read", "create", "export"],
     leave: ["read", "create", "approve", "export"],
