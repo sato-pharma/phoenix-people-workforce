@@ -22,6 +22,7 @@ import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { logError } from "@/lib/observability/log";
 import { generateNextHrIdForLine } from "./hr-id-helper";
 import { isMissingRequiredManager } from "./hierarchy-governance";
+import { isMissingColumnError } from "./missing-column";
 import { resolveEmployeeDisplayName } from "./display-name";
 
 const hrIdPattern = /^[A-Z0-9][A-Z0-9_-]*$/;
@@ -931,12 +932,12 @@ async function loadCompensationByHrId(hrIds: string[]) {
 
     return new Map(rows.map((row) => [row.employee_hr_id, row]));
   } catch (error) {
-    const message = employeeDirectoryErrorMessage(error).toLowerCase();
-
+    // Only when one of those two columns is genuinely ABSENT. Any other failure that merely names
+    // them — a constraint, a bad value, a permission denial — must not be answered by retrying
+    // without them, which would hand back rows with the payment mode silently missing.
     if (
-      message.includes("payment_mode") ||
-      message.includes("salary_details") ||
-      message.includes("schema cache")
+      isMissingColumnError(error, "payment_mode") ||
+      isMissingColumnError(error, "salary_details")
     ) {
       console.log("Employee compensation payment_mode/salary_details column missing, retrying without it (schema cache)", {
         level: "warning",
@@ -2180,13 +2181,14 @@ async function upsertEmployeeCompensation(
       },
     );
   } catch (error) {
-    const message = employeeDirectoryErrorMessage(error).toLowerCase();
-
+    // 🔴 THIS BRANCH ENDS IN A SILENT `return`, so its test decides whether a failed SALARY write is
+    // degraded or swallowed. It fires only for a genuinely absent relation or column; anything else
+    // — a constraint, an invalid payment mode, a permission denial — now throws, as it always should
+    // have, instead of reporting a save that never happened.
     if (
       isMissingRelationMessage(error) ||
-      message.includes("salary_details") ||
-      message.includes("payment_mode") ||
-      message.includes("schema cache")
+      isMissingColumnError(error, "salary_details") ||
+      isMissingColumnError(error, "payment_mode")
     ) {
       if (input.salaryPaymentMode === undefined) {
         return;
@@ -2208,12 +2210,11 @@ async function upsertEmployeeCompensation(
           },
         );
       } catch (fallbackError) {
-        const fallbackMessage = employeeDirectoryErrorMessage(fallbackError).toLowerCase();
-
+        // Same test on the last resort: give up quietly only when the column or the table is not
+        // there to write to.
         if (
           isMissingRelationMessage(fallbackError) ||
-          fallbackMessage.includes("payment_mode") ||
-          fallbackMessage.includes("schema cache")
+          isMissingColumnError(fallbackError, "payment_mode")
         ) {
           return;
         }

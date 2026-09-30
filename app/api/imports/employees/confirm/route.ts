@@ -6,6 +6,7 @@ import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
 import { openAndAnnounceNewHireMailboxes } from "@/lib/new-hire-mailbox/notify";
 import { invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
+import { isMissingColumnError } from "@/lib/employees/missing-column";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
 import { hrIdsForManagerLinks, managerLinksToWrite } from "@/lib/imports/employee-manager-links";
@@ -893,13 +894,14 @@ function compensationValues(record: EmployeeImportRecord) {
   };
 }
 
+/**
+ * 🔴 THIS DECIDES WHETHER AN IMPORT DROPS EVERYONE'S PAYMENT MODE. When it says yes, the whole
+ * compensation upsert is retried with the column stripped out and the import reports success — so a
+ * constraint breach or an invalid payment mode, which merely NAME the column, used to be "fixed" by
+ * writing every imported employee's salary row without their payment mode at all.
+ */
 function isMissingPaymentModeColumn(error: unknown) {
-  const message = errorMessage(error).toLowerCase();
-
-  return (
-    message.includes("payment_mode") ||
-    message.includes("schema cache")
-  );
+  return isMissingColumnError(error, "payment_mode");
 }
 
 function withoutPaymentModeColumn(values: ReturnType<typeof compensationValues>) {
