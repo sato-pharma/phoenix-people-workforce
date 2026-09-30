@@ -68,7 +68,9 @@ function main() {
   const tool = input.tool_name || '';
   if (tool !== 'Write' && tool !== 'Edit' && tool !== 'MultiEdit') return;
 
-  const raw = input.tool_input?.file_path || '';
+  // Backslashes to forward slashes before any path work: node accepts `/` on Windows, while on
+  // Linux a `\` is an ordinary filename character, so dirname() would not split on it.
+  const raw = String(input.tool_input?.file_path || '').replace(/\\/g, '/');
   if (!raw) return;
   const target = isAbsolute(raw) ? raw : resolve(input.cwd || process.cwd(), raw);
   const match = TEST_FILE.exec(target);
