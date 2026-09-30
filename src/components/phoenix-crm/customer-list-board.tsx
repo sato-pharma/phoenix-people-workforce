@@ -57,7 +57,7 @@ import {
 } from "@/lib/phoenix-crm/customer-list-grouping";
 import { clusterRows, describeSharing, findNeighbours, type NearbyContact } from "@/lib/crm/location-confidence";
 import { factInk, gradeInk, listRowFacts, rowPoint } from "@/lib/phoenix-crm/list-row-facts";
-import { describePlanPattern } from "@/lib/phoenix-crm/plan-pattern";
+import { planPatternGroups } from "@/lib/phoenix-crm/plan-pattern";
 import { listRowAction, requestKindLabel, type ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
 import type { ListCustomer } from "@/lib/phoenix-crm/view-types";
 import { brickTintMap, type BrickTint } from "@/components/phoenix-crm/brick-tints";
@@ -372,11 +372,26 @@ function AddressText({ href, text }: { href: string | null; text: string }) {
  * With no plan in the mirror it says so plainly rather than inventing a pattern or leaving a blank.
  */
 function PlanPatternCell({ customer }: { customer: ListCustomer }) {
-  const text = describePlanPattern(customer.planPattern ?? []);
-  if (!text) return <span className="text-xs italic text-slate-400">No plan recorded</span>;
+  const groups = planPatternGroups(customer.planPattern ?? []);
+  if (groups.length === 0) return <span className="text-phx-2xs font-semibold italic text-slate-400">No plan recorded</span>;
   return (
-    <span className="break-words text-xs font-semibold text-slate-700" dir="auto">
-      {text}
+    <span className="grid gap-1.5">
+      {groups.map((group) => (
+        <span className="grid gap-0.5" key={group.weeks.join(",")}>
+          {/* The days as chips, so the eye lands on a weekday rather than reading a sentence. */}
+          <span className="flex flex-wrap gap-0.5">
+            {group.days.map((day) => (
+              <span
+                className="border border-slate-300 bg-slate-50 px-1 py-px text-phx-3xs font-black uppercase tracking-[0.06em] text-slate-700"
+                key={day}
+              >
+                {day}
+              </span>
+            ))}
+          </span>
+          <span className="break-words text-phx-2xs font-semibold text-slate-500">{group.weeksLabel}</span>
+        </span>
+      ))}
     </span>
   );
 }
@@ -799,7 +814,7 @@ export function CustomerListBoard({
                                   <span dir="auto">{customer.name}</span>
                                 </p>
                                 {/* The grade keeps its own ink, as the old board painted it. */}
-                                <p className={`mt-0.5 text-xs font-bold ${gradeInk(customer.grade)}`}>{facts.grade.text}</p>
+                                <p className={`mt-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] ${gradeInk(customer.grade)}`}>{facts.grade.text}</p>
                                 {/* WHY it is highlighted, and who with — the owner asked for the
                                     reason to be stated rather than implied, because the match is an
                                     inference a reader must be able to overrule. */}
@@ -836,7 +851,7 @@ export function CustomerListBoard({
                                 <AddressText href={facts.mapsHref} text={variant === "dropped" ? detailText(customer, variant) : facts.address.text} />
                                 <NearbyLine neighbourhood={near} />
                                 {variant === "active" || variant === "outside" ? (
-                                  <p className="mt-0.5 break-words text-xs text-slate-500">{placesDaysText(customer)}</p>
+                                  <p className="mt-0.5 break-words text-phx-2xs font-semibold leading-4 text-slate-500">{placesDaysText(customer)}</p>
                                 ) : null}
                                 {variant === "pending" && !historyNamesLastVisit(customer) ? (
                                   <p className="mt-0.5 text-xs text-slate-500">
@@ -844,9 +859,9 @@ export function CustomerListBoard({
                                   </p>
                                 ) : null}
                                 {variant === "dropped" && customer.droppedNote ? (
-                                  <p className="mt-0.5 whitespace-pre-line text-xs text-slate-500">{customer.droppedNote}</p>
+                                  <p className="mt-0.5 whitespace-pre-line break-words text-phx-2xs font-semibold leading-4 text-slate-500">{customer.droppedNote}</p>
                                 ) : null}
-                                <p className="mt-1 text-xs text-slate-500">{monthText(customer, variant)}</p>
+                                <p className="mt-0.5 break-words text-phx-2xs font-semibold leading-4 text-slate-500">{monthText(customer, variant)}</p>
                               </td>
                               <td className={crmTdClassName}>
                                 <PlanPatternCell customer={customer} />

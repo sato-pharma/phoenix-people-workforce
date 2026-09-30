@@ -325,13 +325,16 @@ export function CrmChoice<T extends string>({
   value,
 }: {
   className?: string;
-  columns?: 2 | 3 | 4;
+  columns?: 2 | 3 | 4 | 7;
   label: string;
   onChange: (next: T) => void;
   options: ReadonlyArray<CrmChoiceOption<T>>;
   value: T | null;
 }) {
-  const grid = { 2: "grid-cols-2", 3: "grid-cols-2 sm:grid-cols-3", 4: "grid-cols-2 sm:grid-cols-4" }[columns];
+  // 7 is the module's OWN seven-way formula, lifted from phoenix-crm-app's TAB_COLUMNS: a 4-column
+  // grid holding seven options leaves a hole in its last row, which is the unfinished look the owner
+  // called out on the List (2026-09-30). Three on a phone, four from sm, all seven in one row at lg.
+  const grid = { 2: "grid-cols-2", 3: "grid-cols-2 sm:grid-cols-3", 4: "grid-cols-2 sm:grid-cols-4", 7: "grid-cols-2 sm:grid-cols-4 lg:grid-cols-7" }[columns];
   return (
     <div aria-label={label} className={cn("grid gap-1.5", grid, className)} role="radiogroup">
       {options.map((option) => {
