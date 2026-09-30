@@ -54,10 +54,13 @@ const BARE = REMOTE_ROOT + "/repo.git";
 const WORK = REMOTE_ROOT + "/work";
 
 // Each entry is the exact command the box runs. `typecheck` carries the same heap ci.yml gives it,
-// so a result here means the same thing a CI result means.
+// so a result here means the same thing a CI result means. It also takes ci.yml's typecheck lock
+// (/tmp/phx-typecheck.lock), so it waits for a CI typecheck on the box instead of running beside it —
+// two `tsc` runs on this 7.7 GB box is what the lock exists to stop (owner, 2026-09-30).
 const CHECKS = {
   lint: "corepack pnpm run lint",
-  typecheck: "NODE_OPTIONS=--max-old-space-size=6144 ./node_modules/.bin/tsc --noEmit --pretty false",
+  typecheck:
+    "flock -w 1200 /tmp/phx-typecheck.lock env NODE_OPTIONS=--max-old-space-size=6144 ./node_modules/.bin/tsc --noEmit --pretty false",
   test: "corepack pnpm run test",
   build: "corepack pnpm run build",
 };
