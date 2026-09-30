@@ -9,6 +9,22 @@ import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 
+// What the entity-type picker offers. It is a SHORTLIST, not the catalogue: `AuditEntityType` in
+// `src/lib/admin/audit.ts` names 128 types and production wrote 88 distinct ones in the last 30
+// days, so most of what the log holds can only be reached by paging "all".
+//
+// 🔴 A NAME MISSING HERE MAKES ITS TRAIL UNREADABLE IN PRACTICE, NOT JUST UNFILTERABLE. Production
+// writes ~2,456 audit rows a day (measured 2026-09-30), so a row an hour old is already a hundred
+// rows deep in "all" and one from yesterday is thousands. The API behind this select takes ANY
+// entity type — nothing was broken — but a trail nobody can select is a trail nobody reads.
+//
+// So a feature whose LOG IS PART OF WHAT WAS ASKED FOR belongs here, which is why the two CV
+// Lookup types are. The owner's spec on 2026-09-30 had two halves — a seat that may search the CV
+// database, and "every search logged, Super Admin only" — and the second half is this screen:
+// `/admin/logs` is gated on `admin:read`, which the hard boundary in permissions.ts gives to the
+// Super Admin and to nobody else. `cv_lookup_search` is the term that was typed and how many
+// people it reached; `cv_lookup_open` is one named candidate's CV and application leaving the
+// building. Pinned by tests/cv-lookup.test.ts.
 const ENTITY_TYPES = [
   "all",
   "auth_session",
@@ -19,6 +35,8 @@ const ENTITY_TYPES = [
   "payroll_batch",
   "vacation_request",
   "vacation_weekly_off_policy",
+  "cv_lookup_search",
+  "cv_lookup_open",
 ];
 
 function formatDate(iso: string) {
