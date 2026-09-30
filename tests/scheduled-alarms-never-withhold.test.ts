@@ -151,7 +151,29 @@ export function runScheduledAlarmsNeverWithholdTests() {
         "finding, so without the annotation a failed run is indistinguishable from a clean one.",
     );
 
-    // 6. A CANCELLED suite withholds a deploy exactly as a red one does. Several of these sleep in a
+    // 6. A SETUP step that can fail avoidably defeats the whole guarantee, and this one really did.
+    //    `actions/setup-node` defaults `package-manager-cache` to true, hunts for the repo's package
+    //    manager and dies with "Unable to locate executable file: pnpm" unless Corepack was enabled
+    //    first. That is a setup failure, so it is outside the notify-and-finish-green promise by
+    //    design (a broken check is not a finding) — and the job goes RED, which is exactly what these
+    //    workflows must never do on a schedule.
+    //
+    //    Measured on secret-drift-check.yml's first dispatch (run 36772499136, 2026-09-30): it went
+    //    red before reaching the validator, and would have done so on every 06:41 UTC run. So an
+    //    alarm added to catch silent breakage would itself have been withholding deploys silently.
+    //    Either enable Corepack before setup-node, or turn the cache off if the job needs no install.
+    if (/uses:\s*actions\/setup-node/.test(source)) {
+      assert.ok(
+        /package-manager-cache:\s*false/.test(source) || /Enable Corepack/i.test(source),
+        `🔴 ${file} uses actions/setup-node without either enabling Corepack first or setting ` +
+          "`package-manager-cache: false`. setup-node will look for pnpm, fail to find it, and fail " +
+          "the JOB — a red scheduled suite, which withholds the production deploy of whatever commit " +
+          "is main HEAD. A setup failure is outside this workflow's finish-green guarantee, so the " +
+          "guarantee is only worth as much as the setup is reliable.",
+      );
+    }
+
+    // 7. A CANCELLED suite withholds a deploy exactly as a red one does. Several of these sleep in a
     //    grace window where a newer run would supersede them, so cancel-in-progress is the same bug
     //    wearing different clothes — and it is easy to add back without thinking about deploys.
     if (/^concurrency:/m.test(source)) {
@@ -165,7 +187,7 @@ export function runScheduledAlarmsNeverWithholdTests() {
     }
   }
 
-  // 7. The payroll writer must still be able to fail. This is the assertion that stops a later
+  // 8. The payroll writer must still be able to fail. This is the assertion that stops a later
   //    session applying the pattern above uniformly and making a half-finished payroll write conclude
   //    green.
   assert.ok(
@@ -190,7 +212,7 @@ export function runScheduledAlarmsNeverWithholdTests() {
       "by making a broken payroll run conclude green.",
   );
 
-  // 8. …but it must still ALERT. It was the one workflow here with no notification path at all, which
+  // 9. …but it must still ALERT. It was the one workflow here with no notification path at all, which
   //    meant a failed payroll settle reached nobody. Staying red is not the same as being noticed.
   assert.match(
     digest,
