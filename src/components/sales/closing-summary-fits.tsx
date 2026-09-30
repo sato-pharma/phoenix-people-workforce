@@ -245,7 +245,7 @@ export function ClosingSummaryFits({ matrix }: { matrix: MonthlyClosingMatrix })
                 {money(summary.grandTotal.total.salesValue)}
               </td>
               <td className={`${numCell} font-bold text-white`}>
-                {achievement(summary.grandTotal.total.achievement)}
+                {achievement(summary.grandTotal.achievementPct)}
               </td>
             </tr>
           </tbody>

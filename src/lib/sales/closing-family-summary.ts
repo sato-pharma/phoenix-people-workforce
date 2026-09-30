@@ -48,17 +48,36 @@ export type ClosingSummaryAreaRow = {
   total: MonthlyClosingCell;
 };
 
+/**
+ * A summarised row: its family cells, the matrix's own total, and that total's achievement in the
+ * summary's unit.
+ *
+ * The two achievements here are in DIFFERENT units, deliberately. `total` is the matrix's
+ * `MonthlyClosingCell` carried through verbatim, and its `achievement` is a RATIO
+ * (`salesValue / targetValue`). Everything this summary renders is a PERCENT, because that is what
+ * `achievementOf` returns for a family cell. Leaving the render site to remember which is which is
+ * what printed a national 9.2% as "0.1%" on the Grand total line while the family rows above it
+ * were right, so the percent is carried explicitly.
+ */
+export type ClosingSummaryRowTotal = {
+  /** The row total's achievement as a PERCENT — same unit as `ClosingFamilyCell.achievement`. */
+  achievementPct: number | null;
+  byFamily: ClosingFamilyCell[];
+  /** The matrix's own row total, carried through untouched. Its `achievement` is a RATIO. */
+  total: MonthlyClosingCell;
+};
+
 export type ClosingSummaryRegion = {
   areas: ClosingSummaryAreaRow[];
   regionCode: string;
   regionName: string;
-  subtotal: { byFamily: ClosingFamilyCell[]; total: MonthlyClosingCell };
+  subtotal: ClosingSummaryRowTotal;
 };
 
 export type ClosingFamilySummary = {
   /** Distinct families, in the order the matrix's own columns present them. */
   families: string[];
-  grandTotal: { byFamily: ClosingFamilyCell[]; total: MonthlyClosingCell };
+  grandTotal: ClosingSummaryRowTotal;
   regions: ClosingSummaryRegion[];
 };
 
@@ -109,8 +128,14 @@ function summariseRow(
   row: Pick<MonthlyClosingAreaRow, "cells" | "rowTotal">,
   familyOf: readonly string[],
   families: readonly string[],
-) {
-  return { byFamily: foldCells(row.cells, familyOf, families), total: row.rowTotal };
+): ClosingSummaryRowTotal {
+  return {
+    // Re-derived from the SAME two numbers the matrix's own cell holds, so this can never disagree
+    // with it — only the unit differs, and `achievementOf` is the one that matches what renders.
+    achievementPct: achievementOf(row.rowTotal.salesValue, row.rowTotal.targetValue),
+    byFamily: foldCells(row.cells, familyOf, families),
+    total: row.rowTotal,
+  };
 }
 
 /**
