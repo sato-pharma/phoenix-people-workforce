@@ -4,6 +4,7 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { issueShareCardToken, shareCardPublicUrl } from "@/lib/share/share-card-token";
 import { renderRepSpotlightPdf, renderRepSpotlightPng } from "@/lib/spotlight/pdf";
 import { RepSpotlightError, loadRepSpotlight, parseRepSpotlightRange } from "@/lib/spotlight/rep-self";
 
@@ -30,7 +31,8 @@ export async function POST(request: Request) {
     }
 
     const payload = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-    const format = payload?.format === "png" ? "png" : "pdf";
+    const format =
+      payload?.format === "png" ? "png" : payload?.format === "share-link" ? "share-link" : "pdf";
     await assertExportRateLimit({
       actor: access.loginId ?? access.hrId,
       request,
@@ -47,6 +49,18 @@ export async function POST(request: Request) {
         { error: spotlight.reason ?? `The spotlight sheet is available at ${spotlight.threshold}% and above.` },
         { status: 403 },
       );
+    }
+
+    // A public, expiring link to this sheet — only ever for an ELIGIBLE period (the gate above), so a
+    // link can never outlive the achievement. Minted from the caller's own resolved range.
+    if (format === "share-link") {
+      const token = issueShareCardToken({
+        kind: "spotlight",
+        hrId: access.hrId,
+        from: spotlight.from,
+        to: spotlight.to,
+      });
+      return Response.json({ shareUrl: shareCardPublicUrl(token) }, { headers: { "Cache-Control": "no-store" } });
     }
 
     const stem = `sato-spotlight-${spotlight.from}${spotlight.to === spotlight.from ? "" : `_${spotlight.to}`}`;
