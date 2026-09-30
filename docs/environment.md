@@ -261,26 +261,32 @@ at runtime rather than stored as a service variable — which is why `/api/healt
 | Variable | Description |
 |---|---|
 | COMMIT_SHA | Runtime release identifier for `app_error_events.release`. 🔴 **Absent on Railway on purpose, and it must stay that way.** It takes PRECEDENCE over the platform's own `RAILWAY_GIT_COMMIT_SHA`, so a hand-set or left-over value makes `/api/healthz`, every deploy-drift check and every shipped-verification read report a revision production is not running — the one instrument that answers "did my deploy go live" would be lying, permanently, with nothing anywhere to catch it. `scripts/validate-railway-production-secrets.mjs` now fails if it is present on production. |
-| HEALTHCHECKS_PING_KEY | External cron-liveness dead-man's-switch. Set on the `phoenix-hr` **production** Cloud Run service ONLY — never staging, never local (see the Dead-Man's-Switch section below for why, and for the full variable table). |
+| HEALTHCHECKS_PING_KEY | External cron-liveness dead-man's-switch. Lives on the **Railway `phoenix-people-workforce` service, `production` environment** — never staging, never local. 🔴 **It is SET there today** (measured 2026-10-01 against the live service; absent from staging, which is correct), so the switch is live rather than the optional extra the section below reads like. It arrives GitHub → Railway through `sync-railway-production-secrets.yml` as an OPTIONAL entry (`required: false` in `scripts/sync-railway-production-secrets.mjs`), so like `CRON_SECRET` the GitHub secret is the one to change first — editing it on Railway alone is overwritten by the next sync. It said "the `phoenix-hr` **Cloud Run** service" until 2026-10-01, naming a platform that has not existed since GCP billing closed on 2026-08-01. |
 
 See docs/observability.md for the full picture.
 
-## Cloud Scheduler / Deployment
+## Scheduler / Deployment
 
 | Variable | Description |
 |---|---|
-| CRON_SECRET | Bearer-token auth checked against Google Cloud Scheduler job requests (see docs/deployment.md) |
-| PHOENIX_PREVIEW_READ_ONLY | Legacy Vercel-preview read-only guard; inert on Cloud Run today (neither environment sets `APP_ENV=preview`) |
+| CRON_SECRET | Bearer-token auth on every `/api/cron/**` route. 🔴 **It authenticates `cron-job.org`, the live production scheduler — NOT Google Cloud Scheduler**, which this row named until 2026-10-01. The 8 GCP Cloud Scheduler jobs do still fire and **401 on every route** (see the top of this file), so reading this row as "Cloud Scheduler auth" makes those 401s look like a broken secret and sends you hunting a rotation AGENTS.md §2.3 forbids. It flows GitHub → Railway via `sync-railway-production-secrets.yml`, so **rotate the GitHub secret first**. See docs/deployment.md. |
+| PHOENIX_PREVIEW_READ_ONLY | Legacy Vercel-preview read-only guard; inert on Railway today (neither environment sets `APP_ENV=preview`) |
 | VERCEL_ENV | Legacy — Vercel is decommissioned for hosting, so nothing sets this anymore; any code still branching on it is inert |
 
-## Dead-Man's-Switch Monitoring (Optional)
+## Dead-Man's-Switch Monitoring
 
-External liveness alert for the 8 Cloud Scheduler jobs, independent of GCP Monitoring — see
-docs/observability.md for what it catches and full setup steps.
+External liveness alert for the production cron jobs, independent of any platform's own monitoring —
+see docs/observability.md for what it catches and full setup steps.
+
+🔴 **"(Optional)" was dropped from this heading on 2026-10-01: the key is SET on Railway production,
+so this is live.** The heading also said "for the 8 Cloud Scheduler jobs, independent of GCP
+Monitoring", which described a dead arrangement twice over — GCP billing closed 2026-08-01, and those
+8 jobs now 401 on every route. What the switch actually watches is the **`cron-job.org`** schedule
+that runs production.
 
 | Variable | Description | Default |
 |---|---|---|
-| HEALTHCHECKS_PING_KEY | Healthchecks.io project Ping Key. Inert (no ping ever attempted, in any environment) until set. | (unset) |
+| HEALTHCHECKS_PING_KEY | Healthchecks.io project Ping Key. Inert — no ping is ever attempted — while unset, which is still true of staging and local. 🔴 **Set on Railway `production` today**, so pings ARE being sent from there; the `(unset)` beside this row is the default when nobody sets it, never a statement about production. | (unset) |
 | HEALTHCHECKS_PING_HOST | Override for a self-hosted Healthchecks instance | `https://hc-ping.com` |
 
 ## Live Google Sheet Token Rotation (Optional)
