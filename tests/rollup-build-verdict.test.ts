@@ -60,7 +60,9 @@ export function runRollupBuildVerdictTests(): void {
     );
     assert.match(
       source,
-      /cat-file', '-e', `\$\{pr\.headRefOid\}\^\{commit\}`.*allowFail: true \}\) === null/s,
+      // `[\s\S]*` rather than `.*` with the `s` flag: this repo targets ES2017, where the dotAll flag
+      // is a TS1501 typecheck error. Same match, no target dependency.
+      /cat-file', '-e', `\$\{pr\.headRefOid\}\^\{commit\}`[\s\S]*allowFail: true \}\) === null/,
       "and the OBJECT decides: if the commit is still here the merge is still correct, fetch or no fetch",
     );
     assert.match(source, /skipped\.push\(pr\.number\)/, "a skipped member is recorded");
