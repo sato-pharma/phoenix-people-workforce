@@ -39,6 +39,7 @@ import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import {
   dailyPlanActivityText,
   dailyPlanCustomerNotes,
+  dailyPlanDayIsEmpty,
   dailyPlanStateLabel,
   dailyPlanVisitText,
   type DailyPlanCustomer,
@@ -227,9 +228,18 @@ function writeDailyPlan(workbook: ExcelJS.Workbook, view: DailyPlanReportView): 
   const rows: CellValue[][] = [];
   for (const day of view.days) {
     const sent = day.state === "submitted" || day.state === "approved" || day.state === "returned";
-    const plan = [dailyPlanStateLabel(day.state), sent && day.submittedLate ? "sent late" : null, day.isTest ? "test entries" : null]
-      .filter((part): part is string => part !== null)
-      .join(" · ");
+    // The screen's own rule (DayHeader in daily-plan-report.tsx): a day with nothing on it carries no plan
+    // state and no "sent late" — "Not sent before the day" beside a day nobody planned anything for reads
+    // as a failure about that day. Its row still says so in words, below; the test marker stays.
+    const planned = !dailyPlanDayIsEmpty(day);
+    const plan =
+      [
+        planned && day.state !== "none" ? dailyPlanStateLabel(day.state) : null,
+        planned && sent && day.submittedLate ? "sent late" : null,
+        day.isTest ? "test entries" : null,
+      ]
+        .filter((part): part is string => part !== null)
+        .join(" · ") || "—";
     const dayCells: CellValue[] = [
       day.date,
       PHOENIX_CRM_WEEKDAY_NAMES[weekdayOfIsoDay(day.date)],
@@ -242,7 +252,9 @@ function writeDailyPlan(workbook: ExcelJS.Workbook, view: DailyPlanReportView): 
       ...day.pm.map((customer): [string, DailyPlanCustomer] => ["PM", customer]),
     ];
     if (customers.length === 0) {
-      rows.push([...dayCells, "—", day.state === "none" ? "No plan for this week" : "Nothing planned", "", "", "", "", "", "", "", "", ""]);
+      // Word for word the screen's line under a day with no customer on it, without its full stop.
+      const nothing = day.state === "none" ? "No plan for this week" : planned ? "No customer planned this day" : "Nothing planned this day";
+      rows.push([...dayCells, "—", nothing, "", "", "", "", "", "", "", "", ""]);
       continue;
     }
     for (const [listType, customer] of customers) {

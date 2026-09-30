@@ -336,6 +336,72 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     );
   }
 
+  // ── 3c. A day with nothing on it reads as the screen reads it: no plan state beside it ──────────
+  //
+  // The screen stopped putting "Not sent before the day" beside an empty day, which read as a failure
+  // about a day nobody planned anything for; the download kept printing it (owner, 2026-10-01: "fix the
+  // daily plan Excel's empty days to match the screen"). Read back out of the real workbook.
+  {
+    const base = dailyPlanView();
+    const approvedDay = base.days[0];
+    const emptyDay = { ...approvedDay, startsText: null, activities: [], am: [], pm: [] };
+    const buffer = await buildPhoenixCrmReportsWorkbook(
+      pack({
+        dailyPlan: dailyPlanView({
+          days: [
+            { ...emptyDay, date: "2026-09-24", state: "approved" as const, submittedLate: true, isTest: true },
+            { ...emptyDay, date: "2026-09-26", state: "not_sent" as const },
+            {
+              ...emptyDay,
+              date: "2026-09-27",
+              state: "approved" as const,
+              submittedLate: true,
+              activities: [{ activityType: "meeting" as const, label: "Meeting", halfDay: true, note: null }],
+            },
+            ...base.days,
+          ],
+        }),
+      }),
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    const sheet = workbook.getWorksheet("Daily plan");
+    assert.ok(sheet, "the daily plan sheet is written");
+    const rows: string[][] = [];
+    sheet.eachRow((row) => {
+      const cells: string[] = [];
+      row.eachCell({ includeEmpty: true }, (cell) => cells.push(String(cell.value ?? "")));
+      rows.push(cells);
+    });
+    const headers = rows[1] ?? [];
+    const planAt = headers.indexOf("Plan");
+    const customerAt = headers.indexOf("Customer");
+    const rowOf = (date: string) => {
+      const found = rows.find((cells) => cells[0] === date);
+      assert.ok(found, `${date} keeps a row of its own`);
+      return found;
+    };
+
+    const notSent = rowOf("2026-09-26");
+    assert.equal(notSent[planAt], "—", "a past empty day never reads \"Not sent before the day\" — nothing was there to send");
+    assert.equal(notSent[customerAt], "Nothing planned this day", "it says so in the screen's words instead");
+
+    const testDay = rowOf("2026-09-24");
+    assert.equal(testDay[planAt], "test entries", "an empty test day keeps only its test marker — no \"Approved · sent late\" beside nothing");
+    assert.equal(testDay[customerAt], "Nothing planned this day");
+
+    const meetingDay = rowOf("2026-09-27");
+    assert.equal(meetingDay[planAt], "Approved · sent late", "a day holding an activity is a planned day, so its state stays, as on the screen");
+    assert.equal(meetingDay[customerAt], "No customer planned this day", "and it names what is missing: the customers, not the day");
+
+    const noPlan = rowOf("2026-09-29");
+    assert.equal(noPlan[planAt], "—", "a week with no plan puts no state beside its days either");
+    assert.equal(noPlan[customerAt], "No plan for this week");
+
+    const plannedRow = rows.find((cells) => cells.includes("Dr Sami Adel"));
+    assert.equal(plannedRow?.[planAt], "Approved", "a day with customers on it keeps its plan state");
+  }
+
   // ── 4. AM and PM stay apart in every sheet ─────────────────────────────────────────────────────
   //
   // A workbook is precisely where a combined column gets added "for convenience", and a combined
