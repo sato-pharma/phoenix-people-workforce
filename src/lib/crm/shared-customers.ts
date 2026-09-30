@@ -1,4 +1,13 @@
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { logError } from "@/lib/observability/log";
+import { CRM_PLAN_ENTRIES_UNIFIED_VIEW } from "@/lib/crm/tables";
+import { readContactVisitHistory, type CrmContactVisitHistory } from "@/lib/crm/reads";
 import { averageCheckinPoint, type ObservedPoint } from "@/lib/crm/checkin-location";
+
+/** Contact ids per `in(...)` filter, and rows per page — the figures the rest of this module uses. */
+const IN_CHUNK = 50;
+const PLAN_PAGE = 1000;
+
 import { getDoctorListRepSummaries } from "@/lib/crm/contact-lists";
 import { findSharedCustomers, type SharedWith } from "@/lib/crm/location-confidence";
 import { repDoctorListRepKey } from "@/lib/crm/rep-doctor-lists";
@@ -14,6 +23,68 @@ import { loadCheckins, loadContactRoster, loadPinsFor } from "@/lib/crm/reps-lis
  * Returns nothing rather than throwing: a customer with no check-ins, a missing mirror or an
  * unreadable view all mean "nobody has stood there", which is an answer, not a failure.
  */
+/**
+ * 🔴 WHEN EACH DOCTOR IS USUALLY PLANNED, off the iReports360 reference plans (owner, 2026-09-30:
+ * "based on the reference weekly plans from iReports360, tell him — you are visiting this doctor
+ * Sunday and Tuesday, in the first and the fourth week").
+ *
+ * The WINDOW is the last four months of plan dates. Long enough that every week of a month has had
+ * a chance to appear — a doctor planned in week 4 only shows up once a month — and short enough that
+ * a pattern the rep abandoned in the spring is not still being read back to him.
+ *
+ * Returns the DATES; `planWeekdays` turns them into the pattern, and lives in the pure layer so it
+ * can be tested without a database.
+ */
+export async function loadPlanDatesFor(contactCrmIds: readonly number[], fromIsoDay: string): Promise<Map<number, string[]>> {
+  if (contactCrmIds.length === 0) return new Map();
+  const supabase = getSupabaseAdmin();
+  const byContact = new Map<number, string[]>();
+  const ids = [...new Set(contactCrmIds)];
+  for (let from = 0; from < ids.length; from += IN_CHUNK) {
+    const chunk = ids.slice(from, from + IN_CHUNK);
+    for (let page = 0; ; page += 1) {
+      const { data, error } = await supabase
+        .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
+        .select("contact_crm_id, plan_date")
+        .in("contact_crm_id", chunk)
+        .not("plan_date", "is", null)
+        .gte("plan_date", fromIsoDay)
+        .order("plan_date", { ascending: false })
+        .range(page * PLAN_PAGE, page * PLAN_PAGE + PLAN_PAGE - 1);
+      if (error) {
+        // A missing or unreadable plan mirror costs this one column and nothing else.
+        logError("Phoenix CRM list: the reference plan dates could not be read", {
+          error,
+          labels: { event: "phoenix_crm_plan_pattern_failed" },
+        });
+        return byContact;
+      }
+      const rows = (data ?? []) as Array<{ contact_crm_id: number | null; plan_date: string | null }>;
+      for (const row of rows) {
+        if (row.contact_crm_id == null || !row.plan_date) continue;
+        const found = byContact.get(row.contact_crm_id);
+        if (found) found.push(row.plan_date);
+        else byContact.set(row.contact_crm_id, [row.plan_date]);
+      }
+      if (rows.length < PLAN_PAGE) break;
+    }
+  }
+  return byContact;
+}
+
+/**
+ * What the rep has already done with a doctor, straight from the read door.
+ *
+ * 🔴 The QUERY lives in reads.ts, not here (owner's rule that work is not built twice, and the
+ * single-source guard's rule that the visits mirror is read through one door). This is the thin
+ * re-export Phoenix CRM's List calls, so the List never reaches the visits mirror itself.
+ */
+export type VisitHistory = CrmContactVisitHistory;
+
+export async function loadVisitHistoryFor(contactCrmIds: readonly number[]): Promise<Map<number, VisitHistory>> {
+  return readContactVisitHistory(contactCrmIds);
+}
+
 export async function loadObservedPointsFor(contactCrmIds: readonly number[]): Promise<Map<number, ObservedPoint>> {
   if (contactCrmIds.length === 0) return new Map();
   const checkins = await loadCheckins(contactCrmIds);

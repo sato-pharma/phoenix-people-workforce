@@ -29,7 +29,7 @@ import { loadBrickCentroids, loadBrickNames, resolveBrickForPoint } from "@/lib/
 // is: the sharing question can only be answered against the WHOLE company's contact roster, which
 // Phoenix CRM's own tables do not hold.
 import type { SharedWith } from "@/lib/crm/location-confidence";
-import { loadObservedPointsFor, loadSharedCustomersFor } from "@/lib/crm/shared-customers";
+import { loadObservedPointsFor, loadPlanDatesFor, loadSharedCustomersFor, loadVisitHistoryFor, type VisitHistory } from "@/lib/crm/shared-customers";
 import { logError } from "@/lib/observability/log";
 import { resolveEvidenceLocation } from "@/lib/evidence/location-service";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
@@ -64,6 +64,7 @@ import {
   requestStageLabel,
   type ListSection,
 } from "@/lib/phoenix-crm/list-request-rules";
+import { planWeekdays, type PlanWeekday } from "@/lib/phoenix-crm/plan-pattern";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
@@ -257,6 +258,18 @@ export type ListCustomer = {
    * average is taken over the fixes that agree with one another rather than over all of them.
    */
   observed: { lat: number; lon: number; address: string | null; at: string | null; agreed: number; total: number } | null;
+  /**
+   * 🔴 WHEN HE IS USUALLY PLANNED, from the iReports360 reference plans (owner, 2026-09-30). Null
+   * when the mirror holds no plan for him. It is what the plans ALREADY SAY — not a target, not a
+   * frequency, and never a count of whether the rep went.
+   */
+  planPattern: PlanWeekday[] | null;
+  /**
+   * 🔴 WHAT THE REP ALREADY DID WITH HIM, in iReports360 (owner, 2026-09-30). A carried-over row
+   * has NO Phoenix visits by definition — its Phoenix history starts at validation — so reporting
+   * the Phoenix count there could only ever say "never", under a line naming last week's visit.
+   */
+  referenceHistory: VisitHistory | null;
   pendingGradeRequestId: string | null;
   pendingGrade: PhoenixCrmGrade | null;
   pendingDropRequestId: string | null;
@@ -744,6 +757,21 @@ export async function loadRequestRows(seatIds: string[], isTest: boolean, option
   return rows.sort((left, right) => String(right.requested_at).localeCompare(String(left.requested_at)));
 }
 
+/**
+ * How far back the reference plans are read for the "usually planned" column. Four months: long
+ * enough that a doctor planned in week 4 only has had several chances to appear, short enough that a
+ * pattern the rep abandoned in the spring is not read back to him as current.
+ */
+const PLAN_PATTERN_MONTHS = 4;
+
+/** "2026-09-30" minus N whole months, as the first of that month. Arithmetic on the parts, so no
+ * timezone can shift it: these are calendar months, not instants. */
+function monthsBack(isoDay: string, months: number): string {
+  const [year, month] = isoDay.split("-").map(Number);
+  const shifted = year * 12 + (month - 1) - months;
+  return `${String(Math.floor(shifted / 12)).padStart(4, "0")}-${String((shifted % 12) + 1).padStart(2, "0")}-01`;
+}
+
 export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknown, test: unknown): Promise<TerritoryListView> {
   const { seat, isTest } = territoryForRead(viewer, seatId, readTestFlag(test));
   const monthStart = monthStartOf(viewer.cairoToday);
@@ -850,6 +878,8 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       pharmacies,
       sharedWith: null,
       observed: null,
+      planPattern: null,
+      referenceHistory: null,
     };
   });
   listCustomers.sort((left, right) => left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name));
@@ -876,9 +906,16 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       // 🔴 AND WHERE EACH DOCTOR ACTUALLY IS, averaged from the check-ins the reps have already
       // taken on him (owner, 2026-09-30). Both questions are answered against the same mirror, so
       // they are asked together rather than one page load apart.
-      const [sharedByContact, observedByContact] = await Promise.all([
+      // 🔴 AND WHEN HE IS USUALLY PLANNED, off the same mirror (owner, 2026-09-30: "based on the
+      // reference weekly plans from iReports360, tell him you are visiting this doctor Sunday and
+      // Tuesday in the first and the fourth week"). Four months of plan dates: long enough that a
+      // week-4-only doctor has had chances to appear, short enough that a pattern abandoned in the
+      // spring is not read back to him as current.
+      const [sharedByContact, observedByContact, planDatesByContact, historyByContact] = await Promise.all([
         loadSharedCustomersFor(sharedKeys, seat.occupantHrId),
         loadObservedPointsFor(sharedKeys),
+        loadPlanDatesFor(sharedKeys, monthsBack(viewer.cairoToday, PLAN_PATTERN_MONTHS)),
+        loadVisitHistoryFor(sharedKeys),
       ]);
       for (const customer of listCustomers) {
         if (customer.referenceContactCrmId === null) continue;
@@ -886,6 +923,9 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
         customer.sharedWith = shared && shared.length > 0 ? shared : null;
         const point = observedByContact.get(customer.referenceContactCrmId) ?? null;
         customer.observed = point ? { address: point.address, at: point.at, agreed: point.agreed, lat: point.lat, lon: point.lon, total: point.total } : null;
+        const pattern = planWeekdays(planDatesByContact.get(customer.referenceContactCrmId) ?? []);
+        customer.planPattern = pattern.length > 0 ? pattern : null;
+        customer.referenceHistory = historyByContact.get(customer.referenceContactCrmId) ?? null;
       }
     } catch (error) {
       logError("Phoenix CRM list: the shared-customer and check-in reads could not run", {
