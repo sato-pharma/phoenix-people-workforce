@@ -1145,12 +1145,20 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
                 KPIs and put them under each other, so the left side is more tall — and Your day is
                 pushed up, because it is very long now and the page is asymmetric." His day runs the
                 whole right-hand column from the top; these four fold to 2x2 beside it.
-                The fold is the container query below, not a breakpoint — four across only when THIS
-                row is at least 48rem, which it is only when there is no day to put beside it. `lg:`
-                fired at a 1024px window whose content was ~636px once the sidebar opened, leaving each
-                tile ~127px — "SEP 2026" broke in two and "10.2 of 10" wrapped. */}
+                🔴 THE FOLD IS THE DAY ITSELF, NOT A WIDTH QUERY — THAT IS THE SECOND HALF OF THE FIX,
+                2026-09-30. It first shipped as `@3xl:grid-cols-4` on the wrapper below, reasoning that
+                the row only reaches 48rem when there is no day beside it. Measured on the running app,
+                that reasoning does not hold: the wrapper is a real `inline-size` container 721px wide
+                — inside 48rem — and the row still rendered FOUR tracks of 219px, so on a wide screen
+                the tiles went back across the top and the left column finished 143px short of his day.
+                He saw exactly that and asked for the stack a second time. A query measured not to hold
+                is not worth keeping: with a day beside them the tiles are 2x2, full stop, and the
+                four-across form is kept only for the no-day layout, where this column IS the page.
+                `lg:` was wrong here for a different reason and must not come back — it fired at a
+                1024px window whose content was ~636px once the sidebar opened, leaving each tile
+                ~127px, and "SEP 2026" broke in two while "10.2 of 10" wrapped. */}
             <div className="@container">
-              <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
+              <div className={`grid gap-2 ${repTodayPlan ? "grid-cols-2" : "grid-cols-2 @3xl:grid-cols-4"}`}>
                 <RepTile
                   hint={achValue ? `${egp(achValue.salesValue)} of ${egp(achValue.targetValue)}` : "Awaiting closing"}
                   label="Achievement"
