@@ -2476,6 +2476,15 @@ a reversal of the decision — it buys the two deploys their correct order back.
 **So: before dropping a column, probe every select naming that table against the live database, and
 never let a census be a grep.**
 
+**The tooling for it, since 2026-09-30:** `node scripts/select-census.mjs <table> [--column <col>]`
+is the census (any table, constants resolved one import away, embedded relations read with balanced
+parentheses, filters and write keys listed, anything it cannot resolve reported UNRESOLVED), pinned by
+`tests/select-census.test.ts`. The **`select-auditor`** subagent (`.claude/agents/select-auditor.md`)
+runs it, probes every named column against production's catalog with a sentinel as its positive
+control, and reports BROKEN / UNVERIFIED / OK. First run, on `employees` that day: 221 call sites, 53
+distinct column names, 4 embedded relations, all present on production, and 1 run-time select left
+UNVERIFIED (`src/lib/email-templates/custom-variables.ts`).
+
 ## A DDL cannot be attributed to a session, and adjacency in time named the wrong one twice — 2026-09-29
 
 The owner asked a plain question: *find who dropped the two label pre-image tables.* The tables were
