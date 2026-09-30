@@ -2045,6 +2045,7 @@ import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runScriptsAliasLoaderTests } from "./scripts-alias-loader.test.ts";
 import { runMobileFreezeTests } from "./mobile-freeze.test.ts";
 import { runProtectedFileGuardTests } from "./protected-file-guard.test.ts";
+import { runTestRegistrationCheckTests } from "./test-registration-check.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
 import { runRollupPrsTests } from "./rollup-prs.test.ts";
 import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
@@ -7420,6 +7421,11 @@ await runTest(
 await runTest(
   "the three behaviorally-locked files (incentive curve, payroll formulas, portal identity card) raise the owner's PROMPT — protected-file-guard.mjs answers a Write/Edit or a shell write of any of them, by any path spelling, with ask and never deny, stays silent on reads, look-alike names and other files, stands aside only for a current owner-typed AUTORUN arming in THIS session (announced, not awaited, per §6.1) while a stale, old-format, garbled or other session's arming still asks, is registered for Write, Edit, NotebookEdit, Bash and PowerShell, and CLAUDE.md still lists all three and names the hook",
   runProtectedFileGuardTests,
+);
+
+await runTest(
+  "a test file nothing runs is flagged the moment it is written: test-registration-check.mjs warns after a Write/Edit of a tests/*.test.ts that run-tests.ts does not import, or imports and never calls, or that exports no run…Tests function (helpers not named run…Tests are ignored), on either path separator; it stays silent for the runner, support files and non-test paths, is registered as a PostToolUse hook for Write and Edit, and uses test-wiring-complete's own two regexes verbatim so it can never disagree with CI",
+  runTestRegistrationCheckTests,
 );
 
 await runTest(

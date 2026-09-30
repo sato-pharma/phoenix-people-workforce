@@ -28,6 +28,12 @@ This executes `tests/run-tests.ts`, which imports and runs all registered test f
 5. Wire the function into `tests/run-tests.ts` by adding a `runTest()` call
 6. Run `pnpm run test` to verify
 
+A file that skips step 5 never runs. `tests/test-wiring-complete.test.ts` fails CI when any
+`tests/*.test.ts` is not imported **and** called by `run-tests.ts`; since 2026-09-30
+`.claude/hooks/test-registration-check.mjs` gives the same verdict earlier — right after a session
+writes or edits the file — using the guard's own two regexes (pinned equal by
+`tests/test-registration-check.test.ts`).
+
 ### Filtering Tests
 
 There is no per-test filter flag. To isolate a test temporarily, comment out other `runTest()` lines in `tests/run-tests.ts`. Remember to restore them before committing.
