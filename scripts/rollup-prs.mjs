@@ -24,6 +24,15 @@
 //     the exact opposite of "never hand him more than one merge at a time". Measured 2026-09-30 with
 //     three PRs open (#4877 red, #4882 green, #4883 pending): this script printed
 //     `ONE branch can carry #4883 + #4882 + #4877` and `--apply` would have built it.
+//   * And it never BUILDS over a member whose required checks have not FINISHED. That guard asked only
+//     about terminal failure, so a PR whose checks were still queued rolled up as though it were
+//     green: on 2026-09-30 `--apply` built #4896 from #4895 (green) and #4894 (queued), #4894 then went
+//     red on four TypeScript errors in `src/lib/phoenix-crm/server/list.ts` plus two of its own tests,
+//     and the roll-up inherited a red it could never clear — holding the GREEN PR hostage, because a
+//     roll-up's members must not be merged separately. So `--apply` WAITS for the members' required
+//     checks and builds only from the ones that finished green. Pending is deliberately NOT treated as
+//     red in the classification: a roll-up is usually built minutes after a PR is opened, so refusing
+//     every fresh PR would make this useless exactly when it is wanted. See `rollup-check-state.mjs`.
 //   * It groups only PRs whose file sets are DISJOINT. Two PRs touching one file might merge cleanly
 //     and still be wrong together — `tests/run-tests.ts` is the standing example: both sides append at
 //     the same anchor, git puts the conflict INSIDE one `await runTest(` call, and keeping both sides
@@ -35,6 +44,9 @@
 //   node scripts/rollup-prs.mjs --max-files 3    # what counts as "small" (default: PHX_MERGE_MIN_FILES, else 4)
 //   node scripts/rollup-prs.mjs --json           # the whole reading
 //   node scripts/rollup-prs.mjs --close-superseded   # with --apply: close subsumed dependabot PRs
+//   node scripts/rollup-prs.mjs --apply --wait 40    # how long to wait for the members' required checks
+//                                                    # (minutes; default PHX_ROLLUP_WAIT_MINUTES, else 25)
+//   node scripts/rollup-prs.mjs --apply --no-wait     # do not wait: build only from members already green
 'use strict';
 
 import { execFileSync } from 'node:child_process';
@@ -42,7 +54,8 @@ import { readFileSync } from 'node:fs';
 
 import { readProtectionContexts } from './required-check-names.mjs';
 import { rollupBranchName } from './rollup-branch-name.mjs';
-import { rollupBuildVerdict } from './rollup-build-verdict.mjs';
+import { rollupBuildVerdict, MIN_MEMBERS } from './rollup-build-verdict.mjs';
+import { membersReadyToBuild, requiredCheckState, waitForRequiredChecks } from './rollup-check-state.mjs';
 
 const REPO = 'Gawish-1997/phoenix-people-workforce';
 
@@ -67,46 +80,17 @@ const NEVER_ROLL_UP = [
 ];
 
 /**
- * A check conclusion that will not change on its own. PENDING IS NOT RED: a PR opened minutes ago has
- * every required check `QUEUED` or `IN_PROGRESS`, which is the NORMAL case and must still roll up —
- * treating it as a failure would make the tool useless exactly when it is most wanted.
+ * Reading a PR's required checks — RED, PENDING, or finished green — lives in
+ * `rollup-check-state.mjs`, together with the account of why pending is a third answer and not a
+ * flavour of red. The required list itself is never written down anywhere: it comes from
+ * `branches/main/protection/required_status_checks`, read live by the same module
+ * `scripts/check-required-checks.mjs` uses, because it has rotted five times (4 -> 5 -> 6 -> 4 -> 2)
+ * and three of the names a doc still quotes stopped being check names on 2026-09-27 (AGENTS.md §2).
  *
- * `FAILURE`, `TIMED_OUT`, `CANCELLED` and `ERROR` are the four terminal states a required check lands
- * in. `STARTUP_FAILURE` is the same class — the workflow never began, so nothing is coming.
+ * A check that is red but NOT required must not disqualify anything: today two checks still run on a
+ * PR and NEITHER gates the merge (protection read live 2026-09-29), so a red one of those is a thing
+ * to read, not a reason to refuse a roll-up.
  */
-const TERMINAL_FAILURE = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ERROR', 'STARTUP_FAILURE']);
-
-/**
- * The REQUIRED checks of this PR that have terminally failed, named with their state.
- *
- * 🔴 THE REQUIRED LIST IS NEVER HARDCODED HERE. It has rotted five times (4 -> 5 -> 6 -> 4 -> 2) and
- * `lint`/`typecheck`/`test` stopped being check NAMES on 2026-09-27 (AGENTS.md §2, §7), so a constant
- * in this file would disqualify PRs on a name nothing reports any more — or, the quiet direction, miss
- * the one name that actually gates. It comes from `branches/main/protection/required_status_checks`,
- * read live by the same module `scripts/check-required-checks.mjs` uses.
- *
- * A check that is red but NOT required must not disqualify anything: today `mobile` and `secret-scan`
- * both run on a PR and NEITHER gates the merge (protection read live 2026-09-29), so a red one of
- * those is a thing to read, not a reason to refuse a roll-up.
- *
- * `required === null` means the gate could NOT be read. Then every terminal failure counts, because
- * the safe direction is a PR that merges on its own — a false SEPARATE costs one extra CI run and is
- * visible in the report, while a false roll-up is the incident this function exists to prevent.
- *
- * Handles both shapes `statusCheckRollup` returns: a CheckRun (`name` + `conclusion`) and a
- * StatusContext (`context` + `state`).
- */
-function redRequiredChecks(statusCheckRollup, required) {
-  const red = [];
-  for (const entry of statusCheckRollup ?? []) {
-    const name = entry?.name ?? entry?.context ?? '';
-    const state = String(entry?.conclusion ?? entry?.state ?? '').toUpperCase();
-    if (!TERMINAL_FAILURE.has(state)) continue;
-    if (required !== null && !required.has(name)) continue;
-    red.push(`${name || 'an unnamed check'} (${state.toLowerCase()})`);
-  }
-  return red;
-}
 
 const args = process.argv.slice(2);
 const asJson = args.includes('--json');
@@ -120,6 +104,25 @@ const maxFilesArg = (() => {
 const maxFiles = Number.isFinite(maxFilesArg)
   ? maxFilesArg
   : Number(process.env.PHX_MERGE_MIN_FILES ?? 4);
+
+/**
+ * How long `--apply` will wait for a member's required checks to FINISH before giving up on that one.
+ *
+ * 25 minutes is chosen from this repo's own numbers: the two required jobs settle in about 163s
+ * side-by-side (AGENTS.md §7), and a busy hour queues runs behind each other rather than slowing them
+ * down. So the wait is generous enough that the normal case never times out, and short enough that
+ * nobody sits on it — a member that times out is not refused, it simply rolls up on the next run.
+ * `--no-wait` builds from whatever is already green, which is the same tool without the patience.
+ */
+const WAIT_POLL_SECONDS = 30;
+const noWait = args.includes('--no-wait');
+const waitArg = (() => {
+  const i = args.indexOf('--wait');
+  return i >= 0 ? Number(args[i + 1]) : NaN;
+})();
+const waitMinutes = Number.isFinite(waitArg) && waitArg >= 0
+  ? waitArg
+  : Number(process.env.PHX_ROLLUP_WAIT_MINUTES ?? 25);
 
 function gh(argv, { allowFail = false } = {}) {
   try {
@@ -156,13 +159,14 @@ function git(argv, { cwd = process.cwd(), allowFail = false } = {}) {
  * `--json` capture. `--apply` is refused in this mode, because a snapshot is not the live repository.
  *
  * Shape: `[{ number, title, headRefName, headRefOid, paths: [...], author?, isDraft?, mergeStateStatus?,
- * carried?, redRequired?, statusCheckRollup? }]`
+ * carried?, redRequired?, checksPending?, statusCheckRollup? }]`
  *
- * `redRequired` states the check verdict outright and DEFAULTS TO GREEN, so every fixture written
- * before this field existed keeps its verdict. `statusCheckRollup` is the richer seam: give it the real
- * `[{ name, conclusion }]` shape and `PHX_ROLLUP_REQUIRED=validate,checks` names the gate, and the
- * actual `redRequiredChecks()` filter runs — which is the only way "red but NOT required" and "required
- * but still pending" can be told apart offline, since both collapse to `redRequired: false`.
+ * `redRequired` and `checksPending` state the check verdict outright and BOTH DEFAULT TO FINISHED AND
+ * GREEN, so every fixture written before either field existed keeps its verdict exactly.
+ * `statusCheckRollup` is the richer seam: give it the real `[{ name, conclusion }]` shape, name the
+ * gate with `PHX_ROLLUP_REQUIRED`, and the actual `requiredCheckState()` split runs — which is the only
+ * way "red but NOT required", "required and still pending" and "required and green" can be told apart
+ * offline, since all three collapse to `redRequired: false`.
  */
 const fixturePath = process.env.PHX_ROLLUP_FIXTURE;
 
@@ -183,6 +187,7 @@ if (fixturePath) {
     carriedFixture: p.carried === true,
     statusCheckRollup: p.statusCheckRollup ?? null,
     redRequired: p.redRequired === true,
+    pendingFixture: p.checksPending === true,
   }));
 } else {
   open = JSON.parse(
@@ -201,8 +206,8 @@ if (fixturePath) {
 
 /**
  * The live required list, as a Set — or `null` when the gate could not be read, which makes every
- * terminal failure count (see `redRequiredChecks`). Never a name from a file: AGENTS.md's own §2 says
- * to read protection and count against what it returns, because the list has rotted five times.
+ * check count, red or unfinished (see `requiredCheckState`). Never a name from a file: AGENTS.md's own
+ * §2 says to read protection and count against what it returns, because the list has rotted five times.
  *
  * In fixture mode there is no network, so `PHX_ROLLUP_REQUIRED` stands in; absent, the fixture is
  * judged the way an unreadable gate is, which is the same code path either way.
@@ -220,16 +225,22 @@ if (fixturePath) {
 }
 
 for (const pr of open) {
-  // A fixture may state the verdict outright (`redRequired`) or hand over the real rollup shape; when
-  // it hands over the shape, the real filter runs and its answer wins.
+  // A fixture may state the verdict outright (`redRequired` / `checksPending`) or hand over the real
+  // rollup shape; when it hands over the shape, the real split runs and its answer wins.
   if (pr.statusCheckRollup) {
-    pr.redChecks = redRequiredChecks(pr.statusCheckRollup, requiredContexts);
-    pr.redRequired = pr.redChecks.length > 0;
+    const state = requiredCheckState(pr.statusCheckRollup, requiredContexts);
+    pr.redChecks = state.red;
+    pr.pendingChecks = state.pending;
   } else {
     pr.redChecks = pr.redRequired ? ['a required check (stated by the fixture)'] : [];
+    pr.pendingChecks = pr.pendingFixture ? ['a required check (stated by the fixture)'] : [];
   }
-  // It is large, it is already distilled into `redChecks`, and `--json` dumps `open` whole.
+  pr.redRequired = pr.redChecks.length > 0;
+  // Nothing is left to wait for and nothing is red: the only state `--apply` may build from.
+  pr.checksSettled = pr.redChecks.length === 0 && pr.pendingChecks.length === 0;
+  // It is large, it is already distilled into the two lists, and `--json` dumps `open` whole.
   delete pr.statusCheckRollup;
+  delete pr.pendingFixture;
 }
 
 for (const pr of open) {
@@ -364,11 +375,22 @@ if (asJson) {
   for (const pr of open.sort((a, b) => a.number - b.number)) {
     console.log(`  ${label[pr.verdict.kind]}  #${pr.number}  ${String(pr.changedFiles).padStart(2)} files  ${pr.mergeStateStatus.padEnd(8)}  ${pr.title.slice(0, 54)}`);
     console.log(`               ${pr.verdict.why}`);
+    // Pending is not a verdict — it does not change whether the PR belongs in the group — so it is
+    // reported on its own line, or a reader cannot tell a member that is PROVEN green from one that
+    // merely has nothing red yet. That is the distinction #4896 was built without.
+    if (pr.pendingChecks.length > 0 && !pr.redRequired) {
+      console.log(`               required checks not finished yet: ${pr.pendingChecks.join(', ')}`);
+    }
   }
   console.log('');
   if (group.length >= 2) {
     console.log(`[rollup] ONE branch can carry ${group.map((p) => `#${p.number}`).join(' + ')}`);
     console.log(`[rollup] that is ${group.length} merges -> 1, about ${saving} billable minutes saved`);
+    const unproven = group.filter((p) => !p.checksSettled);
+    if (unproven.length > 0) {
+      console.log(`[rollup] ${unproven.map((p) => `#${p.number}`).join(', ')} still have required checks running — `
+        + `--apply waits up to ${waitMinutes} min for them and builds only from the ones that finish green`);
+    }
     console.log(apply ? '[rollup] --apply given: building it' : '[rollup] re-run with --apply to build the branch and open the PR');
   } else {
     console.log('[rollup] nothing to roll up — fewer than two disjoint small PRs. Merge them as they are.');
@@ -431,6 +453,91 @@ if (settle) {
 
 if (!apply || group.length < 2) process.exit(0);
 
+// -------------------------------------------------- wait for the members' required checks to finish
+
+// WHY THIS WAIT EXISTS, AND WHY IT IS HERE RATHER THAN IN THE CLASSIFICATION.
+//
+// The classification answers "does this PR belong in a roll-up", and a PR whose checks are still
+// running does — it is the normal case, since a roll-up is usually built minutes after a PR is opened,
+// and refusing every fresh PR would leave the small ones with nowhere to go again. The BUILD answers a
+// different question: "am I willing to bet one approval on this PR's checks". Those two answers diverge
+// for exactly as long as the checks take, which is why the wait lives at the seam between them.
+//
+// Measured 2026-09-30: `--apply` built #4896 from #4895 (green) and #4894 (queued). #4894 went red
+// minutes later — four TypeScript errors and two of its own tests — and the roll-up inherited a red it
+// could never clear on its own. Because a roll-up's members must not be merged separately (AGENTS.md
+// §6), the GREEN PR was stuck behind another session's fix; #4896 was closed and #4895 merged alone.
+// One CI run spent, nothing shipped.
+//
+// It sits BEFORE the branch is created on purpose. Waiting after that would leave the session parked on
+// a half-built local branch for the duration — which is the other half of the 2026-09-30 mess, because
+// `new-session.mjs --remove` judges a worktree by whatever branch it finds checked out.
+const memberState = new Map(group.map((p) => [p.number, { number: p.number, red: p.redChecks, pending: p.pendingChecks }]));
+
+/** Members with nothing red yet and something still running — the ones a wait could still resolve. */
+function stillRunning() {
+  return [...memberState.values()].filter((m) => m.red.length === 0 && m.pending.length > 0);
+}
+
+/** A synchronous sleep, because everything else in this script is synchronous and reads in order. */
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * One member's required checks, read again. `null` means the read failed — which is NOT news: the
+ * previous reading is kept, so a flaky call can never promote a pending member to green.
+ */
+function rereadCheckState(number) {
+  const raw = gh(['pr', 'view', String(number), '--repo', REPO, '--json', 'statusCheckRollup'], { allowFail: true });
+  if (!raw) return null;
+  try {
+    return requiredCheckState(JSON.parse(raw).statusCheckRollup, requiredContexts);
+  } catch {
+    return null;
+  }
+}
+
+if (stillRunning().length === 0) {
+  console.log('[rollup] every member\'s required checks have already finished green — building now.');
+} else if (noWait) {
+  console.log(`[rollup] --no-wait: ${stillRunning().map((m) => `#${m.number}`).join(', ')} have checks still running `
+    + 'and will be left out rather than waited for.');
+} else {
+  console.log(`[rollup] waiting up to ${waitMinutes} min for ${stillRunning().map((m) => `#${m.number}`).join(', ')} — `
+    + 'a roll-up built over an unfinished member inherits whatever its checks turn out to say.');
+  const settled = waitForRequiredChecks({
+    members: [...memberState.values()],
+    timeoutMs: waitMinutes * 60_000,
+    pollMs: WAIT_POLL_SECONDS * 1000,
+    reread: rereadCheckState,
+    sleep: sleepMs,
+    onPoll: ({ left, msLeft }) => {
+      console.log(left.length > 0
+        ? `[rollup] still running: ${left.map((m) => `#${m.number} (${m.pending.join(', ')})`).join('; ')} `
+          + `— ${Math.max(0, Math.round(msLeft / 60_000))} min left of the wait`
+        : '[rollup] all members\' required checks have finished.');
+    },
+  });
+  for (const member of settled) memberState.set(member.number, member);
+}
+
+const readiness = membersReadyToBuild([...memberState.values()]);
+for (const dropped of readiness.dropped) console.log(`[rollup] #${dropped.number} left out — ${dropped.why}`);
+
+if (readiness.carry.length < MIN_MEMBERS) {
+  console.log(`[rollup] only ${readiness.carry.length} member(s) finished green, so there is no roll-up worth `
+    + `${MIN_MEMBERS} merges. Nothing was built, nothing was pushed, nothing was closed — re-run when the `
+    + 'checks have settled.');
+  process.exit(0);
+}
+
+const buildGroup = group.filter((p) => readiness.carry.includes(p.number));
+if (buildGroup.length < group.length) {
+  console.log(`[rollup] building from ${buildGroup.map((p) => `#${p.number}`).join(' + ')} — `
+    + `${(buildGroup.length - 1) * BILLABLE_MINUTES_PER_MERGE} billable minutes saved instead of ${saving}`);
+}
+
 // ---------------------------------------------------------------------------- build it
 
 // The name must be unique across HISTORY, not just among live branches — see rollup-branch-name.mjs
@@ -478,7 +585,9 @@ function abandon(lines) {
 
 const carried = [];
 const skipped = [];
-for (const pr of group) {
+// `buildGroup`, never `group`: the wait above is what tells the two apart, and a member whose checks
+// never finished green must not reach a `git merge` here.
+for (const pr of buildGroup) {
   // A member can MERGE while this runs, and `delete_branch_on_merge` then deletes its branch, so this
   // fetch fails for a branch that existed seconds ago. That is not the question: the commit is usually
   // still here from the classification pass, and if we HAVE the object the merge is as correct as it
