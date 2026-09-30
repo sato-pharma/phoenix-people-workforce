@@ -10,6 +10,7 @@ import {
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 import { HR_ROLE_BUNDLES, type HrFunctionKey } from "../src/lib/auth/hr-functions.ts";
+import { AUDIT_ENTITY_TYPES } from "../src/lib/admin/audit-entity-types.ts";
 import { CV_LOOKUP_MIN_LENGTH } from "../src/lib/recruitment/cv-lookup.ts";
 
 /**
@@ -282,21 +283,25 @@ export async function runCvLookupTests() {
   );
 
   // …AND A TRAIL HE CANNOT SELECT IS A TRAIL HE CANNOT READ. Writing the row is only half of
-  // "logged, Super Admin only"; the other half is /admin/logs, where the entity-type picker is a
-  // hand-kept shortlist. Production writes ~2,456 audit rows a day (measured 2026-09-30), so a
-  // search from this morning is hundreds deep in "all" by the afternoon and yesterday's is gone.
-  // Both types are asserted because they answer different questions — what was searched for, and
-  // whose CV actually left the building.
+  // "logged, Super Admin only"; the other half is /admin/logs. Production writes ~2,456 audit
+  // rows a day (measured 2026-09-30), so a search from this morning is hundreds deep in "all" by
+  // the afternoon and yesterday's is thousands. The picker was a hand-kept shortlist of ten that
+  // named neither type; it is now derived from the catalogue, which is what the assertion below
+  // holds in place. Both types are asserted because they answer different questions — what was
+  // searched for, and whose CV actually left the building.
   const VIEWER = "src/components/admin/audit-log-viewer.tsx";
-  const viewerSource = read(VIEWER);
-  const listStart = viewerSource.indexOf("const ENTITY_TYPES = [");
-  const entityTypes = viewerSource.slice(listStart, viewerSource.indexOf("];", listStart));
-  for (const entityType of ["cv_lookup_search", "cv_lookup_open"]) {
+  for (const entityType of ["cv_lookup_search", "cv_lookup_open"] as const) {
     assert.ok(
-      entityTypes.includes(`"${entityType}"`),
-      `${VIEWER} must offer "${entityType}" in ENTITY_TYPES. The owner asked for every CV Lookup ` +
-        "search to be logged and readable by him alone; a type missing from that picker can only " +
-        'be reached by paging "all", which is thousands of rows a day.',
+      AUDIT_ENTITY_TYPES.includes(entityType),
+      `the audit log picker must offer "${entityType}". The owner asked for every CV Lookup ` +
+        "search to be logged and readable by him alone; a type missing from that picker can " +
+        'only be reached by paging "all", which is thousands of rows a day.',
     );
   }
+  assert.match(
+    read(VIEWER),
+    /const ENTITY_TYPES = \["all", \.\.\.AUDIT_ENTITY_TYPES\];/,
+    `${VIEWER} must build its picker from the whole catalogue — the hand-kept list that hid these ` +
+      "two is what this asserts against coming back.",
+  );
 }

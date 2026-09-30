@@ -1,0 +1,172 @@
+// The complete catalogue of audit entity types, AS A RUNTIME LIST — the thing a picker can be
+// built from. `AuditEntityType` in ./audit.ts is the source of truth and carries the account of why
+// each type exists; this file exists only because a TYPE cannot be iterated at runtime.
+//
+// ── WHY IT IS A SEPARATE FILE ───────────────────────────────────────────────────────────────────
+//
+// `audit.ts` imports `getSupabaseAdmin`, so it is server code and a client component may not pull
+// it into the bundle. The `import type` below is erased at compile time, so this module lands in
+// the browser carrying nothing but the names. That is the whole reason for the split: keep ONE
+// catalogue, and let the client read it without dragging the service-role client along.
+//
+// ── WHY THE RECORD, AND NOT JUST AN ARRAY ───────────────────────────────────────────────────────
+//
+// 🔴 A UNION AND A HAND-KEPT ARRAY BESIDE IT DRIFT, AND THE DRIFT IS SILENT. This repo already
+// owns that failure once: `permissionResources` is a runtime array beside `PermissionResource`,
+// and a name present in the union but missing from the array is treated as PERMITTED FOR EVERY
+// ROLE — a security hole that no test and no compiler ever mentions.
+//
+// `Record<AuditEntityType, true>` makes the same mistake IMPOSSIBLE instead of merely unlikely:
+// TypeScript refuses a missing key and refuses an unknown one, so the list cannot fall behind the
+// union and cannot invent a type that does not exist. The array is then DERIVED from the record's
+// own keys, never written twice. Adding a type to the union and forgetting this file is a red
+// `checks` job, not a name quietly missing from a screen.
+//
+// ── WHY IT MATTERS THAT THE LIST IS COMPLETE ────────────────────────────────────────────────────
+//
+// Before this, `/admin/logs` offered a hand-kept shortlist of ten names while production wrote 88
+// distinct types in 30 days — so ~78 kinds of trail could only be reached by paging "all", which
+// is ~2,456 rows a day (measured 2026-09-30). Three of the ten it did offer had not been written
+// in 30 days. A trail nobody can select is a trail nobody reads, and the owner asked for the CV
+// Lookup one BY NAME, which is what exposed the shape of the problem.
+//
+// Sorted, because the picker is searchable and alphabetical is the only order that does not rot:
+// any "most used first" arrangement encodes today's volumes and is wrong by next quarter.
+//
+// Pinned by tests/audit-entity-types.test.ts.
+import type { AuditEntityType } from "./audit";
+
+const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
+  android_device_policy: true,
+  android_enrollment_token: true,
+  area_consolidation: true,
+  attendance_digest_answer: true,
+  attendance_digest_auto_salary: true,
+  attendance_digest_bridge_run: true,
+  attendance_digest_confirm: true,
+  attendance_digest_dispute: true,
+  attendance_digest_dispute_review: true,
+  attendance_digest_line_marked: true,
+  attendance_digest_line_removed: true,
+  attendance_digest_release: true,
+  attendance_holiday_override: true,
+  attendance_settlement: true,
+  attendance_settlement_correction: true,
+  attendance_weekly_digest_run: true,
+  auth_session: true,
+  business_cards_export: true,
+  business_review_export: true,
+  business_review_pack: true,
+  business_review_s1_export: true,
+  calendar_event: true,
+  company_activity_report_export: true,
+  company_device: true,
+  company_email_alias: true,
+  crm_account_setup: true,
+  crm_contact_list_sync: true,
+  crm_master_export: true,
+  crm_plan_sync: true,
+  crm_plan_verification: true,
+  cron_job_control: true,
+  cv_lifecycle_share_link: true,
+  cv_lookup_open: true,
+  cv_lookup_search: true,
+  daily_deductions_publication: true,
+  deduction_candidate: true,
+  deduction_comment: true,
+  deduction_decision: true,
+  deduction_export: true,
+  deduction_finalization: true,
+  deduction_payroll_import: true,
+  deduction_payroll_preview: true,
+  deduction_summary: true,
+  deductions_candidate: true,
+  deductions_comment: true,
+  deductions_decision: true,
+  deductions_publication: true,
+  device_assignment: true,
+  device_import: true,
+  direct_order_request: true,
+  distribution_list: true,
+  doctor_coverage_config: true,
+  double_visit_import: true,
+  employee_decline_offer: true,
+  employee_resignation: true,
+  excuse_request: true,
+  field_workforce_compliance_import: true,
+  headwind_configuration: true,
+  headwind_device_command: true,
+  headwind_enrollment: true,
+  headwind_user: true,
+  hiring_document_definition: true,
+  hiring_document_file: true,
+  hiring_document_note: true,
+  hiring_document_status: true,
+  hiring_documents_export: true,
+  hr_retention_conversation: true,
+  job_offer: true,
+  mailbox_offboarding: true,
+  manageengine_app_repository: true,
+  manageengine_device_app: true,
+  manageengine_device_command: true,
+  manageengine_device_profile: true,
+  manageengine_enrollment_template: true,
+  manageengine_profile: true,
+  marketing_customer: true,
+  marketing_pharmacy: true,
+  marketing_request: true,
+  new_hire_mailbox: true,
+  notification: true,
+  organogram_contact_export: true,
+  outstation_expense_access: true,
+  outstation_request: true,
+  payroll_batch: true,
+  permission_override: true,
+  pharmacy_search_discovery: true,
+  phoenix_crm_reports_export: true,
+  planning_calendar_export: true,
+  private_calendar_data_dispute: true,
+  probation_assessment: true,
+  probation_case: true,
+  probation_config: true,
+  probation_decision: true,
+  probation_development_action: true,
+  probation_dv_day: true,
+  probation_feedback: true,
+  resignation_history_export: true,
+  salary_flag: true,
+  sales_import_batch: true,
+  sato_email_media: true,
+  sato_email_send: true,
+  sato_email_template: true,
+  scheduled_job_health: true,
+  sos_phoenix_template_export: true,
+  sos_raw_template_export: true,
+  source_of_sales_area: true,
+  source_of_sales_block: true,
+  source_of_sales_brick: true,
+  source_of_sales_distributor: true,
+  source_of_sales_product: true,
+  source_of_sales_region: true,
+  system_cleanup: true,
+  territory_preview_link: true,
+  territory_sync: true,
+  user: true,
+  user_activity_access: true,
+  vacation_report_export: true,
+  vacation_request: true,
+  vacation_retention_purge: true,
+  vacation_weekly_off_policy: true,
+  visual_aid: true,
+  weekly_plan: true,
+  weekly_plan_day: true,
+  weekly_sales_batch: true,
+  weekly_sales_mapping: true,
+  whatsapp_inbox_conversation: true,
+  whatsapp_inbox_message: true,
+  workflow_registry: true,
+};
+
+export const AUDIT_ENTITY_TYPES: readonly AuditEntityType[] = Object.freeze(
+  (Object.keys(AUDIT_ENTITY_TYPE_PRESENT) as AuditEntityType[]).sort(),
+);
