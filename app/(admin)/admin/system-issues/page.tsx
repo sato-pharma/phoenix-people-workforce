@@ -23,7 +23,7 @@ export default async function SystemIssuesPage() {
   }
 
   const [issuesSettled, attemptsSettled] = await Promise.all([
-    loadSystemIssuesSnapshot(24)
+    loadSystemIssuesSnapshot()
       .then((data) => ({ data, error: null as string | null }))
       .catch((error: unknown) => {
         console.error("Failed to load system issues snapshot:", error);
@@ -45,7 +45,7 @@ export default async function SystemIssuesPage() {
     <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
       <div className="space-y-7">
         <AdminPageHero
-          description="Live system errors from Supabase + GCP Cloud Logging, and per-employee error/failed-login attempt counts. Super Admin + CEO only."
+          description="Live system errors from Supabase, live Cloud Run service health, and per-employee error/failed-login attempt counts. Super Admin + CEO only."
           eyebrow="System diagnostics"
           icon={<TriangleAlert className="h-3.5 w-3.5" />}
           title="System Issues"
@@ -56,7 +56,6 @@ export default async function SystemIssuesPage() {
             aiEnabled={issuesResult.aiEnabled}
             initialAppErrors={issuesResult.appErrors}
             initialAttempts={attemptsResult}
-            initialGcpLogs={issuesResult.gcpLogs}
             initialServiceHealth={issuesResult.serviceHealth}
           />
         ) : (

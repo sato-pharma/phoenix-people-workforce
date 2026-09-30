@@ -1,6 +1,6 @@
 // Live GCP Cloud Monitoring reader for the System Issues "Service Health" panel.
 //
-// Complements gcp-logs.ts (which reads Cloud Logging): this reads Cloud Monitoring
+// Reads GCP Cloud Monitoring
 // time-series so the dashboard can show real availability / latency / instance-count
 // SLIs straight from the platform, alongside the two SLOs already defined under
 // service id `phoenix-hr-prod` (availability-99-5, latency-95-2s). Uses Application
@@ -8,8 +8,7 @@
 // has roles/monitoring.viewer) in production, or `gcloud auth application-default
 // login` locally. Never throws: missing project config or an unauthorized principal
 // (IAM not yet granted) surfaces as `{ available: false, error }` so the dashboard can
-// show an explicit "not connected" state instead of a misleading blank panel. Mirrors
-// gcp-logs.ts's style and its `{ available, error }` contract precisely.
+// show an explicit "not connected" state instead of a misleading blank panel.
 
 import { GoogleAuth } from "google-auth-library";
 
