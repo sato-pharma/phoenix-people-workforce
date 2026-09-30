@@ -268,14 +268,39 @@ function checkScreens(): void {
   assert.match(strip, /<bdi>\{pick\.brickName\}<\/bdi>/, "and an Arabic brick name is isolated inside the English line");
   assert.match(strip, /listText\(pick\.customer\.listType\)/, "AM or PM, in the module's one wording");
 
-  // ── The lead figure: what is still to validate, AM and PM apart ───────────────────────────────
+  // ── The four figures: ONE tile family, and the progress outside them ──────────────────────────
+  // 🔴 The owner called this row awful on 2026-09-30 while it was a tall lead box beside three short
+  //    ones: the lead carried the bar, the percentage and a three-line sentence, so it stood about
+  //    three times their height and — a grid row being as tall as its tallest cell — left each of the
+  //    other three ending in ~120px of white nothing, with its AM · PM beside the figure where theirs
+  //    sat underneath. Four identical tiles now, and everything that measures the WHOLE list moved
+  //    out below them. Re-introducing a bespoke lead box is what this pins against.
   const readiness = functionBody(tab, "ReadinessBlock");
-  const lead = readiness.indexOf(">To validate<");
+  const lead = readiness.indexOf('label="To validate"');
   assert.ok(lead > 0, "the block leads with To validate");
   for (const figure of ['label="Reference list"', 'label="Validated"', 'label="Drops waiting"']) {
     const at = readiness.indexOf(figure);
     assert.ok(at > lead, `${figure} is context beside the lead figure, after it`);
   }
+  assert.equal(
+    (readiness.match(/<ListFigure\b/g) ?? []).length,
+    4,
+    "all four figures are the SAME tile — To validate is not a bespoke box beside the other three",
+  );
+  assert.ok(
+    readiness.includes('<div className="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">'),
+    "and they sit in one equal four-up grid, two-up on a narrow screen — never a 5fr lead track beside a 7fr one",
+  );
+  assert.ok(
+    !readiness.includes("md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]"),
+    "the split that made the lead three times its neighbours' height must not come back",
+  );
+  // The bar measures the whole list, so it belongs to the block, not to one tile.
+  assert.ok(
+    readiness.indexOf('role="progressbar"') > readiness.indexOf('label="Drops waiting"'),
+    "the progress bar sits BELOW the four tiles, not inside the first one",
+  );
+  assert.match(readiness, /tone=\{allDone \? "good" : "act"\}/, "the figure he acts on is marked by its rail, never by a larger number");
   assert.match(readiness, /pairText\(countByType\(pending\)\)/, "the lead's AM and PM are said apart");
   assert.doesNotMatch(tab, /\.AM \+ [^;]*\.PM|\.PM \+ [^;]*\.AM/, "AM and PM are never added into one figure");
   assert.doesNotMatch(readiness, /\brounded-(?!none\b)/, "square corners");

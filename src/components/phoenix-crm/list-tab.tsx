@@ -535,11 +535,9 @@ function ListHome({
       ) : null}
       {error ? <CrmLoadError message={error} onRetry={onRetry} /> : null}
 
-      <ReadinessBlock pending={pending} view={view} />
-
       {/* Where he chooses what to do next — To validate, and The list he opens on — the three worth his
-          next stop sit right under the figure that counts them, above the seven-part chooser that would
-          otherwise push them below a phone's first screen. The rep's alone: he is the one who validates. */}
+          next stop sit above the chooser, which would otherwise push them below a phone's first
+          screen. The rep's alone: he is the one who validates. */}
       {current === "to_validate" || current === "board" ? (
         <ValidateNextStrip canValidate={view.canEdit} customers={view.customers} onRowAction={onRowAction} />
       ) : null}
@@ -587,6 +585,14 @@ function ListHome({
       ) : null}
 
       {current === "board" ? <BoardSection onRowAction={onRowAction} seatId={seatId} test={test} view={view} /> : null}
+
+      {/* 🔴 THE FIGURES SIT UNDER THE CHOOSER, NOT OVER IT (owner, 2026-09-30: "I don't recommend to
+          put it above them"). They used to open the screen, above the chooser — but three of the four
+          say what three of the chooser's own parts already say, in his own words: "the list is the
+          full list, To validate is who are not validated, Your list is which are validated." A
+          summary stacked on top of the thing it summarises is one screen of duplication before a rep
+          reaches anything he can act on. Here they belong to the part they measure. */}
+      {current === "to_validate" ? <ReadinessBlock pending={pending} view={view} /> : null}
 
       {current === "to_validate" ? (
         <CustomerSection
@@ -811,50 +817,70 @@ function ReadinessBlock({ pending, view }: { pending: ReadonlyArray<ListCustomer
 
   return (
     <CrmBlock title="The list">
-      {/* ONE NUMBER LEADS. What is still to validate is the only figure on this block the rep acts on,
-          so it is the big one, with its bar and its one sentence; the reference list, what is validated
-          and the drops waiting are the context beside it, a size down. AM and PM are said apart in
-          every figure (`pairText`), never added into one. */}
-      <div className="grid min-w-0 gap-2 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <div className={cn("min-w-0 border border-l-[3px] border-slate-200/80 bg-white px-4 py-3.5", allDone ? "border-l-emerald-500" : "border-l-orange-500")}>
-          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">To validate</p>
-          <div className="mt-1.5 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-            <p className={cn("text-4xl font-black leading-none tracking-tight", allDone ? "text-emerald-700" : "text-slate-950")}>{countText(toGo)}</p>
-            <p className="break-words text-sm font-black text-slate-600">{allDone ? "Every customer is validated" : pairText(countByType(pending))}</p>
-          </div>
-          {readiness.total > 0 ? (
-            <div className="mt-3">
-              <div
-                aria-label="Validated so far"
-                aria-valuemax={readiness.total}
-                aria-valuemin={0}
-                aria-valuenow={readiness.validated}
-                className="h-1.5 w-full bg-slate-100"
-                role="progressbar"
-              >
-                <div className="h-full bg-emerald-500 transition-[width]" style={{ width: `${donePercent}%` }} />
-              </div>
-              <p className="mt-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{`${donePercent}% of the list validated`}</p>
-            </div>
-          ) : null}
-          <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
-            {allDone
-              ? `${readiness.readyAt ? `Ready since ${cairoStamp(readiness.readyAt)}. ` : ""}Customers who appear on the iReports360 list later show under To validate, and can be planned and visited straight away.`
-              : view.canEdit
-                ? "Plan and visit them as normal. Validate each one at the clinic — signboard photo, location, days and hours — and the visits already saved start counting."
-                : "The rep plans and visits them as normal. Each one starts counting once the rep validates it at the clinic."}
-          </p>
-        </div>
+      {/* 🔴 FOUR EQUAL TILES, THEN THE PROGRESS ON ITS OWN LINE (owner, 2026-09-30, of the row as it
+          stood: "this part is awful"). It was a 5fr lead box beside three 7fr ones, and the lead
+          carried the bar, the percentage AND a three-line sentence — so it stood about three times
+          the height of its neighbours, and because a grid row is as tall as its tallest cell the
+          other three each ended in roughly 120px of white nothing. Worse, the rhythm inside them
+          disagreed: the lead put its AM · PM beside the figure, the other three put it underneath,
+          which is two families pretending to be one.
 
-        <div className="grid min-w-0 grid-cols-3 gap-2">
-          <ListFigure label="Reference list" note={pairText(reference)} value={countText(readiness.total)} />
-          <ListFigure good={readiness.validated > 0} label="Validated" note={pairText(validated)} value={countText(readiness.validated)} />
-          <ListFigure
-            label="Drops waiting"
-            note={`${plural(readiness.dropped, "customer", "customers")} in the Archive`}
-            value={countText(readiness.dropPending)}
-          />
-        </div>
+          So the four figures are now one row of identical tiles — same label, same figure size, same
+          meta line, in that order — and everything that belongs to the LIST rather than to one tile
+          moved out from under "To validate" into the strip below, which is where a bar measuring the
+          whole list belonged in the first place. Nothing is lost and the void is gone.
+
+          What still marks the figure he acts on is the ORANGE RAIL, not extra size: a bigger number
+          in one cell would sit on a different baseline from the other three, which is the same
+          not-lining-up he has objected to before. AM and PM are said apart in every tile
+          (`pairText`), never added into one. */}
+      <div className="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
+        <ListFigure
+          label="To validate"
+          note={allDone ? "Every customer is validated" : pairText(countByType(pending))}
+          tone={allDone ? "good" : "act"}
+          value={countText(toGo)}
+        />
+        <ListFigure label="Reference list" note={pairText(reference)} value={countText(readiness.total)} />
+        <ListFigure
+          label="Validated"
+          note={pairText(validated)}
+          tone={readiness.validated > 0 ? "good" : undefined}
+          value={countText(readiness.validated)}
+        />
+        <ListFigure
+          label="Drops waiting"
+          note={`${plural(readiness.dropped, "customer", "customers")} in the Archive`}
+          value={countText(readiness.dropPending)}
+        />
+      </div>
+
+      <div className="mt-2 min-w-0 border border-slate-200/80 bg-white px-4 py-3">
+        {readiness.total > 0 ? (
+          <>
+            <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Validated so far</p>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.12em] tabular-nums text-slate-500">{`${donePercent}% of the list`}</p>
+            </div>
+            <div
+              aria-label="Validated so far"
+              aria-valuemax={readiness.total}
+              aria-valuemin={0}
+              aria-valuenow={readiness.validated}
+              className="mt-1.5 h-1.5 w-full bg-slate-100"
+              role="progressbar"
+            >
+              <div className="h-full bg-emerald-500 transition-[width]" style={{ width: `${donePercent}%` }} />
+            </div>
+          </>
+        ) : null}
+        <p className={cn("break-words text-xs font-semibold leading-5 text-slate-600", readiness.total > 0 && "mt-2")}>
+          {allDone
+            ? `${readiness.readyAt ? `Ready since ${cairoStamp(readiness.readyAt)}. ` : ""}Customers who appear on the iReports360 list later show under To validate, and can be planned and visited straight away.`
+            : view.canEdit
+              ? "Plan and visit them as normal. Validate each one at the clinic — signboard photo, location, days and hours — and the visits already saved start counting."
+              : "The rep plans and visits them as normal. Each one starts counting once the rep validates it at the clinic."}
+        </p>
       </div>
 
       {view.referenceSource && !view.referenceSource.isCurrent ? (
@@ -875,21 +901,32 @@ function ReadinessBlock({ pending, view }: { pending: ReadonlyArray<ListCustomer
  * a grey stub, and the label tracking, the figure size and the meta type all differed between them,
  * so the row read as one thing plus three offcuts rather than as a set.
  *
- * The structure is now the lead tile's, one step down: the same small-caps label at the same
- * tracking, the figure on its own line in tabular numerals so the four line up, the meta beneath it,
- * and a rail that MEANS something — emerald when there is something good to say, slate when the
- * figure is only context — rather than a decorative stub. Square edges, as everything here is.
+ * 🔴 AND ALL FOUR ARE NOW THE SAME TILE, INCLUDING "To validate" (owner again, same day: "this part
+ * is awful"). The first pass kept the lead as a separate, much taller box, which is what left the
+ * other three sitting in ~120px of white nothing; the block above explains the move. What is left
+ * here is the one shape they all wear: the same small-caps label at the same tracking, the figure on
+ * its own line in tabular numerals so all four line up, the meta beneath it, and a rail that MEANS
+ * something rather than a decorative stub. Square edges, as everything here is.
+ *
+ * `tone` is the ONLY thing that varies, and never the type scale: `act` is the figure he does
+ * something about, `good` is a figure worth being pleased by, and no tone at all is plain context.
+ * Sizing one tile up instead would put its number on a different baseline from its neighbours'.
  */
-function ListFigure({ good = false, label, note, value }: { good?: boolean; label: string; note: string; value: string }) {
+function ListFigure({ label, note, tone, value }: { label: string; note: string; tone?: "act" | "good"; value: string }) {
   return (
     <div
       className={cn(
         "flex min-w-0 flex-col border border-l-[3px] border-slate-200/80 bg-white px-3 py-3 transition hover:border-slate-300",
-        good ? "border-l-emerald-500" : "border-l-slate-300",
+        tone === "good" ? "border-l-emerald-500" : tone === "act" ? "border-l-orange-500" : "border-l-slate-300",
       )}
     >
       <p className="break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className={cn("mt-1.5 break-words text-2xl font-black leading-none tracking-tight tabular-nums", good ? "text-emerald-700" : "text-slate-950")}>
+      <p
+        className={cn(
+          "mt-1.5 break-words text-2xl font-black leading-none tracking-tight tabular-nums",
+          tone === "good" ? "text-emerald-700" : "text-slate-950",
+        )}
+      >
         {value}
       </p>
       <p className="mt-1.5 break-words text-phx-2xs font-semibold leading-4 text-slate-500">{note}</p>

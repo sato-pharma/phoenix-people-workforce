@@ -370,6 +370,21 @@ export function runPhoenixCrmTodayTests(): void {
     assert.ok(panel.includes("if (!plan) return null;"), "no day, no panel — never the empty square he has sworn at");
     // The COLUMN goes with it: a 1fr grid track holding nothing is that same empty square.
     assert.ok(centre.includes('${repTodayPlan ? "@3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}'), "and the two-column split collapses when there is no day");
+    // 🔴 THE FOUR KPI TILES STACK 2x2 WHENEVER THE DAY IS BESIDE THEM, AND THE CONDITION IS THE DAY,
+    //    NEVER A WIDTH. He asked for this stack twice on 2026-09-30 — the second time because the
+    //    first fix leant on `@3xl:grid-cols-4` and a container query, which was MEASURED not to hold:
+    //    the wrapper is a real `inline-size` container 721px wide, inside 48rem, and the row still
+    //    rendered four 219px tracks, so on a wide screen the tiles went back across the top and his
+    //    left column finished 143px short of the day. Re-introducing any width query here puts the
+    //    asymmetry back on the one screen he actually works on.
+    assert.ok(
+      centre.includes('${repTodayPlan ? "grid-cols-2" : "grid-cols-2 @3xl:grid-cols-4"}'),
+      "the KPI tiles are 2x2 whenever there is a day beside them, and four across only when there is not",
+    );
+    assert.ok(
+      !centre.includes('"grid grid-cols-2 gap-2 @3xl:grid-cols-4"'),
+      "and the unconditional four-across form must not come back — that is the exact string that shipped the asymmetry",
+    );
     assert.doesNotMatch(panel, /distance|accuracy|integrity|flag|far from/i, "and nothing on it judges him (golden rule #1)");
     assert.doesNotMatch(panel, /rounded(?!-none)/, "square corners, written out");
     assert.doesNotMatch(panel, /…|truncate/, "and nothing is cut off");
