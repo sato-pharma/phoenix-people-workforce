@@ -702,31 +702,54 @@ replica**, which means the label selection did not hold — those carry `railway
 never self-hosted under the switch, but a red `main` for any reason makes Railway skip the production
 deploy within minutes, and re-running it green does not resurrect it.
 
-## Widening it beyond `ci-runner/` branches — the owner's ruling, 2026-09-28
+## Widening it — DONE, the owner's ruling of 2026-09-30
 
-🔴 **NO — and no longer "not yet".** The earlier wording parked this behind buying two CPX32s. **The
-owner refused that purchase outright on 2026-09-28: *"I WILL NOT BUY THIS"*.** So there is no arriving
-hardware to wait for, and **widening is judged on the pool that exists or it is not judged at all**.
-This is still the obvious-looking improvement a session reading the cost numbers will reach for,
-because the remaining share of the Actions bill genuinely does sit in ordinary pull requests — and the
-measurement below is now the whole of the answer rather than an interim one.
+🔴 **EVERY SAME-REPO PULL REQUEST RUNS SELF-HOSTED NOW.** The owner widened it in his own words —
+*"widen self-hosted CI to all PRs"* — and the `startsWith(github.head_ref, 'ci-runner/')` clause is
+gone from all six `runs-on` lines. **`main`, pushes, dispatches, schedules and fork PRs are still
+hosted**, and the two clauses that keep them there are load-bearing:
 
-**The measurement that decided it.** On the night the switch was proven, two `ci-runner/` PRs ran on the
-pool and **four required jobs wanted three replicas**: `validate`, `checks` and `mobile` queued behind
-`secret-scan` and serialised. Widening the predicate — dropping the `startsWith(github.head_ref,
-'ci-runner/')` clause so every same-repo PR is eligible — would put *every* PR into that queue. That
-trades a measured saving for an unmeasured one and makes the pipeline slower than GitHub-hosted CI,
-which is the opposite of the point.
+| clause | what it stops |
+| --- | --- |
+| `github.event_name == 'pull_request'` | `main` on a self-hosted runner. **`main`'s CI IS the production deploy gate** — a runner that fails or queues there stops shipping, with nothing red |
+| `head.repo.full_name == github.repository` | a fork PR executing arbitrary code on the owner's box |
 
-**It is pinned, not merely written down.** `tests/ci-runner-switch.test.ts` requires that clause, and it
-runs in the required `checks` job — so removing it turns a PR red with the ruling in the failure
-message. Do not "fix" that test to widen the predicate; the test is the ruling.
+**Rolling back is the kill switch, never an edit to the expression:**
 
-**What would change it:** the pool itself getting deeper — more replicas on the Railway service, or
-some other host registered with its own label — so that four required jobs no longer queue behind
-three. 🔴 **Not hardware arriving: none is.** Re-measure the queue against the pool that exists on the
-day, and if it has grown, re-propose widening with his word, as its own change — never bundled into
-something else, and never by re-pitching the boxes.
+```bash
+gh variable set CI_SELF_HOSTED --repo Gawish-1997/phoenix-people-workforce --body off
+```
+
+`vars.*` re-resolve on each new run **attempt**, so that returns every PR to hosted on its next
+attempt and `gh run rerun --failed` picks it up. The branch-name clause could not be undone that way,
+which was its original appeal — and is now moot.
+
+### Why the 2026-09-28 refusal was right then and wrong now
+
+That ruling was not overturned by argument; the measurement under it was an artefact. `checks` read
+**324–339s** self-hosted against ~209s hosted, which reads exactly like slow shared vCPU. It was the
+**ESLint cache, keyed by absolute path**: a cache written on `ubuntu-latest` at `/home/runner/work/…`
+matched **not one file** in `/home/phx/actions-runner/_work/…`, so eslint re-linted all 6,597 files
+**while the step logged a cache hit** — 168s cold against 4s warm, measured twice independently on
+the host. #4844 scoped the key to the workspace. On the one genuinely CPU-bound step the box had been
+winning the whole time: `tsc` **115s** here against **153–162s** hosted.
+
+🔴 **Three other explanations were proposed the same day and all three were wrong** — shared-vCPU CPU,
+a cold pnpm store, and a second runner stealing CPU. Each is refuted with its evidence earlier in this
+file. **Read those before deriving a fourth.**
+
+The older refusal rested on a different pool, too: it counted **four** required jobs queueing behind
+three Railway replicas. Protection has since dropped to **two** required checks (`validate`, `checks`),
+and the Railway pool is gone. Neither half of that arithmetic still describes anything.
+
+### What is still true, and is a trade rather than a defect
+
+🔴 **There are two runners and two required jobs, so one PR occupies the whole box and a second
+concurrent PR queues behind it entirely.** In a busy hour that is slower than hosted. The owner widened
+it knowing that; it is not a regression to report, and the fix is not hardware — **he refused the
+two-CPX32 purchase on 2026-09-28 (*"I WILL NOT BUY THIS"*) and bought one box himself. Never re-pitch
+it.** If depth ever matters more than the bill, the lever is another runner process on the existing
+host, measured first: see the memory arithmetic above, because `tsc` alone peaks at 5.86 GB of 7.7 GB.
 
 ## Turning it off
 

@@ -122,16 +122,21 @@ export function runCiRunnerSwitchTests() {
       "execution on our own machine.",
   );
   assert.ok(
-    /startsWith\(github\.head_ref, 'ci-runner\/'\)/.test(expr),
-    "the branch-name opt-in is gone. It is what makes this per-branch rather than repo-wide, and " +
-      "unlike a variable it cannot change mid-flight. 🔴 IF YOU REMOVED IT TO WIDEN SELF-HOSTED CI TO " +
-      "EVERY PR, THAT IS AN OWNER RULING AND THE ANSWER IS NO. This message used to say \"not yet, wait " +
-      "for the CPX32s\" — the owner REFUSED that purchase on 2026-09-28 (\"I WILL NOT BUY THIS\"), so there " +
-      "is no arriving hardware and nothing to re-propose it after. Judge it on the pool that EXISTS: " +
-      "measured 2026-09-28, three replicas took FOUR required jobs and serialised — validate, checks and " +
-      "mobile queued behind secret-scan — so widening onto this pool makes every PR slower than hosted " +
-      "CI, trading a real cost for an unreal one. Widen only if the pool itself grows, and never by " +
-      "re-pitching the boxes.",
+    !/startsWith\(github\.head_ref/.test(expr),
+    "the `ci-runner/` branch opt-in is BACK, and it should not be. 🔴 THE OWNER WIDENED SELF-HOSTED CI " +
+      "TO EVERY SAME-REPO PULL REQUEST ON 2026-09-30 — his words, \"widen self-hosted CI to all PRs\" — " +
+      "so restoring the prefix narrows it again and is an owner ruling, not a cleanup. 🔴 IF YOU ARE " +
+      "REVERTING IT BECAUSE THIS FILE USED TO SAY WIDENING WAS REFUSED: that refusal was real and it " +
+      "rested on a measurement that turned out to be an artefact. `checks` read 324-339s self-hosted " +
+      "against ~209s hosted, which looked like slow shared vCPU; it was an ESLint cache keyed by " +
+      "ABSOLUTE path, so a cache written at /home/runner/work/... matched not one file on the box and " +
+      "lint ran over all 6,597 files WHILE LOGGING A CACHE HIT (lint 168s cold vs 4s warm, measured " +
+      "twice independently on the host). #4844 scoped the key to the workspace. On the one pure-CPU " +
+      "step the box always won: tsc 115s here against 153-162s hosted. Three other diagnoses were " +
+      "proposed that day and all three were wrong — see docs/ci-self-hosted-runner.md before you " +
+      "re-derive a fourth. 🔴 TO ROLL BACK, DO NOT EDIT THIS EXPRESSION: `gh variable set " +
+      "CI_SELF_HOSTED --body off` returns every PR to hosted, and unlike a branch name it re-resolves " +
+      "on the next run ATTEMPT.",
   );
 
   // 4 — the retired repo-wide variable must not come back, in any expression, in any workflow.
@@ -214,13 +219,20 @@ export function runCiRunnerSwitchTests() {
       want: HOSTED,
     },
     {
-      why: "an ordinary codex/ PR must stay hosted — this is opt-in, not the default",
+      // Was `want: HOSTED` until 2026-09-30, when the owner widened it to every PR. This case is
+      // the whole point of the change: an ordinary branch is now self-hosted by default.
+      why: "an ordinary codex/ PR now goes self-hosted — widening made it the default, not the opt-in",
       ctx: { ...base, head_ref: "codex/some-task" },
-      want: HOSTED,
+      want: LABEL,
     },
     {
-      why: "an opted-in ci-runner/ PR on this repo with a label set is the ONE case that goes self-hosted",
+      why: "a ci-runner/ PR still goes self-hosted — the prefix is no longer special, but it is not excluded either",
       ctx: { ...base },
+      want: LABEL,
+    },
+    {
+      why: "a branch with no prefix convention at all is self-hosted too — nothing keys off the name any more",
+      ctx: { ...base, head_ref: "hotfix" },
       want: LABEL,
     },
     {
@@ -239,9 +251,12 @@ export function runCiRunnerSwitchTests() {
       want: HOSTED,
     },
     {
-      why: "feat/ci-runner/x must NOT match: the opt-in is a PREFIX, not a substring",
+      // Kept deliberately after widening (2026-09-30). It used to prove the opt-in was a prefix
+      // and not a substring; it now proves the branch NAME has stopped mattering in either
+      // direction, so restoring any name-based clause turns this case red.
+      why: "feat/ci-runner/x is self-hosted like everything else — no clause reads the branch name now",
       ctx: { ...base, head_ref: "feat/ci-runner/x" },
-      want: HOSTED,
+      want: LABEL,
     },
   ];
   for (const { why, ctx, want } of cases) {

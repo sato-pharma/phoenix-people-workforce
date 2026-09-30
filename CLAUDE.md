@@ -42,7 +42,15 @@ All commands run from the repo root.
 | Lint | `pnpm run lint` |
 | Typecheck — **CI's job, not yours** (see below) | `pnpm run typecheck` |
 | Unit/integration tests | `pnpm run test` |
+| **Any heavy check, on the CI box instead of this laptop** | `node scripts/remote-check.mjs typecheck` (also `lint`, `test`, `build`, `all`) |
 | Whole gate, by hand — **only when the owner names it** | `pnpm run ci` |
+
+🔴 **`scripts/remote-check.mjs` IS THE ANSWER TO "I NEED A TYPECHECK NOW AND I AM NOT READY FOR A
+PR".** It pushes the committed sha to the self-hosted box over SSH and runs the check there —
+measured 2026-09-30: typecheck **112s**, lint 4s warm, unit suite 133s, a full `next build` 112s.
+Nothing heavy touches the 16 GB laptop, no Actions minutes are billed, and no PR is opened. It sends
+the **commit**, so it prints any uncommitted files it is ignoring. Pinned by
+`tests/remote-check.test.ts`.
 
 **CI is the gate. Do not run a local full validation** — no "quick subset" of lint + typecheck
 before pushing, no `pnpm run ci` as a pre-push ritual. Push the branch and let the PR's two

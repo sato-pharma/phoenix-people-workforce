@@ -1349,6 +1349,7 @@ import { runMarketingRoiCohortsTests } from "./marketing-roi-cohorts.test.ts";
 import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.ts";
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runCiRunnerSwitchTests } from "./ci-runner-switch.test.ts";
+import { runRemoteCheckTests } from "./remote-check.test.ts";
 import { runCiPrSkipsBuildAndSmokeTests } from "./ci-pr-skips-build-and-smoke.test.ts";
 import { runStagingBranchSyncGuardTests } from "./staging-branch-sync-guard.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
@@ -4518,8 +4519,12 @@ await runTest("marketing ROI cohorts (efficiency, coverage, forecast accuracy, m
 await runTest("GitHub workflow validity (no `secrets` context inside `if:` — it invalidates the whole file)", runGithubWorkflowValidityTests);
 await runTest("CI <-> package.json gate parity (a check:* in the gate must run in a workflow)", runCiGateParityTests);
 await runTest(
-  "the self-hosted runner is opt-in PER BRANCH: six byte-identical runs-on lines, main and forks and dispatches can never be self-hosted, an unset label resolves hosted rather than queueing for ever, and the retired repo-wide vars.CI_RUNNER never comes back",
+  "the self-hosted runner takes EVERY same-repo PR (owner, 2026-09-30): six byte-identical runs-on lines, no branch-name clause, main and forks and dispatches can never be self-hosted, an unset label resolves hosted rather than queueing for ever, and the retired repo-wide vars.CI_RUNNER never comes back",
   runCiRunnerSwitchTests,
+);
+await runTest(
+  "remote-check runs the heavy checks on the CI box and never locally: no local spawn but ssh/git, ci.yml's 6144MB heap, its own directory rather than the runner's _work, no GitHub credential on the box, a warning for uncommitted work, and the remote exit code",
+  runRemoteCheckTests,
 );
 await runTest(
   "staging-branch-sync's ordering guard refuses an out-of-order CI completion that would rewind what staging serves - the real `merge-base --is-ancestor` line is lifted from the live YAML and executed, so swapping its operands (which inverts the guard silently) fails here",
