@@ -1162,13 +1162,16 @@ function EmployeePortalMenu({
                             aria-hidden="true"
                             className="ep-crm-gloss pointer-events-none absolute inset-y-0 left-0 w-1/4 -skew-x-12 bg-white/20 blur-md motion-reduce:hidden"
                           />
-                          <RowIcon className={`h-[18px] w-[18px] shrink-0 ${locked ? "text-amber-200" : "text-white"}`} />
-                          <span className={`ep-crm-word text-[15px] font-semibold ${locked ? "opacity-80" : ""}`}>
+                          {/* "Phoenix CRM" sits hard at the LEFT (owner, 2026-09-30); the module's icon
+                              trails on the right as a quiet accent, never pushing the name off the edge. */}
+                          <span className={`ep-crm-word ${locked ? "opacity-80" : ""}`}>
                             {item.label}
                           </span>
                           {pending ? (
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white employee-portal-nav-pending-dot" />
-                          ) : null}
+                            <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white employee-portal-nav-pending-dot" />
+                          ) : (
+                            <RowIcon className={`ml-auto h-[18px] w-[18px] shrink-0 ${locked ? "text-amber-200" : "text-white/85"}`} />
+                          )}
                         </Link>
                       </div>
                     );
