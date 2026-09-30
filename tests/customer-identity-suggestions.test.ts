@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
 import {
   betterBand,
   identityNameKey,
   identityPairKey,
+  isLinkableCandidate,
   isLinkableName,
   judgePair,
   sharesDistributorCode,
@@ -13,6 +15,8 @@ import {
   STRONG_METRES,
 } from "../src/lib/customer-identity/suggestions.ts";
 import type { IdentityCandidate } from "../src/lib/customer-identity/types.ts";
+import { STORE_OVERRIDE_CUSTOMER_KEYS } from "../src/lib/sales/customer-channel.ts";
+import { isCertainWholesalerVenue } from "../src/lib/venues/wholesaler-venue-guard.ts";
 
 /**
  * Phoenix CRM Wave 2 — the engine only ever SUGGESTS, and it is pessimistic on purpose.
@@ -300,6 +304,81 @@ export function runCustomerIdentitySuggestionTests(): void {
     // A mistyped id must not reach the database: `master_id` is a uuid column, so anything else
     // makes Postgres throw and the browser shows an application error instead of a missing page.
     assert.match(route, /0-9a-f\]\{8\}-/, "the id shape is checked before the read");
+  }
+
+  // ── Where a pharmacy's distributor codes are read from ──────────────────────────────────────
+  {
+    const reads = stripComments(readFileSync("src/lib/customer-identity/server/reads.ts", "utf8"));
+    const loader = stripComments(readFileSync("src/lib/customer-identity/server/profile.ts", "utf8"));
+
+    for (const [file, source] of [
+      ["reads.ts", reads],
+      ["profile.ts", loader],
+    ] as const) {
+      // 🔴 BOTH SIDES READ THEIR CHILD TABLE. The parents' own columns are dead —
+      //    `direct_order_pharmacies.distributor_code` is empty on all 131 production rows — and a
+      //    reader that names one gets null for every shop and raises nothing at all.
+      assert.match(source, /direct_order_pharmacy_distributor_codes/, `${file} reads the direct-order codes from the child table`);
+      assert.match(source, /marketing_pharmacy_distributor_codes/, `${file} reads the marketing codes from the child table`);
+
+      // 🔴 THE MASTER-RESOLVED PAIR, NEVER THE RAW ONE. `mapped_customer_code` differs from the
+      //    typed `distributor_pharmacy_code` on 33 of the 479 marketing rows, so the raw code would
+      //    file those shops under a code no other system uses. And `distributor_id` there is a
+      //    bigint in the desk's own numbering while direct orders speak the text code — comparing
+      //    the two is the cross-vocabulary mistake the distributor rule exists to prevent.
+      assert.match(source, /mapped_distributor_code/, `${file} takes the resolved distributor`);
+      assert.match(source, /mapped_customer_code/, `${file} takes the resolved customer code`);
+      assert.doesNotMatch(source, /distributor_pharmacy_code/, `${file} never keys on the raw typed code`);
+      assert.doesNotMatch(source, /distributor_customer_code/, `${file} never names the parent's dead column`);
+    }
+  }
+
+  // ── The wholesaler guard is asked the question it can actually answer ───────────────────────
+  {
+    // 🔴 EACH HALF IN ITS OWN PARAMETER. `isCertainWholesalerVenue(name, clientCode,
+    //    distributorCode)` carries two account-level owner rulings that need the halves apart: a
+    //    pharmacy-override that PROTECTS a real shop, and `isStoreOverride`, which fires only when
+    //    the customer code and the distributor arrive TOGETHER. #4978 passed the customer code as
+    //    the distributor and left clientCode null, so neither could ever fire — silently, because
+    //    a guard answering "not a wholesaler" looks exactly like a guard that was never asked.
+    //
+    //    The case is taken from the repo's own roster rather than typed in, so it stays true when
+    //    the owner rules on another account.
+    const [firstOverride] = [...STORE_OVERRIDE_CUSTOMER_KEYS];
+    const [distributorId, code] = String(firstOverride).split("|");
+    assert.ok(distributorId && code, "the store-override roster is keyed distributor|code");
+
+    // A name that trips NOTHING on its own, so only the code pair can be doing the work — and two
+    // words, or `isLinkableName` would refuse it first and the whole block would pass for the
+    // wrong reason (it did, on the first draft of this test).
+    const plainName = "بدر الدين";
+    assert.equal(isLinkableName(plainName), true, "the name itself is linkable, so the code is what decides below");
+    assert.equal(isCertainWholesalerVenue(plainName, null, null), false, "the name alone says nothing");
+    assert.equal(
+      isCertainWholesalerVenue(plainName, null, code),
+      false,
+      "and the shipped argument order could never have caught it — the bug, pinned",
+    );
+    assert.equal(isCertainWholesalerVenue(plainName, code, distributorId), true, "the two halves together are the owner's ruling");
+
+    const ruled = candidate({
+      source: "marketing",
+      sourceId: "90",
+      kind: "pharmacy",
+      name: plainName,
+      distributorPairs: [{ code, distributorId }],
+    });
+    assert.equal(isLinkableCandidate(ruled), false, "so a venue the owner ruled a store is never offered as a pharmacy identity");
+    assert.equal(
+      isLinkableCandidate({ ...ruled, distributorPairs: [] }),
+      true,
+      "while the same name carrying no code is still a pharmacy — the ruling belongs to the CODE, not the name",
+    );
+    assert.equal(
+      judgePair(ruled, { ...ruled, source: "direct_order", sourceId: "91" }),
+      null,
+      "and it is refused from both sides of a pair",
+    );
   }
 
   console.log("customer identity suggestions: OK");
