@@ -741,7 +741,24 @@ jobs:
         # heap ceiling on the standard GitHub-hosted runner and crash with an
         # OOM before reporting any diagnostics (not a type error). Raise the
         # heap limit rather than let the runner's default silently cap it.
-        run: pnpm run typecheck
+        #
+        # ONE TYPECHECK AT A TIME ON THE SELF-HOSTED BOX (owner, 2026-09-30: "fix the CI box so two PR
+        # typechecks never run at once"). Both runners live on one 7.7 GB box as the same user, and
+        # `tsc` here climbs past 4 GB — measured that morning, two PRs' typechecks sat at 4.1 GB and
+        # 2 GB side by side with the preview server, 3.1 GB into swap. A kernel lock on a shared file
+        # makes the second one WAIT for the first instead (~110s), while lint and the unit suite keep
+        # running in parallel. scripts/remote-check.mjs takes the SAME lock, so a hand-run check
+        # queues too. On a GitHub-hosted runner the lock is always free. If the wait ever passes 20
+        # minutes it warns and runs anyway, so a stuck holder can never fail a PR by itself.
+        run: |
+          exec 9>/tmp/phx-typecheck.lock
+          if ! flock -n 9; then
+            echo "Another typecheck is running on this box — waiting for it to finish (at most 20 minutes)."
+            SECONDS=0
+            flock -w 1200 9 || echo "::warning::Waited 20 minutes for the box's typecheck lock; running without it."
+            echo "Waited ${SECONDS}s for the typecheck lock."
+          fi
+          pnpm run typecheck
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
