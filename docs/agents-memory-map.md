@@ -49,6 +49,12 @@ status, give it its own line.
 - **pnpm run <script> PURGES node_modules** — `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
 - **MSYS mangles paths silently, four ways:** — `git-ref-colon-path-is-mangled-by-msys-returns-empty`
 - **Grepping a wrapped report returns a middle line that reads as a verdict — read the section, and measure the thing itself** — `grepping-a-wrapped-report-turns-an-explanation-into-a-verdict` **(inline — load-bearing)**
+- **`pg_stat_statements` dates a `calls = 1` statement exactly via `stats_since` and can never say WHO ran it — the precise timestamp is what makes adjacency look like proof** — `pg-stat-statements-times-precisely-and-attributes-never` **(inline — load-bearing)**
+- **Never restate a rule the repo already implements — a hand-rolled wholesaler regex collapsed a two-tier owner rule into one and nearly deactivated five real pharmacies on his approval** — `never-hand-roll-a-rule-the-repo-already-implements` **(inline — load-bearing)**
+- **`main`'s required checks have rotted five times (4→5→6→4→2) and the filename still says four — read the protection API live** — `mains-required-checks-are-four-not-six-checks-carries-the-suite` **(inline — load-bearing)**
+- **A superseded deploy reached `success` before going `inactive`; a withheld one never did — and Railway posts two rows per commit, so judge the HISTORY** — `a-superseded-deploy-reached-success-a-withheld-one-never-did` **(inline — load-bearing)**
+- **The 286 GPS-less venues from the 2026-06-20 import: a backfilled cross-area link is evidence, not a mismatch — read `validation_notes`** — `a-pre-gps-backfilled-venue-link-is-not-a-defect` **(inline — load-bearing)**
+- **Cairo Pedia's DM and all five rep seats are vacant by the owner's ruling — never a finding, never filled** — `cairo-pedia-is-empty-on-purpose-a-hire-is-coming` **(inline — load-bearing)**
 - **`TZ=Africa/Cairo date` silently returns UTC in MSYS — 3h early, no error** — `tz-africa-cairo-silently-returns-utc-in-msys` **(inline — load-bearing)**
 - **`main` is usually NOT in the primary — a worktree holds it, so ahead/behind read from HEAD there is real but mislabelled** — `main-is-not-the-primary-checkout` **(inline — load-bearing)**
 - **A scheduled task run by hand records no `lastRunAt` and creates no session — both absences are normal, not proof it failed** — `a-manual-scheduled-task-run-leaves-no-trace` **(inline — load-bearing)**
