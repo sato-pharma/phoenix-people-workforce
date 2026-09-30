@@ -634,14 +634,15 @@ Two tabs, gated by direct role check (not the `admin` permission resource, which
 hard-locked to Super Admin — see `isRolePermissionWithinHardBoundary` in
 `src/lib/auth/permissions.ts`):
 
-- **Issues & Errors** — shows `app_error_events` (self-hosted, app-level). It was built to *merge*
-  those with live Cloud Logging entries (`src/lib/observability/gcp-logs.ts`, severity ≥ WARNING,
-  last 24h) so infra-level failures that never reach application code (container crash, OOM kill,
-  cold-start failure) were visible too. 🔴 **That half is dead** — the GCP project's billing is
-  closed, so the tab shows its explicit "not connected" banner. The banner is correct behaviour
-  (better than a misleading empty list), but it means **container-level failures are currently
-  invisible in the UI** — use `railway logs` for those. Re-pointing this at the Railway log API is
-  open work.
+- **Issues & Errors** — shows `app_error_events` (self-hosted, app-level). It was once built to
+  *merge* those with live GCP Cloud Logging entries so infra-level failures that never reach
+  application code (container crash, OOM kill, cold-start failure) were visible too. 🔴 **That half
+  is gone** — the GCP project's billing is closed (GCP is dead, not standby), so the Cloud Logging
+  reader (`src/lib/observability/gcp-logs.ts`) and its "not connected" panel were **removed**
+  (2026-09-30) along with the `@google-cloud/logging` dependency, which was the sole thing pulling
+  `@grpc/grpc-js` into the production graph and repeatedly withholding Railway deploys on its
+  transitive HIGH advisory. **Container-level failures are not surfaced in the UI** — use
+  `railway logs` for those. Re-pointing this at the Railway log API is open work.
 - **Per-User Attempts** — aggregates `app_error_events` + failed `auth_login_attempts`
   grouped by HR ID + module/route, computed in application code (`getUserAttemptSummary`
   in `src/lib/error-monitor/service.ts`), not a DB view/RPC — no migration required.

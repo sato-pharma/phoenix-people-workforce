@@ -14,14 +14,11 @@ import {
   type ErrorEventRow,
   type UserAttemptRow,
 } from "@/lib/error-monitor/service";
-import { getRecentGcpLogEntries, type GcpLogEntry } from "@/lib/observability/gcp-logs";
 import { getServiceHealthSnapshot, type ServiceHealthResult } from "@/lib/observability/gcp-metrics";
 import {
   deriveAppErrorStatus,
   deriveFailedLoginStatus,
-  deriveGcpStatus,
   getCurrentReleaseTag,
-  getCurrentRevision,
   signatureKey,
   type IssueStatus,
 } from "@/lib/error-monitor/derived-status";
@@ -30,17 +27,14 @@ import { hasOpenAiApiKey } from "@/lib/ai/openai-client";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
 export type ErrorEventRowWithStatus = ErrorEventRow & { status: IssueStatus; displayMessage: string; employeeName: string | null };
-export type GcpLogEntryWithStatus = GcpLogEntry & { status: IssueStatus; displayMessage: string };
 export type { ServiceHealthResult } from "@/lib/observability/gcp-metrics";
 export type UserAttemptRowWithStatus = UserAttemptRow & { status: IssueStatus; displayMessage: string; employeeName: string | null; employeeRole: string | null };
 export type { UnknownAttemptsSummary } from "@/lib/error-monitor/service";
 
-export async function loadSystemIssuesSnapshot(hoursBack = 24) {
+export async function loadSystemIssuesSnapshot() {
   const currentRelease = getCurrentReleaseTag();
-  const currentRevision = getCurrentRevision();
-  const [appErrors, gcpLogs, activeSignatures, directory, serviceHealth] = await Promise.all([
+  const [appErrors, activeSignatures, directory, serviceHealth] = await Promise.all([
     getErrorEvents({ pageSize: 100 }),
-    getRecentGcpLogEntries({ hoursBack }),
     getActiveErrorSignatures(currentRelease),
     getAccountDirectory(),
     // Non-fatal: the reader returns { available: false, error } instead of throwing, so a
@@ -58,21 +52,9 @@ export async function loadSystemIssuesSnapshot(hoursBack = 24) {
     })),
   };
 
-  const gcpLogsWithStatus = gcpLogs.available
-    ? {
-        ...gcpLogs,
-        entries: gcpLogs.entries.map((entry): GcpLogEntryWithStatus => ({
-          ...entry,
-          displayMessage: decodeErrorMessage(entry.message).display,
-          status: deriveGcpStatus(entry.revision, currentRevision),
-        })),
-      }
-    : gcpLogs;
-
   return {
     aiEnabled: hasOpenAiApiKey(),
     appErrors: appErrorsWithStatus,
-    gcpLogs: gcpLogsWithStatus,
     serviceHealth: serviceHealth satisfies ServiceHealthResult,
   };
 }

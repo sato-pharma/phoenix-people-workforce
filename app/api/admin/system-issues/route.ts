@@ -16,10 +16,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: "Forbidden: insufficient permissions." }, { status: 403 });
     }
 
-    const url = new URL(request.url);
-    const hoursBack = Number(url.searchParams.get("hoursBack") ?? "24");
-
-    const snapshot = await loadSystemIssuesSnapshot(Number.isFinite(hoursBack) ? hoursBack : 24);
+    const snapshot = await loadSystemIssuesSnapshot();
     return NextResponse.json(snapshot);
   } catch (error) {
     if (isForbiddenError(error)) {
