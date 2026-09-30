@@ -124,12 +124,31 @@ export function runPhoenixCrmMobileMirrorsTests(): void {
   // The guard is NOT relaxed: every OTHER key must still match exactly, and the web may not carry a
   // key the phone lacks, which is the direction that makes a tab silently never render on the phone.
   const RETIRED_ON_WEB_ONLY = ["today"];
+
+  // 🔴 AND ONE THE OTHER WAY, FOR THE SAME REASON AND FOR NO OTHER.
+  //
+  // The owner asked for the team calendar as its own tab on 2026-09-30, so `calendar` joined
+  // `PhoenixCrmTabs`. The phone's mirror cannot follow it: the mobile app is FROZEN (AGENTS.md §4)
+  // and may not be edited, planned or touched until he lifts that in his own words. So the tab does
+  // not render on the phone — which is not drift, it is what the freeze MEANS for any web tab added
+  // while it lasts, and the alternative is a web tab he asked for that cannot be built at all.
+  //
+  // 🔴 WHEN THE FREEZE LIFTS, EVERY KEY HERE GOES INTO `mobile/src/lib/crm/types.ts` AND THIS LIST
+  // GOES BACK TO EMPTY. It is not a place to park a tab somebody decided the phone does not need —
+  // the two checks under it make a stale entry fail rather than rot.
+  const WEB_ONLY_WHILE_MOBILE_IS_FROZEN = ["calendar"];
+  for (const key of WEB_ONLY_WHILE_MOBILE_IS_FROZEN) {
+    assert.ok(webTabs.includes(key), `\`${key}\` is listed as web-only and is not a web tab — retire the entry`);
+    assert.ok(!phoneTabs.includes(key), `\`${key}\` reached the phone — take it out of WEB_ONLY_WHILE_MOBILE_IS_FROZEN`);
+  }
+
   assert.deepEqual(
     [...phoneTabs].filter((key) => !RETIRED_ON_WEB_ONLY.includes(key)).sort(),
-    [...webTabs].sort(),
+    [...webTabs].filter((key) => !WEB_ONLY_WHILE_MOBILE_IS_FROZEN.includes(key)).sort(),
     "the phone's `tabs` mirror and PhoenixCrmTabs must hold the same keys — a key on one side only is a tab that silently never renders",
   );
   for (const key of webTabs) {
+    if (WEB_ONLY_WHILE_MOBILE_IS_FROZEN.includes(key)) continue;
     assert.ok(phoneTabs.includes(key), `the web has \`${key}\` and the phone does not — that tab can never render there`);
   }
 

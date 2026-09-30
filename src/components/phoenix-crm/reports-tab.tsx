@@ -22,7 +22,7 @@ import { Fragment, useId, useState, type ReactNode } from "react";
 import { crmUrl, useCrmGet, type CrmResource } from "@/components/phoenix-crm/api";
 import { DailyPlanDaysFilter, DailyPlanSection, dailyPlanDaysSummary, useDailyPlanDays } from "@/components/phoenix-crm/daily-plan-report";
 import { countText, dayLabel, dayLabelWithYear, monthLabel, percentText, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
-import { matchesWords } from "@/components/phoenix-crm/labels";
+import { listText, matchesWords } from "@/components/phoenix-crm/labels";
 import {
   CrmBlock,
   CrmButton,
@@ -54,6 +54,8 @@ import { fieldWeekStart, isIsoDay, monthStartOf, weekdayOfIsoDay } from "@/lib/p
 import { dailyPlanPeriodProblem, type DailyPlanReportView } from "@/lib/phoenix-crm/daily-plan-report";
 import type { AdoptionStage } from "@/lib/phoenix-crm/adoption-rules";
 import type { BrickCoverageStatus } from "@/lib/phoenix-crm/brick-report";
+import type { CustomerFrequencyRow } from "@/lib/phoenix-crm/customer-frequency";
+import type { TrackingSheetRow } from "@/lib/phoenix-crm/tracking-sheet";
 import {
   daysInPeriod,
   REPORT_MAX_DAYS,
@@ -67,6 +69,8 @@ import type {
   AdoptionView,
   BrickCoverageView,
   CoverageReportView,
+  CustomerFrequencyReportView,
+  TrackingSheetReportView,
   ReportComparison,
   ExceptionsView,
   ManagerReportEntry,
@@ -85,7 +89,18 @@ import type {
 import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 import { cn } from "@/lib/utils";
 
-type ReportSection = "exceptions" | "visits" | "plan" | "daily" | "coverage" | "bricks" | "managers" | "locations" | "adoption";
+type ReportSection =
+  | "exceptions"
+  | "visits"
+  | "plan"
+  | "daily"
+  | "coverage"
+  | "frequency"
+  | "tracking"
+  | "bricks"
+  | "managers"
+  | "locations"
+  | "adoption";
 type PeriodPreset = "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month";
 type Period = { from: string; to: string };
 type Presence = "all" | "with" | "without";
@@ -1563,6 +1578,242 @@ function AdoptionSection({ idPrefix, resource }: { idPrefix: string; resource: C
   );
 }
 
+/**
+ * Frequency per customer — the two comparisons apart.
+ *
+ * 🔴 TWO COLUMNS, NEVER BLENDED (owner, 2026-09-30, asked which basis he wanted and choosing both):
+ * against his GRADE's monthly number, and against how often he was PLANNED. They disagree often,
+ * and the disagreement is the finding — a rep who kept every plan he made can still be under the
+ * grade, and the page has to show both to say so.
+ *
+ * 🔴 AND OVER IS A DEVIATION TOO, never a bonus (his standing rule of 2026-08-21, which
+ * `coverage.ts` already carries). The list is ordered by the SIZE of the gap, so an over-visited
+ * customer rises to the top beside an under-visited one instead of sinking to the bottom looking
+ * like the healthiest row on the page.
+ */
+function FrequencySection({ idPrefix, resource }: { idPrefix: string; resource: CrmResource<CustomerFrequencyReportView> }) {
+  const report = resource.data;
+  if (!report) return <SectionWaiting error={resource.error} label="Counting each customer" onRetry={resource.reload} />;
+
+  if (report.needsOneTerritory) {
+    return (
+      <>
+        <RefreshFailed error={resource.error} />
+        <CrmEmpty
+          message="This one counts every customer on a list, so it reads one territory at a time. Choose a territory above."
+          title="Choose a territory"
+        />
+      </>
+    );
+  }
+
+  const gradeText = (row: CustomerFrequencyRow) =>
+    row.gradeTarget === null ? row.gradeVerdict : `${row.gradeVerdict} · ${row.visits} of ${row.gradeTarget}`;
+  const planText = (row: CustomerFrequencyRow) => {
+    if (row.planned === 0) return "Never planned this month";
+    if (row.againstPlan === 0) return `Kept every plan · ${row.visits} of ${row.planned}`;
+    const gap = row.againstPlan < 0 ? `Missed ${Math.abs(row.againstPlan)}` : `Seen ${row.againstPlan} more than planned`;
+    return `${gap} · ${row.visits} of ${row.planned}`;
+  };
+
+  return (
+    <>
+      <RefreshFailed error={resource.error} />
+      {report.month.inProgress ? (
+        <div className="px-4 pt-4 sm:px-5">
+          <CrmNote title={`${monthLabel(report.month.month)} is still running`} tone="info">
+            A customer under his grade can still be caught up before the month ends.
+          </CrmNote>
+        </div>
+      ) : null}
+      <CrmBlock>
+        {/* Under, on and over stay APART — there is no single frequency score on this page. */}
+        <CrmStatGrid>
+          <CrmStat label="Under the grade" tone={report.totals.under > 0 ? "warn" : "neutral"} value={report.totals.under} />
+          <CrmStat label="On the grade" tone={report.totals.onTarget > 0 ? "good" : "neutral"} value={report.totals.onTarget} />
+          <CrmStat label="Over the grade" note="Over is a deviation too, never a bonus" value={report.totals.over} />
+          <CrmStat label="No target set" note="No grade, or the company set no number" value={report.totals.noTarget} />
+        </CrmStatGrid>
+      </CrmBlock>
+      <ReportList
+        columns={["34%", null, null, null]}
+        explain="Each customer against TWO things, kept apart: his grade's monthly number from Phoenix CRM's own settings, and how often he was placed on a plan that was actually sent. A draft plan is not counted."
+        hasData={(row: CustomerFrequencyRow) => row.visits > 0}
+        headers={["Customer", "Visits", "Against the grade", "Against the plan"]}
+        idPrefix={`${idPrefix}-frequency`}
+        items={report.rows}
+        keyOf={(row) => row.customerId}
+        renderCard={(row) => (
+          <CrmCard meta={`${listText(row.listType)}${row.grade ? ` · Grade ${row.grade}` : " · No grade"}`} title={row.name}>
+            <CrmFacts
+              facts={[
+                { label: "Visits", value: countText(row.visits) },
+                { label: "Against the grade", value: gradeText(row) },
+                { label: "Against the plan", value: planText(row) },
+              ]}
+            />
+          </CrmCard>
+        )}
+        renderCells={(row) => (
+          <>
+            <td className={crmTdClassName}>
+              <p className="break-words font-black text-slate-950" dir="auto">
+                {row.name}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {listText(row.listType)}
+                {row.grade ? ` · Grade ${row.grade}` : " · No grade"}
+              </p>
+            </td>
+            <td className={crmTdClassName}>
+              <span className="font-black tabular-nums text-slate-950">{countText(row.visits)}</span>
+            </td>
+            <td className={crmTdClassName}>{gradeText(row)}</td>
+            <td className={crmTdClassName}>{planText(row)}</td>
+          </>
+        )}
+        searchWords={(row) => [row.name, row.listType, row.grade]}
+        words={{ ...LIST_WORDS, title: "Customer by customer", with: "Visited", without: "Not visited" }}
+      />
+    </>
+  );
+}
+
+/**
+ * The tracking sheet — every customer down the side, every day of the month across the top.
+ *
+ * 🔴 THE SPACING NOTE IS A MANAGER'S, AND THE SERVER ALREADY DECIDED THAT. A rep's own sheet comes
+ * back with `spacing: null` on every row and `showsSpacing: false`, because a judgement about how
+ * he worked his month is exactly what Golden rule #1 keeps off his screens. This screen renders
+ * what it is given and never re-decides it.
+ *
+ * 🔴 AND IT FITS THE SCREEN. Thirty-one day columns plus a name would scroll sideways, which
+ * Phoenix bans. From `lg` the grid is a `table-fixed` percentage colgroup; below that the day
+ * columns MERGE into the row's own sentence — the days he was seen, written out — which is the
+ * same information a phone can actually read.
+ */
+function TrackingSection({ idPrefix, resource }: { idPrefix: string; resource: CrmResource<TrackingSheetReportView> }) {
+  const report = resource.data;
+  if (!report) return <SectionWaiting error={resource.error} label="Laying out the month" onRetry={resource.reload} />;
+
+  if (report.needsOneTerritory) {
+    return (
+      <>
+        <RefreshFailed error={resource.error} />
+        <CrmEmpty
+          message="This one lays out every customer on a list against every day, so it reads one territory at a time. Choose a territory above."
+          title="Choose a territory"
+        />
+      </>
+    );
+  }
+
+  const dayNumbers = report.days.map((day) => Number(day.slice(8, 10)));
+  const seenText = (row: TrackingSheetRow) =>
+    row.days.length === 0 ? "Not visited this month" : row.days.map((day) => Number(day.slice(8, 10))).join(", ");
+
+  return (
+    <>
+      <RefreshFailed error={resource.error} />
+      <CrmBlock title={`${monthLabel(report.month.month)} · ${report.rows.length} on the list`}>
+        <p className="break-words text-xs font-semibold leading-5 text-slate-600">
+          A mark is a day a countable visit landed. Two visits to one customer on one day mark that day once.
+          {report.showsSpacing ? " The note beside a row speaks only when the visits stopped." : ""}
+        </p>
+        {/* Desktop: the whole month, fixed columns so 31 days can never push the page sideways. */}
+        <div className="mt-3 hidden min-w-0 lg:block">
+          {/* 🔴 THROUGH `CrmTable`, NEVER A RAW <table> — it carries `w-full table-fixed` and the
+              <colgroup>, and every table in this module goes through it. The fits-the-screen test
+              refuses a hand-rolled one and caught this grid. `desktopOnly` is off because the
+              wrapper above already hides it below `lg`, where the days become a sentence. */}
+          <CrmTable columns={["26%", ...report.days.map(() => `${74 / Math.max(1, report.days.length)}%`)]} desktopOnly={false}>
+            <thead>
+              <tr>
+                <th className="border border-slate-200 bg-slate-50 px-2 py-1.5 text-left text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">
+                  Customer
+                </th>
+                {dayNumbers.map((number, index) => (
+                  <th
+                    className="border border-slate-200 bg-slate-50 px-0 py-1.5 text-center text-phx-3xs font-black tabular-nums text-slate-500"
+                    key={report.days[index]}
+                    scope="col"
+                  >
+                    {String(number).padStart(2, "0")}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {report.rows.map((row) => {
+                const marked = new Set(row.days);
+                return (
+                  <tr key={row.customerId}>
+                    <th className="border border-slate-200 bg-white px-2 py-1.5 text-left align-top" scope="row">
+                      <span className="block break-words text-xs font-black leading-5 text-slate-900" dir="auto">
+                        {row.name}
+                      </span>
+                      {row.spacing ? (
+                        <span className="block break-words text-phx-3xs font-semibold leading-4 text-amber-700">{row.spacing}</span>
+                      ) : null}
+                    </th>
+                    {report.days.map((day) => (
+                      <td
+                        className={cn(
+                          "border border-slate-200 px-0 py-1.5 text-center text-phx-3xs font-black",
+                          marked.has(day) ? "bg-emerald-100 text-emerald-900" : "bg-white text-slate-300",
+                        )}
+                        key={day}
+                        title={`${row.name} · ${day} · ${marked.has(day) ? "visited" : "no visit"}`}
+                      >
+                        {marked.has(day) ? "Y" : ""}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </CrmTable>
+        </div>
+      </CrmBlock>
+      {/* Phone: the day columns merge into the row's own sentence. */}
+      <div className="lg:hidden">
+        <ReportList
+          columns={["50%", null]}
+          explain="A mark is a day a countable visit landed, and the days are written out because thirty-one columns cannot fit a phone."
+          hasData={(row: TrackingSheetRow) => row.days.length > 0}
+          headers={["Customer", "Days seen"]}
+          idPrefix={`${idPrefix}-tracking`}
+          items={report.rows}
+          keyOf={(row) => row.customerId}
+          renderCard={(row) => (
+            <CrmCard meta={plural(row.days.length, "day", "days")} title={row.name}>
+              <CrmFacts
+                facts={[
+                  { label: "Days seen", value: seenText(row) },
+                  ...(row.spacing ? [{ label: "The shape of the month", value: row.spacing }] : []),
+                ]}
+              />
+            </CrmCard>
+          )}
+          renderCells={(row) => (
+            <>
+              <td className={crmTdClassName}>
+                <p className="break-words font-black text-slate-950" dir="auto">
+                  {row.name}
+                </p>
+                {row.spacing ? <p className="mt-0.5 break-words text-xs text-amber-700">{row.spacing}</p> : null}
+              </td>
+              <td className={crmTdClassName}>{seenText(row)}</td>
+            </>
+          )}
+          searchWords={(row) => [row.name]}
+          words={{ ...LIST_WORDS, title: "Customer by customer", with: "Visited", without: "Not visited" }}
+        />
+      </div>
+    </>
+  );
+}
+
 // ── The tab ─────────────────────────────────────────────────────────────────────────────────────
 
 const SECTION_TITLES: Record<ReportSection, string> = {
@@ -1571,6 +1822,8 @@ const SECTION_TITLES: Record<ReportSection, string> = {
   plan: "Plan against actual",
   daily: "Daily plan",
   coverage: "Coverage and frequency",
+  frequency: "Frequency per customer",
+  tracking: "Tracking sheet",
   bricks: "Coverage against sales",
   adoption: "Who has started",
   managers: "Double and chain visits",
@@ -1579,6 +1832,9 @@ const SECTION_TITLES: Record<ReportSection, string> = {
 
 /** The three sections a comparison means anything for. The others are lists, not measures. */
 const COMPARABLE_SECTIONS: ReadonlyArray<ReportSection> = ["visits", "plan", "coverage"];
+
+/** Sections that ask for a MONTH rather than a range of days. */
+const MONTHLY_SECTIONS: ReadonlyArray<ReportSection> = ["coverage", "frequency", "tracking"];
 
 /** Sections that read neither a period nor a month — they are about right now. */
 const TIMELESS_SECTIONS: ReadonlyArray<ReportSection> = ["exceptions", "adoption"];
@@ -1633,7 +1889,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const dailyNeedsTerritory = !seatId && lineTerritories.length > 1;
   // Neither of these two reads a period: coverage asks for a month, and the exceptions board is about
   // today and resolves its own days on the server. A period error must not blank either of them.
-  const readsPeriod = activeSection !== "coverage" && !TIMELESS_SECTIONS.includes(activeSection);
+  const readsPeriod = !MONTHLY_SECTIONS.includes(activeSection) && !TIMELESS_SECTIONS.includes(activeSection);
   const problem = readsPeriod ? periodProblem(period, today, view?.maxDays ?? REPORT_MAX_DAYS) : null;
 
   function sectionUrl(name: ReportSection): string | null {
@@ -1650,7 +1906,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     // Neither is filtered by line or territory: both are about the viewer's WHOLE reach, and a
     // filter would turn "how far has the rollout got" into "how far has it got here".
     if (name === "exceptions" || name === "adoption") return crmUrl(REPORTS_PATH, { section: name, includeTest: withTest });
-    if (name === "coverage") return crmUrl(REPORTS_PATH, { ...filters, month });
+    if (MONTHLY_SECTIONS.includes(name)) return crmUrl(REPORTS_PATH, { ...filters, month });
     return problem ? null : crmUrl(REPORTS_PATH, { ...filters, from: period.from, to: period.to });
   }
 
@@ -1667,12 +1923,17 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const plan = useCrmGet<PlanReportView>(sectionUrl("plan"), "report");
   const daily = useCrmGet<DailyPlanReportView>(sectionUrl("daily"), "report");
   const coverage = useCrmGet<CoverageReportView>(sectionUrl("coverage"), "report");
+  const frequency = useCrmGet<CustomerFrequencyReportView>(sectionUrl("frequency"), "report");
+  const tracking = useCrmGet<TrackingSheetReportView>(sectionUrl("tracking"), "report");
   const managers = useCrmGet<ManagerReportView>(sectionUrl("managers"), "report");
   const locations = useCrmGet<VisitLocationReportView>(sectionUrl("locations"), "report");
   const exceptions = useCrmGet<ExceptionsView>(sectionUrl("exceptions"), "report");
   const bricks = useCrmGet<BrickCoverageView>(sectionUrl("bricks"), "report");
   const adoption = useCrmGet<AdoptionView>(sectionUrl("adoption"), "report");
-  const active = { adoption, bricks, coverage, daily, exceptions, locations, managers, plan, visits }[activeSection];
+  // 🔴 EVERY SECTION HAS A KEY HERE. The Refresh button and the busy state read this map, so a
+  // section added to `ReportSection` and forgotten here is a TS7053 at build and a crash the
+  // moment that section is open. Caught on `frequency` before it shipped.
+  const active = { adoption, bricks, coverage, daily, exceptions, frequency, locations, managers, plan, tracking, visits }[activeSection];
 
   if (!view) {
     return (
@@ -1756,6 +2017,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     // Every reader of the tab: a rep reads his own plan here, and a manager a rep's in his scope.
     { value: "daily", label: SECTION_TITLES.daily, note: "Each day's customers" },
     { value: "coverage", label: SECTION_TITLES.coverage, note: "The list, month by month" },
+    { value: "frequency", label: SECTION_TITLES.frequency, note: "Grade and plan, apart" },
+    { value: "tracking", label: SECTION_TITLES.tracking, note: "Customer against every day" },
     // Same gate again: a board comparing bricks ACROSS a team is the manager's (owner, 2026-09-26).
     ...(view.canSeeLocations ? [{ value: "bricks" as const, label: SECTION_TITLES.bricks, note: "Per brick, with the caveat" }] : []),
     // A board naming who has never opened the module must not reach the field (F3) — same gate.
@@ -1781,8 +2044,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const chosenTerritory = seatId ? (lineTerritories.find((territory) => territory.seatId === seatId)?.name ?? null) : null;
   const dailySummary = [dailyPlanDaysSummary(dailyDays), chosenLine, chosenTerritory].filter((part): part is string => Boolean(part)).join(" · ");
   const filterSummary = [
-    activeSection === "coverage" ? monthLabel(month) : presetLabel,
-    activeSection === "coverage" ? null : periodText(period),
+    MONTHLY_SECTIONS.includes(activeSection) ? monthLabel(month) : presetLabel,
+    MONTHLY_SECTIONS.includes(activeSection) ? null : periodText(period),
     chosenLine,
     chosenTerritory,
   ]
@@ -1837,7 +2100,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
             <p className="break-words text-sm font-semibold leading-6 text-slate-700">
               This board reads your whole scope, as it stands today. It takes no days and no territory.
             </p>
-          ) : activeSection === "coverage" ? (
+          ) : MONTHLY_SECTIONS.includes(activeSection) ? (
             <CrmField className="md:max-w-md" htmlFor={`${idPrefix}-month`} label="Month">
               <CrmSelect id={`${idPrefix}-month`} onChange={(event) => setMonth(event.target.value)} value={month}>
                 {offeredMonths(today).map((key) => (
@@ -1944,6 +2207,10 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
         <PlanSection idPrefix={idPrefix} resource={plan} territories={chosen} today={today} />
       ) : activeSection === "coverage" ? (
         <CoverageSection idPrefix={idPrefix} resource={coverage} />
+      ) : activeSection === "frequency" ? (
+        <FrequencySection idPrefix={idPrefix} resource={frequency} />
+      ) : activeSection === "tracking" ? (
+        <TrackingSection idPrefix={idPrefix} resource={tracking} />
       ) : activeSection === "exceptions" ? (
         <ExceptionsSection idPrefix={idPrefix} resource={exceptions} />
       ) : activeSection === "bricks" ? (

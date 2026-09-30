@@ -1657,6 +1657,8 @@ import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.t
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
 import { runPhoenixCrmListCustomerFixtureTests } from "./phoenix-crm-list-customer-fixture.test.ts";
 import { runPhoenixCrmPlanSuggestTests } from "./phoenix-crm-plan-suggest.test.ts";
+import { runCustomerIdentitySuggestionTests } from "./customer-identity-suggestions.test.ts";
+import { runPhoenixCrmWave2ReportTests } from "./phoenix-crm-wave2-reports.test.ts";
 import { runPhoenixCrmListAdmissionTests } from "./phoenix-crm-list-admission.test.ts";
 import { runPhoenixCrmListRowFactsTests } from "./phoenix-crm-list-row-facts.test.ts";
 import { runPhoenixCrmPlanPatternTests } from "./phoenix-crm-plan-pattern.test.ts";
@@ -5776,6 +5778,16 @@ await runTest(
 await runTest(
   "Phoenix CRM's List says when a doctor is USUALLY planned and gathers the ones who stand together (owner, 2026-09-30): the pattern is read off the iReports360 reference plans in Phoenix's own Saturday-start field weeks rather than a second week model, a weekday counts as a pattern only when it happened more than once unless it is all that is known about him, four weeks reads as every week, nothing recorded says so instead of inventing a pattern, the column never counts whether the rep went, and the clustering is the old board's own findNeighbours and clusterRows with its five reserved hues rather than a second copy",
   runPhoenixCrmPlanPatternTests,
+);
+
+await runTest(
+  "Phoenix CRM Wave 2's identity engine only ever SUGGESTS and is pessimistic on purpose (owner, 2026-09-30 — the system suggests, the Super Admin confirms): PM, AM and pharmacy are each linked only with their own kind, a one-word name is never evidence, a speciality conflict vetoes the pair however well everything else agrees, a distributor code counts only within ONE distributor, a wholesaler is never offered as a pharmacy, distance alone neither suggests nor rescues, and a pair ruled not-the-same is dropped by the engine so withdrawing that ruling brings it straight back",
+  runCustomerIdentitySuggestionTests,
+);
+
+await runTest(
+  "Phoenix CRM Wave 2's three reports keep the owner's three rulings of 2026-09-30: the team calendar's day square is coloured by AM and PM alone and never by pharmacies, which appear in the day's detail; frequency per customer keeps visits-against-grade-norm and visits-against-plan as two whole separate columns with no blended figure and no grade reading as a norm of zero; and the tracking sheet's spacing note is gated to managers inside the helper as well as the screen, so nothing that judges how a rep worked can reach his own phone",
+  runPhoenixCrmWave2ReportTests,
 );
 
 await runTest(

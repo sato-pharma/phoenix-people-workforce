@@ -162,8 +162,10 @@ function declaredWidths(literal: string): { entries: number; percentages: number
  * A tag whose widths are a forwarded variable declares nothing and is not counted; the caller that
  * supplied the literal is what gets checked.
  */
-function declaredColumnSets(source: string): Array<{ tag: string; literal: string; headerCells: number | null }> {
-  const out: Array<{ tag: string; literal: string; headerCells: number | null }> = [];
+function declaredColumnSets(
+  source: string,
+): Array<{ tag: string; literal: string; headerCells: number | null; spread: boolean; headerSpread: boolean }> {
+  const out: Array<{ tag: string; literal: string; headerCells: number | null; spread: boolean; headerSpread: boolean }> = [];
   for (const match of source.matchAll(/columns=\{(\[[\s\S]*?\])\}/g)) {
     const at = match.index ?? 0;
     const literal = match[1] ?? "[]";
@@ -185,7 +187,25 @@ function declaredColumnSets(source: string): Array<{ tag: string; literal: strin
       const thead = source.indexOf("</thead>", at);
       headerCells = thead === -1 ? null : (source.slice(at, thead).match(/<th\b/g) ?? []).length;
     }
-    out.push({ tag, literal, headerCells });
+    // 🔴 A COLUMN SET BUILT FROM DATA CANNOT BE COUNTED BY READING IT. The team calendar and the
+    //    tracking sheet declare one column per DAY OF THE MONTH — `["22%", ...days.map(…)]` — so
+    //    the literal holds a spread whose length is 28, 29, 30 or 31 depending on the month, and
+    //    splitting it on commas counts the comma inside `Math.max(1, days.length)` as a column.
+    //    Checking a number that cannot be known is how a guard starts refusing correct code.
+    //
+    //    What replaces the count is stronger, not weaker: when the widths come from a spread, the
+    //    HEADER ROW must be built by mapping too, so both sides come from one array and cannot
+    //    disagree by construction. A spread colgroup over a hand-written header row is exactly the
+    //    drift this check exists to catch, and that still fails.
+    const spread = /\.\.\./.test(literal);
+    // 🔴 FROM `<thead>`, NOT FROM THE PROP. Slicing from the `columns` prop puts the prop's own
+    //    `.map(` inside the region, so every spread set read as "the header maps too" and the
+    //    branch below could never fire. Caught by breaking it: a hand-written header row passed.
+    const theadAt = source.indexOf("<thead>", at);
+    const theadEnd = source.indexOf("</thead>", at);
+    const headerRegion = theadAt === -1 || theadEnd === -1 || theadAt > theadEnd ? "" : source.slice(theadAt, theadEnd);
+    const headerSpread = /\.map\(/.test(headers?.[1] ?? headerRegion);
+    out.push({ tag, literal, headerCells, headerSpread, spread });
   }
   return out;
 }
@@ -293,7 +313,19 @@ export function runPhoenixCrmFitsTheScreenTests(): void {
             `excess rather than scrolling it — invisible to scrollWidth and to the reader. Merge columns instead.`,
         );
       }
-      if (set.headerCells !== null && set.headerCells > 0 && entries !== set.headerCells) {
+      // 🔴 ONLY WHERE THERE IS A HEADER ROW TO PAIR WITH. `columns` is also a workbook prop
+      //    (`ExportXlsxButton`), which has no <thead> and no header cells at all — the first cut of
+      //    this branch flagged `customer-list-board.tsx` for spreading widths on a BUTTON.
+      if (set.spread && set.headerCells !== null) {
+        // One array feeds both, or the two can drift apart on the next month with 31 days.
+        if (!set.headerSpread) {
+          problems.push(
+            `${MODULE_DIR}/${file.name} spreads its column widths on <${set.tag}> but writes its header cells out by ` +
+              `hand. The two are then built from different things and drift the moment the data changes length — map ` +
+              `the header row from the same array.`,
+          );
+        }
+      } else if (set.headerCells !== null && set.headerCells > 0 && entries !== set.headerCells) {
         problems.push(
           `${MODULE_DIR}/${file.name} declares ${entries} column widths for ${set.headerCells} header cells on ` +
             `<${set.tag}>. A short <colgroup> leaves the remaining columns to share what is left, so a measured table ` +

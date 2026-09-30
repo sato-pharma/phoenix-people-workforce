@@ -35,6 +35,7 @@ export type PhoenixCrmTabs = {
   list: boolean;
   plan: boolean;
   team: boolean;
+  calendar: boolean;
   doctors: boolean;
   reports: boolean;
   settings: boolean;
@@ -178,6 +179,9 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     list: hasScope,
     plan: viewer.isSuperAdmin || ownSeatIds.length > 0,
     team: viewer.isSuperAdmin || (scope.length > 0 && (viewer.managerSeats.length > 0 || viewer.basis === "all")),
+    // The team calendar rides the TEAM tab's own predicate rather than a second copy of it: both
+    // show a manager his people, and a rule written twice is a rule that will disagree with itself.
+    calendar: viewer.isSuperAdmin || (scope.length > 0 && (viewer.managerSeats.length > 0 || viewer.basis === "all")),
     // The Doctors directory. A directory role (owner, 2026-09-22: the SFE Manager and the Training
     // Manager read the whole company) gets it without holding a seat — a Training Manager has no
     // territory in the organogram, so `hasScope` alone would leave him with no tab at all.

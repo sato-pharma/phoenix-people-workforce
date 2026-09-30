@@ -70,6 +70,10 @@ export function runPhoenixCrmAmPmWordTests() {
     /doctors: "Directory"/, // that label itself
     /Your account is not linked to an HR record/, // a sign-in account, not an AM customer
     /loadDoctorDirectory|isDirectoryCompanyRole/, // directory functions
+    // The coverage NORMS live in `src/lib/crm`, whose filename carries the retired word. The
+    // frequency report reads the company's own A/B/C expectation from there rather than typing a
+    // number of its own, so this is an import path — never anything a rep can read.
+    /"@\/lib\/crm\/doctor-coverage-config"/,
   ];
 
   const files: string[] = [];

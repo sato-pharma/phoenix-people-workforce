@@ -4260,6 +4260,28 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "phoenix_crm", action: "read" }],
     roles: ["Super Admin", "SFE Manager"],
   },
+  {
+    // Customer Links — Wave 2's review screen, and the door to the 360 view behind it (the owner,
+    // 2026-09-30: the system suggests links and the Super Admin confirms each one).
+    //
+    // 🔴 A CARD, NOT A BACKLOG ROW. `tests/navigation-granted-but-unreachable` caught this page as
+    // an orphan the day it shipped: its only inbound link was the back-link on its own 360 view, so
+    // the one role that can open it had no way in that did not start with typing the address. That
+    // is the finding the guard exists to surface, and the fix is the link — recording it in
+    // tests/navigation-reachability-backlog.ts would have silenced a true report about a screen the
+    // owner asked for and could not reach.
+    //
+    // PERMISSION ALONE, no role list: `customer_identity` is granted to the Super Admin and nobody
+    // else, so naming him here too would be a second copy of that decision to keep in step. The
+    // enforcing gates are the page's own `canAccess(access, "customer_identity", "read")` and
+    // `assertPermission` on both /api/customer-identity routes; this card only draws the link.
+    href: "/admin/customer-links",
+    icon: Link2,
+    label: "Customer Links",
+    description:
+      "Who is the same person across Phoenix CRM, marketing and direct orders — the system proposes, you confirm each one, and nothing is ever merged or moved.",
+    permissions: [{ resource: "customer_identity", action: "read" }],
+  },
   // Reps Plans had its own card here until 2026-09-21, when the owner merged it into Reps List
   // ("merge the 2 modules into 1 module WHICH REPS LIST"). The board is now the Call rate tab of the
   // Reps List card above, still behind canAccessRepsPlans plus crm_visits:read, and /admin/reps-plans
@@ -4837,6 +4859,12 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/field-workforce-compliance",
           "/admin/field-activity",
           "/admin/phoenix-crm/integrity",
+          // Data quality rather than a board: it answers whether two rows in two modules are one
+          // person, which is the same kind of question as the two integrity rows above it. A card
+          // left out of every band here is not dropped — it is appended to the FIRST band and filed
+          // under a heading nobody chose, so nothing looks broken; tests/nav-hub-promotion is what
+          // catches that, and it caught this one.
+          "/admin/customer-links",
         ],
       },
     ],

@@ -57,6 +57,12 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   crm_plans: "Plan Verification",
   crm_visit_entry: "Visit Entry",
   crm_visits: "CRM Visits",
+  // Its own label, never folded into any of the five CRM entries above: those are iReports360's
+  // data and Phoenix CRM's visit entry, while this one is the Super-Admin review of WHO IS THE SAME
+  // PERSON across Phoenix CRM, marketing and direct orders. Locking one must never read as locking
+  // the other. This record is exhaustive over `PermissionResource`, so the typecheck is what
+  // demanded this line the moment the resource was added — and that is the guard working.
+  customer_identity: "Customer Links",
   deductions: "Deductions",
   direct_orders: "Direct Orders",
   double_visit_analytics: "Double Visit Analytics",

@@ -235,7 +235,9 @@ export function runPhoenixCrmTodayTests(): void {
     assert.ok(!body.includes('return "today"'), "and nothing opens on Today any more");
 
     const order = /const TAB_ORDER: readonly TabKey\[\] = \[([^\]]+)\]/.exec(app)?.[1] ?? "";
-    assert.equal(order.split(",").length, 7, "TAB_ORDER and TAB_COLUMNS must agree, or the bar has no grid at its own width");
+    // EIGHT since the team calendar became its own tab on his word (2026-09-30) — Today left and
+    // Calendar arrived, so this is not Today creeping back. TAB_COLUMNS already carries an 8 rule.
+    assert.equal(order.split(",").length, 8, "TAB_ORDER and TAB_COLUMNS must agree, or the bar has no grid at its own width");
     assert.ok(!order.includes('"today"'), "🔴 Today is not a tab — do not add it back; its replacement is RepTodayPlanPanel");
     assert.ok(app.includes('7: "grid-cols-3 sm:grid-cols-4 lg:grid-cols-7"'), "seven tabs have their own grid");
     assert.ok(!app.includes("today-tab"), "and the retired screen is gone from the shell");

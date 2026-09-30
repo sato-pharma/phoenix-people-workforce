@@ -1722,6 +1722,17 @@ export const accessRegistry = [
   // photograph out of the private `employee-photos` bucket onto a sheet built to be printed and
   // handed around. That is a publishing right.
   sessionApi({ methods: ["GET"], pattern: "/api/milestones/due", permission: { resource: "milestones", action: "read" } }),
+
+  // Phoenix CRM Wave 2 — which rows in the four systems are the SAME doctor or the same shop.
+  // Super Admin alone (`customer_identity`), by the owner's ruling of 2026-09-30: the system
+  // suggests and HE confirms, in bulk or one by one. The GET reads every customer in Phoenix CRM,
+  // the marketing register, the direct-order desk and the iReports360 mirror at once with no scope
+  // narrowing, which is why it is not a team-scoped surface; the POST records his decision and
+  // writes ONLY `customer_identity_*` — no source row is merged, renamed, re-territoried or
+  // touched in any way, and no rep's board changes because of it. `not_the_same` is kept for good
+  // and `withdraw_ruling` undoes it, both stamped with who and when.
+  sessionApi({ methods: ["GET"], pattern: "/api/customer-identity/suggestions", permission: { resource: "customer_identity", action: "read" } }),
+  sessionApi({ csrfRequired: true, methods: ["POST"], pattern: "/api/customer-identity/decide", permission: { resource: "customer_identity", action: "update" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/milestones/card", permission: { resource: "milestones", action: "export" } }),
   // The rep's OWN card, self-scoped (owner, 2026-09-30). Not the publishing right above: it builds
   // ONLY the caller's own card (access.hrId, never a hrId off the wire), so it needs no `milestones`
