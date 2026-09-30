@@ -48,6 +48,15 @@ import {
   type VisitCounts,
 } from "@/lib/phoenix-crm/report-rules";
 import { monthEndOf } from "@/lib/phoenix-crm/calendar";
+import { buildTrackingSheet, type TrackingSheetRow } from "@/lib/phoenix-crm/tracking-sheet";
+import { monthDays } from "@/lib/phoenix-crm/team-calendar";
+import {
+  buildCustomerFrequencyReport,
+  customerFrequencyTotals,
+  type CustomerFrequencyRow,
+} from "@/lib/phoenix-crm/customer-frequency";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
+import type { PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
 import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -831,4 +840,273 @@ export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: Rep
     total: mapped.length,
     summary: { visits: mapped.length, far, weakGps, noPlace, measured, farthestMeters: farthest },
   };
+}
+
+// ── Frequency per customer ──────────────────────────────────────────────────────────────────────
+
+/**
+ * How often each customer on ONE territory's list was actually seen this month, against his grade's
+ * number and against how often he was planned — the two kept apart (owner, 2026-09-30, asked which
+ * basis he wanted and choosing both). `customer-frequency.ts` holds the rule and the ordering.
+ *
+ * 🔴 ONE TERRITORY AT A TIME, AND IT SAYS SO RATHER THAN GUESSING. Coverage is per territory, so a
+ * whole scope fits on one screen; this is per CUSTOMER, and a national manager's scope is thousands
+ * of rows. A capped list would be a page that quietly stops being true, so with more than one
+ * territory chosen it returns none and names what to pick.
+ *
+ * 🔴 THE SAME LIST COVERAGE COUNTS, resolved the same way as `phoenix_crm_report_coverage`: validated
+ * customers, active or retired during this month. A different list here would put a different
+ * denominator beside coverage on the same screen.
+ */
+export type CustomerFrequencyReportView = {
+  month: ReportMonth;
+  includeTest: boolean;
+  /** Null until one territory is chosen — the sentence, not an empty table pretending to be an answer. */
+  seat: { seatId: string; territoryName: string; repName: string | null } | null;
+  needsOneTerritory: boolean;
+  rows: CustomerFrequencyRow[];
+  totals: ReturnType<typeof customerFrequencyTotals>;
+};
+
+export async function loadCustomerFrequencyReport(
+  viewer: PhoenixCrmViewer,
+  raw: ReportFilterInput,
+): Promise<CustomerFrequencyReportView> {
+  const chosen = chooseTerritories(viewer, raw);
+  const monthResult = resolveReportMonth({ month: raw.month, cairoToday: viewer.cairoToday });
+  if (!monthResult.ok) throw validationError(monthResult.error);
+  const month = monthResult.value;
+  const empty = { customers: 0, noTarget: 0, onTarget: 0, over: 0, under: 0 };
+
+  if (chosen.seats.length !== 1) {
+    return {
+      includeTest: chosen.includeTest,
+      month,
+      needsOneTerritory: true,
+      rows: [],
+      seat: null,
+      totals: empty,
+    };
+  }
+
+  const seat = chosen.seats[0] as OrgSeat;
+  // The targets the viewer was already resolved with — no second read, and no chance of this page
+  // scoring against a different copy of the settings than the rest of his session.
+  const settings = viewer.config.settings;
+  const names = await loadPeopleNames([seat.occupantHrId]);
+
+  const listed = await listedCustomers(seat.seatId, chosen.includeTest, month);
+  if (listed.length === 0) {
+    return {
+      includeTest: chosen.includeTest,
+      month,
+      needsOneTerritory: false,
+      rows: [],
+      seat: { repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null, seatId: seat.seatId, territoryName: territoryName(seat) },
+      totals: empty,
+    };
+  }
+
+  const [daysByCustomer, plannedByCustomer] = await Promise.all([
+    visitDaysByCustomer(seat.seatId, chosen.includeTest, month),
+    countPlannedByCustomer(seat.seatId, chosen.includeTest, month),
+  ]);
+
+  const rows = buildCustomerFrequencyReport(
+    listed.map((row) => ({
+      customerId: String(row.id),
+      grade: (textOrNull(row.grade) as PhoenixCrmGrade | null) ?? null,
+      listType: String(row.list_type) === "AM" ? "AM" : "PM",
+      name: textOrNull(row.name) ?? "Unnamed customer",
+      planned: plannedByCustomer.get(String(row.id)) ?? 0,
+      visits: (daysByCustomer.get(String(row.id)) ?? []).length,
+    })),
+    settings,
+  );
+
+  return {
+    includeTest: chosen.includeTest,
+    month,
+    needsOneTerritory: false,
+    rows,
+    seat: { repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null, seatId: seat.seatId, territoryName: territoryName(seat) },
+    totals: customerFrequencyTotals(rows),
+  };
+}
+
+/**
+ * The Cairo days each customer was visited in the month, REPEATS INCLUDED, earliest first.
+ *
+ * 🔴 ONE READER FOR BOTH REPORTS, AND THE REPEATS ARE WHY IT RETURNS DAYS RATHER THAN A COUNT.
+ * Frequency counts VISITS, so two visits to one customer on one day are two; the tracking sheet
+ * marks DAYS, so the same pair is one mark. Returning the list lets each report take what it
+ * means — `buildTrackingSheet` de-duplicates — instead of two queries that could drift apart.
+ *
+ * 🔴 THE VIEW, NAMED IN FULL RIGHT HERE. Every KPI in this module reads
+ * `phoenix_crm_countable_visits`, never the raw table — an off-plan visit that is not yet approved
+ * counts in nothing. An earlier cut took the table as a PARAMETER, which reads as flexibility and
+ * is really a way of hiding the name from every sweep that looks for who reads what.
+ */
+async function visitDaysByCustomer(seatId: string, includeTest: boolean, month: ReportMonth): Promise<Map<string, string[]>> {
+  const rows = await fetchAllRowsKeyset<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_countable_visits")
+        .select("id, customer_id, visit_date")
+        .eq("seat_id", seatId)
+        .eq("is_test", includeTest)
+        .gte("visit_date", month.monthStart)
+        .lte("visit_date", month.monthEnd),
+    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+  );
+  const out = new Map<string, string[]>();
+  for (const row of rows) {
+    const id = textOrNull(row.customer_id);
+    const day = textOrNull(row.visit_date)?.slice(0, 10);
+    if (!id || !day) continue;
+    const held = out.get(id) ?? [];
+    held.push(day);
+    out.set(id, held);
+  }
+  for (const days of out.values()) days.sort();
+  return out;
+}
+
+/**
+ * How often each customer was PLANNED this month — on a plan that was actually SENT.
+ *
+ * 🔴 A DRAFT IS NOT A PLAN. The rep owns his own draft until he submits it, so counting draft rows
+ * would let the denominator move under a manager's feet while he reads the page — and it is the
+ * same reasoning that makes an off-plan visit count only against a plan that reached `submitted`
+ * before the visit (`unplanned-rules.ts`). A returned plan is not counted either: it was sent back.
+ */
+async function countPlannedByCustomer(
+  seatId: string,
+  includeTest: boolean,
+  month: ReportMonth,
+): Promise<Map<string, number>> {
+  const plans = await fetchAllRowsKeyset<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_plans")
+        .select("id")
+        .eq("seat_id", seatId)
+        .eq("is_test", includeTest)
+        .in("status", ["submitted", "approved"]),
+    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+  );
+  const out = new Map<string, number>();
+  if (plans.length === 0) return out;
+
+  for (const part of chunk(plans.map((plan) => String(plan.id)), 150)) {
+    const items = await fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_plan_items")
+          .select("id, customer_id, plan_date")
+          .in("plan_id", part)
+          .gte("plan_date", month.monthStart)
+          .lte("plan_date", month.monthEnd),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+    for (const item of items) {
+      const id = textOrNull(item.customer_id);
+      if (id) out.set(id, (out.get(id) ?? 0) + 1);
+    }
+  }
+  return out;
+}
+
+/**
+ * The list a month's report covers — validated, and active or retired DURING the month.
+ *
+ * Exactly what `phoenix_crm_report_coverage` resolves in SQL, and shared by the two per-customer
+ * reports for that reason: a different list here would put a different denominator beside coverage
+ * on the same screen. A customer is never counted before he is validated (`coverage.ts` says why),
+ * and one dropped mid-month still belongs to the month he was worked in.
+ */
+async function listedCustomers(seatId: string, includeTest: boolean, month: ReportMonth): Promise<Row[]> {
+  const rows = await fetchAllRowsKeyset<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_customers")
+        .select("id, name, list_type, grade, status, status_changed_at")
+        .eq("seat_id", seatId)
+        .eq("is_test", includeTest)
+        .not("validated_at", "is", null),
+    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+  );
+  return rows.filter((row) => {
+    if (String(row.status) === "active") return true;
+    const changed = textOrNull(row.status_changed_at);
+    return Boolean(changed && changed.slice(0, 10) >= month.monthStart);
+  });
+}
+
+// ── The tracking sheet ───────────────────────────────────────────────────────────
+
+/**
+ * Every customer down the side, every day of the month across the top, a mark where a visit landed.
+ *
+ * 🔴 THE SPACING NOTE IS FOR MANAGERS ONLY (Golden rule #1). "Seen on the 5th and the 9th, then not
+ * again" is a judgement about how a rep worked his month, and anything that judges him is never
+ * his. `readsTeamReports` decides it here and `buildTrackingSheet` gates it again inside — a helper
+ * that returns the note and trusts the screen to hide it is one render from a rep's own phone.
+ *
+ * One territory at a time, for the same reason frequency is: this is per CUSTOMER, and a national
+ * manager's scope is thousands of rows that no cap could honestly shorten.
+ */
+export type TrackingSheetReportView = {
+  month: ReportMonth;
+  includeTest: boolean;
+  seat: { seatId: string; territoryName: string; repName: string | null } | null;
+  needsOneTerritory: boolean;
+  /** Every Cairo day of the month, so the grid's header needs no arithmetic of its own. */
+  days: string[];
+  rows: TrackingSheetRow[];
+  /** Whether the spacing notes were computed at all. False for a rep reading his own sheet. */
+  showsSpacing: boolean;
+};
+
+export async function loadTrackingSheetReport(
+  viewer: PhoenixCrmViewer,
+  raw: ReportFilterInput,
+): Promise<TrackingSheetReportView> {
+  const chosen = chooseTerritories(viewer, raw);
+  const monthResult = resolveReportMonth({ month: raw.month, cairoToday: viewer.cairoToday });
+  if (!monthResult.ok) throw validationError(monthResult.error);
+  const month = monthResult.value;
+  const managerView = readsTeamReports(viewer);
+  const days = monthDays(month.month);
+
+  if (chosen.seats.length !== 1) {
+    return { days, includeTest: chosen.includeTest, month, needsOneTerritory: true, rows: [], seat: null, showsSpacing: managerView };
+  }
+
+  const seat = chosen.seats[0] as OrgSeat;
+  const [listed, names] = await Promise.all([
+    listedCustomers(seat.seatId, chosen.includeTest, month),
+    loadPeopleNames([seat.occupantHrId]),
+  ]);
+  const seatView = {
+    repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null,
+    seatId: seat.seatId,
+    territoryName: territoryName(seat),
+  };
+  if (listed.length === 0) {
+    return { days, includeTest: chosen.includeTest, month, needsOneTerritory: false, rows: [], seat: seatView, showsSpacing: managerView };
+  }
+
+  const daysByCustomer = await visitDaysByCustomer(seat.seatId, chosen.includeTest, month);
+  const rows = buildTrackingSheet(
+    listed.map((row) => ({
+      customerId: String(row.id),
+      days: daysByCustomer.get(String(row.id)) ?? [],
+      name: textOrNull(row.name) ?? "Unnamed customer",
+    })),
+    month.monthEnd,
+    { managerView },
+  );
+
+  return { days, includeTest: chosen.includeTest, month, needsOneTerritory: false, rows, seat: seatView, showsSpacing: managerView };
 }

@@ -50,11 +50,14 @@ import type { BrickCoverageView } from "@/lib/phoenix-crm/server/brick-report";
 import type { ExceptionsView } from "@/lib/phoenix-crm/server/exceptions";
 import type {
   CoverageReportView,
+  CustomerFrequencyReportView,
   ManagerReportView,
   PlanReportView,
+  TrackingSheetReportView,
   VisitLocationReportView,
   VisitsReportView,
 } from "@/lib/phoenix-crm/server/reports";
+import type { TeamCalendarView } from "@/lib/phoenix-crm/server/team-calendar";
 
 /**
  * Every section the pack can hold. A `null` is a section this viewer may not read, and it writes no
@@ -72,6 +75,10 @@ export type ReportsPackInput = {
   /** One territory's plan, day by day — null (no sheet) unless ONE territory was read. */
   dailyPlan: DailyPlanReportView | null;
   coverage: CoverageReportView | null;
+  /** Per CUSTOMER, so null unless one territory was chosen — see the export route. */
+  frequency: CustomerFrequencyReportView | null;
+  tracking: TrackingSheetReportView | null;
+  calendar: TeamCalendarView | null;
   managers: ManagerReportView | null;
   locations: VisitLocationReportView | null;
   exceptions: ExceptionsView | null;
@@ -328,6 +335,125 @@ function writeCoverage(workbook: ExcelJS.Workbook, view: CoverageReportView): vo
   });
 }
 
+/**
+ * Frequency per customer — the two comparisons in their own columns, side by side and never added.
+ *
+ * 🔴 THE TARGET COLUMN IS PHOENIX CRM'S OWN `grade_targets`, the same number the screen shows and
+ * the same one coverage divides by. A workbook that quoted a different table would be the version
+ * that outlives the screen and gets forwarded.
+ */
+function writeFrequency(workbook: ExcelJS.Workbook, view: CustomerFrequencyReportView): void {
+  const sheet = workbook.addWorksheet("Frequency per customer");
+  sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
+  writeHouseTable(sheet, 1, {
+    columns: [
+      { ...NAME, label: "Customer" },
+      column("List", { width: 8 }),
+      column("Grade", { width: 8 }),
+      counted("Visits"),
+      counted("Grade target", 13),
+      column("Against the grade", { width: 19 }),
+      counted("Planned"),
+      counted("Against the plan", 17),
+    ],
+    note:
+      "Two comparisons, kept apart: the grade's monthly number from Phoenix CRM's own settings, and how often he was "
+      + "placed on a plan that was actually sent. Over the grade is a deviation too, never a bonus.",
+    rows: view.rows.map((row) => [
+      row.name,
+      row.listType,
+      row.grade ?? "No grade",
+      row.visits,
+      row.gradeTarget === null ? "—" : row.gradeTarget,
+      row.gradeVerdict,
+      row.planned,
+      row.againstPlan,
+    ]),
+    title: `Frequency per customer · ${view.seat?.territoryName ?? "one territory"} · ${view.month.month}`,
+    totals: ["All", "", "", "", "", `${view.totals.under} under · ${view.totals.onTarget} on · ${view.totals.over} over`, "", ""],
+  });
+}
+
+/**
+ * The tracking sheet — customer down the side, every day of the month across.
+ *
+ * 🔴 THE SPACING NOTE IS ONLY HERE WHEN THE SERVICE COMPUTED IT. A rep's own pack comes back with
+ * every note null and `showsSpacing` false, so the column is left out entirely rather than printed
+ * empty: a blank column headed "The shape of the month" tells him a judgement exists and that he
+ * is not being shown it, which is the disclosure Golden rule #1 forbids.
+ */
+function writeTracking(workbook: ExcelJS.Workbook, view: TrackingSheetReportView): void {
+  const sheet = workbook.addWorksheet("Tracking sheet");
+  sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
+  const dayColumns = view.days.map((day) => column(String(Number(day.slice(8, 10))).padStart(2, "0"), { width: 4 }));
+  writeHouseTable(sheet, 1, {
+    columns: [
+      { ...NAME, label: "Customer" },
+      ...dayColumns,
+      counted("Days seen", 11),
+      ...(view.showsSpacing ? [column("The shape of the month", { width: 40 })] : []),
+    ],
+    note: "A mark is a day a countable visit landed. Two visits to one customer on one day mark that day once.",
+    rows: view.rows.map((row) => {
+      const marked = new Set(row.days);
+      return [
+        row.name,
+        ...view.days.map((day) => (marked.has(day) ? "Y" : "")),
+        row.days.length,
+        ...(view.showsSpacing ? [row.spacing ?? ""] : []),
+      ];
+    }),
+    title: `Tracking sheet · ${view.seat?.territoryName ?? "one territory"} · ${view.month.month}`,
+  });
+}
+
+/**
+ * The team calendar — a person a row, a day a column, and the day's SHAPE in the cell.
+ *
+ * 🔴 THE CELL IS A WORD, NEVER A FIGURE, for the same reason the screen's is: on a both-halves day
+ * a single number is AM + PM added, and every count of visits is reported apart. The three totals
+ * sit in their own columns at the end.
+ */
+const CALENDAR_CELL: Record<string, string> = {
+  activity: "Act",
+  am: "AM",
+  both: "AM+PM",
+  leave: "Leave",
+  none: "",
+  pm: "PM",
+  rest: "F",
+};
+
+function writeCalendar(workbook: ExcelJS.Workbook, view: TeamCalendarView): void {
+  const sheet = workbook.addWorksheet("Team calendar");
+  sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
+  writeHouseTable(sheet, 1, {
+    columns: [
+      { ...NAME, label: "Person" },
+      column("Territory", { width: 24 }),
+      column("Under", { width: 20 }),
+      ...view.days.map((day) => column(String(Number(day.slice(8, 10))).padStart(2, "0"), { width: 6 })),
+      counted("AM"),
+      counted("PM"),
+      counted("Pharmacies", 12),
+    ],
+    note:
+      "Each cell says which halves of the day were worked — AM, PM, AM+PM — or why it was blank: F for Friday, Leave "
+      + "from HR's own rows, Act for a recorded day activity. Pharmacies are counted apart and never colour a day.",
+    rows: view.rows.map((row) => [
+      row.person,
+      row.territory,
+      row.manager ?? "—",
+      ...row.days.map((day) => CALENDAR_CELL[day.shape] ?? ""),
+      row.totals.am,
+      row.totals.pm,
+      row.totals.pharmacies,
+    ]),
+    title: `Team calendar · ${view.month}`,
+    totals: ["All", "", "", ...view.days.map(() => ""), view.totals.am, view.totals.pm, view.totals.pharmacies],
+  });
+}
+
 function writeManagers(workbook: ExcelJS.Workbook, view: ManagerReportView): void {
   const sheet = workbook.addWorksheet("Double and chain visits");
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
@@ -492,6 +618,9 @@ export function packSections(input: ReportsPackInput): string[] {
     input.plan ? "Plan against actual" : null,
     input.dailyPlan?.territory ? "Daily plan" : null,
     input.coverage ? "Coverage and frequency" : null,
+    input.frequency ? "Frequency per customer" : null,
+    input.tracking ? "Tracking sheet" : null,
+    input.calendar ? "Team calendar" : null,
     input.bricks ? "Coverage against sales" : null,
     input.managers ? "Double and chain visits" : null,
     input.locations ? "Where the visit was saved" : null,
@@ -526,6 +655,9 @@ export async function buildPhoenixCrmReportsWorkbook(input: ReportsPackInput): P
   if (input.plan) writePlan(workbook, input.plan);
   if (input.dailyPlan) writeDailyPlan(workbook, input.dailyPlan);
   if (input.coverage) writeCoverage(workbook, input.coverage);
+  if (input.frequency) writeFrequency(workbook, input.frequency);
+  if (input.tracking) writeTracking(workbook, input.tracking);
+  if (input.calendar) writeCalendar(workbook, input.calendar);
   if (input.bricks) writeBricks(workbook, input.bricks);
   if (input.managers) writeManagers(workbook, input.managers);
   if (input.locations) writeLocations(workbook, input.locations);

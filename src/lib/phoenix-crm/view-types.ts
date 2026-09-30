@@ -32,6 +32,7 @@ export type {
 export type { PlaceMoveResult, PlaceMoveTarget } from "@/lib/phoenix-crm/server/place-move";
 export type { PlannedActivityDraft, PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
 export type { DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
+export type { PhoenixCrmDayDetail } from "@/lib/phoenix-crm/server/day-detail";
 export type { DoctorDirectoryRow, DoctorDirectoryView } from "@/lib/phoenix-crm/server/doctors";
 export type { TodayView } from "@/lib/phoenix-crm/server/today";
 export type { TeamRequest, TeamTerritoryRow, TeamUnplannedVisit, TeamView } from "@/lib/phoenix-crm/server/team";
@@ -58,6 +59,7 @@ export type {
 export type { PlanHistoryEntry, PlanHistoryView } from "@/lib/phoenix-crm/server/plan-history";
 export type {
   CoverageReportView,
+  CustomerFrequencyReportView,
   ManagerReportEntry,
   ManagerReportRow,
   ManagerReportView,
@@ -68,6 +70,7 @@ export type {
   RepVisitRow,
   TerritoryCoverageRow,
   TerritoryPlanRow,
+  TrackingSheetReportView,
   ReportComparison,
   VisitLocationReportView,
   VisitLocationRow,

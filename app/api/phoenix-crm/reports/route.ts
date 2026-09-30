@@ -8,9 +8,12 @@ import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { loadDailyPlanReport } from "@/lib/phoenix-crm/server/daily-plan-report";
 import { loadBrickCoverageReport } from "@/lib/phoenix-crm/server/brick-report";
 import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
+import { loadTeamCalendar } from "@/lib/phoenix-crm/server/team-calendar";
 import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
 import {
   loadCoverageReport,
+  loadCustomerFrequencyReport,
+  loadTrackingSheetReport,
   loadManagerReport,
   loadPlanReport,
   loadReportScope,
@@ -29,7 +32,13 @@ export const dynamic = "force-dynamic";
 //             seen. It reaches FORWARD to the last plannable day, and a rep reads his own plan here.
 //   visits    visits per rep per day, AM and PM apart
 //   plan      plan against actual, per day
-//   coverage  coverage and frequency for a month
+//   coverage  coverage and frequency for a month, per TERRITORY
+//   frequency how often each CUSTOMER was seen, against his grade's number and against how often
+//             he was planned — the two apart (owner, 2026-09-30). One territory at a time: this
+//             is per customer, and a national scope is thousands of rows
+//   tracking  every customer down the side, every day across the top, a mark where a visit
+//             landed. The spacing note beside it is a MANAGER's — a judgement about how a rep
+//             worked his month never reaches the rep (Golden rule #1)
 //   managers  double and chain visits per manager
 //   locations where the rep stood against where the customer's place is saved — a manager's report,
 //             refused to a medical rep inside the service (owner, 2026-09-26)
@@ -40,6 +49,9 @@ export const dynamic = "force-dynamic";
 //             natively from the places captured in this module; the sales half comes through the
 //             shared closing loader with the EL QEMA MASK applied in the service, never here. Same
 //             gate again, and the view carries a fixed caveat: brick sales never sum to the area.
+//   calendar  the month, one square per day, AM and PM apart and pharmacies in the day's detail —
+//             its own TAB in the module, and a MANAGER's view (readsTeamReports), because a month
+//             of a rep's team laid out for comparison is not his to read (Golden rule #1)
 //   adoption  how far the ROLLOUT has got — who has never opened the module at all (F3). Same gate,
 //             and it reads the viewer's WAITING territories too, since a territory whose line has
 //             not opened is the other half of the same question. Nothing on it acts.
@@ -68,11 +80,16 @@ export async function GET(request: Request) {
     else if (section === "visits") report = await loadVisitsReport(viewer, filters);
     else if (section === "plan") report = await loadPlanReport(viewer, filters);
     else if (section === "coverage") report = await loadCoverageReport(viewer, filters);
+    else if (section === "frequency") report = await loadCustomerFrequencyReport(viewer, filters);
+    else if (section === "tracking") report = await loadTrackingSheetReport(viewer, filters);
     else if (section === "managers") report = await loadManagerReport(viewer, filters);
     else if (section === "locations") report = await loadVisitLocationReport(viewer, filters);
     else if (section === "exceptions") report = await loadExceptionsBoard(viewer, { test: filters.includeTest });
     else if (section === "bricks") report = await loadBrickCoverageReport(viewer, filters);
     else if (section === "adoption") report = await loadAdoptionReport(viewer, { test: filters.includeTest });
+    // The team calendar. Its own TAB in the module (owner, 2026-09-30) but the module's own report
+    // endpoint, so there is one place a Phoenix CRM report section is gated, scoped and audited.
+    else if (section === "calendar") report = await loadTeamCalendar(viewer, { month: filters.month, test: filters.includeTest });
     else throw validationError("Choose a report.");
     return NextResponse.json({ report, section, success: true });
   } catch (error) {

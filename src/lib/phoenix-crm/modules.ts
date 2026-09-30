@@ -31,7 +31,7 @@ export const PHOENIX_CRM_PORTAL_BASE = "/employee-portals/field-crm";
  * build. `server/page.ts` carries a compile-time check that this union and `keyof PhoenixCrmTabs`
  * still agree, so adding a tab without giving it a card cannot compile.
  */
-export type PhoenixCrmModuleKey = "visits" | "list" | "plan" | "team" | "doctors" | "reports" | "settings";
+export type PhoenixCrmModuleKey = "visits" | "list" | "plan" | "team" | "calendar" | "doctors" | "reports" | "settings";
 
 export type PhoenixCrmModule = {
   key: PhoenixCrmModuleKey;
@@ -60,6 +60,11 @@ export const PHOENIX_CRM_MODULES: readonly PhoenixCrmModule[] = [
   { key: "list", slug: "list", label: "List", blurb: "Your customers: validate them at the clinic, keep their days and hours, ask to add or drop." },
   { key: "plan", slug: "plan", label: "Plan", blurb: "Build the month and its weeks, and send them for approval." },
   { key: "team", slug: "team", label: "Team", blurb: "Your people's days and plans, and the decisions waiting on you." },
+  // 🔴 ITS OWN TAB, NOT A SECTION OF REPORTS (owner, 2026-09-30: "build the team calendar into a
+  // separate tab inside the button of the Phoenix CRM"). It sits beside Team because it answers
+  // the same question over a month that Team answers for a day, and because — like Team — it is a
+  // MANAGER's view: a rep never opens it.
+  { key: "calendar", slug: "calendar", label: "Calendar", blurb: "The team's month, one square a day — AM and PM apart, and who was away." },
   // The one module whose slug is NOT its key — see `slug` above.
   { key: "doctors", slug: "directory", label: "Directory", blurb: "Search every customer you are allowed to see." },
   { key: "reports", slug: "reports", label: "Reports", blurb: "Coverage, frequency and the call rate, AM and PM apart." },

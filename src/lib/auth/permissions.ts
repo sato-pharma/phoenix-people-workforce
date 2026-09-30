@@ -108,6 +108,14 @@ export type PermissionResource =
   // the employee record and prints a whole window of people at once. Every one of those is a
   // publishing right rather than a reading one.
   | "milestones"
+  // Customer identity (Phoenix CRM Wave 2): deciding that a row in Phoenix CRM, in the marketing
+  // venue register, on a direct order and in the iReports360 mirror are all the SAME doctor, or
+  // the same shop. SUPER ADMIN ONLY, by the owner's own ruling of 2026-09-30 — the system suggests
+  // and HE confirms, in bulk or one by one. It reads every customer in all four systems at once
+  // with no scope narrowing of any kind, and a confirmation is a judgement about who a real person
+  // IS, which is the same shape of right as `milestones` above rather than an ordinary reading
+  // one. Do not widen it, to the CEO or to the SFE, without him saying so in words.
+  | "customer_identity"
   | "employees"
   | "employee_profile"
   | "employee_documents"
@@ -240,6 +248,7 @@ export const permissionResources: PermissionResource[] = [
   "spotlight",
   "spotlight_self",
   "milestones",
+  "customer_identity",
   "overview",
   "admin_access",
   "system_cleanup",
@@ -971,6 +980,10 @@ const defaultPermissionMatrix: PermissionMap = {
     spotlight: ["read", "export"],
     // Milestones: the service-anniversary keepsake — the due list and the printable card.
     milestones: ["read", "export"],
+    // Wave 2. `update` is the confirmation itself — a link, or a "not the same" ruling and its
+    // withdrawal. No `delete`: a ruling is withdrawn, never erased, so the decision survives its
+    // own reversal.
+    customer_identity: ["read", "update", "export"],
     // Visual Aids: uploads, retires and replaces, and opens every line's. No `delete` for anyone —
     // a flyer is retired, never destroyed.
     visual_aids: ["read", "create", "update"],

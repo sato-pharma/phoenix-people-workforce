@@ -39,6 +39,7 @@ const ALL: Record<PhoenixCrmModuleKey, boolean> = {
   list: true,
   plan: true,
   team: true,
+  calendar: true,
   "doctors": true,
   reports: true,
   settings: true,
@@ -49,8 +50,8 @@ export function runPhoenixCrmSplitModulesTests(): void {
   {
     assert.deepEqual(
       PHOENIX_CRM_MODULE_KEYS,
-      ["visits", "list", "plan", "team", "doctors", "reports", "settings"],
-      "the work he does first, then the reading, and Settings last — `today` was RETIRED (owner, 2026-09-30)",
+      ["visits", "list", "plan", "team", "calendar", "doctors", "reports", "settings"],
+      "the work he does first, then the reading, and Settings last — `today` was RETIRED and `calendar` added on his word (owner, 2026-09-30)",
     );
     assert.equal(PHOENIX_CRM_MODULES.length, PHOENIX_CRM_MODULE_KEYS.length);
     for (const entry of PHOENIX_CRM_MODULES) {
@@ -96,8 +97,28 @@ export function runPhoenixCrmSplitModulesTests(): void {
   // ── 2. Only the modules the viewer may open ─────────────────────────────────────────────────────
   {
     assert.deepEqual(allowedPhoenixCrmModules(ALL).map((entry) => entry.key), PHOENIX_CRM_MODULE_KEYS);
-    const rep = { ...ALL, team: false, settings: false, "doctors": false };
+    // 🔴 `calendar` GOES OFF WITH `team`, NOT ON ITS OWN. The team calendar is a manager's view —
+    //    a month of his team laid out for comparison is exactly what Golden rule #1 keeps off a
+    //    rep's screens — so a rep who has no Team tab has no Calendar tab either.
+    const rep = { ...ALL, team: false, calendar: false, settings: false, "doctors": false };
     assert.deepEqual(allowedPhoenixCrmModules(rep).map((entry) => entry.key), ["visits", "list", "plan", "reports"]);
+
+    // And the two flags are decided by the SAME expression in `overview.ts`, so they cannot drift:
+    // a second copy of the predicate is a second answer to a settled question.
+    // Anchored on the LITERAL, not the whole file: the type above it declares `calendar: boolean;`
+    // on a line of the same shape, and a sweep that found that one instead would compare two
+    // "boolean" strings and pass whatever the predicates actually said.
+    const overview = source("src/lib/phoenix-crm/server/overview.ts");
+    const literal = overview.slice(overview.indexOf("const tabs: PhoenixCrmTabs = {"));
+    const predicateOf = (key: string) =>
+      literal
+        .split("\n")
+        .map((line) => line.trim())
+        .find((line) => line.startsWith(key + ": "))
+        ?.slice(key.length + 2)
+        .replace(/,$/, "") ?? "no " + key;
+    assert.equal(predicateOf("calendar"), predicateOf("team"), "the Calendar tab is offered exactly where the Team tab is");
+    assert.notEqual(predicateOf("team"), "no team", "and the sweep really found the tab literal");
     const none = Object.fromEntries(PHOENIX_CRM_MODULE_KEYS.map((key) => [key, false])) as Record<PhoenixCrmModuleKey, boolean>;
     assert.deepEqual(allowedPhoenixCrmModules(none), [], "and nothing at all when he holds nothing");
   }

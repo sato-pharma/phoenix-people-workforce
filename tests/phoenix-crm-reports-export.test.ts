@@ -156,6 +156,12 @@ function pack(patch: Partial<ReportsPackInput> = {}): ReportsPackInput {
     // F3's sheet, added 2026-09-27. A REQUIRED field, not optional: a section the pack type lets you
     // leave out is a section nobody notices is missing from the workbook.
     adoption: null,
+    // Wave 2's three, added 2026-09-30, required for the same reason. 🔴 A GREEN RUN OF THIS FILE
+    // CARRIES NO TYPE SIGNAL — the runner strips types — so a field missing here is caught by the
+    // PR's typecheck and by nothing in this suite. Adding them by hand is the whole guard.
+    frequency: null,
+    tracking: null,
+    calendar: null,
     ...patch,
   };
 }
@@ -429,6 +435,54 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
       source("src/components/phoenix-crm/reports-tab.tsx").includes("downloadXlsxFrom("),
       "the Reports tab uses the shared helper rather than its own fetch-and-anchor",
     );
+  }
+
+  // ── Wave 2's three sheets ───────────────────────────────────────────────────────
+  {
+    // Absent by default, exactly like every other section: null writes NO sheet and the cover
+    // promises none. A tab headed with a report that is not in it is worse than a tab that is absent.
+    const bare = packSections(pack({}));
+    for (const name of ["Frequency per customer", "Tracking sheet", "Team calendar"]) {
+      assert.equal(bare.includes(name), false, `${name} is not promised when it was not loaded`);
+    }
+
+    const threeViews = {
+        calendar: { days: ["2026-09-01"], isTest: false, month: "2026-09", rows: [], totals: { am: 0, pharmacies: 0, pm: 0 } },
+        frequency: { includeTest: false, month: { inProgress: false, month: "2026-09", monthEnd: "2026-09-30", monthStart: "2026-09-01" }, needsOneTerritory: false, rows: [], seat: null, totals: { customers: 0, noTarget: 0, onTarget: 0, over: 0, under: 0 } },
+        tracking: { days: ["2026-09-01"], includeTest: false, month: { inProgress: false, month: "2026-09", monthEnd: "2026-09-30", monthStart: "2026-09-01" }, needsOneTerritory: false, rows: [], seat: null, showsSpacing: true },
+    } as Partial<ReportsPackInput>;
+
+    // In the cover's own order, straight after coverage.
+    const promised = packSections(pack(threeViews));
+    const wanted = ["Coverage and frequency", "Frequency per customer", "Tracking sheet", "Team calendar"];
+    assert.deepEqual(
+      promised.filter((name) => wanted.includes(name)),
+      wanted,
+      "the three sit after coverage, in the order the workbook writes them",
+    );
+    // 🔴 READ BACK OUT OF THE REAL WORKBOOK, never asserted against the input — the rule this file
+    //    already follows above: a builder that promised a sheet on the cover and wrote none would
+    //    pass every check made on `packSections` alone.
+    const built = await sheetsOf(pack(threeViews));
+    for (const name of wanted) assert.ok(built.includes(name), `${name} is really in the built workbook`);
+    assert.deepEqual(built.filter((name) => wanted.includes(name)), wanted, "and in that order");
+
+    const route = stripComments(readFileSync("app/api/phoenix-crm/reports/export/route.ts", "utf8"));
+    // 🔴 NO TERRITORY MEANS NO SHEET. Both per-customer reports answer `needsOneTerritory` for a
+    //    whole scope, and a sheet of thousands of rows for a district is not what that means.
+    assert.match(route, /frequencyRaw\.needsOneTerritory \? null : frequencyRaw/, "frequency is dropped unless one territory was chosen");
+    assert.match(route, /trackingRaw\.needsOneTerritory \? null : trackingRaw/, "and so is the tracking sheet");
+    // The calendar is a manager's, by the same predicate its own service uses.
+    assert.match(route, /managerSections \? loadTeamCalendar\(/, "the team calendar is withheld from anyone who reads no team");
+
+    const workbook = stripComments(readFileSync("src/lib/phoenix-crm/server/reports-workbook.ts", "utf8"));
+    // 🔴 THE CALENDAR CELL IS A WORD, NEVER A FIGURE — on a both-halves day a single number is
+    //    AM + PM added, and every count of visits is reported apart.
+    assert.doesNotMatch(workbook, /totals\.am \+ [A-Za-z.]*totals\.pm/, "the workbook never adds the two halves");
+    assert.match(workbook, /both: "AM\+PM"/, "a both-halves day says so in words");
+    // 🔴 THE SPACING COLUMN IS ABSENT, NOT EMPTY, WHEN THE SERVICE WITHHELD IT. A blank column
+    //    headed "The shape of the month" tells a rep a judgement exists and is being kept from him.
+    assert.match(workbook, /view\.showsSpacing \? \[column\("The shape of the month"/, "the note's column is only there when there are notes");
   }
 
   console.log("phoenix-crm reports export: OK");

@@ -29,6 +29,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { crmGet, crmUrl, messageOf } from "@/components/phoenix-crm/api";
+import { CalendarTab } from "@/components/phoenix-crm/calendar-tab";
 import { DoctorsTab } from "@/components/phoenix-crm/doctors-tab";
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { ListTab } from "@/components/phoenix-crm/list-tab";
@@ -56,13 +57,14 @@ import { cn } from "@/lib/utils";
 
 type TabKey = keyof PhoenixCrmTabs;
 
-const TAB_ORDER: readonly TabKey[] = ["visits", "list", "plan", "team", "doctors", "reports", "settings"];
+const TAB_ORDER: readonly TabKey[] = ["visits", "list", "plan", "team", "calendar", "doctors", "reports", "settings"];
 
 const TAB_LABELS: Record<TabKey, string> = {
   visits: "Visits",
   list: "List",
   plan: "Plan",
   team: "Team",
+  calendar: "Calendar",
   doctors: "Directory",
   reports: "Reports",
   settings: "Settings",
@@ -99,7 +101,8 @@ const SEAT_TABS: readonly SeatTab[] = ["visits", "list", "plan"];
 
 /** The tabs that can hold work the page keeps while another tab is open. Reports and Doctors hold none. */
 /** Today holds none either: it is a read, and every action on it opens another tab. */
-type HoldingTab = Exclude<TabKey, "reports" | "doctors">;
+/** Nor does the Calendar: it is a month laid out to be read, and nothing on it is entered. */
+type HoldingTab = Exclude<TabKey, "reports" | "doctors" | "calendar">;
 
 /** Each tab's work, as the question before letting it go names it. */
 const HELD_WORK: Record<HoldingTab, string> = {
@@ -148,7 +151,7 @@ function isSeatTab(key: TabKey): key is SeatTab {
 }
 
 function isHoldingTab(key: TabKey): key is HoldingTab {
-  return key !== "reports" && key !== "doctors";
+  return key !== "reports" && key !== "doctors" && key !== "calendar";
 }
 
 function allowedTabs(tabs: PhoenixCrmTabs): TabKey[] {
@@ -789,6 +792,7 @@ export function PhoenixCrmApp({
       );
     }
     if (key === "reports") return <ReportsTab cairoToday={cairoToday} key={`reports|${test}`} test={test} />;
+    if (key === "calendar") return <CalendarTab cairoToday={cairoToday} key={`calendar|${test}`} test={test} />;
     if (key === "settings") return <SettingsTab onChanged={settingsChanged} onDirtyChange={holdReporters.settings} />;
 
     const seatId = seats[key];
