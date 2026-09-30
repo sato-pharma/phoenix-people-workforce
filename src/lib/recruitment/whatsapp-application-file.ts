@@ -52,6 +52,26 @@ export function candidateApplicationPrintPath(candidateId: string): string {
   return `/print/candidate-application/${encodeURIComponent(candidateId)}`;
 }
 
+// ── CV LOOKUP's own door to the same file (owner, 2026-09-30) ────────────────────────────────────
+//
+// Same bytes and same headers, DIFFERENT GATE: the route behind these asserts `cv_lookup:read`,
+// while the candidate forms above need `candidates:read` and the whole recruiting predicate. Two
+// named functions rather than one taking a "which door" argument — a single parameterised helper is
+// how a caller ends up choosing its own gate.
+//
+// There is deliberately NO print path. CV Lookup reads the file in the page and saves it; a print
+// page would be a third surface to keep in step, for a seat with no printing to do.
+
+/** The endpoint that builds one candidate's CV-and-application file for CV Lookup. */
+export function cvLookupApplicationApiPath(candidateId: string): string {
+  return `/api/recruitment/cv-lookup/${encodeURIComponent(candidateId)}/application`;
+}
+
+/** The same, as text for the in-page reader — see `whatsAppApplicationTextPath` for why base64. */
+export function cvLookupApplicationTextPath(candidateId: string): string {
+  return `${cvLookupApplicationApiPath(candidateId)}?format=base64`;
+}
+
 /** The cleaned, file-system-safe form of an applicant's name, capped at 80 characters. */
 function safeApplicantName(name: string): string {
   return name

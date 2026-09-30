@@ -994,6 +994,7 @@ import { runContractRenewalWorkflowScopeCheckTests } from "./contract-renewal-wo
 import { runCustomerPharmacyMappingReadinessTests } from "./customer-pharmacy-mapping-readiness.test.ts";
 import { runCustomerPharmacyMappingActionsTests } from "./customer-pharmacy-mapping-actions.test.ts";
 import { runCvDatabaseTests } from "./cv-database.test.ts";
+import { runCvLookupTests } from "./cv-lookup.test.ts";
 import { runTransactionWorkflowAuditTests } from "./transaction-workflow-audit.test.ts";
 import { runPhase13BrowserSmokeRegressionTests } from "./phase13-browser-smoke-regression.test.ts";
 import { runPhase14ControlledMutationSmokeTests } from "./phase14-controlled-mutation-smoke.test.ts";
@@ -4075,6 +4076,7 @@ await runTest("contract renewal workflow scope check", runContractRenewalWorkflo
 await runTest("customer pharmacy mapping readiness", runCustomerPharmacyMappingReadinessTests);
 await runTest("customer pharmacy mapping actions (approve/reject)", runCustomerPharmacyMappingActionsTests);
 await runTest("cv database", runCvDatabaseTests);
+await runTest("cv lookup", runCvLookupTests);
 await runTest("transaction workflow audit", runTransactionWorkflowAuditTests);
 await runTest("phase 13 browser smoke regressions", runPhase13BrowserSmokeRegressionTests);
 await runTest("phase 14 controlled mutation smoke", runPhase14ControlledMutationSmokeTests);

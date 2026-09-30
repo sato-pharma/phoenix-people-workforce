@@ -265,6 +265,13 @@ type SourceKey =
  * both `people_records` and (via nothing) no second copy of it, and the fetch still happens once.
  */
 const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
+  // NONE, deliberately, and this one is a PRIVACY decision rather than a "nothing to count" one.
+  // `cv_lookup` (owner, 2026-09-30) grants a search box over the CV database and nothing else: the
+  // seat holding it may reach a candidate she searched FOR, and may not have the pool. A tile
+  // saying "1,260 CVs on file", or any figure at all derived from candidates, would hand her the
+  // size and shape of the thing the grant exists to withhold — on her landing page, before she has
+  // searched for anybody. `recruitment` is deliberately absent from this list for that reason.
+  cv_lookup: [],
   engagement_retention: ["supportRequests", "retention"],
   // NONE, deliberately. `hr_governance` grants employee_documents:read/export and overview:read
   // and nothing else — neither is a queue, and there is no figure in the product that counts
@@ -627,6 +634,12 @@ const TILES_BY_FUNCTION: Record<
    */
   hr_communication: () => [],
   hr_governance: () => [],
+  // NONE, and for `cv_lookup` this is the privacy decision recorded in SOURCES_BY_FUNCTION rather
+  // than "nothing to count": any figure counting candidates would put the size of the pool on the
+  // landing page of the one seat the pool is withheld from. Returning an empty array drops the group
+  // entirely (buildGroups skips a function with no tiles), which is the honest outcome — the module
+  // is a search box, and a search box has no backlog.
+  cv_lookup: () => [],
 };
 
 /**
@@ -805,6 +818,9 @@ const CHARTS_BY_FUNCTION: Record<
   HrFunctionKey,
   (loaded: HrCommandSources) => HrCommandChart[]
 > = {
+  // No chart. `cv_lookup` loads no source at all, and the reason is privacy rather than absence —
+  // see SOURCES_BY_FUNCTION.cv_lookup. Plotting anything here would mean plotting candidates.
+  cv_lookup: () => [],
   engagement_retention: () => [],
   // No chart. A send path has no population to plot - see the note above about not completing the
   // set with a chart of a number that means nothing.

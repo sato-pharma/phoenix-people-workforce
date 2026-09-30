@@ -144,6 +144,19 @@ export type PermissionResource =
   | "business_card_requests"
   | "recruitment"
   | "candidates"
+  // CV Lookup (owner, 2026-09-30, asked for Yasmeena Elsafory / HR Operations): SEARCH the CV
+  // database and open only what the search returned. SEPARATE from `candidates` on purpose, and
+  // the separation IS the feature — `candidates` is the POOL, a list of every applicant the
+  // company holds, and his instruction was "she can search the cvs ... i dont want her to have
+  // access to all cvs". Riding on `candidates:read` would have handed her exactly the access he
+  // refused, and hiding the pool's sidebar row would have been presentation, not revocation: a
+  // typed URL walks straight past it (the same lesson as the CV Database on 2026-09-01).
+  //
+  // `read` is the ONLY action it will ever carry, and the hard boundary below enforces that
+  // rather than asking for it. This resource opens a search box and one person's file; it must
+  // never grow a way to change or delete a candidate. There is deliberately NO `export` — a
+  // download of the result set is the pool in a spreadsheet, which is the thing withheld.
+  | "cv_lookup"
   | "account_activation"
   | "hiring_interviews"
   | "workflow_registry"
@@ -263,6 +276,10 @@ export const permissionResources: PermissionResource[] = [
   "business_card_requests",
   "recruitment",
   "candidates",
+  // Omitting this would offer CV Lookup — a search box over every CV the company holds, and the
+  // file behind each hit — to EVERY role, because `permissionAllowed` treats a key the lookup has
+  // never seen as PERMITTED. Mechanism at the head of this array.
+  "cv_lookup",
   "account_activation",
   "hiring_interviews",
   "report_it",
@@ -690,6 +707,17 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
     case "candidates":
     case "offers":
       return isHrAuthorityRole(role) ? allActions : [];
+    case "cv_lookup":
+      // READ AND NOTHING ELSE, for an HR authority role only — capped here rather than merely
+      // left out of the matrix, because this is the one resource whose whole purpose is to be
+      // narrower than the grant beside it. `candidates` above returns allActions, so a later
+      // session that "tidies" CV Lookup into that case list, or that adds `cv_lookup: allActions`
+      // to a role by hand, would silently turn a read-only search into a write surface over the
+      // candidate pool. The cap makes both of those a no-op instead of a widening.
+      //
+      // No `export`: see the resource's own note. A result set that can be downloaded is the pool
+      // in a spreadsheet, and the pool is exactly what this resource exists to withhold.
+      return isHrAuthorityRole(role) ? ["read"] : [];
     case "support_requests":
       return isHrAuthorityRole(role) ? hrSupportStaffActions : supportRequestSenderActions;
     case "business_card_requests":
@@ -927,6 +955,12 @@ const defaultPermissionMatrix: PermissionMap = {
     vacancies: allActions,
     recruitment: allActions,
     candidates: allActions,
+    // `["read"]`, not allActions — the hard boundary caps every role at read, so allActions here
+    // would be a dead grant (deadMatrixGrants() reports those, and a stripped entry is a sentence
+    // in a security file that says the opposite of what the system does). He holds the whole pool
+    // through `candidates` anyway; this is here so the owner can open the SAME screen HR
+    // Operations opens and see exactly what she sees.
+    cv_lookup: ["read"],
     hiring_interviews: allActions,
     report_it: allActions,
     // Activity Control Center: Super Admin only (read + export). Deliberately

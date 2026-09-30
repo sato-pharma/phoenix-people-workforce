@@ -22,6 +22,7 @@ import {
   Database,
   FileCheck2,
   FileClock,
+  FileSearch,
   FileSignature,
   FileSpreadsheet,
   FileUp,
@@ -2082,6 +2083,21 @@ const hrNavigationSectionSeeds = [
       // lives here. No permission: the calendar's own ownership is the gate, and every API route
       // asserts it. `excludedRoles` keeps the Super Admin's row under Recruitment, as above.
       { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
+      // CV Lookup — owner, 2026-09-30: HR Operations may SEARCH the CV database and open only what
+      // the search returns, and must not have the database itself.
+      //
+      // IT LIVES HERE, UNDER "People", FOR THE SAME REASON THE ROWS ABOVE DO: she must never be
+      // shown a "Recruitment" heading (tests/cv-database-recruiting-boundary.test.ts), because a
+      // heading advertises a function this seat does not hold. No `roles` and no `excludedRoles` —
+      // `cv_lookup` is held by HR Operations and the Super Admin and by nobody else, so the grant
+      // picks the audience on its own, and the owner finding it here is right: it is the screen he
+      // has to be able to open in order to see exactly what she sees.
+      //
+      // Naming `cv_lookup` rather than `recruitment` or `candidates` is what keeps the row honest:
+      // the page and both API routes assert this resource, so the row and the gate answer the same
+      // question. A row naming a resource its page does not assert is the CV Database's own
+      // `vacancies`/`recruitment` drift, which cost this exact seat an unintended screen.
+      { href: "/hr/cv-lookup", icon: FileSearch, label: "CV Lookup", permissions: [{ resource: "cv_lookup" }] },
       // Probation moved OUT of this section on 2026-09-01, down to its own "Probation" section,
       // where it sits beside the outcomes dashboard. It is one module and it was in two minds
       // here: People is who is on the payroll, probation is how a new joiner is performing.
@@ -3583,6 +3599,12 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "recruitment" }],
     roles: hrAuthorityNavigationRoles,
   },
+  // NO "CV Lookup" CARD HERE, and the omission is the point. The screen exists for HR Operations
+  // (owner, 2026-09-30) and its card lives under "People Management" instead, beside Employees:
+  // "Recruitment & Hiring" is a heading that announces a function this seat does not hold, which is
+  // the wrong-label defect the CV Database boundary rule exists to stop. Moving it here to sit
+  // beside the CV Database would also have handed her a card in a recruiting hub, which
+  // tests/recruitment-hub-portal-coverage.test.ts pins against.
   {
     href: "/hiring-documents",
     icon: FileCheck2,
@@ -3684,6 +3706,32 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     // the namespace may narrow the matrix, never widen it. Take her off this card and her
     // /hr/employees row becomes a page "neither seat's permissions admit", i.e. the HR namespace
     // inventing access rather than mirroring it. The card is the grant; the /hr row is the mirror.
+    roles: ["Super Admin", "HR Operations"],
+  },
+  {
+    // CV Lookup — the search-only CV access the owner asked for on 2026-09-30. Under PEOPLE
+    // MANAGEMENT and not "Recruitment & Hiring", which is where the CV Database sits: the seat this
+    // exists for holds no recruiting function, and a heading that says she does is the wrong-label
+    // defect tests/cv-database-recruiting-boundary.test.ts exists to stop. Her sidebar row is in the
+    // HR rail's own "People" section for the same reason.
+    //
+    // 🔴 THIS CARD IS LOAD-BEARING FOR EXACTLY THE REASON WRITTEN ON THE `/employees` CARD ABOVE,
+    // and it was learned the same way — by CI, not by reading. It first shipped in the recruiting
+    // list restricted to the Super Admin, and `validate` went red: `tests/hr-url-namespace.test.ts`
+    // derives each HR seat's admin closure from THESE lists and requires every `/hr` row to point
+    // inside one, so `/hr/cv-lookup -> /cv-lookup` read as "a page neither seat's permissions admit"
+    // — the namespace inventing access rather than mirroring it. The card is the grant; the `/hr`
+    // row is the mirror. Narrow this card's audience and her own screen becomes a widening.
+    //
+    // It is also what makes the bare `/cv-lookup` an OFFERED link rather than one reachable only by
+    // typing it (tests/navigation-granted-but-unreachable.test.ts).
+    href: "/cv-lookup",
+    icon: FileSearch,
+    label: "CV Lookup",
+    description: "Search the CV database and open only the candidates the search returns.",
+    permissions: [{ resource: "cv_lookup" }],
+    // Named rather than left to the permission alone, the same style as Employees above: only these
+    // two hold `cv_lookup` today, so this changes nothing now and keeps the audience a decision.
     roles: ["Super Admin", "HR Operations"],
   },
   // Organogram/Probation moved to direct sidebar links — see the
@@ -4540,6 +4588,28 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/support-requests",
           "/admin/business-card-requests",
         ],
+      },
+      {
+        // ITS OWN BAND, one row, rather than filed under "Employee Records" with the personnel
+        // file. A candidate is not an employee, and "Employee Records" holding a CV search is the
+        // wrong-label defect this whole feature has been careful about — the same reason the card
+        // is not in "Recruitment & Hiring", whose heading announces a function the seat it was
+        // built for does not hold.
+        //
+        // `tests/nav-hub-promotion.test.ts` is why this entry exists at all: a split hub must name
+        // every one of its rows, because `hubBandsFor` appends an unnamed row to the FIRST band
+        // instead of dropping it — so the row renders, works, and reads as somebody's decision
+        // while sitting under a heading nobody chose. CI caught exactly that here.
+        // "Candidate CVs" over a row labelled "CV Lookup", and the two MUST differ: a band heading
+        // that repeats one of its own visible rows is BLANKED by `groupAdminSections`, and
+        // tests/sidebar-domains.test.ts pins exactly which headings blank for which role. Naming
+        // this band "CV Lookup" made it the 1 blank heading on the Super Admin's rail — caught
+        // locally, after CI had already caught the unnamed-row half above. It reads like every
+        // other band here: the heading describes the group, the row names the tool, the way
+        // "HR Reports" sits over "Vacancies Report".
+        heading: "Candidate CVs",
+        sectionId: "hub-people-cv-lookup",
+        hrefs: ["/cv-lookup"],
       },
     ],
   },

@@ -177,6 +177,21 @@ export type AuditEntityType =
   // made one — and who killed it — is recorded. The token itself is never written here: an audit
   // trail that stores the credential it audits turns every reader of the log into a holder of it.
   | "cv_lifecycle_share_link"
+  // CV Lookup — the search-only CV access the owner asked for on 2026-09-30, and the ONE place in
+  // this system where the log is part of the feature rather than a by-product of it. He was asked
+  // whether her searches should be recorded and answered yes, readable by him alone.
+  //
+  // TWO TYPES, because they answer different questions and neither answer contains the other:
+  // `cv_lookup_search` is the term that was typed and how many people it reached — which is what
+  // says whether the box is being used as a lookup or as a way to enumerate the pool — and
+  // `cv_lookup_open` is one named candidate's CV and application actually leaving the building.
+  // A single type would make the second unanswerable without reading the newValues of every row.
+  //
+  // The search row is best-effort (`writeAuditLog`): a diagnostic must never fail the search it is
+  // only there to observe. The OPEN row is `writeRequiredAuditLog` — a file that carries a real
+  // person's CV, phone and e-mail out of the system with no trace is treated as a failed open.
+  | "cv_lookup_search"
+  | "cv_lookup_open"
   | "cron_job_control"
   | "deduction_candidate"
   | "deduction_comment"

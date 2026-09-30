@@ -239,7 +239,14 @@ function emptySources(): HrCommandSources {
 // tile to carry. The alternative, a tile counting mail sent, would be exactly the ambitious-but-
 // empty dashboard this page was built to avoid: a number nobody acts on, linking to a screen that
 // is already one click away on her rail.
-const FUNCTIONS_WITH_NO_TILES = new Set(["hr_governance", "hr_communication"]);
+// `cv_lookup` added 2026-09-30 with the function itself. Reason: it is the one entry here whose
+// blankness is a PRIVACY decision rather than "there is nothing to count". The owner granted this
+// seat a search box over the CV database precisely so that she does NOT have the pool — "i dont want
+// her to have access to all cvs" — and every figure a tile could carry (CVs on file, new this week,
+// awaiting screening) is a fact about the pool. It would print the size and shape of the withheld
+// thing on her landing page before she had searched for anybody. SOURCES_BY_FUNCTION.cv_lookup is
+// empty for the same reason, so there is nothing loaded to build a tile from even by accident.
+const FUNCTIONS_WITH_NO_TILES = new Set(["hr_governance", "hr_communication", "cv_lookup"]);
 
 export async function runHrCommandCenterTests() {
   // ── The gate the page gates on ────────────────────────────────────────────────────────────────

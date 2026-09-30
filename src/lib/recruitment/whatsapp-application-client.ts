@@ -13,6 +13,7 @@ import {
   applicationFileName,
   candidateApplicationFileName,
   candidateApplicationTextPath,
+  cvLookupApplicationTextPath,
   whatsAppApplicationTextPath,
 } from "@/lib/recruitment/whatsapp-application-file";
 
@@ -87,6 +88,17 @@ export async function fetchWhatsAppApplication(sessionId: string, signal?: Abort
  */
 export async function fetchCandidateApplication(candidateId: string, signal?: AbortSignal): Promise<FetchedApplication> {
   return fetchApplicationFromPath(candidateApplicationTextPath(candidateId), candidateApplicationFileName(""), signal);
+}
+
+/**
+ * The same file for CV Lookup (owner, 2026-09-30) — one candidate's CV with their application.
+ *
+ * Its own function rather than a `which door` argument on the one above: the two endpoints ARE the
+ * two permissions (`cv_lookup:read` here, `candidates:read` there), and a helper that takes the
+ * door as a parameter is how a caller ends up picking its own gate.
+ */
+export async function fetchCvLookupApplication(candidateId: string, signal?: AbortSignal): Promise<FetchedApplication> {
+  return fetchApplicationFromPath(cvLookupApplicationTextPath(candidateId), candidateApplicationFileName(""), signal);
 }
 
 /** Saves bytes as a file through a temporary link, then lets the browser forget the object. */

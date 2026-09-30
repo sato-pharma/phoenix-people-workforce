@@ -4,18 +4,13 @@ import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruit
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isUuid } from "@/lib/http/uuid";
 import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
-import { loadCandidateApplication } from "@/lib/recruitment/candidate-application";
-import { primaryCvFile } from "@/lib/recruitment/cv-file-choice";
-import { getFileForDownload, listCandidateFiles } from "@/lib/recruitment/files";
+import { buildCandidateApplicationFile } from "@/lib/recruitment/candidate-application-build";
 import {
   APPLICATION_CV_PAGES_HEADER,
   APPLICATION_FILE_NAME_HEADER,
   APPLICATION_SHEET_PAGES_HEADER,
-  applicationFileName,
   attachmentDisposition,
-  candidateApplicationFileName,
 } from "@/lib/recruitment/whatsapp-application-file";
-import { buildWhatsAppApplicationPdf, type ApplicationCvSource } from "@/lib/recruitment/whatsapp-application-pdf";
 import { canOpenWhatsAppApplications } from "@/lib/recruitment/whatsapp-application-access";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
@@ -32,6 +27,11 @@ export const maxDuration = 60;
 // Gated by the same predicate as the WhatsApp file itself (`canOpenWhatsAppApplications`): an HR authority
 // role with recruitment:read AND candidates:read, because the file names a person, their phone and email and
 // opens their CV. The id is a candidate; the screening page that offers the button already passes this gate.
+//
+// THE BYTES ARE BUILT IN `candidate-application-build.ts`, NOT HERE — moved out on 2026-09-30, unchanged,
+// when CV Lookup (app/api/recruitment/cv-lookup/[id]/application) became a second sender of the same file
+// under a different gate. Two copies of the builder would let "the CV with its application" mean two
+// different documents depending on which screen it was opened from.
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const access = await requireRecruitmentAccess(request, "candidates", "read");
@@ -51,24 +51,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       scope: "export:recruitment:candidate-application",
     });
 
-    const loaded = await loadCandidateApplication(id);
-    if (!loaded) {
+    const built = await buildCandidateApplicationFile(id);
+    if (!built) {
       return NextResponse.json({ error: "not_found", message: "Application not found.", success: false }, { status: 404 });
     }
-    const { application, hasWhatsApp } = loaded;
-
-    const { cv, missingCvReason } = await loadCv(application.row.candidateId);
-    const built = await buildWhatsAppApplicationPdf({ application, cv, hasWhatsApp, missingCvReason });
 
     // The saved file's name travels in a header (percent-encoded: a name may be Arabic) so the browser can
     // save the very bytes it printed from, without asking the server to build the PDF a second time.
-    const fileName = hasWhatsApp
-      ? applicationFileName(application.row.name)
-      : candidateApplicationFileName(application.row.name);
     const headers: Record<string, string> = {
       "Cache-Control": "private, no-store",
       [APPLICATION_CV_PAGES_HEADER]: String(built.cvPages),
-      [APPLICATION_FILE_NAME_HEADER]: encodeURIComponent(fileName),
+      [APPLICATION_FILE_NAME_HEADER]: encodeURIComponent(built.fileName),
       [APPLICATION_SHEET_PAGES_HEADER]: String(built.sheetPages),
     };
 
@@ -83,7 +76,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return new NextResponse(Buffer.from(built.bytes) as unknown as BodyInit, {
       headers: {
         ...headers,
-        "Content-Disposition": attachmentDisposition(fileName),
+        "Content-Disposition": attachmentDisposition(built.fileName),
         "Content-Type": "application/pdf",
       },
       status: 200,
@@ -102,28 +95,5 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       );
     }
     return recruitmentApiError(error, "The application could not be produced right now.");
-  }
-}
-
-/**
- * The CV to put first, or the reason there is none. A CV that cannot be fetched does not stop the
- * application: the sheet is still made and its footer says the CV is missing and why. Mirrors the WhatsApp
- * route's own loader so the two produce the same footer sentences.
- */
-async function loadCv(candidateId: string): Promise<{ cv: ApplicationCvSource | null; missingCvReason: string }> {
-  try {
-    const file = primaryCvFile(await listCandidateFiles(candidateId));
-    if (!file) return { cv: null, missingCvReason: "no CV file is on record for this candidate." };
-    const download = await getFileForDownload(file.id);
-    if (!download) return { cv: null, missingCvReason: "the CV file is no longer in storage." };
-    if (download.kind === "external") {
-      return { cv: null, missingCvReason: "the CV is kept as a link, not a file. Open it from the candidate's page." };
-    }
-    return { cv: { bytes: download.bytes, fileName: download.fileName, mimeType: download.mimeType }, missingCvReason: "" };
-  } catch {
-    return {
-      cv: null,
-      missingCvReason: "the CV file could not be fetched from storage just now. Print again in a minute, or open it from the candidate's page.",
-    };
   }
 }

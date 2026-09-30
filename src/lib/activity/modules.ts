@@ -136,6 +136,10 @@ const MODULE_RULES: ModuleRule[] = [
   { prefix: "/recruitment/contact-review", key: "contact_review", label: "Contact Review" },
   { prefix: "/contact-review", key: "contact_review", label: "Contact Review" },
   { prefix: "/cv-database", key: "cv_database", label: "CV Database" },
+  // Its own key, never folded into cv_database above: they are two different authorities over the
+  // same people — the database is the pool, CV Lookup is a search box for a seat that may not have
+  // the pool (owner, 2026-09-30). Sharing a key would make "who opened the CV database" unanswerable.
+  { prefix: "/cv-lookup", key: "cv_lookup", label: "CV Lookup" },
   { prefix: "/hiring-documents", key: "hiring_documents", label: "Hiring Documents" },
   { prefix: "/hiring-pack", key: "hr_forms", label: "HR Forms" },
   { prefix: "/offers", key: "offers", label: "Job Offers" },
