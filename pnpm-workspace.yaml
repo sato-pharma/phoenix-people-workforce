@@ -304,27 +304,16 @@ allowBuilds:
 # Sentry's bundler-plugin-core, and archiver's own dependency chain bump their minimatch
 # pins to a brace-expansion-5.x-compatible release.
 #
-# Added 2026-09-30 — GHSA-qhr7-859c-m2p7 (patched >=1.1.20 / >=2.1.6) and GHSA-6j4f-fj2g-mc7p
-# (patched >=1.1.19 / >=2.1.5), both HIGH, both "brace-expansion DoS via uncontrolled recursion
-# on nested brace groups". They published mid-morning Cairo and `pnpm audit` reads the registry
-# live, so `main` was green at 02:59 UTC and RED at 03:15 with no diff between them (the same
-# registry-reads-live shape as the nanoid and deepmerge-ts notes above), taking the required
-# `validate` check red on every branch. SAME package, SAME reachability as GHSA-mh99 above:
-# `pnpm audit --prod` reports them ONLY through exceljs > archiver > archiver-utils/readdir-glob
-# > minimatch > brace-expansion (the 1.x and 2.x lines), i.e. exceljs's internal zip-archive path
-# handling during XLSX read/write, never a user-supplied pattern string — so not realistically
-# exploitable here, exactly as the GHSA-mh99 note reasons.
-#
-# Ignored rather than floor-bumped this time only because both fixes are IN-LINE patches
-# (^1.1.20 / ^2.1.6, no brace-expansion-5.x jump, so no eslint break) and a floor bump moves the
-# graph ONLY when the lockfile is regenerated — see the "allow-but-resolve-below" trap above. The
-# clean bump to `brace-expansion@1: ^1.1.20` / `@2: ^2.1.6` + a `pnpm install` is the tidier fix
-# and should land in a scheduled `pnpm update` PR; these two entries retire the moment it does.
+# GHSA-qhr7-859c-m2p7 and GHSA-6j4f-fj2g-mc7p (both HIGH, "brace-expansion DoS via uncontrolled
+# recursion on nested brace groups", patched >=1.1.20 / >=2.1.6 and >=1.1.19 / >=2.1.5) were
+# ignored here as a stopgap on 2026-09-30 and RETIRED once #4847 raised the override floors to
+# `brace-expansion@1: ^1.1.21` / `@2: ^2.1.7` and regenerated the lockfile — pnpm-lock.yaml now
+# resolves 1.1.21 and 2.1.7, both above every patch floor, so `pnpm audit` no longer reports
+# either. GHSA-mh99 stays ignored: its only fix is the brace-expansion-5.x jump that breaks
+# eslint (see the note above), and the 1.x/2.x lines cannot take it.
 auditConfig:
   ignoreGhsas:
     - GHSA-mh99-v99m-4gvg
-    - GHSA-qhr7-859c-m2p7
-    - GHSA-6j4f-fj2g-mc7p
 
 # Hoist the canvas addon to the root node_modules so Next's standalone build can actually LOAD it.
 #
