@@ -341,6 +341,24 @@ export function runPhoenixCrmTodayTests(): void {
     assert.doesNotMatch(panel, /rounded(?!-none)/, "square corners, written out");
     assert.doesNotMatch(panel, /…|truncate/, "and nothing is cut off");
 
+    // 🔴 A VISIT LOGGED FROM THE PANEL'S "+" TURNS THAT ROW GREEN WHEN HE COMES BACK (owner,
+    //    2026-09-30: "if it is submitted from those visits in the overview landing page, it is
+    //    automatically marked as done"). It was already true of a FRESH request — `done` is read
+    //    from the day's saved visits — and FALSE of the one navigation a rep actually makes:
+    //    forward from the "+", then Back, which the router answers out of its own cache. Measured
+    //    that day on the preview box: the row stayed white, the "+" stayed, and the header still
+    //    read "AM 0 of 1" over a visit that was already in the database.
+    const saveRoute = source("app/api/phoenix-crm/visits/route.ts");
+    assert.ok(
+      saveRoute.includes('revalidatePath("/employee-portals");'),
+      "saving a visit must invalidate the rep's landing page, or Back shows him the day as it was before he logged it",
+    );
+    // The CALL, not the import on line 1 — which is what `indexOf("revalidatePath")` finds.
+    assert.ok(
+      saveRoute.indexOf('revalidatePath("/employee-portals")') > saveRoute.indexOf("await saveVisit("),
+      "and only once the visit is actually saved",
+    );
+
     // 🔴 EARLY BIRDS IS RETIRED FROM THE MEDICAL REP'S PAGE ONLY — his own scope, the same day:
     // "retire early bird only from med rep accounts". Every other centre keeps the card.
     assert.ok(!centre.includes("<EarlyBirdOfTheFortnightCard"), "the rep's landing page no longer draws the Early Bird card");
