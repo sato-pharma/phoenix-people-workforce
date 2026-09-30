@@ -1688,6 +1688,13 @@ export const accessRegistry = [
   // bucket - the signature route holds the one mutation and checks the origin on PUT and DELETE.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/spotlight/cheques", permission: { resource: "spotlight", action: "export" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["GET", "PUT", "DELETE"], pattern: "/api/spotlight/cheques/signature", permission: { resource: "spotlight", action: "export" } }),
+  // A MEDICAL REP's OWN spotlight — a different gate (`spotlight_self`) held by the rep, never the
+  // company-wide `spotlight` above. Both routes resolve his HR id from the session and read nobody
+  // else, so this scope narrowing is enforced in the loader, not by the pattern. Owner, 2026-09-30:
+  // he filters his own achievement over any period, and the pic/PDF renders only at 90%+ against the
+  // published closing.
+  sessionApi({ methods: ["POST"], pattern: "/api/spotlight/me/preview", permission: { resource: "spotlight_self", action: "read" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/spotlight/me/sheet", permission: { resource: "spotlight_self", action: "export" } }),
   // ── Milestones ───────────────────────────────────────────────────────────────────────────────
   // The service-anniversary keepsake. SUPER ADMIN ONLY — the owner narrowed it from Super Admin +
   // CEO on 2026-09-23 ("make it only super admin. None either uh, CEO"). The due list reads every

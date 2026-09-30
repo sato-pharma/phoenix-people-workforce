@@ -155,6 +155,10 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // is the Call rate tab there, and /employee-portals/reps-plans forwards to it.
   { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "territory", action: "read" } },
   { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"], permission: { resource: "sales", action: "read" } },
+  // Spotlight (self) — the rep's own recognition sheet, MEDICAL REP ONLY (owner, 2026-09-30). Its page
+  // gates on spotlight_self:read, mirrored here; keep in sync with the sidebar entry in
+  // employee-portal-layout.tsx.
+  { label: "Spotlight", fullLabel: "Spotlight", href: "/employee-portals/spotlight", icon: Sparkles, flags: ["showSpotlightTab"], permission: { resource: "spotlight_self", action: "read" } },
   // One link, the merged ROI Tracker module (ROI + former Coverage Report as two tabs, owner
   // instruction 2026-09-22). Offered on EITHER flag — showMarketingCoverageReportTab is the broader
   // set (Finance Manager / Financial Advisor), who land on the Coverage tab. Keep in sync with the

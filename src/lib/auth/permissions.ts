@@ -92,6 +92,13 @@ export type PermissionResource =
   // narrowing of any kind, and it produces a shareable sheet with people's names and achievement
   // on it — so a narrower role holding it would be both a scope leak and a publishing right.
   | "spotlight"
+  // Spotlight (self): a MEDICAL REP looking only at himself. A different resource from `spotlight`
+  // above, on purpose — the admin routes assert `spotlight` and read the whole company, so granting a
+  // rep that would hand him everyone's sheet. This one is held by the rep and gates his own portal
+  // page and the /api/spotlight/me routes, which resolve his HR id from the session and never from
+  // the wire. Owner, 2026-09-30: a rep may filter his own achievement over any period and generate
+  // the pic or PDF only at 90% and above.
+  | "spotlight_self"
   // Milestones: the service-anniversary and birthday keepsake. SUPER ADMIN ONLY — it is NOT the
   // same shape as spotlight above, and this is the one place that says so. It was Super Admin and
   // CEO until the owner narrowed it himself on 2026-09-23, in these words: "not approved. Make it
@@ -218,6 +225,7 @@ export type PermissionResource =
 export const permissionResources: PermissionResource[] = [
   "admin",
   "spotlight",
+  "spotlight_self",
   "milestones",
   "overview",
   "admin_access",
@@ -1211,6 +1219,11 @@ const defaultPermissionMatrix: PermissionMap = {
     // by resolveVisualAidReaderLines, never by this grant.
     visual_aids: ["read"],
     report_it: ["read", "create"],
+    // Spotlight (self): his OWN recognition sheet over any period he picks, and the pic/PDF only at
+    // 90%+ against the published closing (owner, 2026-09-30). `read` powers the on-screen preview;
+    // `export` renders the picture or the PDF. Self-scope is enforced in the loader by his session
+    // HR id, never a wire field — this grant reaches nobody else's numbers.
+    spotlight_self: ["read", "export"],
   },
   "District Manager": {
     // Market Awareness: NO GRANT. He held `read` as an informed party (owner answers 42 and 43)
