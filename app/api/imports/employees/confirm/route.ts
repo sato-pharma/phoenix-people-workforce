@@ -615,57 +615,75 @@ function residenceValues(record: EmployeeImportRecord) {
   };
 }
 
-function isMissingOptionalEmployeeColumn(error: unknown) {
-  const message = errorMessage(error).toLowerCase();
+/**
+ * The columns `withoutOptionalEmployeeColumns` strips, and the ONLY ones whose absence may send the
+ * import down that path. Keep this in the same order as the destructuring below — they are one list
+ * in two places, and `tests/optional-employee-columns.test.ts` fails if they ever drift apart.
+ */
+const OPTIONAL_EMPLOYEE_COLUMNS = [
+  "bank_account",
+  "bank_name",
+  "base_salary",
+  "basic_salary",
+  "birth_date",
+  "contract_type",
+  "employment_status",
+  "extra_cost_of_living",
+  "fuel_allowance",
+  "gender",
+  "gross_salary",
+  "medical_insurance",
+  "medical_insurance_number",
+  "national_id",
+  "net_salary",
+  "nickname",
+  "organogram_visible",
+  "payment_mode",
+  "payroll_eligible",
+  "region_name",
+  "region_code",
+  "residence_address",
+  "residence_area",
+  "residence_city",
+  "social_insurance",
+  "social_insurance_number",
+  "health_card_status",
+  "health_card_number",
+  "health_card_received_date",
+  "birth_place",
+  "qualification",
+  "university_name",
+  "college_major",
+  "senior_year",
+  "contract_duration",
+  "contract_renewal_date",
+  "probation_end_date",
+  "medical_insurance_card_received_date",
+  "social_insurance_start_date",
+  "kaab_elamaal_number",
+  "kaab_elamaal_issuer",
+  "kaab_elamaal_issue_date",
+  "kaab_elamaal_refund",
+  "taxes",
+  "team_id",
+] as const;
 
-  return (
-    message.includes("birth_date") ||
-    message.includes("bank_account") ||
-    message.includes("bank_name") ||
-    message.includes("base_salary") ||
-    message.includes("basic_salary") ||
-    message.includes("contract_type") ||
-    message.includes("employment_status") ||
-    message.includes("extra_cost_of_living") ||
-    message.includes("fuel_allowance") ||
-    message.includes("gender") ||
-    message.includes("gross_salary") ||
-    message.includes("medical_insurance_number") ||
-    message.includes("medical_insurance") ||
-    message.includes("national_id") ||
-    message.includes("net_salary") ||
-    message.includes("nickname") ||
-    message.includes("organogram_visible") ||
-    message.includes("payment_mode") ||
-    message.includes("payroll_eligible") ||
-    message.includes("region_name") ||
-    message.includes("region_code") ||
-    message.includes("residence_address") ||
-    message.includes("residence_area") ||
-    message.includes("residence_city") ||
-    message.includes("social_insurance") ||
-    message.includes("social_insurance_number") ||
-    message.includes("health_card_status") ||
-    message.includes("health_card_number") ||
-    message.includes("health_card_received_date") ||
-    message.includes("birth_place") ||
-    message.includes("qualification") ||
-    message.includes("university_name") ||
-    message.includes("college_major") ||
-    message.includes("senior_year") ||
-    message.includes("contract_duration") ||
-    message.includes("contract_renewal_date") ||
-    message.includes("probation_end_date") ||
-    message.includes("medical_insurance_card_received_date") ||
-    message.includes("social_insurance_start_date") ||
-    message.includes("kaab_elamaal_number") ||
-    message.includes("kaab_elamaal_issuer") ||
-    message.includes("kaab_elamaal_issue_date") ||
-    message.includes("kaab_elamaal_refund") ||
-    message.includes("taxes") ||
-    message.includes("team_id") ||
-    message.includes("schema cache")
-  );
+/**
+ * 🔴 SAYING YES HERE RE-IMPORTS EVERY EMPLOYEE WITH ALL 45 OF THOSE COLUMNS STRIPPED — salary,
+ * national id, bank account, contract, residence, insurance — and the import then reports success.
+ *
+ * It used to say yes to `message.includes(<column>)` for each of them, which is true of any error
+ * that merely NAMES one, and to `message.includes("schema cache")`, true of a schema-cache message
+ * about any column of any table. So a check-constraint breach, an invalid enum, a NOT NULL
+ * violation, a permission denial — or the single word "taxes" anywhere in an unrelated message —
+ * silently imported everyone with 45 fields dropped.
+ *
+ * Now each column is asked properly: 42703 or PGRST204, naming that column, as a whole identifier.
+ * That last part matters here more than anywhere — `medical_insurance` was matching
+ * `medical_insurance_number`, and `social_insurance` was matching `social_insurance_start_date`.
+ */
+function isMissingOptionalEmployeeColumn(error: unknown) {
+  return OPTIONAL_EMPLOYEE_COLUMNS.some((column) => isMissingColumnError(error, column));
 }
 
 function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues>) {

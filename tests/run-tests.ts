@@ -689,6 +689,7 @@ import { runImportPreviewTests } from "./import-preview.test.ts";
 import { runEmployeeImportTeamResurrectionGuardTests } from "./employee-import-team-resurrection-guard.test.ts";
 import { runEmployeeImportKeepsBlankCellsTests } from "./employee-import-keeps-blank-cells.test.ts";
 import { runMissingColumnPredicateTests } from "./missing-column-predicate.test.ts";
+import { runOptionalEmployeeColumnsTests } from "./optional-employee-columns.test.ts";
 import { runOrgTitleCaseAcronymTests } from "./org-title-case-acronyms.test.ts";
 import { runImportsLineCanonicalizationTests } from "./imports-line-canonicalization.test.ts";
 import { runImportTeamBlankWarningTests } from "./import-team-blank-warning.test.ts";
@@ -3585,6 +3586,13 @@ await runTest(
     + "column no longer makes the directory read drop the column, the employee write return having "
     + "saved nothing, or the import re-upsert everyone's compensation without their payment mode",
   runMissingColumnPredicateTests,
+);
+await runTest(
+  "the employee import's optional-column fallback asks per column instead of matching any message "
+    + "that names one — a constraint breach, a bad number, a permission denial or a missing column on "
+    + "ANOTHER table no longer re-imports every employee with 45 fields stripped and reports success; "
+    + "and the columns it asks about are pinned to the columns it strips, so the two cannot drift",
+  runOptionalEmployeeColumnsTests,
 );
 await runTest("org title casing keeps acronyms (HR/QPPV/CEO/SFE/R&D), lower-cases minor words mid-name, and round-trips to the same code", runOrgTitleCaseAcronymTests);
 await runTest("imports line canonicalization (Anti Inf → Anti infective; no duplicate lines rows)", runImportsLineCanonicalizationTests);
