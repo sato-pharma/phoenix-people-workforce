@@ -92,7 +92,7 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
   } catch (error) {
     // A closed line and a missing permission are ordinary answers here, not failures to report.
     if (!isForbiddenError(error)) {
-      logError("Rep landing: today's plan could not be read", { error, event: "rep_today_plan_failed" });
+      logError("Rep landing: today's plan could not be read", { error, labels: { event: "rep_today_plan_failed" } });
     }
     return null;
   }
