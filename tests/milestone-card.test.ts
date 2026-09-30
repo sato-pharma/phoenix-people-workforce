@@ -16,16 +16,21 @@ import {
   cardDisplayName,
   cardFirstName,
   daysBetween,
+  formatMilestoneSpec,
+  isFirstDaySpec,
   milestoneCitation,
   milestoneDate,
   milestoneEyebrow,
   milestoneFileName,
   milestoneStripLabel,
   milestoneTileNumeral,
+  milestoneTileUnit,
   milestonesBetween,
   ordinalDayWords,
   parseMilestoneSpec,
   parsePlainDate,
+  FIRST_DAY_SPEC,
+  MILESTONE_SWEEP,
   MilestoneSpecError,
   type PlainDate,
 } from "@/lib/milestones/periods";
@@ -139,6 +144,73 @@ export async function runMilestoneCardTests() {
   assert.equal(milestoneStripLabel({ count: 1, unit: "year" }), "First year");
   assert.equal(milestoneStripLabel({ count: 100, unit: "day" }), "100 days");
 
+  // ── 3a. The first day as a member of the family ──────────────────────────────────────────────
+  //
+  // 🔴 THE FIRST DAY IS `0d`, AND THE WHOLE MILESTONE TURNS ON THAT ZERO. `1d` is the day AFTER the
+  // hire date — somebody's second morning — so a first-day card built from `1d` would celebrate the
+  // wrong day for every person in the company, and nothing on the sheet would show it.
+  assert.deepEqual(parseMilestoneSpec("0d"), { count: 0, unit: "day" });
+  assert.deepEqual(parseMilestoneSpec("0 days"), { count: 0, unit: "day" });
+  assert.deepEqual(parseMilestoneSpec(FIRST_DAY_SPEC), { count: 0, unit: "day" });
+  assert.equal(formatMilestoneSpec(FIRST_DAY_SPEC), "0d", "the spec string the ledger stores");
+  assert.ok(isFirstDaySpec(FIRST_DAY_SPEC));
+  assert.ok(!isFirstDaySpec({ count: 1, unit: "day" }), "one day is the day AFTER the hire date");
+
+  // Zero is DAYS only — a zero month or a zero year is a typo, never an occasion.
+  assert.throws(() => parseMilestoneSpec("0y"), MilestoneSpecError);
+  assert.throws(() => parseMilestoneSpec("0"), MilestoneSpecError, "a bare 0 means 0 months");
+
+  const joinedOn: PlainDate = { year: 2026, month: 9, day: 30 };
+  assert.deepEqual(milestoneDate(joinedOn, FIRST_DAY_SPEC), joinedOn, "the first day IS the hire date");
+  assert.deepEqual(
+    milestoneDate(joinedOn, { count: 1, unit: "day" }),
+    { year: 2026, month: 10, day: 1 },
+    "1d is the day after — the trap this milestone must never fall into",
+  );
+
+  // The seal reads "01 DAY", never "00": the zero lives in the arithmetic, not on the sheet.
+  assert.equal(milestoneTileNumeral(FIRST_DAY_SPEC), "01");
+  assert.equal(milestoneTileUnit(FIRST_DAY_SPEC), "day");
+  assert.equal(milestoneEyebrow(FIRST_DAY_SPEC), "first day at Sato Pharma");
+  assert.equal(milestoneStripLabel(FIRST_DAY_SPEC), "First day");
+
+  const firstDayCitation = milestoneCitation({
+    firstName: "Ahmed",
+    spec: FIRST_DAY_SPEC,
+    on: joinedOn,
+  });
+  assert.match(firstDayCitation, /^On the thirtieth of September 2026, Ahmed joins Sato Pharma/);
+  assert.match(firstDayCitation, /first day as a member of the family/);
+  assert.doesNotMatch(
+    firstDayCitation,
+    /completes/,
+    "nothing has been completed on the first day — the sentence says what the day IS",
+  );
+
+  // It is SWEPT, which is how a new joiner reaches the due list and the reminder before starting.
+  assert.ok(
+    MILESTONE_SWEEP.some((spec) => isFirstDaySpec(spec)),
+    "the first day must be in the sweep, or a new joiner never surfaces",
+  );
+  assert.deepEqual(
+    milestonesBetween(joinedOn, joinedOn, { year: 2026, month: 10, day: 5 }).map((hit) =>
+      formatMilestoneSpec(hit.spec),
+    ),
+    ["0d"],
+    "the week somebody starts holds exactly one milestone — their first day",
+  );
+
+  // The ledger's own CHECK constraint (20260923212006_milestone_card_prints_and_notice_marks): a
+  // spec string the database refuses is a card that prints and is then never recorded.
+  assert.match(formatMilestoneSpec(FIRST_DAY_SPEC), /^(b[0-9]{1,3}|[0-9]{1,5}[dmy])$/);
+
+  // And the picker offers it, first, or nobody can ask for one.
+  assert.ok(
+    readFileSync(join(process.cwd(), "src/components/milestones/milestones-workspace.tsx"), "utf8")
+      .includes('{ value: "0d", label: "First day" }'),
+    "the workspace period picker must offer the first day",
+  );
+
   const citation = milestoneCitation({
     firstName: "Yasmeen",
     spec: { count: 1, unit: "month" },
@@ -151,6 +223,7 @@ export async function runMilestoneCardTests() {
     citation,
     milestoneCitation({ firstName: "Omar", spec: { count: 1, unit: "year" }, on: yasmeen }),
     milestoneCitation({ firstName: "Omar", spec: { count: 100, unit: "day" }, on: yasmeen }),
+    firstDayCitation,
   ]) {
     assert.doesNotMatch(
       sentence,
