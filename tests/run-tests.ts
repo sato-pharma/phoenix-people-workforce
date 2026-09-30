@@ -1916,6 +1916,7 @@ import { runDirectOrderReversalFamilyCodeTests } from "./direct-orders-reversal-
 import { runSidebarLayoutEditorModeTests } from "./sidebar-layout-editor-mode.test.ts";
 import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
+import { runVulnScanTests } from "./vuln-scan.test.ts";
 import { runAppsScriptPushTests } from "./apps-script-push.test.ts";
 import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
 import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
@@ -6804,6 +6805,17 @@ await runTest(
 await runTest(
   "an npm outage is told apart from a real advisory (CI dependency audit fails closed on findings, open on timeouts)",
   runCiDependencyAuditTests,
+);
+await runTest(
+  "the vulnerability scan cannot pass while reading almost nothing: pnpm QUOTES every scoped key, so a pattern "
+  + "anchored on two spaces loses ~370 of 1167 packages and reports a clean graph over a real HIGH (this happened "
+  + "on 2026-09-30 to @grpc/grpc-js@1.14.4 / GHSA-m9gg-hp2v-232j, with a positive control passing throughout because "
+  + "a control proves the scan WORKS and never that it COVERED) — so the quoted, unquoted and peer-suffixed forms "
+  + "all parse, an override RANGE is never mistaken for a resolved version, scanGraph THROWS on a graph below its "
+  + "coverage floor rather than reporting it clean, OSV's positional batch contract cannot misattribute a finding "
+  + "across chunks, a transitive finding points at an override rather than a manifest bump (Dependabot is direct-only "
+  + "and can never fix one), and the REAL lockfile is asserted to parse with a plausible scoped count",
+  runVulnScanTests,
 );
 await runTest(
   "a sheet fix actually reaches the sheet (Apps Script push refuses to write an empty project, "
