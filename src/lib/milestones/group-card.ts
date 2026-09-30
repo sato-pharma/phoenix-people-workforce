@@ -298,7 +298,10 @@ function faceWidthIn(tier: (typeof TIERS)[number], count: number): { cols: numbe
  * recognisable.
  */
 export function milestoneGroupGrid(count: number): MilestoneGroupGrid {
-  let tier = TIERS[0];
+  // Typed as the UNION, not inferred from `TIERS[0]`. `as const` makes each tier its own literal
+  // type, so an inferred `tier` can only ever hold the one-row tier and the two-row one will not
+  // assign to it.
+  let tier: (typeof TIERS)[number] = TIERS[0];
   let { cols, photoW } = faceWidthIn(tier, count);
   for (const candidate of TIERS.slice(1)) {
     const measured = faceWidthIn(candidate, count);
