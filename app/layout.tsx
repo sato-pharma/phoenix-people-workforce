@@ -29,6 +29,7 @@ import "./globals.css";
 const SCRIPT_FONT_CSS = `
 @font-face{font-family:"Great Vibes";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/great-vibes.woff2") format("woff2")}
 @font-face{font-family:"Pinyon Script";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/pinyon-script.woff2") format("woff2")}
+@font-face{font-family:"Cormorant Garamond";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/cormorant-garamond-700.woff2") format("woff2")}
 `;
 
 /**
