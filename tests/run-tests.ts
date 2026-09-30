@@ -224,6 +224,7 @@ import { runRecruitmentCvRereadStalenessTests } from "./recruitment-cv-reread-st
 import { runRecruitmentContactReviewTests } from "./recruitment-contact-review.test.ts";
 import { runRecruitmentOffersTests } from "./recruitment-offers.test.ts";
 import { runRecruitmentHireDraftTests } from "./recruitment-hire-draft.test.ts";
+import { runCvHireAutofillTests } from "./cv-hire-autofill.test.ts";
 import {
   runCandidateMergeRefilesTheCabinetTests,
   runRecruitmentCandidateMergeTests,
@@ -2590,6 +2591,7 @@ await runTest("recruitment cv re-read staleness (a reading produced after the ex
 await runTest("recruitment contact review (the attended path for the email auto-apply refuses to write; not-a-CV proposes nothing, run-together values never reach a UNIQUE index)", runRecruitmentContactReviewTests);
 await runTest("recruitment offers (an unapproved offer can never be sent — the guard reads the approval trail, not the stage, so a re-widened registry cannot reopen offer_initiated -> offer_sent)", runRecruitmentOffersTests);
 await runTest("recruitment hire draft (the CV and the offer carried into HR's Add Employee form; no salary is ever derived here — that belongs to payroll/policy.ts)", runRecruitmentHireDraftTests);
+await runTest("CV hire autofill (one CV->form mapping behind all three Add Employee doors; College Name stays a one-word column, the letter always outranks the CV, and the seat picker never carries placement)", runCvHireAutofillTests);
 await runTest("recruitment candidate merge (a merge fills blanks and never overwrites; it is refused outright when the database would reject it half-way)", runRecruitmentCandidateMergeTests);
 await runTest(
   "recruitment candidate merge re-files the cabinet (two records holding one CV each become one record holding two identically named files — the merge must rename them)",

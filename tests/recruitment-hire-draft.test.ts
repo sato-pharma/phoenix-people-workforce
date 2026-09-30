@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { buildHireDraft, composeEducation } from "../src/lib/recruitment/hire-draft.ts";
+import { buildHireDraft } from "../src/lib/recruitment/hire-draft.ts";
 
 /**
  * Hiring someone meant reading their CV back to yourself and retyping it into a form the
@@ -16,8 +16,11 @@ const candidate = {
   faculty: "Faculty of Pharmacy",
   fullName: "Ahmed Hassan",
   gender: "Male",
+  governorate: "Cairo",
+  graduationYear: 2017,
   nationalId: "29504121201234",
   phone: "+201001234567",
+  placeOfBirth: "Giza",
   university: "Cairo University",
   whatsapp: "+201119998877",
 };
@@ -44,7 +47,23 @@ export function runRecruitmentHireDraftTests() {
   assert.equal(draft.nationalId, "29504121201234");
   assert.equal(draft.birthDate, "1995-04-12");
   assert.equal(draft.residenceAddress, "12 Nasr Road, Cairo");
-  assert.equal(draft.education, "BSc Pharmacy — Faculty of Pharmacy — Cairo University");
+  assert.equal(draft.birthPlace, "Giza");
+  assert.equal(draft.residenceCity, "Cairo", "the CV's governorate is what employees.residence_city holds");
+
+  // ── The five education boxes, each in its own column ─────────────────────────────────────────
+  // `education` is the box labelled "College Name" and its live vocabulary is ONE WORD — Science 94,
+  // Pharmacy 29, Vet 27 on production. It used to receive `composeEducation`'s three-part string,
+  // which was right while it was the form's only education field (#2283) and wrong from the moment
+  // #4828 gave the qualification, the university and the graduation year boxes of their own.
+  assert.equal(draft.education, "Pharmacy", "College Name is the college, not a composed sentence");
+  assert.equal(draft.qualification, "BSc Pharmacy");
+  assert.equal(draft.universityName, "Cairo University");
+  assert.equal(draft.seniorYear, "2017");
+  assert.equal(
+    "collegeMajor" in draft,
+    false,
+    "the CV has no specialisation distinct from the faculty — the major box stays for a human",
+  );
 
   // The offer is the authority on the terms, over the requisition's original title.
   assert.equal(draft.jobTitle, "Senior Medical Representative");
@@ -124,12 +143,16 @@ export function runRecruitmentHireDraftTests() {
   assert.equal(nothingKnown.lineId, "", "a missing requisition leaves the seat blank, never a stray 'null' string");
   assert.equal(nothingKnown.workEmail, "");
 
-  // ── Education is composed from whatever parts the CV gave ────────────────────────────────────
-  assert.equal(composeEducation({ degree: "BSc", faculty: null, university: "Ain Shams" }), "BSc — Ain Shams");
-  assert.equal(composeEducation({ degree: null, faculty: null, university: null }), "");
-  assert.equal(
-    composeEducation({ degree: "  ", faculty: "Faculty of Science", university: null }),
-    "Faculty of Science",
-    "a whitespace-only part must not leave a dangling separator",
-  );
+  // The education boxes travel or stay blank, never half-composed. Deeper coverage of the college
+  // vocabulary — the Arabic faculties, the science false friends, the degree fallback — lives in
+  // tests/cv-hire-autofill.test.ts beside the mapping itself.
+  const noEducation = buildHireDraft({
+    candidate: { ...candidate, degree: null, faculty: null, graduationYear: null, university: null },
+    offer,
+    requisition,
+  });
+  assert.equal(noEducation.education, "");
+  assert.equal(noEducation.qualification, "");
+  assert.equal(noEducation.universityName, "");
+  assert.equal(noEducation.seniorYear, "");
 }
