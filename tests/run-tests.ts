@@ -2035,7 +2035,7 @@ import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowr
 import { runSpotlightChequeGeneratorTests } from "./spotlight-cheque-generator.test.ts";
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 import { runSpotlightRepSelfTests } from "./spotlight-rep-self.test.ts";
-import { runSpotlightWearsReportItDesignTests } from "./spotlight-wears-report-it-design.test.ts";
+import { runSpotlightPortalLookTests } from "./spotlight-portal-look.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
@@ -7364,8 +7364,8 @@ await runTest(
 );
 
 await runTest(
-  "spotlight (self) wears Report It's design: the field/button primitives match it byte for byte, every structural device is present, and the square-corner / no-scroll / no-truncation rules hold",
-  runSpotlightWearsReportItDesignTests,
+  "spotlight (self) wears the employee portal's look: the shell owns the only header (no second dark banner), cards use the portal's card + hover lift, and the no-scroll / no-truncation / collapsing-grid rules hold",
+  runSpotlightPortalLookTests,
 );
 
 await runTest(
