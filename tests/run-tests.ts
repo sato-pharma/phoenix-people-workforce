@@ -1647,6 +1647,7 @@ import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blo
 import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
+import { runPhoenixCrmListCustomerFixtureTests } from "./phoenix-crm-list-customer-fixture.test.ts";
 import { runPhoenixCrmPlanSuggestTests } from "./phoenix-crm-plan-suggest.test.ts";
 import { runPhoenixCrmListAdmissionTests } from "./phoenix-crm-list-admission.test.ts";
 import { runPhoenixCrmListRowFactsTests } from "./phoenix-crm-list-row-facts.test.ts";
@@ -5681,6 +5682,11 @@ await runTest(
 await runTest(
   "Phoenix CRM Validate next (owner, 2026-09-30): the customers still to validate ranked so the most useful come first - visits already saved, then grade, then the brick with most waiting - one Validate per card, never Add visit, never a distance",
   runPhoenixCrmValidateNextTests,
+);
+
+await runTest(
+  "Phoenix CRM ListCustomer fixture: one shared base, so widening the type names the missing field once instead of reddening tsc in two test files that each restated it",
+  runPhoenixCrmListCustomerFixtureTests,
 );
 
 await runTest(
