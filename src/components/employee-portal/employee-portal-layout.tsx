@@ -1134,20 +1134,21 @@ function EmployeePortalMenu({
                   // exactly what the owner's standing rule forbids. The pin star follows the same rule:
                   // it appears IN PLACE of the icon on hover, so no row gets a pixel wider.
                   const RowIcon = locked ? Lock : item.icon;
-                  // THE STAR OF THE SYSTEM (owner, 2026-09-30). A premium band draws its single row as
-                  // the flagship launcher — a filled orange button with a sheen, an icon chip and a
-                  // "Flagship" kicker — so nobody can miss that Phoenix CRM is the VIP module. In pin
-                  // mode (phone) it falls through to the ordinary pin switch below like every other row.
+                  // THE STAR OF THE SYSTEM (owner, 2026-09-30). The premium band draws its one row as a
+                  // clean, CENTRED launcher on a dark glowing face — the module's icon and name centred
+                  // together, no badge word, no decoration. The dark face and its soft glow say premium;
+                  // the row says only the name. In pin mode (phone) it falls through to the ordinary pin
+                  // switch below like every other row.
                   if (section.premium && !pinMode) {
                     return (
                       <div className="group/row relative" data-active-row={active ? "true" : undefined} key={item.href}>
                         <Link
                           aria-busy={pending || undefined}
                           aria-current={active ? "page" : undefined}
-                          aria-label={locked ? `${item.label} — locked` : `${item.label} — the premium flagship module`}
+                          aria-label={locked ? `${item.label} — locked` : item.label}
                           title={locked ? `${item.label} — temporarily locked by the system administrator` : undefined}
                           className={`ep-crm-launch group flex items-center gap-3 px-4 ${
-                            isMobile ? "py-3.5" : "py-3"
+                            isMobile ? "py-4" : "py-3.5"
                           } transition-transform duration-150 hover:-translate-y-px focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 ${
                             locked ? "opacity-90" : ""
                           }`}
@@ -1155,33 +1156,19 @@ function EmployeePortalMenu({
                           onClick={(event) => handleNavigate(event, item.href)}
                           prefetch
                         >
-                          {/* A thin gloss travelling across the face every few seconds — the catchy,
-                              always-on flourish (owner, 2026-09-30). Decoration only; the orbiting frame
-                              and this gloss are both off under prefers-reduced-motion (globals.css). */}
+                          {/* A soft light that drifts across the dark face — the subtle, catchy motion.
+                              Decoration only; it and the glow are off under prefers-reduced-motion. */}
                           <span
                             aria-hidden="true"
-                            className="ep-crm-gloss pointer-events-none absolute inset-y-0 left-0 w-1/4 -skew-x-12 bg-white/30 blur-md motion-reduce:hidden"
+                            className="ep-crm-gloss pointer-events-none absolute inset-y-0 left-0 w-1/4 -skew-x-12 bg-white/20 blur-md motion-reduce:hidden"
                           />
-                          {/* Glossy orange emblem chip. */}
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-[linear-gradient(150deg,#FF8A47_0%,#F05A1A_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_5px_12px_rgba(240,90,26,0.5)]">
-                            <RowIcon className={`h-[18px] w-[18px] shrink-0 ${locked ? "text-amber-100" : "text-white"}`} />
+                          <RowIcon className={`h-[18px] w-[18px] shrink-0 ${locked ? "text-amber-200" : "text-white"}`} />
+                          <span className={`ep-crm-word text-[15px] font-semibold ${locked ? "opacity-80" : ""}`}>
+                            {item.label}
                           </span>
-                          <span className="flex min-w-0 flex-col gap-0.5">
-                            <span className="ep-crm-gold flex items-center gap-1 text-phx-4xs font-black uppercase tracking-[0.28em]">
-                              <Sparkles className="ep-crm-twinkle h-3 w-3 shrink-0 origin-center text-amber-300" />
-                              Premium
-                            </span>
-                            <span className={`text-phx-md font-black leading-tight text-white ${locked ? "opacity-80" : ""}`}>
-                              {item.label}
-                            </span>
-                          </span>
-                          <span className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center bg-white/10 ring-1 ring-inset ring-white/20">
-                            {pending ? (
-                              <span className="h-1.5 w-1.5 rounded-full bg-white employee-portal-nav-pending-dot" />
-                            ) : (
-                              <ChevronRight className="h-3.5 w-3.5 text-white/85 transition-transform duration-150 group-hover:translate-x-0.5" />
-                            )}
-                          </span>
+                          {pending ? (
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white employee-portal-nav-pending-dot" />
+                          ) : null}
                         </Link>
                       </div>
                     );
