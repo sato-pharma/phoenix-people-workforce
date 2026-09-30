@@ -241,21 +241,26 @@ them. Nothing in that file is a Phoenix variable and none of it goes on Railway.
 
 ## Observability
 
-🔴 **Corrected 2026-09-30, and both halves of the old text were wrong.** Neither variable is set by a
-deploy workflow any more — that was the Cloud Run pipeline, which is dead — and
-`NEXT_PUBLIC_COMMIT_SHA` is read by **no application code at all** (verified across `src/`, `app/` and
-`lib/`: its only mentions in the whole repo are two `Dockerfile` lines and these rows). What actually
-identifies a release is `getDeployRevision()` in `src/lib/observability/deploy-identity.ts`, which
-reads `COMMIT_SHA || RAILWAY_GIT_COMMIT_SHA || K_REVISION` — the non-prefixed one, server-side.
+🔴 **`COMMIT_SHA` is the only release identifier, and it is NOT set by a deploy workflow** — that was
+the Cloud Run pipeline, which is dead. What identifies a release is `getDeployRevision()` in
+`src/lib/observability/deploy-identity.ts`, reading `COMMIT_SHA || RAILWAY_GIT_COMMIT_SHA ||
+K_REVISION` — the non-prefixed one, server-side.
 
-On Railway today **both are absent**, and `RAILWAY_GIT_COMMIT_SHA` is injected by the platform at
-runtime rather than stored as a service variable — which is why `/api/healthz` still returns a
-`revision` while `railway variables` lists neither.
+🔴 **`NEXT_PUBLIC_COMMIT_SHA` NO LONGER EXISTS ANYWHERE, and re-adding it would tag nothing.** It was
+a `Dockerfile` build ARG, declared and re-exported, read by **zero** call sites across `src/`, `app/`
+and `lib/`, under a comment claiming it tagged which revision a client error came from — which it
+never did. Both its `Dockerfile` lines and its row in the table below were removed together on
+2026-09-30, because a build arg that looks like client-side release tagging and is not answers "are
+client errors tagged?" with a reassuring yes. **If that tagging is ever wanted, it needs a call site
+FIRST; the ARG is the last step, not the first.**
+
+On Railway today `COMMIT_SHA` is **absent**, and `RAILWAY_GIT_COMMIT_SHA` is injected by the platform
+at runtime rather than stored as a service variable — which is why `/api/healthz` still returns a
+`revision` while `railway variables` lists neither of them.
 
 | Variable | Description |
 |---|---|
 | COMMIT_SHA | Runtime release identifier for `app_error_events.release`. 🔴 **Absent on Railway on purpose, and it must stay that way.** It takes PRECEDENCE over the platform's own `RAILWAY_GIT_COMMIT_SHA`, so a hand-set or left-over value makes `/api/healthz`, every deploy-drift check and every shipped-verification read report a revision production is not running — the one instrument that answers "did my deploy go live" would be lying, permanently, with nothing anywhere to catch it. `scripts/validate-railway-production-secrets.mjs` now fails if it is present on production. |
-| NEXT_PUBLIC_COMMIT_SHA | 🔴 **Read by nothing.** Declared as a build ARG in the `Dockerfile` and never consumed, so client error reports carry no release tag from it. Kept only so the ARG and this row can be removed together — deleting the ARG alone would leave this row describing a variable that does not exist. |
 | HEALTHCHECKS_PING_KEY | External cron-liveness dead-man's-switch. Set on the `phoenix-hr` **production** Cloud Run service ONLY — never staging, never local (see the Dead-Man's-Switch section below for why, and for the full variable table). |
 
 See docs/observability.md for the full picture.
