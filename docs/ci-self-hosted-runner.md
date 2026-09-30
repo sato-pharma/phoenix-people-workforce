@@ -411,11 +411,19 @@ gate means no deploy at all, silently, until Railway abandons it at the two-hour
 ## It is BUILT, and two of the three jobs already pass — 2026-09-27
 
 The owner had it built rather than prepared, overriding this document's own "a session prepares, it
-does not press". What exists:
+does not press". What existed:
+
+🔴 **THE RAILWAY RUNNER PROJECT IS DELETED — 2026-10-01, at the owner's instruction. Nothing in this
+section is infrastructure any more; it is the record of an approach that was tried and closed.** It
+had been idle since its pool went down on 2026-09-27 (all three replicas `EXITED`, zero GitHub
+registrations) while still billing **171.9 CPU units and 8,726 GB-hours** that cycle — more than the
+production app's 110.6 / 1,351 — which is why it went. CI runs on GitHub-hosted runners plus the one
+Hetzner box (§4's ruling); the box is a preview machine, and `phoenix-ci-ubuntu-8gb-nbg1-1` is the
+only self-hosted runner GitHub has registered.
 
 | | |
 | --- | --- |
-| Railway project | `phoenix-ci-runner` `d657a3c0-684c-4e83-88bc-ded47b32a00d` |
+| Railway project | 🔴 **DELETED 2026-10-01** — was `phoenix-ci-runner` `d657a3c0-684c-4e83-88bc-ded47b32a00d` |
 | service | `ci-runner` `f6a18a22-1434-4423-95d5-875b88928f9b`, image `ghcr.io/actions/actions-runner:latest` |
 | region | EU West `europe-west4-drams3a` — **explicitly scaled there, see the trap below** |
 | shape | 3 replicas, runners named `phoenix-ci-<RAILWAY_REPLICA_ID>`, labels `self-hosted,X64,Linux,phoenix` |
@@ -855,16 +863,28 @@ Later the same day the pool itself went down. Verified state at the time of writ
 
 | | |
 | --- | --- |
-| Railway project | `phoenix-ci-runner` `d657a3c0-684c-4e83-88bc-ded47b32a00d` — `deletedAt: null` |
-| Service | `ci-runner` `f6a18a22-1434-4423-95d5-875b88928f9b` |
-| Deployment | `b6f0858b` — `deploymentStopped: true`, `canRedeploy: true` |
+| Railway project | 🔴 **DELETED 2026-10-01** — was `d657a3c0-684c-4e83-88bc-ded47b32a00d`, `deletedAt: null` until then |
+| Service | `ci-runner` `f6a18a22-1434-4423-95d5-875b88928f9b` — gone with the project |
+| Deployment | `b6f0858b` — was `deploymentStopped: true`, `canRedeploy: true` |
 | Replicas | all three `EXITED` — `1116628c`, `8f9e5a88`, `37e95625` |
 | GitHub registrations | ids 32, 33, 34 deleted; `actions/runners` reads `total_count: 0` |
 
-🔴 **"Retired" here means STOPPED, not deleted — the project, the service and the deployment all
-still exist and the deployment is redeployable.** Bringing the pool back is a redeploy plus
-`CI_SELF_HOSTED` un-set, not a rebuild from the provisioning runbook above. Do not read this entry as
-permission to delete any of them: that is the owner's dashboard click, and so is recreating them.
+🔴 **UPDATED 2026-10-01: "retired" became DELETED.** The owner instructed it, and the project, its
+service and its deployment are gone — so the paragraph that stood here, saying they "all still exist
+and the deployment is redeployable", is no longer true. **Bringing a Railway pool back is now a
+rebuild from the provisioning runbook above, not a redeploy**, and creating a project remains the
+owner's dashboard click. Inventory taken before pressing: no volumes in any environment, the one
+service reading `● Completed`, no runner registered with GitHub from it, and no code path referencing
+it — only this document.
+
+🔴 **AND `railway list` LISTED IT FOR MINUTES AFTER IT WAS GONE, IN BOTH PLAIN AND `--json` FORM.**
+The first `railway delete -p <name> -y` succeeded, printing only its selection line; the listing then
+still showed the project, a second delete answered `Project "phoenix-ci-runner" not found` with exit
+1, and `railway status` on the linked directory answered **`Project is deleted.`** — which is the only
+readout that told the truth. This is the volume-delete trap (AGENTS.md §2.3) with the signs reversed:
+there the delete reports success and does nothing, here it reports almost nothing and works while the
+listing lies. **Never conclude a Railway delete failed because the thing is still listed, and never
+re-press on that basis** — read the object directly.
 
 🔴 **The registration ids in that table are spent.** A replica registers non-ephemerally at
 startup, so a redeploy mints NEW ids and the old ones never come back — never write an id from this
