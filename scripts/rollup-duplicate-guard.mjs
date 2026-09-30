@@ -31,6 +31,28 @@
 export const ROLLUP_BRANCH_PREFIX = 'codex/rollup-';
 
 /**
+ * Whether `name` is a branch {@link rollupBranchName} actually produced.
+ *
+ * 🔴 THE PREFIX ALONE IS NOT THE TEST, AND USING IT WAS A MEASURED FALSE POSITIVE. This very fix
+ * was developed on `codex/rollup-dup-guard` — a branch that FIXES the roll-up tool and is not a
+ * roll-up — and a prefix match flagged it as one. Two ways that bites, both worse than the bug it
+ * was meant to catch:
+ *
+ *   * the nesting blocker marked the PR 'SEPARATE — it is itself a roll-up', which is nonsense on a
+ *     3-file fix and would push every future roll-up-tool PR out of roll-ups for no reason;
+ *   * the duplicate guard treated it as an OPEN roll-up, failed to find a `- #N —` member list in a
+ *     body that has none, and therefore read 'unreadable' — which counts as a collision. So while
+ *     any roll-up-tool PR was open, `--apply` would have refused EVERY build.
+ *
+ * The generated shape is `codex/rollup-YYYYMMDD-HHMM`, UTC, with `-2`, `-3`… when the name is taken
+ * (see rollup-branch-name.mjs). Matching that shape distinguishes a roll-up from a branch merely
+ * named after one, and a hand-made branch that happens to match it is indistinguishable anyway.
+ */
+export function isRollupBranch(name) {
+  return /^codex\/rollup-\d{8}-\d{4}(-\d+)?$/.test(String(name ?? ''));
+}
+
+/**
  * The PR numbers a roll-up's body lists as its members.
  *
  * It matches the line shape the body is BUILT with — `- #4901 — title (3 files)` — and nothing else.

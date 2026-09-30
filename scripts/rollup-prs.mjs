@@ -54,7 +54,7 @@ import { readFileSync } from 'node:fs';
 
 import { readProtectionContexts } from './required-check-names.mjs';
 import { rollupBranchName } from './rollup-branch-name.mjs';
-import { ROLLUP_BRANCH_PREFIX, overlappingRollup, rollupMembers } from './rollup-duplicate-guard.mjs';
+import { isRollupBranch, overlappingRollup, rollupMembers } from './rollup-duplicate-guard.mjs';
 import { rollupBuildVerdict, MIN_MEMBERS } from './rollup-build-verdict.mjs';
 import { membersReadyToBuild, requiredCheckState, waitForRequiredChecks } from './rollup-check-state.mjs';
 
@@ -250,6 +250,23 @@ for (const pr of open) {
   for (const rule of NEVER_ROLL_UP) {
     const hit = pr.paths.find((p) => rule.test(p));
     if (hit) pr.blockers.push(`${rule.why} (${hit})`);
+  }
+  // 🔴 A ROLL-UP IS NEVER A MEMBER OF ANOTHER ROLL-UP.
+  //
+  // Measured 2026-09-30: with #4920 ("roll up 2 open PRs into one merge") open, this script offered
+  // `#4922 + #4920 + #4921` — a roll-up nested inside a roll-up, carrying #4918 and #4919 two levels
+  // down. The duplicate guard does not catch it, and correctly so: that one asks whether an open
+  // roll-up CARRIES something we want, and here the roll-up IS what we want, so there is no overlap
+  // to find. Two shapes of one mistake, needing two rules.
+  //
+  // Nesting merges cleanly, which is why nothing objected to it. What it breaks is accountability:
+  // AGENTS.md §6 says a roll-up's members must not be merged separately, and nesting makes that rule
+  // TRANSITIVE with nothing tracking it — the inner roll-up stays independently mergeable while the
+  // outer one claims to replace it, and whichever merges first leaves the other carrying content
+  // already on main. The reported saving is double-counted too: the outer counts the inner as one
+  // merge replaced, when the inner was already replacing several.
+  if (isRollupBranch(pr.headRefName)) {
+    pr.blockers.push('it is itself a roll-up (' + pr.headRefName + ') — a roll-up is never a member of another roll-up');
   }
 }
 
@@ -459,7 +476,7 @@ if (!apply || group.length < 2) process.exit(0);
 // scripts/rollup-duplicate-guard.mjs records the three collisions on 2026-09-30 that make this a
 // GATE and not a warning. It sits before the members-wait below on purpose: a duplicate is refused
 // in seconds, rather than after minutes spent waiting for checks on members another roll-up owns.
-const openRollupPrs = open.filter((pr) => String(pr.headRefName ?? '').startsWith(ROLLUP_BRANCH_PREFIX));
+const openRollupPrs = open.filter((pr) => isRollupBranch(pr.headRefName));
 if (openRollupPrs.length > 0) {
   const rollups = openRollupPrs.map((pr) => {
     const raw = gh(['pr', 'view', String(pr.number), '--repo', REPO, '--json', 'body'], { allowFail: true });
