@@ -1152,9 +1152,26 @@ export function repSpotlightDocumentHtml(result: SpotlightResult): string {
       },
     ])}`;
 
+  // THE ARABIC WORDMARK AS A WATERMARK — owner instruction for the rep's own sheet (2026-09-30).
+  //
+  // Scoped to THIS sheet only: the admin spotlight keeps the Arabic mark in the foot, and the history
+  // in this file's header (the four placements the owner struck on 2026-09-12) is left untouched there.
+  // What that history teaches is honoured here so the watermark is not the version he rejected:
+  //   · CENTRED AND CONTAINED, never bled off the right edge — Arabic reads RTL, so an off-edge mark
+  //     eats the first half of the company name. 168mm inside a 210mm page keeps the whole name visible.
+  //   · PALE and BEHIND the content, so the figure stays the payload rather than fighting a second mark.
+  // One <img> (the same base64 object as the foot), so it adds no per-page raster layer.
+  const watermarkStyle = `<style>
+    .rep-wm { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      width: 168mm; opacity: 0.05; z-index: 0; pointer-events: none; }
+    .rep-wm img { display: block; width: 100%; height: auto; }
+    .rep-wm-content { position: relative; z-index: 1; }
+  </style>`;
+  const framed = `<div class="rep-wm">${arabicMark()}</div><div class="rep-wm-content">${body}</div>`;
+
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>${escapeHtml(result.headline)}</title><style>${CSS}</style></head>
-<body style="margin:0">${pageShell(result, body, 1, 1)}</body></html>`;
+<title>${escapeHtml(result.headline)}</title><style>${CSS}</style>${watermarkStyle}</head>
+<body style="margin:0">${pageShell(result, framed, 1, 1)}</body></html>`;
 }
 
 /** The rep's sheet, as a PDF. Throws `ChromiumUnavailableError` when the runtime cannot render one. */
