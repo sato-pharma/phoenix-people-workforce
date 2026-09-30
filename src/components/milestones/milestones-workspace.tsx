@@ -13,6 +13,7 @@ import {
   parsePlainDate,
   type MilestoneSpec,
 } from "@/lib/milestones/periods";
+import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import type { MilestoneCandidate, MilestoneDueEntry, MilestonePrintHistoryEntry } from "@/lib/milestones/service";
 
 /**
@@ -411,13 +412,15 @@ export function MilestonesWorkspace({
   const focusValue = focusEdit ?? focusDefault ?? CENTRE;
 
   // What the card will actually print, which is not always what the record holds: an uploaded
-  // picture comes first, and it is the ONLY picture for the many people who never put one on
-  // Phoenix at all. That is why the framing box is not gated on `hasPhoto`.
+  // picture comes first; then the uploaded record photo; then the bundled static photo — the same
+  // order the card now resolves (loadMilestonePhotoBytes), so the framing box previews whatever the
+  // card will cut. Before this the box gated on `hasPhoto` alone and went dark for a static-photo
+  // employee, even though the card prints their face — the preview lied about the picture.
   const photoSrc = upload
     ? upload.dataUri
     : selected?.hasPhoto
       ? `/api/employees/${encodeURIComponent(selectedHrId)}/photo`
-      : null;
+      : employeeProfileImageForHrId(selectedHrId);
   const showFraming = Boolean(photoSrc) && !withoutPhoto;
 
   // How big the picture is drawn, in frames. At zoom 1 it exactly covers; above 1 it overhangs in

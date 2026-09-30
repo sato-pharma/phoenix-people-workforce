@@ -589,4 +589,13 @@ export async function runMilestoneCardTests() {
     workspace.includes("setUpload(null)") && workspace.includes("resetFields"),
     "🔴 and picking a different NAME drops it — one person's face on another person's printed card cannot be taken back",
   );
+
+  // 🔴 THE FRAMING BOX PREVIEWS WHATEVER THE CARD WILL CUT — including the bundled static photo.
+  // The card resolves uploaded → uploaded record → bundled static, so the box must fall back the
+  // same way; gating it on `hasPhoto` alone went dark for a static-photo employee whose card still
+  // prints their face, and the preview then lied about the picture.
+  assert.ok(
+    workspace.includes("employeeProfileImageForHrId(selectedHrId)"),
+    "the framing box falls back to the bundled static photo, matching what the card prints",
+  );
 }
