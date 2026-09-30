@@ -33,9 +33,9 @@ import type { RepTodayPlan, RepTodayBrick, RepTodayStop } from "@/lib/phoenix-cr
  *
  * The page's own rules it obeys (stated 2026-09-04 above the rep layout): no decorative block, NO
  * EMPTY TILE — it renders nothing at all when there is no approved day, and the column collapses
- * with it — no prose, and no round corners, which are never inherited and so are written out. AM and
- * PM are printed APART, never summed. Nothing on it judges him (golden rule #1): no distance, no
- * reading, no check, no flag — only where he is going and whether he has been.
+ * with it — no prose, and no round corners, which are never inherited and so are written out. AM, PM
+ * and Pharmacies are printed APART, never summed. Nothing on it judges him (golden rule #1): no
+ * distance, no reading, no check, no flag — only where he is going and whether he has been.
  */
 
 /** Where the "+" goes: the Visits module's own page, with the customer already chosen. */
@@ -45,20 +45,28 @@ function addVisitHref(stop: RepTodayStop): string {
 }
 
 /**
- * AM and PM each get their own chip — the same one "Needs you" puts in its header. 🔴 They are never
- * added together and never averaged: the call-rate golden rule (AM against 2, PM against 10) reaches
- * every count of a day, and one combined figure here would be the first place it broke.
+ * AM, PM and Pharmacies each get their own chip — the same one "Needs you" puts in its header.
+ *
+ * 🔴 THREE FIGURES APART, never added together and never averaged. Two golden rules meet in this one
+ * header: the call rate is scored AM against 2 and PM against 10, so a combined figure here would be
+ * the first place that broke; and a pharmacy is counted APART from both, whatever the vendor tagged.
+ *
+ * `planned` is the denominator, and a pharmacy has none — it is feedback recorded ON a visit, so
+ * there is nothing to plan against one. Left out, the chip reads "Pharmacies 2" instead of "n of m",
+ * and it is never green: there is no figure for him to reach.
  */
-function CountChip({ done, label, planned }: { done: number; label: string; planned: number }) {
-  if (planned === 0) return null;
-  const complete = done >= planned;
+function CountChip({ done, label, planned }: { done: number; label: string; planned?: number }) {
+  // Nothing to say — nobody planned on that list, or no pharmacy visited yet. The panel carries no
+  // empty square, and a bare "Pharmacies 0" on a day he has not reached one is exactly that.
+  if (planned === 0 || (planned === undefined && done === 0)) return null;
+  const complete = planned !== undefined && done >= planned;
   return (
     <span
       className={`border px-1.5 py-px text-phx-2xs font-bold uppercase tracking-[0.06em] tabular-nums ${
         complete ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600"
       }`}
     >
-      {label} {done} of {planned}
+      {planned === undefined ? `${label} ${done}` : `${label} ${done} of ${planned}`}
     </span>
   );
 }
@@ -134,7 +142,17 @@ export function RepTodayPlanPanel({ plan }: { plan: RepTodayPlan | null }) {
 
   return (
     <section className="min-w-0 border border-slate-200 bg-white">
-      <header className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
+      {/*
+        🔴 `flex-wrap` — the ONE place this header parts from the overview's, and the third chip is
+        why (measured 2026-09-30 at 320px). The chip rail below is `shrink-0`, which makes its own
+        `flex-wrap` inert — it is never handed a narrower width to wrap at — so three chips are 319px
+        of content in a 284px header and the panel scrolls sideways, which the fits-the-screen golden
+        rule forbids outright. Wrapping is the remedy that rule names, and it costs nothing anywhere
+        else: at 360, 375, 390 and 412 the header measures identically with and without it, on one
+        line, because the chips already fit there. Everything else is still the overview's, to the
+        class, and `tests/phoenix-crm-today.test.ts` derives this string from that one.
+      */}
+      <header className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
         <h2 className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600">Your day</h2>
         <span className="min-w-0 break-words text-phx-2xs font-semibold uppercase tracking-[0.08em] text-slate-400" dir="auto">
           {plan.soleBrick ? `${plan.dateLabel} · ${plan.soleBrick}` : plan.dateLabel}
@@ -142,6 +160,7 @@ export function RepTodayPlanPanel({ plan }: { plan: RepTodayPlan | null }) {
         <span className="ml-auto flex shrink-0 flex-wrap justify-end gap-1">
           <CountChip done={plan.amDone} label="AM" planned={plan.amPlanned} />
           <CountChip done={plan.pmDone} label="PM" planned={plan.pmPlanned} />
+          <CountChip done={plan.pharmaciesDone} label="Pharmacies" />
         </span>
       </header>
       <ul className="min-w-0">

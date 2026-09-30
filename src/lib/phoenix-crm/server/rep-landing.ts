@@ -68,6 +68,16 @@ export type RepTodayPlan = {
   amPlanned: number;
   pmDone: number;
   pmPlanned: number;
+  /**
+   * 🔴 THE THIRD FIGURE — the pharmacies he took feedback from today, counted APART from AM and PM
+   * (the AM · PM · Pharmacies golden rule). His own ask the same morning was "am/pm/ph"; the count
+   * was built for the Today module, outlived it, and he put it back here (owner, 2026-09-30).
+   *
+   * There is no denominator, on purpose: a pharmacy is feedback recorded ON a visit, so there is
+   * nothing to plan against one and no "n of m" to print. It reads the whole day's visits, including
+   * one made off the plan, and is NEVER added into `amDone` or `pmDone`.
+   */
+  pharmaciesDone: number;
   /** Where his Add-visit "+" sends him: the Visits module's own page. */
   canAdd: boolean;
 };
@@ -139,6 +149,7 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
       amPlanned: view.counts.plannedAm,
       pmDone: view.counts.donePm,
       pmPlanned: view.counts.plannedPm,
+      pharmaciesDone: view.counts.donePharmacies,
       canAdd: view.canAdd,
     };
   } catch (error) {

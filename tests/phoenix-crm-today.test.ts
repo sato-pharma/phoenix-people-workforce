@@ -13,6 +13,7 @@ import {
   stopWhereLine,
   todayByBrick,
   todayEmptyReason,
+  todayPharmacies,
   type PlannedStop,
   type TodayVisit,
 } from "../src/lib/phoenix-crm/today-rules.ts";
@@ -312,10 +313,27 @@ export function runPhoenixCrmTodayTests(): void {
     assert.ok(panel.includes('<Plus aria-hidden="true"'), "and it is a plus sign");
     assert.ok(panel.includes("stop.done ? ("), "no plus on one he has already done — a tick stands there instead");
 
-    // 4. 🔴 AM and PM APART, never summed — the call-rate golden rule reaches this panel's counts.
+    // 4. 🔴 AM · PM · PHARMACIES, THREE FIGURES APART, never summed. Two golden rules meet in this
+    //    one header: the call rate is scored AM against 2 and PM against 10, and a pharmacy is
+    //    counted apart from both. The third chip is HIS OWN ASK of that morning — "show me my today
+    //    plan am/pm/ph" — which outlived the Today module it was built for: when Today was retired
+    //    that evening the figure lost its screen, and he put it back here (2026-09-30).
     assert.ok(panel.includes('<CountChip done={plan.amDone} label="AM" planned={plan.amPlanned} />'));
     assert.ok(panel.includes('<CountChip done={plan.pmDone} label="PM" planned={plan.pmPlanned} />'));
+    assert.ok(
+      panel.includes('<CountChip done={plan.pharmaciesDone} label="Pharmacies" />'),
+      'the pharmacies chip carries NO planned figure — a pharmacy is feedback recorded ON a visit, so there is nothing to plan against one and no "n of m" to print',
+    );
+    assert.ok(
+      landing.includes("pharmaciesDone: view.counts.donePharmacies,"),
+      "and the figure is the day's own pharmacy count, never a second derivation on the panel",
+    );
     assert.equal(/(am|pm)(Done|Planned)\s*\+\s*[\w.]*(am|pm)(Done|Planned)/i.test(panel), false, "AM and PM are never added into one figure");
+    assert.equal(
+      /pharmaciesDone\s*\+|\+\s*[\w.]*pharmaciesDone/i.test(panel),
+      false,
+      "🔴 and a pharmacy is never added into either of them — the AM · PM · Pharmacies golden rule",
+    );
 
     // 5. 🔴 THE CHROME IS BORROWED, NOT INVENTED — every piece of it is lifted from the panels it now
     //    sits beside. `RepPanel`, `RepNeedRow` and the chip live in portal-command-center.tsx, which
@@ -323,7 +341,6 @@ export function runPhoenixCrmTodayTests(): void {
     //    These comparisons are what stops the two copies drifting into two looks.
     for (const [what, shape] of [
       ["the panel shell", 'className="min-w-0 border border-slate-200 bg-white"'],
-      ["the panel header", 'className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2"'],
       ["the panel title", 'className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600"'],
       ["the header chip", "border px-1.5 py-px text-phx-2xs font-bold uppercase tracking-[0.06em] tabular-nums"],
       ["the row rail", 'className={`w-1 self-stretch'],
@@ -331,6 +348,22 @@ export function runPhoenixCrmTodayTests(): void {
       assert.ok(panel.includes(shape), `the panel must wear the overview's own ${what}: ${shape}`);
       assert.ok(centre.includes(shape), `and the overview must still be the source of ${what} — if it changed there, change it in the panel too`);
     }
+
+    // 🔴 THE HEADER IS THE ONE PIECE THAT PARTS FROM THE OVERVIEW'S, BY EXACTLY ONE CLASS. The chip
+    // rail is `shrink-0`, which makes its own `flex-wrap` inert, so the THIRD chip put 319px of
+    // content into a 284px header at 320px and the panel scrolled sideways — which the
+    // fits-the-screen golden rule forbids outright, and wrapping is the remedy it names. Measured
+    // 2026-09-30: identical at 360, 375, 390 and 412, where the chips already fit on one line.
+    //
+    // The panel's string is DERIVED from the overview's here rather than written out, so this is
+    // still the drift guard the loop above is: change the header in portal-command-center.tsx and
+    // this goes red until the panel follows.
+    const centreHeader = 'className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2"';
+    assert.ok(centre.includes(centreHeader), "the overview must still be the source of the panel header");
+    assert.ok(
+      panel.includes(centreHeader.replace("flex items-center", "flex flex-wrap items-center")),
+      "the panel header must be the overview's, plus flex-wrap — without it the third chip overflows the panel at 320px",
+    );
     assert.ok(!panel.includes("@/components/employee-portal/portal-command-center"), "and it is NEVER imported from there — that is the cycle this duplication exists to avoid");
 
     // The landing page's own rules: no empty square, and nothing that judges him.
@@ -391,6 +424,57 @@ export function runPhoenixCrmTodayTests(): void {
     assert.ok(centre.includes("<RepTodayPlanPanel plan={repTodayPlan} />"), "the rep's landing page draws it");
     const home = source("app/employee-portals/page.tsx");
     assert.ok(home.includes("const repTodayPlan = await loadRepTodayPlan(access);"), "and the page loads it");
+  }
+
+  // ── AM · PM · PHARMACIES — the rule the third chip prints ───────────────────────────────────────
+  //
+  // 🔴 A PHARMACY IS NEVER A STOP OF ITS OWN. It is feedback recorded ON a visit
+  // (`phoenix_crm_visits.pharmacy_name`) — a customer's list type is AM or PM and nothing else — so
+  // there is nothing to plan against one and no "Add visit" for one. It is the day's pharmacy work
+  // read back, counted APART: never inside doneAm or donePm, whatever the vendor tagged.
+  //
+  // This block was written for the Today module and travelled with the figure when he moved it to
+  // the landing panel (2026-09-30). Retiring the screen a number is drawn on does not retire the
+  // rule that says how it is counted — that is exactly how this one nearly went out with the tab.
+  {
+    const built = buildTodayStops({
+      planned: [],
+      visitsToday: [
+        { customerId: "a", name: "Dr One", listType: "AM", doneAt: "09:10", pharmacyName: "El Ezaby" },
+        { customerId: "b", name: "Dr Two", listType: "PM", doneAt: "17:40", pharmacyName: "el ezaby" },
+        { customerId: "c", name: "Dr Three", listType: "PM", doneAt: "18:20", pharmacyName: "Seif" },
+        { customerId: "d", name: "Dr Four", listType: "PM", doneAt: "19:00", pharmacyName: null },
+      ],
+    });
+    assert.deepEqual(
+      built.pharmacies.map((pharmacy) => `${pharmacy.name} | ${pharmacy.fromCustomers.join(", ")} | ${pharmacy.firstAt}`),
+      ["el ezaby | Dr One, Dr Two | 09:10", "Seif | Dr Three | 18:20"],
+      "one pharmacy however it is spelled, the latest spelling wins, every customer it came from, and the first clock",
+    );
+    assert.equal(built.counts.donePharmacies, 2, "two pharmacies");
+    assert.equal(built.counts.doneAm, 1, "AM counts visits, never pharmacies");
+    assert.equal(built.counts.donePm, 3, "and neither does PM");
+    assert.equal(built.counts.doneAm + built.counts.donePm, 4, "the four visits stay four — a pharmacy is never added in");
+
+    // Called directly as well: it is exported, and the panel's figure is only as good as this.
+    assert.deepEqual(todayPharmacies([]), [], "a day with no visits has no pharmacies");
+    assert.deepEqual(
+      todayPharmacies([{ customerId: "a", name: "Dr One", listType: "AM", doneAt: "09:10", pharmacyName: "   " }]),
+      [],
+      "and a blank name is not a pharmacy",
+    );
+
+    // 🔴 The chip is hidden at zero rather than printed as "Pharmacies 0" — the landing page's own
+    // no-empty-square rule, which a figure with no denominator would otherwise walk straight past.
+    const panel = source("src/components/employee-portal/rep-today-plan-panel.tsx");
+    assert.ok(
+      panel.includes("if (planned === 0 || (planned === undefined && done === 0)) return null;"),
+      "no pharmacy visited yet, no chip",
+    );
+    assert.ok(
+      panel.includes("{planned === undefined ? `${label} ${done}` : `${label} ${done} of ${planned}`}"),
+      'a pharmacy has no denominator, so its chip reads "Pharmacies 2" and never "n of m"',
+    );
   }
 
   console.log("phoenix-crm today: OK");
