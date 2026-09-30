@@ -59,6 +59,9 @@ export default async function TerritoryManagementPortalPage() {
         // The server refuses it regardless; this keeps the portal free of a button that would only
         // ever answer "forbidden".
         canPublishPreview={false}
+        // The shell above owns the header — without this the workspace drew its own
+        // `<h1>Territory Management</h1>` and how-to-read-it sentence a second time.
+        chrome="portal"
         filters={filters}
         initialError={initialError}
         productionUrl={systemDeployment.productionUrl}

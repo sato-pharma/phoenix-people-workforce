@@ -35,6 +35,20 @@ type Props = {
   canEditPins: boolean;
   /** Publishing a passwordless preview link is Super-Admin only. Enforced server-side as well. */
   canPublishPreview: boolean;
+  /**
+   * Which shell this is rendered in, and therefore who owns the page title.
+   *
+   * `admin` — `app/(admin)/sales/territory-management/page.tsx` renders this workspace BARE, with no
+   * shell around it, so the `<h1>` in the header below is the page's only title and must stay.
+   *
+   * `portal` — `app/employee-portals/territory-management/page.tsx` wraps it in
+   * `EmployeePortalPageShell`, which already paints the navy command header carrying the title
+   * `Territory Management` and the module sentence, so drawing the header here printed the same words
+   * twice under two type scales (owner, 2026-09-30: "fix the duplicated header on territory
+   * management too"). Same vocabulary as `KpisBoardView` and `FieldActivityView`, which solved this
+   * before it.
+   */
+  chrome?: "admin" | "portal";
   filters: TerritoryFilters;
   initialError: string | null;
   /** Configured public origin, used to build a shareable link the recipient can actually open. */
@@ -52,6 +66,7 @@ export function TerritoryMapWorkspace({
   browserKey,
   canEditPins,
   canPublishPreview,
+  chrome = "admin",
   filters,
   initialError,
   productionUrl,
@@ -401,13 +416,17 @@ export function TerritoryMapWorkspace({
 
   return (
     <div className="space-y-4 p-4">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Territory Management</h1>
-        <p className="text-muted-foreground text-sm">
-          Pick a line, a region, then one or more areas. Bricks are plotted and linked along the shortest
-          path that covers the area — so you can see whether allocation is tight or scattered.
-        </p>
-      </header>
+      {/* The title and the how-to-read-it sentence are the SHELL'S in the portal — see `chrome` in
+          Props above. The admin route renders this workspace bare, so there the header IS the page. */}
+      {chrome === "admin" ? (
+        <header className="space-y-1">
+          <h1 className="text-2xl font-semibold">Territory Management</h1>
+          <p className="text-muted-foreground text-sm">
+            Pick a line, a region, then one or more areas. Bricks are plotted and linked along the shortest
+            path that covers the area — so you can see whether allocation is tight or scattered.
+          </p>
+        </header>
+      ) : null}
 
       {/* Own row rather than tucked into the header: collapsed it is one button, but open it is a
           full Card, and squeezing that into a header flex would shrink it to a column. */}

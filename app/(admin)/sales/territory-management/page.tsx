@@ -50,6 +50,10 @@ export default async function TerritoryManagementPage() {
       // only decides whether the affordance is drawn.
       canEditPins={access.role === "Super Admin"}
       canPublishPreview={access.role === "Super Admin"}
+      // `admin` is the default, but it is passed explicitly because it is load-bearing: this route
+      // renders the workspace BARE, with no shell around it, so the workspace's own header is the
+      // only title on the screen and must keep rendering here.
+      chrome="admin"
       filters={filters}
       initialError={initialError}
       // The CONFIGURED public URL, never the request's own origin. Behind Railway's proxy that
