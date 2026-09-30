@@ -2041,6 +2041,7 @@ import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runScriptsAliasLoaderTests } from "./scripts-alias-loader.test.ts";
 import { runMobileFreezeTests } from "./mobile-freeze.test.ts";
+import { runProtectedFileGuardTests } from "./protected-file-guard.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
 import { runRollupPrsTests } from "./rollup-prs.test.ts";
 import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
@@ -7401,6 +7402,11 @@ await runTest(
 await runTest(
   "the mobile app is FROZEN by the owner's golden rule of 2026-09-29 — mobile-freeze-guard.mjs refuses every write under mobile/ (relative, absolute and backslash) and the whole Expo/EAS toolchain including a Mobile workflow dispatch, while reads, greps, the web dev server, a web component merely NAMED mobile and the stand-down stay allowed; the guard is registered for Write, Edit AND Bash (a matcher missing one half looks installed and lets it through), and the rule is present in AGENTS.md §4, CLAUDE.md and the owner-rules account with the older mobile rules marked dormant",
   runMobileFreezeTests,
+);
+
+await runTest(
+  "the three behaviorally-locked files (incentive curve, payroll formulas, portal identity card) raise the owner's PROMPT — protected-file-guard.mjs answers a Write/Edit or a shell write of any of them, by any path spelling, with ask and never deny, stays silent on reads, look-alike names and other files, stands aside only for a current owner-typed AUTORUN arming in THIS session (announced, not awaited, per §6.1) while a stale, old-format, garbled or other session's arming still asks, is registered for Write, Edit, NotebookEdit, Bash and PowerShell, and CLAUDE.md still lists all three and names the hook",
+  runProtectedFileGuardTests,
 );
 
 await runTest(
