@@ -739,6 +739,12 @@ export const accessRegistry = [
   // it — and the rep's own to write, exactly like his list and his plan.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/day-activities", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/day-activities", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // The daily forecast (owner, 2026-10-01), CNS only: the rep's own form and send, and the managers'
+  // board. The service narrows each again — the form to the territory's own rep, the board to a reader
+  // of team reports — so `read` here is gate one of two, as everywhere in the module.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/forecast", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/forecast", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/forecast/board", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits/form", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: false }),

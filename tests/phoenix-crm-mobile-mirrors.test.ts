@@ -136,7 +136,9 @@ export function runPhoenixCrmMobileMirrorsTests(): void {
   // 🔴 WHEN THE FREEZE LIFTS, EVERY KEY HERE GOES INTO `mobile/src/lib/crm/types.ts` AND THIS LIST
   // GOES BACK TO EMPTY. It is not a place to park a tab somebody decided the phone does not need —
   // the two checks under it make a stale entry fail rather than rot.
-  const WEB_ONLY_WHILE_MOBILE_IS_FROZEN = ["calendar"];
+  // `forecast` joined on 2026-10-01 for the same reason: the owner asked for the CNS daily forecast as
+  // its own module, on the web, while the freeze holds.
+  const WEB_ONLY_WHILE_MOBILE_IS_FROZEN = ["calendar", "forecast"];
   for (const key of WEB_ONLY_WHILE_MOBILE_IS_FROZEN) {
     assert.ok(webTabs.includes(key), `\`${key}\` is listed as web-only and is not a web tab — retire the entry`);
     assert.ok(!phoneTabs.includes(key), `\`${key}\` reached the phone — take it out of WEB_ONLY_WHILE_MOBILE_IS_FROZEN`);
