@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, ChevronLeft, Download, FileText, ShieldCheck } from "lucide-react";
 
+import { ShareCardBar } from "@/components/employee-portal/share-card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { spotlightShareCaption } from "@/lib/share/social-share";
 
 /**
  * Spotlight — one person's own sheet.
@@ -425,18 +427,36 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
                     {preview.rangeLabel}
                   </span>
                 </div>
-                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 p-4">
-                  <span
-                    className={[
-                      "text-4xl font-black tabular-nums leading-none",
-                      preview.achievement === null ? "text-slate-300" : beat ? "text-emerald-600" : "text-slate-900",
-                    ].join(" ")}
-                  >
-                    {preview.achievement === null ? "—" : `${preview.achievement.toFixed(1)}%`}
-                  </span>
-                  <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">
-                    of your published target
-                  </span>
+                <div className="p-4">
+                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <span
+                      className={[
+                        "text-5xl font-black tabular-nums leading-none",
+                        preview.achievement === null ? "text-slate-300" : beat ? "text-emerald-600" : "text-slate-900",
+                      ].join(" ")}
+                    >
+                      {preview.achievement === null ? "—" : `${preview.achievement.toFixed(1)}%`}
+                    </span>
+                    <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">
+                      of your published target
+                    </span>
+                  </div>
+                  {/* A meter to the 100% mark — the same figure, read at a glance. Filled orange until
+                      the mark, emerald once it is beaten; the tick marks 100%. */}
+                  {preview.achievement !== null && (
+                    <div className="mt-3">
+                      <div className="relative h-2 w-full bg-slate-100">
+                        <div
+                          className={["h-2 transition-all duration-500", beat ? "bg-emerald-500" : "bg-orange-500"].join(" ")}
+                          style={{ width: `${Math.max(0, Math.min(100, preview.achievement))}%` }}
+                        />
+                        <span aria-hidden className="absolute inset-y-0 right-0 w-px bg-slate-400" />
+                      </div>
+                      <p className="mt-1 text-right text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
+                        100% target
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -470,6 +490,22 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
                       {busy === "pdf" ? "Building the PDF…" : "Download PDF"}
                     </button>
                   </div>
+
+                  {/* Share the spotlight straight to WhatsApp, his Status, LinkedIn or Facebook. The
+                      picture on screen is the one shared — no second render. */}
+                  {sheet && (
+                    <div className="border-t border-slate-100 pt-4">
+                      <ShareCardBar
+                        getFile={async () => ({
+                          blob: sheet.blob,
+                          filename: `sato-spotlight-${from}${to === from ? "" : `_${to}`}.png`,
+                        })}
+                        caption={spotlightShareCaption(preview.rangeLabel)}
+                        disabled={busy !== null}
+                        heading="Share your spotlight"
+                      />
+                    </div>
+                  )}
                 </>
               ) : (
                 <p className="border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-600">

@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { Award, Cake, Check, Download, ImageUp, Loader2, RotateCcw, Sparkles, UserX } from "lucide-react";
 
 import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
+import { ShareCardBar } from "@/components/employee-portal/share-card";
 import { SURFACE_CLASS, SectionCard } from "@/components/sales/target-visuals";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { milestoneShareCaption } from "@/lib/share/social-share";
 import type { MyMilestoneEntry } from "@/lib/milestones/service";
 
 type Props = {
@@ -243,35 +245,46 @@ export function MyMilestones({ entries, photoUrl }: Props) {
     );
   }, []);
 
+  // Render the card server-side and hand back the file — the ONE place the card bytes are produced,
+  // so the download button and every share button frame the photo identically.
+  const produceCard = useCallback(
+    async (format: "pdf" | "png"): Promise<{ blob: Blob; filename: string }> => {
+      if (!selected) throw new Error("No milestone chosen.");
+      const response = await fetch("/api/milestones/my-card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          period: selected.spec,
+          on: selected.on,
+          format,
+          withoutPhoto,
+          photoFocus: focusEdit ?? undefined,
+          photoUpload: upload?.dataUri,
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || "The card could not be produced. Please try again.");
+      }
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const match = /filename="([^"]+)"/.exec(disposition);
+      const blob = await response.blob();
+      return { blob, filename: match?.[1] ?? `${selected.label.replace(/[^\p{L}\p{N}]+/gu, "-")}.${format}` };
+    },
+    [selected, withoutPhoto, focusEdit, upload],
+  );
+
   const download = useCallback(
     async (format: "pdf" | "png") => {
       if (!selected) return;
       setBusy(format);
       setError(null);
       try {
-        const response = await fetch("/api/milestones/my-card", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            period: selected.spec,
-            on: selected.on,
-            format,
-            withoutPhoto,
-            photoFocus: focusEdit ?? undefined,
-            photoUpload: upload?.dataUri,
-          }),
-        });
-        if (!response.ok) {
-          const payload = await response.json().catch(() => null);
-          throw new Error(payload?.error || "The card could not be produced. Please try again.");
-        }
-        const disposition = response.headers.get("Content-Disposition") ?? "";
-        const match = /filename="([^"]+)"/.exec(disposition);
-        const blob = await response.blob();
+        const { blob, filename } = await produceCard(format);
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
-        anchor.download = match?.[1] ?? `${selected.label.replace(/[^\p{L}\p{N}]+/gu, "-")}.${format}`;
+        anchor.download = filename;
         document.body.append(anchor);
         anchor.click();
         anchor.remove();
@@ -282,8 +295,18 @@ export function MyMilestones({ entries, photoUrl }: Props) {
         setBusy(null);
       }
     },
-    [selected, withoutPhoto, focusEdit, upload],
+    [produceCard, selected],
   );
+
+  // Share the picture. A share always builds a PNG (the card image), never a PDF.
+  const shareCard = useCallback(async () => {
+    try {
+      return await produceCard("png");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The card could not be produced.");
+      return null;
+    }
+  }, [produceCard]);
 
   if (entries.length === 0) {
     return (
@@ -306,7 +329,7 @@ export function MyMilestones({ entries, photoUrl }: Props) {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
         {/* ── The tailored timeline — every milestone on one screen, in order ────────────────────── */}
-        <section className="overflow-hidden border border-slate-200 bg-white shadow-sm">
+        <section className="overflow-hidden border border-slate-200 bg-white shadow-[0_18px_46px_rgba(15,23,42,0.07)]">
           {/* A slim strip — the page shell above already carries the "My Milestones" title, so this
               carries only what it does not: the next milestone and the colour legend. No second big
               header (the owner spotted the duplication, 2026-09-30). */}
@@ -330,8 +353,14 @@ export function MyMilestones({ entries, photoUrl }: Props) {
           {/* The timeline, grouped by year. */}
           <div className="p-4 sm:p-5">
             {byYear.map(([year, group]) => (
-              <div key={year} className="mb-5 last:mb-0">
-                <p className="mb-2 text-sm font-black tracking-tight text-slate-900">{year}</p>
+              <div key={year} className="mb-6 last:mb-0">
+                <div className="mb-2.5 flex items-center gap-2">
+                  <p className="text-base font-black tracking-tight text-slate-900">{year}</p>
+                  <span className="inline-flex items-center justify-center bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-black tabular-nums text-slate-500">
+                    {group.length}
+                  </span>
+                  <span aria-hidden className="h-px flex-1 bg-slate-100" />
+                </div>
                 <ol className="relative ml-2 space-y-2 border-l-2 border-slate-200 pl-5">
                   {group.map((entry) => {
                     const accent = kindAccent(entry.kind);
@@ -358,14 +387,17 @@ export function MyMilestones({ entries, photoUrl }: Props) {
                           type="button"
                           onClick={() => select(entry)}
                           className={[
-                            "flex w-full items-center gap-3 border border-l-[3px] bg-white px-3 py-2.5 text-left transition-colors",
+                            "flex w-full items-center gap-3 border border-l-[3px] bg-white px-3 py-2.5 text-left transition duration-200",
                             accent.rail,
-                            isSelected ? "border-orange-500 ring-2 ring-inset ring-orange-500" : "border-slate-200 hover:bg-slate-50",
+                            isSelected
+                              ? "border-orange-500 shadow-[0_8px_22px_rgba(249,115,22,0.15)] ring-2 ring-inset ring-orange-500"
+                              : "border-slate-200 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:-translate-y-px hover:border-slate-300 hover:shadow-[0_10px_24px_rgba(15,23,42,0.10)]",
+                            isNext && !isSelected ? "bg-orange-50/40" : "",
                             past ? "opacity-90" : "",
                           ].join(" ")}
                         >
-                          <span className={`flex size-9 shrink-0 flex-col items-center justify-center ${accent.tint} ${accent.ink}`}>
-                            <span className="text-sm font-black leading-none">{badge.day}</span>
+                          <span className={`flex size-10 shrink-0 flex-col items-center justify-center border border-black/5 ${accent.tint} ${accent.ink}`}>
+                            <span className="text-base font-black leading-none">{badge.day}</span>
                             <span className="text-[9px] font-bold uppercase leading-none">{badge.month}</span>
                           </span>
                           <span className="min-w-0 flex-1">
@@ -478,6 +510,18 @@ export function MyMilestones({ entries, photoUrl }: Props) {
                   {busy === "png" ? <Loader2 aria-hidden className="size-3.5 animate-spin" /> : <Download aria-hidden className="size-3.5" />}
                   {busy === "png" ? "Preparing" : "Download picture"}
                 </button>
+              </div>
+
+              {/* Share the card straight to WhatsApp, his Status, LinkedIn or Facebook. On his tablet
+                  the button opens the share sheet with the picture attached; on a desktop it saves the
+                  picture and opens the platform's composer. */}
+              <div className="border-t border-slate-100 pt-3">
+                <ShareCardBar
+                  getFile={shareCard}
+                  caption={milestoneShareCaption(selected.label)}
+                  disabled={busy !== null}
+                  heading="Share your card"
+                />
               </div>
             </div>
           </SectionCard>
