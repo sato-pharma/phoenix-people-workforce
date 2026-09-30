@@ -4,6 +4,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { MIN_MEMBERS } from "../scripts/rollup-build-verdict.mjs";
+import { membersReadyToBuild, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
+
 /**
  * `scripts/rollup-prs.mjs` groups the open PRs into the fewest SAFE merges. The bill here is driven by
  * the number of merges (a full CI run on the PR and another on `main`, ~28 billable minutes, because
@@ -42,6 +45,8 @@ type FakePr = {
   mergeStateStatus?: string;
   /** States the check verdict outright. Absent means GREEN, which is why every older fixture is unchanged. */
   redRequired?: boolean;
+  /** States that the required checks have not FINISHED. Absent means finished, for the same reason. */
+  checksPending?: boolean;
   /** The real `gh pr list --json statusCheckRollup` shape, so the actual required-vs-not filter runs. */
   statusCheckRollup?: Array<{
     name?: string;
@@ -116,6 +121,26 @@ function verdicts(
 ${out}`);
   const parsed = JSON.parse(out) as { open: Array<{ number: number; verdict: { kind: string; why: string } }> };
   return new Map(parsed.open.map((p) => [p.number, p.verdict]));
+}
+
+/**
+ * The verdict AND the check reading for each PR, because they are deliberately two different answers:
+ * the verdict says whether a PR belongs in a roll-up, `checksSettled` says whether its required checks
+ * have actually ANSWERED yet, and `--apply` needs the second before it commits a branch to the first.
+ */
+type ChecksReading = {
+  verdict: { kind: string; why: string };
+  checksSettled: boolean;
+  redChecks: string[];
+  pendingChecks: string[];
+};
+
+function verdictAndChecks(prs: FakePr[], env: Record<string, string> = {}): Map<number, ChecksReading> {
+  const { code, out } = runRollup(prs, [], env);
+  assert.equal(code, 0, `rollup-prs.mjs exited ${code}:
+${out}`);
+  const parsed = JSON.parse(out) as { open: Array<ChecksReading & { number: number }> };
+  return new Map(parsed.open.map((p) => [p.number, p]));
 }
 
 const pr = (number: number, paths: string[], over: Partial<FakePr> = {}): FakePr => ({
@@ -327,6 +352,307 @@ export function runRollupPrsTests(): void {
       REQUIRED,
     );
     assert.equal(ctx.get(1)?.kind, "rollable", "a PENDING StatusContext is not a failure either");
+  }
+
+  // ── 4e-bis. …but PENDING is not GREEN either, and the build is where that matters ────────────
+  // #4886 taught the script to hold out a PR whose required checks have FAILED. It asked only about
+  // terminal failure, so the third answer — nothing has finished yet — was read as the first. Measured
+  // 2026-09-30: `--apply` built roll-up #4896 from #4895 (green) and #4894 (checks still QUEUED);
+  // #4894's `checks` then failed on four TypeScript errors in `src/lib/phoenix-crm/server/list.ts` plus
+  // two of its own tests, the roll-up inherited a red it could never clear, and because a roll-up's
+  // members must not be merged separately (AGENTS.md §6) it held the GREEN PR hostage to another
+  // session's fix. #4896 was closed and #4895 merged alone: one CI run spent to ship nothing.
+  //
+  // The fix is NOT to call pending red — 4e above pins why. It is that the classification keeps saying
+  // ROLL UP while `checksSettled` says whether the checks have actually ANSWERED, and `--apply` waits
+  // on that flag before committing a branch to a member. So these four cases assert the reading, and
+  // the verdicts stay exactly as 4c/4d/4e left them.
+  {
+    // QUEUED — nothing has started. Still a candidate, not yet proven.
+    const queued = verdictAndChecks(
+      [
+        pr(1, ["docs/a.md"], {
+          statusCheckRollup: [
+            { name: "validate", status: "QUEUED", conclusion: null },
+            { name: "checks", status: "QUEUED", conclusion: null },
+          ],
+        }),
+        pr(2, ["src/b.ts"]),
+      ],
+      REQUIRED,
+    );
+    assert.equal(queued.get(1)?.verdict.kind, "rollable", "queued required checks keep the PR a candidate");
+    assert.equal(
+      queued.get(1)?.checksSettled,
+      false,
+      "a PR whose required checks are QUEUED has NOT answered — that reading is the whole guard, and "
+        + "without it #4896 was built over #4894 minutes before #4894 went red",
+    );
+    assert.deepEqual(
+      queued.get(1)?.pendingChecks,
+      ["validate (queued)", "checks (queued)"],
+      "and both unfinished required checks are named with their state, so the wait can report them",
+    );
+    assert.deepEqual(queued.get(1)?.redChecks, [], "queued is not red");
+    assert.equal(queued.get(2)?.checksSettled, true, "the green PR beside it is settled and buildable");
+
+    // IN_PROGRESS — started, no verdict yet. Same answer.
+    const running = verdictAndChecks(
+      [
+        pr(1, ["docs/a.md"], {
+          statusCheckRollup: [
+            { name: "validate", status: "IN_PROGRESS", conclusion: null },
+            { name: "checks", status: "IN_PROGRESS", conclusion: null },
+          ],
+        }),
+        pr(2, ["src/b.ts"]),
+      ],
+      REQUIRED,
+    );
+    assert.equal(running.get(1)?.verdict.kind, "rollable", "a running required check keeps the PR a candidate");
+    assert.equal(running.get(1)?.checksSettled, false, "IN_PROGRESS has not answered either");
+    assert.deepEqual(running.get(1)?.pendingChecks, ["validate (in_progress)", "checks (in_progress)"]);
+
+    // COMPLETED GREEN — the one state `--apply` may build from.
+    const green = verdictAndChecks(
+      [
+        pr(1, ["docs/a.md"], {
+          statusCheckRollup: [
+            { name: "validate", conclusion: "SUCCESS" },
+            { name: "checks", conclusion: "SUCCESS" },
+          ],
+        }),
+        pr(2, ["src/b.ts"]),
+      ],
+      REQUIRED,
+    );
+    assert.equal(green.get(1)?.verdict.kind, "rollable");
+    assert.equal(green.get(1)?.checksSettled, true, "every required check finished green — nothing left to wait for");
+    assert.deepEqual(green.get(1)?.pendingChecks, []);
+
+    // FAILED — #4886's case, and its verdict must be exactly what it was.
+    const red = verdictAndChecks(
+      [
+        pr(1, ["docs/a.md"], {
+          statusCheckRollup: [
+            { name: "validate", conclusion: "SUCCESS" },
+            { name: "checks", conclusion: "FAILURE" },
+          ],
+        }),
+        pr(2, ["src/b.ts"]),
+        pr(3, ["src/c.ts"]),
+      ],
+      REQUIRED,
+    );
+    assert.equal(
+      red.get(1)?.verdict.kind,
+      "red",
+      "#4886's guard is untouched: a terminally failed required check still holds the PR out of the group",
+    );
+    assert.deepEqual(red.get(1)?.redChecks, ["checks (failure)"]);
+    assert.equal(red.get(1)?.checksSettled, false, "and a red PR is not 'settled' in the buildable sense");
+
+    // A required check that appears NOWHERE is pending, not absent. A PR opened seconds ago reports an
+    // empty rollup, and reading that as "nothing is red, build it" is the 2026-09-30 failure in its
+    // purest form — the build would commit to a PR before a single check had been queued.
+    const silent = verdictAndChecks([pr(1, ["docs/a.md"], { statusCheckRollup: [] }), pr(2, ["src/b.ts"])], REQUIRED);
+    assert.equal(silent.get(1)?.verdict.kind, "rollable");
+    assert.equal(
+      silent.get(1)?.checksSettled,
+      false,
+      "a PR with NO check reported yet must not read as finished green — that is a fresh PR, not a proven one",
+    );
+    assert.deepEqual(silent.get(1)?.pendingChecks, ["validate (not reported yet)", "checks (not reported yet)"]);
+
+    // And a fixture that says nothing about checks at all still reads finished-and-green, which is why
+    // every fixture written before this field existed keeps its verdict (cases 1-9 below).
+    const silentFixture = verdictAndChecks([pr(1, ["docs/a.md"]), pr(2, ["src/b.ts"])], REQUIRED);
+    assert.equal(
+      silentFixture.get(1)?.checksSettled,
+      true,
+      "a fixture with no check information defaults to finished green, or every older case here changes meaning",
+    );
+
+    // A fixture may also state it outright, the way `redRequired` does, for a case that is about the
+    // grouping rather than about parsing a rollup shape.
+    const stated = verdictAndChecks([pr(1, ["docs/a.md"], { checksPending: true }), pr(2, ["src/b.ts"])]);
+    assert.equal(stated.get(1)?.verdict.kind, "rollable", "a stated-pending PR is still a candidate");
+    assert.equal(stated.get(1)?.checksSettled, false, "and still not something to build over");
+
+    // The human report has to SAY it, or a session reads `ONE branch can carry #1 + #2` and believes
+    // both are green — which is what the #4896 build looked like from the outside.
+    const human = runRollupHuman([pr(1, ["docs/a.md"], { checksPending: true }), pr(2, ["src/b.ts"])]);
+    assert.equal(human.code, 0);
+    assert.match(
+      human.out,
+      /#1 still have required checks running/,
+      "the report must name the member whose checks have not finished",
+    );
+    assert.match(human.out, /--apply waits up to \d+ min/, "and say that --apply waits rather than building over it");
+  }
+
+  // ── 4e-ter. --apply waits for the members' checks, and builds only from what finished green ──
+  // The wait itself needs the live repository, so what is pinned offline is the DECISION it feeds and
+  // the PLACE it sits. `membersReadyToBuild` is the decision; the source order is the place.
+  {
+    const ready = membersReadyToBuild([
+      { number: 1, red: [], pending: [] },
+      { number: 2, red: [], pending: ["checks (in_progress)"] },
+      { number: 3, red: ["validate (failure)"], pending: [] },
+      { number: 4, red: [], pending: [] },
+    ]);
+    assert.deepEqual(ready.carry, [1, 4], "only the members whose required checks finished green are built from");
+    assert.deepEqual(
+      ready.dropped.map((d) => [d.number, d.kind]),
+      [
+        [2, "pending"],
+        [3, "red"],
+      ],
+      "a member that never finished is dropped as PENDING and a failed one as RED — the two are different "
+        + "sentences to the reader: one is unproven and rolls up next run, the other needs a fix",
+    );
+    assert.match(ready.dropped[0]?.why ?? "", /had not finished/);
+    assert.match(ready.dropped[0]?.why ?? "", /rolls up on the next run/);
+    assert.match(ready.dropped[1]?.why ?? "", /could never go green/);
+
+    // Dropping members is always safe because the group was chosen for DISJOINT file sets and every
+    // subset of a disjoint set is disjoint; what is never safe is carrying one we have not seen finish.
+    assert.deepEqual(
+      membersReadyToBuild([{ number: 1, red: [], pending: ["checks (queued)"] }]).carry,
+      [],
+      "a lone unfinished member leaves nothing to build, and MIN_MEMBERS then stops the build",
+    );
+    assert.ok(MIN_MEMBERS >= 2, "a roll-up of one is a rename with a full CI run attached");
+
+    const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    const waitAt = source.indexOf("waiting up to");
+    const branchAt = source.indexOf("'switch', '--quiet', '--create'");
+    assert.ok(waitAt > 0, "--apply must actually wait for the members' required checks before building");
+    assert.ok(branchAt > 0, "the build still creates the roll-up branch");
+    assert.ok(
+      waitAt < branchAt,
+      "the wait must come BEFORE the branch is created. Waiting after it would park the session on a "
+        + "half-built local branch for the duration, and `new-session.mjs --remove` judges a worktree by "
+        + "whatever branch it finds checked out — the other half of the 2026-09-30 mess.",
+    );
+    assert.match(
+      source,
+      /for \(const pr of buildGroup\)/,
+      "and the merge loop must iterate the POST-WAIT set, not the group the report proposed — that "
+        + "difference is the entire fix",
+    );
+  }
+
+  // ── 4e-quater. The wait loop itself, driven with an injected clock and reader ────────────────
+  // A live `--apply` cannot be rehearsed — it pushes a branch and opens a PR — so the loop takes its
+  // clock, its sleep and its GitHub read as arguments and is exercised here instead. Each case below is
+  // a way the loop could be wrong while still looking like it worked.
+  {
+    // It waits, it polls only what can still change, and it stops as soon as the checks finish.
+    let clock = 0;
+    const sleeps: number[] = [];
+    const reads: number[] = [];
+    const answers: Array<{ red: string[]; pending: string[] } | null> = [
+      { red: [], pending: ["checks (in_progress)"] },
+      { red: [], pending: [] },
+    ];
+    const settled = waitForRequiredChecks({
+      members: [
+        { number: 1, red: [], pending: [] },
+        { number: 2, red: [], pending: ["checks (queued)"] },
+      ],
+      timeoutMs: 10 * 60_000,
+      pollMs: 30_000,
+      reread: (n: number) => {
+        reads.push(n);
+        return answers.shift() ?? null;
+      },
+      sleep: (ms: number) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+      now: () => clock,
+    });
+    assert.deepEqual(reads, [2, 2], "only the unfinished member is polled — #1's checks already finished green");
+    assert.equal(sleeps.length, 2, "and it sleeps between reads rather than spinning on the API");
+    assert.deepEqual(
+      membersReadyToBuild(settled).carry,
+      [1, 2],
+      "once the pending member's checks finish green, BOTH are built from — the wait is what makes the "
+        + "roll-up safe, not what shrinks it",
+    );
+  }
+  {
+    // THE WAIT IS BOUNDED. A workflow that never reports must not park the session for ever, and the
+    // member it belongs to is left out rather than gambled on.
+    let clock = 0;
+    const sleeps: number[] = [];
+    const settled = waitForRequiredChecks({
+      members: [
+        { number: 1, red: [], pending: [] },
+        { number: 2, red: [], pending: ["checks (queued)"] },
+      ],
+      timeoutMs: 90_000,
+      pollMs: 30_000,
+      reread: () => ({ red: [], pending: ["checks (in_progress)"] }),
+      sleep: (ms: number) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+      now: () => clock,
+    });
+    assert.equal(sleeps.length, 3, "90s of wait at 30s a poll is three reads and then it gives up — bounded, not hopeful");
+    assert.deepEqual(
+      membersReadyToBuild(settled).carry,
+      [1],
+      "and the member that never finished is left out of the build, not carried on hope",
+    );
+  }
+  {
+    // A FAILED READ IS NOT NEWS. `gh` can fail for a minute; reading that as "nothing pending any more"
+    // would promote an unproven member to green, which is the exact failure the wait exists to prevent.
+    let clock = 0;
+    const settled = waitForRequiredChecks({
+      members: [{ number: 2, red: [], pending: ["checks (queued)"] }],
+      timeoutMs: 60_000,
+      pollMs: 30_000,
+      reread: () => null,
+      sleep: (ms: number) => {
+        clock += ms;
+      },
+      now: () => clock,
+    });
+    assert.deepEqual(
+      settled[0]?.pending,
+      ["checks (queued)"],
+      "a read that failed keeps the previous reading — it can never promote a pending member to green",
+    );
+    assert.deepEqual(membersReadyToBuild(settled).carry, [], "so it is still not something to build over");
+  }
+  {
+    // A member that has already gone RED is never polled. Nothing it reports later can make it
+    // buildable, and re-reading it would only slow the wait for the members that can still settle.
+    const reads: number[] = [];
+    let clock = 0;
+    const settled = waitForRequiredChecks({
+      members: [{ number: 3, red: ["validate (failure)"], pending: ["checks (queued)"] }],
+      timeoutMs: 60_000,
+      pollMs: 30_000,
+      reread: (n: number) => {
+        reads.push(n);
+        return { red: [], pending: [] };
+      },
+      sleep: (ms: number) => {
+        clock += ms;
+      },
+      now: () => clock,
+    });
+    assert.deepEqual(reads, [], "a member whose required check already failed is not waited on");
+    assert.deepEqual(
+      membersReadyToBuild(settled).dropped.map((d) => d.kind),
+      ["red"],
+      "and it is dropped as RED, which is #4886's rule, not as a timeout",
+    );
   }
 
   // ── 4f. The required list is READ, never written down here ──────────────────────────────────
