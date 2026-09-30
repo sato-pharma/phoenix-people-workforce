@@ -47,15 +47,47 @@ export async function getPmProductCodes(hrId: string): Promise<string[]> {
   }
 }
 
-/** Replace a PM's assignments (Super-Admin-only — the route enforces the role). */
-export async function setPmProductCodes(hrId: string, productCodes: string[], actorHrId: string): Promise<void> {
-  const supabase = getSupabaseAdmin();
+/**
+ * Replace a PM's assignments (Super-Admin-only — the route enforces the role).
+ *
+ * 🔴 IT READS BOTH ERRORS. supabase-js RETURNS a failure in `error` rather than throwing it, so
+ * until 2026-09-30 neither result was destructured: the route's own try/catch caught nothing and it
+ * answered `{ok: true}` whatever happened. That is worse than a plain failure, because the delete
+ * runs FIRST — a failed insert left the Product Manager with NO products while the screen said
+ * saved, and the reads above are deliberately table-missing-safe, so Employee 360 then quietly
+ * attributed his sales through the (usually empty) team roll-up with nothing to show anything had
+ * gone wrong. It needed no schema change to fire: any constraint breach or transient error did it.
+ *
+ * The two steps are still not atomic — PostgREST has no transaction across them — so surfacing the
+ * insert's error is the whole point: the admin is told the list was cleared and can re-save, instead
+ * of believing it stuck. The route turns either throw into its existing 409.
+ */
+export async function setPmProductCodes(
+  hrId: string,
+  productCodes: string[],
+  actorHrId: string,
+  // The client is a parameter so a test can hand in a stub and drive the two failure branches. A
+  // real database will not produce an error on demand, and those branches are the whole fix.
+  db: ReturnType<typeof getSupabaseAdmin> = getSupabaseAdmin(),
+): Promise<void> {
+  const supabase = db;
   const codes = Array.from(new Set(productCodes.map((c) => String(c).trim()).filter(Boolean)));
-  await supabase.from("pm_product_assignments").delete().ilike("hr_id", hrId);
-  if (codes.length > 0) {
-    await supabase
-      .from("pm_product_assignments")
-      .insert(codes.map((product_code) => ({ hr_id: hrId, product_code, created_by: actorHrId })));
+
+  const { error: clearError } = await supabase.from("pm_product_assignments").delete().ilike("hr_id", hrId);
+  if (clearError) {
+    throw new Error(`Could not clear the previous product assignments, so nothing was changed: ${clearError.message}`);
+  }
+
+  if (codes.length === 0) return;
+
+  const { error: insertError } = await supabase
+    .from("pm_product_assignments")
+    .insert(codes.map((product_code) => ({ hr_id: hrId, product_code, created_by: actorHrId })));
+  if (insertError) {
+    throw new Error(
+      `The previous product assignments were cleared but the new ones could not be saved, so this `
+        + `Product Manager currently has none — save them again. ${insertError.message}`,
+    );
   }
 }
 
