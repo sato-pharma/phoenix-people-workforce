@@ -34,8 +34,12 @@ import { unstable_cache } from "next/cache.js";
 import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
 import type { SplitRegions } from "@/lib/sales/store-sales-city-split";
 import { systemAccessContext } from "@/lib/auth/permissions";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
+import { loadProductPeriodPrices } from "@/lib/sales/product-period-price";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import {
+  areaProductKey,
   isSplitEligibleLine,
   netStoreSplitByAreaProduct,
   splitStoreSalesAcrossCityAreas,
@@ -139,12 +143,119 @@ export async function loadClosingStoreSplit(
 }
 
 /**
+ * The FROZEN store-split net for a month that is currently PUBLISHED — else null.
+ *
+ * 🔴 A PUBLISHED AND ANNOUNCED MONTH IS NEVER CORRECTED (owner, 2026-09-27, pinned by
+ * 20260927213000_freeze_attribution_for_published_months.sql). That migration froze the ATTRIBUTION
+ * engine — au.monthly_store_split_net and the rollup stop recomputing once a month is published — so
+ * the keycard, boards, Employee 360 and incentive all read the announced number. But THIS live
+ * splitter was never gated: it recomputes the split from current validated imports and the current
+ * customer map (whose writes its own header warns are not invalidated), so the Closing tab drifted
+ * off the announced closing while every attribution surface stayed frozen. Measured 2026-08 Anti
+ * Infective / Menoufia 2 (D13) / Saginko: the tab read 85.5% where the announced closing (and the
+ * keycard) read 84%.
+ *
+ * So for a published month, read the SAME frozen net the attribution engine reads
+ * (au.monthly_store_split_net, via the service-role wrapper phx_monthly_store_split_net), valued at
+ * the period factory price exactly as au.f_monthly_attribution values it. The Closing tab then equals
+ * the keycard = the announced number. [Owner, 2026-09-30: show the frozen published number.]
+ *
+ * FAIL TO LIVE, NEVER TO EMPTY: on any read error return null so the caller recomputes live — an
+ * empty map would wrongly zero the split on the tab. An UNPUBLISHED month also returns null and
+ * recomputes live, exactly as before.
+ */
+async function loadFrozenStoreSplitNetIfPublished(
+  line: string | null | undefined,
+  period: string | null | undefined,
+): Promise<Map<string, NetCell> | null> {
+  const trimmedLine = String(line ?? "").trim();
+  const trimmedPeriod = String(period ?? "").trim();
+  if (!trimmedLine || !trimmedPeriod) return null;
+  if (!isStoreCitySplitActive(trimmedPeriod) || !isSplitEligibleLine(trimmedLine)) return null;
+  const lineCode = resolveTargetLineCode(trimmedLine);
+  if (!lineCode) return null;
+
+  const supabase = getSupabaseAdmin();
+
+  // Frozen? The freeze in 20260927213000 is PER-PERIOD: publishing ANY line freezes
+  // au.monthly_store_split_net and the attribution rollup for the WHOLE period, so every line's keycard
+  // is then frozen. Match that predicate here (any publication row for the period with unpublished_at
+  // IS NULL), not the specific line — otherwise an unpublished line in a partially-published period
+  // keeps recomputing its tab live while its keycard is already frozen, reopening the very drift this
+  // closes. A period with no live publication row recomputes live, as before.
+  const { data: published, error: publishedError } = await supabase
+    .from("monthly_closing_publications")
+    .select("id")
+    .eq("period", trimmedPeriod)
+    .is("unpublished_at", null)
+    .limit(1);
+  if (publishedError || !published || published.length === 0) return null;
+
+  const { data, error } = await supabase.rpc("phx_monthly_store_split_net", { p_period: trimmedPeriod });
+  if (error || !data) return null;
+
+  const prices = await loadProductPeriodPrices();
+  const net = buildFrozenNetFromRows(data as FrozenNetRow[], lineCode, trimmedPeriod, (product) =>
+    prices.priceFor(product, trimmedPeriod),
+  );
+  // FAIL TO LIVE, NEVER TO EMPTY. A frozen month's split-eligible line should have net rows; an empty
+  // result means none matched (a line_code space that drifted from resolveTargetLineCode, an empty
+  // table) — returning it would make the caller drop the split entirely and show the raw, un-split
+  // closing. Fall through to the live recompute instead, which is at worst the pre-fix behaviour.
+  return net.size > 0 ? net : null;
+}
+
+/** One row of au.monthly_store_split_net, as the wrapper RPC returns it. */
+export type FrozenNetRow = {
+  line_code?: unknown;
+  area_code?: unknown;
+  product_code?: unknown;
+  net_qty?: unknown;
+  net_effective_units?: unknown;
+};
+
+/**
+ * Turn the frozen materialized-net rows into the {qty, value} map the matrix write-back applies.
+ * PURE, so the value basis is unit-tested without a database.
+ *
+ * Value is `net_effective_units × factory_price(product, period)` — the PERIOD price, exactly how
+ * au.f_monthly_attribution values the same net, so the frozen closing tab lands on the same EGP the
+ * keycard does even for a period-repriced product (Saginko SA001: 111.15 through 2026-09, 170.52 from
+ * 2026-10). Units carry net_qty (bonus included). Only the requested line's rows contribute.
+ */
+export function buildFrozenNetFromRows(
+  rows: readonly FrozenNetRow[],
+  lineCode: string,
+  _period: string,
+  priceFor: (productCode: string) => number | null,
+): Map<string, NetCell> {
+  const net = new Map<string, NetCell>();
+  for (const raw of rows) {
+    if (String(raw.line_code ?? "").trim() !== lineCode) continue;
+    const product = String(raw.product_code ?? "");
+    const effectiveUnits = Number(raw.net_effective_units ?? 0);
+    const price = priceFor(product) ?? 0;
+    net.set(areaProductKey(String(raw.area_code ?? ""), product), {
+      qty: Number(raw.net_qty ?? 0),
+      value: effectiveUnits * price,
+    });
+  }
+  return net;
+}
+
+/**
  * Net store-split movement per area x product. The Closing Matrix write-back's input, and all the
  * on-screen path needs.
+ *
+ * For a PUBLISHED month this returns the FROZEN net (loadFrozenStoreSplitNetIfPublished) so the
+ * Closing tab equals the announced number and the attribution surfaces, never a live recompute that
+ * drifted after publish. Unpublished months recompute live.
  */
 export async function loadClosingStoreSplitNet(
   line: string | null | undefined,
   period: string | null | undefined,
 ): Promise<Map<string, NetCell>> {
+  const frozen = await loadFrozenStoreSplitNetIfPublished(line, period);
+  if (frozen) return frozen;
   return (await loadClosingStoreSplit(line, period)).net;
 }
