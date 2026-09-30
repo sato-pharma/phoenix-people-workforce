@@ -867,7 +867,11 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     .filter((id): id is number => typeof id === "number");
   // `occupantHrId`, not `repHrId` — OrgSeat has no such field, and reading one that does not exist
   // made this whole block silently unreachable: no sharing, no check-in point, and no error to see.
-  if (seat.occupantHrId && sharedKeys.length > 0 && !isTest) {
+  // NOT gated on `isTest`. Both reads key on the REAL iReports360 contact behind a customer
+  // (`referenceContactCrmId`) and on the seat's real occupant, so they answer the same in a test
+  // world as in the real one — and gating them out made the whole feature invisible to the one
+  // account it would be tried on, since a TEST- login always reads as the test world.
+  if (seat.occupantHrId && sharedKeys.length > 0) {
     try {
       // 🔴 AND WHERE EACH DOCTOR ACTUALLY IS, averaged from the check-ins the reps have already
       // taken on him (owner, 2026-09-30). Both questions are answered against the same mirror, so
