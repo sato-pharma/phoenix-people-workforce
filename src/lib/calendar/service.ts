@@ -181,18 +181,23 @@ async function loadLeaveItems(access: AccessContext, start: string, end: string)
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("v2_vacation_requests")
-      .select("id,employee_hr_id,start_date,end_date,type,status")
+      // `vacation_type`, NOT `type` — this table has never had a `type` column. PostgREST fails the
+      // WHOLE read on a missing column, and the catch below turns that into an empty list, so from
+      // this feature's first commit (2026-06-11) every employee's approved leave was silently absent
+      // from their own calendar: 551 approved requests across 92 people, measured on production
+      // 2026-09-30. Found by the select-auditor.
+      .select("id,employee_hr_id,start_date,end_date,vacation_type,status")
       .eq("employee_hr_id", dbHrId)
       .eq("status", "approved")
       .lte("start_date", end)
       .gte("end_date", start)
       .limit(100);
     if (error) throw error;
-    return ((data ?? []) as Array<{ id: string; start_date: string; end_date: string; type: string | null }>).map(
+    return ((data ?? []) as Array<{ id: string; start_date: string; end_date: string; vacation_type: string | null }>).map(
       (row) => ({
         id: `leave-${row.id}`,
         source: "leave" as const,
-        title: `My leave${row.type ? ` (${row.type})` : ""}`,
+        title: `My leave${row.vacation_type ? ` (${row.vacation_type})` : ""}`,
         startDate: row.start_date,
         endDate: row.end_date ?? row.start_date,
         category: "other" as const,

@@ -66,6 +66,48 @@ export function sourceFiles(root, includeScripts = false) {
 
 /* ------------------------------------------------------ balanced text helpers */
 
+/**
+ * The source with every comment's CONTENT replaced by spaces, same length, same line breaks.
+ *
+ * 🔴 AN APOSTROPHE IN A COMMENT USED TO SWALLOW THE REST OF A STATEMENT. Every scan here tracks
+ * quotes, and `// … the column's fail-closed default` opens one that only closes at the next `'`
+ * somewhere further down the file — so the call chain ran past its own statement and picked up the
+ * NEXT one's filters. That is how `outstation_expense_requests.trip_id` was reported as a missing
+ * column on 2026-09-30, from an `.eq("trip_id", …)` 120 lines later on a different table. Masking
+ * keeps every offset and line number identical, so findings still point at the right line.
+ */
+export function blankComments(source) {
+  const out = source.split('');
+  let i = 0;
+  let quote = null;
+  while (i < out.length) {
+    const ch = source[i];
+    if (quote) {
+      if (ch === '\\') i += 1;
+      else if (ch === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && source[i + 1] === '/') {
+      while (i < out.length && source[i] !== '\n') out[i++] = ' ';
+      continue;
+    }
+    if (ch === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2);
+      const stop = end < 0 ? out.length : end + 2;
+      for (; i < stop; i += 1) if (source[i] !== '\n') out[i] = ' ';
+      continue;
+    }
+    i += 1;
+  }
+  return out.join('');
+}
+
 /** From `open` (index of a `(`), the text inside the matching `)`, honouring quotes. */
 export function balancedArgument(text, open) {
   let depth = 0;
@@ -175,7 +217,7 @@ export function evaluateExpression(expr, source, file, root, depth = 0) {
     if (local !== null) return evaluateExpression(local, source, file, root, depth + 1);
     const imp = importedFrom(source, e, file, root);
     if (imp) {
-      const other = readFileSync(imp.file, 'utf8');
+      const other = blankComments(readFileSync(imp.file, 'utf8'));
       const init = constInitializer(other, imp.name);
       if (init !== null) return evaluateExpression(init, other, imp.file, root, depth + 1);
     }
@@ -258,11 +300,21 @@ export function parseSelect(select) {
 
 const FILTER_METHODS = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'like', 'ilike', 'is', 'in', 'contains', 'containedBy', 'overlaps', 'order', 'not', 'filter', 'textSearch', 'rangeGt', 'rangeLt'];
 
-/** The call chain that starts at `.from(...)`, up to the end of its statement. */
+const CHAIN_MAX = 20000;
+
+/**
+ * The call chain that starts at `.from(...)`, up to the end of its statement.
+ *
+ * 🔴 THE CAP IS A CORRECTNESS BOUNDARY, NOT A PERFORMANCE ONE. At 6,000 characters it cut through a
+ * 120-line `.insert({…})` in `outstation/service.ts`, so the scan ran on into the NEXT statement and
+ * reported that one's `.eq("trip_id", …)` as a filter on this table — a column that does not exist
+ * there, i.e. a false 42703 (measured 2026-09-30, the auditor's first real run). A truncated chain
+ * now says so, and the site is reported UNRESOLVED rather than half-read.
+ */
 function chainAfter(source, start) {
   let depth = 0;
   let quote = null;
-  for (let i = start; i < source.length && i < start + 6000; i += 1) {
+  for (let i = start; i < source.length && i < start + CHAIN_MAX; i += 1) {
     const ch = source[i];
     if (quote) {
       if (ch === '\\') i += 1;
@@ -273,14 +325,14 @@ function chainAfter(source, start) {
     else if ('([{'.includes(ch)) depth += 1;
     else if (')]}'.includes(ch)) {
       depth -= 1;
-      if (depth < 0) return source.slice(start, i);
-    } else if (ch === ';' && depth === 0) return source.slice(start, i);
+      if (depth < 0) return { text: source.slice(start, i), truncated: false };
+    } else if (ch === ';' && depth === 0) return { text: source.slice(start, i), truncated: false };
     else if (ch === '\n' && depth === 0) {
       const rest = source.slice(i + 1).trimStart();
-      if (!rest.startsWith('.')) return source.slice(start, i);
+      if (!rest.startsWith('.')) return { text: source.slice(start, i), truncated: false };
     }
   }
-  return source.slice(start, start + 6000);
+  return { text: source.slice(start, start + CHAIN_MAX), truncated: true };
 }
 
 export function censusOfFile(file, source, { table, schema = 'public', root }) {
@@ -293,9 +345,13 @@ export function censusOfFile(file, source, { table, schema = 'public', root }) {
     const siteSchema = schemaHit ? schemaHit[1] : 'public';
     if (siteSchema !== schema) continue;
 
-    const chain = chainAfter(source, m.index + m[0].length);
+    const { text: chain, truncated } = chainAfter(source, m.index + m[0].length);
     const line = source.slice(0, m.index).split('\n').length;
     const site = { file: relative(root, file).replace(/\\/g, '/'), line, kind: 'read', select: null, resolved: true, note: '', columns: [], embeds: [], star: false, filters: [], writeKeys: [] };
+    if (truncated) {
+      site.resolved = false;
+      site.note = `the call chain runs past ${CHAIN_MAX} characters — its columns are NOT checked (reading further would pick up the next statement's)`;
+    }
 
     const selectAt = chain.search(/\.select\(/);
     const writeAt = chain.search(/\.(insert|update|upsert|delete)\(/);
@@ -303,13 +359,18 @@ export function censusOfFile(file, source, { table, schema = 'public', root }) {
       site.kind = /\.delete\(/.test(chain.slice(writeAt, writeAt + 9)) ? 'delete' : 'write';
       const open = chain.indexOf('(', writeAt);
       const payload = balancedArgument(chain, open) ?? '';
-      const obj = /^\s*\{([\s\S]*)\}\s*$/.exec(payload);
+      // 🔴 `.delete({ count: "exact" })` and `.insert(rows, { count })` take an OPTIONS object, not
+      // columns. Reading a delete's argument as a payload reported `count` as a column of
+      // outstation_expenses on 2026-09-30 — a false 42703. A delete never names columns; for the
+      // others, only the FIRST argument is the payload.
+      const obj = site.kind === 'delete' ? null : /^\s*\{([\s\S]*)\}\s*$/.exec(splitTopLevel(payload)[0] ?? '');
       if (obj) {
         site.writeKeys = splitTopLevel(obj[1])
           .map((kv) => /^\s*["']?([A-Za-z_]\w*)["']?\s*:/.exec(kv)?.[1] ?? (IDENT.test(kv.trim()) ? kv.trim() : null))
           .filter(Boolean);
-      } else if (payload.trim() && site.kind === 'write') {
-        site.note = 'write payload is not an object literal — its columns are not checked';
+      } else if (payload.trim() && site.kind === 'write' && !truncated) {
+        site.resolved = false;
+        site.note = 'write payload is not an object literal — its columns are NOT checked';
       }
     }
 
@@ -331,8 +392,26 @@ export function censusOfFile(file, source, { table, schema = 'public', root }) {
       site.kind = 'other';
     }
 
-    for (const fm of chain.matchAll(new RegExp(`\\.(${FILTER_METHODS.join('|')})\\(\\s*(["'\`])(\\w+)\\2`, 'g'))) {
-      site.filters.push(fm[3]);
+    // 🔴 A FILTER OR ORDER CAN NAME AN EMBEDDED TABLE'S COLUMN, NOT THIS TABLE'S — two ways, and
+    // both were read as base-table columns until 2026-09-30, when `.order("year", { foreignTable:
+    // "salary_batches" })` reported `salary_records.year` as a missing column. It is
+    // `salary_batches.year`, and that read is correct and live. The dotted form
+    // (`.in("salary_batches.status", …)`) is the other way. Each is attributed to the relation named.
+    // The tail is a LOOKAHEAD, never captured: consuming it would swallow the next call in the
+    // chain, so `.eq("line_id", 1).order("hire_date")` would lose `hire_date` entirely.
+    for (const fm of chain.matchAll(new RegExp(`\\.(${FILTER_METHODS.join('|')})\\(\\s*(["'\`])(?:(\\w+)\\.)?(\\w+)\\2(?=([\\s\\S]{0,240}))`, 'g'))) {
+      const [, method, , dotted, column, tail] = fm;
+      const foreign = dotted ?? (method === 'order' ? /^[^)]*(?:foreignTable|referencedTable)\s*:\s*["'`](\w+)["'`]/.exec(tail)?.[1] ?? null : null);
+      if (foreign) {
+        const embed = site.embeds.find((e) => e.relation === foreign);
+        if (embed) {
+          if (!embed.columns.includes(column)) embed.columns.push(column);
+        } else {
+          site.embeds.push({ relation: foreign, hint: null, columns: [column], embeds: [], star: false });
+        }
+      } else {
+        site.filters.push(column);
+      }
     }
     for (const om of chain.matchAll(/\.or\(\s*(["'`])([^"'`]*)\1/g)) {
       for (const clause of om[2].split(',')) {
@@ -357,7 +436,7 @@ export function runCensus({ table, schema = 'public', root = process.cwd(), incl
   const sites = [];
   const needle = `from(`;
   for (const file of files) {
-    const source = readFileSync(file, 'utf8');
+    const source = blankComments(readFileSync(file, 'utf8'));
     if (!source.includes(needle) || !source.includes(table)) continue;
     sites.push(...censusOfFile(file, source, { table, schema, root }));
   }

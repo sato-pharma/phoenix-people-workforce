@@ -75,6 +75,60 @@ export function runSelectCensusTests() {
       [4],
       "--column finds a column named only in a filter",
     );
+
+    // ── THE THREE WAYS IT CRIED WOLF ON ITS FIRST REAL AUDIT (2026-09-30) ──────────────────────
+    // Each of these reported a column that does not exist on the base table, i.e. a false 42703 on
+    // a read that is correct and live. A census that invents findings is worse than none: it gets
+    // switched off, and the real one (v2_vacation_requests.type) goes down with it.
+    write(
+      root,
+      "src/lib/b.ts",
+      [
+        // 1. An order on an EMBEDDED table. `year`/`month` are salary_batches', not salary_records'.
+        'export const embedOrder = () => db.from("salary_records").select("*, salary_batches!inner(year, month, status)")',
+        '  .in("salary_batches.status", ["approved"])',
+        '  .order("year", { foreignTable: "salary_batches", ascending: false })',
+        '  .order("created_at", { ascending: false });',
+        // 2. A delete's OPTIONS object is not a payload: `count` is not a column.
+        'export const del = () => db.from("salary_records").delete({ count: "exact" }).eq("batch_id", id);',
+        // 3. An apostrophe in a COMMENT used to open a string that swallowed the statement end, so
+        //    the scan ran on into the next one and reported ITS filter as this table's column.
+        'export const commented = () => db.from("salary_records")',
+        '  // the column\'s fail-closed default is what this read relies on',
+        '  .select("hr_id")',
+        '  .eq("hr_id", id);',
+        'export const nextStatement = () => db.from("salary_batches").delete().eq("phantom_column", 1);',
+        "",
+      ].join("\n"),
+    );
+    const sr = runCensus({ table: "salary_records", root });
+    const all = (key: "columns" | "filters" | "writeKeys") => sr.sites.flatMap((s: Record<string, string[]>) => s[key]);
+    assert.deepEqual(
+      sr.sites.find((s: { line: number }) => s.line === 1)!.embeds,
+      [{ relation: "salary_batches", hint: "inner", columns: ["year", "month", "status"], embeds: [], star: false }],
+      "an order with foreignTable, and a dotted filter, belong to the EMBEDDED table",
+    );
+    for (const ghost of ["year", "month", "status"]) {
+      assert.ok(!all("filters").includes(ghost), `"${ghost}" is salary_batches', never salary_records' — it must not be a base-table filter`);
+    }
+    assert.ok(!all("writeKeys").includes("count"), "`.delete({ count: \"exact\" })` passes options, not columns");
+    assert.ok(
+      !all("filters").includes("phantom_column"),
+      "an apostrophe in a comment must not let the scan run into the NEXT statement and claim its filter",
+    );
+
+    // A chain longer than the cap is UNRESOLVED, never half-read: reading further picks up the
+    // next statement's columns, which is exactly the false finding above.
+    write(
+      root,
+      "src/lib/c.ts",
+      `export const huge = () => db.from("employees").insert({ pad: "${"x".repeat(21000)}" });\n` +
+        'export const after = () => db.from("employees").delete().eq("phantom_column", 1);\n',
+    );
+    const huge = runCensus({ table: "employees", root }).sites.find((s: { file: string }) => s.file.endsWith("c.ts"))!;
+    assert.equal(huge.resolved, false, "a chain past the cap must be UNRESOLVED");
+    assert.match(huge.note, /runs past/, huge.note);
+    assert.ok(!huge.filters.includes("phantom_column"), "a truncated chain must not claim the next statement's filter");
     assert.equal(runCensus({ table: "employees", schema: "au", root }).sites.length, 1, "--schema au reads only the au chain");
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -102,6 +156,10 @@ export function runSelectCensusTests() {
     schemaFiltered <= raw && raw - schemaFiltered <= 5,
     `the census found ${schemaFiltered} public.employees sites where a raw count finds ${raw} — it is missing reads`,
   );
+  // A ratchet, not a truth: UNRESOLVED means "not checked", so this number should FALL over time and
+  // must never quietly climb. Measured 2026-09-30 on `employees`: 6 — one select built at run time
+  // (`custom-variables.ts`) and five writes whose payload is not an object literal, which became
+  // visible the day writes stopped being silently reported as clean.
   const unresolved = real.sites.filter((s: { resolved: boolean }) => !s.resolved);
-  assert.ok(unresolved.length <= 5, `too many unresolved employees selects (${unresolved.length}) — the resolver has regressed`);
+  assert.ok(unresolved.length <= 6, `too many unresolved employees selects (${unresolved.length}) — the resolver has regressed`);
 }
