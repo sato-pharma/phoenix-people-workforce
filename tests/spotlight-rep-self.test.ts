@@ -26,6 +26,7 @@ import {
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const REP = "B-500";
+const DM = "B-700";
 
 function seat(overrides: Partial<OrgSeat> & { seatId: string; tier: string }): OrgSeat {
   return {
@@ -47,15 +48,20 @@ function person(hrId: string, fullName: string): OrgPerson {
   return { hrId, fullName, nameAr: null, jobTitle: "Medical Representative" };
 }
 
-/** An org with one CNS rep seat held by REP, and a second rep seat held by someone else. */
+/**
+ * An org with one CNS rep seat held by REP, a second rep seat held by someone else, and the DISTRICT
+ * seat above both — so a DM's own sheet can be measured as the sum of the two reps beneath him.
+ */
 function org(): SpotlightOrgIndex {
   const seats = new Map<string, OrgSeat>([
-    ["SEAT-CNS-REP-GZ5", seat({ seatId: "SEAT-CNS-REP-GZ5", tier: "REP", occupantHrId: REP, isVacant: false })],
-    ["SEAT-CNS-REP-GZ6", seat({ seatId: "SEAT-CNS-REP-GZ6", tier: "REP", areaCode: "GZ6", areaName: "Giza 6", occupantHrId: "B-999", isVacant: false })],
+    ["SEAT-CNS-DM-GZ", seat({ seatId: "SEAT-CNS-DM-GZ", tier: "DM", areaCode: null, areaName: null, occupantHrId: DM, isVacant: false })],
+    ["SEAT-CNS-REP-GZ5", seat({ seatId: "SEAT-CNS-REP-GZ5", tier: "REP", parentSeatId: "SEAT-CNS-DM-GZ", occupantHrId: REP, isVacant: false })],
+    ["SEAT-CNS-REP-GZ6", seat({ seatId: "SEAT-CNS-REP-GZ6", tier: "REP", parentSeatId: "SEAT-CNS-DM-GZ", areaCode: "GZ6", areaName: "Giza 6", occupantHrId: "B-999", isVacant: false })],
   ]);
   const people = new Map<string, OrgPerson>([
     [hrKey(REP), person(REP, "Test Rep")],
     [hrKey("B-999"), person("B-999", "Other Rep")],
+    [hrKey(DM), person(DM, "Test District Manager")],
   ]);
   return {
     seats,
@@ -230,5 +236,53 @@ export async function runSpotlightRepSelfTests(): Promise<void> {
     assert.match(html, /Achievement/);
     // No peer ranking language on a rep's own sheet.
     assert.doesNotMatch(html, /ranked|out of \d/i);
+  }
+
+  // 10. A DISTRICT MANAGER is measured as his DISTRICT — the reps beneath his seat, summed, exactly
+  //     as the Monthly Closing grades him. Two reps at 900/1000 and 1100/1000 make the district
+  //     2000/2000 = 100%, which no single rep's own figure equals.
+  {
+    const districtRows = (period: string) => [
+      achievementRow({ period, actualValue: 900, targetValue: 1000, hasTarget: true }),
+      achievementRow({
+        period,
+        repSeatId: "SEAT-CNS-REP-GZ6",
+        repHrId: "B-999",
+        areaCode: "GZ6",
+        actualValue: 1100,
+        targetValue: 1000,
+        hasTarget: true,
+      }),
+    ];
+    const spotlight = await loadRepSpotlight(
+      DM,
+      { from: "2026-07", to: "2026-07" },
+      deps(["cns|2026-07"], { "2026-07": districtRows("2026-07") }),
+    );
+    assert.equal(spotlight.eligible, true);
+    assert.ok(spotlight.achievement !== null && Math.abs(spotlight.achievement - 100) < 1e-9);
+    assert.equal(spotlight.result!.rows.length, 1);
+    assert.equal(spotlight.result!.rows[0]!.hrId, DM);
+    // The district's money, not one rep's.
+    assert.equal(spotlight.result!.rows[0]!.actualValue, 2000);
+    assert.equal(spotlight.result!.selection.subject, "dm");
+
+    const html = repSpotlightDocumentHtml(spotlight.result!);
+    assert.match(html, /Test District Manager/);
+    // His own district only — never the rep names beneath him.
+    assert.doesNotMatch(html, /Test Rep|Other Rep/);
+  }
+
+  // 11. The same 90% floor applies to a district manager — below it the sheet is refused.
+  {
+    const spotlight = await loadRepSpotlight(
+      DM,
+      { from: "2026-07", to: "2026-07" },
+      deps(["cns|2026-07"], {
+        "2026-07": [achievementRow({ period: "2026-07", actualValue: 800, targetValue: 1000, hasTarget: true })],
+      }),
+    );
+    assert.equal(spotlight.eligible, false);
+    assert.match(spotlight.reason ?? "", /90%/);
   }
 }
