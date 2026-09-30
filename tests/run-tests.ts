@@ -2039,6 +2039,7 @@ import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 import { runSpotlightRepSelfTests } from "./spotlight-rep-self.test.ts";
 import { runSpotlightPortalLookTests } from "./spotlight-portal-look.test.ts";
 import { runPortalSingleHeaderTests } from "./portal-single-header.test.ts";
+import { runFlexWrapShrinkGuardTests } from "./flex-wrap-shrink-guard.test.ts";
 import { runShareCardTests } from "./share-card.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
@@ -7379,6 +7380,11 @@ await runTest(
 await runTest(
   "portal pages: the shell owns the ONLY page header — no component inside EmployeePortalPageShell renders a second <h1> or its own dark hero (Spotlight, Report It form, Report It dashboard)",
   runPortalSingleHeaderTests,
+);
+
+await runTest(
+  "fits-the-screen: `shrink-0` beside `flex-wrap` is only allowed where it can still wrap — in a flex COLUMN, or a ROW that wraps itself. In a non-wrapping ROW the shrink-0 makes the wrap inert and the block overflows sideways at 320px (measured on the rep landing panel, 2026-09-30: 319px of content in a 284px header), and `scrollWidth` cannot see it",
+  runFlexWrapShrinkGuardTests,
 );
 
 await runTest(
