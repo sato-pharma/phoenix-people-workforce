@@ -344,14 +344,36 @@ jobs:
         # exploitable).
         #
         # Runs the SAME `pnpm audit --audit-level=high --prod`; the wrapper only tells an npm
-        # outage apart from a real advisory. A bare audit exits non-zero for both, and because
-        # this is the first step in `validate` an outage takes the whole required check red
-        # without running a single test — twice on 2026-09-04, once on `main` itself. A genuine
+        # outage apart from a real advisory. A bare audit exits non-zero for both, and an outage
+        # takes the whole required check red — twice on 2026-09-04, once on `main` itself. A genuine
         # high or critical finding still fails the build. See scripts/ci-dependency-audit.mjs.
         run: node scripts/ci-dependency-audit.mjs
 
-      # THE TEST SUITE IS NOT IN THIS JOB ANY MORE — it is a STEP of the `checks` job below. It left
-      # this job on 2026-09-17 as its own `test` job, and became a step of `checks` on 2026-09-27.
+      # 🔴 THE GATE ABOVE IS BLIND THREE WAYS, AND THIS STEP IS THE SECOND OPINION. `pnpm audit`
+      # reads npm's feed, which LAGS: on 2026-09-30 it reported
+      # `{"info":0,"low":0,"moderate":0,"high":0,"critical":0}` at the same moment OSV reported a HIGH
+      # against `@grpc/grpc-js@1.14.4` (GHSA-m9gg-hp2v-232j, `getAuthContext` returning unauthorized
+      # certificates as authorized). `--prod` also hides the dev graph and `--audit-level=high` hides
+      # everything below high — pnpm-workspace.yaml records three advisories that slipped through for
+      # exactly that reason, each noting "Dependabot alone saw it".
+      #
+      # DELIBERATELY NON-BLOCKING, for now. Two advisory feeds will sometimes disagree, and `main` is
+      # production's own branch: a false positive here would freeze deploys, which is the very outage
+      # this step exists to shorten. So it reports and `pnpm audit` gates. Promote it to blocking only
+      # after watching the two agree. `continue-on-error` also absorbs an OSV outage, on the same
+      # reasoning as the audit wrapper's bounded fail-open.
+      - name: Vulnerability scan, whole graph, all severities (reports, does not gate)
+        if: steps.detect.outputs.docs_only != 'true'
+        continue-on-error: true
+        run: node scripts/vuln-scan.mjs
+
+      # 🔴 THE COMMENT THAT USED TO BE HERE SAID THE TEST SUITE HAD LEFT THIS JOB — AND IT IS THE
+      # `Test` STEP SEVENTEEN LINES ABOVE. It was true from 2026-09-17 (when the suite became its own
+      # `test` job) through 2026-09-27 (when it became a step of `checks`), and went stale on
+      # 2026-09-30 when the suite moved BACK into `validate` to run beside the typecheck rather than
+      # behind it. Left uncorrected it tells the next reader the opposite of what the file does, which
+      # is how a session ends up looking for `pnpm run test` in the wrong job. The measurement and the
+      # reasoning for the move are on the `checks` job below.
       # `pnpm run test` reads nothing `validate` produces: it ran in front of the build and the
       # smoke test and needs neither, so a quarter of the slowest required check was serial for
       # no reason. The measurement and the reasoning are on that job.

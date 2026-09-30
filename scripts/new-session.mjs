@@ -34,6 +34,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { linkNodeModules } from "./lib/link-node-modules.mjs";
+import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 
 // Commit charge, not RAM, is what freezes this machine — and a freeze leaves no
 // dump. Below the floor a new session is refused; below the warn line it is
@@ -58,6 +59,19 @@ function git(args, opts = {}) {
 function fail(message) {
   console.error("\nnew-session aborted — " + message + "\n");
   process.exit(1);
+}
+
+/**
+ * The commit a worktree is sitting on. The one thing a DETACHED HEAD still has: `worktrees()` reports
+ * its branch as the literal string "(detached)", which is useless in a command, so anything advising
+ * the reader how to keep a tip has to name the sha instead.
+ */
+function headSha(dir) {
+  try {
+    return git(["rev-parse", "HEAD"], { cwd: dir });
+  } catch {
+    return "HEAD";
+  }
 }
 
 function powershell(command) {
@@ -461,14 +475,47 @@ if (args.includes("--remove")) {
     }
   })();
 
-  if (unpushed && !pushed && !mergedPr && !onAnotherRemoteBranch) {
+  // 🔴 EVERY ANSWER ABOVE IS NAME-BASED OR REACHABILITY-BASED, AND A DETACHED HEAD DEFEATS ALL OF
+  // THEM AT ONCE. `pushed` and `mergedPr` both return early on the literal string "(detached)"
+  // (there is no branch name to ask `ls-remote` or `gh pr list` about), and `onAnotherRemoteBranch`
+  // asks reachability, which a squash merge never satisfies. So the gate collapsed to `unpushed`
+  // alone and refused unconditionally — ANY commit ahead of origin/main, with no way past it.
+  //
+  // That is not an edge case, it is the normal end state of shipping here: squash-merge plus
+  // delete_branch_on_merge leaves the work on main under a DIFFERENT sha and the branch's own remote
+  // ref deleted. Measured 2026-09-30 on _wt-next-16-3-8, whose two commits had merged as #4961
+  // (eb8b2c247) and were serving in production while this gate called them stranded.
+  //
+  // `countUnpushedCommits` is the answer already written for exactly this, in repo-doctor: it asks by
+  // PATCH-ID, keyed on HEAD rather than on a branch name, so it works detached — and it catches a
+  // MULTI-COMMIT squash (via the cumulative-diff prefix walk) as well as individual cherry-picks (via
+  // `git cherry`), which no single comparison does. Reused rather than reimplemented so the two
+  // cannot drift apart.
+  //
+  // Its contract is three-valued and the null matters: `null` means git could not answer, and the
+  // caller must then REFUSE rather than assume. Erring toward the refusal is the cheap direction.
+  const contentBackedUp = (() => {
+    if (!unpushed) return true;
+    const stranded = countUnpushedCommits(dir);
+    return stranded === 0;
+  })();
+
+  if (unpushed && !pushed && !mergedPr && !onAnotherRemoteBranch && !contentBackedUp) {
     console.error("  REFUSED — commits here are on no remote branch and no merged PR:");
     for (const line of unpushed.split("\n").slice(0, 10)) console.error("    " + line);
+    // A detached HEAD has no branch name to put in a rescue command, and the old advice interpolated
+    // the literal "(detached)" twice — printing `git branch rescue/(detached) (detached)`, which is
+    // not a runnable command. Name the sha instead, which is what a detached HEAD actually has.
+    const detached = !entry.branch || entry.branch === "(detached)";
+    const rescueName = detached
+      ? "detached-" + headSha(dir).slice(0, 9)
+      : String(entry.branch).replace(/^codex\//, "");
+    const rescueAt = detached ? headSha(dir) : entry.branch;
     fail(
       "keep the tip with `git branch rescue/" +
-        String(entry.branch).replace(/^codex\//, "") +
+        rescueName +
         " " +
-        entry.branch +
+        rescueAt +
         "` — that costs nothing and loses nothing. Never PUSH a possibly-merged " +
         "branch to rescue it: that opens a conflicting PR, and a conflicted PR runs no CI at all.",
     );
@@ -484,7 +531,12 @@ if (args.includes("--remove")) {
           ? "present, but PR #" + mergedPr + " merged them — squash residue, not stranded work"
           : pushed
             ? "present, and the branch is on origin"
-            : "present, and on origin as " + onAnotherRemoteBranch + " — not this branch's name"),
+            : onAnotherRemoteBranch
+              ? "present, and on origin as " + onAnotherRemoteBranch + " — not this branch's name"
+              // The detached-HEAD case, and the reason this line exists: without it the chain fell
+              // through and printed "on origin as null", which reads as a bug in the very check that
+              // just cleared the removal.
+              : "present, but their CONTENT is upstream already (patch-id match) — squash residue, not stranded work"),
   );
   console.log("  node_modules        " + dropModulesJunction(dir));
 
@@ -494,13 +546,22 @@ if (args.includes("--remove")) {
   if (husk) {
     console.log("    clear it by hand:  rmdir /s /q " + JSON.stringify(dir));
   }
-  console.log(
-    "\nThe branch " +
-      entry.branch +
-      " still exists locally. Delete it only once `gh pr list --head " +
-      entry.branch +
-      " --state merged` confirms the work landed.\n",
-  );
+  // A detached HEAD leaves no branch behind, so the old wording printed "The branch (detached) still
+  // exists locally" and then advised `gh pr list --head (detached)` — advice for a branch that does
+  // not exist, about a command that cannot run.
+  if (!entry.branch || entry.branch === "(detached)") {
+    console.log(
+      "\nThat worktree was on a DETACHED HEAD, so no branch was left behind and there is nothing to delete.\n",
+    );
+  } else {
+    console.log(
+      "\nThe branch " +
+        entry.branch +
+        " still exists locally. Delete it only once `gh pr list --head " +
+        entry.branch +
+        " --state merged` confirms the work landed.\n",
+    );
+  }
   process.exit(0);
 }
 

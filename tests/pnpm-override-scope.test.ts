@@ -113,4 +113,55 @@ export function runPnpmOverrideScopeTests() {
       "(Dependabot #4698, fixed in #4717). Scope it to the parent that actually needs the floor, e.g. " +
       '"imapflow>nodemailer": ^9.1.1 — or delete it if the direct range already clears the advisory.',
   );
+
+  // ── The lockfile's own `overrides:` echo must match this file, entry for entry ─────────────────
+  //
+  // WHY THIS IS A SEPARATE ASSERTION FROM THE ONE ABOVE. The guard above stops a bare override being
+  // WRITTEN over a direct dependency. This one stops the two files DRIFTING apart at all, in either
+  // direction, and the reason it is worth asserting ourselves rather than leaving to pnpm is the
+  // failure mode: every install that matters here is `--frozen-lockfile` (CI at three places and the
+  // production Dockerfile), so the lockfile — not this file — is what actually decides the graph that
+  // gets built and shipped. An override edited here without regenerating the lockfile changes nothing
+  // real while reading as though it closed an advisory.
+  //
+  // That is not hypothetical: on 2026-09-30 the only sanctioned way to regenerate a lockfile did not
+  // exist (bash-guard clause C6 denies pnpm in every worktree with no stand-down), and hand-editing
+  // pnpm-lock.yaml was considered and rejected precisely because nothing would have caught a mistake.
+  // pnpm's own frozen check would refuse most drifts with ERR_PNPM_OUTDATED_LOCKFILE — this fails
+  // earlier, in our own suite, naming the two entries that disagree instead of printing that.
+  //
+  // Deliberately reuses `readOverrides`: a second parser could disagree with the first and then this
+  // pair of assertions would be arguing with itself rather than with the files.
+  const lockOverrides = readOverrides(readFileSync(path.join(repoRoot, "pnpm-lock.yaml"), "utf8"));
+
+  assert.ok(
+    lockOverrides.length >= 10,
+    `parsed only ${lockOverrides.length} entries from pnpm-lock.yaml's overrides block — the parser did not find it, ` +
+      "so this assertion would pass vacuously.",
+  );
+
+  const asMap = (pairs: Array<[string, string]>) => new Map(pairs);
+  const workspaceMap = asMap(overrides);
+  const lockMap = asMap(lockOverrides);
+
+  const disagreements: string[] = [];
+  for (const [key, value] of workspaceMap) {
+    if (!lockMap.has(key)) disagreements.push(`${key}: in pnpm-workspace.yaml (${value}) but NOT in the lockfile`);
+    else if (lockMap.get(key) !== value) {
+      disagreements.push(`${key}: pnpm-workspace.yaml says ${value}, the lockfile says ${lockMap.get(key)}`);
+    }
+  }
+  for (const [key, value] of lockMap) {
+    if (!workspaceMap.has(key)) disagreements.push(`${key}: in the lockfile (${value}) but NOT in pnpm-workspace.yaml`);
+  }
+
+  assert.deepEqual(
+    disagreements,
+    [],
+    "pnpm-workspace.yaml's overrides and pnpm-lock.yaml's overrides echo have drifted apart:\n  " +
+      disagreements.join("\n  ") +
+      "\nThe lockfile is what every --frozen-lockfile install actually builds from, so while these disagree the " +
+      "override you edited is not the one in force. Regenerate the lockfile rather than editing either by hand: " +
+      "`node scripts/remote-check.mjs lockfile` runs pnpm where it is allowed to run and brings both files back.",
+  );
 }

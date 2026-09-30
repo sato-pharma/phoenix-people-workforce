@@ -21,6 +21,22 @@
 //   node scripts/remote-check.mjs typecheck
 //   node scripts/remote-check.mjs lint test
 //   node scripts/remote-check.mjs all          # lint, typecheck, unit suite
+//   node scripts/remote-check.mjs lockfile     # regenerate pnpm-lock.yaml and bring it back
+//
+// 🔴 WHY `lockfile` IS HERE, AND WHY IT IS NOT A CHECK. Until 2026-09-30 there was no sanctioned place
+// in this setup to regenerate a lockfile at all. `.claude/hooks/bash-guard.mjs` clause C6 denies pnpm
+// inside every linked worktree (node_modules there is a junction to the primary checkout's) and,
+// unlike C7, C8, C10, C11 and C12, it has NO environment stand-down; the primary checkout belongs to
+// whichever session is live in it; and cloud isolation was unavailable. So a branch that bumped
+// package.json could not have its lockfile regenerated anywhere, and the gap was closed that night by
+// an improvised SSH session — which worked, and which nothing would have caught had it gone wrong.
+//
+// This mode is that improvisation made repeatable. It runs `pnpm install --lockfile-only` on the box
+// and returns BOTH pnpm-lock.yaml and pnpm-workspace.yaml — pnpm writes `minimumReleaseAgeExclude`
+// into the second when it adopts a version younger than its release-age quarantine, and a
+// --frozen-lockfile install needs those entries, so returning only the lockfile loses them silently.
+// It is not a `CHECKS` entry because those are bash fragments in a pass/fail wrapper: a check can
+// report a verdict and can never return a file.
 //
 // 🔴 IT SENDS THE COMMIT, NOT THE WORKING TREE. Uncommitted edits are not checked. Commit (or
 // `git stash`-and-commit) first; the script prints the sha it actually ran so a stale result cannot
@@ -135,9 +151,20 @@ function git(...args) {
 }
 
 const requested = process.argv.slice(2).filter((a) => !a.startsWith("-"));
-const names = requested.length === 0 || requested.includes("all") ? ALL : requested;
+
+// `lockfile` is not a CHECKS entry and cannot be one: every CHECKS value is a bash fragment dropped
+// into a `if <cmd>; then R=PASS; else R=FAIL` wrapper, so a check can only ever pass or fail. This
+// mode has to bring two FILES back, which needs its own path. See the header.
+const LOCKFILE_MODE = requested.length === 1 && requested[0] === "lockfile";
+
+const names = LOCKFILE_MODE ? [] : requested.length === 0 || requested.includes("all") ? ALL : requested;
 for (const name of names) {
-  if (!CHECKS[name]) die("unknown check '" + name + "'. Known: " + Object.keys(CHECKS).join(", ") + ", all");
+  if (!CHECKS[name]) {
+    die("unknown check '" + name + "'. Known: " + Object.keys(CHECKS).join(", ") + ", all, lockfile");
+  }
+}
+if (requested.length > 1 && requested.includes("lockfile")) {
+  die("`lockfile` regenerates files and cannot be combined with a check. Run it on its own, commit, then check.");
 }
 
 if (!existsSync(KEY)) die("no SSH key at " + KEY + ". Set PHX_CHECK_KEY.");
@@ -160,7 +187,20 @@ if (dirty.length > 0) {
   console.log("");
 }
 
-console.log("remote-check: " + names.join(" + ") + "  on " + USER + "@" + HOST);
+// 🔴 THE LOCKFILE MODE SENDS THE COMMIT, SO AN UNCOMMITTED MANIFEST WOULD REGENERATE THE WRONG
+// LOCKFILE — and silently: it would come back resolving the versions package.json had at the last
+// commit, not the ones you just typed, which reads as pnpm ignoring your bump. For a CHECK an
+// uncommitted file only narrows what was proved (warned about above); here it corrupts the output.
+if (LOCKFILE_MODE) {
+  const manifests = dirty.filter((line) => /\s(package\.json|pnpm-workspace\.yaml)$/.test(line));
+  if (manifests.length > 0) {
+    console.error("remote-check: the manifests this would resolve FROM are uncommitted:");
+    for (const line of manifests) console.error("    " + line);
+    die("commit them first — this sends the commit, not the working tree, so the lockfile would be generated from the OLD manifests.");
+  }
+}
+
+console.log("remote-check: " + (LOCKFILE_MODE ? "lockfile" : names.join(" + ")) + "  on " + USER + "@" + HOST);
 console.log("             " + branch + " @ " + sha.slice(0, 9));
 
 // One round trip: create the bare repo if this is the first run, and report whether CI is busy.
@@ -185,6 +225,69 @@ try {
   );
 } catch {
   die("could not push to the box. Check SSH: ssh -i " + KEY + " " + USER + "@" + HOST);
+}
+
+// ── The lockfile mode, which returns FILES rather than a verdict ────────────────────────────────
+//
+// The return channel is a git ref in the box's own bare repo, deliberately, for two reasons. The
+// obvious one is that `tests/remote-check.test.ts` asserts this script spawns nothing locally except
+// `ssh` and `git`, so `scp` is out. The better one is that `ssh()`'s capture mode `.trim()`s what it
+// reads, which would eat a YAML file's trailing newline and hand back a lockfile that differs from
+// the one the box generated — a corruption nothing downstream would report.
+if (LOCKFILE_MODE) {
+  const RESULT_REF = "refs/heads/lockfile-result";
+  const outcome = ssh(
+    "set -uo pipefail\n" +
+      "export PATH=/usr/local/lib/nodejs/node/bin:$PATH\n" +
+      "export COREPACK_ENABLE_DOWNLOAD_PROMPT=0\n" +
+      "[ -d " + WORK + "/.git ] || git clone -q -b remote-check " + BARE + " " + WORK + "\n" +
+      "cd " + WORK + "\n" +
+      "git fetch -q origin remote-check\n" +
+      "git checkout -q -f " + sha + " 2>/dev/null || git checkout -q -f FETCH_HEAD\n" +
+      'echo "box head: $(git rev-parse --short HEAD)"\n' +
+      // NOT --frozen-lockfile: that is the one flag guaranteed to fail here, because the whole point
+      // is that the lockfile does not yet match the manifests.
+      "corepack pnpm install --lockfile-only || { echo 'LOCKFILE_FAILED'; exit 1; }\n" +
+      "if git diff --quiet -- pnpm-lock.yaml pnpm-workspace.yaml; then echo NOCHANGE; exit 0; fi\n" +
+      // pnpm can touch pnpm-workspace.yaml too: adopting a version younger than pnpm 11's release-age
+      // quarantine makes it append `minimumReleaseAgeExclude` entries, and a --frozen-lockfile install
+      // needs them. Returning only the lockfile would lose them with nothing to show it.
+      'git -c user.email=box@phoenix.local -c user.name="remote-check" commit -q ' +
+      '-m "chore(deps): regenerate the lockfile on the box" -- pnpm-lock.yaml pnpm-workspace.yaml\n' +
+      "git push -q -f origin HEAD:" + RESULT_REF + "\n" +
+      "echo REGENERATED\n",
+    { capture: true },
+  );
+
+  console.log(outcome.split("\n").filter(Boolean).map((line) => "             " + line).join("\n"));
+
+  if (outcome.includes("NOCHANGE")) {
+    console.log("\nremote-check: lockfile already matches the manifests at " + sha.slice(0, 9) + " — nothing to bring back.");
+    process.exit(0);
+  }
+  if (!outcome.includes("REGENERATED")) {
+    die("the box did not report a regenerated lockfile. Nothing was changed locally.");
+  }
+
+  try {
+    execFileSync(
+      "git",
+      ["fetch", "--quiet", "ssh://" + USER + "@" + HOST + BARE, RESULT_REF],
+      { stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, GIT_SSH_COMMAND } },
+    );
+    // Overwrites both files from the fetched commit. That is the intent here — but it IS the
+    // "names a source AND a path" form that silently discards a local edit to those paths, which is
+    // why the uncommitted-manifest refusal above runs before anything is sent.
+    execFileSync("git", ["checkout", "FETCH_HEAD", "--", "pnpm-lock.yaml", "pnpm-workspace.yaml"], {
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+  } catch {
+    die("could not bring the regenerated files back. The box has them on " + RESULT_REF + " in " + BARE + ".");
+  }
+
+  console.log("\nremote-check: lockfile regenerated from " + sha.slice(0, 9) + " — pnpm-lock.yaml and pnpm-workspace.yaml are staged.");
+  console.log("             Review the diff, commit, and let the PR's --frozen-lockfile install prove it.");
+  process.exit(0);
 }
 
 const steps = names
