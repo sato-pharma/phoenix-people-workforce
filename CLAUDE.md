@@ -53,31 +53,20 @@ the **commit**, so it prints any uncommitted files it is ignoring. Pinned by
 `tests/remote-check.test.ts`.
 
 **CI is the gate. Do not run a local full validation** — no "quick subset" of lint + typecheck
-before pushing, no `pnpm run ci` as a pre-push ritual. Push the branch and let the PR's two
-required checks answer — `validate` and `checks`; `lint`, `typecheck` and `test` are STEPS of
-`checks` since 2026-09-27 (#4527), not check names, so never wait for them by name. **`mobile` and
-`secret-scan` still run but no longer gate** (protection read live 2026-09-29) — read them, do not
-count on them. Never trust that list: it has rotted five times, so read
-`branches/main/protection/required_status_checks` live. Migrations and production deploys are the
-two things CI never sees. Full rule, the retired `check:harden`, and the per-change matrix:
+before pushing, no `pnpm run ci` as a pre-push ritual. Push the branch and let the PR's two required
+checks answer, and **read `branches/main/protection/required_status_checks` live rather than trusting
+any list**: it has rotted five times, and `lint`, `typecheck` and `test` are STEPS, not check names.
+Migrations and production deploys are the two things CI never sees.
+
+🔴 **A LOCAL TYPECHECK IS DENIED, not discouraged** — `.claude/hooks/bash-guard.mjs` clause **C8**
+refuses every spelling, because the rule alone could not hold: a reaped run prints nothing and exits
+non-zero, which a session cannot tell from a typo, so it tries the next spelling.
+`PHX_TYPECHECK_OK=1 <cmd>` (`$env:PHX_TYPECHECK_OK=1; <cmd>` in PowerShell) stands it down for one
+command you will sit and watch. **Push the branch — the PR's typecheck is cold, clean and ~3 min.**
+
+Both in full — the required-check rotation, the retired `check:harden` and `check:edit`, the
+per-change validation matrix, and the measured reason a cold `tsc` no longer fits this machine:
 [AGENTS.md §7](AGENTS.md).
-
-🔴 **A local typecheck is no longer a "fast editing gate" — it does not fit on the owner's machine,
-and `check:edit` is retired as an editing habit.** Measured 2026-09-25: a cold `tsc` needs 4.0–4.5 GB
-of heap and OOMs at node's own 4.1 GB default after 155 s, and `mem-watchdog.ps1` then reaps it as
-the largest node job — and **every one of the 23 kills its log still held was a typecheck**, not one
-other kind of node job among them, each printing nothing, so the session simply ran it again. (The
-log rotates at 800 lines, about a day and a half here, so it can only ever show the recent window —
-never read its start date as the date the trouble began.) Raising `--max-old-space-size` makes it the FIRST victim
-(4096, 5120, 6144 and 7168 were all tried, all reaped). It grew with the repo: 5,065 → 6,048
-`.ts/.tsx` files in 13 days, CI's own cold run 125 s → 183 s. **Push the branch — the PR's
-`typecheck` check is cold, clean and ~3 min.**
-
-**And since 2026-09-25 it is a DENY, not a rule:** `.claude/hooks/bash-guard.mjs` clause **C8**
-refuses a local typecheck in every spelling. The rule alone could not hold, because a reaped run
-prints nothing and exits non-zero — a session cannot tell that from a typo, so it tries the next
-spelling. `PHX_TYPECHECK_OK=1 <cmd>` (`$env:PHX_TYPECHECK_OK=1; <cmd>` in PowerShell) stands it down
-for one command. Pinned by `tests/local-typecheck-guard.test.ts`.
 
 ## The two rules that apply to every change
 
