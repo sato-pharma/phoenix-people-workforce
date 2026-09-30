@@ -521,11 +521,21 @@ if (openRollupPrs.length > 0) {
 // It sits BEFORE the branch is created on purpose. Waiting after that would leave the session parked on
 // a half-built local branch for the duration — which is the other half of the 2026-09-30 mess, because
 // `new-session.mjs --remove` judges a worktree by whatever branch it finds checked out.
-const memberState = new Map(group.map((p) => [p.number, { number: p.number, red: p.redChecks, pending: p.pendingChecks }]));
+//
+// 🔴 AND THE SHA IS PART OF THE EVIDENCE. The checks are re-read live, but the commit the build merges
+// was captured before the wait — so a member pushed meanwhile returns GREEN CHECKS FOR A COMMIT THE
+// BUILD WOULD NOT MERGE, and the roll-up carries something nothing verified. That is the original bug
+// wearing a later timestamp. Measured the same day: #4907's head moved TWICE inside fifteen minutes
+// while its checks ran. So every poll carries the sha it expects, and a member whose head moved — or
+// which is no longer open — goes STALE and is never built from.
+const memberState = new Map(group.map((p) => [
+  p.number,
+  { number: p.number, red: p.redChecks, pending: p.pendingChecks, stale: null, sha: p.headRefOid },
+]));
 
-/** Members with nothing red yet and something still running — the ones a wait could still resolve. */
+/** Members with nothing red, nothing stale, and something still running — what a wait can resolve. */
 function stillRunning() {
-  return [...memberState.values()].filter((m) => m.red.length === 0 && m.pending.length > 0);
+  return [...memberState.values()].filter((m) => m.red.length === 0 && m.stale === null && m.pending.length > 0);
 }
 
 /** A synchronous sleep, because everything else in this script is synchronous and reads in order. */
@@ -534,14 +544,24 @@ function sleepMs(ms) {
 }
 
 /**
- * One member's required checks, read again. `null` means the read failed — which is NOT news: the
- * previous reading is kept, so a flaky call can never promote a pending member to green.
+ * One member's state, read again: its required checks, plus whether it is still the PR we measured.
+ *
+ * `null` means the read failed — which is NOT news: the previous reading is kept, so a flaky call can
+ * never promote a pending member to green. `{ stale }` means the answer would be about something else:
+ * the head moved (the checks now describe a commit the build would not merge, and the file set was
+ * measured on the old one) or the PR is no longer open.
  */
 function rereadCheckState(number) {
-  const raw = gh(['pr', 'view', String(number), '--repo', REPO, '--json', 'statusCheckRollup'], { allowFail: true });
+  const expected = memberState.get(number)?.sha;
+  const raw = gh(['pr', 'view', String(number), '--repo', REPO, '--json', 'state,headRefOid,statusCheckRollup'], { allowFail: true });
   if (!raw) return null;
   try {
-    return requiredCheckState(JSON.parse(raw).statusCheckRollup, requiredContexts);
+    const fresh = JSON.parse(raw);
+    if (fresh.state !== 'OPEN') return { stale: `#${number} is ${String(fresh.state).toLowerCase()}, not open any more` };
+    if (expected && fresh.headRefOid && fresh.headRefOid !== expected) {
+      return { stale: `#${number} was pushed while we waited (${String(expected).slice(0, 9)} -> ${String(fresh.headRefOid).slice(0, 9)})` };
+    }
+    return requiredCheckState(fresh.statusCheckRollup, requiredContexts);
   } catch {
     return null;
   }
@@ -639,6 +659,27 @@ const skipped = [];
 // `buildGroup`, never `group`: the wait above is what tells the two apart, and a member whose checks
 // never finished green must not reach a `git merge` here.
 for (const pr of buildGroup) {
+  // THE LAST LOOK AT THE SHA, and it is not the same question the wait asked. The wait can only see a
+  // push that happens while it is waiting; `--no-wait`, or a push in the seconds between the wait
+  // ending and this merge, arrives after it has stopped looking. It is the roll-up's equivalent of the
+  // `--match-head-commit` guard a merge gets: carry the commit whose checks and file set were
+  // measured, or carry nothing. A moved head is SKIPPED rather than followed — the new commit's checks are unread
+  // and its files unmeasured, so following it would carry exactly what all of this exists to refuse.
+  const live = gh(['pr', 'view', String(pr.number), '--repo', REPO, '--json', 'headRefOid'], { allowFail: true });
+  if (live) {
+    let liveSha = null;
+    try {
+      liveSha = JSON.parse(live).headRefOid ?? null;
+    } catch {
+      liveSha = null; // An unreadable answer is not evidence of a move; the object check below decides.
+    }
+    if (liveSha && liveSha !== pr.headRefOid) {
+      skipped.push(pr.number);
+      console.log(`[rollup] #${pr.number} skipped — it was pushed since it was measured `
+        + `(${pr.headRefOid.slice(0, 9)} -> ${liveSha.slice(0, 9)}); its new commit has not been checked here.`);
+      continue;
+    }
+  }
   // A member can MERGE while this runs, and `delete_branch_on_merge` then deletes its branch, so this
   // fetch fails for a branch that existed seconds ago. That is not the question: the commit is usually
   // still here from the classification pass, and if we HAVE the object the merge is as correct as it

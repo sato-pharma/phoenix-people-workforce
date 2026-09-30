@@ -656,6 +656,101 @@ export function runRollupPrsTests(): void {
     );
   }
 
+  // ── 4e-quinquies. A member that changes under the wait is STALE, never built from ────────────
+  // The hole the wait left behind, and it is the original bug wearing a later timestamp: the checks
+  // are re-read LIVE while the commit the build merges was captured BEFORE the wait. So a member
+  // pushed meanwhile hands back green checks for a commit the build would not merge — and its file
+  // set, which is what the group was chosen on, was measured on the old head too. Not hypothetical:
+  // on 2026-09-30 #4907's head moved TWICE inside fifteen minutes while its checks ran, and each
+  // move was a real commit with different content.
+  {
+    const reads: number[] = [];
+    let clock = 0;
+    const settled = waitForRequiredChecks({
+      members: [
+        { number: 1, red: [], pending: [] },
+        { number: 2, red: [], pending: ["checks (queued)"] },
+      ],
+      timeoutMs: 10 * 60_000,
+      pollMs: 30_000,
+      reread: (n: number) => {
+        reads.push(n);
+        return { stale: `#${n} was pushed while we waited (aaaaaaaaa -> bbbbbbbbb)` };
+      },
+      sleep: (ms: number) => {
+        clock += ms;
+      },
+      now: () => clock,
+    });
+    assert.deepEqual(reads, [2], "a member that goes stale is read ONCE and then left alone, not polled to the deadline");
+    assert.equal(settled.find((m) => m.number === 2)?.stale != null, true, "and it comes back carrying why it is stale");
+
+    const readiness = membersReadyToBuild(settled);
+    assert.deepEqual(
+      readiness.carry,
+      [1],
+      "the moved member is NOT built from — green checks taken after the head moved describe a commit "
+        + "the build would not merge, which is the thing all of this exists to refuse",
+    );
+    assert.deepEqual(readiness.dropped.map((d) => d.kind), ["stale"], "and it is dropped as STALE, not as red or a timeout");
+    assert.match(readiness.dropped[0]?.why ?? "", /was pushed while we waited/);
+    assert.match(readiness.dropped[0]?.why ?? "", /not\s+refused, only out of date/);
+
+    // STALE outranks both other verdicts: a reading taken from a different commit is not evidence
+    // about this one, so it must not be reported as that commit's own red or its own timeout.
+    const mixed = membersReadyToBuild([
+      { number: 3, red: ["checks (failure)"], pending: ["validate (queued)"], stale: "#3 is closed, not open any more" },
+    ]);
+    assert.deepEqual(mixed.carry, []);
+    assert.equal(mixed.dropped[0]?.kind, "stale", "stale outranks red and pending — it says the reading is about something else");
+
+    // An answer that is neither stale nor two lists is NO NEWS, exactly like a failed read. Reading a
+    // malformed answer as empty lists would say "finished, and nothing is red" — the one direction that
+    // carries an unverified member, and the direction a crash-free bug would take on its own.
+    let tick = 0;
+    const malformed = waitForRequiredChecks({
+      members: [{ number: 9, red: [], pending: ["checks (queued)"] }],
+      timeoutMs: 60_000,
+      pollMs: 30_000,
+      reread: () => ({ nonsense: true }) as unknown as { red: string[]; pending: string[] },
+      sleep: (ms: number) => {
+        tick += ms;
+      },
+      now: () => tick,
+    });
+    assert.deepEqual(
+      malformed[0]?.pending,
+      ["checks (queued)"],
+      "an answer of an unexpected shape keeps the previous reading — it is never a verdict",
+    );
+    assert.deepEqual(membersReadyToBuild(malformed).dropped.map((d) => d.kind), ["pending"]);
+  }
+
+  // ── 4e-sexies. The live side asks for the sha, in the poll AND once more before the merge ────
+  {
+    const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    assert.match(
+      source,
+      /'--json', 'state,headRefOid,statusCheckRollup'/,
+      "the poll must read the PR's state and head sha alongside its checks, or it cannot tell a green "
+        + "reading about THIS commit from a green reading about a commit that replaced it",
+    );
+    const mergeAt = source.indexOf("'merge', '--no-edit'");
+    const guardAt = source.indexOf("it was pushed since it was measured");
+    assert.ok(guardAt > 0, "the build must re-read the head before merging — the wait cannot see a push that lands after it stops");
+    assert.ok(
+      guardAt < mergeAt,
+      "and that check must come BEFORE the merge: this is the roll-up's `--match-head-commit`, so it "
+        + "merges the commit whose checks and file set were measured, or it merges nothing",
+    );
+    assert.match(
+      source,
+      /skipped\.push\(pr\.number\);[\s\S]{0,400}?pushed since it was measured/,
+      "a moved head is SKIPPED, never followed: the new commit's checks are unread and its files "
+        + "unmeasured, so following it would carry exactly what the wait refuses",
+    );
+  }
+
   // ── 4f. The required list is READ, never written down here ──────────────────────────────────
   {
     const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
