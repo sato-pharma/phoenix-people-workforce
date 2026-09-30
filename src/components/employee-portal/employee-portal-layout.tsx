@@ -19,6 +19,9 @@ import { usePathname, useRouter } from "next/navigation";
 // import pulled the whole sidebar — dnd-kit, the layout editor, the preference machinery —
 // into every portal page's bundle for a thirty-line badge. See nav-badge.tsx's own header.
 import { NavBadge } from "@/components/layout/nav-badge";
+// The brand asset comes from the one documented edit point for it, so a future logo swap is one
+// line in one file rather than a hunt through the rail (CLAUDE.md, "Global edit points").
+import { systemAssets } from "@/config/system-settings";
 import {
   Menu,
   Search,
@@ -202,13 +205,19 @@ function navIconClass(active: boolean) {
 }
 
 /**
- * The standout row's resting face (owner, 2026-09-30). It rests on the warm tint the other rows only
- * reach on hover, and goes a shade deeper when you hover IT — so the row still answers the pointer
- * instead of looking inert. The label keeps the siblings' navy and the siblings' weight: the row is
- * marked out by its face, its orange icon and its orange rail, never by a type treatment of its own.
- * The ACTIVE face still wins over this one — where you are outranks what is special.
+ * The standout row's resting face (owner, 2026-09-30, picking option D from four rendered mockups).
+ *
+ * 🔴 IT CARRIES NO FILL, AND THAT IS THE WHOLE POINT. The first attempt rested on `#FFF6F0`, which is
+ * the hover tint one shade off the ACTIVE row's `#FFF0E7`, and the owner turned it down on sight —
+ * "you are highlighting it the same" — because a permanent pale-orange row says *you are here* on a
+ * page you are not on. So the highlight is now made of things the active state does not use: a heavy
+ * 4px orange rail down the left edge, the label and the mark in Phoenix orange, and square edges.
+ * The row's background stays the sidebar's own white until you hover it.
+ *
+ * Which also keeps the two states legible TOGETHER: land on Phoenix CRM and the active face fills in
+ * behind the rail, so "special" and "where you are" read as two different things rather than one.
  */
-const NAV_HIGHLIGHT_CLASS = "bg-[#FFF6F0] text-[#26334F] hover:bg-[#FFF0E7] hover:text-[#F05A1A]";
+const NAV_HIGHLIGHT_CLASS = "text-[#F05A1A] hover:bg-[#FFF6F0]";
 
 /**
  * Hub roots that must never stay lit on a child route, even when NO deeper sidebar row matches it.
@@ -285,6 +294,11 @@ type EmployeePortalNavSection = {
  */
 function sectionRailIcon(title: string): typeof Activity {
   if (title === "Training Manager") return ClipboardCheck;
+  // Phoenix CRM's band sits above My Workspace and has no header, but the COLLAPSED rail is nothing
+  // but this strip of icons — so without an entry here the band would show the fallback Activity
+  // glyph and the star of the system would be the one section a collapsed sidebar cannot name.
+  // It reuses the row's own ClipboardList, which is what a rep already associates with the module.
+  if (title === "Phoenix CRM") return ClipboardList;
   if (title === "My Workspace") return Home;
   if (title === "Social") return UsersRound;
   if (title === "Approvals Hub") return FileCheck2;
@@ -398,18 +412,34 @@ function buildEmployeePortalSections({
       ],
     },
     {
-      title: "My Workspace",
+      // ── Phoenix CRM — its own band, ABOVE My Workspace (owner, 2026-09-30: "move it above the
+      // workspace, my workspace") ───────────────────────────────────────────────────────────────
+      // `hideTitle` drops the section header: the one row already carries the name, and a second
+      // "Phoenix CRM" above it would just be the same words twice. A headerless band also cannot be
+      // folded — `folded` is only ever set by the header button, which does not render — so the row
+      // can never hide, and `canFold` needs no new conjunct for it.
+      //
+      // Gated by the row's own flag, so the empty-section filter below drops the whole band for
+      // anyone the module refuses. Its mirror is native-module-directory.ts
+      // (NATIVE_MODULE_SECTION_ORDER + MODULE_PLACEMENT) and its collapsed-rail icon is in
+      // sectionRailIcon — a title missing from either is a drift test failure, not a silent gap.
+      title: "Phoenix CRM",
+      hideTitle: true,
       items: [
-        ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
-        // Phoenix CRM moved here from Field Activity at the owner's word (2026-09-29). Gated by
-        // `phoenixCrmEntryAvailable` — the phoenix_crm permission, a territory of his own or beneath
-        // him, and his line opened in phoenix_crm_line_rollout; the page enforces the same again.
+        // Gated by `phoenixCrmEntryAvailable` — the phoenix_crm permission, a territory of his own or
+        // beneath him, and his line opened in phoenix_crm_line_rollout; the page enforces it again.
         // `highlight` makes it the sidebar's one standout row (owner, 2026-09-30) — see the flag's
         // own note on EmployeePortalNavItem. It must stay the ONLY row carrying it: a second one and
         // neither is a standout.
         ...(showPhoenixCrmTab
           ? [{ href: "/employee-portals/field-crm", label: "Phoenix CRM", icon: ClipboardList, highlight: true as const }]
           : []),
+      ],
+    },
+    {
+      title: "My Workspace",
+      items: [
+        ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
         // Interview Calendar — the interview-calendar access flag (a DM/NSM/HR seat by role, or
         // anyone the owner shared it with).
         ...(showInterviewCalendarTab ? [{ href: "/employee-portals/interview-calendar", label: "Interview Calendar", icon: CalendarClock }] : []),
@@ -1164,12 +1194,29 @@ function EmployeePortalMenu({
                   }
                   return (
                     <div className="group/row relative" data-active-row={active ? "true" : undefined} key={item.href}>
+                      {/* THE PREMIUM PLATE (owner, 2026-09-30: "it needs a more premium polish").
+                          Premium here is DEPTH, never colour and never corners: a crisp white face, a
+                          warm hairline and one soft shadow in the brand's own orange, lifting the row a
+                          millimetre off the sidebar's faint gradient. It is drawn as its own layer
+                          BEHIND the link — `inset-0`, `pointer-events-none`, painted before the rail —
+                          so the row's box is untouched: no border adds a pixel, nothing shifts the
+                          label off the siblings' left edge, and the click still belongs to the link.
+                          🔴 Square, and it stays square: the standing rule is no round or semi-round
+                          corners anywhere, and the note on restoring premium polish from history is
+                          explicit — take the DEPTH only, never the radius. It also carries no fill,
+                          so it cannot drift back into impersonating the active row. */}
+                      {highlighted ? (
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 border border-[#F3D8C4] bg-white shadow-[0_10px_24px_rgba(240,90,26,0.10)] transition group-hover/row:border-[#F0C3A3] group-hover/row:shadow-[0_12px_28px_rgba(240,90,26,0.16)]"
+                        />
+                      ) : null}
                       <Link
                         aria-busy={pending || undefined}
                         aria-current={active ? "page" : undefined}
                         aria-label={locked ? `${item.label} — locked` : undefined}
                         title={locked ? `${item.label} — temporarily locked by the system administrator` : undefined}
-                        className={`group flex items-center gap-3 ${highlighted ? "" : "rounded"} px-4 py-2.5 ${
+                        className={`group relative flex items-center ${highlighted ? "gap-3.5" : "gap-3"} ${highlighted ? "" : "rounded"} px-4 ${highlighted ? "py-3" : "py-2.5"} ${
                           isMobile ? "text-phx-md font-semibold duration-200" : "text-phx-sm font-bold duration-150"
                         } transition ${
                           pending
@@ -1182,28 +1229,64 @@ function EmployeePortalMenu({
                         onClick={(event) => handleNavigate(event, item.href)}
                         prefetch
                       >
-                        <RowIcon
-                          className={`${
-                            isMobile ? "h-4 w-4" : "h-[15px] w-[15px] stroke-[2.1]"
-                          } shrink-0 transition ${canPin ? "group-hover/row:opacity-0" : ""} ${
-                            pending
-                              ? "text-phx-accent-hover"
-                              : locked
-                                ? "text-amber-600"
-                                : highlighted
-                                  ? "text-[#F05A1A]"
+                        {/* The standout row wears the Phoenix LOGO before its name (owner, 2026-09-30:
+                            "before the Phoenix CRM, put the logo") — the same asset and the same
+                            light-orange plate the sidebar's own header lockup uses a few hundred lines
+                            below, so the rail reads as one identity rather than two. It takes the
+                            icon's PLACE rather than joining it, and the row carries no trailing glyph,
+                            so the row is NARROWER than a sibling and no label can be pushed to a
+                            second line. It hides on hover exactly as an icon does, or the pin star
+                            would land on top of it. */}
+                        {highlighted ? (
+                          // The logo is set in a stamped emblem tile rather than dropped in loose: a
+                          // square warm plate with its own hairline, the mark inset so it is not
+                          // touching an edge. That inset is what makes it read as an emblem — the
+                          // premium detail is the tile, not a bigger picture of the bird.
+                          <span
+                            aria-hidden="true"
+                            className={`${
+                              isMobile ? "h-[26px] w-[26px]" : "h-[24px] w-[24px]"
+                            } flex shrink-0 items-center justify-center border border-[#F6D4B8] bg-[#FFF7ED] transition ${
+                              canPin ? "group-hover/row:opacity-0" : ""
+                            }`}
+                          >
+                            <Image
+                              alt=""
+                              className={`${isMobile ? "h-[17px] w-[17px]" : "h-[15px] w-[15px]"} object-contain`}
+                              height={40}
+                              src={systemAssets.iconLogo}
+                              width={40}
+                            />
+                          </span>
+                        ) : (
+                          <RowIcon
+                            className={`${
+                              isMobile ? "h-4 w-4" : "h-[15px] w-[15px] stroke-[2.1]"
+                            } shrink-0 transition ${canPin ? "group-hover/row:opacity-0" : ""} ${
+                              pending
+                                ? "text-phx-accent-hover"
+                                : locked
+                                  ? "text-amber-600"
                                   : navIconClass(active)
-                          }`}
-                        />
-                        <span className={locked ? "opacity-70" : undefined}>{item.label}</span>
+                            }`}
+                          />
+                        )}
+                        {/* A whisper of letter-spacing on the standout row's name, and nothing else:
+                            the siblings' size and weight are kept deliberately. A face or a size of
+                            its own was already tried on this row and thrown out — the polish is in the
+                            plate, the emblem and the spacing, never in a different typeface. */}
+                        <span className={`${highlighted ? "tracking-[0.015em]" : ""} ${locked ? "opacity-70" : ""}`.trim() || undefined}>{item.label}</span>
                         <RowNavBadge navBadge={item.navBadge} />
                         {pending ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-orange-500 employee-portal-nav-pending-dot" /> : null}
                       </Link>
-                      {/* The orange rail on the left edge. Absolutely positioned, so the row is not one
+                      {/* The heavy orange block down the left edge — the loudest part of the highlight
+                          now that the row carries no fill. Absolutely positioned, so the row is not one
                           pixel wider and no label can be pushed into a second line; pointer-events-none,
-                          so it never eats a click meant for the link or the pin star at left-2.5. */}
+                          so it never eats a click meant for the link or the pin star at left-2.5. It
+                          stays on when the row is ACTIVE, so the active fill appears BEHIND it rather
+                          than replacing it. */}
                       {highlighted ? (
-                        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 w-[2px] bg-[#F05A1A]" />
+                        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 w-[4px] bg-[#F05A1A]" />
                       ) : null}
                       {canPin && onTogglePin ? (
                         <button
