@@ -2485,6 +2485,25 @@ control, and reports BROKEN / UNVERIFIED / OK. First run, on `employees` that da
 distinct column names, 4 embedded relations, all present on production, and 1 run-time select left
 UNVERIFIED (`src/lib/email-templates/custom-variables.ts`).
 
+🔴 **THE PAYROLL AUDIT THE SAME DAY FOUND THE SAME DEFECT CLASS AGAIN, AND IT HAD BEEN LIVE FOR
+THREE AND A HALF MONTHS.** Every table the payroll code touches — 31 tables, 601 call sites, 454
+column names — against production: `src/lib/calendar/service.ts` asked `v2_vacation_requests` for
+**`type`**, which that table has never had (it is `vacation_type`). The whole read 42703s, and
+`loadLeaveItems` catches and returns `[]`, so from the calendar's first commit (2026-06-11) **every
+employee's approved leave was silently missing from their own calendar** — 551 approved requests
+across 92 people. Nothing was red, nothing was logged, and the type system could not see it, because
+a select is a string. Pinned by `tests/company-calendar.test.ts`.
+
+🔴 **AND THE AUDIT'S FIRST PASS CRIED WOLF FOUR TIMES OUT OF FIVE — a census that invents findings
+gets switched off, and the real one goes down with it.** All four were census defects, now fixed and
+pinned in `tests/select-census.test.ts`: an **apostrophe inside a `//` comment** (`the column's …`)
+opened a quote that swallowed the statement end, so the scan ran into the NEXT statement and claimed
+its filter (`outstation_expense_requests.trip_id`, from an `.eq` 120 lines later on another table);
+**`.order("year", { foreignTable: "salary_batches" })`** was attributed to the base table, reporting
+`salary_records.year`; **`.delete({ count: "exact" })`** was read as a write payload, reporting a
+column `count`; and a chain longer than the cap was half-read instead of reported UNRESOLVED. **The
+rule that survives all four: never report a finding you have not opened the file and read.**
+
 ## A DDL cannot be attributed to a session, and adjacency in time named the wrong one twice — 2026-09-29
 
 The owner asked a plain question: *find who dropped the two label pre-image tables.* The tables were
