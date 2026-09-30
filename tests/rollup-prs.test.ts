@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { MIN_MEMBERS } from "../scripts/rollup-build-verdict.mjs";
 import { membersReadyToBuild, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
+import { ROLLUP_BRANCH_PREFIX, overlappingRollup, rollupMembers } from "../scripts/rollup-duplicate-guard.mjs";
 
 /**
  * `scripts/rollup-prs.mjs` groups the open PRs into the fewest SAFE merges. The bill here is driven by
@@ -847,4 +848,100 @@ export function runRollupPrsTests(): void {
       "the abandon path must still put the folder back too",
     );
   }
+
+  // ── 12. An open roll-up over the same PRs must REFUSE a second build ─────────────────────────
+  // On 2026-09-30 #4904 and #4905 were opened 46 seconds apart with identical members (#4901, #4902,
+  // #4903) over the same ten files, because `--apply` asked only whether its own BRANCH NAME was
+  // free. The unique-name rule worked and prevented nothing: the names differed by a minute, so
+  // neither run could see the other. Then #4901 and #4902 were merged individually out from under
+  // #4904, turning three intended merges into four.
+  {
+    const rollups = [{ number: 4904, headRefName: "codex/rollup-20260930-1000", members: [4901, 4902, 4903] }];
+
+    // identical members — the measured case
+    const same = overlappingRollup({ wanted: [4903, 4901, 4902], rollups });
+    assert.ok(same, "an open roll-up with identical members must be found");
+    assert.equal(same!.number, 4904);
+    assert.deepEqual(same!.shared, [4901, 4902, 4903], "and it names every member already carried, sorted");
+    assert.equal(same!.unreadable, false);
+
+    // 🔴 OVERLAP, not equality, is the test. Whichever roll-up merges first leaves the other carrying
+    // members already on main, and its remaining members are then stuck behind a roll-up nobody can
+    // merge — the same harm as the identical case, reached by a narrower path.
+    const partial = overlappingRollup({ wanted: [4902, 4910], rollups });
+    assert.ok(partial, "a PARTIAL overlap must refuse too, not just an identical member set");
+    assert.deepEqual(partial!.shared, [4902]);
+
+    // A disjoint roll-up is not a collision: two roll-ups over different PRs are exactly the point.
+    assert.equal(overlappingRollup({ wanted: [4910, 4911], rollups }), null, "disjoint members must still build");
+    assert.equal(overlappingRollup({ wanted: [], rollups }), null, "nothing wanted is not a collision");
+    assert.equal(overlappingRollup({ wanted: [4901], rollups: [] }), null, "no open roll-up is not a collision");
+  }
+
+  // ── 12b. A roll-up whose members cannot be read counts as a COLLISION ────────────────────────
+  // The one direction that matters: an unknown must never read as "carries nothing", because that is
+  // how a second roll-up gets built over live work. Same rule the branch-name check already uses.
+  {
+    const unreadable = overlappingRollup({
+      wanted: [4901],
+      rollups: [{ number: 4904, headRefName: "codex/rollup-20260930-1000", members: [] }],
+    });
+    assert.ok(unreadable, "a roll-up whose members could not be parsed must refuse the build");
+    assert.equal(unreadable!.unreadable, true, "and it must say WHY, so the refusal is not read as a real overlap");
+    assert.deepEqual(unreadable!.shared, []);
+  }
+
+  // ── 12c. Members are read from the body's LIST, never from its prose ─────────────────────────
+  // The body names AGENTS.md sections and quotes `tests/run-tests.ts`, and a member's own title can
+  // carry an issue reference. A loose /#d+/ sweep would read those as members and refuse a build
+  // for nothing — a false refusal is as bad here as a missed one, because it sends the session back
+  // to merging small PRs one at a time.
+  {
+    const body = [
+      "Rolls up several open pull requests into ONE merge, so the CI bill is paid once instead of 3 times.",
+      "",
+      "Each is carried by merging its own head commit, so authorship and history are preserved:",
+      "",
+      "- #4901 — feat(employee-portal): group Business Cards under a Social band (3 files)",
+      "- #4902 — fix(#4123 regression): the name is an <h2> in the portal (5 files)",
+      "",
+      "Their file sets are disjoint, `tests/run-tests.ts` being the standing example. See AGENTS.md #6.",
+    ].join("\n");
+    assert.deepEqual(
+      rollupMembers(body),
+      [4901, 4902],
+      "only the '- #N —' list lines are members: not the title's own #4123, not the prose's AGENTS.md #6",
+    );
+    assert.deepEqual(rollupMembers(""), [], "an empty body yields no members");
+    assert.deepEqual(rollupMembers(undefined), [], "and a missing body must not throw");
+  }
+
+  // ── 12d. rollup-prs.mjs must actually GATE on it, before the members-wait ────────────────────
+  // A pure function nothing calls is not a guard. And placement is load-bearing: refusing AFTER the
+  // wait would spend minutes waiting for checks on members another roll-up already owns. Matched as
+  // plain substrings rather than patterns — the thing under test is a call site, not a shape.
+  {
+    const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    const gate = source.indexOf("overlappingRollup({ wanted: group.map");
+    assert.notEqual(gate, -1, "--apply must call the duplicate guard on the group it is about to build");
+    assert.ok(
+      source.includes("ROLLUP_BRANCH_PREFIX"),
+      "and it must find the open roll-ups by the prefix rollupBranchName actually produces",
+    );
+    // The CALL, not the import: `waitForRequiredChecks` also appears in the import list at the top
+    // of the script, and indexOf would have found that instead — making the ordering assertion
+    // compare the gate against line 59 and fail on a correctly placed guard.
+    const wait = source.indexOf("waitForRequiredChecks({");
+    assert.notEqual(wait, -1, "the members-wait must still be there");
+    assert.ok(
+      gate < wait,
+      "the duplicate refusal must come BEFORE the members-wait, or a duplicate build spends minutes "
+        + "waiting for required checks on members an open roll-up already carries",
+    );
+    // A collision must stop the build, not print and carry on.
+    const after = source.slice(gate, gate + 1400);
+    assert.ok(after.includes("process.exit(1)"), "a collision must exit non-zero");
+    assert.ok(after.includes("REFUSED"), "and say REFUSED, so it is not mistaken for a warning");
+  }
+  assert.equal(ROLLUP_BRANCH_PREFIX, "codex/rollup-", "the prefix must match rollupBranchName's output");
 }
