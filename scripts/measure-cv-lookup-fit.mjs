@@ -158,18 +158,28 @@ const resultsHtml = renderToStaticMarkup(
   React.createElement(CvLookupResultsView, {
     hits: hitsFixture(),
     query: "clinical pharmacist cardiology",
-    // A plain button, so nothing measured depends on a fetch. Same classes as the live one.
+    // Plain buttons, so nothing measured depends on a fetch or on the interview calendar's `/me`
+    // gate — but BOTH of them, stacked exactly as the live screen stacks them. Measuring one button
+    // where the screen draws two is the false-clean this harness exists to avoid: the CV column is
+    // 16% of a `table-fixed` table, and the wider label ("Schedule interview") is the one that
+    // decides whether the cell clips.
     renderAction: (hit) =>
       React.createElement(
-        "button",
-        {
-          className:
-            "gap-2 inline-flex h-7 items-center justify-center rounded-[min(var(--radius-md),12px)] " +
-            "border border-border bg-background px-2.5 text-[0.8rem] font-medium",
-          key: hit.candidateId,
-          type: "button",
-        },
-        "CV + application",
+        "div",
+        { className: "flex flex-col items-start gap-1.5", key: hit.candidateId },
+        ["CV + application", "Schedule interview"].map((label) =>
+          React.createElement(
+            "button",
+            {
+              className:
+                "gap-2 inline-flex h-7 items-center justify-center rounded-[min(var(--radius-md),12px)] " +
+                "border border-border bg-background px-2.5 text-[0.8rem] font-medium",
+              key: label,
+              type: "button",
+            },
+            label,
+          ),
+        ),
       ),
     truncated: true,
   }),
