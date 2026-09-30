@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 
-import { selectCorrectionRows, type BrickRef } from "../src/lib/sales/normalizer/customer-map.ts";
+import { loadOwnerVerifiedMapKeys, selectCorrectionRows, type BrickRef } from "../src/lib/sales/normalizer/customer-map.ts";
 import type { CustomerBrickCorrection } from "../src/lib/sales/normalizer/types.ts";
+
+/**
+ * The PostgREST chain `loadOwnerVerifiedMapKeys` builds, stopping at `.in()` which is awaited.
+ * A stub rather than a live client: the point of these cases is what the function does with an
+ * ERROR, and a real database will not produce one on demand.
+ */
+function stubDb(result: { data?: unknown[] | null; error?: { message: string } | null }) {
+  const chain = {
+    from: () => chain,
+    select: () => chain,
+    eq: () => chain,
+    in: () => Promise.resolve({ data: result.data ?? null, error: result.error ?? null }),
+  };
+  return chain as unknown as Parameters<typeof loadOwnerVerifiedMapKeys>[0];
+}
 
 function bricks(): Map<string, BrickRef> {
   return new Map<string, BrickRef>([
@@ -20,7 +35,7 @@ function correction(over: Partial<CustomerBrickCorrection> = {}): CustomerBrickC
   } as CustomerBrickCorrection;
 }
 
-export function runSosSelfHealOwnerVerifiedGuardTests() {
+export async function runSosSelfHealOwnerVerifiedGuardTests() {
   // Baseline: with no owner ruling on file, the monthly upload's self-heal still wins. This is the
   // behaviour that keeps the crosswalk current, and the guard must not disturb it.
   {
@@ -79,5 +94,52 @@ export function runSosSelfHealOwnerVerifiedGuardTests() {
       "self-heal never writes confidence, so it cannot mint or erase an owner ruling",
     );
     assert.equal(out.rows[0]?.source, "sheet-verified", "provenance stays distinguishable in the Mapping Database");
+  }
+
+  // ── The guard's own read must FAIL CLOSED (2026-09-30) ────────────────────────────────────────
+  // Every case above hands `selectCorrectionRows` a set that someone already built. The set comes
+  // from `loadOwnerVerifiedMapKeys`, and until this date ANY error there returned an EMPTY set —
+  // which is not "no rulings exist", it is "the guard is off". One timeout on one chunk of the
+  // 200-code `in` list was enough to let the sheet overwrite every owner ruling in that run, while
+  // the summary said `skippedOwnerVerified: 0` and nothing went red. On production 6,944 active rows
+  // across 6,357 customers sit at confidence 100, and this only runs on a CONFIRMED import commit.
+  const twoCorrections = [correction(), correction({ customerCode: "1507421" })];
+
+  {
+    // It still reads the rulings it finds, keyed exactly as the upsert keys them.
+    const keys = await loadOwnerVerifiedMapKeys(
+      stubDb({ data: [{ distributor_code: " ps ", customer_code: "1507402" }] }),
+      twoCorrections,
+    );
+    assert.deepEqual([...keys], ["PS 1507402"], "a ruling read back is normalized to the upsert's key");
+  }
+
+  {
+    // The ONE tolerated degradation: a deployment whose customer_map predates `confidence`.
+    const keys = await loadOwnerVerifiedMapKeys(
+      stubDb({ error: { message: `column source_of_sales_customer_map.confidence does not exist` } }),
+      twoCorrections,
+    );
+    assert.equal(keys.size, 0, "a pre-migration schema still degrades to an empty set rather than failing the upload");
+  }
+
+  {
+    // Everything else — the timeout, the blip, the statement error — must THROW.
+    let threw: unknown = null;
+    try {
+      await loadOwnerVerifiedMapKeys(stubDb({ error: { message: "canceling statement due to statement timeout" } }), twoCorrections);
+    } catch (e) {
+      threw = e;
+    }
+    assert.ok(
+      threw,
+      "a read error other than the missing confidence column must THROW — returning an empty set here "
+        + "silently switches off the guard and lets the sheet overwrite the owner's area rulings",
+    );
+    assert.match(
+      String((threw as { message?: string })?.message ?? ""),
+      /overwrite area rulings made at confidence 100/,
+      "and the error must say what it was protecting, not just relay the driver's message",
+    );
   }
 }

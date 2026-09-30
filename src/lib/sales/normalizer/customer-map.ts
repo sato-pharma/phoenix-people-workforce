@@ -795,10 +795,24 @@ export function selectCorrectionRows(
 }
 
 // Which (distributor, customer) pairs among these corrections are owner-verified (confidence=100)?
-// Keyed exactly as the upsert keys them, so the guard and the write agree on identity. A deployment
-// whose customer_map has no `confidence` column yet resolves to an EMPTY set, which restores the old
-// behaviour rather than failing the upload — the same degradation the upsert itself already allows.
-async function loadOwnerVerifiedMapKeys(
+// Keyed exactly as the upsert keys them, so the guard and the write agree on identity.
+//
+// 🔴 IT FAILS CLOSED. An empty set means "nobody is owner-verified", so `selectCorrectionRows` skips
+// nothing and every sheet correction lands — overwriting the owner's own area rulings while
+// reporting `skippedOwnerVerified: 0`, which reads exactly like "there were no rulings to protect".
+// Until 2026-09-30 ANY read error returned that empty set, so one timeout, one network blip or one
+// slow chunk of the 200-code `in` list was enough to switch the guard off for a whole run, silently.
+// Measured on production that day: 6,944 active rows across 6,357 customers sit at confidence 100,
+// and this runs ONLY from a confirmed import commit — so it was live exactly when real sales were
+// being written. An owner ruling binds at confidence 100; losing that guard is not a degradation the
+// caller may take without being told.
+//
+// The ONE tolerated failure is the degradation this function was written for: a deployment whose
+// `customer_map` predates the `confidence` column, which never could tell an owner ruling from
+// anything else. That is matched on an error naming that column — the same test the upsert below
+// already uses to retry without the provenance columns — and it is dead on production, where
+// `confidence` exists. Every other error throws.
+export async function loadOwnerVerifiedMapKeys(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   corrections: CustomerBrickCorrection[],
 ): Promise<Set<string>> {
@@ -817,7 +831,15 @@ async function loadOwnerVerifiedMapKeys(
       .eq("active", true)
       .eq("confidence", 100)
       .in("customer_code", customerCodes.slice(i, i + CHUNK));
-    if (error) return new Set<string>();
+    if (error) {
+      if (/confidence/i.test(error.message ?? "")) return new Set<string>();
+      throw new SalesWorkflowError(
+        "owner_ruling_guard_unavailable",
+        `Could not read the owner-verified mappings, so the sheet's corrections were not applied — `
+          + `applying them blind would overwrite area rulings made at confidence 100. ${error.message}`,
+        500,
+      );
+    }
     for (const row of (data ?? []) as { distributor_code?: unknown; customer_code?: unknown }[]) {
       keys.add(`${normalizeCodeKey(String(row.distributor_code ?? ""))} ${String(row.customer_code ?? "").trim()}`);
     }
