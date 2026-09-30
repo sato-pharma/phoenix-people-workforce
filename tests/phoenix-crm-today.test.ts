@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { stripComments, stripCommentsCompact } from "./support/comment-strip.ts";
 
-import { customerMetaText, gradeSpecialityText } from "../src/components/phoenix-crm/labels.ts";
+import { customerMetaText, gradeSpecialityParts, gradeSpecialityText } from "../src/components/phoenix-crm/labels.ts";
 
 import {
   addressWithoutTheBrick,
@@ -13,6 +13,7 @@ import {
   NO_PLACE_YET,
   planStatusNote,
   stopWhereLine,
+  stopWhereParts,
   todayByBrick,
   todayEmptyReason,
   todayPharmacies,
@@ -214,6 +215,16 @@ export function runPhoenixCrmTodayTests(): void {
     const bare = { hasPlace: false, placeLabel: null, reference: null, todayWindows: NO_PLACE_YET };
     assert.equal(stopWhereLine(bare, null), NO_PLACE_YET, "and with nothing known it still says it once, never twice");
 
+    // 🔴 The rep's day renders the line as its PARTS, each in an isolate of its own — joined, an
+    // Arabic place scrambled the hours beside it ("AM – 1:00 PM 9:00 · عيادة النور"). The parts are
+    // the line's own, in its order, so the joined line and the rendered one can never disagree.
+    assert.deepEqual(stopWhereParts(validated, "باجور"), ["Dr Nabil's clinic", "باجور", "9:00 AM – 1:00 PM"], "the place, the brick, the hours — each apart");
+    assert.deepEqual(stopWhereParts(pending, null), ["Menoufia 2", "سرس", NO_HOURS_YET]);
+    assert.deepEqual(stopWhereParts(bare, null), [NO_PLACE_YET], "and nothing known is still one part, never none");
+    for (const [stop, brick] of [[validated, "باجور"], [validated, null], [pending, "باجور"], [pending, null], [bare, null]] as const) {
+      assert.equal(stopWhereLine(stop, brick), stopWhereParts(stop, brick).join(" · "), "the joined line is exactly its parts");
+    }
+
     // The brick is taken from the reference too, so an unvalidated customer clusters with his own
     // brick-mates instead of falling into a nameless group at the end of the day.
     const loader = stripCommentsCompact(readFileSync(new URL("../src/lib/phoenix-crm/server/today.ts", import.meta.url), "utf8"));
@@ -291,6 +302,8 @@ export function runPhoenixCrmTodayTests(): void {
       "the area is dropped from every row, and an address that merely repeats the brick with it",
     );
     assert.ok(!landing.includes("stopWhereLine(stop,"), "and the brick is never passed to the where-line");
+    assert.ok(landing.includes("where: stopWhereParts("), "the row carries the line's parts, for the panel to isolate");
+    assert.ok(!landing.includes("stopWhereParts(stop,"), "and the brick is never passed to them either");
     // The rule itself, by behaviour: the brick is dropped only when the address OPENS with it.
     assert.equal(addressWithoutTheBrick("الباجور، سبك الضحاك", "باجور"), "سبك الضحاك", "the leading town goes, the village stays");
     assert.equal(addressWithoutTheBrick("الباجور", "باجور"), null, "an address that is only the brick leaves nothing");
@@ -348,14 +361,28 @@ export function runPhoenixCrmTodayTests(): void {
     assert.ok(landing.includes("grade: stop.grade ?? null,"), "every row carries the stop's own grade — a missing one is no grade, never undefined");
     assert.ok(landing.includes("speciality: stop.speciality,"), "and its own speciality");
     const nameAt = panel.indexOf("{stop.name}");
-    const identityAt = panel.indexOf("{gradeSpecialityText(stop)}");
-    const whereAt = panel.indexOf("{stop.where}");
+    const identityAt = panel.indexOf("parts={gradeSpecialityParts(stop)}");
+    const whereAt = panel.indexOf("parts={stop.where}");
     assert.ok(identityAt > 0, "the row prints the grade and the speciality");
     assert.ok(nameAt < identityAt && identityAt < whereAt, "on their own line, after the name and before the place");
     assert.ok(
       !panel.includes("customerMetaText("),
       "and WITHOUT the AM or PM that customerMetaText opens with — the row's own column already says it, so it would print twice",
     );
+
+    // 4c. 🔴 ONE DIRECTION PER ROW, AND EVERY PART ISOLATED. Measured on the first cut: with a `dir`
+    //     on each line, an Arabic name and place hugged the right edge while "Grade B" between them
+    //     hugged the left; and joined into one string, an Arabic place split the hours from their AM
+    //     ("AM – 1:00 PM 9:00 · عيادة النور"). So the block takes its direction from the NAME, once,
+    //     and every part of both lines sits in its own <bdi>.
+    const row = panel.slice(panel.indexOf("function StopRow("), panel.indexOf("function BrickHeading("));
+    assert.ok(row.includes('<span className="min-w-0 flex-1" dir="auto">'), "the row's text takes one direction, from its first letter — the name's");
+    assert.equal((row.match(/dir="auto"/g) ?? []).length, 1, "and no line inside the row sets a direction of its own");
+    assert.ok(panel.includes("<bdi>{part}</bdi>"), "each part is isolated, so a mixed line keeps every part's own order");
+    assert.ok(panel.includes('{index > 0 ? " · " : null}'), "joined by the module's own separator, which runs in the row's direction");
+    assert.deepEqual(gradeSpecialityParts({ grade: "B", speciality: "طب الأطفال" }), ["Grade B", "طب الأطفال"], "the grade and an Arabic speciality are two parts");
+    assert.deepEqual(gradeSpecialityParts({ grade: null, speciality: null }), ["No grade"], "and a bare customer is still one part, never none");
+
     // The words are the module's own, so this row reads exactly as the rest of Phoenix CRM does.
     assert.equal(gradeSpecialityText({ grade: "A", speciality: "Paediatrics" }), "Grade A · Paediatrics");
     assert.equal(gradeSpecialityText({ grade: null, speciality: "Paediatrics" }), "No grade · Paediatrics", "an ungraded customer says so");

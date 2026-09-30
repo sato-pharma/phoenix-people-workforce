@@ -157,14 +157,27 @@ export const NO_HOURS_YET = "No hours yet";
  * hours line.
  */
 export function stopWhereLine(stop: Pick<TodayStop, "hasPlace" | "placeLabel" | "reference" | "todayWindows">, brick: string | null): string {
+  return stopWhereParts(stop, brick).join(" · ");
+}
+
+/**
+ * The same line as its PARTS, in order — for a screen that has to keep each part's own direction.
+ *
+ * 🔴 JOINED INTO ONE STRING, AN ARABIC PLACE SCRAMBLES THE HOURS BESIDE IT. The line takes the
+ * direction of its first letter, so "عيادة النور · 9:00 AM – 1:00 PM" is laid out right to left, and
+ * the bidi rules then split the clock from its AM: it read "AM – 1:00 PM 9:00 · عيادة النور". Nothing
+ * inside the string can prevent that, so the rep's day renders each part in an isolate of its own,
+ * and that needs the parts, not the joined line.
+ */
+export function stopWhereParts(stop: Pick<TodayStop, "hasPlace" | "placeLabel" | "reference" | "todayWindows">, brick: string | null): string[] {
   const hasPlace = stop.hasPlace ?? stop.todayWindows !== NO_PLACE_YET;
-  if (hasPlace) return [stop.placeLabel, brick, stop.todayWindows].filter((part): part is string => Boolean(part)).join(" · ");
+  if (hasPlace) return [stop.placeLabel, brick, stop.todayWindows].filter((part): part is string => Boolean(part));
   // Not validated yet, so there is no clinic and no hours — but he is still on the day, and the day
   // has to read as a route (owner, 2026-09-30: "list all drs of today with timing and location"). So
   // it says where the sales master has him, and then why there are no hours. The names are the
   // ORGANOGRAM's: iReports360's own area and region words disagree with it on 37 of 39 areas.
   const parts = [brick, stop.reference?.area ?? null, stop.reference?.address ?? null].filter((part): part is string => Boolean(part));
-  return parts.length > 0 ? [...parts, NO_HOURS_YET].join(" · ") : NO_PLACE_YET;
+  return parts.length > 0 ? [...parts, NO_HOURS_YET] : [NO_PLACE_YET];
 }
 
 export type TodayVisit = {

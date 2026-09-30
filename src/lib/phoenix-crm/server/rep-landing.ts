@@ -4,7 +4,7 @@ import { canAccess } from "@/lib/auth/permissions";
 import { logError } from "@/lib/observability/log";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmToday } from "@/lib/phoenix-crm/server/today";
-import { addressWithoutTheBrick, stopWhereLine, todayByBrick } from "@/lib/phoenix-crm/today-rules";
+import { addressWithoutTheBrick, stopWhereParts, todayByBrick } from "@/lib/phoenix-crm/today-rules";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 /**
@@ -42,8 +42,11 @@ export type RepTodayStop = {
    * Where and when, on one line — the place, and today's receiving hours. His ask of the same
    * morning: "list all of today with timing and location". Carries NOTHING that judges him: no
    * distance, no reading, no check (golden rule #1).
+   *
+   * The line's PARTS, not the joined string: the panel isolates each one, because joined, an Arabic
+   * place scrambles the hours beside it (`stopWhereParts` says how).
    */
-  where: string;
+  where: string[];
   /** Green when he has already been (owner's own word for it). */
   done: boolean;
 };
@@ -136,7 +139,7 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
         // the brick is either a heading or the header's word on a single-brick day. On the row they
         // printed "باجور · Menoufia 2" sixteen times down a narrow column. What is left is what he
         // asked for that morning and nothing else — the place, and the hours.
-        where: stopWhereLine(
+        where: stopWhereParts(
           {
             ...stop,
             reference: stop.reference
