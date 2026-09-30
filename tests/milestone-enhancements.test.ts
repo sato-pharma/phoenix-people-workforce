@@ -238,7 +238,7 @@ export async function runMilestoneEnhancementsTests() {
     "a calendar birthday carries a printable b<ordinal> spec",
   );
 
-  // The service ladder rows carry their own printable spec; a plain arrival carries none.
+  // The service ladder rows carry their own printable spec.
   const serviceEvents = buildHrCalendarEvents(
     [
       {
@@ -258,6 +258,40 @@ export async function runMilestoneEnhancementsTests() {
   );
   const anniversary = serviceEvents.find((event) => event.eventType === "anniversary");
   assert.equal(anniversary?.spec, "7y", "the seventh anniversary prints a 7y card");
+
+  // ── The arrival PRINTS — the first day as a member of the family (owner, 2026-09-30) ──────────
+  //
+  // 🔴 ONE ROW, NOT TWO. The card rides the arrival row the calendar already emitted; it was NOT
+  // added to `calendarMilestoneSpecs`. Putting it on the ladder would print the joining day twice
+  // on one square for one person — the second copy typed "anniversary" with a tenure of zero — and
+  // would edit the owner's "first month and then yearly" ruling to make a card reachable.
+  const joiner = buildHrCalendarEvents(
+    [
+      {
+        areaName: "",
+        birthDate: "",
+        fullName: "New Joiner",
+        hireDate: "2026-10-05",
+        hrId: "N-01",
+        jobTitle: "",
+        lineName: "",
+        managerName: "",
+        workEmail: null,
+      },
+    ],
+    10, // October
+    2026,
+  );
+  const arrivals = joiner.filter((event) => event.date === "2026-10-05");
+  assert.equal(arrivals.length, 1, "the joining day is ONE row, never the arrival plus a ladder copy");
+  assert.equal(arrivals[0].eventType, "new_hire", "and it stays the arrival row");
+  assert.equal(arrivals[0].spec, "0d", "which now carries the first-day card — a dead chip before this");
+  assert.ok(
+    !calendarMilestoneSpecs({ year: 2026, month: 10, day: 5 }, 2026)
+      .map(formatMilestoneSpec)
+      .includes("0d"),
+    "the ladder is untouched: first month then yearly, exactly as the owner ruled on 2026-09-23",
+  );
 }
 
 /**

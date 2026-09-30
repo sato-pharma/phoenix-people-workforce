@@ -17,6 +17,7 @@ import {
   monthDayOn,
   parsePlainDate,
   satoBirthdayOrdinal,
+  FIRST_DAY_SPEC,
 } from "@/lib/milestones/periods";
 
 export const defaultHrWeeklyOffPolicy: HrWeeklyOffPolicy = {
@@ -49,7 +50,11 @@ function dayOfMonth(value: string) {
  *
  * "First month and then yearly" (the owner, 2026-09-23): the printable ladder is `calendarMilestoneSpecs`
  * — the first month, then every year to 60. `spec` carries the period each row prints as, or null for
- * a row that has no card (a plain arrival, or a birthday/anniversary with no usable date).
+ * a row that has no card (a birthday or anniversary with no usable date).
+ *
+ * THE ARRIVAL IS NOT ON THAT LADDER AND STILL PRINTS. It is its own row, dated to the hire date, and
+ * it carries `0d` — the first day as a member of the family (the owner, 2026-09-30). Keeping it off
+ * the ladder is what stops a joining day appearing twice on one square.
  */
 export function buildHrCalendarEvents(
   employees: HrCalendarEmployee[],
@@ -62,14 +67,22 @@ export function buildHrCalendarEvents(
     const hire = parsePlainDate(employee.hireDate);
 
     if (hire) {
-      // The arrival itself — its own day, its own year, and it prints no card.
+      // The arrival itself — its own day and its own year, and since 2026-09-30 it PRINTS A CARD:
+      // the first day as a member of the family (the owner, "add the first day to the HR calendar
+      // too"). The row was always here; what it lacked was a period, so the chip was dead text.
+      //
+      // 🔴 THE CARD RIDES THIS ROW — IT IS NOT A SECOND ROW ON THE LADDER. Putting `0d` into
+      // `calendarMilestoneSpecs` would have printed the arrival TWICE on one day for one person,
+      // the second copy typed "anniversary" with a tenure of zero years. It would also have edited
+      // the owner's "first month and then yearly" ruling (2026-09-23) to make a card reachable,
+      // which is the wrong half of the system to change. The ladder is untouched.
       if (hire.year === selectedYear && hire.month === selectedMonth) {
         events.push({
           date: employee.hireDate,
           employee,
           eventType: "new_hire",
           tenureYears: 0,
-          spec: null,
+          spec: formatMilestoneSpec(FIRST_DAY_SPEC),
         });
       }
 
