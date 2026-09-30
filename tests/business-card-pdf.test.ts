@@ -27,6 +27,16 @@ export function runBusinessCardPdfTests() {
     "only the name and mobile overlay the record; the title, line·area, email and company details stay the record's",
   );
 
+  // ── The card is fetched as BASE64 TEXT, so a PDF download-manager can't intercept it ────────────
+  // A fetch of an application/pdf response is grabbed and force-downloaded by a browser PDF
+  // download-manager (the page's JS then sees only "Failed to fetch"); base64-as-text dodges it.
+  assert.match(route, /searchParams\.get\("format"\) === "base64"/, "the route can return the card as base64 text");
+  assert.match(route, /pdfBytes\.toString\("base64"\)/, "base64 mode encodes the PDF as text");
+  assert.match(route, /"Content-Type": "text\/plain; charset=utf-8"/, "base64 mode is served as text/plain, not application/pdf");
+  assert.match(component, /\/api\/business-cards\/mine\?format=base64/, "the page fetches the card as base64 text");
+  assert.match(component, /base64ToBytes\(await response\.text\(\)\)/, "the base64 text is decoded to bytes in the browser");
+  assert.doesNotMatch(component, /response\.blob\(\)/, "the page must never read the card as an application/pdf blob a download-manager can grab");
+
   // ── The page SHOWS the card (front and back) and offers a printable-PDF download ────────────────
   assert.match(component, /\/api\/business-cards\/mine/, "the component renders via the own-card PDF endpoint");
   // The card is drawn onto <canvas> via pdf.js, NEVER an <iframe>/<embed> PDF — those obey the

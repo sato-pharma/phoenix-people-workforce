@@ -51,6 +51,17 @@ function safeFileName(name: string): string {
   return `business-card-${safe || "card"}.pdf`;
 }
 
+// The card comes back as base64 TEXT (never an application/pdf response), so a browser PDF
+// download-manager has nothing to intercept — see the /api/business-cards/mine route.
+function base64ToBytes(encoded: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
 export function EmployeeBusinessCard({
   card,
   initialRequests,
@@ -85,9 +96,11 @@ export function EmployeeBusinessCard({
   // Aborting the old request before the next one starts keeps that from ever reaching the employee.
   const previewAbortRef = useRef<AbortController | null>(null);
 
-  // Render the caller's own card server-side and hand back the print-ready PDF bytes.
-  const fetchOwnCardPdf = useCallback(async (signal?: AbortSignal): Promise<Blob> => {
-    const response = await fetch("/api/business-cards/mine", {
+  // Render the caller's own card server-side and hand back the print-ready PDF bytes — as base64
+  // TEXT (?format=base64), so a browser PDF download-manager never intercepts an application/pdf
+  // response and force-downloads it instead of letting this page draw it.
+  const fetchOwnCardBytes = useCallback(async (signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> => {
+    const response = await fetch("/api/business-cards/mine?format=base64", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cardName: name.trim(), cardMobile: mobile.trim() }),
@@ -97,7 +110,7 @@ export function EmployeeBusinessCard({
       const payload = (await response.json().catch(() => null)) as { message?: string } | null;
       throw new Error(payload?.message ?? "Your card could not be generated.");
     }
-    return response.blob();
+    return base64ToBytes(await response.text());
   }, [mobile, name]);
 
   // Draw the card's two pages onto canvas elements. A canvas is pixels, so it ALWAYS shows —
@@ -105,7 +118,7 @@ export function EmployeeBusinessCard({
   // them" setting turns into a forced download, and which mobile browsers cannot render inline at all.
   // pdf.js (library, worker and wasm) is served as static assets from /pdfjs/ and imported natively
   // so this app's webpack never re-bundles it — the exact same approach the CV preview uses.
-  const renderCardToCanvases = useCallback(async (bytes: Uint8Array, signal: AbortSignal) => {
+  const renderCardToCanvases = useCallback(async (bytes: Uint8Array<ArrayBuffer>, signal: AbortSignal) => {
     const pdfjsUrl = "/pdfjs/pdf.min.mjs";
     const pdfjsLib = (await import(/* webpackIgnore: true */ pdfjsUrl)) as typeof import("pdfjs-dist/legacy/build/pdf.mjs");
     pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs";
@@ -134,17 +147,16 @@ export function EmployeeBusinessCard({
     setGenerating(true);
     setPreviewError(null);
     try {
-      let blob: Blob;
+      let bytes: Uint8Array<ArrayBuffer>;
       try {
-        blob = await fetchOwnCardPdf(controller.signal);
+        bytes = await fetchOwnCardBytes(controller.signal);
       } catch (first) {
         // A single network-level drop of the ~2.7 MB body (fetch rejects with a TypeError) gets one
         // silent retry; an abort or a real HTTP error is passed straight through.
         if (controller.signal.aborted || !(first instanceof TypeError)) throw first;
-        blob = await fetchOwnCardPdf(controller.signal);
+        bytes = await fetchOwnCardBytes(controller.signal);
       }
       if (controller.signal.aborted) return;
-      const bytes = new Uint8Array(await blob.arrayBuffer());
       await renderCardToCanvases(bytes, controller.signal);
       if (controller.signal.aborted) return;
       renderedOnceRef.current = true;
@@ -161,7 +173,7 @@ export function EmployeeBusinessCard({
         setGenerating(false);
       }
     }
-  }, [fetchOwnCardPdf, renderCardToCanvases]);
+  }, [fetchOwnCardBytes, renderCardToCanvases]);
 
   // First render is immediate; edits regenerate the preview 800ms after typing stops. The gate is a
   // ref, not state, so marking the first render done does not itself re-fire this effect.
@@ -185,8 +197,10 @@ export function EmployeeBusinessCard({
     setDownloading(true);
     setPreviewError(null);
     try {
-      const blob = await fetchOwnCardPdf();
-      const url = URL.createObjectURL(blob);
+      // Fetched as base64 too, then rebuilt into a PDF blob here, so the download-manager never sees
+      // an application/pdf response — the file is saved by this page's own <a download>.
+      const bytes = await fetchOwnCardBytes();
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
       const link = document.createElement("a");
       link.href = url;
       link.download = safeFileName(trimmedName);
