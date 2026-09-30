@@ -309,8 +309,9 @@ export function MyMilestones({ entries, photoUrl }: Props) {
   }, [produceCard]);
 
   // Mint the PUBLIC, expiring link to this card so LinkedIn and Facebook can show it. The link renders
-  // the record's photo at its default framing (a link cannot carry a live drag or an upload), so
-  // WhatsApp still sends the framed picture while LinkedIn and Facebook show the tidy default.
+  // the RECORD photo at the framing the rep dragged (his crop travels in the link), so LinkedIn and
+  // Facebook match what he saw. A custom UPLOAD cannot fit in a URL, so an uploaded card still shows
+  // the record photo — WhatsApp sends the exact uploaded picture instead.
   const shareLink = useCallback(async (): Promise<string | null> => {
     if (!selected) return null;
     try {
@@ -318,6 +319,13 @@ export function MyMilestones({ entries, photoUrl }: Props) {
       // may run it where a POST would be refused as a write.
       const params = new URLSearchParams({ period: selected.spec, on: selected.on });
       if (withoutPhoto) params.set("withoutPhoto", "1");
+      // Carry the framing only when the card shows the record photo — a drag on an uploaded picture
+      // does not describe the record photo, and a monogram has no photo to frame.
+      if (!upload && !withoutPhoto) {
+        params.set("fx", focusValue.x.toFixed(3));
+        params.set("fy", focusValue.y.toFixed(3));
+        params.set("fz", focusValue.zoom.toFixed(3));
+      }
       const response = await fetch(`/api/milestones/my-card?${params.toString()}`, { method: "GET" });
       if (!response.ok) return null;
       const data = (await response.json().catch(() => null)) as { shareUrl?: unknown } | null;
@@ -325,7 +333,7 @@ export function MyMilestones({ entries, photoUrl }: Props) {
     } catch {
       return null;
     }
-  }, [selected, withoutPhoto]);
+  }, [selected, withoutPhoto, upload, focusValue]);
 
   if (entries.length === 0) {
     return (

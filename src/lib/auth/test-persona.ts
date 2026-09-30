@@ -48,6 +48,19 @@ const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
  */
 export const TEST_ACCOUNT_WRITABLE_PREFIXES = ["/api/phoenix-crm/", "/api/auth/"] as const;
 
+/**
+ * POST routes that RENDER and persist NOTHING — a test account reads the real person's own keepsake
+ * through them (a milestone card, a spotlight sheet) exactly as she sees it, and writes no row, no
+ * ledger and no audit. They are POST only because they can carry a large body (an uploaded photo, a
+ * period), never because they mutate. This is NOT the writable list above: a test account still may
+ * not WRITE as her anywhere outside it — these paths simply are not writes.
+ *
+ * 🔴 Every path here MUST be write-free. `tests/test-account-readonly-posts.test.ts` reads each route
+ * back off disk and fails if it contains an insert/update/upsert/audit call, so a route that grows a
+ * write drops out of the list rather than letting a test account write as the person it mirrors.
+ */
+export const TEST_ACCOUNT_READONLY_POSTS = ["/api/milestones/my-card", "/api/spotlight/me/sheet"] as const;
+
 export function isTestAccount(access: Pick<AccessContext, "testPersona"> | null | undefined): boolean {
   return Boolean(access?.testPersona);
 }
@@ -56,6 +69,7 @@ export function isTestAccount(access: Pick<AccessContext, "testPersona"> | null 
 export function testAccountMayRun(method: string | null | undefined, pathname: string | null | undefined): boolean {
   if (READ_METHODS.has(String(method ?? "GET").toUpperCase())) return true;
   const path = String(pathname ?? "");
+  if ((TEST_ACCOUNT_READONLY_POSTS as readonly string[]).includes(path)) return true;
   return TEST_ACCOUNT_WRITABLE_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 

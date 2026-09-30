@@ -207,6 +207,12 @@ export async function GET(request: Request) {
     const onParam = params.get("on");
     const on: PlainDate | null = onParam ? parsePlainDate(onParam) : null;
     const withoutPhoto = params.get("withoutPhoto") === "1";
+    // The framing the rep dragged (record photo only) so the public card matches what he saw. Only
+    // when the coordinates are actually present — absent means the default centre crop, not (0,0).
+    const focus =
+      params.has("fx") && params.has("fy")
+        ? readFocus({ x: Number(params.get("fx")), y: Number(params.get("fy")), zoom: Number(params.get("fz")) })
+        : null;
     const hrId = access.hrId;
 
     // Resolve the concrete spec + date the card uses so the link renders the same card. `withoutPhoto:
@@ -225,6 +231,7 @@ export async function GET(request: Request) {
       spec: built.periodSpec,
       on: formatPlainDateIso(built.on),
       withoutPhoto,
+      focus,
     });
     return Response.json({ shareUrl: shareCardPublicUrl(token) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

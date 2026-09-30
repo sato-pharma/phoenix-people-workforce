@@ -5,6 +5,7 @@ import {
   readShareCardToken,
   shareCardImageUrl,
   shareCardPublicUrl,
+  unpackShareFocus,
 } from "@/lib/share/share-card-token";
 
 // The public share-card token — the capability behind an UNAUTHENTICATED link that LinkedIn and
@@ -29,6 +30,24 @@ export function runShareCardTokenTests(): void {
   assert.ok(np && np.k === "milestone" && np.np === true, "a no-photo card carries np:true so the public link stays photo-less");
   assert.ok(m.k === "milestone" && !m.np, "a normal card carries no np flag (photo shown)");
   assert.notEqual(npTok.split(".")[1], mTok.split(".")[1], "different payloads sign differently — the rate-limit key varies per token");
+
+  // ── The drag framing travels in the link so LinkedIn/Facebook show the rep's crop ─────────────
+  const framed = issueShareCardToken({
+    kind: "milestone",
+    hrId: "B-13",
+    spec: "2y",
+    on: "2026-10-01",
+    focus: { x: 0.25, y: 0.8, zoom: 2.5 },
+    nowSeconds: now,
+  });
+  const framedFocus = unpackShareFocus(readShareCardToken(framed, now)!);
+  assert.deepEqual(framedFocus, { x: 0.25, y: 0.8, zoom: 2.5 }, "the framing round-trips through the token");
+  assert.equal(unpackShareFocus(readShareCardToken(mTok, now)!), null, "a card with no drag carries no framing");
+  // A monogram (no photo) never carries a framing — there is no photo to frame.
+  const monogram = issueShareCardToken({
+    kind: "milestone", hrId: "B-13", spec: "2y", on: "2026-10-01", withoutPhoto: true, focus: { x: 0.1, y: 0.1, zoom: 3 }, nowSeconds: now,
+  });
+  assert.equal(unpackShareFocus(readShareCardToken(monogram, now)!), null, "a monogram carries no framing");
 
   // ── Round trip: a spotlight link carries its range ────────────────────────────────────────────
   const sTok = issueShareCardToken({ kind: "spotlight", hrId: "b-40", from: "2026-07", to: "2026-08", nowSeconds: now });
