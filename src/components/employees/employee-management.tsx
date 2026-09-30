@@ -59,6 +59,7 @@ import type {
   EmployeeSalaryDetailCategory,
   EmployeeSalaryDetailValueType,
 } from "@/lib/employees/employee-directory";
+import { filterAreaOptionsForLine } from "@/lib/employees/area-line-options";
 import {
   getMissingEmployeeRecordFields,
   hasMissingEmployeeRecordData,
@@ -3468,7 +3469,7 @@ export function EmployeeManagement({
                           : form.lineId
                             ? [{ label: "No open vacancy for this position and line", value: "empty" }]
                             : []
-                        : lookups.areas.filter((a) => !form.lineId || String(a.lineId) === String(form.lineId))
+                        : filterAreaOptionsForLine(lookups.areas, form.lineId)
                     }
                     placeholder={selectedPositionRequiresVacancy && !form.lineId ? "Select line first" : "Select area"}
                     value={form.areaId}

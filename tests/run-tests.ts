@@ -2004,6 +2004,7 @@ import { runOverCapNeverBlocksTests } from "./over-cap-never-blocks.test.ts";
 import { runTargetsUnsavedEditGuardTests } from "./targets-unsaved-edit-guard.test.ts";
 import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts";
 import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
+import { runEmployeeAreaLineOptionsTests } from "./employee-area-line-options.test.ts";
 import { runOrganogramVacancyHireLinkTests } from "./organogram-vacancy-hire-link.test.ts";
 import { runOrganogramSeatCvNoticeTests } from "./organogram-seat-cv-notice.test.ts";
 import { runEmployeeCvCarryFromRecruitmentTests } from "./employee-cv-carry-from-recruitment.test.ts";
@@ -7132,6 +7133,11 @@ await runTest(
 await runTest(
   "vacancy option label (a district vacancy names its district, not only the leaver own area)",
   runVacancyOptionLabelTests,
+);
+
+await runTest(
+  "Employee Master operating-area picker (an area with line_id NULL belongs to every line -- Pedia can hire into Beni Suef)",
+  runEmployeeAreaLineOptionsTests,
 );
 
 await runTest(
