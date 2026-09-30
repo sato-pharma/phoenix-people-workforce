@@ -305,6 +305,20 @@ jobs:
         if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run check:no-stale-domains
 
+      # 🔴 THE ONLY CI COVERAGE A DOCKERFILE GETS, AND IT IS DELIBERATELY IN `validate` RATHER THAN
+      # BEHIND THE BUILD. The Build step below is gated off pull requests on purpose (see
+      # tests/ci-pr-skips-build-and-smoke.test.ts), and the container image is built only by Railway
+      # AFTER the merge — so before this step a Dockerfile typo or an undeclared $VAR reached
+      # production on a commit whose required checks were green, surfacing as a failed deploy, which
+      # AGENTS.md §2.3 calls the hardest failure here to notice.
+      #
+      # Milliseconds, no docker daemon, no build context. It does NOT replace the build; it catches
+      # the four things that break one. Added 2026-10-01 after #4981 removed a dead build ARG and
+      # proving that safe took a hand-rolled audit nothing in the repo could do.
+      - name: Check both Dockerfiles parse and declare every variable they use
+        if: steps.detect.outputs.docs_only != 'true'
+        run: pnpm run check:dockerfile
+
       # 🔴 THE UNIT SUITE LIVES HERE AGAIN, MOVED BACK OUT OF `checks` ON 2026-09-30 FOR WALL CLOCK.
       # It is the same step, unchanged, and it is still inside a REQUIRED check — which is the whole
       # reason it came here rather than into a new job of its own.
