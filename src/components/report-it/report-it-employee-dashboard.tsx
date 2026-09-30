@@ -26,8 +26,8 @@ const btnDark =
   "inline-flex items-center gap-1.5 border border-slate-900 bg-slate-900 px-5 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:pointer-events-none disabled:opacity-50";
 const btnGhost =
   "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-40";
-const btnOrange =
-  "inline-flex items-center gap-1.5 bg-orange-500 px-5 py-2 text-sm font-bold text-white transition hover:bg-orange-600";
+// `btnOrange` lived here for the removed hero's `New Report` button, whose job the `New Report` tab
+// already did. Removing the hero left it referenced nowhere, and an unused constant fails lint.
 
 type Tab = "reports" | "submit";
 
@@ -375,20 +375,12 @@ export function ReportItEmployeeDashboard({ initialRows, initialTotal }: Props) 
 
   return (
     <div className="space-y-5">
-      {/* Premium dark hero */}
-      <div className="bg-slate-900 px-5 py-5">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
-        <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-lg font-black text-white">Report It — Dashboard</h1>
-            <p className="mt-0.5 text-sm text-slate-400">Adverse drug reaction reports</p>
-          </div>
-          <button type="button" className={btnOrange + " shrink-0"} onClick={() => setTab("submit")}>
-            <Plus className="h-4 w-4" />
-            New Report
-          </button>
-        </div>
-      </div>
+      {/* 🔴 A SECOND DARK HERO USED TO STAND HERE, AND IT MUST NOT COME BACK.
+          `EmployeePortalPageShell` already paints the navy command header for this page — the
+          `Pharmacovigilance` badge, the title `Report It Dashboard` and the description — and this
+          block repeated all three VERBATIM, so the page shipped with two stacked dark headers
+          (owner, 2026-09-30: "fix the duplicated header on report it too"). Nothing was lost with
+          it: its `New Report` button was itself a second copy of the `New Report` TAB below. */}
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200">

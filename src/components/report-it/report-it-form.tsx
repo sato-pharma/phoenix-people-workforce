@@ -985,35 +985,32 @@ export function ReportItForm({ onSubmitSuccess, variant = "employee" }: ReportIt
           </div>
         </div>
       ) : (
-        <div className="relative overflow-hidden bg-slate-900 px-5 py-6 sm:px-8 sm:py-7">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-orange-500/10 blur-2xl"
-          />
-          <div className="relative flex items-start gap-4">
-            <div className="min-w-0 flex-1">
-              <p className="text-phx-xs font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
-              <h1 className="mt-1 text-2xl font-black leading-none text-white">Report It</h1>
-              <p className="mt-2 max-w-xl text-sm text-slate-300">
-                Report an adverse drug reaction in a safe, confidential way. Fields marked
-                with <span className="font-bold text-orange-300">*</span> are required.
-              </p>
+        // ── Portal progress strip ──────────────────────────────────────────────────────────────
+        // 🔴 A SECOND DARK HERO USED TO STAND HERE, AND IT MUST NOT COME BACK.
+        // `EmployeePortalPageShell` already paints the navy command header on this page — the
+        // `Pharmacovigilance` badge, the title `Report It`, and the description — so this block
+        // repeated all three and the page shipped with TWO stacked dark headers (owner, 2026-09-30,
+        // after the same defect was removed from Spotlight: "fix the duplicated header on report it
+        // too"). Only what the shell does NOT say survives: which step you are on, that the report
+        // is confidential, and that starred fields are required. Light, so it reads as the top edge
+        // of this card rather than as a header of its own. The `isAdmin` branch above is untouched —
+        // it sits in the admin shell, which prints no title for it, and it carries an <h2>.
+        <div className="border-b border-slate-100 px-5 py-4 sm:px-8">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="flex items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
+              <span>Step {step} of {STEPS.length}</span>
+              <span className="text-orange-600">{pct}%</span>
             </div>
-            <span className="hidden items-center gap-1.5 self-start border border-white/15 bg-white/5 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-slate-200 sm:inline-flex">
-              <ShieldCheck className="h-3.5 w-3.5 text-orange-400" />
+            <span className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
+              <ShieldCheck className="h-3.5 w-3.5 text-orange-500" />
               Confidential
             </span>
           </div>
-
-          {/* progress */}
-          <div className="relative mt-6">
-            <div className="flex items-center justify-between text-phx-2xs font-black uppercase tracking-wide text-slate-400">
-              <span>Step {step} of {STEPS.length}</span>
-              <span className="text-orange-400">{pct}%</span>
-            </div>
-            <div className="mt-1.5 h-1.5 w-full bg-white/10">
-              <div className="h-full bg-orange-500 transition-all duration-300" style={{ width: `${pct}%` }} />
-            </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Fields marked with <span className="font-bold text-orange-600">*</span> are required.
+          </p>
+          <div className="mt-3 h-1.5 w-full bg-slate-100">
+            <div className="h-1.5 bg-orange-500 transition-all duration-300" style={{ width: `${pct}%` }} />
           </div>
         </div>
       )}

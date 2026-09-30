@@ -351,9 +351,23 @@ function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
 }
 
 export function FieldActivityView({
+  chrome = "admin",
   defaultFrom,
   defaultTo,
 }: {
+  /**
+   * Which shell this is rendered in, and therefore who owns the page title.
+   *
+   * `admin` — `app/(admin)/admin/field-activity/page.tsx` renders this component BARE, with no shell
+   * around it, so the `<h1>` below is the page's only title and must stay.
+   *
+   * `portal` — `app/employee-portals/field-activity/page.tsx` wraps it in `EmployeePortalPageShell`,
+   * which already paints the navy command header with the `Coaching` badge, the title `Field
+   * Activity` and the module sentence. Drawing the heading here as well printed the same words twice
+   * under two type scales (owner, 2026-09-30: "add kpis, field activity and double visit analytics
+   * to 4889 too"). Same vocabulary as `KpisBoardView`, which solved this first.
+   */
+  chrome?: "admin" | "portal";
   defaultFrom: string;
   defaultTo: string;
 }) {
@@ -490,13 +504,20 @@ export function FieldActivityView({
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-black text-slate-950">Field Activity</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">
-          Any person in your scope, any period — every visit, GPS fix, logged time and expense, day by day.
-          {scopeLabel ? ` You are seeing ${scopeLabel}.` : ""}
-        </p>
-      </div>
+      {/* The title and the module sentence are the SHELL'S in the portal — see `chrome` above. The
+          scope line is not: it says whose days you are looking at, it changes with the viewer, and
+          the shell header is written once, so it survives in both shells. */}
+      {chrome === "admin" ? (
+        <div>
+          <h1 className="text-2xl font-black text-slate-950">Field Activity</h1>
+          <p className="mt-1 text-sm font-semibold text-slate-500">
+            Any person in your scope, any period — every visit, GPS fix, logged time and expense, day by day.
+            {scopeLabel ? ` You are seeing ${scopeLabel}.` : ""}
+          </p>
+        </div>
+      ) : scopeLabel ? (
+        <p className="text-sm font-semibold text-slate-500">You are seeing {scopeLabel}.</p>
+      ) : null}
 
       <Card className="border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">

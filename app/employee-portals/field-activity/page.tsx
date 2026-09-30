@@ -50,7 +50,9 @@ export default async function FieldActivityPortalPage() {
       errorBoundaryTitle="Field Activity unavailable"
       title="Field Activity"
     >
-      <FieldActivityView defaultFrom={period.fromIso} defaultTo={period.toIso} />
+      {/* `chrome="portal"` because THIS shell owns the header above — without it the view drew its
+          own `<h1>Field Activity</h1>` and the module sentence a second time. */}
+      <FieldActivityView chrome="portal" defaultFrom={period.fromIso} defaultTo={period.toIso} />
     </EmployeePortalPageShell>
   );
 }
