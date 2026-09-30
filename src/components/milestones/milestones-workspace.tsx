@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
+  resolveMilestoneGroupOccasion,
+  MILESTONE_GROUP_MAX,
+  type MilestoneGroupRow,
+} from "@/lib/milestones/group";
+import {
   cardFirstName,
   formatPlainDateIso,
   formatPlainDateLong,
@@ -23,6 +28,13 @@ import type { MilestoneCandidate, MilestoneDueEntry, MilestonePrintHistoryEntry 
  * TWO HALVES, IN THE ORDER THE WORK HAPPENS. Who is coming up, then the card for the one you
  * picked. The list is the reason to open the page at all: a first month is easy to miss, and by
  * the time somebody mentions it the day has gone.
+ *
+ * 🔴 THE TICK LIST FEEDS TWO DIFFERENT ACTS, AND THEY ARE NOT SPELLINGS OF EACH OTHER. "Print N
+ * cards" is a stack to print and hand out — one card per page, in one PDF. "One picture of all N" is
+ * a SINGLE landscape sheet with every face on it, for a group who share one occasion, because a
+ * five-page PDF is not something anybody can send ("I want to make a photo that has them all" — the
+ * owner, 2026-09-30). The second holds one occasion only, and the rule deciding that is imported
+ * from the domain, never restated here, so the button and the route can never disagree.
  *
  * 🔴 THE LIST IS A SHORTCUT, NEVER THE ONLY WAY IN. A name box over the whole active roster sits
  * at the top of the card panel, so a card can be made for anybody at any time — the thirty-day
@@ -69,6 +81,16 @@ const SHEET_W = 794;
 const SHEET_H = 1123;
 
 /**
+ * The GROUP picture's page — the same A4 sheet, turned.
+ *
+ * Landscape, because a row of faces reads across. The preview pane therefore has to be TOLD which
+ * sheet it is showing: it scales the iframe to its own container, and a landscape sheet scaled
+ * against the portrait width would be cropped on the right with no scroll bar to reveal it.
+ */
+const GROUP_SHEET_W = SHEET_H;
+const GROUP_SHEET_H = SHEET_W;
+
+/**
  * Where the portrait window sits on the photograph, and how far in — the card's own
  * `PortraitFocus`, with the identical meaning on both sides of the wire.
  */
@@ -99,6 +121,34 @@ const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 
 /** The employee-photo endpoint's own 5 MB ceiling — checked here so saving fails before the upload. */
 const MAX_RECORD_PHOTO_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Whether the ticked rows may share one picture, and if not, exactly why — in the ROUTE'S OWN WORDS.
+ *
+ * 🔴 THE RULE IS IMPORTED, NEVER RESTATED HERE. `resolveMilestoneGroupOccasion` is pure — it reaches
+ * only `periods.ts`, no I/O — so the button and the route decide from the same function and can never
+ * disagree about what is allowed, and the reason shown under the button is the same sentence the
+ * route would have returned. A second copy of this rule in the client is how a button ends up enabled
+ * for a set the server refuses, or greyed out for a set it would happily print.
+ */
+function groupPictureCheck(rows: readonly MilestoneDueEntry[]): { ok: boolean; reason: string } {
+  if (rows.length === 0) return { ok: false, reason: "Tick the people who share the occasion." };
+  const resolved: MilestoneGroupRow[] = [];
+  for (const entry of rows) {
+    const on = parsePlainDate(entry.on);
+    if (!on) return { ok: false, reason: `${entry.displayName} has no usable date on that row.` };
+    resolved.push({ periodSpec: entry.spec, on, displayName: entry.displayName });
+  }
+  try {
+    resolveMilestoneGroupOccasion(resolved);
+    return { ok: true, reason: "" };
+  } catch (cause) {
+    return {
+      ok: false,
+      reason: cause instanceof Error ? cause.message : "Those rows cannot share one picture.",
+    };
+  }
+}
 
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
@@ -262,7 +312,11 @@ export function MilestonesWorkspace({
   const uploadInput = useRef<HTMLInputElement | null>(null);
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"preview" | "download" | "picture" | "batch" | null>(null);
+  /** Which sheet the preview pane is currently showing — the single card's, or the group's. */
+  const [previewSheet, setPreviewSheet] = useState<{ w: number; h: number }>({ w: SHEET_W, h: SHEET_H });
+  const [busy, setBusy] = useState<
+    "preview" | "download" | "picture" | "batch" | "group" | "group-pdf" | "group-preview" | null
+  >(null);
 
   // ── WHICH ROWS ARE TICKED FOR A BATCH ────────────────────────────────────────────────────────
   // Keyed by occurrence, so a tick survives a refresh that reorders the list, and so the same
@@ -322,15 +376,17 @@ export function MilestonesWorkspace({
     });
   }, []);
 
-  // The preview scales to its container rather than the container scrolling to the preview.
+  // The preview scales to its container rather than the container scrolling to the preview. It
+  // re-measures when the SHEET changes too, not only when the container does — a landscape group
+  // picture and a portrait card are scaled against different widths.
   useEffect(() => {
     const node = frameBox.current;
     if (!node) return;
-    const observer = new ResizeObserver(() => setScale(node.clientWidth / SHEET_W));
+    const observer = new ResizeObserver(() => setScale(node.clientWidth / previewSheet.w));
     observer.observe(node);
-    setScale(node.clientWidth / SHEET_W);
+    setScale(node.clientWidth / previewSheet.w);
     return () => observer.disconnect();
-  }, []);
+  }, [previewSheet.w]);
 
   // A blob URL outlives the component unless it is revoked by hand.
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
@@ -690,6 +746,8 @@ export function MilestonesWorkspace({
       }
       const html = await response.text();
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      // The pane may be showing a landscape group picture; put it back to the card's own sheet.
+      setPreviewSheet({ w: SHEET_W, h: SHEET_H });
       setPreviewUrl((current) => {
         if (current) URL.revokeObjectURL(current);
         return url;
@@ -734,6 +792,12 @@ export function MilestonesWorkspace({
   const tickedItems = useMemo(
     () => entries.filter((entry) => ticked.has(entryKey(entry))),
     [entries, ticked],
+  );
+
+  /** The ticked rows on the wire — the shape both the batch and the group picture take. */
+  const groupItems = useMemo(
+    () => tickedItems.map((entry) => ({ hrId: entry.hrId, period: entry.spec, on: entry.on })),
+    [tickedItems],
   );
 
   const toggleTick = useCallback((entry: MilestoneDueEntry) => {
@@ -809,6 +873,87 @@ export function MilestonesWorkspace({
     () => printItems(entries.map((entry) => ({ hrId: entry.hrId, period: entry.spec, on: entry.on }))),
     [printItems, entries],
   );
+
+  // ── ONE PICTURE WITH EVERYBODY ON IT ─────────────────────────────────────────────────────────
+  // "I have five employees that have the same milestone in one day … I want to make a photo that has
+  // them all" (the owner, 2026-09-30). The batch above is a thing to PRINT — one card per page, and
+  // nothing you can send. This is one landscape sheet with every ticked face on it.
+
+  // Cheap enough to answer on every render (at most twelve rows through a pure function), and
+  // deliberately NOT wrapped in useMemo: the try/catch defeats the React Compiler's ability to
+  // preserve a manual memo, which is a lint error here.
+  const groupCheck = groupPictureCheck(tickedItems);
+
+  /**
+   * The picture itself — the PNG to send, or the same artwork as a one-page PDF to print.
+   *
+   * No photograph and no framing travel: the group prints from each person's record, exactly as the
+   * batch does. Afterwards the list is refreshed so the "already printed" marks appear on the rows
+   * that are on the picture, and the ticks are cleared.
+   */
+  const groupPicture = useCallback(
+    async (format: "png" | "pdf") => {
+      if (!groupCheck.ok) return;
+      setBusy(format === "pdf" ? "group-pdf" : "group");
+      setError(null);
+      try {
+        const response = await fetch("/api/milestones/group", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: groupItems, variant, format }),
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.error ?? "The picture could not be produced.");
+        }
+        const disposition = response.headers.get("Content-Disposition") ?? "";
+        const match = /filename="([^"]+)"/.exec(disposition);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = match?.[1] ?? `milestone-group.${format}`;
+        link.click();
+        URL.revokeObjectURL(url);
+        setTicked(new Set());
+        await refreshList();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "The picture could not be produced.");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [groupCheck.ok, groupItems, refreshList, variant],
+  );
+
+  /** The same artwork on screen, in the preview pane, before anything is downloaded or sent. */
+  const groupPreview = useCallback(async () => {
+    if (!groupCheck.ok) return;
+    setBusy("group-preview");
+    setError(null);
+    try {
+      const response = await fetch("/api/milestones/group", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: groupItems, variant, format: "html" }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error ?? "The preview could not be built.");
+      }
+      const html = await response.text();
+      const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      setPreviewSheet({ w: GROUP_SHEET_W, h: GROUP_SHEET_H });
+      setPreviewUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return url;
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The preview could not be built.");
+    } finally {
+      setBusy(null);
+    }
+  }, [groupCheck.ok, groupItems, variant]);
 
   /** The `?from&to` query string for a window; an empty side is left off and the server fills it
    *  with its default 90-day edge. Shared by the table fetch and the XLSX link, so one window
@@ -995,6 +1140,55 @@ export function MilestonesWorkspace({
                 <span className="text-[11px] leading-relaxed text-slate-500">
                   One PDF, one card per page, from each person&apos;s record photograph.
                 </span>
+              </div>
+            ) : null}
+
+            {/*
+              🔴 ONE PICTURE WITH EVERYBODY ON IT — a different act from the batch above, not a second
+              spelling of it. The batch is a stack of cards to print and hand out; this is a single
+              landscape sheet that can be SENT ("I want to make a photo that has them all" — the
+              owner, 2026-09-30). It holds one occasion only, and the reason it is off is the route's
+              own sentence, from the same function the route decides with.
+            */}
+            {canExport ? (
+              <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-slate-200 pb-3">
+                <button
+                  className="rounded-none bg-sky-800 px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+                  disabled={!groupCheck.ok || busy !== null}
+                  onClick={() => groupPicture("png")}
+                  type="button"
+                >
+                  {busy === "group"
+                    ? "Drawing…"
+                    : tickedItems.length > 1
+                      ? `One picture of all ${tickedItems.length}`
+                      : "One picture of them all"}
+                </button>
+                <button
+                  className="rounded-none border border-sky-800 px-4 py-2 text-[13px] font-semibold text-sky-800 disabled:opacity-50"
+                  disabled={!groupCheck.ok || busy !== null}
+                  onClick={groupPreview}
+                  type="button"
+                >
+                  {busy === "group-preview" ? "Building…" : "Preview it"}
+                </button>
+                <button
+                  className="rounded-none border border-sky-800 px-4 py-2 text-[13px] font-semibold text-sky-800 disabled:opacity-50"
+                  disabled={!groupCheck.ok || busy !== null}
+                  onClick={() => groupPicture("pdf")}
+                  type="button"
+                >
+                  {busy === "group-pdf" ? "Printing…" : "Its PDF"}
+                </button>
+                {groupCheck.ok || tickedItems.length === 0 ? (
+                  <span className="text-[11px] leading-relaxed text-slate-500">
+                    One landscape sheet, every ticked face on it, from each person&apos;s record
+                    photograph — the one to send. Up to {MILESTONE_GROUP_MAX} faces, all on the same
+                    occasion.
+                  </span>
+                ) : (
+                  <span className="text-[11px] leading-relaxed text-amber-800">{groupCheck.reason}</span>
+                )}
               </div>
             ) : null}
 
@@ -1483,19 +1677,26 @@ export function MilestonesWorkspace({
 
         <div className="rounded-none border border-slate-200 bg-slate-50 p-4">
           <h2 className="mb-3 text-[13px] font-bold text-slate-900">Preview</h2>
-          <div className="w-full" ref={frameBox} style={{ height: previewUrl ? SHEET_H * scale : undefined }}>
+          {/* The sheet comes from state, not a constant: this pane shows the portrait card AND the
+              landscape group picture, and the scale is measured against whichever is in it. */}
+          <div
+            className="w-full"
+            ref={frameBox}
+            style={{ height: previewUrl ? previewSheet.h * scale : undefined }}
+          >
             {previewUrl ? (
               <iframe
                 className="border border-slate-300 bg-white"
-                height={SHEET_H}
+                height={previewSheet.h}
                 src={previewUrl}
                 style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}
                 title="Milestone card preview"
-                width={SHEET_W}
+                width={previewSheet.w}
               />
             ) : (
               <p className="text-[13px] text-slate-600">
-                Press Preview to draw the card. The download is the same artwork, printed.
+                Press Preview to draw the card, or &ldquo;Preview it&rdquo; above to draw one picture
+                of everybody ticked. The download is the same artwork, printed.
               </p>
             )}
           </div>

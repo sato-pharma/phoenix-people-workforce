@@ -23,6 +23,13 @@ import {
   type MilestoneCardInput,
   type MilestoneCardVariant,
 } from "./card";
+import {
+  MILESTONE_GROUP_LAYOUT_SCRIPT,
+  milestoneGroupCardHtml,
+  milestoneGroupPageSizeMm,
+  type MilestoneGroupCardInput,
+  type MilestoneGroupCardVariant,
+} from "./group-card";
 
 export type MilestoneCardLayout = {
   nameSize: number;
@@ -248,6 +255,118 @@ export async function renderMilestoneCardImage(
     const [layout] = await layOutCards(page, html, 1);
     const bytes = await page.screenshot({ type: "png", fullPage: true, omitBackground: false });
 
+    return {
+      png: Buffer.from(bytes),
+      pixels: { width: width * IMAGE_SCALE, height: height * IMAGE_SCALE },
+      layout,
+    };
+  });
+}
+
+// ── The group picture ─────────────────────────────────────────────────────────────────────────────
+
+export type MilestoneGroupLayout = {
+  /** The point size each name settled at, in the order the faces print. */
+  names: number[];
+  /** The point size each sub-line settled at. Shorter than `names` when a face carried none. */
+  sublines: number[];
+  citationLines: number;
+  citationSize: number;
+};
+
+export type MilestoneGroupRender = {
+  pdf: Buffer;
+  layout: MilestoneGroupLayout;
+};
+
+export type MilestoneGroupImageRender = {
+  png: Buffer;
+  /** The raster's real size in pixels, so the caller can state it rather than promise it. */
+  pixels: { width: number; height: number };
+  layout: MilestoneGroupLayout;
+};
+
+/**
+ * Lay the group picture out and hand back the browser's own report.
+ *
+ * 🔴 THE GUARD IS A COUNT, NOT A PRESENCE CHECK — the same rule as the batch's, for the same reason.
+ * The pass fits every name to its own frame; checking only that *a* report came back would pass a
+ * picture where names 2..N printed at full size across their neighbours, because name 1's report is
+ * valid. So it refuses unless there are exactly as many name reports as faces.
+ */
+async function layOutGroup(
+  page: ChromiumPage,
+  html: string,
+  faces: number,
+): Promise<MilestoneGroupLayout> {
+  await page.setContent(html, { waitUntil: "networkidle0" });
+
+  const report = (await page.evaluate(MILESTONE_GROUP_LAYOUT_SCRIPT)) as {
+    names?: unknown;
+    sublines?: unknown;
+    citationLines?: unknown;
+    citationSize?: unknown;
+  } | null;
+
+  const names = Array.isArray(report?.names) ? (report.names as unknown[]) : null;
+  if (!names || names.length !== faces || names.some((size) => typeof size !== "number")) {
+    throw new Error("The group picture's layout pass did not fit every name — refusing to print it.");
+  }
+  if (typeof report?.citationLines !== "number") {
+    throw new Error("The group picture's layout pass did not report back — refusing to print it.");
+  }
+
+  await page.emulateMediaType("print");
+  return {
+    names: names as number[],
+    sublines: (Array.isArray(report.sublines) ? report.sublines : []) as number[],
+    citationLines: report.citationLines,
+    citationSize: typeof report.citationSize === "number" ? report.citationSize : 0,
+  };
+}
+
+/** The group picture as a one-page PDF — the sheet to print and put on a wall. */
+export async function renderMilestoneGroupCard(
+  input: MilestoneGroupCardInput,
+  variant: MilestoneGroupCardVariant = "trim",
+): Promise<MilestoneGroupRender> {
+  const html = milestoneGroupCardHtml(input, { variant });
+  const size = milestoneGroupPageSizeMm(variant);
+
+  return withChromiumPage(async (page) => {
+    const layout = await layOutGroup(page, html, input.members.length);
+    const bytes = await page.pdf({
+      width: `${size.width}mm`,
+      height: `${size.height}mm`,
+      printBackground: true,
+      preferCSSPageSize: true,
+      margin: { top: "0", right: "0", bottom: "0", left: "0" },
+    });
+    return { pdf: Buffer.from(bytes), layout };
+  });
+}
+
+/**
+ * The group picture as a PNG — the one the owner actually asked for, to send rather than print.
+ *
+ * Same `IMAGE_SCALE` as the single card, so an A4 landscape sheet comes out 4492 × 3176: 384 DPI on
+ * paper, which is why it can be printed as well as sent. The viewport is sized to the SHEET before
+ * the layout pass, never left at Chromium's default — a landscape sheet laid out in an 800px window
+ * is a photograph of a badly-sized window, not the picture.
+ */
+export async function renderMilestoneGroupCardImage(
+  input: MilestoneGroupCardInput,
+  variant: MilestoneGroupCardVariant = "trim",
+): Promise<MilestoneGroupImageRender> {
+  const html = milestoneGroupCardHtml(input, { variant });
+  const size = milestoneGroupPageSizeMm(variant);
+  const width = cssPixels(size.width);
+  const height = cssPixels(size.height);
+
+  return withChromiumPage(async (page) => {
+    await page.setViewport({ width, height, deviceScaleFactor: IMAGE_SCALE });
+    const layout = await layOutGroup(page, html, input.members.length);
+    const bytes = await page.screenshot({ type: "png", fullPage: true, omitBackground: false });
     return {
       png: Buffer.from(bytes),
       pixels: { width: width * IMAGE_SCALE, height: height * IMAGE_SCALE },

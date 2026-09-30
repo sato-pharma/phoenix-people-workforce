@@ -1733,6 +1733,12 @@ export const accessRegistry = [
   // and a mutation (it records a print row per card), so csrfRequired. Prints from the record only —
   // it carries no handed-in photograph.
   sessionApi({ audit: { classification: "export", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/milestones/batch", permission: { resource: "milestones", action: "export" } }),
+  // ONE landscape picture with every ticked face on it, for people who share one occasion (owner,
+  // 2026-09-30 — "I want to make a photo that has them all"). The batch's publishing right several
+  // times over: it carries several named employees' photographs onto one sheet built to be SENT. A
+  // mutation (it records a print row per face), so csrfRequired. From the record only — no
+  // handed-in photograph travels, so no face can land beside the wrong name.
+  sessionApi({ audit: { classification: "export", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/milestones/group", permission: { resource: "milestones", action: "export" } }),
   // The acknowledgement that stops the daily reminder: opening the page marks the current window
   // seen. A mutation (it writes milestone_notice_marks), so csrfRequired; gated on read, since
   // seeing who is coming up is the same right as reading the due list.
