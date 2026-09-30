@@ -42,9 +42,8 @@ import {
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { prepareClosingStoreSplit } from "@/lib/sales/closing-store-split-export";
-import { loadClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
+import { isFrozenStoreSplitPeriod, loadClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 import { isStoreCitySplitActive } from "@/lib/sales/store-sales-city-split";
-import { isClosingPublished } from "@/lib/sales/monthly-closing-publication";
 import { applyJulyDirectAreasToBreakdown } from "@/lib/sales/july-direct-channel-breakdown";
 import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import {
@@ -390,13 +389,13 @@ export async function POST(request: Request) {
         movements: storeSplitMovements,
         net: storeSplitNet,
       } = prepareClosingStoreSplit(monthRows, scopedAreaCodes, await sharedSplitPromise);
-      // The split is FROZEN only when the shared (whole-month) split was used AND the month is
-      // published — that is exactly when `storeSplitMovements` above are the frozen ones. A row-level
+      // The split is FROZEN only when the shared (whole-month) split was used AND the period is frozen
+      // — exactly when `storeSplitMovements` above are the frozen ones. isFrozenStoreSplitPeriod is the
+      // SAME per-period predicate loadFrozenStoreSplitIfPublished uses to decide to freeze, so the
+      // banner and the frozen summary cannot disagree (a per-LINE check would miss a partially-published
+      // period, where the split is frozen but this line's own row is not yet published). A row-level
       // filtered export derives its own live split over a different population, so it is never frozen.
-      const storeSplitFrozen =
-        !rowLevelActive
-        && isStoreCitySplitActive(matrix.period)
-        && (await isClosingPublished(matrix.line, matrix.period));
+      const storeSplitFrozen = !rowLevelActive && (await isFrozenStoreSplitPeriod(matrix.line, matrix.period));
       const comparison = aggregateComparisonPromise
         ? await aggregateComparisonPromise
         : await loadMonthlyClosingComparisonFromRows(

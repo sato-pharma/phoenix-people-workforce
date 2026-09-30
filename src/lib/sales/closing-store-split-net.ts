@@ -170,33 +170,45 @@ export async function loadClosingStoreSplit(
  * empty map would wrongly zero the split on the tab. An UNPUBLISHED month also returns null and
  * recomputes live, exactly as before.
  */
-async function loadFrozenStoreSplitIfPublished(
+/**
+ * Whether a (line, period)'s store split is FROZEN — split-active, split-eligible, and the PERIOD is
+ * published. The freeze in 20260927213000 is PER-PERIOD: publishing ANY line freezes
+ * au.monthly_store_split_net and the attribution rollup for the WHOLE period, so match that (any
+ * publication row for the period with unpublished_at IS NULL), never the specific line — an unpublished
+ * line in a partially-published period is frozen too.
+ *
+ * The ONE predicate both the frozen split (loadFrozenStoreSplitIfPublished) and the export's frozen
+ * banner (route.ts) read, so the sheet's numbers and the banner explaining them cannot disagree about
+ * whether the month is frozen. Fails to FALSE (recompute live) on any read error.
+ */
+export async function isFrozenStoreSplitPeriod(
   line: string | null | undefined,
   period: string | null | undefined,
-): Promise<ClosingStoreSplit | null> {
+): Promise<boolean> {
   const trimmedLine = String(line ?? "").trim();
   const trimmedPeriod = String(period ?? "").trim();
-  if (!trimmedLine || !trimmedPeriod) return null;
-  if (!isStoreCitySplitActive(trimmedPeriod) || !isSplitEligibleLine(trimmedLine)) return null;
-  const lineCode = resolveTargetLineCode(trimmedLine);
-  if (!lineCode) return null;
-
-  const supabase = getSupabaseAdmin();
-
-  // Frozen? The freeze in 20260927213000 is PER-PERIOD: publishing ANY line freezes
-  // au.monthly_store_split_net and the attribution rollup for the WHOLE period, so every line's keycard
-  // is then frozen. Match that predicate here (any publication row for the period with unpublished_at
-  // IS NULL), not the specific line — otherwise an unpublished line in a partially-published period
-  // keeps recomputing its tab live while its keycard is already frozen, reopening the very drift this
-  // closes. A period with no live publication row recomputes live, as before.
-  const { data: published, error: publishedError } = await supabase
+  if (!trimmedLine || !trimmedPeriod) return false;
+  if (!isStoreCitySplitActive(trimmedPeriod) || !isSplitEligibleLine(trimmedLine)) return false;
+  const { data, error } = await getSupabaseAdmin()
     .from("monthly_closing_publications")
     .select("id")
     .eq("period", trimmedPeriod)
     .is("unpublished_at", null)
     .limit(1);
-  if (publishedError || !published || published.length === 0) return null;
+  return !error && Array.isArray(data) && data.length > 0;
+}
 
+async function loadFrozenStoreSplitIfPublished(
+  line: string | null | undefined,
+  period: string | null | undefined,
+): Promise<ClosingStoreSplit | null> {
+  if (!(await isFrozenStoreSplitPeriod(line, period))) return null;
+  const trimmedLine = String(line ?? "").trim();
+  const trimmedPeriod = String(period ?? "").trim();
+  const lineCode = resolveTargetLineCode(trimmedLine);
+  if (!lineCode) return null;
+
+  const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.rpc("phx_monthly_store_split_net", { p_period: trimmedPeriod });
   if (error || !data) return null;
 
