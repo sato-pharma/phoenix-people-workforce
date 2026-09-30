@@ -9,7 +9,30 @@ import {
 import { dayDetailCounts } from "../src/lib/phoenix-crm/day-detail.ts";
 import { buildTeamCalendar, dayShape, monthDays, teamCalendarTotals } from "../src/lib/phoenix-crm/team-calendar.ts";
 import { buildTrackingSheet, spacingNote } from "../src/lib/phoenix-crm/tracking-sheet.ts";
+import { readsCalendar, readsTeamReports, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
+import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import { stripComments } from "./support/comment-strip.ts";
+
+/** One territory seat, enough for the access predicates — they read the list's LENGTH, not a seat. */
+const SEAT = { seatId: "seat-1" } as unknown as OrgSeat;
+
+/**
+ * The six fields `readsCalendar` and `readsTeamReports` actually read. A partial cast is honest
+ * here precisely because that is the whole contract: both are pure functions over these, and
+ * building a real viewer would need an organogram, a config and a live access context to test a
+ * boolean.
+ */
+function viewerWith(patch: Partial<PhoenixCrmViewer>): PhoenixCrmViewer {
+  return {
+    isSuperAdmin: false,
+    isSfeManager: false,
+    basis: "tree",
+    managerSeats: [],
+    ownTerritories: [],
+    scopeTerritories: [],
+    ...patch,
+  } as unknown as PhoenixCrmViewer;
+}
 
 /**
  * Phoenix CRM Wave 2 — the three reports, and the rulings the owner gave on them.
@@ -362,6 +385,68 @@ export function runPhoenixCrmWave2ReportTests(): void {
     assert.doesNotMatch(body, /overflow-x-auto|min-w-\[/, "no sideways scroll and no minimum width");
     assert.match(body, /hidden min-w-0 lg:block/, "the full month is the desktop's");
     assert.match(body, /\blg:hidden/, "and the phone reads the days as words");
+  }
+
+  // ── Who opens the calendar, and what the rep is NOT given with it ───────────────────────────
+  {
+    // Owner, 2026-10-01: "I WANT THE MEDICAL REP TO HAVE ALSO HIS TEAM CALENDER SEEING ONLY
+    // HISELF". The calendar therefore leaves `readsTeamReports` and gets a predicate of its own.
+    const rep = viewerWith({ ownTerritories: [SEAT], scopeTerritories: [SEAT] });
+    const manager = viewerWith({ managerSeats: [SEAT], scopeTerritories: [SEAT] });
+
+    assert.equal(readsCalendar(rep), true, "a rep holding a territory opens the calendar");
+    assert.equal(readsCalendar(manager), true, "and so does his manager");
+    assert.equal(readsCalendar(viewerWith({ isSuperAdmin: true })), true, "and the Super Admin, seat or no seat");
+
+    // 🔴 THE WHOLE POINT OF A SEPARATE PREDICATE. Widening `readsTeamReports` would have been one
+    //    character, and would have handed the rep the place-vs-actual report, the exceptions
+    //    board, the brick report, the adoption board and the daily digest's recipient test — every
+    //    one a comparison ACROSS people, which is what Golden rule #1 keeps off his screens.
+    assert.equal(readsTeamReports(rep), false, "the rep is still refused every report ABOUT a team");
+    assert.equal(readsTeamReports(manager), true, "while his manager keeps them");
+
+    // An empty grid is indistinguishable from a month with no work in it, so nobody is shown one.
+    assert.equal(readsCalendar(viewerWith({})), false, "a viewer with no territory in scope is refused, not shown an empty month");
+    assert.equal(readsCalendar(viewerWith({ basis: "all" })), false, "including a company-basis viewer who reaches no territory");
+
+    const service = stripComments(readFileSync("src/lib/phoenix-crm/server/team-calendar.ts", "utf8"));
+    assert.match(service, /if \(!readsCalendar\(viewer\)\) throw forbiddenError/, "the service gates on the calendar's own predicate");
+    assert.doesNotMatch(service, /if \(!readsTeamReports\(viewer\)\)/, "and no longer on the manager-only one");
+    // 🔴 WHOSE MONTH IT IS COMES FROM THE PREDICATE, NEVER FROM THE ROW COUNT. A district manager
+    //    down to one rep still reads a team, and a count would rename his screen as people join
+    //    and leave.
+    assert.match(service, /readsTeamReports\(viewer\) \? "team" : "own"/, "whose month it is, decided by who is reading");
+    // What keeps a rep's view his own is the SCOPE, not a branch: `scopeTerritories` holds his own
+    // seat and nobody else's, so there is no path by which he is handed a colleague.
+    assert.match(service, /testReadSeats\(viewer, isTest, viewer\.scopeTerritories\)/, "the rows are built from the viewer's own scope");
+
+    const overview = stripComments(readFileSync("src/lib/phoenix-crm/server/overview.ts", "utf8"));
+    assert.match(overview, /calendar: readsCalendar\(viewer\)/, "the tab reads the service's predicate rather than restating it");
+
+    const exportRoute = stripComments(readFileSync("app/api/phoenix-crm/reports/export/route.ts", "utf8"));
+    assert.match(exportRoute, /readsCalendar\(viewer\) \? loadTeamCalendar\(/, "the workbook follows the screen, so a rep's own month is in his download");
+    assert.doesNotMatch(exportRoute, /managerSections \? loadTeamCalendar\(/, "the calendar is not a manager section any more");
+
+    // The screen says whose month it is from that same flag, and never from the row count.
+    const screen = stripComments(readFileSync("src/components/phoenix-crm/calendar-tab.tsx", "utf8"));
+    assert.match(screen, /view\.data\?\.scope === "own"/, "the heading follows the server's answer");
+    assert.match(screen, /Your month/, "a rep reads Your month");
+    assert.match(screen, /The team's month/, "and a manager still reads The team's month");
+    assert.doesNotMatch(screen, /rows\.length === 1/, "the title is never decided by counting people");
+
+    // The module chooser's blurb is ONE static line shown to both readers, so it may not promise
+    // a rep other people's work.
+    const modules = stripComments(readFileSync("src/lib/phoenix-crm/modules.ts", "utf8"));
+    const calendarEntry = /\{ key: "calendar",[^\n]*\}/.exec(modules)?.[0] ?? "";
+    assert.ok(calendarEntry.length > 0, "the calendar module entry is findable");
+    assert.doesNotMatch(calendarEntry, /team/i, "its blurb never promises a team to the one reader who only sees himself");
+
+    // 🔴 AND THE GRID STILL JUDGES NOTHING. Giving a rep a month of his own work is only safe
+    //    while that month carries no verdict on him — no distance, no flag, no accuracy, no
+    //    integrity signal at all (Golden rule #1; `isLocationBlind` covers the day a cell opens).
+    for (const banned of [/\bmocked\b/, /\baccuracy\b/, /locationFlag/, /integrity/i, /\bmetres\b/, /\bdistance\b/i]) {
+      assert.doesNotMatch(screen, banned, `the calendar screen carries no ${String(banned)} — nothing on it judges the person`);
+    }
   }
 
   console.log("phoenix-crm wave 2 reports: OK");

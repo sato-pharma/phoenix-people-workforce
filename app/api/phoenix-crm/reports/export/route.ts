@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
-import { readsTeamReports, reportIncludesTest, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsCalendar, readsTeamReports, reportIncludesTest, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadBrickCoverageReport } from "@/lib/phoenix-crm/server/brick-report";
 import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
 import { loadDailyPlanReport } from "@/lib/phoenix-crm/server/daily-plan-report";
@@ -109,7 +109,11 @@ export async function GET(request: Request) {
       // reads `seatId` into `filters` and the tab sends it, so a chosen territory reaches them.
       loadCustomerFrequencyReport(viewer, filters),
       loadTrackingSheetReport(viewer, filters),
-      managerSections ? loadTeamCalendar(viewer, { month: filters.month, test: filters.includeTest }) : Promise.resolve(null),
+      // 🔴 NOT a manager section since 2026-10-01. The owner gave the calendar to the rep as well,
+      // scoped to himself, so the workbook follows the screen: gated on the calendar's own
+      // predicate, and a rep's sheet holds his own month. Leaving it behind `managerSections`
+      // would have downloaded him a workbook missing the one month view he can actually open.
+      readsCalendar(viewer) ? loadTeamCalendar(viewer, { month: filters.month, test: filters.includeTest }) : Promise.resolve(null),
       // Every viewer's, as on the screen: a rep's own plan is his to keep. It reads ONE territory and
       // answers with none when several are in reach and none is chosen — that writes no sheet.
       dailyFrom && dailyTo ? loadDailyPlanReport(viewer, { ...filters, from: dailyFrom, to: dailyTo }) : Promise.resolve(null),

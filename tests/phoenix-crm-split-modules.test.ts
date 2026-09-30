@@ -98,15 +98,23 @@ export function runPhoenixCrmSplitModulesTests(): void {
   // ── 2. Only the modules the viewer may open ─────────────────────────────────────────────────────
   {
     assert.deepEqual(allowedPhoenixCrmModules(ALL).map((entry) => entry.key), PHOENIX_CRM_MODULE_KEYS);
-    // 🔴 `calendar` GOES OFF WITH `team`, NOT ON ITS OWN. The team calendar is a manager's view —
-    //    a month of his team laid out for comparison is exactly what Golden rule #1 keeps off a
-    //    rep's screens — so a rep who has no Team tab has no Calendar tab either.
-    const rep = { ...ALL, team: false, calendar: false, settings: false, "doctors": false };
-    // A CNS rep keeps the Forecast: it is HIS form (his own targets), not a manager's view of his team.
-    assert.deepEqual(allowedPhoenixCrmModules(rep).map((entry) => entry.key), ["visits", "list", "plan", "forecast", "reports"]);
+    // 🔴 `calendar` LEFT `team` ON 2026-10-01, at the owner's instruction: "I WANT THE MEDICAL REP
+    //    TO HAVE ALSO HIS TEAM CALENDER SEEING ONLY HISELF". Until then this block asserted the
+    //    opposite — a rep with no Team tab had no Calendar tab — and that was right for the rule
+    //    of the day: a month of his TEAM laid out for comparison is what Golden rule #1 keeps off
+    //    his screens. What changed is that his OWN month is not that.
+    //
+    //    It lands beside the Forecast, and the two are the same judgement reached twice on the
+    //    same day: a CNS rep keeps the Forecast because it is HIS form, his own targets, and he
+    //    keeps the Calendar because it is HIS month. The boundary is not which screen it is, it is
+    //    whose work it shows — anything comparing him with other people is still a manager's.
+    const rep = { ...ALL, team: false, settings: false, "doctors": false };
+    assert.deepEqual(allowedPhoenixCrmModules(rep).map((entry) => entry.key), ["visits", "list", "plan", "forecast", "calendar", "reports"]);
 
-    // And the two flags are decided by the SAME expression in `overview.ts`, so they cannot drift:
-    // a second copy of the predicate is a second answer to a settled question.
+    // 🔴 AND THE TWO PREDICATES MUST NOW DIFFER. They were deliberately one expression so they
+    //    could not drift; keeping that assertion would now force either the rep back out of the
+    //    calendar or the manager's rules onto a rep, so it is INVERTED rather than dropped.
+    //
     // Anchored on the LITERAL, not the whole file: the type above it declares `calendar: boolean;`
     // on a line of the same shape, and a sweep that found that one instead would compare two
     // "boolean" strings and pass whatever the predicates actually said.
@@ -119,7 +127,9 @@ export function runPhoenixCrmSplitModulesTests(): void {
         .find((line) => line.startsWith(key + ": "))
         ?.slice(key.length + 2)
         .replace(/,$/, "") ?? "no " + key;
-    assert.equal(predicateOf("calendar"), predicateOf("team"), "the Calendar tab is offered exactly where the Team tab is");
+    assert.equal(predicateOf("calendar"), "readsCalendar(viewer)", "the Calendar tab reads the calendar's own named predicate");
+    assert.notEqual(predicateOf("calendar"), predicateOf("team"), "and no longer the Team tab's, which stays a manager's");
+    assert.match(predicateOf("team"), /managerSeats\.length > 0/, "Team is still offered only where somebody manages people");
     assert.notEqual(predicateOf("team"), "no team", "and the sweep really found the tab literal");
     const none = Object.fromEntries(PHOENIX_CRM_MODULE_KEYS.map((key) => [key, false])) as Record<PhoenixCrmModuleKey, boolean>;
     assert.deepEqual(allowedPhoenixCrmModules(none), [], "and nothing at all when he holds nothing");

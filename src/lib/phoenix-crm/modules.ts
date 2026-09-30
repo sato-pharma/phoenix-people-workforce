@@ -67,9 +67,15 @@ export const PHOENIX_CRM_MODULES: readonly PhoenixCrmModule[] = [
   { key: "team", slug: "team", label: "Team", blurb: "Your people's days and plans, and the decisions waiting on you." },
   // 🔴 ITS OWN TAB, NOT A SECTION OF REPORTS (owner, 2026-09-30: "build the team calendar into a
   // separate tab inside the button of the Phoenix CRM"). It sits beside Team because it answers
-  // the same question over a month that Team answers for a day, and because — like Team — it is a
-  // MANAGER's view: a rep never opens it.
-  { key: "calendar", slug: "calendar", label: "Calendar", blurb: "The team's month, one square a day — AM and PM apart, and who was away." },
+  // the same question over a month that Team answers for a day.
+  //
+  // 🔴 AND UNLIKE TEAM, A REP OPENS IT — scoped to himself (owner, 2026-10-01: "I want the medical
+  // rep to have also his team calendar seeing only himself"). So the blurb is written to be TRUE
+  // FOR BOTH readers: this line is static, it is shown in the module chooser to whoever can open
+  // the tab, and "the team's month" would have read as a promise of other people's work to the one
+  // person who will only ever see his own. The heading inside the tab does say which it is —
+  // `TeamCalendarView.scope` carries that from the server.
+  { key: "calendar", slug: "calendar", label: "Calendar", blurb: "The month, one square a day — AM and PM apart, and the days away." },
   // The one module whose slug is NOT its key — see `slug` above.
   { key: "doctors", slug: "directory", label: "Directory", blurb: "Search every customer you are allowed to see." },
   { key: "reports", slug: "reports", label: "Reports", blurb: "Coverage, frequency and the call rate, AM and PM apart." },

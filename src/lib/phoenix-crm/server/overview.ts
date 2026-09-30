@@ -15,7 +15,7 @@
 import { plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { isForecastLine } from "@/lib/phoenix-crm/daily-forecast";
 import { managerChain, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { canReviewTerritory, lineOpeningText, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canReviewTerritory, lineOpeningText, readsCalendar, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { isDirectoryCompanyRole } from "@/lib/phoenix-crm/server/doctors";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -185,9 +185,12 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     // him; anyone whose scope holds no CNS territory is never offered it.
     forecast: viewer.isSuperAdmin || scope.some((seat) => isForecastLine(seat.lineCode)),
     team: viewer.isSuperAdmin || (scope.length > 0 && (viewer.managerSeats.length > 0 || viewer.basis === "all")),
-    // The team calendar rides the TEAM tab's own predicate rather than a second copy of it: both
-    // show a manager his people, and a rule written twice is a rule that will disagree with itself.
-    calendar: viewer.isSuperAdmin || (scope.length > 0 && (viewer.managerSeats.length > 0 || viewer.basis === "all")),
+    // 🔴 THE CALENDAR LEFT THE TEAM TAB'S PREDICATE ON 2026-10-01, at the owner's instruction:
+    // "I want the medical rep to have also his team calendar seeing only himself". It is now the
+    // one month view a rep is given, so it can no longer ride Team's rule — and it reads the
+    // SERVICE'S own predicate rather than restating the condition here, because a tab that
+    // disagrees with its page is a rep pressing Calendar and being refused by what is behind it.
+    calendar: readsCalendar(viewer),
     // The Doctors directory. A directory role (owner, 2026-09-22: the SFE Manager and the Training
     // Manager read the whole company) gets it without holding a seat — a Training Manager has no
     // territory in the organogram, so `hasScope` alone would leave him with no tab at all.

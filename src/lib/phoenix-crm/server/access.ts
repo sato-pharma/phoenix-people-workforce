@@ -257,6 +257,35 @@ export function readsTeamReports(viewer: PhoenixCrmViewer): boolean {
   return viewer.isSuperAdmin || viewer.isSfeManager || viewer.basis === "all" || viewer.managerSeats.length > 0;
 }
 
+/**
+ * Who opens the CALENDAR — a manager sees his team, and a medical rep sees HIMSELF.
+ *
+ * 🔴 ITS OWN PREDICATE, AND WIDENING `readsTeamReports` INSTEAD WOULD HAVE BEEN THE BUG. The owner
+ * asked for this on 2026-10-01 — *"I want the medical rep to have also his team calendar seeing
+ * only himself"* — and `readsTeamReports` is shared by the place-vs-actual report, the exceptions
+ * board, the brick report, the adoption board and the daily digest's recipient test. One character
+ * there would have handed a rep five boards that compare him with other people, which is exactly
+ * what Golden rule #1 keeps off his screens. So the calendar leaves that predicate and gets this
+ * one, and the two now answer different questions on purpose.
+ *
+ * 🔴 IT IS NOT A HOLE IN GOLDEN RULE #1, because of WHOSE WORK IT IS. His own month — the days he
+ * worked, AM and PM apart, and the days he was away — is his own work, like his plan and his
+ * targets, and the boundary the owner drew on 2026-09-26 is that anything judging his honesty is
+ * never his. Nothing on this grid judges: there is no distance, no flag, no accuracy, no integrity
+ * signal, and the day a cell opens is the same blinded day view he already reaches from Visits.
+ * The SCOPING is what keeps it his: `loadTeamCalendar` builds its rows from `scopeTerritories`,
+ * which for a rep holds his own seat and nobody else's, so he cannot be shown a colleague's month
+ * even by asking for one.
+ *
+ * A viewer with no territory in scope is refused rather than shown an empty grid: an empty month is
+ * indistinguishable from a month with no work in it, and the tab is hidden for the same reason.
+ */
+export function readsCalendar(viewer: PhoenixCrmViewer): boolean {
+  if (viewer.isSuperAdmin) return true;
+  if (viewer.scopeTerritories.length === 0) return false;
+  return readsTeamReports(viewer) || viewer.ownTerritories.length > 0;
+}
+
 export function canWriteAsRep(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
   if (viewer.isTestPersona) return isTest && viewer.canCreate && viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId);
   if (isTest) return viewer.isSuperAdmin;
