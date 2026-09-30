@@ -186,8 +186,8 @@ export function runBusinessCardRequestsTests() {
   assert.match(portalLayout, /href: "\/employee-portals\/business-cards"/, "the portal sidebar lists the page for everyone");
   assert.match(
     nativeDirectory,
-    /"\/employee-portals\/business-cards": \{ icon: "id-card-outline", section: "My Workspace" \}/,
-    "the native module directory places the page in My Workspace, matching the sidebar section",
+    /"\/employee-portals\/business-cards": \{ icon: "id-card-outline", section: "Social" \}/,
+    "the native module directory places the page in the Social band, matching the sidebar section",
   );
   assert.match(
     systemNavigation,
