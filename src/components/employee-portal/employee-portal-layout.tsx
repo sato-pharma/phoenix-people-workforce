@@ -265,6 +265,7 @@ type EmployeePortalNavSection = {
 function sectionRailIcon(title: string): typeof Activity {
   if (title === "Training Manager") return ClipboardCheck;
   if (title === "My Workspace") return Home;
+  if (title === "Social") return UsersRound;
   if (title === "Approvals Hub") return FileCheck2;
   if (title === "Sales Data") return ChartColumnBig;
   if (title === "Performance") return Trophy;
@@ -389,17 +390,29 @@ function buildEmployeePortalSections({
         ...(showOrganogramTab ? [{ href: "/employee-portals/organogram", label: "Organogram", icon: Building2 }] : []),
         // Open to every role, self-scoped (see src/lib/employee-360/access.ts).
         { href: "/employee-portals/employee-360", label: "Employee 360", icon: IdCard },
-        // Open to every employee: their own business card, editable name/number, and a request to HR.
-        { href: "/employee-portals/business-cards", label: "Business Cards", icon: IdCard },
+        // Business Cards, My Milestones and Spotlight moved to the "Social" band below (owner, 2026-09-30).
         ...(showBusinessReviewTab ? [{ href: "/employee-portals/business-review", label: "Business Review", icon: ChartColumnBig }] : []),
         // Private Calendar — self-scoped; every portal role since 2026-08-01, kept behind its flag so
         // Modules Control can still curate it per role or person.
         ...(showPrivateCalendarTab ? [{ href: "/employee-portals/private-calendar", label: "Private Calendar", icon: CalendarDays }] : []),
-        // My Milestones — the rep's own service-anniversary and Sato-Pharma birthday keepsake cards,
-        // self-scoped and downloadable by him (owner, 2026-09-30). Medical-Rep only.
-        ...(showMilestonesTab ? [{ href: "/employee-portals/milestones", label: "My Milestones", icon: Award }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
         ...(showPlanningCalendarTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
+      ],
+    },
+    {
+      // Social — the employee's own identity and recognition cards, grouped together (owner,
+      // 2026-09-30): his business card, his milestone keepsakes and his spotlight sheet. Mirrored in
+      // native-module-directory.ts and held level by tests/mobile-module-directory.test.ts.
+      title: "Social",
+      items: [
+        // Open to every employee: their own business card, editable name/number, and a request to HR.
+        { href: "/employee-portals/business-cards", label: "Business Cards", icon: IdCard },
+        // My Milestones — the rep's own service-anniversary and Sato-Pharma birthday keepsake cards,
+        // self-scoped and downloadable by him. Medical-Rep only.
+        ...(showMilestonesTab ? [{ href: "/employee-portals/milestones", label: "My Milestones", icon: Award }] : []),
+        // Spotlight (self) — the rep's own recognition sheet. Kept in sync with the registry entry in
+        // employee-portal-nav-registry.ts by the bottom-nav test.
+        ...(showSpotlightTab ? [{ href: "/employee-portals/spotlight", label: "Spotlight", icon: Sparkles }] : []),
       ],
     },
     {
@@ -448,9 +461,6 @@ function buildEmployeePortalSections({
         // Read-only Targets. /sales/targets keeps the authoring tools and bounces portal roles away;
         // a Medical Rep is served their own targets only (owner, 2026-09-16).
         ...(showTargetsTab ? [{ href: "/employee-portals/targets", label: "Targets", icon: Target }] : []),
-        // Spotlight (self) — the rep's own recognition sheet (owner, 2026-09-30). Kept in sync with
-        // the registry entry in employee-portal-nav-registry.ts by the bottom-nav test.
-        ...(showSpotlightTab ? [{ href: "/employee-portals/spotlight", label: "Spotlight", icon: Sparkles }] : []),
       ],
     },
     {

@@ -41,6 +41,7 @@ import { resolveLockedModuleForPath } from "@/lib/navigation/module-catalog";
 export const NATIVE_MODULE_SECTION_ORDER = [
   "Training Manager",
   "My Workspace",
+  "Social",
   "Approvals Hub",
   "Sales Data",
   "Performance",
@@ -72,8 +73,8 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/interview-calendar": { icon: "videocam-outline", section: "My Workspace" },
   "/employee-portals/organogram": { icon: "business-outline", section: "My Workspace" },
   "/employee-portals/employee-360": { icon: "id-card-outline", section: "My Workspace" },
-  "/employee-portals/business-cards": { icon: "id-card-outline", section: "My Workspace" },
-  "/employee-portals/milestones": { icon: "ribbon-outline", section: "My Workspace" },
+  "/employee-portals/business-cards": { icon: "id-card-outline", section: "Social" },
+  "/employee-portals/milestones": { icon: "ribbon-outline", section: "Social" },
   "/employee-portals/field-crm": { icon: "briefcase-outline", section: "My Workspace" },
   "/employee-portals/business-review": { icon: "analytics-outline", section: "My Workspace" },
   "/employee-portals/plans": { icon: "calendar-outline", section: "My Workspace" },
@@ -105,7 +106,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/targets": { icon: "locate-outline", section: "Forecast & Target" },
   // Filed in the same section the sidebar puts it in, beside Targets — the placement is derived from
   // buildEmployeePortalSections, so a registry entry without one drops out of the list silently.
-  "/employee-portals/spotlight": { icon: "trophy-outline", section: "Forecast & Target" },
+  "/employee-portals/spotlight": { icon: "trophy-outline", section: "Social" },
   // ── Recruitment ───────────────────────────────────────────────────────────────────────────────
   "/employee-portals/vacancies": { icon: "person-add-outline", section: "Recruitment" },
   "/employee-portals/recruitment-candidates": { icon: "person-circle-outline", section: "Recruitment" },
