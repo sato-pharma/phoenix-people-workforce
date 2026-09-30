@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
 import {
   buildGroups,
   displayOrder,
@@ -168,4 +170,29 @@ export function runPhoenixCrmCustomerListBoardTests() {
   assert.equal(matchesQuery(searchable, "mohandessin"), true, "matches a place zone");
   assert.equal(matchesQuery(searchable, "el nasr"), true, "matches the iReports360 reference address");
   assert.equal(matchesQuery(searchable, "alexandria"), false, "a term that is nowhere does not match");
+
+  // ── The export carries the rep's phone, as TEXT ─────────────────────────────────────────────────
+  //
+  // The columns and the rows are built inline in the JSX, so the source is what a test can hold to —
+  // comments stripped first, so the explanation of a rule can never be mistaken for the rule itself.
+  {
+    const board = stripComments(readFileSync(new URL("../src/components/phoenix-crm/customer-list-board.tsx", import.meta.url), "utf8"));
+
+    assert.ok(
+      /\{ key: "phone", label: "Phone", text: true/.test(board),
+      "the export has a Phone column carrying `text: true` — a phone is an identifier, so one retype must not turn 01012345678 into the number 1012345678, which is how 124 employee mobile numbers lost their leading zero",
+    );
+    assert.ok(board.includes('phone: customer.phone ?? "",'), "and every row carries the phone the rep typed");
+    assert.equal(
+      /phone: customer\.phone \?\? "—"/.test(board),
+      false,
+      "blank, not a dash: this sheet leaves the grade and the specialty empty too, and a dash would be exported as the customer's phone number",
+    );
+
+    const order = ["customer", "grade", "speciality", "phone", "list"].map((key) => board.indexOf(`{ key: "${key}",`));
+    assert.ok(
+      order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1])),
+      "the phone sits after the specialty and before the list, where the daily plan sheet puts it too",
+    );
+  }
 }

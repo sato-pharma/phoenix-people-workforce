@@ -138,6 +138,33 @@ export function runRequiredCheckNamesTests() {
       + "surfaces without being remembered, and it already pages a live API so it is the right home.",
   );
 
+  // 🔴 AND IT MUST RUN ON A SCHEDULE, because repo-doctor alone was not enough and the reason is
+  // specific: `repo-doctor.mjs` pages the PRODUCTION GoTrue admin API by default, so sessions are
+  // told to pass `--no-auth` — and `--no-auth` SKIPS this very comparison, printing
+  // "REQUIRED CHECKS -> skipped (--no-auth)". So the live half was reachable only by a human
+  // remembering to run repo-doctor WITHOUT that flag, against a gate that has rotted five times
+  // (4 → 5 → 6 → 4 → 2). Wired into the daily configuration drift alarm on 2026-10-01.
+  //
+  // Asserted by npm-script name rather than by workflow filename, so the alarm can be renamed or the
+  // step moved to a different schedule without going red — what must not happen is the comparison
+  // going back to running only when somebody remembers it.
+  const scheduledWorkflows = readdirSync(WORKFLOW_DIR)
+    .filter((name) => name.endsWith(".yml"))
+    .map((name) => ({ name, source: readFileSync(path.join(WORKFLOW_DIR, name), "utf8") }))
+    .filter(({ source }) => /^\s*schedule:\s*$/m.test(source));
+
+  const runsIt = scheduledWorkflows.filter(({ source }) => source.includes("check-required-checks.mjs")
+    || source.includes("check:required-checks"));
+
+  assert.ok(
+    runsIt.length > 0,
+    "🔴 no SCHEDULED workflow runs the live required-check comparison any more. repo-doctor is not a "
+      + "substitute: it pages the production GoTrue admin API by default, so sessions run it with "
+      + "`--no-auth`, and that flag skips this exact check. Without a schedule the only thing that "
+      + "catches the next rotation depends on somebody remembering — which is how the list rotted "
+      + `five times. Scheduled workflows seen: ${scheduledWorkflows.map((w) => w.name).join(", ")}`,
+  );
+
   // ── 1. The declaration must be internally consistent ────────────────────────────────────────
   // The floor is a PARSER sanity check — it exists so a regex that silently matches nothing cannot
   // pass forever — and it is NOT a policy minimum. It read `>= 3` until 2026-09-29, when `mobile`
