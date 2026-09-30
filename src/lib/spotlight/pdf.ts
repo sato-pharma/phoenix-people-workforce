@@ -1069,3 +1069,123 @@ export async function renderSpotlightPdf(result: SpotlightResult): Promise<Uint8
     });
   });
 }
+
+// ── The medical rep's own sheet ─────────────────────────────────────────────────────────────────
+/**
+ * One hero page for a rep looking at himself — the same crest, name-on-a-rule, figure panel, gauge
+ * and stat band as the admin hero (heroPage), with two differences the self case requires:
+ *
+ *   · NO COMPANY RANK. A rep's own recognition sheet does not place him against his peers — the whole
+ *     surface exists at his request and only at 90%+, so there is no "Nth of M" to state, and the
+ *     stat band's third cell carries his own total instead.
+ *
+ *   · A SENTENCE WITHOUT A RANKING CLAUSE. `heroSentence` opens "ranked/spotlighted out of N …",
+ *     which is meaningless for a party of one; this states his role, line, territory and the months.
+ *
+ * Everything visual is the shared, locked design (pageShell, opener, gauge, statBand, the figure
+ * panel) so the rep's sheet cannot drift from the one the owner signed off.
+ */
+function repHeroSentence(result: SpotlightResult, row: SpotlightRow): string {
+  const months = monthsLabel(result.periods);
+  const role = escapeHtml(row.roleLabel.toLowerCase());
+  const line = row.lineName ? ` on the ${escapeHtml(row.lineName)} line` : "";
+  const where = row.territory ? ` in ${escapeHtml(row.territory)}` : "";
+  return `A ${role}${line}${where}${months ? `, over ${escapeHtml(months)}` : ""}.`;
+}
+
+export function repSpotlightDocumentHtml(result: SpotlightResult): string {
+  const row = result.rows[0];
+  if (!row) {
+    const body = `
+      ${opener(`Spotlight · ${escapeHtml(result.windowLabel)}`)}
+      <h1 class="title">${escapeHtml(result.headline)}</h1>
+      <div class="ruleunder"></div>
+      <p class="lede">There is nothing to spotlight for this period yet.</p>
+      <div class="gap"></div>`;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>${escapeHtml(result.headline)}</title><style>${CSS}</style></head>
+<body style="margin:0">${pageShell(result, body, 1, 1)}</body></html>`;
+  }
+
+  const variance = row.varianceValue;
+  const shownPct = pct(row.achievement);
+  const caption = variance === null
+    ? ""
+    : `${egp(Math.abs(variance))} EGP ${variance >= 0 ? "over" : "under"} target`;
+  const untargeted = untargetedMonthsInWindow(result, row);
+
+  const body = `
+    ${opener(`${escapeHtml(result.headline)} · ${escapeHtml(result.windowLabel)}`)}
+    <p class="lead-in">This sheet recognises</p>
+
+    <h1 class="name${nameSizeClass(row.title)}">${escapeHtml(row.title)}</h1>
+    <div class="signrule"></div>
+    ${row.titleAr ? `<p class="name-ar" dir="rtl" lang="ar">${escapeHtml(row.titleAr)}</p>` : ""}
+    <p class="sentence">${repHeroSentence(result, row)}</p>
+
+    <section class="figure">
+      <div class="figure__core">
+        <p class="figure__label">Achievement</p>
+        <p class="figure__pct${pctSizeClass(shownPct)}">${shownPct}${row.achievement === null ? "" : "<span>%</span>"}</p>
+        ${targetCaption(row) ? `<p class="figure__cap">${targetCaption(row)}</p>` : ""}
+        ${gauge(row.achievement, caption)}
+      </div>
+    </section>
+
+    ${statBand([
+      {
+        value: `${egp(row.targetValue !== null ? row.gradedValue : row.actualValue)}<small> EGP</small>`,
+        label: targetedAgainstLabel(row),
+      },
+      untargeted > 0 && row.targetValue !== null
+        ? {
+            value: `${egp(row.actualValue)}<small> EGP</small>`,
+            label: `Delivered in total, including ${monthCount(untargeted)} with no target`,
+          }
+        : {
+            value: `${row.targetedMonths}<small> of ${result.periods.length}</small>`,
+            label: "Months in this period that carried a target",
+          },
+      {
+        value: `${egp(row.actualValue)}<small> EGP</small>`,
+        label: "Delivered in total over this period",
+      },
+    ])}`;
+
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>${escapeHtml(result.headline)}</title><style>${CSS}</style></head>
+<body style="margin:0">${pageShell(result, body, 1, 1)}</body></html>`;
+}
+
+/** The rep's sheet, as a PDF. Throws `ChromiumUnavailableError` when the runtime cannot render one. */
+export async function renderRepSpotlightPdf(result: SpotlightResult): Promise<Uint8Array> {
+  const html = repSpotlightDocumentHtml(result);
+  return withChromiumPage(async (page) => {
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.emulateMediaType("print");
+    return page.pdf({
+      format: "A4",
+      printBackground: true,
+      preferCSSPageSize: true,
+      margin: { top: "0", right: "0", bottom: "0", left: "0" },
+    });
+  });
+}
+
+/**
+ * The rep's sheet, as a PICTURE — a PNG he can send in a message.
+ *
+ * A screenshot needs an explicit viewport or Chromium hands back an 800×600 thumbnail of the corner
+ * (see the note beside `setViewport` in chromium.ts). A4 at 96dpi is 794×1123, and a
+ * `deviceScaleFactor` of 2 doubles the pixels so the number and the name stay crisp when shared. The
+ * sheet is one page, so a full-page shot captures exactly the certificate and nothing else.
+ */
+export async function renderRepSpotlightPng(result: SpotlightResult): Promise<Uint8Array> {
+  const html = repSpotlightDocumentHtml(result);
+  return withChromiumPage(async (page) => {
+    await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.emulateMediaType("screen");
+    return page.screenshot({ type: "png", fullPage: true });
+  });
+}

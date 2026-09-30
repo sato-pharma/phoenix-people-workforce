@@ -2017,6 +2017,7 @@ import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending
 import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
 import { runSpotlightChequeGeneratorTests } from "./spotlight-cheque-generator.test.ts";
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
+import { runSpotlightRepSelfTests } from "./spotlight-rep-self.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
@@ -7252,6 +7253,11 @@ await runTest(
 await runTest(
   "award cheque generator: the form is read strictly (piastres, Arabic digits, no coerced amount), every typed field reaches the sheet, and the routes gate on spotlight:export with the signature kept server-side",
   runSpotlightChequeGeneratorTests,
+);
+
+await runTest(
+  "spotlight (self): a rep's own sheet over any period, measured only over PUBLISHED months at the closing's graded/target rule, gated at 90%, isolated to his own row",
+  runSpotlightRepSelfTests,
 );
 
 await runTest(
