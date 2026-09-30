@@ -34,7 +34,7 @@ export function runPhoenixCrmPlanPatternTests() {
       ],
       "Sundays and Tuesdays, in weeks 1 and 3",
     );
-    assert.equal(describePlanPattern(pattern), "Sun & Tue · weeks 1 and 3", "said the way a column has room for");
+    assert.equal(describePlanPattern(pattern), "Sun & Tue weeks 1 and 3", "said the way a column has room for");
   }
 
   // ── 🔴 THE WEEK MODEL IS PHOENIX'S OWN, NOT ceil(day / 7) ───────────────────────────────────────
@@ -61,20 +61,20 @@ export function runPhoenixCrmPlanPatternTests() {
     // …unless it is ALL that is known about him, in which case saying it beats saying nothing.
     const only = planWeekdays(["2026-09-09"]);
     assert.deepEqual(only.map((entry) => entry.weekday), [3]);
-    assert.equal(describePlanPattern(only), "Wed · week 1");
+    assert.equal(describePlanPattern(only), "Wed week 1");
   }
 
   // ── The wording ─────────────────────────────────────────────────────────────────────────────────
   {
     // "every week" beats listing all four — the reader wants the shape, not the list.
-    assert.equal(describePlanPattern(planWeekdays(["2026-09-06", "2026-09-13", "2026-09-20", "2026-09-27"])), "Sun · every week");
+    assert.equal(describePlanPattern(planWeekdays(["2026-09-06", "2026-09-13", "2026-09-20", "2026-09-27"])), "Sun every week");
     // Days in the FIELD week's order, Saturday first — the order he works it, not the calendar's.
     const satAndSun = planWeekdays(["2026-09-05", "2026-09-06", "2026-09-19", "2026-09-20"]);
-    assert.equal(describePlanPattern(satAndSun), "Sat & Sun · weeks 1 and 3");
+    assert.equal(describePlanPattern(satAndSun), "Sat & Sun weeks 1 and 3");
     // Nothing recorded is null, never an invented pattern and never an empty string.
     assert.equal(describePlanPattern(planWeekdays([])), null);
     assert.equal(describePlanPattern(planWeekdays(["not-a-date", ""])), null, "a bad date is not a plan");
-    assert.equal(describePlanPattern(planWeekdays(["2026-09-06"]), false), "Sunday · week 1", "the long form names the day in full");
+    assert.equal(describePlanPattern(planWeekdays(["2026-09-06"]), false), "Sunday week 1", "the long form names the day in full");
   }
 
   // ── It is wired in, and it is not a judgement ───────────────────────────────────────────────────

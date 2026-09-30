@@ -82,14 +82,20 @@ function fieldOrder(weekday: number): number {
 export function describePlanPattern(weekdays: readonly PlanWeekday[], short = true): string | null {
   if (weekdays.length === 0) return null;
   const names = short ? DAY_SHORT : DAY_NAMES;
-  const days = weekdays.map((entry) => names[entry.weekday] ?? "?");
 
-  // Every weekday in the pattern sharing one set of weeks is the ordinary case, and it reads far
-  // better as one phrase than as the same weeks repeated after each day.
-  const weekSets = weekdays.map((entry) => entry.weeks.join(","));
-  const shared = weekSets.every((set) => set === weekSets[0]) ? weekdays[0].weeks : null;
-  if (shared) return `${joinDays(days)} · ${describeWeeks(shared)}`;
-  return weekdays.map((entry, index) => `${days[index]} ${describeWeeks(entry.weeks)}`).join(" · ");
+  // 🔴 DAYS THAT SHARE A SET OF WEEKS ARE SAID ONCE. Measured on production, a rep's carried-over
+  // doctor is often planned four days a week, and naming the weeks after every day printed a
+  // paragraph into a narrow column — "Sat every week · Sun every week · Mon weeks 1, 2 and 4 · Tue
+  // every week". Grouping loses nothing and says the same thing in a third of the width:
+  // "Sat, Sun & Tue every week · Mon weeks 1, 2 and 4".
+  const byWeeks = new Map<string, { days: string[]; weeks: number[] }>();
+  for (const entry of weekdays) {
+    const key = entry.weeks.join(",");
+    const found = byWeeks.get(key);
+    if (found) found.days.push(names[entry.weekday] ?? "?");
+    else byWeeks.set(key, { days: [names[entry.weekday] ?? "?"], weeks: entry.weeks });
+  }
+  return [...byWeeks.values()].map((group) => `${joinDays(group.days)} ${describeWeeks(group.weeks)}`).join(" · ");
 }
 
 function joinDays(days: readonly string[]): string {
