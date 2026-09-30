@@ -566,9 +566,15 @@ export async function runMilestoneCardTests() {
     /photoUpload\?: Buffer \| null/.test(service),
     "the card service takes a handed-in photograph",
   );
+  // Photo resolution now lives in ONE place (loadMilestonePhotoBytes), so the card, the framing
+  // focus and every caller agree on which picture is used. Order: a handed-in upload wins, then the
+  // uploaded record photo, then — the 2026-09-30 fix — the bundled static photo the portal already
+  // shows (an account whose portal photo was a static file used to export a card with NO picture).
   assert.ok(
-    service.includes("options.photoUpload ?? (employee.hasPhoto"),
-    "an upload WINS over the record's photograph, and is the only source when the record has none",
+    service.includes("loadMilestonePhotoBytes") &&
+      service.includes("if (upload) return upload;") &&
+      service.includes("readStaticProfilePhoto"),
+    "an upload wins, then the uploaded record photo, then the bundled static photo — one resolver, so portal and card finally agree",
   );
   assert.match(
     /import \{([^}]*)\} from "@\/lib\/employees\/employee-photo";/.exec(service)?.[1] ?? "",
