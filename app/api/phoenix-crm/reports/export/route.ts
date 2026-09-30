@@ -7,6 +7,7 @@ import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { readsTeamReports, reportIncludesTest, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadBrickCoverageReport } from "@/lib/phoenix-crm/server/brick-report";
 import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
+import { loadDailyPlanReport } from "@/lib/phoenix-crm/server/daily-plan-report";
 import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -62,11 +63,15 @@ export async function GET(request: Request) {
     };
     const includeTest = reportIncludesTest(viewer, search.get("includeTest"));
     const managerSections = readsTeamReports(viewer);
+    // The daily plan keeps its own days — they reach forward, which the shared period refuses — so it
+    // travels as two parameters of its own. Without them it writes no sheet.
+    const dailyFrom = search.get("dailyFrom");
+    const dailyTo = search.get("dailyTo");
 
     // Loaded together; each service applies the viewer's scope again. `managers` is asked for even
     // when the viewer has none — the service answers with an empty list, and a manager sheet with no
     // rows is a real finding, unlike a section the viewer may not read at all.
-    const [names, scope, visits, plan, coverage, managers, locations, exceptions, bricks, adoption] = await Promise.all([
+    const [names, scope, visits, plan, coverage, managers, locations, exceptions, bricks, adoption, daily] = await Promise.all([
       // The cover says who it was prepared for, by NAME — the owner's standing rule, and a saved
       // workbook is exactly the artefact where an HR code would outlive anyone who could decode it.
       loadPeopleNames([viewer.hrId]),
@@ -79,7 +84,11 @@ export async function GET(request: Request) {
       managerSections ? loadExceptionsBoard(viewer, { test: filters.includeTest }) : Promise.resolve(null),
       managerSections ? loadBrickCoverageReport(viewer, filters) : Promise.resolve(null),
       managerSections ? loadAdoptionReport(viewer, { test: filters.includeTest }) : Promise.resolve(null),
+      // Every viewer's, as on the screen: a rep's own plan is his to keep. It reads ONE territory and
+      // answers with none when several are in reach and none is chosen — that writes no sheet.
+      dailyFrom && dailyTo ? loadDailyPlanReport(viewer, { ...filters, from: dailyFrom, to: dailyTo }) : Promise.resolve(null),
     ]);
+    const dailyPlan = daily?.territory ? daily : null;
 
     const chosenLine = scope.lines.find((line) => line.lineCode === filters.lineCode)?.lineName ?? null;
     const chosenTerritory = scope.territories.find((territory) => territory.seatId === filters.seatId)?.name ?? null;
@@ -88,12 +97,15 @@ export async function GET(request: Request) {
       adoption,
       bricks,
       coverage,
+      dailyPlan,
       exceptions,
       generatedAtIso: new Date().toISOString(),
       includeTest,
       locations,
       managers,
-      periodText: `${visits.period.from} to ${visits.period.to} · coverage for ${coverage.month.month}`,
+      periodText:
+        `${visits.period.from} to ${visits.period.to} · coverage for ${coverage.month.month}`
+        + (dailyPlan ? ` · daily plan ${dailyPlan.period.from} to ${dailyPlan.period.to}` : ""),
       plan,
       scopeText: [chosenTerritory, chosenLine, `${scope.territories.length} territories in scope`]
         .filter((part): part is string => Boolean(part))
@@ -110,7 +122,8 @@ export async function GET(request: Request) {
       entityType: "phoenix_crm_reports_export",
       summary:
         `Exported the Phoenix CRM reports pack (${visits.period.from} to ${visits.period.to}, `
-        + `${scope.territories.length} territories, manager sections ${managerSections ? "included" : "withheld"})`,
+        + `${scope.territories.length} territories, manager sections ${managerSections ? "included" : "withheld"}, `
+        + `daily plan ${dailyPlan ? `of ${dailyPlan.territory?.name} ${dailyPlan.period.from} to ${dailyPlan.period.to}` : "not included"})`,
     });
 
     const filename = `phoenix-crm-reports-${visits.period.from}-to-${visits.period.to}.xlsx`;

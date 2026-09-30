@@ -20,6 +20,7 @@
 import { Fragment, useId, useState, type ReactNode } from "react";
 
 import { crmUrl, useCrmGet, type CrmResource } from "@/components/phoenix-crm/api";
+import { DailyPlanDaysFilter, DailyPlanSection, dailyPlanDaysSummary, useDailyPlanDays } from "@/components/phoenix-crm/daily-plan-report";
 import { countText, dayLabel, dayLabelWithYear, monthLabel, percentText, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
 import { matchesWords } from "@/components/phoenix-crm/labels";
 import {
@@ -50,6 +51,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { fieldWeekStart, isIsoDay, monthStartOf, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import { dailyPlanPeriodProblem, type DailyPlanReportView } from "@/lib/phoenix-crm/daily-plan-report";
 import type { AdoptionStage } from "@/lib/phoenix-crm/adoption-rules";
 import type { BrickCoverageStatus } from "@/lib/phoenix-crm/brick-report";
 import {
@@ -83,7 +85,7 @@ import type {
 import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 import { cn } from "@/lib/utils";
 
-type ReportSection = "exceptions" | "visits" | "plan" | "coverage" | "bricks" | "managers" | "locations" | "adoption";
+type ReportSection = "exceptions" | "visits" | "plan" | "daily" | "coverage" | "bricks" | "managers" | "locations" | "adoption";
 type PeriodPreset = "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month";
 type Period = { from: string; to: string };
 type Presence = "all" | "with" | "without";
@@ -1567,6 +1569,7 @@ const SECTION_TITLES: Record<ReportSection, string> = {
   exceptions: "Needs you today",
   visits: "Visits per day",
   plan: "Plan against actual",
+  daily: "Daily plan",
   coverage: "Coverage and frequency",
   bricks: "Coverage against sales",
   adoption: "Who has started",
@@ -1611,6 +1614,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
 
   const view = scope.data;
   const today = view?.cairoToday ?? cairoToday;
+  // The daily plan keeps its own days: they reach FORWARD, which the shared period refuses.
+  const dailyDays = useDailyPlanDays(today);
   const territories = view?.territories ?? [];
   const lineTerritories = lineCode ? territories.filter((territory) => territory.lineCode === lineCode) : territories;
   const chosen = seatId ? lineTerritories.filter((territory) => territory.seatId === seatId) : lineTerritories;
@@ -1620,6 +1625,12 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
       ? "visits"
       : section;
   const withTest = Boolean(view?.canIncludeTest) && includeTest;
+  // Checked whichever section is open: the export carries the daily plan's days too, and must never
+  // send a range the server would refuse and so fail the whole workbook over one sheet.
+  const dailyPeriodProblem = dailyPlanPeriodProblem(dailyDays.period, today);
+  const dailyProblem = activeSection === "daily" ? dailyPeriodProblem : null;
+  // A plan is ONE rep's: with several territories in reach and none chosen there is nothing to read.
+  const dailyNeedsTerritory = !seatId && lineTerritories.length > 1;
   // Neither of these two reads a period: coverage asks for a month, and the exceptions board is about
   // today and resolves its own days on the server. A period error must not blank either of them.
   const readsPeriod = activeSection !== "coverage" && !TIMELESS_SECTIONS.includes(activeSection);
@@ -1631,6 +1642,9 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     // URL that carries every default is a URL nobody can read.
     const comparing = COMPARABLE_SECTIONS.includes(name) && compare !== "off" ? compare : null;
     const filters = { section: name, lineCode: lineCode || null, seatId: seatId || null, includeTest: withTest, compare: comparing };
+    if (name === "daily") {
+      return dailyProblem || dailyNeedsTerritory ? null : crmUrl(REPORTS_PATH, { ...filters, from: dailyDays.period.from, to: dailyDays.period.to });
+    }
     // The board is about the viewer's whole scope today; a line or territory filter would turn "what
     // needs you" into "what needs you here", which is the Team tab's question and not this one.
     // Neither is filtered by line or territory: both are about the viewer's WHOLE reach, and a
@@ -1651,13 +1665,14 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
 
   const visits = useCrmGet<VisitsReportView>(sectionUrl("visits"), "report");
   const plan = useCrmGet<PlanReportView>(sectionUrl("plan"), "report");
+  const daily = useCrmGet<DailyPlanReportView>(sectionUrl("daily"), "report");
   const coverage = useCrmGet<CoverageReportView>(sectionUrl("coverage"), "report");
   const managers = useCrmGet<ManagerReportView>(sectionUrl("managers"), "report");
   const locations = useCrmGet<VisitLocationReportView>(sectionUrl("locations"), "report");
   const exceptions = useCrmGet<ExceptionsView>(sectionUrl("exceptions"), "report");
   const bricks = useCrmGet<BrickCoverageView>(sectionUrl("bricks"), "report");
   const adoption = useCrmGet<AdoptionView>(sectionUrl("adoption"), "report");
-  const active = { adoption, bricks, coverage, exceptions, locations, managers, plan, visits }[activeSection];
+  const active = { adoption, bricks, coverage, daily, exceptions, locations, managers, plan, visits }[activeSection];
 
   if (!view) {
     return (
@@ -1710,6 +1725,10 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     try {
       await downloadXlsxFrom(
         crmUrl(`${REPORTS_PATH}/export`, {
+          // The daily plan's own days, so its sheet holds what that section shows — and no sheet at all
+          // when those days cannot be read, rather than a whole workbook refused over one of them.
+          dailyFrom: dailyPeriodProblem ? null : dailyDays.period.from,
+          dailyTo: dailyPeriodProblem ? null : dailyDays.period.to,
           from: period.from,
           includeTest: withTest,
           lineCode: lineCode || null,
@@ -1734,6 +1753,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     ...(view.canSeeLocations ? [{ value: "exceptions" as const, label: SECTION_TITLES.exceptions, note: "Only what is wrong" }] : []),
     { value: "visits", label: SECTION_TITLES.visits, note: "AM and PM apart" },
     { value: "plan", label: SECTION_TITLES.plan, note: "Visited or missed, day by day" },
+    // Every reader of the tab: a rep reads his own plan here, and a manager a rep's in his scope.
+    { value: "daily", label: SECTION_TITLES.daily, note: "Each day's customers" },
     { value: "coverage", label: SECTION_TITLES.coverage, note: "The list, month by month" },
     // Same gate again: a board comparing bricks ACROSS a team is the manager's (owner, 2026-09-26).
     ...(view.canSeeLocations ? [{ value: "bricks" as const, label: SECTION_TITLES.bricks, note: "Per brick, with the caveat" }] : []),
@@ -1754,10 +1775,11 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   // The folded filters, in one line: "This month · Tue 1 Sept – Fri 25 Sept 2026 · Pedia · Faisal".
   // Days that cannot be read keep the filters open, since the fix is inside them.
   const filtersId = `${idPrefix}-filters`;
-  const showFilters = filtersOpen || Boolean(problem);
+  const showFilters = filtersOpen || Boolean(problem) || Boolean(dailyProblem);
   const presetLabel = preset ? (PRESETS.find((option) => option.value === preset)?.label ?? null) : null;
   const chosenLine = lineCode ? (view.lines.find((line) => line.lineCode === lineCode)?.lineName ?? null) : null;
   const chosenTerritory = seatId ? (lineTerritories.find((territory) => territory.seatId === seatId)?.name ?? null) : null;
+  const dailySummary = [dailyPlanDaysSummary(dailyDays), chosenLine, chosenTerritory].filter((part): part is string => Boolean(part)).join(" · ");
   const filterSummary = [
     activeSection === "coverage" ? monthLabel(month) : presetLabel,
     activeSection === "coverage" ? null : periodText(period),
@@ -1779,7 +1801,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
           <CrmButton busy={exporting} disabled={Boolean(problem)} onClick={() => void exportPack()} size="sm">
             {exportFailed ? "Export failed — press to retry" : "Export all sections"}
           </CrmButton>
-          <CrmButton busy={scope.loading || active.loading} disabled={Boolean(problem)} onClick={refresh} size="sm">
+          <CrmButton busy={scope.loading || active.loading} disabled={Boolean(problem || dailyProblem)} onClick={refresh} size="sm">
             Refresh
           </CrmButton>
         </div>
@@ -1796,7 +1818,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
 
       <CrmBlock
         actions={
-          problem ? null : (
+          problem || dailyProblem ? null : (
             <CrmButton aria-controls={filtersId} aria-expanded={showFilters} className="md:hidden" onClick={() => setFiltersOpen((open) => !open)} size="sm">
               {showFilters ? "Done" : "Change"}
             </CrmButton>
@@ -1805,9 +1827,13 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
         className="border-t border-slate-100"
         title="Filters"
       >
-        {showFilters ? null : <p className="break-words text-sm font-semibold leading-6 text-slate-700 md:hidden">{filterSummary}</p>}
+        {showFilters ? null : (
+          <p className="break-words text-sm font-semibold leading-6 text-slate-700 md:hidden">{activeSection === "daily" ? dailySummary : filterSummary}</p>
+        )}
         <div className={cn("min-w-0 gap-3", showFilters ? "grid" : "hidden md:grid")} id={filtersId}>
-          {activeSection === "exceptions" ? (
+          {activeSection === "daily" ? (
+            <DailyPlanDaysFilter days={dailyDays} firstDay={FIRST_REPORT_DAY} idPrefix={idPrefix} today={today} />
+          ) : activeSection === "exceptions" ? (
             <p className="break-words text-sm font-semibold leading-6 text-slate-700">
               This board reads your whole scope, as it stands today. It takes no days and no territory.
             </p>
@@ -1884,7 +1910,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
               {lineTerritories.length > 1 ? (
                 <CrmField htmlFor={`${idPrefix}-territory`} label="Territory">
                   <CrmSelect id={`${idPrefix}-territory`} onChange={(event) => setSeatId(event.target.value)} value={seatId}>
-                    <option value="">{`Every territory · ${countText(lineTerritories.length)}`}</option>
+                    <option value="">{activeSection === "daily" ? "Choose a territory" : `Every territory · ${countText(lineTerritories.length)}`}</option>
                     {lineTerritories.map((territory) => (
                       <option key={territory.seatId} value={territory.seatId}>
                         {`${territory.name} · ${repText(territory.repName)}`}
@@ -1905,7 +1931,10 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
         </div>
       </CrmBlock>
 
-      {problem ? (
+      {activeSection === "daily" ? (
+        // Ahead of the shared period's check: this section reads its own days, never those.
+        <DailyPlanSection idPrefix={idPrefix} needsTerritory={dailyNeedsTerritory} problem={dailyProblem} resource={daily} />
+      ) : problem ? (
         <div className="border-t border-slate-100">
           <CrmEmpty message="Pick a quick choice above, or change the first or last day." title="Choose the days to read" />
         </div>

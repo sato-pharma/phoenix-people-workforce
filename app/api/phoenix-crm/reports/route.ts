@@ -5,6 +5,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { validationError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
+import { loadDailyPlanReport } from "@/lib/phoenix-crm/server/daily-plan-report";
 import { loadBrickCoverageReport } from "@/lib/phoenix-crm/server/brick-report";
 import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
 import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
@@ -23,6 +24,9 @@ export const dynamic = "force-dynamic";
 
 // GET = one section of the module's own report, so a phone reads only the section on screen:
 //   scope     what the filters can offer (the viewer's lines and territories)
+//   daily     ONE territory's plan, day by day (owner, 2026-09-30): each day's start times and other
+//             activities, then its AM and its PM customers — where each one is, and whether he was
+//             seen. It reaches FORWARD to the last plannable day, and a rep reads his own plan here.
 //   visits    visits per rep per day, AM and PM apart
 //   plan      plan against actual, per day
 //   coverage  coverage and frequency for a month
@@ -60,6 +64,7 @@ export async function GET(request: Request) {
     const section = search.get("section") ?? "scope";
     let report: unknown;
     if (section === "scope") report = await loadReportScope(viewer);
+    else if (section === "daily") report = await loadDailyPlanReport(viewer, filters);
     else if (section === "visits") report = await loadVisitsReport(viewer, filters);
     else if (section === "plan") report = await loadPlanReport(viewer, filters);
     else if (section === "coverage") report = await loadCoverageReport(viewer, filters);
