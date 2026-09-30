@@ -55,8 +55,9 @@ import {
   specialityOf,
   type CustomerGroup,
 } from "@/lib/phoenix-crm/customer-list-grouping";
-import { describeSharing } from "@/lib/crm/location-confidence";
-import { factInk, gradeInk, listRowFacts } from "@/lib/phoenix-crm/list-row-facts";
+import { clusterRows, describeSharing, findNeighbours, type NearbyContact } from "@/lib/crm/location-confidence";
+import { factInk, gradeInk, listRowFacts, rowPoint } from "@/lib/phoenix-crm/list-row-facts";
+import { describePlanPattern } from "@/lib/phoenix-crm/plan-pattern";
 import { listRowAction, requestKindLabel, type ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
 import type { ListCustomer } from "@/lib/phoenix-crm/view-types";
 import { brickTintMap, type BrickTint } from "@/components/phoenix-crm/brick-tints";
@@ -248,6 +249,91 @@ function cardMetaText(customer: ListCustomer): string {
 }
 
 /**
+ * 🔴 DOCTORS WHO STAND NEAR EACH OTHER SHARE A COLOUR (owner, 2026-09-30: "sort the addresses to be
+ * near each other, give them colours, then sort by distance and by colour").
+ *
+ * FIVE HUES, WIDELY SPACED, AND NONE OF THEM ALREADY MEANS SOMETHING HERE — lifted verbatim from the
+ * old Reps List, where the reasoning is written out: violet is the shared customer, emerald and
+ * amber are the month's standing, amber is also "no brick yet" and orange is a link. Reusing any of
+ * those would make one colour answer two questions. Clusters beyond the fifth wrap round, which is
+ * safe because a repeat can only meet its twin with four other blocks in between.
+ *
+ * The wash lands on the ADDRESS cell and nowhere else: that is the thing being compared.
+ */
+const NEIGHBOUR_TINTS = [
+  { bar: "border-sky-400", fill: "bg-sky-100", ink: "text-sky-800" },
+  { bar: "border-rose-400", fill: "bg-rose-100", ink: "text-rose-800" },
+  { bar: "border-teal-400", fill: "bg-teal-100", ink: "text-teal-800" },
+  { bar: "border-lime-400", fill: "bg-lime-100", ink: "text-lime-800" },
+  { bar: "border-indigo-400", fill: "bg-indigo-100", ink: "text-indigo-800" },
+] as const;
+
+type Neighbourhood = { cluster: number | null; nearby: NearbyContact[] };
+
+/**
+ * Who stands beside whom inside ONE brick group, and which block each row belongs to.
+ *
+ * 🔴 PER GROUP, which is what makes "near each other" structural: a group already IS one brick, so
+ * the comparison can never reach across a heading and call two people neighbours when the page has
+ * just told the reader they are in different places. `findNeighbours` and `clusterRows` are the old
+ * board's own — the owner asked that this not be built twice.
+ *
+ * The same pass REORDERS the rows so a block sits together ("sort them by distance and by colour"),
+ * and NUMBERS each block so it can have a colour of its own rather than all sharing one tint.
+ */
+function neighbourhoodsIn(rows: readonly ListCustomer[]): { rows: ListCustomer[]; of: Map<string, Neighbourhood> } {
+  const keyed = rows.map((customer) => {
+    const point = rowPoint(customer);
+    return { contactCrmId: rowKey(customer), customer, lat: point?.lat ?? null, lon: point?.lon ?? null, name: customer.name };
+  });
+  const found = findNeighbours(keyed);
+  const clustered = clusterRows(keyed, found);
+  const of = new Map<string, Neighbourhood>();
+  for (const row of clustered.rows) {
+    of.set(row.customer.customerId, {
+      cluster: clustered.clusterOf.get(row.contactCrmId) ?? null,
+      nearby: found.get(row.contactCrmId) ?? [],
+    });
+  }
+  return { of, rows: clustered.rows.map((row) => row.customer) };
+}
+
+/**
+ * A numeric key for a Phoenix CRM customer, because the old board's helpers are keyed on the CRM's
+ * own contact id and a Phoenix customer's id is a UUID. A customer the rep added himself has no CRM
+ * id at all, so the index is used — unique within one render, which is all these helpers need.
+ */
+const rowKeys = new WeakMap<ListCustomer, number>();
+let nextRowKey = 1;
+function rowKey(customer: ListCustomer): number {
+  const found = rowKeys.get(customer);
+  if (found != null) return found;
+  const key = customer.referenceContactCrmId ?? -(nextRowKey += 1);
+  rowKeys.set(customer, key);
+  return key;
+}
+
+/**
+ * "Also at this address: Ahmed Samir, Mona Fouad" — the names, not just a count.
+ *
+ * The USE of the highlight is a rep planning ONE stop instead of three, and for that he needs to know
+ * WHICH ones. Long lists are trimmed to three and the rest counted: the point is "there is a cluster
+ * here", not a roster. Tinted with its own block's hue so the words and the colour are one signal.
+ */
+function NearbyLine({ neighbourhood }: { neighbourhood: Neighbourhood | null }) {
+  const nearby = neighbourhood?.nearby ?? [];
+  if (nearby.length === 0) return null;
+  const shown = nearby.slice(0, 3);
+  const rest = nearby.length - shown.length;
+  const tint = neighbourhood?.cluster == null ? null : NEIGHBOUR_TINTS[neighbourhood.cluster % NEIGHBOUR_TINTS.length];
+  return (
+    <span className={`mt-0.5 block break-words text-phx-2xs font-semibold ${tint?.ink ?? "text-slate-500"}`} dir="auto">
+      {`Also here: ${shown.map((entry) => entry.name).join(", ")}${rest > 0 ? ` and ${rest} more` : ""}`}
+    </span>
+  );
+}
+
+/**
  * 🔴 THE FULL ADDRESS, AND IT IS CLICKABLE (owner, 2026-09-30: "you were writing the full address
  * and the full address was clickable"). It opens Google Maps in a new tab — a pin on the captured
  * place's own point, or a search on the words when nothing has been captured yet.
@@ -273,6 +359,25 @@ function AddressText({ href, text }: { href: string | null; text: string }) {
     >
       {text}
     </a>
+  );
+}
+
+/**
+ * 🔴 WHEN HE IS USUALLY PLANNED, from the iReports360 reference plans (owner, 2026-09-30: "add
+ * another column and tell him that, based on the reference weekly plans from iReports360, you are
+ * visiting this doctor — Sunday and Tuesday, in the first and the fourth week").
+ *
+ * It states what the plans ALREADY SAY. It is not a target, not a frequency and not an instruction,
+ * and it carries no count of whether the rep actually went — nothing on his own List judges him.
+ * With no plan in the mirror it says so plainly rather than inventing a pattern or leaving a blank.
+ */
+function PlanPatternCell({ customer }: { customer: ListCustomer }) {
+  const text = describePlanPattern(customer.planPattern ?? []);
+  if (!text) return <span className="text-xs italic text-slate-400">No plan recorded</span>;
+  return (
+    <span className="break-words text-xs font-semibold text-slate-700" dir="auto">
+      {text}
+    </span>
   );
 }
 
@@ -544,8 +649,13 @@ export function CustomerListBoard({
         </div>
       ) : (
         <div className="border border-slate-200">
-          {visible.map((entry) => {
-            const isCollapsed = collapsed.has(entry.group.key);
+          {visible.map((rawEntry) => {
+            const isCollapsed = collapsed.has(rawEntry.group.key);
+            // 🔴 Gather the doctors who stand together, colour each block, and put a block's rows
+            // under each other (owner, 2026-09-30). Scoped to THIS group, so numbering — and
+            // therefore colour — restarts in every brick, and a comparison never crosses a heading.
+            const neighbourhoods = neighbourhoodsIn(rawEntry.rows);
+            const entry = { ...rawEntry, rows: neighbourhoods.rows };
             return (
               <div key={entry.group.key}>
                 <GroupHeading
@@ -580,6 +690,12 @@ export function CustomerListBoard({
                           <p className="break-words text-xs font-semibold leading-5 text-slate-500" dir="auto">
                             {listRowFacts(customer).brick.text}
                           </p>
+                          {/* The same two the table gained: who stands beside him, and when the
+                              iReports360 plans say he is seen. */}
+                          <NearbyLine neighbourhood={neighbourhoods.of.get(customer.customerId) ?? null} />
+                          <p className="break-words text-xs font-semibold leading-5 text-slate-500">
+                            <PlanPatternCell customer={customer} />
+                          </p>
                           {variant === "active" || variant === "outside" ? (
                             <p className="break-words text-xs font-semibold leading-5 text-slate-500">{placesDaysText(customer)}</p>
                           ) : null}
@@ -610,7 +726,7 @@ export function CustomerListBoard({
                         The widths total 100% on a `table-fixed` grid, so the row fits its column at
                         every size rather than scrolling sideways (the fits-the-screen golden rule);
                         the phone gets the cards above instead. */}
-                    <CrmTable columns={["24%", "16%", "8%", "16%", "22%", "14%"]}>
+                    <CrmTable columns={["22%", "13%", "7%", "13%", "21%", "14%", "10%"]}>
                       <thead>
                         <tr>
                           <th className={crmThClassName} scope="col">
@@ -628,6 +744,12 @@ export function CustomerListBoard({
                           <th className={crmThClassName} scope="col">
                             {DETAIL_HEADER[variant]}
                           </th>
+                          {/* 🔴 What the iReports360 plans already say about him — not a target and
+                              not an instruction, which is why the heading is "Usually planned" and
+                              never "Frequency". */}
+                          <th className={crmThClassName} scope="col">
+                            Usually planned
+                          </th>
                           <th className={crmThClassName} scope="col">
                             <span className="sr-only">Actions</span>
                           </th>
@@ -637,6 +759,8 @@ export function CustomerListBoard({
                         {entry.rows.map((customer) => {
                           const facts = listRowFacts(customer);
                           const shared = (customer.sharedWith?.length ?? 0) > 0;
+                          const near = neighbourhoods.of.get(customer.customerId) ?? null;
+                          const nearTint = near?.cluster == null ? null : NEIGHBOUR_TINTS[near.cluster % NEIGHBOUR_TINTS.length];
                           return (
                             // 🔴 A CUSTOMER SHARED WITH ANOTHER REP IS HIGHLIGHTED — the old board's
                             // violet, row level, on the owner's instruction of 2026-09-30 ("if a
@@ -680,8 +804,12 @@ export function CustomerListBoard({
                                   {facts.brick.text}
                                 </p>
                               </td>
-                              <td className={`${crmTdClassName} ${factInk(facts.address)}`}>
+                              {/* 🔴 The neighbourhood wash lands on the ADDRESS cell and nowhere
+                                  else — that is the thing being compared. A row standing alone
+                                  carries no colour, which is itself the answer. */}
+                              <td className={`${crmTdClassName} ${nearTint?.fill ?? ""} ${factInk(facts.address)}`}>
                                 <AddressText href={facts.mapsHref} text={variant === "dropped" ? detailText(customer, variant) : facts.address.text} />
+                                <NearbyLine neighbourhood={near} />
                                 {variant === "active" || variant === "outside" ? (
                                   <p className="mt-0.5 break-words text-xs text-slate-500">{placesDaysText(customer)}</p>
                                 ) : null}
@@ -694,6 +822,9 @@ export function CustomerListBoard({
                                   <p className="mt-0.5 whitespace-pre-line text-xs text-slate-500">{customer.droppedNote}</p>
                                 ) : null}
                                 <p className="mt-1 text-xs text-slate-500">{monthText(customer, variant)}</p>
+                              </td>
+                              <td className={crmTdClassName}>
+                                <PlanPatternCell customer={customer} />
                               </td>
                               <td className={crmTdClassName}>
                                 {/* The column's full width — the board's Actions column does the same. */}

@@ -199,6 +199,21 @@ export function listRowFacts(customer: ListRowFactsInput): ListRowFacts {
 }
 
 /**
+ * Where this row actually stands, by the same precedence its address follows: the place the rep
+ * captured, else the average of the check-ins. Null when neither exists.
+ *
+ * 🔴 It is the ONE point every reader of a row must use, so the colour a customer is painted, the
+ * pin his address opens and the neighbours he is gathered with can never disagree about where he is.
+ * It is a LOCATION, never a judgement: no distance to anything, no accuracy, no reading.
+ */
+export function rowPoint(customer: ListRowFactsInput): { lat: number; lon: number } | null {
+  const place = customer.places[0] ?? null;
+  if (place) return { lat: place.lat, lon: place.lon };
+  const observed = customer.observed ?? null;
+  return observed ? { lat: observed.lat, lon: observed.lon } : null;
+}
+
+/**
  * The ink a grade is printed in, as the old Reps List painted it: A and A+ red, B amber, the rest
  * grey, and no grade the palest — so a board reads by weight before it reads by word.
  */

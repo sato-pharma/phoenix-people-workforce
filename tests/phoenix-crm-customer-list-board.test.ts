@@ -85,6 +85,7 @@ function customer(overrides: Partial<ListCustomer> = {}): ListCustomer {
     // where the reps have actually stood. Both null here — this fixture is one rep's own row.
     sharedWith: null,
     observed: null,
+    planPattern: null,
     ...overrides,
   };
 }
