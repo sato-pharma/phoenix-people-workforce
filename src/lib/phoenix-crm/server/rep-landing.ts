@@ -4,7 +4,7 @@ import { canAccess } from "@/lib/auth/permissions";
 import { logError } from "@/lib/observability/log";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmToday } from "@/lib/phoenix-crm/server/today";
-import { stopWhereLine, todayByBrick } from "@/lib/phoenix-crm/today-rules";
+import { addressWithoutTheBrick, stopWhereLine, todayByBrick } from "@/lib/phoenix-crm/today-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 /**
@@ -114,7 +114,15 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
         // the brick is either a heading or the header's word on a single-brick day. On the row they
         // printed "باجور · Menoufia 2" sixteen times down a narrow column. What is left is what he
         // asked for that morning and nothing else — the place, and the hours.
-        where: stopWhereLine({ ...stop, reference: stop.reference ? { ...stop.reference, area: null } : stop.reference }, null),
+        where: stopWhereLine(
+          {
+            ...stop,
+            reference: stop.reference
+              ? { ...stop.reference, address: addressWithoutTheBrick(stop.reference.address, stop.brick), area: null }
+              : stop.reference,
+          },
+          null,
+        ),
         done: stop.done,
       })),
     }));
@@ -122,7 +130,9 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
     return {
       date: view.date,
       dateLabel: cairoDayLabel(view.date),
-      soleBrick: groups.length === 1 ? groups[0].label : null,
+      // The stop's OWN brick, not the group's label: `clusterByBrick` labels a group "Brick <name>"
+      // for a heading row, and the header read "WED 30 SEPT · BRICK باجور".
+      soleBrick: groups.length === 1 ? (view.stops[0]?.brick ?? null) : null,
       territory: view.territory.name,
       bricks,
       amDone: view.counts.doneAm,

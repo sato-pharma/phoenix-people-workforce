@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { stripComments, stripCommentsCompact } from "./support/comment-strip.ts";
 
 import {
+  addressWithoutTheBrick,
   buildTodayStops,
   compareTodayStops,
   NO_HOURS_YET,
@@ -271,14 +272,29 @@ export function runPhoenixCrmTodayTests(): void {
   {
     const panel = source("src/components/employee-portal/rep-today-plan-panel.tsx");
     const centre = source("src/components/employee-portal/portal-command-center.tsx");
+    const landing = source("src/lib/phoenix-crm/server/rep-landing.ts");
 
     // 1. Bricks as headers, ONLY when there is more than one.
     assert.ok(panel.includes("const showBrickHeadings = plan.bricks.length > 1;"), "bricks head the list only when there is more than one");
     assert.ok(panel.includes("{showBrickHeadings ? <BrickHeading brick={brick} /> : null}"), "and the header is conditional on it");
-    // With one brick its name is dropped from the where-line too, not printed on every row.
+    // 🔴 And the brick is said ONCE. Neither it nor the area goes on a row (owner, 2026-09-30: "you
+    //    don't have to write Menoufia … and the Bagour is duplicated"): the area is his own
+    //    territory, and the brick is a heading, or the header's word on a single-brick day.
     assert.ok(
-      source("src/lib/phoenix-crm/server/rep-landing.ts").includes("where: stopWhereLine(stop, null),"),
-      "🔴 the brick is NEVER on the row — it is a heading, or the header's own word on a single-brick day",
+      landing.includes("address: addressWithoutTheBrick(stop.reference.address, stop.brick), area: null"),
+      "the area is dropped from every row, and an address that merely repeats the brick with it",
+    );
+    assert.ok(!landing.includes("stopWhereLine(stop,"), "and the brick is never passed to the where-line");
+    // The rule itself, by behaviour: the brick is dropped only when the address OPENS with it.
+    assert.equal(addressWithoutTheBrick("الباجور، سبك الضحاك", "باجور"), "سبك الضحاك", "the leading town goes, the village stays");
+    assert.equal(addressWithoutTheBrick("الباجور", "باجور"), null, "an address that is only the brick leaves nothing");
+    assert.equal(addressWithoutTheBrick("جروان الباجور", "باجور"), "جروان الباجور", "a place that merely CONTAINS the brick is a different place and is kept");
+    assert.equal(addressWithoutTheBrick("طنطا، سجر", "باجور"), "طنطا، سجر", "another town is never dropped");
+    assert.equal(addressWithoutTheBrick(null, "باجور"), null);
+    assert.equal(addressWithoutTheBrick("الباجور", null), "الباجور", "with no brick nothing is dropped");
+    assert.ok(
+      landing.includes("soleBrick: groups.length === 1 ? (view.stops[0]?.brick ?? null) : null,"),
+      'a one-brick day names the brick from the STOP, not the group label — that label is "Brick <name>", and the header read "WED 30 SEPT · BRICK باجور"',
     );
     assert.ok(panel.includes("{plan.soleBrick ? `${plan.dateLabel} · ${plan.soleBrick}` : plan.dateLabel}"), "and a one-brick day still says where he is");
 

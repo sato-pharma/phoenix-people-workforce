@@ -222,6 +222,29 @@ export function buildTodayStops(input: { planned: readonly PlannedStop[]; visits
 }
 
 /** His day in brick clusters, in the order he will drive them. */
+/**
+ * 🔴 THE BRICK IS NOT SAID TWICE ON ONE ROW (owner, 2026-09-30: "you are duplicating — for example
+ * the Bagour, the Bagour is duplicated"). With the brick now in the panel header, an address that
+ * OPENS with that same town repeats it on every row: "باجور" over "الباجور، سبك الضحاك" sixteen
+ * times. So the leading segment is dropped when it IS the brick, and only then.
+ *
+ * Segments split on the Arabic comma as well as the Latin one, and the Arabic definite article is
+ * ignored in the comparison — "الباجور" and "باجور" are the same town written two ways, which is
+ * exactly how this data holds it. A segment that merely CONTAINS the brick ("جروان الباجور") is a
+ * different place and is kept. An address that was nothing but the brick leaves no address at all,
+ * and the line then says plainly that no place is saved yet.
+ */
+export function addressWithoutTheBrick(address: string | null, brick: string | null): string | null {
+  if (!address || !brick) return address;
+  const bare = (value: string) => value.trim().replace(/^ال/, "");
+  const parts = address
+    .split(/[،,]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length > 0 && bare(parts[0]) === bare(brick)) parts.shift();
+  return parts.length > 0 ? parts.join("، ") : null;
+}
+
 export function todayByBrick(stops: readonly TodayStop[]) {
   return clusterByBrick(stops, (stop) => stop.brick, "first-appearance");
 }
