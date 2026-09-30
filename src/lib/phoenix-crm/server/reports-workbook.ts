@@ -35,6 +35,16 @@ import ExcelJS from "exceljs";
 import { buildHouseCoverSheet, writeHouseTable, type CellValue, type TableColumn } from "@/lib/export/house-table-workbook";
 import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 
+import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import {
+  dailyPlanActivityText,
+  dailyPlanCustomerNotes,
+  dailyPlanStateLabel,
+  dailyPlanVisitText,
+  type DailyPlanCustomer,
+  type DailyPlanReportView,
+} from "@/lib/phoenix-crm/daily-plan-report";
+import { PHOENIX_CRM_WEEKDAY_NAMES } from "@/lib/phoenix-crm/timings";
 import type { AdoptionView } from "@/lib/phoenix-crm/server/adoption";
 import type { BrickCoverageView } from "@/lib/phoenix-crm/server/brick-report";
 import type { ExceptionsView } from "@/lib/phoenix-crm/server/exceptions";
@@ -59,6 +69,8 @@ export type ReportsPackInput = {
   generatedAtIso: string;
   visits: VisitsReportView | null;
   plan: PlanReportView | null;
+  /** One territory's plan, day by day — null (no sheet) unless ONE territory was read. */
+  dailyPlan: DailyPlanReportView | null;
   coverage: CoverageReportView | null;
   managers: ManagerReportView | null;
   locations: VisitLocationReportView | null;
@@ -191,6 +203,80 @@ function writePlan(workbook: ExcelJS.Workbook, view: PlanReportView): void {
       pct(view.totals.PM.keptPct),
       view.totals.AM.unplanned + view.totals.PM.unplanned,
     ],
+  });
+}
+
+/**
+ * The daily plan: one territory's plan, a row for every planned customer, day by day (owner,
+ * 2026-09-30). A day with nobody on it keeps a row of its own, so a gap shows rather than vanishing.
+ * AM and PM stay apart as the List column on every row, and the sheet carries no total at all — it is
+ * a listing, not a measure; plan against actual is the measure.
+ */
+function writeDailyPlan(workbook: ExcelJS.Workbook, view: DailyPlanReportView): void {
+  const territory = view.territory;
+  if (!territory) return;
+  const sheet = workbook.addWorksheet("Daily plan");
+  sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
+  const rows: CellValue[][] = [];
+  for (const day of view.days) {
+    const sent = day.state === "submitted" || day.state === "approved" || day.state === "returned";
+    const plan = [dailyPlanStateLabel(day.state), sent && day.submittedLate ? "sent late" : null, day.isTest ? "test entries" : null]
+      .filter((part): part is string => part !== null)
+      .join(" · ");
+    const dayCells: CellValue[] = [
+      day.date,
+      PHOENIX_CRM_WEEKDAY_NAMES[weekdayOfIsoDay(day.date)],
+      plan,
+      day.startsText ?? "—",
+      day.activities.length > 0 ? day.activities.map(dailyPlanActivityText).join("; ") : "—",
+    ];
+    const customers: Array<[string, DailyPlanCustomer]> = [
+      ...day.am.map((customer): [string, DailyPlanCustomer] => ["AM", customer]),
+      ...day.pm.map((customer): [string, DailyPlanCustomer] => ["PM", customer]),
+    ];
+    if (customers.length === 0) {
+      rows.push([...dayCells, "—", day.state === "none" ? "No plan for this week" : "Nothing planned", "", "", "", "", "", "", "", ""]);
+      continue;
+    }
+    for (const [listType, customer] of customers) {
+      rows.push([
+        ...dayCells,
+        listType,
+        customer.name,
+        customer.grade ?? "—",
+        customer.speciality ?? "—",
+        customer.brick ?? "—",
+        customer.area ?? "—",
+        [customer.placeLabel, customer.address].filter((part): part is string => Boolean(part)).join(" · ") || "—",
+        customer.hoursText,
+        dailyPlanVisitText(customer.status, customer.visitedMinute),
+        dailyPlanCustomerNotes(customer).join(" · "),
+      ]);
+    }
+  }
+  writeHouseTable(sheet, 1, {
+    columns: [
+      column("Day", { width: 12 }),
+      column("Weekday", { width: 11 }),
+      column("Plan", { width: 24 }),
+      column("Starts", { width: 30 }),
+      column("Other activities", { width: 28 }),
+      column("List", { width: 7 }),
+      { ...NAME, label: "Customer", width: 28 },
+      column("Grade", { width: 7 }),
+      column("Speciality", { width: 18 }),
+      column("Brick", { width: 16 }),
+      column("Area", { width: 16 }),
+      column("Address", { width: 32 }),
+      column("Hours that day", { width: 22 }),
+      column("Status", { width: 17 }),
+      column("Notes", { width: 34 }),
+    ],
+    note:
+      "A day that has passed shows the plan as it stood when that day ended; today and the days ahead show it as it is now. "
+      + "Visited means a visit to the customer was saved that day. Friday holds no plan and is left out.",
+    rows,
+    title: `Daily plan · ${territory.name} · ${territory.repName ?? "No rep"} · ${view.period.from} to ${view.period.to}`,
   });
 }
 
@@ -401,6 +487,7 @@ export function packSections(input: ReportsPackInput): string[] {
     input.exceptions ? "Needs you" : null,
     input.visits ? "Visits per day" : null,
     input.plan ? "Plan against actual" : null,
+    input.dailyPlan?.territory ? "Daily plan" : null,
     input.coverage ? "Coverage and frequency" : null,
     input.bricks ? "Coverage against sales" : null,
     input.managers ? "Double and chain visits" : null,
@@ -434,6 +521,7 @@ export async function buildPhoenixCrmReportsWorkbook(input: ReportsPackInput): P
   if (input.exceptions) writeExceptions(workbook, input.exceptions);
   if (input.visits) writeVisits(workbook, input.visits);
   if (input.plan) writePlan(workbook, input.plan);
+  if (input.dailyPlan) writeDailyPlan(workbook, input.dailyPlan);
   if (input.coverage) writeCoverage(workbook, input.coverage);
   if (input.bricks) writeBricks(workbook, input.bricks);
   if (input.managers) writeManagers(workbook, input.managers);

@@ -145,6 +145,9 @@ function pack(patch: Partial<ReportsPackInput> = {}): ReportsPackInput {
     generatedAtIso: "2026-09-27T06:00:00.000Z",
     visits: visitsView(),
     plan: null,
+    // The daily plan's sheet, added 2026-09-30 — required like the rest, and null unless ONE
+    // territory was read.
+    dailyPlan: null,
     coverage: coverageView(),
     managers: null,
     locations: null,
@@ -181,6 +184,50 @@ function adoptionView() {
     ],
     summary: { territories: 1, open: 1, neverTouched: 1, overdue: 1, ready: 0, working: 0, byStage: [] },
   } as unknown as NonNullable<ReportsPackInput["adoption"]>;
+}
+
+function dailyPlanView(patch: Partial<NonNullable<ReportsPackInput["dailyPlan"]>> = {}): NonNullable<ReportsPackInput["dailyPlan"]> {
+  const customer = {
+    customerId: "C-1",
+    name: "Dr Sami Adel",
+    grade: "A" as const,
+    speciality: "Paediatrics",
+    pending: false,
+    stale: false,
+    placeLabel: "Al Shifa Clinic",
+    brick: "Shebin 3",
+    area: "Menoufia 2",
+    address: "12 Gamal Abdel Nasser St",
+    hoursText: "6:00 PM – 8:00 PM",
+    exceptionLabel: null,
+    exceptionNote: null,
+    status: "visited" as const,
+    visitedMinute: 615,
+    offPlan: null,
+  };
+  const day = {
+    isTest: false,
+    state: "approved" as const,
+    submittedLate: false,
+    starts: { startAmMinute: 660, startPmMinute: 1020 },
+    startsText: "Start AM 11:00 AM · Start PM 5:00 PM",
+    activities: [],
+    listTypes: ["AM" as const, "PM" as const],
+    running: false,
+  };
+  return {
+    period: { from: "2026-09-26", to: "2026-09-29" },
+    cairoToday: "2026-09-30",
+    visitDay: "2026-09-30",
+    lastPlannableDay: "2026-11-05",
+    includeTest: false,
+    territory: { seatId: "SEAT-1", name: "Menoufia 2 · Anti Infective", lineName: "Anti Infective", repName: "Aya Ibrahim" },
+    days: [
+      { ...day, date: "2026-09-28", am: [{ ...customer, customerId: "C-2", name: "El Shifa Hospital", status: "not_visited" as const, visitedMinute: null }], pm: [customer] },
+      { ...day, date: "2026-09-29", state: "none" as const, startsText: null, am: [], pm: [] },
+    ],
+    ...patch,
+  };
 }
 
 async function sheetsOf(input: ReportsPackInput): Promise<string[]> {
@@ -231,8 +278,50 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
       locations: locationsView(),
       managers: { period: PERIOD, includeTest: false, rows: [] } as unknown as NonNullable<ReportsPackInput["managers"]>,
       plan: { period: PERIOD, includeTest: false, runningDay: null, rows: [], totals: { AM: { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null }, PM: { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null } } } as unknown as NonNullable<ReportsPackInput["plan"]>,
+      dailyPlan: dailyPlanView(),
     });
     assert.deepEqual(await sheetsOf(full), ["Cover", ...packSections(full)], "the sheets are exactly what the cover promised, in that order");
+    const order = packSections(full);
+    assert.equal(order.indexOf("Daily plan"), order.indexOf("Plan against actual") + 1, "the daily plan follows plan against actual, as on the screen");
+  }
+
+  // ── 3b. The daily plan: ONE territory's sheet, a row a planned customer, and never a total ──────
+  {
+    // Read with several territories in reach and none chosen, it names no territory — and writes no sheet.
+    const unchosenPack = pack({ dailyPlan: dailyPlanView({ territory: null, days: [] }) });
+    const unchosen = await sheetsOf(unchosenPack);
+    assert.equal(unchosen.includes("Daily plan"), false, "no territory, no sheet — never an empty tab");
+    assert.equal(packSections(unchosenPack).includes("Daily plan"), false, "and the cover does not promise one");
+
+    const buffer = await buildPhoenixCrmReportsWorkbook(pack({ dailyPlan: dailyPlanView() }));
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    const sheet = workbook.getWorksheet("Daily plan");
+    assert.ok(sheet, "a rep's own territory gets its daily plan sheet");
+    const rows: string[][] = [];
+    sheet.eachRow((row) => {
+      const cells: string[] = [];
+      row.eachCell({ includeEmpty: true }, (cell) => cells.push(String(cell.value ?? "")));
+      rows.push(cells);
+    });
+    const headers = rows[1] ?? [];
+    assert.deepEqual(
+      headers.slice(0, 7),
+      ["Day", "Weekday", "Plan", "Starts", "Other activities", "List", "Customer"],
+      "the day's own facts first, then the list the customer is on, then the customer",
+    );
+    const visited = rows.find((cells) => cells.includes("Dr Sami Adel"));
+    assert.ok(visited, "the planned customer has his row");
+    assert.ok(visited.includes("PM") && visited.includes("Visited 10:15 AM"), "on his own list, with when he was seen");
+    assert.ok(visited.includes("Monday") && visited.includes("Start AM 11:00 AM · Start PM 5:00 PM"), "carrying his day's weekday and start times");
+    const missed = rows.find((cells) => cells.includes("El Shifa Hospital"));
+    assert.ok(missed && missed.includes("AM") && missed.includes("Not visited"));
+    assert.ok(rows.some((cells) => cells.includes("2026-09-29") && cells.includes("No plan for this week")), "a day with nobody on it keeps a row, so the gap shows");
+    assert.equal(
+      rows.some((cells) => cells.some((cell) => /^(All|Total)\b/i.test(cell))),
+      false,
+      "a listing carries no total row — plan against actual is the measure",
+    );
   }
 
   // ── 4. AM and PM stay apart in every sheet ─────────────────────────────────────────────────────

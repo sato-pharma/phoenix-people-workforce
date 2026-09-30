@@ -1625,6 +1625,7 @@ import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.t
 import { runPhoenixCrmAdoptionTests } from "./phoenix-crm-adoption.test.ts";
 import { runPhoenixCrmReportComparisonTests } from "./phoenix-crm-report-comparison.test.ts";
 import { runPhoenixCrmReportsExportTests } from "./phoenix-crm-reports-export.test.ts";
+import { runPhoenixCrmDailyPlanReportTests } from "./phoenix-crm-daily-plan-report.test.ts";
 import { runPhoenixCrmBrickCoverageReportTests } from "./phoenix-crm-brick-coverage-report.test.ts";
 import { runPhoenixCrmMobileManagerTests } from "./phoenix-crm-mobile-manager.test.ts";
 import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.test.ts";
@@ -5609,6 +5610,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's reports pack is one workbook whose SHEETS are the access control (C1 — owner's plan, Phase 4: a section the viewer may not read is never loaded and writes NO SHEET, because an empty \"Where the visit was saved\" tab tells a medical rep both that the report exists and that he is not trusted with it — the disclosure Golden Rule #1 forbids, only in a file he keeps; the sheets are read back out of the real .xlsx buffer rather than asserted against the input, so a builder that wrote nothing cannot pass; a viewer with nothing in scope still gets a valid file that is the cover alone; AM and PM keep the same number of columns in every sheet and are never joined; the brick caveat is written INTO the workbook, because a saved file leaves the building without the screen it sat beside; it wears the house identity and never falls back to the Phoenix kit; the rate limit runs before any section is loaded; and there is exactly one blob download in the client)",
   runPhoenixCrmReportsExportTests,
+);
+
+await runTest(
+  "Phoenix CRM's daily plan report (owner, 2026-09-30: \"build the daily plan report\" — iReports360's Daily Plan rebuilt from Phoenix CRM's own plans, one territory day by day): it reaches FORWARD to the last day a rep can plan where every other section stops at today, and every quick pick is readable on every day of 2026-2027; a day that has passed reads as its plan stood when the day ENDED — the last status before the next Cairo midnight, the same test plan against actual applies — so a plan reopened afterwards never turns a sent Monday into a draft; the visit day ends at 02:00, so yesterday is \"not yet\" until then; Friday is left out; AM and PM are two lists with no total; a test visit never marks a real plan's customer seen and a test plan is listed after the real one; the territory comes from the viewer's own scope; and it never reads a distance, a flag or an accuracy, because the rep reads his own plan there",
+  runPhoenixCrmDailyPlanReportTests,
 );
 
 await runTest(
