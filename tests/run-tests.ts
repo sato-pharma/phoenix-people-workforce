@@ -2150,6 +2150,7 @@ import { runSeniorDistrictManagerTitleTests } from "./senior-district-manager-ti
 import { runHiringDocumentsExportWorkbookTests } from "./hiring-documents-export-workbook.test.ts";
 import { runSeniorMedicalRepresentativeTitleTests } from "./senior-medical-representative-title.test.ts";
 import { runPhoenixCrmDiscardOnePressTests } from "./phoenix-crm-discard-one-press.test.ts";
+import { runRollupBranchNameTests } from "./rollup-branch-name.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -7944,6 +7945,8 @@ await runTest(
 );
 
 await runTest("phoenix crm: no save bar takes two presses to discard", runPhoenixCrmDiscardOnePressTests);
+
+await runTest("rollup branch name: unique across history, an unknown counts as taken", runRollupBranchNameTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
