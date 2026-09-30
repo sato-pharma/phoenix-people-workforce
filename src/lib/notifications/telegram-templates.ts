@@ -24,6 +24,7 @@ export type TelegramTemplateWorkflowKey =
   | "recruitment"
   | "internal_messages"
   | "support_requests"
+  | "business_card_requests"
   | "attendance"
   | "field_workforce_compliance"
   | "birthday"
@@ -343,6 +344,26 @@ export const telegramTemplateDefinitions: TelegramTemplateDefinition[] = [
       title: "New support request",
     },
     templateKey: "support_requests",
+  },
+  {
+    allowedPlaceholders: [...globalPlaceholders],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Business Card Request Telegram event (the owner and
+    // HR Operations are alerted when an employee requests printed business cards).
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
+    module: "business_card_requests",
+    name: "Business Card Requests",
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
+    sampleVariables: {
+      ...baseSampleVariables,
+      actionUrl: "/admin/business-card-requests",
+      message: "Module: Business card request\nAhmed Hassan requested printed business cards.",
+      title: "New business card request",
+    },
+    templateKey: "business_card_requests",
   },
   {
     allowedPlaceholders: [...globalPlaceholders],

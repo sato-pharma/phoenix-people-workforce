@@ -122,6 +122,9 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
     ],
     grants: {
       support_requests: MAINTAIN,
+      // Employee business-card change requests (name / number) — worked by HR exactly as a support
+      // request is, so it traces to the same two functions (this one and people_records).
+      business_card_requests: MAINTAIN,
       // NOT report_it. "Report It" is PHARMACOVIGILANCE — adverse drug reactions, seriousness
       // (death, hospitalisation, congenital anomaly), suspected medicines, patient outcomes. It is
       // regulatory patient-safety data and has nothing to do with employee concerns, despite a name
@@ -338,6 +341,8 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // fix is to split the decision path by recommendation kind first, then grant.
       hr_calendar: READ_ONLY,
       support_requests: MAINTAIN,
+      // Business-card change requests edit a person's name and number on file — master data.
+      business_card_requests: MAINTAIN,
       // ops 6 - Resignation & Offboarding. Added 2026-08-28 (Phase 6), renamed from `clearance`
       // on 2026-09-01 when the Clearance & Offboarding module was removed at the owner's
       // instruction. This is the half of ops 6 that had nowhere to live: `resignations` records

@@ -2101,6 +2101,7 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/retention", icon: HeartPulse, label: "Retention Register", permissions: [{ resource: "retention" }] },
       { href: "/hr/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
       { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
+      { href: "/hr/admin/business-card-requests", icon: IdCard, label: "Business Card Requests", permissions: [{ resource: "business_card_requests" }] },
       // 🔴 THE HR SHELL'S OWN ROW, and the only one that reaches her. Adding "HR Advisory" to the
       // adminToolsPageItems entry looks equivalent and is inert: that array is read by the Admin
       // Tools hub (Super-Admin-only) and by the command palette in ADMIN mode, while an HR seat
@@ -3812,6 +3813,14 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "support_requests" }],
     roles: hrAuthorityNavigationRoles,
   },
+  {
+    href: "/admin/business-card-requests",
+    icon: IdCard,
+    label: "Business Card Requests",
+    description: "Employee business-card print requests, worked through by HR.",
+    permissions: [{ resource: "business_card_requests" }],
+    roles: hrAuthorityNavigationRoles,
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── Outstation Expenses hub (app/(admin)/admin/outstation-expenses/page.tsx) ────
@@ -4523,6 +4532,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         hrefs: [
           "/admin/weekly-plans",
           "/admin/support-requests",
+          "/admin/business-card-requests",
         ],
       },
     ],

@@ -134,6 +134,7 @@ export type PermissionResource =
   | "user_admin"
   | "permission_admin"
   | "support_requests"
+  | "business_card_requests"
   | "recruitment"
   | "candidates"
   | "account_activation"
@@ -251,6 +252,7 @@ export const permissionResources: PermissionResource[] = [
   "outstation",
   "leave",
   "support_requests",
+  "business_card_requests",
   "recruitment",
   "candidates",
   "account_activation",
@@ -682,6 +684,11 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       return isHrAuthorityRole(role) ? allActions : [];
     case "support_requests":
       return isHrAuthorityRole(role) ? hrSupportStaffActions : supportRequestSenderActions;
+    case "business_card_requests":
+      // Same shape as support_requests: every employee may open a request for their own card
+      // (create), HR staff read and work the queue. The sender's `create` is granted to every
+      // role by the special-case in applyHardPermissionBoundaries below.
+      return isHrAuthorityRole(role) ? hrSupportStaffActions : supportRequestSenderActions;
     // `hiring_interviews` is deliberately NOT hard-boundary-capped (falls to `default`
     // below) — it is a narrow, purpose-built resource (a hiring manager's own assigned
     // candidate + their own interview only, enforced by service-layer scoping in
@@ -832,7 +839,7 @@ function applyHardPermissionBoundaries<T extends PermissionMap>(matrix: T): T {
       const allowedActions = hardBoundaryAllowedActions(role, resource);
       if (!allowedActions) continue;
 
-      if (resource === "support_requests") {
+      if (resource === "support_requests" || resource === "business_card_requests") {
         matrix[role][resource] = [...allowedActions];
         continue;
       }

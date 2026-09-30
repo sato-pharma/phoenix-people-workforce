@@ -46,6 +46,7 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   { enabled: true, genericOnly: false, module: "outstation", notes: "Allowed for governed outstation expense workflows.", optional: false },
   { enabled: true, genericOnly: false, module: "weekly_plans", notes: "Allowed for governed weekly plan notifications.", optional: false },
   { enabled: true, genericOnly: false, module: "support_requests", notes: "Allowed so the HR team is alerted when an employee opens a support ticket.", optional: false },
+  { enabled: true, genericOnly: false, module: "business_card_requests", notes: "Allowed so the owner and HR Operations are alerted when an employee requests business cards.", optional: false },
   { enabled: true, genericOnly: false, module: "birthday", notes: "Non-sensitive celebratory reminders. (Real module string is singular; see note above.)", optional: true },
   { enabled: true, genericOnly: false, module: "attendance", notes: "Attendance digest, disputes, and missing-punch workflow alerts.", optional: false },
   { enabled: true, genericOnly: false, module: "field_workforce_compliance", notes: "Monthly field workforce compliance digest to compliance reviewers.", optional: false },

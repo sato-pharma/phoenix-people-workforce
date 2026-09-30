@@ -108,6 +108,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Payslips", fullLabel: "Payslips", href: "/employee-portals/payslips", icon: FileText, permission: { resource: "payslips", action: "read" } },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText, permission: { resource: "employee_profile", action: "read" } },
   { label: "360", fullLabel: "Employee 360", href: "/employee-portals/employee-360", icon: IdCard, permission: { resource: "employee_profile", action: "read" } },
+  // Every employee's own business card — view, correct name/number, request print from HR.
+  { label: "Cards", fullLabel: "Business Cards", href: "/employee-portals/business-cards", icon: IdCard, permission: { resource: "business_card_requests", action: "create" } },
   // My Milestones — the rep's own keepsake cards, self-scoped (owner, 2026-09-30). No `permission`:
   // the page gates by role predicate (canUseEmployeePortalMilestones), not a matrix permission.
   { label: "Milestones", fullLabel: "My Milestones", href: "/employee-portals/milestones", icon: Award, flags: ["showMilestonesTab"] },
