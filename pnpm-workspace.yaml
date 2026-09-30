@@ -31,8 +31,21 @@ overrides:
   # ALLOWED the patched versions but the lockfile still resolved below them, so the audit
   # failed on every PR until the floors themselves moved. Reached only transitively, via
   # exceljs > archiver/unzipper > glob/minimatch.
-  "brace-expansion@1": ^1.1.18
-  "brace-expansion@2": ^2.1.4
+  # RE-BUMPED 2026-09-30 for three advisories, one per major line, and this bump has a SECOND reason
+  # beyond the CVEs: A SECURITY ALERT DEPENDABOT CANNOT ACT ON FAILS ITS JOB, and a failed Dependabot
+  # run attaches a red check suite to whatever commit is `main` HEAD when it fires - which makes
+  # Railway's Wait-for-CI withhold that production deploy, SILENTLY. Measured 2026-09-30: 17 of the
+  # last 30 dependabot `dynamic` runs failed, and eb9530dd5 (#4844) was withheld by exactly this -
+  # production deployment 6749844557 went in_progress -> inactive and never success, while ci.yml was
+  # green twice. Dependabot cannot fix these itself: its job definition carries
+  # `"allowed-updates":[{"dependency-type":"direct"}]` and `"update-subdependencies": false`, and all
+  # three instances are transitive. So THE OVERRIDE IS THE FIX, and leaving a floor low costs
+  # production deploys, not merely an open alert.
+  # Floors: 1.x -> 1.1.21, 2.x -> 2.1.7, 5.x -> 5.0.12. Same allow-but-resolve-below shape as every
+  # other note in this file. Each line stays inside its OWN major on purpose - forcing all instances
+  # to 5.x breaks eslint, which is what the auditConfig note at the foot of this file records.
+  "brace-expansion@1": ^1.1.21
+  "brace-expansion@2": ^2.1.7
   # The advisory covers `>=4.0.0 <5.0.9` and patches at `>=5.0.9`, i.e. the 4.x line's fix ships
   # inside 5.x. The selector must be `@5`, NOT `@4`: this graph had already resolved to 5.0.8, so
   # an `@4` selector matches nothing and silently leaves the vulnerable version in place — the
@@ -42,7 +55,7 @@ overrides:
   # in app/globals.css), so this override is now DEV-ONLY — `pnpm why brace-expansion --prod`
   # returns just the 1.1.18/2.1.4 exceljs paths above, never a 5.x. Kept because the dev
   # toolchain still resolves it and the floor costs nothing.
-  "brace-expansion@5": ^5.0.9
+  "brace-expansion@5": ^5.0.12
   # Added 2026-08-17 for GHSA-ggr8-5vv4-36mx (high): stack exhaustion merging recursive object
   # graphs. Advisory covers `<8.0.0`; the graph had resolved 7.1.5. Reached via
   # mailparser > html-to-text, and mailparser is a direct `dependencies` entry, so this is the
@@ -107,7 +120,15 @@ overrides:
   # rest of this file and because ajv@8.20.0 — the only route into the graph — declares `^3.1.6`,
   # i.e. the 3.x line; a caret keeps the resolution inside it. Still DEV-ONLY (via shadcn > ajv), so
   # `pnpm audit --prod` never saw either advisory; fast-uri is transitive and no repo code imports it.
-  fast-uri: ^3.1.7
+  # RE-BUMPED 2026-09-30 to ^3.1.8: the advisory covers `>=3.0.0 <3.1.8` and patches at 3.1.8, and the
+  # graph had resolved 3.1.7 - the version the previous floor names. FIFTH occurrence of the
+  # allow-but-resolve-below shape on this one package. The 2026-09-02 note above said that if it
+  # recurred a fifth time the answer is a scheduled `pnpm update` rather than another hand floor:
+  # that is now DUE. It is not done in this change because this one is fixing WITHHELD PRODUCTION
+  # DEPLOYS (see the brace-expansion note above) and a blanket update is its own blast radius.
+  # Still DEV-ONLY via shadcn > ajv, so `pnpm audit --prod` never sees it - but the failing Dependabot
+  # job it causes withholds production deploys, which is why it is bumped now rather than at leisure.
+  fast-uri: ^3.1.8
   # Added 2026-08-03 for GHSA-mwp4-54f8-5fhr: Address4 decodes leading-zero octets as decimal
   # while resolvers decode them as octal, so a host like 0177.0.0.1 can pass a check and then
   # resolve somewhere else — SSRF and trust-boundary bypass. Patched at 10.3.1. Reached via
