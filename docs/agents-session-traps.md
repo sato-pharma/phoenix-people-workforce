@@ -2677,6 +2677,123 @@ had to be read again.
 5. The rows **lag** the live domain, they do not stall. A row still reading `in_progress` while its own
    sha is serving means you read it early: do not wait on it, and do not distrust it.
 
+## Four defects in one afternoon were one bug: an absent answer read as a positive one — 2026-09-30
+
+On 2026-09-30 `scripts/rollup-prs.mjs` took nine merges in a day. Six of those merges fixed a real
+defect, and **four of the six were the same bug wearing four different names.** That is worth more than
+any of the four fixes, because the fixes are specific to one script and the shape is not.
+
+### The four
+
+| PR | What was absent | What it was read as |
+| --- | --- | --- |
+| #4906 | a PR's required checks had not FINISHED | not red, therefore buildable |
+| #4944 | `statusCheckRollup` came back `null` (a PR seconds old) | the fixture branch's default: finished and green |
+| #4948 | the required LIST could not be read, or came back EMPTY | nothing objected, therefore everything passed |
+| #4948 | a required check with no `startedAt` (a StatusContext, which never has one) | *inverted* — pending for ever, so that member could never be built from again |
+
+The first three are fail-**open**: an unknown read as a pass. The fourth is the same mistake corrected
+too hard — a shape that cannot answer the question was refused instead of exempted, which would have
+been worse than the hole it guarded, because a PR whose required check is a commit status could never
+again enter a roll-up and the wait would always time out.
+
+### Why the third one was invisible for so long
+
+`checksSettled` — the one flag `--apply` builds on — was `red.length === 0 && pending.length === 0`.
+That is not "every required check passed". It is "nothing in the list I could see objected", and the
+clause that enumerates the required names and calls the unreported ones PENDING can only enumerate a
+list it HAS. With `required === null` (protection unreadable) or an empty Set (protection answered with
+an empty `contexts` array, which is a *successful* call — the classic array is deprecated in favour of
+`checks`, and a rule moved to a ruleset leaves it empty), nothing was enumerated, so the only thing
+judging the PR was the loop over the checks that existed. A PR opened seconds ago has none. A PR whose
+only reported check is `mobile (skipped)` has none that gates. Both answered two empty lists.
+
+Measured: roll-up **#4937** was opened at 14:49:58Z carrying **#4936**, whose `validate` ran
+14:48:14 → 14:51:14Z and whose `checks` ran 14:48:13 → 14:51:48Z. Both required jobs were still
+running when the build committed to it, and the squash carried all three of #4936's files. Two empty
+lists is the only reading that could have done that.
+
+### The rule, and it is about writing code rather than reading it
+
+1. **Never let "nothing objected" stand in for "the thing that would object was consulted."** Count
+   what was CONFIRMED, positively, and require that count to be non-zero. `red === 0 && pending === 0`
+   became `red === 0 && pending === 0 && confirmed > 0`, and that one clause closes all three
+   fail-open shapes at once.
+2. **Zero is the ultimate subset.** A guard written as "all of them must pass" is silently satisfied by
+   an empty set. Whenever the set is read from somewhere that can fail — an API, a config, a protection
+   endpoint — an empty answer is a changed SHAPE, not a permissive one.
+3. **A gate that cannot be read stops the run, it does not soften it.** Reporting may continue on a
+   degraded reading and say so; an ACTION may not.
+4. **And do not over-correct: exempt the shapes that cannot answer, never refuse them.** A CheckRun
+   always carries `startedAt` here, so one missing it is a genuine anomaly and pends. A StatusContext
+   never carries one, so holding it to a timing test refuses it for ever. Pin BOTH directions, or the
+   exemption becomes the next fail-open.
+5. **The two sessions caught each other's, and neither caught its own.** Two sessions were started for
+   this defect. The first's diagnosis of #4937 did not reproduce; the second's footprint figure was a
+   measurement from earlier the same afternoon quoted as current. Each was corrected by the other, from
+   live reads rather than from the claim — which is the same discipline as rule 1, aimed at a peer.
+
+Family: the same sentence as the local-suite/typecheck trap in the Validation cluster — *a signal that
+cannot say "I did not look at this" gets read as "I looked and it was fine."* Those invent a success,
+an event and a scope; these invent a **verdict**.
+
+## A TS1005 in `tests/run-tests.ts` was invisible to every local run — 2026-09-30
+
+Also 2026-09-30, and it belongs beside the above because it is the same family: a check that never
+looked read as a check that passed.
+
+A registration description in `tests/run-tests.ts` was given a double-quoted phrase inside a
+double-quoted string. `TS1005`. It reached a PR and was caught by `remote-check.mjs typecheck` on the
+box, at 118s, after the local run had reported green.
+
+**The local run had reported green because it never parsed that file.** Both sessions had spent the
+afternoon running ONE suite through its exported function —
+`import('./tests/rollup-prs.test.ts')` then `runRollupPrsTests()` — which is the right way to iterate
+on one suite and never loads `tests/run-tests.ts` at all. The full `pnpm run test` WOULD have crashed
+on it immediately: `--experimental-strip-types` erases types but still has to parse, and that file is
+the suite's own entry point. Verified by extracting `run-tests.ts` from the broken commit and parsing
+it — it throws. So the blind spot is not the suite. It is **running one suite in isolation**, and the
+remedy is therefore not a 118s remote typecheck.
+
+Node 24 strips types without executing, so a pure parse of the registry costs 0.337s and involves no
+`tsc` — nothing for `bash-guard.mjs` C8 to refuse:
+
+```
+node scripts/check-tests-parse.mjs
+```
+
+Verified in both directions: it throws `Expected ',', got 'ident'` on exactly the unescaped-inner-quote
+shape and passes on the escaped one. `tests/tests-parse-guard.test.ts` pins the guard itself against a
+known-bad and a known-good fixture, so the guard cannot rot into one that always passes — which would
+be this whole section's own bug, one level up.
+
+### And that test's first version WAS the bug in the section above
+
+One of its clauses asserts that the guard's own code reaches for no compiler. The first version stripped
+comments line-wise — `.filter((line) => !line.trimStart().startsWith("//"))` — and
+`tests/comment-strip-ratchet.test.ts` failed the PR for it in CI:
+
+```
+FAIL no source-pinning test strips comments unsafely — a regex that eats the code it pins,
+     or a line filter blind to a comment block
+  tests/tests-parse-guard.test.ts strips comments line-wise at line 154
+```
+
+The ratchet is right, and right for exactly the reason the section above is about: a line judged by how
+it STARTS is blind to a `/* … */` block and to a `//` inside a string, so the clause could report a clean
+pin over a file it had only partly read. **A guard blind to a shape reads as a clean pass** — the same
+sentence, one level up again. `stripComments` in `tests/support/comment-strip.ts` scans for string and
+template state instead of guessing, and is the only sanctioned stripper here.
+
+Proved in BOTH directions after the fix, because a ratchet can be appeased without being satisfied: real
+code carrying `const COMPILER = "tsc"` still fires the clause, and a `/* … tsc --noEmit … */` block does
+NOT — which is the false alarm the line-wise version would have raised.
+
+No local run could have caught it. `comment-strip-ratchet` resolves stripper → call site → argument →
+path across the whole `tests/` tree, so a new offender only appears when the suite runs as a whole —
+and the isolated run is precisely what this section is about. That is the honest limit of the 0.3s
+parse: it is a parse, and the PR's required checks remain the gate.
+
 ## `AGENTS.md` §2.1 Session-level traps — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.

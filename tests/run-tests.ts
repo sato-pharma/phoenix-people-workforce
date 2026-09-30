@@ -2065,6 +2065,7 @@ import { runProtectedFileGuardTests } from "./protected-file-guard.test.ts";
 import { runTestRegistrationCheckTests } from "./test-registration-check.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
 import { runRollupPrsTests } from "./rollup-prs.test.ts";
+import { runTestsParseGuardTests } from "./tests-parse-guard.test.ts";
 import { runWaitPrTests } from "./wait-pr.test.ts";
 import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
 import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
@@ -7486,6 +7487,11 @@ await runTest(
 await runTest(
   "rollup-prs.mjs groups the open PRs into the fewest SAFE merges and writes nothing by default: two disjoint small PRs roll up, sharing one file keeps them apart (tests/run-tests.ts merges cleanly into a four-argument call), a migration or protected file or frozen path is never folded in, a SUPERSEDED bot PR does not disqualify the PR that supersedes it (which regressed on its first run), a lone small PR proposes nothing, a wide PR rides along but never forms a roll-up on its own, a PR whose REQUIRED checks are QUEUED or IN_PROGRESS stays rollable but reads as NOT settled so --apply waits for it before the branch is created and builds only from the members that finished green (measured 2026-09-30: #4896 was built over #4894 while its checks were queued, #4894 then went red, and the roll-up held the green #4895 hostage), a check that ran BEFORE the head commit is the previous commit's result and never clears the member, a gate that names nothing (an unreadable read, or an empty contexts array on a 200) can confirm nothing so --apply refuses the run, a running check is labelled in_progress rather than 'not started', and `gh pr merge` appears nowhere in the script because merging stays the owner's word",
   runRollupPrsTests,
+);
+
+await runTest(
+  "check-tests-parse.mjs is the 0.3s local answer to a syntax error in tests/run-tests.ts, and this pins the guard against rotting into one that always passes: the exact unescaped-inner-quote shape that shipped on 2026-09-30 does not parse while the escaped form does (both fixtures built in TypeScript, because building them with shell printf made BOTH fail and read as a working guard), ordinary TypeScript is stripped rather than rejected, a path that cannot be READ exits 2 and never reads as a clean parse, the CLI's three exit codes hold, the registry itself parses on this branch, and the guard's code reaches for no compiler and no child process at all — because bash-guard C8 denies a local typecheck in every spelling and a denied guard prints nothing, which is the failure mode C8 exists for",
+  runTestsParseGuardTests,
 );
 
 await runTest(
