@@ -1654,6 +1654,11 @@ const employeePortalNavigationSectionSeeds = [
       // PORTAL_REP_TARGETS_ROLES — a Medical Rep is served their OWN targets only (owner, 2026-09-16).
       // Editing and upload stay on the admin surface with SFE Manager / Super Admin.
       { href: "/employee-portals/targets", icon: Target, label: "Targets", permissions: [{ resource: "sales", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"] },
+      // Spotlight (self) — a Medical Rep's own recognition sheet over any period, MEDICAL REP ONLY
+      // (owner, 2026-09-30). Catalog entry so the command palette can find it and the tab is titled;
+      // the rendered sidebar link sits under Sales in employee-portal-layout.tsx, and the page and the
+      // /api/spotlight/me routes gate on spotlight_self.
+      { href: "/employee-portals/spotlight", icon: Sparkles, label: "Spotlight", permissions: [{ resource: "spotlight_self", action: "read" }], roles: ["Medical Rep"] },
       // Scoped CRM Master. Catalog entry (so Modules Control can curate it); the rendered sidebar
       // link lives in the Fieldforce section of employee-portal-layout.tsx. Mirrors PORTAL_CRM_ROLES
       // in src/lib/crm/portal-crm-scope.ts (adds Medical Rep to the DSM/RM/NSM set above).
