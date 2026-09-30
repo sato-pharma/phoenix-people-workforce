@@ -42,6 +42,7 @@ import type { PermissionAction, PermissionResource, PhoenixCompanyJobTitle } fro
 
 export type HrFunctionKey =
   | "recruiting"
+  | "cv_lookup"
   | "engagement_retention"
   | "performance_probation"
   | "workforce_insight"
@@ -109,6 +110,30 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // pages gate on employee_documents. hr_governance grants only read+export, so recruiting must
       // carry the write half or the seat that runs the hire can open the contract and not fill it.
       employee_documents: MAINTAIN,
+    },
+  },
+  {
+    key: "cv_lookup",
+    label: "CV Lookup",
+    summary:
+      "Find one candidate's CV and application by searching for them. No candidate list, no export.",
+    // NOT a job-description section, and it says so rather than borrowing one. The owner asked for
+    // this capability by name on 2026-09-30: "in yasmeen el safory account i want to make
+    // something that she can search the cvs in admin account and finds only what it search for i
+    // dont want her to have access to all cvs."
+    jdSections: ["owner 2026-09-30 — search-only CV access for HR Operations"],
+    grants: {
+      // ONE grant, one action, and that is the entire function. It is deliberately NOT folded into
+      // `recruiting` above: recruiting carries candidates:read/create/update/delete plus the whole
+      // pipeline, and giving HR Operations that function to obtain a search box is the widening the
+      // owner refused. A function of its own is also what makes the capability withdrawable in one
+      // line — remove the key from her bundle and the screen, the two routes and the sidebar row
+      // all close together.
+      //
+      // Nothing else is added here. The file behind a hit is built by the CV Lookup route, which
+      // asserts THIS grant rather than `candidates:read`, so the seat needs no recruitment key to
+      // open it.
+      cv_lookup: READ_ONLY,
     },
   },
   {
@@ -442,10 +467,16 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
  * change what a seat can do, move a function key between these arrays. To add a seat, add a
  * bundle. Neither needs a rename, a codebase sweep, or a migration.
  *
- * Union of the two = all eight functions, which is the owner's "at the end of the day,
- * everything": between them the HR department is fully covered, with two functions
- * (performance_probation, hr_governance) genuinely shared because both job descriptions ask for
- * them from different angles.
+ * Union of the two = the WHOLE catalogue, which is the owner's "at the end of the day, everything":
+ * between them the HR department is fully covered, with two functions (performance_probation,
+ * hr_governance) genuinely shared because both job descriptions ask for them from different angles.
+ * Rule 3 of tests/hr-function-governance.test.ts asserts that union by identity, so a function added
+ * to the catalogue and handed to neither seat fails the build instead of sitting here as dead policy.
+ *
+ * This line used to say "all eight functions". It was already wrong when it said so — there were
+ * nine — and a tenth arrived with `cv_lookup` on 2026-09-30, so the COUNT is gone rather than
+ * corrected: the invariant is the union, and a number maintained by hand beside it can only go stale
+ * again.
  */
 export const HR_ROLE_BUNDLES = {
   "HR Advisory": [
@@ -464,6 +495,11 @@ export const HR_ROLE_BUNDLES = {
     "payroll_inputs",
     "performance_probation",
     "hr_governance",
+    // Added 2026-09-30 at the owner's instruction. She is NOT a recruiting seat and this does not
+    // make her one: `recruiting` stays with HR Advisory, the CV Database stays shut to her
+    // (tests/cv-database-recruiting-boundary.test.ts), and what she gains is a search box that
+    // answers with the people she searched for and nothing else.
+    "cv_lookup",
   ],
 } as const satisfies Record<string, readonly HrFunctionKey[]>;
 

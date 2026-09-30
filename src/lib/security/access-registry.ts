@@ -1185,6 +1185,22 @@ export const accessRegistry = [
   // than left to the candidates/** catch-all, which would not mark it an export. Same candidates:read gate.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/candidates/:id/application", permission: { resource: "candidates", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/candidates/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
+  // CV LOOKUP — the search-only CV access the owner asked for on 2026-09-30 (HR Operations may find
+  // a CV she searches for; she may not have the pool). TWO CONCRETE ENTRIES AND NO WILDCARD, so the
+  // inventory says exactly what this narrow surface is: a read that returns candidate identities,
+  // and a read that hands over one person's CV.
+  //
+  // `cv_lookup:read`, NOT `candidates:read`, and the difference is the entire feature — the seat
+  // behind it does not hold `candidates` and must not (see app/(admin)/cv-lookup/page.tsx). A row
+  // here naming the wrong resource is how the CV Database ended up advertising a gate it did not
+  // enforce, so these two say what the handlers assert and nothing else.
+  //
+  // The file route is an audited EXPORT: a CV leaving the building is the same event whichever
+  // door it went through, and its handler additionally writes a REQUIRED audit row naming the
+  // candidate. The search route is a plain read here — it writes its own best-effort audit row, on
+  // the owner's instruction, but a search is not an export and must not be counted as one.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/cv-lookup/:id/application", permission: { resource: "cv_lookup", action: "read" } }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/cv-lookup", permission: { resource: "cv_lookup", action: "read" } }),
   // The recruiter's OWN folder tree — folders and subfolders built by hand, and the CVs pushed into
   // them (owner request 2026-09-12). Gated on `candidates` rather than `recruitment` because of what
   // filing a CV DOES: a candidate sitting in any of these folders is hidden from the pool every
