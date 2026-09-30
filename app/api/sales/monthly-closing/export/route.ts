@@ -44,6 +44,7 @@ import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { prepareClosingStoreSplit } from "@/lib/sales/closing-store-split-export";
 import { loadClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 import { isStoreCitySplitActive } from "@/lib/sales/store-sales-city-split";
+import { isClosingPublished } from "@/lib/sales/monthly-closing-publication";
 import { applyJulyDirectAreasToBreakdown } from "@/lib/sales/july-direct-channel-breakdown";
 import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import {
@@ -389,6 +390,13 @@ export async function POST(request: Request) {
         movements: storeSplitMovements,
         net: storeSplitNet,
       } = prepareClosingStoreSplit(monthRows, scopedAreaCodes, await sharedSplitPromise);
+      // The split is FROZEN only when the shared (whole-month) split was used AND the month is
+      // published — that is exactly when `storeSplitMovements` above are the frozen ones. A row-level
+      // filtered export derives its own live split over a different population, so it is never frozen.
+      const storeSplitFrozen =
+        !rowLevelActive
+        && isStoreCitySplitActive(matrix.period)
+        && (await isClosingPublished(matrix.line, matrix.period));
       const comparison = aggregateComparisonPromise
         ? await aggregateComparisonPromise
         : await loadMonthlyClosingComparisonFromRows(
@@ -564,6 +572,10 @@ export async function POST(request: Request) {
         // which of those areas this workbook actually covers.
         storeSplitApplied,
         storeSplitCells,
+        // The frozen (or, for a live month, the same live) movements the Matrix used, so the Store
+        // Split summary's net ties to the Matrix rather than to a second recompute.
+        storeSplitMovements,
+        storeSplitFrozen,
         storeSplitRows: monthRows.rows,
         // Computed from the REAL rows above; the answer is masked by code, because a split
         // entry carries no distributor to recognise. See closing-source-mask.ts.

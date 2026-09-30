@@ -41,6 +41,7 @@ import {
   summariseStoreSplitByArea,
   summariseStoreSplitByCustomer,
   areaProductKey,
+  type StoreSplitAreaMovement,
   type StoreSplitAreaSummary,
   type StoreSplitCustomerSummary,
   type StoreSplitDetailRow,
@@ -2517,10 +2518,19 @@ function writeStoreSplitDetailSheet(
   period: string | null,
   stores: StoreSplitCustomerSummary[],
   details: StoreSplitDetailRow[],
+  frozen = false,
 ) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Store Split Detail"), {
     views: [{ state: "frozen", ySplit: 5 }],
   });
+  // A published month is frozen, but this per-store detail cannot be (the frozen table keeps no
+  // customer grain), so it stays a LIVE recompute for explanation. Name the authoritative number so
+  // the live per-store shares here are never mistaken for the published figure.
+  const frozenBanner = frozen
+    ? "This month is PUBLISHED and frozen. The Closing Matrix, Total sheet and Store Split summary show the "
+      + "frozen announced numbers; this per-store detail is recomputed from current data for explanation and its "
+      + "totals may differ slightly. The frozen Matrix is the published figure. "
+    : "";
   const columns: TableColumn[] = [
     { label: "Customer Code", width: 15 },
     { label: "Store (wholesaler)", width: 38 },
@@ -2539,8 +2549,9 @@ function writeStoreSplitDetailSheet(
   const row = writeTable(sheet, 4, {
     columns,
     note: stores.length === 0
-      ? "No store customers in this line and month — nothing was split, so there is nothing to detail."
-      : `${stores.length} stores were split. "Its own area" is where the shop physically sits — the area that `
+      ? frozenBanner + "No store customers in this line and month — nothing was split, so there is nothing to detail."
+      : frozenBanner
+        + `${stores.length} stores were split. "Its own area" is where the shop physically sits — the area that `
         + "booked the sale before the split; the value is then divided evenly across every area of its city. "
         + "Pharmacies are never split, and neither is the Head Office line.",
     rows: stores.map((entry) => [
@@ -3531,6 +3542,22 @@ export async function buildMonthlyClosingWorkbook(
      */
     storeSplitMaskedClients?: ReadonlySet<string>;
     /**
+     * The split movements to fold into the Store Split SUMMARY sheet, instead of recomputing them
+     * from `storeSplitRows`. For a PUBLISHED month the caller passes the FROZEN movements
+     * (loadClosingStoreSplit), so the summary's net ties to the frozen Closing Matrix rather than to a
+     * live recompute that drifted after publish. Omitted for a live month (the sheet recomputes as
+     * before). Only the single-month summary uses it; the consolidated fold keeps its own per-month path.
+     */
+    storeSplitMovements?: readonly StoreSplitAreaMovement[];
+    /**
+     * True when this month is published and its split is FROZEN. Adds a banner to the Store Split
+     * Detail sheet, which is per-customer and cannot be frozen (the frozen table has no customer
+     * grain): it stays a LIVE recompute for explanation while the Matrix, Total and Store Split
+     * summary show the frozen announced numbers. Names which number is authoritative so the live
+     * per-store detail cannot be mistaken for the published figure.
+     */
+    storeSplitFrozen?: boolean;
+    /**
      * The two halves of `matrix`, for the channel tabs: `retail` is the same grid before direct is
      * injected (with the identical store split applied), `directCells` the direct money by region
      * and product. Omitted under a row-level filter, where the matrix is rebuilt from invoice rows
@@ -3694,6 +3721,9 @@ export async function buildMonthlyClosingWorkbook(
           options?.storeSplitRows ?? details.rows,
           matrix.period,
           options?.storeSplitRegions,
+          // A published month passes its FROZEN movements so the summary net ties to the frozen
+          // Matrix; a live month passes none and the split is recomputed from the rows, unchanged.
+          options?.storeSplitMovements,
         ),
       options?.storeSplitScopeAreaCodes ?? [],
     );
@@ -3715,6 +3745,7 @@ export async function buildMonthlyClosingWorkbook(
           : detailStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
         options?.storeSplitMaskedClients,
       ),
+      options?.storeSplitFrozen ?? false,
     );
   }
   writeComparisonSheet(workbook, comparison, ref);

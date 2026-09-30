@@ -1505,8 +1505,13 @@ export function summariseStoreSplitByArea<T extends StoreSplitRow & { areaName?:
   rows: readonly T[],
   period?: string | null,
   regions?: SplitRegions,
+  // When supplied, the split is NOT recomputed from `rows` — these movements are folded instead. A
+  // PUBLISHED month passes its FROZEN movements here (loadClosingStoreSplit) so the sheet's net ties
+  // to the frozen Closing Matrix rather than to a live recompute that drifted after publish. `before`
+  // still comes from `rows` (the area's raw closing position), so `before + net = after` reconciles.
+  movementsOverride?: readonly StoreSplitAreaMovement[],
 ): StoreSplitAreaSummary[] {
-  const { movements } = splitStoreSalesAcrossCityAreas(rows, period, regions);
+  const movements = movementsOverride ?? splitStoreSalesAcrossCityAreas(rows, period, regions).movements;
   if (movements.length === 0) return [];
 
   // The area's current closing position, from the untouched rows.
