@@ -202,6 +202,15 @@ function navIconClass(active: boolean) {
 }
 
 /**
+ * The standout row's resting face (owner, 2026-09-30). It rests on the warm tint the other rows only
+ * reach on hover, and goes a shade deeper when you hover IT — so the row still answers the pointer
+ * instead of looking inert. The label keeps the siblings' navy and the siblings' weight: the row is
+ * marked out by its face, its orange icon and its orange rail, never by a type treatment of its own.
+ * The ACTIVE face still wins over this one — where you are outranks what is special.
+ */
+const NAV_HIGHLIGHT_CLASS = "bg-[#FFF6F0] text-[#26334F] hover:bg-[#FFF0E7] hover:text-[#F05A1A]";
+
+/**
  * Hub roots that must never stay lit on a child route, even when NO deeper sidebar row matches it.
  * Only the portal root qualifies: /employee-portals/profile (and a few other destinations) have no
  * sidebar row of their own, so without this "Command Center" would light up while you sit on them.
@@ -235,6 +244,18 @@ type EmployeePortalNavItem = {
   href: string;
   label: string;
   icon: typeof Activity;
+  /**
+   * The sidebar's one standout row (owner, 2026-09-30: "Phoenix CRM highlight a special highlight in
+   * side bar"). It stays an ordinary row in its ordinary section — the highlight is a persistent warm
+   * face, an orange rail on the left edge and an orange icon, so the row reads as the flagship without
+   * a band of its own. Deliberately NOT the launcher that was tried and removed the same day (#4958):
+   * no dark face, no glow, no motion, no font of its own, and no badge word.
+   *
+   * It costs the row NO width — the rail is absolutely positioned inside the row wrapper — which is
+   * what the no-horizontal-scroll rule requires here, since the portal's label span has no `truncate`
+   * and anything placed beside a long label wraps to a second line.
+   */
+  highlight?: true;
   // Live pending-count badge (mirrors the admin sidebar's navBadge) — the Vacation/
   // Excuse/Plan/Direct Orders/Marketing Approvals/Awareness Approvals links plus the
   // residual "Other Approvals" inbox carry one.
@@ -383,7 +404,12 @@ function buildEmployeePortalSections({
         // Phoenix CRM moved here from Field Activity at the owner's word (2026-09-29). Gated by
         // `phoenixCrmEntryAvailable` — the phoenix_crm permission, a territory of his own or beneath
         // him, and his line opened in phoenix_crm_line_rollout; the page enforces the same again.
-        ...(showPhoenixCrmTab ? [{ href: "/employee-portals/field-crm", label: "Phoenix CRM", icon: ClipboardList }] : []),
+        // `highlight` makes it the sidebar's one standout row (owner, 2026-09-30) — see the flag's
+        // own note on EmployeePortalNavItem. It must stay the ONLY row carrying it: a second one and
+        // neither is a standout.
+        ...(showPhoenixCrmTab
+          ? [{ href: "/employee-portals/field-crm", label: "Phoenix CRM", icon: ClipboardList, highlight: true as const }]
+          : []),
         // Interview Calendar — the interview-calendar access flag (a DM/NSM/HR seat by role, or
         // anyone the owner shared it with).
         ...(showInterviewCalendarTab ? [{ href: "/employee-portals/interview-calendar", label: "Interview Calendar", icon: CalendarClock }] : []),
@@ -1112,6 +1138,10 @@ function EmployeePortalMenu({
                   // exactly what the owner's standing rule forbids. The pin star follows the same rule:
                   // it appears IN PLACE of the icon on hover, so no row gets a pixel wider.
                   const RowIcon = locked ? Lock : item.icon;
+                  // The sidebar's one standout row (owner, 2026-09-30) — Phoenix CRM. A locked row keeps
+                  // its padlock treatment: "you cannot open this" must beat "this is the flagship". In pin
+                  // mode the row falls through to the pin switch below, like every other row.
+                  const highlighted = item.highlight === true && !locked;
                   if (pinMode) {
                     // Pin mode: a tap pins or unpins, and opens nothing. The star takes the icon's
                     // place, as the desktop hover star does, so no label loses a pixel of width.
@@ -1139,9 +1169,15 @@ function EmployeePortalMenu({
                         aria-current={active ? "page" : undefined}
                         aria-label={locked ? `${item.label} — locked` : undefined}
                         title={locked ? `${item.label} — temporarily locked by the system administrator` : undefined}
-                        className={`group flex items-center gap-3 rounded px-4 py-2.5 ${
+                        className={`group flex items-center gap-3 ${highlighted ? "" : "rounded"} px-4 py-2.5 ${
                           isMobile ? "text-phx-md font-semibold duration-200" : "text-phx-sm font-bold duration-150"
-                        } transition ${pending ? "bg-phx-accent-soft text-phx-accent-hover ring-1 ring-orange-200/80" : navItemClass(active)}`}
+                        } transition ${
+                          pending
+                            ? "bg-phx-accent-soft text-phx-accent-hover ring-1 ring-orange-200/80"
+                            : highlighted && !active
+                              ? NAV_HIGHLIGHT_CLASS
+                              : navItemClass(active)
+                        }`}
                         href={item.href}
                         onClick={(event) => handleNavigate(event, item.href)}
                         prefetch
@@ -1154,13 +1190,21 @@ function EmployeePortalMenu({
                               ? "text-phx-accent-hover"
                               : locked
                                 ? "text-amber-600"
-                                : navIconClass(active)
+                                : highlighted
+                                  ? "text-[#F05A1A]"
+                                  : navIconClass(active)
                           }`}
                         />
                         <span className={locked ? "opacity-70" : undefined}>{item.label}</span>
                         <RowNavBadge navBadge={item.navBadge} />
                         {pending ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-orange-500 employee-portal-nav-pending-dot" /> : null}
                       </Link>
+                      {/* The orange rail on the left edge. Absolutely positioned, so the row is not one
+                          pixel wider and no label can be pushed into a second line; pointer-events-none,
+                          so it never eats a click meant for the link or the pin star at left-2.5. */}
+                      {highlighted ? (
+                        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 w-[2px] bg-[#F05A1A]" />
+                      ) : null}
                       {canPin && onTogglePin ? (
                         <button
                           aria-label={pinned ? `Unpin ${item.label}` : `Pin ${item.label} to the top`}
