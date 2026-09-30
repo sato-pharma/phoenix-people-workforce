@@ -60,10 +60,11 @@ ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_ONESIGNAL_APP_ID
-# 🔴 READ BY NO APPLICATION CODE — zero call sites across src/, app/ and lib/, verified 2026-09-30. The comment that stood here
-# claimed it tagged which revision a client error came from; it never did. What actually tags one is the NON-prefixed COMMIT_SHA,
-# resolved in src/lib/observability/deploy-identity.ts. Inert build-arg slot — wire it up or drop it with its docs/environment.md rows.
-ARG NEXT_PUBLIC_COMMIT_SHA
+# 🔴 NO `NEXT_PUBLIC_COMMIT_SHA` HERE, AND RE-ADDING ONE WOULD TAG NOTHING. It sat in this list as an inert slot — declared,
+# re-exported, and read by ZERO call sites across src/, app/ and lib/ — under a comment claiming it tagged which revision a client
+# error came from. It never did: what identifies a release is `getDeployRevision()` in src/lib/observability/deploy-identity.ts,
+# reading the NON-prefixed COMMIT_SHA || RAILWAY_GIT_COMMIT_SHA || K_REVISION, server-side. Removed 2026-09-30 with its
+# docs/environment.md row. Client-side release tagging needs a CALL SITE first; the ARG is the last step, not the first.
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 ENV NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
 ENV NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=$NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
@@ -72,7 +73,6 @@ ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_ONESIGNAL_APP_ID=$NEXT_PUBLIC_ONESIGNAL_APP_ID
-ENV NEXT_PUBLIC_COMMIT_SHA=$NEXT_PUBLIC_COMMIT_SHA
 
 RUN pnpm run build
 
