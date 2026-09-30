@@ -226,10 +226,27 @@ export function runPortalGodmodeChromeTests() {
   const menu = componentBody(layout, "EmployeePortalMenu");
   assert.match(menu, /aria-expanded=\{!folded\}/, "a section header must say whether it is open");
   assert.match(menu, /disabled=\{!canFold\}/, "a section that cannot fold must say so on its button");
+  // 🔴 BOTH ORIGINAL GUARANTEES ARE REQUIRED, AND THE LINE IS ALLOWED TO GROW.
+  // Pinning the whole line verbatim made a STRENGTHENING of the rule read as a violation: on
+  // 2026-09-30, #4925 added `&& !section.premium` so the flagship section cannot fold either, and
+  // this assertion went red on a change that took nothing away. A pin that cannot tell `relaxed`
+  // from `tightened` taxes every attempt to make the rule stricter, which is the wrong direction to
+  // tax — and worse, it trains the next reader to treat this failure as noise. The two conditions
+  // below stay mandatory; further conjuncts are welcome.
   assert.match(
     menu,
-    /const canFold = !isActiveSection && !filtering;/,
+    /const canFold = !isActiveSection && !filtering(?: && [^;]+)?;/,
     "the section you are in must not fold away — it would hide the row that says where you are — nor any section while filtering",
+  );
+
+  // 🔴 AND THE FLAGSHIP SECTION CANNOT FOLD EITHER (owner, 2026-09-30: Phoenix CRM is the star of
+  // the portal). Pinned SEPARATELY and on purpose: relaxing the assertion above without this would
+  // leave `!section.premium` guarded by nothing, so the next edit could drop it and the whole suite
+  // would stay green. Widening a pin and pinning what the widening let through are one change.
+  assert.match(
+    menu,
+    /const canFold = [^;]*!section\.premium/,
+    "the premium flagship section must not fold away — it is the row the sidebar is built around",
   );
   assert.match(menu, /writeStoredList\(PORTAL_COLLAPSED_SECTIONS_KEY, toggleInList\(collapsedSections, section\.title\)\)/, "folding is remembered on this device");
   assert.match(menu, /data-active-row=\{active \? "true" : undefined\}/, "the sliding marker finds the lit row by this attribute");
