@@ -40,6 +40,16 @@ type FakePr = {
   isDraft?: boolean;
   carried?: boolean;
   mergeStateStatus?: string;
+  /** States the check verdict outright. Absent means GREEN, which is why every older fixture is unchanged. */
+  redRequired?: boolean;
+  /** The real `gh pr list --json statusCheckRollup` shape, so the actual required-vs-not filter runs. */
+  statusCheckRollup?: Array<{
+    name?: string;
+    context?: string;
+    status?: string;
+    conclusion?: string | null;
+    state?: string;
+  }>;
 };
 
 /**
@@ -51,14 +61,18 @@ type FakePr = {
  * timing out instead of failing as a miss — a test that quietly talks to production is worse than no
  * test. `where gh` listed the shim first, which is what made it look correct.
  */
-function runRollup(prs: FakePr[], extraArgs: string[] = []): { code: number; out: string } {
+function runRollup(
+  prs: FakePr[],
+  extraArgs: string[] = [],
+  env: Record<string, string> = {},
+): { code: number; out: string } {
   const dir = mkdtempSync(path.join(tmpdir(), "phx-rollup-"));
   const fixture = path.join(dir, "prs.json");
   writeFileSync(fixture, JSON.stringify(prs), "utf8");
   try {
     const out = execFileSync(process.execPath, ["scripts/rollup-prs.mjs", "--json", ...extraArgs], {
       encoding: "utf8",
-      env: { ...process.env, PHX_ROLLUP_FIXTURE: fixture, PHX_MERGE_MIN_FILES: "4" },
+      env: { ...process.env, PHX_ROLLUP_FIXTURE: fixture, PHX_MERGE_MIN_FILES: "4", ...env },
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 60000,
     });
@@ -92,8 +106,12 @@ function runRollupHuman(prs: FakePr[], extraArgs: string[] = []): { code: number
   }
 }
 
-function verdicts(prs: FakePr[], extraArgs: string[] = []): Map<number, { kind: string; why: string }> {
-  const { code, out } = runRollup(prs, extraArgs);
+function verdicts(
+  prs: FakePr[],
+  extraArgs: string[] = [],
+  env: Record<string, string> = {},
+): Map<number, { kind: string; why: string }> {
+  const { code, out } = runRollup(prs, extraArgs, env);
   assert.equal(code, 0, `rollup-prs.mjs exited ${code}:
 ${out}`);
   const parsed = JSON.parse(out) as { open: Array<{ number: number; verdict: { kind: string; why: string } }> };
@@ -182,6 +200,154 @@ export function runRollupPrsTests(): void {
       group: number[];
     };
     assert.deepEqual(parsed.group, [], "a carried PR must not be grouped, and one live PR alone is no roll-up");
+  }
+
+  // ── 4c. A PR whose REQUIRED checks have failed is never rolled up ───────────────────────────
+  // Measured 2026-09-30 with three PRs open — #4877 red, #4882 green, #4883 pending — the script
+  // printed `ONE branch can carry #4883 + #4882 + #4877`, so `--apply` would have built a branch
+  // containing a PR whose required checks were FAILING. The owner's one approval could then never go
+  // green until somebody else's unrelated fix landed: the exact opposite of "never hand him more than
+  // one merge at a time" (AGENTS.md §6).
+  //
+  // `PHX_ROLLUP_REQUIRED` stands in for the live protection read, so the REAL filter runs offline.
+  // Without it the three cases below are indistinguishable — red-but-not-required and still-pending
+  // both look like "not red" from the outside.
+  const REQUIRED = { PHX_ROLLUP_REQUIRED: "validate,checks" };
+  {
+    const red = pr(1, ["docs/a.md"], { statusCheckRollup: [{ name: "checks", conclusion: "FAILURE" }] });
+    const v = verdicts([red, pr(2, ["src/b.ts"]), pr(3, ["src/c.ts"])], [], REQUIRED);
+    assert.equal(
+      v.get(1)?.kind,
+      "red",
+      `a PR whose required check has FAILED must not be rollable, got ${v.get(1)?.kind}: ${v.get(1)?.why}`,
+    );
+    assert.match(v.get(1)?.why ?? "", /checks \(failure\)/, "and the report must name the check and its state");
+
+    const parsed = JSON.parse(runRollup([red, pr(2, ["src/b.ts"]), pr(3, ["src/c.ts"])], [], REQUIRED).out) as {
+      group: number[];
+    };
+    assert.deepEqual(
+      parsed.group.sort((a, b) => a - b),
+      [2, 3],
+      "the two green PRs still roll up together, and the red one is NOT in the branch that would be built",
+    );
+  }
+
+  // Every terminal conclusion counts, not just FAILURE — a cancelled or timed-out required check is
+  // just as red on the PR and just as stuck.
+  for (const conclusion of ["FAILURE", "TIMED_OUT", "CANCELLED", "ERROR", "STARTUP_FAILURE"]) {
+    const v = verdicts(
+      [pr(1, ["docs/a.md"], { statusCheckRollup: [{ name: "validate", conclusion }] }), pr(2, ["src/b.ts"])],
+      [],
+      REQUIRED,
+    );
+    assert.equal(v.get(1)?.kind, "red", `a required check concluding ${conclusion} must disqualify the PR`);
+  }
+
+  // And a WIDE red PR must be held out too. Dropping it from `rollable` alone would not do it: `group`
+  // unions `rollable` with `ownMerge` unconditionally, so an own-merge PR rides along regardless — which
+  // is why the verdict is assigned in the FIRST pass, where `isDraft` sits.
+  {
+    const wideRed = pr(1, ["a/1", "a/2", "a/3", "a/4", "a/5"], {
+      statusCheckRollup: [{ name: "checks", conclusion: "FAILURE" }],
+    });
+    const v = verdicts([wideRed, pr(2, ["docs/small.md"])], [], REQUIRED);
+    assert.equal(v.get(1)?.kind, "red", "a wide PR with a red required check is held out, not called own-merge");
+    const parsed = JSON.parse(runRollup([wideRed, pr(2, ["docs/small.md"])], [], REQUIRED).out) as { group: number[] };
+    assert.deepEqual(parsed.group, [], "and it must not be carried into the roll-up as an own-merge rider");
+  }
+
+  // ── 4d. A red check that is NOT required must not disqualify anything ───────────────────────
+  // `mobile` and `secret-scan` both still RUN on a PR and NEITHER gates the merge (protection read
+  // live 2026-09-29). A red one of those is a thing to read and judge, never a reason to refuse a
+  // roll-up — and the required list is read from protection precisely because it has rotted five
+  // times (4 -> 5 -> 6 -> 4 -> 2), so a hardcoded name here would disqualify on a check nothing
+  // reports any more.
+  {
+    const v = verdicts(
+      [
+        pr(1, ["docs/a.md"], {
+          statusCheckRollup: [
+            { name: "mobile", conclusion: "FAILURE" },
+            { name: "secret-scan", conclusion: "FAILURE" },
+            { name: "checks", conclusion: "SUCCESS" },
+            { name: "validate", conclusion: "SUCCESS" },
+          ],
+        }),
+        pr(2, ["src/b.ts"]),
+      ],
+      [],
+      REQUIRED,
+    );
+    assert.equal(
+      v.get(1)?.kind,
+      "rollable",
+      `a red NON-required check must not disqualify a PR, got ${v.get(1)?.kind}: ${v.get(1)?.why}`,
+    );
+    const parsed = JSON.parse(
+      runRollup(
+        [
+          pr(1, ["docs/a.md"], { statusCheckRollup: [{ name: "mobile", conclusion: "FAILURE" }] }),
+          pr(2, ["src/b.ts"]),
+        ],
+        [],
+        REQUIRED,
+      ).out,
+    ) as { group: number[] };
+    assert.deepEqual(parsed.group.sort((a, b) => a - b), [1, 2], "and it still rides in the roll-up");
+  }
+
+  // ── 4e. PENDING is not red ──────────────────────────────────────────────────────────────────
+  // A PR opened minutes ago has every required check QUEUED or IN_PROGRESS. That is the NORMAL case
+  // and the one this tool is most often run against; treating it as a failure would make the script
+  // propose nothing exactly when it is wanted.
+  {
+    const pending = pr(1, ["docs/a.md"], {
+      statusCheckRollup: [
+        { name: "checks", status: "IN_PROGRESS", conclusion: null },
+        { name: "validate", status: "QUEUED", conclusion: null },
+      ],
+    });
+    const v = verdicts([pending, pr(2, ["src/b.ts"])], [], REQUIRED);
+    assert.equal(
+      v.get(1)?.kind,
+      "rollable",
+      `required checks still running are NOT a failure, got ${v.get(1)?.kind}: ${v.get(1)?.why}`,
+    );
+    const parsed = JSON.parse(runRollup([pending, pr(2, ["src/b.ts"])], [], REQUIRED).out) as { group: number[] };
+    assert.deepEqual(parsed.group.sort((a, b) => a - b), [1, 2], "a pending PR still rolls up — that is the normal case");
+
+    // A StatusContext reports `state`, not `conclusion`, and PENDING there means the same thing.
+    const ctx = verdicts(
+      [
+        pr(1, ["docs/a.md"], { statusCheckRollup: [{ context: "checks", state: "PENDING" }] }),
+        pr(2, ["src/b.ts"]),
+      ],
+      [],
+      REQUIRED,
+    );
+    assert.equal(ctx.get(1)?.kind, "rollable", "a PENDING StatusContext is not a failure either");
+  }
+
+  // ── 4f. The required list is READ, never written down here ──────────────────────────────────
+  {
+    const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    assert.match(
+      source,
+      /readProtectionContexts/,
+      "the required list must come from branch protection, live. AGENTS.md §2: it has rotted five times "
+        + "(4 -> 5 -> 6 -> 4 -> 2) and `lint`/`typecheck`/`test` stopped being check names on 2026-09-27.",
+    );
+    for (const name of ["validate", "checks", "lint", "typecheck", "secret-scan"]) {
+      // Quotes only, never backticks: the file's own prose cites `checks` and the required `checks`
+      // job by name, and that is documentation, not a constant the code reads.
+      assert.doesNotMatch(
+        source,
+        new RegExp(`['"]${name}['"]`),
+        `rollup-prs.mjs must not hardcode the check name \`${name}\` — a constant here disqualifies PRs on `
+          + "a name nothing reports any more, or misses the one that actually gates.",
+      );
+    }
   }
 
   // ── 5. A draft is left alone ─────────────────────────────────────────────────────────────────

@@ -18,6 +18,12 @@
 //   * It refuses to roll up anything carrying a migration, a protected file, or a frozen path. Those
 //     need their own visible approval, and burying one inside a roll-up is how it gets approved by
 //     accident.
+//   * It never rolls up a PR whose REQUIRED checks have FAILED. One approval is supposed to be enough
+//     to ship the roll-up; a member whose required check is red makes the roll-up red too, so the
+//     owner's single approval can never go green until somebody else's unrelated fix lands — which is
+//     the exact opposite of "never hand him more than one merge at a time". Measured 2026-09-30 with
+//     three PRs open (#4877 red, #4882 green, #4883 pending): this script printed
+//     `ONE branch can carry #4883 + #4882 + #4877` and `--apply` would have built it.
 //   * It groups only PRs whose file sets are DISJOINT. Two PRs touching one file might merge cleanly
 //     and still be wrong together — `tests/run-tests.ts` is the standing example: both sides append at
 //     the same anchor, git puts the conflict INSIDE one `await runTest(` call, and keeping both sides
@@ -34,6 +40,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
+import { readProtectionContexts } from './required-check-names.mjs';
 import { rollupBranchName } from './rollup-branch-name.mjs';
 
 const REPO = 'Gawish-1997/phoenix-people-workforce';
@@ -57,6 +64,48 @@ const NEVER_ROLL_UP = [
   { test: (p) => p.startsWith('src/components/employee-portal/identity-card'), why: 'protected: the portal identity banner' },
   { test: (p) => p.startsWith('mobile/') || p.startsWith('eas.json'), why: 'the mobile app is frozen' },
 ];
+
+/**
+ * A check conclusion that will not change on its own. PENDING IS NOT RED: a PR opened minutes ago has
+ * every required check `QUEUED` or `IN_PROGRESS`, which is the NORMAL case and must still roll up —
+ * treating it as a failure would make the tool useless exactly when it is most wanted.
+ *
+ * `FAILURE`, `TIMED_OUT`, `CANCELLED` and `ERROR` are the four terminal states a required check lands
+ * in. `STARTUP_FAILURE` is the same class — the workflow never began, so nothing is coming.
+ */
+const TERMINAL_FAILURE = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ERROR', 'STARTUP_FAILURE']);
+
+/**
+ * The REQUIRED checks of this PR that have terminally failed, named with their state.
+ *
+ * 🔴 THE REQUIRED LIST IS NEVER HARDCODED HERE. It has rotted five times (4 -> 5 -> 6 -> 4 -> 2) and
+ * `lint`/`typecheck`/`test` stopped being check NAMES on 2026-09-27 (AGENTS.md §2, §7), so a constant
+ * in this file would disqualify PRs on a name nothing reports any more — or, the quiet direction, miss
+ * the one name that actually gates. It comes from `branches/main/protection/required_status_checks`,
+ * read live by the same module `scripts/check-required-checks.mjs` uses.
+ *
+ * A check that is red but NOT required must not disqualify anything: today `mobile` and `secret-scan`
+ * both run on a PR and NEITHER gates the merge (protection read live 2026-09-29), so a red one of
+ * those is a thing to read, not a reason to refuse a roll-up.
+ *
+ * `required === null` means the gate could NOT be read. Then every terminal failure counts, because
+ * the safe direction is a PR that merges on its own — a false SEPARATE costs one extra CI run and is
+ * visible in the report, while a false roll-up is the incident this function exists to prevent.
+ *
+ * Handles both shapes `statusCheckRollup` returns: a CheckRun (`name` + `conclusion`) and a
+ * StatusContext (`context` + `state`).
+ */
+function redRequiredChecks(statusCheckRollup, required) {
+  const red = [];
+  for (const entry of statusCheckRollup ?? []) {
+    const name = entry?.name ?? entry?.context ?? '';
+    const state = String(entry?.conclusion ?? entry?.state ?? '').toUpperCase();
+    if (!TERMINAL_FAILURE.has(state)) continue;
+    if (required !== null && !required.has(name)) continue;
+    red.push(`${name || 'an unnamed check'} (${state.toLowerCase()})`);
+  }
+  return red;
+}
 
 const args = process.argv.slice(2);
 const asJson = args.includes('--json');
@@ -105,7 +154,14 @@ function git(argv, { cwd = process.cwd(), allowFail = false } = {}) {
  * It is also useful by hand: an analysis of a past PR set can be re-run offline from a saved
  * `--json` capture. `--apply` is refused in this mode, because a snapshot is not the live repository.
  *
- * Shape: `[{ number, title, headRefName, headRefOid, paths: [...], author?, isDraft?, mergeStateStatus? }]`
+ * Shape: `[{ number, title, headRefName, headRefOid, paths: [...], author?, isDraft?, mergeStateStatus?,
+ * carried?, redRequired?, statusCheckRollup? }]`
+ *
+ * `redRequired` states the check verdict outright and DEFAULTS TO GREEN, so every fixture written
+ * before this field existed keeps its verdict. `statusCheckRollup` is the richer seam: give it the real
+ * `[{ name, conclusion }]` shape and `PHX_ROLLUP_REQUIRED=validate,checks` names the gate, and the
+ * actual `redRequiredChecks()` filter runs — which is the only way "red but NOT required" and "required
+ * but still pending" can be told apart offline, since both collapse to `redRequired: false`.
  */
 const fixturePath = process.env.PHX_ROLLUP_FIXTURE;
 
@@ -124,18 +180,55 @@ if (fixturePath) {
     author: { login: p.author ?? 'Gawish-1997' },
     paths: p.paths,
     carriedFixture: p.carried === true,
+    statusCheckRollup: p.statusCheckRollup ?? null,
+    redRequired: p.redRequired === true,
   }));
 } else {
   open = JSON.parse(
     gh([
       'pr', 'list', '--repo', REPO, '--state', 'open', '--limit', '100',
-      '--json', 'number,title,headRefName,headRefOid,changedFiles,additions,deletions,mergeStateStatus,isDraft,author',
+      '--json', 'number,title,headRefName,headRefOid,changedFiles,additions,deletions,mergeStateStatus,isDraft,author,statusCheckRollup',
     ]) || '[]',
   );
   for (const pr of open) {
     pr.paths = JSON.parse(gh(['pr', 'view', String(pr.number), '--repo', REPO, '--json', 'files']) || '{"files":[]}')
       .files.map((f) => f.path);
   }
+}
+
+// ------------------------------------------------------- which checks actually gate, read live
+
+/**
+ * The live required list, as a Set — or `null` when the gate could not be read, which makes every
+ * terminal failure count (see `redRequiredChecks`). Never a name from a file: AGENTS.md's own §2 says
+ * to read protection and count against what it returns, because the list has rotted five times.
+ *
+ * In fixture mode there is no network, so `PHX_ROLLUP_REQUIRED` stands in; absent, the fixture is
+ * judged the way an unreadable gate is, which is the same code path either way.
+ */
+const requiredEnv = process.env.PHX_ROLLUP_REQUIRED;
+let requiredContexts = null;
+let protectionNote = '';
+if (fixturePath) {
+  if (requiredEnv) requiredContexts = new Set(requiredEnv.split(',').map((s) => s.trim()).filter(Boolean));
+  else protectionNote = 'fixture mode with no PHX_ROLLUP_REQUIRED — judging on every check';
+} else {
+  const live = readProtectionContexts();
+  if (live.skipped) protectionNote = `${live.skipped} — judging on EVERY failed check, not just the required ones`;
+  else requiredContexts = new Set(live.contexts);
+}
+
+for (const pr of open) {
+  // A fixture may state the verdict outright (`redRequired`) or hand over the real rollup shape; when
+  // it hands over the shape, the real filter runs and its answer wins.
+  if (pr.statusCheckRollup) {
+    pr.redChecks = redRequiredChecks(pr.statusCheckRollup, requiredContexts);
+    pr.redRequired = pr.redChecks.length > 0;
+  } else {
+    pr.redChecks = pr.redRequired ? ['a required check (stated by the fixture)'] : [];
+  }
+  // It is large, it is already distilled into `redChecks`, and `--json` dumps `open` whole.
+  delete pr.statusCheckRollup;
 }
 
 for (const pr of open) {
@@ -215,6 +308,19 @@ for (const pr of open) {
   if (pr.isDraft) pr.verdict = { kind: 'skip', why: 'draft' };
   else if (alreadyCarried(pr)) pr.verdict = { kind: 'carried', why: 'every file it touches is already byte-identical on main — close it, do not merge it' };
   else if (sub) pr.verdict = { kind: 'superseded', why: `every file it touches is in #${sub.number}, which changes more`, by: sub.number };
+  // 🔴 FIRST PASS, exactly where `isDraft` sits, and for the same reason: a PR that cannot merge today
+  // must not reach the second pass at all. It is not enough to drop it from `rollable`, because `group`
+  // unions `rollable` with `ownMerge` unconditionally — a red WIDE PR would ride along and redden the
+  // roll-up just the same. Keeping it out of `contenders` also keeps it out of `collidesWith`, which is
+  // the settled rule here: a collision only matters against a PR that is actually going to be merged.
+  // It sits AFTER `carried`/`superseded` so a PR that only needs closing is still reported as such.
+  else if (pr.redRequired) {
+    pr.verdict = {
+      kind: 'red',
+      why: `required check(s) failing: ${pr.redChecks.join(', ')} — a roll-up carrying this could never `
+        + 'go green, so the owner\'s one approval would be stuck behind somebody else\'s fix',
+    };
+  }
 }
 const contenders = open.filter((p) => !p.verdict);
 for (const pr of contenders) {
@@ -238,10 +344,22 @@ const saving = group.length >= 2 ? (group.length - 1) * BILLABLE_MINUTES_PER_MER
 // ---------------------------------------------------------------------------- report
 
 if (asJson) {
-  console.log(JSON.stringify({ maxFiles, open, group: group.map((p) => p.number), saving }, null, 2));
+  console.log(JSON.stringify({
+    maxFiles,
+    requiredChecks: requiredContexts ? [...requiredContexts] : null,
+    protectionNote: protectionNote || null,
+    open,
+    group: group.map((p) => p.number),
+    saving,
+  }, null, 2));
 } else {
-  console.log(`[rollup] ${open.length} open PR(s); "small" is <= ${maxFiles} changed files\n`);
-  const label = { rollable: 'ROLL UP  ', carried: 'CARRIED  ', 'own-merge': 'own merge', separate: 'SEPARATE ', superseded: 'SUPERSEDED', skip: 'skip     ' };
+  console.log(`[rollup] ${open.length} open PR(s); "small" is <= ${maxFiles} changed files`);
+  // Say WHICH checks the red verdicts were judged against, so a reader never has to assume the list.
+  console.log(requiredContexts
+    ? `[rollup] branch protection requires ${requiredContexts.size}: ${[...requiredContexts].join(', ')} — a red check outside that list does not disqualify anything`
+    : `[rollup] could not read the required list (${protectionNote})`);
+  console.log('');
+  const label = { rollable: 'ROLL UP  ', carried: 'CARRIED  ', 'own-merge': 'own merge', separate: 'SEPARATE ', superseded: 'SUPERSEDED', skip: 'skip     ', red: 'RED CHECK' };
   for (const pr of open.sort((a, b) => a.number - b.number)) {
     console.log(`  ${label[pr.verdict.kind]}  #${pr.number}  ${String(pr.changedFiles).padStart(2)} files  ${pr.mergeStateStatus.padEnd(8)}  ${pr.title.slice(0, 54)}`);
     console.log(`               ${pr.verdict.why}`);
@@ -253,6 +371,11 @@ if (asJson) {
     console.log(apply ? '[rollup] --apply given: building it' : '[rollup] re-run with --apply to build the branch and open the PR');
   } else {
     console.log('[rollup] nothing to roll up — fewer than two disjoint small PRs. Merge them as they are.');
+  }
+  const redPrs = open.filter((p) => p.verdict.kind === 'red');
+  if (redPrs.length > 0) {
+    console.log(`[rollup] held out of the group: ${redPrs.map((p) => `#${p.number}`).join(', ')} — required checks failing. `
+      + 'Fix them and re-run; nothing here is closed or merged.');
   }
 }
 
