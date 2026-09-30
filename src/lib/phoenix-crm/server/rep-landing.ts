@@ -4,7 +4,7 @@ import { canAccess } from "@/lib/auth/permissions";
 import { logError } from "@/lib/observability/log";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmToday } from "@/lib/phoenix-crm/server/today";
-import { todayByBrick } from "@/lib/phoenix-crm/today-rules";
+import { stopWhereLine, todayByBrick } from "@/lib/phoenix-crm/today-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 /**
@@ -30,6 +30,12 @@ export type RepTodayStop = {
   customerId: string;
   name: string;
   listType: PhoenixCrmListType;
+  /**
+   * Where and when, on one line — the place, and today's receiving hours. His ask of the same
+   * morning: "list all of today with timing and location". Carries NOTHING that judges him: no
+   * distance, no reading, no check (golden rule #1).
+   */
+  where: string;
   /** Green when he has already been (owner's own word for it). */
   done: boolean;
 };
@@ -44,6 +50,11 @@ export type RepTodayBrick = {
 export type RepTodayPlan = {
   /** The VISIT day, Cairo — until 02:00 the day that just ended (owner, 2026-09-29). */
   date: string;
+  /**
+   * That day as "Tue 30 Sep". It is on the panel BECAUSE of the 02:00 rule: at 01:00 he is still
+   * looking at the day that just ended, and a panel headed only "Your day" would read as tomorrow's.
+   */
+  dateLabel: string;
   territory: string;
   bricks: RepTodayBrick[];
   /** 🔴 AM and PM APART, never a total — the call-rate golden rule reaches every count. */
@@ -54,6 +65,21 @@ export type RepTodayPlan = {
   /** Where his Add-visit "+" sends him: the Visits module's own page. */
   canAdd: boolean;
 };
+
+/**
+ * "2026-09-30" → "Tue 30 Sep". Built as a UTC instant and formatted as UTC on purpose: the string is
+ * a Cairo CALENDAR day, not an instant, and letting the runtime pick a zone would shift it a day.
+ */
+function cairoDayLabel(date: string): string {
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) return date;
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+    weekday: "short",
+  });
+}
 
 export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayPlan | null> {
   try {
@@ -68,19 +94,25 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
     const view = await loadPhoenixCrmToday(viewer, { seatId: own.seatId, test: null });
     if (view.stops.length === 0) return null;
 
-    const bricks: RepTodayBrick[] = todayByBrick(view.stops).map((group) => ({
+    const groups = todayByBrick(view.stops);
+    // The brick heads the group only when there is more than one (his condition), so it is dropped
+    // from the where-line in that case rather than printed twice on every row.
+    const brickOnTheLine = groups.length > 1;
+    const bricks: RepTodayBrick[] = groups.map((group) => ({
       key: group.key,
       label: group.label,
       stops: group.rows.map((stop) => ({
         customerId: stop.customerId,
         name: stop.name,
         listType: stop.listType,
+        where: stopWhereLine(stop, brickOnTheLine ? null : stop.brick),
         done: stop.done,
       })),
     }));
 
     return {
       date: view.date,
+      dateLabel: cairoDayLabel(view.date),
       territory: view.territory.name,
       bricks,
       amDone: view.counts.doneAm,

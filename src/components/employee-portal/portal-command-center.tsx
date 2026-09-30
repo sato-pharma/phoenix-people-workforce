@@ -21,7 +21,6 @@ import {
   Wallet,
 } from "lucide-react";
 
-import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
 import { RepTodayPlanPanel } from "@/components/employee-portal/rep-today-plan-panel";
@@ -1058,19 +1057,12 @@ function RepFact({ label, value, tone }: { label: string; value: string; tone?: 
   );
 }
 
-// Each label names the page it opens exactly as the sidebar does, so a rep never lands somewhere
-// called something else: "/crm" is the sidebar's "CRM" (the rep's "My Visits" is /visits), and a
-// rep's Source of Sales is his pharmacy lists, not a sales dashboard.
-const REP_TOOLS: { href: string; label: string }[] = [
-  { href: "/employee-portals/crm", label: "CRM" },
-  { href: "/employee-portals/kpis", label: "My KPIs" },
-  { href: "/employee-portals/source-of-sales", label: "Source of Sales" },
-  { href: "/employee-portals/incentive", label: "My incentive" },
-  { href: "/employee-portals/vacation-request", label: "Vacation request" },
-  { href: "/employee-portals/payslips", label: "My payslips" },
-  // Last, by the owner's instruction: outstation expense is not what a rep's landing page is for.
-  { href: "/employee-portals/expenses", label: "Outstation expenses" },
-];
+// 🔴 `REP_TOOLS` — the rep's "My tools" rail — WAS REMOVED HERE ON 2026-09-30 at the owner's own
+// instruction, and his day took the column. It listed CRM, My KPIs, Source of Sales, My incentive,
+// Vacation request, My payslips and Outstation expenses; every one of those is still in the rep's
+// sidebar, which is where he actually reaches them. Restoring the rail needs his word, not a
+// tidy-up — `tests/portal-tools-grid-fits-a-phone.test.ts` records the removal and fails if it
+// comes back on its own.
 
 function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: RepTodayPlan | null; snapshot: PortalHomeSnapshot }) {
   const {
@@ -1083,7 +1075,7 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
     monthlySalesTrend,
     mrFieldKpis,
     doubleVisitPulse,
-    earlyBirdStars,
+    // `earlyBirdStars` is deliberately NOT read here any more — see the note where the card was.
   } = snapshot;
 
   const totalPending = pendingVacationCount + pendingExcuseCount;
@@ -1137,10 +1129,6 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
     <div className="mx-auto w-full space-y-2" dir="auto">
       <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} myInterviews={snapshot.myInterviews} />
       <PortalContextBar context="Field Performance" role="Medical Representative" />
-
-      {/* His day, first — it is the one thing on this page he ACTS on. Renders nothing when there is
-          no approved plan for today, so it can never be the empty square he has sworn at. */}
-      <RepTodayPlanPanel plan={repTodayPlan} />
 
       {/* Four measurements, no ornament. Coverage and frequency stand apart on purpose: they
           disagree by design — production has run 68% coverage against 39% frequency in one month —
@@ -1248,9 +1236,12 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
         </div>
       </div>
 
-      {/* Same reason: two columns only when the row itself has the width for them. */}
+      {/* Same reason: two columns only when the row itself has the width for them — and only when
+          there is a second column to hold. With no approved day the right-hand column renders
+          nothing, and a 1fr track holding nothing is the empty square the owner banned, so the split
+          itself is conditional and the panels below run full width. */}
       <div className="@container">
-        <div className="grid gap-2 @3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className={`grid gap-2 ${repTodayPlan ? "@3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}`}>
           <div className="min-w-0 space-y-2">
             {closed.length > 0 && (
               <RepPanel
@@ -1406,26 +1397,28 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
             </RepPanel>
           </div>
 
-          <div className="min-w-0 space-y-2">
-            {/* The rep's own landing page is the whole point of the competition — this is where he
-                sees who is currently the star and what it would take to be next. */}
-            <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
+          {/* 🔴 EARLY BIRDS AND MY TOOLS WERE REMOVED FROM HERE, AND THE DAY TOOK THEIR PLACE
+              (owner, 2026-09-30: "it became awful like this — find a way to put it to be contrasting
+              and premium polished with the current overview. I recommend that you remove the Early
+              Birds and the My Tools, and put the doctors in a premium polished, in their place").
 
-            <RepPanel title="My tools">
-              <nav>
-                {REP_TOOLS.map((tool) => (
-                  <Link
-                    className="flex min-h-11 items-center gap-2 border-b border-slate-200 px-3 py-2 text-phx-sm font-medium text-slate-800 transition last:border-b-0 hover:bg-orange-50 hover:text-orange-800 lg:min-h-9"
-                    href={tool.href}
-                    key={tool.href}
-                  >
-                    {tool.label}
-                    <ArrowRight aria-hidden="true" className="ml-auto h-3.5 w-3.5 shrink-0 text-orange-600" />
-                  </Link>
-                ))}
-              </nav>
-            </RepPanel>
-          </div>
+              🔴 THE EARLY BIRD CARD IS RETIRED FROM THE MEDICAL REP'S LANDING PAGE ONLY — his own
+              scope, minutes later: "retire early bird only from med rep accounts". It still draws on
+              the CEO board and on the DSM, RM, NSM and Marketing Manager command centres, and the
+              card itself and the whole Early Birds module are untouched. So do not read this as the
+              feature being dropped, and do not follow it through to the other centres.
+
+              Both were his own earlier calls, so this is a REVERSAL, not a tidy-up: the Early Bird
+              card was put here because "the rep's own landing page is the whole point of the
+              competition", and My tools was the column's quick-access rail. Every tool it listed is
+              still one click away in the sidebar, which is where he goes for them; what he wants in
+              front of him on opening the page is who he is seeing today. Do not restore either
+              without his word. */}
+          {repTodayPlan ? (
+            <div className="min-w-0 space-y-2">
+              <RepTodayPlanPanel plan={repTodayPlan} />
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

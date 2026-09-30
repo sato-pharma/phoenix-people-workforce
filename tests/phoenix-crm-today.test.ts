@@ -260,47 +260,96 @@ export function runPhoenixCrmTodayTests(): void {
   // visited today. When he has visited one it is coloured GREEN; if not visited it is not coloured.
   // And a very small PLUS sign that redirects him to enter a visit for that person."
   //
-  // So this pins the four things he named, and the two page rules the panel inherits.
+  // 🔴 AND THEN, ON SEEING THE FIRST ATTEMPT: "it became AWFUL like this. Find a way to put it to be
+  // CONTRASTING and PREMIUM POLISHED with the current overview. I recommend that you remove the Early
+  // Birds and the My Tools, and put the doctors in a premium polished, in their place." So the panel
+  // may NOT carry a look of its own: it takes the column those two held and wears the chrome of the
+  // panels it sits beside. That is what the borrowed-vocabulary block below pins — a one-off style
+  // here is the exact defect he was looking at.
+  //
+  // So this pins the four things he named, the borrowed chrome, and the page rules the panel inherits.
   {
     const panel = source("src/components/employee-portal/rep-today-plan-panel.tsx");
+    const centre = source("src/components/employee-portal/portal-command-center.tsx");
 
     // 1. Bricks as headers, ONLY when there is more than one.
-    assert.ok(panel.includes("const showBrickHeaders = plan.bricks.length > 1;"), "bricks head the list only when there is more than one");
-    assert.ok(panel.includes("{showBrickHeaders ? ("), "and the header is conditional on it");
+    assert.ok(panel.includes("const showBrickHeadings = plan.bricks.length > 1;"), "bricks head the list only when there is more than one");
+    assert.ok(panel.includes("{showBrickHeadings ? <BrickHeading brick={brick} /> : null}"), "and the header is conditional on it");
+    // With one brick its name is dropped from the where-line too, not printed on every row.
+    assert.ok(
+      source("src/lib/phoenix-crm/server/rep-landing.ts").includes("stopWhereLine(stop, brickOnTheLine ? null : stop.brick)"),
+      "the brick is on the row OR in a heading, never both",
+    );
 
     // 2. Green when visited, nothing when not — carried by a tick as well as the colour, so it
     //    survives a grey screenshot and a colour-blind reader.
-    assert.match(panel, /stop\.done\s*\?[\s\S]{0,160}bg-emerald-50/, "a visited customer is green");
-    assert.match(panel, /:\s*"flex min-w-0 items-center gap-2 border border-slate-200 bg-white/, "and one not visited carries no colour at all");
-    assert.ok(panel.includes("<Check aria-hidden"), "the tick says it too");
+    assert.match(panel, /stop\.done \? "bg-emerald-50" : "bg-white"/, "a visited customer is green");
+    assert.match(panel, /stop\.done \? "bg-emerald-500" : "bg-slate-200"/, "and one not visited carries no colour at all — its rail is neutral slate");
+    assert.ok(panel.includes('<Check aria-hidden="true"'), "the tick says it too");
 
     // 3. The very small plus, into Add visit on that person.
     assert.ok(panel.includes("function addVisitHref(stop: RepTodayStop)"), "the plus has one address");
     assert.match(panel, /\?customer=\$\{encodeURIComponent\(stop\.customerId\)\}/, "which names the customer");
     assert.ok(panel.includes('phoenixCrmModulePath(PHOENIX_CRM_PORTAL_BASE, "visits")'), "and points at the Visits module's own page");
-    assert.ok(panel.includes('className="flex h-7 w-7'), "very small, and still a comfortable tap");
-    assert.ok(panel.includes("<Plus aria-hidden"), "and it is a plus sign");
-    assert.ok(panel.includes("stop.done || !canAdd ? null :"), "no plus on one he has already done");
+    assert.equal((panel.match(/h-7 w-7 shrink-0/g) ?? []).length, 2, "very small, and the tick that replaces it is the same size");
+    assert.ok(panel.includes('<Plus aria-hidden="true"'), "and it is a plus sign");
+    assert.ok(panel.includes("stop.done ? ("), "no plus on one he has already done — a tick stands there instead");
 
     // 4. 🔴 AM and PM APART, never summed — the call-rate golden rule reaches this panel's counts.
-    assert.match(panel, /\{plan\.amDone\} of \{plan\.amPlanned\} AM/);
-    assert.match(panel, /\{plan\.pmDone\} of \{plan\.pmPlanned\} PM/);
+    assert.ok(panel.includes('<CountChip done={plan.amDone} label="AM" planned={plan.amPlanned} />'));
+    assert.ok(panel.includes('<CountChip done={plan.pmDone} label="PM" planned={plan.pmPlanned} />'));
     assert.equal(/(am|pm)(Done|Planned)\s*\+\s*[\w.]*(am|pm)(Done|Planned)/i.test(panel), false, "AM and PM are never added into one figure");
+
+    // 5. 🔴 THE CHROME IS BORROWED, NOT INVENTED — every piece of it is lifted from the panels it now
+    //    sits beside. `RepPanel`, `RepNeedRow` and the chip live in portal-command-center.tsx, which
+    //    imports THIS file, so they cannot be imported back (a cycle) and are written out instead.
+    //    These comparisons are what stops the two copies drifting into two looks.
+    for (const [what, shape] of [
+      ["the panel shell", 'className="min-w-0 border border-slate-200 bg-white"'],
+      ["the panel header", 'className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2"'],
+      ["the panel title", 'className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600"'],
+      ["the header chip", "border px-1.5 py-px text-phx-2xs font-bold uppercase tracking-[0.06em] tabular-nums"],
+      ["the row rail", 'className={`w-1 self-stretch'],
+    ] as const) {
+      assert.ok(panel.includes(shape), `the panel must wear the overview's own ${what}: ${shape}`);
+      assert.ok(centre.includes(shape), `and the overview must still be the source of ${what} — if it changed there, change it in the panel too`);
+    }
+    assert.ok(!panel.includes("@/components/employee-portal/portal-command-center"), "and it is NEVER imported from there — that is the cycle this duplication exists to avoid");
 
     // The landing page's own rules: no empty square, and nothing that judges him.
     assert.ok(panel.includes("if (!plan) return null;"), "no day, no panel — never the empty square he has sworn at");
+    // The COLUMN goes with it: a 1fr grid track holding nothing is that same empty square.
+    assert.ok(centre.includes('${repTodayPlan ? "@3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}'), "and the two-column split collapses when there is no day");
     assert.doesNotMatch(panel, /distance|accuracy|integrity|flag|far from/i, "and nothing on it judges him (golden rule #1)");
     assert.doesNotMatch(panel, /rounded(?!-none)/, "square corners, written out");
     assert.doesNotMatch(panel, /…|truncate/, "and nothing is cut off");
+
+    // 🔴 EARLY BIRDS IS RETIRED FROM THE MEDICAL REP'S PAGE ONLY — his own scope, the same day:
+    // "retire early bird only from med rep accounts". Every other centre keeps the card.
+    assert.ok(!centre.includes("<EarlyBirdOfTheFortnightCard"), "the rep's landing page no longer draws the Early Bird card");
+    for (const other of [
+      "src/components/admin/ceo-phase-b.tsx",
+      "src/components/employee-portal/dashboards/dsm-command-center.tsx",
+      "src/components/employee-portal/dashboards/rm-command-center.tsx",
+      "src/components/employee-portal/dashboards/nsm-command-center.tsx",
+      "src/components/employee-portal/dashboards/marketing-manager-command-center.tsx",
+    ]) {
+      assert.ok(
+        source(other).includes("<EarlyBirdOfTheFortnightCard"),
+        `${other}: the Early Bird card must STAY. The owner retired it from the medical rep's page alone — "only from med rep accounts" — so do not follow that removal through to this one.`,
+      );
+    }
 
     // The loader never throws onto the landing page, and reads HIS OWN territory.
     const loader = source("src/lib/phoenix-crm/server/rep-landing.ts");
     assert.ok(loader.includes("const [own] = viewer.ownTerritories;"), "his own territory, not a manager's board");
     assert.ok(loader.includes("if (view.stops.length === 0) return null;"), "no stops, no panel");
     assert.match(loader, /catch \(error\) \{/, "and a failed read never takes the landing page down with it");
+    // The day's own date is on the panel BECAUSE of the 02:00 rule, and is formatted as UTC so a
+    // Cairo calendar day is never shifted back one by the runtime's zone.
+    assert.ok(loader.includes('timeZone: "UTC",'), "the day label is formatted as UTC — it is a calendar day, not an instant");
 
     // It is wired in, for the rep and through the one switch.
-    const centre = source("src/components/employee-portal/portal-command-center.tsx");
     assert.ok(centre.includes("<RepTodayPlanPanel plan={repTodayPlan} />"), "the rep's landing page draws it");
     const home = source("app/employee-portals/page.tsx");
     assert.ok(home.includes("const repTodayPlan = await loadRepTodayPlan(access);"), "and the page loads it");
