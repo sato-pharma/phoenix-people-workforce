@@ -78,9 +78,11 @@ export function runSpotlightPortalLookTests(): void {
       `Grid "${grid}" does not start at one column, so it cannot collapse on a phone.`,
     );
   }
-  // The sheet scales instead of overflowing.
+  // The sheet scales instead of overflowing. Deliberately does NOT pin a corner radius: the
+  // square-edge golden rule owns that, and an earlier version of this line required `rounded-sm`
+  // on the sheet, which is the one thing the page must not have.
   assert.ok(
-    /className="block w-full rounded-sm border border-slate-200 bg-white/.test(workspace),
+    /className="block w-full border border-slate-200 bg-white"/.test(workspace),
     "The rendered sheet must be w-full so an A4 portrait fits a phone without scrolling sideways.",
   );
 
