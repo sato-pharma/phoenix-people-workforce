@@ -1626,6 +1626,7 @@ import { runPhoenixCrmAdoptionTests } from "./phoenix-crm-adoption.test.ts";
 import { runPhoenixCrmReportComparisonTests } from "./phoenix-crm-report-comparison.test.ts";
 import { runPhoenixCrmReportsExportTests } from "./phoenix-crm-reports-export.test.ts";
 import { runPhoenixCrmDailyPlanReportTests } from "./phoenix-crm-daily-plan-report.test.ts";
+import { runPhoenixCrmCustomerPhoneTests } from "./phoenix-crm-customer-phone.test.ts";
 import { runPhoenixCrmBrickCoverageReportTests } from "./phoenix-crm-brick-coverage-report.test.ts";
 import { runPhoenixCrmMobileManagerTests } from "./phoenix-crm-mobile-manager.test.ts";
 import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.test.ts";
@@ -5615,6 +5616,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's daily plan report (owner, 2026-09-30: \"build the daily plan report\" — iReports360's Daily Plan rebuilt from Phoenix CRM's own plans, one territory day by day): it reaches FORWARD to the last day a rep can plan where every other section stops at today, and every quick pick is readable on every day of 2026-2027; a day that has passed reads as its plan stood when the day ENDED — the last status before the next Cairo midnight, the same test plan against actual applies — so a plan reopened afterwards never turns a sent Monday into a draft; the visit day ends at 02:00, so yesterday is \"not yet\" until then; Friday is left out; AM and PM are two lists with no total; a test visit never marks a real plan's customer seen and a test plan is listed after the real one; the territory comes from the viewer's own scope; and it never reads a distance, a flag or an accuracy, because the rep reads his own plan there",
   runPhoenixCrmDailyPlanReportTests,
+);
+
+await runTest(
+  "Phoenix CRM keeps the customer's phone as the rep types it (owner, 2026-09-30, answering after the Daily Plan was rebuilt without iReports360's phone column: \"Add a phone to validation\", OPTIONAL, \"only what the rep types\" and \"yes, in Change the details\"): an empty box is no phone and never a refusal; Arabic-Indic and Persian digits, spaces, dashes, brackets and invisible direction marks read as the number they write, and 00 before a country code is its +; the form, the server and the database test ONE pattern, character for character, so nothing the form accepts is refused after Save; the validation writes it in the SAME save and never blanks one on file; Change the details moves it only when the key is sent, so a caller one release behind changes nothing, and the change is on the customer_renamed record; every validation screen asks for it; and nothing reads a phone out of iReports360's contacts",
+  runPhoenixCrmCustomerPhoneTests,
 );
 
 await runTest(

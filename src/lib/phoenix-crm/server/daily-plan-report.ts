@@ -54,12 +54,16 @@ function trimmed(value: unknown): string | null {
 }
 
 /**
- * The plan board's own item reading (`ITEM_COLUMNS`) plus the three things this report prints that
- * the board does not: the place's address and area, and the sales master key a customer not validated
- * yet is found by. ONE string literal — the Supabase client reads a select list at the type level.
+ * The plan board's own item reading (`ITEM_COLUMNS`) plus what this report prints that the board does
+ * not: the customer's phone, the place's address and area, and the sales master key a customer not
+ * validated yet is found by. ONE string literal — the Supabase client reads a select list at the type
+ * level.
+ *
+ * 🔴 The phone is phoenix_crm_customers.phone — what the REP typed (owner, 2026-09-30: "only what the
+ * rep types"). iReports360's own phones are never read here, so a customer not validated yet shows none.
  */
 const DAILY_PLAN_ITEM_COLUMNS =
-  "id, plan_id, plan_date, customer_id, place_id, list_type, receives, start_minute, exception_type, exception_note, customer:phoenix_crm_customers!customer_id(name, grade, speciality, status, reference_contact_crm_id), place:phoenix_crm_places!place_id(label, address, brick_name, zone, area_name, lat, lon, timings, status)";
+  "id, plan_id, plan_date, customer_id, place_id, list_type, receives, start_minute, exception_type, exception_note, customer:phoenix_crm_customers!customer_id(name, grade, speciality, status, reference_contact_crm_id, phone), place:phoenix_crm_places!place_id(label, address, brick_name, zone, area_name, lat, lon, timings, status)";
 
 /**
  * The one territory the report reads: the chosen one, or the viewer's only one. Line and territory
@@ -242,7 +246,8 @@ export async function loadDailyPlanReport(viewer: PhoenixCrmViewer, raw: ReportF
           activities.push({ planId, date: day.date, activityType: activity.activityType, label: activity.activityLabel, halfDay: activity.halfDay, note: activity.note });
         }
         for (const item of day.items) {
-          const place = record(rowByDayCustomer.get(`${day.date}|${item.customerId}`)?.place);
+          const itemRow = rowByDayCustomer.get(`${day.date}|${item.customerId}`);
+          const place = record(itemRow?.place);
           // A validated customer is where his planned place is; one not validated yet has no place, so
           // the sales master's brick and area stand in — the organogram's names, never iReports360's.
           const reference = item.placeId ? null : (references.get(item.customerId) ?? null);
@@ -256,6 +261,7 @@ export async function loadDailyPlanReport(viewer: PhoenixCrmViewer, raw: ReportF
             speciality: item.speciality,
             pending: item.pending,
             stale: item.stale,
+            phone: textOrNull(record(itemRow?.customer).phone),
             placeLabel: item.placeLabel,
             brick: item.placeId ? item.brickName : (reference?.brick ?? null),
             area: item.placeId ? textOrNull(place.area_name) : (reference?.area ?? null),

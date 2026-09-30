@@ -252,6 +252,11 @@ export type DailyPlanCustomer = {
   pending: boolean;
   /** Left the list, or his planned place was removed, after the day was planned. */
   stale: boolean;
+  /**
+   * His phone as the rep typed it (owner, 2026-09-30 — the old report's phone column). Null until the
+   * rep gives one: the old list's phones are never shown, by the owner's choice.
+   */
+  phone: string | null;
   /** The place's own name, when it has one. */
   placeLabel: string | null;
   /** The organogram's brick and area: his validated place's, or the sales master's while he waits. */
@@ -424,6 +429,7 @@ export function buildDailyPlanDays(input: {
           speciality: item.speciality,
           pending: item.pending,
           stale: item.stale,
+          phone: item.phone,
           placeLabel: item.placeLabel,
           brick: item.brick,
           area: item.area,

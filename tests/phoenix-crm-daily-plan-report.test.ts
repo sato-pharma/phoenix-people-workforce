@@ -63,6 +63,7 @@ function item(patch: Partial<DailyPlanSourceItem> & Pick<DailyPlanSourceItem, "p
     speciality: "Paediatrics",
     pending: false,
     stale: false,
+    phone: null,
     placeLabel: null,
     brick: "Shebin 3",
     area: "Menoufia 2",
@@ -246,7 +247,7 @@ export function runPhoenixCrmDailyPlanReportTests(): void {
     };
     const test: DailyPlanSourcePlan = { planId: "P-TEST", weekStart: "2026-09-26", isTest: true, status: "approved", submittedLate: false, events: [] };
     const items: DailyPlanSourceItem[] = [
-      item({ planId: "P-REAL", date: "2026-09-28", customerId: "A", listType: "AM" }),
+      item({ planId: "P-REAL", date: "2026-09-28", customerId: "A", listType: "AM", phone: "01012345678" }),
       item({ planId: "P-REAL", date: "2026-09-28", customerId: "B", listType: "PM" }),
       item({ planId: "P-REAL", date: "2026-09-28", customerId: "C", listType: "PM", pending: true, brick: null, area: null, hoursText: "No days and hours yet" }),
       item({ planId: "P-REAL", date: "2026-10-01", customerId: "D", listType: "AM" }),
@@ -307,6 +308,8 @@ export function runPhoenixCrmDailyPlanReportTests(): void {
     assert.equal(a.status, "visited");
     assert.equal(a.visitedMinute, 615, "the visit ON the plan answers, not the earlier one off it");
     assert.equal(a.offPlan, null);
+    // The old report's phone column (owner, 2026-09-30): the rep's own typed phone reaches the day as it is.
+    assert.equal(a.phone, "01012345678", "a planned customer carries the phone the rep gave him");
     const [b, c] = monday.pm;
     assert.equal(b.status, "not_visited", "a TEST visit never marks a real plan's customer seen");
     assert.equal(c.status, "visited");

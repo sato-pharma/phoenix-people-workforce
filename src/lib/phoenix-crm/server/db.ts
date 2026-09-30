@@ -7,6 +7,7 @@
  */
 
 import { ApiError } from "@/lib/http/api-errors";
+import { CUSTOMER_PHONE_ERROR } from "@/lib/phoenix-crm/entry-rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Refusal = { status: number; message: string };
@@ -20,6 +21,8 @@ const REFUSALS: Record<string, Refusal> = {
     message: "A customer with this name is already on the list. If this is a different person, confirm it and save again.",
   },
   customer_not_found: { status: 404, message: "This customer is not on the territory's list. Reload the list." },
+  // The database's own check on the phone (owner, 2026-09-30), in the same words the form uses.
+  bad_phone: { status: 400, message: CUSTOMER_PHONE_ERROR },
   customer_dropped: { status: 409, message: "This customer has left the list." },
   too_many_places: { status: 409, message: "A customer can have at most five places." },
   place_not_found: { status: 404, message: "This place is no longer on the list. Reload the list." },

@@ -21,11 +21,12 @@ import { useState } from "react";
 import { UserPlus } from "lucide-react";
 
 import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
+import { CustomerPhoneField } from "@/components/phoenix-crm/customer-phone";
 import { customerMetaText, listText } from "@/components/phoenix-crm/labels";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { emptyPlaceDraft, PlaceEditor, placeDraftProblem, placePayload, type PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import { CrmBackBar, CrmBlock, CrmButton, CrmChoice, CrmField, CrmNote, CrmPanel, CrmPill, crmInputClassName } from "@/components/phoenix-crm/ui";
-import { CUSTOMER_NAME_MAX } from "@/lib/phoenix-crm/entry-rules";
+import { CUSTOMER_NAME_MAX, parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { TerritoryListView, ValidateResult, VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
 
@@ -92,6 +93,8 @@ export function OutOfListEntry({
   const [listType, setListType] = useState<PhoenixCrmListType | null>(null);
   const [name, setName] = useState("");
   const [speciality, setSpeciality] = useState("");
+  // Optional, saved with the validation, exactly as on the List's Validate (owner, 2026-09-30).
+  const [phone, setPhone] = useState("");
   const [draft, setDraft] = useState<PlaceDraftState>(emptyPlaceDraft);
   const [sameName, setSameName] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -118,6 +121,8 @@ export function OutOfListEntry({
   function clientProblem(): string | null {
     if (!listType) return "Choose AM or PM.";
     if (cleanName.length < 3) return "Write the customer's full name.";
+    const phoneCheck = parseCustomerPhone(phone);
+    if (!phoneCheck.ok) return phoneCheck.error;
     return placeDraftProblem(draft, { needsPhoto: true });
   }
 
@@ -141,6 +146,7 @@ export function OutOfListEntry({
           mode: "outside",
           customer: { listType, name: cleanName, speciality: normalizedName(speciality) || null },
           allowSameName,
+          phone: phone.trim() || null,
           // The List's own place body (place-editor.tsx): the pin, and the photo's own reading under
           // the `shutter*` keys the server reads — sent as measured, never filled in from the pin.
           place: placePayload(photo, draft),
@@ -279,6 +285,16 @@ export function OutOfListEntry({
               ))}
             </datalist>
           </CrmField>
+          <CustomerPhoneField
+            className="sm:col-span-2"
+            disabled={saving}
+            id="phoenix-crm-outside-phone"
+            onChange={(next) => {
+              setPhone(next);
+              setProblem(null);
+            }}
+            value={phone}
+          />
         </div>
       </CrmBlock>
 

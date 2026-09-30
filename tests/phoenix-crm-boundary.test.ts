@@ -478,6 +478,10 @@ const LATER_MIGRATIONS = [
   // allowed one, and the day's Start AM / Start PM. One new table, one new function, and part three's
   // save_plan_activities replaced — so it appends after part three.
   "supabase/migrations/20260930213537_phoenix_crm_plan_day_details.sql",
+  // The customer's phone (owner, 2026-09-30): one nullable column, and validate_customer and
+  // rename_customer replaced with their live bodies plus the phone — so it appends after the list
+  // admission that last replaced validate_customer.
+  "supabase/migrations/20260930235705_phoenix_crm_customer_phone.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
@@ -512,7 +516,10 @@ function liveMigrationSql(): string {
     const later = migrationSql(path);
     for (const name of [...later.matchAll(/\bcreate or replace function public\.(phoenix_crm_[a-z_]+)\(/g)].map((match) => match[1])) {
       const live = functionSql(later, name);
-      if (sql.includes(`create or replace function public.${name}(`)) sql = sql.replace(functionSql(sql, name), live);
+      // A FUNCTION replacer, never the text itself: in a replacement string `$'` means "everything after
+      // the match", and a body checking a regex anchor — `phone ~ '^\+?[0-9]{7,15}$'` — contains exactly
+      // that, which spliced the rest of the file in and counted 13 plan-event writes where there are 4.
+      if (sql.includes(`create or replace function public.${name}(`)) sql = sql.replace(functionSql(sql, name), () => live);
       else sql += `\n${live}\n$$;\n`;
     }
   }
