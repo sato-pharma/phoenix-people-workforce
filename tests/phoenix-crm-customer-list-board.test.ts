@@ -13,6 +13,7 @@ import {
   UNSPECIFIED,
 } from "../src/lib/phoenix-crm/customer-list-grouping.ts";
 import type { ListCustomer, ListPlace } from "../src/lib/phoenix-crm/server/list.ts";
+import { listCustomer } from "./support/phoenix-crm-list-customer.ts";
 
 /**
  * Phoenix CRM — the grouping and filtering that give the List tab's customer parts (To validate,
@@ -54,46 +55,9 @@ function place(overrides: Partial<ListPlace> = {}): ListPlace {
 }
 
 function customer(overrides: Partial<ListCustomer> = {}): ListCustomer {
-  return {
-    customerId: overrides.name ?? "c",
-    listType: "PM",
-    name: "Dr Test",
-    speciality: null,
-    grade: null,
-    origin: "reference",
-    referenceContactCrmId: null,
-    status: "active",
-    section: "your_list",
-    potentialGrade: null,
-    validatedAt: null,
-    validatedByName: null,
-    reference: null,
-    droppedReason: null,
-    droppedNote: null,
-    statusChangedAt: "2026-09-01T00:00:00Z",
-    places: [],
-    visitsThisMonth: 0,
-    target: null,
-    tier: 0,
-    pendingGradeRequestId: null,
-    pendingGrade: null,
-    // 🔴 EVERY field of ListCustomer must be listed here, even the ones this fixture does not
-    // care about: the trailing `...overrides` is a Partial, so its type carries `| undefined`, and a
-    // field supplied ONLY by the spread makes the whole object stop being assignable. Three rounds of
-    // red CI in one afternoon (sharedWith + observed, then planPattern, then referenceHistory) were
-    // each this and nothing else. Widening ListCustomer? Add the field here in the same change.
-    pendingDropRequestId: null,
-    waiting: [],
-    primaryPharmacyName: null,
-    pharmacies: [],
-    // Added 2026-09-30 with the List's Reps-List look: another rep's copy of this customer, and
-    // where the reps have actually stood. Both null here — this fixture is one rep's own row.
-    sharedWith: null,
-    observed: null,
-    planPattern: null,
-    referenceHistory: null,
-    ...overrides,
-  };
+  // The full field list lives in ONE place now (tests/support/phoenix-crm-list-customer.ts). Widening
+  // `ListCustomer` breaks that annotated literal by name instead of this call site by field count.
+  return listCustomer({ customerId: overrides.name ?? "c", ...overrides });
 }
 
 export function runPhoenixCrmCustomerListBoardTests() {
