@@ -114,7 +114,30 @@ const SHELL_OWNS_THE_HEADER: ReadonlyArray<{ page: string; components: readonly 
     ],
     page: "app/employee-portals/double-visit-analytics/page.tsx",
   },
+  {
+    components: [
+      {
+        componentGate: /\{chrome === "admin" \? \(/,
+        file: "src/components/territory-management/territory-map-workspace.tsx",
+        h1: "gated",
+        pagePasses: /chrome=["']portal["']/,
+        why: "app/(admin)/sales/territory-management/page.tsx renders this workspace BARE, with no"
+          + " shell, so its <h1> is the only title on that screen.",
+      },
+    ],
+    page: "app/employee-portals/territory-management/page.tsx",
+  },
 ];
+
+/**
+ * 🔴 DELIBERATELY NOT A ROW: `src/components/employee-360/employee-360-view.tsx`.
+ *
+ * It contains an `<h1>` under a shell that passes `title="Employee 360"`, which a grep for `<h1>`
+ * reports as this defect. It is not one — the heading is `{subject.displayName}`, the PERSON being
+ * looked at, not the page. Nothing is printed twice, and there is nothing for a viewer to see wrong.
+ * There is a semantic argument for demoting it to `<h2>` under the shell's page title; that is a
+ * different change, it was not asked for, and adding a row here would force it. Audited 2026-09-30.
+ */
 
 // 🔴 THE `<h1>` CHECK IS THE LOAD-BEARING ONE; THIS LIST IS THE SECOND FENCE, NOT THE FIRST.
 // `bg-slate-900` is deliberately ABSENT: Report It uses it for buttons, table header rows and the
