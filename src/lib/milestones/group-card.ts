@@ -245,47 +245,71 @@ export type MilestoneGroupGrid = {
 /**
  * One tier per number of rows: the air around a face, and the type under it.
  *
- * 🔴 A THREE-ROW SHEET IS NOT A ONE-ROW SHEET WITH MORE FACES ON IT. Every point spent on a gap, a
- * keyline offset or a caption is spent ROWS times over, and the band is what it is — so the tiers
- * tighten as the rows multiply. Measured: keeping row one's 26pt gap and 46pt caption at three rows
- * costs a twelve-face picture a quarter of each face (41 × 51pt against 50 × 62pt). They are TIGHTER
- * at three rows, never smaller than the type can carry: the names are still fitted in the browser and
- * still shrink rather than truncate.
+ * 🔴 A TWO-ROW SHEET IS NOT A ONE-ROW SHEET WITH MORE FACES ON IT. Every point spent on a gap, a
+ * keyline offset or a caption is spent ROWS times over, and the band is what it is — so the second
+ * tier is tighter, never smaller than the type can carry: the names are still fitted in the browser
+ * and still shrink rather than truncate.
+ *
+ * 🔴 THERE IS NO THREE-ROW TIER, AND ADDING ONE WOULD MAKE EVERY LARGE GROUP WORSE. A third row caps
+ * a face at 50pt wide against two rows' 84pt, while two rows of six still fit the width at the
+ * ceiling of twelve — so three rows can only ever win past about twenty-six faces, which
+ * `MILESTONE_GROUP_MAX` does not allow.
  */
 const TIERS = [
   { rows: 1, gap: 26, frame: 9, tick: 12, captionH: 46, namePt: 19, nameMinPt: 11, nameBaselineOffset: 26, subPt: 6.8, subBaselineOffset: 40 },
   { rows: 2, gap: 20, frame: 6, tick: 8, captionH: 36, namePt: 14, nameMinPt: 8.5, nameBaselineOffset: 19, subPt: 5.8, subBaselineOffset: 30 },
-  { rows: 3, gap: 14, frame: 5, tick: 7, captionH: 30, namePt: 12, nameMinPt: 7.5, nameBaselineOffset: 17, subPt: 5.2, subBaselineOffset: 27 },
 ] as const;
+
+/**
+ * The widest a face can be in one tier — the SMALLER of the two budgets, never just the first one.
+ *
+ * Both subtract the OUTER KEYLINE, which sits `frame` points outside the photograph on every side:
+ * forgetting it is how a keyline ends up touching its neighbour's, or crossing the rule above the
+ * grid. The height budget is what stops a group of two printing two portraits 457pt tall on a 314pt
+ * band; the width budget is what stops twelve in a row.
+ */
+function faceWidthIn(tier: (typeof TIERS)[number], count: number): { cols: number; photoW: number } {
+  const cols = Math.ceil(count / tier.rows);
+  const byWidth = (CONTENT_W - 2 * tier.frame - tier.gap * (cols - 1)) / cols;
+  const byHeight =
+    (GRID_BOTTOM - GRID_TOP - 2 * tier.frame - tier.gap * (tier.rows - 1) - tier.rows * tier.captionH) /
+    tier.rows /
+    PHOTO_RATIO;
+  return { cols, photoW: Math.min(byWidth, byHeight) };
+}
 
 /**
  * Where every face goes.
  *
- * 🔴 THE WIDTH DECIDES, UNTIL THE HEIGHT DOES. The tile is sized from the row width first, then cut
- * down if the rows would not fit the grid box — never the other way round, or a group of two would
- * print two portraits 457pt tall on a 314pt band. Both budgets subtract the OUTER KEYLINE, which
- * sits `frame` points outside the photograph on every side: forgetting it is how a keyline ends up
- * touching its neighbour's, or crossing the rule above the grid.
+ * 🔴 THE SHAPE IS CHOSEN BY MEASURING BOTH, NEVER BY A TABLE OF COUNTS. A fixed "six or more goes to
+ * two rows" reads sensibly and is wrong in both directions: six faces fit ACROSS at 102pt and were
+ * being printed at 84, and twelve were sent to three rows at 50pt when two rows of six fit the width
+ * at 84 — a picture using a third of its own page, which is what it looked like. So each tier is
+ * measured for this count and the one giving the biggest face wins.
+ *
+ * 🔴 MORE ROWS MUST WIN BY A MARGIN, NOT BY A ROUNDING. At seven faces the two shapes are 83.4pt and
+ * 84pt apart — a twentieth of a millimetre — and one row of seven is the better picture. So a second
+ * row has to beat one row by more than 2% before the faces are split up.
  *
  * 🔴 SMALL GROUPS GET BIG FACES AND LARGE ONES GET SMALL FACES, AND THAT IS THE HONEST ANSWER.
  * Measured: two or three faces print at 200 × 250pt (71 × 88 mm), five at 127 × 159 (45 × 56 mm),
- * eight at 84 × 105 (30 × 37 mm), twelve at 50 × 62 (17 × 22 mm) — which is why
- * `MILESTONE_GROUP_MAX` stops there rather than going on until nobody on the sheet is recognisable.
+ * seven at 83 × 104 (29 × 37 mm), and everything from eight to twelve at 84 × 105 (30 × 37 mm) —
+ * which is why `MILESTONE_GROUP_MAX` stops at twelve rather than going on until nobody is
+ * recognisable.
  */
 export function milestoneGroupGrid(count: number): MilestoneGroupGrid {
-  const tier = count <= 5 ? TIERS[0] : count <= 8 ? TIERS[1] : TIERS[2];
-  const { rows, gap, frame, tick, captionH } = tier;
-  const cols = Math.ceil(count / rows);
-
-  const widthBudget = CONTENT_W - 2 * frame - gap * (cols - 1);
-  let photoW = widthBudget / cols;
-  let photoH = photoW * PHOTO_RATIO;
-
-  const heightBudget = GRID_BOTTOM - GRID_TOP - 2 * frame - gap * (rows - 1) - rows * captionH;
-  if (photoH * rows > heightBudget) {
-    photoH = heightBudget / rows;
-    photoW = photoH / PHOTO_RATIO;
+  let tier = TIERS[0];
+  let { cols, photoW } = faceWidthIn(tier, count);
+  for (const candidate of TIERS.slice(1)) {
+    const measured = faceWidthIn(candidate, count);
+    if (measured.photoW > photoW * 1.02) {
+      tier = candidate;
+      cols = measured.cols;
+      photoW = measured.photoW;
+    }
   }
+  const { rows, gap, frame, tick, captionH } = tier;
+  const photoH = photoW * PHOTO_RATIO;
 
   const rowH = photoH + captionH;
   const blockH = rows * rowH + gap * (rows - 1);
@@ -411,9 +435,14 @@ function cardBody(input: MilestoneGroupCardInput): string {
 
     // The name, and the one line under it. Both are fitted in the browser, where the type can be
     // measured; the width they must fit is the OUTER KEYLINE's, carried on the element itself.
+    //
+    // 🔴 `data-gname="1"`, NEVER A BARE `data-gname`. Chromium parses the sheet as HTML and tolerates
+    // a valueless attribute, so the picture would print perfectly — and the SVG would still not be
+    // well-formed XML, which any XML reader refuses with a tag-mismatch error thousands of characters
+    // away from the real cause. Measured 2026-09-30: sharp would not open the sheet at all.
     const fit = photoW + 2 * frame;
     parts.push(
-      `<text id="gname-${index}" data-gname data-fit="${n(fit)}" data-floor="${n(grid.nameMinPt)}" class="name" x="${n(x + photoW / 2)}" y="${n(y + photoH + grid.nameBaselineOffset)}" font-size="${n(grid.namePt)}" fill="${C.navy}" stroke="${C.navy}" stroke-width="0.25" text-anchor="middle">${esc(member.displayName)}</text>`,
+      `<text id="gname-${index}" data-gname="1" data-fit="${n(fit)}" data-floor="${n(grid.nameMinPt)}" class="name" x="${n(x + photoW / 2)}" y="${n(y + photoH + grid.nameBaselineOffset)}" font-size="${n(grid.namePt)}" fill="${C.navy}" stroke="${C.navy}" stroke-width="0.25" text-anchor="middle">${esc(member.displayName)}</text>`,
     );
     if (member.subLine.trim()) {
       parts.push(
@@ -425,7 +454,7 @@ function cardBody(input: MilestoneGroupCardInput): string {
           "middle",
           grid.subPt,
           0.7,
-          `id="gsub-${index}" data-gsub data-fit="${n(fit)}" data-floor="${n(grid.subMinPt)}"`,
+          `id="gsub-${index}" data-gsub="1" data-fit="${n(fit)}" data-floor="${n(grid.subMinPt)}"`,
         ),
       );
     }

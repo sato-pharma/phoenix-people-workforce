@@ -122,6 +122,34 @@ const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 /** The employee-photo endpoint's own 5 MB ceiling — checked here so saving fails before the upload. */
 const MAX_RECORD_PHOTO_BYTES = 5 * 1024 * 1024;
 
+/**
+ * Whether the ticked rows may share one picture, and if not, exactly why — in the ROUTE'S OWN WORDS.
+ *
+ * 🔴 THE RULE IS IMPORTED, NEVER RESTATED HERE. `resolveMilestoneGroupOccasion` is pure — it reaches
+ * only `periods.ts`, no I/O — so the button and the route decide from the same function and can never
+ * disagree about what is allowed, and the reason shown under the button is the same sentence the
+ * route would have returned. A second copy of this rule in the client is how a button ends up enabled
+ * for a set the server refuses, or greyed out for a set it would happily print.
+ */
+function groupPictureCheck(rows: readonly MilestoneDueEntry[]): { ok: boolean; reason: string } {
+  if (rows.length === 0) return { ok: false, reason: "Tick the people who share the occasion." };
+  const resolved: MilestoneGroupRow[] = [];
+  for (const entry of rows) {
+    const on = parsePlainDate(entry.on);
+    if (!on) return { ok: false, reason: `${entry.displayName} has no usable date on that row.` };
+    resolved.push({ periodSpec: entry.spec, on, displayName: entry.displayName });
+  }
+  try {
+    resolveMilestoneGroupOccasion(resolved);
+    return { ok: true, reason: "" };
+  } catch (cause) {
+    return {
+      ok: false,
+      reason: cause instanceof Error ? cause.message : "Those rows cannot share one picture.",
+    };
+  }
+}
+
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
@@ -851,36 +879,10 @@ export function MilestonesWorkspace({
   // them all" (the owner, 2026-09-30). The batch above is a thing to PRINT — one card per page, and
   // nothing you can send. This is one landscape sheet with every ticked face on it.
 
-  /**
-   * Whether the ticked rows may share one picture, and if not, exactly why — in the SERVER'S OWN
-   * WORDS.
-   *
-   * 🔴 THE RULE IS IMPORTED, NEVER RESTATED HERE. `resolveMilestoneGroupOccasion` is pure (it reaches
-   * only `periods.ts`, no I/O), so the button and the route decide from the same function and can
-   * never disagree about what is allowed — and the reason shown under the button is the same sentence
-   * the route would have returned. A second copy of this rule in the client is how a button ends up
-   * enabled for a set the server refuses, or greyed out for a set it would happily print.
-   */
-  const groupCheck = useMemo<{ ok: boolean; reason: string }>(() => {
-    if (tickedItems.length === 0) {
-      return { ok: false, reason: "Tick the people who share the occasion." };
-    }
-    const rows: MilestoneGroupRow[] = [];
-    for (const entry of tickedItems) {
-      const on = parsePlainDate(entry.on);
-      if (!on) return { ok: false, reason: `${entry.displayName} has no usable date on that row.` };
-      rows.push({ periodSpec: entry.spec, on, displayName: entry.displayName });
-    }
-    try {
-      resolveMilestoneGroupOccasion(rows);
-      return { ok: true, reason: "" };
-    } catch (cause) {
-      return {
-        ok: false,
-        reason: cause instanceof Error ? cause.message : "Those rows cannot share one picture.",
-      };
-    }
-  }, [tickedItems]);
+  // Cheap enough to answer on every render (at most twelve rows through a pure function), and
+  // deliberately NOT wrapped in useMemo: the try/catch defeats the React Compiler's ability to
+  // preserve a manual memo, which is a lint error here.
+  const groupCheck = groupPictureCheck(tickedItems);
 
   /**
    * The picture itself — the PNG to send, or the same artwork as a one-page PDF to print.

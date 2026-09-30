@@ -332,11 +332,36 @@ export async function runMilestoneGroupCardTests() {
     "four corner ticks per face (two rects each), plus the head seam and its mirror at the base",
   );
 
-  // A group of one is not a group, and the artwork must not pretend otherwise: a 13th face has no
-  // place, so the grid would have to invent one.
-  assert.equal(milestoneGroupGrid(5).rows, 1, "up to five faces read as one row");
-  assert.equal(milestoneGroupGrid(6).rows, 2, "six turn into two");
-  assert.equal(milestoneGroupGrid(MILESTONE_GROUP_MAX).rows, 3, "the ceiling is three rows");
+  // 🔴 THE SHAPE IS MEASURED, NOT LOOKED UP — and both directions of the table it replaced were real
+  // defects, invisible in the source and obvious on the sheet. Six faces fit ACROSS at 102pt and a
+  // "six or more goes to two rows" table printed them at 84; twelve went to three rows at 50pt when
+  // two rows of six fit the width at 84, which is a picture using a third of its own page.
+  assert.equal(milestoneGroupGrid(6).rows, 1, "six faces still fit across, so they stay in one row");
+  assert.equal(milestoneGroupGrid(7).rows, 1, "and so do seven — a second row must win by a margin");
+  assert.equal(milestoneGroupGrid(8).rows, 2, "eight are bigger split in two, so they are");
+  assert.equal(milestoneGroupGrid(MILESTONE_GROUP_MAX).rows, 2, "and twelve are two rows of six");
+  assert.ok(
+    milestoneGroupGrid(MILESTONE_GROUP_MAX).photoW > 80,
+    `twelve faces print at ${milestoneGroupGrid(MILESTONE_GROUP_MAX).photoW.toFixed(1)}pt wide, not a third of that`,
+  );
+  // 🔴 THE FLOOR, WHICH IS WHAT THE THREE-ROW REGRESSION BROKE. No group the picture will accept may
+  // print a face narrower than 83pt — 29 mm, a passport photograph. The three-row shape put twelve
+  // faces at 50pt and fitted every other check perfectly.
+  //
+  // A face is NOT required to shrink monotonically: eight faces are bigger than seven, because eight
+  // are worth splitting into two rows and seven are not. Within one shape it must, and that is the
+  // part asserted.
+  for (let count = 2; count <= MILESTONE_GROUP_MAX; count += 1) {
+    const chosen = milestoneGroupGrid(count);
+    assert.ok(chosen.photoW >= 83, `${count}: a face is ${chosen.photoW.toFixed(1)}pt wide, under 83`);
+    const previous = milestoneGroupGrid(count - 1);
+    if (previous.rows === chosen.rows) {
+      assert.ok(
+        chosen.photoW <= previous.photoW + 0.01,
+        `${count}: inside one shape, another face never makes every face bigger`,
+      );
+    }
+  }
 
   // ── 5 ── THE LAYOUT PASS ────────────────────────────────────────────────────────────────────────
 

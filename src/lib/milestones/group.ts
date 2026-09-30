@@ -178,20 +178,20 @@ export function resolveMilestoneGroupOccasion(rows: readonly MilestoneGroupRow[]
   }
 
   // ── Every row is a service milestone ──────────────────────────────────────────────────────────
-  if (specs.length > 1) {
+  //
+  // 🔴 COMPARED AS PARSED PERIODS, NOT AS STRINGS. `parseMilestoneSpec` reads a period the way the
+  // owner types one, so "6 months", "6 month" and "6m" are the SAME milestone; comparing the raw
+  // strings would refuse a set that plainly shares one occasion, and the refusal would be about
+  // spelling rather than about anything on the sheet.
+  const parsed = rows.map((row) => parseMilestoneSpec(row.periodSpec));
+  if (distinct(parsed.map(formatMilestoneSpec)).length > 1) {
     throw new MilestoneGroupOccasionError(
       `A group picture is for one milestone, and these rows are ${listWords(
         distinct(rows.map((row) => milestoneGroupRowLabel(row.periodSpec))),
       )}. Tick one milestone at a time.`,
     );
   }
-  const spec = parseMilestoneSpec(specs[0]);
-  // A spec string that parses to something else would put a seal on the picture that does not match
-  // the rows it was built from; refuse rather than print it.
-  if (formatMilestoneSpec(spec) !== specs[0]) {
-    throw new MilestoneGroupOccasionError(`"${specs[0]}" is not a milestone this picture can name.`);
-  }
-  return { kind: "service", spec };
+  return { kind: "service", spec: parsed[0] };
 }
 
 /** The commemorative seal — the numeral and the word under it. Upper-cased by the card, not here. */

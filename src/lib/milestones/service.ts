@@ -81,7 +81,7 @@ const PORTRAIT_WIDTH = 1750;
  *
  * 🔴 A GROUP PICTURE HOLDS EVERY PORTRAIT DECODED IN MEMORY AT ONCE, and unlike the batch it cannot
  * be chunked — it is one sheet. Twelve portraits at `PORTRAIT_WIDTH` is ~180 MB of decoded pixels in
- * one Chromium page, for faces printed 50pt wide, where 384 DPI asks for 265 px. So a group renders
+ * one Chromium page, for faces printed 84pt wide, where 384 DPI asks for 448 px. So a group renders
  * each portrait at the size its own tile needs and no more, floored here so a face is never softer
  * than the sheet it is on.
  */
