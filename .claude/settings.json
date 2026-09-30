@@ -68,9 +68,9 @@
           },
           {
             "type": "command",
-            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; if [ -f \"$DIR/.git\" ] && [ -f \"$DIR/scripts/sync-worktree-env.mjs\" ]; then node \"$DIR/scripts/sync-worktree-env.mjs\" 2>/dev/null || true; fi",
+            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; if [ -f \"$DIR/scripts/sync-worktree-env.mjs\" ]; then node \"$DIR/scripts/sync-worktree-env.mjs\" --all 2>/dev/null || true; fi",
             "shell": "bash",
-            "statusMessage": "Syncing worktree env"
+            "statusMessage": "Provisioning node_modules + env in all worktrees"
           },
           {
             "type": "command",

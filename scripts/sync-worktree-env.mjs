@@ -35,12 +35,20 @@
 //   node scripts/sync-worktree-env.mjs            # copy files that are missing here
 //   node scripts/sync-worktree-env.mjs --force     # also overwrite existing env files
 //   node scripts/sync-worktree-env.mjs --dry-run   # print what would happen, change nothing
+//   node scripts/sync-worktree-env.mjs --all       # ALSO sweep every OTHER worktree on the
+//                                                   # machine (node_modules junction + missing env
+//                                                   # only — never their settings), so node / pnpm /
+//                                                   # npm run in all working trees, not just this one.
+//                                                   # This is what the SessionStart hook runs; see
+//                                                   # scripts/lib/provision-worktree.mjs for why it is
+//                                                   # safe to touch another session's worktree.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import { linkNodeModules } from "./lib/link-node-modules.mjs";
+import { sweepWorktrees, wasChanged, linkedNodeModules } from "./lib/provision-worktree.mjs";
 
 function git(args, opts = {}) {
   return execFileSync("git", args, { encoding: "utf8", ...opts }).trim();
@@ -54,6 +62,7 @@ function fail(message) {
 const args = process.argv.slice(2);
 const force = args.includes("--force");
 const dryRun = args.includes("--dry-run");
+const all = args.includes("--all");
 
 // The common .git dir's parent is always the PRIMARY worktree (the original
 // clone) — unlike `git worktree list`'s first entry, this is reliable
@@ -74,28 +83,80 @@ try {
 }
 currentRoot = path.resolve(currentRoot);
 
-if (primaryRoot === currentRoot) {
-  console.log("sync-worktree-env: this IS the primary worktree — nothing to sync.");
-  process.exit(0);
-}
-
 // Candidate files: anything in the primary worktree root matching /^\.env/,
 // excluding tracked *.example templates (already present via checkout), and
 // double-checked as actually gitignored so a tracked file can never be swept
 // in by accident.
-const entries = fs.readdirSync(primaryRoot, { withFileTypes: true });
-const candidates = entries
-  .filter((entry) => entry.isFile() && entry.name.startsWith(".env") && !entry.name.endsWith(".example"))
-  .map((entry) => entry.name)
-  .filter((name) => {
-    try {
-      git(["-C", primaryRoot, "check-ignore", "-q", name]);
-      return true;
-    } catch {
-      return false; // not gitignored — leave tracked files alone
-    }
-  })
-  .sort();
+function getEnvCandidates() {
+  return fs
+    .readdirSync(primaryRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.startsWith(".env") && !entry.name.endsWith(".example"))
+    .map((entry) => entry.name)
+    .filter((name) => {
+      try {
+        git(["-C", primaryRoot, "check-ignore", "-q", name]);
+        return true;
+      } catch {
+        return false; // not gitignored — leave tracked files alone
+      }
+    })
+    .sort();
+}
+
+// Every worktree git knows about, as absolute paths — the primary plus every
+// linked one. `--porcelain` is stable across git versions and quotes nothing here.
+function listWorktreeDirs() {
+  const dirs = [];
+  for (const line of git(["worktree", "list", "--porcelain"]).split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("worktree ")) dirs.push(path.resolve(trimmed.slice("worktree ".length).trim()));
+  }
+  return dirs;
+}
+
+// `--all`: provision node_modules + missing env in every OTHER worktree, so node /
+// pnpm / npm run in ALL working trees, not just the one this session opened. The
+// current worktree (already fully synced above, settings and all) and the primary
+// are skipped. Stays quiet for worktrees that needed nothing, so a healthy machine
+// prints one short line and a broken one prints exactly what it fixed.
+function runSweep(candidates, skip) {
+  let dirs;
+  try {
+    dirs = listWorktreeDirs();
+  } catch {
+    return; // no git / no worktrees — nothing to sweep
+  }
+  const results = sweepWorktrees(primaryRoot, dirs, candidates, { dryRun, skip });
+  let changed = 0;
+  for (const r of results) {
+    if (!wasChanged(r)) continue;
+    changed++;
+    const bits = [];
+    if (r.copied.length) bits.push(`${r.copied.length} env file(s)`);
+    if (linkedNodeModules(r.modulesStatus)) bits.push("node_modules " + r.modulesStatus);
+    console.log(`  sweep ${path.basename(r.dir)}: ${bits.join(", ")}${dryRun ? " [dry-run]" : ""}`);
+  }
+  const considered = results.filter((r) => r.present).length;
+  console.log(
+    changed === 0
+      ? `  sweep: all ${considered} other worktree(s) already had node_modules + env`
+      : `  sweep: ${changed} of ${considered} other worktree(s) provisioned`,
+  );
+}
+
+if (primaryRoot === currentRoot) {
+  // A control-tower (primary) session has nothing of its OWN to sync, but it is the
+  // ideal place to provision every worktree, so `--all` still sweeps from here.
+  if (all) {
+    console.log("sync-worktree-env: primary=" + primaryRoot + " — sweeping all worktrees");
+    runSweep(getEnvCandidates(), [currentRoot]);
+    process.exit(0);
+  }
+  console.log("sync-worktree-env: this IS the primary worktree — nothing to sync.");
+  process.exit(0);
+}
+
+const candidates = getEnvCandidates();
 
 console.log("sync-worktree-env: primary=" + primaryRoot);
 console.log("sync-worktree-env: target =" + currentRoot);
@@ -273,6 +334,12 @@ if (targetExisting === undefined) {
       console.log("    if any of those were deliberate, add them to the PRIMARY's settings.local.json so every worktree inherits them.");
     }
   }
+}
+
+// --all: now that THIS worktree is fully synced (env + node_modules + settings),
+// provision every OTHER worktree so node / pnpm / npm run across all working trees.
+if (all) {
+  runSweep(candidates, [currentRoot]);
 }
 
 if (!dryRun) {
