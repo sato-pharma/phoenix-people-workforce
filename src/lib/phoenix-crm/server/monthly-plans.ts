@@ -72,6 +72,7 @@ import { ensureReferenceCustomers, loadMonthVisitCounts, loadPlannerReferences, 
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanActivities } from "@/lib/phoenix-crm/server/plan-activities";
+import { loadPlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
 import {
   buildDays,
   ITEM_COLUMNS,
@@ -264,13 +265,14 @@ export async function loadMonthlyPlanner(
   const headerRow = headerResult.data as Row | null;
   const planRows = (planRowsResult.data ?? []) as Row[];
 
-  const [itemRows, names, activities, references] = await Promise.all([
+  const [itemRows, names, activities, starts, references] = await Promise.all([
     loadPlanItemRows(
       planRows.map((row) => String(row.id)),
       ITEM_COLUMNS,
     ),
     loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...planPeople(headerRow ? [headerRow, ...planRows] : planRows)]),
     loadPlanActivities(planRows.map((row) => String(row.id))),
+    loadPlanDayStarts(planRows.map((row) => String(row.id))),
     loadPlannerReferences(seat.seatId, isTest, customers),
   ]);
 
@@ -347,7 +349,7 @@ export async function loadMonthlyPlanner(
     const planRow = planRows.find((row) => String(row.week_start) === weekStart) ?? null;
     const weekStatus = planRow ? statusOf(planRow.status) : null;
     const weekItems = planRow ? itemsByPlan.get(String(planRow.id)) ?? [] : [];
-    const days = buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan, activities });
+    const days = buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan, activities, starts });
     const weekPlan = planRow ? mapPlan(planRow, names) : null;
     const dueOn = weekPlan?.dueOn ?? weeklyPlanDueOn(weekStart);
     const open = editablePlanDays(weekStart, today).length > 0;

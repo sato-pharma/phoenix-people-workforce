@@ -52,7 +52,7 @@ export type GradeTargets = PhoenixCrmSettings["gradeTargets"];
 /** The rep's call-rate target per working day, AM and PM apart (the Settings' call-rate targets). */
 export type DayTargets = { am: number; pm: number };
 
-/** A day's other activity as the suggestion reads it: only whether it takes the whole day. */
+/** A day's other activity as the suggestion reads it: only whether it takes the whole day (`activityOn` folds a day's several). */
 export type SuggestActivity = { planDate: string; halfDay: boolean };
 
 export type SuggestInput = {
@@ -160,8 +160,16 @@ function roomOf(
   return { AM: Math.max(0, capOf("AM") - counts.AM), PM: Math.max(0, capOf("PM") - counts.PM) };
 }
 
-function activityOn(activities: ReadonlyArray<SuggestActivity>, date: string): SuggestActivity | null {
-  return activities.find((activity) => activity.planDate === date) ?? null;
+/**
+ * A day's other activities read as ONE, the way the suggestion needs them. A day may hold several (one of
+ * each kind, 2026-09-30): it is taken whole when ANY of them takes the whole day, and it is a half day
+ * only when every one of them is — a half-day meeting beside a whole-day conference is still a day with
+ * no room for visits. Null when the day holds none.
+ */
+export function activityOn(activities: ReadonlyArray<SuggestActivity>, date: string): SuggestActivity | null {
+  const onDay = activities.filter((activity) => activity.planDate === date);
+  if (onDay.length === 0) return null;
+  return { planDate: date, halfDay: onDay.every((activity) => activity.halfDay) };
 }
 
 /** Why the day cannot take a suggestion, or null when it can. */

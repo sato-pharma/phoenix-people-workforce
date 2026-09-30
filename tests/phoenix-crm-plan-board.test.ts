@@ -47,12 +47,26 @@ import {
   weekFixes,
   weekProblems,
   weekScope,
+  weekSignature,
   weekToPlanMove,
   dayFullness,
+  savedWeekStarts,
+  brickTickPress,
+  brickTickState,
   type DraftDay,
   type DraftWeek,
   type WeekDraft,
 } from "../src/lib/phoenix-crm/plan-week-draft.ts";
+import {
+  describeDayStarts,
+  parsePlanDayStarts,
+  setPlannedStart,
+  startInputValue,
+  startMinuteFromInput,
+  startsForDay,
+  startsOn,
+} from "../src/lib/phoenix-crm/plan-day-starts.ts";
+import { activityOn } from "../src/lib/phoenix-crm/plan-suggest.ts";
 import type { PlannerCustomer } from "../src/lib/phoenix-crm/suggestions.ts";
 import type { PhoenixCrmListType, PhoenixCrmTiming } from "../src/lib/phoenix-crm/types.ts";
 
@@ -134,8 +148,14 @@ function copyWeek(weekStart: string, editable = true): CopyWeek {
   };
 }
 
-function draftDay(date: string, editable: boolean, items: DraftDay["items"] = [], activity: DraftDay["activity"] = null): DraftDay {
-  return { date, listTypes: weekdayOfIsoDay(date) === 4 ? ["AM"] : ["AM", "PM"], ramadan: false, editable, activity, items };
+function draftDay(
+  date: string,
+  editable: boolean,
+  items: DraftDay["items"] = [],
+  activities: DraftDay["activities"] = [],
+  starts: DraftDay["starts"] = { startAmMinute: null, startPmMinute: null },
+): DraftDay {
+  return { date, listTypes: weekdayOfIsoDay(date) === 4 ? ["AM"] : ["AM", "PM"], ramadan: false, editable, activities, starts, items };
 }
 
 function monthStartsBetween(from: string, to: string): string[] {
@@ -285,11 +305,11 @@ export function runPhoenixCrmPlanBoardTests(): void {
       weekStart: "2026-10-03",
       plan: { planId: "plan-1", version: 3 },
       days: [
-        draftDay("2026-10-03", false, [item("pm-sat", "p-sat")], { activityType: "meeting", halfDay: false, note: null }),
+        draftDay("2026-10-03", false, [item("pm-sat", "p-sat")], [{ activityType: "meeting", halfDay: false, note: null }]),
         draftDay("2026-10-04", true, [item("two-places", "tp-removed")]),
         draftDay("2026-10-05", true, [item("pm-sat", "p-sat")]),
         draftDay("2026-10-06", true, [item("left-the-list", "p-left")]),
-        draftDay("2026-10-07", true, [], { activityType: "training", halfDay: true, note: "  bring the slides  " }),
+        draftDay("2026-10-07", true, [], [{ activityType: "training", halfDay: true, note: "  bring the slides  " }]),
         draftDay("2026-10-08", true),
       ],
     };
@@ -329,8 +349,8 @@ export function runPhoenixCrmPlanBoardTests(): void {
     );
     assert.equal(isWeekDirty({ ...draft, items: [...draft.items].reverse() }, week), false, "the order the ticks were made in is not a change");
 
-    // The activity rides on the same draft: one a day, and taking one off is a change too.
-    const withSalesDay = setPlannedActivity(draft.activities, "2026-10-04", { activityType: "sales_day", halfDay: false, note: null });
+    // The activities ride on the same draft — one of each kind a day — and taking one off is a change too.
+    const withSalesDay = setPlannedActivity(draft.activities, "2026-10-04", "sales_day", { halfDay: false, note: null });
     draft = { ...draft, activities: withSalesDay };
     assert.equal(isWeekDirty(draft, week), true, "planning an activity is unsaved work");
     const both = buildWeekSavePayload({ seatId: "seat-1", test: true, week, draft, customers });
@@ -339,22 +359,48 @@ export function runPhoenixCrmPlanBoardTests(): void {
       ["2026-10-04|sales_day", "2026-10-07|training"],
       "the FULL activity list of the editable days is sent, in day order",
     );
-    const onPassedDay = { ...draft, activities: setPlannedActivity(draft.activities, "2026-10-03", { activityType: "travel", halfDay: false, note: null }) };
+    const onPassedDay = { ...draft, activities: setPlannedActivity(draft.activities, "2026-10-03", "travel", { halfDay: false, note: null }) };
     assert.equal(
       buildWeekSavePayload({ seatId: "seat-1", test: true, week, draft: onPassedDay, customers }).activities.some((entry) => entry.planDate === "2026-10-03"),
       false,
       "a day that has passed keeps what was saved — the save never sends an activity for it",
     );
-    const withoutTraining = { ...draft, activities: setPlannedActivity(draft.activities, "2026-10-07", null) };
+    const withoutTraining = { ...draft, activities: setPlannedActivity(draft.activities, "2026-10-07", "training", null) };
     assert.deepEqual(
       buildWeekSavePayload({ seatId: "seat-1", test: true, week, draft: withoutTraining, customers }).activities.map((entry) => entry.planDate),
       ["2026-10-04"],
       "an activity taken off is simply missing from the full list — that is how the save removes it",
     );
+
+    // 🔴 SEVERAL KINDS A DAY, ONE OF EACH (2026-09-30 — the old weekly plan's tick boxes; the day held one
+    // until then). Ticking a second kind KEEPS the first; ticking a kind again changes that kind only.
+    const meetingToo = setPlannedActivity(draft.activities, "2026-10-04", "meeting", { halfDay: true, note: null });
+    assert.deepEqual(
+      meetingToo.filter((entry) => entry.planDate === "2026-10-04").map((entry) => entry.activityType),
+      ["meeting", "sales_day"],
+      "a meeting ticked beside the sales day keeps the sales day — and the day reads in the order the boxes are ticked from",
+    );
+    const meetingAgain = setPlannedActivity(meetingToo, "2026-10-04", "meeting", { halfDay: false, note: "area meeting" });
+    assert.deepEqual(
+      meetingAgain.filter((entry) => entry.planDate === "2026-10-04").map((entry) => `${entry.activityType}|${entry.halfDay}|${entry.note}`),
+      ["meeting|false|area meeting", "sales_day|false|null"],
+      "a kind ticked again is changed in place — never a second meeting on the same day",
+    );
+    assert.deepEqual(
+      setPlannedActivity(meetingAgain, "2026-10-04", "sales_day", null).filter((entry) => entry.planDate === "2026-10-04").map((entry) => entry.activityType),
+      ["meeting"],
+      "unticking one kind takes that kind off and leaves the others",
+    );
+    const twoKinds = buildWeekSavePayload({ seatId: "seat-1", test: true, week, draft: { ...draft, activities: meetingAgain }, customers });
+    assert.deepEqual(
+      twoKinds.activities.map((entry) => `${entry.planDate}|${entry.activityType}`),
+      ["2026-10-04|meeting", "2026-10-04|sales_day", "2026-10-07|training"],
+      "both kinds on one day go with the save — the server keeps one of each, not one a day",
+    );
     assert.equal(
-      setPlannedActivity(draft.activities, "2026-10-04", { activityType: "meeting", halfDay: true, note: null }).filter((entry) => entry.planDate === "2026-10-04").length,
-      1,
-      "a day holds one activity: a new one replaces it",
+      weekSignature({ ...draft, activities: [...meetingAgain].reverse() }),
+      weekSignature({ ...draft, activities: meetingAgain }),
+      "the order the kinds were ticked in is not a change of its own",
     );
 
     // What the server would refuse, named before the save leaves the page — and a day his saved hours
@@ -391,7 +437,7 @@ export function runPhoenixCrmPlanBoardTests(): void {
     assert.deepEqual(weekProblems(week, pendingPlaced, byId, CAPS), [], "a customer not validated yet is planned with no place");
 
     // A save stands the draft over the version it made; a version it does not know sets it aside.
-    const saved = markWeekSaved(scope, week, { planId: "plan-1", version: 4 }, both.items, both.activities);
+    const saved = markWeekSaved(scope, week, { planId: "plan-1", version: 4 }, both);
     const reloaded: DraftWeek = { ...week, plan: { planId: "plan-1", version: 4 } };
     assert.equal(draftFits(saved, scope, week), true, "before the reload lands, the draft still stands over the version on screen");
     assert.equal(draftFits(saved, scope, reloaded), true, "and after it, over the version its own save made");
@@ -674,7 +720,7 @@ export function runPhoenixCrmPlanBoardTests(): void {
     const loaded = weekAt(5);
     const fresh = { ...startDraft(scope, loaded), items: placeCustomer(startDraft(scope, loaded).items, tick(WEDNESDAY, "am-2")) };
     const landedWeek = weekAt(6, [...ON_THE_WEDNESDAY, saved("am-2", "AM")]);
-    const afterSave = markWeekSaved(scope, loaded, { planId: "plan-1", version: 6 }, fresh.items, fresh.activities);
+    const afterSave = markWeekSaved(scope, loaded, { planId: "plan-1", version: 6 }, fresh);
     const cases = [
       { name: "a fresh draft, nothing saved this session", week: loaded, draft: fresh, back: ["am-1"] },
       {
@@ -763,6 +809,173 @@ export function runPhoenixCrmPlanBoardTests(): void {
       /<CrmButton disabled=\{locked\} onClick=\{onDiscard\} variant="danger">/,
       "the single press is marked destructive, the way the confirm's Discard was",
     );
+  }
+
+  // ── (h) The plan day's details: Start AM / Start PM, several activities, a whole brick ────────────
+  // The owner's walk of the old weekly plan (2026-09-29 videos): every day carries "Start AM 11:00 AM ·
+  // Start PM 2:00 PM", its Other Activities are tick boxes, and each brick heading has a box of its own
+  // that ticks the whole brick. His status sheet of 2026-09-30 marked all three not done (the activities
+  // "one per day only").
+  {
+    // Start times are minutes of the day, read and written as the module's own clock does.
+    assert.equal(startMinuteFromInput("11:00"), 660);
+    assert.equal(startMinuteFromInput(""), null, "an emptied field is no start time, never midnight");
+    assert.equal(startMinuteFromInput("25:00"), null);
+    assert.equal(startInputValue(1020), "17:00");
+    assert.equal(startInputValue(null), "");
+    assert.equal(describeDayStarts({ startAmMinute: 660, startPmMinute: 1020 }), "Start AM 11:00 AM · Start PM 5:00 PM", "the old weekly plan's own words");
+    assert.equal(describeDayStarts({ startAmMinute: null, startPmMinute: 1080 }), "Start PM 6:00 PM", "only the one he set");
+    assert.equal(describeDayStarts({ startAmMinute: null, startPmMinute: null }), null, "and nothing at all when he set neither");
+
+    // A Thursday is a morning: it keeps a Start AM and never a Start PM. A Friday holds nothing.
+    const THU = "2026-10-08";
+    const FRI = "2026-10-09";
+    assert.deepEqual(startsForDay(THU, { startAmMinute: 600, startPmMinute: 1080 }), { startAmMinute: 600, startPmMinute: null });
+    assert.deepEqual(startsForDay(FRI, { startAmMinute: 600, startPmMinute: 1080 }), { startAmMinute: null, startPmMinute: null });
+    assert.deepEqual(startsForDay("2026-10-05", { startAmMinute: 600, startPmMinute: 1080 }), { startAmMinute: 600, startPmMinute: 1080 });
+
+    // Setting a day's times replaces that day's; a day left with neither comes off the list.
+    let starts = setPlannedStart([], "2026-10-05", { startAmMinute: 660, startPmMinute: null });
+    starts = setPlannedStart(starts, "2026-10-04", { startAmMinute: null, startPmMinute: 1020 });
+    assert.deepEqual(starts.map((entry) => entry.planDate), ["2026-10-04", "2026-10-05"], "one entry a day, in day order");
+    starts = setPlannedStart(starts, "2026-10-05", { startAmMinute: 690, startPmMinute: 1050 });
+    assert.deepEqual(startsOn(starts, "2026-10-05"), { startAmMinute: 690, startPmMinute: 1050 }, "a day set again is changed in place");
+    assert.deepEqual(
+      setPlannedStart(starts, "2026-10-04", { startAmMinute: null, startPmMinute: null }).map((entry) => entry.planDate),
+      ["2026-10-05"],
+      "clearing both takes the day off the list — which is how the save clears it",
+    );
+    assert.deepEqual(startsOn(starts, "2026-10-06"), { startAmMinute: null, startPmMinute: null }, "a day with none reads as neither");
+
+    // The server's reading of a save body: dropped, never refused — a start time never loses the plan.
+    const open = new Set(["2026-10-04", "2026-10-05", THU]);
+    assert.deepEqual(
+      parsePlanDayStarts(
+        [
+          { planDate: "2026-10-03", startAmMinute: 600, startPmMinute: null }, // a day that cannot change
+          { planDate: "2026-10-04", startAmMinute: 1500, startPmMinute: 10.5 }, // neither is a minute of the day
+          { planDate: "2026-10-05", startAmMinute: 600, startPmMinute: null },
+          { planDate: "2026-10-05", startAmMinute: 630, startPmMinute: 1020 }, // the last one sent wins
+          { planDate: THU, startAmMinute: 570, startPmMinute: 1080 }, // a morning keeps no PM start
+          "nonsense",
+        ],
+        open,
+      ),
+      [
+        { planDate: "2026-10-05", startAmMinute: 630, startPmMinute: 1020 },
+        { planDate: THU, startAmMinute: 570, startPmMinute: null },
+      ],
+    );
+    assert.deepEqual(parsePlanDayStarts(undefined, open), [], "a caller that sends no list sends nothing");
+
+    // In the week's draft: a start time is a change, it rides on the save, and a Thursday PM never leaves.
+    const week: DraftWeek = {
+      weekStart: "2026-10-03",
+      plan: { planId: "plan-9", version: 2 },
+      days: [
+        draftDay("2026-10-03", false, [], [], { startAmMinute: 540, startPmMinute: null }),
+        draftDay("2026-10-04", true, [], [], { startAmMinute: 600, startPmMinute: 1020 }),
+        draftDay("2026-10-05", true),
+        draftDay("2026-10-06", true),
+        draftDay("2026-10-07", true),
+        draftDay(THU, true),
+      ],
+    };
+    const scope = weekScope("seat-9", true, week.weekStart);
+    assert.deepEqual(savedWeekStarts(week).map((entry) => entry.planDate), ["2026-10-04"], "a draft starts from the days that can still change");
+    let draft = startDraft(scope, week);
+    assert.equal(isWeekDirty(draft, week), false);
+    draft = { ...draft, starts: setPlannedStart(draft.starts, THU, { startAmMinute: 570, startPmMinute: 1080 }) };
+    assert.equal(isWeekDirty(draft, week), true, "setting a start time is unsaved work");
+    const payload = buildWeekSavePayload({ seatId: "seat-9", test: true, week, draft, customers: [] });
+    assert.deepEqual(
+      payload.starts,
+      [
+        { planDate: "2026-10-04", startAmMinute: 600, startPmMinute: 1020 },
+        { planDate: THU, startAmMinute: 570, startPmMinute: null },
+      ],
+      "the FULL start list of the editable days goes with the save — never the passed Saturday's, and never a Thursday PM",
+    );
+    const cleared = { ...draft, starts: setPlannedStart(draft.starts, "2026-10-04", { startAmMinute: null, startPmMinute: null }) };
+    assert.deepEqual(
+      buildWeekSavePayload({ seatId: "seat-9", test: true, week, draft: cleared, customers: [] }).starts.map((entry) => entry.planDate),
+      [THU],
+      "a day cleared is simply missing from the full list",
+    );
+    const saved = markWeekSaved(scope, week, { planId: "plan-9", version: 3 }, payload);
+    assert.equal(isWeekDirty(saved, { ...week, plan: { planId: "plan-9", version: 3 } }), false, "a saved start time holds nothing unsaved");
+    const changedAgain = { ...saved, starts: setPlannedStart(saved.starts, THU, { startAmMinute: 600, startPmMinute: null }) };
+    assert.deepEqual(
+      discardWeekDraft(changedAgain, week)?.starts,
+      payload.starts,
+      "Discard changes puts the start times back to the last save as well as the ticks",
+    );
+
+    // Several activities on one day, as "Suggest this day" reads them: taken whole when ANY takes the
+    // whole day, a half day only when every one is.
+    assert.equal(activityOn([], "2026-10-05"), null);
+    assert.deepEqual(activityOn([{ planDate: "2026-10-05", halfDay: true }], "2026-10-05"), { planDate: "2026-10-05", halfDay: true });
+    assert.deepEqual(
+      activityOn([{ planDate: "2026-10-05", halfDay: true }, { planDate: "2026-10-05", halfDay: false }], "2026-10-05"),
+      { planDate: "2026-10-05", halfDay: false },
+      "a half-day meeting beside a whole-day conference leaves no room for visits",
+    );
+    assert.deepEqual(
+      activityOn([{ planDate: "2026-10-05", halfDay: true }, { planDate: "2026-10-06", halfDay: false }], "2026-10-05"),
+      { planDate: "2026-10-05", halfDay: true },
+      "another day's activity never reaches this one",
+    );
+
+    // The brick's own box: the rest on in the order shown, only as many as fit; all on → all off.
+    const rows = ["b1", "b2", "b3", "b4", "b5"].map((id, index) => ({ id, placed: index === 1 }));
+    assert.deepEqual(brickTickState(rows, 10), { all: false, some: true, disabled: false }, "half-ticked while some are on");
+    assert.deepEqual(brickTickPress(rows, 10).place.map((row) => row.id), ["b1", "b3", "b4", "b5"], "a press places the rest, in the order shown");
+    assert.deepEqual(brickTickPress(rows, 2).place.map((row) => row.id), ["b1", "b3"], "and never more than the list has room for");
+    assert.deepEqual(brickTickPress(rows, 2).takeOff, [], "placing takes nobody off");
+    assert.equal(brickTickState(rows, 0).disabled, true, "with no room and the brick not whole, the box is off — as a customer's own is");
+    assert.deepEqual(brickTickPress(rows, 0).place, [], "and a press there places nobody");
+    const whole = rows.map((row) => ({ ...row, placed: true }));
+    assert.deepEqual(brickTickState(whole, 0), { all: true, some: false, disabled: false }, "a whole brick can always be taken off, full list or not");
+    assert.deepEqual(brickTickPress(whole, 0).takeOff.map((row) => row.id), ["b1", "b2", "b3", "b4", "b5"], "all on → one press takes the whole brick off");
+    assert.equal(brickTickState([], 5).disabled, true, "an empty brick has nothing to tick");
+    assert.equal(brickTickState(rows, 10, true).disabled, true, "and nothing ticks while the board is locked");
+
+    // The screen: the brick box sits in the heading both layouts share, and goes through the one tick.
+    const panel = stripComments(readFileSync("src/components/phoenix-crm/plan-day-panel.tsx", "utf8"));
+    assert.match(panel, /<BrickTick\s+dayName=\{dayName\}\s+label=\{group\.label\}\s+onPress=\{\(\) => pressBrick\(group\.rows, listType\)\}/, "every brick heading carries its box");
+    assert.match(panel, /const press = brickTickPress\(rows, room\[listType\]\);/, "the press is brickTickPress's, never a copy of it");
+    assert.match(panel, /for \(const row of press\.place\) toggle\(row, true\);/, "and each placement is the ordinary tick");
+    // The activities are tick boxes, one per kind, each with its own half day and note.
+    assert.match(panel, /PHOENIX_CRM_DAY_ACTIVITIES\.map\(\(entry\) => \{/);
+    assert.match(panel, /onChange\(entry\.key, event\.target\.checked \? \{ halfDay: false, note: null \} : null\)/, "ticking a kind adds it, unticking takes that kind off");
+    assert.doesNotMatch(panel, /label=\{`Other activity on/, "the one-of-several chooser is gone");
+    // Start AM / Start PM, and a Thursday offers the AM alone.
+    assert.match(panel, /label="Start AM"/);
+    assert.match(panel, /\{morning \? null : \(\s*<CrmField hint="Optional" htmlFor=\{pmId\} label="Start PM">/, "a morning has no Start PM");
+
+    // The board applies every change over the LATEST draft, so a brick's several ticks in one press all land.
+    const board = stripComments(readFileSync("src/components/phoenix-crm/plan-board.tsx", "utf8"));
+    assert.match(board, /setDrafts\(\(previous\) => \{\s*const current = previous\[state\.scope\];/, "change() reads the draft the previous tick made, never this render's");
+
+    // The server: one of each kind a day, and Today never asks for a single row.
+    const activitiesService = stripComments(readFileSync("src/lib/phoenix-crm/server/plan-activities.ts", "utf8"));
+    assert.match(activitiesService, /byDayAndKind\.set\(`\$\{planDate\}\|\$\{body\.activityType\}`/, "a save body keeps one of each kind a day");
+    const onDay = activitiesService.slice(activitiesService.indexOf("export async function loadPlannedActivitiesOn("));
+    assert.doesNotMatch(
+      onDay.slice(onDay.indexOf('.from("phoenix_crm_plan_activities")'), onDay.indexOf("throwIfError(activityError)")),
+      /maybeSingle/,
+      "a single-row read ERRORS once a day holds two — Today would stop opening on exactly those days",
+    );
+    const plans = stripComments(readFileSync("src/lib/phoenix-crm/server/plans.ts", "utf8"));
+    assert.match(plans, /if \(Array\.isArray\(body\.starts\)\) \{\s*await savePlanDayStarts\(/, "a caller that sends no start times leaves them as they were");
+
+    // The migration: the key widened to one of each kind, the save keyed on it, and the day's starts.
+    const sql = readFileSync("supabase/migrations/20260930213537_phoenix_crm_plan_day_details.sql", "utf8").replace(/--.*$/gm, "");
+    assert.match(sql, /add constraint phoenix_crm_plan_activities_one_of_each unique \(plan_id, plan_date, activity_type\);/);
+    assert.match(sql, /on conflict \(plan_id, plan_date, activity_type\) do update/, "the save upserts one of each kind, never one a day");
+    assert.doesNotMatch(sql, /distinct on \(x\.plan_date\)\s+v_plan\.id, x\.plan_date, x\.activity_type/, "and never folds a day's kinds into one");
+    assert.match(sql, /constraint phoenix_crm_plan_day_starts_one_a_day unique \(plan_id, plan_date\)/);
+    assert.match(sql, /constraint phoenix_crm_plan_day_starts_some check \(start_am_minute is not null or start_pm_minute is not null\)/, "a stored day has at least one time");
   }
 
   console.log("phoenix-crm plan board: OK");

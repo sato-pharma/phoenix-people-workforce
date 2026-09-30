@@ -47,6 +47,7 @@ import {
 import { summarizeReadiness } from "@/lib/phoenix-crm/coverage";
 import { cleanText, parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { checkDaySpread } from "@/lib/phoenix-crm/geo";
+import { noDayStarts, parsePlanDayStarts, type PlanDayStarts } from "@/lib/phoenix-crm/plan-day-starts";
 import {
   describeDayWindows,
   exceptionLabel,
@@ -90,6 +91,7 @@ import {
   savePlanActivities,
   type PlannedActivityRow,
 } from "@/lib/phoenix-crm/server/plan-activities";
+import { loadPlanDayStarts, savePlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
@@ -249,8 +251,12 @@ export type PlanDayView = {
   ramadan: boolean;
   /** Today or later: the rep may still change it. */
   editable: boolean;
-  /** The other activity planned for the day (a meeting, a sales day…), shown at the top of it. */
+  /** The other activities planned for the day (a meeting, a sales day…), one of each kind, shown at the top of it. */
+  activities: PlannedActivityRow[];
+  /** The first of `activities` — what this field carried while a day held one; kept for a caller one release behind. */
   activity: PlannedActivityRow | null;
+  /** When the rep means to start his AM and his PM rounds that day — his own statement, never a rule. */
+  starts: PlanDayStarts;
   items: PlanItemView[];
   counts: Record<PhoenixCrmListType, number>;
   spanKm: number;
@@ -289,7 +295,8 @@ export function buildDays(input: {
   itemRows: ReadonlyArray<Row>;
   farApartKm: number;
   isRamadan: (isoDay: string) => boolean;
-  activities?: ReadonlyMap<string, PlannedActivityRow>;
+  activities?: ReadonlyMap<string, PlannedActivityRow[]>;
+  starts?: ReadonlyMap<string, PlanDayStarts>;
 }): PlanDayView[] {
   const byDay = new Map<string, Row[]>();
   for (const row of input.itemRows) {
@@ -351,12 +358,15 @@ export function buildDays(input: {
         left.name.localeCompare(right.name),
     );
 
+    const activities = input.activities?.get(date) ?? [];
     return {
       date,
       listTypes: planDayListTypes(date),
       ramadan,
       editable: date >= input.cairoToday,
-      activity: input.activities?.get(date) ?? null,
+      activities,
+      activity: activities[0] ?? null,
+      starts: input.starts?.get(date) ?? noDayStarts(),
       items,
       counts,
       spanKm: spread.spanKm,
@@ -382,17 +392,18 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   throwIfError(planRowsResult.error);
   const planRows = (planRowsResult.data ?? []) as Row[];
   const planRow = planRows.find((row) => String(row.week_start) === weekStart) ?? null;
-  const [itemRows, names, activities, references] = await Promise.all([
+  const [itemRows, names, activities, starts, references] = await Promise.all([
     planRow ? loadPlanItemRows([String(planRow.id)], ITEM_COLUMNS) : Promise.resolve([] as Row[]),
     loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...planPeople(planRows)]),
     loadPlanActivities(planRow ? [String(planRow.id)] : []),
+    loadPlanDayStarts(planRow ? [String(planRow.id)] : []),
     loadPlannerReferences(seat.seatId, isTest, customers),
   ]);
 
   const settings = viewer.config.settings;
   const isRamadan = (isoDay: string) => isRamadanDay(isoDay, viewer.config.ramadanOverrides);
   const plan = planRow ? mapPlan(planRow, names) : null;
-  const days = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities });
+  const days = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts });
 
   const plannerCustomers: PlannerCustomer[] = customers.map((row) => {
     const customerId = String(row.id);
@@ -563,6 +574,17 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
       weekStart,
       editableDays,
       activities: parsePlanActivities(body.activities, open),
+    });
+  }
+  // So do its Start AM / Start PM, on the same terms: a caller that sends none leaves them as they were.
+  if (Array.isArray(body.starts)) {
+    await savePlanDayStarts({
+      seatId: seat.seatId,
+      actorHrId: viewer.hrId,
+      isTest,
+      weekStart,
+      editableDays,
+      starts: parsePlanDayStarts(body.starts, open),
     });
   }
   return {
