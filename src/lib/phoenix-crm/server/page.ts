@@ -13,9 +13,10 @@ import { isForbiddenError } from "@/lib/auth/server";
 import { ApiError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { PHOENIX_CRM_PORTAL_BASE } from "@/lib/phoenix-crm/modules";
 import { loadPhoenixCrmOverview, type PhoenixCrmOverview } from "@/lib/phoenix-crm/server/overview";
 
-export const PHOENIX_CRM_PORTAL_PATH = "/employee-portals/field-crm";
+export const PHOENIX_CRM_PORTAL_PATH = PHOENIX_CRM_PORTAL_BASE;
 export const PHOENIX_CRM_ADMIN_PATH = "/admin/field-crm";
 
 export type PhoenixCrmPageLoad =

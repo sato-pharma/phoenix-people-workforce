@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { PhoenixCrmApp } from "@/components/phoenix-crm/phoenix-crm-app";
+import { PhoenixCrmModuleChooser } from "@/components/phoenix-crm/module-chooser";
 import { CrmEmpty, CrmPanel } from "@/components/phoenix-crm/ui";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { isPhoenixCrmModuleKey, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import {
   loadPhoenixCrmPage,
   PHOENIX_CRM_ADMIN_PATH,
@@ -18,9 +19,14 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Phoenix CRM (the owner, 2026-09-16): the field force's customer lists, weekly plans, visits and
-// reports, built clean in Phoenix. The admin shell twin is /admin/field-crm. The pilot at
-// /employee-portals/phoenix-crm, the retired pilot, forwards here.
+// Phoenix CRM — THE CHOOSER (owner, 2026-09-30: "make the Phoenix CRM a button in the sidebar that
+// does not direct me into what it directs me today — it directs me to a page that has the SPLIT
+// modules"). This address used to open Today with every other module mounted beside it in one screen;
+// it now lists the modules, and each one is its own page at /employee-portals/field-crm/<module>.
+//
+// `?tab=` is kept and FORWARDED, never dropped: the portal's "+" actions, in-app notification links
+// and any address he has saved still carry it, and `?add=` rides along so "+ Add visit" still opens
+// the form on arrival. The admin shell twin is /admin/field-crm, which keeps its one-screen shape.
 export default async function PhoenixCrmPortalPage({
   searchParams,
 }: {
@@ -28,9 +34,15 @@ export default async function PhoenixCrmPortalPage({
 }) {
   const access = await resolveAccessContextFromPage();
   if (access.source === "guest") redirect("/login");
-  const tab = requestedPhoenixCrmTab((await searchParams).tab);
+  const params = await searchParams;
+  const tab = requestedPhoenixCrmTab(params.tab);
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect(`${PHOENIX_CRM_ADMIN_PATH}${phoenixCrmTabQuery(tab)}`);
+  }
+  // A named module goes straight to its own page, carrying `?add=` with it.
+  if (isPhoenixCrmModuleKey(tab)) {
+    const add = requestedPhoenixCrmTab(params.add);
+    redirect(`${phoenixCrmModulePath(PHOENIX_CRM_PORTAL_PATH, tab)}${add ? `?add=${add}` : ""}`);
   }
 
   const load = await loadPhoenixCrmPage(access);
@@ -38,7 +50,9 @@ export default async function PhoenixCrmPortalPage({
   if (load.kind === "ready") {
     return (
       <EmployeePortalPageShell badge="CRM" description={phoenixCrmPageDescription(load.overview)} title="Phoenix CRM">
-        <PhoenixCrmApp initialOverview={load.overview} initialTab={tab} surface="portal" />
+        <CrmPanel title="Phoenix CRM">
+          <PhoenixCrmModuleChooser base={PHOENIX_CRM_PORTAL_PATH} overview={load.overview} />
+        </CrmPanel>
       </EmployeePortalPageShell>
     );
   }
