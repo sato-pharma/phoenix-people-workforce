@@ -2037,6 +2037,7 @@ import { runSpotlightChequeGeneratorTests } from "./spotlight-cheque-generator.t
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 import { runSpotlightRepSelfTests } from "./spotlight-rep-self.test.ts";
 import { runSpotlightPortalLookTests } from "./spotlight-portal-look.test.ts";
+import { runShareCardTests } from "./share-card.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
@@ -7370,6 +7371,11 @@ await runTest(
 await runTest(
   "spotlight (self) wears the employee portal's look: the shell owns the only header (no second dark banner), cards use the portal's card + hover lift, and the no-scroll / no-truncation / collapsing-grid rules hold",
   runSpotlightPortalLookTests,
+);
+
+await runTest(
+  "social share (milestone card + spotlight sheet): the four targets are WhatsApp / Status / LinkedIn / Facebook, Status has no web composer, and the composers carry the first-person #SatoPharma caption",
+  runShareCardTests,
 );
 
 await runTest(
