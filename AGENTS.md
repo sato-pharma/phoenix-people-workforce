@@ -522,6 +522,15 @@ never merges; `--settle` closes only a PR already byte-identical on `main`. 🔴
 ALREADY OPEN, DO NOT MERGE ITS MEMBERS SEPARATELY** — it happened four minutes after one was built
 and commented on, because **a comment on a PR is not enforcement**. Check `gh pr list` for an open
 `codex/rollup-*` before merging anything small. Pinned by `tests/rollup-prs.test.ts`.
+🔴 **THE WINDOW IS ABOUT THREE MINUTES, SO A ROLL-UP MUST BE MERGED BEFORE ITS MEMBERS, NOT MERELY
+BUILT BEFORE THEM** (measured 2026-09-30). One opened at 13:16 lost both members by 13:18:55 — the
+first 90 seconds after being commented on — which with the morning's #4814 makes **three members lost
+in one day: the comment is a courtesy, never a guard.** So build it the moment `rollup-prs.mjs` names
+one and put it to him in the SAME turn; never hold it until the members go green, which is what
+`--apply`'s own 25-minute checks wait already covers. 🔴 **And if they land first, CLOSE it — never
+merge it:** it then replaces no merges, its files are byte-identical on `main` (the `carried`
+verdict), and merging is an empty squash paying a full `main` run. Account:
+`docs/ci-self-hosted-runner.md`, "A roll-up must be merged before its members".
 🔴 **MEASURE IN MINUTES, NEVER IN RUNS, AND NEVER FROM A SAMPLE — both lie**, and two sampled dollar
 figures were published and corrected before this was re-measured from every run of the month.
 `ci.yml` is ~89% of the bill, so nothing outside it is worth touching, and `main` already runs
