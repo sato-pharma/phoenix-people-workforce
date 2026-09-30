@@ -3,12 +3,21 @@
 /**
  * Phoenix CRM — one day of the plan board (owner, 2026-09-29).
  *
- *   - At the top, the day's OTHER ACTIVITY: one a day — a meeting, a conference, a health day, a sales
- *     day, training, admin work or travel — for the whole day or half of it, with a short note.
+ *   - Under the date, the day's START AM and START PM: when he means to start each round, as the old
+ *     weekly plan carried them on every day (2026-09-30). Both optional, a Thursday has no PM, and they
+ *     are his own statement — nothing is checked against them.
+ *   - At the top, the day's OTHER ACTIVITIES as tick boxes — a meeting, a conference, a health day, a
+ *     sales day, training, admin work, travel — ONE OF EACH KIND, so a meeting and travel on one day is
+ *     planned as exactly that (2026-09-30; the day held one until then). Each is for the whole day or
+ *     half of it, with a short note of its own.
  *   - Below it, the day's customers GROUPED BY BRICK WITH TICK BOXES, AM and PM apart (a Thursday is a
  *     morning, so it holds AM only). Ticking places the customer on the day and unticking takes him off.
  *     Each row shows his name, grade, speciality, brick and address, and a column of every day and hour
  *     he receives.
+ *   - EACH BRICK HAS ITS OWN TICK BOX (2026-09-30, as the old weekly plan's brick headers did): it places
+ *     every customer shown under the brick at once — as many as the list still has room for, in the
+ *     order shown — and, once they are all on the day, takes the whole brick off. It is only the ticks
+ *     he would have made one by one: no rule of its own.
  *   - NEVER BLOCKED BY HOURS (owner, 2026-09-30: "does not receive on Wednesday — never block, because
  *     the rep didn't add his time; add a column for timings but never block"). A tick places him on
  *     any day and asks nothing: the hours are the rep's own entry and may simply be missing.
@@ -44,7 +53,6 @@ import {
   CrmCardsOnPhone,
   CrmFillBar,
   CrmCheck,
-  CrmChoice,
   CrmField,
   CrmNote,
   CrmPill,
@@ -52,14 +60,16 @@ import {
   crmInputClassName,
   crmTdClassName,
   crmThClassName,
-  type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
 import { clusterByBrick, NO_BRICK_KEY } from "@/lib/phoenix-crm/brick-groups";
 import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
-import { PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
+import { dayActivityLabel, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
+import { describeDayStarts, startInputValue, startMinuteFromInput, type PlanDayStarts } from "@/lib/phoenix-crm/plan-day-starts";
 import { filterPlannerCustomers, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
 import type { PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import {
+  brickTickPress,
+  brickTickState,
   customerOnDay,
   dayCounts,
   dayFullness,
@@ -67,6 +77,7 @@ import {
   PLANNED_ACTIVITY_NOTE_MAX,
   resolveDayRows,
   roomOnDay,
+  type BrickTickState,
   type DailyCaps,
   type PlannedActivity,
 } from "@/lib/phoenix-crm/plan-week-draft";
@@ -120,7 +131,7 @@ function customerWords(customer: PlannerCustomer): Array<string | null> {
 }
 
 export function PlanDayPanel({
-  activity,
+  activities,
   caps,
   copyMenu,
   customers,
@@ -136,14 +147,16 @@ export function PlanDayPanel({
   onPlace,
   onQuery,
   onRemove,
+  onStarts,
   query,
   showSpread,
+  starts,
   suggestMenu,
   tints,
   today,
 }: {
-  /** The day's other activity as the draft holds it (editing), or null. */
-  activity: PlannedActivity | null;
+  /** The day's other activities as the draft holds them (editing), one of each kind. */
+  activities: ReadonlyArray<PlannedActivity>;
   caps: DailyCaps;
   /** "Copy a day", when the rep may change this day. */
   copyMenu?: ReactNode;
@@ -161,14 +174,18 @@ export function PlanDayPanel({
   /** The week's drafted placements. */
   items: ReadonlyArray<PlanItemDraft>;
   locked: boolean;
-  onActivity: (next: Omit<PlannedActivity, "planDate"> | null) => void;
+  /** Ticks one kind of activity on the day, or takes it off (null); the day's other kinds stay. */
+  onActivity: (activityType: PhoenixCrmDayActivity, next: Pick<PlannedActivity, "halfDay" | "note"> | null) => void;
   onFilter: (next: DoctorFilter) => void;
   onPlace: (item: PlanItemDraft) => void;
   onQuery: (next: string) => void;
   onRemove: (customerId: string) => void;
+  onStarts: (next: PlanDayStarts) => void;
   query: string;
   /** A reviewer's reading: the day's spread may show. Never true for a rep on his own plan. */
   showSpread: boolean;
+  /** The day's Start AM / Start PM: the draft's while he is changing the day, else what was saved. */
+  starts: PlanDayStarts;
   /** "Suggest this day", on the rep's own plan — disabled, with its reason, when the day cannot change. */
   suggestMenu?: ReactNode;
   tints: ReadonlyMap<string, BrickTint>;
@@ -182,6 +199,7 @@ export function PlanDayPanel({
   // Full: the day's rail turns emerald and the colour blooms off it (owner, 2026-09-30).
   const drafted = editing ? resolveDayRows(day, items, byId) : [];
   const full = dayFullness(editing ? dayCounts(drafted) : day.counts, caps, day.listTypes);
+  const startsText = describeDayStarts(starts);
 
   const header = (
     <CrmBlock
@@ -201,6 +219,11 @@ export function PlanDayPanel({
       title="Day"
     >
       <p className="break-words text-lg font-black leading-tight text-slate-950">{dayLabelLong(day.date)}</p>
+      {editing ? (
+        <DayStartsEditor dayName={dayName} idPrefix={`${idPrefix}-${day.date}`} locked={locked} morning={morning} onChange={onStarts} starts={starts} />
+      ) : startsText ? (
+        <p className="mt-1 break-words text-sm font-bold text-slate-700">{startsText}</p>
+      ) : null}
       {!day.editable || morning || day.ramadan ? (
         <div className="mt-3 grid min-w-0 gap-2">
           {!day.editable ? <CrmNote>This day has passed. It shows what was planned.</CrmNote> : null}
@@ -220,13 +243,17 @@ export function PlanDayPanel({
             {suggestMenu}
           </CrmBlock>
         ) : null}
-        <CrmBlock className="border-t border-slate-100" title="Other activity">
-          {day.activity ? (
-            <p className="break-words text-sm font-bold text-slate-800">
-              {day.activity.activityLabel}
-              {day.activity.halfDay ? " · half day" : " · whole day"}
-              {day.activity.note ? <span className="block break-words text-xs font-semibold leading-5 text-slate-500">{day.activity.note}</span> : null}
-            </p>
+        <CrmBlock className="border-t border-slate-100" title="Other activities">
+          {day.activities.length > 0 ? (
+            <ul className="grid min-w-0 gap-2">
+              {day.activities.map((activity) => (
+                <li className="break-words text-sm font-bold text-slate-800" key={activity.activityType}>
+                  {activity.activityLabel}
+                  {activity.halfDay ? " · half day" : " · whole day"}
+                  {activity.note ? <span className="block break-words text-xs font-semibold leading-5 text-slate-500">{activity.note}</span> : null}
+                </li>
+              ))}
+            </ul>
           ) : (
             <p className="text-sm font-medium text-slate-500">No other activity planned.</p>
           )}
@@ -301,14 +328,24 @@ export function PlanDayPanel({
     onPlace({ planDate: day.date, customerId: row.customerId, placeId: row.placeId, exceptionType: null, exceptionNote: null });
   }
 
+  // A whole brick at once: exactly the ticks he would make one by one, through the same `toggle`, so a
+  // brick carries no rule of its own (`brickTickPress` decides which). The board applies each over the
+  // draft the one before it made, so none of them is lost.
+  function pressBrick(rows: ReadonlyArray<TickRow>, listType: PhoenixCrmListType) {
+    if (locked) return;
+    const press = brickTickPress(rows, room[listType]);
+    for (const row of press.takeOff) toggle(row, false);
+    for (const row of press.place) toggle(row, true);
+  }
+
   const tickRowProps = { dayName, idPrefix, locked, onToggle: toggle, room };
 
   return (
     <div className="min-w-0">
       {header}
 
-      <CrmBlock className="border-t border-slate-100" title="Other activity">
-        <ActivityEditor activity={activity} dayName={dayName} idPrefix={`${idPrefix}-${day.date}`} locked={locked} onChange={onActivity} />
+      <CrmBlock className="border-t border-slate-100" title="Other activities">
+        <ActivityEditor activities={activities} dayName={dayName} idPrefix={`${idPrefix}-${day.date}`} locked={locked} onChange={onActivity} />
       </CrmBlock>
 
       {suggestMenu || copyMenu ? (
@@ -378,7 +415,12 @@ export function PlanDayPanel({
                       return (
                         <div className="min-w-0 border border-slate-200" key={group.key}>
                           <div className={cn("flex min-w-0 flex-wrap items-center justify-between gap-2 border-l-[3px] px-3 py-2", tint.bar, tint.fill)}>
-                            <p className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-700">{group.label}</p>
+                            <BrickTick
+                              dayName={dayName}
+                              label={group.label}
+                              onPress={() => pressBrick(group.rows, listType)}
+                              state={brickTickState(group.rows, room[listType], locked)}
+                            />
                             <span className="text-xs font-bold text-slate-600">
                               {countText(ticked)} of {countText(group.rows.length)} placed
                             </span>
@@ -433,61 +475,176 @@ export function PlanDayPanel({
   );
 }
 
-// ── The other activity ──────────────────────────────────────────────────────────────────────────
+// ── The day's start times ───────────────────────────────────────────────────────────────────────
 
+/**
+ * Start AM and Start PM, the old weekly plan's own two fields — his statement of when each round
+ * starts, never a rule: an empty field is simply a day he did not set one for, and nothing he ticks is
+ * checked against it. A Thursday is a morning, so it offers Start AM alone.
+ */
+function DayStartsEditor({
+  dayName,
+  idPrefix,
+  locked,
+  morning,
+  onChange,
+  starts,
+}: {
+  dayName: string;
+  idPrefix: string;
+  locked: boolean;
+  morning: boolean;
+  onChange: (next: PlanDayStarts) => void;
+  starts: PlanDayStarts;
+}) {
+  const amId = `${idPrefix}-start-am`;
+  const pmId = `${idPrefix}-start-pm`;
+  return (
+    <div aria-label={`When the rounds start on ${dayName}`} className={cn("mt-3 grid min-w-0 gap-3", morning ? "sm:max-w-[14rem]" : "grid-cols-2 sm:max-w-md")} role="group">
+      {/* `appearance-none`, as on every time input in the module: without it iOS draws its own rounded control. */}
+      <CrmField hint="Optional" htmlFor={amId} label="Start AM">
+        <input
+          className={cn(crmInputClassName, "appearance-none")}
+          disabled={locked}
+          id={amId}
+          onChange={(event) => onChange({ startAmMinute: startMinuteFromInput(event.target.value), startPmMinute: starts.startPmMinute })}
+          step={300}
+          type="time"
+          value={startInputValue(starts.startAmMinute)}
+        />
+      </CrmField>
+      {morning ? null : (
+        <CrmField hint="Optional" htmlFor={pmId} label="Start PM">
+          <input
+            className={cn(crmInputClassName, "appearance-none")}
+            disabled={locked}
+            id={pmId}
+            onChange={(event) => onChange({ startAmMinute: starts.startAmMinute, startPmMinute: startMinuteFromInput(event.target.value) })}
+            step={300}
+            type="time"
+            value={startInputValue(starts.startPmMinute)}
+          />
+        </CrmField>
+      )}
+    </div>
+  );
+}
+
+// ── The other activities ────────────────────────────────────────────────────────────────────────
+
+/**
+ * The day's other activities as TICK BOXES, one of each kind (2026-09-30): the old weekly plan ticks
+ * them, and a meeting and travel on one day is an ordinary day. Each ticked kind opens its own line
+ * under the boxes, with its half-day box and its own short note.
+ *
+ * The seven boxes sit in the module's seven-way grid (ui.tsx `CrmChoice` columns 7): two on a phone,
+ * four from sm, all seven in one row at lg, and the last one spanning the gap the odd count leaves.
+ */
 function ActivityEditor({
-  activity,
+  activities,
   dayName,
   idPrefix,
   locked,
   onChange,
 }: {
-  activity: PlannedActivity | null;
+  activities: ReadonlyArray<PlannedActivity>;
   dayName: string;
   idPrefix: string;
   locked: boolean;
-  onChange: (next: Omit<PlannedActivity, "planDate"> | null) => void;
+  onChange: (activityType: PhoenixCrmDayActivity, next: Pick<PlannedActivity, "halfDay" | "note"> | null) => void;
 }) {
-  const noteId = `${idPrefix}-activity-note`;
-  const options: ReadonlyArray<CrmChoiceOption<"none" | PhoenixCrmDayActivity>> = [
-    { value: "none", label: "None", disabled: locked },
-    ...PHOENIX_CRM_DAY_ACTIVITIES.map((entry) => ({ value: entry.key, label: entry.label, disabled: locked })),
-  ];
+  const byKind = new Map(activities.map((activity) => [activity.activityType, activity]));
   return (
     <div className="grid min-w-0 gap-3">
-      <p className="break-words text-sm font-medium leading-6 text-slate-600">A meeting, a conference or another activity planned for {dayName}. It changes no call rate.</p>
-      <CrmChoice
-        columns={4}
-        label={`Other activity on ${dayName}`}
-        onChange={(next) =>
-          onChange(next === "none" ? null : { activityType: next, halfDay: activity?.halfDay ?? false, note: activity?.note ?? null })
-        }
-        options={options}
-        value={activity?.activityType ?? "none"}
-      />
-      {activity ? (
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2 sm:items-start">
-          <CrmCheck
-            checked={activity.halfDay}
-            disabled={locked}
-            onChange={(halfDay) => onChange({ activityType: activity.activityType, halfDay, note: activity.note })}
+      <p className="break-words text-sm font-medium leading-6 text-slate-600">
+        Tick every activity planned for {dayName} — a meeting, a conference, travel. They change no call rate.
+      </p>
+      <div
+        aria-label={`Other activities on ${dayName}`}
+        className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 lg:grid-cols-7 [&>*:last-child]:col-span-2 lg:[&>*:last-child]:col-span-1"
+        role="group"
+      >
+        {PHOENIX_CRM_DAY_ACTIVITIES.map((entry) => {
+          const chosen = byKind.get(entry.key) ?? null;
+          return (
+            <label
+              className={cn(
+                "flex min-h-11 min-w-0 cursor-pointer items-center gap-2.5 border px-3 py-2 text-sm font-black transition",
+                chosen ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+                locked && "cursor-not-allowed opacity-50",
+              )}
+              key={entry.key}
+            >
+              <input
+                checked={chosen !== null}
+                className="h-4 w-4 shrink-0 rounded-none accent-orange-600"
+                disabled={locked}
+                onChange={(event) => onChange(entry.key, event.target.checked ? { halfDay: false, note: null } : null)}
+                type="checkbox"
+              />
+              <span className="min-w-0 break-words">{entry.label}</span>
+            </label>
+          );
+        })}
+      </div>
+      {activities.map((activity) => {
+        const noteId = `${idPrefix}-activity-${activity.activityType}-note`;
+        const label = dayActivityLabel(activity.activityType);
+        return (
+          <div
+            className="grid min-w-0 gap-3 border border-l-[3px] border-slate-200 border-l-orange-500 bg-white px-3 py-3 sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)_minmax(0,1.3fr)] sm:items-start"
+            key={activity.activityType}
           >
-            Half day — the rest of the day is for visits
-          </CrmCheck>
-          <CrmField hint="Optional" htmlFor={noteId} label="Short note">
-            <input
-              className={crmInputClassName}
+            <p className="break-words text-sm font-black text-slate-950">{label}</p>
+            <CrmCheck
+              checked={activity.halfDay}
               disabled={locked}
-              id={noteId}
-              maxLength={PLANNED_ACTIVITY_NOTE_MAX}
-              onChange={(event) => onChange({ activityType: activity.activityType, halfDay: activity.halfDay, note: event.target.value })}
-              type="text"
-              value={activity.note ?? ""}
-            />
-          </CrmField>
-        </div>
-      ) : null}
+              onChange={(halfDay) => onChange(activity.activityType, { halfDay, note: activity.note })}
+            >
+              Half day — the rest of the day is for visits
+            </CrmCheck>
+            <CrmField hint="Optional" htmlFor={noteId} label={`Short note · ${label}`}>
+              <input
+                className={crmInputClassName}
+                disabled={locked}
+                id={noteId}
+                maxLength={PLANNED_ACTIVITY_NOTE_MAX}
+                onChange={(event) => onChange(activity.activityType, { halfDay: activity.halfDay, note: event.target.value })}
+                type="text"
+                value={activity.note ?? ""}
+              />
+            </CrmField>
+          </div>
+        );
+      })}
     </div>
+  );
+}
+
+// ── A whole brick ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The brick's own tick box, in the brick's heading (2026-09-30, the old weekly plan's brick headers):
+ * checked, half-ticked or clear by `brickTickState`, and a press does what `brickTickPress` says. It
+ * stands in the heading, not in a row, so the phone's cards and the desktop's table share the one box.
+ */
+function BrickTick({ dayName, label, onPress, state }: { dayName: string; label: string; onPress: () => void; state: BrickTickState }) {
+  return (
+    <label className={cn("flex min-w-0 cursor-pointer items-center gap-2.5", state.disabled && "cursor-not-allowed")}>
+      <input
+        aria-label={state.all ? `Take every customer in ${label} off ${dayName}` : `Plan every customer in ${label} on ${dayName}`}
+        checked={state.all}
+        className="h-5 w-5 shrink-0 rounded-none accent-orange-600"
+        disabled={state.disabled}
+        onChange={onPress}
+        // "Half-ticked" is a property, not an attribute: it can only be set on the element itself.
+        ref={(node) => {
+          if (node) node.indeterminate = state.some;
+        }}
+        type="checkbox"
+      />
+      <span className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-700">{label}</span>
+    </label>
   );
 }
 

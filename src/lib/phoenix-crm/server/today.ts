@@ -4,7 +4,7 @@ import { describeDayWindows } from "@/lib/phoenix-crm/plan-rules";
 import { canWriteAsRep, isLocationBlind, readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { textOrNull } from "@/lib/phoenix-crm/server/db";
-import { loadPlannedActivityOn, type PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
+import { loadPlannedActivitiesOn, type PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
 import { loadPlannerReferences, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { windowsForWeekday } from "@/lib/phoenix-crm/timings";
@@ -52,7 +52,9 @@ export type TodayView = {
    * Why there is nothing to show, in one sentence — including which state an unapproved plan is in
    * (owner, 2026-09-30). One sentence, never two: `todayEmptyReason` folds the plan's status in.
    */
-  /** What he planned the day as, when it was not only calls — a meeting, training, a sales day. */
+  /** What he planned the day as, when it was not only calls — a meeting, training, a sales day; one of each kind. */
+  plannedActivities: PlannedActivityRow[];
+  /** The first of `plannedActivities` — what this field carried while a day held one; kept for a caller one release behind. */
   plannedActivity: PlannedActivityRow | null;
   /** What he recorded the day as, if anything. A record only: it moves no figure. */
   dayActivity: DayActivityRow | null;
@@ -68,11 +70,11 @@ export async function loadPhoenixCrmToday(
   const ramadan = isRamadanDay(date, viewer.config.ramadanOverrides);
   const weekday = weekdayOfIsoDay(date);
 
-  const [{ customers, placesByCustomer }, planned, visitRows, plannedActivity, dayActivity] = await Promise.all([
+  const [{ customers, placesByCustomer }, planned, visitRows, plannedActivities, dayActivity] = await Promise.all([
     loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
     plannedCustomersOn(seat.seatId, isTest, date),
     loadVisitRowsForDay(seat.seatId, isTest, date, { blind: isLocationBlind(viewer, seat) }),
-    loadPlannedActivityOn(seat.seatId, isTest, date),
+    loadPlannedActivitiesOn(seat.seatId, isTest, date),
     loadDayActivityOn(seat.seatId, isTest, date),
   ]);
 
@@ -140,7 +142,8 @@ export async function loadPhoenixCrmToday(
     date,
     target: { am: viewer.config.settings.callRateAmTarget, pm: viewer.config.settings.callRatePmTarget },
     canAdd: canEnterVisits(viewer, seat.seatId, isTest),
-    plannedActivity,
+    plannedActivities,
+    plannedActivity: plannedActivities[0] ?? null,
     dayActivity,
     canSetDayActivity: canWriteAsRep(viewer, seat, isTest),
     emptyReason: todayEmptyReason({

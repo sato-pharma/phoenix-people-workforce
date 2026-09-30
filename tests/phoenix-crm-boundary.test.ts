@@ -474,6 +474,10 @@ const LATER_MIGRATIONS = [
   // new table, one new function, and the two plan transitions — still one plan-event insert each.
   // It replaces no save_visit, so it appends safely after part two.
   "supabase/migrations/20260929235555_phoenix_crm_plan_weeks.sql",
+  // The plan day's details (2026-09-30): one of each kind of other activity a day where part three
+  // allowed one, and the day's Start AM / Start PM. One new table, one new function, and part three's
+  // save_plan_activities replaced — so it appends after part three.
+  "supabase/migrations/20260930213537_phoenix_crm_plan_day_details.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

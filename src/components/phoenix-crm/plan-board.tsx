@@ -56,6 +56,8 @@ import {
   type NoteTone,
 } from "@/components/phoenix-crm/ui";
 import { monthEndOf, monthKeyOf } from "@/lib/phoenix-crm/calendar";
+import type { PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
+import { setPlannedStart, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
 import { EMPTY_DOCTOR_FILTER, plannerBricks, plannerGrades, plannerSpecialities, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
 import { isPlanEditable, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import { monthPlacements } from "@/lib/phoenix-crm/plan-suggest";
@@ -75,6 +77,7 @@ import {
   rebaseDraft,
   savedWeekActivities,
   savedWeekItems,
+  savedWeekStarts,
   setPlannedActivity,
   startDraft,
   takeOffCustomer,
@@ -85,6 +88,7 @@ import {
   type DailyCaps,
   type DraftProblem,
   type PlannedActivity,
+  type WeekContent,
   type WeekDraft,
 } from "@/lib/phoenix-crm/plan-week-draft";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
@@ -138,6 +142,7 @@ type WeekState = {
   settled: boolean;
   items: PlanItemDraft[];
   activities: PlannedActivity[];
+  starts: PlannedDayStart[];
   dirty: boolean;
   /** Planned customers the next save changes by itself (left the list, or moved place). */
   fixes: number;
@@ -261,6 +266,7 @@ export function PlanBoard({
         const draft = fits || heldOver ? raw : null;
         const items = draft ? draft.items : editable ? savedWeekItems(week) : [];
         const activities = draft ? draft.activities : editable ? savedWeekActivities(week) : [];
+        const starts = draft ? draft.starts : editable ? savedWeekStarts(week) : [];
         const dirty = heldOver || (fits && isWeekDirty(draft, week));
         return {
           week,
@@ -272,6 +278,7 @@ export function PlanBoard({
           settled: holdSettled(raw, week, flag !== null),
           items,
           activities,
+          starts,
           dirty,
           fixes: editable ? weekFixes(week, items, byId) : 0,
           problems: editable ? weekProblems(week, items, byId, caps) : [],
@@ -362,7 +369,12 @@ export function PlanBoard({
 
   // ── Changing a week's draft ───────────────────────────────────────────────────────────────────
 
-  function change(state: WeekState, update: (draft: WeekDraft) => Pick<WeekDraft, "items" | "activities">) {
+  /**
+   * One change to a week's draft, over the latest draft — never the one this render saw — so several in
+   * one click (a whole brick ticked at once) apply in order and none is lost. A list the change leaves
+   * out stays as it was.
+   */
+  function change(state: WeekState, update: (draft: WeekDraft) => Partial<WeekContent>) {
     if (!state.editable || locked) return;
     setDrafts((previous) => {
       const current = previous[state.scope];
@@ -373,22 +385,26 @@ export function PlanBoard({
   }
 
   function place(state: WeekState, item: PlanItemDraft) {
-    change(state, (draft) => ({ items: placeCustomer(draft.items, item), activities: draft.activities }));
+    change(state, (draft) => ({ items: placeCustomer(draft.items, item) }));
   }
 
   function remove(state: WeekState, date: string, customerId: string) {
-    change(state, (draft) => ({ items: takeOffCustomer(draft.items, date, customerId), activities: draft.activities }));
+    change(state, (draft) => ({ items: takeOffCustomer(draft.items, date, customerId) }));
   }
 
-  function planActivity(state: WeekState, date: string, next: Omit<PlannedActivity, "planDate"> | null) {
-    change(state, (draft) => ({ items: draft.items, activities: setPlannedActivity(draft.activities, date, next) }));
+  function planActivity(state: WeekState, date: string, activityType: PhoenixCrmDayActivity, next: Pick<PlannedActivity, "halfDay" | "note"> | null) {
+    change(state, (draft) => ({ activities: setPlannedActivity(draft.activities, date, activityType, next) }));
+  }
+
+  function planStarts(state: WeekState, date: string, next: PlanDayStarts) {
+    change(state, (draft) => ({ starts: setPlannedStart(draft.starts, date, next) }));
   }
 
   /** A copy fills the drafts of the weeks it reached — it never saves and never sends. */
   function addCopies(placements: CopiedPlacements) {
     for (const [copiedWeek, additions] of placements) {
       const state = states.find((entry) => entry.week.weekStart === copiedWeek);
-      if (state) change(state, (draft) => ({ items: addCopiedItems(draft.items, additions), activities: draft.activities }));
+      if (state) change(state, (draft) => ({ items: addCopiedItems(draft.items, additions) }));
     }
   }
 
@@ -450,7 +466,7 @@ export function PlanBoard({
     const payload = buildWeekSavePayload({ seatId, test, week: state.week, draft: state.draft, customers: view.customers });
     try {
       const saved = await crmPost<SavedPlan>("/api/phoenix-crm/plans", payload, "plan");
-      setDrafts((previous) => ({ ...previous, [state.scope]: markWeekSaved(state.scope, state.week, saved, payload.items, payload.activities) }));
+      setDrafts((previous) => ({ ...previous, [state.scope]: markWeekSaved(state.scope, state.week, saved, payload) }));
       setHolds((previous) => withoutKey(previous, state.scope));
       return saved;
     } catch (error) {
@@ -1055,7 +1071,7 @@ export function PlanBoard({
               items={selected.items}
               key={selected.week.weekStart}
               locked={locked}
-              onActivity={(date, next) => planActivity(selected, date, next)}
+              onActivity={(date, activityType, next) => planActivity(selected, date, activityType, next)}
               onCopied={addCopies}
               onDay={setDay}
               onDecide={(action, note) => decideWeek(selected, action, note)}
@@ -1067,6 +1083,7 @@ export function PlanBoard({
               onReopen={() => void reopenWeek(selected)}
               onSend={() => void sendWeek(selected)}
               onShowLatest={() => showLatest(selected)}
+              onStarts={(date, next) => planStarts(selected, date, next)}
               problems={selected.problems}
               query={query}
               reviewerSentence={reviewerSentence(view)}
@@ -1074,6 +1091,7 @@ export function PlanBoard({
               selectedDay={selectedDay}
               showProblems={showProblems}
               showSpread={showSpread}
+              starts={selected.starts}
               suggest={suggest}
               test={test}
               tints={tints}

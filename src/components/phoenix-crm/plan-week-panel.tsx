@@ -30,11 +30,13 @@ import { PlanCopyMenu, PlanSuggestMenu, type CopiedPlacements, type SuggestConte
 import { PlanDayPanel } from "@/components/phoenix-crm/plan-day-panel";
 import { decisionBusy, PlanDecision, type PlanDecisionAction } from "@/components/phoenix-crm/plan-decision";
 import { CrmBlock, CrmButton, CrmChoice, CrmFacts, CrmNote, CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
-import { dayActivityLabel } from "@/lib/phoenix-crm/day-activities";
+import { dayActivityLabel, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
+import { startsOn, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
 import type { DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
 import type { PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
-import { daySuggestBlock, weekSuggestBlock, type SuggestBlock, type SuggestInput } from "@/lib/phoenix-crm/plan-suggest";
+import { activityOn, daySuggestBlock, weekSuggestBlock, type SuggestBlock, type SuggestInput } from "@/lib/phoenix-crm/plan-suggest";
 import {
+  activitiesOn,
   dayCounts,
   dayFullness,
   indexCustomers,
@@ -94,14 +96,17 @@ function weekSuggestReason(block: SuggestBlock | null): string | null {
   return "Every day left this week already has its target placed.";
 }
 
-function daySuggestReason(block: SuggestBlock | null, date: string, activity: PlannedActivity | null): string | null {
+/** Why "Suggest this day" is off, naming the activity that takes the day when one does. */
+function daySuggestReason(block: SuggestBlock | null, date: string, activities: ReadonlyArray<PlannedActivity>): string | null {
   if (block === null) return null;
   const name = dayLabel(date);
   if (block === "passed") return "This day has passed.";
   if (block === "activity") {
-    return `${activity ? dayActivityLabel(activity.activityType) : "Another activity"} takes the whole of ${name}. Make it a half day to plan visits too.`;
+    const whole = activities.find((activity) => !activity.halfDay);
+    return `${whole ? dayActivityLabel(whole.activityType) : "Another activity"} takes the whole of ${name}. Make it a half day to plan visits too.`;
   }
-  return `${name} already has its target placed${activity?.halfDay ? " beside its half-day activity" : ""}.`;
+  const halfDays = activities.length > 0 && activities.every((activity) => activity.halfDay);
+  return `${name} already has its target placed${halfDays ? ` beside its half-day ${activities.length === 1 ? "activity" : "activities"}` : ""}.`;
 }
 
 /**
@@ -148,6 +153,7 @@ export function PlanWeekPanel({
   onReopen,
   onSend,
   onShowLatest,
+  onStarts,
   problems,
   query,
   reviewerSentence,
@@ -155,6 +161,7 @@ export function PlanWeekPanel({
   selectedDay,
   showProblems,
   showSpread,
+  starts,
   suggest,
   test,
   tints,
@@ -162,7 +169,7 @@ export function PlanWeekPanel({
   viewerIsRep,
   week,
 }: {
-  /** The week's drafted activities (editable weeks only). */
+  /** The week's drafted activities, one of each kind a day (editable weeks only). */
   activities: ReadonlyArray<PlannedActivity>;
   busy: WeekBusy | null;
   caps: DailyCaps;
@@ -182,7 +189,7 @@ export function PlanWeekPanel({
   /** The week's drafted placements (editable weeks only). */
   items: ReadonlyArray<PlanItemDraft>;
   locked: boolean;
-  onActivity: (date: string, next: Omit<PlannedActivity, "planDate"> | null) => void;
+  onActivity: (date: string, activityType: PhoenixCrmDayActivity, next: Pick<PlannedActivity, "halfDay" | "note"> | null) => void;
   onCopied: (placements: CopiedPlacements) => void;
   onDay: (date: string) => void;
   onDecide: (action: PlanDecisionAction, note: string) => Promise<boolean>;
@@ -194,6 +201,7 @@ export function PlanWeekPanel({
   onReopen: () => void;
   onSend: () => void;
   onShowLatest: () => void;
+  onStarts: (date: string, next: PlanDayStarts) => void;
   problems: ReadonlyArray<DraftProblem>;
   query: string;
   /** "Ahmed Samir reviews it." */
@@ -202,6 +210,8 @@ export function PlanWeekPanel({
   selectedDay: PlanDayView;
   showProblems: boolean;
   showSpread: boolean;
+  /** The week's drafted Start AM / Start PM (editable weeks only). */
+  starts: ReadonlyArray<PlannedDayStart>;
   /** The grade numbers and the month so far, for the two suggestions — null for anyone but the rep. */
   suggest: SuggestContext | null;
   test: boolean;
@@ -230,7 +240,7 @@ export function PlanWeekPanel({
 
   // The two suggestions read the same draft a copy does, and land through the same onCopied.
   const suggestInput: SuggestInput | null = suggest && editable ? { week, items, activities, customers, caps, ...suggest } : null;
-  const dayActivity = editingDay ? (activities.find((entry) => entry.planDate === selectedDay.date) ?? null) : null;
+  const dayActivities = editingDay ? activitiesOn(activities, selectedDay.date) : [];
   const weekReason = !suggest
     ? null
     : editable
@@ -240,9 +250,9 @@ export function PlanWeekPanel({
     ? null
     : editable
       ? daySuggestReason(
-          daySuggestBlock({ day: selectedDay, items, activity: dayActivity, customers, caps, dayTargets: suggest.dayTargets }),
+          daySuggestBlock({ day: selectedDay, items, activity: activityOn(dayActivities, selectedDay.date), customers, caps, dayTargets: suggest.dayTargets }),
           selectedDay.date,
-          dayActivity,
+          dayActivities,
         )
       : weekClosedReason(week);
 
@@ -443,8 +453,8 @@ export function PlanWeekPanel({
           label="Day"
           onChange={onDay}
           options={week.days.map((day) => {
-            const activityType =
-              editable && day.editable ? activities.find((entry) => entry.planDate === day.date)?.activityType : day.activity?.activityType;
+            // Every kind the day holds, in the order they are ticked from — never only the first.
+            const activityTypes = (editable && day.editable ? activitiesOn(activities, day.date) : day.activities).map((entry) => entry.activityType);
             const counts = dayCountsOf(day);
             const full = dayFullness(counts, caps, day.listTypes);
             return {
@@ -454,7 +464,7 @@ export function PlanWeekPanel({
                 <>
                   {day.date === today ? "Today · " : null}
                   <DayPair counts={counts} full={full} listTypes={day.listTypes} />
-                  {activityType ? ` · ${dayActivityLabel(activityType)}` : null}
+                  {activityTypes.length > 0 ? ` · ${activityTypes.map(dayActivityLabel).join(", ")}` : null}
                 </>
               ),
               tone: full.day ? ("good" as const) : undefined,
@@ -465,7 +475,7 @@ export function PlanWeekPanel({
       </CrmBlock>
 
       <PlanDayPanel
-        activity={dayActivity}
+        activities={dayActivities}
         caps={caps}
         copyMenu={
           editingDay ? (
@@ -490,13 +500,15 @@ export function PlanWeekPanel({
         items={items}
         key={selectedDay.date}
         locked={locked}
-        onActivity={(next) => onActivity(selectedDay.date, next)}
+        onActivity={(activityType, next) => onActivity(selectedDay.date, activityType, next)}
         onFilter={onFilter}
         onPlace={onPlace}
         onQuery={onQuery}
         onRemove={(customerId) => onRemove(selectedDay.date, customerId)}
+        onStarts={(next) => onStarts(selectedDay.date, next)}
         query={query}
         showSpread={showSpread}
+        starts={editingDay ? startsOn(starts, selectedDay.date) : selectedDay.starts}
         suggestMenu={
           suggest ? (
             <PlanSuggestMenu

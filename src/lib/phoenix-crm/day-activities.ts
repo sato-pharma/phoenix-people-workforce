@@ -52,6 +52,12 @@ export function dayActivityLabel(value: PhoenixCrmDayActivity): string {
   return PHOENIX_CRM_DAY_ACTIVITIES.find((entry) => entry.key === value)?.label ?? value;
 }
 
+/** Where a kind sits in the list above — so a day holding several reads them in the order he ticks them from. */
+export function dayActivityRank(value: PhoenixCrmDayActivity): number {
+  const index = PHOENIX_CRM_DAY_ACTIVITIES.findIndex((entry) => entry.key === value);
+  return index < 0 ? PHOENIX_CRM_DAY_ACTIVITIES.length : index;
+}
+
 export type DayActivityDraft = {
   activityType: PhoenixCrmDayActivity;
   halfDay: boolean;

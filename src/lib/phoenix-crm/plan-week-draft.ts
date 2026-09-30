@@ -17,8 +17,9 @@
  *   - a customer placed on a day his saved hours do not cover is never blocked and asks nothing (owner,
  *     2026-09-30), and a day holds the AM and PM caps at most — the plan's only hard limits
  *     (plan-rules.ts);
- *   - the day's planned activity rides on the same save, and the FULL list for the editable days is
- *     sent every time, so taking one off is a save like any other.
+ *   - the day's other activities — one of EACH kind, since a meeting and travel on one day is an
+ *     ordinary day (2026-09-30) — and its Start AM / Start PM ride on the same save, and the FULL lists
+ *     for the editable days are sent every time, so taking one off is a save like any other.
  *
  * And the three copies (plan-copy.ts places them): a customer lands on his day whatever hours are saved
  * against it (owner, 2026-09-30 — never block on a time the rep did not enter), and every copy is
@@ -27,8 +28,9 @@
  */
 
 import { fieldWeekStart, weekdayOfIsoDay, weekNumberInMonth } from "@/lib/phoenix-crm/calendar";
-import type { PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
+import { dayActivityRank, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import type { CopySourcePlacement, CopyWeek } from "@/lib/phoenix-crm/plan-copy";
+import { hasDayStarts, startsForDay, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
 import { PLAN_EXCEPTION_TYPES, type PlanExceptionType, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import type { PlannerCustomer, PlannerPlace } from "@/lib/phoenix-crm/suggestions";
 import { windowsForWeekday } from "@/lib/phoenix-crm/timings";
@@ -37,13 +39,16 @@ import type { PhoenixCrmListType, PhoenixCrmTiming } from "@/lib/phoenix-crm/typ
 /** The longest note a planned activity keeps — the table's own limit (server/plan-activities.ts PLAN_ACTIVITY_NOTE_MAX). */
 export const PLANNED_ACTIVITY_NOTE_MAX = 300;
 
-/** One day's other activity, as the save sends it. */
+/** One of a day's other activities, as the save sends it. A day holds one of each kind. */
 export type PlannedActivity = {
   planDate: string;
   activityType: PhoenixCrmDayActivity;
   halfDay: boolean;
   note: string | null;
 };
+
+/** An activity as a day of the week view carries it. */
+export type DraftDayActivity = { activityType: PhoenixCrmDayActivity; halfDay: boolean; note: string | null };
 
 /** A saved placement as the week view carries it — the part of PlanItemView a draft needs. */
 export type DraftDayItem = {
@@ -62,7 +67,10 @@ export type DraftDay = {
   ramadan: boolean;
   /** Today or later: the rep may still change it. */
   editable: boolean;
-  activity: { activityType: PhoenixCrmDayActivity; halfDay: boolean; note: string | null } | null;
+  /** The day's other activities as saved, one of each kind. */
+  activities: ReadonlyArray<DraftDayActivity>;
+  /** When he means to start the AM and the PM rounds, as saved. */
+  starts: PlanDayStarts;
   items: ReadonlyArray<DraftDayItem>;
 };
 
@@ -84,9 +92,13 @@ export type WeekDraft = {
   basis: string;
   items: PlanItemDraft[];
   activities: PlannedActivity[];
+  starts: PlannedDayStart[];
   /** What the last save wrote, and the version it made. */
-  saved: { items: PlanItemDraft[]; activities: PlannedActivity[]; planId: string; version: number } | null;
+  saved: { items: PlanItemDraft[]; activities: PlannedActivity[]; starts: PlannedDayStart[]; planId: string; version: number } | null;
 };
+
+/** What a save writes for one week: the draft's three lists. */
+export type WeekContent = Pick<WeekDraft, "items" | "activities" | "starts">;
 
 export type DailyCaps = { amDailyCap: number; pmDailyCap: number };
 
@@ -130,13 +142,27 @@ export function savedWeekItems(week: DraftWeek): PlanItemDraft[] {
     );
 }
 
-/** The saved activities of the days the rep may still change. */
+/** The saved activities of the days the rep may still change — every kind each day holds. */
 export function savedWeekActivities(week: DraftWeek): PlannedActivity[] {
-  return week.days.flatMap((day) =>
-    day.editable && day.activity
-      ? [{ planDate: day.date, activityType: day.activity.activityType, halfDay: day.activity.halfDay, note: day.activity.note }]
-      : [],
+  return sortPlannedActivities(
+    week.days.flatMap((day) =>
+      day.editable
+        ? day.activities.map((activity) => ({ planDate: day.date, activityType: activity.activityType, halfDay: activity.halfDay, note: activity.note }))
+        : [],
+    ),
   );
+}
+
+/** The saved start times of the days the rep may still change. */
+export function savedWeekStarts(week: DraftWeek): PlannedDayStart[] {
+  return week.days.flatMap((day) =>
+    day.editable && hasDayStarts(day.starts) ? [{ planDate: day.date, startAmMinute: day.starts.startAmMinute, startPmMinute: day.starts.startPmMinute }] : [],
+  );
+}
+
+/** What the week on screen holds for the days that can still change — a draft's baseline. */
+function savedWeekContent(week: DraftWeek): WeekContent {
+  return { items: savedWeekItems(week), activities: savedWeekActivities(week), starts: savedWeekStarts(week) };
 }
 
 /**
@@ -150,7 +176,7 @@ export function draftFits(draft: WeekDraft | null | undefined, scope: string, we
 }
 
 export function startDraft(scope: string, week: DraftWeek): WeekDraft {
-  return { scope, basis: weekBasis(week.plan), items: savedWeekItems(week), activities: savedWeekActivities(week), saved: null };
+  return { scope, basis: weekBasis(week.plan), ...savedWeekContent(week), saved: null };
 }
 
 /** The rep keeps his ticks over a version saved elsewhere: the next save goes over the version on screen. */
@@ -159,19 +185,14 @@ export function rebaseDraft(draft: WeekDraft, week: DraftWeek): WeekDraft {
 }
 
 /** What a save wrote, standing over the version on screen AND the version the save made. */
-export function markWeekSaved(
-  scope: string,
-  week: DraftWeek,
-  saved: { planId: string; version: number },
-  items: PlanItemDraft[],
-  activities: PlannedActivity[],
-): WeekDraft {
+export function markWeekSaved(scope: string, week: DraftWeek, saved: { planId: string; version: number }, content: WeekContent): WeekDraft {
   return {
     scope,
     basis: weekBasis(week.plan),
-    items,
-    activities,
-    saved: { items, activities, planId: saved.planId, version: saved.version },
+    items: content.items,
+    activities: content.activities,
+    starts: content.starts,
+    saved: { items: content.items, activities: content.activities, starts: content.starts, planId: saved.planId, version: saved.version },
   };
 }
 
@@ -183,22 +204,24 @@ function activitySignature(activity: PlannedActivity): string {
   return ["activity", activity.planDate, activity.activityType, activity.halfDay ? "half" : "whole", (activity.note ?? "").trim()].join("|");
 }
 
+function startSignature(start: PlannedDayStart): string {
+  return ["start", start.planDate, start.startAmMinute ?? "", start.startPmMinute ?? ""].join("|");
+}
+
 /** Order-free, so re-ticking a customer in another order is not a change. */
-export function weekSignature(items: ReadonlyArray<PlanItemDraft>, activities: ReadonlyArray<PlannedActivity>): string {
-  return [...items.map(itemSignature), ...activities.map(activitySignature)].sort().join("\n");
+export function weekSignature(content: WeekContent): string {
+  return [...content.items.map(itemSignature), ...content.activities.map(activitySignature), ...content.starts.map(startSignature)].sort().join("\n");
 }
 
 /** The draft holds changes its own baseline does not: the last save, or the week as it was loaded. */
 export function isWeekDirty(draft: WeekDraft | null | undefined, week: DraftWeek): boolean {
   if (!draft) return false;
-  const items = draft.saved ? draft.saved.items : savedWeekItems(week);
-  const activities = draft.saved ? draft.saved.activities : savedWeekActivities(week);
-  return weekSignature(draft.items, draft.activities) !== weekSignature(items, activities);
+  return weekSignature(draft) !== weekSignature(draft.saved ?? savedWeekContent(week));
 }
 
 /** The draft says exactly what the week on screen already holds (a save that went through, say). */
 export function matchesSavedWeek(draft: WeekDraft, week: DraftWeek): boolean {
-  return weekSignature(draft.items, draft.activities) === weekSignature(savedWeekItems(week), savedWeekActivities(week));
+  return weekSignature(draft) === weekSignature(savedWeekContent(week));
 }
 
 /**
@@ -213,7 +236,7 @@ export function matchesSavedWeek(draft: WeekDraft, week: DraftWeek): boolean {
  */
 export function discardWeekDraft(draft: WeekDraft, week: DraftWeek): WeekDraft | null {
   if (!draft.saved || !draftFits(draft, draft.scope, week)) return null;
-  return { ...draft, items: draft.saved.items, activities: draft.saved.activities };
+  return { ...draft, items: draft.saved.items, activities: draft.saved.activities, starts: draft.saved.starts };
 }
 
 /**
@@ -251,15 +274,31 @@ export function setCustomerReason(
   return items.map((entry) => (entry.planDate === date && entry.customerId === customerId ? { ...entry, exceptionType, exceptionNote } : entry));
 }
 
-/** One activity a day: a new one replaces the day's, and null takes it off. */
+/**
+ * Ticks one KIND of other activity on a day, or takes it off (null). A day holds one of each kind — a
+ * meeting and travel on one day is an ordinary day, as the old weekly plan's tick boxes allowed (the
+ * owner's walk, 2026-09-29) — so setting a kind changes only that kind, and the day's others stay.
+ */
 export function setPlannedActivity(
   activities: ReadonlyArray<PlannedActivity>,
   date: string,
-  next: Omit<PlannedActivity, "planDate"> | null,
+  activityType: PhoenixCrmDayActivity,
+  next: Pick<PlannedActivity, "halfDay" | "note"> | null,
 ): PlannedActivity[] {
-  const rest = activities.filter((activity) => activity.planDate !== date);
-  const all = next ? [...rest, { planDate: date, ...next }] : rest;
-  return all.sort((left, right) => left.planDate.localeCompare(right.planDate));
+  const rest = activities.filter((activity) => !(activity.planDate === date && activity.activityType === activityType));
+  return sortPlannedActivities(next ? [...rest, { planDate: date, activityType, halfDay: next.halfDay, note: next.note }] : rest);
+}
+
+/** Day order, then the kinds in the order the rep ticks them from (day-activities.ts). */
+export function sortPlannedActivities<T extends Pick<PlannedActivity, "planDate" | "activityType">>(activities: T[]): T[] {
+  return activities.sort(
+    (left, right) => left.planDate.localeCompare(right.planDate) || dayActivityRank(left.activityType) - dayActivityRank(right.activityType),
+  );
+}
+
+/** One day's other activities out of the week's list. */
+export function activitiesOn(activities: ReadonlyArray<PlannedActivity>, date: string): PlannedActivity[] {
+  return activities.filter((activity) => activity.planDate === date);
 }
 
 /** A copy's placements added to the draft; a customer already on that day is never doubled. */
@@ -382,6 +421,32 @@ export function roomOnDay(rows: ReadonlyArray<DraftRow>, caps: DailyCaps): Recor
   return { AM: Math.max(0, caps.amDailyCap - counts.AM), PM: Math.max(0, caps.pmDailyCap - counts.PM) };
 }
 
+// ── A whole brick at once ───────────────────────────────────────────────────────────────────────
+
+/** How a brick's own tick box reads. */
+export type BrickTickState = { all: boolean; some: boolean; disabled: boolean };
+
+/**
+ * A brick's own tick box (2026-09-30 — the old weekly plan's brick headers each carry one). Checked once
+ * every customer shown under the brick is on the day, half-ticked while some are. With no room left in
+ * the list and the brick not whole it is off, exactly as a customer's own box is on a full list.
+ */
+export function brickTickState(rows: ReadonlyArray<{ placed: boolean }>, room: number, locked = false): BrickTickState {
+  const placed = rows.filter((row) => row.placed).length;
+  const all = rows.length > 0 && placed === rows.length;
+  return { all, some: placed > 0 && !all, disabled: locked || rows.length === 0 || (!all && room <= 0) };
+}
+
+/**
+ * What one press of it does: the rest of the brick onto the day — in the order shown, and only as many
+ * as the list still has room for — or, once every one is on, the whole brick off. Nothing more: a brick
+ * is the ticks he would make one by one, and carries no rule of its own.
+ */
+export function brickTickPress<T extends { placed: boolean }>(rows: ReadonlyArray<T>, room: number): { place: T[]; takeOff: T[] } {
+  if (brickTickState(rows, room).all) return { place: [], takeOff: [...rows] };
+  return { place: rows.filter((row) => !row.placed).slice(0, Math.max(0, room)), takeOff: [] };
+}
+
 /** How full each of a day's lists is, and whether the day itself is. */
 export type DayFullness = { AM: boolean; PM: boolean; day: boolean };
 
@@ -452,6 +517,8 @@ export type WeekSavePayload = {
   items: PlanItemDraft[];
   /** The FULL activity list of the editable days, so taking one off saves too. */
   activities: PlannedActivity[];
+  /** The FULL start-time list of the editable days, so clearing one saves too. */
+  starts: PlannedDayStart[];
 };
 
 /** The body of `POST /api/phoenix-crm/plans` for one week. A customer no longer on the list is left out. */
@@ -465,6 +532,7 @@ export function buildWeekSavePayload(input: {
   const byId = indexCustomers(input.customers);
   const items = input.draft ? input.draft.items : savedWeekItems(input.week);
   const activities = input.draft ? input.draft.activities : savedWeekActivities(input.week);
+  const starts = input.draft ? input.draft.starts : savedWeekStarts(input.week);
   const editable = input.week.days.filter((day) => day.editable);
   const editableDates = new Set(editable.map((day) => day.date));
   return {
@@ -483,14 +551,21 @@ export function buildWeekSavePayload(input: {
           exceptionNote: row.receives ? null : cleanNote(row.exceptionNote),
         })),
     ),
-    activities: activities
-      .filter((activity) => editableDates.has(activity.planDate))
-      .map((activity) => ({
-        planDate: activity.planDate,
-        activityType: activity.activityType,
-        halfDay: activity.halfDay,
-        note: cleanNote(activity.note)?.slice(0, PLANNED_ACTIVITY_NOTE_MAX) ?? null,
-      }))
+    activities: sortPlannedActivities(
+      activities
+        .filter((activity) => editableDates.has(activity.planDate))
+        .map((activity) => ({
+          planDate: activity.planDate,
+          activityType: activity.activityType,
+          halfDay: activity.halfDay,
+          note: cleanNote(activity.note)?.slice(0, PLANNED_ACTIVITY_NOTE_MAX) ?? null,
+        })),
+    ),
+    // A Thursday is a morning, so a PM start drafted on one never leaves the page.
+    starts: starts
+      .filter((entry) => editableDates.has(entry.planDate))
+      .map((entry) => ({ planDate: entry.planDate, ...startsForDay(entry.planDate, entry) }))
+      .filter((entry) => hasDayStarts(entry))
       .sort((left, right) => left.planDate.localeCompare(right.planDate)),
   };
 }

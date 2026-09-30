@@ -1,14 +1,16 @@
 /**
  * Phoenix CRM — the other activities a rep PLANS for a day: a meeting, a conference, a health day, a
  * sales day, training, admin work, travel (owner, 2026-09-29 — "other activities at the top of the
- * day"). They sit on the week's plan, one a day, above the day's customers.
+ * day"). They sit on the week's plan above the day's customers, ONE OF EACH KIND a day: the old weekly
+ * plan ticks them as boxes, and a meeting and travel on one day is an ordinary day (2026-09-30 — the day
+ * held one until then).
  *
  * A PLAN, not a record: what the day actually was is still the day activity he records on the day
  * (day-activities.ts), and — the 2026-09-26 ruling — neither moves a call rate, a coverage figure or a
  * plan-against-actual. Leave is not here either: HR's vacation module stays the only leave record.
  */
 
-import { dayActivityLabel, isDayActivity, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
+import { dayActivityLabel, dayActivityRank, isDayActivity, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { callPhoenixCrm, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -41,24 +43,37 @@ function mapRow(row: Row): PlannedActivityRow | null {
   };
 }
 
-/** Every planned activity on some week plans of ONE territory, by day (a territory has one plan a week). */
-export async function loadPlanActivities(planIds: readonly string[]): Promise<Map<string, PlannedActivityRow>> {
+/** A day's activities in the order the rep ticks them from. */
+function byDayThenKind(left: { planDate: string; activityType: PhoenixCrmDayActivity }, right: { planDate: string; activityType: PhoenixCrmDayActivity }): number {
+  return left.planDate.localeCompare(right.planDate) || dayActivityRank(left.activityType) - dayActivityRank(right.activityType);
+}
+
+/** Every planned activity on some week plans of ONE territory, by day — each day's several, in order. */
+export async function loadPlanActivities(planIds: readonly string[]): Promise<Map<string, PlannedActivityRow[]>> {
   if (planIds.length === 0) return new Map();
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_plan_activities")
     .select("plan_date, activity_type, half_day, note")
     .in("plan_id", [...planIds]);
   throwIfError(error);
-  const byDay = new Map<string, PlannedActivityRow>();
-  for (const row of (data ?? []) as Row[]) {
+  const rows = ((data ?? []) as Row[]).flatMap((row) => {
     const mapped = mapRow(row);
-    if (mapped) byDay.set(mapped.planDate, mapped);
-  }
+    return mapped ? [mapped] : [];
+  });
+  const byDay = new Map<string, PlannedActivityRow[]>();
+  for (const row of rows.sort(byDayThenKind)) byDay.set(row.planDate, [...(byDay.get(row.planDate) ?? []), row]);
   return byDay;
 }
 
-/** What the rep planned one day as, from his week's plan whatever its status; null when nothing. */
-export async function loadPlannedActivityOn(seatId: string, isTest: boolean, date: string): Promise<PlannedActivityRow | null> {
+/**
+ * What the rep planned one day as, from his week's plan whatever its status — every kind the day holds,
+ * in order; empty when nothing.
+ *
+ * 🔴 A LIST, NEVER `maybeSingle()`. This read asked for one row while a day could hold only one; once a
+ * day holds several, a single-row read ERRORS rather than picking one, and Today would fail to open on
+ * exactly the days the rep planned most carefully.
+ */
+export async function loadPlannedActivitiesOn(seatId: string, isTest: boolean, date: string): Promise<PlannedActivityRow[]> {
   const supabase = getSupabaseAdmin();
   const { data: plan, error } = await supabase
     .from("phoenix_crm_plans")
@@ -68,37 +83,42 @@ export async function loadPlannedActivityOn(seatId: string, isTest: boolean, dat
     .eq("week_start", fieldWeekStart(date))
     .maybeSingle();
   throwIfError(error);
-  if (!plan) return null;
+  if (!plan) return [];
   const { data, error: activityError } = await supabase
     .from("phoenix_crm_plan_activities")
     .select("plan_date, activity_type, half_day, note")
     .eq("plan_id", String((plan as Row).id))
-    .eq("plan_date", date)
-    .maybeSingle();
+    .eq("plan_date", date);
   throwIfError(activityError);
-  return data ? mapRow(data as Row) : null;
+  return ((data ?? []) as Row[])
+    .flatMap((row) => {
+      const mapped = mapRow(row);
+      return mapped ? [mapped] : [];
+    })
+    .sort(byDayThenKind);
 }
 
 /**
- * The activities from a save body, one per day, on the days the rep may still change. Anything else
- * is dropped rather than refused: an activity is a note on the plan, never a reason to lose the plan.
+ * The activities from a save body, one of each kind a day, on the days the rep may still change.
+ * Anything else is dropped rather than refused: an activity is a note on the plan, never a reason to
+ * lose the plan. A kind sent twice for one day keeps the last one sent.
  */
 export function parsePlanActivities(raw: unknown, editableDays: ReadonlySet<string>): PlannedActivityDraft[] {
   if (!Array.isArray(raw)) return [];
-  const byDay = new Map<string, PlannedActivityDraft>();
+  const byDayAndKind = new Map<string, PlannedActivityDraft>();
   for (const entry of raw) {
     const body = (entry && typeof entry === "object" ? entry : {}) as Row;
     const planDate = textOrNull(body.planDate);
     if (!planDate || !editableDays.has(planDate) || !isDayActivity(body.activityType)) continue;
     const note = textOrNull(body.note);
-    byDay.set(planDate, {
+    byDayAndKind.set(`${planDate}|${body.activityType}`, {
       planDate,
       activityType: body.activityType,
       halfDay: body.halfDay === true,
       note: note ? note.replace(/\s+/g, " ").slice(0, PLAN_ACTIVITY_NOTE_MAX) : null,
     });
   }
-  return [...byDay.values()].sort((left, right) => left.planDate.localeCompare(right.planDate));
+  return [...byDayAndKind.values()].sort(byDayThenKind);
 }
 
 /** Replace the planned activities on the editable days of one week's plan. The plan must exist. */

@@ -101,7 +101,15 @@ function customer(
 
 function day(date: string, editable = true, options: { ramadan?: boolean } = {}): DraftDay {
   const thursday = date === THU;
-  return { date, listTypes: thursday ? ["AM"] : ["AM", "PM"], ramadan: options.ramadan ?? false, editable, activity: null, items: [] };
+  return {
+    date,
+    listTypes: thursday ? ["AM"] : ["AM", "PM"],
+    ramadan: options.ramadan ?? false,
+    editable,
+    activities: [],
+    starts: { startAmMinute: null, startPmMinute: null },
+    items: [],
+  };
 }
 
 function week(options: { passed?: string[]; ramadan?: boolean; saved?: Record<string, string[]> } = {}): DraftWeek {
@@ -441,7 +449,7 @@ export function runPhoenixCrmPlanSuggestTests(): void {
     assert.match(board, /onCopied=\{addCopies\}/, "and onCopied is the board's addCopies");
     assert.match(
       board,
-      /function addCopies\(placements: CopiedPlacements\) \{[\s\S]*?change\(state, \(draft\) => \(\{ items: addCopiedItems\(draft\.items, additions\), activities: draft\.activities \}\)\);/,
+      /function addCopies\(placements: CopiedPlacements\) \{[\s\S]*?change\(state, \(draft\) => \(\{ items: addCopiedItems\(draft\.items, additions\) \}\)\);/,
       "which only changes the draft — the unsaved-changes bar then appears, and Save and Send stay the rep's own presses",
     );
     assert.match(board, /suggest=\{suggest\}/, "the board hands the week panel the month so far");
