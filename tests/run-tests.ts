@@ -1627,6 +1627,7 @@ import { runPhoenixCrmAdoptionTests } from "./phoenix-crm-adoption.test.ts";
 import { runPhoenixCrmReportComparisonTests } from "./phoenix-crm-report-comparison.test.ts";
 import { runPhoenixCrmReportsExportTests } from "./phoenix-crm-reports-export.test.ts";
 import { runPhoenixCrmDailyPlanReportTests } from "./phoenix-crm-daily-plan-report.test.ts";
+import { runPhoenixCrmPlanLeaveTests } from "./phoenix-crm-plan-leave.test.ts";
 import { runPhoenixCrmDailyForecastTests } from "./phoenix-crm-daily-forecast.test.ts";
 import { runPhoenixCrmCustomerPhoneTests } from "./phoenix-crm-customer-phone.test.ts";
 import { runPhoenixCrmBrickCoverageReportTests } from "./phoenix-crm-brick-coverage-report.test.ts";
@@ -5626,6 +5627,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's daily plan report (owner, 2026-09-30: \"build the daily plan report\" — iReports360's Daily Plan rebuilt from Phoenix CRM's own plans, one territory day by day): it reaches FORWARD to the last day a rep can plan where every other section stops at today, and every quick pick is readable on every day of 2026-2027; a day that has passed reads as its plan stood when the day ENDED — the last status before the next Cairo midnight, the same test plan against actual applies — so a plan reopened afterwards never turns a sent Monday into a draft; the visit day ends at 02:00, so yesterday is \"not yet\" until then; Friday is left out; AM and PM are two lists with no total; a test visit never marks a real plan's customer seen and a test plan is listed after the real one; the territory comes from the viewer's own scope; and it never reads a distance, a flag or an accuracy, because the rep reads his own plan there",
   runPhoenixCrmDailyPlanReportTests,
+);
+
+await runTest(
+  "Phoenix CRM never calls a leave day a miss (owner, 2026-10-01: \"fix missed visits on leave days in plan vs actual\"): a customer planned on a day HR approved the rep's leave, and not seen, is ON LEAVE — plan against actual moves him from missed to on leave and out of planned, so a week of annual leave cannot pull plan-kept % down; the daily plan report reads On leave, never Not visited, past, running or ahead; the frequency report leaves that planning out of the times he was planned; one he DID see that day still counts as a kept plan; another territory's day is never touched by one rep's leave; leave comes only from HR's vacation module and is never inferred from a gap in the visits; a failed leave read keeps the figures and says so on the screen; and the screens and the workbook print it, AM and PM apart",
+  runPhoenixCrmPlanLeaveTests,
 );
 
 await runTest(

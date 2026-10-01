@@ -221,6 +221,7 @@ function dailyPlanView(patch: Partial<NonNullable<ReportsPackInput["dailyPlan"]>
     activities: [],
     listTypes: ["AM" as const, "PM" as const],
     running: false,
+    onLeave: false,
   };
   return {
     period: { from: "2026-09-26", to: "2026-09-29" },
@@ -233,6 +234,7 @@ function dailyPlanView(patch: Partial<NonNullable<ReportsPackInput["dailyPlan"]>
       { ...day, date: "2026-09-28", am: [{ ...customer, customerId: "C-2", name: "El Shifa Hospital", phone: null, status: "not_visited" as const, visitedMinute: null }], pm: [customer] },
       { ...day, date: "2026-09-29", state: "none" as const, startsText: null, am: [], pm: [] },
     ],
+    leaveUnread: false,
     ...patch,
   };
 }
@@ -284,7 +286,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
       exceptions: { rows: [], summary: { territories: 0, needingAttention: 0, byKind: [] }, isTest: false, lastFieldDay: "2026-09-24", weekStart: "2026-09-19", windowFieldDays: 6 } as unknown as NonNullable<ReportsPackInput["exceptions"]>,
       locations: locationsView(),
       managers: { period: PERIOD, includeTest: false, rows: [] } as unknown as NonNullable<ReportsPackInput["managers"]>,
-      plan: { period: PERIOD, includeTest: false, runningDay: null, rows: [], totals: { AM: { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null }, PM: { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null } } } as unknown as NonNullable<ReportsPackInput["plan"]>,
+      plan: { period: PERIOD, includeTest: false, runningDay: null, leaveUnread: false, rows: [], totals: { AM: { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, onLeave: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null }, PM: { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, onLeave: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null } } } as unknown as NonNullable<ReportsPackInput["plan"]>,
       dailyPlan: dailyPlanView(),
     });
     assert.deepEqual(await sheetsOf(full), ["Cover", ...packSections(full)], "the sheets are exactly what the cover promised, in that order");
@@ -516,7 +518,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
         // `scope` since 2026-10-01: whose month the sheet holds. Required, not optional — a
         // calendar that cannot say whose it is would print a rep's own month under a team heading.
         calendar: { days: ["2026-09-01"], isTest: false, month: "2026-09", rows: [], scope: "team", totals: { am: 0, pharmacies: 0, pm: 0 } },
-        frequency: { includeTest: false, month: { inProgress: false, month: "2026-09", monthEnd: "2026-09-30", monthStart: "2026-09-01" }, needsOneTerritory: false, rows: [], seat: null, totals: { customers: 0, noTarget: 0, onTarget: 0, over: 0, under: 0 } },
+        frequency: { includeTest: false, leaveUnread: false, month: { inProgress: false, month: "2026-09", monthEnd: "2026-09-30", monthStart: "2026-09-01" }, needsOneTerritory: false, rows: [], seat: null, totals: { customers: 0, noTarget: 0, onTarget: 0, over: 0, under: 0 } },
         tracking: { days: ["2026-09-01"], includeTest: false, month: { inProgress: false, month: "2026-09", monthEnd: "2026-09-30", monthStart: "2026-09-01" }, needsOneTerritory: false, rows: [], seat: null, showsSpacing: true },
     } as Partial<ReportsPackInput>;
 

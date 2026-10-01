@@ -847,9 +847,9 @@ function runReportRuleTests() {
     { seat_id: "R2", day: "2026-10-04", list_type: "PM", planned: 0, visited_planned: 0, missed: 0, unplanned: 4 },
   ]);
   assert.deepEqual(plan.groups[0].days.map((day) => day.date), ["2026-10-03", "2026-10-04"]);
-  assert.deepEqual(plan.groups[0].pm, { planned: 22, visitedPlanned: 19, plannedWaiting: 0, missed: 3, unplanned: 2, unplannedWaiting: 0, unplannedRefused: 0 });
-  assert.deepEqual(plan.groups[0].am, { planned: 3, visitedPlanned: 3, plannedWaiting: 0, missed: 0, unplanned: 1, unplannedWaiting: 0, unplannedRefused: 0 });
-  assert.deepEqual(plan.totals.PM, { planned: 22, visitedPlanned: 19, plannedWaiting: 0, missed: 3, unplanned: 6, unplannedWaiting: 0, unplannedRefused: 0 });
+  assert.deepEqual(plan.groups[0].pm, { planned: 22, visitedPlanned: 19, plannedWaiting: 0, missed: 3, onLeave: 0, unplanned: 2, unplannedWaiting: 0, unplannedRefused: 0 });
+  assert.deepEqual(plan.groups[0].am, { planned: 3, visitedPlanned: 3, plannedWaiting: 0, missed: 0, onLeave: 0, unplanned: 1, unplannedWaiting: 0, unplannedRefused: 0 });
+  assert.deepEqual(plan.totals.PM, { planned: 22, visitedPlanned: 19, plannedWaiting: 0, missed: 3, onLeave: 0, unplanned: 6, unplannedWaiting: 0, unplannedRefused: 0 });
   assert.equal(planKeptPercent(plan.groups[0].pm), 86.4);
   assert.equal(planKeptPercent(plan.groups[1].pm), null, "no plan is no figure, never 0%");
 

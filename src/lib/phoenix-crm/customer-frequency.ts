@@ -45,12 +45,21 @@ export type CustomerFrequencyInput = {
   grade: PhoenixCrmGrade | null;
   /** Visits that COUNT — the caller reads `phoenix_crm_countable_visits`, never a raw visit table. */
   visits: number;
-  /** How many times he was placed on a plan that was actually sent. */
+  /**
+   * How many times he was placed on a plan that was actually sent — less the times on a day HR
+   * approved the rep's leave when he was not seen that day (`plannedOutsideLeave`).
+   */
   planned: number;
+  /**
+   * Those leave-day plannings, counted apart and never against the plan (owner, 2026-10-01: "fix
+   * missed visits on leave days in plan vs actual"). Absent means none.
+   */
+  plannedOnLeave?: number;
 };
 
 /** One row, with both comparisons kept whole and separate. */
 export type CustomerFrequencyRow = CustomerFrequencyInput & {
+  plannedOnLeave: number;
   /** The grade's own monthly number, or null when he has no grade or the company set none. */
   gradeTarget: number | null;
   /** visits − gradeTarget. Null when there is no target to compare against. */
@@ -83,11 +92,29 @@ export function customerFrequencyRow(
   const againstGrade = target === null ? null : input.visits - target;
   return {
     ...input,
+    plannedOnLeave: input.plannedOnLeave ?? 0,
     againstGrade,
     againstPlan: input.visits - input.planned,
     gradeTarget: target,
     gradeVerdict: verdictOf(againstGrade),
   };
+}
+
+/**
+ * How many times a customer counts as PLANNED: every planning on a sent plan, except one on a day HR
+ * approved the rep's leave when he was not seen that day — that one is on leave, never a time he owed
+ * (`plan-leave.ts`, the rule all three plan reports read). One he WAS seen on, that day, still counts:
+ * the visit happened, and taking the planning away would turn a kept plan into a visit above it.
+ */
+export function plannedOutsideLeave(input: {
+  planDays: readonly string[];
+  visitDays: readonly string[];
+  isLeaveDay: (day: string) => boolean;
+}): { planned: number; onLeave: number } {
+  const seen = new Set(input.visitDays);
+  let onLeave = 0;
+  for (const day of input.planDays) if (input.isLeaveDay(day) && !seen.has(day)) onLeave += 1;
+  return { planned: input.planDays.length - onLeave, onLeave };
 }
 
 /**

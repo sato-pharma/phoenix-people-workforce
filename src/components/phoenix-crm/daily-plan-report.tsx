@@ -62,6 +62,7 @@ import {
   type DailyPlanState,
   type DailyPlanVisitStatus,
 } from "@/lib/phoenix-crm/daily-plan-report";
+import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 import { REPORT_MAX_DAYS } from "@/lib/phoenix-crm/report-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { cn } from "@/lib/utils";
@@ -167,6 +168,8 @@ const VISIT_TONES: Record<DailyPlanVisitStatus, PillTone> = {
   not_visited: "warn",
   not_yet: "info",
   ahead: "neutral",
+  // A fact HR recorded about him, never a shortfall — so never the warning colour "Not visited" wears.
+  on_leave: "neutral",
 };
 
 const SENT_STATES: ReadonlyArray<DailyPlanState> = ["submitted", "approved", "returned"];
@@ -275,6 +278,8 @@ function DayHeader({ day, headingId, today }: { day: DailyPlanDay; headingId: st
   if (planned && day.submittedLate && SENT_STATES.includes(day.state)) pills.push(<CrmPill key="late" tone="warn">Sent late</CrmPill>);
   // The visit day runs to 02:00, so just after midnight yesterday is the day still running.
   if (day.running) pills.push(<CrmPill key="running" tone="info">{day.date === today ? "Today" : "Still running"}</CrmPill>);
+  // HR approved his leave for the day: its customers he did not see read "On leave", never "Not visited".
+  if (day.onLeave) pills.push(<CrmPill key="leave" tone="neutral">On leave</CrmPill>);
   if (day.isTest) pills.push(<CrmPill key="test" tone="neutral">Test entries</CrmPill>);
   return (
     <div className="px-4 pt-4 sm:px-5">
@@ -406,10 +411,17 @@ export function DailyPlanSection({
           </CrmNote>
         </div>
       ) : null}
+      {report.leaveUnread ? (
+        <div className="px-4 pt-4 sm:px-5">
+          <CrmNote title="Leave could not be read" tone="warn">
+            {LEAVE_UNREAD_NOTE}
+          </CrmNote>
+        </div>
+      ) : null}
       <CrmBlock className="border-t border-slate-100" title={territory.name}>
         <p className="break-words text-sm font-semibold leading-6 text-slate-700">{territory.repName ?? "No rep in this territory"}</p>
         <p className="mt-1 break-words text-sm font-medium leading-6 text-slate-600">
-          Each day as it was planned: its start times and other activities, then the AM and the PM customers. A day that has passed shows the plan as it stood when that day ended; today and the days ahead show it as it is now. Visited means a visit to him was saved that day.
+          Each day as it was planned: its start times and other activities, then the AM and the PM customers. A day that has passed shows the plan as it stood when that day ended; today and the days ahead show it as it is now. Visited means a visit to him was saved that day. On a day HR approved the rep&apos;s leave, a customer not seen reads On leave, never Not visited.
         </p>
       </CrmBlock>
       {report.days.length === 0 ? (

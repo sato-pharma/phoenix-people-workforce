@@ -53,14 +53,18 @@ import { monthDays } from "@/lib/phoenix-crm/team-calendar";
 import {
   buildCustomerFrequencyReport,
   customerFrequencyTotals,
+  plannedOutsideLeave,
+  type CustomerFrequencyInput,
   type CustomerFrequencyRow,
 } from "@/lib/phoenix-crm/customer-frequency";
+import { isLeaveDay } from "@/lib/phoenix-crm/plan-leave";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import type { PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
 import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
+import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -409,6 +413,11 @@ export type PlanReportView = {
   totals: ByList<PlanCell>;
   /** C3. Headline figure: planned calls KEPT — a count, not the kept percentage. */
   comparison: ReportComparison | null;
+  /**
+   * HR's leave could not be read, so a day the rep was on leave may read as missed. The figures stay —
+   * the screen says this beside them (`plan-leave.ts`, `server/leave-days.ts`).
+   */
+  leaveUnread: boolean;
 };
 
 function planCell(counts: PlanCounts): PlanCell {
@@ -420,6 +429,9 @@ function planCell(counts: PlanCounts): PlanCell {
  *
  * Kept, not the kept PERCENTAGE: the difference between two percentages is percentage points, and a
  * cell reading "68% (vs 61% · +11.5%)" has three numbers in it of which one is a lie.
+ *
+ * It reads no leave, and needs none: leave moves a customer he did NOT see from missed to on leave,
+ * and a kept call is one he did see, so the count compared here is the same either way.
  */
 async function planFigures(
   seatIds: ReadonlyArray<string>,
@@ -453,13 +465,14 @@ export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilter
       rows: [],
       totals: { AM: planCell(emptyPlanCounts()), PM: planCell(emptyPlanCounts()) },
       comparison: null,
+      leaveUnread: false,
     };
   }
 
   const mode = comparisonModeOf(viewer, raw);
   const previous = previousPeriod(period);
   const peers = peerTerritories(viewer);
-  const [data, baseline] = await Promise.all([
+  const [data, baseline, leave] = await Promise.all([
     callPhoenixCrm<unknown>("phoenix_crm_report_plan_vs_actual", {
       p_seat_ids: chosen.seats.map((seat) => seat.seatId),
       p_from: period.from,
@@ -471,9 +484,14 @@ export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilter
       : mode === "previous"
         ? planFigures(chosen.seats.map((seat) => seat.seatId), previous, chosen.includeTest)
         : planFigures(peers.map((seat) => seat.seatId), period, chosen.includeTest),
+    // 🔴 A day HR approved his leave is never a day of misses (owner, 2026-10-01) — `plan-leave.ts`.
+    loadSeatLeaveDays(chosen.seats, period),
   ]);
   const seatsById = new Map(chosen.seats.map((seat) => [seat.seatId, seat]));
-  const { groups, totals } = groupPlanByTerritory(asRows(data).filter((row) => seatsById.has(String(row.seat_id))));
+  const { groups, totals } = groupPlanByTerritory(
+    asRows(data).filter((row) => seatsById.has(String(row.seat_id))),
+    leave.days,
+  );
   const names = await loadPeopleNames(groups.map((group) => seatsById.get(group.seatId)?.occupantHrId));
   const rows = groups
     .map((group) => {
@@ -509,6 +527,7 @@ export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilter
             peerTerritoryCount: mode === "peers" ? peers.length : null,
             seatIds: chosen.seats.map((seat) => seat.seatId),
           }),
+    leaveUnread: leave.unread,
   };
 }
 
@@ -866,6 +885,8 @@ export type CustomerFrequencyReportView = {
   needsOneTerritory: boolean;
   rows: CustomerFrequencyRow[];
   totals: ReturnType<typeof customerFrequencyTotals>;
+  /** HR's leave could not be read, so a planning on a leave day may count against the plan. */
+  leaveUnread: boolean;
 };
 
 export async function loadCustomerFrequencyReport(
@@ -886,6 +907,7 @@ export async function loadCustomerFrequencyReport(
       rows: [],
       seat: null,
       totals: empty,
+      leaveUnread: false,
     };
   }
 
@@ -904,23 +926,34 @@ export async function loadCustomerFrequencyReport(
       rows: [],
       seat: { repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null, seatId: seat.seatId, territoryName: territoryName(seat) },
       totals: empty,
+      leaveUnread: false,
     };
   }
 
-  const [daysByCustomer, plannedByCustomer] = await Promise.all([
+  const [daysByCustomer, planDaysByCustomer, leave] = await Promise.all([
     visitDaysByCustomer(seat.seatId, chosen.includeTest, month),
-    countPlannedByCustomer(seat.seatId, chosen.includeTest, month),
+    plannedDaysByCustomer(seat.seatId, chosen.includeTest, month),
+    // 🔴 A planning on a day HR approved his leave is never a time he owed (owner, 2026-10-01).
+    loadSeatLeaveDays([seat], { from: month.monthStart, to: month.monthEnd }),
   ]);
 
   const rows = buildCustomerFrequencyReport(
-    listed.map((row) => ({
-      customerId: String(row.id),
-      grade: (textOrNull(row.grade) as PhoenixCrmGrade | null) ?? null,
-      listType: String(row.list_type) === "AM" ? "AM" : "PM",
-      name: textOrNull(row.name) ?? "Unnamed customer",
-      planned: plannedByCustomer.get(String(row.id)) ?? 0,
-      visits: (daysByCustomer.get(String(row.id)) ?? []).length,
-    })),
+    listed.map((row): CustomerFrequencyInput => {
+      const planned = plannedOutsideLeave({
+        planDays: planDaysByCustomer.get(String(row.id)) ?? [],
+        visitDays: daysByCustomer.get(String(row.id)) ?? [],
+        isLeaveDay: (day) => isLeaveDay(leave.days, seat.seatId, day),
+      });
+      return {
+        customerId: String(row.id),
+        grade: (textOrNull(row.grade) as PhoenixCrmGrade | null) ?? null,
+        listType: String(row.list_type) === "AM" ? "AM" : "PM",
+        name: textOrNull(row.name) ?? "Unnamed customer",
+        planned: planned.planned,
+        plannedOnLeave: planned.onLeave,
+        visits: (daysByCustomer.get(String(row.id)) ?? []).length,
+      };
+    }),
     settings,
   );
 
@@ -931,6 +964,7 @@ export async function loadCustomerFrequencyReport(
     rows,
     seat: { repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null, seatId: seat.seatId, territoryName: territoryName(seat) },
     totals: customerFrequencyTotals(rows),
+    leaveUnread: leave.unread,
   };
 }
 
@@ -973,18 +1007,20 @@ async function visitDaysByCustomer(seatId: string, includeTest: boolean, month: 
 }
 
 /**
- * How often each customer was PLANNED this month — on a plan that was actually SENT.
+ * The days each customer was PLANNED this month — on a plan that was actually SENT. One entry per
+ * planning, so the length is how often he was planned; the DAYS are what lets a planning on a day
+ * HR approved the rep's leave be told apart (`plannedOutsideLeave`, `plan-leave.ts`).
  *
  * 🔴 A DRAFT IS NOT A PLAN. The rep owns his own draft until he submits it, so counting draft rows
  * would let the denominator move under a manager's feet while he reads the page — and it is the
  * same reasoning that makes an off-plan visit count only against a plan that reached `submitted`
  * before the visit (`unplanned-rules.ts`). A returned plan is not counted either: it was sent back.
  */
-async function countPlannedByCustomer(
+async function plannedDaysByCustomer(
   seatId: string,
   includeTest: boolean,
   month: ReportMonth,
-): Promise<Map<string, number>> {
+): Promise<Map<string, string[]>> {
   const plans = await fetchAllRowsKeyset<Row>(
     () =>
       getSupabaseAdmin()
@@ -995,7 +1031,7 @@ async function countPlannedByCustomer(
         .in("status", ["submitted", "approved"]),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
-  const out = new Map<string, number>();
+  const out = new Map<string, string[]>();
   if (plans.length === 0) return out;
 
   for (const part of chunk(plans.map((plan) => String(plan.id)), 150)) {
@@ -1011,7 +1047,8 @@ async function countPlannedByCustomer(
     );
     for (const item of items) {
       const id = textOrNull(item.customer_id);
-      if (id) out.set(id, (out.get(id) ?? 0) + 1);
+      const day = textOrNull(item.plan_date)?.slice(0, 10);
+      if (id && day) out.set(id, [...(out.get(id) ?? []), day]);
     }
   }
   return out;
