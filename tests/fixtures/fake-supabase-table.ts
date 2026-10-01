@@ -32,6 +32,14 @@ function isSqlNotEqual(current: unknown, value: unknown) {
   return current !== value;
 }
 
+// SQL `<`, `<=` and `>=`, by the same rule: a NULL on either side drops the row. These used to read
+// NULL as the empty string, which sorts below every bound, so `lt` and `lte` kept every NULL row. A
+// value that is present still compares as text, exactly as before.
+function isSqlOrdered(current: unknown, value: unknown, holds: (cell: string, bound: string) => boolean) {
+  if (current === null || current === undefined || value === null || value === undefined) return false;
+  return holds(String(current), String(value));
+}
+
 // PostgREST sends a filter value as text and Postgres compares it in the column's own type. The
 // columns these terms are used on hold text in the fixture's rows, so the comparison is on the text.
 function asFilterText(value: unknown) {
@@ -130,12 +138,12 @@ class FakeQueryBuilder {
   }
 
   gte(column: string, value: unknown) {
-    this.filters.push((row) => String(row[column] ?? "") >= String(value));
+    this.filters.push((row) => isSqlOrdered(row[column], value, (cell, bound) => cell >= bound));
     return this;
   }
 
   lte(column: string, value: unknown) {
-    this.filters.push((row) => String(row[column] ?? "") <= String(value));
+    this.filters.push((row) => isSqlOrdered(row[column], value, (cell, bound) => cell <= bound));
     return this;
   }
 
@@ -157,7 +165,7 @@ class FakeQueryBuilder {
   }
 
   lt(column: string, value: unknown) {
-    this.filters.push((row) => String(row[column] ?? "") < String(value));
+    this.filters.push((row) => isSqlOrdered(row[column], value, (cell, bound) => cell < bound));
     return this;
   }
 

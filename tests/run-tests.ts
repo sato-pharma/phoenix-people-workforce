@@ -1330,6 +1330,7 @@ import { runAutomatedPayrollDismissalSettlementTests } from "./automated-payroll
 import { runAutomatedPayrollInsuranceWageTests } from "./automated-payroll-insurance-wage.test.ts";
 import { runPayrollReadySheetLeaverProrationTests } from "./payroll-ready-sheet-leaver-proration.test.ts";
 import { runAutomatedPayrollVacationReconfirmTests } from "./automated-payroll-vacation-reconfirm.test.ts";
+import { runFakeSupabaseTableSqlNullsTests } from "./fake-supabase-table-sql-nulls.test.ts";
 import { runAutomatedPayrollCrmLeaveOneMechanismTests } from "./automated-payroll-crm-leave-one-mechanism.test.ts";
 import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-drift.test.ts";
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
@@ -2459,6 +2460,11 @@ await runTest(
 await runTest(
   "automated payroll: confirming the vacation step twice reaches the same answer twice",
   runAutomatedPayrollVacationReconfirmTests,
+);
+await runTest(
+  "the fake database treats an empty cell as Postgres does: a NULL never satisfies neq, lt, lte or "
+  + "gte, and is.null inside or() is what keeps it",
+  runFakeSupabaseTableSqlNullsTests,
 );
 await runTest(
   "automated payroll: a CRM leave day reaches a leave balance by exactly one path",
