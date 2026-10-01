@@ -2202,6 +2202,7 @@ import { runPortalLinkPrefetchTests } from "./portal-link-prefetch.test.ts";
 import { runPortalRepNavigationSpeedTests } from "./portal-rep-navigation-speed.test.ts";
 import { runPhoenixCrmForecastWhatsAppTests } from "./phoenix-crm-forecast-whatsapp.test.ts";
 import { runKpiBoardAgentsTests } from "./kpi-board-agents.test.ts";
+import { runPayrollCopilotSettlementSlotSafetyTests } from "./payroll-copilot-settlement-slot-safety.test.ts";
 import { runPrivateCalendarDoubleVisitDaysTests } from "./private-calendar-double-visit-days.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -8221,6 +8222,10 @@ await runTest(
 await runTest(
   "the KPIs board reads only its scope's reps and every figure is the company-wide one (a rep named only on plan rows, a first plan row with no hr id, a native rep, a reused CRM slot; small scopes only, anything doubtful reads company-wide)",
   runKpiBoardAgentsTests,
+);
+await runTest(
+  "neither Copilot settlement writer retires a leave row it cannot replace (bridging exclusion refused by the old 4-branch CHECK retires nothing; a settlement never clears a system correction, another request's row, or HR's bridging exclusion; 'reject' is scoped to its own request)",
+  runPayrollCopilotSettlementSlotSafetyTests,
 );
 
 await runTest(

@@ -60,7 +60,7 @@ export async function runAutomatedPayrollCrmLeaveOneMechanismTests() {
     payroll_copilot_vacation_settlements: [
       { employee_hr_id_compact: "b185", settlement_method: "balance", superseded_at: null, start_date: "2026-07-09", balance_days_consumed: 2, run_id: null },
     ],
-    vacation_attendance_charges: [],
+    attendance_annual_balance_charges: [],
   });
   const doubleCharged = await approvedPaidDaysInPeriod(
     { employeeHrId: "B-185", vacationType: "annual", ...PERIOD },
@@ -82,7 +82,7 @@ export async function runAutomatedPayrollCrmLeaveOneMechanismTests() {
       { id: "req-16", employee_hr_id: "B-185", status: "approved", vacation_type: "annual", start_date: "2026-07-16", duration_days: 0.5, paid_duration_days: 0.5, payment_status: "paid" },
     ],
     payroll_copilot_vacation_settlements: [],
-    vacation_attendance_charges: [],
+    attendance_annual_balance_charges: [],
   });
   assert.equal(
     await approvedPaidDaysInPeriod({ employeeHrId: "B-185", vacationType: "annual", ...PERIOD }, importerOnly),
@@ -99,7 +99,7 @@ export async function runAutomatedPayrollCrmLeaveOneMechanismTests() {
     payroll_copilot_vacation_settlements: [
       { employee_hr_id_compact: "b185", settlement_method: "balance", superseded_at: null, start_date: "2026-07-09", balance_days_consumed: 2, run_id: "copilot-run" },
     ],
-    vacation_attendance_charges: [],
+    attendance_annual_balance_charges: [],
   });
   assert.equal(
     await approvedPaidDaysInPeriod({ employeeHrId: "B-185", vacationType: "annual", ...PERIOD }, copilotOnly),

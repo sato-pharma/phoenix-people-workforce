@@ -8,6 +8,7 @@ import {
 } from "../src/lib/automated-payroll/deductions-source.ts";
 import { STEP_DEFINITIONS } from "../src/lib/automated-payroll/step-definitions.ts";
 import { stepPhase } from "../src/lib/automated-payroll/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 import type { DeductionsCandidateWithDecision, DeductionsCategory } from "../src/lib/deductions/types.ts";
 
 /**
@@ -268,9 +269,12 @@ export function runAutomatedPayrollReadsDeductionsModuleTests() {
   // pins: someone reintroducing a live calculation next to a module read, which
   // is invisible until two screens disagree about one employee's money. The
   // wizard shipped with exactly that for two weeks.
-  const recommendSource = readFileSync(
-    new URL("../src/lib/automated-payroll/recommend.ts", import.meta.url),
-    "utf8",
+  // Comments stripped FIRST. Every assertion below is a "must not appear" guard, and the prose
+  // explaining why something was removed necessarily QUOTES it — so a guard reading raw source
+  // matches its own documentation and passes, or fails, for the wrong reason. See
+  // tests/support/comment-strip.ts for the 39 files the naive regex mutilates.
+  const recommendSource = stripComments(
+    readFileSync(new URL("../src/lib/automated-payroll/recommend.ts", import.meta.url), "utf8"),
   );
   for (const banned of [
     "computeLeaverCrmDates",
@@ -284,11 +288,25 @@ export function runAutomatedPayrollReadsDeductionsModuleTests() {
       `recommend.ts must not call ${banned} — every deduction figure is the Deductions module's confirmed one`,
     );
   }
-  // The one survivor, and why: leave-BALANCE bookkeeping is not a deduction.
-  assert.ok(
-    recommendSource.includes("computeVacationDeductionTotals"),
-    "the leave-balance draw-down must survive — confirming the vacation step still debits balances, which is a different question from salary",
-  );
+
+  // ---- A PAYROLL RUN WRITES NO LEAVE SETTLEMENT (owner rule 2026-10-01) -----
+  // `scripts/import-crm-vacation-backfill.ts` is the ONE path by which a CRM leave day reaches an
+  // employee's balance. #5040 removed the settlement write from the payroll run, after #5032 found
+  // it had retired a real employee's leave settlement on production on 2026-08-04 and replaced it
+  // with nothing.
+  //
+  // This replaces a ratchet that asserted the OPPOSITE — that `computeVacationDeductionTotals` must
+  // survive, "confirming the vacation step still debits balances". That claim became false when the
+  // write was removed, and it could never have caught the removal anyway: it read RAW source, and
+  // recommend.ts still names the identifier in a comment, so the assertion stayed green over
+  // deleted code. Both halves are now the other way round — stripped source, and the direction the
+  // owner actually ruled.
+  for (const banned of ["settleCrmLeaveBalanceForPeriod", "payroll_copilot_vacation_settlements"]) {
+    assert.ok(
+      !recommendSource.includes(banned),
+      `recommend.ts must not touch ${banned} — a payroll run writes no leave settlement, and scripts/import-crm-vacation-backfill.ts is the one path a CRM leave day reaches a balance by (owner, 2026-10-01)`,
+    );
+  }
 
   assert.equal(STEP_DEFINITIONS.p1_fingerprint.phase, "part1", "fingerprint is a Part 1 deduction, always");
   assert.equal(stepPhase("p1_fingerprint"), "part1");
