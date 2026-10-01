@@ -1140,6 +1140,53 @@ try {
           );
         };
 
+        // 🔴 THE REQUIRED CHECKS ON THE HEAD COMMIT, WHICH IS WHAT THE CLAUSE ACTUALLY ASKS ABOUT.
+        // `mergeStateStatus` conflates two different facts — "every required check passed" and
+        // "GitHub has finished recomputing mergeability" — and only the first one decides whether
+        // this PR's run is already paid. Measured 2026-10-01: twelve merges landed on `main` inside
+        // 45 minutes, and `UNKNOWN` was the NORMAL reading for minutes at a time while
+        // `gh pr checks` showed both contexts `pass`. So this asks branch protection for the
+        // required context names and reads those check-runs on the head sha, exactly as a session
+        // does by hand. Unreadable in any part → `null`, and the caller keeps the refusal.
+        const requiredChecksGreen = () => {
+          const cwd = input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd();
+          const gh = (args) =>
+            String(
+              execFileSync('gh', args, {
+                cwd,
+                encoding: 'utf8',
+                stdio: ['ignore', 'pipe', 'ignore'],
+                timeout: 20000,
+                shell: process.platform === 'win32',
+              }),
+            ).trim();
+          try {
+            const repo = gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
+            if (!repo) return null;
+            const contexts = JSON.parse(
+              gh(['api', `repos/${repo}/branches/main/protection/required_status_checks`, '--jq', '.contexts']) || '[]',
+            );
+            if (!Array.isArray(contexts) || contexts.length === 0) return null;
+            const sha = gh(['pr', 'view', prNumber, '--json', 'headRefOid', '--jq', '.headRefOid']);
+            if (!sha) return null;
+            const runs = JSON.parse(
+              gh(['api', `repos/${repo}/commits/${sha}/check-runs?per_page=100`, '--jq', '.check_runs']) || '[]',
+            );
+            if (!Array.isArray(runs)) return null;
+            for (const name of contexts) {
+              // Last run wins: a re-run leaves the earlier attempt in the list.
+              const mine = runs.filter((r) => r && r.name === name);
+              const last = mine.length > 0 ? mine[mine.length - 1] : null;
+              if (!last) return null;
+              if (last.status !== 'completed') return false;
+              if (last.conclusion !== 'success') return false;
+            }
+            return true;
+          } catch {
+            return null;
+          }
+        };
+
         const alreadyGreen = () => {
           try {
             let state = readMergeState();
@@ -1151,6 +1198,11 @@ try {
               Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);
               state = readMergeState();
             }
+            // Still UNKNOWN after the retry is the measured common case, not an edge: ask the
+            // checks themselves rather than refusing a PR whose run is already paid. Only a
+            // definite `true` promotes it; `false` and `null` both keep the refusal, so an
+            // unreachable API cannot retire the clause.
+            if (state === 'OPEN/UNKNOWN' && requiredChecksGreen() === true) return true;
             return state === 'OPEN/CLEAN';
           } catch {
             // Unreadable: keep the refusal. The stand-down is the way past a blind spot here,
@@ -1177,7 +1229,7 @@ try {
               'its test, its doc, the follow-up already in view. Nothing here delays a merge — ' +
               'a finished PR of any real size goes the moment it is green.\n\n' +
               '🔴 THIS PR IS NOT GREEN YET — that is the only reason you are reading this. An ' +
-              'already-open PR whose required checks have all passed (GitHub `CLEAN`) goes ' +
+              'already-open PR whose required checks have all passed goes ' +
               'straight through from 2026-10-01, with no stand-down: its PR run is already paid, ' +
               'so refusing the merge saves nothing. You are being stopped while folding is still ' +
               'possible, because this branch has not shipped. NEVER CLOSE IT to satisfy this ' +
