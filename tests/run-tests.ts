@@ -1678,6 +1678,7 @@ import { runPhoenixCrmPlanPatternTests } from "./phoenix-crm-plan-pattern.test.t
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
+import { runPhoenixCrmStepFormTests } from "./phoenix-crm-step-form.test.ts";
 import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-requests.test.ts";
 import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.ts";
 import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
@@ -5875,6 +5876,11 @@ await runTest(
 await runTest(
   "Phoenix CRM plans one week at a time (owner, 2026-10-01, after the first Delta session): the rep's week is the one that begins on the coming Saturday on every day of 2026-2028, every other week is greyed and refused by the server on save and on send, his own board opens on that week's month with no month chooser, no month send and no Copy last month, a sent week is never taken back, the running week stays reachable in months that start on a Friday or a Saturday, and the week of 3 October 2026 is due Friday 2 October in TypeScript and SQL alike",
   runPhoenixCrmPlanWeeklyOnlyTests,
+);
+
+await runTest(
+  "Phoenix CRM plan making and Add visit wear Report It's step form (owner, 2026-10-02): the same strip, numbered rail, step heading and Back / Next as Report It, square and never cut short; the rep's plan is Week, Day, Customers, Send, where a tap on his week or a day moves him on and a manager in Team keeps his whole board; Add visit is Visit type, Customer, Products and comment, Log the visit, where a tap on a type or a customer moves him on, the visit form stays mounted across its last two steps and its one Log visit is on the last; and inside the form a screen loses only its own frame",
+  runPhoenixCrmStepFormTests,
 );
 
 await runTest(
