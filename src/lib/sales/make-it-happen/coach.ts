@@ -69,7 +69,7 @@ export function templateCoachMessage(facts: CoachFacts): string {
 function baseCoachMessage(facts: CoachFacts): string {
   const picks = picksSentence(facts.picks);
   const early = facts.earlyHistory
-    ? " With only a few closed months, Phoenix holds each product to its average so far."
+    ? " With only a few closed months, Phoenix reads each product from its average and the spread between those months."
     : "";
 
   if (facts.projectedAchievementLabel == null) {

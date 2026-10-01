@@ -12,13 +12,13 @@
 //   2. Units are only ever totalled inside ONE concentration (product_code). Everything above a
 //      concentration — a family, a line, the whole plan — is totalled in VALUE.
 //   3. History starts July 2026 and only PUBLISHED Monthly Closing months count.
-//   4. "Realistic" follows each concentration's own month-by-month pace:
-//        · growing  → the growth may continue, never above its best normal month;
-//        · flat     → stays flat;
-//        · declining→ holds its recent level, never an invented recovery;
-//        · fewer than three closed months → capped at the AVERAGE of the closed months
-//          (owner's pick over "best month" and "latest month").
-//      A one-off spike (a bulk order) is ignored before the trend is read.
+//   4. Each concentration is read from its OWN closed months, and gives two figures:
+//        · EXPECTED (Scenario 1, steady pace) — the middle of what its months say happens next:
+//            growing / flat → its recent level; declining → held at its recent level, never an
+//            invented recovery; fewer than three closed months → the AVERAGE of them (owner's
+//            pick over "best month" and "latest month", 2026-09-14).
+//        · REALISTIC (Scenario 2) — the upper quartile of the same forecast (rule 8 below).
+//      A one-off spike (a bulk order) is ignored before anything is read.
 //   5. When the target cannot be reached realistically, the plan says so — it never pads the
 //      numbers to a 100% it does not believe.
 //
@@ -35,12 +35,33 @@
 //      split.ts). Lacto can lift the total; it can never lift the Sato half. So the plan has
 //      several goals, met in order — the Sato products on their own target first, then the Pedia
 //      total, then the whole plan — and it reaches "your goal" only when every one of them does.
+//   8. SCENARIO 2 IS A REAL SECOND FORECAST, NOT A COPY OF SCENARIO 1 (owner, 2026-10-01: "two
+//      different scenarios, realistic, that can really help them" — the maths was left to Phoenix).
+//      Until then "realistic" was capped at the expected pace for every flat, declining and early
+//      product, and with only July and August closed EVERY product was early — so Scenario 2 was
+//      Scenario 1 on every screen. Now, over the m open months:
+//
+//          total ~ Normal( m·L ,  s²·(m + m²/k) )
+//
+//      L is the expected monthly level above, s the product's own month-to-month spread (around its
+//      robust trend line once three months are closed, around the mean before that), and k the
+//      months L was averaged from — the m²/k term is the doubt in L itself, which is what makes a
+//      two-month history honestly wide. REALISTIC is the 75th percentile of that total: better
+//      than the pace, inside the range its own months already show, never above m × its best
+//      normal month (a declining product: its best RECENT month, so no old peak comes back). A
+//      product with one closed month, or none that move, has no spread and stays at its pace — and
+//      says so rather than inventing one.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The first month Make It Happen reads (owner decision 2026-09-14). */
 export const MAKE_IT_HAPPEN_FLOOR = "2026-07";
-/** Below this many closed months the trend is not read at all — the average caps the plan. */
+/** Below this many closed months the trend is not read at all — the average is the pace. */
 export const EARLY_HISTORY_MONTHS = 3;
+/**
+ * The standard-normal 75th percentile (rule 8). Scenario 2 is the upper QUARTILE of the forecast:
+ * a result the pace alone reaches about one time in four, and focus makes likelier.
+ */
+export const REALISTIC_Z = 0.6745;
 /** How many closed months the trend reads, newest first. */
 export const TREND_WINDOW_MONTHS = 6;
 /** A month above this multiple of the median is a one-off (a bulk order), not a pace. */
@@ -290,9 +311,50 @@ function robustSlope(values: readonly number[]): number {
   return median(slopes);
 }
 
+/** Sample standard deviation (n − 1). 0 below two values: one month carries no spread. */
+function sampleSpread(values: readonly number[]): number {
+  if (values.length < 2) return 0;
+  const average = mean(values);
+  return Math.sqrt(values.reduce((sum, value) => sum + (value - average) ** 2, 0) / (values.length - 1));
+}
+
+/**
+ * Spread around the robust trend line (Theil–Sen slope, median intercept), n − 2 degrees of
+ * freedom — so a steady climb or a steady fall is not mistaken for volatility. 0 below three values.
+ */
+function residualSpread(values: readonly number[], slope: number): number {
+  if (values.length < 3) return 0;
+  const intercept = median(values.map((value, index) => value - slope * index));
+  const squares = values.reduce((sum, value, index) => sum + (value - (intercept + slope * index)) ** 2, 0);
+  return Math.sqrt(squares / (values.length - 2));
+}
+
+/**
+ * Rule 8: the 75th percentile of the m-month total, never above m × `bestMonth`, never below the
+ * expected units. `levelMonths` is k, the months the level was averaged from — its m²/k term is
+ * the doubt in the level itself.
+ */
+export function realisticUnits(input: {
+  level: number;
+  spread: number;
+  levelMonths: number;
+  months: number;
+  bestMonth: number;
+  expectedUnits: number;
+}): number {
+  const { level, spread, months, bestMonth, expectedUnits } = input;
+  if (months <= 0) return 0;
+  const k = Math.max(1, input.levelMonths);
+  const deviation = spread * Math.sqrt(months + (months * months) / k);
+  const quartile = Math.max(0, level) * months + REALISTIC_Z * deviation;
+  const ceiling = Math.max(0, bestMonth) * months;
+  return Math.max(expectedUnits, Math.floor(Math.min(quartile, ceiling)));
+}
+
 /**
  * Read one concentration's monthly units (closed months, oldest first, a month with no sales
- * passed as 0) and turn it into what the remaining months can realistically hold.
+ * passed as 0) and turn it into its two forecasts over the remaining months: the expected units
+ * (Scenario 1) and the realistic units (Scenario 2, rule 8).
  */
 export function readTrend(history: readonly number[], remainingMonths: number): TrendReading {
   const months = Math.max(0, Math.floor(remainingMonths));
@@ -304,8 +366,23 @@ export function readTrend(history: readonly number[], remainingMonths: number): 
   }
 
   if (series.length < EARLY_HISTORY_MONTHS) {
-    const units = Math.floor(Math.max(0, mean(series)) * months);
-    return { kind: "early", ...empty, expectedUnits: units, realisticMaxUnits: units };
+    // Too few months to read a trend or tell a spike from a pace: the average is the pace, and
+    // the spread between the closed months is the only honest measure of the room above it.
+    const level = Math.max(0, mean(series));
+    const units = Math.floor(level * months);
+    return {
+      kind: "early",
+      ...empty,
+      expectedUnits: units,
+      realisticMaxUnits: realisticUnits({
+        level,
+        spread: sampleSpread(series),
+        levelMonths: series.length,
+        months,
+        bestMonth: Math.max(...series),
+        expectedUnits: units,
+      }),
+    };
   }
 
   const typical = median(series);
@@ -319,28 +396,52 @@ export function readTrend(history: readonly number[], remainingMonths: number): 
   });
 
   const average = mean(cleaned);
-  const recent = Math.max(0, mean(cleaned.slice(-EARLY_HISTORY_MONTHS)));
+  const recentMonths = cleaned.slice(-EARLY_HISTORY_MONTHS);
+  const recent = Math.max(0, mean(recentMonths));
   const slope = robustSlope(cleaned);
   const relative = average > 0 ? slope / average : 0;
   const reading = { historyMonths: cleaned.length, spikesIgnored };
+  const spread = residualSpread(cleaned, slope);
+  const best = Math.max(...cleaned);
 
   if (relative >= FLAT_BAND) {
     const anchor = cleaned[cleaned.length - 1];
-    const best = Math.max(...cleaned);
     let path = 0;
     for (let step = 1; step <= months; step += 1) path += Math.max(0, Math.min(anchor + slope * step, best));
     const expectedUnits = Math.floor(recent * months);
-    return { kind: "growing", ...reading, expectedUnits, realisticMaxUnits: Math.max(expectedUnits, Math.floor(path)) };
+    // The growth carried on (capped at the best month), or the upper quartile around the recent
+    // level — whichever is higher. Both stop at the best normal month.
+    const quartile = realisticUnits({ level: recent, spread, levelMonths: recentMonths.length, months, bestMonth: best, expectedUnits });
+    return { kind: "growing", ...reading, expectedUnits, realisticMaxUnits: Math.max(quartile, Math.floor(path)) };
   }
 
   if (relative <= -FLAT_BAND) {
     const level = Math.max(0, Math.min(cleaned[cleaned.length - 1], recent));
     const units = Math.floor(level * months);
-    return { kind: "declining", ...reading, expectedUnits: units, realisticMaxUnits: units };
+    // Never an invented recovery: the ceiling is the best RECENT month, not the peak it fell from,
+    // and the spread is measured around the falling line, so the fall itself adds no room.
+    return {
+      kind: "declining",
+      ...reading,
+      expectedUnits: units,
+      realisticMaxUnits: realisticUnits({
+        level,
+        spread,
+        levelMonths: recentMonths.length,
+        months,
+        bestMonth: Math.max(...recentMonths),
+        expectedUnits: units,
+      }),
+    };
   }
 
   const units = Math.floor(recent * months);
-  return { kind: "flat", ...reading, expectedUnits: units, realisticMaxUnits: units };
+  return {
+    kind: "flat",
+    ...reading,
+    expectedUnits: units,
+    realisticMaxUnits: realisticUnits({ level: recent, spread, levelMonths: recentMonths.length, months, bestMonth: best, expectedUnits: units }),
+  };
 }
 
 // ── Building the realistic mix ───────────────────────────────────────────────

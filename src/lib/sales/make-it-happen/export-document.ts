@@ -289,7 +289,7 @@ export async function buildForecastWorkbook(model: ForecastExportModel): Promise
       { label: "Forecast value", numFmt: MONEY_FMT, right: true, width: 16 },
       { label: "Achievement", numFmt: PCT_FMT, right: true, width: 13 },
       { label: `Short of ${model.goalPct}% goal`, numFmt: MONEY_FMT, right: true, width: 16 },
-      { label: "Above the products' pace", numFmt: MONEY_FMT, right: true, width: 18 },
+      { label: "Above the realistic level", numFmt: MONEY_FMT, right: true, width: 18 },
       { label: "What it means", width: 70 },
     ],
     rows: model.scenarios.map((scenario) => [
@@ -323,7 +323,7 @@ export async function buildForecastWorkbook(model: ForecastExportModel): Promise
       { label: "Scenario 1 units", numFmt: UNITS_FMT, right: true, width: 16 },
       { label: "Scenario 2 units", numFmt: UNITS_FMT, right: true, width: 16 },
       { label: "Scenario 3 units", numFmt: UNITS_FMT, right: true, width: 16 },
-      { label: "Of which above pace", numFmt: UNITS_FMT, right: true, width: 18 },
+      { label: "Scenario 3 above realistic", numFmt: UNITS_FMT, right: true, width: 20 },
     ],
     rows: unitRows,
     title: model.filterNote ? "Units per product · filtered products only" : "Units per product",

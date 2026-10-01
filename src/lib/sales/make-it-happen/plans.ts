@@ -22,6 +22,7 @@ import {
   DEFAULT_GOAL_PCT,
   buildPlanScenarios,
   parseGoalPct,
+  suggestedScenario,
   type PlanScenario,
 } from "@/lib/sales/make-it-happen/scenarios";
 import { canUseMakeItHappen } from "@/lib/sales/make-it-happen/scope";
@@ -168,7 +169,7 @@ export type MakeItHappenSuggestion = {
   message: string;
   /** The goal the plan was built for, as a whole percentage of target. */
   goalPct: number;
-  /** Scenario 1 steady pace, 2 realistic plan (the units above), 3 stretch to the goal. */
+  /** Scenario 1 steady pace, 2 realistic plan, 3 your goal — the units above are 3 when realistic, else 2. */
   scenarios: PlanScenario[];
 };
 
@@ -184,15 +185,17 @@ export async function suggestRealisticPlan(ctx: AccessContext, rawBody: unknown)
     throw new MakeItHappenError(400, "This period is already closed, so there is nothing left to plan.");
   }
 
-  // The suggestion IS Scenario 2 — one builder, so the plan Phoenix fills in and the realistic card
-  // beside it can never disagree, and a Pedia plan meets its Sato half first (engine.ts rule 7).
+  // The suggestion IS one of the cards (suggestedScenario): Scenario 3 when your goal sits inside what
+  // the products realistically support, Scenario 2 otherwise — one builder, so the plan Phoenix
+  // fills in and the card beside it can never disagree, and a Pedia plan meets its Sato half first.
   const scenarios = buildPlanScenarios(workspace, goalPct);
-  const [pace, realistic] = scenarios;
-  const shortValue = realistic.shortOfGoal ?? 0;
+  const pace = scenarios[0];
+  const suggestion = suggestedScenario(scenarios);
+  const shortValue = suggestion.shortOfGoal ?? 0;
   const pct = (value: number | null) => (value == null ? null : `${(value * 100).toFixed(1)}%`);
   const egp = (value: number) => `EGP ${numberFormat.format(Math.round(value))}`;
 
-  const picks = Object.entries(realistic.units)
+  const picks = Object.entries(suggestion.units)
     .filter(([, units]) => units > 0)
     .map(([code, units]) => ({ code, units, value: units * (open.get(code)?.price ?? 0) }))
     .sort((a, b) => b.value - a.value)
@@ -202,13 +205,13 @@ export async function suggestRealisticPlan(ctx: AccessContext, rawBody: unknown)
   const message = await phoenixCoachMessage({
     periodLabel: workspace.periodLabel,
     goalLabel: goalPct === DEFAULT_GOAL_PCT ? null : `${goalPct}%`,
-    projectedAchievementLabel: pct(realistic.achievement),
+    projectedAchievementLabel: pct(suggestion.achievement),
     shortValueLabel: shortValue > 0 ? egp(shortValue) : null,
-    reachable: realistic.planReachesGoal,
+    reachable: suggestion.planReachesGoal,
     onTrack: pace.reachesGoal === true,
     earlyHistory: [...open.values()].some(({ row }) => row.trend.kind === "early"),
     picks,
-    halves: realistic.checks
+    halves: suggestion.checks
       .filter((check) => check.targetValue != null)
       .map((check) => ({
         label: check.label,
@@ -218,9 +221,9 @@ export async function suggestRealisticPlan(ctx: AccessContext, rawBody: unknown)
   });
 
   return {
-    units: realistic.units,
-    reachable: realistic.reachesGoal,
-    projectedAchievement: realistic.achievement,
+    units: suggestion.units,
+    reachable: suggestion.reachesGoal,
+    projectedAchievement: suggestion.achievement,
     shortValue,
     message,
     goalPct,
