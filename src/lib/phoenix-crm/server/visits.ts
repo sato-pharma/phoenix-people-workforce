@@ -59,7 +59,7 @@ import {
   type LastNextStep,
 } from "@/lib/phoenix-crm/visit-outcome";
 import { describeDayWindows, isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { managerChain, resolveVisitParticipants, territoryReviewer } from "@/lib/phoenix-crm/scope";
+import { managerChain, resolveVisitParticipants, territoryReviewer, type OrgIndex } from "@/lib/phoenix-crm/scope";
 import { canWriteAsRep, isLocationBlind, readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -70,7 +70,7 @@ import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/ser
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
-import { describeTerritory, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
+import { describeTerritory, personSeatTitle, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import {
   isUnplannedKind,
@@ -138,6 +138,20 @@ export type VisitRow = {
   repName: string | null;
   managerName: string | null;
   seniorName: string | null;
+  /**
+   * Each one's REAL JOB TITLE, as the organogram states it — "Medical Representative", "District
+   * Sales Manager", "National Sales Manager" (owner, 2026-10-01: *"put actual titles from the
+   * organogram"*). The card used to label them by the SLOT they fill on a visit — "Rep", "Manager",
+   * "Senior manager" — which names the visit's shape and nobody's job, and read as a demotion beside
+   * the organogram's own wording.
+   *
+   * Null when the organogram has no seat for that person: the tree is SALES-only, so a head-office
+   * person or the Super Admin genuinely has no title in it, and the screen falls back to the slot
+   * rather than printing nothing or guessing from HR's own job-title column.
+   */
+  repTitle: string | null;
+  managerTitle: string | null;
+  seniorTitle: string | null;
   enteredByName: string;
   /**
    * Entered FOR the rep by the Super Admin, who was not on the visit — a visit the rep missed logging
@@ -263,7 +277,7 @@ function visitPeople(rows: ReadonlyArray<Row>): Array<string | null> {
  * (`isLocationBlind`): the location fields say nothing and the phone-clock mark is off — no distance,
  * no flag, no check (Golden Rule #1, owner 2026-09-29).
  */
-function mapVisitRow(row: Row, names: PeopleNames, options: { blind: boolean }): VisitRow {
+function mapVisitRow(row: Row, names: PeopleNames, options: { blind: boolean; org: OrgIndex }): VisitRow {
   const kind = visitKind(row.kind);
   const flag = locationFlag(row.location_flag);
   const skew = numberOrNull(row.device_skew_minutes);
@@ -271,6 +285,10 @@ function mapVisitRow(row: Row, names: PeopleNames, options: { blind: boolean }):
     const hrId = textOrNull(value);
     return hrId ? nameOf(names, hrId) : null;
   };
+  // The organogram's own title for whoever is on the visit — resolved from the WHOLE tree rather than
+  // this territory's manager chain on purpose: a manager who moved line since the visit, or who went
+  // out with a rep outside his own district, still has a seat and still has a title.
+  const title = (value: unknown) => personSeatTitle(options.org, textOrNull(value));
   const unplannedKind = row.is_unplanned === true ? (isUnplannedKind(row.unplanned_kind) ? row.unplanned_kind : "out_of_plan") : null;
   const enteredByAdmin = isEnteredForRep({ enteredBy: row.entered_by_hr_id, rep: row.rep_hr_id, manager: row.manager_hr_id, senior: row.senior_hr_id });
   return {
@@ -285,6 +303,9 @@ function mapVisitRow(row: Row, names: PeopleNames, options: { blind: boolean }):
     repName: person(row.rep_hr_id),
     managerName: person(row.manager_hr_id),
     seniorName: person(row.senior_hr_id),
+    repTitle: title(row.rep_hr_id),
+    managerTitle: title(row.manager_hr_id),
+    seniorTitle: title(row.senior_hr_id),
     enteredByName: nameOf(names, textOrNull(row.entered_by_hr_id)),
     enteredByAdmin,
     products: Array.isArray(row.products) ? row.products.map(String) : [],
@@ -366,7 +387,7 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     date,
-    visits: rows.map((row) => mapVisitRow(row, names, { blind })),
+    visits: rows.map((row) => mapVisitRow(row, names, { blind, org: viewer.org })),
     canAdd: date === today && canEnterVisits(viewer, seat.seatId, isTest),
     dayActivity: activity,
     canSetDayActivity: date === today && canWriteAsRep(viewer, seat, isTest),
@@ -605,7 +626,7 @@ async function loadLastVisits(
  * The Today screen reads this rather than the raw rows, so one visit reads the same on both screens
  * and a change to `mapVisitRow` cannot leave the two disagreeing about a name.
  */
-export async function loadVisitRowsForDay(seatId: string, isTest: boolean, date: string, options: { blind: boolean }): Promise<VisitRow[]> {
+export async function loadVisitRowsForDay(seatId: string, isTest: boolean, date: string, options: { blind: boolean; org: OrgIndex }): Promise<VisitRow[]> {
   const rows = await loadVisitRows(seatId, isTest, date);
   const names = await loadPeopleNames(visitPeople(rows));
   return rows.map((row) => mapVisitRow(row, names, options));
@@ -753,7 +774,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     pharmacies,
     rules: { visitFarMeters: settings.visitFarMeters, weakGpsMeters: settings.weakGpsMeters },
     customers: options,
-    todayVisits: visitRows.map((row) => mapVisitRow(row, names, { blind })),
+    todayVisits: visitRows.map((row) => mapVisitRow(row, names, { blind, org: viewer.org })),
     blockedReason,
   };
 }
