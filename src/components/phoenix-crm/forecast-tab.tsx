@@ -246,7 +246,7 @@ function ForecastForm({ territories, test }: { territories: TerritorySummary[]; 
                   <ForecastWhatsAppButton
                     className="w-full sm:w-auto"
                     day={form.day}
-                    lines={form.lines.map((line) => ({ productName: line.productName, units: unitsOf(line) }))}
+                    lines={form.lines.map((line) => ({ productName: line.productName, family: line.productFamily, units: unitsOf(line) }))}
                     territoryName={form.territoryName}
                   />
                 </>
@@ -291,15 +291,26 @@ function ForecastForm({ territories, test }: { territories: TerritorySummary[]; 
 
 // ── The managers' board ─────────────────────────────────────────────────────────────────────────
 
+/** A territory's state today: sent (with the time), not sent, or vacant — nobody's to send. */
+function DayStatus({ row }: { row: ForecastBoardView["rows"][number] }) {
+  if (row.sent) return <CrmPill tone="good">Sent {cairoClock(row.sentAt)}</CrmPill>;
+  if (row.vacant) return <CrmPill tone="neutral">Vacant</CrmPill>;
+  return <CrmPill tone="warn">Not sent</CrmPill>;
+}
+
 function DayBoard({ view }: { view: ForecastBoardView }) {
+  // A vacant territory is nobody's to send, so it is never counted as "not sent" — only the territories
+  // a rep holds are, and the vacant ones are shown as their own figure rather than hidden.
+  const held = view.rows.filter((row) => !row.vacant).length;
+  const vacant = view.rows.length - held;
   const sent = view.rows.filter((row) => row.sent).length;
   return (
     <>
       <CrmBlock>
         <CrmStatGrid>
-          <CrmStat label="Territories" value={countText(view.rows.length)} />
-          <CrmStat label="Sent" tone={sent === view.rows.length && sent > 0 ? "good" : "neutral"} value={countText(sent)} />
-          <CrmStat label="Not sent" tone={view.rows.length - sent > 0 ? "warn" : "neutral"} value={countText(view.rows.length - sent)} />
+          <CrmStat label="Territories" note={vacant > 0 ? `${countText(vacant)} vacant` : undefined} value={countText(view.rows.length)} />
+          <CrmStat label="Sent" tone={sent === held && sent > 0 ? "good" : "neutral"} value={countText(sent)} />
+          <CrmStat label="Not sent" tone={held - sent > 0 ? "warn" : "neutral"} value={countText(held - sent)} />
           <CrmStat label="Working days" note={monthLabel(view.period)} value={countText(view.workingDays)} />
         </CrmStatGrid>
       </CrmBlock>
@@ -326,10 +337,10 @@ function DayBoard({ view }: { view: ForecastBoardView }) {
           <CrmCardsOnPhone>
             {view.rows.map((row) => (
               <CrmCard
-                accent={row.sent ? "border-l-emerald-500" : "border-l-amber-500"}
+                accent={row.sent ? "border-l-emerald-500" : row.vacant ? "border-l-slate-300" : "border-l-amber-500"}
                 key={row.seatId}
                 meta={`${row.areaName ?? row.name} · ${row.regionName ?? "—"}`}
-                status={row.sent ? <CrmPill tone="good">Sent {cairoClock(row.sentAt)}</CrmPill> : <CrmPill tone="warn">Not sent</CrmPill>}
+                status={<DayStatus row={row} />}
                 title={row.repName ?? "Vacant"}
               >
                 {row.sent ? <CrmFacts facts={[{ label: "Against the day's share", value: ratioText(row.shareOfDay) }]} /> : null}
@@ -353,7 +364,7 @@ function DayBoard({ view }: { view: ForecastBoardView }) {
                   <td className={crmTdClassName}>{row.areaName ?? row.name}</td>
                   <td className={crmTdClassName}>{row.regionName ?? "—"}</td>
                   <td className={crmTdClassName}>
-                    {row.sent ? cairoClock(row.sentAt) : <CrmPill tone="warn">Not sent</CrmPill>}
+                    {row.sent ? cairoClock(row.sentAt) : <DayStatus row={row} />}
                   </td>
                   <td className={crmTdClassName}>{ratioText(row.shareOfDay)}</td>
                 </tr>

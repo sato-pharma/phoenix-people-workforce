@@ -35,6 +35,7 @@ import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publica
 import {
   loadMonthlyAchievement,
   loadMonthlyTargets,
+  loadProductFamilyMap,
   loadProductNameMap,
   loadProductPriceMap,
   type MonthlyTargetRow,
@@ -69,6 +70,8 @@ const NOT_CNS = "The daily forecast is for the CNS line only.";
 export type ForecastProductLine = {
   productCode: string;
   productName: string;
+  /** The product family from the master (Tebofortin, Rispadex, …) — what the WhatsApp message groups by. */
+  productFamily: string | null;
   /** The month's target for this territory, in boxes of THIS product. */
   monthTargetUnits: number | null;
   /** The pre-filled boxes: the month's target ÷ the month's working days. */
@@ -102,6 +105,12 @@ export type ForecastBoardRow = {
   repName: string | null;
   areaName: string | null;
   regionName: string | null;
+  /**
+   * No rep holds the territory, so nobody can send for it. Listed (a manager still sees the gap in his
+   * map), but last, and never counted as "not sent": nine of the 35 CNS territories were vacant the
+   * day this shipped, and counting them buried the reps who really had not sent.
+   */
+  vacant: boolean;
   sent: boolean;
   sentAt: string | null;
   /** The day's forecast against the day's share of target, by value (1 = exactly the share). */
@@ -258,10 +267,11 @@ async function buildForm(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolea
   const day = viewer.visitDay;
   const period = periodOfDay(day);
   const area = seatAreaCode(seat);
-  const [targets, days, names, published, sent, people] = await Promise.all([
+  const [targets, days, names, families, published, sent, people] = await Promise.all([
     cnsTargets(period),
     workingDaysOf(period),
     loadProductNameMap(),
+    loadProductFamilyMap(),
     publishedCnsPeriods(),
     sentLinesOn([seat.seatId], isTest, day, day),
     loadPeopleNames(seat.occupantHrId ? [seat.occupantHrId] : []),
@@ -288,6 +298,7 @@ async function buildForm(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolea
       return {
         productCode: code,
         productName: names.get(code) ?? code,
+        productFamily: families.get(code) ?? null,
         monthTargetUnits: target.targetUnits,
         suggestedUnits: dailyShare(target.targetUnits, days.workingDays),
         lastMonthRatio: past ? unitsRatio(past.actualUnits, past.targetUnits) : null,
@@ -408,6 +419,7 @@ export async function loadForecastBoard(viewer: PhoenixCrmViewer, raw: { day?: u
       repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null,
       areaName: seat.areaName,
       regionName: seat.regionName,
+      vacant: !seat.occupantHrId,
       sent: lines.length > 0,
       sentAt: firstSentAt(lines),
       shareOfDay:
@@ -427,7 +439,8 @@ export async function loadForecastBoard(viewer: PhoenixCrmViewer, raw: { day?: u
   for (const seat of seats) {
     const regionName = seat.regionName ?? "No region";
     const entry = regions.get(regionName) ?? { territories: 0, sent: 0, forecastValue: 0, targetValue: 0 };
-    entry.territories += 1;
+    // "3 of 5 sent" counts the territories someone CAN send for — a vacant one is nobody's to send.
+    if (seat.occupantHrId) entry.territories += 1;
     const lines = sent.get(seat.seatId)?.get(day) ?? [];
     const area = seatAreaCode(seat);
     const areaTargets = area ? targets.get(area) : undefined;
