@@ -297,14 +297,9 @@ export function MedicalRepExpensesWorkspace({
   const canSend =
     canSubmit &&
     !isSubmitting &&
-    Boolean(
-      tripStartDate &&
-        tripEndDate &&
-        toLocation.trim() &&
-        notes.trim() &&
-        attachments.length > 0 &&
-        ticketTotal > 0,
-    );
+    // The attachment is deliberately absent from this list: the upload is OPTIONAL (owner,
+    // 2026-10-01), so a claim with no ticket file sends exactly like one that carries files.
+    Boolean(tripStartDate && tripEndDate && toLocation.trim() && notes.trim() && ticketTotal > 0);
 
   async function submitExpense(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -420,7 +415,7 @@ export function MedicalRepExpensesWorkspace({
               </div>
 
               <div className="md:col-span-4">
-                <Field label="Attachment">
+                <Field label="Attachment (optional)">
                   <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-none border border-dashed border-orange-300 bg-orange-50 px-4 text-sm font-bold text-orange-700 transition hover:bg-orange-100">
                     <Upload className="h-4 w-4" />
                     <span className="whitespace-nowrap">
@@ -436,7 +431,6 @@ export function MedicalRepExpensesWorkspace({
                       onChange={(event) =>
                         setAttachments(event.target.files ? Array.from(event.target.files) : [])
                       }
-                      required
                       type="file"
                     />
                   </label>

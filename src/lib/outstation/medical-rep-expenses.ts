@@ -7,6 +7,15 @@ export type MedicalRepSimpleExpenseAttachment = {
 
 export type MedicalRepSimpleExpenseInput = {
   amWorkload?: number;
+  /**
+   * The ticket files, and an EMPTY array is a valid claim.
+   *
+   * OPTIONAL by the owner's instruction (2026-10-01): the upload in the employee portal's medical
+   * rep expense form is optional, not required. A rep who has no scan of his ticket on the phone
+   * still files the amount, and the row waits for a human exactly as every other submission on
+   * this path does — it is inserted `submitted` / `needs_review` and nothing here approves it. So
+   * refusing the claim bought no safety; it only sent the rep away with nothing filed.
+   */
   attachments: MedicalRepSimpleExpenseAttachment[];
   goTicketAmount: number;
   notes: string;
@@ -96,12 +105,13 @@ export function validateMedicalRepSimpleExpenseInput(
     throw new Error("At least one ticket amount is required.");
   }
 
-  if (!Array.isArray(input.attachments) || input.attachments.length === 0) {
-    throw new Error("Ticket attachment is required.");
-  }
+  // No attachment check: the upload is OPTIONAL (owner, 2026-10-01 — see the field's own note on
+  // `MedicalRepSimpleExpenseInput.attachments`). A non-array is still normalised to [] so the
+  // insert writes `attachment_count: 0` and an empty metadata array rather than undefined.
+  const attachments = Array.isArray(input.attachments) ? input.attachments : [];
 
   return {
-    attachments: input.attachments,
+    attachments,
     goTicketAmount,
     notes,
     returnTicketAmount,
