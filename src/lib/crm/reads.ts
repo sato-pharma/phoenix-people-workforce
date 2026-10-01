@@ -426,7 +426,8 @@ export function visitFilterNamesPeople(filter: CrmVisitFilter): boolean {
     (filter.doubleHrIds?.length ?? 0) > 0 ||
     (filter.contactCrmIds?.length ?? 0) > 0 ||
     filter.participantCrmIds != null ||
-    filter.participantHrIds != null
+    filter.participantHrIds != null ||
+    filter.agentCrmOrHrIds != null
   );
 }
 
@@ -570,6 +571,16 @@ export type CrmVisitFilter = {
   /** Require a `double_crm_id` (NOT NULL only). Unlike `doubleOnly` it keeps the vendor's `0`
    * sentinel, for callers that already discard it themselves. */
   requireDoubleCrmId?: boolean;
+  /**
+   * Restrict to visits these people SUBMITTED, found by EITHER id (`agent_crm_id IN crmIds OR
+   * agent_hr_id IN hrIds`, every casing variant of the hr ids) — the visits twin of the check-in
+   * door's filter of the same name, sharing its expression builder. For a reader that must reach a
+   * few reps whose vendor rows carry only a CRM id and whose native rows only an hr id, in ONE read
+   * and in the single scan's id order. Unlike the participant filters it never matches the
+   * double-visit partner. Nothing usable on either side → no rows (fails closed). Not to be combined
+   * with `doubleOnly` or the participant filters, which bring their own `or`.
+   */
+  agentCrmOrHrIds?: { crmIds?: readonly number[]; hrIds?: readonly string[] };
 };
 
 /**
@@ -681,6 +692,11 @@ export function applyVisitFilter(
     // Fail CLOSED: a supplied-but-unusable id list must never silently drop the filter and widen
     // the read to every row. The doors short-circuit this case before querying; this is the backstop.
     result = participantOr ? result.or(participantOr) : result.in("agent_crm_id", []);
+  }
+  if (filter.agentCrmOrHrIds) {
+    const identityOr = buildAgentCrmOrHrIdOrFilter(filter.agentCrmOrHrIds);
+    // Fail CLOSED, exactly as the check-in door does: never widen to every visit.
+    result = identityOr ? result.or(identityOr) : result.in("agent_crm_id", []);
   }
   return result;
 }
@@ -919,6 +935,7 @@ export async function queryVisits<T = CrmVisitRow>(
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   if (options.contactCrmIds && options.contactCrmIds.length === 0) return [];
   if (participantFilterMatchesNobody(options)) return [];
+  if (options.agentCrmOrHrIds && buildAgentCrmOrHrIdOrFilter(options.agentCrmOrHrIds) === null) return [];
   const supabase = getSupabaseAdmin();
   const excludedInList = options.includeResignedAgents ? "" : await getEffectiveExcludedInList();
   // When collapsing, widen the projection so the duplicate-detection fingerprint columns are present
@@ -991,6 +1008,7 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   if (options.contactCrmIds && options.contactCrmIds.length === 0) return [];
   if (participantFilterMatchesNobody(options)) return [];
+  if (options.agentCrmOrHrIds && buildAgentCrmOrHrIdOrFilter(options.agentCrmOrHrIds) === null) return [];
   const supabase = getSupabaseAdmin();
   const excludedInList = await getEffectiveExcludedInList();
   // See queryVisits: widen the projection so the collapse fingerprint columns are present.
