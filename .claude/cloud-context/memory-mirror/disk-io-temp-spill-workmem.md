@@ -12,7 +12,7 @@ Diagnosed 2026-07-04 when prod (ozucdzovmcqvepbozvqf) was running out of Supabas
 Real cause (pg_stat_statements, 36-day window from 2026-05-29): **~12 GB shared reads but ~161 GB temp-file I/O**. Temp spill dwarfs shared I/O ~13×. `work_mem` is only **2184 kB (~2 MB)** on this small instance (shared_buffers 224 MB, effective_cache_size 384 MB), so every analytics aggregate/sort spills to disk.
 
 Two RPCs = ~85% of all temp I/O:
-- `phx_exec_customers(p_period)` — 3771 calls, ~79.5 GB temp (48%). Called via `rpcAll` (src/lib/sales/sos-dashboard.ts:559) with `count:"exact"` + ORDER BY client_code,distributor_code → PostgREST outer sort+count of the full result set spills.
+- `phx_exec_customers(p_period)` — 3771 calls, ~79.5 GB temp (48%). Called via `rpcAll` (src/lib/sales/sos-dashboard.ts) with `count:"exact"` + ORDER BY client_code,distributor_code → PostgREST outer sort+count of the full result set spills.
 - `phx_customer_directory(...region/area/brick/dist + period range)` — 758 calls, ~59.8 GB temp (36%).
 
 Both **already read the rollup tables** (customer_directory_rollup / fact_rollup), NOT raw import rows — so "route to rollup / trim indexes / partition" advice is moot; the rollup migration is already done. The spill is pure work_mem starvation.

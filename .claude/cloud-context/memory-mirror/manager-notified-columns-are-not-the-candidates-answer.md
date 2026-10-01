@@ -5,14 +5,14 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e095ef1e-a48a-4780-ab5a-fb0c8e34528a
-  modified: 2026-08-28T02:11:18.550Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **`manager_notified_region`, `manager_notified_area` and `manager_notified_job_title` on
 `ats_candidates` are NOT the candidate's declaration.** They are written by
-`src/lib/recruitment/hiring-manager-notify.ts:290-292` from `manager.regionName`, `manager.areaName`
+`src/lib/recruitment/hiring-manager-notify.ts` from `manager.regionName`, `manager.areaName`
 and `manager.jobTitle` — the territory and title of the **hiring manager who was pinged about this
-candidate**. `src/lib/recruitment/db.ts:186-190` reads them straight back out under a `manager`
+candidate**. `src/lib/recruitment/db.ts` reads them straight back out under a `manager`
 object.
 
 The names read exactly like "which region did this candidate apply for", which is why this is worth
