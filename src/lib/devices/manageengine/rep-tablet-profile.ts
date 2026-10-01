@@ -397,6 +397,12 @@ export async function buildRepTabletProfile(
   actor: string,
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
+  /**
+   * Where the required audit row goes. Passed only by the test, which records it: left to the
+   * default, a test run with `.env.local` loaded wrote "Built and published …" rows into
+   * production's audit log in the owner's name, for a profile that exists only in the test.
+   */
+  writeAudit: typeof writeRequiredAuditLog = writeRequiredAuditLog,
 ): Promise<RepTabletProfileResult> {
   const existing = findRepTabletProfile(await listManageEngineProfiles(fetchImpl, env));
 
@@ -485,7 +491,7 @@ export async function buildRepTabletProfile(
     error = `The profile was created but ${missing.join(" and ")} did not attach, so it was NOT published and no tablet can be put on it. ${restrictions.error ?? passcode.error ?? "ManageEngine gave no reason."}`;
   }
 
-  await writeRequiredAuditLog({
+  await writeAudit({
     actorLoginId: actor,
     entityId: profileId,
     entityType: "manageengine_profile",
