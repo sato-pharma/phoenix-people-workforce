@@ -43,6 +43,25 @@ export function weeklyRowPeriod(cycleMonth: string | null | undefined, weekStart
 }
 
 /**
+ * The unit price a weekly figure for `period` is valued at: the dated price that covers that month where
+ * one does, else today's price. Null when the product has no current positive master price — the caller
+ * then keeps what it had (a sale's stored value; a stock value of nothing). Every weekly money figure —
+ * sales, stock, the zero-sales watchlist — reads this one rule.
+ */
+export function liveUnitPrice(
+  productCode: string | null | undefined,
+  period: string | null | undefined,
+  prices: ReadonlyMap<string, number>,
+  datedPrices?: Pick<ProductPeriodPrices, "priceFor">,
+): number | null {
+  const code = normalizeCode(productCode);
+  const price = prices.get(code);
+  if (price == null) return null;
+  const dated = datedPrices && period ? datedPrices.priceFor(code, period) : null;
+  return dated != null && dated > 0 ? dated : price;
+}
+
+/**
  * The row's value at today's price — or at the dated price that covers the row's month, where one does —
  * and the stored value where the rule above says to keep it.
  */
@@ -59,10 +78,7 @@ export function liveSalesValue(
   datedPrices?: Pick<ProductPeriodPrices, "priceFor">,
 ): number {
   if (normalizeCode(row.distributorCode) === "DIRECT") return row.storedValue;
-  const code = normalizeCode(row.productCode);
-  const price = prices.get(code);
-  if (price == null) return row.storedValue;
-  const dated = datedPrices && row.period ? datedPrices.priceFor(code, row.period) : null;
-  const unit = dated != null && dated > 0 ? dated : price;
+  const unit = liveUnitPrice(row.productCode, row.period, prices, datedPrices);
+  if (unit == null) return row.storedValue;
   return Number((row.netQty * unit).toFixed(6));
 }

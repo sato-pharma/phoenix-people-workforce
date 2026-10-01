@@ -1164,6 +1164,8 @@ import { runProductPeriodPriceTests } from "./product-period-price.test.ts";
 import { runClosingDetailsPeriodPriceTests } from "./closing-details-period-price.test.ts";
 import { runImportStoredValuePeriodPriceTests } from "./import-stored-value-period-price.test.ts";
 import { runWeeklyDatedPriceTests } from "./weekly-dated-price.test.ts";
+import { runAnalyticsSosFactDatedPriceTests } from "./analytics-sos-fact-dated-price.test.ts";
+import { runSaginkoDatedPriceCodeSurfacesTests } from "./saginko-dated-price-code-surfaces.test.ts";
 import { runVerifiedCapturesTests } from "./verified-captures.test.ts";
 import { runSpotlightRankingTests } from "./spotlight-ranking.test.ts";
 import { runOfficeReceiptExplainsItsRowCountTests } from "./office-receipt-explains-its-row-count.test.ts";
@@ -4483,6 +4485,8 @@ await runTest('PERIOD-SCOPED FACTORY PRICE (Saginko 170.52 from 2026-10; July/Au
 await runTest('closing Details price each row at the CLOSING month (Saginko 170.52 from 2026-10, like the Matrix; July-September unchanged)', runClosingDetailsPeriodPriceTests);
 await runTest("the importer stores each row at its own month's price (Saginko 170.52 from 2026-10), re-prices a re-dated row, and still catches a re-dated duplicate (Office included)", runImportStoredValuePeriodPriceTests);
 await runTest("weekly rows are priced at the dated price of their cycle month (Saginko 170.52 from 2026-10) on the dashboard and the Combined Report; September, Direct and undated products unchanged", runWeeklyDatedPriceTests);
+await runTest("analytics.sos_fact and sos_fact_all value each month at its dated factory price (Saginko 170.52 from 2026-10), inlined so the analytics roles can still read them", runAnalyticsSosFactDatedPriceTests);
+await runTest("targets template (semester), weekly stock + zero-sales watchlist and ROI near misses price each row at its own month (Saginko 170.52 from 2026-10)", runSaginkoDatedPriceCodeSurfacesTests);
 await runTest('Verified Captures (Super Admin + SFE Manager gate, rep/DM/search filter)', runVerifiedCapturesTests);
 await runTest('SPOTLIGHT (achievement summed never averaged, targeted months only, completed-window gate)', runSpotlightRankingTests);
 await runTest('the Office receipt explains what its Rows Read number is', runOfficeReceiptExplainsItsRowCountTests);

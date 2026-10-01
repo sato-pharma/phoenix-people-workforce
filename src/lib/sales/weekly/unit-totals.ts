@@ -17,6 +17,7 @@
 // else the top product by value — and names the product beside it. Units are still never added across
 // products; only what the screen shows in their place changed. The exports keep the rule above.
 
+import { weeklyRowPeriod } from "@/lib/sales/weekly/live-price";
 import type {
   WeeklyBranchRow,
   WeeklyBranchSummary,
@@ -364,18 +365,21 @@ export type WeeklyZeroSalesSourceRow = {
   salesValue: number;
   netQty: number;
   stockQty: number;
+  /** The upload's month-cycle and week, so the stock is valued at the price covering its month. */
+  cycleMonth?: string | null;
+  weekStart?: string | null;
 };
 
 /**
  * The admin dashboard's Stock on hand watchlist (`zeroSalesBranches`): branches holding stock that sold
  * nothing, asked per product by weeklyHoldsStockWithNoSales, and ranked by their stock VALUE at the
- * Product Master price (`priceOf`; a product with no price adds nothing). Branchless rows are skipped
- * so the list never shows a "—" branch. The units on each row stay as they were; the screen decides
- * whether to show them (weeklyBreakdownUnitsAreOneProduct).
+ * price covering each row's month (`priceOf`, handed the row's `weeklyRowPeriod`; a product with no
+ * price adds nothing). Branchless rows are skipped so the list never shows a "—" branch. The units on
+ * each row stay as they were; the screen decides whether to show them (weeklyBreakdownUnitsAreOneProduct).
  */
 export function weeklyZeroSalesBranches(
   rows: readonly WeeklyZeroSalesSourceRow[],
-  priceOf: (productCode: string) => number | undefined,
+  priceOf: (productCode: string, period: string | null) => number | undefined,
 ): WeeklyBranchRow[] {
   type Branch = {
     branchName: string;
@@ -406,7 +410,7 @@ export function weeklyZeroSalesBranches(
     branch.salesValue += row.salesValue;
     branch.salesUnits += row.netQty;
     branch.stockUnits += row.stockQty;
-    branch.stockValue += row.stockQty * (priceOf(row.productCode) ?? 0);
+    branch.stockValue += row.stockQty * (priceOf(row.productCode, weeklyRowPeriod(row.cycleMonth, row.weekStart)) ?? 0);
     const productKey = row.productCode || row.productName;
     const product = branch.products.get(productKey) ?? { netUnits: 0, stockUnits: 0 };
     product.netUnits += row.netQty;

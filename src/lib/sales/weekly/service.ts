@@ -35,7 +35,7 @@ import {
   weekHasDecumulationGap,
 } from "@/lib/sales/weekly/decumulate";
 import { latestStockOnly } from "@/lib/sales/weekly/latest-stock";
-import { livePriceMap, liveSalesValue, weeklyRowPeriod } from "@/lib/sales/weekly/live-price";
+import { livePriceMap, liveSalesValue, liveUnitPrice, weeklyRowPeriod } from "@/lib/sales/weekly/live-price";
 import { productPeriodPricesFromRows, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
 import { narrowWeeklyRowsToOwnAreaShare, type WeeklyOwnAreaShare } from "@/lib/sales/weekly/own-area-share";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
@@ -1564,8 +1564,8 @@ export async function loadWeeklyDashboard(filters: {
   const sum = (rows: FactRow[], pick: (row: FactRow) => number) => rows.reduce((acc, row) => acc + pick(row), 0);
 
   // Zero-sales branches: stock on hand this week but no sales, each product checked on its own and
-  // ranked by stock value at the Product Master price (weeklyZeroSalesBranches).
-  const zeroSalesBranches = weeklyZeroSalesBranches(weekRowsAdj, (productCode) => priceMap.get(normalizeCode(productCode)));
+  // ranked by stock value at the price covering each row's month (weeklyZeroSalesBranches, live-price.ts).
+  const zeroSalesBranches = weeklyZeroSalesBranches(weekRowsAdj, (productCode, period) => liveUnitPrice(productCode, period, priceMap, datedPrices) ?? undefined);
 
   const trendWeeks = [...rawAvailableWeeks].sort();
   // flatMap: return [] for weeks with no loaded rows (empty historical batches), [point] otherwise.
@@ -1836,7 +1836,8 @@ export async function loadWeeklyDashboard(filters: {
           weekStart: row.weekStart,
           netUnits: row.netQty,
           stockUnits: row.stockQty,
-          factoryPrice: priceMap.get(normalizeCode(row.productCode)) ?? null,
+          // The price covering this upload's own month (Saginko 170.52 from 2026-10), as weekly sales.
+          factoryPrice: liveUnitPrice(row.productCode, weeklyRowPeriod(row.cycleMonth, row.weekStart), priceMap, datedPrices),
         }))
       : undefined,
     factRowDepotWeekGaps: filters?.includeFactRows ? depotGaps : undefined,

@@ -10,6 +10,7 @@ import {
   loadTargetableProducts,
   type TargetPeriodScope,
 } from "@/lib/sales/monthly-targets";
+import { loadProductPeriodPrices } from "@/lib/sales/product-period-price";
 import { generateTargetsTemplate } from "@/lib/sales/targets-template";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -49,15 +50,17 @@ export async function GET(request: Request) {
     // existing caller of this route expects, so it must stay reachable.
     const periods = PERIOD_RE.test(requestedPeriod) ? expandTargetPeriodScope(requestedPeriod, scope) : [];
 
-    // The template's unit-price column is resolved for the FIRST period of the span, because a
-    // price can differ by period and one column cannot carry two. Every span this route offers —
-    // a month, a quarter, a semester — sits entirely on one side of a price change in practice.
+    // Every row is priced at ITS OWN Period (`priceFor`), because a price can differ by period and a
+    // semester does NOT sit on one side of a change: Jul–Dec 2026 crosses Saginko's 2026-10 reprice,
+    // and a single first-month price stored October–December at 111.15 against sales at 170.52. The
+    // Products tab still shows the first month's price, as a reference and the formula's fallback.
     // A plain form with no period asked for falls back to the product master's current price.
     const templatePeriod = periods[0] ?? (PERIOD_RE.test(requestedPeriod) ? requestedPeriod : null);
 
-    const [areas, products] = await Promise.all([
+    const [areas, products, periodPrices] = await Promise.all([
       loadTargetableAreas(line.code),
       loadTargetableProducts(line.code, templatePeriod),
+      loadProductPeriodPrices(),
     ]);
 
     // `${period}|${areaCode}|${productCode}` -> the stored target. Loaded per month because
@@ -83,6 +86,7 @@ export async function GET(request: Request) {
       products,
       periods,
       existing,
+      priceFor: (productCode, period) => periodPrices.priceFor(productCode, period),
     });
 
     const span = periods.length > 0 ? `-${scope}-${periods[0]}` : "";

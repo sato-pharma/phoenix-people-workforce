@@ -11,7 +11,8 @@
 //     sum across weeks.
 //   • Units are NEVER added across different product codes. Any figure that spans products — a
 //     depot, an area, a region, a distributor, the whole scope — is a VALUE (units × the live
-//     Product Master factory price), never a unit total.
+//     Product Master factory price — or the dated price covering the snapshot's month where one
+//     does, e.g. Saginko 170.52 from 2026-10; live-price.ts), never a unit total.
 //   • Weeks of cover = stock ÷ average weekly net sales over the last 4 weeks.
 //     Low < 2 weeks · Healthy 2–8 · Overstock > 8 · stock with no sales in the window = No sales.
 //   • A depot with no area mapping is reported under "Area not mapped", never dropped.
@@ -56,7 +57,7 @@ export type WeeklyStockSourceRow = {
   netUnits: number;
   /** stock-on-hand snapshot for this upload */
   stockUnits: number;
-  /** live Product Master factory price; null when the master has none */
+  /** the price covering this upload's month (liveUnitPrice); null when the master has none */
   factoryPrice: number | null;
 };
 
@@ -363,8 +364,11 @@ export function buildWeeklyStockView(
   const allCells: WeeklyStockCell[] = [];
   // The unit price comes from the uploads, never from the filtered cells: a stocked-out depot has no
   // stock value to divide, and a "Low stock" filter can leave a product with only such depots — its
-  // weekly sales would then be valued at zero and the depot would read Healthy.
+  // weekly sales would then be valued at zero and the depot would read Healthy. A product's price is
+  // read off its NEWEST snapshot, so where distributors' snapshots straddle a month whose price differs
+  // (Saginko: 111.15 in September, 170.52 from October) the answer does not depend on row order.
   const productPrice = new Map<string, number>();
+  const productPriceWeek = new Map<string, string>();
   for (const [distributor, distributorRows] of rowsByDistributor) {
     const snapshot = snapshotByDistributor.get(distributor)!;
     const window = weeklyStockSalesWindow(distributorRows, snapshot);
@@ -394,7 +398,11 @@ export function buildWeeklyStockView(
       const areaCode = row.areaCode?.trim() ? row.areaCode.trim().toUpperCase() : null;
       const areaName = areaCode ? areaNames.get(areaCode) ?? areaCode : WEEKLY_STOCK_UNMAPPED_AREA_LABEL;
       const price = row.factoryPrice != null && row.factoryPrice > 0 ? row.factoryPrice : null;
-      if (price != null) productPrice.set(up(row.productCode), price);
+      const productKey = up(row.productCode);
+      if (price != null && snapshot >= (productPriceWeek.get(productKey) ?? "")) {
+        productPrice.set(productKey, price);
+        productPriceWeek.set(productKey, snapshot);
+      }
       allCells.push({
         distributorCode: row.distributorCode,
         distributorName: row.distributorName || row.distributorCode,
