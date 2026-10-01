@@ -587,6 +587,7 @@ function AddFlow({
         onBack={onClose}
         onPlanned={() => onStep({ name: "planned" })}
         onUnplanned={() => onStep({ name: "unplanned" })}
+        planToday={form ? form.planToday : null}
         plannedCount={form ? customersFor("planned", form.customers).length : null}
         seatId={seatId}
         test={test}

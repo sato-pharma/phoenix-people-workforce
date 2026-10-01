@@ -59,6 +59,24 @@ export function isPlanEditable(status: PhoenixCrmPlanStatus): boolean {
   return status === "draft" || status === "returned";
 }
 
+/**
+ * 🔴 A PLAN THAT HAS GONE FOR REVIEW — THE ONE THING THAT MAKES A VISIT "PLANNED", AND THE FILTER THAT
+ * MUST NOT BE DROPPED FOR LOOKING REDUNDANT.
+ *
+ * A draft plan is the rep's own to edit and today is an editable day, so counting a plain plan row
+ * would let him place the doctor at the door, save seconds later and never be off plan — the approval
+ * would never happen and the rule would be theatre. A RETURNED plan is his to edit too, so it is not
+ * authority either. The exact complement of `isPlanEditable`, named for what it means at the door.
+ *
+ * `phoenix_crm_save_visit` is stricter still: it asks whether the plan had reached review BEFORE this
+ * visit's server-issued `captured_at`, which a form being drawn cannot know yet. The two disagree only
+ * when the rep reopens his plan between opening the form and saving, and then the save comes back
+ * asking for his reason — the database is the authority and the screen never overrules it.
+ */
+export function isPlanSentForReview(status: PhoenixCrmPlanStatus | null): boolean {
+  return status === "submitted" || status === "approved";
+}
+
 export type PlanItemDraft = {
   planDate: string;
   customerId: string;

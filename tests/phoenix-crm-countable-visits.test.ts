@@ -3,6 +3,8 @@ import { readdirSync, readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 
+import { isPlanSentForReview } from "../src/lib/phoenix-crm/plan-rules.ts";
+
 /**
  * Phoenix CRM — an off-plan visit counts in NOTHING until it is approved.
  *
@@ -366,11 +368,20 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
     assert.match(save, /not v_on_sent_plan/, "and is stamped on the visit");
 
     // The screen's twin of the same test, so the picker and the server agree about what "planned" is.
+    // Since 2026-10-01 the form reads today's plan row ONCE — it has to show the status too, to say
+    // why Planned has nobody to offer — and narrows it to the sent set through a named predicate.
     const visits = source("src/lib/phoenix-crm/server/visits.ts");
-    const start = visits.indexOf("async function plannedCustomerIds");
-    assert.notEqual(start, -1);
-    const planned = visits.slice(start, start + 700);
-    assert.ok(planned.includes('.in("status", ["submitted", "approved"])'), "the picker counts only a plan that has gone for review");
+    assert.match(
+      visits,
+      /isPlanSentForReview\(planDay\.status\) \? planDay\.customerIds : \[\]/,
+      "the picker counts only a plan that has gone for review",
+    );
+    for (const status of ["submitted", "approved"] as const) {
+      assert.equal(isPlanSentForReview(status), true, `${status} is authority at the door`);
+    }
+    for (const status of ["draft", "returned", null] as const) {
+      assert.equal(isPlanSentForReview(status), false, `${status ?? "no plan row"} is the rep's own to edit, so it is not`);
+    }
   }
 
   // ── The legacy vendor KPI stack is untouched ─────────────────────────────────────────────────

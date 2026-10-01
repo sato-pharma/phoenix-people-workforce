@@ -58,7 +58,7 @@ import {
   isVisitObjection,
   type LastNextStep,
 } from "@/lib/phoenix-crm/visit-outcome";
-import { describeDayWindows, isUuid } from "@/lib/phoenix-crm/plan-rules";
+import { describeDayWindows, isPlanSentForReview, isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, resolveVisitParticipants, territoryReviewer, type OrgIndex } from "@/lib/phoenix-crm/scope";
 import { canWriteAsRep, isLocationBlind, readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
@@ -489,40 +489,20 @@ export type VisitFormView = {
   rules: { visitFarMeters: number; weakGpsMeters: number };
   customers: VisitCustomerOption[];
   todayVisits: VisitRow[];
+  /**
+   * Today's plan as it actually stands — the week plan's status, and how many stops he has SAVED for
+   * today whatever that status is.
+   *
+   * It exists so Add visit can say WHY "Planned visit" has nobody to offer (today-rules.ts
+   * `plannedStartEmptyNote`). `customers[].plannedToday` stays the SENT set and nothing else: it is
+   * what the picker offers and what the ordering follows, and widening it to a draft is precisely the
+   * defect the status filter below exists to prevent. These two numbers differ only when the rep has
+   * planned his day and not sent it — the morning of 2026-10-01, which is what this answers.
+   */
+  planToday: { status: PhoenixCrmPlanStatus | null; saved: number };
   /** Why no visit can be saved here, in one sentence; null when nothing stops it. */
   blockedReason: string | null;
 };
-
-/**
- * The customers planned for a day on a plan that has GONE FOR REVIEW — the screen's twin of the test
- * phoenix_crm_save_visit runs.
- *
- * The status filter is the whole point and must not be dropped for looking redundant. A draft plan is
- * the rep's own to edit and today is an editable day, so counting a plain plan row would let him place
- * the doctor at the door, save seconds later and never be off plan — the approval would never happen
- * and the rule would be theatre. A RETURNED plan is his to edit too, so it is not authority either.
- *
- * The database's version is stricter still: it asks whether the plan had reached review BEFORE this
- * visit's server-issued `captured_at`, which a form being drawn cannot know yet. The two disagree only
- * when the rep reopens his plan between opening the form and saving, and then the save comes back
- * asking him for a reason — the right answer, not a defect.
- */
-async function plannedCustomerIds(seatId: string, isTest: boolean, date: string): Promise<Set<string>> {
-  const supabase = getSupabaseAdmin();
-  const { data: plan, error } = await supabase
-    .from("phoenix_crm_plans")
-    .select("id")
-    .eq("seat_id", seatId)
-    .eq("is_test", isTest)
-    .eq("week_start", fieldWeekStart(date))
-    .in("status", ["submitted", "approved"])
-    .maybeSingle();
-  throwIfError(error);
-  if (!plan) return new Set();
-  const items = await supabase.from("phoenix_crm_plan_items").select("customer_id").eq("plan_id", String((plan as Row).id)).eq("plan_date", date);
-  throwIfError(items.error);
-  return new Set(((items.data ?? []) as Row[]).map((row) => String(row.customer_id)));
-}
 
 /**
  * The pharmacy names this seat has typed before, most recent first, deduped case-insensitively. The
@@ -691,7 +671,9 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     // is another out-of-list visit to the same customer, never a second customer.
     ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true, includeOutside: true })),
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
-    plannedCustomerIds(seat.seatId, isTest, today),
+    // Today's plan row WHATEVER its status: the sent set is filtered out of it below, and the status
+    // itself is what Add visit needs to say why Planned has nobody to offer.
+    plannedCustomersOn(seat.seatId, isTest, today),
     visitRowsRead,
     productFamiliesRead,
     loadSeatPharmacies(seat.seatId, isTest),
@@ -704,7 +686,11 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
   wave.catch(() => undefined);
   await ensured;
-  const [{ customers, placesByCustomer }, visitCounts, planned, visitRows, productFamilies, pharmacies, lastVisits, names] = await wave;
+  const [{ customers, placesByCustomer }, visitCounts, planDay, visitRows, productFamilies, pharmacies, lastVisits, names] = await wave;
+  // The SENT set, and only it, is what the picker offers and what the ordering follows — a draft is the
+  // rep's own to edit today, so counting one would let him place the doctor at the door and never be off
+  // plan (plan-rules.ts `isPlanSentForReview`). The count he has SAVED rides beside it, for the sentence.
+  const planned = new Set(isPlanSentForReview(planDay.status) ? planDay.customerIds : []);
   const products = productFamilies.map((entry) => entry.family);
   const visitedToday = new Set(visitRows.map((row) => String(row.customer_id)));
   const ramadan = isRamadanDay(today, viewer.config.ramadanOverrides);
@@ -775,6 +761,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     rules: { visitFarMeters: settings.visitFarMeters, weakGpsMeters: settings.weakGpsMeters },
     customers: options,
     todayVisits: visitRows.map((row) => mapVisitRow(row, names, { blind, org: viewer.org })),
+    planToday: { status: planDay.status, saved: planDay.customerIds.length },
     blockedReason,
   };
 }

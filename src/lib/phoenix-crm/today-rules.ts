@@ -323,6 +323,34 @@ export function planStatusNote(status: PhoenixCrmPlanStatus | null): string | nu
   return "Your plan for this week has not been sent yet. Open Plan to send it for approval.";
 }
 
+/**
+ * 🔴 WHY "PLANNED VISIT" HAS NOBODY TO OFFER — THE REAL REASON, NEVER A BARE "NOBODY" (owner,
+ * 2026-10-01, out of his own morning: "I submitted the doctors … the doctors in the plan are not
+ * appearing and I'm obligatory should enter them as unplanned visits — why").
+ *
+ * He had SAVED five accounts on Thursday 1 October; what he SENT were the weeks of 3 and 10 October.
+ * Thursday 1 October belongs to the field week starting Saturday 26 September, and a week is filed
+ * under the month its Saturday falls in — so today's stops sat in September as a DRAFT. A draft offers
+ * nobody, by design: the plan must have reached sent or approved BEFORE the visit's `captured_at`,
+ * which is what stops a rep dropping a doctor onto today's draft at the door. All of that was right.
+ * What was wrong is that Add visit said "Nobody on today's sent plan yet" — the same six words whether
+ * he planned nobody at all or planned five people and left them unsent. The screen knew and did not say.
+ *
+ * So it names the state, the count he has already placed, and where to go. This is HIS OWN WORK, which
+ * Golden Rule #1 keeps VISIBLE: it judges nothing, and it adds no step to his day.
+ *
+ * `saved` is every stop on today's plan row whatever its status; the caller's `offered` count is the
+ * SENT ones. The two differ exactly when this sentence is needed.
+ */
+export function plannedStartEmptyNote(input: { saved: number; status: PhoenixCrmPlanStatus | null }): string {
+  const placed = input.saved > 0 ? `${input.saved} planned for today, but ` : "";
+  if (input.status === null) return "No plan sent for this week yet. Open Plan to send it.";
+  if (input.status === "draft") return `${placed}your plan for this week is still a draft. Open Plan to send it.`;
+  if (input.status === "returned") return `${placed}your plan for this week was sent back to you. Open Plan to send it again.`;
+  // Sent or approved with nobody on today: he planned the day empty, which is an answer in itself.
+  return "Nobody on today's sent plan yet.";
+}
+
 // ── Next up ─────────────────────────────────────────────────────────────────────────────────────
 //
 // Owner, 2026-09-30: "the best-appearing and easiest CRM". Between two doors the rep's question is

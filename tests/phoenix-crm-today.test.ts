@@ -5,6 +5,7 @@ import { stripComments, stripCommentsCompact } from "./support/comment-strip.ts"
 
 import { customerMetaText, gradeSpecialityParts, gradeSpecialityText } from "../src/components/phoenix-crm/labels.ts";
 
+import { isPlanSentForReview } from "../src/lib/phoenix-crm/plan-rules.ts";
 import {
   addressWithoutTheBrick,
   buildTodayStops,
@@ -161,11 +162,19 @@ export function runPhoenixCrmTodayTests(): void {
     assert.ok(!/for \(const customerId of planned\.customerIds\)/.test(loader), "never from the plan's rows regardless of status");
     assert.ok(loader.includes("status: planned.status,"), "and the empty reason names which state an unapproved plan is in");
 
-    // 🔴 The counting reader is untouched and still wider than Today, which is what makes the trap
-    // impossible: approved ⊂ {submitted, approved}.
-    const counting = visits.indexOf("async function plannedCustomerIds");
-    const countingBody = visits.slice(counting, visits.indexOf("\n}", counting));
-    assert.ok(countingBody.includes('.in("status", ["submitted", "approved"])'), "what COUNTS as planned still takes either");
+    // 🔴 The counting reader is still wider than Today, which is what makes the trap impossible:
+    // approved ⊂ {submitted, approved}. Since 2026-10-01 the form narrows the SAME read rather than
+    // running a second one behind `.in("status", …)` — it needs the status itself now, to say why
+    // Planned has nobody to offer — so the filter is a named predicate at the call site.
+    assert.match(
+      visits,
+      /isPlanSentForReview\(planDay\.status\) \? planDay\.customerIds : \[\]/,
+      "what COUNTS as planned still takes either",
+    );
+    assert.ok(isPlanSentForReview("submitted") && isPlanSentForReview("approved"), "and that predicate takes both");
+    for (const status of ["draft", "returned", null] as const) {
+      assert.equal(isPlanSentForReview(status), false, `${status ?? "no plan row"} is the rep's own to edit, so it is never authority`);
+    }
 
     // Each status earns its own sentence. `submitted` is his wording; the other two are named as
     // themselves, because "pending approval" would be untrue of a plan nobody has yet.
