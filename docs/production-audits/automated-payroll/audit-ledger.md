@@ -329,8 +329,12 @@ nothing, and reading as coverage. The Egypt holiday pin in
 `tests/holiday-calendar-outage-gates.test.ts` went the same way, replaced by a note naming the three
 places the live protection actually sits. Git history holds the function if the September figure
 (**95 CRM-only AV day-rows across 43 people**, measured on production 2026-10-01) is ever wanted on
-a screen; `tests/automated-payroll-reads-deductions-module.test.ts` now asserts, comment-stripped,
-that it does not come back unwired.
+a screen. `tests/automated-payroll-reads-deductions-module.test.ts` asserts against **comment-stripped**
+source that it does not come back — added in the #5068 follow-up, because #5068 as merged claimed that
+guard without carrying it: the assertion it left in place was #5050's predecessor, which read RAW
+source and so was satisfied by recommend.ts's own note about the removal. That follow-up also removed
+`pad2`, `periodBounds`, `eachDateInclusive` and two imports, which #5068 orphaned and left as dead
+code in a payroll file — the same defect it had set out to remove.
 
 ## The ruling on the fourteen — MOOT, resolved 2026-09-12 (cycle 4)
 

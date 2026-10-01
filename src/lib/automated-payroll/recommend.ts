@@ -15,7 +15,6 @@ import { buildFeederStates, compactHrKey } from "@/lib/payroll/copilot/feeders.t
 // leaver-basis.ts owns it now, so both leaver tabs read one settlement instead
 // of each computing its own.
 import { computeJoinerPay, isInPeriod } from "@/lib/payroll/copilot/proration.ts";
-import { listUnpaidVacationCandidates } from "@/lib/payroll/copilot/vacation-settlement.ts";
 import { deductionsCategoryLabel } from "@/lib/deductions/calculations";
 // The whole-month settlement basis behind every step's four-figure summary.
 // Value import into a module assemble.ts imports FROM — safe, and deliberately
@@ -31,7 +30,6 @@ import {
   type DeductionLine,
   type EmployeeDeductions,
 } from "./deductions-source.ts";
-import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
 // The ONE leaver rule — days worked and the day rate — shared by the
 // Resignations and Resignations CRM steps so they can never disagree again
 // (owner, 2026-08-30: "the rule must be synced everywhere in the module").
@@ -333,18 +331,6 @@ function pick(draftValue: number | null | undefined, recommended: number): numbe
   return draftValue == null ? recommended : draftValue;
 }
 
-function pad2(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function periodBounds(period: PayrollPeriod): { start: string; end: string } {
-  const lastDay = new Date(Date.UTC(period.year, period.month, 0)).getUTCDate();
-  return {
-    start: `${period.year}-${pad2(period.month)}-01`,
-    end: `${period.year}-${pad2(period.month)}-${pad2(lastDay)}`,
-  };
-}
-
 /** One reimbursable trip behind an employee's expense total (owner request 2026-08-01). */
 export type PayoutExpenseTrip = {
   tripId: string;
@@ -558,17 +544,6 @@ export function formatDateRange(startIso: string, endIso: string): string {
   const end = (endIso ?? "").slice(0, 10);
   if (start && end && start !== end) return `${start} → ${end}`;
   return start || end || "—";
-}
-
-function eachDateInclusive(startIso: string, endIso: string): string[] {
-  const dates: string[] = [];
-  const start = startIso.slice(0, 10);
-  const end = endIso.slice(0, 10);
-  let ms = Date.parse(`${start}T00:00:00Z`);
-  const endMs = Date.parse(`${end}T00:00:00Z`);
-  if (!Number.isFinite(ms) || !Number.isFinite(endMs)) return dates;
-  for (; ms <= endMs; ms += 86400000) dates.push(new Date(ms).toISOString().slice(0, 10));
-  return dates;
 }
 
 /**

@@ -308,6 +308,19 @@ export function runAutomatedPayrollReadsDeductionsModuleTests() {
     );
   }
 
+  // And the reader itself does not come back. #5068 deleted `computeVacationDeductionTotals` with
+  // its two Supabase loaders and its error class, because nothing could reach them: a fail-closed
+  // refusal guarding a code path no route, cron, script or step could enter. Reinstating it unwired
+  // would restore that, and wiring it up would make it the second reader of CRM leave — the first
+  // half of the double balance draw-down tests/automated-payroll-crm-leave-one-mechanism.test.ts
+  // exists to prevent. Stripped source, so recommend.ts's historical note about the removal cannot
+  // satisfy this the way the old RAW-source assertion satisfied itself.
+  assert.ok(
+    !recommendSource.includes("computeVacationDeductionTotals"),
+    "recommend.ts must not reintroduce computeVacationDeductionTotals — nothing consumes its result, so its "
+      + "refusal on an unreadable CRM feed or Egypt holiday calendar would block a payroll confirm for no benefit",
+  );
+
   assert.equal(STEP_DEFINITIONS.p1_fingerprint.phase, "part1", "fingerprint is a Part 1 deduction, always");
   assert.equal(stepPhase("p1_fingerprint"), "part1");
   for (const stepKey of ["p2_crm", "p2_vacation"] as const) {
