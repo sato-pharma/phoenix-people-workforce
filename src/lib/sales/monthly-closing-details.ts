@@ -24,6 +24,7 @@ import { evenSplitKey, loadEvenSplitCustomerKeys } from "@/lib/sales/even-split-
 import { resolveMedicalRepSosAreaCodes } from "@/lib/sales/medical-rep-area-scope";
 import { loadSalesReferenceData, type SalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import { loadProductPeriodPrices, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
 import { rowIsInRegionScope, rowMatchesRegionFilter } from "@/lib/sales/sos-region-basis";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -249,8 +250,9 @@ function num(value: unknown): number {
  *
  * ── DISTRIBUTOR ROWS: effectiveUnits x factoryPrice ──────────────────────────────────────────
  * That is the DISTRIBUTOR formula — the same arithmetic phx_monthly_closing_matrix values sell-out
- * at (`f.effective_units * p.factory_price`) — and it is correct for a distributor invoice line,
- * whose sheet value is a restatement of it. Unchanged.
+ * at (`f.effective_units * phx_factory_price(f.product_code, f.period)`) — and it is correct for a
+ * distributor invoice line, whose sheet value is a restatement of it. `factoryPrice` arrives already
+ * resolved for the closing month; see resolveClosingDetailFactoryPrice.
  *
  * ── DIRECT ROWS: THE STORED VALUE IS THE VALUE, IN EVERY MONTH ───────────────────────────────
  * A direct order is a negotiated deal — its own price, its own discount, its own bonus — so
@@ -298,6 +300,33 @@ export function resolveClosingDetailSalesValue(input: {
 }): number {
   if (input.isDirect) return input.sheetValue;
   return input.effectiveUnits * input.factoryPrice;
+}
+
+/**
+ * The factory price that values one row of the closing month being read.
+ *
+ * 🔴 THE PERIOD PRICE, NEVER THE PRODUCT MASTER'S. Saginko (SA001) is valued at 111.15 through
+ * 2026-09 and 170.52 from 2026-10 (owner, 2026-09-28: "the sales and target of the retail to be
+ * adjusted from 1 October"), while `source_of_sales_products.factory_price` STAYS 111.15 on purpose.
+ * Every closing function in the database prices through `public.phx_factory_price(code, period)`;
+ * this module read the master price off loadSalesReferenceData until 2026-10-01, so from October the
+ * Details tab, the workbook's Data and Total sheets and the live store split's money would have
+ * valued Saginko at 111.15 beside a Closing Matrix at 170.52. At August 2026's Anti Infective volume
+ * (2,983 units) that is 331,560.45 on the Details tab against 508,661.16 on the Matrix.
+ *
+ * Priced at the CLOSING month rather than the row's invoice period, because that is what the Matrix
+ * prices by: `source_of_sales_fact_rollup.period` is stamped from the BATCH, and these rows are read
+ * from exactly this month's batches. The two never differ in production (0 of 362,356 validated
+ * rows on 2026-10-01), so this picks which one to mirror; it corrects neither.
+ *
+ * `?? 0` is the Matrix's own `coalesce(..., 0)`: a product with no price contributes nothing.
+ */
+export function resolveClosingDetailFactoryPrice(
+  prices: Pick<ProductPeriodPrices, "priceFor">,
+  productCode: string,
+  closingPeriod: string,
+): number {
+  return prices.priceFor(productCode, closingPeriod) ?? 0;
 }
 
 function emptyTotals(): ClosingDetailsTotals {
@@ -712,7 +741,7 @@ export async function loadMonthlyClosingDetails(
 
   // The three period-independent reads come from `shared` when a caller looping over months handed
   // them in — the same function, already running once for the whole request — else from here.
-  const [batchIds, references, operationalRegions, evenSplitCustomers] = await Promise.all([
+  const [batchIds, references, operationalRegions, evenSplitCustomers, prices] = await Promise.all([
     validatedBatchIdsForPeriod(period),
     shared?.references ?? loadSalesReferenceData({ includeCustomerBricks: false }),
     // The org chart, for the region relabel below. Fails soft to geography, so an unreadable chart
@@ -722,6 +751,9 @@ export async function loadMonthlyClosingDetails(
     // place closing rows are built, so every consumer of those rows inherits the flag instead of
     // having to remember it — the store city split above all. See even-split-registry.ts.
     shared?.evenSplitCustomers ?? loadEvenSplitCustomerKeys(),
+    // The price each row is valued at IN THIS MONTH. Not `references.products`, whose price is the
+    // product master's flat one — see resolveClosingDetailFactoryPrice.
+    loadProductPeriodPrices(),
   ]);
 
   // 🔴 A MEDICAL REP SEES THEIR OWN AREA, NOT THEIR REGION. The engine reads their SELF scope at region
@@ -779,7 +811,7 @@ export async function loadMonthlyClosingDetails(
 
     const productCode = text(raw.product_code);
     const product = productCode ? productByCode.get(productCode.toUpperCase()) : undefined;
-    const factoryPrice = num(product?.factoryPrice);
+    const factoryPrice = resolveClosingDetailFactoryPrice(prices, productCode, period);
 
     const qty = num(raw.qty);
     const discount = num(raw.discount);
