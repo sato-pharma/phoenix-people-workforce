@@ -17,22 +17,28 @@ import {
 // The same pair is in the live feed for 25/29 January 2026, 30 June/2 July 2026 and 25/28 January
 // 2027, so this is a recurrence, not an October one-off.
 //
-// Dated 2098 so the per-month holiday cache cannot be shared with any other test in the suite.
+// YEAR 2096 IS RESERVED BY THIS FILE, AND SO ARE DECEMBER 2095 AND JANUARY 2097. The fold reads
+// the month either side of the one asked for, so every getConfirmedNationalHolidays call here
+// warms THREE months of the per-month holiday cache (holidayCache, keyed by year-month alone and
+// shared by the whole suite). A later test that needs one of those months COLD then reads a
+// cached answer and counts zero feed downloads — which is exactly how this file first went red
+// against vacation-reads-started-together.test.ts, whose own note reserves 2098; 2099 belongs to
+// the observance filter. Pick a year nobody else uses, and leave its two neighbours free too.
 const SYNTHETIC_ICS = [
   "BEGIN:VCALENDAR",
   "VERSION:2.0",
   // Same month: the October pair, exactly as the live feed carries it.
-  ...event("20981006", "20981007", "armed-forces-day", "Armed Forces Day"),
-  ...event("20981008", "20981009", "day-off-armed-forces-day", "Day off for Armed Forces Day"),
+  ...event("20961006", "20961007", "armed-forces-day", "Armed Forces Day"),
+  ...event("20961008", "20961009", "day-off-armed-forces-day", "Day off for Armed Forces Day"),
   // Across a month boundary: June 30 observed on 2 July.
-  ...event("20980630", "20980701", "june-30-revolution", "June 30 Revolution"),
-  ...event("20980702", "20980703", "day-off-june-30-revolution", "Day off for June 30 Revolution"),
+  ...event("20960630", "20960701", "june-30-revolution", "June 30 Revolution"),
+  ...event("20960702", "20960703", "day-off-june-30-revolution", "Day off for June 30 Revolution"),
   // The substitute can land BEFORE the official date — the 2025 feed did exactly this.
-  ...event("20980424", "20980425", "day-off-sinai", "Day off for Sinai Liberation Day"),
-  ...event("20980425", "20980426", "sinai", "Sinai Liberation Day"),
+  ...event("20960424", "20960425", "day-off-sinai", "Day off for Sinai Liberation Day"),
+  ...event("20960425", "20960426", "sinai", "Sinai Liberation Day"),
   // A genuine multi-day holiday: no `Day off for` prefix anywhere, so nothing may be folded.
-  ...event("20980319", "20980320", "eid-el-fitr-holiday", "Eid el Fitr Holiday"),
-  ...event("20980320", "20980321", "eid-el-fitr", "Eid el Fitr"),
+  ...event("20960319", "20960320", "eid-el-fitr-holiday", "Eid el Fitr Holiday"),
+  ...event("20960320", "20960321", "eid-el-fitr", "Eid el Fitr"),
   "END:VCALENDAR",
 ].join("\r\n");
 
@@ -49,7 +55,7 @@ function event(start: string, end: string, uid: string, summary: string) {
 }
 
 async function holidayDates(month: number) {
-  const result = await getConfirmedNationalHolidays({ month, year: 2098 });
+  const result = await getConfirmedNationalHolidays({ month, year: 2096 });
   return result.holidays.map((holiday) => holiday.startDate).sort();
 }
 
@@ -68,51 +74,51 @@ export async function runHolidaySubstituteDayOffTests() {
     // 1. The incident itself: ONE day off in October, on the substitute date.
     assert.deepEqual(
       await holidayDates(10),
-      ["2098-10-08"],
+      ["2096-10-08"],
       "Armed Forces Day must not block its official date as well as the day off Google moved it to",
     );
 
     // 2. The admin page still has to SEE the pair, or the official date could never be confirmed
     //    by hand when the government does something the feed does not describe.
-    const rawOctober = await getEgyptianNationalHolidays({ month: 10, year: 2098 });
+    const rawOctober = await getEgyptianNationalHolidays({ month: 10, year: 2096 });
     assert.deepEqual(
       rawOctober.holidays.map((holiday) => holiday.startDate).sort(),
-      ["2098-10-06", "2098-10-08"],
+      ["2096-10-06", "2096-10-08"],
       "the RAW source must be left untouched — the fold belongs to getConfirmedNationalHolidays",
     );
 
     // 3. Across a month boundary, read from the official date's own month.
     assert.equal(
-      (await holidayDates(6)).includes("2098-06-30"),
+      (await holidayDates(6)).includes("2096-06-30"),
       false,
       "June 30 is not a day off when July carries `Day off for June 30 Revolution`",
     );
-    assert.deepEqual(await holidayDates(7), ["2098-07-02"]);
+    assert.deepEqual(await holidayDates(7), ["2096-07-02"]);
 
     // 4. The substitute sitting BEFORE the official date folds the same way.
     assert.deepEqual(
       await holidayDates(4),
-      ["2098-04-24"],
+      ["2096-04-24"],
       "a `Day off for` event the day BEFORE the official date still supersedes it",
     );
 
     // 5. A real multi-day holiday is never folded.
     assert.deepEqual(
       await holidayDates(3),
-      ["2098-03-19", "2098-03-20"],
+      ["2096-03-19", "2096-03-20"],
       "Eid el Fitr and Eid el Fitr Holiday are two genuine days off — neither is a `Day off for` substitute",
     );
 
     // 6. The Bulk Holiday Calendar opens the official row on the substitute date, so one
     //    "Save All Changes" cannot pin the holiday back onto a day the government moved.
-    const yearView = await buildHolidayCalendarYearView(2098);
-    const october6 = yearView.rows.find((row) => row.officialDate === "2098-10-06");
+    const yearView = await buildHolidayCalendarYearView(2096);
+    const october6 = yearView.rows.find((row) => row.officialDate === "2096-10-06");
     assert.ok(october6, "the official 6 October row must still be listed for review");
-    assert.equal(october6.observedDate, "2098-10-08");
-    assert.equal(october6.observedEndDate, "2098-10-08");
+    assert.equal(october6.observedDate, "2096-10-08");
+    assert.equal(october6.observedEndDate, "2096-10-08");
     assert.equal(october6.hasOverride, false, "a pre-filled substitute date is a default, never a confirmation");
-    const eidHoliday = yearView.rows.find((row) => row.officialDate === "2098-03-19");
-    assert.equal(eidHoliday?.observedDate, "2098-03-19", "an unmoved holiday still opens on its own date");
+    const eidHoliday = yearView.rows.find((row) => row.officialDate === "2096-03-19");
+    assert.equal(eidHoliday?.observedDate, "2096-03-19", "an unmoved holiday still opens on its own date");
   } finally {
     globalThis.fetch = savedFetch;
   }
