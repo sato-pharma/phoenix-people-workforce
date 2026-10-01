@@ -436,8 +436,25 @@ const CALENDAR_CELL: Record<string, string> = {
   rest: "F",
 };
 
+/**
+ * What the calendar's tab is called, which depends on WHOSE month it holds.
+ *
+ * 🔴 ONE FUNCTION, THREE CALLERS, AND THAT IS THE POINT OF IT. The name is written in three
+ * places — the worksheet tab, the heading inside it, and `packSections`, which is what the COVER
+ * promises — and a cover naming a tab the workbook does not contain is a file that reads as
+ * broken to whoever opens it. Deriving all three from here is what stops a rename reaching two.
+ *
+ * A rep has read this calendar since 2026-10-01, scoped to himself, so "Team calendar" on his own
+ * download names something he does not have and cannot see. `scope` comes from the service, which
+ * takes it from the access predicate rather than from the row count — a district manager down to
+ * one rep still gets "Team calendar", because it is still his team.
+ */
+export function calendarSheetName(view: Pick<TeamCalendarView, "scope"> | null | undefined): string {
+  return view?.scope === "own" ? "Your month" : "Team calendar";
+}
+
 function writeCalendar(workbook: ExcelJS.Workbook, view: TeamCalendarView): void {
-  const sheet = workbook.addWorksheet("Team calendar");
+  const sheet = workbook.addWorksheet(calendarSheetName(view));
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(sheet, 1, {
     columns: [
@@ -461,7 +478,7 @@ function writeCalendar(workbook: ExcelJS.Workbook, view: TeamCalendarView): void
       row.totals.pm,
       row.totals.pharmacies,
     ]),
-    title: `Team calendar · ${view.month}`,
+    title: `${calendarSheetName(view)} · ${view.month}`,
     totals: ["All", "", "", ...view.days.map(() => ""), view.totals.am, view.totals.pm, view.totals.pharmacies],
   });
 }
@@ -632,7 +649,9 @@ export function packSections(input: ReportsPackInput): string[] {
     input.coverage ? "Coverage and frequency" : null,
     input.frequency ? "Frequency per customer" : null,
     input.tracking ? "Tracking sheet" : null,
-    input.calendar ? "Team calendar" : null,
+    // Through the same function the sheet itself uses, or the cover promises a tab that the
+    // workbook does not contain the moment the two names diverge.
+    input.calendar ? calendarSheetName(input.calendar) : null,
     input.bricks ? "Coverage against sales" : null,
     input.managers ? "Double and chain visits" : null,
     input.locations ? "Where the visit was saved" : null,
