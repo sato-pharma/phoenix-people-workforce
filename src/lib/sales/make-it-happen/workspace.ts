@@ -10,6 +10,8 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
+import { resolveSemesterKey } from "@/lib/incentives/semester";
+import { PEDIA_SATO_PRODUCT_CODES, isPediaSatoProductCode, pediaSplitApplies } from "@/lib/incentives/pedia-split";
 import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
 import {
   SALES_LINES,
@@ -29,6 +31,7 @@ import {
 import {
   MAKE_IT_HAPPEN_FLOOR,
   achievementOf,
+  forecastMonthsOf,
   gradeRows,
   isPeriodKind,
   monthLabel,
@@ -178,6 +181,17 @@ export async function buildMakeItHappenWorkspace(
   }
 
   const monthSet = new Set(months);
+  // Quarters and months sit inside one semester, and a semester is itself — so the first month names it.
+  const periodSemester = resolveSemesterKey(months[0]);
+  const satoNames = PEDIA_SATO_PRODUCT_CODES.map((code) => productNames.get(code)).filter(
+    (name): name is string => Boolean(name),
+  );
+  const satoProductNames =
+    satoNames.length === 0
+      ? "the Sato products"
+      : satoNames.length === 1
+        ? satoNames[0]
+        : `${satoNames.slice(0, -1).join(", ")} and ${satoNames[satoNames.length - 1]}`;
   const toGradable = (row: AchievementRow): GradableRow => ({
     period: row.period,
     closed: isRowPublished(row, publishedKeys),
@@ -194,9 +208,12 @@ export async function buildMakeItHappenWorkspace(
       if (lineRows.length === 0) continue;
       const historyMonths = historyMonthsByLine.get(line.code) ?? [];
       const historySet = new Set(historyMonths);
-      const openMonths = months.filter((month) => !publishedKeys.has(`${line.code}|${month}`));
-      const closedMonths = months.filter((month) => publishedKeys.has(`${line.code}|${month}`));
+      const isClosed = (month: string) => publishedKeys.has(`${line.code}|${month}`);
+      const closedMonths = months.filter(isClosed);
       const periodRows = lineRows.filter((row) => monthSet.has(row.period));
+      // engine.ts rule 6: the forecast fills only the open months this scope carries a target in.
+      const targetedMonths = new Set(periodRows.filter((row) => (row.targetValue ?? 0) > 0).map((row) => row.period));
+      const { forecast: openMonths, untargeted } = forecastMonthsOf(months, isClosed, (month) => targetedMonths.has(month));
 
       const byCode = new Map<string, AchievementRow[]>();
       for (const row of lineRows) {
@@ -248,15 +265,37 @@ export async function buildMakeItHappenWorkspace(
       concentrations.sort((a, b) => a.family.localeCompare(b.family) || a.name.localeCompare(b.name));
 
       const lineGraded = gradeRows(periodRows.map(toGradable));
+
+      // engine.ts rule 7 — the Sato half, graded on its OWN rows so its months are its own: the
+      // same total-over-total the incentive tab reads (src/lib/incentives/pedia-achievement.ts).
+      let satoHalf: LinePlanGroup["satoHalf"] = null;
+      if (pediaSplitApplies({ line: line.code, semester: periodSemester })) {
+        const satoRows = periodRows.filter((row) => isPediaSatoProductCode(row.productCode));
+        const satoInScope = concentrations.some((row) => isPediaSatoProductCode(row.productCode));
+        if (satoInScope) {
+          const satoGraded = gradeRows(satoRows.map(toGradable));
+          satoHalf = {
+            productCodes: concentrations
+              .map((row) => row.productCode)
+              .filter((code) => isPediaSatoProductCode(code)),
+            productNames: satoProductNames,
+            targetValue: satoGraded.targetValue > 0 ? satoGraded.targetValue : null,
+            gradedValue: satoGraded.gradedValue,
+          };
+        }
+      }
+
       groups.push({
         lineCode: line.code,
         lineName: lineName(line.code),
         remainingMonths: openMonths.length,
         closedMonthLabels: closedMonths.map((month) => monthLabel(month, true)),
         forecastMonthLabels: openMonths.map((month) => monthLabel(month, true)),
+        untargetedMonthLabels: untargeted.map((month) => monthLabel(month, true)),
         targetValue: lineGraded.targetValue > 0 ? lineGraded.targetValue : null,
         gradedValue: lineGraded.gradedValue,
         actualValue: lineGraded.actualValue,
+        satoHalf,
         rows: concentrations,
       });
     }

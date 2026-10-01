@@ -45,6 +45,10 @@ import {
 } from "@/lib/crm/master-datasets";
 import { CRM_VISIT_TYPE_FILTER_CODES, CRM_VISIT_TYPE_OPTIONS, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
+// The one authority on which dates are really days off — Google's Egypt feed with the System
+// Admin's confirmed observed dates layered on top (attendance_holiday_overrides). Read for the
+// vacation-period labels below; see loadConfirmedNationalHolidayNames.
+import { getConfirmedNationalHolidaysForPeriods } from "@/lib/vacation/national-holidays";
 
 export { CRM_MASTER_DATASETS, CRM_MASTER_SUPPORTED_FILTERS, crmMasterSupportsFilter, type CrmMasterDataset, type CrmMasterFilterKey };
 
@@ -1343,37 +1347,75 @@ function isNextCalendarDay(prev: string, cur: string): boolean {
   return Number.isFinite(p) && Number.isFinite(c) && c - p === 86_400_000;
 }
 
-/** Official Egyptian public holidays for 2026 (YYYY-MM-DD → name), for flagging "national vacations"
- * by date. Gregorian-fixed dates are firm; the Islamic/Coptic ones (Eid, Hijri New Year, Sham
- * El-Nessim, Mawlid) shift by moon/calendar and are best-effort — edit here if the observed dates
- * differ. Comment-based detection (below) catches the actually-logged holidays regardless of date. */
-const NATIONAL_HOLIDAYS_2026: ReadonlyMap<string, string> = new Map([
-  ["2026-01-07", "Coptic Christmas"],
-  ["2026-01-25", "25 January Revolution / Police Day"],
-  ["2026-03-20", "Eid al-Fitr"],
-  ["2026-03-21", "Eid al-Fitr"],
-  ["2026-03-22", "Eid al-Fitr"],
-  ["2026-04-13", "Sham El-Nessim"],
-  ["2026-04-25", "Sinai Liberation Day"],
-  ["2026-05-01", "Labour Day"],
-  ["2026-05-27", "Eid al-Adha"],
-  ["2026-05-28", "Eid al-Adha"],
-  ["2026-05-29", "Eid al-Adha"],
-  ["2026-05-30", "Eid al-Adha"],
-  ["2026-06-17", "Islamic New Year"],
-  ["2026-06-18", "Islamic New Year"],
-  ["2026-06-30", "30 June Revolution"],
-  ["2026-07-23", "23 July Revolution"],
-  ["2026-08-26", "Prophet's Birthday"],
-  // Armed Forces Day is officially 6 October, which falls on a TUESDAY in 2026, so the day off is
-  // observed on Thursday 8 October (owner, 2026-10-01) — and the observed date is the only one that
-  // belongs here, because this map labels the days agents actually logged as leave. 6 October is a
-  // normal working day: leave logged on it is an ordinary vacation, not a national holiday, and
-  // labelling it as one would excuse a day nobody was off. The confirmed date lives in
-  // attendance_holiday_overrides (official 2026-10-06 → observed 2026-10-08) for every other
-  // consumer; this map is the one hand-rolled copy of it.
-  ["2026-10-08", "Armed Forces Day"],
-]);
+/**
+ * NO HAND-ROLLED HOLIDAY CALENDAR ANY MORE — the dates come from the confirmed source.
+ *
+ * This module used to carry its own YYYY-MM-DD → name map of Egypt's 2026 holidays, and it drifted
+ * from the authority on four entries at once: Armed Forces Day (fixed on its observed 8 October in
+ * #5079), the 30 June Revolution (observed 2 July, override row 1 on production), the Prophet's
+ * Birthday (confirmed 27 August, not the 26th) and Eid al-Fitr (confirmed 19–20 March, where the
+ * map said 20–22). Every wrong date costs twice: a rep's ordinary leave on a working day is excused
+ * as a national holiday, and the real day off is labelled only if his own comment happens to name
+ * it. A hand-rolled map cannot be anything but wrong, because the Islamic and Coptic holidays move
+ * every year and the observed day off is postponed by decision, not by arithmetic.
+ *
+ * So the names are now read from `getConfirmedNationalHolidays*` — Google's Egypt public-holiday
+ * feed with the System Admin's confirmed observed dates layered on top — which is the same source
+ * every calendar, plan, attendance and compliance surface already reads (see the rule on
+ * getConfirmedNationalHolidays). Nothing here needs editing next year.
+ *
+ * Expand the confirmed SPANS (`startDate`..`endDate`, a multi-day Eid is one record) into the
+ * date → name map `detectNationalHoliday` looks up. A span is kept whole even where it runs past
+ * the months that were asked for, so a multi-day holiday straddling a month boundary labels all of
+ * its days. First name wins on a date two holidays share, and the 400-day ceiling only stops a
+ * malformed span from looping — a real one is days long.
+ */
+export function nationalHolidayNamesByDate(
+  holidays: ReadonlyArray<{ endDate?: string | null; name: string; startDate: string }>,
+): Map<string, string> {
+  const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const names = new Map<string, string>();
+  for (const holiday of holidays) {
+    const start = String(holiday.startDate).slice(0, 10);
+    if (!isIsoDate(start)) continue;
+    const rawEnd = String(holiday.endDate ?? "").slice(0, 10);
+    const end = isIsoDate(rawEnd) && rawEnd > start ? rawEnd : start;
+    let date = start;
+    for (let guard = 0; date <= end && guard < 400; guard += 1) {
+      if (!names.has(date)) names.set(date, holiday.name);
+      date = addDaysIso(date, 1);
+    }
+  }
+  return names;
+}
+
+/**
+ * The confirmed holiday names for exactly the months the fetched leave days fall in — the DISTINCT
+ * months, not every month between the first and the last, because leave clusters and the mirror
+ * spans years.
+ *
+ * NEVER THROWS, AND A MISSING LABEL IS THE ACCEPTED FAILURE. Google's feed can be unreachable, and
+ * this is a LABEL on a vacation row, not money: a national vacation that reads as an ordinary one
+ * is a cosmetic loss, while an exception escaping here would empty the whole Vacations tab. The
+ * keyword fallback in `detectNationalHoliday` still catches the holidays agents named in their own
+ * comments, exactly as it did when the map was hand-rolled.
+ */
+async function loadConfirmedNationalHolidayNames(days: VacationDayRow[]): Promise<ReadonlyMap<string, string>> {
+  const months = new Map<string, { month: number; year: number }>();
+  for (const row of days) {
+    const date = String(row.visit_date ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const key = date.slice(0, 7);
+    if (!months.has(key)) months.set(key, { month: Number(date.slice(5, 7)), year: Number(date.slice(0, 4)) });
+  }
+  if (months.size === 0) return new Map();
+  try {
+    const { holidays } = await getConfirmedNationalHolidaysForPeriods([...months.values()]);
+    return nationalHolidayNamesByDate(holidays);
+  } catch {
+    return new Map();
+  }
+}
 
 /** Comment fragments (Arabic is case-insensitive; English lowercased) that mark an official/national
  * holiday in a leave note — how agents actually log them ("اجازة رسمي", "عيد العمال", "Eid vacation",
@@ -1384,13 +1426,15 @@ const NATIONAL_HOLIDAY_KEYWORDS: readonly string[] = [
   "feast", "revolution", "liberation", "labour day", "labor day", "christmas", "sinai", "mawlid", "sham el",
 ];
 
-/** Flag a vacation period as a national/official holiday if ANY of its days falls on an official
- * holiday date OR its comment names one. Returns the holiday name (date match preferred) or null. */
-function detectNationalHoliday(run: VacationDayRow[]): string | null {
+/** Flag a vacation period as a national/official holiday if ANY of its days falls on a confirmed
+ * holiday date OR its comment names one. Returns the holiday name (date match preferred) or null.
+ * `holidayNames` is the confirmed date → name map (loadConfirmedNationalHolidayNames); an absent or
+ * empty one leaves only the keyword fallback, which is the degraded answer, never a stale date. */
+function detectNationalHoliday(run: VacationDayRow[], holidayNames?: ReadonlyMap<string, string>): string | null {
   let byDate: string | null = null;
   let byComment = false;
   for (const r of run) {
-    const named = NATIONAL_HOLIDAYS_2026.get(String(r.visit_date).slice(0, 10));
+    const named = holidayNames?.get(String(r.visit_date).slice(0, 10));
     if (named && !byDate) byDate = named;
     const c = (r.comment ?? "").toLowerCase();
     if (c && NATIONAL_HOLIDAY_KEYWORDS.some((kw) => c.includes(kw))) byComment = true;
@@ -1401,8 +1445,13 @@ function detectNationalHoliday(run: VacationDayRow[]): string | null {
 /** Build one vacation-period row from a run of consecutive day-rows (same agent, sorted by date).
  * Duration sums each calendar DATE (not each row — see the collapse below): a date with any
  * full-day marker is 1, otherwise 0.5 per distinct half marker capped at 1. Vacation ID = earliest
- * CRM visit id. Exported for `tests/crm-vacation-duration.test.ts`; not used outside this module. */
-export function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
+ * CRM visit id. Exported for `tests/crm-vacation-duration.test.ts`; not used outside this module.
+ *
+ * `holidayNames` is the confirmed date → name map the caller loaded once for the whole fetch
+ * (loadConfirmedNationalHolidayNames). Optional so the signature stays backwards-compatible: with
+ * no map, the national-holiday label falls back to the comment keywords alone — the same answer a
+ * Google outage produces, and deliberately NOT a hand-rolled date list. */
+export function buildVacationPeriod(run: VacationDayRow[], holidayNames?: ReadonlyMap<string, string>): CrmMasterRow {
   const first = run[0];
   const dates = run.map((r) => String(r.visit_date).slice(0, 10));
   const fromDate = dates.reduce((a, b) => (a < b ? a : b));
@@ -1441,7 +1490,7 @@ export function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
     agent_name: first.agent_name,
     visit_type_description: first.visit_type_description,
     comment: first.comment,
-    national_holiday: detectNationalHoliday(run),
+    national_holiday: detectNationalHoliday(run, holidayNames),
     raw_payload: {
       visit_ids: ids,
       days: run.map((r) => ({ date: String(r.visit_date).slice(0, 10), ampm: r.ampm || "full", crm_visit_id: r.crm_visit_id })),
@@ -1548,6 +1597,11 @@ async function computeVacationPeriodsUncached(range: { dateFrom: string | null; 
     if (rows.length < PAGE) break;
   }
 
+  // The confirmed national-holiday names for the months these days actually fall in, read ONCE for
+  // the whole fetch rather than per period — `getConfirmedNationalHolidaysForPeriods` is one call,
+  // its Google feed is downloaded once per calendar and its override table is cached whole.
+  const holidayNames = await loadConfirmedNationalHolidayNames(days);
+
   // Group by rep, then split each rep's (date-sorted) days into consecutive-day runs.
   const byAgent = new Map<string, VacationDayRow[]>();
   for (const d of days) {
@@ -1572,11 +1626,11 @@ async function computeVacationPeriodsUncached(range: { dateFrom: string | null; 
       if (cur === prev || isNextCalendarDay(prev, cur)) {
         run.push(d);
       } else {
-        periods.push(buildVacationPeriod(run));
+        periods.push(buildVacationPeriod(run, holidayNames));
         run = [d];
       }
     }
-    if (run.length > 0) periods.push(buildVacationPeriod(run));
+    if (run.length > 0) periods.push(buildVacationPeriod(run, holidayNames));
   }
 
   // Keep only periods that genuinely overlap the requested window — the margin rows above exist to

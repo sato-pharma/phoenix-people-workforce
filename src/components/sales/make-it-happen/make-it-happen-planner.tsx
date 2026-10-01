@@ -64,6 +64,7 @@ import {
   DEFAULT_GOAL_PCT,
   GAP_OPTIONS,
   GOAL_PRESETS,
+  INCENTIVE_FLOOR,
   MAX_GOAL_PCT,
   MIN_GOAL_PCT,
   NO_PLANNER_FILTERS,
@@ -74,10 +75,12 @@ import {
   buildPlanScenarios,
   filterPlanLines,
   parseGoalPct,
+  pediaHalves,
   plannerFiltersActive,
   scenarioSummary,
   trendLabel,
   type FilteredRow,
+  type GoalCheck,
   type PlanScenario,
   type PlannerFilters,
 } from "@/lib/sales/make-it-happen/scenarios";
@@ -265,6 +268,12 @@ export function MakeItHappenPlanner({
     return parsed;
   }, [units]);
   const filteredLines = useMemo(() => filterPlanLines(data.lines, filters, typedUnits), [data.lines, filters, typedUnits]);
+  // The two Pedia halves on the typed forecast — empty on every plan without the Pedia split.
+  const halves = useMemo(
+    () => pediaHalves(data, typedUnits, goalPct ?? DEFAULT_GOAL_PCT),
+    [data, typedUnits, goalPct],
+  );
+  const untargetedLabels = [...new Set(data.lines.flatMap((line) => line.untargetedMonthLabels))];
   const shownRows = filteredLines.reduce((sum, entry) => sum + entry.rows.length, 0);
   const totalRows = data.lines.reduce((sum, line) => sum + line.rows.length, 0);
 
@@ -576,8 +585,17 @@ export function MakeItHappenPlanner({
                 <p className="text-sm font-black text-slate-900">
                   {openForForecast
                     ? "Type the units you expect to sell for each product, or let Phoenix build the plan from your own sales."
-                    : "Every month of this period is closed, so there is nothing left to forecast."}
+                    : untargetedLabels.length > 0
+                      ? `No open month of this period carries a target yet (${untargetedLabels.join(", ")}), so there is nothing to forecast against.`
+                      : "Every month of this period is closed, so there is nothing left to forecast."}
                 </p>
+                {openForForecast && untargetedLabels.length > 0 ? (
+                  <p className="mt-0.5 text-phx-xs font-bold text-amber-700">
+                    {untargetedLabels.join(", ")} {untargetedLabels.length === 1 ? "carries" : "carry"} no target yet, so Phoenix does
+                    not forecast {untargetedLabels.length === 1 ? "it" : "them"}: a forecast is only ever measured against a target
+                    for the same months.
+                  </p>
+                ) : null}
                 <p className="mt-0.5 text-phx-xs text-slate-500">
                   Value and achievement calculate as you type. Phoenix only plans what each product&apos;s own month-by-month
                   pace supports.
@@ -715,6 +733,7 @@ export function MakeItHappenPlanner({
                         <div className="mt-1">
                           <AchievementMeter value={scenario.achievement} />
                         </div>
+                        {scenario.checks.length > 0 ? <ScenarioHalves checks={scenario.checks} /> : null}
                         <p className="mt-2 flex-1 break-words text-phx-xs leading-5 text-slate-500">
                           {scenarioSummary(scenario, goalPct ?? DEFAULT_GOAL_PCT, formatEgpFull)}
                         </p>
@@ -755,6 +774,15 @@ export function MakeItHappenPlanner({
               </p>
             ) : null}
           </section>
+
+          {halves.length > 0 ? (
+            <PediaHalvesPanel
+              goalPct={goalPct ?? DEFAULT_GOAL_PCT}
+              halves={halves}
+              open={openForForecast}
+              semester={data.periodKind === "semester"}
+            />
+          ) : null}
 
           <FilterBar
             surface={surface}
@@ -937,6 +965,20 @@ export function MakeItHappenPlanner({
                       <ProportionBar color={achievementHex(overallPct)} fraction={overallPct ?? 0} />
                     </span>
                   </div>
+                  {/* Pedia alone: its total half IS the achievement beside it, so only the Sato half is added. */}
+                  {halves.filter((half) => half.key === "sato" || data.lines.length > 1).map((half) => (
+                    <div key={half.key} className="w-36">
+                      <p className="flex items-baseline justify-between gap-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+                        {half.key === "sato" ? "Sato half" : "Total half"}
+                        <span className={cn("text-sm tabular-nums tracking-normal", achievementTone(half.achievement))}>
+                          {formatPct(half.achievement)}
+                        </span>
+                      </p>
+                      <span className="mt-1.5 block">
+                        <ProportionBar color={achievementHex(half.achievement)} fraction={half.achievement ?? 0} />
+                      </span>
+                    </div>
+                  ))}
                   {data.canSave && isDirty ? (
                     <span className="inline-flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2 py-1 text-phx-xs font-bold text-amber-700">
                       <CircleAlert className="h-3.5 w-3.5 shrink-0" />
@@ -997,6 +1039,93 @@ function GapToTarget({ gap, units }: { gap: number | null; units: number | null 
         {units != null && units > 0 ? `${formatNumber(units)} units to go` : "still to go"}
       </p>
     </>
+  );
+}
+
+/** The Pedia halves under one scenario card: each on its own target, red while it falls short. */
+function ScenarioHalves({ checks }: { checks: GoalCheck[] }) {
+  return (
+    <ul className="mt-1.5 space-y-0.5 text-phx-xs">
+      {checks.map((check) => (
+        <li key={check.key} className="flex flex-wrap items-baseline justify-between gap-x-2">
+          <span className="min-w-0 break-words font-bold text-slate-600">{check.key === "sato" ? "Sato half" : check.label}</span>
+          <span className={cn("font-black tabular-nums", check.reachesGoal === false ? "text-red-700" : achievementTone(check.achievement))}>
+            {formatPct(check.achievement)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Pedia is paid on two halves from Semester 2 2026 (src/lib/incentives/pedia-split.ts): one month
+ * of basic on the Sato products alone, one on the whole line. The plan shows both, live, so a
+ * forecast can never read 100% while the Sato half sits below the 90% floor unseen.
+ */
+function PediaHalvesPanel({
+  halves,
+  goalPct,
+  open,
+  semester,
+}: {
+  halves: GoalCheck[];
+  goalPct: number;
+  open: boolean;
+  /** The incentive is a SEMESTER figure: only a semester plan may say what a half will pay. */
+  semester: boolean;
+}) {
+  return (
+    <section className={cn(SURFACE_CLASS, "border-l-[3px] border-l-orange-500 px-4 py-4 sm:px-6")}>
+      <p className="text-sm font-black text-slate-900">Pedia is paid on two halves, and Phoenix plans both</p>
+      <p className="mt-0.5 break-words text-phx-xs text-slate-500">
+        One month of basic on the Sato products against their own target, one month on the whole line. Other products lift only the
+        total half, so Phoenix plans the Sato products to your {goalPct}% goal first. Below 90% a half pays nothing.
+      </p>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {halves.map((half) => {
+          const belowFloor = half.achievement != null && half.achievement < INCENTIVE_FLOOR;
+          return (
+            <div key={half.key} className="min-w-0 border border-slate-200 bg-white px-3.5 py-3">
+              <p className="break-words text-xs font-black text-slate-900">{half.label}</p>
+              <div className="mt-1.5">
+                <AchievementMeter value={half.achievement} />
+              </div>
+              <dl className="mt-2 grid grid-cols-3 gap-2 text-phx-xs">
+                <div className="min-w-0">
+                  <dt className="font-black uppercase tracking-[0.12em] text-slate-500">Target</dt>
+                  <dd className="break-words font-bold tabular-nums text-slate-900">
+                    {half.targetValue == null ? "No target" : formatEgpFull(half.targetValue)}
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="font-black uppercase tracking-[0.12em] text-slate-500">Sold so far</dt>
+                  <dd className="break-words font-bold tabular-nums text-slate-900">{formatEgpFull(half.gradedValue)}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="font-black uppercase tracking-[0.12em] text-slate-500">Forecast</dt>
+                  <dd className="break-words font-bold tabular-nums text-orange-700">{formatEgpFull(half.forecastValue)}</dd>
+                </div>
+              </dl>
+              {half.reachesGoal == null ? null : half.reachesGoal ? (
+                <p className="mt-2 break-words text-phx-xs font-bold text-emerald-700">Reaches your {goalPct}% goal.</p>
+              ) : (
+                <p className="mt-2 break-words text-phx-xs font-bold text-red-700">
+                  {formatEgpFull(half.shortOfGoal ?? 0)} short of your {goalPct}% goal{open ? " on this forecast" : ""}.
+                </p>
+              )}
+              {belowFloor ? (
+                <p className="mt-1 break-words text-phx-xs font-bold text-red-700">
+                  {semester
+                    ? "Below 90%, this half of the incentive pays nothing."
+                    : "Below 90%, the floor this half of the semester incentive pays from."}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -1291,11 +1420,15 @@ function LineSection({
 }) {
   const open = line.remainingMonths > 0;
   const linePct = achievementOf(line.gradedValue, forecastValue, line.targetValue);
+  const untargetedText =
+    line.untargetedMonthLabels.length > 0 ? ` · ${line.untargetedMonthLabels.join(", ")} not forecast, no target yet` : "";
   const subtitle = !open
-    ? "Every month of this period is closed"
+    ? line.untargetedMonthLabels.length > 0
+      ? `No open month carries a target yet${untargetedText}`
+      : "Every month of this period is closed"
     : line.closedMonthLabels.length === 0
-      ? `Nothing closed yet · forecasting ${line.forecastMonthLabels.join(", ")}`
-      : `Closed ${line.closedMonthLabels.join(", ")} · forecasting ${line.forecastMonthLabels.join(", ")}`;
+      ? `Nothing closed yet · forecasting ${line.forecastMonthLabels.join(", ")}${untargetedText}`
+      : `Closed ${line.closedMonthLabels.join(", ")} · forecasting ${line.forecastMonthLabels.join(", ")}${untargetedText}`;
   const shownText = rows.length < totalRows ? ` · showing ${rows.length} of ${totalRows} products` : "";
   const lineGap = line.targetValue == null ? null : line.targetValue - line.gradedValue - forecastValue;
 

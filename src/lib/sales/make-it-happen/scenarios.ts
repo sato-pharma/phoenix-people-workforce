@@ -22,9 +22,11 @@
 import {
   HONESTY_SENTENCE,
   achievementOf,
-  buildRealisticMix,
+  buildGoalMix,
+  buildGoalStretchMix,
   type ConcentrationPlanRow,
   type LinePlanGroup,
+  type MixGoal,
   type MixItem,
   type MixResult,
   type TrendKind,
@@ -86,44 +88,152 @@ export type StretchResult = MixResult & {
 /**
  * The realistic mix first; then, only if it still falls short, the missing value is spread over the
  * priced products in proportion to what each one realistically sells, so the stretch lands where the
- * business already is rather than on a product that barely moves.
+ * business already is rather than on a product that barely moves. The whole plan as ONE goal; the
+ * scenarios use the goal-by-goal version so a Pedia plan stretches its Sato products first.
  */
 export function buildStretchMix(items: readonly MixItem[], gapValue: number | null): StretchResult {
-  const base = buildRealisticMix(items, gapValue);
-  const units = { ...base.units };
-  const aboveRealistic: Record<string, number> = {};
-  if (gapValue == null || base.reachable !== false) {
-    return { ...base, units, aboveRealistic, aboveRealisticValue: 0 };
-  }
-
-  const priced = items.filter((item) => item.price > 0);
-  const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
-  let weights = priced.map((item) => Math.max(0, item.realisticMaxUnits) * item.price);
-  if (sum(weights) <= 0) weights = priced.map((item) => Math.max(0, item.unitsStillToTarget ?? 0) * item.price);
-  if (sum(weights) <= 0) weights = priced.map(() => 1);
-  const totalWeight = sum(weights);
-  if (priced.length === 0 || totalWeight <= 0) {
-    return { ...base, units, aboveRealistic, aboveRealisticValue: 0 };
-  }
-
-  let added = 0;
-  priced.forEach((item, index) => {
-    if (weights[index] <= 0) return;
-    const extra = Math.ceil((base.shortValue * weights[index]) / totalWeight / item.price);
-    if (extra <= 0) return;
-    units[item.key] = (units[item.key] ?? 0) + extra;
-    aboveRealistic[item.key] = extra;
-    added += extra * item.price;
-  });
-
+  const stretch = buildGoalStretchMix(items, [{ key: "plan", gapValue, codes: null }]);
+  const plan = stretch.goals[0];
   return {
-    units,
-    aboveRealistic,
-    aboveRealisticValue: added,
-    plannedValue: base.plannedValue + added,
-    reachable: added >= base.shortValue,
-    shortValue: Math.max(0, base.shortValue - added),
+    units: stretch.units,
+    aboveRealistic: stretch.aboveRealistic,
+    aboveRealisticValue: stretch.aboveRealisticValue,
+    plannedValue: stretch.plannedValue,
+    reachable: plan.reachable,
+    shortValue: plan.shortValue,
   };
+}
+
+// ── The goals a plan must meet ───────────────────────────────────────────────
+
+/**
+ * "sato" and "pedia" are the two halves of the Pedia incentive; "plan" is everything in scope.
+ * Only the halves are listed as checks under a scenario — the plan's own figures are already there.
+ */
+export type PlanGoalKey = "sato" | "pedia" | "plan";
+
+export type PlanGoal = {
+  key: PlanGoalKey;
+  /** What a person reads: "Sato half · Guamusin and Ivyronc". Names, never codes. */
+  label: string;
+  targetValue: number | null;
+  gradedValue: number;
+  /** The products whose value counts toward it. null is every product. */
+  codes: ReadonlySet<string> | null;
+};
+
+/**
+ * The goals, in the order the mix meets them (engine.ts rule 7): the Sato products on their own
+ * target, then the Pedia line, then the whole plan. The Pedia line is its own goal only when the
+ * plan holds another line too — alone, it IS the whole plan, and listing it twice says nothing.
+ */
+export function planGoals(input: {
+  lines: readonly LinePlanGroup[];
+  totals: { targetValue: number | null; gradedValue: number };
+}): PlanGoal[] {
+  const goals: PlanGoal[] = [];
+  for (const line of input.lines) {
+    if (!line.satoHalf) continue;
+    goals.push({
+      key: "sato",
+      label: `Sato half · ${line.satoHalf.productNames}`,
+      targetValue: line.satoHalf.targetValue,
+      gradedValue: line.satoHalf.gradedValue,
+      codes: new Set(line.satoHalf.productCodes),
+    });
+    if (input.lines.length > 1) {
+      goals.push({
+        key: "pedia",
+        label: `Total half · all ${line.lineName}`,
+        targetValue: line.targetValue,
+        gradedValue: line.gradedValue,
+        codes: new Set(line.rows.map((row) => row.productCode)),
+      });
+    }
+  }
+  goals.push({
+    key: "plan",
+    label: "Whole plan",
+    targetValue: input.totals.targetValue,
+    gradedValue: input.totals.gradedValue,
+    codes: null,
+  });
+  return goals;
+}
+
+/** The incentive's floor: below 90% a half pays nothing (src/lib/incentives/scheme-2026.ts). */
+export const INCENTIVE_FLOOR = 0.9;
+
+/**
+ * The two Pedia halves read against `units`, Sato first — or nothing when no Pedia split is in
+ * the plan. When Pedia is the only line, its total half IS the whole plan, read under that name.
+ */
+export function pediaHalves(
+  input: { lines: readonly LinePlanGroup[]; totals: { targetValue: number | null; gradedValue: number } },
+  units: Record<string, number>,
+  goalPct: number,
+): GoalCheck[] {
+  const pedia = input.lines.find((line) => line.satoHalf);
+  if (!pedia) return [];
+  const checks = checkGoals(input, units, goalPct);
+  const sato = checks.find((check) => check.key === "sato");
+  const total =
+    checks.find((check) => check.key === "pedia") ??
+    (input.lines.length === 1 ? checks.find((check) => check.key === "plan") : undefined);
+  return [
+    ...(sato ? [sato] : []),
+    ...(total ? [{ ...total, key: "pedia" as const, label: `Total half · all ${pedia.lineName}` }] : []),
+  ];
+}
+
+/** One goal read against a forecast: what it reaches, and what is still missing. */
+export type GoalCheck = {
+  key: PlanGoalKey;
+  label: string;
+  targetValue: number | null;
+  gradedValue: number;
+  /** Forecast value on this goal's products. */
+  forecastValue: number;
+  /** null — never 0 — when the goal has no target. */
+  achievement: number | null;
+  /** Value still missing to the goal %. null with no target. */
+  shortOfGoal: number | null;
+  reachesGoal: boolean | null;
+};
+
+/**
+ * Read every goal against a set of units — the screen's typed forecast and each scenario alike.
+ * Units of a line with no open month never count, exactly as `rowFigures` treats them.
+ */
+export function checkGoals(
+  input: { lines: readonly LinePlanGroup[]; totals: { targetValue: number | null; gradedValue: number } },
+  units: Record<string, number>,
+  goalPct: number,
+): GoalCheck[] {
+  const prices = new Map<string, number>();
+  for (const line of input.lines) {
+    if (line.remainingMonths <= 0) continue;
+    for (const row of line.rows) prices.set(row.productCode, row.price);
+  }
+  return planGoals(input).map((goal) => {
+    let forecastValue = 0;
+    for (const [code, count] of Object.entries(units)) {
+      const price = prices.get(code);
+      if (price == null || (goal.codes != null && !goal.codes.has(code))) continue;
+      forecastValue += Math.max(0, count) * price;
+    }
+    const gap = goalGapValue(goal, goalPct);
+    return {
+      key: goal.key,
+      label: goal.label,
+      targetValue: goal.targetValue,
+      gradedValue: goal.gradedValue,
+      forecastValue,
+      achievement: achievementOf(goal.gradedValue, forecastValue, goal.targetValue),
+      shortOfGoal: gap == null ? null : Math.max(0, gap - forecastValue),
+      reachesGoal: gap == null ? null : forecastValue >= gap,
+    };
+  });
 }
 
 // ── The three scenarios ──────────────────────────────────────────────────────
@@ -137,12 +247,26 @@ export type PlanScenario = {
   units: Record<string, number>;
   value: number;
   achievement: number | null;
-  /** Value still missing to the goal after sales so far and this scenario. null with no target. */
+  /** Value still missing to the goal after sales so far and this scenario — the WHOLE plan. null with no target. */
   shortOfGoal: number | null;
+  /** True only when the whole plan AND every half in `checks` reach the goal. null with no target. */
   reachesGoal: boolean | null;
+  /** The whole plan alone. Differs from `reachesGoal` exactly when a Pedia half falls short. */
+  planReachesGoal: boolean | null;
+  /** The Pedia halves read against this scenario — empty for every plan without Pedia. */
+  checks: GoalCheck[];
   aboveRealistic: Record<string, number>;
   aboveRealisticValue: number;
 };
+
+function mixGoalsFor(goals: readonly PlanGoal[], goalPct: number): MixGoal[] {
+  return goals.map((goal) => ({ key: goal.key, gapValue: goalGapValue(goal, goalPct), codes: goal.codes }));
+}
+
+/** Every half in `checks` that falls short. A half with no target is never "short". */
+export function missedHalves(checks: readonly GoalCheck[]): GoalCheck[] {
+  return checks.filter((check) => check.reachesGoal === false);
+}
 
 export function buildPlanScenarios(
   input: { lines: readonly LinePlanGroup[]; totals: { targetValue: number | null; gradedValue: number } },
@@ -152,6 +276,7 @@ export function buildPlanScenarios(
   const items = mixItemsFor(rows);
   const priceOf = new Map(items.map((item) => [item.key, item.price]));
   const gap = goalGapValue(input.totals, goalPct);
+  const goals = mixGoalsFor(planGoals(input), goalPct);
 
   const finish = (
     key: ScenarioKey,
@@ -162,6 +287,11 @@ export function buildPlanScenarios(
     aboveRealisticValue = 0,
   ): PlanScenario => {
     const value = Object.entries(units).reduce((sum, [code, count]) => sum + count * (priceOf.get(code) ?? 0), 0);
+    const checks = checkGoals(input, units, goalPct).filter((check) => check.key !== "plan");
+    const planReachesGoal = gap == null ? null : value >= gap;
+    const judged = [planReachesGoal, ...checks.map((check) => check.reachesGoal)].filter(
+      (reached): reached is boolean => reached != null,
+    );
     return {
       key,
       number,
@@ -170,7 +300,9 @@ export function buildPlanScenarios(
       value,
       achievement: achievementOf(input.totals.gradedValue, value, input.totals.targetValue),
       shortOfGoal: gap == null ? null : Math.max(0, gap - value),
-      reachesGoal: gap == null ? null : value >= gap,
+      reachesGoal: planReachesGoal == null ? null : judged.every(Boolean),
+      planReachesGoal,
+      checks,
       aboveRealistic,
       aboveRealisticValue,
     };
@@ -178,8 +310,8 @@ export function buildPlanScenarios(
 
   const pace: Record<string, number> = {};
   for (const item of items) pace[item.key] = Math.max(0, Math.floor(item.expectedUnits));
-  const realistic = buildRealisticMix(items, gap);
-  const stretch = buildStretchMix(items, gap);
+  const realistic = buildGoalMix(items, goals);
+  const stretch = buildGoalStretchMix(items, goals);
 
   return [
     finish("pace", 1, "Steady pace", pace),
@@ -188,20 +320,40 @@ export function buildPlanScenarios(
   ];
 }
 
+function pctText(value: number | null): string {
+  return value == null ? "no target" : `${(value * 100).toFixed(1)}%`;
+}
+
+/** "Sato half · Guamusin and Ivyronc reaches only 54.8% of its own target, EGP 1,234 short". */
+export function halfShortText(check: GoalCheck, money: (value: number) => string): string {
+  return `${check.label} reaches only ${pctText(check.achievement)} of its own target, ${money(check.shortOfGoal ?? 0)} short`;
+}
+
 /** The one honest line under each scenario. Never mentions AI; never calls a stretch realistic. */
 export function scenarioSummary(scenario: PlanScenario, goalPct: number, money: (value: number) => string): string {
   const goal = `${goalPct}%`;
+  const missed = missedHalves(scenario.checks);
+  // Said whenever a Pedia half falls short: the whole plan can look fine while half the incentive pays nothing.
+  const halvesText = missed.length > 0 ? ` ${missed.map((check) => halfShortText(check, money)).join("; ")}.` : "";
   if (scenario.key === "pace") {
     if (scenario.reachesGoal == null) return "Every product simply keeps its own month-by-month pace.";
     if (scenario.reachesGoal) return `Your current pace already reaches your ${goal} goal.`;
-    return `Every product keeps its current pace, ${money(scenario.shortOfGoal ?? 0)} short of your ${goal} goal.`;
+    if (scenario.planReachesGoal) return `Your current pace reaches your ${goal} goal overall, but not on both Pedia halves.${halvesText}`;
+    return `Every product keeps its current pace, ${money(scenario.shortOfGoal ?? 0)} short of your ${goal} goal.${halvesText}`;
   }
   if (scenario.key === "realistic") {
     if (scenario.reachesGoal == null) return "With no target set, Phoenix plans each product at its own pace.";
-    if (scenario.reachesGoal) return `Reaches your ${goal} goal without asking any product for more than its pace supports.`;
+    if (scenario.reachesGoal) {
+      return scenario.checks.length > 0
+        ? `Reaches your ${goal} goal on both Pedia halves without asking any product for more than its pace supports.`
+        : `Reaches your ${goal} goal without asking any product for more than its pace supports.`;
+    }
+    if (scenario.planReachesGoal) {
+      return `Reaches your ${goal} goal overall, but not on both Pedia halves.${halvesText} ${HONESTY_SENTENCE}.`;
+    }
     return (
       `The most each product's pace realistically supports, ${money(scenario.shortOfGoal ?? 0)} short of your ` +
-      `${goal} goal. ${HONESTY_SENTENCE}.`
+      `${goal} goal.${halvesText} ${HONESTY_SENTENCE}.`
     );
   }
   if (scenario.reachesGoal == null) return "There is no target for this period, so there is no goal to stretch to.";
@@ -209,7 +361,9 @@ export function scenarioSummary(scenario: PlanScenario, goalPct: number, money: 
   const stretched = Object.keys(scenario.aboveRealistic).length;
   return (
     `Reaches your ${goal} goal only by selling ${money(scenario.aboveRealisticValue)} above what the products' own ` +
-    `pace supports, across ${stretched} product${stretched === 1 ? "" : "s"}.`
+    `pace supports, across ${stretched} product${stretched === 1 ? "" : "s"}.` +
+    (scenario.checks.length > 0 ? " The Sato products are stretched to their own goal first; no other product stands in for them." : "") +
+    halvesText
   );
 }
 

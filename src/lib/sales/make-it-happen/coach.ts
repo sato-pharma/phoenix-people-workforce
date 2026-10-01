@@ -26,7 +26,28 @@ export type CoachFacts = {
   onTrack: boolean;
   earlyHistory: boolean;
   picks: Array<{ name: string; unitsLabel: string }>;
+  /**
+   * The Pedia halves (engine.ts rule 7), each read on its OWN target. `reachable` above is the whole
+   * plan; a half carrying `shortValueLabel` falls short of the goal, and the message must say so —
+   * a plan can read 100% while the Sato half pays nothing.
+   */
+  halves?: Array<{ label: string; achievementLabel: string; shortValueLabel: string | null }>;
 };
+
+/** One sentence per Pedia half, in the order the plan meets them. Empty for every other plan. */
+export function halvesSentence(facts: CoachFacts): string {
+  return (facts.halves ?? [])
+    .map((half) =>
+      half.shortValueLabel
+        ? ` ${half.label} realistically reaches only ${half.achievementLabel} of its own target, ${half.shortValueLabel} short.`
+        : ` ${half.label} reaches ${half.achievementLabel} of its own target.`,
+    )
+    .join("");
+}
+
+function anyHalfShort(facts: CoachFacts): boolean {
+  return (facts.halves ?? []).some((half) => half.shortValueLabel != null);
+}
 
 function picksSentence(picks: CoachFacts["picks"]): string {
   if (picks.length === 0) return "";
@@ -36,6 +57,16 @@ function picksSentence(picks: CoachFacts["picks"]): string {
 
 /** The fixed wording — also the fallback whenever the rewrite is unavailable or unfaithful. */
 export function templateCoachMessage(facts: CoachFacts): string {
+  const base = baseCoachMessage(facts);
+  const halves = halvesSentence(facts);
+  if (!halves) return base;
+  // The whole plan's branch already carries the owner's sentence when IT is out of reach; a short
+  // half adds it otherwise, exactly once.
+  const honesty = anyHalfShort(facts) && facts.reachable !== false ? ` ${HONESTY_SENTENCE}.` : "";
+  return `${base}${halves}${honesty}`;
+}
+
+function baseCoachMessage(facts: CoachFacts): string {
   const picks = picksSentence(facts.picks);
   const early = facts.earlyHistory
     ? " With only a few closed months, Phoenix holds each product to its average so far."
@@ -101,7 +132,8 @@ export function isFaithfulRewrite(facts: CoachFacts, template: string, rewrite: 
   const got = new Set(figuresIn(rewrite));
   if (expected.size !== got.size || [...expected].some((figure) => !got.has(figure))) return false;
   if (facts.picks.some((pick) => !rewrite.includes(pick.name))) return false;
-  if (facts.reachable === false && !rewrite.includes(HONESTY_SENTENCE)) return false;
+  if ((facts.halves ?? []).some((half) => !rewrite.includes(half.label))) return false;
+  if ((facts.reachable === false || anyHalfShort(facts)) && !rewrite.includes(HONESTY_SENTENCE)) return false;
   if (/\b(I|I'm|I'll|I've|me|my|we|we'll|we're|us|our)\b/i.test(rewrite)) return false;
   if (/\byou(?: are|'re) (?:at|currently)\b/i.test(rewrite)) return false;
   if (/\bAI\b|artificial|language model|chatbot|automat/i.test(rewrite)) return false;
@@ -123,6 +155,7 @@ export async function phoenixCoachMessage(facts: CoachFacts): Promise<string> {
         "Rewrite the message you are given so it sounds warm, direct and motivating to a medical sales employee. " +
         "Use at most two sentences, plain English, no emoji, no markdown. " +
         "Keep every number, percentage, currency amount and product name exactly as written. " +
+        "Keep every phrase that starts with \"Sato half\" or \"Total half\" exactly as written. " +
         "Never add a number. Never promise more than the message does. " +
         `If the message contains the sentence "${HONESTY_SENTENCE}", keep that sentence word for word. ` +
         `Keep the words "${coachAnchorPhrase(facts)}" exactly as written. ` +

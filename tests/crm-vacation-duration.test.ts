@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { buildVacationPeriod, type VacationDayRow } from "../src/lib/crm/master.ts";
+import { buildVacationPeriod, nationalHolidayNamesByDate, type VacationDayRow } from "../src/lib/crm/master.ts";
 
 // Regression for #1523. `buildVacationPeriod` summed 0.5 per AM/PM ROW and 1 per full-day ROW, but
 // the iReports360 mirror really does carry duplicate rows for the same agent/date/AM-PM marker —
@@ -14,6 +15,10 @@ import { buildVacationPeriod, type VacationDayRow } from "../src/lib/crm/master.
 // so a genuine AM + PM pair is still a full day while a duplicated AM + AM is still a half. That
 // distinction is the whole point, and it is what the AM+PM / AM+AM pairs below pin: any
 // implementation that counts rows makes those two cases identical.
+//
+// The second half of this file covers the national-holiday LABEL on a vacation period, which used
+// to come from a hand-rolled 2026 date map in the same module and now comes from the confirmed
+// source (Google's Egypt feed + attendance_holiday_overrides).
 
 let nextId = 1;
 
@@ -117,28 +122,172 @@ export function runCrmVacationDurationTests() {
     assert.equal(period.half_days, 1);
   }
 
-  // ── Armed Forces Day 2026 is labelled on its OBSERVED date, 8 October ───────────
-  // Owner, 2026-10-01: 6 October 2026 falls on a TUESDAY, so the national day off is observed on
-  // Thursday 8 October. This map labels the days agents actually LOGGED as leave, so the observed
-  // date is the only one that belongs in it: 6 October stays a normal working day, where leave is
-  // an ordinary vacation and must never be excused as a national holiday.
+  // ── The national-holiday label comes from the CONFIRMED source, not a hand-rolled map ──────────
+  // This module used to carry its own 2026 date -> name map, and it disagreed with
+  // attendance_holiday_overrides + Google's Egypt feed on four entries at once. The rows below are
+  // the CONFIRMED shape `getConfirmedNationalHolidaysForPeriods` returns (spans, with an override's
+  // observed date already substituted for its official one), and `nationalHolidayNamesByDate` is
+  // the expansion the master builder injects into `buildVacationPeriod`.
+  //
+  // Each wrong date cost twice: a rep's ordinary leave on a working day read as a national holiday,
+  // so the day was excused; and the real day off carried no label unless his own comment named it.
   {
+    const confirmed = nationalHolidayNamesByDate([
+      // Eid al-Fitr — confirmed 19 and 20 March. The old map said 20, 21 and 22.
+      { endDate: "2026-03-19", name: "Eid el Fitr Holiday", startDate: "2026-03-19" },
+      { endDate: "2026-03-20", name: "Eid el Fitr", startDate: "2026-03-20" },
+      // Eid al-Adha — one multi-day SPAN, which is how the confirmed source returns it.
+      { endDate: "2026-05-30", name: "Eid al-Adha", startDate: "2026-05-27" },
+      // 30 June Revolution — override row 1 on production: official 2026-06-30, observed 2026-07-02.
+      { endDate: "2026-07-02", name: "30 June Revolution", startDate: "2026-07-02" },
+      // Prophet's Birthday — confirmed 27 August. The old map said the 26th.
+      { endDate: "2026-08-27", name: "Prophet Mohamed's Birthday Holiday", startDate: "2026-08-27" },
+      // Armed Forces Day — official 6 October (a TUESDAY in 2026), observed Thursday 8 October.
+      { endDate: "2026-10-08", name: "Armed Forces Day", startDate: "2026-10-08" },
+    ]);
+
+    const labelOn = (date: string) => buildVacationPeriod([day(date, null)], confirmed).national_holiday;
+
+    // A multi-day span labels EVERY one of its days, not just the first.
+    for (const date of ["2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30"]) {
+      assert.equal(labelOn(date), "Eid al-Adha", `${date} is inside the confirmed Eid al-Adha span`);
+    }
+    assert.equal(labelOn("2026-05-31"), null, "the day after the span ends is an ordinary working day");
+
+    // The three dates the hand-rolled map had wrong.
+    assert.equal(
+      labelOn("2026-07-02"),
+      "30 June Revolution",
+      "the 30 June Revolution day off is observed on 2 July — override row 1 on production",
+    );
+    assert.equal(
+      labelOn("2026-06-30"),
+      null,
+      "30 June 2026 is a working day: the day off was postponed to 2 July, and the old map labelled the wrong one",
+    );
+    assert.equal(
+      labelOn("2026-08-27"),
+      "Prophet Mohamed's Birthday Holiday",
+      "the Prophet's Birthday is confirmed on 27 August",
+    );
+    assert.equal(labelOn("2026-08-26"), null, "26 August 2026 is a working day — the old map was a day early");
+    assert.equal(
+      labelOn("2026-03-19"),
+      "Eid el Fitr Holiday",
+      "Eid al-Fitr starts on 19 March, which the old map missed entirely",
+    );
+    assert.equal(labelOn("2026-03-20"), "Eid el Fitr", "20 March is the second confirmed Eid al-Fitr day");
+    assert.equal(labelOn("2026-03-21"), null, "21 March 2026 is a working day — the old map ran Eid two days long");
+    assert.equal(labelOn("2026-03-22"), null, "22 March 2026 is a working day — the old map ran Eid two days long");
+
+    // #5079's ruling, now pinned through the confirmed source. Owner, 2026-10-01: 6 October 2026
+    // falls on a TUESDAY, so the day off is observed on Thursday 8 October. Keeping both halves here
+    // means the ruling survives the map's removal.
     assert.equal(
       new Date("2026-10-06T00:00:00Z").getUTCDay(),
       2,
       "2026-10-06 must be a Tuesday — that is why the day off moved to Thursday 8 October",
     );
     assert.equal(
-      buildVacationPeriod([day("2026-10-08", null)]).national_holiday,
+      labelOn("2026-10-08"),
       "Armed Forces Day",
       "the observed day off, Thursday 8 October, carries the holiday name",
     );
     assert.equal(
-      buildVacationPeriod([day("2026-10-06", null)]).national_holiday,
+      labelOn("2026-10-06"),
       null,
       "6 October 2026 is a working day — leave logged on it is an ordinary vacation, not a national holiday",
     );
+
+    // A period is flagged when ANY of its days is a holiday, and takes that day's name.
+    const straddling = buildVacationPeriod(
+      [day("2026-10-07", null), day("2026-10-08", null), day("2026-10-09", null)],
+      confirmed,
+    );
+    assert.equal(straddling.national_holiday, "Armed Forces Day", "a run containing the day off is flagged with its name");
+    assert.equal(straddling.duration, 3, "the label never changes the duration");
   }
 
-  console.log("crm vacation duration: per-date collapse passed (AM+PM = 1 day, AM+AM = 0.5); Armed Forces Day labelled on 8 October");
+  // ── A malformed or empty confirmed set degrades to NO label, never to a stale date ─────────────
+  // Google's feed can be unreachable. This is a LABEL, not money, so the accepted failure is a
+  // national vacation reading as an ordinary one — and `loadConfirmedNationalHolidayNames` swallows
+  // the error so the Vacations tab still renders. What must NEVER happen is a date surviving from a
+  // hardcoded list after the authority has moved it.
+  {
+    assert.equal(nationalHolidayNamesByDate([]).size, 0);
+    assert.equal(
+      nationalHolidayNamesByDate([{ endDate: null, name: "Nonsense", startDate: "not-a-date" }]).size,
+      0,
+      "a malformed span is skipped, never expanded",
+    );
+    assert.equal(
+      nationalHolidayNamesByDate([{ endDate: "2026-01-07", name: "Coptic Christmas", startDate: "2026-01-07" }]).get("2026-01-07"),
+      "Coptic Christmas",
+      "endDate equal to startDate is a single day",
+    );
+    assert.equal(
+      nationalHolidayNamesByDate([{ name: "Labour Day", startDate: "2026-05-01" }]).get("2026-05-01"),
+      "Labour Day",
+      "an absent endDate is a single day",
+    );
+    assert.equal(
+      buildVacationPeriod([day("2026-10-08", null)]).national_holiday,
+      null,
+      "with NO confirmed map the date carries no label — nothing may resurrect a hardcoded holiday calendar",
+    );
+    assert.equal(
+      buildVacationPeriod([day("2026-10-08", null)], new Map()).national_holiday,
+      null,
+      "an empty confirmed map (a Google outage) labels nothing by date",
+    );
+  }
+
+  // ── The comment keyword fallback survives, and is what carries a degraded read ─────────────────
+  {
+    const spoken = (comment: string) => {
+      const row = day("2026-10-08", null);
+      row.comment = comment;
+      return buildVacationPeriod([row]).national_holiday;
+    };
+    assert.equal(spoken("اجازة رسمي"), "National Holiday", "an Arabic official-holiday comment still labels the period");
+    assert.equal(spoken("Eid vacation"), "National Holiday", "an English holiday comment still labels the period");
+    assert.equal(spoken("sick"), null, "an ordinary comment still labels nothing");
+
+    // A confirmed date beats the generic keyword name.
+    const row = day("2026-10-08", null);
+    row.comment = "اجازة رسمي";
+    assert.equal(
+      buildVacationPeriod([row], new Map([["2026-10-08", "Armed Forces Day"]])).national_holiday,
+      "Armed Forces Day",
+      "a confirmed date names the holiday; the keyword fallback only ever answers the generic name",
+    );
+  }
+
+  // ── The hand-rolled calendar must not come back ─────────────────────────────────────────────────
+  // The rot this fixes is a date literal in this module's source. A map keyed by YYYY-MM-DD cannot
+  // be anything but stale: Islamic and Coptic holidays move every year, and the observed day off is
+  // postponed by a decision nobody can compute.
+  {
+    const master = readFileSync("src/lib/crm/master.ts", "utf8");
+    assert.ok(
+      master.includes('from "@/lib/vacation/national-holidays"'),
+      "the holiday names are read from the confirmed source",
+    );
+    assert.doesNotMatch(
+      master,
+      /\["\d{4}-\d{2}-\d{2}",\s*"/,
+      "no date-keyed holiday map in this module — the confirmed source owns the calendar",
+    );
+    // And the read of that source can never throw out of the master builder: an unreachable Google
+    // feed must cost a LABEL, not the whole Vacations tab.
+    const loader = master.slice(master.indexOf("async function loadConfirmedNationalHolidayNames("));
+    assert.ok(
+      loader.slice(0, loader.indexOf("\n}\n")).includes("} catch {"),
+      "the confirmed-holiday read is wrapped — a Google outage degrades the label, it does not empty the tab",
+    );
+  }
+
+  console.log(
+    "crm vacation duration: per-date collapse passed (AM+PM = 1 day, AM+AM = 0.5); holiday labels read the confirmed source (2 Jul, 27 Aug, 19-20 Mar, 8 Oct)",
+  );
 }

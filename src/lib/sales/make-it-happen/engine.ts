@@ -24,6 +24,17 @@
 //
 // Achievement divides the GRADED actual (every sale inside a month the group carries a target
 // in) by the target — the Sales vs Target rule, so this screen agrees with that one.
+//
+//   6. A FORECAST ONLY FILLS A MONTH THAT CARRIES A TARGET (2026-10-01). Targets are loaded a
+//      quarter at a time, so an open month with no target yet is normal — but forecasting it
+//      divided three months of pace by one month of target: Pedia's Q4 read 171% with only
+//      October targeted. An open month with no target is named and left out, unless no month of
+//      the period carries one, when there is no achievement to inflate and the pace fills them all.
+//   7. PEDIA IS PLANNED ON TWO HALVES (2026-10-01). From Semester 2 2026 its incentive is one month
+//      of basic on Guamusin + Ivyronc alone and one on the whole line (src/lib/incentives/pedia-
+//      split.ts). Lacto can lift the total; it can never lift the Sato half. So the plan has
+//      several goals, met in order — the Sato products on their own target first, then the Pedia
+//      total, then the whole plan — and it reaches "your goal" only when every one of them does.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The first month Make It Happen reads (owner decision 2026-09-14). */
@@ -125,7 +136,24 @@ export function periodLabel(kind: PeriodKind, key: string): string {
   const year = key.slice(0, 4);
   const span = `${monthLabel(months[0]).split(" ")[0]} to ${monthLabel(months[months.length - 1]).split(" ")[0]}`;
   if (kind === "quarter") return `Q${key.slice(6)} ${year} · ${span}`;
-  return `${key.endsWith("1") ? "First" : "Second"} half ${year} · ${span}`;
+  // Semester 1 / Semester 2, never "half" or H1/H2 (owner, 2026-09-23). The KEY keeps its H shape —
+  // saved plans are stored under it — only the words a person reads changed.
+  return `Semester ${key.endsWith("1") ? 1 : 2} ${year} · ${span}`;
+}
+
+/**
+ * The open months a line's forecast fills (rule 6 in the header): the open months that carry a
+ * target, or every open month when none of the period's months carries one. The rest are named,
+ * never silently dropped.
+ */
+export function forecastMonthsOf(
+  months: readonly string[],
+  isClosed: (month: string) => boolean,
+  isTargeted: (month: string) => boolean,
+): { forecast: string[]; untargeted: string[] } {
+  const open = months.filter((month) => !isClosed(month));
+  if (!months.some(isTargeted)) return { forecast: open, untargeted: [] };
+  return { forecast: open.filter(isTargeted), untargeted: open.filter((month) => !isTargeted(month)) };
 }
 
 /**
@@ -337,45 +365,145 @@ export type MixResult = {
 };
 
 /**
- * Start every concentration at its expected pace, then — only if that leaves a gap — raise the
- * ones with realistic headroom, those still short of their own target first, biggest headroom
- * value next. Stops the moment the gap closes; never plans above a concentration's realistic max.
+ * One goal the mix must reach: a value gap, and the products whose value counts toward it.
+ * `codes: null` is every product — the whole plan. A Pedia plan adds the Sato products and the
+ * Pedia line ahead of it (rule 7).
  */
-export function buildRealisticMix(items: readonly MixItem[], gapValue: number | null): MixResult {
+export type MixGoal = {
+  key: string;
+  /** Value still needed after sales so far. null when there is no target to reach. */
+  gapValue: number | null;
+  codes: ReadonlySet<string> | null;
+};
+
+export type MixGoalOutcome = {
+  key: string;
+  /** null when the goal has no target. */
+  reachable: boolean | null;
+  shortValue: number;
+  /** Value the mix plans on this goal's products. */
+  plannedValue: number;
+};
+
+export type GoalMixResult = {
+  units: Record<string, number>;
+  plannedValue: number;
+  /** Every goal, in the order given. */
+  goals: MixGoalOutcome[];
+  /** True only when every goal with a target is reached; null when none has one. */
+  reachable: boolean | null;
+};
+
+function countsToward(goal: MixGoal, key: string): boolean {
+  return goal.codes == null || goal.codes.has(key);
+}
+
+function plannedFor(items: readonly MixItem[], units: Record<string, number>, goal: MixGoal): number {
+  return items.reduce((sum, item) => (countsToward(goal, item.key) ? sum + (units[item.key] ?? 0) * item.price : sum), 0);
+}
+
+function goalOutcomes(items: readonly MixItem[], units: Record<string, number>, goals: readonly MixGoal[]) {
+  const outcomes = goals.map((goal): MixGoalOutcome => {
+    const planned = plannedFor(items, units, goal);
+    if (goal.gapValue == null) return { key: goal.key, reachable: null, shortValue: 0, plannedValue: planned };
+    const short = goal.gapValue - planned;
+    return { key: goal.key, reachable: short <= 0, shortValue: Math.max(0, short), plannedValue: planned };
+  });
+  const judged = outcomes.filter((outcome) => outcome.reachable != null);
+  return {
+    goals: outcomes,
+    plannedValue: items.reduce((sum, item) => sum + (units[item.key] ?? 0) * item.price, 0),
+    reachable: judged.length === 0 ? null : judged.every((outcome) => outcome.reachable === true),
+  };
+}
+
+/**
+ * Start every concentration at its expected pace, then meet the goals IN ORDER: for each, only if
+ * a gap is left, raise the products that count toward it and have realistic headroom — those
+ * still short of their own target first, biggest headroom value next. A goal stops the moment its
+ * gap closes; nothing is ever planned above a concentration's realistic max. Value a goal raised
+ * keeps counting toward every later goal that includes those products.
+ */
+export function buildGoalMix(items: readonly MixItem[], goals: readonly MixGoal[]): GoalMixResult {
   const units: Record<string, number> = {};
-  let plannedValue = 0;
-  for (const item of items) {
-    const start = Math.max(0, Math.floor(item.expectedUnits));
-    units[item.key] = start;
-    plannedValue += start * item.price;
-  }
-  if (gapValue == null) return { units, reachable: null, shortValue: 0, plannedValue };
+  for (const item of items) units[item.key] = Math.max(0, Math.floor(item.expectedUnits));
 
-  let remaining = gapValue - plannedValue;
-  const candidates = items
-    .filter((item) => item.price > 0 && item.realisticMaxUnits > units[item.key])
-    .map((item) => ({
-      item,
-      belowOwnTarget: item.unitsStillToTarget != null && item.unitsStillToTarget - units[item.key] > 0,
-      headroomValue: (item.realisticMaxUnits - units[item.key]) * item.price,
-    }))
-    .sort(
-      (a, b) =>
-        Number(b.belowOwnTarget) - Number(a.belowOwnTarget) ||
-        b.headroomValue - a.headroomValue ||
-        a.item.key.localeCompare(b.item.key),
-    );
-
-  for (const { item } of candidates) {
-    if (remaining <= 0) break;
-    const headroom = item.realisticMaxUnits - units[item.key];
-    const add = Math.min(headroom, Math.ceil(remaining / item.price));
-    units[item.key] += add;
-    plannedValue += add * item.price;
-    remaining -= add * item.price;
+  for (const goal of goals) {
+    if (goal.gapValue == null) continue;
+    let remaining = goal.gapValue - plannedFor(items, units, goal);
+    if (remaining <= 0) continue;
+    const candidates = items
+      .filter((item) => countsToward(goal, item.key) && item.price > 0 && item.realisticMaxUnits > units[item.key])
+      .map((item) => ({
+        item,
+        belowOwnTarget: item.unitsStillToTarget != null && item.unitsStillToTarget - units[item.key] > 0,
+        headroomValue: (item.realisticMaxUnits - units[item.key]) * item.price,
+      }))
+      .sort(
+        (a, b) =>
+          Number(b.belowOwnTarget) - Number(a.belowOwnTarget) ||
+          b.headroomValue - a.headroomValue ||
+          a.item.key.localeCompare(b.item.key),
+      );
+    for (const { item } of candidates) {
+      if (remaining <= 0) break;
+      const headroom = item.realisticMaxUnits - units[item.key];
+      const add = Math.min(headroom, Math.ceil(remaining / item.price));
+      units[item.key] += add;
+      remaining -= add * item.price;
+    }
   }
 
-  return { units, reachable: remaining <= 0, shortValue: Math.max(0, remaining), plannedValue };
+  return { units, ...goalOutcomes(items, units, goals) };
+}
+
+export type GoalStretchResult = GoalMixResult & {
+  /** Units per product planned ABOVE that product's realistic max. Only products that were stretched. */
+  aboveRealistic: Record<string, number>;
+  aboveRealisticValue: number;
+};
+
+/**
+ * The realistic mix first; then, goal by goal and only where one still falls short, the missing
+ * value is spread over that goal's priced products in proportion to what each realistically sells —
+ * so a Sato shortfall lands on the Sato products, never on Lacto, and the whole-plan stretch lands
+ * where the business already is.
+ */
+export function buildGoalStretchMix(items: readonly MixItem[], goals: readonly MixGoal[]): GoalStretchResult {
+  const base = buildGoalMix(items, goals);
+  const units = { ...base.units };
+  const aboveRealistic: Record<string, number> = {};
+  let aboveRealisticValue = 0;
+  const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
+
+  for (const goal of goals) {
+    if (goal.gapValue == null) continue;
+    const short = goal.gapValue - plannedFor(items, units, goal);
+    if (short <= 0) continue;
+    const priced = items.filter((item) => countsToward(goal, item.key) && item.price > 0);
+    let weights = priced.map((item) => Math.max(0, item.realisticMaxUnits) * item.price);
+    if (sum(weights) <= 0) weights = priced.map((item) => Math.max(0, item.unitsStillToTarget ?? 0) * item.price);
+    if (sum(weights) <= 0) weights = priced.map(() => 1);
+    const totalWeight = sum(weights);
+    if (priced.length === 0 || totalWeight <= 0) continue;
+    priced.forEach((item, index) => {
+      if (weights[index] <= 0) return;
+      const extra = Math.ceil((short * weights[index]) / totalWeight / item.price);
+      if (extra <= 0) return;
+      units[item.key] = (units[item.key] ?? 0) + extra;
+      aboveRealistic[item.key] = (aboveRealistic[item.key] ?? 0) + extra;
+      aboveRealisticValue += extra * item.price;
+    });
+  }
+
+  return { units, aboveRealistic, aboveRealisticValue, ...goalOutcomes(items, units, goals) };
+}
+
+/** The single-goal mix over every product — the whole plan and nothing else. */
+export function buildRealisticMix(items: readonly MixItem[], gapValue: number | null): MixResult {
+  const mix = buildGoalMix(items, [{ key: "plan", gapValue, codes: null }]);
+  const plan = mix.goals[0];
+  return { units: mix.units, reachable: plan.reachable, shortValue: plan.shortValue, plannedValue: mix.plannedValue };
 }
 
 // ── The payload the screen renders ───────────────────────────────────────────
@@ -397,16 +525,34 @@ export type ConcentrationPlanRow = {
   trend: TrendReading;
 };
 
+/**
+ * The Sato half of the Pedia incentive, measured on this plan's period: Guamusin + Ivyronc on
+ * their OWN target (rule 7). Set only on the Pedia line, from Semester 2 2026, when the viewer's
+ * scope carries a Sato product at all.
+ */
+export type SatoHalfGroup = {
+  /** product_codes — identities, never rendered. */
+  productCodes: string[];
+  /** The products by name, e.g. "Guamusin and Ivyronc". */
+  productNames: string;
+  targetValue: number | null;
+  gradedValue: number;
+};
+
 export type LinePlanGroup = {
   lineCode: string;
   lineName: string;
-  /** Months of the period still open for this line — what the forecast fills. */
+  /** Open months of the period that carry a target (rule 6) — what the forecast fills. */
   remainingMonths: number;
   closedMonthLabels: string[];
   forecastMonthLabels: string[];
+  /** Open months with no target loaded yet. Named on screen, never forecast. */
+  untargetedMonthLabels: string[];
   targetValue: number | null;
   gradedValue: number;
   actualValue: number;
+  /** Pedia only — the Sato half. null on every other line. */
+  satoHalf: SatoHalfGroup | null;
   rows: ConcentrationPlanRow[];
 };
 
