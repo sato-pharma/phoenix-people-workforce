@@ -29,6 +29,7 @@ import {
   type CrmChoiceOption,
   type PillTone,
 } from "@/components/phoenix-crm/ui";
+import { ForecastWhatsAppButton } from "@/components/phoenix-crm/forecast-whatsapp-button";
 import { FORECAST_MAX_UNITS, type AccuracyReading } from "@/lib/phoenix-crm/daily-forecast";
 import type {
   ForecastAccuracyView,
@@ -231,9 +232,24 @@ function ForecastForm({ territories, test }: { territories: TerritorySummary[]; 
           <CrmBlock>
             <div className="grid min-w-0 gap-2">
               {form.sentAt ? (
-                <CrmNote tone="good" title={sentNow ? "Sent" : `Sent at ${cairoClock(form.sentAt)}`}>
-                  Your forecast for today is in. You can change a figure and send again; it replaces today&apos;s boxes.
-                </CrmNote>
+                <>
+                  <CrmNote tone="good" title={sentNow ? "Sent" : `Sent at ${cairoClock(form.sentAt)}`}>
+                    Your forecast for today is in. You can change a figure and send again; it replaces today&apos;s boxes.
+                  </CrmNote>
+                  {/*
+                    Only once it is RECORDED. Offering the share before the figures are sent would put a
+                    number in the line's group that Phoenix does not hold, and the two would disagree.
+                    The boxes shared are the ones on screen now (`unitsOf`), which after a send are the
+                    sent figures — and if he edits afterwards, `sentNow` clears and the note reverts to
+                    the stored time, so the message follows what he last agreed.
+                  */}
+                  <ForecastWhatsAppButton
+                    className="w-full sm:w-auto"
+                    day={form.day}
+                    lines={form.lines.map((line) => ({ productName: line.productName, units: unitsOf(line) }))}
+                    territoryName={form.territoryName}
+                  />
+                </>
               ) : null}
               <p className="break-words text-xs font-semibold leading-5 text-slate-500">
                 {monthLabel(form.period)} has {plural(form.workingDays, "working day", "working days")}, Saturday to Wednesday.
