@@ -1,14 +1,39 @@
 ---
 name: analytics-open-to-all-scoped-plan
-description: "SHIPPED (PR #1150, prod-live 2026-07-19): sales analytics is open to portal sales roles through a SEPARATE URL, per-viewer scoped. Owner ruling — portal users must NEVER reach analytics via /admin/*: /admin/analytics/* stays admin-only (CEO/SA/SFE), portal roles get /employee-portals/sales-analytics/* only. Tile matrix (owner-picked): MR/DSM = 3 core (SoS/Closing/Weekly); RM/NSM/PM/GPM/MM = all 5 (adds Exec Comparison + Reconciliation). Durable lesson: curl text-match cannot test Next.js App Router redirects — grep for the NEXT_REDIRECT digest, not page text."
+description: "RETIRED 2026-09-17 — THE SALES ANALYTICS MODULE NO LONGER EXISTS, by the owner's Ruling 11 ('no analytics module, no sales analytics', said three times). Everything below describes a module that was deleted: src/lib/analytics/ is gone entirely (portal-access.ts, scope.ts, canViewPortalDetailedAnalytics, resolveAnalyticsViewerScope, scopeAnalyticsFilters all absent), there is no /employee-portals/sales-analytics route, and next.config.ts redirects the old addresses. NEVER restore it or re-add a nav row — tests/sales-analytics-retired.test.ts and tests/navigation-ruling-11-analytics.test.ts both run in the suite and fail the PR. The ONE address the ruling left behind is /admin/analytics/monthly-closing/details for Finance Manager, gated by src/lib/sales/closing-details-page-access.ts. Kept only as the account of what was built in PR #1150 and why it went. The durable lesson still holds: curl text-match cannot test Next.js App Router redirects — grep for the NEXT_REDIRECT digest, not page text."
 metadata:
   node_type: memory
   type: project
   originSessionId: 7a426ddb-95c0-494b-928f-6af0ac0d891a
-  modified: 2026-09-26T00:00:36.009Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
-## The live architecture (shipped 2026-07-19, PR #1150)
+> 🔴 **RETIRED 2026-09-17 — READ THIS BEFORE ANYTHING BELOW.**
+>
+> The owner retired the **whole Sales Analytics module** by **Ruling 11 — "no analytics module, no
+> sales analytics", which `system-navigation.ts` records him saying three times.** Nothing below is
+> live. Verified against `origin/main` on 2026-10-01:
+>
+> - `src/lib/analytics/` **does not exist** — `portal-access.ts`, `scope.ts`,
+>   `canViewPortalDetailedAnalytics`, `resolveAnalyticsViewerScope` and `scopeAnalyticsFilters` are
+>   absent from the entire tree.
+> - There is **no `/employee-portals/sales-analytics` route**; the pages were deleted in #3911
+>   (`9f31a4e1b`) and `next.config.ts` redirects their addresses.
+> - The five-tile matrix, the three/five split and the detailed-pair gate describe nothing that runs.
+>
+> 🔴 **DO NOT RESTORE IT, and do not re-add a nav row** — `tests/sales-analytics-retired.test.ts` and
+> `tests/navigation-ruling-11-analytics.test.ts` both run in the suite (invoked from
+> `tests/run-tests.ts`, inside the required `validate` job) and fail the PR if any role's rail
+> exposes `/admin/analytics` or a rail label reads exactly "Sales Analytics".
+>
+> **The one address the ruling deliberately left behind** is
+> `/admin/analytics/monthly-closing/details` for **Finance Manager**, gated by
+> `src/lib/sales/closing-details-page-access.ts`. The ruling removed the module, not that export.
+>
+> Everything from here down is the account of what PR #1150 built on 2026-07-19 and is kept for that
+> reason only. See [[rm-dsm-portal-provisioning-gaps]], whose RM tab diff named the same dead gate.
+
+## What PR #1150 built on 2026-07-19 — RETIRED, not live
 
 Owner direction 2026-07-18: open the analytics dashboards to every sales role, but each sees **only
 their own scope (line/region) and only relevant filters.** Mid-build he made the ruling that decided
