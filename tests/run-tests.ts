@@ -1613,6 +1613,7 @@ import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
 import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-customers.test.ts";
 import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list-board.test.ts";
 import { runPhoenixCrmDayActivitiesTests } from "./phoenix-crm-day-activities.test.ts";
+import { runPhoenixCrmMissedRecordsTests } from "./phoenix-crm-missed-records.test.ts";
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
@@ -5558,6 +5559,11 @@ await runTest(
 await runTest(
   "Phoenix CRM records a day that was not a call (E1 — owner, 2026-09-26: a meeting, training, a conference, admin work, travelling or a health day, so a rep at a training day stops looking like a rep who did nothing; a RECORD ONLY that no report, no coverage and no call rate reads; LEAVE IS NOT HERE because HR's vacation module is the only leave record; an unknown kind is refused rather than coerced; one row a day, replaced not piled up; and the date is the server's Cairo today, never the body's)",
   runPhoenixCrmDayActivitiesTests,
+);
+
+await runTest(
+  "Phoenix CRM: the Super Admin enters a record a rep MISSED (owner, 2026-10-01: \"if he missed a visit or a record, admin can enter it for him … anyone, anytime, anywhere\", \"I choose planned or unplanned\", \"marked as entered by admin\" — the Super Admin alone, any day that has begun, a rep who exists on a line that has opened; planned or unplanned is HIS required choice; it adds what is missing and never rewrites the rep's own record; the mark is read from who entered the visit because capture_source is rep-blind; and an entered visit has NO location, so the location checks, the behaviour sweep and place-against-actual all leave it out — the coordinate read no longer turns a missing reading into 0°N 0°E)",
+  runPhoenixCrmMissedRecordsTests,
 );
 
 await runTest(

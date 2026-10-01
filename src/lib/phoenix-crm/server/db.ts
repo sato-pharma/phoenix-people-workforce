@@ -82,6 +82,8 @@ const REFUSALS: Record<string, Refusal> = {
   move_reason_required: { status: 400, message: "Write why the place is moved (at least 10 characters)." },
   // The daily forecast (owner, 2026-10-01): CNS only, and the database refuses any other line itself.
   not_forecast_line: { status: 403, message: "The daily forecast is for the CNS line only." },
+  // A record a rep missed, entered by the Super Admin (owner, 2026-10-01): any day that has begun.
+  future_day: { status: 400, message: "That day has not begun yet. Choose today or an earlier day." },
 };
 
 function messageOf(error: unknown): string {

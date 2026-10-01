@@ -14,6 +14,7 @@ import {
   CrmTable,
 } from "@/components/phoenix-crm/ui";
 import { dayActivityLabel } from "@/lib/phoenix-crm/day-activities";
+import { opensForMissedRecords } from "@/lib/phoenix-crm/missed-records";
 import { PHOENIX_CRM_PORTAL_BASE } from "@/lib/phoenix-crm/modules";
 import type { DayShape, TeamCalendarDay, TeamCalendarRow } from "@/lib/phoenix-crm/team-calendar";
 import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
@@ -54,6 +55,8 @@ type CalendarView = {
   isTest: boolean;
   /** `own` when the reader is a rep seeing himself, `team` when he is reading other people. */
   scope: "own" | "team";
+  /** The Super Admin's: the last day and the territories he may enter a missed record on. Null for everyone else. */
+  missedRecords: { through: string; seatIds: string[] } | null;
 };
 
 /** His legend, as ink. Square edges, and one class string per shape so nothing is composed at runtime. */
@@ -124,7 +127,13 @@ function dayTitle(person: string, day: TeamCalendarDay, opens: boolean): string 
   if (day.shape === "am" || day.shape === "both" || day.shape === "pm") parts.push(splitText(day.counts));
   if (day.activity) parts.push(dayActivityLabel(day.activity));
   if (day.onLeave && day.shape !== "leave") parts.push("HR has approved leave on this day");
-  if (opens) parts.push("Opens the day in full, in a new tab");
+  if (opens) {
+    parts.push(
+      opensTheDay(day)
+        ? "Opens the day in full, in a new tab"
+        : "Opens the day in a new tab, to enter a record he missed",
+    );
+  }
   return parts.join(" — ");
 }
 
@@ -140,6 +149,17 @@ function dayTitle(person: string, day: TeamCalendarDay, opens: boolean): string 
  */
 function opensTheDay(day: TeamCalendarDay): boolean {
   return day.shape === "am" || day.shape === "pm" || day.shape === "both" || day.shape === "activity";
+}
+
+/**
+ * 🔴 AND FOR THE SUPER ADMIN, EVERY DAY THAT HAS BEGUN OPENS, the empty ones included (owner,
+ * 2026-10-01: "admin can enter manual record for anyone, anytime, anywhere"). An empty day is exactly
+ * where a missed record belongs, and the day's page is where he enters it. Only on the territories the
+ * server named (`missedRecords.seatIds`) — a vacant seat, or a line that has not opened, has nothing
+ * to enter for — and never a day still to come.
+ */
+function opensForEntry(entrySeats: ReadonlySet<string>, through: string | null, seatId: string, day: TeamCalendarDay): boolean {
+  return entrySeats.has(seatId) && opensForMissedRecords(day.day, through);
 }
 
 /** The day's own address. `test` rides along so a test-mode calendar opens the test-mode day. */
@@ -175,6 +195,9 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
 
   const rows = useMemo(() => view.data?.rows ?? [], [view.data]);
   const days = useMemo(() => view.data?.days ?? [], [view.data]);
+  // The Super Admin's: which territories open on any day that has begun, to enter a missed record.
+  const entryThrough = view.data?.missedRecords?.through ?? null;
+  const entrySeats = useMemo(() => new Set(view.data?.missedRecords?.seatIds ?? []), [view.data]);
   // A rep reads only himself here (owner, 2026-10-01), so the heading says so rather than calling
   // one person a team. It follows the SERVICE's own `scope`, never the row count — a district
   // manager down to one rep still reads a team, and a count would rename his screen as people
@@ -254,6 +277,12 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                 </span>
               ))}
             </div>
+            {entryThrough !== null ? (
+              <p className="mt-3 break-words text-xs font-semibold leading-5 text-slate-600">
+                Any day up to today opens for you, an empty one included, to enter a visit or a day&apos;s activity a rep
+                missed. It is marked as entered by the Super Admin wherever it shows.
+              </p>
+            ) : null}
           </CrmBlock>
 
           {/* ── From `lg`: his grid, one row a person ───────────────────────────────────────── */}
@@ -297,7 +326,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                       ) : null}
                     </th>
                     {row.days.map((day) => {
-                      const opens = opensTheDay(day);
+                      const opens = opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day);
                       const face = cn(
                         "flex h-11 w-full items-center justify-center rounded-none border-0 px-0 text-center text-phx-3xs font-black transition",
                         SHAPE_INK[day.shape],
@@ -369,7 +398,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                       <div key={`lead-${index}`} />
                     ))}
                     {row.days.map((day) => {
-                      const opens = opensTheDay(day);
+                      const opens = opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day);
                       const face = cn(
                         "flex min-h-11 min-w-0 flex-col items-center justify-center rounded-none border px-0 py-1 text-center text-phx-3xs font-black transition",
                         SHAPE_INK[day.shape],
@@ -381,7 +410,8 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                           <CellFace day={day} />
                         </>
                       );
-                      // The same rule as the grid above: a day with work on it opens in a new tab.
+                      // The same rule as the grid above: a day with work on it opens in a new tab — and,
+                      // for the Super Admin, any day that has begun, to enter what was missed.
                       return opens ? (
                         <a
                           aria-label={dayTitle(row.person, day, true)}
