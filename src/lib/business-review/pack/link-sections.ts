@@ -50,6 +50,7 @@ import {
   type ReachCount,
 } from "../field-link";
 import { periodColumnLabel, periodLabel, periodMonthEnd } from "../period-format";
+import { kpiSummaryRows } from "./kpi-sections";
 import { deltaPct, formatDelta } from "../previous-window";
 import type { ReviewPersonRow } from "../sources/roles";
 import type { PackLevel, ReviewMetricId } from "./metrics";
@@ -66,6 +67,7 @@ const pct1 = (value: number | null) => (value == null ? "not gradeable" : `${val
 const reachCell = (reach: ReachCount) => (reach.listed === 0 ? "—" : `${reach.reached} of ${reach.listed}`);
 const reachPct = (reach: ReachCount) => sharePct(reach.reached, reach.listed);
 const plural = (count: number, one: string, many: string) => `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
+const count0 = (value: number) => value.toLocaleString("en-US");
 
 /** "12 Jul 2026", in the only calendar the owner reads — a DATE carries no time, so no zone shifts it. */
 function dayLabel(iso: string | null): string {
@@ -93,6 +95,11 @@ const REQUEST_STATUS_LABEL: Record<string, string> = {
   returned: "Returned for changes",
   roi_tracking: "Tracking its return",
 };
+
+/** True when the request was raised by one of the pack's own reps — on a rep's pack, by him. */
+function isOwnRequest(ctx: LinkContext, requesterHrId: string): boolean {
+  return ctx.reps.includes(requesterHrId.trim().toUpperCase());
+}
 
 function statusLabel(status: string): string {
   return REQUEST_STATUS_LABEL[status] ?? (status ? status.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()) : "—");
@@ -268,6 +275,10 @@ export function summarySection(input: PackInput, ctx: LinkContext | null): PackS
     }
   }
 
+  // ── The plan and the calls — the CRM KPIs board's own figures, read whether or not the linked
+  // facts were (owner, 2026-10-01: "add all three") ──
+  rows.push(...kpiSummaryRows(input));
+
   if (ctx) {
     // ── Bricks ──
     const bricks = ctx.bricks;
@@ -393,9 +404,12 @@ export function summarySection(input: PackInput, ctx: LinkContext | null): PackS
       const committed = ctx.facts.marketing.filter((request) => request.bucket === "committed");
       const cost = committed.reduce((sum, request) => sum + request.cost, 0);
       const back = committed.reduce((sum, request) => sum + num(request.returnSoFar), 0);
+      const yours = ctx.facts.marketing.filter((request) => isOwnRequest(ctx, request.requesterHrId)).length;
       rows.push([
         "Marketing requests",
-        `${plural(ctx.facts.marketing.length, isRep ? "request of yours was" : "request was", isRep ? "requests of yours were" : "requests were")} paid in the period: ${egp(cost)} committed, ${egp(back)} of sales brought back so far.`,
+        isRep
+          ? `${plural(ctx.facts.marketing.length, "request for your area was", "requests for your area were")} paid in the period, ${yours === 0 ? "none of them raised by you" : `${count0(yours)} raised by you`}: ${egp(cost)} committed, ${egp(back)} of sales brought back so far.`
+          : `${plural(ctx.facts.marketing.length, "request was", "requests were")} paid in the period: ${egp(cost)} committed, ${egp(back)} of sales brought back so far.`,
       ]);
     }
     if (ctx.facts.awareness && ctx.facts.awareness.length > 0) {
@@ -876,24 +890,15 @@ export function directOrdersSection(input: PackInput, ctx: LinkContext | null): 
 export function requestsSection(_input: PackInput, ctx: LinkContext | null): PackSection | null {
   const requests = ctx?.facts.marketing;
   if (!ctx || !requests || requests.length === 0) return null;
-  const withRequester = !ctx.isRep;
+  // A rep's pack lists every request for HIS line in HIS area, whoever raised it (owner, 2026-10-01:
+  // "all on his patch") — so it names who raised each, and his own read "You".
   return {
-    align: [
-      "left",
-      "left",
-      "left",
-      ...(withRequester ? (["left"] as PackAlign[]) : []),
-      "right",
-      "left",
-      "right",
-      "right",
-      "right",
-    ],
+    align: ["left", "left", "left", "left", "right", "left", "right", "right", "right"],
     columns: [
       "Paid in",
       "Customer",
       "Type",
-      ...(withRequester ? ["Requested by"] : []),
+      "Requested by",
       "Cost",
       "Status",
       "Sales brought back so far",
@@ -902,20 +907,20 @@ export function requestsSection(_input: PackInput, ctx: LinkContext | null): Pac
     ],
     metric: "requests-return",
     note: ctx.isRep
-      ? "Your marketing requests paid in the period. A request should bring back ten times its cost in sales; the figure is the Marketing ROI module's own matching, from the month it was paid."
+      ? "Every marketing request for your line in your area paid in the period, whoever raised it. A request should bring back ten times its cost in sales; the figure is the Marketing ROI module's own matching, from the month it was paid. The cost page counts only the requests you raised yourself."
       : "Marketing requests paid in the period, for these areas and lines. 'Sales brought back so far' is the Marketing ROI engine's own matching since the pay month — its figure, not the Monthly Closing's — and a request must bring back ten times its cost. Pending and refused requests have no return. The confidential Head Office products are never counted.",
     rows: requests.map((request) => [
       periodLabel(request.period),
       request.customerName,
       request.typeName,
-      ...(withRequester ? [request.requesterName] : []),
+      ctx.isRep && isOwnRequest(ctx, request.requesterHrId) ? "You" : request.requesterName,
       whole(request.cost),
       statusLabel(request.status),
       request.returnSoFar == null ? "—" : whole(request.returnSoFar),
       whole(request.requiredReturn),
       request.returnSoFar == null ? "—" : pct0(sharePct(request.returnSoFar, request.requiredReturn)),
     ]),
-    title: ctx.isRep ? "Your marketing requests and what they brought" : "Marketing requests and what they brought",
+    title: ctx.isRep ? "Marketing requests for your area and what they brought" : "Marketing requests and what they brought",
   };
 }
 
@@ -1048,7 +1053,7 @@ const REP_WORDS: Partial<Record<ReviewMetricId, { title: string; note?: string }
     title: "Customers each month",
   },
   "marketing-committed": {
-    note: "Marketing committed and outstation claimed in your area. Spend per point is what each point of achievement cost — lower is better.",
+    note: "The marketing requests you raised yourself and the outstation you claimed. Requests others raised for your doctors are listed in \"Marketing requests for your area\" and are not counted here. Spend per point is what each point of achievement cost — lower is better.",
     title: "What your area cost",
   },
   "marketing-vs-trend": {
