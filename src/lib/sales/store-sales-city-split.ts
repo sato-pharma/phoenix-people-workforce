@@ -72,18 +72,24 @@ export const STORE_CITY_SPLIT_ENABLED = true;
  *
  * 🔴 JUNE AND EARLIER ARE DELIBERATELY UNTOUCHED, and that is why this is `2026-07` and not a bare
  * boolean. The gate is a FLOOR (`period >= this`), so `2026-07` reaches exactly July, August and
- * September and leaves January–June as published. Measured on live data 2026-10-02, the months this
- * does NOT reach would each have moved between areas: Jan 262,846.70, Feb 252,084.29,
- * Mar 301,764.29, Apr 1,807,659.82, May 573,326.77, Jun 936,655.07 EGP. Setting this to `2026-01`,
- * or removing it in favour of the bare flag, restates all six at once with no signal anywhere — see
- * WHY A DATE EXISTS below. He asked for July; only July moves.
+ * September and leaves January–June as published — six published months that each hold wholesaler
+ * money the rule would redistribute, in Apr 2026's case over a million EGP. Setting this to
+ * `2026-01`, or removing it in favour of the bare flag, restates all six at once with no signal
+ * anywhere — see WHY A DATE EXISTS below. He asked for July; only July moves. Deliberately NO
+ * per-month figures here: a month before the gate is not split-active, so the one instrument that
+ * can quote them authoritatively (`scripts/check-store-split-drift.ts`, which drives the real
+ * closing-detail loader) skips it by design, and a hand-built row set measures a different
+ * population. Move the gate and the detector prints the real number for whatever it now reaches.
  *
- * WHAT IT COSTS IN JULY, measured the same day through this module on the live July rows:
- * Anti Infective 18 warehouses / 55,198.09 EGP across 18 areas; CNS 79 / 264,197.76 across 34;
- * Pedia 13 / 35,859.37 across 18. In Menoufia — the district that prompted the ruling — Menoufia 1
- * goes 142.86% → 81.78% and Menoufia 2 goes 73.99% → 126.82%. Dakahlia 2 goes slightly NEGATIVE
- * (10,806.60 → −650.07), because ريونيون للتجارةوالاستثمار's −34,370.00 July return sits whole on
- * Dakahlia 1 and the split spreads it outward. The owner was shown all of that before deciding.
+ * WHAT IT COSTS IN JULY, measured 2026-10-02 by `scripts/check-store-split-drift.ts` — the live
+ * recompute against July's empty frozen net, so these are the figures the backfill will write:
+ * 70 line×area pairs over 321 cells, **352,549.49 EGP ending up on a different area** (376,315.42
+ * at cell grain, the gap being cells that offset inside one area) — Anti Infective 100,451.91
+ * across 18 pairs, CNS 218,465.70 across 34, Pedia 33,631.88 across 18. In Menoufia — the district
+ * that prompted the ruling — Menoufia 1 goes 142.86% → 81.78% and Menoufia 2 goes 73.99% →
+ * 126.82%. Dakahlia 2 goes slightly NEGATIVE (10,806.60 → −650.07), because
+ * ريونيون للتجارةوالاستثمار's −34,370.00 July return sits whole on Dakahlia 1 and the split spreads
+ * it outward. The owner was shown all of that before deciding.
  *
  * 🔴 THIS CONSTANT ALONE DOES NOT MOVE THE ACHIEVEMENT, AND THAT IS THE TRAP. The attribution
  * engine does not recompute the split: `au.f_monthly_attribution` READS `au.monthly_store_split_net`,
