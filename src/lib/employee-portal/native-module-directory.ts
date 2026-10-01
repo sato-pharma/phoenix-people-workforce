@@ -107,6 +107,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/probation": { icon: "checkbox-outline", section: "Performance" },
   // ── Forecast & Target ─────────────────────────────────────────────────────────────────────────
   "/employee-portals/make-it-happen": { icon: "sparkles-outline", section: "Forecast & Target" },
+  "/employee-portals/field-crm/forecast": { icon: "today-outline", section: "Forecast & Target" },
   "/employee-portals/targets": { icon: "locate-outline", section: "Forecast & Target" },
   // Filed in the same section the sidebar puts it in, beside Targets — the placement is derived from
   // buildEmployeePortalSections, so a registry entry without one drops out of the list silently.

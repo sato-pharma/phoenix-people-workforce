@@ -192,8 +192,8 @@ export function runMobileModuleDirectoryTests() {
   );
   assert.match(
     route,
-    /resolveEmployeePortalNavVisibility\(\s*data\.employee\.roleLabel,\s*access\.role,\s*data\.employee\.line,\s*data\.employee\.department,\s*data\.employee\.hrId,\s*hasDeviceMapping,\s*sharedInterviewCalendar,\s*phoenixCrm,\s*\)/,
-    "visibility is resolved with the shell's own eight inputs in the shell's own order — a reordered argument list silently hands the phone a different role's list",
+    /resolveEmployeePortalNavVisibility\(\s*data\.employee\.roleLabel,\s*access\.role,\s*data\.employee\.line,\s*data\.employee\.department,\s*data\.employee\.hrId,\s*hasDeviceMapping,\s*sharedInterviewCalendar,\s*phoenixCrm\.crm,\s*phoenixCrm\.forecast,\s*\)/,
+    "visibility is resolved with the shell's own nine inputs in the shell's own order — a reordered argument list silently hands the phone a different role's list",
   );
 
   // ── The screen obeys the two look rules that a list like this breaks first ─────────────────────

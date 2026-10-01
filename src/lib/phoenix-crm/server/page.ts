@@ -12,6 +12,7 @@ import { canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { isForbiddenError } from "@/lib/auth/server";
 import { ApiError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
+import { forecastIsOffered } from "@/lib/phoenix-crm/daily-forecast";
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { PHOENIX_CRM_PORTAL_BASE, type PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 import { loadPhoenixCrmOverview, type PhoenixCrmOverview } from "@/lib/phoenix-crm/server/overview";
@@ -78,24 +79,42 @@ export function phoenixCrmHasSomethingToSay(viewer: PhoenixCrmViewer): boolean {
 }
 
 /**
- * Whether My Visits and the portal sidebar show the Phoenix CRM row: to a holder of `phoenix_crm`
- * read whom the module has something to say to — see `phoenixCrmHasSomethingToSay`. It never throws:
- * the sidebar renders whatever happens here, and a failure is logged rather than shown as a missing
- * row nobody can explain.
+ * What the portal sidebar offers of Phoenix CRM: the module's own row (`crm`), and the "Daily
+ * Forecast" row under Forecast & Target (`forecast`, owner, 2026-10-01: "put it under forecast in
+ * sidebar"). One viewer lookup answers both, because the sidebar is drawn on every portal page.
  */
-export async function phoenixCrmEntryAvailable(access: AccessContext): Promise<boolean> {
+export type PhoenixCrmSidebarEntries = { crm: boolean; forecast: boolean };
+
+/** Neither row — what a failed, refused or seatless lookup answers. */
+export const NO_PHOENIX_CRM_ENTRIES: PhoenixCrmSidebarEntries = { crm: false, forecast: false };
+
+/**
+ * Whether My Visits and the portal sidebar show the Phoenix CRM row: to a holder of `phoenix_crm`
+ * read whom the module has something to say to — see `phoenixCrmHasSomethingToSay`. And whether the
+ * sidebar shows the Daily Forecast row: to that same person when the forecast is offered to him
+ * (`forecastIsOffered`, the very function that offers the tab), so the row can never open onto a
+ * refusal. It never throws: the sidebar renders whatever happens here, and a failure is logged rather
+ * than shown as a missing row nobody can explain.
+ */
+export async function phoenixCrmSidebarEntries(access: AccessContext): Promise<PhoenixCrmSidebarEntries> {
   try {
-    if (!(await canAccess(access, "phoenix_crm", "read"))) return false;
+    if (!(await canAccess(access, "phoenix_crm", "read"))) return NO_PHOENIX_CRM_ENTRIES;
     const viewer = await resolvePhoenixCrmViewer(access);
-    return phoenixCrmHasSomethingToSay(viewer);
+    const crm = phoenixCrmHasSomethingToSay(viewer);
+    return { crm, forecast: crm && forecastIsOffered(viewer) };
   } catch (error) {
-    if ((error instanceof ApiError && error.status < 500) || isForbiddenError(error)) return false;
+    if ((error instanceof ApiError && error.status < 500) || isForbiddenError(error)) return NO_PHOENIX_CRM_ENTRIES;
     logError("Phoenix CRM entry check failed", {
       error,
       labels: { event: "phoenix_crm_entry_check_failed", route: "/employee-portals/visits" },
     });
-    return false;
+    return NO_PHOENIX_CRM_ENTRIES;
   }
+}
+
+/** The Phoenix CRM row alone — what the My Visits button asks. */
+export async function phoenixCrmEntryAvailable(access: AccessContext): Promise<boolean> {
+  return (await phoenixCrmSidebarEntries(access)).crm;
 }
 
 /** The sentence under the page title, for who is looking. */

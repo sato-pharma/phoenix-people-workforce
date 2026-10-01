@@ -136,22 +136,60 @@ export function runPhoenixCrmPortalSidebarTests() {
     const text = source(path);
     assert.match(
       text,
-      /import \{ phoenixCrmEntryAvailable \} from "@\/lib\/phoenix-crm\/server\/page";/,
+      /import \{ NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries(?:, type PhoenixCrmSidebarEntries)? \} from "@\/lib\/phoenix-crm\/server\/page";/,
       `${path} asks the module's own gate rather than inventing a second one`,
     );
     assert.match(
       text,
-      /phoenixCrmEntryAvailable\(access\)\.catch\(\(\) => false\)/,
-      `${path} fails the gate closed — a CRM outage costs the row, never the page`,
+      /phoenixCrmSidebarEntries\(access\)\.catch\(\(\) => NO_PHOENIX_CRM_ENTRIES\)/,
+      `${path} fails the gate closed — a CRM outage costs the rows, never the page`,
     );
     const call = /resolveEmployeePortalNavVisibility\(([\s\S]*?)\n  \);/.exec(text);
     assert.ok(call, `${path} still resolves the portal nav visibility`);
     assert.match(
       call[1],
-      /phoenixCrm,\s*$/,
-      `${path} passes the gate's answer through as the last argument, or its sidebar loses the row`,
+      /phoenixCrm\.crm,\s*phoenixCrm\.forecast,\s*$/,
+      `${path} passes both of the gate's answers through, last and in order, or its sidebar loses a row`,
     );
   }
+
+  // ── 3b. The Daily Forecast row under Forecast & Target (owner, 2026-10-01) ────────────────────
+  //
+  // "Put it under forecast in sidebar": the CNS daily forecast is a Phoenix CRM tab, and this row is
+  // its second door. It follows the SAME gate as the tab — `forecastIsOffered`, through
+  // `phoenixCrmSidebarEntries` — never a role list, or a Pedia rep is offered a row that opens onto
+  // "not yours to open".
+  const forecastOn = resolveEmployeePortalNavVisibility("Medical Rep", "Medical Rep", "CNS", "Sales", "B-995", false, false, true, true);
+  assert.equal(forecastOn.showDailyForecastTab, true, "a rep the module offers the forecast gets the row");
+  const forecastOff = resolveEmployeePortalNavVisibility("Medical Rep", "Medical Rep", "CNS", "Sales", "B-995", false, false, true, false);
+  assert.equal(
+    forecastOff.showDailyForecastTab,
+    false,
+    "and nobody else — the flag is the gate's answer, never the line name the viewer carries",
+  );
+  assert.equal(
+    resolveEmployeePortalNavVisibility("Medical Rep", "Medical Rep", "CNS", "Sales", "B-995", false, false, true).showDailyForecastTab,
+    false,
+    "an unpassed forecast flag fails closed",
+  );
+  const forecastAssignment = /showDailyForecastTab:\s*([^\n]*)/.exec(navigation);
+  assert.ok(forecastAssignment, "navigation.ts still assigns showDailyForecastTab");
+  assert.equal(forecastAssignment[1], "hasPhoenixCrmForecast === true,", "the forecast flag is the passed gate verbatim");
+
+  assert.match(destructuring, /showDailyForecastTab = false,/, "the rail builder destructures the forecast flag");
+  const forecastSection = layout.slice(layout.indexOf('title: "Forecast & Target",'), layout.indexOf('title: "Recruitment",'));
+  assert.match(
+    forecastSection,
+    /\.\.\.\(showDailyForecastTab \? \[\{ href: "\/employee-portals\/field-crm\/forecast", label: "Daily Forecast", icon: PackageCheck \}\] : \[\]\),/,
+    "the row sits in Forecast & Target and opens the forecast module's own portal address",
+  );
+  assert.ok(
+    forecastSection.indexOf('"/employee-portals/make-it-happen"') < forecastSection.indexOf('"/employee-portals/field-crm/forecast"'),
+    "directly under Make It Happen, the section's forecast planner",
+  );
+  const forecastEntry = PORTAL_NAV_REGISTRY.find((row) => row.href === "/employee-portals/field-crm/forecast");
+  assert.ok(forecastEntry, "the registry lists Daily Forecast, so the phone and the quick-nav grid reach it too");
+  assert.deepEqual(forecastEntry.flags, ["showDailyForecastTab"], "on the same flag as the rail row");
 
   // ── 4. The phone's registry carries it too, under a label of its own ───────────────────────────
 

@@ -13,7 +13,7 @@
  */
 
 import { plannableWeeks } from "@/lib/phoenix-crm/calendar";
-import { isForecastLine } from "@/lib/phoenix-crm/daily-forecast";
+import { forecastIsOffered } from "@/lib/phoenix-crm/daily-forecast";
 import { managerChain, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { canReviewTerritory, lineOpeningText, readsCalendar, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -183,7 +183,7 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     // The daily forecast is CNS ONLY (owner, 2026-10-01). A CNS rep has his own territory in scope, a
     // CNS manager (and the CEO and the SFE Manager, who read the company) has CNS territories beneath
     // him; anyone whose scope holds no CNS territory is never offered it.
-    forecast: viewer.isSuperAdmin || scope.some((seat) => isForecastLine(seat.lineCode)),
+    forecast: forecastIsOffered(viewer),
     team: viewer.isSuperAdmin || (scope.length > 0 && (viewer.managerSeats.length > 0 || viewer.basis === "all")),
     // 🔴 THE CALENDAR LEFT THE TEAM TAB'S PREDICATE ON 2026-10-01, at the owner's instruction:
     // "I want the medical rep to have also his team calendar seeing only himself". It is now the

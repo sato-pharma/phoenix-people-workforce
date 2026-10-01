@@ -25,6 +25,7 @@ import {
   type LucideIcon,
   MapPinned,
   Package,
+  PackageCheck,
   PackageSearch,
   ReceiptText,
   Send,
@@ -120,6 +121,9 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // rather than the desktop sidebar alone.
   { label: "vs Target", fullLabel: "Sales vs Target", href: "/employee-portals/sales-vs-target", icon: Gauge, flags: ["showSalesVsTargetTab"], permission: { resource: "sales", action: "read" } },
   { label: "Forecast", fullLabel: "Make It Happen", href: "/employee-portals/make-it-happen", icon: Sparkles, flags: ["showMakeItHappenTab"], permission: { resource: "sales", action: "read" } },
+  // Daily Forecast — the CNS reps' boxes for today, a Phoenix CRM tab (owner, 2026-10-01). No
+  // `permission`: the gate is the module's own answer (`forecastIsOffered`), carried in by the flag.
+  { label: "Daily Forecast", fullLabel: "Daily Forecast", href: "/employee-portals/field-crm/forecast", icon: PackageCheck, flags: ["showDailyForecastTab"] },
   { label: "ROI", fullLabel: "ROI Intelligence", href: "/employee-portals/roi", icon: Target, flags: ["showRoiIntelligenceTab"] },
   { label: "SoS", fullLabel: "Source of Sales", href: "/employee-portals/source-of-sales", icon: ChartColumnBig, flags: ["showSourceOfSalesTab"], permission: { resource: "sales", action: "read" } },
   // The three sales destinations below plus My Visits/Team Calendar further down were in the

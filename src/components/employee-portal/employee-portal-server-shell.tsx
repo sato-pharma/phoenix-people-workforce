@@ -17,7 +17,7 @@ import { phoenixNativeClientUserAgentMarker } from "@/lib/auth/native-session";
 import { NATIVE_WEB_APP_SHELL_COOKIE } from "@/lib/auth/native-web-handoff";
 import { PATH_HEADER } from "@/lib/navigation/shell-headers";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
-import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/page";
+import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/page";
 import { hasInterviewCalendarAccess } from "@/lib/recruitment/interview-calendar";
 
 type EmployeePortalServerShellProps = {
@@ -65,8 +65,9 @@ export async function EmployeePortalServerShell({
   let sharedInterviewCalendar = false;
   // Whether Phoenix CRM has anything open for this person today — the module's own gate, the same
   // one the My Visits button asks, so the sidebar row and that button can never disagree. It fails
-  // closed and never throws, so a CRM outage costs the row, never the portal.
-  let phoenixCrm = false;
+  // closed and never throws, so a CRM outage costs the row, never the portal. Its forecast half is
+  // the Daily Forecast row under Forecast & Target, answered by the same lookup.
+  let phoenixCrm = NO_PHOENIX_CRM_ENTRIES;
   // The saved nav-row arrangement used to be read here, in this same Promise.all. The portal has
   // no horizontal rows any more (owner rule, 2026-09-03 — see EmployeePortalChrome), so the read
   // went with them: it crossed the Atlantic to Frankfurt on every portal page render.
@@ -75,7 +76,7 @@ export async function EmployeePortalServerShell({
       getEmployeePortalShellData(access),
       access.hrId ? employeeHasActiveDeviceMapping(access.hrId).catch(() => false) : Promise.resolve(false),
       access.hrId ? hasInterviewCalendarAccess(access).catch(() => false) : Promise.resolve(false),
-      access.hrId ? phoenixCrmEntryAvailable(access).catch(() => false) : Promise.resolve(false),
+      access.hrId ? phoenixCrmSidebarEntries(access).catch(() => NO_PHOENIX_CRM_ENTRIES) : Promise.resolve(NO_PHOENIX_CRM_ENTRIES),
     ]);
   } catch (error) {
     logPortalFailure(
@@ -102,7 +103,8 @@ export async function EmployeePortalServerShell({
     data.employee.hrId,
     hasDeviceMapping,
     sharedInterviewCalendar,
-    phoenixCrm,
+    phoenixCrm.crm,
+    phoenixCrm.forecast,
   );
 
   // The tab stays in the sidebar wearing a padlock — taking it away would say "this was removed",

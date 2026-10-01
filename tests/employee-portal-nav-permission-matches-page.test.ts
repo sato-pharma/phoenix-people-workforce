@@ -56,7 +56,9 @@ export function runEmployeePortalNavPermissionMatchesPageTests() {
   let confirmed = 0;
 
   for (const entry of entries) {
-    const file = pageFileFor(entry.href, { repoRoot });
+    // `matchDynamicSegment`: a Phoenix CRM module row (Daily Forecast) links to
+    // /employee-portals/field-crm/<module>, which the [module] page serves.
+    const file = pageFileFor(entry.href, { repoRoot, matchDynamicSegment: true });
     if (!file) {
       missingPage.push(entry.href);
       continue;
