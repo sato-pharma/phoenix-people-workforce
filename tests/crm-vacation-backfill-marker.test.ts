@@ -11,11 +11,18 @@ import { stripComments } from "./support/comment-strip.ts";
  * rows carry no run id, no job id and no batch table. Its own comment says it exists "so the whole
  * batch is identifiable and exactly reversible".
  *
- * THE DEFECT. The date was a hardcoded constant, `CRM_BACKFILL_2026-08-03`. The script ran twice —
- * 2026-08-03 and 2026-08-24 — so the second run's rows carry the FIRST run's date, and
- * `notes like '[CRM_BACKFILL_2026-08-03]%'` matches 260 rows spanning both batches. Reversing one
- * without the other is impossible, which is exactly what the marker was supposed to make possible.
- * A third run would have folded a third batch into the same bucket.
+ * THE DEFECT. The date was a hardcoded constant, and editing it before each run was a step someone
+ * had to remember.
+ *
+ * 🔴 CORRECTED 2026-10-01. This note first said the two August runs shared one marker and could not
+ * be separated. Measured on production the same day, that was WRONG: the batches are cleanly
+ * disjoint — `[CRM_BACKFILL_2026-08-03]` 260 rows / 62 people, `[CRM_BACKFILL_2026-08-24]` 208 rows
+ * / 66 people, `[CRM_BACKFILL_2026-10-01]` 61 rows / 31 people. The constant WAS edited before the
+ * second run, so both August batches are reversible on their own.
+ *
+ * The defect that remains is that it was left reading `2026-08-03` in the committed file afterwards
+ * — a stale value that looks deliberate. The September run would have inherited it and folded its
+ * rows into a batch from two months earlier, silently. A required flag cannot be forgotten.
  *
  * THE FIX. `--marker <YYYY-MM-DD>` is required and validated. There is deliberately NO default:
  * a default would be silently accepted, and a batch marker nobody chose is the defect above. These
@@ -35,9 +42,9 @@ export function runCrmVacationBackfillMarkerTests() {
   assert.equal(
     /CRM_BACKFILL_\d{4}-\d{2}-\d{2}/.test(code),
     false,
-    "the batch marker's DATE must never be hardcoded: two runs sharing one stamp cannot be told "
-      + "apart, and 260 production rows from the 2026-08-03 and 2026-08-24 runs already carry the "
-      + "same marker for that reason",
+    "the batch marker's DATE must never be hardcoded: editing it before each run is a step someone "
+      + "has to remember, and it was last left reading 2026-08-03, so the September run would have "
+      + "folded its rows into a batch from two months earlier",
   );
 
   // ---- It comes from the command line, and it is REQUIRED ------------------------------------
@@ -60,7 +67,7 @@ export function runCrmVacationBackfillMarkerTests() {
     /readArg\("--marker"\)\s*\?\?/.test(code) || /readArg\("--marker"\)\s*\|\|/.test(code),
     false,
     "--marker must have no fallback: a defaulted batch marker is indistinguishable from a chosen "
-      + "one, which is precisely how the two existing batches became inseparable",
+      + "one - a stale constant that happens to be correct for one run is not correct for the next",
   );
 
   // ---- The stamp is still built from it, and still written into the notes ---------------------
