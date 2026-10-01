@@ -360,6 +360,9 @@ export async function seedRunFromRecurring(input: {
   );
   if (error) throw error;
 
+  // To the same client as every other write here. Left to its default, a test that injected a fake
+  // still sent this row to the real database. `input.client` is unset in production, so the audit
+  // writer resolves the admin client exactly as it always did.
   await writeAutomatedPayrollAudit({
     runId: input.runId,
     actorHrId: input.actorHrId,
@@ -374,7 +377,7 @@ export async function seedRunFromRecurring(input: {
       skippedAsDuplicate,
       heldBackPartClosed,
     },
-  });
+  }, input.client);
 
   return { inserted: pending.length, skipped, skippedAsDuplicate, heldBackPartClosed };
 }
