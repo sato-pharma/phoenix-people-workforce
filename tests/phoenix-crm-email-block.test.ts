@@ -40,6 +40,8 @@ const EVENT_TYPES = [
   "unplanned_visit_approved",
   "unplanned_visit_refused",
   "unplanned_visit_moved_on",
+  // The CNS daily forecast (owner, 2026-10-01): the district manager hears it is in — IN-APP ONLY.
+  "forecast_sent",
 ];
 
 export function runPhoenixCrmEmailBlockTests() {
@@ -56,9 +58,25 @@ export function runPhoenixCrmEmailBlockTests() {
     const notify = readFileSync("src/lib/phoenix-crm/server/notifications.ts", "utf8");
     assert.doesNotMatch(notify, /"email"/, "the Phoenix CRM notifier must never ask for email");
     assert.equal(
-      (notify.match(/channels: \["in_app", "telegram"\],/g) ?? []).length,
+      (notify.match(/channels: delivery\.inAppOnly \? \["in_app"\] : \["in_app", "telegram"\],/g) ?? []).length,
       1,
-      "every Phoenix CRM notice goes out through one send, in-app and Telegram, and nothing else",
+      "every Phoenix CRM notice goes out through one send, in-app and Telegram (in-app alone where the notice says so), and nothing else",
+    );
+    // The in-app-only exception is the daily forecast's alert, and ONLY that one: the owner asked for an
+    // in-app alert, and some 26 reps send one every working day.
+    assert.equal((notify.match(/inAppOnly: true,/g) ?? []).length, 1, "exactly one notice is in-app only");
+    const forecastBranch = notify.slice(notify.indexOf('if (notice.kind === "forecast_sent")'), notify.indexOf('if (notice.kind === "unplanned_visit_raised")'));
+    assert.match(forecastBranch, /inAppOnly: true,/, "and it is the daily forecast's");
+    assert.match(
+      forecastBranch,
+      /idempotencyKey: `phoenix_crm:forecast:\$\{notice\.seat\.seatId\}:\$\{notice\.day\}:sent`,/,
+      "one alert per territory and day — a corrected re-send updates it rather than adding a second",
+    );
+    assert.match(forecastBranch, /const reviewer = territoryReviewer\(notice\.org, notice\.seat\.seatId\);/, "it goes to the territory's reviewing manager, his district manager");
+    assert.match(
+      notify,
+      /\.\.\.\(delivery\.inAppOnly \? \{\} : \{ telegram: /,
+      "an in-app-only notice carries no Telegram call to action either",
     );
     // The test world used to tell nobody at all. Since 2026-09-28 (owner) it tells the TEST accounts
     // — and the email ban has to survive that, because the test branch is a SECOND send. It does so
@@ -103,6 +121,8 @@ export function runPhoenixCrmEmailBlockTests() {
       // The off-plan visit: raised from the save, decided from the queue.
       "src/lib/phoenix-crm/server/visits.ts",
       "src/lib/phoenix-crm/server/unplanned.ts",
+      // The daily forecast's alert, from the save.
+      "src/lib/phoenix-crm/server/daily-forecast.ts",
     ]) {
       const source = readFileSync(file, "utf8");
       const calls = source.split("notifyPhoenixCrm(").slice(1);

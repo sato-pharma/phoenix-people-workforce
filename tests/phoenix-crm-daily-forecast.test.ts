@@ -231,6 +231,16 @@ export function runPhoenixCrmDailyForecastTests(): void {
     assert.doesNotMatch(migration, /\bcurrent_date\b/i, "the day is the caller's Cairo day, never the database's UTC one");
     assert.match(migration, /revoke execute on function public\.phoenix_crm_save_daily_forecast\(jsonb\) from public, anon, authenticated;/);
     assert.match(migration, /grant execute on function public\.phoenix_crm_save_daily_forecast\(jsonb\) to service_role;/);
+
+    // The district manager's in-app alert (owner, 2026-10-01) goes out only AFTER the boxes are saved —
+    // a send the database refused must never tell a manager the forecast is in — and carries the
+    // entry's own test flag, so a Super Admin try-out never reaches a real manager.
+    const service = source("src/lib/phoenix-crm/server/daily-forecast.ts");
+    const save = service.slice(service.indexOf("export async function saveForecast("), service.indexOf("function assertBoardReader("));
+    const rpcAt = save.indexOf('callPhoenixCrm("phoenix_crm_save_daily_forecast"');
+    const alertAt = save.indexOf('kind: "forecast_sent"');
+    assert.ok(rpcAt > 0 && alertAt > rpcAt, "the alert is sent after the save, never before it");
+    assert.match(save, /kind: "forecast_sent", org: viewer\.org, seat, day: viewer\.visitDay,[^\n]*\n\s*isTest,\n\s*\);/, "with the forecast's own day and the entry's test flag");
   }
 
   // ── 8. The board reads the not-sent first ───────────────────────────────────────────────────────
