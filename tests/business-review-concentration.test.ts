@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   areaSpendTrend,
@@ -8,6 +9,8 @@ import {
   type ReviewSalesDetail,
 } from "@/lib/business-review/concentration";
 import { spendPerPoint, formatSpendPerPoint } from "@/lib/business-review/spend-efficiency";
+
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Business Review — where a scope's money came from, and what a point of achievement cost.
@@ -221,5 +224,14 @@ export function runBusinessReviewConcentrationTests() {
     );
     assert.equal(formatSpendPerPoint({ marketingCost: 3_000, outstationCost: 1_000 }, null), "—");
     assert.equal(formatSpendPerPoint({ marketingCost: 12_345, outstationCost: 0 }, 50), "247");
+  }
+
+  // ------------------------------------------------------------------ 8. the screen says STORES
+  {
+    // Owner, 2026-10-02: "change the word wholesalers with stores". The export says it in the pack
+    // model; this is the same channel on the SCREEN, which the pack tests never render.
+    const screen = stripComments(readFileSync("src/components/business-review/concentration.client.tsx", "utf8"));
+    assert.match(screen, /wholesaler: "Through stores"/, "the channel label on the screen reads Through stores");
+    assert.ok(!/Through wholesalers/.test(screen), "and never the old word");
   }
 }

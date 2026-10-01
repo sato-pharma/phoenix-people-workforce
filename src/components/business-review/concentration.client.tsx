@@ -41,7 +41,7 @@ const egp = (n: number) =>
 const CHANNEL_LABEL: Record<SalesChannel, string> = {
   direct: "Direct orders",
   distributor: "Through distributors",
-  wholesaler: "Through wholesalers",
+  wholesaler: "Through stores",
 };
 
 const CHANNEL_HINT: Record<SalesChannel, string> = {
