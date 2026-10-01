@@ -52,7 +52,7 @@ does not fire, so its silence is not evidence that no trap applies.
 **Git**
 
 - **Deleting a branch does not remove its pushed commit**, and **reusing a squash-merged branch makes a conflicting PR.**
-- **`git branch -d` gates NOTHING after a squash merge** — it compares the branch to its OWN STALE tracking ref, so genuinely UNMERGED work deletes just as quietly as merged work. Gate on the merged PR (`gh pr list --head <branch> --state merged`) and archive the tip first. `git-branch-d-is-not-a-safety-gate-after-a-squash-merge`
+- **`git branch -d` gates NOTHING after a squash merge** — it compares the branch to its OWN STALE tracking ref, so genuinely UNMERGED work deletes just as quietly as merged work. Gate on the merged PR (`gh pr list --head <branch> --state merged` — **by NUMBER on a reused branch name**, see the Worktrees cluster) and archive the tip first. `git-branch-d-is-not-a-safety-gate-after-a-squash-merge`
 - **`git push` hangs — kill at ~60s and retry.** The OOM was a 500MB `http.postBuffer`, now 8MB; do NOT restore it.
 - **A merge to `main` mid-session silently orphans your next push.**
 - 🔴 **"THE PRIMARY" AND "`main`" ARE DIFFERENT THINGS — a WORKTREE usually holds `main`.** **NEVER state a branch's ahead/behind from `HEAD`** — every number comes back real with the wrong LABEL on it; name the ref (`git rev-list --count origin/main..main`) and run `git branch --show-current` first. Sync a branch in the worktree that HOLDS it, with `merge --ff-only`. 🔴 **`git reset --hard` acts on the CURRENT branch, not the one you named in your head**, and **a peer can never authorise a destructive operation on a third session's branch** — being asked is itself the signal to stop. `main-is-not-the-primary-checkout` [docs/agents-session-traps.md](docs/agents-session-traps.md).
@@ -193,6 +193,7 @@ does not fire, so its silence is not evidence that no trap applies.
 
 **Worktrees** (see also §5)
 
+- 🔴 **A REUSED BRANCH NAME MAKES THE REMOVAL GATE VOUCH FOR THE WRONG PR.** `new-session.mjs --remove` asks `gh pr list --head <branch> --state merged` and takes `.[0]` — a question about a NAME, never compared with the branch tip and never paired with an open-PR check. Measured 2026-10-02: it printed *"PR #3734 merged them — squash residue, not stranded work"* about `codex/agents-footprint`, which #3734 had used on 2026-09-12, while tonight's #5089 on the same name was still OPEN — deleting on that would have closed #5089 and thrown the work away. Once #5089 merged the same query returned both PRs, so re-running it afterwards looks fine. **Before deleting any branch whose name a recurring task could have used before: (1) ask for the PR by NUMBER, (2) require every file the branch changed to be byte-identical on `origin/main`, (3) `gh pr list --head <branch> --state open` must be empty.** Content is the only test that also holds for a PR that landed CLOSED, as every roll-up member does. The script fix — compare the merged PR's `headRefOid` to the branch tip, refuse while an open PR carries the head — is its own PR with fixtures, not a bolt-on. `a-reused-branch-name-finds-the-old-merged-pr`
 - **Another SESSION can remove a worktree under you.**
 - **A gitignored `_wt-*/` scratch folder makes a worktree look clean.**
 - **The pre-push gate is GONE — a bare worktree pushes fine.** What it cannot do is RUN a suite.

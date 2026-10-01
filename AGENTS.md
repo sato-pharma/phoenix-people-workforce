@@ -80,7 +80,7 @@ cost, the deploy path or the region.
 - **A hand-run typecheck must start cold:** `tsc --incremental false`.
 - **Never foreground-watch a long pipeline.** Background it and check at batched checkpoints.
 - **Role sweeps use dev-auth request headers** (`PHOENIX_ENABLE_DEV_AUTH_HEADERS=true` + `x-phoenix-role`/`x-phoenix-hr-id`), never the cookie flow — it logs the real user out.
-- **Merged-branch checks must be squash-aware:** `gh pr list --head <branch> --state merged`, never `git branch --merged`.
+- **Merged-branch checks must be squash-aware:** `gh pr list --head <branch> --state merged`, never `git branch --merged` — 🔴 **but that asks about a NAME, so a REUSED name returns the OLD merged PR while yours is still open**: before deleting a branch ask for the PR by NUMBER and check its files are byte-identical on `main`. `a-reused-branch-name-finds-the-old-merged-pr`
 - **A regression test counts only if you break the fix and see its own headline assertion fire.**
 - **`list_migrations` reports the ledger, not reality** — query `pg_class`/`pg_proc`.
 - **Commit, push and open the PR WITHOUT asking; ALWAYS ask before merge** (owner rule, 2026-09-16 — supersedes the old auto-git ban). Branch first, stage only the task's files, never `--auto`.
