@@ -165,13 +165,22 @@ function CellFace({ day }: { day: TeamCalendarDay }) {
 }
 
 export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: boolean }) {
-  const [month, setMonth] = useState(() => cairoToday.slice(0, 7));
+  // 🔴 NULL UNTIL HE PICKS ONE, AND THAT IS THE WHOLE MECHANISM. `crmUrl` drops a null, so the
+  //    first request names no month and the SERVER answers with the last month that has work in
+  //    it (owner, 2026-10-01). Choosing here instead would need a second fetch — the client
+  //    cannot know which month has work until something has been read — and would flash an empty
+  //    current month on the way. Once an arrow is pressed this holds a real month and the server
+  //    stops choosing.
+  const [picked, setPicked] = useState<string | null>(null);
   const [open, setOpen] = useState<{ seatId: string; day: string } | null>(null);
   const view = useCrmGet<CalendarView>(
     // `crmUrl` drops a false flag, and the server reads "true" — so test mode is on only when sent.
-    crmUrl(CALENDAR_PATH, { includeTest: test, month, section: "calendar" }),
+    crmUrl(CALENDAR_PATH, { includeTest: test, month: picked, section: "calendar" }),
     "report",
   );
+  // What the heading and the arrows work from: his choice, else the month the server chose, else
+  // this month while the first read is still in flight.
+  const month = picked ?? view.data?.month ?? cairoToday.slice(0, 7);
 
   const rows = useMemo(() => view.data?.rows ?? [], [view.data]);
   const days = useMemo(() => view.data?.days ?? [], [view.data]);
@@ -203,7 +212,9 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
               className="min-h-11 rounded-none border border-slate-300 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-700 transition hover:border-slate-400"
               key={step.label}
               onClick={() => {
-                setMonth((current) => shiftMonth(current, step.by));
+                // From the month on screen, which on the first press is the one the server chose
+                // — stepping from `picked` would jump back to this month from wherever he landed.
+                setPicked(shiftMonth(month, step.by));
                 setOpen(null);
               }}
               type="button"
