@@ -129,13 +129,25 @@ class FakeQueryBuilder {
     return this;
   }
 
+  // TEMPORARY AUDIT INSTRUMENTATION (throwaway branch, never pushed to GitHub).
+  private auditNullHits = new Map<FakeRow, string[]>();
+  private auditRange(op: string, column: string, value: unknown, kept: boolean, row: FakeRow) {
+    const cell = row[column];
+    if (kept && (cell === null || cell === undefined || value === null || value === undefined)) {
+      const notes = this.auditNullHits.get(row) ?? [];
+      notes.push(`op=${op} col=${column} bound=${String(value)} cell=${cell === null ? "null" : cell === undefined ? "absent" : "set"}`);
+      this.auditNullHits.set(row, notes);
+    }
+    return kept;
+  }
+
   gte(column: string, value: unknown) {
-    this.filters.push((row) => String(row[column] ?? "") >= String(value));
+    this.filters.push((row) => this.auditRange("gte", column, value, String(row[column] ?? "") >= String(value), row));
     return this;
   }
 
   lte(column: string, value: unknown) {
-    this.filters.push((row) => String(row[column] ?? "") <= String(value));
+    this.filters.push((row) => this.auditRange("lte", column, value, String(row[column] ?? "") <= String(value), row));
     return this;
   }
 
@@ -157,7 +169,7 @@ class FakeQueryBuilder {
   }
 
   lt(column: string, value: unknown) {
-    this.filters.push((row) => String(row[column] ?? "") < String(value));
+    this.filters.push((row) => this.auditRange("lt", column, value, String(row[column] ?? "") < String(value), row));
     return this;
   }
 
@@ -183,6 +195,11 @@ class FakeQueryBuilder {
     this.rows.forEach((row, index) => {
       if (this.filters.every((predicate) => predicate(row))) indexes.push(index);
     });
+    // TEMPORARY AUDIT: a row kept by a range filter on an empty cell AND kept by every other filter.
+    for (const index of indexes) {
+      const notes = this.auditNullHits.get(this.rows[index]);
+      if (notes) console.log(`FAKE-NULL-AUDIT kept-row mode=${this.mode} ${notes.join(" | ")}`);
+    }
     return indexes;
   }
 
