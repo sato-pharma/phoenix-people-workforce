@@ -552,6 +552,14 @@ export type CrmVisitFilter = {
    * the subject of the question is the contact rather than the agent. */
   contactCrmIds?: readonly number[];
   /**
+   * Restrict to these visit days (`visit_date IN`). Empty array → no rows. For a reader that has
+   * already found the few days that concern it and needs EVERY row of those days, whoever they name:
+   * the private calendar's double visits, where a chain visit is resolved from its whole day. Names
+   * nobody, so a window read this way is still the company window — the unordered probe, then one
+   * request per listed day inside the window — and comes back in the single scan's id order.
+   */
+  visitDates?: readonly string[];
+  /**
    * Restrict to visits these CRM ids took part in, as EITHER the submitting agent OR the
    * double-visit partner (`agent_crm_id IN ids OR double_crm_id IN ids`). Empty array, or no finite
    * id in it → no rows (fails closed, never widens to every row). For person-centric workload reads
@@ -686,6 +694,7 @@ export function applyVisitFilter(
   if (filter.requireAgentHrId) result = result.not("agent_hr_id", "is", null);
   if (filter.requireDoubleHrId) result = result.not("double_hr_id", "is", null);
   if (filter.contactCrmIds && filter.contactCrmIds.length > 0) result = result.in("contact_crm_id", [...filter.contactCrmIds]);
+  if (filter.visitDates && filter.visitDates.length > 0) result = result.in("visit_date", [...filter.visitDates]);
   if (filter.requireDoubleCrmId) result = result.not("double_crm_id", "is", null);
   if (filter.participantCrmIds != null || filter.participantHrIds != null) {
     const participantOr = buildParticipantOrFilter(filter);
@@ -934,6 +943,7 @@ export async function queryVisits<T = CrmVisitRow>(
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   if (options.contactCrmIds && options.contactCrmIds.length === 0) return [];
+  if (options.visitDates && options.visitDates.length === 0) return [];
   if (participantFilterMatchesNobody(options)) return [];
   if (options.agentCrmOrHrIds && buildAgentCrmOrHrIdOrFilter(options.agentCrmOrHrIds) === null) return [];
   const supabase = getSupabaseAdmin();
@@ -972,7 +982,10 @@ export async function queryVisits<T = CrmVisitRow>(
   };
   // A company-wide window is probed, then read day by day when dense (see "Company-wide date-range
   // scans" above), and comes back in the single scan's id order either way.
-  const days = visitFilterNamesPeople(options) ? null : dayScanSlices(options.dateFrom, options.dateTo);
+  const windowDays = visitFilterNamesPeople(options) ? null : dayScanSlices(options.dateFrom, options.dateTo);
+  // A read limited to listed days (`visitDates`) requests those days of the window and no others.
+  const listedDays = options.visitDates ? new Set(options.visitDates) : null;
+  const days = windowDays && listedDays ? windowDays.filter((day) => listedDays.has(day)) : windowDays;
   const rows: Row[] | null = days
     ? await readCompanyWindow<Row>({
         days,
@@ -1007,6 +1020,7 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   if (options.contactCrmIds && options.contactCrmIds.length === 0) return [];
+  if (options.visitDates && options.visitDates.length === 0) return [];
   if (participantFilterMatchesNobody(options)) return [];
   if (options.agentCrmOrHrIds && buildAgentCrmOrHrIdOrFilter(options.agentCrmOrHrIds) === null) return [];
   const supabase = getSupabaseAdmin();

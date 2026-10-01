@@ -2201,6 +2201,7 @@ import { runPortalLinkPrefetchTests } from "./portal-link-prefetch.test.ts";
 import { runPortalRepNavigationSpeedTests } from "./portal-rep-navigation-speed.test.ts";
 import { runPhoenixCrmForecastWhatsAppTests } from "./phoenix-crm-forecast-whatsapp.test.ts";
 import { runKpiBoardAgentsTests } from "./kpi-board-agents.test.ts";
+import { runPrivateCalendarDoubleVisitDaysTests } from "./private-calendar-double-visit-days.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -8218,6 +8219,11 @@ await runTest(
 await runTest(
   "the KPIs board reads only its scope's reps and every figure is the company-wide one (a rep named only on plan rows, a first plan row with no hr id, a native rep, a reused CRM slot; small scopes only, anything doubtful reads company-wide)",
   runKpiBoardAgentsTests,
+);
+
+await runTest(
+  "the Private Calendar reads only the days its people are on, whole, and every double and chain visit is the whole-month one (a chain, an ambiguous chain, a reused CRM account, a duplicate save, a lowercase hr id; small scopes only, anything doubtful reads the whole month)",
+  runPrivateCalendarDoubleVisitDaysTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

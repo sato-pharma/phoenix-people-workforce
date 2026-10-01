@@ -201,7 +201,7 @@ export function runDoubleVisitAnalyticsTests() {
   // left), and the calendar item says plainly that the identity is unverified.
   assert.match(
     service,
-    /getLiveDoubleVisitRows\(start, end, employees, \{ includeResignedAgents: true \}\)/,
+    /getLiveDoubleVisitRows\(start, end, employees, \{\s*includeResignedAgents: true,/,
     "the private calendar loader must opt into seeing resigned-agent double-visit rows",
   );
   assert.match(

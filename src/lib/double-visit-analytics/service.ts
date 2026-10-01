@@ -21,6 +21,8 @@ import { buildDownwardCut } from "@/lib/crm/doctor-coverage-scope";
 import { getCrmIdentityResolutions } from "@/lib/crm/identity";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
+import type { CrmResolutionRow } from "@/lib/crm/types";
+import { logWarning } from "@/lib/observability/log";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 import {
   classifyDoubleVisitRows,
@@ -411,7 +413,7 @@ function currentMonthBounds(referenceDate = todayIso()) {
 
 // ── Live loader: ireports360_visits -> DoubleVisitDbRow ─────────────────────────────
 
-type MirrorVisitRow = {
+export type MirrorVisitRow = {
   agent_crm_id: number | null;
   agent_hr_id: string | null;
   agent_name: string | null;
@@ -454,7 +456,7 @@ function extractNameAreaLine(value: string | null | undefined) {
 async function paginateLiveMirrorVisits(
   dateFrom: string,
   dateTo: string,
-  options?: { includeResignedAgents?: boolean },
+  options?: { includeResignedAgents?: boolean; visitDates?: readonly string[] },
 ): Promise<MirrorVisitRow[]> {
   // Reads through the CRM single-door double-visit loader (keyset-paginated past the PostgREST
   // row cap, resigned/excluded agents removed by default). The canonical double-visit predicate —
@@ -470,6 +472,8 @@ async function paginateLiveMirrorVisits(
     dateFrom,
     dateTo,
     includeResignedAgents: options?.includeResignedAgents,
+    // Whole days only (see findDoubleVisitCalendarDays): every row of each listed day, whoever it names.
+    ...(options?.visitDates ? { visitDates: options.visitDates } : {}),
     visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
     columns:
       "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
@@ -682,7 +686,14 @@ export async function getLiveDoubleVisitRows(
   dateFrom: string,
   dateTo: string,
   employees: EmployeeDirectoryRow[],
-  options?: { includeResignedAgents?: boolean },
+  options?: {
+    includeResignedAgents?: boolean;
+    /** Read only these whole days of the window (see findDoubleVisitCalendarDays). */
+    visitDates?: readonly string[];
+    /** The identity overrides the caller already read, so ONE snapshot decides both which days were
+     * read and who each visit is credited to. */
+    crmIdentityResolutions?: readonly CrmResolutionRow[];
+  },
 ): Promise<DoubleVisitDbRow[]> {
   const mirrorRows = await paginateLiveMirrorVisits(dateFrom, dateTo, options);
   if (mirrorRows.length === 0) return [];
@@ -691,8 +702,24 @@ export async function getLiveDoubleVisitRows(
   // decides WHO a visit is credited to, and the module rule is that a failed read may blank an
   // overlay but must never quietly change an attribution. A real read failure surfaces instead of
   // silently reverting every corrected row to the departed employee it used to name.
+  return liveDoubleVisitRowsFromMirror(
+    mirrorRows,
+    employees,
+    options?.crmIdentityResolutions ?? (await getCrmIdentityResolutions()),
+  );
+}
+
+/** The attribution half of {@link getLiveDoubleVisitRows}: a window's mirror rows, credited to the
+ * right people and enriched from the directory. Each day is resolved from its own rows alone (the
+ * chain note below), so a read of whole days gives each of those days exactly the rows a read of
+ * the whole window gives it. Pure, exported for its unit test. */
+export function liveDoubleVisitRowsFromMirror(
+  mirrorRows: MirrorVisitRow[],
+  employees: EmployeeDirectoryRow[],
+  crmIdentityResolutions: readonly CrmResolutionRow[],
+): DoubleVisitDbRow[] {
   const crmIdentityOverrides = new Map<string, string>(
-    (await getCrmIdentityResolutions())
+    crmIdentityResolutions
       .filter((row) => row.status === "mapped" && row.mappedHrId)
       .map((row) => [String(row.crmId), row.mappedHrId as string]),
   );
@@ -2277,53 +2304,157 @@ function doubleVisitCalendarItem(group: ClassifiedCalendarRow[], side: "performe
   });
 }
 
+/** A district manager's team fits in one read; a wider calendar scope reads the whole window. */
+export const DOUBLE_VISIT_DAYS_MAX_PEOPLE = 8;
+/** One month of days — inside the 50-value house limit for one `in` list. */
+export const DOUBLE_VISIT_DAYS_MAX_LISTED = 31;
+
+export type DoubleVisitDayReaders = {
+  /** The admin identity overrides ({@link getCrmIdentityResolutions}). */
+  resolutions: () => Promise<readonly CrmResolutionRow[]>;
+  /** The day of every double visit in the window with one of these people, or accounts, on it. */
+  days: (filter: {
+    dateFrom: string;
+    dateTo: string;
+    participantCrmIds?: readonly number[];
+    participantHrIds?: readonly string[];
+  }) => Promise<string[]>;
+};
+
+const DOOR_DAY_READERS: DoubleVisitDayReaders = {
+  resolutions: getCrmIdentityResolutions,
+  // The same door, double-visit definition and resigned-agent opt-out as the calendar's own read.
+  days: async (filter) =>
+    (
+      await getDoubleVisitRows<{ visit_date: string }>({
+        ...filter,
+        columns: "visit_date",
+        includeResignedAgents: true,
+        visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
+      })
+    ).map((row) => row.visit_date),
+};
+
+/** The CRM accounts an admin identity override credits to one of these people (`selected` holds
+ * their normalized keys) — the accounts whose visits name someone else's hr id. Pure, exported for
+ * its unit test. */
+export function crmIdsOverriddenTo(selected: ReadonlySet<string>, resolutions: readonly CrmResolutionRow[]): number[] {
+  const ids = resolutions
+    .filter((row) => row.status === "mapped" && row.mappedHrId && selected.has(normalizedHrKey(row.mappedHrId) ?? ""))
+    .map((row) => Number(row.crmId))
+    .filter((id) => Number.isFinite(id));
+  return Array.from(new Set(ids)).sort((left, right) => left - right);
+}
+
+/**
+ * The days of the window the private calendar's double visits must read for these people, and the
+ * override snapshot that decided them — or `null`, meaning read the whole window.
+ *
+ * 🔴 WHY THIS EXISTS (2026-10-01, "speed up the rep's Private Calendar page"). The calendar read the
+ * WHOLE company's month of double visits and kept the rep's own: 2,220 September rows for a rep on 5
+ * of its 24 days, and 0.7 s of a 0.7 s page (measured on production the same morning).
+ *
+ * WHY WHOLE DAYS ARE ENOUGH. Every step after the read works inside one day: the duplicate collapse
+ * keys on the day, a chain visit is resolved from its day's rows (resolveDoubleVisitChains), its two
+ * halves are paired by day (classifyDoubleVisitRows), and items are one per person, day and kind. So
+ * a day read whole gives every row on it the same answer the month read gives, in the same id order.
+ * A day reaches these people's calendars only through a row naming one of them — as the visited
+ * rep, the double-visitor, the rep a chain resolves to (always the agent of a row that same day), or
+ * the person an admin override credits the submitting CRM account to. The read below finds every
+ * such day; any other day can only hold other people's visits.
+ *
+ * BOUNDED. More than {@link DOUBLE_VISIT_DAYS_MAX_PEOPLE} people, or more days than one `in` list
+ * should carry, reads the whole window as before. A lookup that fails does too — slower, never wrong.
+ */
+export async function findDoubleVisitCalendarDays(
+  employeeHrIds: readonly string[],
+  window: { end: string; start: string },
+  readers: DoubleVisitDayReaders = DOOR_DAY_READERS,
+): Promise<{ days: string[]; resolutions: readonly CrmResolutionRow[] } | null> {
+  const hrIds = Array.from(new Set(employeeHrIds.map((hrId) => String(hrId ?? "").trim()).filter(Boolean)));
+  const selected = new Set(hrIds.map(normalizedHrKey).filter((key): key is string => Boolean(key)));
+  if (selected.size === 0 || hrIds.length > DOUBLE_VISIT_DAYS_MAX_PEOPLE) return null;
+  try {
+    const [resolutions, hrDays] = await Promise.all([
+      readers.resolutions(),
+      readers.days({ dateFrom: window.start, dateTo: window.end, participantHrIds: hrIds }),
+    ]);
+    const overridden = crmIdsOverriddenTo(selected, resolutions);
+    const crmDays =
+      overridden.length > 0
+        ? await readers.days({ dateFrom: window.start, dateTo: window.end, participantCrmIds: overridden })
+        : [];
+    const days = Array.from(new Set([...hrDays, ...crmDays])).sort();
+    if (days.length > DOUBLE_VISIT_DAYS_MAX_LISTED) return null;
+    return { days, resolutions };
+  } catch (error) {
+    logWarning("Private calendar could not find its double-visit days; reading the whole window", {
+      labels: { event: "private_calendar_double_visit_days_failed" },
+      error,
+    });
+    return null;
+  }
+}
+
 export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[], start: string, end: string) {
   try {
     const selected = new Set(employeeHrIds.map(normalizedHrKey).filter((value): value is string => Boolean(value)));
     if (selected.size === 0) return { items: [] as PrivateCalendarItem[], ready: true };
-    const employees = await getEmployeeDirectoryRows({ includeInactive: true });
+    const [employees, calendarDays] = await Promise.all([
+      getEmployeeDirectoryRows({ includeInactive: true }),
+      findDoubleVisitCalendarDays(employeeHrIds, { end, start }),
+    ]);
     // A double visit is real, positive proof the calendar owner did field work that day —
     // that stays true even when the visited party's resolved identity is a resigned
     // employee (dbRowFromMirrorVisit already swaps in the raw CRM name/area for display
     // in that case, since the resolution is frequently just a stale, reused CRM account —
     // see memory crm-resigned-slot-reused-for-new-hire). Never silently hide a real visit.
-    const rows = await getLiveDoubleVisitRows(start, end, employees, { includeResignedAgents: true });
-    // Pairs a chain visit's two CRM halves (see classifyDoubleVisitRows), so a chain stop is ONE
-    // chain visit on every calendar it touches and never a double visit counted twice.
-    const classified = classifyDoubleVisitRows(rows);
-    const items: PrivateCalendarItem[] = [];
-
-    const performed = groupCalendarRows(
-      classified.filter((entry) => selected.has(normalizedHrKey(entry.row.double_visitor_hr_id) ?? "")),
-      (entry) => {
-        const key = normalizedHrKey(entry.row.double_visitor_hr_id);
-        return key ? `${key}|${entry.row.activity_date}|${calendarVisitKind(entry)}` : null;
-      },
-    );
-    for (const group of performed.values()) {
-      const item = doubleVisitCalendarItem(group, "performed");
-      if (item) items.push(item);
-    }
-
-    // A senior manager's half folded into the rep's row is the same stop — the rep's own row
-    // already carries it as a chain visit, so it never reaches the rep's calendar a second time.
-    const received = groupCalendarRows(
-      classified.filter((entry) => !entry.absorbed && selected.has(normalizedHrKey(entry.row.visited_employee_hr_id) ?? "")),
-      (entry) => {
-        const key = normalizedHrKey(entry.row.visited_employee_hr_id);
-        return key ? `${key}|${entry.row.activity_date}|${calendarVisitKind(entry)}` : null;
-      },
-    );
-    for (const group of received.values()) {
-      const item = doubleVisitCalendarItem(group, "received");
-      if (item) items.push(item);
-    }
-
-    return { items, ready: true };
+    const rows = await getLiveDoubleVisitRows(start, end, employees, {
+      includeResignedAgents: true,
+      ...(calendarDays ? { crmIdentityResolutions: calendarDays.resolutions, visitDates: calendarDays.days } : {}),
+    });
+    return { items: doubleVisitPrivateCalendarItemsFromRows(rows, selected), ready: true };
   } catch (error) {
     if (schemaMissing(error)) return { items: [] as PrivateCalendarItem[], ready: false };
     throw error;
   }
+}
+
+/** One calendar's double and chain visit items, from the window's attributed rows. `selected` holds
+ * the calendar people's normalized keys. Pure, exported for its unit test. */
+export function doubleVisitPrivateCalendarItemsFromRows(rows: DoubleVisitDbRow[], selected: ReadonlySet<string>): PrivateCalendarItem[] {
+  // Pairs a chain visit's two CRM halves (see classifyDoubleVisitRows), so a chain stop is ONE
+  // chain visit on every calendar it touches and never a double visit counted twice.
+  const classified = classifyDoubleVisitRows(rows);
+  const items: PrivateCalendarItem[] = [];
+
+  const performed = groupCalendarRows(
+    classified.filter((entry) => selected.has(normalizedHrKey(entry.row.double_visitor_hr_id) ?? "")),
+    (entry) => {
+      const key = normalizedHrKey(entry.row.double_visitor_hr_id);
+      return key ? `${key}|${entry.row.activity_date}|${calendarVisitKind(entry)}` : null;
+    },
+  );
+  for (const group of performed.values()) {
+    const item = doubleVisitCalendarItem(group, "performed");
+    if (item) items.push(item);
+  }
+
+  // A senior manager's half folded into the rep's row is the same stop — the rep's own row
+  // already carries it as a chain visit, so it never reaches the rep's calendar a second time.
+  const received = groupCalendarRows(
+    classified.filter((entry) => !entry.absorbed && selected.has(normalizedHrKey(entry.row.visited_employee_hr_id) ?? "")),
+    (entry) => {
+      const key = normalizedHrKey(entry.row.visited_employee_hr_id);
+      return key ? `${key}|${entry.row.activity_date}|${calendarVisitKind(entry)}` : null;
+    },
+  );
+  for (const group of received.values()) {
+    const item = doubleVisitCalendarItem(group, "received");
+    if (item) items.push(item);
+  }
+
+  return items;
 }
 
 export async function getDoubleVisitExpenseWorkloadEvidence(input: {

@@ -100,6 +100,11 @@ function runNamesPeopleTests() {
     false,
     "a type or flag filter names nobody — the annual-leave and double-visit reads are still company-wide",
   );
+  assert.equal(
+    visitFilterNamesPeople({ ...window, visitDates: ["2026-08-02", "2026-08-09"] }),
+    false,
+    "a day list names nobody — the read stays a company window, probed and then read over the listed days",
+  );
   for (const [label, filter] of [
     ["agentCrmIds", { agentCrmIds: [101] }],
     ["agentHrIds", { agentHrIds: ["B-1"] }],
