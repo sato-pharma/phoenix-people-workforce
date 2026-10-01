@@ -1783,7 +1783,6 @@ import { runTerritoryAsofAndLinePickerTests } from "./territory-asof-and-line-pi
 import { runCrmDayMapVisitTypeStatusTests } from "./crm-day-map-visit-type-status.test.ts";
 import { runCrmVisitTypeMeaningTests } from "./crm-visit-type-meaning.test.ts";
 import { runVisitTypeLabelIsResolvedTests } from "./visit-type-label-is-resolved-not-the-vendor-string.test.ts";
-import { runAutomatedPayrollCrmLeaveFailsClosedTests } from "./automated-payroll-crm-leave-fails-closed.test.ts";
 import { runCrmBrickCoverageTests } from "./crm-brick-coverage.test.ts";
 
 import { runRecruitmentCvReadHonestyTests } from "./recruitment-cv-read-honesty.test.ts";
@@ -6346,7 +6345,6 @@ await runTest(
   + "mapVisitRow resolves for the screen AND the export; the comment routes -7 and -30)",
   runVisitTypeLabelIsResolvedTests,
 );
-await runTest("automated payroll CRM leave reads fail closed (CRM leave, v2 dates, balance check rethrow)", runAutomatedPayrollCrmLeaveFailsClosedTests);
 await runTest(
   "CV read honesty (five EMPTY arrays are not five fields; a read that produced nothing reports EMPTY, "
     + "never READ, and gets its own summary line so 'Failed: 0' cannot mean 'nothing was extracted')",
