@@ -14,6 +14,7 @@
 import { addDaysIso } from "@/lib/crm/dates";
 import { isIsoDay, isMonthKey, monthEndOf, monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { sharePercent } from "@/lib/phoenix-crm/coverage";
+import { isLeaveDay, NO_LEAVE_DAYS, type LeaveDays } from "@/lib/phoenix-crm/plan-leave";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 export const REPORT_MAX_DAYS = 31;
@@ -237,7 +238,11 @@ export function groupVisitsByRep(rows: ReadonlyArray<Row>): { groups: RepVisitGr
 // ── Plan against actual ─────────────────────────────────────────────────────────────────────────
 
 export type PlanCounts = {
-  /** Customers on a plan that reached review (submitted or approved) for the day. */
+  /**
+   * Customers on a plan that reached review (submitted or approved) for the day — less the ones on a
+   * day HR approved his leave that he did not see, which are `onLeave` instead. So it is the plan he
+   * could have kept, and plan-kept % divides by it unchanged.
+   */
   planned: number;
   /** Planned customers visited on their planned day, on a visit that was itself planned. */
   visitedPlanned: number;
@@ -248,7 +253,14 @@ export type PlanCounts = {
    * manager. It is never part of plan-kept %, for the same reason `unplanned` is not.
    */
   plannedWaiting: number;
+  /** Planned, and not visited on the day. Never a day HR approved his leave — that is `onLeave`. */
   missed: number;
+  /**
+   * Planned on a day HR approved his leave, and not visited (owner, 2026-10-01: "fix missed visits on
+   * leave days in plan vs actual"). Never a miss, and out of `planned`, so plan-kept % is measured
+   * over the days he was there. `plan-leave.ts` holds the rule, for all three reports that read it.
+   */
+  onLeave: number;
   /** Visits to customers who were not planned for that day — every one of them, decided or not. */
   unplanned: number;
   /** Of those, the ones still with the manager or with SFE, so counting in nothing yet. */
@@ -258,7 +270,7 @@ export type PlanCounts = {
 };
 
 export function emptyPlanCounts(): PlanCounts {
-  return { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0 };
+  return { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, onLeave: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0 };
 }
 
 function addPlanCounts(target: PlanCounts, source: PlanCounts): void {
@@ -266,6 +278,7 @@ function addPlanCounts(target: PlanCounts, source: PlanCounts): void {
   target.visitedPlanned += source.visitedPlanned;
   target.plannedWaiting += source.plannedWaiting;
   target.missed += source.missed;
+  target.onLeave += source.onLeave;
   target.unplanned += source.unplanned;
   target.unplannedWaiting += source.unplannedWaiting;
   target.unplannedRefused += source.unplannedRefused;
@@ -276,7 +289,8 @@ function addPlanCounts(target: PlanCounts, source: PlanCounts): void {
  *
  * Neither off-plan figure may ever enter this ratio, whatever it has been approved as: the denominator
  * is what the rep PLANNED, and a visit he did not plan cannot make him better or worse at keeping the
- * plan he did make.
+ * plan he did make. Nor may a day HR approved his leave: `planned` already leaves those customers out
+ * (`onLeave`), so a week of annual leave cannot pull this down.
  */
 export function planKeptPercent(counts: PlanCounts): number | null {
   return sharePercent(counts.visitedPlanned, counts.planned);
@@ -286,8 +300,18 @@ export type PlanDay = { date: string; am: PlanCounts; pm: PlanCounts };
 
 export type TerritoryPlanGroup = { seatId: string; days: PlanDay[]; am: PlanCounts; pm: PlanCounts };
 
-/** phoenix_crm_report_plan_vs_actual rows → one group per territory, days in date order. */
-export function groupPlanByTerritory(rows: ReadonlyArray<Row>): { groups: TerritoryPlanGroup[]; totals: ByList<PlanCounts> } {
+/**
+ * phoenix_crm_report_plan_vs_actual rows → one group per territory, days in date order.
+ *
+ * `leave` is the days HR approved the rep's leave (`server/leave-days.ts`). The function knows
+ * nothing of leave, so it is applied here: on such a day every planned customer he did not see moves
+ * from `missed` to `onLeave`, and out of `planned` with it. A customer he DID see that day stays a
+ * kept plan — the visit happened.
+ */
+export function groupPlanByTerritory(
+  rows: ReadonlyArray<Row>,
+  leave: LeaveDays = NO_LEAVE_DAYS,
+): { groups: TerritoryPlanGroup[]; totals: ByList<PlanCounts> } {
   const groups = new Map<string, TerritoryPlanGroup & { byDay: Map<string, PlanDay> }>();
   const totals: ByList<PlanCounts> = { AM: emptyPlanCounts(), PM: emptyPlanCounts() };
   for (const row of rows) {
@@ -304,11 +328,14 @@ export function groupPlanByTerritory(rows: ReadonlyArray<Row>): { groups: Territ
       day = { date, am: emptyPlanCounts(), pm: emptyPlanCounts() };
       group.byDay.set(date, day);
     }
+    const missed = count(row.missed);
+    const onLeave = isLeaveDay(leave, seatId, date) ? missed : 0;
     const counts: PlanCounts = {
-      planned: count(row.planned),
+      planned: count(row.planned) - onLeave,
       visitedPlanned: count(row.visited_planned),
       plannedWaiting: count(row.planned_waiting),
-      missed: count(row.missed),
+      missed: missed - onLeave,
+      onLeave,
       unplanned: count(row.unplanned),
       unplannedWaiting: count(row.unplanned_waiting),
       unplannedRefused: count(row.unplanned_refused),

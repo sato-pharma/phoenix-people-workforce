@@ -45,6 +45,7 @@ import {
   type DailyPlanCustomer,
   type DailyPlanReportView,
 } from "@/lib/phoenix-crm/daily-plan-report";
+import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 import { PHOENIX_CRM_WEEKDAY_NAMES } from "@/lib/phoenix-crm/timings";
 import type { AdoptionView } from "@/lib/phoenix-crm/server/adoption";
 import type { BrickCoverageView } from "@/lib/phoenix-crm/server/brick-report";
@@ -173,27 +174,37 @@ function writePlan(workbook: ExcelJS.Workbook, view: PlanReportView): void {
       counted("AM planned"),
       counted("AM visited"),
       counted("AM missed"),
+      counted("AM on leave"),
       percentColumn("AM kept %"),
       counted("PM planned"),
       counted("PM visited"),
       counted("PM missed"),
+      counted("PM on leave"),
       percentColumn("PM kept %"),
       counted("Off-plan"),
     ],
-    note:
+    note: [
       view.runningDay === null
         ? "Plan kept counts a planned customer visited on the planned day, on a visit that was itself planned."
         : `${view.runningDay} is today: its planned customers can still be visited, so "missed" is not final for that day.`,
+      // The screen's own rule, written into the file that leaves the building without the screen.
+      "A customer planned on a day HR approved the rep's leave, and not seen, is on leave: never missed, and not in planned.",
+      view.leaveUnread ? LEAVE_UNREAD_NOTE : null,
+    ]
+      .filter((part): part is string => part !== null)
+      .join(" "),
     rows: view.rows.map((row) => [
       row.territoryName,
       row.repName ?? "No rep",
       row.am.planned,
       row.am.visitedPlanned,
       row.am.missed,
+      row.am.onLeave,
       pct(row.am.keptPct),
       row.pm.planned,
       row.pm.visitedPlanned,
       row.pm.missed,
+      row.pm.onLeave,
       pct(row.pm.keptPct),
       row.am.unplanned + row.pm.unplanned,
     ]),
@@ -204,10 +215,12 @@ function writePlan(workbook: ExcelJS.Workbook, view: PlanReportView): void {
       view.totals.AM.planned,
       view.totals.AM.visitedPlanned,
       view.totals.AM.missed,
+      view.totals.AM.onLeave,
       pct(view.totals.AM.keptPct),
       view.totals.PM.planned,
       view.totals.PM.visitedPlanned,
       view.totals.PM.missed,
+      view.totals.PM.onLeave,
       pct(view.totals.PM.keptPct),
       view.totals.AM.unplanned + view.totals.PM.unplanned,
     ],
@@ -236,6 +249,8 @@ function writeDailyPlan(workbook: ExcelJS.Workbook, view: DailyPlanReportView): 
       [
         planned && day.state !== "none" ? dailyPlanStateLabel(day.state) : null,
         planned && sent && day.submittedLate ? "sent late" : null,
+        // The screen's "On leave" pill: HR approved his leave for the day (`plan-leave.ts`).
+        day.onLeave ? "on leave" : null,
         day.isTest ? "test entries" : null,
       ]
         .filter((part): part is string => part !== null)
@@ -294,9 +309,14 @@ function writeDailyPlan(workbook: ExcelJS.Workbook, view: DailyPlanReportView): 
       column("Status", { width: 17 }),
       column("Notes", { width: 34 }),
     ],
-    note:
+    note: [
       "A day that has passed shows the plan as it stood when that day ended; today and the days ahead show it as it is now. "
-      + "Visited means a visit to the customer was saved that day. Friday holds no plan and is left out.",
+        + "Visited means a visit to the customer was saved that day. Friday holds no plan and is left out. "
+        + "On a day HR approved the rep's leave, a customer not seen reads On leave, never Not visited.",
+      view.leaveUnread ? LEAVE_UNREAD_NOTE : null,
+    ]
+      .filter((part): part is string => part !== null)
+      .join(" "),
     rows,
     title: `Daily plan · ${territory.name} · ${territory.repName ?? "No rep"} · ${view.period.from} to ${view.period.to}`,
   });
@@ -366,11 +386,18 @@ function writeFrequency(workbook: ExcelJS.Workbook, view: CustomerFrequencyRepor
       counted("Grade target", 13),
       column("Against the grade", { width: 19 }),
       counted("Planned"),
+      counted("Planned on leave", 17),
       counted("Against the plan", 17),
     ],
-    note:
+    note: [
       "Two comparisons, kept apart: the grade's monthly number from Phoenix CRM's own settings, and how often he was "
-      + "placed on a plan that was actually sent. Over the grade is a deviation too, never a bonus.",
+        + "placed on a plan that was actually sent. Over the grade is a deviation too, never a bonus.",
+      // The screen's own rule, written into the file that leaves the building without the screen.
+      "A planning on a day HR approved the rep's leave, when the customer was not seen that day, is Planned on leave and never counted against the plan.",
+      view.leaveUnread ? LEAVE_UNREAD_NOTE : null,
+    ]
+      .filter((part): part is string => part !== null)
+      .join(" "),
     rows: view.rows.map((row) => [
       row.name,
       row.listType,
@@ -379,10 +406,11 @@ function writeFrequency(workbook: ExcelJS.Workbook, view: CustomerFrequencyRepor
       row.gradeTarget === null ? "—" : row.gradeTarget,
       row.gradeVerdict,
       row.planned,
+      row.plannedOnLeave,
       row.againstPlan,
     ]),
     title: `Frequency per customer · ${view.seat?.territoryName ?? "one territory"} · ${view.month.month}`,
-    totals: ["All", "", "", "", "", `${view.totals.under} under · ${view.totals.onTarget} on · ${view.totals.over} over`, "", ""],
+    totals: ["All", "", "", "", "", `${view.totals.under} under · ${view.totals.onTarget} on · ${view.totals.over} over`, "", "", ""],
   });
 }
 

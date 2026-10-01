@@ -29,6 +29,7 @@ import {
 } from "@/lib/employees/employee-directory";
 import { createSystemNotification, createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { isUuid } from "@/lib/http/uuid";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -2490,6 +2491,10 @@ export async function balanceSettledDaysInPeriod(input: {
    * days back while the payroll deduction stays where it was. A third confirm sees the restored
    * balance and consumes it again. The figure oscillates, and each swing is a real change to
    * somebody's leave entitlement.
+   *
+   * Only rows carrying THIS run id are set aside. A settlement written outside any payroll run
+   * (`run_id` IS NULL — the Copilot's settle workflow, a one-off correction) is somebody else's
+   * spending and still counts.
    */
   excludeSettlementRunId?: string | null;
   /**
@@ -2514,7 +2519,27 @@ export async function balanceSettledDaysInPeriod(input: {
       .is("superseded_at", null)
       .gte("start_date", input.periodStart)
       .lt("start_date", input.periodEnd);
-    if (input.excludeSettlementRunId) query = query.neq("run_id", input.excludeSettlementRunId);
+    const excludedRunId = input.excludeSettlementRunId;
+    if (excludedRunId && isUuid(excludedRunId)) {
+      // NOT `.neq("run_id", id)`. PostgREST's `neq` is SQL `<>`, and `NULL <> id` is NULL, never
+      // true, so it also dropped every settlement written outside a payroll run. The run then
+      // believed more balance remained than really did and settled more leave against it than was
+      // left — spending days that were already spent. Keep the NULLs explicitly.
+      // The id is written into the filter's text, which is safe only because a uuid is hex and
+      // hyphens: a comma, a dot or a parenthesis would split, rewrite or widen the expression.
+      query = query.or(`run_id.is.null,run_id.neq.${excludedRunId}`);
+    } else if (excludedRunId) {
+      // Never written into the filter. `run_id` is a uuid column and every run id this code is
+      // given comes back from Postgres as one, so anything else is a caller's defect: the exclusion
+      // is left off — this run's own rows then count against it — and the error log says so.
+      logError("Balance-settled days lookup ignored a run id that is not a uuid", {
+        labels: {
+          event: "vacation_balance_settled_days_run_id_not_uuid",
+          employeeHrId: input.employeeHrId,
+          excludeSettlementRunId: excludedRunId.slice(0, 64),
+        },
+      });
+    }
     const { data, error } = await query;
 
     if (error) {

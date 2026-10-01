@@ -29,13 +29,37 @@ import { fakeSupabaseClient } from "./fixtures/fake-supabase-table.ts";
  * computation is a function of its inputs rather than of how many times it has been run. Every
  * other reader still sees every live settlement, which is what a balance check should do.
  *
- * ARMED, NEVER FIRED. No CRM-sourced settlement has ever been written on production: the whole
- * ledger holds 8 rows, all from July, all carrying a formal request id.
+ * ARMED, NEVER FIRED. No payroll run has ever written a CRM-sourced settlement on production
+ * (re-measured 2026-10-01): the ledger holds 8 rows, and the only two without a formal request id
+ * were written outside any run, by the one-off 2026-07-21 CRM correction.
+ *
+ * THE NULL DEFECT (2026-10-01). The exclusion was first written as `.neq("run_id", thisRun)`.
+ * PostgREST's `neq` is SQL `<>`, and `NULL <> x` is never true — so it also dropped every
+ * settlement written OUTSIDE any payroll run, the very rows the assertions below say must count,
+ * and the run believed more balance remained than really did. Those assertions passed only because
+ * the fixture compared with a JavaScript `!==`, which keeps a NULL. The fixture's `neq` is now
+ * SQL's, and the exclusion keeps the NULLs explicitly: `or(run_id.is.null,run_id.neq.<run>)`.
  */
 
 const PERIOD = { periodEnd: "2026-07-01", periodStart: "2026-06-01" };
-const THIS_RUN = "run-august";
-const ANOTHER_RUN = "run-july";
+// Run ids are uuids: `run_id` is a uuid column, and the exclusion refuses to place anything else
+// inside its filter.
+const THIS_RUN = "aaaaaaaa-0000-4000-8000-000000000008";
+const ANOTHER_RUN = "bbbbbbbb-0000-4000-8000-000000000007";
+
+/** Runs `read` with the error log collected instead of printed, and hands both back. */
+async function withCapturedErrorLog<T>(read: () => Promise<T>): Promise<{ lines: string[]; value: T }> {
+  const lines: string[] = [];
+  const savedError = console.error;
+  console.error = (...parts: unknown[]) => {
+    lines.push(parts.map(String).join(" "));
+  };
+  try {
+    return { lines, value: await read() };
+  } finally {
+    console.error = savedError;
+  }
+}
 
 /**
  * The fixture is a real tiny query engine, not a SupabaseClient, so it is cast at the boundary —
@@ -119,6 +143,31 @@ export async function runAutomatedPayrollVacationReconfirmTests() {
     3.5,
     "2 from the other run plus 1.5 from outside any run; only this run's own 5 are set aside",
   );
+
+  // ---- A run id that is not a uuid never reaches the filter -------------------------------------
+  // The id is written into PostgREST's `or=(...)` text, where a parenthesis breaks the expression
+  // (the read errors, and a failed read is counted as 0 days spent) and a comma adds a term of its
+  // own. Neither can happen with a uuid. Anything else leaves the exclusion off — every row counts,
+  // this run's own included — and says so in the error log.
+  for (const malformed of [`${THIS_RUN})`, `${THIS_RUN},run_id.is.null`]) {
+    const { lines, value } = await withCapturedErrorLog(() =>
+      balanceSettledDaysInPeriod(
+        { employeeHrId: "B-1", excludeSettlementRunId: malformed, ...PERIOD },
+        ledger([
+          settlement({ balance_days_consumed: 5 }),
+          settlement({ run_id: null, start_date: "2026-06-25", balance_days_consumed: 1.5 }),
+        ]),
+      ));
+    assert.equal(
+      value,
+      6.5,
+      `"${malformed}" must not be placed in the filter: nothing is set aside and nothing is lost`,
+    );
+    assert.ok(
+      lines.some((line) => line.includes("vacation_balance_settled_days_run_id_not_uuid")),
+      `"${malformed}" is a caller's defect and must be logged`,
+    );
+  }
 
   // ---- The filters that already existed must survive --------------------------------------------
   // A superseded row is a decision that was replaced, and a row outside the period belongs to

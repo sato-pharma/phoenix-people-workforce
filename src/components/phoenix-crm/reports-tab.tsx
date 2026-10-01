@@ -55,6 +55,7 @@ import { dailyPlanPeriodProblem, type DailyPlanReportView } from "@/lib/phoenix-
 import type { AdoptionStage } from "@/lib/phoenix-crm/adoption-rules";
 import type { BrickCoverageStatus } from "@/lib/phoenix-crm/brick-report";
 import type { CustomerFrequencyRow } from "@/lib/phoenix-crm/customer-frequency";
+import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 import type { TrackingSheetRow } from "@/lib/phoenix-crm/tracking-sheet";
 import {
   daysInPeriod,
@@ -647,7 +648,7 @@ function VisitsSection({
 
 // ── Plan against actual ─────────────────────────────────────────────────────────────────────────
 
-const NO_PLAN: PlanCell = { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null };
+const NO_PLAN: PlanCell = { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, onLeave: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null };
 
 type PlanLine = { key: string; territoryName: string; repName: string | null; row: TerritoryPlanRow | null };
 
@@ -662,18 +663,28 @@ function planLines(report: PlanReportView, territories: ReadonlyArray<ReportTerr
 }
 
 function hasPlan(row: TerritoryPlanRow | null): boolean {
-  return row !== null && (row.am.planned > 0 || row.pm.planned > 0);
+  return row !== null && (row.am.planned > 0 || row.pm.planned > 0 || row.am.onLeave > 0 || row.pm.onLeave > 0);
 }
 
-/** "4 of 5 visited", or "Nothing planned". */
+/**
+ * "4 of 5 visited", "3 on leave" or "Nothing planned".
+ *
+ * 🔴 A day planned and spent on leave says so, in place of the figure (owner, 2026-10-01). `planned`
+ * already leaves those customers out, so "Nothing planned" would be untrue and "0 of 3 visited"
+ * would be the accusation this exists to remove.
+ */
 function planMainText(counts: PlanCounts): string {
-  return counts.planned > 0 ? `${countText(counts.visitedPlanned)} of ${countText(counts.planned)} visited` : "Nothing planned";
+  if (counts.planned > 0) return `${countText(counts.visitedPlanned)} of ${countText(counts.planned)} visited`;
+  return counts.onLeave > 0 ? `${countText(counts.onLeave)} on leave` : "Nothing planned";
 }
 
-/** "1 missed · 2 off the plan · 1 waiting"; null when none of them happened. */
+/** "1 missed · 3 on leave · 2 off the plan · 1 waiting"; null when none of them happened. */
 function planMissText(counts: PlanCounts): string | null {
   const parts = [
     counts.missed > 0 ? `${countText(counts.missed)} missed` : null,
+    // Beside the plan he could keep, never inside it — and only when the main text has not already
+    // said it, on a day that was leave and nothing else.
+    counts.onLeave > 0 && counts.planned > 0 ? `${countText(counts.onLeave)} on leave` : null,
     // Seen, but the visit was off-plan and is not decided — so it is neither kept nor missed yet.
     counts.plannedWaiting > 0 ? `${countText(counts.plannedWaiting)} seen off-plan` : null,
     counts.unplanned > 0 ? `${countText(counts.unplanned)} off the plan` : null,
@@ -714,20 +725,29 @@ function planFact(cell: PlanCell): ReactNode {
 
 function planDayLine(listType: "AM" | "PM", counts: PlanCounts): string {
   const miss = planMissText(counts);
-  const main = counts.planned > 0 ? `${countText(counts.visitedPlanned)} of ${countText(counts.planned)} visited` : "nothing planned";
+  const main = counts.planned > 0 || counts.onLeave > 0 ? planMainText(counts) : "nothing planned";
   return `${listType}: ${main}${miss ? ` · ${miss}` : ""}`;
 }
 
-/** Every day of the period (a Friday only when something happened), doctors and accounts on their own lines. */
+/**
+ * Every day of the period (a Friday only when something happened), doctors and accounts on their own
+ * lines — and the day activity the rep recorded, on a line BESIDE them (owner, 2026-10-01: "show it
+ * beside the miss"). It explains a miss and never removes one: the figures above it are unchanged.
+ */
 function planDayLines(row: TerritoryPlanRow, period: Period): DayLine[] {
   const byDate = new Map(row.days.map((day) => [day.date, day]));
   return daysOf(period).flatMap((date): DayLine[] => {
     const day = byDate.get(date);
-    const happened = day && (day.am.planned > 0 || day.pm.planned > 0 || day.am.unplanned > 0 || day.pm.unplanned > 0);
+    const activity = row.activities[date];
+    const activityLines = activity ? [`Other activity: ${activity}`] : [];
+    const happened =
+      day &&
+      (day.am.planned > 0 || day.pm.planned > 0 || day.am.onLeave > 0 || day.pm.onLeave > 0 || day.am.unplanned > 0 || day.pm.unplanned > 0);
     if (!day || !happened) {
+      if (activityLines.length > 0) return [{ date, lines: ["No plan and no visit", ...activityLines], muted: true }];
       return weekdayOfIsoDay(date) === FRIDAY ? [] : [{ date, lines: ["No plan and no visit"], muted: true }];
     }
-    return [{ date, lines: [planDayLine("PM", day.pm), planDayLine("AM", day.am)] }];
+    return [{ date, lines: [planDayLine("PM", day.pm), planDayLine("AM", day.am), ...activityLines] }];
   });
 }
 
@@ -771,17 +791,32 @@ function PlanSection({
           </CrmNote>
         </div>
       ) : null}
+      {report.leaveUnread ? (
+        <div className="px-4 pt-4 sm:px-5">
+          <CrmNote title="Leave could not be read" tone="warn">
+            {LEAVE_UNREAD_NOTE}
+          </CrmNote>
+        </div>
+      ) : null}
       <CrmBlock>
         <CrmStatGrid>
           {keptStat(am, "AM", "No AM planned")}
           {keptStat(pm, "PM", "No PM planned")}
-          <CrmStat label="Missed" note="Planned, and not visited on the day" value={amPmText(am.missed, pm.missed)} />
+          <CrmStat
+            label="Missed"
+            note={
+              am.onLeave > 0 || pm.onLeave > 0
+                ? `Planned, and not visited on the day · ${amPmText(am.onLeave, pm.onLeave)} on leave, never counted here`
+                : "Planned, and not visited on the day"
+            }
+            value={amPmText(am.missed, pm.missed)}
+          />
           <CrmStat label="Off the plan" note="Visited, and not planned for that day" value={amPmText(am.unplanned, pm.unplanned)} />
         </CrmStatGrid>
       </CrmBlock>
       <ReportList
         columns={oneDay ? ["34%", null, null] : ["30%", null, null, "15%"]}
-        explain="Only a plan sent for review counts. A planned customer visited on another day counts as missed on the planned day, and as off the plan on the day of the visit."
+        explain="Only a plan sent for review counts. A planned customer visited on another day counts as missed on the planned day, and as off the plan on the day of the visit. One planned on a day HR approved the rep's leave is on leave: never missed, and out of the planned figure."
         hasData={(line) => hasPlan(line.row)}
         headers={
           oneDay
@@ -1610,15 +1645,25 @@ function FrequencySection({ idPrefix, resource }: { idPrefix: string; resource: 
   const gradeText = (row: CustomerFrequencyRow) =>
     row.gradeTarget === null ? row.gradeVerdict : `${row.gradeVerdict} · ${row.visits} of ${row.gradeTarget}`;
   const planText = (row: CustomerFrequencyRow) => {
-    if (row.planned === 0) return "Never planned this month";
-    if (row.againstPlan === 0) return `Kept every plan · ${row.visits} of ${row.planned}`;
+    // A planning on a day HR approved the rep's leave is said apart and never counted against the
+    // plan (owner, 2026-10-01) — `plannedOutsideLeave` has already taken it out of `planned`.
+    const leave = row.plannedOnLeave > 0 ? ` · ${countText(row.plannedOnLeave)} on leave` : "";
+    if (row.planned === 0) return row.plannedOnLeave > 0 ? `Planned only on leave days${leave}` : "Never planned this month";
+    if (row.againstPlan === 0) return `Kept every plan · ${row.visits} of ${row.planned}${leave}`;
     const gap = row.againstPlan < 0 ? `Missed ${Math.abs(row.againstPlan)}` : `Seen ${row.againstPlan} more than planned`;
-    return `${gap} · ${row.visits} of ${row.planned}`;
+    return `${gap} · ${row.visits} of ${row.planned}${leave}`;
   };
 
   return (
     <>
       <RefreshFailed error={resource.error} />
+      {report.leaveUnread ? (
+        <div className="px-4 pt-4 sm:px-5">
+          <CrmNote title="Leave could not be read" tone="warn">
+            {LEAVE_UNREAD_NOTE}
+          </CrmNote>
+        </div>
+      ) : null}
       {report.month.inProgress ? (
         <div className="px-4 pt-4 sm:px-5">
           <CrmNote title={`${monthLabel(report.month.month)} is still running`} tone="info">
@@ -1637,7 +1682,7 @@ function FrequencySection({ idPrefix, resource }: { idPrefix: string; resource: 
       </CrmBlock>
       <ReportList
         columns={["34%", null, null, null]}
-        explain="Each customer against TWO things, kept apart: his grade's monthly number from Phoenix CRM's own settings, and how often he was placed on a plan that was actually sent. A draft plan is not counted."
+        explain="Each customer against TWO things, kept apart: his grade's monthly number from Phoenix CRM's own settings, and how often he was placed on a plan that was actually sent. A draft plan is not counted, and nor is a planning on a day HR approved the rep's leave when the customer was not seen that day."
         hasData={(row: CustomerFrequencyRow) => row.visits > 0}
         headers={["Customer", "Visits", "Against the grade", "Against the plan"]}
         idPrefix={`${idPrefix}-frequency`}

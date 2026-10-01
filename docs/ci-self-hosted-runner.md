@@ -622,7 +622,10 @@ on a new run attempt, `gh run rerun --failed` then rescues a stuck `ci-runner/` 
 1. Provision a host — Ubuntu 22.04/24.04, **x86_64, 8 GB RAM minimum** (`ci.yml` runs typecheck
    with `--max-old-space-size=6144`, and the build peaks around 4 GB), ~40 GB disk.
 2. Get a registration token: **Settings → Actions → Runners → New self-hosted runner**
-   (`/settings/actions/runners/new`).
+   (`/settings/actions/runners/new`). 🔴 **That is a short-lived token, NOT a PAT** — this path stores
+   no credential at all, which is why deleting the `phoenix-ci-runner` PAT on 2026-10-01 left it
+   untouched. Only the retired Railway container pool needed a PAT; see the table under the
+   2026-09-29 stand-down below.
 3. On the host:
    ```bash
    git clone https://github.com/Gawish-1997/phoenix-people-workforce
@@ -897,6 +900,21 @@ re-press on that basis** — read the object directly.
 🔴 **The registration ids in that table are spent.** A replica registers non-ephemerally at
 startup, so a redeploy mints NEW ids and the old ones never come back — never write an id from this
 file into a command. Read `gh api repos/<repo>/actions/runners` at the moment you need one.
+
+🔴 **THE TWO WAYS A RUNNER REGISTERS NEED DIFFERENT CREDENTIALS, AND ONLY ONE OF THEM NEEDED A PAT —
+WHICH IS WHY DELETING THE `phoenix-ci-runner` PAT ON 2026-10-01 CHANGED NOTHING ABOUT THE RUNBOOK
+ABOVE.** The two paths are not interchangeable and a session that conflates them either hunts a token
+it does not need or rebuilds a pool it cannot authenticate:
+
+| path | credential | state after 2026-10-01 |
+| --- | --- | --- |
+| **The manual runbook above** (a host you provision, `scripts/setup-self-hosted-runner.sh`) | `RUNNER_TOKEN` — a **registration token valid about ONE HOUR**, read off `/settings/actions/runners/new`. **No PAT, no stored secret** | **Unaffected.** Re-register the Hetzner box, or a replacement host, with a fresh token from that page and nothing else |
+| **The Railway container pool** (`ghcr.io/actions/actions-runner:latest`, 3 replicas self-registering at startup) | a **fine-grained PAT in the service's own variables** — a replica boots unattended, so it cannot be handed a one-hour token by a human | **Gone twice over.** The project was deleted, and the `phoenix-ci-runner` PAT with it. Rebuilding that pool needs the owner to **mint a NEW fine-grained PAT first** — the old one cannot be recovered or re-read |
+
+So: **re-registering a runner does NOT need a PAT. Rebuilding the Railway pool does, and the one it
+used no longer exists.** `scripts/setup-self-hosted-runner.sh` dies with
+`RUNNER_TOKEN is not set` and names the page to get one from — that message is the whole credential
+story for the path this document actually recommends.
 
 **Reading that project without relinking the CLI**, which matters because the primary checkout is
 linked to `phoenix-headwind` and relinking breaks every other session's `railway run`:
