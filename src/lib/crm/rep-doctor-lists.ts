@@ -541,6 +541,13 @@ export async function scanPlanEntries(
   return rows;
 }
 
+/** Plan rows in ascending entry id — the order a company-wide `scanPlanEntries` returns. The entry
+ * id is the mirror's primary key, so the order is total. Pure, exported for its test. */
+export function inPlanEntryOrder(rows: readonly PlanRow[]): PlanRow[] {
+  const entryId = (row: PlanRow) => Number((row as ScannedPlanRow).crm_plan_entry_id);
+  return [...rows].sort((left, right) => entryId(left) - entryId(right));
+}
+
 /** The plan mirror is newer than several environments' schemas; a missing table degrades to an
  * empty board rather than a crash page, matching every other CRM reader's posture. */
 function isPlanSchemaMissing(error: unknown): boolean {
@@ -638,13 +645,26 @@ export async function getRepDoctorLists(input: {
   window?: { from: string; to: string };
   /** See `RepDoctorListsInput.uncapped`. */
   uncapped?: boolean;
+  /**
+   * Read only these reps' plans and visits, by either id — the KPIs board's narrowing for a scope of
+   * a few people (crm/kpi-board-agents.ts chooses the ids). The builder is handed exactly the rows
+   * the company-wide read gives these reps, in the same order, so every figure is the one it was.
+   * Omitted, the whole company is read as before.
+   */
+  agents?: { crmIds: readonly number[]; hrIds: readonly string[] };
 }): Promise<RepDoctorListsBoard> {
   const monthWindow = monthBounds(input.month);
   const from = input.window?.from ?? monthWindow.from;
   const to = input.window?.to ?? monthWindow.to;
+  const agents = input.agents;
 
   const [planRows, visitRows, excludedAgentCrmIds, directory, norms] = await Promise.all([
-    scanPlanEntries(from, to),
+    agents
+      ? // Two passes (CRM ids, then hr ids) come back one after the other; the company-wide read comes
+        // back in entry-id order, and the builder takes a rep's identity from his FIRST plan row, so
+        // the union is put back into that order.
+        scanPlanEntries(from, to, { agentCrmIds: agents.crmIds, agentHrIds: agents.hrIds }).then(inPlanEntryOrder)
+      : scanPlanEntries(from, to),
     queryVisits<VisitRow>({
       collapseDoubleVisits: true,
       columns:
@@ -655,6 +675,8 @@ export async function getRepDoctorLists(input: {
       // buildRepDoctorListsBoard. They are here so a rep who spent the month on campaign work is
       // shown as working rather than as a zero (owner's ruling 2026-08-21).
       visitTypes: [0, CAMPAIGN_TYPE],
+      // One read, in the visits door's id order — the same order the company-wide read is in.
+      ...(agents ? { agentCrmOrHrIds: { crmIds: agents.crmIds, hrIds: agents.hrIds } } : {}),
     }),
     getEffectiveExcludedAgentCrmIds(),
     getEmployeeDirectoryRows({ includeInactive: true }),
