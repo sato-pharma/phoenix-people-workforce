@@ -451,7 +451,7 @@ function channels(facts: ConcentrationFacts): PackSection {
             capNote: null,
             items: [
               { label: "Through distributors", note: null, value: pctOf(facts.channels.distributor) },
-              { label: "Through wholesalers", note: null, value: pctOf(facts.channels.wholesaler) },
+              { label: "Through stores", note: null, value: pctOf(facts.channels.wholesaler) },
               { label: "Direct orders", note: null, value: pctOf(facts.channels.direct) },
             ],
             kind: "bars",
@@ -462,10 +462,10 @@ function channels(facts: ConcentrationFacts): PackSection {
     align: ["left", "right", "right"],
     columns: ["Channel", "Sales", "Share"],
     metric: "channel-split",
-    note: "The three add up to the window's whole sales value. A direct order is direct whoever bought it; a wholesaler is a customer that sells on.",
+    note: "The three add up to the window's whole sales value. A direct order is direct whoever bought it; a store is a customer that sells on.",
     rows: [
       ["Through distributors", num(facts.channels.distributor), share(facts.channels.distributor)],
-      ["Through wholesalers", num(facts.channels.wholesaler), share(facts.channels.wholesaler)],
+      ["Through stores", num(facts.channels.wholesaler), share(facts.channels.wholesaler)],
       ["Direct orders", num(facts.channels.direct), share(facts.channels.direct)],
     ],
     title: "How it reached the market",

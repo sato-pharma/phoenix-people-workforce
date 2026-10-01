@@ -238,7 +238,7 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
   },
   {
     group: "origin",
-    hint: "Distributor, wholesaler or direct order.",
+    hint: "Distributor, store or direct order.",
     id: "channel-split",
     label: "Channel split",
     levels: ALL,

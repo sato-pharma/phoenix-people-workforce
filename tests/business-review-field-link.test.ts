@@ -387,6 +387,8 @@ export function runBusinessReviewFieldLinkTests() {
       areas: [area("CA1", [REP], { allProducts: slice(150000, 160000) })],
     }).sections.find((s) => s.metric === "brick-work");
     assert.match(short?.note ?? "", /The bricks add up to EGP 104,000 of your area's EGP 150,000/);
+    assert.match(short?.note ?? "", /the rest is store sales the Monthly Closing spreads across a city/, "in the owner's word: stores");
+    assert.ok(!/wholesale/i.test(short?.note ?? ""), "never wholesale (owner, 2026-10-02)");
 
     // Nobody claimed a trip → no cost table of zeros per field day.
     const noTrips = buildSalesReviewPack({
