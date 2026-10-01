@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: faedc714-ba73-4daa-a9e9-810ee2b0f383
-  modified: 2026-08-23T12:52:48.555Z
+  modified: 2026-10-01T00:09:51.623Z
 ---
 
 Found 2026-08-23 while backfilling `source_of_sales_customer_map.customer_name`. **232 EP-PHS
@@ -80,3 +80,30 @@ importer reads (named `Coded`, implying codes are assigned in a preparation step
 **How to apply:** do not repeat "two different pharmacies on one code" as fact, and do not use the
 address column as evidence of anything. The only untried independent source is
 `marketing_pharmacy_reference` — test the 168 against it before asserting the split is real.
+
+## 2026-10-01 — the identity engine no longer treats an EP-PHS code as proof
+
+The owner's instruction: *"stop EP-PHS codes counting as certain evidence"*. `judgePair` in
+`src/lib/customer-identity/suggestions.ts` now reads `sharedProvingDistributorPair`, which skips the
+codes of `DISTRIBUTORS_WHOSE_CODE_IS_NOT_PROOF` — **exactly `EP-PHS`**. `fact` is the one band that
+skips the name check, so before this an EP-PHS code offered two UNLIKE names to the Super Admin as
+certain. **The correction above is the reason, not an objection to it:** the code settles neither
+question, so it cannot carry certainty either way.
+
+🔴 **Narrow by design, and each half is pinned by a break-tested assertion** in
+`tests/customer-identity-suggestions.test.ts`: a row carrying an EP-PHS code AND a real one still
+reaches `fact` on the real one (the exclusion skips a CODE, never a row); `sharedDistributorPair` and
+`sharesDistributorCode` are untouched for callers asking the plain "do they share a code?"; the
+cluster sweep still buckets by every code, so the pair is **demoted, never hidden**. Widening the set
+to another distributor throws away real evidence — every other one measured 0 concurrent.
+
+🔴 **A test that varies a key's spelling on ONE side can never catch a case-folding bug** — the two
+ids then never match as a shared code at all, so the helper answers `null` for the wrong reason. The
+first draft of the folding assertion did exactly that and went GREEN against a build with
+`.trim().toUpperCase()` removed; both sides now carry the same odd spelling, so they genuinely match
+and only the exclusion can refuse them. Generalises: vary the key on BOTH sides, or the assertion is
+testing nothing.
+
+Measured on production the same day: of the **28** certain pharmacy pairs exactly **one** rested on
+an EP-PHS code — `علا رجب`, whose two sides carry the **same** name 21 m apart, so it lands on
+`strong` and stays on the review list. Certain pairs 28 → 27; nothing left the screen.
