@@ -247,29 +247,56 @@ async function latestWorkedMonth(
   const lastDayOfCap = monthBounds(notAfter)?.to;
   if (!lastDayOfCap) return null;
 
-  const newestIn = async (table: string, dayColumn: string): Promise<string | null> => {
+  // 🔴 THE SELECT LIST IS A LITERAL IN EACH READ, NEVER BUILT FROM THE COLUMN NAME. The first cut
+  //    of this passed `\`seat_id, ${dayColumn}\`` and the typecheck refused it: PostgREST's types
+  //    parse the select string at COMPILE time, so a template literal resolves to a ParserError
+  //    rather than a row shape. It is the same house rule the sweeps in `reads.ts` follow, and
+  //    the reason the two reads below are written out instead of parameterised.
+  const newestOf = async (
+    table: string,
+    run: (part: string[]) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+    dayOf: (row: Row) => unknown,
+  ): Promise<string | null> => {
     let newest: string | null = null;
     for (const part of chunk([...seatIds], 150)) {
-      const { data, error } = await getSupabaseAdmin()
-        .from(table)
-        .select(`seat_id, ${dayColumn}`)
-        .eq("is_test", isTest)
-        .lte(dayColumn, lastDayOfCap)
-        .in("seat_id", part)
-        .order(dayColumn, { ascending: false })
-        .limit(1);
+      const { data, error } = await run(part);
       // A scope with no rows is the normal answer here, not a fault — but a BROKEN read must not
       // read as one, or the tab would quietly go back to opening on the current month for ever.
-      if (error) throw new Error(`customer calendar: reading the newest day in ${table} failed — ${error.message}`);
-      const day = cleanDay((data?.[0] as Row | undefined)?.[dayColumn]);
+      if (error) throw new Error(`phoenix-crm calendar: reading the newest day in ${table} failed — ${error.message}`);
+      const row = (data as Row[] | null)?.[0];
+      const day = row ? cleanDay(dayOf(row)) : null;
       if (day && (newest === null || day > newest)) newest = day;
     }
     return newest;
   };
 
   const [lastVisit, lastActivity] = await Promise.all([
-    newestIn("phoenix_crm_countable_visits", "visit_date"),
-    newestIn("phoenix_crm_day_activities", "activity_date"),
+    newestOf(
+      "phoenix_crm_countable_visits",
+      (part) =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_countable_visits")
+          .select("seat_id, visit_date")
+          .eq("is_test", isTest)
+          .lte("visit_date", lastDayOfCap)
+          .in("seat_id", part)
+          .order("visit_date", { ascending: false })
+          .limit(1),
+      (row) => row.visit_date,
+    ),
+    newestOf(
+      "phoenix_crm_day_activities",
+      (part) =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_day_activities")
+          .select("seat_id, activity_date")
+          .eq("is_test", isTest)
+          .lte("activity_date", lastDayOfCap)
+          .in("seat_id", part)
+          .order("activity_date", { ascending: false })
+          .limit(1),
+      (row) => row.activity_date,
+    ),
   ]);
   const newest = [lastVisit, lastActivity].filter((day): day is string => day !== null).sort().pop();
   return newest ? newest.slice(0, 7) : null;

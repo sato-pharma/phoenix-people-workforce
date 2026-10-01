@@ -430,13 +430,19 @@ export function runPhoenixCrmWave2ReportTests(): void {
 
     // What counts as work is what COLOURS a cell — a visit or a day activity, never leave and
     // never a Friday. Opening on a grid of F and dashes would answer the letter and not the point.
-    assert.match(service, /newestIn\("phoenix_crm_countable_visits", "visit_date"\)/, "visits count as work");
-    assert.match(service, /newestIn\("phoenix_crm_day_activities", "activity_date"\)/, "and so does a recorded day activity");
-    assert.doesNotMatch(service, /newestIn\("[^"]*leave/i, "leave is not work");
+    assert.match(service, /newestOf\(\s*"phoenix_crm_countable_visits"/, "visits count as work");
+    assert.match(service, /newestOf\(\s*"phoenix_crm_day_activities"/, "and so does a recorded day activity");
+    assert.doesNotMatch(service, /newestOf\(\s*"[^"]*leave/i, "leave is not work");
+    // 🔴 EACH SELECT LIST IS A LITERAL. PostgREST's types parse it at COMPILE time, so a template
+    //    literal built from a column name resolves to a ParserError and not a row shape — the
+    //    typecheck caught exactly that on the first cut of this function.
+    assert.match(service, /\.select\("seat_id, visit_date"\)/, "the visit read names its columns literally");
+    assert.match(service, /\.select\("seat_id, activity_date"\)/, "and so does the activity read");
+    assert.doesNotMatch(service, /\.select\(`/, "no select list is ever built from a variable");
     // Capped, so an activity recorded ahead of time cannot open a manager on a month that has not
     // happened; and a BROKEN read throws rather than reading as "this scope has never worked",
     // which would quietly restore the old behaviour for ever.
-    assert.match(service, /\.lte\(dayColumn, lastDayOfCap\)/, "the search is capped at the current month");
+    assert.match(service, /\.lte\("visit_date", lastDayOfCap\)/, "the search is capped at the current month");
     assert.match(service, /if \(error\) throw new Error/, "a failed read is an error, never an empty answer");
 
     // The client's half: it asks for NO month on the first load, which is what lets the server
