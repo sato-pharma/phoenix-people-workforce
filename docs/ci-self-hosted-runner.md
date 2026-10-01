@@ -860,6 +860,28 @@ runs anyway with a warning, so a stuck holder cannot fail a PR by itself; on a G
 the lock is always free. Pinned by `tests/ci-typecheck-lock.test.ts`, which on Linux holds the lock
 from another process and proves the step waits.
 
+### remote-check: one tree per invocation — 2026-10-01
+
+The lock above serialises `tsc`, and nothing else. Until 2026-10-01 every `remote-check.mjs`
+invocation, from every session, also shared ONE directory on the box (`~/remote-check/work`) and one
+branch (`remote-check`): push, `git checkout -f <sha>`, run. Two sessions at once therefore checked
+out over each other mid-run. The box's own reflog shows it: `19442c382` checked out at 05:59:44
+Cairo, `5d2bfaa24` over it at 06:01:25 while the first run was still going. The first run printed
+`box head: 19442c382`, then failed its typecheck with `TS6053` on a test file that commit *has*, and
+passed the unit suite with `2085 test files` — the other commit's count; CI ran 2,086 on the same
+sha. Wrong in both directions, under the right header.
+
+Now each run pushes to its own ref (`refs/remote-check/<run id>`), `git worktree add`s its own
+directory under `~/remote-check/runs/`, and its EXIT trap removes both; a directory a hard-killed run
+left behind is reaped after 6 hours. After the checkout, the install and every check it re-reads
+HEAD, and a run whose tree is no longer its sha exits **3** and prints **NO VERDICT** instead of PASS
+or FAIL. A fresh tree has no `.next/types`, so the typecheck now runs `next typegen` first, as
+ci.yml does — the shared directory had been typechecking against whatever route types some earlier
+commit left behind. The cost is a fresh `pnpm install` (hard links from the box's store) and a cold
+eslint cache per run. `~/remote-check/work` is no longer used. The bash lives in
+`scripts/remote-check-plan.mjs`; `tests/remote-check.test.ts` runs it for real against a throwaway
+bare repo with two overlapping invocations on two commits.
+
 ## Turning it off
 
 ```bash

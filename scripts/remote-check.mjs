@@ -52,6 +52,13 @@
 // both slower (see docs/ci-self-hosted-runner.md for the memory arithmetic: `tsc` alone peaks at
 // 5.86 GB of 7,740 MB).
 //
+// 🔴 EVERY INVOCATION RUNS IN A TREE NOBODY ELSE CAN TOUCH. Until 2026-10-01 all of them shared one
+// directory on the box, and a second session's checkout swapped the tree under a running check: it
+// printed `box head: 19442c382` and then failed a typecheck on a file that commit has (TS6053) and
+// passed a suite with the OTHER commit's file count. Each run now pushes to its own ref, works in its
+// own `git worktree`, removes both on exit, and re-reads HEAD after every check — a run whose tree
+// moved exits 3 with NO VERDICT. The account and the bash: scripts/remote-check-plan.mjs.
+//
 // Host, user and key are overridable for when the box is replaced:
 //   PHX_CHECK_HOST   default 46.225.184.142
 //   PHX_CHECK_USER   default phx
@@ -62,12 +69,14 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { buildLockfileScript, buildRunScript, newRunId, runPaths } from "./remote-check-plan.mjs";
+
 const HOST = process.env.PHX_CHECK_HOST || "46.225.184.142";
 const USER = process.env.PHX_CHECK_USER || "phx";
 const KEY = process.env.PHX_CHECK_KEY || path.join(os.homedir(), ".ssh", "railway_phoenix_ed25519");
 const REMOTE_ROOT = "/home/" + USER + "/remote-check";
 const BARE = REMOTE_ROOT + "/repo.git";
-const WORK = REMOTE_ROOT + "/work";
+const PRELUDE = ["export PATH=/usr/local/lib/nodejs/node/bin:$PATH", "export COREPACK_ENABLE_DOWNLOAD_PROMPT=0"];
 
 // Each entry is the exact command the box runs. `typecheck` carries the same heap ci.yml gives it,
 // so a result here means the same thing a CI result means. It also takes ci.yml's typecheck lock
@@ -83,10 +92,15 @@ const WORK = REMOTE_ROOT + "/work";
 // ~112s a cold run takes. That is AGENTS.md §5 ("a warm incremental cache lies") arriving through the
 // one tool that exists to REPLACE the local typecheck, which makes the false pass worse than no
 // answer: it was trusted, and it sent a branch to CI believing it was clean.
+//
+// 🔴 `next typegen` RUNS FIRST, AS IT DOES IN ci.yml. Every run now gets a FRESH tree (see
+// scripts/remote-check-plan.mjs), which holds no `.next/types` and no `next-env.d.ts` — so without
+// typegen tsc would fail on route types CI generates. The old shared directory hid this the other way:
+// it carried whatever `.next/types` an earlier run of SOME commit had left behind.
 const CHECKS = {
   lint: "corepack pnpm run lint",
   typecheck:
-    "flock -w 1200 /tmp/phx-typecheck.lock env NODE_OPTIONS=--max-old-space-size=6144 ./node_modules/.bin/tsc --noEmit --incremental false --pretty false",
+    "flock -w 1200 /tmp/phx-typecheck.lock sh -c './node_modules/.bin/next typegen >/dev/null && env NODE_OPTIONS=--max-old-space-size=6144 ./node_modules/.bin/tsc --noEmit --incremental false --pretty false'",
   test: "corepack pnpm run test",
   build: "corepack pnpm run build",
 };
@@ -203,6 +217,9 @@ if (LOCKFILE_MODE) {
 console.log("remote-check: " + (LOCKFILE_MODE ? "lockfile" : names.join(" + ")) + "  on " + USER + "@" + HOST);
 console.log("             " + branch + " @ " + sha.slice(0, 9));
 
+const runId = newRunId(sha);
+const paths = runPaths(REMOTE_ROOT, runId);
+
 // One round trip: create the bare repo if this is the first run, and report whether CI is busy.
 const state = ssh(
   "set -e\n" +
@@ -220,7 +237,7 @@ try {
     "git",
     ["push", "--force", "--quiet",
       "ssh://" + USER + "@" + HOST + BARE,
-      sha + ":refs/heads/remote-check"],
+      sha + ":" + paths.ref],
     { stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, GIT_SSH_COMMAND } },
   );
 } catch {
@@ -235,29 +252,9 @@ try {
 // reads, which would eat a YAML file's trailing newline and hand back a lockfile that differs from
 // the one the box generated — a corruption nothing downstream would report.
 if (LOCKFILE_MODE) {
-  const RESULT_REF = "refs/heads/lockfile-result";
-  const outcome = ssh(
-    "set -uo pipefail\n" +
-      "export PATH=/usr/local/lib/nodejs/node/bin:$PATH\n" +
-      "export COREPACK_ENABLE_DOWNLOAD_PROMPT=0\n" +
-      "[ -d " + WORK + "/.git ] || git clone -q -b remote-check " + BARE + " " + WORK + "\n" +
-      "cd " + WORK + "\n" +
-      "git fetch -q origin remote-check\n" +
-      "git checkout -q -f " + sha + " 2>/dev/null || git checkout -q -f FETCH_HEAD\n" +
-      'echo "box head: $(git rev-parse --short HEAD)"\n' +
-      // NOT --frozen-lockfile: that is the one flag guaranteed to fail here, because the whole point
-      // is that the lockfile does not yet match the manifests.
-      "corepack pnpm install --lockfile-only || { echo 'LOCKFILE_FAILED'; exit 1; }\n" +
-      "if git diff --quiet -- pnpm-lock.yaml pnpm-workspace.yaml; then echo NOCHANGE; exit 0; fi\n" +
-      // pnpm can touch pnpm-workspace.yaml too: adopting a version younger than pnpm 11's release-age
-      // quarantine makes it append `minimumReleaseAgeExclude` entries, and a --frozen-lockfile install
-      // needs them. Returning only the lockfile would lose them with nothing to show it.
-      'git -c user.email=box@phoenix.local -c user.name="remote-check" commit -q ' +
-      '-m "chore(deps): regenerate the lockfile on the box" -- pnpm-lock.yaml pnpm-workspace.yaml\n' +
-      "git push -q -f origin HEAD:" + RESULT_REF + "\n" +
-      "echo REGENERATED\n",
-    { capture: true },
-  );
+  const outcome = ssh(buildLockfileScript({ remoteRoot: REMOTE_ROOT, runId, sha, prelude: PRELUDE }), {
+    capture: true,
+  });
 
   console.log(outcome.split("\n").filter(Boolean).map((line) => "             " + line).join("\n"));
 
@@ -272,7 +269,7 @@ if (LOCKFILE_MODE) {
   try {
     execFileSync(
       "git",
-      ["fetch", "--quiet", "ssh://" + USER + "@" + HOST + BARE, RESULT_REF],
+      ["fetch", "--quiet", "ssh://" + USER + "@" + HOST + BARE, paths.resultRef],
       { stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, GIT_SSH_COMMAND } },
     );
     // Overwrites both files from the fetched commit. That is the intent here — but it IS the
@@ -282,38 +279,36 @@ if (LOCKFILE_MODE) {
       stdio: ["ignore", "inherit", "inherit"],
     });
   } catch {
-    die("could not bring the regenerated files back. The box has them on " + RESULT_REF + " in " + BARE + ".");
+    die("could not bring the regenerated files back. The box has them on " + paths.resultRef + " in " + BARE + ".");
   }
+  // The result ref was this run's alone; drop it so the box does not accumulate one per run.
+  spawnSync("git", ["push", "--quiet", "ssh://" + USER + "@" + HOST + BARE, "--delete", paths.resultRef], {
+    stdio: "ignore",
+    env: { ...process.env, GIT_SSH_COMMAND },
+  });
 
   console.log("\nremote-check: lockfile regenerated from " + sha.slice(0, 9) + " — pnpm-lock.yaml and pnpm-workspace.yaml are staged.");
   console.log("             Review the diff, commit, and let the PR's --frozen-lockfile install prove it.");
   process.exit(0);
 }
 
-const steps = names
-  .map((name) =>
-    'echo ""; echo "=== ' + name + ' ==="; S=$(date +%s); ' +
-    "if " + CHECKS[name] + "; then R=PASS; else R=FAIL; FAILED=1; fi; " +
-    'E=$(date +%s); echo "--- ' + name + ' $R in $((E-S))s ---"',
-  )
-  .join("\n");
-
 const status = ssh(
-  "set -uo pipefail\n" +
-    "export PATH=/usr/local/lib/nodejs/node/bin:$PATH\n" +
-    "FAILED=0\n" +
-    // `-b remote-check` because the bare repo's HEAD still points at a branch that was never
-    // created, and a plain clone then warns "remote HEAD refers to nonexistent ref" on first run.
-    "[ -d " + WORK + "/.git ] || git clone -q -b remote-check " + BARE + " " + WORK + "\n" +
-    "cd " + WORK + "\n" +
-    "git fetch -q origin remote-check\n" +
-    "git checkout -q -f " + sha + " 2>/dev/null || git checkout -q -f FETCH_HEAD\n" +
-    'echo "box head: $(git rev-parse --short HEAD)"\n' +
-    "corepack pnpm install --frozen-lockfile --reporter=silent || { echo 'install failed'; exit 1; }\n" +
-    steps + "\n" +
-    "exit $FAILED\n",
+  buildRunScript({
+    remoteRoot: REMOTE_ROOT,
+    runId,
+    sha,
+    prelude: PRELUDE,
+    install: "corepack pnpm install --frozen-lockfile --reporter=silent",
+    steps: names.map((name) => ({ name, command: CHECKS[name] })),
+  }),
 );
 
 console.log("");
+if (status === 3) {
+  // same_tree fired: the tree under the run stopped being `sha`. Whatever the checks printed is about
+  // some other commit, so this must never read as either a pass or a fail of this one.
+  console.log("remote-check: NO VERDICT — the box's tree changed during the run; nothing above is about " + sha.slice(0, 9));
+  process.exit(3);
+}
 console.log(status === 0 ? "remote-check: PASS — " + sha.slice(0, 9) : "remote-check: FAIL — " + sha.slice(0, 9));
 process.exit(status);

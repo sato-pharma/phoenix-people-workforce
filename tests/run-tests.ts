@@ -4656,7 +4656,7 @@ await runTest(
   runCiTypecheckLockTests,
 );
 await runTest(
-  "remote-check runs the heavy checks on the CI box and never locally: no local spawn but ssh/git, ci.yml's 6144MB heap, its own directory rather than the runner's _work, no GitHub credential on the box, a warning for uncommitted work, and the remote exit code",
+  "remote-check runs the heavy checks on the CI box and never locally: no local spawn but ssh/git, ci.yml's 6144MB heap, its own directory rather than the runner's _work, no GitHub credential on the box, a warning for uncommitted work, the remote exit code, and a private tree per invocation (own ref, own git worktree, removed on exit) re-verified after every check so a tree swapped mid-run exits 3 with NO VERDICT, proven by running two overlapping invocations on two commits",
   runRemoteCheckTests,
 );
 await runTest(
