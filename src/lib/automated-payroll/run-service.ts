@@ -114,12 +114,10 @@ import {
 } from "./permissions.ts";
 import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
 import {
-  computeVacationDeductionTotals,
   filterExcludedMembers,
   isSettledInPart1,
   loadStepContext,
   recommendStep,
-  settleCrmLeaveBalanceForPeriod,
   type PopulationMember,
 } from "./recommend.ts";
 import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
@@ -773,13 +771,25 @@ export async function confirmStep(
     summary[RECOMMENDED_AT_CONFIRM_KEY] = snapshotRecommendations(rows);
   }
 
-  // Computed BEFORE the step is marked confirmed: when the CRM leave data cannot be read this throws
-  // PayrollCrmLeaveUnavailableError, and the step must stay unconfirmed rather than show "confirmed"
-  // with no balance settlement behind it.
-  // Pass the run so its own earlier settlement is excluded from the balance it re-reads.
-  const vacationTotals =
-    stepKey === "p2_vacation" ? await computeVacationDeductionTotals(members, sources, period, runId) : null;
-
+  // CONFIRMING p2_vacation TOUCHES NO LEAVE BALANCE, AND READS NO CRM LEAVE TO DECIDE ONE.
+  //
+  // It used to do both: it computed every member's CRM-only leave here — refusing the confirm
+  // outright if the CRM feed or the Egypt holiday calendar could not be read — and then wrote a
+  // row per employee into payroll_copilot_vacation_settlements to draw those days off the balance.
+  // That write never once succeeded (a foreign key onto the wrong runs table) while its unscoped
+  // supersede destroyed live rows it could not replace. The full account, and why it must not be
+  // rebuilt, is on the note where it lived in recommend.ts.
+  //
+  // CRM leave now reaches a balance by one path only (owner's decision, 2026-10-01):
+  // scripts/import-crm-vacation-backfill.ts, which creates a real Phoenix request through the same
+  // balance engine the admin UI uses, behind three guards this step never had — hire-date
+  // attribution (CRM accounts are seats the vendor renames), national-holiday adjacency, and
+  // overlap containment against an existing request. So the owner's holiday protection of
+  // 2026-09-16 sits in front of the write that actually happens, not in front of one that cannot.
+  //
+  // The read is therefore gone from here rather than left in: with nothing downstream consuming
+  // it, an unreachable holiday calendar would have refused a payroll confirm for no benefit at all.
+  // The step's own figure comes from the Deductions module via recommendVacation, untouched.
   const state = await upsertStepState({
     runId,
     stepKey,
@@ -788,23 +798,6 @@ export async function confirmStep(
     confirmedAt: nowIso(),
     confirmedBy: actorId(access),
   });
-
-  // Owner rule (2026-07-21): a vacation day — CRM-sourced or a formal Phoenix request —
-  // must durably subtract from balance first, salary only for what balance doesn't cover.
-  // Confirming this step is the one moment CRM-only leave (no v2_vacation_requests row)
-  // becomes real: settle it into the same ledger a formal request settlement uses, so future
-  // balance checks see it consumed, not just this month's payroll-sheet number.
-  if (vacationTotals) {
-    // Confirming this step is not a one-way door: HR re-confirms after correcting a row, and
-    // before this the second confirm gave the leave days back while the deduction stayed.
-    const { crmLeaveSettlements } = vacationTotals;
-    const { settled } = await settleCrmLeaveBalanceForPeriod({
-      actorHrId: actorId(access),
-      crmLeaveSettlements,
-      runId,
-    });
-    if (settled > 0) summary.crmLeaveBalanceSettled = settled;
-  }
 
   await writeAutomatedPayrollAudit({
     runId,

@@ -293,6 +293,32 @@ treated held people as absent.
 
 ---
 
+### Finding 21's mechanism is RETIRED — PR #5032 (2026-10-01) · **owner decision**
+
+**Read finding 21 above as history, not as guidance.** Its fix — passing the run in so its own
+earlier settlement is excluded from the balance it re-reads — was correct about the oscillation, but
+the write it protected could never happen, and the whole mechanism has now been removed.
+
+| # | What it was | Where the fix lives | Evidence |
+| --- | --- | --- | --- |
+| **21b** | **The Part 2 Vacation confirm destroyed leave settlements and wrote none.** `settleCrmLeaveBalanceForPeriod` set `run_id` to an `automated_payroll_runs` id while the column is `FOREIGN KEY (run_id) REFERENCES payroll_copilot_runs(id)` — **0 of 3** automated run ids satisfy it, so every insert was refused `23503`, logged, and skipped with `continue`. Its supersede ran **first**, was scoped to `employee_hr_id_compact` + `start_date` alone, and its error was discarded: each confirm retired whatever live row held that slot and replaced it with nothing. All **8** `p2_vacation` confirms on production (July ×7 on 4–8 Aug Cairo, August ×1 on 8 Sep) recorded `crmLeaveBalanceSettled` null, and the ledger holds no row any automated run wrote. On **2026-08-04 07:49:03 Cairo**, 1.2 s before the July run's first `step_confirmed` audit row, it retired **Khaled Mohamed Ali Bedair**'s 1.00-day `balance` settlement of 2026-07-12, written by `system:crm-correction-2026-07-21`. | The write is **removed**, not repaired (owner's decision, 2026-10-01): `scripts/import-crm-vacation-backfill.ts` is the one path a CRM leave day reaches a balance by. Standing note in `recommend.ts` where it lived · `tests/automated-payroll-crm-leave-one-mechanism.test.ts` | code + test + production measurement + staging `23503` probe + PR #5032 |
+
+**Why it was removed rather than fixed.** The owner rule of 2026-07-21 was never unserved: the CRM
+vacation importer has honoured it all year — **468 requests, 415 days, January–August 2026**, imported
+2026-08-03 and 2026-08-24 — which is exactly why the July confirm found zero CRM-only days left to
+settle. Fixing the foreign key would have produced **two** mechanisms for one rule, and
+`approvedPaidDaysInPeriod` sums `requestDays + settledDays + attendanceDays`, so a settlement row and
+an imported request covering the same day are **both** charged. Production already carries one such
+pair. The importer also carries three guards the confirm never had: hire-date attribution (a CRM
+account is a seat the vendor renames to its next occupant), national-holiday adjacency — the owner's
+2026-09-16 protection, now sitting in front of the write that actually happens — and overlap
+containment against an existing request.
+
+**The CRM read left the confirm with it.** Nothing downstream consumed
+`computeVacationDeductionTotals`, so leaving the call would have let an unreachable Egypt holiday
+calendar refuse a payroll confirm for no benefit at all. The function is kept, unwired, as the only
+measurement of how many CRM-only leave days a period holds; its three reads still fail closed.
+
 ## The ruling on the fourteen — MOOT, resolved 2026-09-12 (cycle 4)
 
 > **🟢 READ THIS FIRST. The ruling below is superseded and no longer describes reality.** It was

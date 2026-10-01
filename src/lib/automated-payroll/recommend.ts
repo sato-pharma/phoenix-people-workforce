@@ -1269,54 +1269,37 @@ type VacationDeductionTotal = {
 };
 
 /**
- * One employee's CRM-only-leave balance breakdown for a period — the detail
- * `settleCrmLeaveBalanceForPeriod` needs to durably record, beyond the
- * aggregated `VacationDeductionTotal` used for the payroll-sheet number.
- */
-export type CrmLeaveBalanceSettlement = {
-  employeeHrId: string;
-  compact: string;
-  /** Earliest CRM-only AV date this period — the settlement row's anchor date. */
-  startDate: string;
-  /** Count of CRM-only AV dates this period (no Phoenix v2 request covering them). */
-  totalDays: number;
-  /** Days actually covered by the employee's live balance (<= totalDays). */
-  balanceDaysConsumed: number;
-  /** Days beyond balance, deducted from salary instead. */
-  unpaidDays: number;
-  salaryDeductionAmount: number;
-};
-
-/**
  * Vacation deduction totals for every member (Phoenix v2 unpaid days + CRM-recorded leave,
- * balance-first). Shared by the Part-2 Vacation step (everyone except leavers, who are
- * settled at resignation time instead) and the Resignation step (leavers only).
+ * balance-first), with one detail line per CRM leave date.
  *
- * Also returns crmLeaveSettlements — the same CRM-only-leave figures broken out per employee,
- * consumed by settleCrmLeaveBalanceForPeriod to durably record the balance draw-down when the
- * Part-2 Vacation step is confirmed (owner rule 2026-07-21: a vacation day, whether sourced
- * from CRM or a formal Phoenix request, must subtract from balance first and salary only for
- * what balance doesn't cover — durably, not just as a one-off payroll-sheet number that
- * disappears next period).
+ * READ-ONLY, AND CURRENTLY CALLED BY NOTHING. It writes no leave-balance row. The owner rule of
+ * 2026-07-21 — a vacation day, CRM-sourced or from a formal Phoenix request, subtracts from the
+ * balance first and salary only for what the balance cannot cover — is honoured by
+ * `scripts/import-crm-vacation-backfill.ts`, which imports each CRM vacation signal as a real
+ * Phoenix request in `v2_vacation_requests`. That is the ONE path a CRM leave day reaches a
+ * balance by (owner's decision, 2026-10-01). See the note where the settlement write used to
+ * live, below.
+ *
+ * Kept rather than deleted because it is the only measurement of how many CRM-only leave days a
+ * period holds and how much of that the balance would cover — the figure that says whether the
+ * importer still has work to do for a month (September 2026: 95 CRM-only AV day-rows across 43
+ * people, measured on production 2026-10-01). Its three reads still fail CLOSED, pinned by
+ * `tests/automated-payroll-crm-leave-fails-closed.test.ts`.
+ *
+ * DO NOT WIRE IT BACK INTO THE CONFIRM PATH. Nothing downstream consumes the result, so its
+ * refusal on an unreadable CRM feed or Egypt holiday calendar would block a payroll confirm for no
+ * benefit. Surfacing it on a screen, or retiring it, is a separate change.
  */
 export async function computeVacationDeductionTotals(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
   period: PayrollPeriod,
-  /**
-   * The run asking. Its own balance settlements are excluded from the balance read, so confirming
-   * this step twice reaches the same answer twice — see the note on `balanceSettledDaysInPeriod`.
-   * Left unset by the preview paths, which only display and never settle.
-   */
-  excludeSettlementRunId?: string | null,
 ): Promise<{
   totals: Map<string, VacationDeductionTotal>;
-  crmLeaveSettlements: CrmLeaveBalanceSettlement[];
   detailsByCompact: Map<string, StepRowDetail[]>;
 }> {
   const byCompact = new Map(members.map((member) => [member.compact, member]));
   const totals = new Map<string, VacationDeductionTotal>();
-  const crmLeaveSettlements: CrmLeaveBalanceSettlement[] = [];
   const detailsByCompact = new Map<string, StepRowDetail[]>();
   const ensure = (compact: string) => {
     const existing =
@@ -1378,11 +1361,12 @@ export async function computeVacationDeductionTotals(
       const snapshot = await calculatePaymentForRequest({
         durationDays: crmOnly.length,
         employeeHrId: member.employee.hrId,
-        // THIS RUN'S OWN prior settlement must not count against the balance it is re-deciding.
-        // Reading it back made the second confirm see a balance already spent, drop its coverage
-        // to zero, and supersede the row that had consumed the days — restoring the entitlement
-        // while the deduction stayed. See the full account on balanceSettledDaysInPeriod.
-        excludeSettlementRunId,
+        // No `excludeSettlementRunId`. That exclusion existed to stop a run reading back the
+        // settlement its OWN previous confirm had written; this step writes no settlement now, so
+        // it has nothing of its own to exclude and the read is simply the live balance. The
+        // parameter is still carried by `balanceSettledDaysInPeriod` in vacation/service.ts for
+        // whoever writes a run-scoped settlement next (the Payroll Copilot) — deliberately left
+        // in place there, with its tests.
         hireDate: member.employee.hireDate,
         startDate: crmOnly[0],
         vacationType: "annual",
@@ -1416,15 +1400,6 @@ export async function computeVacationDeductionTotals(
     entry.crmUnpaidDays += unpaidDays;
     entry.crmAmount += amount;
     entry.crmBalanceDays += Math.min(Math.floor(balanceDays), crmOnly.length);
-    crmLeaveSettlements.push({
-      balanceDaysConsumed: roundCurrency(Math.min(balanceDays, crmOnly.length)),
-      compact,
-      employeeHrId: member.employee.hrId,
-      salaryDeductionAmount: amount,
-      startDate: crmOnly[0],
-      totalDays: crmOnly.length,
-      unpaidDays,
-    });
 
     // One line per CRM leave DATE — this is the "which days" the aggregate hides.
     // crmOnly is already sorted, and the balance is consumed in date order, so
@@ -1451,157 +1426,41 @@ export async function computeVacationDeductionTotals(
     });
   }
 
-  return { crmLeaveSettlements, detailsByCompact, totals };
+  return { detailsByCompact, totals };
 }
 
 /**
- * The live-row collision on payroll_copilot_vacation_settlements_live_idx, the partial unique
- * index over (employee_hr_id_compact, start_date) WHERE superseded_at IS NULL. It is the ONE
- * insert failure that a supersede can legitimately clear; every other failure means the row was
- * never going to land, so nothing may be retired on its behalf.
+ * THE PART 2 VACATION CONFIRM WRITES NO LEAVE-BALANCE ROW, AND MUST NOT BE GIVEN ONE AGAIN.
+ *
+ * A `settleCrmLeaveBalanceForPeriod` used to live here. It wrote one
+ * `public.payroll_copilot_vacation_settlements` row per employee with CRM-only annual leave, to
+ * draw those days off the balance durably rather than only as that month's payroll-sheet figure.
+ *
+ * IT NEVER WORKED, AND IT DESTROYED ROWS WHILE FAILING. It set `run_id` to an
+ * `automated_payroll_runs` id, but the column is a foreign key onto `payroll_copilot_runs` — no
+ * automated run id has ever satisfied it, so every insert was refused `23503`, logged, and skipped.
+ * The supersede that ran FIRST was scoped to `employee_hr_id_compact` + `start_date` alone and its
+ * error was discarded, so each confirm retired whatever live row held that slot and replaced it
+ * with nothing. On 2026-08-04 07:49:03 Cairo the July run retired Khaled Mohamed Ali Bedair's
+ * 1.00-day balance settlement of 2026-07-12, written by `system:crm-correction-2026-07-21`. All 8
+ * `p2_vacation` confirms on production recorded `crmLeaveBalanceSettled` null; the ledger holds no
+ * row any automated run wrote.
+ *
+ * SO THERE IS ONE MECHANISM, NOT TWO (owner's decision, 2026-10-01).
+ * `scripts/import-crm-vacation-backfill.ts` imports each CRM vacation signal as a real Phoenix
+ * request in `v2_vacation_requests`, where it draws the balance down the ordinary way, is visible
+ * to HR, and can be corrected. It has done so all year: 468 requests, 415 days, January–August
+ * 2026, imported 2026-08-03 and 2026-08-24 — which is why the July confirm found zero CRM-only
+ * days left to settle.
+ *
+ * RESTORING A SETTLEMENT WRITE HERE RE-CREATES A DOUBLE DRAW-DOWN, measured, not hypothetical.
+ * `approvedPaidDaysInPeriod` in vacation/service.ts returns requestDays + settledDays +
+ * attendanceDays, so a ledger row and an imported request covering the same day are BOTH charged.
+ * Production already carries one such pair. If this ever has to come back, the importer has to be
+ * retired in the same change — and the foreign key fixed first.
+ *
+ * Pinned by `tests/automated-payroll-crm-leave-one-mechanism.test.ts`.
  */
-function isLiveSettlementCollision(error: unknown): boolean {
-  return String((error as { code?: unknown } | null)?.code ?? "") === "23505";
-}
-
-/**
- * Durably records the balance-first-else-salary settlement for each employee's CRM-only
- * leave days this period, reusing the SAME payroll_copilot_vacation_settlements ledger a
- * formal Phoenix unpaid-request settlement writes to (balanceSettledDaysInPeriod in
- * vacation/service.ts already sums it, regardless of source) — so a CRM-only AV day counts
- * against the employee's real balance in every FUTURE balance check, not just this month's
- * payroll sheet. vacation_request_ids stays [] (no formal request exists); that's also how a
- * CRM-sourced row is told apart from a Copilot-decided one when reviewing the table directly.
- *
- * THE INSERT IS ATTEMPTED FIRST, AND NOTHING IS RETIRED UNTIL IT IS KNOWN TO BE REPLACEABLE.
- *
- * This used to supersede first and insert second, unscoped and with the supersede's own error
- * discarded — so a confirm retired ANY live row for that employee+start_date, whoever wrote it,
- * and then carried on past a failed insert with `continue`. Both halves fired on production. The
- * insert has never once succeeded: `run_id` carries an automated_payroll_runs id while the column
- * is a foreign key onto payroll_copilot_runs, so every insert is refused `23503` (proved on
- * staging, 2026-10-01) — and on 2026-08-04 07:49:03 Cairo the July run's first confirm used that
- * unscoped supersede to retire Khaled Mohamed Ali Bedair's 1.00-day balance settlement of
- * 2026-07-12, written by `system:crm-correction-2026-07-21`, and replaced it with nothing.
- *
- * So the order is inverted. The insert goes first with nothing retired; a failure that is NOT the
- * live-row collision leaves the ledger exactly as it was. Only the collision justifies a
- * supersede, only THIS RUN's own earlier row may be superseded by it (the re-confirm case — a
- * Copilot decision or a system correction holding that slot is somebody else's and is left alone,
- * reported instead), and the supersede's error is now read rather than dropped.
- */
-export async function settleCrmLeaveBalanceForPeriod(
-  input: {
-    crmLeaveSettlements: CrmLeaveBalanceSettlement[];
-    actorHrId: string;
-    runId?: string | null;
-  },
-  /**
-   * Injected only by the test — production always uses the admin client. The same seam
-   * `buildSettledSalaryDeductionTotals` and `recordVacationSettlementDecision` already carry, and
-   * for the same reason: this suite runs with PRODUCTION credentials (`.env.local` points at
-   * production), so a function that writes the leave-balance ledger can never be exercised
-   * against a real client from a test.
-   */
-  client: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
-): Promise<{ settled: number }> {
-  const supabase = client;
-  let settled = 0;
-  for (const settlement of input.crmLeaveSettlements) {
-    if (settlement.totalDays <= 0) continue;
-
-    const method: "balance" | "partial_balance" | "salary" =
-      settlement.unpaidDays <= 0 ? "balance" : settlement.balanceDaysConsumed > 0 ? "partial_balance" : "salary";
-
-    const row = {
-      balance_days_consumed: method === "salary" ? null : settlement.balanceDaysConsumed,
-      decided_by: input.actorHrId,
-      employee_hr_id: settlement.employeeHrId,
-      employee_hr_id_compact: settlement.compact,
-      run_id: input.runId ?? null,
-      salary_deduction_amount: method === "balance" ? null : settlement.salaryDeductionAmount,
-      settlement_method: method,
-      start_date: settlement.startDate,
-      unpaid_days: settlement.totalDays,
-      vacation_request_ids: [] as string[],
-    };
-    const labels = {
-      event: "automated_payroll_crm_leave_balance_settlement_insert_failed",
-      hrId: settlement.employeeHrId,
-      runId: input.runId ?? null,
-    };
-
-    const firstAttempt = await supabase.from("payroll_copilot_vacation_settlements").insert(row);
-    if (!firstAttempt.error) {
-      settled += 1;
-      continue;
-    }
-
-    // Not the live-row collision: this row cannot land at all, so the ledger is left untouched.
-    // The old code had already retired the live row by this point.
-    if (!isLiveSettlementCollision(firstAttempt.error)) {
-      logError("Automated payroll: CRM leave balance settlement insert failed — nothing was retired", {
-        labels,
-        error: firstAttempt.error,
-      });
-      continue;
-    }
-
-    // A live settlement holds this employee+start_date. Read WHO holds it before touching it.
-    const { data: holder, error: holderError } = await supabase
-      .from("payroll_copilot_vacation_settlements")
-      .select("id,run_id,decided_by")
-      .eq("employee_hr_id_compact", settlement.compact)
-      .eq("start_date", settlement.startDate)
-      .is("superseded_at", null)
-      .maybeSingle();
-    if (holderError || !holder) {
-      logError("Automated payroll: CRM leave settlement slot is held but could not be read — nothing was retired", {
-        labels,
-        error: holderError ?? firstAttempt.error,
-      });
-      continue;
-    }
-
-    const holderRow = holder as { id: string; run_id: string | null; decided_by: string | null };
-    if (!input.runId || String(holderRow.run_id ?? "") !== input.runId) {
-      logError("Automated payroll: CRM leave settlement slot is held by a decision this run did not make — left alone", {
-        labels: {
-          ...labels,
-          event: "automated_payroll_crm_leave_balance_settlement_slot_held_by_another_decider",
-          heldByRunId: holderRow.run_id ?? null,
-          heldByDecider: holderRow.decided_by ?? null,
-        },
-      });
-      continue;
-    }
-
-    // This run's own earlier answer for the same employee+start_date — the re-confirm case.
-    const { error: supersedeError } = await supabase
-      .from("payroll_copilot_vacation_settlements")
-      .update({ superseded_at: new Date().toISOString() })
-      .eq("id", holderRow.id)
-      .is("superseded_at", null);
-    if (supersedeError) {
-      logError("Automated payroll: CRM leave settlement supersede failed — the earlier row still stands", {
-        labels: { ...labels, event: "automated_payroll_crm_leave_balance_settlement_supersede_failed" },
-        error: supersedeError,
-      });
-      continue;
-    }
-
-    const retry = await supabase.from("payroll_copilot_vacation_settlements").insert(row);
-    if (retry.error) {
-      logError("Automated payroll: CRM leave settlement was retired and its replacement failed to insert", {
-        labels: { ...labels, event: "automated_payroll_crm_leave_balance_settlement_replacement_failed" },
-        error: retry.error,
-      });
-      continue;
-    }
-    settled += 1;
-  }
-  return { settled };
-}
 
 /**
  * Unpaid-vacation deductions for continuing two-part employees, sourced from the

@@ -1329,7 +1329,7 @@ import { runAutomatedPayrollDismissalSettlementTests } from "./automated-payroll
 import { runAutomatedPayrollInsuranceWageTests } from "./automated-payroll-insurance-wage.test.ts";
 import { runPayrollReadySheetLeaverProrationTests } from "./payroll-ready-sheet-leaver-proration.test.ts";
 import { runAutomatedPayrollVacationReconfirmTests } from "./automated-payroll-vacation-reconfirm.test.ts";
-import { runAutomatedPayrollCrmLeaveSettlementSlotTests } from "./automated-payroll-crm-leave-settlement-slot.test.ts";
+import { runAutomatedPayrollCrmLeaveOneMechanismTests } from "./automated-payroll-crm-leave-one-mechanism.test.ts";
 import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-drift.test.ts";
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
 import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
@@ -2458,8 +2458,8 @@ await runTest(
   runAutomatedPayrollVacationReconfirmTests,
 );
 await runTest(
-  "automated payroll: a run never retires a leave settlement it cannot replace, nor one it did not write",
-  runAutomatedPayrollCrmLeaveSettlementSlotTests,
+  "automated payroll: a CRM leave day reaches a leave balance by exactly one path",
+  runAutomatedPayrollCrmLeaveOneMechanismTests,
 );
 await runTest(
   "automated payroll: a confirmed deduction the Deductions module has since changed is surfaced",
