@@ -117,5 +117,28 @@ export function runCrmVacationDurationTests() {
     assert.equal(period.half_days, 1);
   }
 
-  console.log("crm vacation duration: per-date collapse passed (AM+PM = 1 day, AM+AM = 0.5)");
+  // ── Armed Forces Day 2026 is labelled on its OBSERVED date, 8 October ───────────
+  // Owner, 2026-10-01: 6 October 2026 falls on a TUESDAY, so the national day off is observed on
+  // Thursday 8 October. This map labels the days agents actually LOGGED as leave, so the observed
+  // date is the only one that belongs in it: 6 October stays a normal working day, where leave is
+  // an ordinary vacation and must never be excused as a national holiday.
+  {
+    assert.equal(
+      new Date("2026-10-06T00:00:00Z").getUTCDay(),
+      2,
+      "2026-10-06 must be a Tuesday — that is why the day off moved to Thursday 8 October",
+    );
+    assert.equal(
+      buildVacationPeriod([day("2026-10-08", null)]).national_holiday,
+      "Armed Forces Day",
+      "the observed day off, Thursday 8 October, carries the holiday name",
+    );
+    assert.equal(
+      buildVacationPeriod([day("2026-10-06", null)]).national_holiday,
+      null,
+      "6 October 2026 is a working day — leave logged on it is an ordinary vacation, not a national holiday",
+    );
+  }
+
+  console.log("crm vacation duration: per-date collapse passed (AM+PM = 1 day, AM+AM = 0.5); Armed Forces Day labelled on 8 October");
 }
