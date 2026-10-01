@@ -35,7 +35,8 @@ import {
   weekHasDecumulationGap,
 } from "@/lib/sales/weekly/decumulate";
 import { latestStockOnly } from "@/lib/sales/weekly/latest-stock";
-import { livePriceMap, liveSalesValue } from "@/lib/sales/weekly/live-price";
+import { livePriceMap, liveSalesValue, weeklyRowPeriod } from "@/lib/sales/weekly/live-price";
+import { productPeriodPricesFromRows, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
 import { narrowWeeklyRowsToOwnAreaShare, type WeeklyOwnAreaShare } from "@/lib/sales/weekly/own-area-share";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
@@ -1374,7 +1375,10 @@ export async function loadWeeklyDashboard(filters: {
   // Upload screen's Combined Report reads too:
   //   • Direct channel keeps its own sheet Value (locked invariant — never recompute from price).
   //   • A missing/zero current master price falls back to the stored value (never zero a row).
+  //   • A dated price covers its own months (Saginko: 170.52 from 2026-10 while the master stays
+  //     111.15), read off the row's cycle month — one month per de-cumulation group, so linear still.
   let priceMap = new Map<string, number>();
+  let datedPrices: Pick<ProductPeriodPrices, "priceFor"> | undefined;
   const mappedCodes = new Set<string>(); // master products that have a line (i.e. properly mapped)
   // product_code -> family NAME. Deliberately the name, not family_code: the code is NOT unique —
   // "DO" is shared by both Dopaminict and Dolabactin, so grouping on it would merge two families.
@@ -1382,6 +1386,7 @@ export async function loadWeeklyDashboard(filters: {
   try {
     const reference = await liveReferenceLoad;
     priceMap = livePriceMap(reference.products);
+    datedPrices = productPeriodPricesFromRows(reference.products, reference.productPriceOverrides ?? []);
     for (const masterProduct of reference.products) {
       const code = normalizeCode(masterProduct.productCode);
       if (!code) continue;
@@ -1395,8 +1400,15 @@ export async function loadWeeklyDashboard(filters: {
   if (priceMap.size > 0) {
     for (const row of allRows) {
       row.salesValue = liveSalesValue(
-        { distributorCode: row.distributorCode, productCode: row.productCode, netQty: row.netQty, storedValue: row.salesValue },
+        {
+          distributorCode: row.distributorCode,
+          productCode: row.productCode,
+          netQty: row.netQty,
+          storedValue: row.salesValue,
+          period: weeklyRowPeriod(row.cycleMonth, row.weekStart),
+        },
         priceMap,
+        datedPrices,
       );
     }
   }

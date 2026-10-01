@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
-import { pickDuplicateUploadClash, totalValueAtPeriod } from "../src/lib/sales/import-duplicate-guard.ts";
+import { pickDuplicateUploadClash, repriceableUploadRow, totalValueAtPeriod } from "../src/lib/sales/import-duplicate-guard.ts";
 import {
   validateDistributorSalesWorkbookBuffer,
   type SalesReferenceData,
@@ -186,7 +186,9 @@ export async function runImportStoredValuePeriodPriceTests() {
     total_qty: UNITS,
     total_value: SEPTEMBER_VALUE,
   };
-  const octoberRows = [{ isDirect: false, period: "2026-10", productCode: SAGINKO, value: UNITS * 170.52 }];
+  const octoberRows = [
+    repriceableUploadRow({ distributorCode: "PS", isDirect: false, period: "2026-10", productCode: SAGINKO, value: UNITS * 170.52 }),
+  ];
   const candidate = { fileName: "overseas.xlsx", period: "2026-10", totalRows: 1, totalQty: UNITS, totalValue: OCTOBER_VALUE };
   assert.equal(
     pickDuplicateUploadClash([storedSeptember], candidate),
@@ -210,6 +212,26 @@ export async function runImportStoredValuePeriodPriceTests() {
     "and a different file is still a different file — the figures still have to agree",
   );
 
+  // An Office file is units × the MASTER price in EVERY month (the owner's locked Office rule,
+  // office-allocation.ts), so the same Office pivot loaded again as October carries September's very
+  // total. Re-pricing it to September would shrink it to 216,120.95 and let it walk past (review of
+  // #5030, 2026-10-01) — it is compared at face value, exactly as before this change.
+  const officeRow = { distributorCode: "Office", isDirect: false, period: "2026-10", productCode: SAGINKO, value: SEPTEMBER_VALUE };
+  const officeOctober = [repriceableUploadRow(officeRow)];
+  assert.equal(
+    pickDuplicateUploadClash([{ ...storedSeptember, file_name: "office.xlsx" }], {
+      ...candidate,
+      fileName: "office.xlsx",
+      totalValue: SEPTEMBER_VALUE,
+      totalValueAt: (period) => totalValueAtPeriod(officeOctober, prices, period),
+    })?.id,
+    "batch-sep",
+    "an Office file, valued at the master price in every month, loaded again as October is still caught",
+  );
+  assert.equal(repriceableUploadRow({ ...officeRow, distributorCode: " office " }).keepsValue, true, "Office is read case-blind");
+  assert.equal(repriceableUploadRow({ ...officeRow, distributorCode: "Direct", isDirect: true }).keepsValue, true, "a direct deal keeps its value");
+  assert.equal(octoberRows[0].keepsValue, false, "control: a distributor's row follows its month's price");
+
   // ── 5. Wiring the behaviour above cannot see: every production path hands the prices on ────────
   const loader = sourceOf("monthly-distributor-import.ts", "export async function loadSalesReferenceData(");
   assert.match(loader, /\.from\("source_of_sales_product_price_history"\)/, "loadSalesReferenceData reads the dated overrides");
@@ -224,7 +246,9 @@ export async function runImportStoredValuePeriodPriceTests() {
     ["monthly-distributor-import.ts", "export async function persistDistributorSalesUpload("],
     ["normalizer/service.ts", "export async function persistNormalizedBatch("],
   ] as const) {
-    assert.match(sourceOf(file, signature), /totalValueAt:/, `${signature} compares stored batches on their own month's price`);
+    const step = sourceOf(file, signature);
+    assert.match(step, /totalValueAt:/, `${signature} compares stored batches on their own month's price`);
+    assert.match(step, /repriceableUploadRow\(\{\s*distributorCode:/, `${signature} lets Direct and Office rows keep their value`);
   }
   const upload = readFileSync(new URL("../src/lib/sales/sales-upload.ts", import.meta.url), "utf8");
   assert.equal(

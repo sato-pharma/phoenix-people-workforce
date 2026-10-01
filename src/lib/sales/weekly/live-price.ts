@@ -10,6 +10,12 @@
 //
 //   • Direct keeps its own sheet Value (locked invariant — never recomputed from price).
 //   • A product with no current positive master price keeps its stored value (never zero a row).
+//   • A DATED price wins for the month it covers (owner, 2026-10-01: weekly Saginko at 170.52 from
+//     October too). Saginko is 111.15 through 2026-09 and 170.52 from 2026-10 while its master price stays
+//     111.15, so "today's price" alone would value October's weekly Saginko at 111.15 beside a closing at
+//     170.52. Every product with no dated price is priced exactly as before.
+
+import type { ProductPeriodPrices } from "@/lib/sales/product-period-price";
 
 const normalizeCode = (value: string | null | undefined) => (value ?? "").trim().toUpperCase();
 
@@ -27,13 +33,36 @@ export function livePriceMap(
   return prices;
 }
 
-/** The row's value at today's price; the stored value where the rule above says to keep it. */
+/**
+ * The month a weekly row is reported under, `YYYY-MM`: its month-cycle when the upload is tagged with
+ * one, else the month its week starts in. Null when it carries neither.
+ */
+export function weeklyRowPeriod(cycleMonth: string | null | undefined, weekStart: string | null | undefined): string | null {
+  const month = (value: string | null | undefined) => /^(\d{4}-\d{2})/.exec(String(value ?? "").trim())?.[1] ?? null;
+  return month(cycleMonth) ?? month(weekStart);
+}
+
+/**
+ * The row's value at today's price — or at the dated price that covers the row's month, where one does —
+ * and the stored value where the rule above says to keep it.
+ */
 export function liveSalesValue(
-  row: { distributorCode: string | null | undefined; productCode: string | null | undefined; netQty: number; storedValue: number },
+  row: {
+    distributorCode: string | null | undefined;
+    productCode: string | null | undefined;
+    netQty: number;
+    storedValue: number;
+    /** The month the row is reported under (weeklyRowPeriod). */
+    period?: string | null;
+  },
   prices: ReadonlyMap<string, number>,
+  datedPrices?: Pick<ProductPeriodPrices, "priceFor">,
 ): number {
   if (normalizeCode(row.distributorCode) === "DIRECT") return row.storedValue;
-  const price = prices.get(normalizeCode(row.productCode));
+  const code = normalizeCode(row.productCode);
+  const price = prices.get(code);
   if (price == null) return row.storedValue;
-  return Number((row.netQty * price).toFixed(6));
+  const dated = datedPrices && row.period ? datedPrices.priceFor(code, row.period) : null;
+  const unit = dated != null && dated > 0 ? dated : price;
+  return Number((row.netQty * unit).toFixed(6));
 }

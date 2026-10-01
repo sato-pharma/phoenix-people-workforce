@@ -5,7 +5,7 @@ import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { logError } from "@/lib/observability/log";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { collectUnmappedProducts, computeBrickCoverage, countBrickDrift, saveBrickCoverageSnapshot } from "@/lib/sales/import-coverage";
-import { assertNotADuplicateUpload, totalValueAtPeriod } from "@/lib/sales/import-duplicate-guard";
+import { assertNotADuplicateUpload, repriceableUploadRow, totalValueAtPeriod } from "@/lib/sales/import-duplicate-guard";
 import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { loadProductPeriodPrices } from "@/lib/sales/product-period-price";
@@ -501,7 +501,15 @@ export async function persistNormalizedBatch(input: {
   // exactly the figures the insert below stores (see import-duplicate-guard.ts). Each stored batch is
   // compared on its own month's price basis, so a file re-dated across a reprice still matches.
   const prices = await loadProductPeriodPrices();
-  const repriceable = rows.map((r) => ({ isDirect: r.isDirect, period: r.invoiceDate, productCode: r.productCode, value: r.value }));
+  const repriceable = rows.map((r) =>
+    repriceableUploadRow({
+      distributorCode: input.distributorCode,
+      isDirect: r.isDirect,
+      period: r.invoiceDate,
+      productCode: r.productCode,
+      value: r.value,
+    }),
+  );
   await assertNotADuplicateUpload({
     distributorCode: input.distributorCode,
     fileName: input.fileName,
