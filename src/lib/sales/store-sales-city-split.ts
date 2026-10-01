@@ -67,29 +67,61 @@ import { isStoreCustomerForPeriod } from "@/lib/sales/customer-channel";
 export const STORE_CITY_SPLIT_ENABLED = true;
 
 /**
- * The FIRST period the split applies to. Owner ruling 2026-09-04, immediately after the flag was
- * turned on and the retroactive restatement was measured for him: "DONT TOUCH JULY APPLY ON AUGUST
- * AND UPCOMING".
+ * The FIRST period the split applies to. Owner ruling 2026-10-02: **"FIX JULY"** — July 2026 takes
+ * the wholesaler city split too, so this moves from `2026-08` to `2026-07`.
  *
- * WHY THIS EXISTS AT ALL. The closing matrix re-derives every month live, so a bare boolean is
- * retroactive to the first period on record — turning the split on moved 296,444.88 EGP across 34
- * areas in his PUBLISHED July CNS closing, 96,561.67 in July Anti Infective and 27,016.88 in July
- * Pedia, and the publication drift check cannot see any of it (it compares UNITS only, and the
- * split preserves each line's unit total while moving units between areas). July is published and
- * its numbers are the managers' copy; August is the month being reconciled when the rule was
- * turned on. So the rule starts at August.
+ * 🔴 JUNE AND EARLIER ARE DELIBERATELY UNTOUCHED, and that is why this is `2026-07` and not a bare
+ * boolean. The gate is a FLOOR (`period >= this`), so `2026-07` reaches exactly July, August and
+ * September and leaves January–June as published. Measured on live data 2026-10-02, the months this
+ * does NOT reach would each have moved between areas: Jan 262,846.70, Feb 252,084.29,
+ * Mar 301,764.29, Apr 1,807,659.82, May 573,326.77, Jun 936,655.07 EGP. Setting this to `2026-01`,
+ * or removing it in favour of the bare flag, restates all six at once with no signal anywhere — see
+ * WHY A DATE EXISTS below. He asked for July; only July moves.
+ *
+ * WHAT IT COSTS IN JULY, measured the same day through this module on the live July rows:
+ * Anti Infective 18 warehouses / 55,198.09 EGP across 18 areas; CNS 79 / 264,197.76 across 34;
+ * Pedia 13 / 35,859.37 across 18. In Menoufia — the district that prompted the ruling — Menoufia 1
+ * goes 142.86% → 81.78% and Menoufia 2 goes 73.99% → 126.82%. Dakahlia 2 goes slightly NEGATIVE
+ * (10,806.60 → −650.07), because ريونيون للتجارةوالاستثمار's −34,370.00 July return sits whole on
+ * Dakahlia 1 and the split spreads it outward. The owner was shown all of that before deciding.
+ *
+ * 🔴 THIS CONSTANT ALONE DOES NOT MOVE THE ACHIEVEMENT, AND THAT IS THE TRAP. The attribution
+ * engine does not recompute the split: `au.f_monthly_attribution` READS `au.monthly_store_split_net`,
+ * and `phx_write_monthly_store_split_net` REFUSES a period that has a live publication row — it
+ * returns 0 with a notice, not an error (the freeze of 20260927213000). July is published, so until
+ * it is unpublished the net stays empty; and an empty frozen net makes
+ * `loadFrozenStoreSplitIfPublished` fall through to the LIVE recompute, so the Closing tab and the
+ * export would show July split while the keycard, the boards, Employee 360 and the incentive still
+ * read the announced number. Shipping this constant is step 2 of 5, never the whole fix. The order
+ * that avoids that divergence: owner unpublishes July → this ships → backfill the net
+ * (`scripts/backfill-attribution-store-split.ts --apply 2026-07`) → re-stamp the rollup
+ * (`au.f_refresh_monthly_attribution('2026-07')`) → owner re-publishes July.
+ *
+ * WHY A DATE EXISTS AT ALL, kept because it is still true of every month before July. The closing
+ * matrix re-derives every month live, so a bare boolean is retroactive to the first period on
+ * record, and the publication drift check cannot see it: that check compares UNITS only, and the
+ * split preserves each line's unit total while moving units between areas. A restated month
+ * therefore reports no drift at all.
+ *
+ * PREVIOUS STATE. `2026-08` from 2026-09-04 to 2026-10-02, on his ruling that day — "DONT TOUCH
+ * JULY APPLY ON AUGUST AND UPCOMING" — made immediately after the retroactive cost was first
+ * measured for him (296,444.88 EGP across 34 areas in July CNS alone). He reversed it on 2026-10-02
+ * after auditing which customers and which months the split had actually touched. Moving this
+ * constant in EITHER direction is an owner decision, never a code cleanup and never a way to make a
+ * reconciliation go green.
  *
  * A plain string compare is correct and deliberate: periods are `YYYY-MM`, which sorts
  * lexicographically in calendar order. Anything malformed or absent falls to NOT active — the safe
  * direction, since failing to split leaves a number where it already was, while splitting a month
  * that should not be split silently moves money between reps.
  */
-export const STORE_CITY_SPLIT_FROM_PERIOD = "2026-08";
+export const STORE_CITY_SPLIT_FROM_PERIOD = "2026-07";
 
 /**
  * Is the wholesaler city split applied to this period? BOTH gates: the master flag and the start
  * period. Every apply point asks this, never the bare flag — a caller that reads
- * STORE_CITY_SPLIT_ENABLED alone would split July.
+ * STORE_CITY_SPLIT_ENABLED alone would split June 2026 and every month before it, which are
+ * published and which the owner's 2026-10-02 "FIX JULY" ruling deliberately did not reach.
  */
 export function isStoreCitySplitActive(period: string | null | undefined): boolean {
   if (!STORE_CITY_SPLIT_ENABLED) return false;

@@ -361,7 +361,7 @@ function runRouteWiringChecks() {
     "the shared split may be skipped only under a row-level filter AND only where the split is "
       + "active FOR THAT PERIOD — a null here makes prepareClosingStoreSplit derive a live split "
       + "from the rows, so asking the bare flag instead of the period would split a row-level "
-      + "filtered export of July while the screen's July stays unsplit",
+      + "filtered export of June while the screen's June stays unsplit",
   );
   // OWNER RULING 2026-09-04: the wholesaler city split is ON, on every city — "شغل تقسيم المخازن
   // على كل المدن". It was OFF from 2026-08-10 to 2026-09-04; his August Anti Infective manual sheet
@@ -374,21 +374,29 @@ function runRouteWiringChecks() {
     "the wholesaler city split must stay ON until the owner explicitly orders it back off",
   );
 
-  // OWNER RULING 2026-09-04, the same day and immediately after the flag went on, once the
-  // retroactive restatement was measured for him: "DONT TOUCH JULY APPLY ON AUGUST AND UPCOMING".
-  // July 2026 is PUBLISHED — it is the managers' copy — and turning the split on without this gate
-  // moved 296,444.88 EGP across 34 areas in July CNS alone, invisibly: the publication drift check
-  // compares UNITS only, and the split preserves each line's unit total while moving units between
-  // areas. Moving this constant EARLIER restates a published month with no drift signal at all.
+  // OWNER RULING 2026-10-02: "FIX JULY" — July 2026 takes the split too, so the gate moved from
+  // 2026-08 to 2026-07. It had read 2026-08 since 2026-09-04, on his ruling that day ("DONT TOUCH
+  // JULY APPLY ON AUGUST AND UPCOMING"), and he reversed it after auditing which customers and
+  // months the split had actually touched.
+  //
+  // 🔴 JUNE IS STILL THE LINE, AND THAT IS WHAT THIS ASSERTION GUARDS. The gate is a floor, so
+  // 2026-07 reaches July, August and September and nothing earlier. January–June are published and
+  // he did not ask for them: measured 2026-10-02 they would have moved 262,846.70 / 252,084.29 /
+  // 301,764.29 / 1,807,659.82 / 573,326.77 / 936,655.07 EGP between areas, and nothing would report
+  // it — the publication drift check compares UNITS only, and the split preserves each line's unit
+  // total while moving units between areas. Moving this constant EARLIER than 2026-07 restates six
+  // published months with no drift signal at all. Either direction is an owner decision.
   assert.equal(
     STORE_CITY_SPLIT_FROM_PERIOD,
-    "2026-08",
-    "the city split starts at August 2026 — July and earlier keep the numbers they were published with",
+    "2026-07",
+    "the city split starts at July 2026 (owner, 2026-10-02 'FIX JULY') — June and earlier keep the "
+      + "numbers they were published with",
   );
-  assert.equal(isStoreCitySplitActive("2026-07"), false, "July 2026 must never be split");
   assert.equal(isStoreCitySplitActive("2026-06"), false, "June 2026 must never be split");
-  assert.equal(isStoreCitySplitActive("2026-08"), true, "August 2026 is the first split month");
-  assert.equal(isStoreCitySplitActive("2026-09"), true, "every month after August is split");
+  assert.equal(isStoreCitySplitActive("2026-05"), false, "May 2026 must never be split");
+  assert.equal(isStoreCitySplitActive("2026-07"), true, "July 2026 is now the first split month");
+  assert.equal(isStoreCitySplitActive("2026-08"), true, "August 2026 was the first split month before the ruling");
+  assert.equal(isStoreCitySplitActive("2026-09"), true, "every month after July is split");
   assert.equal(isStoreCitySplitActive("2027-01"), true, "the gate is a floor, not a window");
   // Anything unparseable falls to NOT active. That is the safe direction: not splitting leaves a
   // number where it already was, while splitting a month that should not be moves money between

@@ -103,11 +103,13 @@ function pediaTotals(rows: readonly { areaCode: string; salesValue: number }[]):
 }
 
 export async function runSalesTruthStoreSplitTests(): Promise<void> {
-  // ── 1. The split is live for August and not for July ───────────────────────────────────────────
-  // loadClosingStoreSplitNet answers empty for every month before 2026-08, which is why July always
-  // reconciled and the gap only opened when August closed.
-  assert.equal(isStoreCitySplitActive("2026-07"), false, "July keeps the numbers it was published with");
-  assert.equal(isStoreCitySplitActive("2026-08"), true, "the city split and El Qema's rule start in August");
+  // ── 1. The split is live from July, and not before it ──────────────────────────────────────────
+  // loadClosingStoreSplitNet answers empty for every month before the gate, which is why the gap
+  // first opened when August closed. The gate moved to 2026-07 on the owner's "FIX JULY" ruling
+  // (2026-10-02), so June is now the first month that keeps the numbers it was published with.
+  assert.equal(isStoreCitySplitActive("2026-06"), false, "June keeps the numbers it was published with");
+  assert.equal(isStoreCitySplitActive("2026-07"), true, "July splits since the owner's 'FIX JULY' ruling");
+  assert.equal(isStoreCitySplitActive("2026-08"), true, "the city split and El Qema's rule were live from August");
 
   // ── 2. THE REGRESSION: filed rows against the closing's split, with and without its net ───────
   const split = splitStoreSalesAcrossCityAreas(AUGUST_ROWS, "2026-08", PEDIA_AUGUST_REGIONS);
