@@ -1397,7 +1397,11 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
                       cta="Open"
                       detail={`${kpis.visitedDoctors} of ${kpis.plannedDoctors} covered · ${kpis.monthLabel}`}
                       headline="Planned doctors not seen yet"
-                      href="/employee-portals/kpis"
+                      // The month this row just NAMED, carried through to the board. The KPIs page
+                      // reads `?month=YYYY-MM` and otherwise opens on the running month, so a bare
+                      // link made the row say September and its own Open button show October. It was
+                      // right only while this page could show nothing but the running month.
+                      href={`/employee-portals/kpis?month=${kpiMonth}`}
                       rail="bg-orange-500"
                     />
                   )}
