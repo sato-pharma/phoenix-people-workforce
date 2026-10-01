@@ -28,6 +28,7 @@ import {
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory } from "@/lib/phoenix-crm/server/territory";
 import { applyAchievementAreaMerges, foldAreaCodeForLine } from "@/lib/sales/closing-area-merges";
@@ -371,6 +372,12 @@ export async function saveForecast(
       seat_id: seat.seatId,
     },
   });
+  // His district manager hears that it is in — in-app, once a day (owner, 2026-10-01). Never throws,
+  // so an alert that cannot be delivered never undoes the forecast he just saved.
+  await notifyPhoenixCrm(
+    { kind: "forecast_sent", org: viewer.org, seat, day: viewer.visitDay, repHrId: seat.occupantHrId ?? viewer.hrId },
+    isTest,
+  );
   return buildForm(viewer, seat, isTest);
 }
 

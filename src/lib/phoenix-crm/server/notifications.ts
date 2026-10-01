@@ -18,6 +18,11 @@
  *   - a plan is approved or returned     → the rep; a plan the SFE Manager returns also tells the
  *                                          reviewing manager, whose approval it undoes.
  *
+ *   - a CNS rep sends his daily forecast → the territory's reviewing manager (his district manager),
+ *                                          IN-APP ONLY, once a day (owner, 2026-10-01: "an in-app
+ *                                          alert to the district manager when a CNS rep sends his
+ *                                          daily forecast"). A re-send updates the same alert.
+ *
  * A PLANNED visit tells nobody: double and chain visits count straight away, and a far visit is
  * flagged on the manager's screens rather than pushed (about 600 visits a working day). An OFF-PLAN
  * visit is the one exception (owner, 2026-09-26) — it counts in nothing until it is approved, so the
@@ -125,6 +130,14 @@ export type PhoenixCrmNotice =
       enteredByAdmin?: boolean;
     }
   | {
+      kind: "forecast_sent";
+      org: OrgIndex;
+      seat: OrgSeat;
+      /** The forecast's own Cairo business day, as the save wrote it. */
+      day: string;
+      repHrId: string;
+    }
+  | {
       kind: "unplanned_visit_decided";
       org: OrgIndex;
       seat: OrgSeat;
@@ -143,10 +156,16 @@ type Delivery = {
   eventType: string;
   title: string;
   message: string;
-  tab: "team" | "list" | "plan" | "visits";
+  tab: "team" | "list" | "plan" | "visits" | "forecast";
   recordId: string;
   idempotencyKey: string;
   subjectHrId: string | null;
+  /**
+   * In the bell and nowhere else. Only the daily forecast's alert sets it: the owner asked for an
+   * IN-APP alert, and with some 26 CNS reps sending one every working day, a Telegram ping for each
+   * would bury the notices that are waiting for a decision.
+   */
+  inAppOnly?: boolean;
 };
 
 /**
@@ -290,6 +309,28 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | null> {
     };
   }
 
+  if (notice.kind === "forecast_sent") {
+    // The territory's reviewing manager — his district manager, the same person his weekly plan goes
+    // to (an acting DM included). A chain with nobody in it tells nobody; the board still shows it.
+    const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
+    if (!reviewer) return null;
+    const names = await loadPeopleNames([notice.repHrId]);
+    const rep = nameOf(names, notice.repHrId, "A rep");
+    return {
+      recipients: [reviewer.hrId],
+      eventType: "forecast_sent",
+      title: `Daily forecast from ${rep}`,
+      message: `${rep} sent the ${territory} forecast for ${formatPhoenixLongDate(notice.day)}. Your team's forecasts for the day are on the Forecast board in Phoenix CRM.`,
+      tab: "forecast",
+      recordId: `${notice.seat.seatId}:${notice.day}`,
+      // ONE alert per territory and day: the key does not move when he corrects his boxes and sends
+      // again, so the re-send updates the alert already in the manager's bell instead of adding one.
+      idempotencyKey: `phoenix_crm:forecast:${notice.seat.seatId}:${notice.day}:sent`,
+      subjectHrId: notice.repHrId,
+      inAppOnly: true,
+    };
+  }
+
   if (notice.kind === "unplanned_visit_raised") {
     // The reviewing manager, exactly as a grade request goes to him. A territory whose chain is vacant
     // starts at the SFE stage, and the SFE Manager is a ROLE with no seat in the organogram — there is
@@ -384,9 +425,9 @@ export async function notifyPhoenixCrm(notice: PhoenixCrmNotice, isTest: boolean
       await createSystemNotificationForRecipients(
         {
           ...base,
-          channels: ["in_app", "telegram"],
+          channels: delivery.inAppOnly ? ["in_app"] : ["in_app", "telegram"],
           metadata: { idempotencyKey: delivery.idempotencyKey, seatId: notice.seat.seatId },
-          telegram: { ctaLabel: "Open Phoenix CRM", ctaUrl: actionUrl },
+          ...(delivery.inAppOnly ? {} : { telegram: { ctaLabel: "Open Phoenix CRM", ctaUrl: actionUrl } }),
         },
         delivery.recipients,
       );
