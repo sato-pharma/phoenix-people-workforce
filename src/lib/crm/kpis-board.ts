@@ -77,6 +77,7 @@ import { keepMedicalRepsOnly } from "@/lib/crm/medical-rep";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
+import { resolveKpiBoardAgents } from "@/lib/crm/kpi-board-agents";
 import { countCallRateWorkingDays } from "@/lib/crm/call-rate";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import {
@@ -1101,21 +1102,39 @@ export async function getKpisBoard(input: {
   // both CRM sources for the days he worked, and dropping his identity here would print those days
   // against a blank line and area — the reads door already decides who is excluded, and this call
   // is only ever putting a name to an id.
+  // ONLY THESE REPS' ROWS, when the scope is a few people (2026-10-01): a medical rep's landing tile
+  // read the whole company's month for his one row. crm/kpi-board-agents.ts says why the narrowed
+  // rows are the same rows; null keeps the company-wide read. The window spans both loaders' reads.
+  // NOT FOR THE COVERAGE TAB: its doctor list names an off-plan doctor from ANOTHER rep's plan row
+  // (buildRepDoctorListsBoard, "a doctor off THIS rep's plan is usually on another's"), and a read
+  // of these reps alone would print that doctor as a bare id. Every other output of the doctor
+  // lists the board reads is per rep, so only that tab keeps the company-wide read.
+  const agentsRead = input.coverageDoctors
+    ? Promise.resolve(null)
+    : resolveKpiBoardAgents(scope, {
+        from: callRange.dateFrom < range.dateFrom ? callRange.dateFrom : range.dateFrom,
+        to: callRange.dateTo > range.windowEnd ? callRange.dateTo : range.windowEnd,
+      });
   const [callRate, docList, employees, windowHolidays, cutover] = await Promise.all([
     // Through YESTERDAY (ruling C1): its working days are the denominator every rate on this board
     // divides by, the rep KPI reports below included.
-    loadCallRateReport({ dateFrom: callRange.dateFrom, dateTo: callRange.dateTo }),
+    agentsRead.then((agents) =>
+      loadCallRateReport({ dateFrom: callRange.dateFrom, dateTo: callRange.dateTo, ...(agents ? { agents } : {}) }),
+    ),
     // THE PERIOD REACHES BOTH KPIs. Until 2026-09-04 this was `{ month: input.month }` and the
     // picker moved the call rate alone, so "Week 1" scored week 1's calls against the whole month's
     // doctor list. `windowEnd`, not `dateTo`: dateTo is capped at today, and capping the plan side
     // is exactly the shrinking denominator this change removed.
-    getRepDoctorLists({
-      month: input.month,
-      window: { from: range.dateFrom, to: range.windowEnd },
-      // The Coverage tab picks one rep's doctors out of this list, so it must not be cut at the
-      // drill-down cap. The rows are in memory either way; only the chosen rep's leave this file.
-      uncapped: Boolean(input.coverageDoctors),
-    }),
+    agentsRead.then((agents) =>
+      getRepDoctorLists({
+        month: input.month,
+        window: { from: range.dateFrom, to: range.windowEnd },
+        // The Coverage tab picks one rep's doctors out of this list, so it must not be cut at the
+        // drill-down cap. The rows are in memory either way; only the chosen rep's leave this file.
+        uncapped: Boolean(input.coverageDoctors),
+        ...(agents ? { agents } : {}),
+      }),
+    ),
     getEmployeeDirectoryRows({ includeInactive: true }),
     // The window's OWN end, not today. callRate.workingDays counts the days worked so far; this
     // counts the days the window contains. The pair is what separates "the team is behind" from

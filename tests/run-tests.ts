@@ -2194,6 +2194,7 @@ import { runDockerfileParseGateTests } from "./dockerfile-parse-gate.test.ts";
 import { runPortalLinkPrefetchTests } from "./portal-link-prefetch.test.ts";
 import { runPortalRepNavigationSpeedTests } from "./portal-rep-navigation-speed.test.ts";
 import { runPhoenixCrmForecastWhatsAppTests } from "./phoenix-crm-forecast-whatsapp.test.ts";
+import { runKpiBoardAgentsTests } from "./kpi-board-agents.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -8184,6 +8185,10 @@ await runTest(
 await runTest(
   "the agreed forecast reaches WhatsApp with nothing typed — the picker form, no phone number, and the Cairo day never parsed as a Date",
   runPhoenixCrmForecastWhatsAppTests,
+);
+await runTest(
+  "the KPIs board reads only its scope's reps and every figure is the company-wide one (a rep named only on plan rows, a first plan row with no hr id, a native rep, a reused CRM slot; small scopes only, anything doubtful reads company-wide)",
+  runKpiBoardAgentsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

@@ -156,8 +156,9 @@ export function runKpisCallRateThroughYesterdayTests() {
       board.includes("repsPlansRange(input.month, input.todayIso, input.period, CALL_RATE_THROUGH_YESTERDAY)"),
       "the board builds a through-yesterday call-rate window",
     );
+    // The scope's reps may ride along (2026-10-01, crm/kpi-board-agents.ts); the window may not move.
     assert.ok(
-      board.includes("loadCallRateReport({ dateFrom: callRange.dateFrom, dateTo: callRange.dateTo })"),
+      /loadCallRateReport\(\{ dateFrom: callRange\.dateFrom, dateTo: callRange\.dateTo(?:, \.\.\.\(agents \? \{ agents \} : \{\}\))? \}\)/.test(board),
       "the call-rate report — every row's rate and working days — reads it",
     );
     assert.equal(
