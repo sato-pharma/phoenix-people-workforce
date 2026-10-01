@@ -491,7 +491,7 @@ export async function buildRepTabletProfile(
     error = `The profile was created but ${missing.join(" and ")} did not attach, so it was NOT published and no tablet can be put on it. ${restrictions.error ?? passcode.error ?? "ManageEngine gave no reason."}`;
   }
 
-  await writeAudit({
+  await writeRequiredAuditLog({
     actorLoginId: actor,
     entityId: profileId,
     entityType: "manageengine_profile",
