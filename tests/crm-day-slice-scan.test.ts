@@ -6,6 +6,8 @@ import {
   checkinFilterNamesPeople,
   compareCheckinScanOrder,
   compareUuidText,
+  DOUBLE_VISIT_SLICE_DAYS,
+  dayScanRuns,
   dayScanSlices,
   readCompanyWindow,
   visitFilterNamesPeople,
@@ -261,6 +263,62 @@ async function runReadCompanyWindowTests() {
   );
 }
 
+// THE DOUBLE-VISIT WINDOW IS READ A WEEK PER REQUEST (2026-10-02, "speed up the slowest portal page"):
+// a manager's landing read every double visit since January in about 275 one-day requests, 4.0–4.9 s.
+// A run of days is one request bounded by its first and last day, so these pin that the runs cover
+// the window once each and that the rows come back exactly as the single id scan returned them —
+// over consecutive days and over a listed-day read, where only the `visit_date IN` filter keeps an
+// unlisted day out of a run's range.
+function runDayScanRunsTests() {
+  const days: string[] = dayScanSlices("2026-08-01", "2026-08-10") ?? assert.fail("ten days slice");
+  assert.deepEqual(dayScanRuns(days, 1), days.map((day) => [day]), "one day per request by default");
+  assert.deepEqual(dayScanRuns(days, undefined), days.map((day) => [day]));
+  for (const bad of [0, -3, 2.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.deepEqual(dayScanRuns(days, bad), days.map((day) => [day]), `a size of ${bad} keeps one day per request`);
+  }
+  for (const size of [2, 3, 7, 10, 40]) {
+    const runs = dayScanRuns(days, size);
+    assert.deepEqual(runs.flat(), days, `size ${size}: every day exactly once, in order`);
+    assert.ok(runs.every((run) => run.length >= 1 && run.length <= size), `size ${size}: no run longer than asked`);
+    assert.equal(runs.length, Math.ceil(days.length / size), `size ${size}: as few runs as the size allows`);
+  }
+  assert.deepEqual(dayScanRuns([], 7), [], "no days, no requests");
+  assert.ok(DOUBLE_VISIT_SLICE_DAYS > 1, "the double-visit door asks for runs");
+}
+
+async function runReadCompanyWindowRunTests() {
+  const random = prng(1002);
+  const days: string[] = dayScanSlices("2026-01-01", "2026-03-31") ?? assert.fail("a quarter slices");
+  const pageSize = 25;
+  type Visit = { day: string; id: string };
+  const visitOrder = (a: Visit, b: Visit) => compareUuidText(a.id, b.id);
+  const table: Visit[] = Array.from({ length: 900 }, () => ({ day: days[Math.floor(random() * days.length)], id: randomUuid(random) }));
+  for (const listed of [null, new Set(days.filter(() => random() < 0.3))]) {
+    const wanted = table.filter((row) => !listed || listed.has(row.day));
+    const windowDays = listed ? days.filter((day) => listed.has(day)) : days;
+    for (const size of [1, 3, 7, 14]) {
+      const requested: string[][] = [];
+      const rows = await readCompanyWindow<Visit, readonly string[]>({
+        days: dayScanRuns(windowDays, size),
+        pageSize,
+        probe: async () => [...wanted].reverse().slice(0, pageSize),
+        // The request the door sends: the run's first-to-last range, inside the listed-day filter.
+        scanDay: async (run) => {
+          requested.push([...run]);
+          return table
+            .filter((row) => row.day >= run[0] && row.day <= run[run.length - 1] && (!listed || listed.has(row.day)))
+            .sort(visitOrder);
+        },
+        order: visitOrder,
+        sortDays: true,
+      });
+      const label = `${listed ? "listed days" : "every day"}, runs of ${size}`;
+      assert.deepEqual(rows, [...wanted].sort(visitOrder), `${label}: the rows and order the single id scan returned`);
+      assert.equal(requested.length, Math.ceil(windowDays.length / size), `${label}: one request per run`);
+    }
+  }
+}
+
 function runCheckinDayBoundaryTests() {
   // Each day request is the half-open [day 00:00, next day 00:00) INSIDE the caller's own
   // [from 00:00:00, to 23:59:59], so every check-in the whole window holds falls in exactly one day.
@@ -290,7 +348,15 @@ function runScanWiringGuards() {
 
   const visits = functionBody(source, "export async function queryVisits");
   assert.match(visits, /visitFilterNamesPeople\(options\) \? null : dayScanSlices\(options\.dateFrom, options\.dateTo\)/, "queryVisits slices only a read that names nobody");
-  assert.match(visits, /if \(day\) query = query\.eq\("visit_date", day\);/, "queryVisits narrows each request to its day");
+  assert.match(visits, /if \(run && run\.length === 1\) query = query\.eq\("visit_date", run\[0\]\);/, "queryVisits narrows a one-day request to its day, as before runs");
+  assert.match(
+    visits,
+    /else if \(run\) query = query\.gte\("visit_date", run\[0\]\)\.lte\("visit_date", run\[run\.length - 1\]\);/,
+    "a run is narrowed to its first and last day",
+  );
+  assert.match(visits, /days: dayScanRuns\(days, options\.sliceDays\),/, "the window is cut into the caller's runs, one day each by default");
+  const doubles = functionBody(source, "export async function getDoubleVisitRows");
+  assert.match(doubles, /sliceDays: options\.sliceDays \?\? DOUBLE_VISIT_SLICE_DAYS,/, "the double-visit door reads its sparse window a week per request");
   assert.match(visits, /await filtered\(\)\.limit\(pageSize\);/, "queryVisits probes with an UNORDERED page of the same filter");
   assert.match(visits, /order: \(a, b\) => compareUuidText\(a\.id, b\.id\),\s+sortDays: true,/, "queryVisits returns the joined days in id order");
 
@@ -348,6 +414,8 @@ export async function runCrmDaySliceScanTests() {
   runNamesPeopleTests();
   runOrderTests();
   await runReadCompanyWindowTests();
+  runDayScanRunsTests();
+  await runReadCompanyWindowRunTests();
   runCheckinDayBoundaryTests();
   runScanWiringGuards();
   runPlanScanWiringGuards();
