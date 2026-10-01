@@ -283,7 +283,7 @@ export function PlanWeekPanel({
           </span>
         }
         className="border-l-4 border-t border-slate-100 border-l-orange-500"
-        title={`Week ${week.weekNumber}`}
+        title={week.label}
       >
         <p className="break-words text-lg font-black leading-tight text-slate-950">{weekLabel(week.weekStart)}</p>
         <p className="mt-1 break-words text-sm font-bold text-slate-700">
@@ -292,6 +292,15 @@ export function PlanWeekPanel({
         <div className="mt-3">
           <CrmFacts facts={facts} />
         </div>
+
+        {/* The week this month opens with and does not own (owner, 2026-10-01). It is shown here so he
+            can reach his first days from the month he is planning — and told, in words, that the
+            month's own Send will not take it, which is the whole reason it was worth showing. */}
+        {week.leadingNote ? (
+          <CrmNote className="mt-3" title="These days are sent with the week before" tone="info">
+            {week.leadingNote}
+          </CrmNote>
+        ) : null}
 
         {/* The deadline, said once where he is working. Never a block: a late week is accepted and stamped. */}
         {viewerIsRep && week.overdue ? (

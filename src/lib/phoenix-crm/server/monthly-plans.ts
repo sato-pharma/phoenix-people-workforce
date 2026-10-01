@@ -25,6 +25,7 @@
  * who sends the whole month use the same board.
  */
 
+import { addDaysIso } from "@/lib/crm/dates";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
 import {
@@ -33,6 +34,7 @@ import {
   isIsoDay,
   isMonthKey,
   isRamadanDay,
+  leadingFieldWeekOfMonth,
   monthEndOf,
   monthlyPlanDueOn,
   monthStartOf,
@@ -173,11 +175,26 @@ export type MonthlyDoctorRow = DoctorMonthTally & {
   pending: boolean;
 };
 
+/** What the board calls the week a month opens with and does not own (owner, 2026-10-01). */
+export const LEADING_WEEK_LABEL = "First days";
+
 /** A field-week of the month, with its own status and its days (the derived weekly plan). */
 export type MonthlyWeekView = {
   weekStart: string;
-  /** "Week 1", "Week 2"… of this month. */
+  /** "Week 1", "Week 2"… of this month. 0 on the leading week, which belongs to another month. */
   weekNumber: number;
+  /** What the board calls it: "Week 1", or "First days" for the leading week. */
+  label: string;
+  /**
+   * 🔴 THE WEEK THIS MONTH OPENS WITH AND DOES NOT OWN (owner, 2026-10-01). It is the PREVIOUS month's
+   * last week, shown here because it holds this month's first field days — in FULL, all six of them,
+   * because it is one week with one plan row, one editable window and one send. It is not in
+   * `fieldWeeksOfMonth`, so it enters no meter, no call rate and no monthly cascade here: sending the
+   * month does NOT send it, which is the whole trap, so `leadingNote` says that in words.
+   */
+  leading: boolean;
+  /** On the leading week only: that it is sent on its own, with the month it belongs to. */
+  leadingNote: string | null;
   status: PhoenixCrmPlanStatus | null;
   statusLabel: string;
   days: PlanDayView[];
@@ -246,6 +263,9 @@ export async function loadMonthlyPlanner(
   const months = plannableMonths(today);
   const monthStart = resolveMonth(raw.month, months);
   const weeks = fieldWeeksOfMonth(monthStart);
+  // The week this month OPENS with and does not own — read beside the month's own weeks and kept out
+  // of every meter below (owner, 2026-10-01; calendar.ts `leadingFieldWeekOfMonth`).
+  const leadingWeek = leadingFieldWeekOfMonth(monthStart);
 
   // 🔴 TWO CHAINS SIDE BY SIDE, NOT THREE WAVES IN A ROW (2026-10-01, "slow to transfer between page
   // and page", Phoenix CRM first) — the weekly planner's own shape, see loadPlanner in plans.ts. The
@@ -257,28 +277,47 @@ export async function loadMonthlyPlanner(
   const supabase = getSupabaseAdmin();
   const ensured = ensureReferenceCustomers(seat, isTest);
   const planPartsRead = (async () => {
-    const [headerResult, monthsResult, planRowsResult] = await Promise.all([
+    const [headerResult, monthsResult, planRowsResult, leadingResult] = await Promise.all([
       supabase.from("phoenix_crm_monthly_plans").select(MONTHLY_PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).eq("month_start", monthStart).maybeSingle(),
       supabase.from("phoenix_crm_monthly_plans").select("month_start, status").eq("seat_id", seat.seatId).eq("is_test", isTest).in("month_start", months),
       weeks.length > 0
         ? supabase.from("phoenix_crm_plans").select(PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).in("week_start", weeks)
         : Promise.resolve({ data: [] as Row[], error: null }),
+      leadingWeek
+        ? supabase
+            .from("phoenix_crm_plans")
+            .select(PLAN_COLUMNS)
+            .eq("seat_id", seat.seatId)
+            .eq("is_test", isTest)
+            .eq("week_start", leadingWeek)
+            .maybeSingle()
+        : Promise.resolve({ data: null as Row | null, error: null }),
     ]);
     throwIfError(headerResult.error);
     throwIfError(monthsResult.error);
     throwIfError(planRowsResult.error);
+    throwIfError(leadingResult.error);
     const headerRow = headerResult.data as Row | null;
     const planRows = (planRowsResult.data ?? []) as Row[];
-    const [itemRows, names, activities, starts] = await Promise.all([
-      loadPlanItemRows(
-        planRows.map((row) => String(row.id)),
-        ITEM_COLUMNS,
-      ),
-      loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...planPeople(headerRow ? [headerRow, ...planRows] : planRows)]),
-      loadPlanActivities(planRows.map((row) => String(row.id))),
-      loadPlanDayStarts(planRows.map((row) => String(row.id))),
+    const leadingRow = (leadingResult.data as Row | null) ?? null;
+    // 🔴 ONE READ, TWO BAGS. The leading week's items ride along so its days can be drawn, and are
+    // then taken OUT of `itemRows` — which is what every meter, tally and call rate below is built
+    // from. Letting them through would move October's numbers by another month's week, silently.
+    const planIds = planRows.map((row) => String(row.id));
+    const leadingId = leadingRow ? String(leadingRow.id) : null;
+    const allIds = leadingId ? [...planIds, leadingId] : planIds;
+    const [allItemRows, names, activities, starts] = await Promise.all([
+      loadPlanItemRows(allIds, ITEM_COLUMNS),
+      loadPeopleNames([
+        ...territoryPeople(viewer.org, [seat]),
+        ...planPeople([...(headerRow ? [headerRow] : []), ...planRows, ...(leadingRow ? [leadingRow] : [])]),
+      ]),
+      loadPlanActivities(allIds),
+      loadPlanDayStarts(allIds),
     ]);
-    return { monthsResult, headerRow, planRows, itemRows, names, activities, starts };
+    const itemRows = leadingId ? allItemRows.filter((row) => String(row.plan_id) !== leadingId) : allItemRows;
+    const leadingItems = leadingId ? allItemRows.filter((row) => String(row.plan_id) === leadingId) : [];
+    return { monthsResult, headerRow, planRows, itemRows, leadingRow, leadingItems, names, activities, starts };
   })();
   const customersRead = ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }));
   const wave = Promise.all([
@@ -291,7 +330,7 @@ export async function loadMonthlyPlanner(
   wave.catch(() => undefined);
   await ensured;
   const [
-    { monthsResult, headerRow, planRows, itemRows, names, activities, starts },
+    { monthsResult, headerRow, planRows, itemRows, leadingRow, leadingItems, names, activities, starts },
     { customers, placesByCustomer },
     visitCounts,
     readiness,
@@ -367,10 +406,10 @@ export async function loadMonthlyPlanner(
   const repForWeeks = canWriteAsRep(viewer, seat, isTest) && Boolean(seat.lineCode);
   const reviewerForWeeks = canReviewTerritory(viewer, seat, isTest);
   const returnerForWeeks = canReturnTerritoryPlan(viewer, seat, isTest);
-  const weekViews: MonthlyWeekView[] = weeks.map((weekStart) => {
-    const planRow = planRows.find((row) => String(row.week_start) === weekStart) ?? null;
+  // One builder for both, so the leading week is judged by exactly the same rules as the month's own —
+  // its own plan row, its own editable window, its own Send. Only its name and its note differ.
+  const toWeekView = (weekStart: string, planRow: Row | null, weekItems: Row[], leading: boolean): MonthlyWeekView => {
     const weekStatus = planRow ? statusOf(planRow.status) : null;
-    const weekItems = planRow ? itemsByPlan.get(String(planRow.id)) ?? [] : [];
     const days = buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan, activities, starts });
     const weekPlan = planRow ? mapPlan(planRow, names) : null;
     const dueOn = weekPlan?.dueOn ?? weeklyPlanDueOn(weekStart);
@@ -378,7 +417,14 @@ export async function loadMonthlyPlanner(
     const staleOpen = days.some((day) => day.editable && day.items.some((item) => item.stale));
     return {
       weekStart,
-      weekNumber: weekNumberInMonth(weekStart),
+      weekNumber: leading ? 0 : weekNumberInMonth(weekStart),
+      label: leading ? LEADING_WEEK_LABEL : `Week ${weekNumberInMonth(weekStart)}`,
+      leading,
+      // 🔴 The sentence that closes the trap: sending the MONTH does not send this week, because the
+      // week belongs to the month before it. Said here, where he is standing, in his own vocabulary.
+      leadingNote: leading
+        ? `These are the first days of ${formatPhoenixMonth(monthStart)}, on the week of ${formatPhoenixLongDate(weekStart)} — which belongs to ${formatPhoenixMonth(addDaysIso(monthStart, -1))}. Sending ${formatPhoenixMonth(monthStart)} does not send it. Send this week on its own.`
+        : null,
       status: weekStatus,
       statusLabel: planStatusLabel(weekStatus),
       days,
@@ -392,7 +438,15 @@ export async function loadMonthlyPlanner(
       canApprove: reviewerForWeeks && weekStatus === "submitted",
       canReturn: open && returnerForWeeks && (weekStatus === "submitted" || weekStatus === "approved"),
     };
+  };
+  const weekViews: MonthlyWeekView[] = weeks.map((weekStart) => {
+    const planRow = planRows.find((row) => String(row.week_start) === weekStart) ?? null;
+    return toWeekView(weekStart, planRow, planRow ? itemsByPlan.get(String(planRow.id)) ?? [] : [], false);
   });
+  // 🔴 FIRST IN THE LIST, AND OUTSIDE `weekViews` — the month's own flags below (`staleOnOpenDays`,
+  // and through it the month's Send) are about the month's OWN weeks, and must not be gated on a week
+  // that belongs to the month before.
+  const leadingView = leadingWeek ? toWeekView(leadingWeek, leadingRow, leadingItems, true) : null;
 
   const monthStatusByStart = new Map<string, PhoenixCrmPlanStatus>();
   for (const row of (monthsResult.data ?? []) as Row[]) monthStatusByStart.set(String(row.month_start), statusOf(row.status));
@@ -438,7 +492,7 @@ export async function loadMonthlyPlanner(
       callRatePmTarget: settings.callRatePmTarget,
     },
     plan,
-    weeks: weekViews,
+    weeks: leadingView ? [leadingView, ...weekViews] : weekViews,
     tallies,
     amMeter,
     pmMeter,
