@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: fa9757e2-2eab-4f0a-b018-cf9adb57709c
-  modified: 2026-07-30T03:46:30.172Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **VERIFIED ON THE PORTAL 2026-07-30**, as B-119 via dev-auth against prod data, on code byte-identical
@@ -29,7 +29,7 @@ geographically). 6 live areas differ between the two:
 - Pedia GZ5 Helwan-Maadi → operational `CA`, geographic `GZ`
 - CNS CA5 Down town → operational `GZ`; plus AIF GZ6/UE splits (UE-1/UE-2)
 
-`computeSalesAccessScope` in [access-scope.ts:262-264](src/lib/sales/access-scope.ts)
+`computeSalesAccessScope` in [access-scope.ts](src/lib/sales/access-scope.ts)
 narrows SELF/TEAM/HIERARCHY viewers to `allowedRegionNames = {own employees.region_name}`.
 Saad's row says ALEX-BHR → region code AB → **all 1,165 CNS D16 fact rows (7,350 units)
 are invisible to him**, so his own Kafr El-Sheikh rep's sales are missing from every

@@ -7,7 +7,7 @@ metadata:
   originSessionId: 8e9b4490-fc7c-4dd6-99a9-edaac55824e1
 ---
 
-`resignEmployeeAndOpenVacancy` (`src/lib/resignations/service.ts:1077`) previously only
+`resignEmployeeAndOpenVacancy` (`src/lib/resignations/service.ts`) previously only
 checked the caller's **role** (`assertResignationWorkflowTransition`) before
 terminating/resigning an employee — never that the caller's **scope** covers the target
 employee. Shipped in PR #689 (merged + verified live 2026-07-02): widened `access` from

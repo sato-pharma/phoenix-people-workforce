@@ -5,12 +5,12 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 77132691-db3d-4ec1-bf67-fd48dae8b4a4
-  modified: 2026-07-27T16:00:41.883Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 In PRODUCTION (`ozucdzovmcqvepbozvqf`), the Marketing Requests draft workspace shows the wrong product set to line-scoped requesters, blocking submission.
 
-Root cause in `marketingProductMatchesRequesterLine` (src/lib/marketing-requests/service.ts:663): it matches a product to the requester's line by (1) numeric `product.line_id === requester.lineId`, else (2) exact normalized text `product.line === requester.lineName`.
+Root cause in `marketingProductMatchesRequesterLine` (src/lib/marketing-requests/service.ts): it matches a product to the requester's line by (1) numeric `product.line_id === requester.lineId`, else (2) exact normalized text `product.line === requester.lineName`.
 
 Production data state (verified 2026-06-06):
 - All 21 `marketing_products` have `line_id = NULL` → numeric path is dead; everything relies on fragile text matching.

@@ -139,3 +139,37 @@ not a claim.
 
 Related: [[tz-africa-cairo-silently-returns-utc-in-msys]] — the same shape in a different MSYS gap,
 a command that returns a confident wrong value instead of failing.
+
+---
+
+## 🔴 COMPARE TWO MANGLED READS AND THE ERROR BECOMES A GREEN LIGHT — 2026-10-01
+
+Everything above says the wrong answer is the ALARMING one: empty reads as "missing", which makes
+you look. **In a SYMMETRIC comparison it inverts, and that is the dangerous direction.** Deciding
+whether a remote branch could be deleted, I compared each file on the branch against `main`:
+
+```sh
+a=$(git show "origin/$b:$f" | git hash-object --stdin)   # mangled -> hashes NOTHING
+m=$(git show "origin/main:$f" 2>/dev/null | git hash-object --stdin)   # mangled -> hashes NOTHING
+[ "$a" = "$m" ] && echo "identical on main"
+```
+
+Both sides were mangled, both hashed the empty string, `e69de29bb2d1…` equalled `e69de29bb2d1…`, and
+the check printed **"identical on main"** for `.github/workflows/secret-drift-check.yml` — a file it
+had never read. One `fatal:` went to stderr among six files and was easy to skim past. The verdict it
+produced was the authorisation to `git push origin --delete`.
+
+**Two lessons this file did not already carry:**
+
+1. **An error that hits BOTH sides of an equality test cancels itself out and reads as agreement.**
+   The `|| echo ABSENT` fallback cannot save you either: `git hash-object --stdin` given no input
+   SUCCEEDS with the empty-blob hash, so the `||` never fires.
+2. **So reject the empty hash explicitly, rather than trusting the comparison.** Treat
+   `e69de29bb2d1d6434b8b29ae775ad8c2e48c5391` (git's empty blob) as "not read", capture stderr per
+   file and fail if it is non-empty, and print the real hashes so agreement is visible rather than
+   asserted. With the conversion disarmed all six files came back with genuine, distinct hashes and
+   the delete was safe — the same conclusion, but this time actually measured.
+
+**Where it bites hardest: any "is this already on main, safe to delete?" check** — a worktree
+retirement, a branch delete, a `--settle`. Those are exactly the places a false "identical" destroys
+something, and exactly where dot-leading paths (`.github/`, `.claude/`) turn up in the diff.

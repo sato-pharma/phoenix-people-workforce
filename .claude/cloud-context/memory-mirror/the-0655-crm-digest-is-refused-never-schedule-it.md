@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e94a655d-2c8b-49f4-9c2c-ad15fddfe252
-  modified: 2026-09-27T23:21:15.800Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 🔴 **The slug still says "refused". It is not refused any more — read this before acting on the
@@ -22,7 +22,7 @@ name.** The refusal lasted one evening.
 
 | Place | State |
 | --- | --- |
-| `JOB_SCHEDULES` (`src/lib/observability/job-schedule.ts:91`) | `{ slug: "phoenix-crm-daily-digest", kind: "cron", schedule: "55 6 * * *", graceSeconds: 2h }` |
+| `JOB_SCHEDULES` (`src/lib/observability/job-schedule.ts`) | `{ slug: "phoenix-crm-daily-digest", kind: "cron", schedule: "55 6 * * *", graceSeconds: 2h }` |
 | `scripts/cronjob-sync.mjs:135` | `"phoenix-crm-daily-digest"`, 06:55, `requestTimeout: 300` |
 | `docs/observability.md:331` | the row, naming cron-job.org job `8526396` · **in-house only** |
 | cron-job.org | job `8526396` exists — the id is recorded in the doc row above |
