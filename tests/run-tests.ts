@@ -2075,6 +2075,7 @@ import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runBusinessCardRequestsTests } from "./business-card-requests.test.ts";
 import { runBusinessCardPdfTests } from "./business-card-pdf.test.ts";
 import { runVacationBackfillHireGuardTests } from "./vacation-backfill-hire-guard.test.ts";
+import { runCrmVacationBackfillMarkerTests } from "./crm-vacation-backfill-marker.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
@@ -7582,6 +7583,10 @@ await runTest(
 await runTest(
   "a leave import refuses any day dated before the employee's hire date, a future hire outright, and a missing hire date — the CRM seat-rename trap that gave PD-0009 an approved row 167 days before he joined — while leave ON the hire date and every ordinary row still pass",
   runVacationBackfillHireGuardTests,
+);
+await runTest(
+  "a CRM vacation backfill batch is stamped with its OWN run date, so one batch can be reversed without the other",
+  runCrmVacationBackfillMarkerTests,
 );
 
 await runTest(

@@ -27,9 +27,10 @@
  * Usage:
  *   node --env-file-if-exists=.env.local --experimental-strip-types \
  *     --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs \
- *     scripts/import-crm-vacation-backfill.ts --input <path> [--execute] [--limit N]
+ *     scripts/import-crm-vacation-backfill.ts --input <path> --marker <YYYY-MM-DD> [--execute] [--limit N]
  *
  * Without --execute it is a dry run: it resolves and guards every row but writes nothing.
+ * `--marker` is this run's own date and is required — see the note on MARKER_PATTERN.
  */
 import fs from "node:fs";
 
@@ -43,8 +44,20 @@ import {
   vacationErrorMessage,
 } from "@/lib/vacation/service";
 
-/** Stamped into every created row so the whole batch is identifiable and exactly reversible. */
-const BATCH_MARKER = "CRM_BACKFILL_2026-08-03";
+/**
+ * Stamped into every created row so the whole batch is identifiable and exactly reversible.
+ *
+ * IT IS A FLAG, NOT A CONSTANT, AND THAT IS THE WHOLE POINT. It was hardcoded to
+ * `CRM_BACKFILL_2026-08-03` through the 2026-08-03 and 2026-08-24 runs, so the second run's rows
+ * carry the FIRST run's date — `notes like '[CRM_BACKFILL_2026-08-03]%'` matches 260 rows spanning
+ * both. Reversing one batch without the other is then impossible, which is exactly what the marker
+ * exists to make possible. A later run reusing it would fold a third batch into the same bucket.
+ *
+ * So the date must be passed and must be the date of THIS run (`--marker 2026-10-01`). The default
+ * is deliberately absent rather than today's date: a default would be silently accepted, and a
+ * batch marker that nobody chose is the defect above.
+ */
+const MARKER_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 type TargetRow = {
   date: string;
@@ -74,8 +87,17 @@ const execute = process.argv.includes("--execute");
 const inputPath = readArg("--input");
 const limitRaw = readArg("--limit");
 const limit = limitRaw ? Number(limitRaw) : null;
+const markerDate = readArg("--marker");
 
 if (!inputPath) throw new Error("--input <path to target-rows.json> is required.");
+if (!markerDate || !MARKER_PATTERN.test(markerDate)) {
+  throw new Error(
+    "--marker <YYYY-MM-DD> is required: the date of THIS run, stamped into every row so this batch "
+      + "can be identified and reversed on its own. The 2026-08-03 and 2026-08-24 runs share one "
+      + "hardcoded marker and cannot be separated; do not reuse a previous run's date.",
+  );
+}
+const BATCH_MARKER = `CRM_BACKFILL_${markerDate}`;
 
 const allRows = JSON.parse(fs.readFileSync(inputPath, "utf8")) as TargetRow[];
 const rows = limit ? allRows.slice(0, limit) : allRows;
