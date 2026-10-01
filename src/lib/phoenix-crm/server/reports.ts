@@ -57,6 +57,7 @@ import {
   type CustomerFrequencyInput,
   type CustomerFrequencyRow,
 } from "@/lib/phoenix-crm/customer-frequency";
+import { dailyPlanActivityText } from "@/lib/phoenix-crm/daily-plan-report";
 import { isLeaveDay } from "@/lib/phoenix-crm/plan-leave";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import type { PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
@@ -64,6 +65,7 @@ import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "
 import { readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
+import { loadSeatDayActivities } from "@/lib/phoenix-crm/server/day-activities";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
@@ -402,6 +404,12 @@ export type TerritoryPlanRow = {
   days: PlanDay[];
   am: PlanCell;
   pm: PlanCell;
+  /**
+   * The day activity the rep recorded, by date — "Meeting · half day" — printed BESIDE that day's
+   * misses (owner, 2026-10-01: "show it beside the miss"). Shown, never counted: a customer missed on
+   * a meeting day is still missed, as the day-activities ruling of 2026-09-26 has it.
+   */
+  activities: Record<string, string>;
 };
 
 export type PlanReportView = {
@@ -472,7 +480,7 @@ export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilter
   const mode = comparisonModeOf(viewer, raw);
   const previous = previousPeriod(period);
   const peers = peerTerritories(viewer);
-  const [data, baseline, leave] = await Promise.all([
+  const [data, baseline, leave, dayActivities] = await Promise.all([
     callPhoenixCrm<unknown>("phoenix_crm_report_plan_vs_actual", {
       p_seat_ids: chosen.seats.map((seat) => seat.seatId),
       p_from: period.from,
@@ -486,6 +494,12 @@ export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilter
         : planFigures(peers.map((seat) => seat.seatId), period, chosen.includeTest),
     // 🔴 A day HR approved his leave is never a day of misses (owner, 2026-10-01) — `plan-leave.ts`.
     loadSeatLeaveDays(chosen.seats, period),
+    // The day's recorded activity, printed beside its misses and never moving a figure.
+    loadSeatDayActivities(
+      chosen.seats.map((seat) => seat.seatId),
+      chosen.includeTest,
+      period,
+    ),
   ]);
   const seatsById = new Map(chosen.seats.map((seat) => [seat.seatId, seat]));
   const { groups, totals } = groupPlanByTerritory(
@@ -493,6 +507,18 @@ export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilter
     leave.days,
   );
   const names = await loadPeopleNames(groups.map((group) => seatsById.get(group.seatId)?.occupantHrId));
+  const activitiesBySeat = new Map<string, Record<string, string>>();
+  for (const [key, activity] of dayActivities) {
+    const seatId = key.slice(0, key.lastIndexOf("|"));
+    const held = activitiesBySeat.get(seatId) ?? {};
+    held[activity.activityDate.slice(0, 10)] = dailyPlanActivityText({
+      activityType: activity.activityType,
+      label: activity.activityLabel,
+      halfDay: activity.halfDay,
+      note: activity.note,
+    });
+    activitiesBySeat.set(seatId, held);
+  }
   const rows = groups
     .map((group) => {
       const seat = seatsById.get(group.seatId) as OrgSeat;
@@ -504,6 +530,7 @@ export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilter
         days: group.days,
         am: planCell(group.am),
         pm: planCell(group.pm),
+        activities: activitiesBySeat.get(group.seatId) ?? {},
       };
     })
     .sort(byTerritoryName);

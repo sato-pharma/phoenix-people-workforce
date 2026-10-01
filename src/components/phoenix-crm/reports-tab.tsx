@@ -729,18 +729,25 @@ function planDayLine(listType: "AM" | "PM", counts: PlanCounts): string {
   return `${listType}: ${main}${miss ? ` · ${miss}` : ""}`;
 }
 
-/** Every day of the period (a Friday only when something happened), doctors and accounts on their own lines. */
+/**
+ * Every day of the period (a Friday only when something happened), doctors and accounts on their own
+ * lines — and the day activity the rep recorded, on a line BESIDE them (owner, 2026-10-01: "show it
+ * beside the miss"). It explains a miss and never removes one: the figures above it are unchanged.
+ */
 function planDayLines(row: TerritoryPlanRow, period: Period): DayLine[] {
   const byDate = new Map(row.days.map((day) => [day.date, day]));
   return daysOf(period).flatMap((date): DayLine[] => {
     const day = byDate.get(date);
+    const activity = row.activities[date];
+    const activityLines = activity ? [`Other activity: ${activity}`] : [];
     const happened =
       day &&
       (day.am.planned > 0 || day.pm.planned > 0 || day.am.onLeave > 0 || day.pm.onLeave > 0 || day.am.unplanned > 0 || day.pm.unplanned > 0);
     if (!day || !happened) {
+      if (activityLines.length > 0) return [{ date, lines: ["No plan and no visit", ...activityLines], muted: true }];
       return weekdayOfIsoDay(date) === FRIDAY ? [] : [{ date, lines: ["No plan and no visit"], muted: true }];
     }
-    return [{ date, lines: [planDayLine("PM", day.pm), planDayLine("AM", day.am)] }];
+    return [{ date, lines: [planDayLine("PM", day.pm), planDayLine("AM", day.am), ...activityLines] }];
   });
 }
 
