@@ -32,6 +32,7 @@ import {
   type MixGoal,
   type MixItem,
   type MixResult,
+  type RepSatoHalf,
   type TrendKind,
   type TrendReading,
 } from "@/lib/sales/make-it-happen/engine";
@@ -187,6 +188,26 @@ export function pediaHalves(
     ...(sato ? [sato] : []),
     ...(total ? [{ ...total, key: "pedia" as const, label: `Total half · all ${pedia.lineName}` }] : []),
   ];
+}
+
+/**
+ * A Pedia rep's Sato half at their expected pace, for the team list (engine.ts rule 7). The team
+ * row already shows the rep's TOTAL half as `expectedAchievement`; this is the other one, scored
+ * on Guamusin + Ivyronc over their own target with each product at its steady pace. null for a rep
+ * with no Pedia Sato half in scope.
+ */
+export function repPaceSatoHalf(lines: readonly LinePlanGroup[]): RepSatoHalf | null {
+  const pedia = lines.find((line) => line.satoHalf);
+  if (!pedia?.satoHalf) return null;
+  const satoCodes = new Set(pedia.satoHalf.productCodes);
+  const paceValue = pedia.rows
+    .filter((row) => satoCodes.has(row.productCode))
+    .reduce((sum, row) => sum + row.trend.expectedUnits * row.price, 0);
+  return {
+    productNames: pedia.satoHalf.productNames,
+    hasTarget: pedia.satoHalf.targetValue != null,
+    achievement: achievementOf(pedia.satoHalf.gradedValue, paceValue, pedia.satoHalf.targetValue),
+  };
 }
 
 /** One goal read against a forecast: what it reaches, and what is still missing. */

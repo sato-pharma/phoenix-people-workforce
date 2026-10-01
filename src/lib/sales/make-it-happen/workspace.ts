@@ -55,6 +55,7 @@ import {
   isTeamBound,
   resolveMakeItHappenBound,
 } from "@/lib/sales/make-it-happen/scope";
+import { repPaceSatoHalf } from "@/lib/sales/make-it-happen/scenarios";
 
 export type WorkspaceRequest = {
   kind?: string | null;
@@ -331,6 +332,8 @@ export async function buildMakeItHappenWorkspace(
         gradedValue: repGraded.gradedValue,
         expectedValue,
         expectedAchievement: achievementOf(repGraded.gradedValue, expectedValue, targetValue),
+        // The rep's Sato half at pace — the companion to the total half above (engine.ts rule 7).
+        pediaSato: repPaceSatoHalf(repLines),
         savedPlans: [],
       });
     }

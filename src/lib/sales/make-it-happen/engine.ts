@@ -667,6 +667,18 @@ export type SavedPlanSummary = {
   updatedAtLabel: string;
 };
 
+/**
+ * A Pedia rep's Sato half at their own expected pace (rule 7) — Guamusin + Ivyronc over their own
+ * target. On the team list the rep's `expectedAchievement` is the TOTAL half, so this is its
+ * companion. null on every other line and before Semester 2 2026.
+ */
+export type RepSatoHalf = {
+  productNames: string;
+  /** At the rep's pace; null when the Sato half carries no target yet. */
+  achievement: number | null;
+  hasTarget: boolean;
+};
+
 export type RepPlanSummary = {
   /** HR id — identity for the drill-down link, never rendered. */
   key: string;
@@ -675,6 +687,8 @@ export type RepPlanSummary = {
   gradedValue: number;
   expectedValue: number;
   expectedAchievement: number | null;
+  /** The Sato half at pace for a Pedia rep — the companion to `expectedAchievement`'s total half. */
+  pediaSato: RepSatoHalf | null;
   savedPlans: SavedPlanSummary[];
 };
 
