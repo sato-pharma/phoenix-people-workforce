@@ -63,6 +63,26 @@ const WHOLE_LINE_ROLES = new Set(["National Sales Manager", "Group Product Manag
  * are for, and widening it here would hand somebody a scope with no seat check behind it.
  */
 const REP_ROLES = new Set(["Medical Rep", "Medical Representative"]);
+/**
+ * The ONLY roles whose scope is resolved from an org SEAT — the two branches of
+ * `resolveReviewPortalScopeFromOrg` that read `org.seats`. Every other role is answered from the
+ * session role or the employee record's line, so the seat map is never consulted for it.
+ */
+const SEAT_SCOPE_ROLES = new Set(["District Manager", "Regional Manager"]);
+
+/**
+ * Whether this session role can resolve to ANY Business Review scope. False means the resolver below
+ * answers "none" whatever the organogram says, so a page may skip work it would only throw away —
+ * the review bundle above all, which is a company-wide read.
+ */
+export function mayHoldReviewScope(sessionRole: string): boolean {
+  return (
+    COMPANY_ROLES.has(sessionRole) ||
+    WHOLE_LINE_ROLES.has(sessionRole) ||
+    SEAT_SCOPE_ROLES.has(sessionRole) ||
+    REP_ROLES.has(sessionRole)
+  );
+}
 
 /** `au_v_org_tree.line_code` → the review's own line key. */
 const LINE_BY_ORG_CODE: Record<string, ReviewLine> = {
@@ -287,32 +307,43 @@ export function resolveReviewPortalScopeFromOrg(
 
 /**
  * Read the live seat map. One query for the seats, one for the whole-line roles' line name — and
- * the second is skipped entirely for every role that does not need it.
+ * each is skipped entirely for every role that does not need it.
  *
  * A failed read returns NO snapshot rather than an empty one, because an empty snapshot and a
  * broken query look identical to the resolver and the first would silently deny every manager.
+ *
+ * `needsSeats: false` is NOT that empty snapshot: it is passed only for a role the resolver answers
+ * without ever reading `seats` (see SEAT_SCOPE_ROLES), so the seats it leaves out are seats nothing
+ * would have looked at. Omitted = read them, as before.
  */
-export async function loadReviewOrgSnapshot(options?: { needsLineName?: string | null }): Promise<ReviewOrgSnapshot> {
+export async function loadReviewOrgSnapshot(options?: {
+  needsLineName?: string | null;
+  needsSeats?: boolean;
+}): Promise<ReviewOrgSnapshot> {
   const db = getSupabaseAdmin();
-  const seatRes = await db
-    .from("au_v_org_tree")
-    .select("seat_tier,seat_id,line_code,occupant_hr_id,path")
-    .in("seat_tier", [...DISTRICT_SEAT_TIERS, "RSM"]);
-  if (seatRes.error) throw new Error(`Business Review: could not read the organogram — ${seatRes.error.message}`);
 
-  const seats: OrgSeat[] = (seatRes.data ?? []).map((r) => ({
-    seatTier: r.seat_tier as DistrictSeatTier | "RSM",
-    seatId: String(r.seat_id),
-    lineCode: String(r.line_code ?? ""),
-    occupantHrId: r.occupant_hr_id ?? null,
-    // `path` is a text[] in the view. Normalised here so the resolver never has to care.
-    path: Array.isArray(r.path) ? r.path.map((p: unknown) => String(p)) : [],
-  }));
+  const loadSeats = async (): Promise<OrgSeat[]> => {
+    const seatRes = await db
+      .from("au_v_org_tree")
+      .select("seat_tier,seat_id,line_code,occupant_hr_id,path")
+      .in("seat_tier", [...DISTRICT_SEAT_TIERS, "RSM"]);
+    if (seatRes.error) throw new Error(`Business Review: could not read the organogram — ${seatRes.error.message}`);
 
-  const lineNameByHrId: Record<string, string | null> = {};
-  const raw = String(options?.needsLineName ?? "").trim();
-  const wanted = hrKey(raw);
-  if (wanted) {
+    return (seatRes.data ?? []).map((r) => ({
+      seatTier: r.seat_tier as DistrictSeatTier | "RSM",
+      seatId: String(r.seat_id),
+      lineCode: String(r.line_code ?? ""),
+      occupantHrId: r.occupant_hr_id ?? null,
+      // `path` is a text[] in the view. Normalised here so the resolver never has to care.
+      path: Array.isArray(r.path) ? r.path.map((p: unknown) => String(p)) : [],
+    }));
+  };
+
+  const loadLineNames = async (): Promise<Record<string, string | null>> => {
+    const lineNameByHrId: Record<string, string | null> = {};
+    const raw = String(options?.needsLineName ?? "").trim();
+    const wanted = hrKey(raw);
+    if (!wanted) return lineNameByHrId;
     // `in` on the three spellings rather than `ilike`: HR ids reach this code from three systems in
     // mixed case, and a pattern match would give `_` and `%` meaning inside an identifier.
     const empRes = await db
@@ -334,7 +365,16 @@ export async function loadReviewOrgSnapshot(options?: { needsLineName?: string |
     } else {
       lineNameByHrId[wanted] = null;
     }
-  }
+    return lineNameByHrId;
+  };
+
+  // READ TOGETHER (2026-10-01, "slow to transfer between page and page"): the seat map and the
+  // viewer's own line share nothing, so neither waits for the other. Either failing still fails the
+  // whole snapshot, exactly as before.
+  const [seats, lineNameByHrId] = await Promise.all([
+    options?.needsSeats === false ? Promise.resolve<OrgSeat[]>([]) : loadSeats(),
+    loadLineNames(),
+  ]);
 
   return { seats, lineNameByHrId, readAt: new Date().toISOString() };
 }
@@ -352,7 +392,10 @@ export async function loadReviewPortalScope(input: {
   // still skipped for all of them.
   const needsLineName =
     WHOLE_LINE_ROLES.has(input.sessionRole) || REP_ROLES.has(input.sessionRole) ? input.hrId : null;
-  const org = await loadReviewOrgSnapshot({ needsLineName });
+  // And the SEAT map only for the two roles the resolver answers from a seat (2026-10-01, "slow to
+  // transfer between page and page"). A company, whole-line or rep viewer never reads `seats`, so
+  // that whole-organogram read was paid on every one of their page loads for nothing.
+  const org = await loadReviewOrgSnapshot({ needsLineName, needsSeats: SEAT_SCOPE_ROLES.has(input.sessionRole) });
   return { scope: resolveReviewPortalScopeFromOrg(input, org), resolvedAt: org.readAt };
 }
 

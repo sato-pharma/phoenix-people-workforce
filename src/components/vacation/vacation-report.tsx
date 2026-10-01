@@ -1427,7 +1427,14 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   }
 
   function switchTab(nextTab: VacationReportTab) {
-    router.push(buildReportUrl(nextTab, searchParams));
+    // A TAB IS NOT A PAGE LOAD (2026-10-01, "slow to transfer between page and page"). The server
+    // never reads `tab` — all three pages that render this report build their filters from the other
+    // params only — and `activeTab` is read from useSearchParams above, so router.push paid for a
+    // whole server render of the report just to flip a tab. The native pushState is folded into the
+    // App Router: useSearchParams picks up the new URL, the tab switches at once, the address and
+    // Back button behave as before, and no request is made. Filters still go through router.push
+    // (applyFilters below), because those the server does read.
+    window.history.pushState(null, "", buildReportUrl(nextTab, searchParams));
   }
 
   function startAdminAdd() {

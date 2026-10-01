@@ -69,6 +69,7 @@ import {
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled } from "@/lib/notifications/role-recipients";
 import { logError, logWarning } from "@/lib/observability/log";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import {
   MARKETING_CUSTOMER_SPECIALITIES,
   MARKETING_CUSTOMER_TYPES,
@@ -5138,19 +5139,45 @@ async function fetchCustomerContactsByCustomerIds(
   return rows;
 }
 
+/**
+ * CHUNKS READ TOGETHER, ANSWERED IN ORDER (2026-10-01, "slow to transfer between page and page").
+ * Each chunk of an id list is its own read and none needs another's answer, yet they ran one after
+ * another. They now run a few at a time — `mapWithConcurrency` caps it, so a long list cannot open
+ * dozens of connections at once — and the rows are concatenated in chunk order, as the loop pushed
+ * them. A failure throws exactly what the loop threw: the first failed chunk in CHUNK order, whether
+ * its read rejected or answered with an error.
+ */
+const ID_CHUNK_READS_TOGETHER = 6;
+
+/** Exported for its test (tests/marketing-chunk-reads-in-order.test.ts). */
+export async function readChunksInOrder<Row, Id>(
+  batches: Id[][],
+  read: (batch: Id[]) => PromiseLike<{ data: unknown; error: unknown }>,
+): Promise<Row[]> {
+  const outcomes = await mapWithConcurrency(batches, ID_CHUNK_READS_TOGETHER, async (batch) => {
+    try {
+      return { failed: false as const, result: await read(batch) };
+    } catch (reason) {
+      return { failed: true as const, reason };
+    }
+  });
+  const rows: Row[] = [];
+  for (const outcome of outcomes) {
+    if (outcome.failed) throw outcome.reason;
+    if (outcome.result.error) throw outcome.result.error;
+    rows.push(...((outcome.result.data ?? []) as Row[]));
+  }
+  return rows;
+}
+
 async function fetchRowsByIds<T extends { id: string | number }>(
   supabase: SupabaseClient,
   table: string,
   ids: Array<string | number>,
 ) {
   if (ids.length === 0) return [];
-  const rows: T[] = [];
-  for (const batch of chunk(ids)) {
-    const { data, error } = await supabase.from(table).select("*").in("id", batch);
-    if (error) throw error;
-    rows.push(...((data ?? []) as T[]));
-  }
-  return rows;
+  return readChunksInOrder<T, string | number>(chunk(ids), (batch) =>
+    supabase.from(table).select("*").in("id", batch));
 }
 
 /**
@@ -5733,17 +5760,13 @@ async function fetchDistributorCodesByPharmacyIds(
   supabase: SupabaseClient,
   pharmacyIds: string[],
 ): Promise<MarketingPharmacyDistributorCodeDbRow[]> {
-  const rows: MarketingPharmacyDistributorCodeDbRow[] = [];
-  for (const batch of chunk(pharmacyIds)) {
-    const { data, error } = await supabase
+  // Chunks read together, answered in chunk order — see readChunksInOrder.
+  return readChunksInOrder<MarketingPharmacyDistributorCodeDbRow, string>(chunk(pharmacyIds), (batch) =>
+    supabase
       .from("marketing_pharmacy_distributor_codes")
       .select("*")
       .in("pharmacy_id", batch)
-      .or("active.is.null,active.eq.true");
-    if (error) throw error;
-    rows.push(...((data ?? []) as MarketingPharmacyDistributorCodeDbRow[]));
-  }
-  return rows;
+      .or("active.is.null,active.eq.true"));
 }
 
 /**
@@ -5911,7 +5934,11 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
   // Built even when the workspace is otherwise empty: a rep whose only validated customer belongs
   // to a colleague still has that colleague's pharmacies to reuse, and the very first customer he
   // validates is exactly when re-typing a known shop hurts most.
-  const reusablePharmacies = await buildReusableMarketingPharmacies({
+  //
+  // STARTED BESIDE THE ROW READS (2026-10-01, "slow to transfer between page and page"): the picker
+  // reads nothing the report rows read, so it no longer holds them up. It is still settled FIRST —
+  // its failure throws before any row-read failure, as when it ran first.
+  const reusablePharmaciesRead = buildReusableMarketingPharmacies({
     access,
     distributorRows,
     employeeRows,
@@ -5920,36 +5947,47 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
   });
 
   if (links.length === 0) {
+    const emptyWorkspacePharmacies = await reusablePharmaciesRead;
     // A Super Admin still needs the picker on an empty workspace — validating the very first
     // customer for an employee is exactly when this screen is empty.
     return {
       canValidateOnBehalf: canActOnBehalf,
       distributors,
       onBehalfEmployees: canActOnBehalf ? buildMarketingOnBehalfEmployees(employeeRows) : [],
-      reusablePharmacies,
+      reusablePharmacies: emptyWorkspacePharmacies,
       rows: [],
       summary: emptyValidationSummary(),
       viewerHrId: normalizeHrId(access.hrId) ?? "",
     };
   }
 
-  const [customerRows, pharmacyRows, codeRows] = await Promise.all([
-    fetchRowsByIds<MarketingCustomerDbRow>(
-      supabase,
-      "marketing_customers",
-      links.map((row) => row.customer_id),
-    ),
-    fetchRowsByIds<MarketingPharmacyDbRow>(
-      supabase,
-      "marketing_pharmacies",
-      links.map((row) => row.pharmacy_id),
-    ),
-    fetchRowsByIds<MarketingPharmacyDistributorCodeDbRow>(
-      supabase,
-      "marketing_pharmacy_distributor_codes",
-      links.map((row) => row.distributor_code_id).filter((id): id is string => Boolean(id)),
-    ),
+  // Each id once. Many links share a customer or a pharmacy, and the repeats only added chunks: the
+  // report below looks every row up BY ID (mapValidationReportRows builds id-keyed maps), so a row
+  // read twice was the same row twice.
+  const [reusableSettled, rowReadsSettled] = await Promise.allSettled([
+    reusablePharmaciesRead,
+    Promise.all([
+      fetchRowsByIds<MarketingCustomerDbRow>(
+        supabase,
+        "marketing_customers",
+        [...new Set(links.map((row) => row.customer_id))],
+      ),
+      fetchRowsByIds<MarketingPharmacyDbRow>(
+        supabase,
+        "marketing_pharmacies",
+        [...new Set(links.map((row) => row.pharmacy_id))],
+      ),
+      fetchRowsByIds<MarketingPharmacyDistributorCodeDbRow>(
+        supabase,
+        "marketing_pharmacy_distributor_codes",
+        [...new Set(links.map((row) => row.distributor_code_id).filter((id): id is string => Boolean(id)))],
+      ),
+    ]),
   ]);
+  if (reusableSettled.status === "rejected") throw reusableSettled.reason;
+  const reusablePharmacies = reusableSettled.value;
+  if (rowReadsSettled.status === "rejected") throw rowReadsSettled.reason;
+  const [customerRows, pharmacyRows, codeRows] = rowReadsSettled.value;
 
   const customerViewerAreaId = viewerAreaIdFor(access, employeeRows);
   const visibleCustomers = customerRows.filter((row) =>

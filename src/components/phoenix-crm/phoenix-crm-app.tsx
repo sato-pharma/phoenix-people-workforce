@@ -25,37 +25,53 @@
  * already under way. The `add` word is taken off the address once read, so the next tap is a new ask.
  */
 
-import { useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
+import { announceRouteTransition } from "@/components/layout/route-transition-provider";
 import { crmGet, crmUrl, messageOf } from "@/components/phoenix-crm/api";
-import { CalendarTab } from "@/components/phoenix-crm/calendar-tab";
-import { DoctorsTab } from "@/components/phoenix-crm/doctors-tab";
-import { ForecastTab } from "@/components/phoenix-crm/forecast-tab";
 import { countText, plural } from "@/components/phoenix-crm/format";
-import { ListTab } from "@/components/phoenix-crm/list-tab";
-import { releaseCapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
-import { PlanBoard } from "@/components/phoenix-crm/plan-board";
-import { ReportsTab } from "@/components/phoenix-crm/reports-tab";
-import { SettingsTab } from "@/components/phoenix-crm/settings-tab";
-import { TeamTab } from "@/components/phoenix-crm/team-tab";
+// The leaf module, never the camera: see captured-photo.ts for why the shell must not import the camera.
+import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
+import { preloadPhoenixCrmTab } from "@/components/phoenix-crm/tab-preload";
 import {
   CrmBlock,
   CrmButton,
   CrmChoice,
   CrmEmpty,
   CrmField,
+  CrmLoading,
   CrmNote,
   CrmPanel,
   CrmPill,
   CrmSelect,
   type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
-import { VisitsTab, type PendingValidate, type PendingVisit } from "@/components/phoenix-crm/visits-tab";
+import type { PendingValidate, PendingVisit } from "@/components/phoenix-crm/visits-tab";
 import { isForecastLine } from "@/lib/phoenix-crm/daily-forecast";
 import { PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import type { PhoenixCrmOverview, PhoenixCrmTabs, TerritorySummary } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
+
+// ── Each module's screen is its own chunk (owner, 2026-10-01: "slow to transfer between page and page",
+// Phoenix CRM first). Imported statically, all eight shipped to every module page as ONE 108 KB gzip
+// chunk (measured on the production build), so a rep opening Visits downloaded Reports, Team and the
+// Super Admin's Settings with it. Only the module on screen renders (see the panels at the bottom),
+// so only its chunk is fetched; the placeholder is the tabs' own loading look, so a screen arriving
+// reads exactly as one reading its data. The `import()` stays INSIDE each `dynamic()` on purpose: that
+// is what lets Next preload the chunk with a server-rendered page. `tab-preload.ts` warms the same
+// chunks ahead of a client navigation.
+const tabLoading = () => <CrmLoading />;
+const VisitsTab = dynamic(() => import("@/components/phoenix-crm/visits-tab").then((mod) => mod.VisitsTab), { loading: tabLoading });
+const ListTab = dynamic(() => import("@/components/phoenix-crm/list-tab").then((mod) => mod.ListTab), { loading: tabLoading });
+const PlanBoard = dynamic(() => import("@/components/phoenix-crm/plan-board").then((mod) => mod.PlanBoard), { loading: tabLoading });
+const ForecastTab = dynamic(() => import("@/components/phoenix-crm/forecast-tab").then((mod) => mod.ForecastTab), { loading: tabLoading });
+const TeamTab = dynamic(() => import("@/components/phoenix-crm/team-tab").then((mod) => mod.TeamTab), { loading: tabLoading });
+const CalendarTab = dynamic(() => import("@/components/phoenix-crm/calendar-tab").then((mod) => mod.CalendarTab), { loading: tabLoading });
+const DoctorsTab = dynamic(() => import("@/components/phoenix-crm/doctors-tab").then((mod) => mod.DoctorsTab), { loading: tabLoading });
+const ReportsTab = dynamic(() => import("@/components/phoenix-crm/reports-tab").then((mod) => mod.ReportsTab), { loading: tabLoading });
+const SettingsTab = dynamic(() => import("@/components/phoenix-crm/settings-tab").then((mod) => mod.SettingsTab), { loading: tabLoading });
 
 type TabKey = keyof PhoenixCrmTabs;
 
@@ -275,6 +291,7 @@ export function PhoenixCrmApp({
   // The portal's "+": each ask bumps a counter the screen watches, so a second tap is a second ask
   // even when the address reads the same, and nothing remounts to answer it.
   const searchParams = useSearchParams();
+  const router = useRouter();
   const addParam = addIntentOf(searchParams?.get("add") ?? null);
   const tabParam = searchParams?.get("tab") ?? null;
   // A hand-off that crossed a page boundary (single mode): the customer Today sent here, or the
@@ -419,8 +436,21 @@ export function PhoenixCrmApp({
   function openTab(next: TabKey, carry?: Record<string, string>) {
     // 🔴 SEPARATE PAGES, SO THIS IS A NAVIGATION (owner, 2026-09-30). Switching the panel in place is
     // what he objected to: it left him on one module's address looking at another's.
+    //
+    // 🔴 A CLIENT NAVIGATION, NEVER A RELOAD (owner, 2026-10-01: "slow to transfer between page and
+    // page", Phoenix CRM first). This was `window.location.assign`, so Visits → List to validate a
+    // customer threw the whole page away: the HTML and the portal shell rendered again on the server,
+    // every script parsed and hydrated again, before the List could even start. A push keeps the
+    // shell and swaps only the module page, which REMOUNTS — its segment changes — so each module
+    // still opens fresh, and the hand-off (`?validate=`, `?customer=`, `?name=`) is read from the
+    // address on the first paint exactly as before. Nothing is held across it: `pendingVisit` is
+    // never set on this path, so there is no captured photo to let go. The next module's screen starts
+    // downloading here too, beside the page rather than after it (tab-preload.ts).
     if (single) {
-      window.location.assign(moduleHref(next, carry));
+      const href = moduleHref(next, carry);
+      preloadPhoenixCrmTab(next);
+      announceRouteTransition(href);
+      router.push(href);
       return;
     }
     setTab(next);

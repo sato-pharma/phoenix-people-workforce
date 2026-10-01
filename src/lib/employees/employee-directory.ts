@@ -1679,23 +1679,35 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
     employeeRows = await fetchAllEmployeeRows(fallbackParams);
   }
 
-  const [departmentNames, lineNames, areaNames, positionTitles, teamNames, managerNames, compensationByHrId] =
-    await Promise.all([
-      loadLookup("departments", uniqueNumberValues(employeeRows, "department_id")),
-      loadLookup("lines", uniqueNumberValues(employeeRows, "line_id")),
-      loadLookup("areas", uniqueNumberValues(employeeRows, "area_id")),
-      loadLookup("positions", uniqueNumberValues(employeeRows, "position_id"), "title"),
-      loadLookup("teams", uniqueNumberValues(employeeRows, "team_id")),
-      loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
-      loadCompensationByHrId(uniqueTextValues(employeeRows, "hr_id")),
-    ]);
-
-  const residenceByHrId = await loadResidenceByHrId(uniqueTextValues(employeeRows, "hr_id"));
-  const pendingReplacementByHrId = await loadPendingManagerReplacementByHrId(
-    uniqueTextValues(employeeRows, "hr_id"),
-  );
-  const photoMap = await getEmployeePhotoMap();
-  const cvHrIds = await getEmployeeCvHrIdSet();
+  // ONE ROUND, NOT FIVE (2026-10-01, "slow to transfer between page and page"): the residence,
+  // pending-replacement, photo and CV loads used to wait for the lookups and then for each other,
+  // though every one of them reads only `employeeRows` (or nothing at all) — the same four that
+  // fetchEmployeeDirectory above already runs side by side. Each still returns the same map.
+  const [
+    departmentNames,
+    lineNames,
+    areaNames,
+    positionTitles,
+    teamNames,
+    managerNames,
+    compensationByHrId,
+    residenceByHrId,
+    pendingReplacementByHrId,
+    photoMap,
+    cvHrIds,
+  ] = await Promise.all([
+    loadLookup("departments", uniqueNumberValues(employeeRows, "department_id")),
+    loadLookup("lines", uniqueNumberValues(employeeRows, "line_id")),
+    loadLookup("areas", uniqueNumberValues(employeeRows, "area_id")),
+    loadLookup("positions", uniqueNumberValues(employeeRows, "position_id"), "title"),
+    loadLookup("teams", uniqueNumberValues(employeeRows, "team_id")),
+    loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
+    loadCompensationByHrId(uniqueTextValues(employeeRows, "hr_id")),
+    loadResidenceByHrId(uniqueTextValues(employeeRows, "hr_id")),
+    loadPendingManagerReplacementByHrId(uniqueTextValues(employeeRows, "hr_id")),
+    getEmployeePhotoMap(),
+    getEmployeeCvHrIdSet(),
+  ]);
 
   return employeeRows.map((row) => {
     const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());

@@ -3,6 +3,7 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { forbiddenError } from "@/lib/http/api-errors";
 import { currentCairoDateParts } from "@/lib/i18n/format";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { expandAreaCodesForLine, foldAreaCodeForLine, getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import { closingRegionsAsOfDate } from "@/lib/sales/closing-organogram-regions";
 import { resolveAuLineCode } from "@/lib/sales/territory/skeleton";
@@ -178,6 +179,9 @@ function chunk<T>(items: T[], size = 300): T[][] {
   return out;
 }
 
+/** Chunks read at once — the figure every other fan-out on the rep's pages uses. */
+const CHUNK_CONCURRENCY = 4;
+
 function toNum(value: unknown): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -254,30 +258,36 @@ export async function getRepAreaDirectOrders(access: AccessContext): Promise<Rep
 
   const supabase = getSupabaseAdmin();
 
-  // 1) the viewer's own home area and line, from the employee directory.
-  const employeeRows = await getEmployeeDirectoryRows({ includeInactive: true });
-  const viewer = employeeRows.find((row) => canonicalHrIdKey(row.hrId) === viewerKey);
-  const areaIds = new Set<number>();
-  const rawAreaId = viewer?.areaId;
-  if (rawAreaId !== null && rawAreaId !== undefined && Number.isFinite(Number(rawAreaId))) {
-    areaIds.add(Number(rawAreaId));
-  }
+  // Steps 1–2 and step 3 share nothing — the seat map is keyed on the viewer's HR id alone — so they
+  // run together (2026-10-01, "slow to transfer between page and page") instead of one after the
+  // other. Either failing still fails the page, exactly as before.
+  const homeLoad = (async () => {
+    // 1) the viewer's own home area and line, from the employee directory.
+    const employeeRows = await getEmployeeDirectoryRows({ includeInactive: true });
+    const viewerRow = employeeRows.find((row) => canonicalHrIdKey(row.hrId) === viewerKey);
+    const areaIds = new Set<number>();
+    const rawAreaId = viewerRow?.areaId;
+    if (rawAreaId !== null && rawAreaId !== undefined && Number.isFinite(Number(rawAreaId))) {
+      areaIds.add(Number(rawAreaId));
+    }
 
-  // 2) resolve that numeric area id to its text code. A direct order carries its area on the
-  //    pharmacy as `area_code` (text); `employees.area_id` is the numeric `areas.id`.
-  let homeAreaCode: string | null = null;
-  if (areaIds.size > 0) {
-    const { data: homeRows, error: homeError } = await supabase
-      .from("areas")
-      .select("id, code, name")
-      .in("id", Array.from(areaIds));
-    if (homeError) throw homeError;
-    homeAreaCode = up((homeRows ?? [])[0]?.code as string | null | undefined) || null;
-  }
+    // 2) resolve that numeric area id to its text code. A direct order carries its area on the
+    //    pharmacy as `area_code` (text); `employees.area_id` is the numeric `areas.id`.
+    let home: string | null = null;
+    if (areaIds.size > 0) {
+      const { data: homeRows, error: homeError } = await supabase
+        .from("areas")
+        .select("id, code, name")
+        .in("id", Array.from(areaIds));
+      if (homeError) throw homeError;
+      home = up((homeRows ?? [])[0]?.code as string | null | undefined) || null;
+    }
+    return { viewer: viewerRow, homeAreaCode: home };
+  })();
 
   // 3) the rep's own REP seat areas — a seat can cover more than one area (the Ismailia and Suez
   //    seat carries both OT2 and OT9), which one `employees.area_id` can never say.
-  const seatAreas = await loadRepSeatAreas(viewerKey);
+  const [{ viewer, homeAreaCode }, seatAreas] = await Promise.all([homeLoad, loadRepSeatAreas(viewerKey)]);
   const seatLine = seatAreas.find((seat) => seat.lineCode)?.lineCode ?? null;
   const scope: RepAreaScopeInput = {
     lineCode: seatLine ?? (viewer?.lineName ? resolveAuLineCode(viewer.lineName) : null),
@@ -305,9 +315,26 @@ export async function getRepAreaDirectOrders(access: AccessContext): Promise<Rep
   const codes = Array.from(candidateCodes);
   if (codes.length === 0) return EMPTY;
 
-  // 4) the names those codes show under. A code with no name reads "Unnamed area", never itself.
+  // 4) the names those codes show under, and 5) the pharmacies sitting in those areas — both keyed
+  //    on `codes` alone, so they are read together (2026-10-01, speed), each pharmacy chunk alongside
+  //    the others. The chunks' rows are taken back in CHUNK order below, exactly as the serial walk
+  //    took them, so every map is built in the same order.
+  const [areaResult, pharmacyParts] = await Promise.all([
+    supabase.from("areas").select("code, name").in("code", codes),
+    // Four chunks at a time, like every other fan-out on these pages; results come back in chunk order.
+    mapWithConcurrency(chunk(codes), CHUNK_CONCURRENCY, async (part) => {
+      const { data, error } = await supabase
+        .from("direct_order_pharmacies")
+        .select("id, pharmacy_name, area_code")
+        .in("area_code", part);
+      if (error) throw error;
+      return (data ?? []) as Array<{ id: string; pharmacy_name: string | null; area_code: string | null }>;
+    }),
+  ]);
+
+  // 4) A code with no name reads "Unnamed area", never itself.
   const nameByCode = new Map<string, string>();
-  const { data: areaRows, error: areaError } = await supabase.from("areas").select("code, name").in("code", codes);
+  const { data: areaRows, error: areaError } = areaResult;
   if (areaError) throw areaError;
   for (const row of (areaRows ?? []) as Array<{ code: string | null; name: string | null }>) {
     const name = (row.name ?? "").trim();
@@ -324,15 +351,10 @@ export async function getRepAreaDirectOrders(access: AccessContext): Promise<Rep
     if (!areaNames.includes(name)) areaNames.push(name);
   }
 
-  // 5) pharmacies sitting in those areas ("to whom").
+  // 5) pharmacies sitting in those areas ("to whom"), read above.
   const pharmacyById = new Map<string, { name: string; areaCode: string }>();
-  for (const part of chunk(codes)) {
-    const { data, error } = await supabase
-      .from("direct_order_pharmacies")
-      .select("id, pharmacy_name, area_code")
-      .in("area_code", part);
-    if (error) throw error;
-    for (const row of (data ?? []) as Array<{ id: string; pharmacy_name: string | null; area_code: string | null }>) {
+  for (const part of pharmacyParts) {
+    for (const row of part) {
       pharmacyById.set(row.id, {
         name: (row.pharmacy_name ?? "").trim() || "—",
         areaCode: up(row.area_code),
@@ -343,23 +365,25 @@ export async function getRepAreaDirectOrders(access: AccessContext): Promise<Rep
   if (pharmacyIds.length === 0) return { ...EMPTY, areaNames };
 
   // 6) counted orders on those pharmacies — approved AND a Finance-booked sales month, 2026-07+,
-  //    excluding superseded (reversed) and duplicate rows so nothing is double-shown.
-  const fetched: RequestRow[] = [];
-  for (const part of chunk(pharmacyIds)) {
-    const { data, error } = await supabase
-      .from("direct_order_requests")
-      .select(
-        "id, pharmacy_id, sales_month, collection_date, decided_at, created_at, product_code, product_name, qty, sales_value",
-      )
-      .eq("status", "approved")
-      .not("sales_month", "is", null)
-      .gte("sales_month", AREA_DIRECT_ORDERS_FROM_MONTH)
-      .is("reversed_by_request_id", null)
-      .is("duplicate_of_request_id", null)
-      .in("pharmacy_id", part);
-    if (error) throw error;
-    fetched.push(...((data ?? []) as RequestRow[]));
-  }
+  //    excluding superseded (reversed) and duplicate rows so nothing is double-shown. The chunks run
+  //    together and are joined in chunk order, so `fetched` is the list the serial walk produced.
+  const fetched: RequestRow[] = (
+    await mapWithConcurrency(chunk(pharmacyIds), CHUNK_CONCURRENCY, async (part) => {
+      const { data, error } = await supabase
+        .from("direct_order_requests")
+        .select(
+          "id, pharmacy_id, sales_month, collection_date, decided_at, created_at, product_code, product_name, qty, sales_value",
+        )
+        .eq("status", "approved")
+        .not("sales_month", "is", null)
+        .gte("sales_month", AREA_DIRECT_ORDERS_FROM_MONTH)
+        .is("reversed_by_request_id", null)
+        .is("duplicate_of_request_id", null)
+        .in("pharmacy_id", part);
+      if (error) throw error;
+      return (data ?? []) as RequestRow[];
+    })
+  ).flat();
   // Each order stays only if its pharmacy's area was the rep's in the month it was COUNTED.
   const requests = fetched.filter((request) => {
     const pharmacy = pharmacyById.get(request.pharmacy_id);
@@ -372,16 +396,19 @@ export async function getRepAreaDirectOrders(access: AccessContext): Promise<Rep
 
   // 7) product lines. Since baskets (2026-08-12) one request can carry several products, one row
   //    each; a legacy single-product request with no item rows falls back to the header snapshot,
-  //    so an order is never silently dropped.
-  const items: ItemRow[] = [];
-  for (const part of chunk(requestIds)) {
-    const { data, error } = await supabase
-      .from("direct_order_request_items")
-      .select("request_id, product_code, product_name, qty, sales_value")
-      .in("request_id", part);
-    if (error) throw error;
-    items.push(...((data ?? []) as ItemRow[]));
-  }
+  //    so an order is never silently dropped. Chunks together, joined in chunk order.
+  const items: ItemRow[] = (
+    await Promise.all(
+      chunk(requestIds).map(async (part) => {
+        const { data, error } = await supabase
+          .from("direct_order_request_items")
+          .select("request_id, product_code, product_name, qty, sales_value")
+          .in("request_id", part);
+        if (error) throw error;
+        return (data ?? []) as ItemRow[];
+      }),
+    )
+  ).flat();
 
   const rows: RepAreaDirectOrderRow[] = [];
   const requestsWithItems = new Set<string>();

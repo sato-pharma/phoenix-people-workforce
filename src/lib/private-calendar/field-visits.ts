@@ -13,7 +13,8 @@
 //
 // Read-only. Never mutates CRM, attendance or deduction data.
 
-import { collapseDuplicateVisitSubmissions, CRM_DOUBLE_VISIT_TYPE_CODES, scanVisitsForRange } from "@/lib/crm/reads.ts";
+import { mergeDayMapVisitPages } from "@/lib/attendance/crm-day-maps";
+import { collapseDuplicateVisitSubmissions, CRM_DOUBLE_VISIT_TYPE_CODES, queryVisits, scanVisitsForRange } from "@/lib/crm/reads.ts";
 import { addVisitToSplit, emptyVisitCountSplit, formatVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { CRM_LEAVE_VISIT_TYPE_CODES } from "@/lib/crm/visit-type-meaning";
 import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
@@ -104,6 +105,74 @@ function countedList(counts: Map<string, number>): string {
   return [...counts.entries()].map(([label, count]) => `${label} ${count}`).join(" · ");
 }
 
+const FIELD_VISIT_COLUMNS =
+  "visit_date,agent_hr_id,agent_name,agent_crm_id,contact_name,contact_crm_id,crm_visit_id,crm_save_date,double_crm_id,double_hr_id,double_name,source,visit_type,visit_type_description,ampm,speciality,comment";
+
+/** Above this many employees one company-wide window scan is cheaper than reading each person's own
+ * visits by index — the attendance day maps' bound (DAY_MAP_PUSHDOWN_MAX_IDS in
+ * attendance/crm-day-maps.ts), for the same reason. One employee's calendar and a district's team sit
+ * far below it; the whole-roster No Activity engine sits far above it and keeps the scan. */
+const FIELD_VISIT_PUSHDOWN_MAX_IDS = 40;
+
+/** A directory CRM account as the id the visits carry: digits only, never the vendor's `0`
+ * "no partner" sentinel — which, as a participant id, would match every solo visit in the company. */
+function positiveCrmId(value: unknown): number | null {
+  const text = String(value ?? "").trim();
+  if (!/^\d+$/.test(text)) return null;
+  const id = Number(text);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/**
+ * The visit rows the grouping below reads, before the duplicate collapse.
+ *
+ * READ BY PERSON, NOT BY COMPANY (2026-10-01, "slow to transfer between page and page"): for a
+ * bounded set of employees it asks the CRM door for the visits they took part in — by HR id in any
+ * casing, or by CRM account, as agent or double — instead of scanning every visit the company logged
+ * in the window and discarding nearly all of it. That is a SUPERSET of the rows the grouping keeps
+ * (its own filter, on the rep's hr id, stays the authority), and it keeps every duplicate group
+ * WHOLE: the collapse picks one survivor among the rows of one CRM account, contact, day and type, so
+ * a group read in part could pick differently. Any CRM account on a kept row that was not already
+ * asked for is therefore read in full as well, and the pages are merged back into id order — the
+ * order the window scan returns — so the collapse and every chip see the rows they always saw, in the
+ * same order.
+ */
+async function readFieldVisitRows(input: {
+  employeeCrmIds: ReadonlyArray<string | number | null | undefined>;
+  employeeHrIds: string[];
+  end: string;
+  selected: ReadonlySet<string>;
+  start: string;
+}): Promise<FieldVisitRow[]> {
+  if (input.selected.size > FIELD_VISIT_PUSHDOWN_MAX_IDS) {
+    return scanVisitsForRange<FieldVisitRow>({ dateFrom: input.start, dateTo: input.end, columns: FIELD_VISIT_COLUMNS });
+  }
+  type KeyedFieldVisitRow = FieldVisitRow & { id: string };
+  const crmIds = [...new Set(input.employeeCrmIds.map(positiveCrmId).filter((id): id is number => id !== null))];
+  const rows = await queryVisits<KeyedFieldVisitRow>({
+    columns: FIELD_VISIT_COLUMNS,
+    dateFrom: input.start,
+    dateTo: input.end,
+    participantHrIds: input.employeeHrIds,
+    ...(crmIds.length > 0 ? { participantCrmIds: crmIds } : {}),
+  });
+  const asked = new Set(crmIds);
+  const groupAccounts = new Set<number>();
+  for (const row of rows) {
+    const hrKey = normalizedKey(row.agent_hr_id);
+    if (!hrKey || !input.selected.has(hrKey)) continue;
+    if (typeof row.agent_crm_id === "number" && !asked.has(row.agent_crm_id)) groupAccounts.add(row.agent_crm_id);
+  }
+  if (groupAccounts.size === 0) return rows;
+  const groupMates = await queryVisits<KeyedFieldVisitRow>({
+    agentCrmIds: [...groupAccounts],
+    columns: FIELD_VISIT_COLUMNS,
+    dateFrom: input.start,
+    dateTo: input.end,
+  });
+  return mergeDayMapVisitPages([rows, groupMates]);
+}
+
 /**
  * One item per (employee, day, colour) for the CRM activity the employee logged themselves.
  * Grouped rather than one-per-visit so a 12-visit day is a single calendar chip, matching how
@@ -121,6 +190,8 @@ export async function loadFieldVisitPrivateCalendarItems(
   employeeHrIds: string[],
   start: string,
   end: string,
+  /** The same employees' CRM accounts (directory `crmId`), in any order — optional; see readFieldVisitRows. */
+  employeeCrmIds: ReadonlyArray<string | number | null | undefined> = [],
 ): Promise<{ items: PrivateCalendarItem[]; ready: boolean }> {
   try {
     const selected = new Set(
@@ -128,17 +199,12 @@ export async function loadFieldVisitPrivateCalendarItems(
     );
     if (selected.size === 0) return { items: [], ready: true };
 
-    // scanVisitsForRange does not collapse on its own, so the chip's count runs through the same
-    // canonical read-time collapse DV Analytics and FWC use — otherwise a rep re-saving one stop
-    // reads as an extra visit here while every other surface counts it once. The extra columns are
-    // the collapse's fingerprint and the AM · PM · Pharmacies bucket's inputs.
+    // Neither read collapses on its own, so the chip's count runs through the same canonical
+    // read-time collapse DV Analytics and FWC use — otherwise a rep re-saving one stop reads as an
+    // extra visit here while every other surface counts it once. The extra columns are the
+    // collapse's fingerprint and the AM · PM · Pharmacies bucket's inputs.
     const rows = collapseDuplicateVisitSubmissions(
-      await scanVisitsForRange<FieldVisitRow>({
-        dateFrom: start,
-        dateTo: end,
-        columns:
-          "visit_date,agent_hr_id,agent_name,agent_crm_id,contact_name,contact_crm_id,crm_visit_id,crm_save_date,double_crm_id,double_hr_id,double_name,source,visit_type,visit_type_description,ampm,speciality,comment",
-      }),
+      await readFieldVisitRows({ employeeCrmIds, employeeHrIds, end, selected, start }),
     );
 
     // Group by (employee, day, colour). Keyed on the rep's own hr_id — a visit where this

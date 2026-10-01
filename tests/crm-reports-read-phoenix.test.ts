@@ -179,13 +179,16 @@ export function runCrmReportsReadPhoenixTests() {
     const board = readFileSync("src/lib/crm/reps-list-board.ts", "utf8");
     assert.match(
       board,
-      /if \(rawList && selectedRep && \(selectedRep\.agentCrmId != null \|\| selectedRep\.hrId\)\)/,
+      /hasList && selectedRep && \(selectedRep\.agentCrmId != null \|\| selectedRep\.hrId\)\s*\?\s*loadRepsListActivity\(/,
       "a rep with no CRM account gets his activity column too — gated on a CRM account, his whole list read 'unavailable'",
     );
-    assert.ok(
-      board.includes("agentCrmId: selectedRep.agentCrmId,\n        hrId: selectedRep.hrId,\n        month: activityMonth,"),
+    assert.match(
+      board,
+      /loadRepsListActivity\(\{\s*agentCrmId: selectedRep\.agentCrmId,\s*hrId: selectedRep\.hrId,\s*month: activityMonth\s*\}\)/,
       "the activity loader is handed the HR id, which is the only thing that finds a rep with no CRM account",
     );
+    // Started beside the list (2026-10-01), and still only READ for a board that has one.
+    assert.match(board, /const activityIndex = rawList \? await activityRead : null;/, "the activity is only ever read for a board with a list");
     assert.match(
       board,
       /const key = repDoctorListRepKey\(summaryFor\(rep\.hrId\)\?\.agentCrmId, rep\.hrId\);/,

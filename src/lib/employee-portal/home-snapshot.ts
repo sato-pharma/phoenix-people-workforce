@@ -830,7 +830,11 @@ async function loadMrFieldKpis(access: AccessContext, hrId: string, month: strin
   // running only as far as it has run, and it needs the real date to tell those apart. Passing the
   // picked month as `todayIso` would score a past month as though it were still mid-flight.
   const todayIso = cairoTodayIso();
-  const board = await getKpisBoard({ access, month, todayIso });
+  // `includeReports: false` (2026-10-01, "slow to transfer between page and page"): the tile reads
+  // his row and the board's four targets and nothing else, and the two per-rep KPI reports are a
+  // whole further read the board makes AFTER its main batch, whose answer is dropped right here.
+  // They never touch a row (see getKpisBoard), so every figure on the tile is the one it was.
+  const board = await getKpisBoard({ access, includeReports: false, month, todayIso });
   const wanted = hrId.toLowerCase();
   const row =
     board.reps.find((r) => (r.agentHrId ?? "").toLowerCase() === wanted) ??
@@ -1021,7 +1025,13 @@ export async function getPortalHomeSnapshot(
     kpiMonth?: string | null;
   },
 ): Promise<PortalHomeSnapshot> {
-  const shell = await getEmployeePortalShellData(access);
+  // STARTED, NOT AWAITED (2026-10-01, "slow to transfer between page and page"). Nothing below needs
+  // the shell until the leave balance at the very end, and awaiting it first held every other read
+  // of the landing page behind it. A failure still fails the snapshot, exactly as before — at the
+  // `await` below — and is handled the moment it starts so it can never surface as an UNHANDLED
+  // rejection while the other reads are in flight.
+  const shellPromise = getEmployeePortalShellData(access);
+  shellPromise.catch(() => undefined);
   const hrId = normalizeHrId(access.hrId) ?? "";
   const role = access.role ?? "";
   const today = cairoTodayIso();
@@ -1067,6 +1077,28 @@ export async function getPortalHomeSnapshot(
   const dvFocusPromise: Promise<DoubleVisitPortalFocus | null> = DV_FOCUS_ROLES.has(role)
     ? getDoubleVisitPortalFocus(access).catch(() => null)
     : Promise.resolve(null);
+  // STARTED HERE WITH THE REST (2026-10-01, "slow to transfer between page and page"). These four
+  // were only started once every read above had been awaited, so the page paid for them AFTER the
+  // slowest of those instead of beside it. Each is independent of everything else in this function
+  // and none of them rejects.
+  // Computed OUTSIDE the role branches: it is the same three line-stars for every audience, so
+  // resolving it per role would be the same query many times over. Degrades to [] like every other
+  // snapshot field — a missing announcement must never fail a landing page.
+  const earlyBirdStarsPromise = getLatestLineEarlyBirds().catch(() => []);
+  // Also outside the role branches, and for a stronger reason: the plan module's population does not
+  // follow the role map. It is DSM, NSM, Product Manager, Group Product Manager AND Training Manager
+  // today, and an acting DSM keeps the job title "Medical Representative" (her authority is her app
+  // role, not her title). Gating this on a role list would silently drop her. Whether a person has
+  // plans is the only honest test, so that is the test — the loader returns null for everyone who
+  // has none.
+  const planAdherencePromise = hrId ? loadPortalPlanAdherence(hrId).catch(() => null) : Promise.resolve(null);
+  // Days LEFT, not the raw entitlement — see leaveDaysRemaining's own doc on PortalHomeSnapshot.
+  const leaveDaysRemainingPromise = hrId ? getEmployeeAnnualLeaveBalanceDays(hrId).catch(() => null) : Promise.resolve(null);
+  // The person's own upcoming interviews — outside the role branches, data-driven like plan
+  // adherence: whether they have any interview is the only honest test, so that is the test.
+  const myInterviewsPromise: Promise<PortalMyInterview[]> = hrId
+    ? loadMyUpcomingInterviews(access).catch(() => [])
+    : Promise.resolve([]);
 
   // Double-visit rows for this MR — most recent first so [0] is the latest visit. Reads via the
   // CRM read layer (the shared double_crm_id + visit_type predicate): Regular/Campaign visits
@@ -1233,6 +1265,7 @@ export async function getPortalHomeSnapshot(
     role,
   });
 
+  const shell = await shellPromise;
   // Pure calculation — no DB. employeeHrId is required so a per-employee calendar-year reset
   // (see usesCalendarYearVacationReset in vacation/calculations.ts) applies here exactly as it
   // does on the Vacation Report and the request page — omitting it silently kept this tile on
@@ -1241,22 +1274,10 @@ export async function getPortalHomeSnapshot(
   const [roleExtras, dvFocus, earlyBirdStars, planAdherence, leaveDaysRemaining, myInterviews] = await Promise.all([
     roleExtrasPromise,
     dvFocusPromise,
-    // Computed OUTSIDE the role branches: it is the same three line-stars for every audience, so
-    // resolving it per role would be the same query many times over. Degrades to [] like every
-    // other snapshot field — a missing announcement must never fail a landing page.
-    getLatestLineEarlyBirds().catch(() => []),
-    // Also outside the role branches, and for a stronger reason: the plan module's population does
-    // not follow the role map. It is DSM, NSM, Product Manager, Group Product Manager AND Training
-    // Manager today, and an acting DSM keeps the job title "Medical Representative" (her authority
-    // is her app role, not her title). Gating this on a role list would silently drop her. Whether
-    // a person has plans is the only honest test, so that is the test — the loader returns null for
-    // everyone who has none.
-    hrId ? loadPortalPlanAdherence(hrId).catch(() => null) : Promise.resolve(null),
-    // Days LEFT, not the raw entitlement — see leaveDaysRemaining's own doc on PortalHomeSnapshot.
-    hrId ? getEmployeeAnnualLeaveBalanceDays(hrId).catch(() => null) : Promise.resolve(null),
-    // The person's own upcoming interviews — outside the role branches, data-driven like plan
-    // adherence: whether they have any interview is the only honest test, so that is the test.
-    hrId ? loadMyUpcomingInterviews(access).catch(() => []) : Promise.resolve([]),
+    earlyBirdStarsPromise,
+    planAdherencePromise,
+    leaveDaysRemainingPromise,
+    myInterviewsPromise,
   ]);
 
   return {

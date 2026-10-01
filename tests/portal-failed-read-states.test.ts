@@ -25,45 +25,49 @@ import { stripComments } from "./support/comment-strip.ts";
  */
 
 const DASHBOARD = "src/components/employee-portal/employee-portal-dashboard.tsx";
+// The support-request list left the dashboard for its own file on 2026-10-01 (so the Request Support
+// form stops downloading the dashboard's charts); its assertions below read it there.
+const SUPPORT_PAGE = "src/components/employee-portal/contact-hr-support-page.tsx";
 const PROBATION = "app/employee-portals/probation/page.tsx";
 const EXPENSE_DASHBOARD = "app/employee-portals/expense-dashboard/page.tsx";
 const SUPPORT_REQUESTS = "app/employee-portals/support-requests/page.tsx";
 
 export function runPortalFailedReadStatesTests() {
   const source = stripComments(readFileSync(DASHBOARD, "utf8"));
+  const supportSource = stripComments(readFileSync(SUPPORT_PAGE, "utf8"));
 
   // ── The failure is recorded, on both paths out of the fetch ────────────────
   assert.match(
-    source,
+    supportSource,
     /const \[requestsError, setRequestsError\] = useState\(false\)/,
     "the support-request loader must record that the read FAILED, separately from the list being empty",
   );
   assert.equal(
-    (source.match(/setRequestsError\(true\)/g) ?? []).length,
+    (supportSource.match(/setRequestsError\(true\)/g) ?? []).length,
     2,
     "both failure paths set it — a non-ok response AND a thrown fetch. Missing either one puts the " +
       "false 'no requests' message back for half the ways this can fail.",
   );
   assert.match(
-    source,
+    supportSource,
     /setRequestsError\(false\)/,
     "and a successful read clears it, or one blip leaves the error showing for the rest of the session",
   );
 
   // ── The screen says what happened, and does NOT claim an empty history ─────
   assert.match(
-    source,
+    supportSource,
     /\) : requestsError \? \(/,
     "the error branch must come BEFORE the empty branch — checked after it, a failed read still " +
       "renders 'No recent requests'",
   );
   assert.match(
-    source,
+    supportSource,
     /title="Could not load your requests"/,
     "it names what happened rather than describing the person's record",
   );
   assert.match(
-    source,
+    supportSource,
     /They have not been lost/,
     "and it says the requests still exist — the fear a blank list creates is that they are gone",
   );
@@ -71,7 +75,7 @@ export function runPortalFailedReadStatesTests() {
   // ── Nor do the three tiles above it print a confident 0 ────────────────────
   for (const metric of ["openCount", "resolvedCount", "recentRequests.length"]) {
     assert.match(
-      source,
+      supportSource,
       new RegExp(`value=\\{isLoadingRequests \\|\\| requestsError \\? "—" : ${metric.replace(".", "\\.")}\\}`),
       `the ${metric} tile must read — on a failed load, never 0: the count is unknown, not zero`,
     );

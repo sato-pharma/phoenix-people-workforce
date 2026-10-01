@@ -419,6 +419,21 @@ export async function loadRepTargets(ctx: AccessContext, requestedPeriod: string
   const { year, month, day } = currentCairoDateParts();
   const clockPeriod = `${year}-${String(month).padStart(2, "0")}`;
   const current = clockPeriod < SALES_VS_TARGET_FLOOR ? SALES_VS_TARGET_FLOOR : clockPeriod;
+
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the window's rows, its
+  // publication keys and the name masters depend on the Cairo clock alone, never on the bound, so
+  // they no longer wait for it. The bound still decides everything: SELF or nothing, and the rows are
+  // bounded below before anything is built from them. A viewer refused by the bound never awaits the
+  // loads, and the guard keeps that quiet; a SELF viewer awaits them, so a failed publication read
+  // still throws, exactly as before.
+  const { from, to } = repTargetsWindow(current);
+  const windowLoads = Promise.all([
+    loadVsTargetRange(from, to),
+    loadPublishedPeriodKeys(from, to),
+    loadAllCanonicalAreaNames(),
+    loadProductNameMap(),
+  ]);
+  windowLoads.catch(() => {});
   const bound = await resolveVsTargetBound(ctx);
 
   const empty = (): RepTargetsData =>
@@ -434,13 +449,7 @@ export async function loadRepTargets(ctx: AccessContext, requestedPeriod: string
   // SELF only. Any wider bound on this view would be a rep reading other reps' numbers.
   if (bound.kind !== "self") return empty();
 
-  const { from, to } = repTargetsWindow(current);
-  const [rangeRows, publishedKeys, areaNames, productNames] = await Promise.all([
-    loadVsTargetRange(from, to),
-    loadPublishedPeriodKeys(from, to),
-    loadAllCanonicalAreaNames(),
-    loadProductNameMap(),
-  ]);
+  const [rangeRows, publishedKeys, areaNames, productNames] = await windowLoads;
 
   // Merge BEFORE scoping, exactly as Sales vs Target does, so a folded area keeps its rep's rows.
   const rows = filterRowsForBound(applyAchievementAreaMerges(rangeRows), bound);

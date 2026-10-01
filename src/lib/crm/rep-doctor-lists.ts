@@ -76,7 +76,7 @@ import {
   getDoctorCoverageConfig,
   type DoctorCoverageNorms,
 } from "@/lib/crm/doctor-coverage-config";
-import { expandHrIdFilterValues, getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
+import { dayScanSlices, expandHrIdFilterValues, getEffectiveExcludedAgentCrmIds, queryVisits, readCompanyWindow } from "@/lib/crm/reads";
 import { CAMPAIGN_TYPE } from "@/lib/crm/visit-types";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -402,6 +402,13 @@ const PLAN_AGENT_CHUNK = 50;
  * variants (`expandHrIdFilterValues`), so 10 ids keep the URL list inside the same 50-value limit. */
 const PLAN_HR_ID_CHUNK = 10;
 
+/** The one projection every plan scan reads, whichever way it pages. */
+const PLAN_SCAN_COLUMNS =
+  "agent_crm_id, agent_hr_id, contact_crm_id, contact_grade, contact_name, crm_plan_entry_id, crm_region_name, plan_date, plan_status, speciality, synced_at";
+
+/** A plan row as a scan reads it — with the entry id it pages and deduplicates on. */
+type ScannedPlanRow = PlanRow & { crm_plan_entry_id?: number | string | null };
+
 /** Reads every plan entry whose date falls inside the window. Returns [] before the migration
  * ships, so the page renders an honest empty state instead of a crash.
  *
@@ -444,6 +451,60 @@ export async function scanPlanEntries(
     agentChunks.push(null);
   }
 
+  // 🔴 A COMPANY-WIDE WINDOW IS READ ONE DAY AT A TIME (2026-10-01, "slow to transfer between page and
+  // page"). This is the visits door's own answer to the same fault — `readCompanyWindow` in reads.ts,
+  // whose header is the account — reused rather than written twice. An OFFSET page over the whole
+  // window cannot stop early: Postgres reads every row in it through the date index and sorts them
+  // all to hand back one thousand, and the next page does it again. Measured on production
+  // 2026-10-01: September held 25,862 plan rows, each page cost 62 ms in the database whatever its
+  // offset, and the 26 pages ran one after another on EVERY rep landing (the KPI tile reads this
+  // board company-wide), where one day's slice costs 22 ms and the unordered probe 8 ms.
+  // The days are disjoint and cover the window, and `crm_plan_entry_id` is the mirror's primary key,
+  // so re-sorting their union by it hands back exactly the rows, in exactly the order, of the single
+  // scan. A window that names agents keeps the single scan: its index already makes it narrow.
+  const days = agentChunks.length === 1 && agentChunks[0] === null ? dayScanSlices(from, to) : null;
+  if (days) {
+    const scanDay = async (day: string): Promise<ScannedPlanRow[] | null> => {
+      const scanned: ScannedPlanRow[] = [];
+      let cursor: number | string | null = null;
+      for (;;) {
+        let query = supabase.from(CRM_PLAN_ENTRIES_UNIFIED_VIEW).select(PLAN_SCAN_COLUMNS).eq("plan_date", day);
+        if (cursor !== null) query = query.gt("crm_plan_entry_id", cursor);
+        const { data, error } = await query.order("crm_plan_entry_id", { ascending: true }).limit(PLAN_PAGE_SIZE);
+        if (error) {
+          if (isPlanSchemaMissing(error)) return null;
+          throw new Error(error.message);
+        }
+        const page = (data ?? []) as unknown as ScannedPlanRow[];
+        scanned.push(...page);
+        const last = page[page.length - 1]?.crm_plan_entry_id ?? null;
+        if (page.length < PLAN_PAGE_SIZE || last === null) return scanned;
+        cursor = last;
+      }
+    };
+    const windowRows = await readCompanyWindow<ScannedPlanRow>({
+      days,
+      pageSize: PLAN_PAGE_SIZE,
+      probe: async () => {
+        const { data, error } = await supabase
+          .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
+          .select(PLAN_SCAN_COLUMNS)
+          .gte("plan_date", from)
+          .lte("plan_date", to)
+          .limit(PLAN_PAGE_SIZE);
+        if (error) {
+          if (isPlanSchemaMissing(error)) return null;
+          throw new Error(error.message);
+        }
+        return (data ?? []) as unknown as ScannedPlanRow[];
+      },
+      scanDay,
+      order: (left, right) => Number(left.crm_plan_entry_id) - Number(right.crm_plan_entry_id),
+      sortDays: true,
+    });
+    return windowRows ?? [];
+  }
+
   const rows: PlanRow[] = [];
   // Only a union of two passes can return one entry twice; its id makes that exact.
   const seenEntryIds = new Set<number | string>();
@@ -453,9 +514,7 @@ export async function scanPlanEntries(
     for (;;) {
       let query = supabase
         .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
-        .select(
-          "agent_crm_id, agent_hr_id, contact_crm_id, contact_grade, contact_name, crm_plan_entry_id, crm_region_name, plan_date, plan_status, speciality, synced_at",
-        )
+        .select(PLAN_SCAN_COLUMNS)
         .gte("plan_date", from)
         .lte("plan_date", to);
       if (chunk) query = query.in(chunk.column, [...chunk.values]);
@@ -466,7 +525,7 @@ export async function scanPlanEntries(
         if (isPlanSchemaMissing(error)) return [];
         throw new Error(error.message);
       }
-      const page = (data ?? []) as unknown as Array<PlanRow & { crm_plan_entry_id?: number | string | null }>;
+      const page = (data ?? []) as unknown as ScannedPlanRow[];
       for (const row of page) {
         const entryId = row.crm_plan_entry_id;
         if (dedupe && entryId != null) {

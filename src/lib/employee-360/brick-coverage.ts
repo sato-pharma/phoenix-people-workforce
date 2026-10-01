@@ -350,6 +350,27 @@ async function loadRepTerritory(hrId: string): Promise<RepTerritory | null> {
 }
 
 /**
+ * One line-month of the closing's brick sales, SHARED WHILE IN FLIGHT (2026-10-01, "slow to transfer
+ * between page and page"): the figure is the whole line's, not the viewer's (the El Qema mask is
+ * applied per viewer afterwards), so two reps of one line opening their pages at once — or one page
+ * asking twice — wait on one `phx_closing_brick` read instead of each running it. Nothing is kept once
+ * it settles, a failure included, so no answer outlives its own read. Every waiter gets the same rows
+ * and none mutates them: the mask filters into a new array and everything after only reads.
+ */
+const closingBrickSalesInFlight = new Map<string, Promise<BrickSalesRow[]>>();
+
+function loadClosingBrickSalesShared(line: string, period: string): Promise<BrickSalesRow[]> {
+  const key = `${line}|${period}`;
+  const inFlight = closingBrickSalesInFlight.get(key);
+  if (inFlight) return inFlight;
+  const request: Promise<BrickSalesRow[]> = loadClosingBrickSales(line, period).finally(() => {
+    if (closingBrickSalesInFlight.get(key) === request) closingBrickSalesInFlight.delete(key);
+  });
+  closingBrickSalesInFlight.set(key, request);
+  return request;
+}
+
+/**
  * The panel for one person, or null when they hold no rep seat. Server-only.
  *
  * `viewerRole` decides the El Qema mask — see note 2 in the header.
@@ -359,16 +380,26 @@ export async function getEmployee360BrickCoverage(
   window: Pick<Employee360Window, "from" | "to">,
   viewerRole: PhoenixRole,
 ): Promise<Employee360BrickCoverage | null> {
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the landed months, the
+  // hire months and the list's brick placement need nothing from the seat, so they load while the seat
+  // and its areas are read instead of after them. They are still only USED once a seat is found: a
+  // person with none returns null below exactly as before, and a failed seat read still fails the
+  // panel on its own error. The no-op handlers only stop a failure of theirs from surfacing unhandled
+  // while the seat is awaited — or at all, on those two early paths; each is awaited below.
+  const currentMonth = cairoTodayIso().slice(0, 7);
+  const uploadedPeriodsLoad = loadUploadedPeriodsInRange(SALES_HISTORY_FLOOR, currentMonth);
+  const hireMonthsLoad = loadEmployee360HireMonths();
+  const placementLoad = getRepsListBrickPlacement(hrId);
+  const earlyLoads: Promise<unknown>[] = [uploadedPeriodsLoad, hireMonthsLoad, placementLoad];
+  for (const load of earlyLoads) load.catch(() => undefined);
+
   const territory = await loadRepTerritory(hrId);
   if (!territory) return null;
   const line = lineName(territory.lineCode);
 
-  const currentMonth = cairoTodayIso().slice(0, 7);
-  const [uploadedPeriods, hireMonths, placement] = await Promise.all([
-    loadUploadedPeriodsInRange(SALES_HISTORY_FLOOR, currentMonth),
-    loadEmployee360HireMonths(),
-    getRepsListBrickPlacement(hrId),
-  ]);
+  // The closing months need only the landed months and the hire month — not the placement — so the
+  // closing reads start as soon as those two are in.
+  const [uploadedPeriods, hireMonths] = await Promise.all([uploadedPeriodsLoad, hireMonthsLoad]);
   const key = canonicalHrIdKey(hrId);
   const { months, fallback } = resolveBrickSalesMonths({
     window,
@@ -377,13 +408,13 @@ export async function getEmployee360BrickCoverage(
   });
 
   const viewer = { role: viewerRole, scope: scopeForRole(viewerRole) };
-  const sales = (await Promise.all(months.map((period) => loadClosingBrickSales(line, period))))
+  const sales = (await Promise.all(months.map((period) => loadClosingBrickSalesShared(line, period))))
     .flatMap((rows) => [...withoutMaskedSourceRows(rows, viewer)]);
 
   const areaCodes = territory.areas.map((area) => area.areaCode);
   const areaSet = new Set(areaCodes);
   const salesBrickIds = [...new Set(sales.filter((row) => areaSet.has(upper(row.areaCode))).map((row) => row.brickId))];
-  const brickMaster = await loadAreaBrickMaster(areaCodes, salesBrickIds);
+  const [brickMaster, placement] = await Promise.all([loadAreaBrickMaster(areaCodes, salesBrickIds), placementLoad]);
 
   return buildEmployee360BrickCoverage({
     lineName: line,

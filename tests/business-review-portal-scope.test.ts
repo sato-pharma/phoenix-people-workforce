@@ -7,6 +7,7 @@ import {
   applySeatScope,
   DISTRICT_SEAT_TIERS,
   isDistrictSeatTier,
+  mayHoldReviewScope,
   resolveReviewPortalScopeFromOrg,
   type OrgSeat,
   type ReviewOrgSnapshot,
@@ -553,5 +554,55 @@ export async function runBusinessReviewPortalScopeTests(): Promise<void> {
       page.indexOf('redirect("/admin/access")') < page.indexOf("await loadBusinessReview({"),
       "and the page must redirect before it loads the review",
     );
+  }
+
+  // ────────────────────────── Only a seat role ever reads the seat map (2026-10-01)
+  //
+  // `loadReviewPortalScope` now skips the whole-organogram seat read for every role but District
+  // Manager and Regional Manager ("slow to transfer between page and page"). That is safe ONLY if the
+  // resolver answers every other role without looking at `seats` — so it is proved here, viewer by
+  // viewer, against the same organogram with its seats emptied: every answer must be identical. And
+  // `mayHoldReviewScope`, which lets the page skip the company-wide bundle, must never say "no" to a
+  // role the resolver would give a scope to: that would be a viewer shown nothing for no reason.
+  {
+    const roles = [
+      "Super Admin",
+      "CEO",
+      "SFE Manager",
+      "Marketing Manager",
+      "National Sales Manager",
+      "Group Product Manager",
+      "Product Manager",
+      "Medical Rep",
+      "Medical Representative",
+      "District Manager",
+      "Regional Manager",
+      "Employee",
+      "HR Manager",
+      "Finance Manager",
+      "Training Manager",
+    ];
+    const seatRoles = new Set(["District Manager", "Regional Manager"]);
+    const people = ["A-12", "B-122", "A-10", "A-99", "R-500", "R-501", "B-154", "PD-0001", "B-1", "AI-0014", "NOBODY", null];
+    const withoutSeats: ReviewOrgSnapshot = { ...ORG, seats: [] };
+    for (const sessionRole of roles) {
+      for (const hrId of people) {
+        const full = resolveReviewPortalScopeFromOrg({ hrId, sessionRole }, ORG);
+        if (!seatRoles.has(sessionRole)) {
+          assert.deepEqual(
+            resolveReviewPortalScopeFromOrg({ hrId, sessionRole }, withoutSeats),
+            full,
+            `${sessionRole} ${hrId ?? "(no id)"} must resolve without the seat map — the page no longer reads it for this role`,
+          );
+        }
+        if (!mayHoldReviewScope(sessionRole)) {
+          assert.equal(
+            full.kind,
+            "none",
+            `${sessionRole} is said to hold no scope, so the page skips its bundle — yet ${hrId ?? "(no id)"} resolved to ${full.kind}`,
+          );
+        }
+      }
+    }
   }
 }

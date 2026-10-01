@@ -371,6 +371,17 @@ function numberValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/**
+ * The value of a read that was started alongside others, or its failure rethrown. Reads that used
+ * to run one after another are now started together (2026-10-01, "slow to transfer between page and
+ * page"); unwrapping them with this, in the order they used to run, makes a failure throw the same
+ * error the one-at-a-time code met first.
+ */
+function settledValueOrThrow<T>(result: PromiseSettledResult<T>): T {
+  if (result.status === "rejected") throw result.reason;
+  return result.value;
+}
+
 function integerValue(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isInteger(parsed) ? parsed : fallback;
@@ -2579,7 +2590,15 @@ async function pendingPaidDaysInPeriod(input: {
   }, 0);
 }
 
-async function approvedPaidDaysInPeriod(input: {
+/** Reaches only `.from` — the admin client in production, a fake in the tests. */
+type VacationBalanceReadClient = Pick<ReturnType<typeof getSupabaseAdmin>, "from">;
+
+/**
+ * Exported for its test (tests/vacation-reads-started-together.test.ts). Production reaches
+ * it only through calculatePaymentForRequest and the carried-debt walk below, and `client` is
+ * injected only by that test — left out, every read uses the admin client exactly as before.
+ */
+export async function approvedPaidDaysInPeriod(input: {
   employeeHrId: string;
   excludeRequestId?: string;
   /** Passed straight to balanceSettledDaysInPeriod — see the note there. */
@@ -2589,10 +2608,11 @@ async function approvedPaidDaysInPeriod(input: {
   periodEnd: string | null;
   periodStart: string | null;
   vacationType: VacationType;
-}) {
+}, client?: VacationBalanceReadClient) {
   if (!input.periodStart || !input.periodEnd) return 0;
 
-  let query = getSupabaseAdmin()
+  const reader: VacationBalanceReadClient = client ?? getSupabaseAdmin();
+  let query = reader
     .from(vacationRequestsTable)
     .select("id,duration_days,paid_duration_days,payment_status")
     .eq("employee_hr_id", input.employeeHrId.toUpperCase())
@@ -2606,7 +2626,34 @@ async function approvedPaidDaysInPeriod(input: {
     query = query.eq("vacation_type", input.vacationType);
   }
 
-  const { data, error } = await query;
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the Copilot ledger and
+  // the attendance charges never depended on the request read, yet each waited for the one before
+  // it. All three now start at once — the two ledgers still only for the annual/emergency pool. They
+  // are unwrapped in the order they used to run (a failed request read throws first, then a
+  // fail-closed ledger read, then the attendance read), so the sum and every thrown error are the
+  // ones the one-after-another version produced.
+  const pooledWithAnnual = input.vacationType === "annual" || input.vacationType === "emergency";
+  const [requestRead, settledRead, attendanceRead] = await Promise.allSettled([
+    query,
+    pooledWithAnnual
+      ? balanceSettledDaysInPeriod({
+          employeeHrId: input.employeeHrId,
+          excludeSettlementRunId: input.excludeSettlementRunId,
+          failClosed: input.failClosedLedgerRead,
+          periodEnd: input.periodEnd,
+          periodStart: input.periodStart,
+        }, client)
+      : Promise.resolve(0),
+    pooledWithAnnual
+      ? attendanceChargedDaysInPeriod({
+          employeeHrId: input.employeeHrId,
+          periodEnd: input.periodEnd,
+          periodStart: input.periodStart,
+        }, client)
+      : Promise.resolve(0),
+  ]);
+
+  const { data, error } = settledValueOrThrow(requestRead);
 
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
 
@@ -2622,18 +2669,8 @@ async function approvedPaidDaysInPeriod(input: {
   // Vacation tab today — matches the vacation_type grouping just above.
   if (input.vacationType !== "annual" && input.vacationType !== "emergency") return requestDays;
 
-  const settledDays = await balanceSettledDaysInPeriod({
-    employeeHrId: input.employeeHrId,
-    excludeSettlementRunId: input.excludeSettlementRunId,
-    failClosed: input.failClosedLedgerRead,
-    periodEnd: input.periodEnd,
-    periodStart: input.periodStart,
-  });
-  const attendanceDays = await attendanceChargedDaysInPeriod({
-    employeeHrId: input.employeeHrId,
-    periodEnd: input.periodEnd,
-    periodStart: input.periodStart,
-  });
+  const settledDays = settledValueOrThrow(settledRead);
+  const attendanceDays = settledValueOrThrow(attendanceRead);
   return requestDays + settledDays + attendanceDays;
 }
 
@@ -2666,30 +2703,59 @@ export async function attendanceChargedDaysInPeriod(
   return (data ?? []).reduce((sum, row) => sum + numberValue((row as { days?: unknown }).days), 0);
 }
 
-async function getDeferredDebtFromPreviousPeriods(input: {
+/** How many past balance periods the carried-debt walk reads at once — each is up to three reads. */
+const DEFERRED_DEBT_PERIODS_READ_TOGETHER = 6;
+
+/**
+ * Exported for its test, with approvedPaidDaysInPeriod above; `client` is injected only there.
+ */
+export async function getDeferredDebtFromPreviousPeriods(input: {
   employeeHrId: string;
   hireDate: string;
   currentPeriodStart: string;
   failClosedLedgerRead?: boolean;
-}): Promise<number> {
+}, client?: VacationBalanceReadClient): Promise<number> {
   if (compareDateOnly(input.currentPeriodStart, input.hireDate) <= 0) return 0;
 
-  let currentDebt = 0;
+  // THE PERIODS FIRST, THEN THEIR READS TOGETHER (2026-10-01, "slow to transfer between page and
+  // page"). Which periods the walk visits is decided by dates alone — the same loop and the same
+  // 50-period cap as before — never by what a period's read returned, so the list is built up front.
+  // The reads then run six periods at a time instead of one after another, and the debt is folded
+  // in period order with the same max(0, debt + used − entitlement) step, so the figure is the same
+  // to the last digit. A failed read throws only when the fold reaches it, so the error is the one
+  // the one-at-a-time walk met first; once a batch holds a failure, no later batch is started.
+  const periods: Array<NonNullable<ReturnType<typeof getVacationBalancePeriod>>> = [];
   let periodStart = input.hireDate;
-  
   let iterations = 0;
   while (compareDateOnly(periodStart, input.currentPeriodStart) < 0 && iterations < 50) {
     iterations++;
     const period = getVacationBalancePeriod({ employeeHrId: input.employeeHrId, hireDate: input.hireDate, referenceDate: periodStart });
     if (!period) break;
+    periods.push(period);
+    periodStart = period.periodEnd;
+  }
 
-    const usedPaidDays = await approvedPaidDaysInPeriod({
-      employeeHrId: input.employeeHrId,
-      failClosedLedgerRead: input.failClosedLedgerRead,
-      periodStart: period.periodStart,
-      periodEnd: period.periodEnd,
-      vacationType: "annual",
-    });
+  const usedPaidDaysReads: Array<PromiseSettledResult<number>> = [];
+  for (let first = 0; first < periods.length; first += DEFERRED_DEBT_PERIODS_READ_TOGETHER) {
+    const batch = await Promise.allSettled(
+      periods.slice(first, first + DEFERRED_DEBT_PERIODS_READ_TOGETHER).map((period) =>
+        approvedPaidDaysInPeriod({
+          employeeHrId: input.employeeHrId,
+          failClosedLedgerRead: input.failClosedLedgerRead,
+          periodStart: period.periodStart,
+          periodEnd: period.periodEnd,
+          vacationType: "annual",
+        }, client),
+      ),
+    );
+    usedPaidDaysReads.push(...batch);
+    if (batch.some((read) => read.status === "rejected")) break;
+  }
+
+  let currentDebt = 0;
+  for (let index = 0; index < usedPaidDaysReads.length; index += 1) {
+    const period = periods[index];
+    const usedPaidDays = settledValueOrThrow(usedPaidDaysReads[index]);
 
     const entitlementDays = getCompletedVacationPeriodEntitlementDays({
       employeeHrId: input.employeeHrId,
@@ -2697,7 +2763,6 @@ async function getDeferredDebtFromPreviousPeriods(input: {
       period,
     });
     currentDebt = Math.max(0, currentDebt + usedPaidDays - entitlementDays);
-    periodStart = period.periodEnd;
   }
 
   return currentDebt;
@@ -2954,7 +3019,13 @@ export async function getVacationRequestPageData(access: AccessContext) {
   // local/UTC clock.
   const today = currentCairoDateOnlyIso();
   const { manager, managerOfManager } = managerChain(directory, employee);
-  const weeklyOffPolicy = await fetchWeeklyOffPolicyForTitle(employeeVacationPolicyTitle(employee));
+  // STARTED ALONGSIDE THE BALANCES (2026-10-01, "slow to transfer between page and page"): the
+  // weekly-off policy is one read the balances never use, and it used to hold all of them up. It is
+  // awaited below, after them; its failure still fails the page with the same error, because the
+  // balances' own failures are caught into balanceError and never thrown. The no-op catch only stops
+  // a failure from reading as UNHANDLED while the balances run — the await below still throws it.
+  const weeklyOffPolicyRead = fetchWeeklyOffPolicyForTitle(employeeVacationPolicyTitle(employee));
+  void weeklyOffPolicyRead.catch(() => undefined);
 
   const balanceReferenceDates: Record<VacationType, string> = {
     annual: getAnnualVacationMinimumStartDate(),
@@ -2995,6 +3066,7 @@ export async function getVacationRequestPageData(access: AccessContext) {
       ? "Vacation schema is not ready. Apply the new v2 vacation migration before using this module."
       : (err instanceof Error ? err.message : String(err));
   }
+  const weeklyOffPolicy = await weeklyOffPolicyRead;
 
   return {
     balance,
@@ -4894,9 +4966,21 @@ async function enrichVacationRows(rows: VacationRequestRecord[]) {
 
 async function fetchHolidaysForRows(rows: VacationRequestRecord[]) {
   const dates = rows.flatMap((row) => [row.startDate, row.endDate]);
+  const periods = holidayMonthKeysForDates(dates);
+  if (periods.length === 0) return [];
+  // MONTHS TOGETHER, NOT IN A LINE (2026-10-01, "slow to transfer between page and page"): no
+  // month's holidays depend on another's. The first month is still read on its own, because it
+  // fills the two caches every month reads — the Google calendar feed and the confirmed-override
+  // table — so the rest, read together after it, find them warm instead of each fetching them
+  // again. Each month still fails on its own into "no holidays for that month", and the months are
+  // appended in the order they were asked for, exactly as the one-at-a-time loop appended them.
+  const [firstPeriod, ...laterPeriods] = periods;
+  const firstMonth = await getConfirmedNationalHolidays(firstPeriod).catch(() => null);
+  const laterMonths = await Promise.all(
+    laterPeriods.map((period) => getConfirmedNationalHolidays(period).catch(() => null)),
+  );
   const holidays: EgyptianNationalHoliday[] = [];
-  for (const period of holidayMonthKeysForDates(dates)) {
-    const result = await getConfirmedNationalHolidays(period).catch(() => null);
+  for (const result of [firstMonth, ...laterMonths]) {
     if (result?.connected) holidays.push(...result.holidays);
   }
   return holidays;
@@ -5843,11 +5927,30 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
   const visibleEmployeeHrIds = buildVisibleHrIdSet(visibleEmployees);
   const data = await fetchVacationReportRowsFromDatabase({ access, filters: clean, visibleEmployeeHrIds });
 
-  const visibleRowsBase = await markVacationDecisionAccess(access, (data ?? [])
+  const scopedRows = (data ?? [])
     .map((row) => mapVacationRow(row as VacationRequestDbRow))
-    .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds)));
-  const visibleRows = await enrichVacationRows(visibleRowsBase);
-  const holidays = await fetchHolidaysForRows(visibleRows);
+    .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds));
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the approval-step read,
+  // the evidence/event enrichment, the holiday months, the unfiltered re-read and the last SLA run
+  // used to wait on each other in a line, and none reads another's answer. markVacationDecisionAccess
+  // sets `canDecide` and nothing else; enrichVacationRows keeps every field it is handed and adds its
+  // own three, reading only id, status, createdAt and managerDecisionAt; fetchHolidaysForRows reads
+  // only each row's dates. So the rows below are field for field the ones the chained calls built.
+  // The results are unwrapped in the order the calls used to run, so a failure throws the same error
+  // the one-at-a-time version would have met first.
+  const [decisionAccessRead, enrichedRead, holidaysRead, allScopedRead, latestSlaRunRead] = await Promise.allSettled([
+    markVacationDecisionAccess(access, scopedRows),
+    enrichVacationRows(scopedRows),
+    fetchHolidaysForRows(scopedRows),
+    fetchVacationReportRowsFromDatabase({ access, filters: {}, visibleEmployeeHrIds }),
+    fetchLatestVacationSlaRun(),
+  ]);
+  const rowsWithDecisionAccess = settledValueOrThrow(decisionAccessRead);
+  const visibleRows = settledValueOrThrow(enrichedRead).map((row, index) => ({
+    ...row,
+    canDecide: rowsWithDecisionAccess[index].canDecide,
+  }));
+  const holidays = settledValueOrThrow(holidaysRead);
   const warningsByRequest = buildVacationOverlapWarnings({ holidays, rows: visibleRows });
   const visibleRowsWithWarnings = visibleRows.map((row) => ({
     ...row,
@@ -5860,7 +5963,8 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
   // (loadAllVacationRequestRowsCached) and re-applies only the access scope in memory, so this adds
   // no database round-trip. enrichVacationRows is deliberately NOT applied: it fetches events and
   // evidence reviews per request id for the timeline UI, and the balance sum reads none of that.
-  const allScopedRows = (await fetchVacationReportRowsFromDatabase({ access, filters: {}, visibleEmployeeHrIds }))
+  // (The re-read itself was started with the others above.)
+  const allScopedRows = settledValueOrThrow(allScopedRead)
     .map((row) => mapVacationRow(row))
     .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds));
   const employeeEligibility = buildEmployeeEligibilityRows({
@@ -5875,7 +5979,7 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
     // days) and can make HR reject a request that is actually funded.
     today: currentCairoDateOnlyIso(),
   });
-  const latestSlaRun = await fetchLatestVacationSlaRun();
+  const latestSlaRun = settledValueOrThrow(latestSlaRunRead);
 
   return {
     canAdminManage,

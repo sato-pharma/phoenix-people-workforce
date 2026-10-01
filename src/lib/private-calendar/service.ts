@@ -255,7 +255,17 @@ async function loadHolidayItems(year: number, month: number, start: string, end:
 async function loadAttendanceItems(employeeHrIds: string[], start: string, end: string) {
   try {
     const selectedKeys = new Set(employeeHrIds.map(privateCalendarHrIdKey).filter(Boolean));
-    const report = await getFingerprintAttendanceReport({ dateFrom: start, dateTo: end });
+    // ONE EMPLOYEE → HIS REPORT ONLY (2026-10-01, "slow to transfer between page and page"): unlocked,
+    // the report builds the whole company's month — every punch, and six per-person lookups for
+    // everyone who punched — for a calendar showing one person. Locked with exactEmployeeHrId, as the
+    // self-service attendance page already is (employee-attendance.ts), it reads only his punches and
+    // builds only his rows, which are the rows the filter below kept from the company-wide report. The
+    // filter stays the authority on what is shown.
+    const report = await getFingerprintAttendanceReport(
+      employeeHrIds.length === 1
+        ? { dateFrom: start, dateTo: end, exactEmployeeHrId: employeeHrIds[0] }
+        : { dateFrom: start, dateTo: end },
+    );
     return {
       items: report.rows
         .filter((row) => selectedKeys.has(privateCalendarHrIdKey(row.employeeHrId)))
@@ -396,15 +406,23 @@ export async function getPrivateCalendarWorkspace(input: {
   const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
   const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
-  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, attendancePolicyRows] =
+  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, attendancePolicyRows, disputesByEmployee] =
     await Promise.all([
       loadAttendanceItems(scopeHrIds, start, end),
       loadVacationItems(scopeHrIds, start, end),
       loadExcuseItems(scopeHrIds, start, end),
       loadHolidayItems(input.year, input.month, start, end),
       loadDoubleVisitPrivateCalendarItems(scopeHrIds, start, end),
-      loadFieldVisitPrivateCalendarItems(scopeHrIds, start, end),
+      // The CRM accounts ride along so the field-visit read can find each person's own visits by
+      // account as well as by HR id (see loadFieldVisitPrivateCalendarItems).
+      loadFieldVisitPrivateCalendarItems(scopeHrIds, start, end, scopeEmployees.map((employee) => employee.crmId)),
       loadAttendancePolicyScheduleRows(),
+      // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): a dispute is read by
+      // employee and date range alone — nothing loaded beside it feeds it — so it loads with the
+      // sources instead of after them. Each employee's read still falls back to none on failure.
+      Promise.all(
+        scopeEmployees.map((employee) => listDisputesForEmployee({ employeeHrId: employee.hrId, end, start }).catch(() => [])),
+      ),
     ]);
 
   const allItems = decorateItemsWithEmployeeMetadata(filterItemsByEmployees([
@@ -440,9 +458,7 @@ export async function getPrivateCalendarWorkspace(input: {
     vacation: vacations.ready,
   };
 
-  const employeeDisputes = (await Promise.all(
-    scopeEmployees.map((employee) => listDisputesForEmployee({ employeeHrId: employee.hrId, end, start }).catch(() => [])),
-  )).flat();
+  const employeeDisputes = disputesByEmployee.flat();
   const itemsWithCorrections = applyAcceptedDisputeOverlays(items, employeeDisputes);
   const exceptionsWithStatuses = appendDisputeStatusExceptions(exceptions, employeeDisputes);
 

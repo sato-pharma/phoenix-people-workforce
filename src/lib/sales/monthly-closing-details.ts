@@ -8,16 +8,21 @@ import {
   isRestrictedProductCode,
   normalizeLineKey,
   resolveSalesAccessScope,
+  type SalesAccessScope,
 } from "@/lib/sales/access-scope";
 import { applyCreditedAreaView, buildMainStoresRows } from "@/lib/sales/closing-main-stores";
 import { canRevealClosingSource, withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
 import { applyClosingAreaMergesToDetails } from "@/lib/sales/closing-area-merges";
 import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
-import { loadOperationalRegionResolver, loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
+import {
+  loadOperationalRegionResolver,
+  loadSplitRegions,
+  type OperationalRegionResolver,
+} from "@/lib/sales/closing-organogram-regions";
 import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
 import { evenSplitKey, loadEvenSplitCustomerKeys } from "@/lib/sales/even-split-registry";
 import { resolveMedicalRepSosAreaCodes } from "@/lib/sales/medical-rep-area-scope";
-import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { loadSalesReferenceData, type SalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { rowIsInRegionScope, rowMatchesRegionFilter } from "@/lib/sales/sos-region-basis";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -333,6 +338,28 @@ async function validatedBatchIdsForPeriod(period: string): Promise<string[]> {
 
 /** Batches read at once. Each walk is sequential inside itself; four keep the PostgREST pool calm. */
 const BATCH_READ_CONCURRENCY = 4;
+/** Customer-master address chunks read at once — the same pool courtesy as the batch walk. */
+const ADDRESS_READ_CONCURRENCY = 4;
+
+/**
+ * The `official_line` ILIKE pattern that admits every row `normalizeLineKey` would keep for this
+ * line — or null when no pattern can be proven to, and the walk reads every line as it always did.
+ *
+ * WHY A SUPERSET IS ALL IT HAS TO BE. The JS comparison below stays the authority: a row this admits
+ * and the key rejects is still dropped there. So the one thing that must hold is that nothing the key
+ * keeps is filtered out here, and it does, for a key of printable ASCII (every line name in the
+ * system: "CNS", "Pedia", "Anti Infective", "Head Office"):
+ *   • `normalizeLineKey` is trim + toLowerCase, and ILIKE folds ASCII letters exactly as
+ *     toLowerCase does, so the key's own letters match in any case;
+ *   • the `%` at each end admits whatever `trim()` would have stripped, so a padded " pedia " matches;
+ *   • `%`, `_` and `\` in the key are escaped, so they match themselves and never act as wildcards.
+ * An EMPTY key is the one that cannot be expressed: it keeps rows whose line is NULL, and no LIKE
+ * pattern matches NULL. So an empty or non-ASCII key reads unfiltered.
+ */
+export function officialLineIlikePattern(lineKey: string): string | null {
+  if (!lineKey || !/^[\x20-\x7e]+$/.test(lineKey)) return null;
+  return `%${lineKey.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+}
 
 /**
  * Read every import row for the batches, KEYSET-paged ONE BATCH AT A TIME on
@@ -353,6 +380,13 @@ const BATCH_READ_CONCURRENCY = 4;
  *
  * The ORDER is unchanged. The rows are re-sorted by `id` before they leave, so every consumer sees
  * the same sequence the single walk produced — the details sheet and everything built from it.
+ *
+ * THE LINE IS ASKED FOR IN SQL TOO (2026-10-01, "slow to transfer between page and page"). A
+ * distributor file carries every line, so a Pedia read shipped CNS, Anti Infective and Head Office
+ * rows across the wire only for the loop below to drop them. The ILIKE is a SUPERSET of that loop's
+ * test (see officialLineIlikePattern), and the loop still decides — so the rows kept, and the order
+ * they leave in, are exactly what they were. The keyset is unchanged: each page is still a seek on
+ * (batch_id, row_number), now skipping other lines' rows inside the database.
  */
 export async function readImportRowsFrom(
   supabase: ReturnType<typeof getSupabaseAdmin>,
@@ -364,6 +398,7 @@ export async function readImportRowsFrom(
   const batches = [...new Set(batchIds)];
   if (batches.length === 0) return [];
   const lineKey = normalizeLineKey(line);
+  const linePattern = officialLineIlikePattern(lineKey);
 
   const perBatch = await mapWithConcurrency(batches, BATCH_READ_CONCURRENCY, async (batchId) => {
     const kept: Array<Record<string, unknown>> = [];
@@ -380,6 +415,7 @@ export async function readImportRowsFrom(
         .eq("batch_id", batchId)
         .order("row_number", { ascending: true })
         .limit(pageSize);
+      if (linePattern !== null) query = query.ilike("official_line", linePattern);
       if (cursor !== null) query = query.gt("row_number", cursor);
 
       const { data, error } = await query;
@@ -427,15 +463,23 @@ async function fillMissingAddresses(rows: Array<Record<string, unknown>>): Promi
   const byKey = new Map<string, string>();
   const supabase = getSupabaseAdmin();
   const CHUNK = 400;
+  const chunks: string[][] = [];
+  for (let index = 0; index < codes.length; index += CHUNK) chunks.push(codes.slice(index, index + CHUNK));
   try {
-    for (let index = 0; index < codes.length; index += CHUNK) {
+    // FOUR CHUNKS AT A TIME (2026-10-01, "slow to transfer between page and page"), where they used
+    // to go one after another. The answers are applied in CHUNK order below, so the map ends up
+    // exactly as the one-by-one walk left it; and any chunk failing still leaves every address blank.
+    const answers = await mapWithConcurrency(chunks, ADDRESS_READ_CONCURRENCY, async (chunk) => {
       const { data, error } = await supabase
         .from("source_of_sales_customer_map")
         .select("distributor_code,customer_code,address")
         .eq("active", true)
-        .in("customer_code", codes.slice(index, index + CHUNK));
+        .in("customer_code", chunk);
       if (error) throw error;
-      (data ?? []).forEach((entry) => {
+      return data ?? [];
+    });
+    for (const data of answers) {
+      data.forEach((entry) => {
         const address = text((entry as Record<string, unknown>).address);
         if (!address) return;
         const key = `${text((entry as Record<string, unknown>).distributor_code)}|${text((entry as Record<string, unknown>).customer_code)}`;
@@ -490,6 +534,40 @@ export type LoadClosingDetailsInput = {
   pageSize?: number;
   /** Return every filtered row rather than one page. Used by the workbook export. */
   unpaged?: boolean;
+  /**
+   * Reads the caller has ALREADY started for this same `access`, handed in so a loop over MONTHS
+   * pays for each once rather than once per month (2026-10-01, "slow to transfer between page and
+   * page"). Every one is optional, and an absent one is read here exactly as it always was.
+   */
+  shared?: ClosingDetailsSharedReads;
+};
+
+/**
+ * Period-independent reads one request may share across several `loadMonthlyClosingDetails` calls.
+ *
+ * 🔴 EACH MUST BE EXACTLY WHAT THIS LOADER WOULD HAVE READ FOR ITSELF, FOR THE SAME `access` — the
+ * scope and the rep's areas are access boundaries, and a value computed for anyone else would show
+ * this viewer someone else's rows. Nothing here is read from a request, and none of it is cached past
+ * the request that made it. The loader only READS what it is handed; it never mutates it, which is
+ * what makes one value safe to hand to every month at once.
+ */
+export type ClosingDetailsSharedReads = {
+  /**
+   * `resolveSalesAccessScope(access, { includeRestricted })`. Used only when `includeRestricted` is
+   * the loader's own `includeConfidential === true`; otherwise the loader resolves its own.
+   */
+  salesScope?: { includeRestricted: boolean; scope: Promise<SalesAccessScope> };
+  /** `loadSalesReferenceData({ includeCustomerBricks: false })` — the name masters only. */
+  references?: Promise<SalesReferenceData>;
+  /** `loadOperationalRegionResolver()`. */
+  operationalRegions?: Promise<OperationalRegionResolver>;
+  /** `loadEvenSplitCustomerKeys()`. */
+  evenSplitCustomers?: Promise<Set<string>>;
+  /**
+   * A Medical Rep's own areas, `resolveMedicalRepSosAreaCodes(access)` — null is "no area on file".
+   * Read only on the Medical Rep branch, exactly where the loader would resolve them itself.
+   */
+  medicalRepAreaCodes?: Promise<string[] | null>;
 };
 
 const DEFAULT_PAGE_SIZE = 200;
@@ -559,10 +637,15 @@ export async function loadMonthlyClosingDetails(
   const { access } = input;
   const period = text(input.period) || null;
   const availablePeriods = input.availablePeriods ?? [];
+  const shared = input.shared;
 
-  const scope = await resolveSalesAccessScope(access, {
-    includeRestricted: input.includeConfidential === true,
-  });
+  // A scope the caller already resolved is taken ONLY when it was resolved with this call's own
+  // confidential flag — anything else is resolved here, exactly as before.
+  const includeRestricted = input.includeConfidential === true;
+  const sharedScope = shared?.salesScope;
+  const scope = await (sharedScope && sharedScope.includeRestricted === includeRestricted
+    ? sharedScope.scope
+    : resolveSalesAccessScope(access, { includeRestricted }));
 
   // Only offer the lines this viewer may actually open. Doing it here (rather than in the route)
   // keeps the picker and the data on the same authority, so a portal user never sees a line in
@@ -627,16 +710,18 @@ export async function loadMonthlyClosingDetails(
     if (!allowed.has(normalizeLineKey(line))) return empty(true);
   }
 
+  // The three period-independent reads come from `shared` when a caller looping over months handed
+  // them in — the same function, already running once for the whole request — else from here.
   const [batchIds, references, operationalRegions, evenSplitCustomers] = await Promise.all([
     validatedBatchIdsForPeriod(period),
-    loadSalesReferenceData({ includeCustomerBricks: false }),
+    shared?.references ?? loadSalesReferenceData({ includeCustomerBricks: false }),
     // The org chart, for the region relabel below. Fails soft to geography, so an unreadable chart
     // costs this tab its region vocabulary and never its rows.
-    loadOperationalRegionResolver(),
+    shared?.operationalRegions ?? loadOperationalRegionResolver(),
     // Customers the database distributes across areas by a rule of their own. Read here, at the one
     // place closing rows are built, so every consumer of those rows inherits the flag instead of
     // having to remember it — the store city split above all. See even-split-registry.ts.
-    loadEvenSplitCustomerKeys(),
+    shared?.evenSplitCustomers ?? loadEvenSplitCustomerKeys(),
   ]);
 
   // 🔴 A MEDICAL REP SEES THEIR OWN AREA, NOT THEIR REGION. The engine reads their SELF scope at region
@@ -644,9 +729,14 @@ export async function loadMonthlyClosingDetails(
   // exactly as the portal Monthly Closing matrix beside this tab resolves it, and it REPLACES the
   // region bound below rather than narrowing inside it. No area on file ⇒ out of scope, never the
   // region. Checked before the empty-month answer so a rep with no area never reads as "no data".
+  // A caller that already resolved them for this same rep hands them in (`shared`) — the same
+  // resolver, so the same bound; null there is still "no area on file", and still out of scope.
   let repClosingAreaCodes: Set<string> | null = null;
   if (access.role === "Medical Rep") {
-    const repAreaCodes = await resolveMedicalRepSosAreaCodes(access, { references });
+    const sharedRepAreaCodes = shared?.medicalRepAreaCodes;
+    const repAreaCodes = sharedRepAreaCodes
+      ? await sharedRepAreaCodes
+      : await resolveMedicalRepSosAreaCodes(access, { references });
     if (!repAreaCodes) return empty(true);
     repClosingAreaCodes = new Set(repAreaCodes);
   }

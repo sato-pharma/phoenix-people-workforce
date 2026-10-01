@@ -80,44 +80,45 @@ export default async function MyVisitsPage() {
   let visits: MyCrmVisitRow[] = [];
   let doubleVisits: MyCrmDoubleVisitRow[] = [];
   let checkins: MyCrmCheckinRow[] = [];
-  let teamVisits: TeamCrmVisitRow[] = [];
-  // A load failure is LOGGED, and the rep reads a sentence — never `error.message`, which on this path
-  // is a Supabase or PostgREST string (the same fix the KPIs page carries).
-  let loadFailed = false;
-  try {
-    [visits, doubleVisits, checkins] = await Promise.all([
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the viewer's own visits,
+  // the Team Visits tab and the three link checks read nothing from one another, so all three batches
+  // run at once instead of one after another. Each keeps its own failure handling exactly as before,
+  // attached where it starts so no batch's failure waits unhandled on another.
+  const [own, teamVisits, [phoenixCrm, vacationDays, doctorList]] = await Promise.all([
+    // A load failure is LOGGED, and the rep reads a sentence — never `error.message`, which on this path
+    // is a Supabase or PostgREST string (the same fix the KPIs page carries).
+    Promise.all([
       fetchMyVisits(hrId, window),
       fetchMyDoubleVisits(hrId, window),
       fetchMyCheckins(hrId, window),
-    ]);
-  } catch (error) {
-    logPortalFailure({ hrId, module: "visits", role: access.role, route: "/employee-portals/visits" }, error);
-    loadFailed = true;
-  }
-
-  // Team Visits — a manager's own people. Resolved HERE, never inside the CRM helper: fetchTeamVisits
-  // takes the hrId set as an explicit argument and fails closed on an empty one, so the scope decision
-  // stays visible at the call site. A Medical Rep resolves to nobody and the tab never renders.
-  try {
-    const teamHrIds = await resolveVisitsTeamHrIds(access);
-    if (teamHrIds.length > 0) teamVisits = await fetchTeamVisits(teamHrIds, window);
-  } catch {
-    // The manager view is additive — never let it break the viewer's own visits.
-    teamVisits = [];
-  }
-
-  // None of these three throws, so the viewer's own visits always render.
-  // The vacation-day requests link (CRM phase 6, rule 9) appears only once the cutover date is set.
-  // The doctor-list link (CRM phase 7) likewise appears only once the cutover date is set.
-  // Phoenix CRM (the owner, 2026-09-16) holds customer lists, weekly plans, visits and reports, built
-  // clean in Phoenix: one button, for the reps and managers of a line that has opened. It replaced the
-  // 2026-09-14 pilot's button, which the owner asked to hide when this module shipped; the old visit and
-  // plan addresses now land in it too.
-  const [phoenixCrm, vacationDays, doctorList] = await Promise.all([
-    phoenixCrmEntryAvailable(access),
-    getVacationDayRequestAvailability(access),
-    getContactListAvailability(access),
+    ]).catch((error: unknown) => {
+      logPortalFailure({ hrId, module: "visits", role: access.role, route: "/employee-portals/visits" }, error);
+      return null;
+    }),
+    // Team Visits — a manager's own people. Resolved HERE, never inside the CRM helper: fetchTeamVisits
+    // takes the hrId set as an explicit argument and fails closed on an empty one, so the scope decision
+    // stays visible at the call site. A Medical Rep resolves to nobody and the tab never renders.
+    resolveVisitsTeamHrIds(access)
+      .then((teamHrIds): Promise<TeamCrmVisitRow[]> | TeamCrmVisitRow[] =>
+        teamHrIds.length > 0 ? fetchTeamVisits(teamHrIds, window) : [],
+      )
+      // The manager view is additive — never let it break the viewer's own visits.
+      .catch((): TeamCrmVisitRow[] => []),
+    // None of these three throws, so the viewer's own visits always render.
+    // The vacation-day requests link (CRM phase 6, rule 9) appears only once the cutover date is set.
+    // The doctor-list link (CRM phase 7) likewise appears only once the cutover date is set.
+    // Phoenix CRM (the owner, 2026-09-16) holds customer lists, weekly plans, visits and reports, built
+    // clean in Phoenix: one button, for the reps and managers of a line that has opened. It replaced the
+    // 2026-09-14 pilot's button, which the owner asked to hide when this module shipped; the old visit and
+    // plan addresses now land in it too.
+    Promise.all([
+      phoenixCrmEntryAvailable(access),
+      getVacationDayRequestAvailability(access),
+      getContactListAvailability(access),
+    ]),
   ]);
+  const loadFailed = own === null;
+  if (own) [visits, doubleVisits, checkins] = own;
   const showNativeLinks = phoenixCrm || vacationDays.show || doctorList.show;
 
   return (

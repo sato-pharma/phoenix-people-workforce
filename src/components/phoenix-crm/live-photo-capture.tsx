@@ -80,13 +80,8 @@ export type CapturedPhoto = {
   shutterCapturedAt: string | null;
 };
 
-/**
- * Frees the memory a photo's on-phone preview holds. Called by the screen that owns the entry, once
- * the entry is saved or abandoned; the capture itself frees a preview only when the photo is retaken.
- */
-export function releaseCapturedPhoto(photo: CapturedPhoto | null | undefined) {
-  if (photo?.previewUrl) URL.revokeObjectURL(photo.previewUrl);
-}
+// `releaseCapturedPhoto` lives in captured-photo.ts, a leaf module, so the app shell can free a
+// preview without pulling this whole camera into the chunk every Phoenix CRM page loads.
 
 type Fix = { lat: number; lon: number; accuracyMeters: number | null; at: string };
 

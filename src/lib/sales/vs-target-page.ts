@@ -191,7 +191,45 @@ export async function buildVsTargetDashboard(
   const explicitPeriod =
     isValidVsTargetPeriod(requestedPeriod) && periods.includes(requestedPeriod) ? requestedPeriod : null;
 
-  const bound = await resolveVsTargetBound(ctx);
+  // Load the WHOLE window up front — not just up to the requested month — because the
+  // landing month is chosen from which periods actually have sales, and that cannot be
+  // known before reading. One range call covers the trend and both compared months.
+  const windowStartCandidate = shiftPeriod(current, -(TREND_WINDOW_MONTHS - 1));
+  const windowStart =
+    windowStartCandidate && windowStartCandidate > SALES_VS_TARGET_FLOOR
+      ? windowStartCandidate
+      : SALES_VS_TARGET_FLOOR;
+
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"). The range, the name
+  // masters, the target-bearing pairs and the publication keys depend on the window alone, never on
+  // who is asking, so they no longer wait for the viewer's bound — which is applied to the rows below,
+  // exactly as before, before anything is totalled. A viewer whose bound is `none` never awaits them;
+  // the guards keep that from surfacing as an unhandled rejection. Each is still awaited, and still
+  // throws, where it is used.
+  const boundLoad = resolveVsTargetBound(ctx);
+  const windowLoads = Promise.all([
+    loadVsTargetRange(windowStart, current),
+    loadAllCanonicalAreaNames(),
+    loadProductNameMap(),
+    loadTargetBearingPairs().catch(() => new Set<string>()),
+    loadPublishedPeriodKeys(windowStart, current),
+  ]);
+  windowLoads.catch(() => {});
+  // Employee names feed ONLY the rep and district-manager roll-ups, which run only where
+  // `levels.rep` is true — never for a Medical Rep (`self`) or a `none` bound. So they are read once
+  // the bound says they will be used, and not at all otherwise.
+  const employeeNamesLoad = boundLoad.then((resolved) =>
+    visibleLevelsForBound(resolved).rep ? loadEmployeeNameMap() : new Map<string, string>(),
+  );
+  employeeNamesLoad.catch(() => {});
+  // The channel split's attribution pass, when the month is already named in the request: it is
+  // the month the dashboard will show, so the pass starts now rather than after the range lands. Its
+  // result is read only if that month turns out to be published, exactly as before.
+  const explicitAttributionLoad = explicitPeriod
+    ? loadMonthlyAttribution(explicitPeriod).catch(() => [])
+    : null;
+
+  const bound = await boundLoad;
   const levels = visibleLevelsForBound(bound);
 
   if (bound.kind === "none") {
@@ -226,22 +264,9 @@ export async function buildVsTargetDashboard(
     };
   }
 
-  // Load the WHOLE window up front — not just up to the requested month — because the
-  // landing month is chosen from which periods actually have sales, and that cannot be
-  // known before reading. One range call covers the trend and both compared months.
-  const windowStartCandidate = shiftPeriod(current, -(TREND_WINDOW_MONTHS - 1));
-  const windowStart =
-    windowStartCandidate && windowStartCandidate > SALES_VS_TARGET_FLOOR
-      ? windowStartCandidate
-      : SALES_VS_TARGET_FLOOR;
-
-  const [rangeRows, areaNames, employeeNames, productNames, targetBearing, publishedKeys] = await Promise.all([
-    loadVsTargetRange(windowStart, current),
-    loadAllCanonicalAreaNames(),
-    loadEmployeeNameMap(),
-    loadProductNameMap(),
-    loadTargetBearingPairs().catch(() => new Set<string>()),
-    loadPublishedPeriodKeys(windowStart, current),
+  const [[rangeRows, areaNames, productNames, targetBearing, publishedKeys], employeeNames] = await Promise.all([
+    windowLoads,
+    employeeNamesLoad,
   ]);
 
   // Scope FIRST — everything below derives from these arrays.
@@ -289,8 +314,11 @@ export async function buildVsTargetDashboard(
 
   // The channel split is not carried by the achievement function (it aggregates the channel
   // away), so it comes from the attribution engine that function is itself built on. Loaded
-  // after the period is resolved, since the period depends on what the range actually held.
-  const attribution = salesLoaded ? await loadMonthlyAttribution(period).catch(() => []) : [];
+  // after the period is resolved, since the period depends on what the range actually held —
+  // unless the request named the period, in which case the pass started above for that same month.
+  const attribution = salesLoaded
+    ? await (explicitAttributionLoad ?? loadMonthlyAttribution(period).catch(() => []))
+    : [];
 
   const trendPeriods = periods.filter((entry) => entry >= windowStart && entry <= period);
   const allUncovered = buildUncovered(rows, names, targetBearing);

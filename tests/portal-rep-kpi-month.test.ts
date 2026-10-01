@@ -111,8 +111,10 @@ export function runPortalRepKpiMonthTests() {
     !/month:\s*todayIso\.slice/.test(snapshot),
     `${SNAPSHOT}: the KPI board's month must not be re-derived from today inside the loader — that ignores the picker`,
   );
+  // `includeReports: false` may sit between them: the tile never shows the two per-rep reports, so the
+  // landing page skips that read (pinned in tests/portal-rep-navigation-speed.test.ts).
   assert.ok(
-    /getKpisBoard\(\{\s*access,\s*month,\s*todayIso\s*\}\)/.test(snapshot),
+    /getKpisBoard\(\{\s*access,(?:\s*includeReports:\s*false,)?\s*month,\s*todayIso\s*\}\)/.test(snapshot),
     `${SNAPSHOT}: the board needs BOTH the picked month and the real Cairo day (see the control above)`,
   );
 

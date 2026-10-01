@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 
-import { readImportRowsFrom } from "../src/lib/sales/monthly-closing-details.ts";
+import {
+  officialLineIlikePattern,
+  readImportRowsFrom,
+} from "../src/lib/sales/monthly-closing-details.ts";
 
 /**
  * The Monthly Closing details read pages every import row of the month's validated batches. Until
@@ -15,7 +18,11 @@ import { readImportRowsFrom } from "../src/lib/sales/monthly-closing-details.ts"
  *      old IN list ordered by id, which is the regression that costs the database;
  *   2. the OUTPUT is what the old walk returned — every row of the requested line exactly once, in
  *      ascending id across all batches, however row_number and id interleave, across page
- *      boundaries, on an exact-multiple last page, and with a batch id listed twice.
+ *      boundaries, on an exact-multiple last page, and with a batch id listed twice;
+ *   3. since 2026-10-01 the LINE is asked for in SQL too (`ilike official_line`), so other lines'
+ *      rows no longer cross the wire — and because the mock applies that ILIKE the way Postgres
+ *      does, (2) proves it is a SUPERSET of the JS line test: the padded " pedia " and the upper-case
+ *      "PEDIA" still come back.
  */
 
 type Row = Record<string, unknown>;
@@ -24,8 +31,26 @@ interface Call {
   eq: Array<[string, unknown]>;
   inList: Array<[string, unknown[]]>;
   gt: Array<[string, number]>;
+  ilike: Array<[string, string]>;
   order: string[];
   limit: number;
+}
+
+/** Postgres ILIKE, as far as this reader can use it: `%`, `_`, backslash escapes, ASCII case folded. */
+function ilikeMatches(value: unknown, pattern: string): boolean {
+  if (value == null) return false; // NULL ILIKE anything is not true
+  const literal = (character: string) => character.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index];
+    if (character === "\\" && index + 1 < pattern.length) {
+      index += 1;
+      source += literal(pattern[index]);
+    } else if (character === "%") source += "[\\s\\S]*";
+    else if (character === "_") source += "[\\s\\S]";
+    else source += literal(character);
+  }
+  return new RegExp(`^${source}$`, "i").test(String(value));
 }
 
 function mockSupabase(dataset: Row[]) {
@@ -33,20 +58,22 @@ function mockSupabase(dataset: Row[]) {
   const client = {
     from(table: string) {
       assert.equal(table, "source_of_sales_import_rows");
-      const call: Call = { eq: [], inList: [], gt: [], order: [], limit: Number.POSITIVE_INFINITY };
+      const call: Call = { eq: [], inList: [], gt: [], ilike: [], order: [], limit: Number.POSITIVE_INFINITY };
       calls.push(call);
       const builder = {
         select(_cols: string) { return builder; },
         eq(col: string, val: unknown) { call.eq.push([col, val]); return builder; },
         in(col: string, vals: unknown[]) { call.inList.push([col, vals]); return builder; },
         gt(col: string, val: number) { call.gt.push([col, val]); return builder; },
+        ilike(col: string, pattern: string) { call.ilike.push([col, pattern]); return builder; },
         order(col: string, _opts: { ascending: boolean }) { call.order.push(col); return builder; },
         limit(n: number) { call.limit = n; return builder; },
         then(resolve: (v: { data: Row[]; error: null }) => void) {
           let rows = dataset.filter((r) =>
             call.eq.every(([c, v]) => r[c] === v) &&
             call.inList.every(([c, vs]) => vs.includes(r[c])) &&
-            call.gt.every(([c, v]) => Number(r[c]) > v),
+            call.gt.every(([c, v]) => Number(r[c]) > v) &&
+            call.ilike.every(([c, p]) => ilikeMatches(r[c], p)),
           );
           for (const col of [...call.order].reverse()) rows = [...rows].sort((a, b) => Number(a[col]) - Number(b[col]));
           resolve({ data: rows.slice(0, call.limit), error: null });
@@ -102,6 +129,11 @@ export async function runMonthlyClosingDetailsKeysetTests() {
       ["b1", "b2"],
       "only the requested batches are read",
     );
+    assert.ok(
+      calls.every((c) => c.ilike.length === 1 && c.ilike[0]?.[0] === "official_line" && c.ilike[0]?.[1] === "%pedia%"),
+      "every page asks for the line in SQL too — a distributor file carries every line, and without this the other " +
+        "lines' rows are shipped across the wire only for the JS test to drop them",
+    );
   }
 
   // ── 2. output: the line's rows, each once, ascending id across batches and pages ──────────────
@@ -148,5 +180,46 @@ export async function runMonthlyClosingDetailsKeysetTests() {
     const { client, calls } = mockSupabase(dataset);
     await readImportRowsFrom(client, ["b1"], "Pedia");
     assert.ok(calls.every((c) => c.limit === 1000), "production pages stay at 1,000 rows");
+  }
+
+  // ── 7. the SQL line filter is a SUPERSET, and the JS line test still decides ─────────────────
+  {
+    assert.equal(officialLineIlikePattern("pedia"), "%pedia%", "the key, wrapped so a padded line still matches");
+    assert.equal(officialLineIlikePattern("anti infective"), "%anti infective%");
+    assert.equal(
+      officialLineIlikePattern("50%_off\\x"),
+      "%50\\%\\_off\\\\x%",
+      "LIKE metacharacters in a key are escaped, so they match only themselves",
+    );
+    assert.equal(
+      officialLineIlikePattern(""),
+      null,
+      "an empty key keeps NULL lines, which no LIKE pattern matches — so it must read unfiltered",
+    );
+    assert.equal(
+      officialLineIlikePattern("pédia"),
+      null,
+      "a non-ASCII key cannot be proven to fold the way toLowerCase does — so it must read unfiltered",
+    );
+
+    // "Pedia Plus" CONTAINS the key, so the ILIKE admits it; the JS test must still drop it. A tab-and-
+    // newline padded upper-case spelling must still come back. Pages of two force a seek across it.
+    const tricky: Row[] = [
+      { id: 7, batch_id: "b5", row_number: 1, official_line: "Pedia Plus" },
+      { id: 3, batch_id: "b5", row_number: 2, official_line: "\tPEDIA\n" },
+      { id: 5, batch_id: "b5", row_number: 3, official_line: "Anti Infective" },
+      { id: 1, batch_id: "b5", row_number: 4, official_line: null },
+      { id: 9, batch_id: "b5", row_number: 5, official_line: "pedia" },
+    ];
+    const filtered = mockSupabase(tricky);
+    const got = await readImportRowsFrom(filtered.client, ["b5"], "Pedia", 2);
+    assert.deepEqual(got.map((r) => Number(r.id)), oldWalk(tricky, ["b5"], "pedia"), "the JS line test still decides");
+    assert.deepEqual(got.map((r) => Number(r.id)), [3, 9], "every spelling the key keeps, and nothing it does not");
+
+    // An empty key keeps the NULL-line row — which is exactly why it asks for no line in SQL.
+    const blank = mockSupabase(tricky);
+    const kept = await readImportRowsFrom(blank.client, ["b5"], "  ", 2);
+    assert.deepEqual(kept.map((r) => Number(r.id)), [1], "an empty line key keeps the NULL-line row");
+    assert.ok(blank.calls.every((c) => c.ilike.length === 0), "and so asks for no line in SQL at all");
   }
 }

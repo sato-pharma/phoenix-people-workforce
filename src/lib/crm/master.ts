@@ -541,8 +541,10 @@ async function attachNearestCheckins(rows: CrmMasterRow[], preloadedIndex?: Map<
   }
 
   let index: Map<string, CheckinLite[]>;
+  let centroidsLoad: ReturnType<typeof loadBrickCentroids>;
   if (preloadedIndex) {
     index = preloadedIndex;
+    centroidsLoad = loadBrickCentroids();
   } else {
     // No pre-built index (the paginated master table view — one page at a time, so the per-call
     // cost this function's own docstring warns about never gets multiplied): fall back to the
@@ -568,6 +570,11 @@ async function attachNearestCheckins(rows: CrmMasterRow[], preloadedIndex?: Map<
     if ((agentIds.length === 0 && agentHrIds.length === 0) || days.length === 0) return true;
     const from = days.reduce((a, b) => (a < b ? a : b));
     const to = days.reduce((a, b) => (a > b ? a : b));
+    // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the brick centres are a
+    // cached reference list that depends on nothing this page's check-ins hold, so they load while
+    // the check-ins are read. loadBrickCentroids never rejects (it degrades to an empty list), so the
+    // failure path below may leave it unread.
+    centroidsLoad = loadBrickCentroids();
     let data: CheckinLite[];
     try {
       data = await queryCheckins<CheckinLite>({
@@ -591,7 +598,7 @@ async function attachNearestCheckins(rows: CrmMasterRow[], preloadedIndex?: Map<
   }
 
   // Brick centroids for the GPS-geography columns below (cached; empty list = columns stay null).
-  const centroids = await loadBrickCentroids();
+  const centroids = await centroidsLoad;
 
   // Same agent + CONTACT + day matcher as the Visits Report (crm/checkin-match.ts), tie broken by
   // crm_save_date — so a given visit resolves to the SAME check-in on both surfaces.
@@ -954,16 +961,25 @@ type BrickMapping = { areaId: string | null; brickId: string; regionId: string |
  * against source_of_sales_bricks for the brick's real area_code/region_code — the same master
  * validated against the owner's manually-mapped xlsx (2026-07-22). Small table (bounded by
  * distinct CRM region count, ~300), so one unpaginated read is safe. Degrades to an empty map on
- * any error (cells then show "—") — this is a display overlay, never load-bearing for the sync. */
-async function loadBrickMappingByRegionId(): Promise<Map<number, BrickMapping>> {
+ * any error (cells then show "—") — this is a display overlay, never load-bearing for the sync.
+ *
+ * `regionIds` narrows the read to those regions' own resolutions — see
+ * {@link loadBrickMappingByContactId} for why the paginated view passes it; omitted, it is the full
+ * map the export preloads. crm_region_id is the table's primary key, so the page's regions get
+ * exactly the entries the full map holds for them. */
+async function loadBrickMappingByRegionId(regionIds?: readonly number[]): Promise<Map<number, BrickMapping>> {
   const supabase = getSupabaseAdmin();
   const map = new Map<number, BrickMapping>();
   try {
-    const { data: resolutions, error: resolutionsError } = await supabase
+    // No region on the page → nothing it could look up, so nothing to read.
+    if (regionIds && regionIds.length === 0) return map;
+    let resolutionsQuery = supabase
       .from(CRM_REGION_BRICK_RESOLUTIONS_TABLE)
       .select("crm_region_id, brick_id")
       .eq("status", "mapped")
       .not("brick_id", "is", null);
+    if (regionIds) resolutionsQuery = resolutionsQuery.in("crm_region_id", [...regionIds]);
+    const { data: resolutions, error: resolutionsError } = await resolutionsQuery;
     if (resolutionsError) return map;
     const rows = (resolutions ?? []) as Array<{ brick_id: string | null; crm_region_id: number }>;
     if (rows.length === 0) return map;
@@ -998,29 +1014,53 @@ async function loadBrickMappingByRegionId(): Promise<Map<number, BrickMapping>> 
 /** Builds crm_contact_id -> {brickId, areaId, regionId} from every "mapped" CUSTOMER resolution.
  * Same shape as {@link loadBrickMappingByRegionId}, but per individual customer, which is strictly
  * more precise than the region-level mapping (a CRM region spans many bricks). Degrades to an empty
- * map on any error — display overlay only, never load-bearing. */
-async function loadBrickMappingByContactId(): Promise<Map<number, BrickMapping>> {
+ * map on any error — display overlay only, never load-bearing.
+ *
+ * PAGE-SCOPED when `contactIds` is given (2026-10-01, "slow to transfer between page and page"): the
+ * paginated view labels at most one page of rows, and reading all ~12.5k mappings for it meant ~13
+ * sequential 1,000-row pages plus a sequential brick lookup per 200 bricks — seconds on every page
+ * turn, to label 50 rows. It now reads only the page's own contacts. crm_contact_id is the table's
+ * primary key, so each of those contacts gets exactly the entry the full map holds for it, and
+ * attachBrickMapping looks up nothing else. The export passes nothing and keeps the full preload. */
+async function loadBrickMappingByContactId(contactIds?: readonly number[]): Promise<Map<number, BrickMapping>> {
   const supabase = getSupabaseAdmin();
   const map = new Map<number, BrickMapping>();
   try {
-    // Paginated with an EXPLICIT order: this table is one row per resolved CRM contact and the
-    // migration sizes it at ~12.5k, so a single unpaginated read would silently stop at
-    // PostgREST's 1,000-row cap and quietly re-show already-mapped customers as unmapped. Offset
-    // paging is only exact when the order is stable.
-    //
-    // The order is now the `tiebreakColumn` ARGUMENT rather than an `.order()` inside the builder.
-    // Same query, but the guarantee moves somewhere it can be enforced: the builder is an opaque
-    // callback, so fetchAllRows cannot verify an order hidden inside it — which is how this class of
-    // bug reached production three times. crm_contact_id is unique here, so the order is total.
-    const resolutions = await fetchAllRows<{ brick_id: string | null; crm_contact_id: number }>(
-      () =>
-        supabase
+    let resolutions: Array<{ brick_id: string | null; crm_contact_id: number }>;
+    if (contactIds) {
+      resolutions = [];
+      // Chunked for the same reason as the brick lookup below: an `.in()` list rides in the URL.
+      for (let i = 0; i < contactIds.length; i += 200) {
+        const { data, error } = await supabase
           .from(CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE)
           .select("crm_contact_id, brick_id")
           .eq("status", "mapped")
-          .not("brick_id", "is", null),
-      "crm_contact_id",
-    );
+          .not("brick_id", "is", null)
+          .in("crm_contact_id", contactIds.slice(i, i + 200));
+        // The same "failure → empty map" the full read below reaches through fetchAllRows' throw.
+        if (error) return map;
+        resolutions.push(...((data ?? []) as Array<{ brick_id: string | null; crm_contact_id: number }>));
+      }
+    } else {
+      // Paginated with an EXPLICIT order: this table is one row per resolved CRM contact and the
+      // migration sizes it at ~12.5k, so a single unpaginated read would silently stop at
+      // PostgREST's 1,000-row cap and quietly re-show already-mapped customers as unmapped. Offset
+      // paging is only exact when the order is stable.
+      //
+      // The order is now the `tiebreakColumn` ARGUMENT rather than an `.order()` inside the builder.
+      // Same query, but the guarantee moves somewhere it can be enforced: the builder is an opaque
+      // callback, so fetchAllRows cannot verify an order hidden inside it — which is how this class of
+      // bug reached production three times. crm_contact_id is unique here, so the order is total.
+      resolutions = await fetchAllRows<{ brick_id: string | null; crm_contact_id: number }>(
+        () =>
+          supabase
+            .from(CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE)
+            .select("crm_contact_id, brick_id")
+            .eq("status", "mapped")
+            .not("brick_id", "is", null),
+        "crm_contact_id",
+      );
+    }
     if (resolutions.length === 0) return map;
 
     const brickIds = Array.from(new Set(resolutions.map((r) => r.brick_id).filter((v): v is string => Boolean(v))));
@@ -1080,6 +1120,25 @@ function attachBrickMapping(
     row.phx_area_id = mapping?.areaId ?? null;
     row.phx_region_id = mapping?.regionId ?? null;
   }
+}
+
+/** The contact ids attachBrickMapping above looks up, under its own guard (a real, non-zero
+ * contact) — so a page-scoped read fetches every mapping it can use and nothing it would discard. */
+function brickLookupContactIds(rows: CrmMasterRow[]): number[] {
+  const ids = new Set<number>();
+  for (const row of rows) {
+    if (typeof row.contact_crm_id === "number" && row.contact_crm_id !== 0) ids.add(row.contact_crm_id);
+  }
+  return [...ids];
+}
+
+/** The CRM region ids attachBrickMapping above can fall back to, under its own guard. */
+function brickLookupRegionIds(rows: CrmMasterRow[]): number[] {
+  const ids = new Set<number>();
+  for (const row of rows) {
+    if (typeof row.crm_region_id === "number") ids.add(row.crm_region_id);
+  }
+  return [...ids];
 }
 
 /**
@@ -1671,45 +1730,85 @@ async function attachDerived(
   range: { dateFrom: string | null; dateTo: string | null },
   resources?: DeriveResources,
 ): Promise<void> {
-  // Check-ins carry real GPS but no Phoenix geography — resolve their brick/area/region from the
-  // coordinates (see attachGeoBrick). Visit datasets get their geography from the CRM region instead
-  // (attachBrickMapping below), so this is deliberately check-ins-only.
-  if (dataset === "checkins") await attachGeoBrick(rows);
-  // False = the check-in read failed, so `checkin_id` is null everywhere for that reason alone.
-  // Threaded into attachEffectiveType below so a failure can't manufacture a reclassification.
-  let checkinCorrelationAvailable = true;
-  if (dataset === "visits" || dataset === "double_visits") {
-    checkinCorrelationAvailable = await attachNearestCheckins(rows, resources?.checkinsIndex);
-  }
-  // These tabs never correlate a check-in — the two No-Check-in tabs are defined by NOT having one,
-  // and the No-Doctor tab is contact-less — so seed the Logged/save visit time directly, otherwise
-  // the Visit Time column renders blank for them.
-  else if (
-    dataset === "regular_no_checkin" ||
-    dataset === "regular_dv_no_checkin" ||
-    dataset === "regular_no_contact"
-  )
-    attachSaveTierVisitTime(rows);
-  if (dataset === "double_visits") {
-    // Flag the double visits that are actually part of a triple (third person stacked that day).
-    const byVisitId = resources?.triples ?? (await computeTriplesInRange(range)).byVisitId;
-    attachTripleFlag(rows, byVisitId);
-  }
+  // The check-in-derived overlays, written onto the rows in place. Resolves to whether the check-in
+  // correlation RAN: false = the check-in read failed, so `checkin_id` is null everywhere for that
+  // reason alone. Threaded into attachEffectiveType below so a failure can't manufacture a
+  // reclassification.
+  const attachCheckinOverlays = async (): Promise<boolean> => {
+    // Check-ins carry real GPS but no Phoenix geography — resolve their brick/area/region from the
+    // coordinates (see attachGeoBrick). Visit datasets get their geography from the CRM region instead
+    // (attachBrickMapping below), so this is deliberately check-ins-only.
+    if (dataset === "checkins") {
+      await attachGeoBrick(rows);
+      return true;
+    }
+    if (dataset === "visits" || dataset === "double_visits") return attachNearestCheckins(rows, resources?.checkinsIndex);
+    // These tabs never correlate a check-in — the two No-Check-in tabs are defined by NOT having one,
+    // and the No-Doctor tab is contact-less — so seed the Logged/save visit time directly, otherwise
+    // the Visit Time column renders blank for them.
+    if (dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin" || dataset === "regular_no_contact") {
+      attachSaveTierVisitTime(rows);
+    }
+    return true;
+  };
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the roster, the two brick
+  // mappings and the triple self-join read nothing the check-in overlays write — they key on the rows'
+  // own agent, contact and region ids — so they load WHILE the check-ins are correlated instead of one
+  // after another. With no preload handed in (the paginated view), the brick mappings are read for this
+  // page's own contacts and regions only. One Promise.all, so no load runs unwatched; every overlay is
+  // still APPLIED below in exactly the order it always was.
+  const [checkinCorrelationAvailable, agentMeta, byRegion, byContact, tripleFlags] = await Promise.all([
+    attachCheckinOverlays(),
+    resources?.agentMeta ?? loadAgentMetaByHrId(),
+    isVisitDataset(dataset) ? (resources?.brickMapping ?? loadBrickMappingByRegionId(brickLookupRegionIds(rows))) : null,
+    isVisitDataset(dataset)
+      ? (resources?.brickMappingByContact ?? loadBrickMappingByContactId(brickLookupContactIds(rows)))
+      : null,
+    dataset === "double_visits"
+      ? (resources?.triples ?? computeTriplesInRange(range).then((triples) => triples.byVisitId))
+      : null,
+  ]);
+  // Flag the double visits that are actually part of a triple (third person stacked that day).
+  if (dataset === "double_visits" && tripleFlags) attachTripleFlag(rows, tripleFlags);
   if (isVisitDataset(dataset)) attachEffectiveType(dataset, rows, checkinCorrelationAvailable);
   // "Line" + "Hiring Date" columns on every tab — the agent's roster metadata.
-  attachAgentMeta(rows, resources?.agentMeta ?? (await loadAgentMetaByHrId()), "agent_hr_id");
+  attachAgentMeta(rows, agentMeta, "agent_hr_id");
   // PHX Brick/Area/Region ID + Grade — visit-only (checkins/vacations/triples don't carry a
   // crm_region_id), and only meaningful for the raw visits/regular-no-checkin tabs, which is what
-  // isVisitDataset already scopes to.
-  if (isVisitDataset(dataset)) {
-    const [byRegion, byContact] = await Promise.all([
-      resources?.brickMapping ? Promise.resolve(resources.brickMapping) : loadBrickMappingByRegionId(),
-      resources?.brickMappingByContact ? Promise.resolve(resources.brickMappingByContact) : loadBrickMappingByContactId(),
-    ]);
-    attachBrickMapping(rows, byRegion, byContact);
-  }
+  // isVisitDataset already scopes to (both maps are null for every other dataset).
+  if (byRegion && byContact) attachBrickMapping(rows, byRegion, byContact);
   // Recognition score reads phx_brick_id, so it must run after attachBrickMapping above.
   if (isVisitDataset(dataset)) attachRecognitionScore(rows);
+}
+
+/**
+ * One page of a database-backed dataset, read together with the sync-run ledger the page header
+ * shows. The page read's error is RETURNED, not thrown, so getCrmMasterData still decides between
+ * "not set up yet" (a missing schema) and a real failure exactly as it always did.
+ */
+async function readMasterPage(
+  dataset: CrmMasterDataset,
+  filterOpts: Parameters<typeof applyMasterFilters>[1],
+  page: number,
+  pageSize: number,
+) {
+  const isCheckins = dataset === "checkins";
+  const supabase = getSupabaseAdmin();
+  const table = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin" ? CRM_VISITS_CHECKIN_FLAGS_VIEW : isCheckins ? CRM_CHECKINS_UNIFIED_VIEW : CRM_VISITS_UNIFIED_VIEW;
+  const dateColumn = isCheckins ? "check_date" : "visit_date";
+  const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
+  const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
+
+  const excludedInList = await getEffectiveExcludedInList();
+  const base = supabase.from(table).select(select, { count: "exact" });
+  const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts, excludedInList);
+  const ordered = (filtered as unknown as typeof base)
+    .order(dateColumn, { ascending: false })
+    .order(idColumn, { ascending: false })
+    .range((page - 1) * pageSize, page * pageSize - 1);
+
+  const [{ data, error, count }, latestSyncRuns] = await Promise.all([ordered, getLatestVisitsSyncRuns(6)]);
+  return { count, data, error, latestSyncRuns };
 }
 
 /**
@@ -1726,7 +1825,6 @@ async function attachDerived(
  */
 export async function getCrmMasterData(input: CrmMasterFilter, scope: CrmViewerScope): Promise<CrmMasterData> {
   const dataset = normalizeDataset(input.dataset);
-  const isCheckins = dataset === "checkins";
   const page = Math.max(1, input.page ?? 1);
   const requested = input.pageSize ?? DEFAULT_PAGE_SIZE;
   const pageSize = (CRM_MASTER_PAGE_SIZE_OPTIONS as readonly number[]).includes(requested)
@@ -1749,21 +1847,9 @@ export async function getCrmMasterData(input: CrmMasterFilter, scope: CrmViewerS
 
   const columns = columnsForDataset(dataset);
 
-  // Line / hiring-date resolve to an employee-hr-id allow-set (applied to every tab); load the line
-  // options for the dropdown alongside it.
-  const [allowed, allLineOptions] = await Promise.all([
-    resolveAllowedHrIds({ line, hireFrom, hireTo }),
-    loadLineOptions(),
-  ]);
-  // loadLineOptions() returns EVERY line including Head Office. A scoped viewer must only be offered
-  // the lines their own scope covers, so the dropdown cannot advertise data they can't reach.
-  const lineOptions =
-    scope.kind === "company" || !scope.lineNames
-      ? allLineOptions
-      : allLineOptions.filter((option) => {
-          const label = String(option ?? "").trim().toLowerCase();
-          return scope.lineNames!.some((name) => name.trim().toLowerCase() === label);
-        });
+  // Line / hiring-date resolve to an employee-hr-id allow-set (applied to every tab). With neither
+  // filter set it answers at once, without a read.
+  const allowed = await resolveAllowedHrIds({ line, hireFrom, hireTo });
   // The viewer scope and the Line/Hiring-date filter BOTH resolve to an hr-id allow-set and both land
   // in the SAME `allowedHrIds` slot. They must be INTERSECTED, not one overwriting the other —
   // otherwise a District Manager who picks "Line: Pedia" would see all of Pedia. Intersecting makes
@@ -1792,6 +1878,25 @@ export async function getCrmMasterData(input: CrmMasterFilter, scope: CrmViewerS
     minDuration,
     search,
   };
+
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): a database-backed tab's
+  // page needs only the allow-set above, so it is read WHILE the Line dropdown's options load instead
+  // of after them — those options fill nothing but the echoed filter state. The two computed tabs
+  // build their rows in memory below and read no page here.
+  const readsPage = dataset !== "triple_visits" && dataset !== "vacations";
+  const [allLineOptions, pageRead] = await Promise.all([
+    loadLineOptions(),
+    readsPage ? readMasterPage(dataset, filterOpts, page, pageSize) : null,
+  ]);
+  // loadLineOptions() returns EVERY line including Head Office. A scoped viewer must only be offered
+  // the lines their own scope covers, so the dropdown cannot advertise data they can't reach.
+  const lineOptions =
+    scope.kind === "company" || !scope.lineNames
+      ? allLineOptions
+      : allLineOptions.filter((option) => {
+          const label = String(option ?? "").trim().toLowerCase();
+          return scope.lineNames!.some((name) => name.trim().toLowerCase() === label);
+        });
 
   // Fields echoed back so the UI can seed its filter inputs — and, via `activeChips`, to state
   // which filters are currently applied. A filter this dataset does NOT honour is echoed back
@@ -1831,7 +1936,11 @@ export async function getCrmMasterData(input: CrmMasterFilter, scope: CrmViewerS
     totalCount: 0,
   });
 
-  if (!(await isCrmVisitsSchemaReady())) return empty(false);
+  // The computed tabs swallow a failed read into an empty result, so this probe is what tells a
+  // missing mirror from "no rows" there. A database-backed tab no longer waits on it (2026-10-01): its
+  // own page read maps a missing schema to empty(false) below — the same answer — so the probe's round
+  // trip no longer runs ahead of every page.
+  if (!readsPage && !(await isCrmVisitsSchemaReady())) return empty(false);
 
   // Triple visits are a derived analytic (a self-join across visit rows), not a single-table filter:
   // detect them in memory over the date range, then paginate the computed result.
@@ -1877,21 +1986,8 @@ export async function getCrmMasterData(input: CrmMasterFilter, scope: CrmViewerS
     };
   }
 
-  const supabase = getSupabaseAdmin();
-  const table = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin" ? CRM_VISITS_CHECKIN_FLAGS_VIEW : isCheckins ? CRM_CHECKINS_UNIFIED_VIEW : CRM_VISITS_UNIFIED_VIEW;
-  const dateColumn = isCheckins ? "check_date" : "visit_date";
-  const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
-  const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
-
-  const excludedInList = await getEffectiveExcludedInList();
-  const base = supabase.from(table).select(select, { count: "exact" });
-  const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts, excludedInList);
-  const ordered = (filtered as unknown as typeof base)
-    .order(dateColumn, { ascending: false })
-    .order(idColumn, { ascending: false })
-    .range((page - 1) * pageSize, page * pageSize - 1);
-
-  const [{ data, error, count }, latestSyncRuns] = await Promise.all([ordered, getLatestVisitsSyncRuns(6)]);
+  // Every other dataset read its page above, together with the Line options (`readsPage`).
+  const { count, data, error, latestSyncRuns } = pageRead!;
   if (error) {
     if (isCrmSchemaMissingError(error)) return empty(false);
     throw new Error(error.message);

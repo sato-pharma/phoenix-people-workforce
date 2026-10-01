@@ -209,10 +209,16 @@ async function loadFrozenStoreSplitIfPublished(
   if (!lineCode) return null;
 
   const supabase = getSupabaseAdmin();
+  // READ TOGETHER (2026-10-01, "slow to transfer between page and page"): the period prices do not
+  // depend on the frozen rows, so they are fetched beside them instead of after. They are still only
+  // CONSULTED once the rows have answered: a failed rows read falls back to live exactly as before,
+  // and the prices' own failure is then ignored — as it was when they were never fetched at all.
+  const pricesLoad = loadProductPeriodPrices();
+  pricesLoad.catch(() => {});
   const { data, error } = await supabase.rpc("phx_monthly_store_split_net", { p_period: trimmedPeriod });
   if (error || !data) return null;
 
-  const prices = await loadProductPeriodPrices();
+  const prices = await pricesLoad;
   const net = buildFrozenNetFromRows(data as FrozenNetRow[], lineCode, trimmedPeriod, (product) =>
     prices.priceFor(product, trimmedPeriod),
   );

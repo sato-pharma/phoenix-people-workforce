@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { logError } from "@/lib/observability/log";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { CRM_PLAN_ENTRIES_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { readContactVisitHistory, type CrmContactVisitHistory } from "@/lib/crm/reads";
 import { averageCheckinPoint, type ObservedPoint } from "@/lib/crm/checkin-location";
@@ -7,6 +8,8 @@ import { averageCheckinPoint, type ObservedPoint } from "@/lib/crm/checkin-locat
 /** Contact ids per `in(...)` filter, and rows per page — the figures the rest of this module uses. */
 const IN_CHUNK = 50;
 const PLAN_PAGE = 1000;
+/** Chunks read at once — the Reps List's own figure. */
+const CHUNK_CONCURRENCY = 4;
 
 import { getDoctorListRepSummaries } from "@/lib/crm/contact-lists";
 import { findSharedCustomers, type SharedWith } from "@/lib/crm/location-confidence";
@@ -40,8 +43,10 @@ export async function loadPlanDatesFor(contactCrmIds: readonly number[], fromIso
   const supabase = getSupabaseAdmin();
   const byContact = new Map<number, string[]>();
   const ids = [...new Set(contactCrmIds)];
-  for (let from = 0; from < ids.length; from += IN_CHUNK) {
-    const chunk = ids.slice(from, from + IN_CHUNK);
+  type PlanDateRow = { contact_crm_id: number | null; plan_date: string | null };
+  // One chunk's pages, in order; a failed page hands back the pages before it WITH its error.
+  const readChunk = async (chunk: number[]): Promise<{ error: unknown; rows: PlanDateRow[] }> => {
+    const rows: PlanDateRow[] = [];
     for (let page = 0; ; page += 1) {
       const { data, error } = await supabase
         .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
@@ -51,22 +56,32 @@ export async function loadPlanDatesFor(contactCrmIds: readonly number[], fromIso
         .gte("plan_date", fromIsoDay)
         .order("plan_date", { ascending: false })
         .range(page * PLAN_PAGE, page * PLAN_PAGE + PLAN_PAGE - 1);
-      if (error) {
-        // A missing or unreadable plan mirror costs this one column and nothing else.
-        logError("Phoenix CRM list: the reference plan dates could not be read", {
-          error,
-          labels: { event: "phoenix_crm_plan_pattern_failed" },
-        });
-        return byContact;
-      }
-      const rows = (data ?? []) as Array<{ contact_crm_id: number | null; plan_date: string | null }>;
-      for (const row of rows) {
-        if (row.contact_crm_id == null || !row.plan_date) continue;
-        const found = byContact.get(row.contact_crm_id);
-        if (found) found.push(row.plan_date);
-        else byContact.set(row.contact_crm_id, [row.plan_date]);
-      }
-      if (rows.length < PLAN_PAGE) break;
+      if (error) return { error, rows };
+      const pageRows = (data ?? []) as PlanDateRow[];
+      rows.push(...pageRows);
+      if (pageRows.length < PLAN_PAGE) return { error: null, rows };
+    }
+  };
+  // 🔴 A FEW CHUNKS AT ONCE, FOLDED IN CHUNK ORDER (2026-10-01, "slow to transfer between page and
+  // page", Phoenix CRM first). One after another, a rep's list paid one round trip per fifty doctors
+  // before the List could paint; folded in order once they are in, the answer is the one the serial
+  // loop gave — the same dates, and the same first failure ending the read where it ended before.
+  const chunks = Array.from({ length: Math.ceil(ids.length / IN_CHUNK) }, (_unused, index) => ids.slice(index * IN_CHUNK, (index + 1) * IN_CHUNK));
+  const answers = await mapWithConcurrency(chunks, CHUNK_CONCURRENCY, readChunk);
+  for (const { error, rows } of answers) {
+    for (const row of rows) {
+      if (row.contact_crm_id == null || !row.plan_date) continue;
+      const found = byContact.get(row.contact_crm_id);
+      if (found) found.push(row.plan_date);
+      else byContact.set(row.contact_crm_id, [row.plan_date]);
+    }
+    if (error) {
+      // A missing or unreadable plan mirror costs this one column and nothing else.
+      logError("Phoenix CRM list: the reference plan dates could not be read", {
+        error,
+        labels: { event: "phoenix_crm_plan_pattern_failed" },
+      });
+      return byContact;
     }
   }
   return byContact;
@@ -133,8 +148,10 @@ export async function loadSharedCustomersFor(
 ): Promise<Map<number, SharedWith[]>> {
   if (contactCrmIds.length === 0) return new Map();
 
-  const [roster, summaries] = await Promise.all([loadContactRoster(), getDoctorListRepSummaries()]);
-  if (roster.length === 0) return new Map();
+  // The summaries FIRST, and the roster only once they say a match is possible. They are the cached
+  // read (five minutes, tag-busted), so asking for them alone costs nothing; the roster is the
+  // expensive one — a count, then every open assignment in pages with the contact embedded.
+  const summaries = await getDoctorListRepSummaries();
 
   // 🔴 THE REP NAMES ARE REQUIRED, NOT OPTIONAL. `findSharedCustomers` never names — and so never
   // matches — a partner whose key it cannot resolve. Handing it an empty map finds nothing at all,
@@ -149,9 +166,20 @@ export async function loadSharedCustomersFor(
     if (name) repNames.set(key, name);
     if (summary.hrId === repHrId) repKey = key;
   }
+  // 🔴 NO NAME, NO MATCH — SO NO ROSTER (2026-10-01, "slow to transfer between page and page",
+  // Phoenix CRM first). With no partner that can be named, `findSharedCustomers` can only answer an
+  // empty map, which is exactly what this returns — and until now the whole company-wide roster was
+  // read first to arrive at it: the 420 ms-mean `crm_contact_assignments` read in production.
+  // ⚠ Today EVERY summary is built with `name: ""` (`summarizeRepLists`), so this returns here on
+  // every call and the List's "shared with" highlight never shows; once the summaries carry names
+  // again it stops short-circuiting on its own, and the roster is read as before.
+  if (repNames.size === 0) return new Map();
   // A rep with no iReports360 account at all still has a key of his own.
   repKey ??= repDoctorListRepKey(null, repHrId);
   if (!repKey) return new Map();
+
+  const roster = await loadContactRoster();
+  if (roster.length === 0) return new Map();
 
   // Narrow the roster to the contacts that could possibly be the same customer BEFORE asking for any
   // pins. The matching keys come from the roster on BOTH sides, so the two halves of a pair are

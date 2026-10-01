@@ -78,7 +78,10 @@ export function mapPublicationLine(row: PublicationLineRow): DeductionsPortalLin
   };
 }
 
-async function loadNewModuleLines(monthKey: string | undefined): Promise<{
+async function loadNewModuleLines(
+  monthKey: string | undefined,
+  compactHrIds?: ReadonlySet<string>,
+): Promise<{
   lines: DeductionsPortalLine[];
   coveredMonthKeys: Set<string>;
 }> {
@@ -102,14 +105,23 @@ async function loadNewModuleLines(monthKey: string | undefined): Promise<{
   // never reach the employee's portal. Legacy wholesale publishes are all
   // 'active' (the column defaults to 'active'), so this changes nothing for them.
   const rows = await fetchAllRows<PublicationLineRow>(
-    () =>
-      supabase
+    () => {
+      const query = supabase
         .from("deductions_publication_lines")
         .select(
           "id, publication_id, candidate_id, decision_id, employee_hr_id, employee_hr_id_compact, employee_name, month_key, category, unit, original_value, applied_value, applied_amount, dates, reason, hr_note, created_at",
         )
         .in("publication_id", publications.map((p) => p.id))
-        .eq("line_status", "active"),
+        .eq("line_status", "active");
+      // NARROWED IN SQL (2026-10-01, "slow to transfer between page and page"): a self-only viewer
+      // used to page through EVERY active line of every published month, company-wide, to keep
+      // his own handful. The same exact-equality test on the same column now runs in the query;
+      // getPortalDeductions still filters in JS as the authority, so this can only ever drop rows
+      // that filter would have dropped. Absent (a system viewer, or no id at all) = today's read.
+      return compactHrIds && compactHrIds.size > 0
+        ? query.in("employee_hr_id_compact", [...compactHrIds])
+        : query;
+    },
     "id",
   );
 
@@ -160,10 +172,15 @@ export async function getPortalDeductions(input: {
 }> {
   const monthKey = safeNormalizeMonthKey(input.monthKey);
 
-  const { lines: publishedLines } = await loadNewModuleLines(monthKey);
+  // Resolved BEFORE the read (it is pure — no I/O), so a self-only viewer's own ids can narrow
+  // the query itself. The JS filter below stays exactly as it was and remains the authority.
+  const scope = collectPortalDeductionScope({ access: input.access });
+  const { lines: publishedLines } = await loadNewModuleLines(
+    monthKey,
+    scope.all ? undefined : scope.compactHrIds,
+  );
   const sortedLines = sortPortalLines(publishedLines);
 
-  const scope = collectPortalDeductionScope({ access: input.access });
   const lines = scope.all
     ? sortedLines
     : sortedLines.filter((line) => scope.compactHrIds.has(line.employeeHrIdCompact));

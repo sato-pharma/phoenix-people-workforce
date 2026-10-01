@@ -12,6 +12,7 @@ import {
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { randomUUID } from "node:crypto";
+import { cache } from "react";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { carTripFuelIsUnpriceable, UNPRICEABLE_CAR_TRIP_MESSAGE } from "@/lib/outstation/fuel-policy";
@@ -894,7 +895,14 @@ function fallbackResidenceFromEmployee(employee: EmployeeDirectoryRow): Employee
   };
 }
 
-async function getMedicalRepExpenseIdentity(access: AccessContext) {
+// MEMOIZED PER REQUEST (React cache(), 2026-10-01, "slow to transfer between page and page"): the
+// My Outstation Expenses page resolves its context and its request list side by side, and both went
+// through here — so every render read employee_locations twice and, for a residence with no
+// coordinates yet, geocoded it and wrote the same UPDATE twice. `access` is the page's request-cached
+// object, passed by reference to both, so the second call now shares the first one's answer (its
+// refusal included). Nobody mutates the result. cache() never spans two requests, and outside a
+// render — the submit API route — it is a plain call, so the submit path is unchanged.
+const getMedicalRepExpenseIdentity = cache(async (access: AccessContext) => {
   const identity = await getEmployeeIdentity(access);
   // The page reads this refusal through the same module — see medical-rep-expense-viewer.ts.
   assertMedicalRepExpenseRole(identity.employeeRole);
@@ -908,7 +916,7 @@ async function getMedicalRepExpenseIdentity(access: AccessContext) {
     fromLocation,
     residence,
   };
-}
+});
 
 export async function getMedicalRepExpenseContext(access: AccessContext) {
   const identity = await getMedicalRepExpenseIdentity(access);

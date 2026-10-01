@@ -359,6 +359,36 @@ const nextConfig: NextConfig = {
     // import sites in app/ or src/ — this project's UI primitives are
     // hand-rolled, not radix wrappers, so it was dead config.
     optimizePackageImports: ["lucide-react", "recharts"],
+    // 🔴 PREFETCH A PAGE'S DATA ON INTENT, NEVER FOR EVERY LINK ON SCREEN (owner, 2026-10-01: "the
+    // system is slow to transfer between page and page … make the medical rep role very fast").
+    //
+    // The portal sidebar used `<Link prefetch>` — `prefetch={true}`, a FULL prefetch — on every row
+    // and every rail icon. For a dynamic page a full prefetch is the whole page rendered on the
+    // server: its auth, its loaders, its RPCs. So opening ANY portal page rendered ~15 others in the
+    // background at the same moment, on the one replica, against the one database. Production HTTP
+    // logs, 2026-10-01 00:57 Cairo, one portal load: business-review 7.5 s, weekly-stock 6.4 s,
+    // /employee-portals 5.2 s, employee-360 4.8 s, weekly-sales 4.5 s — all at once, none clicked.
+    // A tap on a link while that burst ran queued behind it, which is the slowness he saw.
+    //
+    // `dynamicOnHover` is what makes `<Link unstable_dynamicOnHover>` work (the prop does nothing
+    // without it — `__NEXT_DYNAMIC_ON_HOVER` is compiled in from this key). Links now prefetch only
+    // down to the page's loading.tsx while on screen — every rep route has one, so the skeleton
+    // appears the instant he taps — and upgrade to the full page on mouseenter / touchstart, the
+    // 100–400 ms before the click itself lands. See the row Link in EmployeePortalMenu and the rail
+    // Link in EmployeePortalSidebar (src/components/employee-portal/employee-portal-layout.tsx).
+    dynamicOnHover: true,
+    // THE CLIENT ROUTER CACHE. `dynamic`: a page he navigated to is reused for 30 s, so going back
+    // and forth between two pages is instant instead of a fresh server render each time (default 0).
+    // `static`: how old a previous visit may be and still answer a hover prefetch — lowered from the
+    // default 300 s to 60 s, because until now EVERY sidebar page was fully prefetched and served
+    // up to five minutes stale; this bounds it at one minute. Every save that calls
+    // `router.refresh()` (the Phoenix CRM visit form among ~85 others) invalidates the whole cache
+    // at once, so a save is never followed by its own stale page. 30 is the schema's floor for
+    // `static`.
+    staleTimes: {
+      dynamic: 30,
+      static: 60,
+    },
     // NO TURBOPACK FILESYSTEM CACHE FOR `next build`, added 2026-09-17. Next 16.3 turned it
     // ON by default, and nothing here ever reads it back: CI starts every run on a fresh
     // runner with no .next restore (ci.yml deleted that cache on 2026-08-29), and the

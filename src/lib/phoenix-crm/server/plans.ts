@@ -382,23 +382,54 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   const weekStart = isFieldWeekStart(raw.weekStart) ? raw.weekStart : weeks[0];
   const weekList = weeks.includes(weekStart) ? weeks : [weekStart, ...weeks];
 
-  await ensureReferenceCustomers(seat, isTest);
-  const [planRowsResult, { customers, placesByCustomer }, visitCounts, readiness] = await Promise.all([
-    getSupabaseAdmin().from("phoenix_crm_plans").select(PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).in("week_start", weekList),
-    loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
+  // 🔴 TWO CHAINS SIDE BY SIDE, NOT THREE WAVES IN A ROW (2026-10-01, "slow to transfer between page
+  // and page", Phoenix CRM first). The planner waited for the reference mint, then for four reads,
+  // then for five more — each wave for its slowest member. What truly waits on what is narrower:
+  //   • the customer list and the readiness count read the reference list, which the mint can change,
+  //     so they still follow it, and the references follow the customer list;
+  //   • the week's plan rows cannot name a customer minted a moment ago, and neither can this month's
+  //     visit counts, so they start beside the mint — and the plan's items, activities, starts and
+  //     names need only the plan rows, so they follow those rather than the whole first wave.
+  // Every answer is the one the waves gave. The mint's own failure is still the one that surfaces,
+  // first, and every read started early is handled the moment it starts.
+  const ensured = ensureReferenceCustomers(seat, isTest);
+  const planRowsRead = (async () => {
+    const planRowsResult = await getSupabaseAdmin()
+      .from("phoenix_crm_plans")
+      .select(PLAN_COLUMNS)
+      .eq("seat_id", seat.seatId)
+      .eq("is_test", isTest)
+      .in("week_start", weekList);
+    throwIfError(planRowsResult.error);
+    return (planRowsResult.data ?? []) as Row[];
+  })();
+  const planPartsRead = planRowsRead.then(async (planRows) => {
+    const planRow = planRows.find((row) => String(row.week_start) === weekStart) ?? null;
+    const [itemRows, names, activities, starts] = await Promise.all([
+      planRow ? loadPlanItemRows([String(planRow.id)], ITEM_COLUMNS) : Promise.resolve([] as Row[]),
+      loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...planPeople(planRows)]),
+      loadPlanActivities(planRow ? [String(planRow.id)] : []),
+      loadPlanDayStarts(planRow ? [String(planRow.id)] : []),
+    ]);
+    return { planRows, planRow, itemRows, names, activities, starts };
+  });
+  const customersRead = ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }));
+  const wave = Promise.all([
+    planPartsRead,
+    customersRead,
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
-    territoryReadiness(seat.seatId, isTest, false),
+    ensured.then(() => territoryReadiness(seat.seatId, isTest, false)),
+    customersRead.then(({ customers }) => loadPlannerReferences(seat.seatId, isTest, customers)),
   ]);
-  throwIfError(planRowsResult.error);
-  const planRows = (planRowsResult.data ?? []) as Row[];
-  const planRow = planRows.find((row) => String(row.week_start) === weekStart) ?? null;
-  const [itemRows, names, activities, starts, references] = await Promise.all([
-    planRow ? loadPlanItemRows([String(planRow.id)], ITEM_COLUMNS) : Promise.resolve([] as Row[]),
-    loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...planPeople(planRows)]),
-    loadPlanActivities(planRow ? [String(planRow.id)] : []),
-    loadPlanDayStarts(planRow ? [String(planRow.id)] : []),
-    loadPlannerReferences(seat.seatId, isTest, customers),
-  ]);
+  wave.catch(() => undefined);
+  await ensured;
+  const [
+    { planRows, planRow, itemRows, names, activities, starts },
+    { customers, placesByCustomer },
+    visitCounts,
+    readiness,
+    references,
+  ] = await wave;
 
   const settings = viewer.config.settings;
   const isRamadan = (isoDay: string) => isRamadanDay(isoDay, viewer.config.ramadanOverrides);

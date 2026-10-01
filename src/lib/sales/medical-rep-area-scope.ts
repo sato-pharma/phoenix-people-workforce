@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { resolveEmployeeIdentityId, type AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -19,6 +21,21 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const MEDICAL_REP_AREA_UNRESOLVED_MESSAGE =
   "We don't have your area on file yet. Contact HR/your admin to get your territory assigned.";
+
+/**
+ * The Source of Sales NAME masters — `loadSalesReferenceData({ includeCustomerBricks: false })` —
+ * read at most ONCE per server-component render.
+ *
+ * WHY (2026-10-01, "slow to transfer between page and page"): the Territory Drilldown page read the
+ * same masters twice in one render — here, to confirm a rep's own area codes, and again in
+ * territory/skeleton.ts to list his blocks and bricks — six paged reads each time. React `cache`
+ * shares one read across a single request's render and nothing more: it starts fresh for every
+ * request, and with no render in progress it calls straight through, exactly as before. Both
+ * callers only READ the masters, so sharing one object between them is safe.
+ */
+export const loadSalesNameMastersOncePerRender = cache(() =>
+  loadSalesReferenceData({ includeCustomerBricks: false }),
+);
 
 /**
  * The Source of Sales area codes (UPPER-cased) this rep covers, or null when any link of the chain
@@ -61,7 +78,7 @@ export async function resolveMedicalRepSosAreaCodes(
     .filter(Boolean);
   if (sosAreaCodes.length === 0) return null;
 
-  const references = options?.references ?? (await loadSalesReferenceData({ includeCustomerBricks: false }));
+  const references = options?.references ?? (await loadSalesNameMastersOncePerRender());
   const knownAreaCodes = new Set((references.areas ?? []).map((area) => area.areaCode.toUpperCase()));
   const confirmedAreaCodes = sosAreaCodes.filter((code) => knownAreaCodes.has(code));
   return confirmedAreaCodes.length > 0 ? confirmedAreaCodes : null;

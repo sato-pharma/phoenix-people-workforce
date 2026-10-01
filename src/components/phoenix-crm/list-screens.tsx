@@ -44,7 +44,8 @@ import {
   referenceLastVisitText,
   territoryLine,
 } from "@/components/phoenix-crm/labels";
-import { capturedLocationText, releaseCapturedPhoto, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
+import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
+import { capturedLocationText, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import {
   emptyPlaceDraft,

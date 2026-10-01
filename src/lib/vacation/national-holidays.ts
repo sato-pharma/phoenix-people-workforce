@@ -235,6 +235,56 @@ async function fetchGoogleHolidayCalendarIcs(calendarId: string) {
   });
 }
 
+/**
+ * ONE DOWNLOAD OF THE FEED, NOT ONE PER MONTH (2026-10-01, "slow to transfer between page and
+ * page"). The iCal feed is the WHOLE calendar, yet every month that missed `holidayCache` downloaded
+ * all of it again — a vacation report spanning twenty months fetched the same file twenty times, one
+ * after another. The body is now kept per calendar for the same ten minutes a month's answer is
+ * kept, and months that ask at the same moment share one download.
+ *
+ * What each month does with the body is unchanged, and so is every failure: only a readable (`ok`)
+ * body is kept, so an unreachable feed is asked again next time exactly as before; a failed fetch
+ * still reads as `null`; and a body that fails to read still throws, now to each caller waiting on
+ * it. An entry also remembers the `fetch` that downloaded it and is only handed back to that same
+ * `fetch` — so anything that swaps `fetch` (every holiday test stubs it) gets its own answer, never a
+ * body another `fetch` downloaded.
+ */
+type GoogleHolidayIcsDownload = { body: string | null; status: number };
+const googleHolidayIcsCache = new Map<string, { body: string; expiresAt: number; fetchImpl: typeof fetch; status: number }>();
+const googleHolidayIcsInFlight = new Map<string, { download: Promise<GoogleHolidayIcsDownload | null>; fetchImpl: typeof fetch }>();
+
+function loadGoogleHolidayCalendarIcs(calendarId: string): Promise<GoogleHolidayIcsDownload | null> {
+  const fetchImpl = globalThis.fetch;
+  const cached = googleHolidayIcsCache.get(calendarId);
+  if (cached && cached.fetchImpl === fetchImpl && cached.expiresAt > Date.now()) {
+    return Promise.resolve({ body: cached.body, status: cached.status });
+  }
+  const inFlight = googleHolidayIcsInFlight.get(calendarId);
+  if (inFlight && inFlight.fetchImpl === fetchImpl) return inFlight.download;
+
+  const download = (async (): Promise<GoogleHolidayIcsDownload | null> => {
+    const response = await fetchGoogleHolidayCalendarIcs(calendarId).catch(() => null);
+    if (!response) return null;
+    if (!response.ok) return { body: null, status: response.status };
+    const body = await response.text();
+    googleHolidayIcsCache.set(calendarId, {
+      body,
+      expiresAt: Date.now() + holidayCacheTtlMs,
+      fetchImpl,
+      status: response.status,
+    });
+    return { body, status: response.status };
+  })();
+  googleHolidayIcsInFlight.set(calendarId, { download, fetchImpl });
+  const release = () => {
+    if (googleHolidayIcsInFlight.get(calendarId)?.download === download) googleHolidayIcsInFlight.delete(calendarId);
+  };
+  // Both handlers, so this bookkeeping chain can never itself be an unhandled rejection; the caller
+  // still receives the download's own rejection from the promise returned below.
+  void download.then(release, release);
+  return download;
+}
+
 function unfoldIcsLines(value: string) {
   return value
     .replace(/\r\n/g, "\n")
@@ -379,14 +429,16 @@ export async function getEgyptianNationalHolidays(input: {
   let lastStatus = 0;
 
   for (const candidateCalendarId of calendarCandidates) {
-    const icsResponse = await fetchGoogleHolidayCalendarIcs(candidateCalendarId).catch(() => null);
-    if (!icsResponse) {
+    // Shared per calendar across months — see loadGoogleHolidayCalendarIcs. `body` is non-null
+    // exactly when the response was `ok`, which is the branch the inline read took.
+    const ics = await loadGoogleHolidayCalendarIcs(candidateCalendarId);
+    if (!ics) {
       lastStatus = 0;
     } else {
-      lastStatus = icsResponse.status;
-      if (icsResponse.ok) {
+      lastStatus = ics.status;
+      if (ics.body !== null) {
         const holidays = withCompanyHolidays(
-          icsEventsToHolidays(parseGoogleHolidayIcs(await icsResponse.text()), monthStart, monthEnd),
+          icsEventsToHolidays(parseGoogleHolidayIcs(ics.body), monthStart, monthEnd),
           company,
         );
         const result = {

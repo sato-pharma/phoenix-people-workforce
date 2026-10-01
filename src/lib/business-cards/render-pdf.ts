@@ -60,6 +60,34 @@ export function loadBusinessCardAssets(): BusinessCardAssets {
   return cachedAssets;
 }
 
+/**
+ * The template, PARSED ONCE per template file (2026-10-01, "slow to transfer between page and page").
+ * It is a static asset and a render only ever READS it: the OutputIntent and the embedded pages reach
+ * the new file through PDFObjectCopier, which clones each object into the new document and leaves the
+ * source untouched — so every render can share one parse of the design instead of re-parsing it on
+ * each preview. Keyed by the bytes, so a caller passing its own assets gets its own parse; a failed
+ * parse is not kept.
+ *
+ * Deliberately NOT shared: the fonts and the rendered bytes. A CardFont records the glyphs its
+ * document used (truetype.ts), and that record decides the embedded subset — one shared across
+ * renders would carry the previous card's glyphs into the next file. And the bytes carry the render's
+ * own time (pdf-lib stamps CreationDate and ModDate on every new document), so the same card never
+ * renders twice to the same bytes; a cache of them would serve a different file than a fresh render.
+ */
+const parsedTemplates = new WeakMap<Uint8Array, Promise<PDFDocument>>();
+
+function loadParsedTemplate(bytes: Uint8Array): Promise<PDFDocument> {
+  const cached = parsedTemplates.get(bytes);
+  if (cached) return cached;
+  const parsed = PDFDocument.load(bytes);
+  parsedTemplates.set(bytes, parsed);
+  // Dropped on failure so the next render parses again; this render still receives the failure.
+  parsed.catch(() => {
+    if (parsedTemplates.get(bytes) === parsed) parsedTemplates.delete(bytes);
+  });
+  return parsed;
+}
+
 /** A card whose text the font cannot draw. Refused rather than printed with blank boxes. */
 export class BusinessCardCharacterError extends Error {
   characters: string[];
@@ -117,7 +145,7 @@ export async function renderBusinessCardsPdf(
   doc.setCreator("Phoenix Workforce");
   doc.setProducer("Phoenix Workforce");
 
-  const template = await PDFDocument.load(assets.template);
+  const template = await loadParsedTemplate(assets.template);
   const [frontArt, backArt, iconArt] = template.getPages();
   if (!frontArt || !backArt || !iconArt) throw new Error("The business-card template is incomplete.");
 

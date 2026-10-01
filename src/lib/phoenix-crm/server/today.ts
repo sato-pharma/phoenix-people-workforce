@@ -70,25 +70,36 @@ export async function loadPhoenixCrmToday(
   const ramadan = isRamadanDay(date, viewer.config.ramadanOverrides);
   const weekday = weekdayOfIsoDay(date);
 
-  const [{ customers, placesByCustomer }, planned, visitRows, plannedActivities, dayActivity] = await Promise.all([
-    loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
-    plannedCustomersOn(seat.seatId, isTest, date),
-    loadVisitRowsForDay(seat.seatId, isTest, date, { blind: isLocationBlind(viewer, seat) }),
-    loadPlannedActivitiesOn(seat.seatId, isTest, date),
-    loadDayActivityOn(seat.seatId, isTest, date),
-  ]);
-
-  const byId = new Map(customers.map((row) => [String(row.id), row]));
-  // 🔴 THE APPROVED PLAN ONLY (owner, 2026-09-30). A plan still waiting on someone shows no stops at
-  // all — `planNote` says which state it is in instead. Today is the day he has been cleared to work.
-  const approvedIds = planned.status === "approved" ? planned.customerIds : [];
-  // Where the ones not validated yet sit — they have no clinic, and a day he cannot read as a route
-  // is not a day he can work. Only the planned ones are looked up.
-  const references = await loadPlannerReferences(
-    seat.seatId,
-    isTest,
-    approvedIds.map((customerId) => byId.get(customerId)).filter((row): row is NonNullable<typeof row> => Boolean(row)),
-  );
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page" — this is the rep's day on
+  // his landing page as well as here). The territory's names read nothing but the org chart, so they no
+  // longer wait for every read below; and the references need only the list and the plan, so they start
+  // the moment those two land instead of after the whole first wave. Every answer is the one before.
+  const customersRead = loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true });
+  const plannedRead = plannedCustomersOn(seat.seatId, isTest, date);
+  const plannedStopsRead = Promise.all([customersRead, plannedRead]).then(async ([{ customers }, planned]) => {
+    const byId = new Map(customers.map((row) => [String(row.id), row]));
+    // 🔴 THE APPROVED PLAN ONLY (owner, 2026-09-30). A plan still waiting on someone shows no stops at
+    // all — `planNote` says which state it is in instead. Today is the day he has been cleared to work.
+    const approvedIds = planned.status === "approved" ? planned.customerIds : [];
+    // Where the ones not validated yet sit — they have no clinic, and a day he cannot read as a route
+    // is not a day he can work. Only the planned ones are looked up.
+    const references = await loadPlannerReferences(
+      seat.seatId,
+      isTest,
+      approvedIds.map((customerId) => byId.get(customerId)).filter((row): row is NonNullable<typeof row> => Boolean(row)),
+    );
+    return { byId, approvedIds, references };
+  });
+  const [{ placesByCustomer }, planned, visitRows, plannedActivities, dayActivity, { byId, approvedIds, references }, names] =
+    await Promise.all([
+      customersRead,
+      plannedRead,
+      loadVisitRowsForDay(seat.seatId, isTest, date, { blind: isLocationBlind(viewer, seat) }),
+      loadPlannedActivitiesOn(seat.seatId, isTest, date),
+      loadDayActivityOn(seat.seatId, isTest, date),
+      plannedStopsRead,
+      loadPeopleNames(territoryPeople(viewer.org, [seat])),
+    ]);
   const stops: PlannedStop[] = [];
   for (const customerId of approvedIds) {
     const row = byId.get(customerId);
@@ -121,7 +132,6 @@ export async function loadPhoenixCrmToday(
   // the order he meets them rather than alphabetically.
   stops.sort(compareTodayStops);
 
-  const names = await loadPeopleNames(territoryPeople(viewer.org, [seat]));
   const build = buildTodayStops({
     planned: stops,
     visitsToday: visitRows.map((row) => ({

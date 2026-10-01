@@ -249,9 +249,16 @@ export async function loadRepSpotlight(
   const loadPeriod = options.loadPeriod ?? loadMonthlyAchievement;
   const buckets = new Map<string, Bucket>();
   const filters = { hrIds: [hrId] };
-  for (const period of publishedPeriods) {
-    const rows = await loadPeriod(period);
-    bucketRows(rows, subject, org, filters, buckets);
+  // FETCHED TOGETHER (2026-10-01, "slow to transfer between page and page"): each published month is
+  // its own read and none depends on another, so they all load at once instead of one after another.
+  // They are still folded strictly in month order, and awaited in that order, so the buckets — and,
+  // should a read fail, which month's failure surfaces — are what the one-by-one loop produced. The
+  // no-op handlers only keep a later month's failure from surfacing unhandled while an earlier month
+  // is still being awaited.
+  const monthLoads = publishedPeriods.map((period) => loadPeriod(period));
+  for (const load of monthLoads) load.catch(() => undefined);
+  for (const load of monthLoads) {
+    bucketRows(await load, subject, org, filters, buckets);
   }
 
   const rows = rowsFromBuckets(buckets, {

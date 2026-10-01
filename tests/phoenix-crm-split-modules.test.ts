@@ -28,6 +28,7 @@ import {
  *   3. `?tab=` is FORWARDED, not dropped — the portal's "+" actions and notification links carry it.
  *   4. A module the viewer may not open is a SENTENCE, never a dead page.
  *   5. The module list and the overview's tab flags cannot drift apart.
+ *   6. Each module's screen is its own chunk, and moving between modules never reloads the page.
  */
 
 function source(path: string): string {
@@ -192,8 +193,20 @@ export function runPhoenixCrmSplitModulesTests(): void {
     assert.match(bar, /if \(single \|\| tabs\.length < 2\) return null;/, "no tab bar on a separated page");
     assert.match(shell, /\{\(single \? \[activeTab\] : tabs\)\.map\(\(key\) => \{/, "and the others are not even in the DOM");
 
-    // Every hand-off that used to switch tabs in place now NAVIGATES, carrying its subject.
-    assert.match(shell, /if \(single\) \{\s*window\.location\.assign\(moduleHref\(next, carry\)\);/, "openTab navigates");
+    // Every hand-off that used to switch tabs in place now NAVIGATES, carrying its subject — and it is a
+    // CLIENT navigation (owner, 2026-10-01: "slow to transfer between page and page", Phoenix CRM
+    // first). It was `window.location.assign`, a full reload that rendered the portal shell again and
+    // re-parsed every script before the next module could start.
+    assert.match(
+      shell,
+      /if \(single\) \{\s*const href = moduleHref\(next, carry\);\s*preloadPhoenixCrmTab\(next\);\s*announceRouteTransition\(href\);\s*router\.push\(href\);/,
+      "openTab navigates, in the client, with the next module's screen already downloading",
+    );
+    const openTabBody = shell.slice(shell.indexOf("function openTab("), shell.indexOf("function workDroppedBy("));
+    assert.ok(
+      !/window\.location\.(assign|replace)\(|window\.location\.href\s*=/.test(openTabBody),
+      "openTab must never reload the page to change module: that is the slowness the owner reported",
+    );
     // 🔴 Today's own hand-off is GONE, not broken: the module was retired on 2026-09-30 and nothing
     // inside Phoenix CRM hands a customer across pages any more. What does it now is the rep's
     // LANDING panel, by a plain link, pinned in tests/phoenix-crm-today.test.ts.
@@ -227,6 +240,44 @@ export function runPhoenixCrmSplitModulesTests(): void {
       /const MODULES_AND_TABS_AGREE: \[ModuleKeysCoverTabs, TabsCoverModuleKeys\] = \[true, true\];/,
       "adding a tab with no card, or a card with no tab, must stop compiling",
     );
+  }
+
+  // ── 6. Each module's screen is its own chunk (owner, 2026-10-01: "slow to transfer between page and
+  // page", Phoenix CRM first). Imported statically, all eight screens shipped to every module page as
+  // ONE 108 KB gzip chunk on the production build, so Visits downloaded Reports, Team and Settings too.
+  // A static import of any one of them here puts it back into every module page.
+  {
+    const shell = source("src/components/phoenix-crm/phoenix-crm-app.tsx");
+    const screens: Array<[file: string, component: string]> = [
+      ["visits-tab", "VisitsTab"],
+      ["list-tab", "ListTab"],
+      ["plan-board", "PlanBoard"],
+      // The CNS daily forecast (2026-10-01) arrived after the split, and is held to the same rule.
+      ["forecast-tab", "ForecastTab"],
+      ["team-tab", "TeamTab"],
+      ["calendar-tab", "CalendarTab"],
+      ["doctors-tab", "DoctorsTab"],
+      ["reports-tab", "ReportsTab"],
+      ["settings-tab", "SettingsTab"],
+    ];
+    for (const [file, component] of screens) {
+      const staticImport = new RegExp(`^import (?!type )[^;]*from "@/components/phoenix-crm/${file}";`, "m");
+      assert.doesNotMatch(shell, staticImport, `${component} must not be imported statically — it would ship to every module page again`);
+      assert.match(
+        shell,
+        new RegExp(`const ${component} = dynamic\\(\\(\\) => import\\("@/components/phoenix-crm/${file}"\\)\\.then\\(\\(mod\\) => mod\\.${component}\\)`),
+        `${component} is a next/dynamic screen, with its import() inline so Next can preload it with a server-rendered page`,
+      );
+    }
+    // The warm-up points at the SAME files, so the chooser's touch and openTab fetch the very chunks
+    // the page will render — one download, never two.
+    const preload = source("src/components/phoenix-crm/tab-preload.ts");
+    for (const [file] of screens) {
+      assert.ok(preload.includes(`import("@/components/phoenix-crm/${file}")`), `tab-preload.ts warms ${file}`);
+    }
+    const chooserLink = source("src/components/phoenix-crm/module-link.tsx");
+    assert.match(chooserLink, /preloadPhoenixCrmTab\(moduleKey\)/, "a chooser card starts its module's screen at the touch");
+    assert.match(chooserLink, /unstable_dynamicOnHover/, "and the module's page with it");
   }
 
   console.log("phoenix-crm split modules: OK");
