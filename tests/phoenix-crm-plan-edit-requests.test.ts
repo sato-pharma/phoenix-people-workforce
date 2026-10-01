@@ -1,0 +1,243 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { stripComments } from "./support/comment-strip.ts";
+
+import { ApiError } from "../src/lib/http/api-errors.ts";
+import {
+  isPlanEditWaiting,
+  nextPlanEditStatus,
+  PLAN_EDIT_ACKNOWLEDGER_HR_ID,
+  planEditDecisionsFor,
+  planEditFirstStatus,
+  planEditStageOf,
+  type PlanEditStage,
+} from "../src/lib/phoenix-crm/plan-edit-rules.ts";
+import { assertPlanEditApprover, canAcknowledgePlanEdits, canDecidePlanEdit, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
+import { buildOrgIndex, heldManagerSeats, ownTerritories, territoriesInScope, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
+
+/**
+ * Phoenix CRM — asking to edit a week that is already sent (owner, 2026-10-01).
+ *
+ * "REQUEST TO EDIT FROM DISTRICT MANAGER APPROVAL THEN SFE THEN HR ACKNOWLEDGEMENT WITH EMAILS IN APP
+ * AND TELEGRAM FOR EVERY STEP" — and HR is Omar Gawish himself, the week opens only after HR, the rep
+ * gives no reason, any refusal ends it. What this file pins:
+ *   1. the steps run in order, a vacant manager chain starts at SFE, and HR only acknowledges;
+ *   2. WHO takes each step — the district manager, the SFE Manager, B-10 — and nobody else, in either
+ *      world. HR's acknowledgement is one of the Super Admin's real-data acts, so it is B-10's alone;
+ *   3. the database half: the plan's own lock, the order, the note on a refusal, the reopen inside the
+ *      acknowledgement, and an expiry that is written rather than raised;
+ *   4. the service half: the step is read from the row, never the body, and checked before the write.
+ */
+
+const NSM: OrgSeat = {
+  seatId: "SEAT-AIF-NSM",
+  parentSeatId: "SEAT-ROOT-CEO",
+  tier: "NSM",
+  path: ["SEAT-ROOT-CEO", "SEAT-AIF-NSM"],
+  occupantHrId: "B-900",
+  lineCode: "anti_infective",
+  lineName: "Anti Infective",
+  areaName: null,
+  regionName: null,
+  seatLabel: "AIF NSM",
+};
+const DM: OrgSeat = {
+  ...NSM,
+  seatId: "SEAT-AIF-DM-D1",
+  parentSeatId: "SEAT-AIF-NSM",
+  tier: "DM",
+  path: ["SEAT-ROOT-CEO", "SEAT-AIF-NSM", "SEAT-AIF-DM-D1"],
+  occupantHrId: "B-12",
+  regionName: "Delta (1)",
+  seatLabel: "AIF Delta (1) DM",
+};
+const REP: OrgSeat = {
+  ...DM,
+  seatId: "SEAT-AIF-REP-D13",
+  parentSeatId: "SEAT-AIF-DM-D1",
+  tier: "REP",
+  path: ["SEAT-ROOT-CEO", "SEAT-AIF-NSM", "SEAT-AIF-DM-D1", "SEAT-AIF-REP-D13"],
+  occupantHrId: "B-7",
+  areaName: "Menoufia 2",
+  seatLabel: "AIF D13 rep",
+};
+
+const org = buildOrgIndex([NSM, DM, REP]);
+
+/** A viewer as resolvePhoenixCrmViewer builds it. */
+function viewerFor(
+  hrId: string,
+  role: string,
+  options: { superAdmin?: boolean; sfe?: boolean; testPersona?: boolean; canApprove?: boolean } = {},
+): PhoenixCrmViewer {
+  const company = options.superAdmin || options.sfe;
+  const scope = company ? org.territories : territoriesInScope(org, hrId, "tree");
+  return {
+    hrId,
+    role,
+    isSuperAdmin: options.superAdmin ?? false,
+    isSfeManager: options.sfe ?? false,
+    isTestPersona: options.testPersona ?? false,
+    basis: company ? "all" : "tree",
+    canCreate: true,
+    canApprove: options.canApprove ?? true,
+    canUpdate: options.superAdmin ?? false,
+    org,
+    config: { lineRollout: [] },
+    cairoToday: "2026-10-01",
+    openLines: new Set(["anti_infective"]),
+    ownTerritories: ownTerritories(org, hrId),
+    waitingTerritories: [],
+    scopeTerritories: scope,
+    waitingScopeTerritories: [],
+    managerSeats: heldManagerSeats(org, hrId),
+  } as unknown as PhoenixCrmViewer;
+}
+
+function source(path: string): string {
+  return stripComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+}
+
+/** One function's text in the comment-free migration, from its header to its closing `$$;`. */
+function functionSql(sql: string, name: string): string {
+  const start = sql.indexOf(`create or replace function public.${name}(`);
+  assert.ok(start >= 0, `${name} is in the migration`);
+  const end = sql.indexOf("\n$$;", start);
+  assert.ok(end > start, `${name} ends in "$$;"`);
+  return sql.slice(start, end);
+}
+
+const STAGES: readonly PlanEditStage[] = ["manager", "sfe", "hr"];
+
+function stagesFor(viewer: PhoenixCrmViewer, isTest: boolean): PlanEditStage[] {
+  return STAGES.filter((stage) => canDecidePlanEdit(viewer, REP, isTest, stage));
+}
+
+export function runPhoenixCrmPlanEditRequestTests(): void {
+  // ── 1. The steps ────────────────────────────────────────────────────────────────────────────────
+  {
+    assert.equal(planEditFirstStatus(true), "manager_pending", "a territory with a district manager starts with him");
+    assert.equal(planEditFirstStatus(false), "sfe_pending", "a vacant chain starts at SFE, as an off-plan visit does");
+    assert.equal(nextPlanEditStatus("manager"), "sfe_pending", "the manager's yes goes to SFE");
+    assert.equal(nextPlanEditStatus("sfe"), "hr_pending", "SFE's yes goes to HR");
+    assert.equal(nextPlanEditStatus("hr"), "reopened", "and HR's acknowledgement opens the week");
+    assert.equal(planEditStageOf("manager_pending"), "manager");
+    assert.equal(planEditStageOf("sfe_pending"), "sfe");
+    assert.equal(planEditStageOf("hr_pending"), "hr");
+    for (const settled of ["reopened", "refused", "expired"] as const) {
+      assert.equal(planEditStageOf(settled), null, `${settled} waits on nobody`);
+      assert.equal(isPlanEditWaiting(settled), false);
+    }
+    assert.deepEqual(planEditDecisionsFor("hr"), ["acknowledge"], "HR acknowledges — it never approves or refuses");
+    assert.deepEqual(planEditDecisionsFor("manager"), ["approve", "refuse"]);
+    assert.deepEqual(planEditDecisionsFor("sfe"), ["approve", "refuse"]);
+    assert.equal(PLAN_EDIT_ACKNOWLEDGER_HR_ID, "B-10", "HR's step is Omar Gawish's own (his ruling)");
+  }
+
+  // ── 2. Who takes each step ──────────────────────────────────────────────────────────────────────
+  {
+    const dm = viewerFor("B-12", "District Manager");
+    const nsm = viewerFor("B-900", "National Sales Manager");
+    const sfe = viewerFor("B-300", "SFE Manager", { sfe: true });
+    const owner = viewerFor("B-10", "Super Admin", { superAdmin: true });
+    const ownerConsole = viewerFor("PHX-1", "Super Admin", { superAdmin: true });
+    const otherAdmin = viewerFor("B-55", "Super Admin", { superAdmin: true });
+    const rep = viewerFor("B-7", "Medical Rep", { canApprove: false });
+    const testDm = viewerFor("B-12", "District Manager", { testPersona: true });
+
+    assert.deepEqual(stagesFor(dm, false), ["manager"], "the district manager takes the first step, and only it");
+    assert.deepEqual(stagesFor(nsm, false), [], "the manager's manager reads the queue and decides nothing — scope is sight, not authority");
+    assert.deepEqual(stagesFor(sfe, false), ["sfe"], "the SFE Manager takes the second step, and only it");
+    assert.deepEqual(stagesFor(owner, false), ["hr"], "Omar Gawish takes HR's step on a real request, and no other");
+    assert.deepEqual(stagesFor(ownerConsole, false), ["hr"], "his console login is the same person (identity-aliases.ts)");
+    assert.deepEqual(stagesFor(otherAdmin, false), [], "another Super Admin is not HR's step: the acknowledgement is his alone");
+    assert.deepEqual(stagesFor(rep, false), [], "the rep asks; he never decides");
+
+    assert.deepEqual(stagesFor(owner, true), ["manager", "sfe", "hr"], "in the test world the Super Admin takes every step");
+    assert.deepEqual(stagesFor(testDm, true), ["manager"], "a test account takes the manager's step as the person it mirrors");
+    assert.deepEqual(stagesFor(testDm, false), [], "and never on a real request");
+
+    assert.equal(canAcknowledgePlanEdits(owner), true);
+    assert.equal(canAcknowledgePlanEdits(viewerFor("B-10", "Super Admin", { superAdmin: true, canApprove: false })), false, "it needs the approve grant");
+    assert.equal(canAcknowledgePlanEdits(viewerFor("B-10", "Super Admin", { superAdmin: true, testPersona: true })), false, "a test login never acknowledges");
+
+    const refused = (run: () => void, pattern: RegExp, message: string) =>
+      assert.throws(run, (error: unknown) => error instanceof ApiError && error.status === 403 && pattern.test(error.message), message);
+    refused(() => assertPlanEditApprover(owner, REP, false, "manager"), /test entries/, "the Super Admin's real step is HR's, never the manager's");
+    refused(() => assertPlanEditApprover(dm, REP, false, "sfe"), /SFE/, "the district manager cannot take SFE's step");
+    refused(() => assertPlanEditApprover(sfe, REP, false, "hr"), /HR/, "SFE cannot acknowledge for HR");
+    refused(() => assertPlanEditApprover(testDm, REP, false, "manager"), /test login/, "a test login never touches a real request");
+    assert.doesNotThrow(() => assertPlanEditApprover(owner, REP, false, "hr"), "Omar Gawish acknowledges a real request");
+  }
+
+  // ── 3. The database half ────────────────────────────────────────────────────────────────────────
+  {
+    const sql = readFileSync("supabase/migrations/20261002002251_phoenix_crm_plan_edit_requests.sql", "utf8").replace(/\r\n/g, "\n").replace(/--.*$/gm, "");
+    const raise = functionSql(sql, "phoenix_crm_raise_plan_edit_request");
+    const decide = functionSql(sql, "phoenix_crm_decide_plan_edit_request");
+    const lock = "perform pg_advisory_xact_lock(hashtext('phoenix_crm:plan:' || v_seat || ':' || v_week::text));";
+    assert.ok(raise.includes(lock), "a request takes the PLAN's own lock, so it never crosses a send or a decision");
+    assert.ok(decide.includes(lock), "and so does each step, whose acknowledgement reopens the plan");
+    assert.match(raise, /if v_plan\.status not in \('submitted', 'approved'\) then\s+raise exception 'phoenix_crm:plan_edit_not_sent';/, "only a sent week can be asked about");
+    assert.match(raise, /raise exception 'phoenix_crm:plan_edit_already_open';/, "one request at a time");
+    assert.match(sql, /create unique index if not exists phoenix_crm_plan_edit_requests_open_uniq\s+on public\.phoenix_crm_plan_edit_requests \(plan_id\)\s+where status in \('manager_pending', 'sfe_pending', 'hr_pending'\);/, "and the database holds that too");
+    assert.match(decide, /or \(v_stage = 'hr' and v_decision <> 'acknowledge'\)/, "HR's step only acknowledges");
+    assert.match(decide, /if v_decision = 'refuse' and v_note is null then\s+raise exception 'phoenix_crm:note_required';/, "a refusal needs a note the rep reads");
+    assert.match(
+      decide,
+      /if \(v_stage = 'manager' and v_from <> 'manager_pending'\)\s+or \(v_stage = 'sfe' and v_from <> 'sfe_pending'\)\s+or \(v_stage = 'hr' and v_from <> 'hr_pending'\) then\s+raise exception 'phoenix_crm:plan_edit_wrong_stage';/,
+      "no step is skipped and none is taken twice",
+    );
+    // The acknowledgement reopens the week in the same transaction, and only a week still sent.
+    assert.match(decide, /if v_plan_from in \('submitted', 'approved'\) then\s+update public\.phoenix_crm_plans pl\s+set status = 'draft',/, "HR's acknowledgement makes the sent week a draft again");
+    assert.match(
+      decide,
+      /insert into public\.phoenix_crm_plan_events \(plan_id, event_type, actor_hr_id, actor_role, from_status, to_status, version, note, details\)\s+values \(v_plan\.id, 'reopened', v_actor, 'hr', v_plan_from, v_plan\.status, v_plan\.version, null,\s+jsonb_build_object\('edit_request_id', v_request_id\)\);/,
+      "and writes the plan's own 'reopened' event, with its status and the request that opened it",
+    );
+    // A week that has passed is closed as expired — WRITTEN, so it commits — not raised.
+    const expiry = decide.slice(decide.indexOf("if v_request.week_start + 5 < v_today then"), decide.indexOf("if v_decision = 'refuse' then"));
+    assert.ok(expiry.includes("set status = 'expired'"), "a request whose week has passed is closed as expired");
+    assert.doesNotMatch(expiry, /raise exception/, "and that is written, never raised — a raise would roll it back");
+    assert.match(expiry, /return jsonb_build_object\(/, "it returns the expired request");
+  }
+
+  // ── 4. The service half ─────────────────────────────────────────────────────────────────────────
+  {
+    const edits = source("src/lib/phoenix-crm/server/plan-edits.ts");
+    const decide = edits.slice(edits.indexOf("export async function decidePlanEdit("));
+    const stageAt = decide.indexOf("const stage = planEditStageOf(status);");
+    const assertAt = decide.indexOf("assertPlanEditApprover(viewer, seat, isTest, stage);");
+    const writeAt = decide.indexOf('callPhoenixCrm<Row>("phoenix_crm_decide_plan_edit_request"');
+    assert.ok(stageAt > 0 && assertAt > stageAt && writeAt > assertAt, "the step is read from the row, checked, and only then written");
+    assert.doesNotMatch(decide, /body\.stage/, "the body never names its own step");
+
+    const raise = edits.slice(edits.indexOf("export async function raisePlanEdit("), edits.indexOf("export async function decidePlanEdit("));
+    assert.match(
+      raise,
+      /if \(territoryForRepWrite\(viewer, seat\.seatId, isTest\)\.isTest !== isTest\) \{\s*throw notFoundError/,
+      "a test login asking about a REAL plan by its id is told it is not there",
+    );
+    assert.match(raise, /first_status: planEditFirstStatus\(reviewer !== null\),/, "the first step follows the territory's own chain");
+    assert.doesNotMatch(raise, /reason/, "no reason is asked of the rep — one button (owner)");
+
+    // Every step tells the next person, the rep, the district manager and SFE — by email, in-app and Telegram.
+    const notify = source("src/lib/phoenix-crm/server/notifications.ts");
+    const branch = notify.slice(notify.indexOf("async function describePlanEdit("), notify.indexOf("async function describe(notice"));
+    assert.match(branch, /status === "hr_pending" \? \[PLAN_EDIT_ACKNOWLEDGER_HR_ID\]/, "HR's step tells Omar Gawish");
+    assert.match(branch, /\.\.\.\(reviewer \? \[reviewer\.hrId\] : \[\]\), \.\.\.sfe\]/, "every step tells the district manager and SFE");
+    assert.match(branch, /key !== actorKey/, "nobody is told about his own press");
+    assert.match(branch, /tab: "plan", idempotencyKey: `\$\{key\}:rep`/, "the rep is told on his Plan, under a key of his own");
+    assert.match(branch, /const key = `phoenix_crm:plan_edit:\$\{notice\.requestId\}:v\$\{notice\.version\}:\$\{status\}`;/, "each step's notice is its own");
+
+    // The queue is in Team, for each person whose step it is.
+    const team = source("src/components/phoenix-crm/team-tab.tsx");
+    assert.match(team, /current === "edits" && team\.data \?/, "the Team tab has its Plan edits section");
+    const card = source("src/components/phoenix-crm/plan-edit-card.tsx");
+    assert.match(card, /"\/api\/phoenix-crm\/plans\/edit-requests\/decide"/, "the card posts each step");
+    assert.match(card, /Acknowledge · opens the week/, "HR's button says what it does");
+  }
+
+  console.log("phoenix-crm plan edit requests: OK");
+}

@@ -3,12 +3,15 @@
 /**
  * Phoenix CRM — one week of the plan board (owner, 2026-09-29).
  *
- * A week is due the Thursday before it when it is sent on its own; sent with the month, it is judged
- * against the month's date. A late week is ACCEPTED and STAMPED — never refused, because a rep who
- * cannot plan cannot work. The week carries its own status, its own due date, its own late stamp and
- * its own buttons: Send this week and Take it back for the rep, Approve and Return for the reviewer
- * (the SFE Manager can Return). Nothing here sends or approves on its own — every one of them is a
- * press, and Send and Take back ask once more before they go.
+ * A week is due the Thursday before it. A late week is ACCEPTED and STAMPED — never refused, because a
+ * rep who cannot plan cannot work. The week carries its own status, its own due date, its own late
+ * stamp and its own buttons: Send this week for the rep, Approve and Return for the reviewer (the SFE
+ * Manager can Return). Nothing here sends or approves on its own — every one of them is a press, and
+ * Send asks once more before it goes.
+ *
+ * 🔴 Owner, 2026-10-01: a rep no longer takes a sent week back himself. "Ask to edit this week" — one
+ * button, no reason — sends a request to his district manager, then SFE, then HR, and only HR's
+ * acknowledgement opens the week again (plan-edits.ts). Where the request stands is said on the week.
  *
  * Its six days sit under it as tabs; the day on screen is PlanDayPanel.
  *
@@ -29,8 +32,9 @@ import type { BrickTint } from "@/components/phoenix-crm/brick-tints";
 import { PlanCopyMenu, PlanSuggestMenu, type CopiedPlacements, type SuggestContext } from "@/components/phoenix-crm/plan-copy-menu";
 import { PlanDayPanel } from "@/components/phoenix-crm/plan-day-panel";
 import { decisionBusy, PlanDecision, type PlanDecisionAction } from "@/components/phoenix-crm/plan-decision";
-import { CrmBlock, CrmButton, CrmChoice, CrmFacts, CrmNote, CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
+import { CrmBlock, CrmButton, CrmChoice, CrmFacts, CrmNote, CrmPill, type NoteTone, type PillTone } from "@/components/phoenix-crm/ui";
 import { dayActivityLabel, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
+import { planEditRepNote, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { startsOn, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
 import type { DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
 import type { PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
@@ -59,7 +63,17 @@ export const PLAN_STATUS_TONE: Record<PhoenixCrmPlanStatus | "none", PillTone> =
 };
 
 /** What a week's own button is doing. */
-export type WeekBusy = "send" | "reopen" | PlanDecisionAction;
+export type WeekBusy = "send" | "ask" | PlanDecisionAction;
+
+/** How a request to edit the week reads on it, by where it stands. */
+const EDIT_TONE: Record<PlanEditStatus, NoteTone> = {
+  manager_pending: "info",
+  sfe_pending: "info",
+  hr_pending: "info",
+  reopened: "good",
+  refused: "bad",
+  expired: "warn",
+};
 
 /** Why a week's draft is held on the page. */
 export type WeekHold = "changed" | "unchecked";
@@ -84,9 +98,9 @@ export function ChoiceLabel({ children, chosen }: { children: ReactNode; chosen:
 /** Why the rep cannot change the week, said under a suggestion button that is off. */
 function weekClosedReason(week: MonthlyWeekView): string {
   if (!week.open) return "This week has passed.";
-  if (week.status === "submitted") return "This week is sent for review. Take it back to change it.";
-  if (week.status === "approved") return "This week is approved. Take it back to change it.";
-  return "This week cannot be changed now.";
+  if (week.status === "submitted") return "This week is sent for review. Ask to edit it to change it.";
+  if (week.status === "approved") return "This week is approved. Ask to edit it to change it.";
+  return "You plan one week at a time, and this is not it.";
 }
 
 function weekSuggestReason(block: SuggestBlock | null): string | null {
@@ -142,6 +156,7 @@ export function PlanWeekPanel({
   items,
   locked,
   onActivity,
+  onAskToEdit,
   onCopied,
   onDay,
   onDecide,
@@ -150,7 +165,6 @@ export function PlanWeekPanel({
   onPlace,
   onQuery,
   onRemove,
-  onReopen,
   onSend,
   onShowLatest,
   onStarts,
@@ -190,6 +204,8 @@ export function PlanWeekPanel({
   items: ReadonlyArray<PlanItemDraft>;
   locked: boolean;
   onActivity: (date: string, activityType: PhoenixCrmDayActivity, next: Pick<PlannedActivity, "halfDay" | "note"> | null) => void;
+  /** "Ask to edit this week" — the request to the district manager, then SFE, then HR. */
+  onAskToEdit: () => void;
   onCopied: (placements: CopiedPlacements) => void;
   onDay: (date: string) => void;
   onDecide: (action: PlanDecisionAction, note: string) => Promise<boolean>;
@@ -198,7 +214,6 @@ export function PlanWeekPanel({
   onPlace: (item: PlanItemDraft) => void;
   onQuery: (next: string) => void;
   onRemove: (date: string, customerId: string) => void;
-  onReopen: () => void;
   onSend: () => void;
   onShowLatest: () => void;
   onStarts: (date: string, next: PlanDayStarts) => void;
@@ -220,7 +235,7 @@ export function PlanWeekPanel({
   viewerIsRep: boolean;
   week: MonthlyWeekView;
 }) {
-  const [confirm, setConfirm] = useState<"send" | "reopen" | null>(null);
+  const [confirm, setConfirm] = useState<"send" | "ask" | null>(null);
 
   const byId = indexCustomers(customers);
   const { plan } = week;
@@ -297,7 +312,7 @@ export function PlanWeekPanel({
             can reach his first days from the month he is planning — and told, in words, that the
             month's own Send will not take it, which is the whole reason it was worth showing. */}
         {week.leadingNote ? (
-          <CrmNote className="mt-3" title="These days are sent with the week before" tone="info">
+          <CrmNote className="mt-3" title="This week belongs to the month before" tone="info">
             {week.leadingNote}
           </CrmNote>
         ) : null}
@@ -324,8 +339,8 @@ export function PlanWeekPanel({
             <div className="mt-3 grid min-w-0 gap-2 border border-orange-200 bg-orange-50/40 px-3.5 py-3">
               <p className="text-sm font-black text-slate-950">Send this week for review?</p>
               <p className="break-words text-sm font-medium leading-6 text-slate-600">
-                {countText(totals.AM)} AM · {countText(totals.PM)} PM across the week.{dirty ? " Your changes are saved first." : ""} {reviewerSentence} Until
-                then, you can take it back to change it.
+                {countText(totals.AM)} AM · {countText(totals.PM)} PM across the week.{dirty ? " Your changes are saved first." : ""} {reviewerSentence} Once
+                it is sent, changing it needs your manager, SFE and HR.
               </p>
               {problems.length > 0 ? (
                 <CrmNote title="Fix these first" tone="bad">
@@ -359,36 +374,46 @@ export function PlanWeekPanel({
           )
         ) : null}
 
-        {week.canReopen && plan ? (
-          confirm === "reopen" ? (
+        {/* Where his request to edit the week stands (owner, 2026-10-01), in the same words wherever
+            he meets it. A refusal carries its note, because he reads why. */}
+        {viewerIsRep && week.editRequest ? (
+          <CrmNote className="mt-3" title={week.editRequest.statusLabel} tone={EDIT_TONE[week.editRequest.status]}>
+            <span className="block">{planEditRepNote(week.editRequest.status)}</span>
+            {week.editRequest.status === "refused" && (week.editRequest.sfeNote ?? week.editRequest.managerNote) ? (
+              <span className="mt-1 block whitespace-pre-line">Note: {week.editRequest.sfeNote ?? week.editRequest.managerNote}</span>
+            ) : null}
+          </CrmNote>
+        ) : null}
+
+        {week.canAskToEdit && plan ? (
+          confirm === "ask" ? (
             <div className="mt-3 grid min-w-0 gap-2 border border-slate-200 bg-slate-50 px-3.5 py-3">
-              <p className="text-sm font-black text-slate-950">Take this week back?</p>
+              <p className="text-sm font-black text-slate-950">Ask to edit this week?</p>
               <p className="break-words text-sm font-medium leading-6 text-slate-600">
-                {status === "approved"
-                  ? "It is approved. Taking it back makes it a draft again, and it needs a new approval once you send it."
-                  : "It leaves the manager's review until you send it again."}
+                Your district manager decides first, then SFE, then HR. The week opens again once HR acknowledges it, and until you send it
+                again your visits this week count as off-plan.
               </p>
               <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                 <CrmButton
-                  busy={busy === "reopen"}
+                  busy={busy === "ask"}
                   disabled={locked}
                   onClick={() => {
                     setConfirm(null);
-                    onReopen();
+                    onAskToEdit();
                   }}
-                  variant="danger"
+                  variant="primary"
                 >
-                  Take it back
+                  Ask
                 </CrmButton>
-                <CrmButton disabled={busy === "reopen"} onClick={() => setConfirm(null)}>
-                  {status === "approved" ? "Keep it approved" : "Keep it sent"}
+                <CrmButton disabled={busy === "ask"} onClick={() => setConfirm(null)}>
+                  Not yet
                 </CrmButton>
               </div>
             </div>
           ) : (
             <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
-              <CrmButton busy={busy === "reopen"} disabled={locked} onClick={() => setConfirm("reopen")}>
-                Take this week back to change it
+              <CrmButton busy={busy === "ask"} disabled={locked} onClick={() => setConfirm("ask")}>
+                Ask to edit this week
               </CrmButton>
             </div>
           )
@@ -552,7 +577,7 @@ export function PlanWeekPanel({
         <CrmBlock className="border-t border-slate-100">
           <p className="break-words text-xs font-semibold leading-5 text-slate-500">
             {plural(week.days.filter((day) => dayCountsOf(day).AM + dayCountsOf(day).PM > 0).length, "day", "days")} of {countText(week.days.length)} planned.
-            Send the week when it is ready, or send the whole month from the top.
+            Send the week when it is ready.
           </p>
         </CrmBlock>
       ) : null}

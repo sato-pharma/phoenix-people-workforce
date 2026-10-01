@@ -419,8 +419,9 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   const needsYouOwnerOnly = enforceNeedsYouOwnerOnlyEmail(withoutOutstationRejectionEmail, input.module, input.recipientHrId);
   // Same hard guarantee for Phoenix CRM (owner rule 2026-09-16): in-app and Telegram only, never
   // email — see phoenix-crm-channel-guard.ts. Keyed on its own module string; chained, never
-  // replacing a block above, because each guards a disjoint set.
-  return enforcePhoenixCrmEmailBlock(needsYouOwnerOnly, input.module);
+  // replacing a block above, because each guards a disjoint set. The event type rides along for the
+  // one exception the owner ordered on 2026-10-01: the five steps of a request to edit a sent week.
+  return enforcePhoenixCrmEmailBlock(needsYouOwnerOnly, input.module, input.eventType);
 }
 
 function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {

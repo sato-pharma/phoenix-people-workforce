@@ -572,38 +572,18 @@ export function buildWeekSavePayload(input: {
 
 // ── Which week and day to open ──────────────────────────────────────────────────────────────────
 
-/** The first week still open and not sent yet (a returned one is waiting to be sent again), else the first open one. */
+/**
+ * The week a REVIEWER's board opens on: the first week still open and not sent yet (a returned one is
+ * waiting to be sent again), else the first open one. A rep's own board opens on his one week,
+ * `view.repWeek` (owner, 2026-10-01 — weekly only); "+ Make weekly plan" goes there too, so the
+ * month-hopping search that used to live beside this is gone.
+ */
 export function firstWeekToPlan<T extends { open: boolean; status: string | null }>(weeks: ReadonlyArray<T>): T | null {
   return (
     weeks.find((week) => week.open && (week.status === null || week.status === "draft" || week.status === "returned")) ??
     weeks.find((week) => week.open) ??
     null
   );
-}
-
-export type WeekToPlanMove<T> = { kind: "week"; week: T } | { kind: "month"; monthStart: string } | { kind: "none" };
-
-/**
- * Where "+ Make weekly plan" goes. The first week of this month still to plan; when this month has
- * none left — late in a month every week is past or sent, and the next week to plan belongs to the
- * NEXT month — that month, once, and only while nothing here is unsaved; else the first open week
- * here. Found on the owner's walk of 2026-09-30: on 30 September the button opened September's Week 4,
- * already sent, instead of the week of Saturday 3 October.
- */
-export function weekToPlanMove<T extends { open: boolean; status: string | null }>(input: {
-  weeks: ReadonlyArray<T>;
-  monthStart: string;
-  months: ReadonlyArray<{ monthStart: string }>;
-  mayChangeMonth: boolean;
-}): WeekToPlanMove<T> {
-  const toPlan = input.weeks.find(
-    (week) => week.open && (week.status === null || week.status === "draft" || week.status === "returned"),
-  );
-  if (toPlan) return { kind: "week", week: toPlan };
-  const later = input.mayChangeMonth ? input.months.find((option) => option.monthStart > input.monthStart) : undefined;
-  if (later) return { kind: "month", monthStart: later.monthStart };
-  const open = input.weeks.find((week) => week.open);
-  return open ? { kind: "week", week: open } : { kind: "none" };
 }
 
 /** The first day the rep may still change, else the week's first day. */

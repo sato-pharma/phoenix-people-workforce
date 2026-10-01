@@ -77,6 +77,41 @@ export function isPlanSentForReview(status: PhoenixCrmPlanStatus | null): boolea
   return status === "submitted" || status === "approved";
 }
 
+/**
+ * What a rep may do with one week (owner, 2026-10-01 — weekly only, and a sent week changes only
+ * through "Ask to edit this week": the district manager, then SFE, then HR's acknowledgement).
+ *
+ *   - plan   — he may tick, save and send it;
+ *   - sent   — it is sent or approved, and he may ask to edit it;
+ *   - asked  — it is sent and his request to edit it is on its way;
+ *   - closed — greyed out: a week that has passed, a week ahead of his one, or a draft he never sent.
+ *
+ * The ONE week he plans is `repPlanWeek`. Two other weeks open for him, both by somebody else's act:
+ * one his manager RETURNED (the manager asked for changes), and one an edit request REOPENED. Every
+ * other week is closed, which is the whole rule — the board greys it, and the server refuses it.
+ */
+export type RepWeekState = "plan" | "sent" | "asked" | "closed";
+
+export function repWeekState(input: {
+  weekStart: string;
+  /** The week's own open window: true while it has a day from today on. */
+  open: boolean;
+  status: PhoenixCrmPlanStatus | null;
+  /** The week the rep plans now (calendar.ts `repPlanWeek`). */
+  repWeek: string;
+  /** A request to edit this week is waiting on somebody. */
+  editAsked: boolean;
+  /** A request to edit this week was acknowledged, and reopened it. */
+  editReopened: boolean;
+}): RepWeekState {
+  if (!input.open) return "closed";
+  if (isPlanSentForReview(input.status)) return input.editAsked ? "asked" : "sent";
+  if (input.weekStart === input.repWeek) return "plan";
+  if (input.status === "returned") return "plan";
+  if (input.status === "draft" && input.editReopened) return "plan";
+  return "closed";
+}
+
 export type PlanItemDraft = {
   planDate: string;
   customerId: string;

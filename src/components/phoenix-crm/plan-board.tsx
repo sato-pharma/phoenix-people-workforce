@@ -17,9 +17,16 @@
  * version. A save that fails NEVER loses his ticks: they stay on the page, and when the week changed
  * underneath them he chooses whether to keep them or to see the saved week.
  *
- * A late month or week is ACCEPTED and STAMPED, never refused. Nothing here sends or approves on its
- * own: every send, take-back, approve and return is a press of its own button (and Send asks once
- * more). A manager reading his rep's plan gets the same board, read only, with Approve and Return.
+ * A late week is ACCEPTED and STAMPED, never refused. Nothing here sends or approves on its own: every
+ * send, request, approve and return is a press of its own button (and Send asks once more). A manager
+ * reading his rep's plan gets the same board, read only, with Approve and Return.
+ *
+ * 🔴 Owner, 2026-10-01 — WEEKLY ONLY, after the first Delta (1) session: the board opened on
+ * September, four reps pressed "Send the month" and were stamped late, and one planned a week that had
+ * passed. On his OWN plan (opened from the Plan tab, not from Team) the rep now gets one path: the
+ * month of his week, that ONE week active and every other week greyed, its days, its customers. No
+ * month chooser, no month send, no Copy last month. A week he has sent changes only through "Ask to
+ * edit this week" (the district manager, then SFE, then HR). The server refuses any other week too.
  *
  * Owner, 2026-09-30 — "the best-appearing and easiest CRM, yet controlled":
  *   - "Suggest this day" and "Suggest the week" (plan-suggest.ts) fill the draft through `addCopies`,
@@ -37,7 +44,7 @@ import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components
 import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
 import { cairoStamp, countText, dayLabel, plural, type Tone } from "@/components/phoenix-crm/format";
 import { pendingListNote, territoryLine } from "@/components/phoenix-crm/labels";
-import { PlanCopyMenu, type CopiedPlacements, type SuggestContext } from "@/components/phoenix-crm/plan-copy-menu";
+import type { CopiedPlacements, SuggestContext } from "@/components/phoenix-crm/plan-copy-menu";
 import { decisionBusy, PlanDecision, type PlanDecisionAction } from "@/components/phoenix-crm/plan-decision";
 import { ChoiceLabel, PLAN_STATUS_TONE, PlanWeekPanel, problemText, type WeekBusy, type WeekHold } from "@/components/phoenix-crm/plan-week-panel";
 import {
@@ -55,7 +62,7 @@ import {
   CrmStatGrid,
   type NoteTone,
 } from "@/components/phoenix-crm/ui";
-import { monthEndOf, monthKeyOf } from "@/lib/phoenix-crm/calendar";
+import { monthKeyOf } from "@/lib/phoenix-crm/calendar";
 import type { PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { setPlannedStart, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
 import { EMPTY_DOCTOR_FILTER, plannerBricks, plannerGrades, plannerSpecialities, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
@@ -84,7 +91,6 @@ import {
   weekFixes,
   weekProblems,
   weekScope,
-  weekToPlanMove,
   type DailyCaps,
   type DraftProblem,
   type PlannedActivity,
@@ -106,8 +112,11 @@ const PLAN_RELOAD_CODES = new Set([
   "phoenix_crm_day_not_editable",
   "phoenix_crm_not_editable",
   "phoenix_crm_place_changed",
+  "phoenix_crm_plan_edit_already_open",
+  "phoenix_crm_plan_edit_not_sent",
   "phoenix_crm_plan_not_found",
   "phoenix_crm_version_conflict",
+  "phoenix_crm_week_passed",
 ]);
 
 /** Answers a save can get when it landed and only its answer was lost. */
@@ -121,10 +130,7 @@ const RELOADED_MESSAGES: Record<string, string> = {
 
 type Notice = { tone: NoteTone; title: string; message?: string | null };
 
-type BoardBusy =
-  | { kind: "save" }
-  | { kind: "month"; action: "send" | "reopen" | PlanDecisionAction }
-  | { kind: "week"; weekStart: string; action: WeekBusy };
+type BoardBusy = { kind: "save" } | { kind: "month"; action: PlanDecisionAction } | { kind: "week"; weekStart: string; action: WeekBusy };
 
 /** Unsaved ticks and a way out was pressed: another month, or back to the screen that opened the board. */
 type Leaving = { kind: "month"; monthKey: string } | { kind: "back" };
@@ -200,8 +206,8 @@ export function PlanBoard({
   seatId: string;
   test: boolean;
   /**
-   * The portal's "+ Make weekly plan": each new positive value opens the first week still open and not
-   * sent yet (else the first open week) and brings it into view. Nothing unsaved is dropped.
+   * The portal's "+ Make weekly plan": each new positive value opens the rep's ONE week — the week he
+   * plans now (owner, 2026-10-01) — and brings it into view. Nothing unsaved is dropped.
    */
   weekNonce?: number;
 }) {
@@ -219,10 +225,9 @@ export function PlanBoard({
   const [filter, setFilter] = useState<DoctorFilter>(EMPTY_DOCTOR_FILTER);
   const [query, setQuery] = useState("");
   const [leaving, setLeaving] = useState<Leaving | null>(null);
-  const [monthConfirm, setMonthConfirm] = useState<"send" | "reopen" | null>(null);
   const [seenNonce, setSeenNonce] = useState(0);
-  // "+ Make weekly plan" looking for its week: `movedTo` is the month it moved on to, once.
-  const [weekSearch, setWeekSearch] = useState<{ movedTo: string | null } | null>(null);
+  // "+ Make weekly plan" asked for the rep's week; it is brought into view once the board is on screen.
+  const [jumpToWeek, setJumpToWeek] = useState(false);
   const [scrollNonce, setScrollNonce] = useState(0);
   const topRef = useRef<HTMLDivElement>(null);
   const weekRef = useRef<HTMLDivElement>(null);
@@ -232,23 +237,31 @@ export function PlanBoard({
   const locked = busy !== null || resource.loading;
 
   // "+ Make weekly plan" asked again: answered while rendering, from the value seen last time — state
-  // derived from a prop, never an effect. The week is chosen once the month is on screen (below).
+  // derived from a prop, never an effect. It goes back to the rep's one week (owner, 2026-10-01): the
+  // board opens on it by default, so letting go of the week and the month on screen is the whole move.
   if (weekNonce !== seenNonce) {
     setSeenNonce(weekNonce);
-    if (weekNonce > 0) setWeekSearch({ movedTo: null });
+    if (weekNonce > 0) {
+      setMonth(null);
+      setWeekStart(null);
+      setDay(null);
+      setJumpToWeek(true);
+    }
   }
 
   // ── The weeks, as the board holds them ────────────────────────────────────────────────────────
   const customers = view ? view.customers : [];
   const byId = indexCustomers(customers);
   const caps: DailyCaps = view ? { amDailyCap: view.rules.amDailyCap, pmDailyCap: view.rules.pmDailyCap } : { amDailyCap: 0, pmDailyCap: 0 };
-  const monthPassed = view ? monthEndOf(view.monthStart) < view.cairoToday : false;
+  // 🔴 THE REP'S OWN PLAN — opened from his Plan tab, not from a manager's Team tab. It gets the one
+  // path (owner, 2026-10-01): no month chooser, no month header, his one week active, the rest greyed.
+  // Keyed on WHERE the board was opened, not on the role: the Super Admin's test board is both rep and
+  // reviewer, and from Team he reviews.
+  const repBoard = Boolean(view?.viewerIsRep) && !onBack;
 
+  /** The rep ticks, saves and sends this week — the server's own answer (`repWeekState`), never a guess. */
   function weekEditable(week: MonthlyWeekView): boolean {
-    if (!view || !view.viewerIsRep || !week.open) return false;
-    if (week.status !== null && !isPlanEditable(week.status)) return false;
-    // The month's own "has passed" does not close its last week, which runs into the next month.
-    return view.blockedReason === null || monthPassed;
+    return Boolean(view?.viewerIsRep) && week.canEdit && (week.status === null || isPlanEditable(week.status));
   }
 
   const states: WeekState[] = view
@@ -299,36 +312,18 @@ export function PlanBoard({
 
   const anyDirty = states.some((state) => state.dirty);
   const needsSave = states.filter((state) => state.dirty || state.fixes > 0);
-  // The week this month opens with and does not own (owner, 2026-10-01). Sending the MONTH does not
-  // send it — it belongs to the month before — so the month's own confirmation must not claim it does.
-  const leadingState = states.find((state) => state.week.leading) ?? null;
 
-  // The week "+ Make weekly plan" opens: this month's first week still to plan, or — when this month
-  // has none left and nothing here is unsaved — the next month's, once that month is on screen.
-  if (weekSearch && view && !resource.loading && (weekSearch.movedTo === null || monthKeyOf(view.monthStart) === weekSearch.movedTo)) {
-    const move = weekToPlanMove({
-      weeks: view.weeks,
-      monthStart: view.monthStart,
-      months: view.months,
-      mayChangeMonth: weekSearch.movedTo === null && !anyDirty,
-    });
-    if (move.kind === "month") {
-      const monthKey = monthKeyOf(move.monthStart);
-      setWeekSearch({ movedTo: monthKey });
-      setMonth(monthKey);
-      setWeekStart(null);
-      setDay(null);
-    } else {
-      setWeekSearch(null);
-      if (move.kind === "week") {
-        setWeekStart(move.week.weekStart);
-        setDay(null);
-        setScrollNonce((current) => current + 1);
-      }
-    }
+  // "+ Make weekly plan" brings the rep's week into view once the board holding it is on screen.
+  if (jumpToWeek && view && !resource.loading) {
+    setJumpToWeek(false);
+    setScrollNonce((current) => current + 1);
   }
 
-  const firstToPlan = view ? firstWeekToPlan(view.weeks) : null;
+  // The week the board opens on: the rep's ONE week on his own plan (owner, 2026-10-01); for a
+  // reviewer, the first week still open and not sent.
+  const firstToPlan = view
+    ? ((view.viewerIsRep ? view.weeks.find((week) => week.weekStart === view.repWeek) : undefined) ?? firstWeekToPlan(view.weeks))
+    : null;
   const selected =
     states.find((state) => state.week.weekStart === weekStart) ??
     states.find((state) => state.week.weekStart === firstToPlan?.weekStart) ??
@@ -576,20 +571,30 @@ export function PlanBoard({
     }
   }
 
-  async function reopenWeek(state: WeekState) {
+  /**
+   * "Ask to edit this week" (owner, 2026-10-01): a sent week is no longer taken back by the rep. The
+   * request goes to his district manager, then SFE, then HR — and only HR's acknowledgement opens it.
+   */
+  async function askToEdit(state: WeekState) {
     const plan = state.week.plan;
     if (!view || !plan || locked) return;
     const name = state.week.label;
-    setBusy({ kind: "week", weekStart: state.week.weekStart, action: "reopen" });
+    setBusy({ kind: "week", weekStart: state.week.weekStart, action: "ask" });
     setNotice(null);
     try {
-      await crmPost<unknown>("/api/phoenix-crm/plans/submit", { planId: plan.planId, action: "reopen", expectedVersion: plan.version }, "plan");
-      show({ tone: "info", title: `${name} taken back`, message: "Change it, save it, and send it for review again." });
+      await crmPost<unknown>("/api/phoenix-crm/plans/edit-requests", { planId: plan.planId, expectedVersion: plan.version }, "plan");
+      show({
+        tone: "info",
+        title: `You asked to edit ${name}`,
+        message: view.isTest
+          ? "This is a test plan: you take every step yourself in Team, and nobody is notified."
+          : "Your district manager decides first, then SFE, then HR. The week opens again once HR acknowledges it.",
+      });
       onChanged?.();
       resource.reload();
     } catch (error) {
       const code = errorCodeOf(error);
-      show({ tone: "bad", title: `${name} was not taken back`, message: messageOf(error) });
+      show({ tone: "bad", title: "The request was not sent", message: messageOf(error) });
       if (code !== null && PLAN_RELOAD_CODES.has(code)) resource.reload();
     } finally {
       setBusy(null);
@@ -624,29 +629,8 @@ export function PlanBoard({
   }
 
   // ── The month's own buttons ───────────────────────────────────────────────────────────────────
-
-  async function transitionMonth(action: "send" | "reopen") {
-    if (!view || locked) return;
-    // The month goes with every week's latest ticks, so they are saved first.
-    if (action === "send" && needsSave.length > 0 && !(await saveWeeks(needsSave))) return;
-    setBusy({ kind: "month", action });
-    setNotice(null);
-    try {
-      await crmPost<unknown>("/api/phoenix-crm/monthly-plans", { seatId, test, month: view.monthStart, action: action === "send" ? "submit" : "reopen" }, "plan");
-      show(
-        action === "send"
-          ? { tone: "good", title: "Month sent for review", message: `Every week goes with it. ${reviewerSentence(view)}` }
-          : { tone: "info", title: "Month taken back", message: "Change any week, then send the month for review again." },
-      );
-      onChanged?.();
-      resource.reload();
-    } catch (error) {
-      show({ tone: "bad", title: action === "send" ? "The month was not sent" : "The month was not taken back", message: messageOf(error) });
-      resource.reload();
-    } finally {
-      setBusy(null);
-    }
-  }
+  // A rep no longer sends or takes back a month (owner, 2026-10-01). What is left is the reviewer's
+  // decision on a month sent before that day.
 
   /** The reviewer's decision on the month — only ever called from its own Approve or Return button. */
   async function decideMonth(action: PlanDecisionAction, note: string): Promise<boolean> {
@@ -686,7 +670,6 @@ export function PlanBoard({
     setNotice(null);
     setShowProblems(false);
     setLeaving(null);
-    setMonthConfirm(null);
   }
 
   function chooseMonth(next: string) {
@@ -701,6 +684,8 @@ export function PlanBoard({
   }
 
   function chooseWeek(next: string) {
+    // A greyed week is not a choice on the rep's own plan (owner, 2026-10-01): one week at a time.
+    if (repBoard && view?.weeks.find((week) => week.weekStart === next)?.repState === "closed") return;
     setWeekStart(next);
     setDay(null);
   }
@@ -751,11 +736,9 @@ export function PlanBoard({
   const status = plan?.status ?? null;
   const showSpread = !view.viewerIsRep || view.viewerIsReviewer;
   // 🔴 THE MONTH'S OWN WEEKS, FOR EVERYTHING THAT IS ABOUT THE MONTH (owner, 2026-10-01). The leading
-  // week is shown and edited like any other, but it belongs to the month before: "Copy last month"
-  // must not fill it, and it must not move this month's placed count or its weeks-left arithmetic —
-  // the server keeps it out of every meter for the same reason.
-  const editableStates = states.filter((state) => state.editable && !state.week.leading);
-  const anyPlaced = view.amMeter.placements + view.pmMeter.placements > 0 || states.some((state) => state.items.length > 0);
+  // week is shown like any other, but it belongs to the month before: it must not move this month's
+  // placed count or its weeks-left arithmetic — the server keeps it out of every meter for the same reason.
+  const ownWeeks = states.filter((state) => !state.week.leading);
   const bricks = plannerBricks(view.customers);
   const tints = brickTintMap(bricks.map((brick) => brick.value));
   const filterOptions = {
@@ -766,8 +749,10 @@ export function PlanBoard({
   const monthBusy = busy?.kind === "month" ? busy.action : null;
   const weekBusy = busy?.kind === "week" && selected && busy.weekStart === selected.week.weekStart ? busy.action : null;
   // The two suggestions, on the rep's own plan only: the month so far with his unsaved ticks in it, the
-  // weeks still open from the one on screen, so a customer is spread over them rather than bunched, and
-  // his daily call-rate target, which a suggestion fills a day to (never past the cap).
+  // month's weeks from the one on screen on, so a customer is spread over them rather than bunched, and
+  // his daily call-rate target, which a suggestion fills a day to (never past the cap). The weeks are
+  // the MONTH's, not the ones he can change: he plans one week at a time now (owner, 2026-10-01), and
+  // counting only that one would cram a customer's whole month into it.
   const suggest: SuggestContext | null =
     view.viewerIsRep && selected
       ? {
@@ -776,7 +761,7 @@ export function PlanBoard({
           placedThisMonth: monthPlacements(
             states.filter((state) => !state.week.leading).map((state) => ({ week: state.week, items: state.editable ? state.items : null })),
           ),
-          weeksLeft: Math.max(1, editableStates.filter((state) => state.week.weekStart >= selected.week.weekStart).length),
+          weeksLeft: Math.max(1, ownWeeks.filter((state) => state.week.weekStart >= selected.week.weekStart).length),
         }
       : null;
 
@@ -837,131 +822,53 @@ export function PlanBoard({
           </div>
         ) : null}
 
-        <CrmBlock title="Month">
-          <CrmChoice
-            columns={4}
-            label="Month"
-            onChange={chooseMonth}
-            options={view.months.map((option) => ({
-              value: option.monthStart,
-              label: option.label,
-              note: option.statusLabel,
-              disabled: locked && option.monthStart !== view.monthStart,
-            }))}
-            value={view.monthStart}
-          />
-        </CrmBlock>
+        {/* 🔴 The rep's own plan has ONE path (owner, 2026-10-01): no month to choose and no month to
+            send — the title above names the month, and his week is the one open below. A manager
+            reviewing from Team keeps his month chooser. */}
+        {repBoard ? (
+          view.blockedReason ? (
+            <CrmBlock>
+              <CrmNote tone="warn">{view.blockedReason}</CrmNote>
+            </CrmBlock>
+          ) : null
+        ) : (
+          <CrmBlock title="Month">
+            <CrmChoice
+              columns={4}
+              label="Month"
+              onChange={chooseMonth}
+              options={view.months.map((option) => ({
+                value: option.monthStart,
+                label: option.label,
+                note: option.statusLabel,
+                disabled: locked && option.monthStart !== view.monthStart,
+              }))}
+              value={view.monthStart}
+            />
+          </CrmBlock>
+        )}
 
-        <CrmBlock
-          actions={
-            <span className="flex max-w-full flex-wrap gap-1">
-              <CrmPill tone={PLAN_STATUS_TONE[status ?? "none"]}>{plan?.statusLabel ?? "Not started"}</CrmPill>
-              {plan?.submittedLate ? <CrmPill tone="warn">Sent late</CrmPill> : null}
-              {view.overdue ? <CrmPill tone="bad">Overdue</CrmPill> : null}
-            </span>
-          }
-          className="border-t border-slate-100"
-          title={`${view.monthLabel} · the month`}
-        >
-          <p className="break-words text-sm font-bold text-slate-800">Due {view.dueOnLabel}</p>
-          <div className="mt-3">
+        {/* A month SENT before 2026-10-01 still carries its status and its reviewer's decision. A month
+            with no header is not a thing any more — the rep sends a week at a time — so nothing shows. */}
+        {!repBoard && plan ? (
+          <CrmBlock
+            actions={
+              <span className="flex max-w-full flex-wrap gap-1">
+                <CrmPill tone={PLAN_STATUS_TONE[status ?? "none"]}>{plan.statusLabel}</CrmPill>
+                {plan.submittedLate ? <CrmPill tone="warn">Sent late</CrmPill> : null}
+              </span>
+            }
+            className="border-t border-slate-100"
+            title={`${view.monthLabel} · the month`}
+          >
             <CrmFacts facts={monthFacts} />
-          </div>
-          {/* The deadline, said once where he is working. Never a block: a late month is accepted and
-              stamped. Only the rep is told he is behind — a manager reads the stamp instead. */}
-          {view.viewerIsRep && view.overdue ? (
-            <CrmNote className="mt-3" title={`This month was due ${view.dueOnLabel}`} tone="warn">
-              Send it as soon as it is ready. It will still be accepted, and it will be marked as sent late.
-            </CrmNote>
-          ) : null}
-          {plan?.submittedLate ? (
-            <CrmNote className="mt-3" title="Sent late" tone="warn">
-              This month was due {view.dueOnLabel} and was sent {plan.submittedAt ? cairoStamp(plan.submittedAt) : "after it"}.
-            </CrmNote>
-          ) : null}
-          {plan?.decisionNote && (status === "returned" || status === "approved") ? (
-            <CrmNote className="mt-3" title={status === "returned" ? "What to change" : "Manager's note"} tone={status === "returned" ? "warn" : "good"}>
-              <span className="block whitespace-pre-line">{plan.decisionNote}</span>
-            </CrmNote>
-          ) : null}
-          {view.viewerIsRep && view.blockedReason && editableStates.length === 0 ? (
-            <CrmNote className="mt-3" tone="warn">
-              {view.blockedReason}
-            </CrmNote>
-          ) : null}
-
-          {view.canEdit ? (
-            monthConfirm === "send" ? (
-              <div className="mt-3 grid min-w-0 gap-2 border border-orange-200 bg-orange-50/40 px-3.5 py-3">
-                <p className="text-sm font-black text-slate-950">Send the whole month for review?</p>
-                <p className="break-words text-sm font-medium leading-6 text-slate-600">
-                  Every week of {view.monthLabel} goes with it
-                  {leadingState ? `, but not ${leadingState.week.label} — those belong to the week before, and you send that week on its own` : ""}
-                  {needsSave.length > 0 ? `, and ${weeksText(needsSave.map((state) => state.week.label))} ${needsSave.length === 1 ? "is" : "are"} saved first` : ""}.{" "}
-                  {reviewerSentence(view)} Until then, you can take it back to change it.
-                </p>
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                  <CrmButton
-                    busy={monthBusy === "send" || busy?.kind === "save"}
-                    disabled={locked}
-                    onClick={() => {
-                      setMonthConfirm(null);
-                      void transitionMonth("send");
-                    }}
-                    variant="primary"
-                  >
-                    Send the month
-                  </CrmButton>
-                  <CrmButton disabled={monthBusy === "send"} onClick={() => setMonthConfirm(null)}>
-                    Not yet
-                  </CrmButton>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
-                <CrmButton busy={monthBusy === "send"} disabled={locked || !anyPlaced} onClick={() => setMonthConfirm("send")} variant="primary">
-                  {status === "returned" ? "Send the month again" : "Send the month"}
-                </CrmButton>
-                {!anyPlaced ? <span className="text-xs font-semibold leading-5 text-slate-500">Place at least one customer on a day before sending the month.</span> : null}
-              </div>
-            )
-          ) : null}
-
-          {view.canReopen && plan ? (
-            monthConfirm === "reopen" ? (
-              <div className="mt-3 grid min-w-0 gap-2 border border-slate-200 bg-slate-50 px-3.5 py-3">
-                <p className="text-sm font-black text-slate-950">Take the month back?</p>
-                <p className="break-words text-sm font-medium leading-6 text-slate-600">
-                  {status === "approved"
-                    ? "It is approved. Taking it back makes every week a draft again, and they need a new approval once you send them."
-                    : "It leaves the manager's review until you send it again."}
-                </p>
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                  <CrmButton
-                    busy={monthBusy === "reopen"}
-                    disabled={locked}
-                    onClick={() => {
-                      setMonthConfirm(null);
-                      void transitionMonth("reopen");
-                    }}
-                    variant="danger"
-                  >
-                    Take it back
-                  </CrmButton>
-                  <CrmButton disabled={monthBusy === "reopen"} onClick={() => setMonthConfirm(null)}>
-                    {status === "approved" ? "Keep it approved" : "Keep it sent"}
-                  </CrmButton>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
-                <CrmButton busy={monthBusy === "reopen"} disabled={locked} onClick={() => setMonthConfirm("reopen")}>
-                  Take the month back to change it
-                </CrmButton>
-              </div>
-            )
-          ) : null}
-        </CrmBlock>
+            {plan.decisionNote && (status === "returned" || status === "approved") ? (
+              <CrmNote className="mt-3" title={status === "returned" ? "What to change" : "Manager's note"} tone={status === "returned" ? "warn" : "good"}>
+                <span className="block whitespace-pre-line">{plan.decisionNote}</span>
+              </CrmNote>
+            ) : null}
+          </CrmBlock>
+        ) : null}
 
         <CrmBlock className="border-t border-slate-100" title="This month">
           <MeterStrip view={view} />
@@ -1008,20 +915,6 @@ export function PlanBoard({
           {anyDirty ? <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">These count what is saved. Save to see your latest ticks in them.</p> : null}
         </CrmBlock>
 
-        {editableStates.length > 0 ? (
-          <CrmBlock className="border-t border-slate-100" title="Copy last month">
-            <PlanCopyMenu
-              caps={caps}
-              customers={view.customers}
-              disabled={locked}
-              key={view.monthStart}
-              onPlace={addCopies}
-              scope={{ kind: "month", monthStart: view.monthStart, weeks: editableStates.map((state) => ({ week: state.week, items: state.items })) }}
-              seatId={seatId}
-              test={test}
-            />
-          </CrmBlock>
-        ) : null}
 
         {/* Owner, 2026-09-22: information, never a refusal — a customer not validated yet is planned as he is. */}
         {view.pendingCount > 0 && view.viewerIsRep ? (
@@ -1047,19 +940,29 @@ export function PlanBoard({
               columns={4}
               label="Week"
               onChange={chooseWeek}
-              options={states.map((state) => ({
-                value: state.week.weekStart,
-                label: <ChoiceLabel chosen={state.week.weekStart === selected?.week.weekStart}>{state.week.label}</ChoiceLabel>,
-                note: [
-                  state.week.statusLabel,
-                  `due ${dayLabel(state.week.dueOn)}`,
-                  state.week.plan?.submittedLate ? "sent late" : null,
-                  state.week.overdue ? "overdue" : null,
-                  state.dirty ? "unsaved" : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · "),
-              }))}
+              options={states.map((state) => {
+                // 🔴 GREYED on the rep's own plan (owner, 2026-10-01): one week at a time. A week ahead
+                // of his is not open yet; a week behind it has passed or was never sent.
+                const closed = repBoard && state.week.repState === "closed";
+                return {
+                  value: state.week.weekStart,
+                  label: <ChoiceLabel chosen={state.week.weekStart === selected?.week.weekStart}>{state.week.label}</ChoiceLabel>,
+                  disabled: closed,
+                  note: closed
+                    ? state.week.weekStart > view.repWeek
+                      ? "Not open yet"
+                      : state.week.statusLabel
+                    : [
+                        state.week.statusLabel,
+                        `due ${dayLabel(state.week.dueOn)}`,
+                        state.week.plan?.submittedLate ? "sent late" : null,
+                        state.week.overdue ? "overdue" : null,
+                        state.dirty ? "unsaved" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · "),
+                };
+              })}
               value={selected?.week.weekStart ?? null}
             />
           )}
@@ -1082,6 +985,7 @@ export function PlanBoard({
               key={selected.week.weekStart}
               locked={locked}
               onActivity={(date, activityType, next) => planActivity(selected, date, activityType, next)}
+              onAskToEdit={() => void askToEdit(selected)}
               onCopied={addCopies}
               onDay={setDay}
               onDecide={(action, note) => decideWeek(selected, action, note)}
@@ -1090,7 +994,6 @@ export function PlanBoard({
               onPlace={(item) => place(selected, item)}
               onQuery={setQuery}
               onRemove={(date, customerId) => remove(selected, date, customerId)}
-              onReopen={() => void reopenWeek(selected)}
               onSend={() => void sendWeek(selected)}
               onShowLatest={() => showLatest(selected)}
               onStarts={(date, next) => planStarts(selected, date, next)}

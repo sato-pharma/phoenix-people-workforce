@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
-import { enforcePhoenixCrmEmailBlock, isPhoenixCrmModule } from "../src/lib/notifications/phoenix-crm-channel-guard.ts";
+import {
+  enforcePhoenixCrmEmailBlock,
+  isPhoenixCrmModule,
+  PHOENIX_CRM_EMAIL_EVENT_TYPES,
+  phoenixCrmChannels,
+} from "../src/lib/notifications/phoenix-crm-channel-guard.ts";
 import { resolveNotificationPolicy } from "../src/lib/notifications/policy.ts";
 import { isPersonalBellCategory } from "../src/lib/notifications/recipients.ts";
 import { defaultTelegramPolicyFor } from "../src/lib/notifications/telegram-governance.ts";
@@ -44,7 +49,36 @@ const EVENT_TYPES = [
   "forecast_sent",
 ];
 
+/**
+ * 🔴 THE ONE EXCEPTION, BY THE OWNER'S OWN ORDER (2026-10-01): a rep's request to edit a week he already
+ * sent runs the district manager → SFE → HR, "with emails, in-app and Telegram for every step". These
+ * five, and ONLY these five, keep their email — the list is pinned exactly, so widening it is a change
+ * this test makes visible rather than one that slips through.
+ */
+const EMAIL_EVENT_TYPES = ["plan_edit_waiting", "plan_edit_moved_on", "plan_edit_refused", "plan_edit_reopened", "plan_edit_expired"];
+
 export function runPhoenixCrmEmailBlockTests() {
+  assert.deepEqual([...PHOENIX_CRM_EMAIL_EVENT_TYPES].sort(), [...EMAIL_EVENT_TYPES].sort(), "exactly the five steps of a plan edit may email");
+  for (const eventType of EMAIL_EVENT_TYPES) {
+    const policy = resolveNotificationPolicy({ module: "phoenix_crm", eventType });
+    for (const channel of ["in_app", "email", "telegram"] as const) {
+      assert.equal(policy.channels.includes(channel), true, `the plan-edit step ${eventType} goes by ${channel} (owner, 2026-10-01)`);
+    }
+    assert.deepEqual(phoenixCrmChannels(eventType), ["in_app", "email", "telegram"], `${eventType} asks for email, in-app and Telegram`);
+    assert.deepEqual(
+      enforcePhoenixCrmEmailBlock(["in_app", "email", "telegram"], "phoenix_crm", eventType),
+      ["in_app", "email", "telegram"],
+      `the guard lets ${eventType} keep its email`,
+    );
+  }
+  for (const eventType of EVENT_TYPES) {
+    assert.deepEqual(phoenixCrmChannels(eventType).includes("email"), false, `${eventType} never asks for email`);
+    assert.deepEqual(
+      enforcePhoenixCrmEmailBlock(["in_app", "email", "telegram"], "phoenix_crm", eventType),
+      ["in_app", "telegram"],
+      `the guard strips email from ${eventType} even when something asks for it`,
+    );
+  }
   for (const eventType of EVENT_TYPES) {
     const policy = resolveNotificationPolicy({ module: "phoenix_crm", eventType });
     assert.equal(policy.channels.includes("email"), false, `the phoenix_crm policy for ${eventType} must not request email`);
@@ -56,11 +90,13 @@ export function runPhoenixCrmEmailBlockTests() {
     // The notices name their channels explicitly, which bypasses the policy's channel list — so the
     // sender itself must never name email either.
     const notify = readFileSync("src/lib/phoenix-crm/server/notifications.ts", "utf8");
-    assert.doesNotMatch(notify, /"email"/, "the Phoenix CRM notifier must never ask for email");
+    // The notifier names NO channel itself: the guard's own allowlist answers for each event type, so the
+    // one exception the owner ordered cannot be widened from here.
+    assert.doesNotMatch(notify, /"email"/, "the Phoenix CRM notifier must never ask for email itself");
     assert.equal(
-      (notify.match(/channels: delivery\.inAppOnly \? \["in_app"\] : \["in_app", "telegram"\],/g) ?? []).length,
+      (notify.match(/channels: phoenixCrmChannels\(delivery\.eventType, delivery\.inAppOnly\),/g) ?? []).length,
       1,
-      "every Phoenix CRM notice goes out through one send, in-app and Telegram (in-app alone where the notice says so), and nothing else",
+      "every Phoenix CRM notice goes out through one send, its channels named by the guard's allowlist, and nothing else",
     );
     // The in-app-only exception is the daily forecast's alert, and ONLY that one: the owner asked for an
     // in-app alert, and some 26 reps send one every working day.
@@ -100,7 +136,7 @@ export function runPhoenixCrmEmailBlockTests() {
     for (const line of notify.split("\n").filter((text) => /^\s*eventType: /.test(text))) {
       for (const match of line.matchAll(/"([a-z_]+)"/g)) sent.add(match[1]);
     }
-    assert.deepEqual([...sent].sort(), [...EVENT_TYPES].sort(), "the notices this test checks are exactly the notices the module sends");
+    assert.deepEqual([...sent].sort(), [...EVENT_TYPES, ...EMAIL_EVENT_TYPES].sort(), "the notices this test checks are exactly the notices the module sends");
 
     // Every notice opens a tab the page really has, on a page that exists.
     const app = readFileSync("src/components/phoenix-crm/phoenix-crm-app.tsx", "utf8");
@@ -123,6 +159,8 @@ export function runPhoenixCrmEmailBlockTests() {
       "src/lib/phoenix-crm/server/unplanned.ts",
       // The daily forecast's alert, from the save.
       "src/lib/phoenix-crm/server/daily-forecast.ts",
+      // A request to edit a sent week: raised by the rep, then each step (owner, 2026-10-01).
+      "src/lib/phoenix-crm/server/plan-edits.ts",
     ]) {
       const source = readFileSync(file, "utf8");
       const calls = source.split("notifyPhoenixCrm(").slice(1);
@@ -152,6 +190,8 @@ export function runPhoenixCrmEmailBlockTests() {
       "email is stripped and the two authorized channels survive",
     );
     assert.deepEqual(enforcePhoenixCrmEmailBlock(["email"], "phoenix_crm"), [], "email-only resolves to NOTHING");
+    assert.deepEqual(enforcePhoenixCrmEmailBlock(["email", "in_app"], "phoenix_crm", "plan_waiting"), ["in_app"], "a plan waiting is still never emailed");
+    assert.deepEqual(enforcePhoenixCrmEmailBlock(["email", "in_app"], "phoenix_crm", null), ["in_app"], "no event type, no exception");
     assert.deepEqual(enforcePhoenixCrmEmailBlock(["in_app", "email", "in_app"], " Phoenix_CRM "), ["in_app"], "the module string is read loosely and channels are deduplicated");
 
     // Other modules keep their own rules; a guard that widened would silence them.
@@ -173,7 +213,7 @@ export function runPhoenixCrmEmailBlockTests() {
     assert.ok(base, "system.ts still has basePolicyChannels");
     assert.match(
       base[1],
-      /return enforcePhoenixCrmEmailBlock\(\w+, input\.module\);\s*$/,
+      /return enforcePhoenixCrmEmailBlock\(\w+, input\.module, input\.eventType\);\s*$/,
       "basePolicyChannels must END by running the phoenix_crm guard — a guard nothing calls blocks nothing",
     );
   }

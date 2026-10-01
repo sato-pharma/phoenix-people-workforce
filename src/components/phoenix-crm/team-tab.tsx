@@ -23,6 +23,7 @@ import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
 import { cairoDayOf, cairoStamp, countText, dayLabel, dayLabelWithYear, plural, weekLabel } from "@/components/phoenix-crm/format";
 import { matchesWords, PENDING_PILL } from "@/components/phoenix-crm/labels";
 import { PlanBoard } from "@/components/phoenix-crm/plan-board";
+import { PlanEditCard } from "@/components/phoenix-crm/plan-edit-card";
 import { RequestCard } from "@/components/phoenix-crm/request-card";
 import { UnplannedVisitCard } from "@/components/phoenix-crm/unplanned-visit-card";
 import {
@@ -58,6 +59,7 @@ import type {
   PlanReviewRow,
   PlanReviewView,
   SeatReadiness,
+  TeamPlanEdit,
   TeamRequest,
   TeamTerritoryRow,
   TeamUnplannedVisit,
@@ -66,7 +68,7 @@ import type {
 } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
-type TeamSection = "plans" | "months" | "unplanned" | "requests" | "lists";
+type TeamSection = "plans" | "edits" | "months" | "unplanned" | "requests" | "lists";
 type ReviewFilter = "waiting" | "not_sent" | "approved" | "all";
 type ListFilter = "not_ready" | "ready" | "vacant" | "all";
 type TeamNotice = { tone: NoteTone; title: string; message?: string | null };
@@ -326,14 +328,19 @@ export function TeamTab({
     (settled
       ? (plansWaiting ?? 0) > 0
         ? "plans"
-        : (summary?.unplannedWaitingForYou ?? 0) > 0
-          ? "unplanned"
-          : (summary?.waitingForYou ?? 0) > 0
-            ? "requests"
-            : "plans"
+        : (summary?.planEditsWaitingForYou ?? 0) > 0
+          ? "edits"
+          : (summary?.unplannedWaitingForYou ?? 0) > 0
+            ? "unplanned"
+            : (summary?.waitingForYou ?? 0) > 0
+              ? "requests"
+              : "plans"
       : null);
 
   const monthsWaiting = months.data ? months.data.rows.filter((row) => row.canApprove).length : null;
+  // A rep sends a week at a time since 2026-10-01 (owner), so a month only reaches a manager from
+  // before that day. The section stays while one is still there to read, and leaves once none is.
+  const anyMonthSent = months.data ? months.data.rows.some((row) => row.plan !== null) : false;
   const sectionOptions: Array<CrmChoiceOption<TeamSection>> = [
     {
       value: "plans",
@@ -341,10 +348,23 @@ export function TeamTab({
       note: plansWaiting === null ? undefined : plansWaiting > 0 ? `${countText(plansWaiting)} waiting for you` : "Nothing waiting for you",
     },
     {
+      value: "edits",
+      label: "Plan edits",
+      note: summary
+        ? summary.planEditsWaitingForYou > 0
+          ? `${countText(summary.planEditsWaitingForYou)} waiting for you`
+          : `${countText(summary.planEditsWaiting)} waiting`
+        : undefined,
+    },
+  ];
+  if (anyMonthSent || section === "months") {
+    sectionOptions.push({
       value: "months",
       label: "Monthly plans",
       note: monthsWaiting === null ? undefined : monthsWaiting > 0 ? `${countText(monthsWaiting)} waiting for you` : "Nothing waiting for you",
-    },
+    });
+  }
+  sectionOptions.push(
     {
       value: "unplanned",
       label: "Off-plan visits",
@@ -363,7 +383,7 @@ export function TeamTab({
           : `${countText(summary.requestsWaiting)} waiting`
         : undefined,
     },
-  ];
+  );
   if (!test) {
     sectionOptions.push({
       value: "lists",
@@ -424,6 +444,16 @@ export function TeamTab({
                     note="Sent by the rep for your approval"
                     tone={(plansWaiting ?? 0) > 0 ? "warn" : "neutral"}
                     value={countText(plansWaiting)}
+                  />
+                  <CrmStat
+                    label="Plan edits waiting for you"
+                    note={
+                      summary.planEditsWaiting > summary.planEditsWaitingForYou
+                        ? `${countText(summary.planEditsWaiting)} waiting in all`
+                        : "A rep asks to change a week he already sent"
+                    }
+                    tone={summary.planEditsWaitingForYou > 0 ? "warn" : "neutral"}
+                    value={countText(summary.planEditsWaitingForYou)}
                   />
                   <CrmStat
                     label="Off-plan visits waiting for you"
@@ -493,6 +523,16 @@ export function TeamTab({
               onRetry={months.reload}
               test={test}
               view={months.data}
+            />
+          ) : null}
+
+          {current === "edits" && team.data ? (
+            <PlanEditsSection
+              idPrefix={idPrefix}
+              onChanged={requestDecided}
+              onOpenWeek={(edit) => openReview(edit.seatId, edit.weekStart)}
+              team={team.data}
+              test={test}
             />
           ) : null}
 
@@ -854,6 +894,103 @@ function MonthsSection({
  * manager, then the SFE. Everyone else in scope reads them and decides nothing — scope is sight, not
  * authority — which is why the split below is by `canDecide` and not by territory.
  */
+/**
+ * A rep's requests to edit a week he already sent (owner, 2026-10-01): the district manager decides
+ * first, then SFE, then HR acknowledges — and only then does the week open again for him.
+ */
+function PlanEditsSection({
+  idPrefix,
+  onChanged,
+  onOpenWeek,
+  team,
+  test,
+}: {
+  idPrefix: string;
+  onChanged: (message: string) => void;
+  onOpenWeek: (edit: TeamPlanEdit) => void;
+  team: TeamView;
+  test: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const [limit, setLimit] = useState(PAGE);
+  const [othersLimit, setOthersLimit] = useState(PAGE);
+
+  if (team.planEdits.length === 0) {
+    return (
+      <div className="border-t border-slate-100">
+        <CrmEmpty
+          message={
+            test
+              ? "Test requests to edit a sent week show here while they wait."
+              : "When a rep asks to change a week he already sent, the request shows here until the district manager, SFE and HR have each taken their step."
+          }
+          title="No request to edit a plan waiting"
+        />
+      </div>
+    );
+  }
+
+  const searchable = team.planEdits.length > SEARCH_FROM;
+  const edits = searchable ? team.planEdits.filter((edit) => matchesWords(query, [edit.repName, edit.territoryName, edit.weekLabel])) : team.planEdits;
+  const forYou = edits.filter((edit) => edit.canDecide);
+  const others = edits.filter((edit) => !edit.canDecide);
+
+  function card(edit: TeamPlanEdit) {
+    return <PlanEditCard edit={edit} key={edit.requestId} onChanged={onChanged} onOpenWeek={() => onOpenWeek(edit)} />;
+  }
+
+  return (
+    <>
+      {searchable ? (
+        <CrmBlock className="border-t border-slate-100">
+          <CrmSearchField
+            id={`${idPrefix}-edits-search`}
+            label="Find a request"
+            onChange={(next) => {
+              setQuery(next);
+              setLimit(PAGE);
+              setOthersLimit(PAGE);
+            }}
+            placeholder="Rep, territory or week"
+            value={query}
+          />
+        </CrmBlock>
+      ) : null}
+
+      {edits.length === 0 ? (
+        <div className="border-t border-slate-100">
+          <CrmEmpty message="Clear the search to see every request." title="No request matches" />
+        </div>
+      ) : null}
+
+      {forYou.length > 0 ? (
+        <>
+          <CrmBlock className="border-t border-slate-100" title={`Waiting for your step · ${countText(forYou.length)}`}>
+            <p className="break-words text-sm font-medium leading-6 text-slate-600">
+              The longest waiting first. Open the week to see it as it was sent, then take your step. A refusal needs a note the rep reads.
+            </p>
+          </CrmBlock>
+          <div className="divide-y divide-slate-100 border-t border-slate-100">{forYou.slice(0, limit).map(card)}</div>
+          <CrmShowMore left={forYou.length - limit} onMore={() => setLimit((value) => value + PAGE)} page={PAGE} />
+        </>
+      ) : null}
+
+      {others.length > 0 ? (
+        <>
+          <CrmBlock className="border-t border-slate-100" title={`Waiting for somebody else · ${countText(others.length)}`}>
+            <p className="break-words text-sm font-medium leading-6 text-slate-600">
+              {forYou.length === 0 && edits.length === team.planEdits.length ? "Nothing waits for your step. " : ""}
+              A request sits with the district manager first, then with SFE, then with HR.
+            </p>
+          </CrmBlock>
+          <div className="divide-y divide-slate-100 border-t border-slate-100">{others.slice(0, othersLimit).map(card)}</div>
+          <CrmShowMore left={others.length - othersLimit} onMore={() => setOthersLimit((value) => value + PAGE)} page={PAGE} />
+        </>
+      ) : null}
+    </>
+  );
+}
+
 function UnplannedSection({
   idPrefix,
   onChanged,

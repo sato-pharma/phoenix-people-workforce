@@ -1677,6 +1677,8 @@ import { runPhoenixCrmListRowFactsTests } from "./phoenix-crm-list-row-facts.tes
 import { runPhoenixCrmPlanPatternTests } from "./phoenix-crm-plan-pattern.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
+import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
+import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-requests.test.ts";
 import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.ts";
 import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
@@ -5868,6 +5870,16 @@ await runTest(
 await runTest(
   "Phoenix CRM plans on one board (owner, 2026-09-29): every field-week of a month is plannable by the month's own due date for every month of 2026-2028 (the three-week window made the rest of October unplannable on the day it was due), a week sent alone is due the Thursday before it, Copy last month replays Week N's weekday onto Week N's weekday and never every Saturday, copying a week or a day keeps the caps and the editable days, the week draft sends its day activities and counts them as unsaved work, and nothing on the board approves or sends by itself",
   runPhoenixCrmPlanBoardTests,
+);
+
+await runTest(
+  "Phoenix CRM plans one week at a time (owner, 2026-10-01, after the first Delta session): the rep's week is the one that begins on the coming Saturday on every day of 2026-2028, every other week is greyed and refused by the server on save and on send, his own board opens on that week's month with no month chooser, no month send and no Copy last month, a sent week is never taken back, the running week stays reachable in months that start on a Friday or a Saturday, and the week of 3 October 2026 is due Friday 2 October in TypeScript and SQL alike",
+  runPhoenixCrmPlanWeeklyOnlyTests,
+);
+
+await runTest(
+  "Phoenix CRM changes a sent week only through a request (owner, 2026-10-01): the district manager approves, then SFE, then HR — Omar Gawish alone, on a real request — acknowledges, and only that reopens the week, inside the same transaction and under the plan's own lock; a vacant chain starts at SFE, a refusal needs a note, no step is skipped or taken twice, a passed week's request is closed as expired rather than raised, the step is read from the row and never the body, and every step tells the next person, the rep, the district manager and SFE",
+  runPhoenixCrmPlanEditRequestTests,
 );
 
 await runTest(

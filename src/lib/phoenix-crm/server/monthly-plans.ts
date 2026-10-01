@@ -23,12 +23,23 @@
  * month". The month sits on top as Week 1..N; each week carries its own plan, its own due date (the
  * Thursday before it) and its own send / approve buttons, so a rep who plans a week at a time and one
  * who sends the whole month use the same board.
+ *
+ * 🔴 Owner, 2026-10-01 — WEEKLY ONLY, after the first Delta (1) session: the board opened on September
+ * (the first plannable month), four reps pressed "Send the month" and were stamped late, and one
+ * planned a week that had passed. Now:
+ *   - the board opens on the month of the rep's ONE week (calendar.ts `repPlanWeek`), every other week
+ *     greyed for him (`repState`), and the server refuses a save or a send of any other week;
+ *   - a rep no longer sends or takes back a MONTH — `transitionMonthlyPlanAsRep` refuses both, so a
+ *     screen one release behind gets a sentence. The month stays the frame the weeks sit in, with its
+ *     meters; a reviewer's month decision is untouched;
+ *   - a sent week changes only through "Ask to edit this week" (plan-edits.ts).
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
 import {
+  boardLeadingWeek,
   editablePlanDays,
   fieldWeeksOfMonth,
   isIsoDay,
@@ -39,13 +50,13 @@ import {
   monthlyPlanDueOn,
   monthStartOf,
   plannableMonths,
+  repPlanWeek,
   weeklyPlanDueOn,
   weekNumberInMonth,
 } from "@/lib/phoenix-crm/calendar";
 import { cleanText, parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { checkDaySpread } from "@/lib/phoenix-crm/geo";
 import {
-  isMonthlyPlanEditable,
   monthlyCallRate,
   monthlyPlanStatusLabel,
   summarizeMonthlyList,
@@ -54,7 +65,7 @@ import {
   type MonthlyCallRate,
   type MonthlyListMeter,
 } from "@/lib/phoenix-crm/monthly-plan-rules";
-import { isPlanEditable, isUuid, PLAN_DECISION_NOTE_MAX, planStatusLabel } from "@/lib/phoenix-crm/plan-rules";
+import { isPlanEditable, isUuid, PLAN_DECISION_NOTE_MAX, planStatusLabel, type RepWeekState } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   assertCanReturnPlan,
@@ -75,6 +86,7 @@ import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanActivities } from "@/lib/phoenix-crm/server/plan-activities";
 import { loadPlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
+import { loadPlanEditState, repStateOf, type PlanEditRequestView, type PlanEditState } from "@/lib/phoenix-crm/server/plan-edits";
 import {
   buildDays,
   ITEM_COLUMNS,
@@ -107,11 +119,15 @@ const MONTHLY_PLAN_COLUMNS =
   "id, seat_id, line_code, month_start, status, version, submitted_at, submitted_by_hr_id, decided_at, decided_by_hr_id, " +
   "decided_by_role, decision_note, created_by_hr_id, updated_at, is_test, due_on, submitted_late";
 
-/** The requested month, clamped to the plannable months; the first plannable month by default. */
-function resolveMonth(value: unknown, plannable: string[]): string {
+/**
+ * The requested month, clamped to the plannable months. By default the board opens on the month of the
+ * rep's own week (owner, 2026-10-01): on 1 October the first plannable month was still September, and
+ * the reps had to find October themselves.
+ */
+function resolveMonth(value: unknown, plannable: string[], fallback?: string): string {
   if (isMonthKey(value) && plannable.includes(`${value}-01`)) return `${value}-01`;
   if (isIsoDay(value) && plannable.includes(monthStartOf(value))) return monthStartOf(value);
-  return plannable[0];
+  return fallback && plannable.includes(fallback) ? fallback : plannable[0];
 }
 
 // ── The month header ──────────────────────────────────────────────────────────────────────────────
@@ -177,6 +193,8 @@ export type MonthlyDoctorRow = DoctorMonthTally & {
 
 /** What the board calls the week a month opens with and does not own (owner, 2026-10-01). */
 export const LEADING_WEEK_LABEL = "First days";
+/** ...and the running week, when the month of the rep's own week shows it only so it can be reached. */
+export const RUNNING_WEEK_LABEL = "This week";
 
 /** A field-week of the month, with its own status and its days (the derived weekly plan). */
 export type MonthlyWeekView = {
@@ -207,8 +225,21 @@ export type MonthlyWeekView = {
   overdue: boolean;
   /** The week still has a day the rep may change. */
   open: boolean;
+  /**
+   * What the rep may do with it (owner, 2026-10-01 — weekly only): plan it, ask to edit it once sent,
+   * wait on that request, or nothing — greyed. "closed" for anyone who is not its rep.
+   */
+  repState: RepWeekState;
+  /** The rep ticks, saves and sends it. */
+  canEdit: boolean;
   canSubmit: boolean;
-  canReopen: boolean;
+  /** The rep may press "Ask to edit this week": it is sent, still has days ahead, and nothing is asked yet. */
+  canAskToEdit: boolean;
+  /**
+   * The request a week shows: the one on its way, else the last one while its answer still stands — a
+   * refusal on a week still sent, an acknowledgement on a week still open again. Null otherwise.
+   */
+  editRequest: PlanEditRequestView | null;
   canApprove: boolean;
   canReturn: boolean;
 };
@@ -245,6 +276,9 @@ export type MonthlyPlannerView = {
   customers: PlannerCustomer[];
   viewerIsRep: boolean;
   viewerIsReviewer: boolean;
+  /** The one week the rep plans now (calendar.ts `repPlanWeek`) — where his board opens. */
+  repWeek: string;
+  /** The month's own send and take-back: always false since 2026-10-01 (a rep sends a week at a time). */
   canEdit: boolean;
   canSubmit: boolean;
   canReopen: boolean;
@@ -261,11 +295,13 @@ export async function loadMonthlyPlanner(
   const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
   const today = viewer.cairoToday;
   const months = plannableMonths(today);
-  const monthStart = resolveMonth(raw.month, months);
+  const monthStart = resolveMonth(raw.month, months, monthStartOf(repPlanWeek(today)));
   const weeks = fieldWeeksOfMonth(monthStart);
   // The week this month OPENS with and does not own — read beside the month's own weeks and kept out
-  // of every meter below (owner, 2026-10-01; calendar.ts `leadingFieldWeekOfMonth`).
-  const leadingWeek = leadingFieldWeekOfMonth(monthStart);
+  // of every meter below (owner, 2026-10-01; calendar.ts `leadingFieldWeekOfMonth`) — or, on the month
+  // of the rep's own week, the week he is in, so its "Ask to edit" stays reachable (`boardLeadingWeek`).
+  const leadingWeek = boardLeadingWeek(monthStart, today);
+  const leadingIsRunning = leadingWeek !== null && leadingWeek !== leadingFieldWeekOfMonth(monthStart);
 
   // 🔴 TWO CHAINS SIDE BY SIDE, NOT THREE WAVES IN A ROW (2026-10-01, "slow to transfer between page
   // and page", Phoenix CRM first) — the weekly planner's own shape, see loadPlanner in plans.ts. The
@@ -306,7 +342,7 @@ export async function loadMonthlyPlanner(
     const planIds = planRows.map((row) => String(row.id));
     const leadingId = leadingRow ? String(leadingRow.id) : null;
     const allIds = leadingId ? [...planIds, leadingId] : planIds;
-    const [allItemRows, names, activities, starts] = await Promise.all([
+    const [allItemRows, names, activities, starts, editState] = await Promise.all([
       loadPlanItemRows(allIds, ITEM_COLUMNS),
       loadPeopleNames([
         ...territoryPeople(viewer.org, [seat]),
@@ -314,10 +350,12 @@ export async function loadMonthlyPlanner(
       ]),
       loadPlanActivities(allIds),
       loadPlanDayStarts(allIds),
+      // Each week's request to edit it (owner, 2026-10-01), beside the rest — never a wave of its own.
+      loadPlanEditState(allIds, isTest),
     ]);
     const itemRows = leadingId ? allItemRows.filter((row) => String(row.plan_id) !== leadingId) : allItemRows;
     const leadingItems = leadingId ? allItemRows.filter((row) => String(row.plan_id) === leadingId) : [];
-    return { monthsResult, headerRow, planRows, itemRows, leadingRow, leadingItems, names, activities, starts };
+    return { monthsResult, headerRow, planRows, itemRows, leadingRow, leadingItems, names, activities, starts, editState };
   })();
   const customersRead = ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }));
   const wave = Promise.all([
@@ -330,7 +368,7 @@ export async function loadMonthlyPlanner(
   wave.catch(() => undefined);
   await ensured;
   const [
-    { monthsResult, headerRow, planRows, itemRows, leadingRow, leadingItems, names, activities, starts },
+    { monthsResult, headerRow, planRows, itemRows, leadingRow, leadingItems, names, activities, starts, editState },
     { customers, placesByCustomer },
     visitCounts,
     readiness,
@@ -415,15 +453,27 @@ export async function loadMonthlyPlanner(
     const dueOn = weekPlan?.dueOn ?? weeklyPlanDueOn(weekStart);
     const open = editablePlanDays(weekStart, today).length > 0;
     const staleOpen = days.some((day) => day.editable && day.items.some((item) => item.stale));
+    // One week at a time (owner, 2026-10-01): the same answer the server gives a save or a send.
+    const edit: PlanEditState | null = planRow ? (editState.get(String(planRow.id)) ?? null) : null;
+    const repState: RepWeekState = repForWeeks ? repStateOf({ weekStart, cairoToday: today, status: weekStatus, edit }) : "closed";
+    const canEdit = repState === "plan";
+    const latest = edit?.latest ?? null;
+    const editRequest =
+      edit?.waiting ??
+      (latest && ((latest.status === "refused" && (weekStatus === "submitted" || weekStatus === "approved")) || (latest.status === "reopened" && weekStatus === "draft"))
+        ? latest
+        : null);
+    const previousMonth = formatPhoenixMonth(addDaysIso(monthStart, -1));
     return {
       weekStart,
       weekNumber: leading ? 0 : weekNumberInMonth(weekStart),
-      label: leading ? LEADING_WEEK_LABEL : `Week ${weekNumberInMonth(weekStart)}`,
+      label: leading ? (leadingIsRunning ? RUNNING_WEEK_LABEL : LEADING_WEEK_LABEL) : `Week ${weekNumberInMonth(weekStart)}`,
       leading,
-      // 🔴 The sentence that closes the trap: sending the MONTH does not send this week, because the
-      // week belongs to the month before it. Said here, where he is standing, in his own vocabulary.
+      // Where this week is filed, said where he is standing: it belongs to the month before.
       leadingNote: leading
-        ? `These are the first days of ${formatPhoenixMonth(monthStart)}, on the week of ${formatPhoenixLongDate(weekStart)} — which belongs to ${formatPhoenixMonth(addDaysIso(monthStart, -1))}. Sending ${formatPhoenixMonth(monthStart)} does not send it. Send this week on its own.`
+        ? leadingIsRunning
+          ? `This is the week you are in, from ${formatPhoenixLongDate(weekStart)}. It belongs to ${previousMonth}.`
+          : `These are the first days of ${formatPhoenixMonth(monthStart)}, on the week of ${formatPhoenixLongDate(weekStart)} — which belongs to ${previousMonth}.`
         : null,
       status: weekStatus,
       statusLabel: planStatusLabel(weekStatus),
@@ -431,10 +481,14 @@ export async function loadMonthlyPlanner(
       plan: weekPlan,
       dueOn,
       dueOnLabel: formatPhoenixLongDate(dueOn),
-      overdue: open && today > dueOn && (weekStatus === null || weekStatus === "draft" || weekStatus === "returned"),
+      // A rep is told only about the week he can still send; a manager reads it on every open week.
+      overdue: (repForWeeks ? canEdit : open) && today > dueOn && (weekStatus === null || weekStatus === "draft" || weekStatus === "returned"),
       open,
-      canSubmit: repForWeeks && open && weekStatus !== null && isPlanEditable(weekStatus) && weekItems.length > 0 && !staleOpen,
-      canReopen: repForWeeks && open && (weekStatus === "submitted" || weekStatus === "approved"),
+      repState,
+      canEdit,
+      canSubmit: canEdit && weekStatus !== null && isPlanEditable(weekStatus) && weekItems.length > 0 && !staleOpen,
+      canAskToEdit: repState === "sent" && weekPlan !== null,
+      editRequest,
       canApprove: reviewerForWeeks && weekStatus === "submitted",
       canReturn: open && returnerForWeeks && (weekStatus === "submitted" || weekStatus === "approved"),
     };
@@ -462,11 +516,11 @@ export async function loadMonthlyPlanner(
 
   let blockedReason: string | null = null;
   if (viewerIsRep) {
-    if (!monthOpen) blockedReason = "This month has passed. Choose a month ahead to plan.";
-    else if (!seat.lineCode) blockedReason = "This territory has no line in the organogram, so it cannot be planned.";
+    if (!seat.lineCode) blockedReason = "This territory has no line in the organogram, so it cannot be planned.";
+    else if (!monthOpen || ![leadingView, ...weekViews].some((week) => week?.repState === "plan" || week?.repState === "sent")) {
+      blockedReason = `You plan one week at a time: the week starting ${formatPhoenixLongDate(repPlanWeek(today))}.`;
+    }
   }
-  const hasPlacements = itemRows.length > 0;
-  const staleOnOpenDays = weekViews.some((week) => week.days.some((day) => day.editable && day.items.some((item) => item.stale)));
 
   return {
     territory: describeTerritory(viewer.org, seat, names),
@@ -500,9 +554,12 @@ export async function loadMonthlyPlanner(
     customers: plannerCustomers,
     viewerIsRep,
     viewerIsReviewer,
-    canEdit: viewerIsRep && blockedReason === null && isMonthlyPlanEditable(status),
-    canSubmit: viewerIsRep && blockedReason === null && isMonthlyPlanEditable(status) && hasPlacements && !staleOnOpenDays,
-    canReopen: viewerIsRep && monthOpen && (status === "submitted" || status === "approved"),
+    repWeek: repPlanWeek(today),
+    // A rep no longer sends or takes back a MONTH (owner, 2026-10-01 — weekly only): these stay false,
+    // and transitionMonthlyPlanAsRep refuses both for a screen one release behind.
+    canEdit: false,
+    canSubmit: false,
+    canReopen: false,
     canApprove: viewerIsReviewer && status === "submitted",
     canReturn: monthOpen && canReturnTerritoryPlan(viewer, seat, isTest) && (status === "submitted" || status === "approved"),
     blockedReason,
@@ -513,54 +570,17 @@ export async function loadMonthlyPlanner(
 
 export type MonthlyTransitionResult = { monthlyPlanId: string; status: PhoenixCrmPlanStatus; version: number };
 
-function lineCodeOf(seat: OrgSeat): string {
-  if (!seat.lineCode) throw validationError("This territory has no line in the organogram, so it cannot be planned.");
-  return seat.lineCode;
-}
-
 /**
- * The rep sends the whole month for review, or reopens it to change it. Submit ensures the month header
- * exists (the first send creates it), then transitions; the database refuses an empty month, so the
- * rep cannot send a month with no placement in any of its weeks.
+ * The rep no longer sends or takes back a MONTH (owner, 2026-10-01 — "the plan is entered weekly only").
+ * On 1 October four Delta reps pressed "Send the month", were stamped late against a month due on 24
+ * September, and went on planning weeks they could not send. The route stays, so a screen one release
+ * behind is told what to do instead of meeting a missing page; the gate still runs first, so a viewer
+ * who could never have sent a month is refused exactly as before.
  */
 export async function transitionMonthlyPlanAsRep(viewer: PhoenixCrmViewer, raw: unknown): Promise<MonthlyTransitionResult> {
   const body = record(raw);
-  const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
-  const lineCode = lineCodeOf(seat);
-  const action = body.action === "reopen" ? "reopen" : body.action === "submit" ? "submit" : null;
-  if (!action) throw validationError("Reload the page and try again.");
-  const today = viewer.cairoToday;
-  const months = plannableMonths(today);
-  const monthStart = resolveMonth(body.month, months);
-  if (!months.includes(monthStart) || monthEndOf(monthStart) < today) {
-    throw conflictError("This month has passed. Reload the planner.");
-  }
-
-  const opened = await callPhoenixCrm<Row>("phoenix_crm_open_monthly_plan", {
-    p: { seat_id: seat.seatId, line_code: lineCode, month_start: monthStart, actor_hr_id: viewer.hrId, is_test: isTest },
-  });
-  const monthlyPlanId = String(opened.monthly_plan_id);
-
-  const result = await callPhoenixCrm<Row>("phoenix_crm_monthly_plan_transition", {
-    p: {
-      monthly_plan_id: monthlyPlanId,
-      action,
-      actor_hr_id: viewer.hrId,
-      actor_role: "rep",
-      is_test: isTest,
-      expected_version: Number(opened.version),
-      note: null,
-    },
-  });
-  const status = statusOf(result.status);
-  const version = Number(result.version);
-  if (action === "submit") {
-    await notifyPhoenixCrm(
-      { kind: "monthly_plan_submitted", org: viewer.org, seat, monthlyPlanId, version, monthStart: String(result.month_start), submitterHrId: viewer.hrId },
-      isTest,
-    );
-  }
-  return { monthlyPlanId, status, version };
+  territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
+  throw conflictError("Plans are sent one week at a time now. Open your week and press Send this week. Reload the planner.");
 }
 
 // ── Approve / return (the reviewer or the SFE Manager) ──────────────────────────────────────────────
