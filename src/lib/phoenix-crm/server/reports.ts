@@ -58,6 +58,7 @@ import {
   type CustomerFrequencyRow,
 } from "@/lib/phoenix-crm/customer-frequency";
 import { dailyPlanActivityText } from "@/lib/phoenix-crm/daily-plan-report";
+import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { isLeaveDay } from "@/lib/phoenix-crm/plan-leave";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import type { PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
@@ -511,12 +512,13 @@ export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilter
   for (const [key, activity] of dayActivities) {
     const seatId = key.slice(0, key.lastIndexOf("|"));
     const held = activitiesBySeat.get(seatId) ?? {};
-    held[activity.activityDate.slice(0, 10)] = dailyPlanActivityText({
+    // A day the rep missed recording, entered for him by the Super Admin, says so here as everywhere.
+    held[activity.activityDate.slice(0, 10)] = `${dailyPlanActivityText({
       activityType: activity.activityType,
       label: activity.activityLabel,
       halfDay: activity.halfDay,
       note: activity.note,
-    });
+    })}${activity.enteredByAdmin ? ` · ${MISSED_RECORD_MARK}` : ""}`;
     activitiesBySeat.set(seatId, held);
   }
   const rows = groups
@@ -816,7 +818,12 @@ export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: Rep
       .select(columns)
       .in("seat_id", batch)
       .gte("visit_date", period.from)
-      .lte("visit_date", period.to);
+      .lte("visit_date", period.to)
+      // Place against ACTUAL, and a visit the Super Admin entered for a rep who missed logging it has
+      // no actual: nobody was at the door with a phone (owner, 2026-10-01). Its stand-in flag would
+      // read "no place saved" and its missing reading would plot at 0°N 0°E, so it is not a row here.
+      // Every visit that remains carries a reading — phoenix_crm_visits_location_source holds it.
+      .neq("capture_source", "admin");
     if (!chosen.includeTest) query = query.eq("is_test", false);
     const { data, error } = await query;
     throwIfError(error);

@@ -47,6 +47,7 @@ import {
 } from "@/lib/phoenix-crm/entry-rules";
 import { checkVisitLocation, formatDistance } from "@/lib/phoenix-crm/geo";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
+import { isEnteredForRep } from "@/lib/phoenix-crm/missed-records";
 import { deriveOfflineCaptureTime, parseOfflineCaptureClaim } from "@/lib/phoenix-crm/offline-clock";
 import { describeSamples, narrowSamplesToLine, parseSamplesGiven } from "@/lib/phoenix-crm/samples";
 import {
@@ -120,6 +121,9 @@ export function visitLocationLabel(flag: VisitLocationFlag, distanceMeters: numb
  */
 export const BLIND_LOCATION: { locationFlag: VisitLocationFlag; locationLabel: string } = { locationFlag: "ok", locationLabel: "Visit saved" };
 
+/** What a manager reads where a location would be, on a visit the Super Admin entered for the rep. */
+export const MISSED_VISIT_LOCATION_LABEL = "No location: entered later by the Super Admin";
+
 // ── A territory's visits ────────────────────────────────────────────────────────────────────────
 
 export type VisitRow = {
@@ -135,6 +139,12 @@ export type VisitRow = {
   managerName: string | null;
   seniorName: string | null;
   enteredByName: string;
+  /**
+   * Entered FOR the rep by the Super Admin, who was not on the visit — a visit the rep missed logging
+   * (owner, 2026-10-01). Every screen that shows the visit says so in words (`MISSED_RECORD_MARK`).
+   * Read from who entered it (`isEnteredForRep`), never from how it was dated.
+   */
+  enteredByAdmin: boolean;
   products: string[];
   /** The pharmacy the rep took feedback from before the doctor. */
   pharmacyName: string | null;
@@ -262,6 +272,7 @@ function mapVisitRow(row: Row, names: PeopleNames, options: { blind: boolean }):
     return hrId ? nameOf(names, hrId) : null;
   };
   const unplannedKind = row.is_unplanned === true ? (isUnplannedKind(row.unplanned_kind) ? row.unplanned_kind : "out_of_plan") : null;
+  const enteredByAdmin = isEnteredForRep({ enteredBy: row.entered_by_hr_id, rep: row.rep_hr_id, manager: row.manager_hr_id, senior: row.senior_hr_id });
   return {
     visitId: String(row.id),
     visitDate: String(row.visit_date),
@@ -275,6 +286,7 @@ function mapVisitRow(row: Row, names: PeopleNames, options: { blind: boolean }):
     managerName: person(row.manager_hr_id),
     seniorName: person(row.senior_hr_id),
     enteredByName: nameOf(names, textOrNull(row.entered_by_hr_id)),
+    enteredByAdmin,
     products: Array.isArray(row.products) ? row.products.map(String) : [],
     pharmacyName: textOrNull(row.pharmacy_name),
     productAvailability: parseProductAvailability(row.product_availability),
@@ -284,7 +296,14 @@ function mapVisitRow(row: Row, names: PeopleNames, options: { blind: boolean }):
     voiceNoteSeconds: numberOrNull(row.voice_note_seconds),
     ...(options.blind
       ? BLIND_LOCATION
-      : { locationFlag: flag, locationLabel: visitLocationLabel(flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters)) }),
+      : {
+          locationFlag: flag,
+          // Entered later by the Super Admin, from wherever he was: there is no reading to describe, and
+          // "no place saved for this customer" would be a sentence about the wrong thing.
+          locationLabel: enteredByAdmin
+            ? MISSED_VISIT_LOCATION_LABEL
+            : visitLocationLabel(flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters)),
+        }),
     clockOff: !options.blind && skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
     unplanned: unplannedKind === "out_of_plan" ? visitUnplanned(row) : null,
     unplannedKind,

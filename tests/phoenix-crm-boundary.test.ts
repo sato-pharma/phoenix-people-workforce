@@ -150,6 +150,11 @@ const ROUTE_GATES: RouteGate[] = [
   // Manager) — a district manager holding `approve` is not entitled to another district's visits.
   // There is no GET: the queue rides in /team, so one decision refreshes the whole tab.
   post("visits/unplanned", "approve"),
+  // A record a rep MISSED, entered for him by the Super Admin (owner, 2026-10-01): what can be entered
+  // on a day, and the entry itself. `update` — the Super Admin's own gate, as Settings is — and narrowed
+  // again in the service to the Super Admin alone (`territoryForMissedRecord`).
+  get("missed-records", "update"),
+  post("missed-records", "update"),
   get("team"),
   // The Doctors directory: validated customers across territories, scoped downward on the server.
   get("doctors"),
@@ -490,6 +495,10 @@ const LATER_MIGRATIONS = [
   "supabase/migrations/20260930235705_phoenix_crm_customer_phone.sql",
   // The CNS daily forecast (owner, 2026-10-01): one table and its save function, CNS only by CHECK.
   "supabase/migrations/20261001015949_phoenix_crm_daily_forecasts.sql",
+  // The Super Admin enters a visit a rep missed logging (owner, 2026-10-01): one brand-new function,
+  // capture_source 'admin', and lat/lon nullable on that one source only. It replaces no save_visit,
+  // so it appends safely at the end.
+  "supabase/migrations/20261001044221_phoenix_crm_admin_entry.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

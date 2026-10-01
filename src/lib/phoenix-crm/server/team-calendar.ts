@@ -8,7 +8,15 @@ import {
   type TeamCalendarPerson,
   type TeamCalendarRow,
 } from "@/lib/phoenix-crm/team-calendar";
-import { readsCalendar, readsTeamReports, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import {
+  canEnterMissedRecordOn,
+  canEnterMissedRecords,
+  readsCalendar,
+  readsTeamReports,
+  testModeFor,
+  testReadSeats,
+  type PhoenixCrmViewer,
+} from "@/lib/phoenix-crm/server/access";
 import { chunk } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -61,6 +69,13 @@ export type TeamCalendarView = {
    * and forth as people join and leave.
    */
   scope: "own" | "team";
+  /**
+   * Where the Super Admin may enter a record a rep MISSED (owner, 2026-10-01): the last day he may
+   * enter for, and the territories he may enter on — so a day with nothing on it opens for him too,
+   * on the page where the entry is made. Null for everyone else, whose cells open only on a day with
+   * work on it, exactly as before.
+   */
+  missedRecords: { through: string; seatIds: string[] } | null;
 };
 
 type Row = Record<string, unknown>;
@@ -91,8 +106,11 @@ export async function loadTeamCalendar(
   const bounds = monthBounds(month);
   const isTest = testModeFor(viewer, raw.test);
   const seats = testReadSeats(viewer, isTest, viewer.scopeTerritories);
+  const missedRecords = canEnterMissedRecords(viewer)
+    ? { through: viewer.visitDay, seatIds: seats.filter((seat) => canEnterMissedRecordOn(viewer, seat, isTest)).map((seat) => seat.seatId) }
+    : null;
   if (!bounds || seats.length === 0) {
-    return { days: monthDays(month), isTest, month, rows: [], scope, totals: emptyVisitCountSplit() };
+    return { days: monthDays(month), isTest, missedRecords, month, rows: [], scope, totals: emptyVisitCountSplit() };
   }
 
   const seatIds = seats.map((seat) => seat.seatId);
@@ -104,7 +122,7 @@ export async function loadTeamCalendar(
   const leave = await loadLeaveDays(seats, bounds);
 
   const rows = buildTeamCalendar(month, people, { activities, leave, visits });
-  return { days: monthDays(month), isTest, month, rows, scope, totals: teamCalendarTotals(rows) };
+  return { days: monthDays(month), isTest, missedRecords, month, rows, scope, totals: teamCalendarTotals(rows) };
 }
 
 /** Who holds each seat, where it is, and the name above it — his A.Manager · TM · Line columns. */

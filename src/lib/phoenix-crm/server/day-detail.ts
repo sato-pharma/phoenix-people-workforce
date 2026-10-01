@@ -1,6 +1,7 @@
 import { ApiError } from "@/lib/http/api-errors";
 import { dayDetailCounts, type DayDetailCounts } from "@/lib/phoenix-crm/day-detail";
-import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { isMissedRecordDay } from "@/lib/phoenix-crm/missed-records";
+import { canEnterMissedRecordOn, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadVisitDay, type VisitDayView } from "@/lib/phoenix-crm/server/visits";
 import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -31,6 +32,13 @@ export type PhoenixCrmDayDetail = VisitDayView &
   DayDetailCounts & {
     /** HR's own approved leave covering this day for the person in the seat. */
     onLeave: boolean;
+    /**
+     * The Super Admin may enter a record the rep MISSED on this day (owner, 2026-10-01) — a visit, or how
+     * the day was spent. Null for everyone else, for a vacant seat, for a line that has not opened, and
+     * for a day still to come. The entry itself is the panel's, through /missed-records, where the same
+     * gate (`territoryForMissedRecord`) is asserted again.
+     */
+    missedRecords: { seatId: string; through: string } | null;
   };
 
 export async function loadPhoenixCrmDayDetail(
@@ -67,7 +75,13 @@ export async function loadPhoenixCrmDayDetail(
     }
   }
 
-  return { ...day, counts, onLeave, pharmacies };
+  const seat = viewer.org.seats.get(day.territory.seatId);
+  const missedRecords =
+    seat && canEnterMissedRecordOn(viewer, seat, day.isTest) && isMissedRecordDay(day.date, viewer.visitDay)
+      ? { seatId: seat.seatId, through: viewer.visitDay }
+      : null;
+
+  return { ...day, counts, missedRecords, onLeave, pharmacies };
 }
 
 /**

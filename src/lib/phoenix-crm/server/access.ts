@@ -11,7 +11,9 @@
  *   - everyone reads downward only; the Super Admin, the CEO and the SFE Manager read the company;
  *   - a line's reps and managers use the module from the line's opening day;
  *   - the Super Admin's own entries are ALWAYS test entries (owner, 2026-09-16: the Super Admin tries
- *     Add Visit and the report from day one; those try-outs never reach a real report), on any territory, open or not;
+ *     Add Visit and the report from day one; those try-outs never reach a real report), on any territory, open or not —
+ *     with TWO real-data exceptions, each its own gate below: moving a validated place
+ *     (`canMovePlaces`), and entering a record a rep MISSED, for that rep (`territoryForMissedRecord`);
  *   - a TEST ACCOUNT (owner, 2026-09-27; src/lib/auth/test-persona.ts) is the employee it mirrors, with
  *     that person's own territories, scope and authority — but every read and every save it makes is in
  *     the test world, always, whatever flag the screen sends. It decides test entries only, as the
@@ -472,9 +474,10 @@ export function assertListRequestApprover(
  * Whether the viewer may MOVE a validated place (owner, 2026-09-29: "the location never changes,
  * ever — only the system administrator", widened by him the same day to the SFE Manager).
  *
- * 🔴 This is the ONE real-data write the Super Admin makes in Phoenix CRM. Everywhere else his own
- * entries are test entries (owner, 2026-09-16); a place he moves is a real place, so the move carries
- * a written reason and an audited event (phoenix_crm_move_place). A test account never moves one.
+ * 🔴 One of the TWO real-data writes the Super Admin makes in Phoenix CRM (the other is
+ * `territoryForMissedRecord`). Everywhere else his own entries are test entries (owner, 2026-09-16); a
+ * place he moves is a real place, so the move carries a written reason and an audited event
+ * (phoenix_crm_move_place). A test account never moves one.
  */
 export function canMovePlaces(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
   if (viewer.isTestPersona) return false;
@@ -487,4 +490,45 @@ export function assertPlaceMover(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest
   if (!canMovePlaces(viewer, seat, isTest)) {
     throw forbiddenError("A validated place is fixed. Only the Super Admin and the SFE Manager can move it.");
   }
+}
+
+// ── A record a rep missed: the Super Admin enters it for him ───────────────────────────────────
+
+/**
+ * Whether the viewer enters records a rep MISSED (owner, 2026-10-01: "the rep is responsible for all
+ * his records, but if he missed a visit or a record, admin can enter it for him … for anyone, anytime,
+ * anywhere"). The Super Admin, and only him: a test account never does, and neither does any other role.
+ *
+ * 🔴 The second of the Super Admin's two real-data writes (beside `canMovePlaces`). With test mode on it
+ * enters a test record, exactly like everything else he does in test mode; with it off the record is
+ * real, for the real rep, and every screen marks it "Entered by the Super Admin".
+ */
+export function canEnterMissedRecords(viewer: PhoenixCrmViewer): boolean {
+  return viewer.isSuperAdmin && viewer.canUpdate && !viewer.isTestPersona;
+}
+
+/** The twin of `territoryForMissedRecord`, answered for a screen (which calendar cells open for him). */
+export function canEnterMissedRecordOn(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
+  if (!canEnterMissedRecords(viewer) || seat.tier !== TERRITORY_TIER || !seat.occupantHrId) return false;
+  return isTest || Boolean(seat.lineCode && viewer.openLines.has(seat.lineCode));
+}
+
+/**
+ * The territory a missed record is entered on, and the rep it is entered FOR.
+ *
+ * A real record needs the territory's line to be open — a rep whose line has not opened has no Phoenix
+ * CRM yet, so there is nothing he could have missed — and a test one reaches any territory, as every
+ * test entry of his does. Either way the seat must have a rep: the record is HIS, and a vacant seat has
+ * nobody to enter it for.
+ */
+export function territoryForMissedRecord(
+  viewer: PhoenixCrmViewer,
+  seatId: unknown,
+  test: boolean,
+): TerritoryAccess & { repHrId: string } {
+  if (!canEnterMissedRecords(viewer)) throw forbiddenError("Only the Super Admin enters a record a rep missed.");
+  const seat = territory(viewer, seatId);
+  if (!test && !(seat.lineCode && viewer.openLines.has(seat.lineCode))) throw lineNotOpen(viewer, seat);
+  if (!seat.occupantHrId) throw forbiddenError("This territory has no rep, so there is nobody to enter a record for.");
+  return { seat, isTest: test, repHrId: seat.occupantHrId };
 }

@@ -2,6 +2,7 @@
 
 import { cairoClock, dayLabelLong } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
+import { MissedRecordPanel } from "@/components/phoenix-crm/missed-record-panel";
 import {
   CrmBlock,
   CrmCard,
@@ -13,6 +14,7 @@ import {
   CrmStatGrid,
 } from "@/components/phoenix-crm/ui";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
+import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 // Through `view-types`, never `server/day-detail`: a component may not import server code, and an
 // `import type` counts — the boundary test caught exactly this on the first run.
 import type { PhoenixCrmDayDetail } from "@/lib/phoenix-crm/view-types";
@@ -80,6 +82,7 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                     <span dir="auto">{dayActivity.note}</span>
                   </>
                 ) : null}
+                {dayActivity.enteredByAdmin ? ` · ${MISSED_RECORD_MARK}` : ""}
               </p>
             ) : null}
             {onLeave ? (
@@ -169,13 +172,19 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                         {visit.outcome.nextStepOn ? ` · ${dayLabelLong(visit.outcome.nextStepOn)}` : ""}
                       </p>
                     ) : null}
-                    {visit.unplanned?.note ? (
+                    {/* The REASON, as the Visits tab shows it — `note` is the status sentence, which
+                        the pill above already says, and printing it after "because" hid the reason. */}
+                    {visit.unplanned?.clarification ? (
                       <p className="break-words">
                         <span className="font-black text-slate-800">Off the plan because: </span>
-                        <span dir="auto">{visit.unplanned.note}</span>
+                        <span dir="auto">{visit.unplanned.clarification}</span>
                       </p>
                     ) : null}
-                    {visit.enteredByName && visit.enteredByName !== visit.repName ? (
+                    {/* A visit the rep missed logging, entered for him by the Super Admin, says so in the
+                        owner's words (2026-10-01); a manager's entry says his name, as before. */}
+                    {visit.enteredByAdmin ? (
+                      <p className="break-words">{MISSED_RECORD_MARK}</p>
+                    ) : visit.enteredByName && visit.enteredByName !== visit.repName ? (
                       <p className="break-words">Entered by {visit.enteredByName}</p>
                     ) : null}
                   </div>
@@ -184,6 +193,17 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
             </div>
           )}
         </CrmBlock>
+
+        {/* The Super Admin's own: enter what the rep missed on this day (owner, 2026-10-01). The server
+            decided it — `missedRecords` is null for everyone else. */}
+        {view.missedRecords ? (
+          <MissedRecordPanel
+            date={view.date}
+            isTest={view.isTest}
+            repName={territory.repName}
+            seatId={view.missedRecords.seatId}
+          />
+        ) : null}
 
         {pharmacies.length > 0 ? (
           <CrmBlock title="Pharmacies he took feedback from">

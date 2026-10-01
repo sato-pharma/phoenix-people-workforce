@@ -3271,6 +3271,44 @@ and direct orders (the system suggests, the Super Admin confirms each link — n
 reassigned), and the three reports he named from the old CRM: frequency per customer, the team calendar
 ("the most important"), and the tracking sheet.
 
+## The Super Admin enters a record a rep MISSED — owner rulings, 2026-10-01
+
+Asked how a missed visit should be handled, he answered in four messages: *"show it beside the miss, and
+the system admin can enter a manual record for anyone, anytime, anywhere"* — *"no, the rep is responsible
+for all his records, but if he missed a visit or a record, admin can enter it for him"* — *"I choose
+planned or unplanned"* — and, for what the rep sees, *"marked as entered by admin"*.
+
+**Who and where.** The Super Admin alone (`canEnterMissedRecords`, `territoryForMissedRecord` in
+`src/lib/phoenix-crm/server/access.ts`) — not the SFE Manager, not a district manager, never a test
+account. It is the SECOND real-data write he makes in Phoenix CRM, beside moving a validated place; with
+test mode on it is a test entry like everything else he does there. The territory must have a rep (a
+vacant seat has nobody to enter for) and, for a real entry, a line that has opened. He enters it on the
+day's own page: the team calendar opens EVERY day that has begun for him, the empty ones included, and
+the page carries an "Enter a missed record" panel (`missed-record-panel.tsx`).
+
+**What it is.** A visit — any day that has begun, never one still to come; his time or noon; the
+products discussed and a comment, both required as on a rep's own visit; and **planned or unplanned as
+he chooses**, a required choice that only STARTS from the plan the rep had sent for that day. Planned
+counts at once. Unplanned raises the same manager-then-SFE approval as a rep's own off-plan visit, with
+his reason as its clarification, and the reviewing manager is told in-app and on Telegram, as for a
+rep's. Or a day activity, on any past day. **It adds what is missing and never rewrites the rep's own
+record**: one visit a customer a day (`already_visited`), and a day the rep recorded himself stays his —
+the Super Admin changes or clears only what he entered.
+
+**No location, by design.** He is not at the door, so the visit stores no reading at all
+(`capture_source = 'admin'`; the `phoenix_crm_visits_location_source` CHECK allows a missing lat/lon
+on that source alone). Never his own position, never a made-up point. So nothing that judges a rep reads
+it as a capture: the location checks skip it — and their coordinate read no longer turns a missing
+reading into 0°N 0°E, which would have shown the rep's next real visit as impossible travel — the
+behaviour sweep leaves it out, and place-against-actual has no actual for it.
+
+**The mark.** Every screen that shows it says "Entered by the Super Admin" — the rep's Visits tab, the
+day page, the day's activity. It is read from WHO entered the visit (somebody who was not on it), never
+from `capture_source`, which is a rep-blind column (`tests/phoenix-crm-blind-half.test.ts`).
+
+Pinned by `tests/phoenix-crm-missed-records.test.ts`; the database half is
+`supabase/migrations/20261001044221_phoenix_crm_admin_entry.sql` (`phoenix_crm_admin_enter_visit`).
+
 ## The Business Review reads live — owner ruling, 2026-09-28
 
 The Monthly Closing is the one source of truth for every sales and target figure, and every surface

@@ -754,6 +754,11 @@ export const accessRegistry = [
   // another district's off-plan visits, and that is a gate a permission cannot perform. The queue
   // itself has no route: it rides in /api/phoenix-crm/team.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visits/unplanned", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  // A record a rep MISSED — a visit, or how his day was spent — entered for him by the Super Admin
+  // (owner, 2026-10-01). `update`, the same gate as Settings, and narrowed AGAIN in the service to the
+  // Super Admin alone (`territoryForMissedRecord`), so holding `update` is not enough.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/missed-records", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/missed-records", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // The same territory's list as the Reps List board holds it — grouped by brick, with the month's
   // activity beside each row. It gets its own entry rather than inheriting a blanket because it reads

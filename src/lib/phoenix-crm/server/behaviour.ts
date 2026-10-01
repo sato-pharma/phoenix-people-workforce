@@ -110,13 +110,17 @@ async function recomputeMonth(month: string, landed: ReadonlySet<string>): Promi
   if (!bounds) return { reps: 0, notChecked: 0, flagged: 0 };
   const supabase = getSupabaseAdmin();
 
-  // 🔴 The raw table, not the countable view — see the header.
+  // 🔴 The raw table, not the countable view — see the header. And never a visit the Super Admin
+  // entered for a rep who missed logging it (owner, 2026-10-01): its time is the one HE typed, or noon,
+  // and it has no form and no reading, so it says nothing about how the rep works — three of them
+  // entered at noon would read as three visits in the same minute.
   const visitRead = await supabase
     .from("phoenix_crm_visits")
     .select("id, seat_id, line_code, customer_id, visit_date, captured_at, rep_hr_id, manager_hr_id, entered_by_hr_id, form_open_seconds, objection, is_test")
     .gte("visit_date", bounds.from)
     .lte("visit_date", bounds.to)
     .eq("is_test", false)
+    .neq("capture_source", "admin")
     .order("captured_at", { ascending: true })
     .limit(VISIT_READ_MAX);
   throwIfError(visitRead.error);
