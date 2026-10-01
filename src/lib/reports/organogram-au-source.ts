@@ -2,6 +2,7 @@ import { normalizeLineName } from "@/lib/auth/permissions";
 import { loadOfferOutBySeat } from "@/lib/offers/seat-offers";
 import { resolveEmployeeDepartmentName } from "@/lib/employees/employee-org-labels";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { ORG_SEAT_TITLE, type OrgSeatTier } from "@/lib/org/seat-titles";
 import {
   buildHeadOfficeOrganogramRows,
   HEAD_OFFICE_LINE_ID,
@@ -38,7 +39,7 @@ import type {
 type AuTreeRow = {
   seat_id: string;
   parent_seat_id: string | null;
-  seat_tier: "CEO" | "NSM" | "RSM" | "DM" | "ACTING_DM" | "REP";
+  seat_tier: OrgSeatTier;
   line_code: string | null;
   region_code: string | null;
   area_code: string | null;
@@ -83,14 +84,15 @@ type EmployeeWorkRow = {
   work_email: string | null;
 };
 
-const TITLE_BY_TIER: Record<AuTreeRow["seat_tier"], string> = {
-  CEO: "CEO",
-  NSM: "National Sales Manager",
-  RSM: "Regional Sales Manager",
-  DM: "District Sales Manager",
-  ACTING_DM: "District Sales Manager",
-  REP: "Medical Representative",
-};
+/**
+ * The title this source stamps on a seat — and, since 2026-10-01, the ONE copy of it.
+ *
+ * It lives in `@/lib/org/seat-titles` now because the Phoenix CRM visit card needed the same six
+ * strings (the owner: *"put actual titles from the organogram"*) and importing this module for them
+ * would have dragged the whole AU read into a CRM server bundle. The values are unchanged; a second
+ * hand-typed copy is exactly what would let the organogram and the visit card drift apart.
+ */
+const TITLE_BY_TIER: Record<AuTreeRow["seat_tier"], string> = ORG_SEAT_TITLE;
 
 const emptySummary = {
   areasAffected: 0,

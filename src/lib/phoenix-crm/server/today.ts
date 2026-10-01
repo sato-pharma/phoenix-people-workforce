@@ -94,7 +94,7 @@ export async function loadPhoenixCrmToday(
     await Promise.all([
       customersRead,
       plannedRead,
-      loadVisitRowsForDay(seat.seatId, isTest, date, { blind: isLocationBlind(viewer, seat) }),
+      loadVisitRowsForDay(seat.seatId, isTest, date, { blind: isLocationBlind(viewer, seat), org: viewer.org }),
       loadPlannedActivitiesOn(seat.seatId, isTest, date),
       loadDayActivityOn(seat.seatId, isTest, date),
       plannedStopsRead,
