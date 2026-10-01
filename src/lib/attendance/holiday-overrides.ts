@@ -8,7 +8,7 @@
 // just attendance) so that national-holidays.ts can apply them without a
 // circular import. Re-exported here so existing imports keep working.
 
-import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
+import { getEgyptianNationalHolidays, normalizeHolidayName, substitutedHolidayName } from "@/lib/vacation/national-holidays";
 import { listHolidayOverridesForYear } from "@/lib/vacation/holiday-override-store";
 
 export {
@@ -60,6 +60,30 @@ export async function buildHolidayCalendarYearView(year: number): Promise<{ rows
         source: holiday.source,
       });
     }
+  }
+
+  // A HOLIDAY GOOGLE HAS ALREADY MOVED OPENS ON ITS SUBSTITUTE DATE, NOT ON ITS OFFICIAL ONE.
+  //
+  // Google states a postponement as a second event, `Day off for <X>`, on the substitute date
+  // (see substitutedHolidayName — it is why 6 AND 8 October both read as days off on
+  // 2026-10-01). getConfirmedNationalHolidays folds that pair at read time, but this page is
+  // where the pair is CONFIRMED, and "Save All Changes" writes every row it is showing. Left
+  // defaulting to the official date, one click would pin `<X>` back onto a day the government
+  // has moved and the fold would then stand down, because an override is authoritative. So the
+  // official row opens pre-filled with the substitute's date and its "Postponed" chip, and a
+  // save-all confirms what the calendar actually says. It is a DEFAULT, not a confirmation:
+  // hasOverride stays false, the row still reads "Awaiting confirmation", and an admin who
+  // knows better types over it.
+  const substituteDateByName = new Map<string, string>();
+  for (const row of byOfficialDate.values()) {
+    const superseded = substitutedHolidayName(row.holidayName);
+    if (superseded) substituteDateByName.set(superseded, row.officialDate);
+  }
+  for (const row of byOfficialDate.values()) {
+    const substituteDate = substituteDateByName.get(normalizeHolidayName(row.holidayName));
+    if (!substituteDate || substituteDate === row.officialDate) continue;
+    row.observedDate = substituteDate;
+    row.observedEndDate = substituteDate;
   }
 
   const overrides = await listHolidayOverridesForYear(year).catch(() => []);

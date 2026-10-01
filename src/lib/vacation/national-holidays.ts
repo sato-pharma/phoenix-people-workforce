@@ -96,7 +96,7 @@ function inclusiveDaysBetween(startDate: string, endDate: string) {
   return Math.max(1, Math.round((end - start) / 86400000) + 1);
 }
 
-function normalizeHolidayName(value: string) {
+export function normalizeHolidayName(value: string) {
   return value
     .trim()
     .toLowerCase()
@@ -513,6 +513,77 @@ export async function getEgyptianNationalHolidays(input: {
 }
 
 /**
+ * GOOGLE STATES A POSTPONEMENT AS A SECOND EVENT, AND READING BOTH AS DAYS OFF BLOCKS TWO WORKING
+ * DAYS FOR ONE HOLIDAY.
+ *
+ * Egypt's public-holiday calendar does not move an event when the government postpones the day
+ * off. It keeps the official date and adds a second "Public holiday" event named
+ * `Day off for <X>` on the substitute date. Read from the live feed, 2026-10-01:
+ *
+ *   2026-01-25  Revolution Day January 25     2026-01-29  Day off for Revolution Day January 25
+ *   2026-06-30  June 30 Revolution            2026-07-02  Day off for June 30 Revolution
+ *   2026-10-06  Armed Forces Day              2026-10-08  Day off for Armed Forces Day
+ *   2027-01-25  Revolution Day January 25     2027-01-28  Day off for Revolution Day January 25
+ *
+ * Only ONE of each pair is a day off. Reading both is what blocked Tuesday 6 October AND Thursday
+ * 8 October in the District Managers' weekly/monthly plans on 2026-10-01, and it is why moving the
+ * 6 October row in the Bulk Holiday Calendar changed nothing anyone could see: the Thursday was
+ * carrying its own separate entry the whole time, and the pair had to be hand-corrected twice.
+ * It is not an October problem — it recurs every time a holiday falls midweek, and 2027 already
+ * has one waiting.
+ *
+ * So the substitute's own name is taken at its word: where `Day off for <X>` exists, the event
+ * named exactly `<X>` is NOT a day off. The substitute can land either side of the official date
+ * (2025 carried `Day off for Sinai Liberation Day` the day BEFORE it) and can fall in an adjacent
+ * month (June 30 -> July 2), so the neighbouring months are consulted too — both are already
+ * cached per month and share one feed download, so this costs no extra network.
+ *
+ * TWO THINGS IT DELIBERATELY DOES NOT DO:
+ *  - It never overrules an admin. A holiday whose official date carries a confirmed override is
+ *    left alone here and relocated by that override exactly as before — including an override
+ *    that says the official date IS the day off after all.
+ *  - It never folds on a name that merely looks related. `Eid el Fitr` + `Eid el Fitr Holiday`,
+ *    and `Prophet Mohamed's Birthday` + `Prophet Mohamed's Birthday Holiday`, are genuinely
+ *    separate days off; they carry no `Day off for` prefix, so nothing matches.
+ *
+ * When a neighbouring month cannot be read the fold simply does not happen, leaving the extra day
+ * marked as a holiday — the safe direction for anything that moves money.
+ */
+const DAY_OFF_FOR_PREFIX = /^day\s+off\s+for\s+/i;
+
+/** `Day off for Armed Forces Day` -> the normalized name `armed forces day`; anything else -> null. */
+export function substitutedHolidayName(name: string): string | null {
+  const trimmed = String(name ?? "").trim();
+  if (!DAY_OFF_FOR_PREFIX.test(trimmed)) return null;
+  const base = trimmed.replace(DAY_OFF_FOR_PREFIX, "").trim();
+  return base ? normalizeHolidayName(base) : null;
+}
+
+function adjacentPeriod(input: { month: number; year: number }, offset: number) {
+  const index = input.year * 12 + (input.month - 1) + offset;
+  return { month: (index % 12) + 1, year: Math.floor(index / 12) };
+}
+
+/**
+ * The normalized names every `Day off for <X>` event supersedes, across the month and its two
+ * neighbours. RAW source only: an override must never feed this, or an admin's own confirmation
+ * would start folding other rows away.
+ */
+async function supersededHolidayNames(input: { month: number; year: number }): Promise<Set<string>> {
+  const periods = [adjacentPeriod(input, -1), { month: input.month, year: input.year }, adjacentPeriod(input, 1)];
+  const results = await Promise.all(periods.map((period) => getEgyptianNationalHolidays(period).catch(() => null)));
+  const names = new Set<string>();
+  for (const result of results) {
+    if (!result) continue;
+    for (const holiday of result.holidays) {
+      const superseded = substitutedHolidayName(holiday.name);
+      if (superseded) names.add(superseded);
+    }
+  }
+  return names;
+}
+
+/**
  * Rule: a national holiday's real day off is only authoritative once a System
  * Admin has explicitly confirmed it (see the T-3-day reminder in
  * holiday-confirmation.ts) — the raw ministry/Google Calendar date
@@ -537,16 +608,21 @@ export async function getConfirmedNationalHolidays(input: {
 }): Promise<EgyptianNationalHolidayResult> {
   const raw = await getEgyptianNationalHolidays(input);
   const { endDate: monthEnd, startDate: monthStart } = monthDateRange(raw.year, raw.month);
-  const overrides = await listHolidayOverridesOverlappingRange(monthStart, monthEnd).catch(() => []);
-  if (overrides.length === 0) return raw;
+  const [overrides, superseded] = await Promise.all([
+    listHolidayOverridesOverlappingRange(monthStart, monthEnd).catch(() => []),
+    supersededHolidayNames({ month: raw.month, year: raw.year }),
+  ]);
 
   const overrideByOfficialDate = new Map(overrides.map((override) => [override.officialDate, override]));
 
   // Drop entries whose official date has a confirmed override — the real day
   // off lives at the observed date instead (injected below, in whichever
-  // month it actually falls in).
+  // month it actually falls in) — and entries Google's own `Day off for <X>`
+  // event has already moved to another date (see supersededHolidayNames). An
+  // override wins over the fold: it is the admin's explicit confirmation.
   const withoutOverriddenOfficialDates = raw.holidays.filter(
-    (holiday) => !overrideByOfficialDate.has(holiday.startDate),
+    (holiday) =>
+      !overrideByOfficialDate.has(holiday.startDate) && !superseded.has(normalizeHolidayName(holiday.name)),
   );
 
   const injected: EgyptianNationalHoliday[] = [];
