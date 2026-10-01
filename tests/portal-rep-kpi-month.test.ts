@@ -148,6 +148,21 @@ export function runPortalRepKpiMonthTests() {
     center.includes("mrSalesAchievement.targetValue > 0"),
     `${CENTER}: a published month with no target has an achievement of 0 by arithmetic, and must not be drawn as one`,
   );
+  // 🔒 THE FALLBACK IS HIS RULING, NOT AN ACCIDENT — put to him as an open question the morning the
+  // picker shipped and answered in his own words (owner, 2026-10-01): "keep the achievement tile
+  // falling back to the last published month". Pick September before its closing is published and
+  // the tile reads AUG 2026 beside three tiles reading SEP 2026, which LOOKS like a defect and is a
+  // decision. Both halves must survive: the fallback itself, and the label naming the month it fell
+  // back to — without that label the tile would silently pass August off as September's achievement,
+  // which is the only version of this that would genuinely be a bug.
+  assert.ok(
+    /const achValue = achFromSelected \? mrSalesAchievement : latestClosed/.test(center),
+    `${CENTER}: an unpublished picked month must fall back to the last published one, never to an empty tile`,
+  );
+  assert.ok(
+    /: latestClosed \? monthName\(latestClosed\.month, latestClosed\.year\)/.test(center),
+    `${CENTER}: the fallback must NAME the month it is showing — that label is what keeps it honest`,
+  );
   // The alert row under the tiles names the month in its own detail line — "20 of 90 covered ·
   // September 2026" — and its Open button must land on that same month. A bare link was correct
   // only while the landing page could show nothing but the running month; with the picker it makes
