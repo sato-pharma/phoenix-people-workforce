@@ -393,6 +393,40 @@ export function runCustomerIdentitySuggestionTests(): void {
   assert.doesNotMatch(workspace, /\brounded-(?!none\b)/, "square corners, as everywhere");
   assert.doesNotMatch(workspace, /\btruncate\b|…/, "nothing is cut off with an ellipsis");
 
+  // ── Selecting a page in one go, and the confirm that stays his ───────────────────────────────
+  // 🔴 THE OWNER'S RULING HAS TWO HALVES AND ONLY ONE WAS BUILT (2026-09-30: "bulk or by hand,
+  //    full control"). Confirming in bulk worked, but a page of pharmacies took 18 presses to
+  //    tick — so on 2026-10-01 he asked a session to confirm 17 names FOR him, which is the one
+  //    thing it may not do: `admin_approved` is the record that A PERSON LOOKED, the field that
+  //    exists to be distinguished from `system_validated` (§4.1). The answer is to make his own
+  //    press cheap, never to press it for him.
+  assert.match(workspace, /The certain ones \(/, "the screen can tick every certain pair on the page at once");
+  assert.match(workspace, /Everything on this page \(/, "and every pair on the page at once");
+  assert.match(
+    workspace,
+    /pair\.band === "fact"/,
+    'the "certain ones" control is scoped to the fact band — the one band whose evidence needs no judgement',
+  );
+
+  // 🔴 AND THESE SELECT ONLY. Counting the call sites is what makes that durable: a control that
+  //    both ticked and recorded would add a third `decide("confirm", …)` and fail here. Two is
+  //    the whole surface — one pair's own button, and the bulk bar he presses after reading what
+  //    is ticked. The same count guards the other decision, so a "keep all apart" cannot appear
+  //    either. A source check cannot prove a button is rendered, but it CAN prove no second way
+  //    to write a decision was introduced, which is the half that matters here.
+  for (const action of ["confirm", "not_the_same"]) {
+    assert.equal(
+      workspace.split(`decide("${action}"`).length - 1,
+      2,
+      `exactly two places may record "${action}" — one pair, or the selection he presses himself; a third is a decision taken for him`,
+    );
+  }
+  assert.match(
+    workspace,
+    /Nothing is recorded until you press a decision yourself/,
+    "and the screen says so where the select controls are, so a big selection never reads as a done deal",
+  );
+
   assert.equal(STRONG_METRES, 200, "the strong band is 200 m — measured against the 127 validated links, not tuned");
 
   // ── Customer 360 for one confirmed identity ────────────────────────────────────────
