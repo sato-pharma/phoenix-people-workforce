@@ -5,8 +5,13 @@ import { stripComments } from "./support/comment-strip.ts";
 
 import { addDaysIso } from "../src/lib/crm/dates.ts";
 import {
+  fieldWeekDays,
   fieldWeeksOfMonth,
+  leadingFieldDaysOfMonth,
+  leadingFieldWeekOfMonth,
+  monthEndOf,
   monthlyPlanDueOn,
+  monthStartOf,
   plannableMonths,
   plannableWeeks,
   weekdayOfIsoDay,
@@ -976,6 +981,61 @@ export function runPhoenixCrmPlanBoardTests(): void {
     assert.doesNotMatch(sql, /distinct on \(x\.plan_date\)\s+v_plan\.id, x\.plan_date, x\.activity_type/, "and never folds a day's kinds into one");
     assert.match(sql, /constraint phoenix_crm_plan_day_starts_one_a_day unique \(plan_id, plan_date\)/);
     assert.match(sql, /constraint phoenix_crm_plan_day_starts_some check \(start_am_minute is not null or start_pm_minute is not null\)/, "a stored day has at least one time");
+  }
+
+  // ── The days a month OPENS with (owner, 2026-10-01) ──────────────────────────────────────────
+  //
+  // "Show the first days of a month on that month's plan board." A week belongs to the month its
+  // SATURDAY falls in, so October 2026 is the weeks of 3, 10, 17, 24 and 31 October — and 1 October,
+  // a Thursday, was on no October screen at all. He planned October, sent it, walked out on the 1st,
+  // and found his own stops in a draft he never knew he had left behind.
+  {
+    assert.deepEqual(leadingFieldDaysOfMonth("2026-10-01"), ["2026-10-01"], "October opens with Thursday 1 October");
+    assert.equal(leadingFieldWeekOfMonth("2026-10-01"), "2026-09-26", "which lives in the week of Saturday 26 September");
+
+    // 🔴 THE FILING IS UNCHANGED, and this is the half that must never drift. The leading week is not
+    // one of the month's own on either side of the edge, so no meter, no due date and no monthly
+    // cascade moves. All that changes is what the BOARD shows.
+    assert.ok(!fieldWeeksOfMonth("2026-10-01").includes("2026-09-26"), "the leading week is never one of October's own");
+    assert.ok(fieldWeeksOfMonth("2026-09-01").includes("2026-09-26"), "it is still September's, exactly as before");
+
+    // Every month of 2026-2028: the leading days are inside the month, are never a Friday, and never
+    // also belong to one of the month's own weeks — so a day is reachable from its own month and is
+    // never shown twice within it.
+    for (let month = monthStartOf("2026-01-01"); month < "2029-01-01"; month = monthStartOf(addDaysIso(monthEndOf(month), 1))) {
+      const days = leadingFieldDaysOfMonth(month);
+      assert.equal(leadingFieldWeekOfMonth(month) === null, days.length === 0, `${month}: a leading week exists exactly when it holds a day`);
+      const ownDays = new Set(fieldWeeksOfMonth(month).flatMap((weekStart) => fieldWeekDays(weekStart)));
+      for (const day of days) {
+        assert.equal(day.slice(0, 7), month.slice(0, 7), `${month}: a leading day is in the month`);
+        assert.notEqual(weekdayOfIsoDay(day), 5, `${month}: Friday is never a field day`);
+        assert.ok(!ownDays.has(day), `${month}: a leading day is never also in one of the month's own weeks`);
+      }
+      if (weekdayOfIsoDay(month) === 6 || weekdayOfIsoDay(month) === 5) {
+        assert.deepEqual(days, [], `${month}: a month starting on a Saturday or a Friday leads with nothing`);
+      } else {
+        assert.ok(days.length > 0, `${month}: a month starting mid-week opens with days another week holds`);
+        assert.equal(days[0], month, `${month}: the first of them is the 1st itself`);
+      }
+    }
+
+    // The board reaches it, and is told the one thing that would otherwise repeat his morning: the
+    // MONTH's own Send does not take it.
+    const server = stripComments(readFileSync("src/lib/phoenix-crm/server/monthly-plans.ts", "utf8"));
+    assert.match(server, /weeks: leadingView \? \[leadingView, \.\.\.weekViews\] : weekViews/, "the leading week is offered first");
+    assert.match(server, /Sending \$\{formatPhoenixMonth\(monthStart\)\} does not send it/, "and it says the month's Send will not take it");
+    // 🔴 Out of every meter: its items are filtered off `itemRows`, which is what the tallies, the two
+    // list meters and the call rate are all built from.
+    assert.match(
+      server,
+      /const itemRows = leadingId \? allItemRows\.filter\(\(row\) => String\(row\.plan_id\) !== leadingId\) : allItemRows;/,
+      "its placements never enter the month's numbers",
+    );
+    assert.match(server, /const staleOnOpenDays = weekViews\.some/, "and the month's own Send is gated on the month's own weeks");
+
+    const board = stripComments(readFileSync("src/components/phoenix-crm/plan-board.tsx", "utf8"));
+    assert.match(board, /state\.editable && !state\.week\.leading/, "Copy last month and weeks-left stay on the month's own weeks");
+    assert.match(board, /Every week of \{view\.monthLabel\} goes with it/, "the month's confirmation no longer claims every week on screen");
   }
 
   console.log("phoenix-crm plan board: OK");

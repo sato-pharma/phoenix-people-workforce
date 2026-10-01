@@ -456,7 +456,14 @@ export function runPhoenixCrmPlanSuggestTests(): void {
     assert.match(board, /view\.viewerIsRep && selected/, "on the rep's own plan only — a manager reading it gets no suggestion");
     assert.match(board, /dayTargets: \{ am: view\.callRate\.amTarget, pm: view\.callRate\.pmTarget \}/, "the board fills a day to the Settings' call-rate targets");
     assert.equal((weekPanel.match(/dayTargets: suggest\.dayTargets/g) ?? []).length, 2, "and the day and week notices judge 'full' against the same targets");
-    assert.match(board, /monthPlacements\(states\.map\(/, "counted from the weeks as the board holds them, unsaved ticks included");
+    // Counted from the weeks as the board holds them, unsaved ticks included — and from THIS month's
+    // own weeks: since 2026-10-01 the board also shows the week the month opens with and does not own
+    // (the previous month's last week), which must not move this month's placed count.
+    assert.match(
+      board,
+      /monthPlacements\(\s*states\.filter\(\(state\) => !state\.week\.leading\)\.map\(/,
+      "counted from the weeks as the board holds them, unsaved ticks included",
+    );
     assert.match(dayPanel, /\{suggestMenu\}\s*\{copyMenu\}/, "Suggest this day sits beside Copy a day");
 
     // The phone's month strip: AM and PM apart, the full cards kept from md up.

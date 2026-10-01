@@ -221,6 +221,36 @@ export function fieldWeeksOfMonth(monthStart: string): string[] {
 }
 
 /**
+ * 🔴 THE FIELD DAYS A MONTH OPENS WITH THAT ITS OWN WEEKS DO NOT HOLD (owner, 2026-10-01: "show the
+ * first days of a month on that month's plan board").
+ *
+ * A week belongs to the month its Saturday falls in, so a month that does not start on a Saturday
+ * opens with days the PREVIOUS month's last week carries. 1 October 2026 is a Thursday and lives in
+ * the week of Saturday 26 September — which is why October's board did not show it at all, and why a
+ * rep who planned October, sent it, and walked out on the 1st found his own stops in a draft he never
+ * knew he had left behind.
+ *
+ * 🔴 THIS CHANGES NO FILING. The week's plan row, its status, its due date, the monthly cascade and
+ * `fieldWeeksOfMonth` are all untouched: the week is still September's and is still sent on its own.
+ * All this answers is which days a month OPENS with, so the board can show them.
+ *
+ * `[]` when the month starts on a Saturday (nothing leads it) or when the leading week holds no field
+ * day inside the month at all — a month starting on a Friday, which is never a field day.
+ */
+export function leadingFieldDaysOfMonth(monthStart: string): string[] {
+  const day1 = monthStartOf(monthStart);
+  if (weekdayOfIsoDay(day1) === 6) return [];
+  const monthKey = monthKeyOf(day1);
+  return fieldWeekDays(fieldWeekStart(day1)).filter((day) => monthKeyOf(day) === monthKey);
+}
+
+/** The Saturday of the week those leading days belong to, or null when nothing leads the month. */
+export function leadingFieldWeekOfMonth(monthStart: string): string | null {
+  if (leadingFieldDaysOfMonth(monthStart).length === 0) return null;
+  return fieldWeekStart(monthStartOf(monthStart));
+}
+
+/**
  * When a month's plan is due: the last Thursday of the month BEFORE it (owner, 2026-09-26).
  *
  * Nothing in the module refuses a plan after this date — he ruled a late month is ACCEPTED and

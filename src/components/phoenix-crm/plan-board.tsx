@@ -166,9 +166,8 @@ function reviewerSentence(view: MonthlyPlannerView): string {
   return "The manager above this territory reviews it.";
 }
 
-/** "Week 2 and Week 3". */
-function weeksText(numbers: ReadonlyArray<number>): string {
-  const names = numbers.map((number) => `Week ${number}`);
+/** "Week 2 and Week 3", or "First days, Week 1 and Week 2" — the weeks' own names, as the board shows them. */
+function weeksText(names: ReadonlyArray<string>): string {
   return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
@@ -300,6 +299,9 @@ export function PlanBoard({
 
   const anyDirty = states.some((state) => state.dirty);
   const needsSave = states.filter((state) => state.dirty || state.fixes > 0);
+  // The week this month opens with and does not own (owner, 2026-10-01). Sending the MONTH does not
+  // send it — it belongs to the month before — so the month's own confirmation must not claim it does.
+  const leadingState = states.find((state) => state.week.leading) ?? null;
 
   // The week "+ Make weekly plan" opens: this month's first week still to plan, or — when this month
   // has none left and nothing here is unsaved — the next month's, once that month is on screen.
@@ -444,7 +446,7 @@ export function PlanBoard({
 
   function refusedSave(state: WeekState, error: unknown) {
     const code = errorCodeOf(error);
-    const name = `Week ${state.week.weekNumber}`;
+    const name = state.week.label;
     if (code !== null && MAY_HAVE_SAVED.has(code)) {
       setHolds((previous) => ({ ...previous, [state.scope]: "unchecked" }));
       show({ tone: "warn", title: `Phoenix could not confirm that ${name} was saved`, message: `${messageOf(error)} Your ticks are kept on this page.` });
@@ -483,7 +485,7 @@ export function PlanBoard({
       show({
         tone: "bad",
         title: "Choose what to keep first",
-        message: `Week ${held.week.weekNumber} changed since you started. Keep your ticks or show the saved week, then save.`,
+        message: `${held.week.label} changed since you started. Keep your ticks or show the saved week, then save.`,
       });
       return false;
     }
@@ -494,7 +496,7 @@ export function PlanBoard({
       setDay(withProblems.problems[0].date);
       show({
         tone: "bad",
-        title: `Week ${withProblems.week.weekNumber} needs a fix before saving`,
+        title: `${withProblems.week.label} needs a fix before saving`,
         message: problemText(withProblems.problems[0]),
       });
       return false;
@@ -511,7 +513,7 @@ export function PlanBoard({
     setBusy({ kind: "save" });
     setNotice(null);
     setShowProblems(false);
-    const saved: number[] = [];
+    const saved: string[] = [];
     let fixed = 0;
     try {
       for (const state of pending) {
@@ -519,7 +521,7 @@ export function PlanBoard({
           if (saved.length > 0) onChanged?.();
           return false;
         }
-        saved.push(state.week.weekNumber);
+        saved.push(state.week.label);
         fixed += state.fixes;
       }
       show({
@@ -541,7 +543,7 @@ export function PlanBoard({
     if (!view || locked || !state.editable) return;
     if (!readyToSave([state])) return;
     const saveFirst = state.dirty || state.fixes > 0 || state.week.plan === null;
-    const name = `Week ${state.week.weekNumber}`;
+    const name = state.week.label;
     setBusy({ kind: "week", weekStart: state.week.weekStart, action: "send" });
     setNotice(null);
     setShowProblems(false);
@@ -577,7 +579,7 @@ export function PlanBoard({
   async function reopenWeek(state: WeekState) {
     const plan = state.week.plan;
     if (!view || !plan || locked) return;
-    const name = `Week ${state.week.weekNumber}`;
+    const name = state.week.label;
     setBusy({ kind: "week", weekStart: state.week.weekStart, action: "reopen" });
     setNotice(null);
     try {
@@ -598,7 +600,7 @@ export function PlanBoard({
   async function decideWeek(state: WeekState, action: PlanDecisionAction, note: string): Promise<boolean> {
     const plan = state.week.plan;
     if (!view || !plan || locked) return false;
-    const name = `Week ${state.week.weekNumber}`;
+    const name = state.week.label;
     setBusy({ kind: "week", weekStart: state.week.weekStart, action });
     setNotice(null);
     try {
@@ -748,7 +750,11 @@ export function PlanBoard({
   const { plan } = view;
   const status = plan?.status ?? null;
   const showSpread = !view.viewerIsRep || view.viewerIsReviewer;
-  const editableStates = states.filter((state) => state.editable);
+  // 🔴 THE MONTH'S OWN WEEKS, FOR EVERYTHING THAT IS ABOUT THE MONTH (owner, 2026-10-01). The leading
+  // week is shown and edited like any other, but it belongs to the month before: "Copy last month"
+  // must not fill it, and it must not move this month's placed count or its weeks-left arithmetic —
+  // the server keeps it out of every meter for the same reason.
+  const editableStates = states.filter((state) => state.editable && !state.week.leading);
   const anyPlaced = view.amMeter.placements + view.pmMeter.placements > 0 || states.some((state) => state.items.length > 0);
   const bricks = plannerBricks(view.customers);
   const tints = brickTintMap(bricks.map((brick) => brick.value));
@@ -767,7 +773,9 @@ export function PlanBoard({
       ? {
           gradeTargets: view.rules.gradeTargets,
           dayTargets: { am: view.callRate.amTarget, pm: view.callRate.pmTarget },
-          placedThisMonth: monthPlacements(states.map((state) => ({ week: state.week, items: state.editable ? state.items : null }))),
+          placedThisMonth: monthPlacements(
+            states.filter((state) => !state.week.leading).map((state) => ({ week: state.week, items: state.editable ? state.items : null })),
+          ),
           weeksLeft: Math.max(1, editableStates.filter((state) => state.week.weekStart >= selected.week.weekStart).length),
         }
       : null;
@@ -887,7 +895,9 @@ export function PlanBoard({
               <div className="mt-3 grid min-w-0 gap-2 border border-orange-200 bg-orange-50/40 px-3.5 py-3">
                 <p className="text-sm font-black text-slate-950">Send the whole month for review?</p>
                 <p className="break-words text-sm font-medium leading-6 text-slate-600">
-                  Every week goes with it{needsSave.length > 0 ? `, and ${weeksText(needsSave.map((state) => state.week.weekNumber))} ${needsSave.length === 1 ? "is" : "are"} saved first` : ""}.{" "}
+                  Every week of {view.monthLabel} goes with it
+                  {leadingState ? `, but not ${leadingState.week.label} — those belong to the week before, and you send that week on its own` : ""}
+                  {needsSave.length > 0 ? `, and ${weeksText(needsSave.map((state) => state.week.label))} ${needsSave.length === 1 ? "is" : "are"} saved first` : ""}.{" "}
                   {reviewerSentence(view)} Until then, you can take it back to change it.
                 </p>
                 <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
@@ -1039,7 +1049,7 @@ export function PlanBoard({
               onChange={chooseWeek}
               options={states.map((state) => ({
                 value: state.week.weekStart,
-                label: <ChoiceLabel chosen={state.week.weekStart === selected?.week.weekStart}>Week {state.week.weekNumber}</ChoiceLabel>,
+                label: <ChoiceLabel chosen={state.week.weekStart === selected?.week.weekStart}>{state.week.label}</ChoiceLabel>,
                 note: [
                   state.week.statusLabel,
                   `due ${dayLabel(state.week.dueOn)}`,
@@ -1126,7 +1136,7 @@ export function PlanBoard({
           locked={locked}
           onDiscard={discardAll}
           onSave={() => void saveWeeks(needsSave)}
-          weeks={weeksText(needsSave.map((state) => state.week.weekNumber))}
+          weeks={weeksText(needsSave.map((state) => state.week.label))}
         />
       ) : null}
     </div>
