@@ -70,6 +70,23 @@ export function runCrmVacationBackfillMarkerTests() {
       + "one - a stale constant that happens to be correct for one run is not correct for the next",
   );
 
+  // ---- TWO BATCHES CAN RUN ON ONE DAY, so the date alone cannot be the whole marker ----------
+  // Found by this flag's own first use: the September 2026 import took [CRM_BACKFILL_2026-10-01]
+  // and the August tail was authorised the same day. A date-only marker would have put 61 September
+  // rows and 12 August rows in one bucket - the inseparability the flag exists to prevent,
+  // reintroduced by the fix for it. An optional suffix separates same-day batches.
+  const patternLine = code.match(/const MARKER_PATTERN = (\/.*\/);/);
+  assert.ok(patternLine, "MARKER_PATTERN must stay a literal regex in the executable source");
+  const pattern = new RegExp(patternLine![1].slice(1, -1));
+  assert.ok(pattern.test("2026-10-01"), "a plain run date must still be accepted - one batch a day is the normal case");
+  assert.ok(
+    pattern.test("2026-10-01-aug"),
+    "a suffixed marker must be accepted, or a second batch on the same day cannot be told from the first",
+  );
+  for (const bad of ["october", "2026-10-01-", "2026-10-01-AUG", "2026-1-1"]) {
+    assert.equal(pattern.test(bad), false, `a malformed marker must be refused, got through: ${bad}`);
+  }
+
   // ---- The stamp is still built from it, and still written into the notes ---------------------
   assert.ok(
     code.includes("const BATCH_MARKER = `CRM_BACKFILL_${markerDate}`"),

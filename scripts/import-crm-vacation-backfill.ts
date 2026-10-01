@@ -27,7 +27,7 @@
  * Usage:
  *   node --env-file-if-exists=.env.local --experimental-strip-types \
  *     --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs \
- *     scripts/import-crm-vacation-backfill.ts --input <path> --marker <YYYY-MM-DD> [--execute] [--limit N]
+ *     scripts/import-crm-vacation-backfill.ts --input <path> --marker <YYYY-MM-DD[-suffix]> [--execute] [--limit N]
  *
  * Without --execute it is a dry run: it resolves and guards every row but writes nothing.
  * `--marker` is this run's own date and is required — see the note on MARKER_PATTERN.
@@ -66,8 +66,20 @@ import {
  * So the date must be passed and must be the date of THIS run (`--marker 2026-10-01`). The default
  * is deliberately absent rather than today's date: a default would be silently accepted, and a
  * batch marker that nobody chose is the same class of defect.
+ *
+ * 🔴 A DATE ALONE IS NOT ENOUGH, BECAUSE TWO BATCHES CAN RUN ON ONE DAY — found immediately, by
+ * this change's own first use. The September 2026 import ran on 2026-10-01 and took
+ * `[CRM_BACKFILL_2026-10-01]`; the August tail it had left behind was authorised minutes later, the
+ * same day. A second run reusing that marker would have put 61 September rows and 12 August rows in
+ * one bucket — precisely the inseparability this flag exists to prevent, reintroduced by the fix
+ * for it.
+ *
+ * So an optional suffix is allowed: `--marker 2026-10-01-aug` stamps `[CRM_BACKFILL_2026-10-01-aug]`.
+ * The date still leads, so markers sort chronologically and a batch still says when it ran; the
+ * suffix only separates batches that share a day. It stays OPTIONAL rather than becoming required —
+ * one batch on a day is the normal case and should not have to invent a name for itself.
  */
-const MARKER_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MARKER_PATTERN = /^\d{4}-\d{2}-\d{2}(-[a-z0-9]{1,12})?$/;
 
 type TargetRow = {
   date: string;
@@ -102,10 +114,11 @@ const markerDate = readArg("--marker");
 if (!inputPath) throw new Error("--input <path to target-rows.json> is required.");
 if (!markerDate || !MARKER_PATTERN.test(markerDate)) {
   throw new Error(
-    "--marker <YYYY-MM-DD> is required: the date of THIS run, stamped into every row so this batch "
+    "--marker <YYYY-MM-DD[-suffix]> is required: the date of THIS run, stamped into every row so this batch "
       + "can be identified and reversed on its own. Do not reuse a previous run's date: the "
       + "committed constant was last left reading 2026-08-03, and a run inheriting it would fold "
-      + "its rows into a batch from months earlier.",
+      + "its rows into a batch from months earlier. If another batch already ran today, add a "
+      + "suffix (2026-10-01-aug) so the two can be told apart.",
   );
 }
 const BATCH_MARKER = `CRM_BACKFILL_${markerDate}`;

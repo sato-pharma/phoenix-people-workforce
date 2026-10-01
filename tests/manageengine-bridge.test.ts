@@ -76,6 +76,7 @@ import {
 import { REP_TABLET_RULES } from "../src/lib/devices/tablet-policy.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import type { AuditLogInput } from "../src/lib/admin/audit.ts";
 import type { RegisterTablet } from "../src/lib/devices/managed-tablets.ts";
 
 /** Full env so `manageEngineAuthConfig` is satisfied — the three secrets plus the two hosts. */
@@ -1619,7 +1620,11 @@ async function runRepTabletProfileTests() {
       { status: 200, body: { payloads: ["androidrestrictionspolicy", "androidpasscodepolicy"] } },
     ],
   });
-  const second = await buildRepTabletProfile("B-10", already.fetch, ENV);
+  const alreadyAudit: AuditLogInput[] = [];
+  const second = await buildRepTabletProfile("B-10", already.fetch, ENV, async (row) => {
+    alreadyAudit.push(row);
+  });
+  assert.equal(alreadyAudit.length, 0, "a press that changes nothing records nothing");
   assert.equal(second.created, false, "a tenant that already holds the profile is not given a second one");
   assert.equal(second.profileId, "44");
   assert.equal(
@@ -1645,13 +1650,26 @@ async function runRepTabletProfileTests() {
       { status: 200, body: {} }, // publish
     ],
   });
-  // A completed build ends in a REQUIRED audit row, and there is no database here — so what reached
-  // ManageEngine is what is asserted, and the audit is proved to be the only thing that stopped it,
-  // so a genuine failure earlier in the flow can never hide behind this rejection.
-  await assert.rejects(
-    () => buildRepTabletProfile("B-10", leftover.fetch, ENV),
-    (error: Error) => /audit/i.test(error.message),
-    "the repair runs the whole way through to its audit row",
+  // A completed build ends in a REQUIRED audit row, and here it goes to a recorder — never to the real
+  // audit log. Until 2026-10-01 these two builds instead expected the audit write to FAIL ("there is
+  // no database here"), which held only where no Supabase key is set. A local run loads `.env.local`,
+  // which is production, and there the write succeeded: production's audit_logs holds eight "Built
+  // and published" rows in the owner's name for profile 44 — this fixture's id.
+  const leftoverAudit: AuditLogInput[] = [];
+  const repaired = await buildRepTabletProfile("B-10", leftover.fetch, ENV, async (row) => {
+    leftoverAudit.push(row);
+  });
+  assert.equal(repaired.published, true, "the repair runs the whole way through and publishes");
+  assert.deepEqual(
+    leftoverAudit.map((row) => ({ entityId: row.entityId, entityType: row.entityType, summary: row.summary })),
+    [
+      {
+        entityId: "44",
+        entityType: "manageengine_profile",
+        summary: `Built and published the rep tablet profile '${REP_TABLET_PROFILE_NAME}' in ManageEngine`,
+      },
+    ],
+    "and it ends in exactly one audit row, handed to the writer the build was given — never the real audit log",
   );
   assert.equal(
     leftover.calls.some((call) => /\/profiles$/.test(call.url) && call.init.method === "POST"),
@@ -1692,10 +1710,16 @@ async function runRepTabletProfileTests() {
       { status: 200, body: {} }, // publish
     ],
   });
-  await assert.rejects(
-    () => buildRepTabletProfile("B-10", fussy.fetch, ENV),
-    (error: Error) => /audit/i.test(error.message),
-    "a refused field does not abort the build — it runs on to its audit row",
+  const fussyAudit: AuditLogInput[] = [];
+  const despiteRefusal = await buildRepTabletProfile("B-10", fussy.fetch, ENV, async (row) => {
+    fussyAudit.push(row);
+  });
+  assert.equal(despiteRefusal.published, true, "a refused field does not abort the build");
+  assert.equal(fussyAudit.length, 1, "it runs on to its one audit row");
+  assert.deepEqual(
+    (fussyAudit[0].newValues as { refusedFields?: unknown } | null | undefined)?.refusedFields,
+    ["allow_uninstall_app"],
+    "and the field the tenant refused is named in that row, findable later without re-reading the page",
   );
   assert.ok(
     fussy.calls.some((call) => call.url.includes("/publish") && call.init.method === "POST"),
