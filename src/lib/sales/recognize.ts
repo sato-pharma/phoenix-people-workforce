@@ -16,6 +16,7 @@ import {
 } from "@/lib/sales/normalizer/phoenix-template";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { CodedRow, DistributorProfile, NormalizeResult } from "@/lib/sales/normalizer/types";
+import type { ProductPeriodPrices } from "@/lib/sales/product-period-price";
 
 // ── The Sales recognition spine ──────────────────────────────────────────────────────────────
 // THE single place that classifies an uploaded distributor workbook. Every sales workflow
@@ -86,7 +87,9 @@ export type NormalizeFileResult =
   // caller passed when the file came in on the Phoenix template (where the sheet names its own
   // distributor). Every caller must file mappings, the batch and the customer crosswalk under THIS
   // code — passing the sentinel through would file a month under a distributor that does not exist.
-  | { status: "ok"; result: NormalizeResult; period: string | null; distributorCode: string; distributorName: string; products: ProductRef[]; valueSource: "recompute" | "sheet"; priceByCode: Map<string, number>; hasDateColumn: boolean; regionOnly: boolean }
+  // `prices` values a row in a given month (the crosswalks' own resolver); the upload flow uses it to
+  // move a row's value to the month the operator files it under. Optional so hand-built results stay valid.
+  | { status: "ok"; result: NormalizeResult; period: string | null; distributorCode: string; distributorName: string; products: ProductRef[]; valueSource: "recompute" | "sheet"; priceByCode: Map<string, number>; prices?: Pick<ProductPeriodPrices, "priceFor">; hasDateColumn: boolean; regionOnly: boolean }
   | { status: "header_error"; distributorName: string; missingGroups: HeaderValidationFailure[]; fingerprintWarning?: { likelyCode: string; likelyName: string }; observedHeaders: string[] }
   // The file came in on the Phoenix template but the template itself cannot be read — no distributor
   // named, a name the system does not know, or two distributors in one file. `message` is already
@@ -117,6 +120,7 @@ export type NormalizePartsResult =
       products: ProductRef[];
       valueSource: "recompute" | "sheet";
       priceByCode: Map<string, number>;
+      prices?: Pick<ProductPeriodPrices, "priceFor">;
       hasDateColumn: boolean;
       regionOnly: boolean;
     }
@@ -257,7 +261,7 @@ export async function recognizeWorkbookParts(distributorCode: string, file: File
     const result = normalizeRows(sheet, profile, maps);
     parts.push({ distributorCode: profile.distributorCode, distributorName: profile.distributorName, period: dominantPeriod(result.coded), result });
   }
-  return { status: "ok", parts, products, valueSource: profile.valueSource, priceByCode: buildPriceMap(refs.products), hasDateColumn: (profile.dateColumns ?? []).length > 0, regionOnly: Boolean(profile.regionOnly) };
+  return { status: "ok", parts, products, valueSource: profile.valueSource, priceByCode: buildPriceMap(refs.products), prices: maps.prices, hasDateColumn: (profile.dateColumns ?? []).length > 0, regionOnly: Boolean(profile.regionOnly) };
 }
 
 /**
@@ -288,6 +292,7 @@ export async function recognizeDistributorWorkbook(distributorCode: string, file
     products: recognized.products,
     valueSource: recognized.valueSource,
     priceByCode: recognized.priceByCode,
+    prices: recognized.prices,
     hasDateColumn: recognized.hasDateColumn,
     regionOnly: recognized.regionOnly,
   };

@@ -20,7 +20,7 @@ import {
 } from "@/lib/sales/closing-organogram-regions";
 import { applyClosingAreaMerges, markMergedAreaRowsStatic } from "@/lib/sales/closing-area-merges";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
-import { assertNotADuplicateUpload } from "@/lib/sales/import-duplicate-guard";
+import { assertNotADuplicateUpload, totalValueAtPeriod } from "@/lib/sales/import-duplicate-guard";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "@/lib/sales/july-2026-direct-orders";
 import {
   addClosingSales,
@@ -32,6 +32,11 @@ import { loadMonthlyTargets, resolveTargetLineCode } from "@/lib/sales/monthly-t
 import { misplacedComma, needsAGuess, normalizeNumberText } from "@/lib/sales/normalizer/number-text";
 import { numberProblem } from "@/lib/sales/normalizer/row-messages";
 import { isOfficeDistributorCode } from "@/lib/sales/office-distributor";
+import {
+  loadProductPeriodPrices,
+  productPeriodPricesFromRows,
+  type ProductPriceOverrideRow,
+} from "@/lib/sales/product-period-price";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
@@ -101,6 +106,11 @@ export type SalesReferenceData = {
   customerBricks?: { brickId: string; customerCode: string; distributorCode: string }[];
   distributors: SalesDistributorReference[];
   products: SalesProductReference[];
+  // Dated factory-price overrides (source_of_sales_product_price_history). A product's `factoryPrice`
+  // above is the master's flat price; a row is valued at the price OF ITS MONTH, which differs from it
+  // only where one of these covers that month (Saginko from 2026-10). loadSalesReferenceData always
+  // reads them; optional so hand-built test fixtures stay valid, and absent means "no overrides".
+  productPriceOverrides?: ProductPriceOverrideRow[];
   regions: SalesAreaRegionReference[];
 };
 
@@ -1395,6 +1405,8 @@ function buildReferenceMaps(references: SalesReferenceData) {
     ),
     distributorByCode: new Map(references.distributors.map((row) => [normalizeCode(row.code), row])),
     productByCode: new Map(references.products.map((row) => [normalizeCode(row.productCode), row])),
+    // The price of each of THOSE products in a given month — see SalesReferenceData's overrides.
+    prices: productPeriodPricesFromRows(references.products, references.productPriceOverrides ?? []),
     regionByCode: regionReferences,
   };
 }
@@ -1603,11 +1615,18 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     // neglected, the distributor sheet's own Value/Net column is ignored, and since 2026-09-07 the
     // per-row discount is ignored too — the owner struck that factor out of the whole system. The
     // Direct channel remains the one exception, the only sheet whose own Value column is truth.
+    //
+    // The price is the one OF THE ROW'S MONTH (`period`), never the master's flat price — the closing
+    // prices every month through phx_factory_price(code, period), and Saginko is 111.15 through
+    // 2026-09 and 170.52 from 2026-10 while the master stays 111.15. Stored at the flat price, an
+    // October row would carry 111.15 into the Source of Sales dashboard, the import summaries and the
+    // workbook's Sheet Value beside a closing at 170.52. A product the reference set does not hold is
+    // still valued at 0, exactly as before.
     const valueCell = readSheetNumber(rawSheetValue, { emptyAsZero: true });
     const value = isDirect
       ? valueCell.value
       : Number.isFinite(qty)
-        ? qty * (productReference?.factoryPrice ?? 0)
+        ? qty * (productReference ? (maps.prices.priceFor(productCode, period) ?? productReference.factoryPrice) : 0)
         : Number.NaN;
 
     // When geography is taken from the brick, the master Region/Area NAMES win too, so a stored
@@ -2049,7 +2068,15 @@ export async function loadSalesReferenceData(
   // fail: it just makes the missing bricks unresolvable, sending those customers' sales nowhere.
   // selectAllReference pages while preserving the { data, error } shape the schema-drift fallbacks
   // below depend on.
-  const [newRegionsResult, areasResult, blocksResult, bricksResult, productsResult, distributorsResult] = await Promise.all([
+  const [
+    newRegionsResult,
+    areasResult,
+    blocksResult,
+    bricksResult,
+    productsResult,
+    distributorsResult,
+    priceOverridesResult,
+  ] = await Promise.all([
     selectAllReference(() =>
       supabase
         .from("source_of_sales_regions")
@@ -2080,10 +2107,19 @@ export async function loadSalesReferenceData(
         .from("source_of_sales_distributors")
         .select("distributor_code,distributor_name")
         .eq("active", true), "distributor_code"),
+    // A handful of rows at most (one today), so one plain read — see productPriceOverrides.
+    supabase
+      .from("source_of_sales_product_price_history")
+      .select("product_code,effective_period,factory_price")
+      .order("product_code", { ascending: true })
+      .order("effective_period", { ascending: true }),
   ]);
 
   if (productsResult.error) throw toQueryError(productsResult.error);
   if (distributorsResult.error) throw toQueryError(distributorsResult.error);
+  // Loud, like the product master it qualifies: an unread override values its month at the flat
+  // master price — exactly the wrong number this read exists to prevent — and says nothing.
+  if (priceOverridesResult.error) throw toQueryError(priceOverridesResult.error);
 
   // Region names are joined from the regions master by code; the areas table does not carry
   // region_name in every Supabase project (schema drift across staging/prod).
@@ -2197,6 +2233,11 @@ export async function loadSalesReferenceData(
       productCode: String(row.product_code ?? ""),
       productName: String(row.product_name ?? ""),
       source: String(row.source ?? ""),
+    })),
+    productPriceOverrides: (priceOverridesResult.data ?? []).map((row) => ({
+      productCode: String(row.product_code ?? ""),
+      effectivePeriod: String(row.effective_period ?? ""),
+      factoryPrice: Number(row.factory_price ?? 0),
     })),
     distributors: (distributorsResult.data ?? []).map((row) => ({
       code: String(row.distributor_code ?? ""),
@@ -3272,6 +3313,15 @@ export async function persistDistributorSalesUpload(
   // exactly the figures the insert below stores (see import-duplicate-guard.ts). Only a batch that
   // will become sales is checked; a blocked one is kept for its reasons and never counts.
   if (result.status === "validated") {
+    // Each stored batch is compared on ITS month's price basis, so a file re-dated across a reprice
+    // (September's file loaded again as October) still reads as the same file — see totalValueAtPeriod.
+    const prices = await loadProductPeriodPrices();
+    const repriceable = parsedRows.map((row) => ({
+      isDirect: row.isDirect,
+      period: row.invoicePeriod,
+      productCode: row.productCode,
+      value: row.value,
+    }));
     await assertNotADuplicateUpload({
       distributorCode: result.distributor.code,
       fileName: result.fileName,
@@ -3279,6 +3329,7 @@ export async function persistDistributorSalesUpload(
       totalRows: result.rowCount,
       totalQty: result.totals.totalQty,
       totalValue: result.totals.totalValue,
+      totalValueAt: (period) => totalValueAtPeriod(repriceable, prices, period),
     });
   }
 
