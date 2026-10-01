@@ -26,6 +26,7 @@ import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import type { ConcentrationFacts, ReviewSalesDetail } from "../concentration";
 import { describeSpread } from "../concentration";
 import type { FieldLinkFacts } from "../field-link";
+import type { ReviewKpiMonth } from "../sources/crm-kpis";
 import { isResignedStatus, leaverLabel } from "../employment-status";
 import { REVIEW_FLOOR } from "../period";
 import { periodColumnLabel, periodLabel, windowLabel } from "../period-format";
@@ -47,6 +48,7 @@ import {
   summarySection,
   teamScorecardSection,
 } from "./link-sections";
+import { crmKpiSection } from "./kpi-sections";
 import { metricById, type PackSubject, type ReviewMetricId } from "./metrics";
 import { sumSlices } from "./slices";
 
@@ -151,6 +153,12 @@ export type PackInput = {
    * — for the brick table. Null when the closing's detail was not read.
    */
   brickSales?: readonly Pick<ReviewSalesDetail, "brickId" | "brickName" | "channel" | "value">[] | null;
+  /**
+   * The CRM KPIs board's own rows for the pack's reps, one board per month of the figure window —
+   * coverage and frequency against each rep's plan, and his AM · PM · pharmacy call rate. Null (or
+   * absent) when the metric was not ticked or the read failed; the section is then dropped.
+   */
+  crmKpis?: readonly ReviewKpiMonth[] | null;
 };
 
 const NO_VISIT_DATA = "no CRM rows in this window";
@@ -212,6 +220,10 @@ export function buildSalesReviewPack(input: PackInput): SalesReviewPack {
   }
   if (wanted.has("class-a-missed")) {
     add(classAMissedSection(input, link));
+  }
+  // The CRM's own KPIs head the field activity (owner, 2026-10-01: "add all three").
+  if (wanted.has("crm-kpis")) {
+    add(crmKpiSection(input));
   }
   if (wanted.has("visits-split")) {
     add(visitsSplit(input));
@@ -878,7 +890,7 @@ function coverageFrequency({ people, visitsAvailable }: PackInput): PackSection 
     align: ["left", "right", "right", "right", "right", "right", "right"],
     columns: ["Person", "Customers reached", "AM", "PM", "Pharmacies", "Regular visits", "Visits per customer"],
     metric: "coverage-frequency",
-    note: "Reach and frequency from the visits themselves: the distinct customers each person saw, AM · PM · Pharmacies apart, and the regular visits each received on average. Coverage as a share of the PLANNED list is scored against the plan on the CRM KPIs board — this module holds the visits, not the plan, so it gives counts rather than a percentage. Customers are unions, so these rows are never totalled.",
+    note: "From the visits themselves: the distinct customers each person saw, AM · PM · Pharmacies apart, and the regular visits each received on average. Coverage and frequency against each rep's PLAN are the CRM KPIs board's, in \"Coverage, frequency and call rate\". Customers are unions, so these rows are never totalled.",
     rows: reached.map((person) => [
       personName(person),
       num(person.customers),
@@ -888,7 +900,7 @@ function coverageFrequency({ people, visitsAvailable }: PackInput): PackSection 
       num(person.regularVisits),
       person.customers > 0 ? (num(person.regularVisits) / person.customers).toFixed(1) : "—",
     ]),
-    title: "Coverage and frequency",
+    title: "Customers reached",
   };
 }
 

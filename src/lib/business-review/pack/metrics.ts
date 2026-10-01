@@ -68,6 +68,7 @@ export type ReviewMetricId =
   | "customers-per-month"
   | "specialty-mix"
   | "coverage-frequency"
+  | "crm-kpis"
   | "double-visits"
   | "marketing-committed"
   | "outstation-claimed"
@@ -105,6 +106,12 @@ export type ReviewMetric = {
    * export time for the viewer's scope only (sources/field-link.ts), and skipped when none is ticked.
    */
   needsFieldLink?: boolean;
+  /**
+   * True when it needs the CRM KPIs board's own rows — each rep's coverage and frequency against his
+   * plan and his AM · PM · pharmacy call rate — one board per month of the window, read for the
+   * viewer (sources/crm-kpis.ts), and skipped when none is ticked.
+   */
+  needsCrmKpis?: boolean;
   /**
    * The levels where this metric is TICKED in a fresh pack — not a single boolean, because a
    * company pack and a rep pack want different presentations out of the same catalogue. Empty
@@ -240,6 +247,19 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
   },
 
   // ── Field activity ──────────────────────────────────────────────────────────
+  //
+  // The CRM's own KPIs first (owner, 2026-10-01: "add all three"): each rep against HIS plan, and his
+  // call rate, AM against 2 a day and PM against 10 — apart, never averaged. Read from the CRM KPIs
+  // board itself, so a figure here is the figure that board prints for the same rep and month.
+  {
+    defaultAt: ALL,
+    group: "activity",
+    hint: "Against each rep's own plan: doctors reached, doctors seen exactly as planned, and AM · PM · pharmacy visits a day — the CRM KPIs board's own figures.",
+    id: "crm-kpis",
+    label: "Coverage, frequency and call rate",
+    levels: ALL,
+    needsCrmKpis: true,
+  },
   {
     defaultAt: ALL,
     group: "activity",
@@ -267,9 +287,11 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
   {
     defaultAt: ALL,
     group: "activity",
-    hint: "How much of the list was reached, and how often.",
+    // Counts from the visits alone. "Coverage" and "frequency" are the owner's two PLAN KPIs, so they
+    // are the metric above's words, never this one's.
+    hint: "Different customers each person visited, and the regular visits each got on average.",
     id: "coverage-frequency",
-    label: "Coverage and frequency",
+    label: "Customers reached",
     levels: ALL,
   },
   {
@@ -465,6 +487,11 @@ export function needsClosingDetail(selection: readonly ReviewMetricId[]): boolea
 /** True when any chosen metric needs the linked field facts (lists, visits, rides, orders). */
 export function needsFieldLink(selection: readonly ReviewMetricId[]): boolean {
   return selection.some((id) => BY_ID.get(id)?.needsFieldLink === true);
+}
+
+/** True when any chosen metric needs the CRM KPIs board's rows (plan coverage, frequency, call rate). */
+export function needsCrmKpis(selection: readonly ReviewMetricId[]): boolean {
+  return selection.some((id) => BY_ID.get(id)?.needsCrmKpis === true);
 }
 
 /** What the pack is about, for its cover: "Pedia line", "Cairo district", "All company". */

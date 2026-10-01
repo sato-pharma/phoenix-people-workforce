@@ -91,8 +91,6 @@ export type FieldLinkScope = {
   areaCodes: readonly string[];
   /** `lines.name` spellings ("Pedia", "CNS", "Anti Infective") of the pack's lines. */
   lineNames: readonly string[];
-  /** Only the requester's OWN marketing requests are read — a medical rep's pack. */
-  ownRequestsOf?: string | null;
   include: { directOrders: boolean; marketing: boolean; awareness: boolean };
 };
 
@@ -636,10 +634,10 @@ async function loadMarketingRequests(
   const areaCode = new Map(((areaRows.data ?? []) as { id: number; code: string | null }[]).map((r) => [Number(r.id), up(r.code)]));
   const typeName = new Map(((typeRows.data ?? []) as { id: number; name: string | null }[]).map((r) => [Number(r.id), text(r.name)]));
 
-  const own = scope.ownRequestsOf ? hrKey(scope.ownRequestsOf) : null;
+  // Every request for the pack's lines in the pack's areas, whoever raised it — a medical rep's pack
+  // too ("all on his patch", owner 2026-10-01). An area is shared by every line's reps, so the line
+  // must match too — never the area alone (owner, 2026-09-30).
   const kept = rows.filter((row) => {
-    if (own) return hrKey(row.requester_hr_id) === own;
-    // An area is shared by every line's reps, so the line must match too — never the area alone.
     const line = lineName.get(Number(row.line_id))?.toLowerCase() ?? "";
     const area = row.area_id != null ? areaCode.get(Number(row.area_id)) ?? "" : "";
     return lines.has(line) && areas.has(area);

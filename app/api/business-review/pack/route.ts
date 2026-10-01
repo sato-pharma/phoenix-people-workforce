@@ -25,6 +25,7 @@ import {
   defaultSelectionFor,
   narrowSelection,
   needsClosingDetail,
+  needsCrmKpis,
   needsFieldLink,
   type PackLevel,
 } from "@/lib/business-review/pack/metrics";
@@ -40,6 +41,7 @@ import {
   REVIEW_LINE_ORDER,
   territoriesInScope,
 } from "@/lib/business-review/scope-filter";
+import { loadReviewKpiMonths, type ReviewKpiMonth } from "@/lib/business-review/sources/crm-kpis";
 import { loadFieldLinkFacts } from "@/lib/business-review/sources/field-link";
 import type { ReviewPersonRow } from "@/lib/business-review/sources/roles";
 import type { AreaSummary } from "@/lib/business-review/types";
@@ -200,10 +202,18 @@ export async function GET(request: Request) {
 
     // The work beside the money (owner, 2026-10-01). Everything the linked read is told comes from
     // what SURVIVED the scope and the filter above — the reps standing in these areas, these district
-    // seats, these areas and lines — never from the request. A medical rep's read names him alone and
-    // reads only his own marketing requests.
+    // seats, these areas and lines — never from the request. A medical rep's read names him alone; his
+    // marketing requests are every request for his line in his area, whoever raised it (owner,
+    // 2026-10-01: "all on his patch") — area AND line, never the area alone.
     const wantsLink = needsFieldLink(selection);
     const has = (id: (typeof selection)[number]) => selection.includes(id);
+    const packRepHrIds =
+      scope.kind === "rep"
+        ? [scope.hrId]
+        : [
+            ...areas.flatMap((area) => area.repHrIds ?? []),
+            ...people.filter((person) => person.role === "Medical Rep").map((person) => person.hrId),
+          ];
     const linkRead: Promise<FieldLinkFacts | null> = wantsLink
       ? loadFieldLinkFacts({
           areaCodes: [...new Set(areas.map((area) => area.areaCode).filter((code): code is string => !!code))],
@@ -218,19 +228,24 @@ export async function GET(request: Request) {
               ? [...new Set(areas.map((area) => area.dmSeatId).filter((seat): seat is string => !!seat))]
               : filter.dmSeatIds,
           months: figureWindowPeriods(coverage),
-          ownRequestsOf: scope.kind === "rep" ? scope.hrId : null,
-          repHrIds:
-            scope.kind === "rep"
-              ? [scope.hrId]
-              : [
-                  ...areas.flatMap((area) => area.repHrIds ?? []),
-                  ...people.filter((person) => person.role === "Medical Rep").map((person) => person.hrId),
-                ],
+          repHrIds: packRepHrIds,
         }).catch((error: unknown) => {
           // The rest of the pack is still correct; the linked sections are dropped, never zeroed.
           logError("business-review.pack field link failed", { error });
           return null;
         })
+      : Promise.resolve(null);
+
+    // The CRM's own KPIs (owner, 2026-10-01: "add all three"), from the CRM KPIs board itself — one
+    // board per month of the figure window, for THIS viewer, cut to the reps the pack survived to.
+    const kpiRead: Promise<ReviewKpiMonth[] | null> = needsCrmKpis(selection)
+      ? loadReviewKpiMonths({ access, months: figureWindowPeriods(coverage), repHrIds: packRepHrIds }).catch(
+          (error: unknown) => {
+            // The rest of the pack is still correct; the section is dropped, never zeroed.
+            logError("business-review.pack crm kpis failed", { error });
+            return null;
+          },
+        )
       : Promise.resolve(null);
 
     let concentration = null;
@@ -256,6 +271,7 @@ export async function GET(request: Request) {
       }
     }
     const fieldLink = await linkRead;
+    const crmKpis = await kpiRead;
 
     const windowLabel = figureWindowLabel(coverage);
     const pack = buildSalesReviewPack({
@@ -263,6 +279,7 @@ export async function GET(request: Request) {
       concentration,
       brickSales,
       coverageNote: coverage.notUploaded?.note ?? `Every figure covers ${windowLabel}.`,
+      crmKpis,
       dms,
       fieldLink,
       // The FIGURE window's months, never the requested one's — see figureWindowPeriods.

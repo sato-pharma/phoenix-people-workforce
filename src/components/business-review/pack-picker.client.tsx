@@ -113,7 +113,7 @@ export function PackPicker({ action, hidden, level, selected }: Props) {
                       <span className="min-w-0">
                         <span className="block break-words text-sm font-semibold">
                           {metric.label}
-                          {(metric.needsClosingDetail || metric.needsFieldLink) && (
+                          {(metric.needsClosingDetail || metric.needsFieldLink || metric.needsCrmKpis) && (
                             <span className="ml-1.5 border border-border px-1 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-muted-foreground">
                               extra read
                             </span>

@@ -165,7 +165,8 @@ const NEEDS_DETAIL = new Set<ReviewMetricId>(["brick-spread", "customer-concentr
  * them from its own fixture, at every level that offers it.
  */
 const NEEDS_FIELD_LINK = new Set<ReviewMetricId>(
-  REVIEW_METRICS.filter((m) => m.needsFieldLink && m.id !== "review-summary").map((m) => m.id),
+  // The CRM KPIs board's rows are a read of their own as well (tests/business-review-crm-kpis.test.ts).
+  REVIEW_METRICS.filter((m) => (m.needsFieldLink || m.needsCrmKpis) && m.id !== "review-summary").map((m) => m.id),
 );
 
 export function runBusinessReviewPackFullDataTests() {
