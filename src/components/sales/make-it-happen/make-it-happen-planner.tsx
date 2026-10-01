@@ -78,6 +78,7 @@ import {
   pediaHalves,
   plannerFiltersActive,
   scenarioSummary,
+  suggestedScenario,
   trendLabel,
   type FilteredRow,
   type GoalCheck,
@@ -259,6 +260,8 @@ export function MakeItHappenPlanner({
   const goalPct = parseGoalPct(goalInput);
   const hasTarget = data.totals.targetValue != null;
   const scenarios = useMemo(() => (goalPct == null ? [] : buildPlanScenarios(data, goalPct)), [data, goalPct]);
+  // The card "Make It Happen" fills in — Scenario 3 when your goal is realistic, Scenario 2 otherwise.
+  const suggestedKey = scenarios.length > 0 ? suggestedScenario(scenarios).key : null;
   const typedUnits = useMemo(() => {
     const parsed: Record<string, number> = {};
     for (const [code, raw] of Object.entries(units)) {
@@ -597,8 +600,8 @@ export function MakeItHappenPlanner({
                   </p>
                 ) : null}
                 <p className="mt-0.5 text-phx-xs text-slate-500">
-                  Value and achievement calculate as you type. Phoenix only plans what each product&apos;s own month-by-month
-                  pace supports.
+                  Value and achievement calculate as you type. Phoenix reads every product from its own closed months and
+                  never plans above its best normal month.
                 </p>
                 {openForForecast ? (
                   <ul className="mt-2.5 flex flex-wrap gap-1.5">
@@ -740,7 +743,7 @@ export function MakeItHappenPlanner({
                         <button
                           className={cn(
                             "mt-3 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-black",
-                            scenario.key === "realistic" ? PRIMARY_BUTTON : SECONDARY_BUTTON,
+                            scenario.key === suggestedKey ? PRIMARY_BUTTON : SECONDARY_BUTTON,
                             FOCUS_RING,
                           )}
                           disabled={busy !== null}
@@ -1386,7 +1389,7 @@ function UnitsHint({
     );
   }
   if (typedUnits === realistic) {
-    return <p className="mt-1 text-right text-phx-2xs font-bold text-emerald-700">At its realistic pace</p>;
+    return <p className="mt-1 text-right text-phx-2xs font-bold text-emerald-700">At its realistic level</p>;
   }
   return (
     <button

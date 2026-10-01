@@ -9,20 +9,23 @@
 // and makes Phoenix do the plan", "give scenario 1 and 2 and 3", "filter by almost anything",
 // "export xlsx forecast or polish pdf".
 //
-// The honesty rule still decides what each scenario is allowed to claim:
-//   1. Steady pace    — every product keeps its own month-by-month pace. Nothing is raised.
-//   2. Realistic plan — Phoenix raises products toward YOUR goal, never above what each product's
-//                       pace supports. When that is not enough it says so, in the owner's words.
-//   3. Stretch        — reaches your goal even when the pace does not, and says exactly how much of
-//                       it sits ABOVE the pace. It is labelled a stretch; it is never presented as
-//                       the realistic plan.
+// Three DIFFERENT answers (owner, 2026-10-01: Scenarios 1 and 2 had been identical on every screen):
+//   1. Steady pace    — every product keeps its own month-by-month pace: the MIDDLE of its forecast.
+//   2. Realistic plan — every product at the good end of its own months: the UPPER QUARTILE of the
+//                       same forecast, never above its best normal month (engine.ts rule 8). It does
+//                       not bend toward the goal — it says whether it reaches it, in the owner's words
+//                       when it does not.
+//   3. Your goal      — what reaching YOUR goal takes: only the products it needs, raised within
+//                       their realistic level (the Sato products first on Pedia). When that is not
+//                       enough it becomes a Stretch, says exactly how much sits ABOVE the realistic
+//                       level, and is never presented as realistic.
+// "Make It Happen" fills in Scenario 3 when it is realistic, Scenario 2 otherwise — never a stretch.
 // Units are never added across products here either: every total is VALUE.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
   HONESTY_SENTENCE,
   achievementOf,
-  buildGoalMix,
   buildGoalStretchMix,
   type ConcentrationPlanRow,
   type LinePlanGroup,
@@ -246,6 +249,8 @@ export type PlanScenario = {
   title: string;
   units: Record<string, number>;
   value: number;
+  /** Value this scenario plans above Scenario 1, the steady pace. */
+  aboveSteadyValue: number;
   achievement: number | null;
   /** Value still missing to the goal after sales so far and this scenario — the WHOLE plan. null with no target. */
   shortOfGoal: number | null;
@@ -277,6 +282,12 @@ export function buildPlanScenarios(
   const priceOf = new Map(items.map((item) => [item.key, item.price]));
   const gap = goalGapValue(input.totals, goalPct);
   const goals = mixGoalsFor(planGoals(input), goalPct);
+  const valueOf = (units: Record<string, number>) =>
+    Object.entries(units).reduce((sum, [code, count]) => sum + count * (priceOf.get(code) ?? 0), 0);
+
+  const pace: Record<string, number> = {};
+  for (const item of items) pace[item.key] = Math.max(0, Math.floor(item.expectedUnits));
+  const paceValue = valueOf(pace);
 
   const finish = (
     key: ScenarioKey,
@@ -286,7 +297,7 @@ export function buildPlanScenarios(
     aboveRealistic: Record<string, number> = {},
     aboveRealisticValue = 0,
   ): PlanScenario => {
-    const value = Object.entries(units).reduce((sum, [code, count]) => sum + count * (priceOf.get(code) ?? 0), 0);
+    const value = valueOf(units);
     const checks = checkGoals(input, units, goalPct).filter((check) => check.key !== "plan");
     const planReachesGoal = gap == null ? null : value >= gap;
     const judged = [planReachesGoal, ...checks.map((check) => check.reachesGoal)].filter(
@@ -298,6 +309,7 @@ export function buildPlanScenarios(
       title,
       units,
       value,
+      aboveSteadyValue: Math.max(0, value - paceValue),
       achievement: achievementOf(input.totals.gradedValue, value, input.totals.targetValue),
       shortOfGoal: gap == null ? null : Math.max(0, gap - value),
       reachesGoal: planReachesGoal == null ? null : judged.every(Boolean),
@@ -308,16 +320,38 @@ export function buildPlanScenarios(
     };
   };
 
-  const pace: Record<string, number> = {};
-  for (const item of items) pace[item.key] = Math.max(0, Math.floor(item.expectedUnits));
-  const realistic = buildGoalMix(items, goals);
-  const stretch = buildGoalStretchMix(items, goals);
+  // Scenario 2 is every product at its OWN realistic level (engine.ts rule 8) — a second forecast,
+  // not a plan bent toward the goal, so it differs from Scenario 1 wherever a product's months move.
+  const realistic: Record<string, number> = {};
+  for (const item of items) realistic[item.key] = Math.max(pace[item.key], Math.floor(item.realisticMaxUnits));
+  // Scenario 3 is the goal: the products it needs raised within their realistic level, the Sato
+  // products first on a Pedia plan (rule 7), and stretched above that level only when it is not enough.
+  const goalPlan = buildGoalStretchMix(items, goals);
 
   return [
     finish("pace", 1, "Steady pace", pace),
-    finish("realistic", 2, "Realistic plan", realistic.units),
-    finish("stretch", 3, "Stretch to your goal", stretch.units, stretch.aboveRealistic, stretch.aboveRealisticValue),
+    finish("realistic", 2, "Realistic plan", realistic),
+    finish(
+      "stretch",
+      3,
+      goalPlan.aboveRealisticValue > 0 ? "Stretch to your goal" : "Plan for your goal",
+      goalPlan.units,
+      goalPlan.aboveRealistic,
+      goalPlan.aboveRealisticValue,
+    ),
   ];
+}
+
+/**
+ * The scenario "Press here and Phoenix will Make It Happen" fills in: the plan for your goal when it
+ * sits inside what the products realistically support, otherwise the realistic plan — never a
+ * stretch, which would pad the forecast to a number it does not believe (engine.ts rule 5).
+ */
+export function suggestedScenario(scenarios: readonly PlanScenario[]): PlanScenario {
+  const goalPlan = scenarios.find((scenario) => scenario.key === "stretch");
+  const realistic = scenarios.find((scenario) => scenario.key === "realistic");
+  if (goalPlan && goalPlan.aboveRealisticValue <= 0) return goalPlan;
+  return realistic ?? scenarios[0];
 }
 
 function pctText(value: number | null): string {
@@ -342,26 +376,29 @@ export function scenarioSummary(scenario: PlanScenario, goalPct: number, money: 
     return `Every product keeps its current pace, ${money(scenario.shortOfGoal ?? 0)} short of your ${goal} goal.${halvesText}`;
   }
   if (scenario.key === "realistic") {
-    if (scenario.reachesGoal == null) return "With no target set, Phoenix plans each product at its own pace.";
-    if (scenario.reachesGoal) {
-      return scenario.checks.length > 0
-        ? `Reaches your ${goal} goal on both Pedia halves without asking any product for more than its pace supports.`
-        : `Reaches your ${goal} goal without asking any product for more than its pace supports.`;
-    }
+    const lift =
+      scenario.aboveSteadyValue > 0
+        ? `Every product at the good end of its own months: ${money(scenario.aboveSteadyValue)} above your steady pace, never above its best normal month.`
+        : "Your products' months barely move, so their realistic level is their steady pace.";
+    if (scenario.reachesGoal == null) return lift;
+    if (scenario.reachesGoal) return `${lift} Enough for your ${goal} goal.`;
     if (scenario.planReachesGoal) {
-      return `Reaches your ${goal} goal overall, but not on both Pedia halves.${halvesText} ${HONESTY_SENTENCE}.`;
+      return `${lift} Enough for your ${goal} goal overall, but not on both Pedia halves.${halvesText} ${HONESTY_SENTENCE}.`;
     }
+    return `${lift} Still ${money(scenario.shortOfGoal ?? 0)} short of your ${goal} goal.${halvesText} ${HONESTY_SENTENCE}.`;
+  }
+  if (scenario.reachesGoal == null) return "There is no target for this period, so there is no goal to plan for.";
+  if (scenario.aboveRealisticValue <= 0) {
+    if (scenario.aboveSteadyValue <= 0) return `Your steady pace already reaches your ${goal} goal, so nothing more is needed.`;
     return (
-      `The most each product's pace realistically supports, ${money(scenario.shortOfGoal ?? 0)} short of your ` +
-      `${goal} goal.${halvesText} ${HONESTY_SENTENCE}.`
+      `Reaches your ${goal} goal by raising only the products it needs, ${money(scenario.aboveSteadyValue)} above your ` +
+      `steady pace and never above what any product realistically supports.`
     );
   }
-  if (scenario.reachesGoal == null) return "There is no target for this period, so there is no goal to stretch to.";
-  if (scenario.aboveRealisticValue <= 0) return `No stretch needed: the realistic plan already reaches your ${goal} goal.`;
   const stretched = Object.keys(scenario.aboveRealistic).length;
   return (
     `Reaches your ${goal} goal only by selling ${money(scenario.aboveRealisticValue)} above what the products' own ` +
-    `pace supports, across ${stretched} product${stretched === 1 ? "" : "s"}.` +
+    `months realistically support, across ${stretched} product${stretched === 1 ? "" : "s"}.` +
     (scenario.checks.length > 0 ? " The Sato products are stretched to their own goal first; no other product stands in for them." : "") +
     halvesText
   );

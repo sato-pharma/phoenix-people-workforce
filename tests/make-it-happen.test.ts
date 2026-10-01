@@ -15,6 +15,8 @@ import {
   periodLabel,
   periodMonths,
   readTrend,
+  realisticUnits,
+  buildGoalMix,
   type ConcentrationPlanRow,
   type LinePlanGroup,
   type MakeItHappenWorkspace,
@@ -37,6 +39,7 @@ import {
   parsePlannerFilters,
   rowFigures,
   scenarioSummary,
+  suggestedScenario,
   type PlannerFilters,
 } from "@/lib/sales/make-it-happen/scenarios";
 import {
@@ -140,15 +143,27 @@ export async function runMakeItHappenTests() {
   assert.deepEqual(readTrend([], 2), { kind: "none", historyMonths: 0, spikesIgnored: 0, expectedUnits: 0, realisticMaxUnits: 0 });
   assert.equal(readTrend([0, 0, 0], 2).kind, "none");
 
+  // Scenario 1 (expected) is the MIDDLE of a product's forecast; Scenario 2 (realistic) its UPPER
+  // QUARTILE, never above m × its best normal month (engine.ts rule 8, owner 2026-10-01).
   const early = readTrend([90, 110], 2);
   assert.equal(early.kind, "early");
-  assert.equal(early.expectedUnits, 200, "fewer than three closed months: the average of the closed months");
-  assert.equal(early.realisticMaxUnits, 200, "and never above that average (owner choice)");
+  assert.equal(early.expectedUnits, 200, "fewer than three closed months: the pace is the average of the closed months");
+  // s = 20/√2 = 14.142; k = 2, m = 2 → s·√(2 + 4/2) = 28.284; 200 + 0.6745 × 28.284 = 219.08, under the 220 ceiling.
+  assert.equal(early.realisticMaxUnits, 219, "the realistic plan is the upper quartile of the same two months — no longer a copy of the pace");
+  assert.equal(readTrend([90, 110], 1).realisticMaxUnits, 110, "and never above the best closed month");
+  assert.equal(
+    realisticUnits({ level: 100, spread: Math.SQRT2 * 10, levelMonths: 2, months: 2, bestMonth: 110, expectedUnits: 200 }),
+    219,
+    "the formula on its own: m·L + 0.6745 · s · √(m + m²/k), floored, capped at m × best",
+  );
+  assert.equal(readTrend([150], 2).realisticMaxUnits, 300, "one closed month has no spread, so its realistic plan is honestly its pace");
+  assert.equal(readTrend([120, 120], 3).realisticMaxUnits, 360, "two identical months: no spread, no invented room");
 
   const flat = readTrend([100, 102, 98, 101], 2);
   assert.equal(flat.kind, "flat");
   assert.equal(flat.expectedUnits, 200);
-  assert.equal(flat.realisticMaxUnits, 200, "a plateau stays a plateau");
+  // Residual spread around the Theil–Sen line is 2.115 (k = 3): 200.667 + 0.6745 × 2.115 × √(2 + 4/3) = 203.27.
+  assert.equal(flat.realisticMaxUnits, 203, "a plateau stays a plateau: only its own month-to-month wobble lifts it, and only a little");
 
   const growing = readTrend([100, 120, 140, 160], 3);
   assert.equal(growing.kind, "growing");
@@ -157,12 +172,42 @@ export async function runMakeItHappenTests() {
 
   const declining = readTrend([200, 180, 160, 140], 2);
   assert.equal(declining.kind, "declining");
-  assert.equal(declining.realisticMaxUnits, 280, "a decline is held at its recent level, never inflated");
+  assert.equal(declining.realisticMaxUnits, 280, "a straight decline has no wobble around its own line, so nothing is added");
   assert.equal(declining.expectedUnits, declining.realisticMaxUnits);
+  const bumpyDecline = readTrend([300, 260, 280, 200, 230, 190], 3);
+  assert.equal(bumpyDecline.kind, "declining");
+  assert.ok(bumpyDecline.realisticMaxUnits > bumpyDecline.expectedUnits, "a bumpy decline gets room from its own wobble");
+  assert.ok(
+    bumpyDecline.realisticMaxUnits <= 230 * 3,
+    "but never above its best RECENT month — the 300 it fell from never comes back as a plan",
+  );
 
   const spike = readTrend([100, 100, 1000, 100], 1);
   assert.equal(spike.spikesIgnored, 1, "a one-off bulk month is not a pace");
   assert.equal(spike.realisticMaxUnits, 100);
+
+  // Over many shapes, the realistic plan always sits between the pace and m × the best month.
+  let seed = 7;
+  const nextRandom = () => {
+    seed = (seed * 48271) % 2147483647;
+    return seed / 2147483647;
+  };
+  for (let trial = 0; trial < 400; trial += 1) {
+    const length = 1 + Math.floor(nextRandom() * 6);
+    const base = Math.floor(nextRandom() * 900);
+    const shape = Array.from({ length }, () => Math.max(0, Math.round(base * (0.4 + nextRandom() * 1.2))));
+    const months = 1 + Math.floor(nextRandom() * 6);
+    const reading = readTrend(shape, months);
+    assert.ok(reading.realisticMaxUnits >= reading.expectedUnits, `realistic never below pace: ${shape.join(",")} over ${months}`);
+    assert.ok(reading.realisticMaxUnits <= Math.max(0, ...shape) * months, `realistic never above m × best: ${shape.join(",")} over ${months}`);
+  }
+
+  // The owner's report, 2026-10-01: Scenario 1 and Scenario 2 were the same on every screen, because
+  // with July and August the only closed months EVERY product was early and capped at its average.
+  // Ivyronc on the Pedia line, July 3,432 and August 8,757 units:
+  const ivyroncPace = readTrend([3432, 8757], 2);
+  assert.equal(ivyroncPace.expectedUnits, 12189, "Scenario 1: the average month, twice");
+  assert.equal(ivyroncPace.realisticMaxUnits, 17268, "Scenario 2: the good end of the same months, just under August twice");
 
   // ── The mix ──
   const items = [
@@ -250,21 +295,37 @@ export async function runMakeItHappenTests() {
   assert.deepEqual(pace.units, { A: 10, B: 1 }, "Scenario 1 keeps every product at its own pace");
   assert.equal(pace.value, 200);
   assert.equal(pace.shortOfGoal, 1300);
-  assert.deepEqual(realistic.units, { A: 20, B: 5 }, "Scenario 2 never plans above a product's realistic max");
+  assert.deepEqual(realistic.units, { A: 20, B: 5 }, "Scenario 2 is every product at its own realistic level");
+  assert.equal(realistic.aboveSteadyValue, 500, "and it is a DIFFERENT forecast from Scenario 1, by exactly this much");
   assert.equal(realistic.reachesGoal, false);
   assert.equal(realistic.shortOfGoal, 800);
   assert.equal("C" in realistic.units, false, "a closed line is never planned");
   assert.deepEqual(stretched.units, { A: 43, B: 11 });
   assert.equal(stretched.value, 1530);
+  assert.equal(stretched.title, "Stretch to your goal", "a goal above the realistic level is named a stretch");
   assert.equal(stretched.reachesGoal, true, "Scenario 3 reaches the goal");
-  assert.deepEqual(stretched.aboveRealistic, { A: 23, B: 6 }, "and says exactly how much of it sits above the pace");
+  assert.deepEqual(stretched.aboveRealistic, { A: 23, B: 6 }, "and says exactly how much of it sits above the realistic level");
+  assert.equal(suggestedScenario([pace, realistic, stretched]).key, "realistic", "Make It Happen never fills in a stretch");
   const money = (value: number) => `EGP ${value}`;
   assert.ok(scenarioSummary(realistic, 100, money).includes(HONESTY_SENTENCE), "an out-of-reach realistic plan says the owner's sentence");
-  assert.match(scenarioSummary(stretched, 100, money), /above what the products' own pace supports/, "a stretch is never presented as realistic");
+  assert.match(
+    scenarioSummary(stretched, 100, money),
+    /above what the products' own months realistically support/,
+    "a stretch is never presented as realistic",
+  );
   const easyGoal = buildPlanScenarios(workspace, 30);
   assert.equal(easyGoal[1].reachesGoal, true, "a lower goal the pace already covers is reachable");
-  assert.deepEqual(easyGoal[1].units, { A: 10, B: 1 }, "and nothing is raised to reach it");
-  assert.match(scenarioSummary(easyGoal[2], 30, money), /No stretch needed/);
+  assert.deepEqual(easyGoal[1].units, { A: 20, B: 5 }, "and Scenario 2 still shows the realistic level, not a copy of the pace");
+  assert.deepEqual(easyGoal[2].units, { A: 10, B: 1 }, "Scenario 3, your goal, raises nothing the goal does not need");
+  assert.equal(easyGoal[2].title, "Plan for your goal");
+  assert.match(scenarioSummary(easyGoal[2], 30, money), /nothing more is needed/);
+  assert.equal(suggestedScenario(easyGoal).key, "stretch", "a goal inside the realistic level is what Make It Happen fills in");
+  const midGoal = buildPlanScenarios(workspace, 40);
+  assert.equal(midGoal[2].aboveRealisticValue, 0);
+  assert.ok(
+    midGoal[2].value > midGoal[0].value && midGoal[2].value < midGoal[1].value,
+    "a goal between the pace and the realistic level gets a plan between them — three different answers",
+  );
   for (const scenario of [...buildPlanScenarios(workspace, 100), ...easyGoal]) {
     assert.doesNotMatch(scenarioSummary(scenario, 100, money), /\bAI\b|artificial|model/i);
   }
@@ -301,12 +362,24 @@ export async function runMakeItHappenTests() {
   const planOnly = buildRealisticMix(splitItems, 6400);
   assert.deepEqual(planOnly.units, { GU001: 20, IV001: 20, LA001: 60 }, "the old plan-only rule closes the whole gap with Lacto");
 
-  const [splitPace, splitRealistic, splitStretch] = buildPlanScenarios(pediaWorkspace, 100);
+  const satoThenPlan = [
+    { key: "sato", gapValue: 1400, codes: new Set(["GU001", "IV001"]) },
+    { key: "plan", gapValue: 6400, codes: null },
+  ];
   assert.deepEqual(
-    splitRealistic.units,
+    buildGoalMix(splitItems, satoThenPlan).units,
     { GU001: 30, IV001: 30, LA001: 58 },
     "the Sato products are raised to their realistic max FIRST, and Lacto only covers what is left of the total",
   );
+
+  const [splitPace, splitRealistic, splitStretch] = buildPlanScenarios(pediaWorkspace, 100);
+  assert.deepEqual(splitRealistic.units, { GU001: 30, IV001: 30, LA001: 60 }, "Scenario 2: every product at its realistic level");
+  assert.deepEqual(
+    splitStretch.units,
+    { GU001: 70, IV001: 70, LA001: 58 },
+    "Scenario 3, the goal: Sato first, Lacto only for what is left of the total, then the Sato stretch",
+  );
+  assert.equal(suggestedScenario([splitPace, splitRealistic, splitStretch]).key, "realistic", "a Sato stretch is never filled in for the rep");
   assert.equal(splitRealistic.planReachesGoal, true, "the line total reaches 100%");
   assert.deepEqual(splitRealistic.checks.map((check) => check.key), ["sato"], "Pedia alone: the total half IS the whole plan");
   assert.equal(splitRealistic.checks[0].achievement, 0.6);
