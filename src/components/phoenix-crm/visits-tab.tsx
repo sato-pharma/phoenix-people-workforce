@@ -635,7 +635,6 @@ function AddFlow({
             if (target === 3 && current.name === "form") onStep({ ...current, part: "details" });
             else if (target === 1) onStep({ name: "start" });
           }}
-          required={n === 3}
           step={n}
           steps={VISIT_STEPS}
         >

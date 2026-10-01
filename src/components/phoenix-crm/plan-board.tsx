@@ -999,7 +999,7 @@ export function PlanBoard({
             <ChevronRight aria-hidden className="h-4 w-4" />
           </button>
         ) : null}
-        <CrmStepNext onClick={() => goStep(4)}>To sending</CrmStepNext>
+        <CrmStepNext onClick={() => goStep(4)}>Review and send</CrmStepNext>
       </CrmStepFooter>
     ) : (
       <CrmStepFooter back={() => goStep(3)} />
@@ -1107,10 +1107,11 @@ export function PlanBoard({
               steps={planSteps}
             >
               {planStep === 1 ? (
+                // The step is the week, so its weeks lead; the month the week sits in follows.
                 <>
+                  {weeksBlock}
                   {monthBlock}
                   {pendingBlock}
-                  {weeksBlock}
                 </>
               ) : (
                 weekPanel(planStep === 2 ? "days" : planStep === 3 ? "day" : "send")
