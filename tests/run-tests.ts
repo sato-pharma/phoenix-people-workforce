@@ -1906,6 +1906,7 @@ import { runAdminFilenameCellsNeverEllipsiseTests } from "./admin-filename-cells
 import { runSectionCardHeaderFitsAPhoneTests } from "./section-card-header-fits-a-phone.test.ts";
 import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-phone.test.ts";
 import { runPortalRepKpiMonthTests } from "./portal-rep-kpi-month.test.ts";
+import { runPhoenixCrmVisitOrganogramTitlesTests } from "./phoenix-crm-visit-organogram-titles.test.ts";
 import { runSalesCommandBandFitsALaptopTests } from "./sales-command-band-fits-a-laptop.test.ts";
 
 import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.test.ts";
@@ -6789,6 +6790,10 @@ await runTest("portal tile grids are single-column on a phone (a PremiumNavTile 
 await runTest(
   "a Medical Rep picks the month his landing keycards show, and a picked past month scores whole",
   runPortalRepKpiMonthTests,
+);
+await runTest(
+  "who was on a visit is named with his organogram job title, never the visit slot (Rep / Manager / Senior manager)",
+  runPhoenixCrmVisitOrganogramTitlesTests,
 );
 await runTest(
   "sales page headers fit a 1024px laptop (the ring and aside sit beside the headline only from xl)",

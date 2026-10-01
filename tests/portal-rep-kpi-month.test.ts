@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { CRM_DATA_FLOOR_MONTH, kpiMonthOptions } from "../src/lib/crm/kpis-board.ts";
+import { CRM_DATA_FLOOR_MONTH, kpiMonthOptions, selectKpiCoverageRep, type KpiRepRow } from "../src/lib/crm/kpis-board.ts";
+import { resolveKpiTab } from "../src/lib/crm/kpis-tabs.ts";
 import { repsPlansRange } from "../src/lib/crm/reps-plans.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -167,9 +168,30 @@ export function runPortalRepKpiMonthTests() {
   // September 2026" — and its Open button must land on that same month. A bare link was correct
   // only while the landing page could show nothing but the running month; with the picker it makes
   // one row name September and open October, which is the page contradicting itself in one click.
+  // The tab is the owner's own instruction (2026-10-01): the row counts doctors he has not reached,
+  // and Coverage is the ONE tab that lists them by name — Summary answers with three percentages.
   assert.ok(
-    /href=\{`\/employee-portals\/kpis\?month=\$\{kpiMonth\}`\}/.test(center),
-    `${CENTER}: the missed-doctors row must open the KPIs board on the month it just named`,
+    /href=\{`\/employee-portals\/kpis\?month=\$\{kpiMonth\}&tab=coverage`\}/.test(center),
+    `${CENTER}: the missed-doctors row must open the KPIs board on the month it just named, on the Coverage tab`,
+  );
+  // Both halves of that URL must be ones the page honours, so the link cannot rot into a silent
+  // no-op: an unrecognised tab WIDENS to Summary rather than erroring, which is exactly the screen
+  // this change moved off, and nothing on the page would say so.
+  assert.equal(resolveKpiTab("coverage"), "coverage", "the KPIs page must still recognise ?tab=coverage");
+  assert.equal(resolveKpiTab("covrage"), "summary", "control: an unrecognised tab falls back to Summary with no error");
+  // And the Coverage tab opens a MEDICAL REP's own list with no `?rep=` in the link, because his
+  // board holds exactly one row — himself. That is what the href relies on; putting a `rep` key in
+  // it instead would mean guessing the doctor-list builder's own key for him on the landing page.
+  const soleRep = { coverageRepKey: "crm:4210", repName: "Aya Ibrahim" } as unknown as KpiRepRow;
+  assert.equal(
+    selectKpiCoverageRep([soleRep], null),
+    soleRep,
+    "a one-row board (a medical rep looking at himself) must open his doctor list unasked",
+  );
+  assert.equal(
+    selectKpiCoverageRep([soleRep, { coverageRepKey: "crm:99", repName: "Other" } as unknown as KpiRepRow], null),
+    null,
+    "control: a manager's board names nobody until the URL does — the one-row case is what makes the rep's link work",
   );
 
   // ── 6. The control itself ────────────────────────────────────────────────────────────────────

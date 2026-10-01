@@ -92,11 +92,22 @@ export type PendingValidate = {
 
 // ── A day's visits ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Who was on the visit, each under his REAL JOB TITLE as the organogram states it — "Medical
+ * Representative", "District Sales Manager", "National Sales Manager" (owner, 2026-10-01: *"put
+ * actual titles from the organogram"*).
+ *
+ * The three slots behind these people — the rep, a manager on a double visit, a senior manager on a
+ * chain visit — are the VISIT's shape, not anybody's job, and labelling a national sales manager
+ * "Senior manager" on his own call reads as a demotion beside the organogram's own wording. The
+ * server resolves the title from the tree (`personSeatTitle`); the slot survives only as the fallback
+ * for somebody the SALES-only tree has no seat for, where it is still a true sentence about the visit.
+ */
 function visitPeople(visit: VisitRow): Array<{ name: string; role: string }> {
   const people: Array<{ name: string; role: string }> = [];
-  if (visit.repName) people.push({ name: visit.repName, role: "Rep" });
-  if (visit.managerName) people.push({ name: visit.managerName, role: "Manager" });
-  if (visit.seniorName) people.push({ name: visit.seniorName, role: "Senior manager" });
+  if (visit.repName) people.push({ name: visit.repName, role: visit.repTitle ?? "Rep" });
+  if (visit.managerName) people.push({ name: visit.managerName, role: visit.managerTitle ?? "Manager" });
+  if (visit.seniorName) people.push({ name: visit.seniorName, role: visit.seniorTitle ?? "Senior manager" });
   return people;
 }
 

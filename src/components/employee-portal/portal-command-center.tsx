@@ -1407,11 +1407,14 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
                       cta="Open"
                       detail={`${kpis.visitedDoctors} of ${kpis.plannedDoctors} covered · ${kpis.monthLabel}`}
                       headline="Planned doctors not seen yet"
-                      // The month this row just NAMED, carried through to the board. The KPIs page
-                      // reads `?month=YYYY-MM` and otherwise opens on the running month, so a bare
-                      // link made the row say September and its own Open button show October. It was
-                      // right only while this page could show nothing but the running month.
-                      href={`/employee-portals/kpis?month=${kpiMonth}`}
+                      // The month this row just NAMED, carried through to the board, AND the tab that
+                      // answers the row. The KPIs page reads `?month=YYYY-MM` and otherwise opens on
+                      // the running month, so a bare link made the row say September and its own Open
+                      // button show October; it reads `?tab=coverage` too, and without it the board
+                      // opened on Summary — three KPIs and no list of the doctors this row counted.
+                      // Coverage is the one tab that names them (it loads `coverageDoctors`), so the
+                      // owner asked for the button to land there (2026-10-01).
+                      href={`/employee-portals/kpis?month=${kpiMonth}&tab=coverage`}
                       rail="bg-orange-500"
                     />
                   )}
