@@ -19,7 +19,7 @@ from that specific check.
 down through `applyDecisionSideEffects` into `resignEmployeeAndOpenVacancy`.**
 
 **Why:** `runProbationWorkflow` already gates the whole action with `canReadProbationEmployee`
-(`src/lib/probation/service.ts:154`) before it ever reaches termination, and that function is
+(`src/lib/probation/service.ts`) before it ever reaches termination, and that function is
 *deliberately broader* than the generic `canSeeEmployee` (`src/lib/auth/permissions.ts`)
 for exactly the roles that use this path:
 - **Product Manager / Group Product Manager**: `canReadProbationEmployee` allows same-line

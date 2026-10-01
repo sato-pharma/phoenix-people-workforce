@@ -31,7 +31,7 @@ Changing it would mean changing her seat tier, which is the skeleton.
 Nothing server-side reads `job_title` for access. `District Manager` is what grants
 `team: ["read","export"]` — the authority to see a team — plus `leave: approve`,
 `weekly_plans: approve`, `early_birds: approve`, `attendance` (full), `payroll: read`,
-`direct_orders: approve` and ~18 more (`src/lib/auth/permissions.ts:758`).
+`direct_orders: approve` and ~18 more (`src/lib/auth/permissions.ts`).
 
 **OWNER RULE (stated 2026-08-22, emphatically): a medical rep acting as a district manager stays a
 medical rep.** She takes the *authorities* of a DM but "appear on system medical rep and everything
@@ -64,10 +64,10 @@ DB trigger — a direct title update does not fire it.
   access role; `resolvePortalRole` tries the access role first, falls back to the title.
 - `tests/early-birds-scope.test.ts:86` — "the acting DM reporting to him IS one of his districts,
   **even though she is titled a rep**".
-- `src/lib/reports/organogram-au-source.ts:46` maps `ACTING_DM: "District Sales Manager"`, so the
+- `src/lib/reports/organogram-au-source.ts` maps `ACTING_DM: "District Sales Manager"`, so the
   org chart still draws her on a district lane regardless of her title.
 - `ACTING_DM` is a **first-class DM tier** for sales scope and attribution, not a gap:
-  `seat-area-scope.ts:111`, `manager-attribution.ts:150`, `closing-publish-recipients.ts:36`.
+  `seat-area-scope.ts:111`, `manager-attribution.ts`, `closing-publish-recipients.ts`.
 
 **If the Super Admin ever asks to give an acting DM more reps, it is the REPS that move, not her** —
 their `manager_hr_id` points at her, and her `District Manager` app role already covers whoever

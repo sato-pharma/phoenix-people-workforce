@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6867832-e139-4206-bc0f-eb6ccc99fc5a
-  modified: 2026-08-23T12:29:17.231Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 `node scripts/repo-doctor.mjs --fix --force` reported **`FAILED ... EPERM`** on both `_wt-nursery-venue`
@@ -44,7 +44,7 @@ the same ones.
    `"REMOVED|SKIPPED|aborted|husk"` hides the failure branch completely, leaving only
    `Removed 0 husk(s).` — which is indistinguishable from a run that never tried. That mistake cost two
    round trips here. Run it unfiltered; it is only a few lines.
-3. `--force` skips **only** the concurrent-session count (`repo-doctor.mjs:787`). The per-husk
+3. `--force` skips **only** the concurrent-session count (`repo-doctor.mjs`). The per-husk
    re-verification at :843 stays armed and still SKIPs anything that gained a file, so `--force` is not
    the dangerous part — but it is also not what makes the delete succeed.
 4. The session guard fires at **>1** `claude-code` process and this machine routinely runs ~10, so plain
