@@ -489,7 +489,7 @@ export function brickWorkSection(input: PackInput, ctx: LinkContext | null): Pac
   const areaSales = sumSlices(input.areas.map((area) => area.allProducts)).sales;
   const gap =
     areaSales > 0 && bricks.total.sales < areaSales * 0.99
-      ? ` The bricks add up to ${egp(bricks.total.sales)} of ${ctx.isRep ? "your" : "the"} ${input.areas.length > 1 ? "areas'" : "area's"} ${egp(areaSales)} — the rest is wholesale the Monthly Closing spreads across a city, in no single brick.`
+      ? ` The bricks add up to ${egp(bricks.total.sales)} of ${ctx.isRep ? "your" : "the"} ${input.areas.length > 1 ? "areas'" : "area's"} ${egp(areaSales)} — the rest is store sales the Monthly Closing spreads across a city, in no single brick.`
       : "";
   return {
     align: ["left", "right", "right", "right", "right", "right", "right", "left", "left"],
@@ -1039,7 +1039,7 @@ const REP_WORDS: Partial<Record<ReviewMetricId, { title: string; note?: string }
     title: "Your area's sales",
   },
   "channel-split": {
-    note: "Through distributors, through wholesalers, or as direct orders — the three add up to all your area's sales.",
+    note: "Through distributors, through stores, or as direct orders — the three add up to all your area's sales.",
     title: "How your sales reached the market",
   },
   "coverage-frequency": {

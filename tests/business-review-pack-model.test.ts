@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { buildConcentration, type ReviewSalesDetail } from "@/lib/business-review/concentration";
+import { metricById } from "@/lib/business-review/pack/metrics";
 import { buildSalesReviewPack, type PackCell, type PackInput } from "@/lib/business-review/pack/model";
 import { packDocumentHtml } from "@/lib/business-review/pack/pdf";
 import { buildSpecialtyMix } from "@/lib/business-review/specialty-mix";
@@ -145,6 +146,39 @@ export function runBusinessReviewPackModelTests() {
     assert.equal(bricks.rows.length, 2);
     assert.match(bricks.note, /Concentrated|Spread|Narrow|one brick/, "the spread reading travels with the table");
     assert.equal(channels.rows.length, 3, "all three channels, so the shares can be read against each other");
+
+    // The owner's word for a customer that sells on is STORES (2026-10-02: "change the word
+    // wholesalers with stores") — the system's own classifier already calls it a store, and the Monthly
+    // Closing's channel comparison says "Stores". Table, chart, rep wording and picker hint all agree.
+    const channelNames = ["Through distributors", "Through stores", "Direct orders"];
+    assert.deepEqual(
+      channels.rows.map((row) => row[0]),
+      channelNames,
+      "the channel a warehouse customer sells through reads Through stores — never wholesalers",
+    );
+    assert.deepEqual(
+      channels.chart?.items.map((item) => item.label),
+      channelNames,
+      "and the chart beside it says the same",
+    );
+    const asRep = buildSalesReviewPack(
+      input({
+        concentration: buildConcentration(rows),
+        selection: ["channel-split"],
+        subject: { level: "rep", line: "pedia", title: "A Rep", windowLabel: "Jul – Aug 2026" },
+      }),
+    ).sections.find((s) => s.metric === "channel-split");
+    assert.match(asRep?.note ?? "", /through stores/, "a rep reads it in his own voice, with the same word");
+    const spoken = [
+      channels.title,
+      channels.note,
+      ...channels.rows.flat().map(String),
+      asRep?.title ?? "",
+      asRep?.note ?? "",
+      metricById("channel-split")?.hint ?? "",
+      metricById("channel-split")?.label ?? "",
+    ].join(" | ");
+    assert.ok(!/wholesale/i.test(spoken), `nobody reads "wholesale" in the channel split — got: ${spoken}`);
   }
 
   // ------------------------------------------------------------------ 6. the specialty note
