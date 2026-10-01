@@ -460,8 +460,21 @@ export function compareCheckinScanOrder(a: { check_date: string; id: string }, b
   return compareUuidText(a.id, b.id);
 }
 
+/**
+ * The window's days in runs of up to `runDays` consecutive entries, in order — the requests of a
+ * sliced read whose days each hold few rows. Every day lands in exactly one run, so the runs still
+ * cover the window once each. Anything but a whole number above 1 keeps one day per request. Pure,
+ * exported for its unit test.
+ */
+export function dayScanRuns(days: readonly string[], runDays: number | undefined): string[][] {
+  const size = typeof runDays === "number" && Number.isInteger(runDays) && runDays > 1 ? runDays : 1;
+  const runs: string[][] = [];
+  for (let index = 0; index < days.length; index += size) runs.push(days.slice(index, index + size));
+  return runs;
+}
+
 /** Runs `read` for every day, {@link DAY_SLICE_CONCURRENCY} at a time, results kept in day order. */
-async function readDaySlices<R>(days: readonly string[], read: (day: string) => Promise<R>): Promise<R[]> {
+async function readDaySlices<S, R>(days: readonly S[], read: (day: S) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(days.length);
   let next = 0;
   const worker = async () => {
@@ -480,13 +493,14 @@ async function readDaySlices<R>(days: readonly string[], read: (day: string) => 
  * comes back full — one scan per day. `null` when any request found the mirror schema missing.
  * `order` puts a short probe in the single scan's order; `sortDays` re-sorts the joined days (visits,
  * whose id order crosses days) or leaves them end to end (check-ins, already in check_date order).
+ * A slice is one day, or one run of days ({@link dayScanRuns}) for a read that asked for runs.
  * Takes its requests as functions, so it is exported for its unit test.
  */
-export async function readCompanyWindow<Row>(options: {
-  days: readonly string[];
+export async function readCompanyWindow<Row, Slice = string>(options: {
+  days: readonly Slice[];
   pageSize: number;
   probe: () => Promise<Row[] | null>;
-  scanDay: (day: string) => Promise<Row[] | null>;
+  scanDay: (day: Slice) => Promise<Row[] | null>;
   order: (a: Row, b: Row) => number;
   sortDays: boolean;
 }): Promise<Row[] | null> {
@@ -937,6 +951,11 @@ export async function queryVisits<T = CrmVisitRow>(
      * are added to the projection automatically and single-agent visits pass through unchanged, so a
      * caller that SUMS/COUNTS visit rows gets the deduplicated total without re-deriving the dedup. */
     collapseDoubleVisits?: boolean;
+    /** Days per request when a company window is read day by day (default 1). For a SPARSE filter,
+     * whose day holds a small fraction of a page: one request per run of days instead of one per
+     * day, and the same rows in the same order, because the runs cover the window once each
+     * ({@link dayScanRuns}). A dense read must keep 1 — a run's every page re-reads the whole run. */
+    sliceDays?: number;
   },
 ): Promise<T[]> {
   if (options.agentCrmIds && options.agentCrmIds.length === 0) return [];
@@ -958,14 +977,16 @@ export async function queryVisits<T = CrmVisitRow>(
     const query = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(projection);
     return applyVisitFilter(query as unknown as VisitFilterableQuery, options, excludedInList) as unknown as typeof query;
   };
-  /** One keyset scan (order by id) of the filter, narrowed to one `visit_date` when `day` is set.
-   * `null` when the mirror schema is missing. */
-  const scan = async (day: string | null): Promise<Row[] | null> => {
+  /** One keyset scan (order by id) of the filter, narrowed to one run of `visit_date`s when `run` is
+   * set: a lone day by equality, as every day was read before runs existed, and a longer run by its
+   * first and last day. `null` when the mirror schema is missing. */
+  const scan = async (run: readonly string[] | null): Promise<Row[] | null> => {
     const scanned: Row[] = [];
     let cursor: string | null = null;
     for (;;) {
       let query = filtered();
-      if (day) query = query.eq("visit_date", day);
+      if (run && run.length === 1) query = query.eq("visit_date", run[0]);
+      else if (run) query = query.gte("visit_date", run[0]).lte("visit_date", run[run.length - 1]);
       query = query.order("id", { ascending: true }).limit(pageSize);
       if (cursor) query = query.gt("id", cursor);
       const { data, error } = await query;
@@ -987,8 +1008,10 @@ export async function queryVisits<T = CrmVisitRow>(
   const listedDays = options.visitDates ? new Set(options.visitDates) : null;
   const days = windowDays && listedDays ? windowDays.filter((day) => listedDays.has(day)) : windowDays;
   const rows: Row[] | null = days
-    ? await readCompanyWindow<Row>({
-        days,
+    ? await readCompanyWindow<Row, readonly string[]>({
+        // A run of listed days is a contiguous stretch of the sorted list, so any listed day between
+        // its first and last is in it; the `visit_date IN` filter keeps every unlisted day out.
+        days: dayScanRuns(days, options.sliceDays),
         pageSize,
         probe: async () => {
           const { data, error } = await filtered().limit(pageSize);
@@ -1044,6 +1067,19 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
 }
 
 /**
+ * Days per request for a company window of double visits.
+ *
+ * 🔴 WHY (2026-10-02, "speed up the slowest portal page"). A district manager's and an NSM's portal
+ * landing reads every double visit since January for its focus panel: about 275 one-day requests,
+ * four at a time, 4.0–4.9 s of a 4.3–4.9 s landing (measured on production that night). A
+ * double-visit day holds about a hundred rows (2,220 in September 2026), a tenth of a page, so a week
+ * is about 700 rows and still one page: the same window in about 40 requests, and the same rows in
+ * the same order, because the weeks cover it once each. Any other visit read keeps one day per
+ * request — a dense day can hold a thousand rows, and a run's every page re-reads the whole run.
+ */
+export const DOUBLE_VISIT_SLICE_DAYS = 7;
+
+/**
  * Full scan of double-visit rows (real partner on a fieldwork visit type). The canonical
  * double-visit predicate shared by Double-Visit Analytics, probation DV, the portal, and
  * probation feedback — so those consumers can never disagree about what counts as a double
@@ -1053,14 +1089,17 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
  * run through {@link collapseDuplicateVisitSubmissions} before returning, so a rep re-saving the
  * same contact-day stop counts once here everywhere this door is used, instead of each consumer
  * re-deriving its own dedup rule.
+ *
+ * A company window is read a WEEK per request ({@link DOUBLE_VISIT_SLICE_DAYS}), not a day.
  */
 export async function getDoubleVisitRows<T = CrmVisitRow>(
-  options: Omit<CrmVisitFilter, "doubleOnly"> & { columns?: string; includeResignedAgents?: boolean; pageSize?: number },
+  options: Omit<CrmVisitFilter, "doubleOnly"> & { columns?: string; includeResignedAgents?: boolean; pageSize?: number; sliceDays?: number },
 ): Promise<T[]> {
   const rows = await queryVisits<T & DuplicateVisitDetectionRow>({
     ...options,
     columns: withDuplicateDetectionColumns(options.columns),
     doubleOnly: true,
+    sliceDays: options.sliceDays ?? DOUBLE_VISIT_SLICE_DAYS,
     visitTypes: options.visitTypes ?? CRM_DOUBLE_VISIT_TYPE_CODES,
   });
   return collapseDuplicateVisitSubmissions(rows) as unknown as T[];
