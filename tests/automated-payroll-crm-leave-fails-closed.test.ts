@@ -79,7 +79,10 @@ export function runAutomatedPayrollCrmLeaveFailsClosedTests() {
   );
 
   // ---- BALANCE CHECK --------------------------------------------------------
-  const totals = between(code, "export async function computeVacationDeductionTotals(", "export async function settleCrmLeaveBalanceForPeriod(");
+  // End marker re-pointed 2026-10-01: `settleCrmLeaveBalanceForPeriod` was removed when the owner
+  // made the CRM vacation importer the one path a CRM leave day reaches a balance by. The next
+  // executable declaration after this function is `recommendVacation`.
+  const totals = between(code, "export async function computeVacationDeductionTotals(", "function recommendVacation(");
   const balanceCatch = between(totals, "Automated payroll: CRM leave balance check failed", "const unpaidDays");
   assert.ok(
     balanceCatch.includes(THROW),
@@ -98,17 +101,29 @@ export function runAutomatedPayrollCrmLeaveFailsClosedTests() {
     "computeVacationDeductionTotals must still read CRM leave through loadCrmLeaveDatesByCompact",
   );
 
-  // ---- A REFUSAL LEAVES THE STEP UNCONFIRMED --------------------------------
-  // confirmStep used to mark p2_vacation "confirmed" and only THEN compute the vacation totals, so a
-  // refusal left a confirmed step with no balance settlement behind it.
-  const runService = readFileSync("src/lib/automated-payroll/run-service.ts", "utf8");
-  const confirm = runService.slice(runService.indexOf("export async function confirmStep("));
-  const computeAt = confirm.indexOf("computeVacationDeductionTotals(members, sources, period, runId)");
-  const confirmedAt = confirm.indexOf('status: "confirmed"');
-  assert.ok(
-    computeAt >= 0 && confirmedAt >= 0 && computeAt < confirmedAt,
-    "confirmStep must compute the vacation totals BEFORE it writes the confirmed step state — a refusal must leave "
-      + "p2_vacation unconfirmed, never confirmed with no balance settlement",
+  // ---- THE READS FAIL CLOSED WHEREVER THEY ARE CALLED FROM, AND THE CONFIRM NO LONGER CALLS THEM -
+  //
+  // This section used to pin the ORDER inside confirmStep: compute the vacation totals BEFORE
+  // writing the confirmed step state, so a refused read left p2_vacation unconfirmed rather than
+  // confirmed with no balance settlement behind it. That ordering mattered only because the confirm
+  // then WROTE a settlement. It no longer writes one — the CRM vacation importer is the single path
+  // a CRM leave day reaches a balance by (owner, 2026-10-01) — so the confirm does not read CRM
+  // leave at all, and the thing to pin is that it stays that way.
+  //
+  // The fail-closed rule itself is unchanged and still pinned above, against recommend.ts, which is
+  // where it lives and where any future caller inherits it.
+  const runService = stripComments(readFileSync("src/lib/automated-payroll/run-service.ts", "utf8"));
+  assert.equal(
+    runService.includes("computeVacationDeductionTotals"),
+    false,
+    "confirmStep must not compute the CRM vacation totals: nothing downstream consumes the result now, so its "
+      + "refusal on an unreadable CRM feed or Egypt holiday calendar would block a payroll confirm for no benefit",
+  );
+  assert.equal(
+    runService.includes("settleCrmLeaveBalanceForPeriod"),
+    false,
+    "confirming a payroll step must write NO row to payroll_copilot_vacation_settlements — see "
+      + "tests/automated-payroll-crm-leave-one-mechanism.test.ts for why a second mechanism double-charges leave",
   );
 
   // ---- THE WORDS THAT REACH THE STEP ----------------------------------------

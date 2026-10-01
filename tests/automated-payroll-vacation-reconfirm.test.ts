@@ -39,6 +39,20 @@ import { fakeSupabaseClient } from "./fixtures/fake-supabase-table.ts";
  * and the run believed more balance remained than really did. Those assertions passed only because
  * the fixture compared with a JavaScript `!==`, which keeps a NULL. The fixture's `neq` is now
  * SQL's, and the exclusion keeps the NULLs explicitly: `or(run_id.is.null,run_id.neq.<run>)`.
+ *
+ * AND ITS AUTOMATED-PAYROLL WRITER IS NOW GONE (2026-10-01). The reason no payroll run ever wrote
+ * one turned out to be a foreign key the run's `run_id` could never satisfy — `run_id` references
+ * `payroll_copilot_runs` while automated payroll passed an `automated_payroll_runs` id, so every
+ * insert was refused `23503` — while an unscoped supersede destroyed live rows it could not
+ * replace. That write was REMOVED at the owner's decision: `scripts/import-crm-vacation-backfill.ts`
+ * is the one path a CRM leave day reaches a balance by. See
+ * `tests/automated-payroll-crm-leave-one-mechanism.test.ts`.
+ *
+ * SO WHY THIS TEST STAYS, AND WHY THE NULL DEFECT ABOVE STILL MATTERS. `excludeSettlementRunId` is
+ * deliberately kept on `balanceSettledDaysInPeriod` for whoever writes a run-scoped settlement next
+ * — the Payroll Copilot's Unpaid Vacation tab writes `run_id` today — and the rule it carries is
+ * still the difference between a step that can be confirmed twice safely and one that gives leave
+ * days back. Every assertion below is about that function, which the removal does not touch.
  */
 
 const PERIOD = { periodEnd: "2026-07-01", periodStart: "2026-06-01" };
@@ -69,7 +83,7 @@ function ledger(rows: Array<Record<string, unknown>>) {
   return fakeSupabaseClient({ payroll_copilot_vacation_settlements: rows }) as never;
 }
 
-/** One consumed-balance settlement, as `settleCrmLeaveBalanceForPeriod` writes it. */
+/** One consumed-balance settlement, in the shape any run-scoped writer records it. */
 function settlement(overrides: Record<string, unknown> = {}) {
   return {
     employee_hr_id_compact: "b1",
