@@ -9,6 +9,8 @@ import {
   isLinkableCandidate,
   isLinkableName,
   judgePair,
+  DISTRIBUTORS_WHOSE_CODE_IS_NOT_PROOF,
+  sharedProvingDistributorPair,
   sharesDistributorCode,
   specialityConflicts,
   suggestIdentityPairs,
@@ -124,6 +126,134 @@ export function runCustomerIdentitySuggestionTests(): void {
     1,
     "the sweep finds it too: a shop is bucketed under EVERY code it carries, never just its first",
   );
+
+  // 🔴 AN EP-PHS CODE IS A REASON TO LOOK, NEVER THE PROOF — so it cannot reach the `fact` band.
+  //
+  // Measured on production 2026-08-23 across all eight distributors: 232 EP-PHS codes carry two or
+  // three pharmacy names, 168 of them CONCURRENTLY (overlapping invoice months, which is what
+  // separates a reuse from a rename). PS: 224 multi-name codes, 0 concurrent. IS: 108, 0.
+  // EG/IS-S/EP-BK/SF: 38, 0. One distributor's numbering, so the exclusion is exactly one entry.
+  //
+  // Whether those concurrent names are two real shops or one shop written twice is NOT established
+  // (the 2026-08-23 audit found EP-PHS's "address" column is a byte copy of the name, so it
+  // corroborates nothing) — and that is exactly the point: the code settles neither question.
+  // What makes it dangerous rather than untidy is that `fact` is the ONE band that skips the name
+  // check, so before this an EP-PHS code offered two UNLIKE names as certain — and the owner
+  // confirming it would have recorded a merge on evidence that says "look".
+  {
+    const epLeft = candidate({
+      source: "marketing",
+      sourceId: "ep-1",
+      kind: "pharmacy",
+      name: "صيدلية علا رجب",
+      distributorPairs: [{ code: "22197793", distributorId: "EP-PHS" }],
+    });
+    const epUnlikeName = candidate({
+      source: "marketing",
+      sourceId: "ep-2",
+      kind: "pharmacy",
+      name: "الجمعية الشرعية - 6 اكتوبر",
+      distributorPairs: [{ code: "22197793", distributorId: "EP-PHS" }],
+    });
+    assert.equal(
+      judgePair(epLeft, epUnlikeName),
+      null,
+      "two unlike names sharing only an EP-PHS code are offered as NOTHING — that code is why 168 of them " +
+        "carry two concurrent names, so it cannot be the certainty that skips the name check",
+    );
+
+    // The plain question is unchanged: they DO share a code. Only its standing as proof is withdrawn,
+    // and `sharedDistributorPair` stays as it was for callers asking that plain question.
+    assert.equal(sharesDistributorCode(epLeft, epUnlikeName), true, "they do share a code — that is still true");
+    assert.equal(
+      sharedProvingDistributorPair(epLeft, epUnlikeName),
+      null,
+      "but it is not a PROVING code, which is the only thing the fact band may rest on",
+    );
+
+    // Not hidden: with the names agreeing it stands on its own evidence, honestly banded.
+    const epSameName = candidate({
+      source: "direct_order",
+      sourceId: "ep-3",
+      kind: "pharmacy",
+      name: "صيدلية علا رجب",
+      distributorPairs: [{ code: "22197793", distributorId: "EP-PHS" }],
+      lat: 30.05,
+      lon: 31.25,
+    });
+    const epSameNameNear = candidate({
+      source: "marketing",
+      sourceId: "ep-4",
+      kind: "pharmacy",
+      name: "صيدلية علا رجب",
+      distributorPairs: [{ code: "22197793", distributorId: "EP-PHS" }],
+      lat: 30.05,
+      lon: 31.2501,
+    });
+    assert.equal(
+      judgePair(epSameName, epSameNameNear)?.band,
+      "strong",
+      "the same name with the places together is STRONG, not fact — the pair is demoted, never dropped",
+    );
+
+    // A real proving code still reaches fact even when the row also carries an EP-PHS one, so the
+    // exclusion skips that one code rather than disqualifying the whole row.
+    const mixed = candidate({
+      source: "direct_order",
+      sourceId: "ep-5",
+      kind: "pharmacy",
+      name: "لا يشبه الاسم الاخر",
+      distributorPairs: [
+        { code: "22197793", distributorId: "EP-PHS" },
+        { code: "0001509893", distributorId: "PS" },
+      ],
+    });
+    const psOnly = candidate({
+      source: "marketing",
+      sourceId: "ep-6",
+      kind: "pharmacy",
+      name: "اسم ثالث مختلف",
+      distributorPairs: [{ code: "0001509893", distributorId: "PS" }],
+    });
+    assert.equal(judgePair(mixed, psOnly)?.band, "fact", "a PS code on the same row still proves it");
+    assert.match(String(judgePair(mixed, psOnly)?.reason), /0001509893 at PS/, "and the reason names the code that did prove it");
+
+    // 🔴 Spelling of the id must not be what lets it through, and the case that matters is BOTH sides
+    //    spelling it the same unexpected way: two ids that differ never match as a shared code at
+    //    all, so testing "EP-PHS" against " ep-phs " passes whether the exclusion folds case or not.
+    //    Here both carry the padded lower-case form, so they DO match each other — and only the
+    //    folding keeps that out of the fact band. (The first draft of this test used the mismatched
+    //    pair and went green against a build with the folding removed.)
+    const epLower = candidate({
+      source: "direct_order",
+      sourceId: "ep-7",
+      kind: "pharmacy",
+      name: "اسم مختلف رابع",
+      distributorPairs: [{ code: "22197793", distributorId: " ep-phs " }],
+    });
+    const epLowerTwin = candidate({
+      source: "marketing",
+      sourceId: "ep-8",
+      kind: "pharmacy",
+      name: "اسم مختلف خامس",
+      distributorPairs: [{ code: "22197793", distributorId: " ep-phs " }],
+    });
+    assert.equal(sharesDistributorCode(epLower, epLowerTwin), true, "spelled the same way, they do share the code");
+    assert.equal(
+      sharedProvingDistributorPair(epLower, epLowerTwin),
+      null,
+      "a lower-cased or padded EP-PHS is the same distributor — the exclusion trims and folds case",
+    );
+    assert.equal(judgePair(epLower, epLowerTwin), null, "so no spelling of that id reaches the fact band");
+
+    // Keep it NARROW. Widening this to another distributor throws away real evidence: every other
+    // one measured 0 concurrent codes.
+    assert.deepEqual(
+      [...DISTRIBUTORS_WHOSE_CODE_IS_NOT_PROOF],
+      ["EP-PHS"],
+      "exactly one distributor is excluded — the only one measured to reuse a code concurrently",
+    );
+  }
 
   // An empty or half-filled pair is not evidence. Two rows that know nothing must not match each
   // other on knowing nothing — the shape a blank string would have made look like agreement.
