@@ -9,9 +9,9 @@
 // for the Direct channel, per region), what fed last month vs what has fed this month so far.
 //
 // It deliberately mirrors the closing's own bases so its numbers tie to the headline the reader
-// is staring at: distributor rows are valued effective_units × factory_price and Direct rows at
-// their submitted direct_value, confidential products (LA003/LA004/SS001) are skipped — exactly
-// the phx_monthly_closing_matrix / phx_monthly_closing_direct predicates.
+// is staring at: distributor rows are valued effective_units × the factory price OF THEIR MONTH and
+// Direct rows at their submitted direct_value, confidential products (LA003/LA004/SS001) are
+// skipped — exactly the phx_monthly_closing_matrix / phx_monthly_closing_direct predicates.
 //
 // This is COVERAGE, not blame: a source can be legitimately absent (no business that month, or a
 // merged file — July's EPDA-Pharmacies file already carried roughly June's PHS+BULK combined).
@@ -24,6 +24,7 @@ import { normalizeLineKey } from "@/lib/sales/access-scope";
 import { maskSourceCoverage, type SourceMaskViewer } from "@/lib/sales/closing-source-mask";
 import { DIRECT_CHANNEL_CODE, canonicalDistributorKey } from "@/lib/sales/direct-channel";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
+import { loadProductPeriodPrices, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Mirrors the confidential exclusion baked into both closing RPCs. */
@@ -154,13 +155,20 @@ function bump(map: Map<string, CoverageAggregate>, key: string, units: number, v
 
 /**
  * Pure aggregation over rollup-shaped rows. Value follows the closing exactly:
- * Direct rows carry their submitted value; distributor rows are effective_units × factory price
- * (a product with no price contributes 0, the same as the matrix RPC's coalesce). Confidential
- * products are skipped on both sides so the totals here relate to the published headline.
+ * Direct rows carry their submitted value; distributor rows are effective_units × the factory price
+ * of the row's OWN month (a product with no price contributes 0, the same as the matrix RPC's
+ * coalesce). Confidential products are skipped on both sides so the totals here relate to the
+ * published headline.
+ *
+ * 🔴 PRICED PER MONTH, because the two columns can straddle a reprice. Saginko is 111.15 through
+ * 2026-09 and 170.52 from 2026-10 while the product master stays 111.15, and the Matrix prices each
+ * month through `phx_factory_price(code, f.period)`. One flat master-price map, as this took until
+ * 2026-10-01, would have shown October's Saginko at 111.15 beside a Matrix at 170.52 — and November's
+ * "last month" column the same way. `row.period` is the rollup's own month, the Matrix's `f.period`.
  */
 export function aggregateCoverage(
   rows: readonly CoverageFactRow[],
-  input: { period: string; prevPeriod: string; factoryPriceByProduct: ReadonlyMap<string, number> },
+  input: { period: string; prevPeriod: string; prices: Pick<ProductPeriodPrices, "priceFor"> },
 ): CoverageAggregates {
   const aggregates: CoverageAggregates = {
     sourcesPrev: new Map(),
@@ -179,7 +187,7 @@ export function aggregateCoverage(
 
     const value = row.isDirect
       ? row.directValue
-      : row.effectiveUnits * (input.factoryPriceByProduct.get(productCode) ?? 0);
+      : row.effectiveUnits * (input.prices.priceFor(productCode, row.period) ?? 0);
 
     // Normalized the same way resolvers.ts keys a distributor code during import — case (and
     // Arabic-digit) drift between periods must not read as two different sources. This is the
@@ -303,26 +311,19 @@ export async function loadMonthlySourceCoverage(
   if (!selectedLine || !selectedPeriod || !prevPeriod) return null;
 
   const supabase = getSupabaseAdmin();
-  const [rows, batchesResult, productsResult, regionsResult] = await Promise.all([
+  const [rows, batchesResult, prices, regionsResult] = await Promise.all([
     readCoverageRows(selectedLine, [selectedPeriod, prevPeriod]),
     supabase
       .from("source_of_sales_import_batches")
       .select("distributor_code,distributor_name,period,created_at")
       .eq("status", "validated")
       .in("period", [selectedPeriod, prevPeriod]),
-    supabase.from("source_of_sales_products").select("product_code,factory_price").eq("active", true),
+    // Each month's own price, never the product master's flat one — see aggregateCoverage.
+    loadProductPeriodPrices(),
     supabase.from("source_of_sales_regions").select("region_code,region_name"),
   ]);
   if (batchesResult.error) throw batchesResult.error;
-  if (productsResult.error) throw productsResult.error;
   if (regionsResult.error) throw regionsResult.error;
-
-  const factoryPriceByProduct = new Map<string, number>();
-  for (const row of productsResult.data ?? []) {
-    const typed = row as { product_code?: unknown; factory_price?: unknown };
-    const code = String(typed.product_code ?? "").trim().toUpperCase();
-    if (code) factoryPriceByProduct.set(code, Number(typed.factory_price ?? 0));
-  }
 
   // Latest human-entered name per distributor code, and the freshness stamp for this month.
   const sourceNameByCode = new Map<string, string>();
@@ -358,7 +359,7 @@ export async function loadMonthlySourceCoverage(
   const aggregates = aggregateCoverage(rows, {
     period: selectedPeriod,
     prevPeriod,
-    factoryPriceByProduct,
+    prices,
   });
 
   const sources = classifyCoverage(

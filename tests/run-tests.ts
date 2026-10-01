@@ -1160,6 +1160,7 @@ import { runCrmIntegrityPlaceDistanceTests } from "./crm-integrity-place-distanc
 import { runCrmShutterFixTests } from "./crm-shutter-fix.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
 import { runProductPeriodPriceTests } from "./product-period-price.test.ts";
+import { runClosingDetailsPeriodPriceTests } from "./closing-details-period-price.test.ts";
 import { runVerifiedCapturesTests } from "./verified-captures.test.ts";
 import { runSpotlightRankingTests } from "./spotlight-ranking.test.ts";
 import { runOfficeReceiptExplainsItsRowCountTests } from "./office-receipt-explains-its-row-count.test.ts";
@@ -4459,6 +4460,7 @@ await runTest('THE 4 KM RULE (a pharmacy too far from the customer cannot be lin
 await runTest('pharmacy code suggestions (ranked by where the rep stood, NOTHING filtered out)', runPharmacyCodeSuggestionTests);
 await runTest('capture trust readout (the super admin sees photo vs location, and unmeasured is not suspicion)', runCaptureTrustReadoutTests);
 await runTest('PERIOD-SCOPED FACTORY PRICE (Saginko 170.52 from 2026-10; July/August must not move)', runProductPeriodPriceTests);
+await runTest('closing Details price each row at the CLOSING month (Saginko 170.52 from 2026-10, like the Matrix; July-September unchanged)', runClosingDetailsPeriodPriceTests);
 await runTest('Verified Captures (Super Admin + SFE Manager gate, rep/DM/search filter)', runVerifiedCapturesTests);
 await runTest('SPOTLIGHT (achievement summed never averaged, targeted months only, completed-window gate)', runSpotlightRankingTests);
 await runTest('the Office receipt explains what its Rows Read number is', runOfficeReceiptExplainsItsRowCountTests);

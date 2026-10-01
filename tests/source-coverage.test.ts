@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
+import { buildProductPeriodPrices } from "../src/lib/sales/product-period-price.ts";
 import {
   aggregateCoverage,
   canonicalSourceKey,
@@ -34,7 +36,8 @@ export function runSourceCoverageTests() {
   // ── aggregateCoverage — a July-shaped month ───────────────────────────────
   // Prev month has Overseas + Ibn Sina + Direct in two regions; current month has Overseas and
   // only ONE of the Direct regions — the exact shape of the July 2026 incident.
-  const prices = new Map([["LA001", 100]]);
+  // One price in every month (no override), so these cases read exactly as they did with a flat map.
+  const prices = buildProductPeriodPrices(new Map([["LA001", 100]]), new Map());
   const rows: CoverageFactRow[] = [
     factRow({ period: "2026-06", distributorCode: "PS", totalQty: 10, effectiveUnits: 8 }),
     factRow({ period: "2026-06", distributorCode: "IS", totalQty: 5, effectiveUnits: 5 }),
@@ -52,7 +55,7 @@ export function runSourceCoverageTests() {
   const aggregates = aggregateCoverage(rows, {
     period: "2026-07",
     prevPeriod: "2026-06",
-    factoryPriceByProduct: prices,
+    prices,
   });
 
   assert.equal(aggregates.sourcesPrev.get("PS")?.value, 800, "distributor rows are valued effective units × factory price — the matrix RPC's own basis");
@@ -106,7 +109,7 @@ export function runSourceCoverageTests() {
   const caseVariantAggregates = aggregateCoverage(caseVariantRows, {
     period: "2026-07",
     prevPeriod: "2026-06",
-    factoryPriceByProduct: prices,
+    prices,
   });
   assert.equal(caseVariantAggregates.sourcesPrev.size, 1, "DIRECT and Direct must collapse into a single aggregate key");
   assert.equal(caseVariantAggregates.sourcesCur.get("DIRECTREQ")?.value, 400, "the normalized key is upper-case, and the whole Direct channel folds onto the module's code");
@@ -137,7 +140,7 @@ export function runSourceCoverageTests() {
   const switched = aggregateCoverage(channelSwitchRows, {
     period: "2026-08",
     prevPeriod: "2026-07",
-    factoryPriceByProduct: prices,
+    prices,
   });
   const switchedSources = classifyCoverage(switched.sourcesPrev, switched.sourcesCur, (key) => key);
   assert.equal(
@@ -179,4 +182,58 @@ export function runSourceCoverageTests() {
   const switchedRegions = classifyCoverage(switched.directPrev, switched.directCur, (key) => key);
   assert.equal(switchedRegions.find((entry) => entry.key === "D2")?.status, "missing", "the per-region table still records the drop-out; only the alarm is suppressed");
   assert.equal(switchedRegions.find((entry) => entry.key === "D1")?.status, "present");
+
+  // ── each month at ITS OWN price (2026-10-01) ──────────────────────────────
+  // Saginko is 111.15 through 2026-09 and 170.52 from 2026-10 (owner, 2026-09-28) while the product
+  // master stays 111.15, and the Closing Matrix prices every month through phx_factory_price(code,
+  // f.period). Until 2026-10-01 this module valued both columns with ONE flat master-price map, so the
+  // first October file would have shown Saginko at 111.15 here beside a Matrix at 170.52 — 177,100.71
+  // short at August 2026's 2,983 units — and November's "last month" column the same way.
+  const repriced = buildProductPeriodPrices(
+    new Map([["SA001", 111.15]]),
+    new Map([["SA001", [{ effectivePeriod: "2026-10", factoryPrice: 170.52 }]]]),
+  );
+  const acrossTheReprice = aggregateCoverage(
+    [
+      factRow({ period: "2026-09", distributorCode: "PS", productCode: "SA001", totalQty: 2_983, effectiveUnits: 2_983 }),
+      factRow({ period: "2026-10", distributorCode: "PS", productCode: "SA001", totalQty: 2_983, effectiveUnits: 2_983 }),
+      factRow({ period: "2026-10", distributorCode: "DirectReq", isDirect: true, regionCode: "D1", productCode: "SA001", totalQty: 570, directValue: 66_960 }),
+    ],
+    { period: "2026-10", prevPeriod: "2026-09", prices: repriced },
+  );
+  assert.equal(
+    Number(acrossTheReprice.sourcesCur.get("PS")?.value.toFixed(2)),
+    508_661.16,
+    "October's Saginko is valued at 170.52 — the price the Closing Matrix gives that month, never the master's 111.15",
+  );
+  assert.equal(
+    Number(acrossTheReprice.sourcesPrev.get("PS")?.value.toFixed(2)),
+    331_560.45,
+    "September, in the column beside it, keeps 111.15 — each row is priced at its OWN month, not the month being viewed",
+  );
+  assert.equal(
+    acrossTheReprice.sourcesCur.get("DIRECTREQ")?.value,
+    66_960,
+    "a direct order keeps its deal value whatever the factory price is",
+  );
+
+  // The loader has to hand it those prices, and the behaviour above cannot see what the loader passes.
+  // A flat read of the product master here is exactly what valued October at 111.15.
+  const stripComments = (code: string) => code.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+  const MASTER_TABLE_READ = /\.from\(\s*["']source_of_sales_products["']\s*\)/;
+  const loaderSource = stripComments(
+    readFileSync(new URL("../src/lib/sales/source-coverage.ts", import.meta.url), "utf8"),
+  );
+  assert.ok(
+    /\bloadProductPeriodPrices\(\)/.test(loaderSource),
+    "loadMonthlySourceCoverage reads the period prices (product master + dated overrides)",
+  );
+  assert.ok(
+    !MASTER_TABLE_READ.test(loaderSource),
+    "Source Coverage must not read the product master's flat price itself — it values October's Saginko at 111.15",
+  );
+  assert.ok(
+    MASTER_TABLE_READ.test(`supabase.from("source_of_sales_products").select("product_code,factory_price").eq("active", true)`),
+    "control: the detector fires on the exact read it replaced",
+  );
 }
