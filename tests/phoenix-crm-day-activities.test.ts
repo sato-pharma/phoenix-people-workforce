@@ -87,7 +87,10 @@ export function runPhoenixCrmDayActivitiesTests(): void {
   // that is his decision to make on its own day, not a consequence of a feature that records a day.
   {
     for (const path of [
-      "src/lib/phoenix-crm/server/reports.ts",
+      // server/reports.ts is deliberately NOT here since 2026-10-01: asked whether a recorded activity
+      // should excuse a missed plan, the owner answered "show it beside the miss". Plan against actual
+      // SHOWS the day's activity and scores nothing by it — the pin after this loop holds that. The
+      // counting rules (report-rules.ts) stay in this list: they never see an activity at all.
       "src/lib/phoenix-crm/report-rules.ts",
       "src/lib/phoenix-crm/coverage.ts",
       // server/today.ts is deliberately NOT here since 2026-09-29: the owner asked for the day's activity
@@ -108,6 +111,21 @@ export function runPhoenixCrmDayActivitiesTests(): void {
       const build = /buildTodayStops\(\{[\s\S]*?\}\);/.exec(today)?.[0] ?? "";
       assert.ok(build.length > 0, "Today still builds its stops in one call");
       assert.equal(/dayActivity|plannedActivity/.test(build), false, "the day's activity never reaches the stops or the counts");
+    }
+    // Plan against actual SHOWS the day's activity beside its misses and nothing more (owner,
+    // 2026-10-01: "show it beside the miss"). It is read once, for that report alone; it never enters a
+    // call that builds a figure; and it reaches the row only as the words printed beside the day.
+    {
+      const reports = source("src/lib/phoenix-crm/server/reports.ts");
+      assert.equal((reports.match(/loadSeatDayActivities\(/g) ?? []).length, 1, "only plan against actual reads it");
+      const groupings = [...reports.matchAll(/groupPlanByTerritory\([\s\S]*?\);/g)].map((match) => match[0]);
+      assert.ok(groupings.length >= 2, "plan against actual and its comparison still build their figures in groupPlanByTerritory");
+      for (const grouping of groupings) {
+        assert.equal(/activit/i.test(grouping), false, `the day's activity never reaches the figures: ${grouping}`);
+      }
+      assert.match(reports, /activities: activitiesBySeat\.get\(group\.seatId\) \?\? \{\},/, "it reaches the row as words, beside the figures");
+      const tab = source("src/components/phoenix-crm/reports-tab.tsx");
+      assert.ok(tab.includes("`Other activity: ${activity}`"), "and the day prints it on its own line, under that day's AM and PM");
     }
     // And the report RPCs in the newest migration touching them name no such table.
     const reports = stripSqlComments(

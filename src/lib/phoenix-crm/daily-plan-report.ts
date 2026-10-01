@@ -203,20 +203,27 @@ export function dailyPlanStateLabel(state: DailyPlanState): string {
 /**
  * The visit day ends at 02:00 Cairo (`cairoBusinessDay`), so until then yesterday is the day still
  * running and a customer planned for it is "not yet", never "not visited".
+ *
+ * 🔴 AND A DAY HR APPROVED HIS LEAVE IS "ON LEAVE", NEVER "NOT VISITED" (owner, 2026-10-01: "fix missed
+ * visits on leave days in plan vs actual"). Past, running or ahead alike: he is away, so the plan for
+ * that day is not his to keep. One he saw anyway still reads "visited" — the visit happened
+ * (`plan-leave.ts` holds the rule for the three reports that read it).
  */
-export type DailyPlanVisitStatus = "visited" | "not_visited" | "not_yet" | "ahead";
+export type DailyPlanVisitStatus = "visited" | "not_visited" | "not_yet" | "ahead" | "on_leave";
 
-export function dailyPlanVisitStatus(input: { date: string; visitDay: string; visited: boolean }): DailyPlanVisitStatus {
+export function dailyPlanVisitStatus(input: { date: string; visitDay: string; visited: boolean; onLeave?: boolean }): DailyPlanVisitStatus {
   if (input.visited) return "visited";
+  if (input.onLeave) return "on_leave";
   if (input.date < input.visitDay) return "not_visited";
   return input.date === input.visitDay ? "not_yet" : "ahead";
 }
 
-/** "Visited 11:42 AM", "Not visited", "Not yet", "Planned". */
+/** "Visited 11:42 AM", "Not visited", "Not yet", "On leave", "Planned". */
 export function dailyPlanVisitText(status: DailyPlanVisitStatus, visitedMinute: number | null): string {
   if (status === "visited") return visitedMinute === null ? "Visited" : `Visited ${formatClockMinute(visitedMinute)}`;
   if (status === "not_visited") return "Not visited";
   if (status === "not_yet") return "Not yet";
+  if (status === "on_leave") return "On leave";
   return "Planned";
 }
 
@@ -311,6 +318,8 @@ export type DailyPlanDay = {
   pm: DailyPlanCustomer[];
   /** The visit day still running (until 02:00 the next morning). */
   running: boolean;
+  /** HR approved the rep's leave for this day: its planned customers he did not see are "on leave". */
+  onLeave: boolean;
 };
 
 export type DailyPlanTerritory = { seatId: string; name: string; lineName: string | null; repName: string | null };
@@ -325,6 +334,8 @@ export type DailyPlanReportView = {
   /** Null when the viewer reads several territories and has not chosen one: a plan is ONE rep's. */
   territory: DailyPlanTerritory | null;
   days: DailyPlanDay[];
+  /** HR's leave could not be read, so a leave day's customers may read "Not visited" — said on screen. */
+  leaveUnread: boolean;
 };
 
 // ── Putting a territory's plans together ────────────────────────────────────────────────────────
@@ -386,7 +397,10 @@ export function buildDailyPlanDays(input: {
   activities: ReadonlyArray<DailyPlanSourceActivity>;
   starts: ReadonlyArray<DailyPlanSourceStarts>;
   visits: ReadonlyArray<DailyPlanSourceVisit>;
+  /** The days HR approved this territory's rep's leave — read from HR, never inferred from visits. */
+  leaveDays?: ReadonlySet<string>;
 }): DailyPlanDay[] {
+  const leaveDays = input.leaveDays ?? new Set<string>();
   const plansByWeek = new Map<string, DailyPlanSourcePlan[]>();
   for (const plan of input.plans) plansByWeek.set(plan.weekStart, [...(plansByWeek.get(plan.weekStart) ?? []), plan]);
   const itemsByDay = new Map<string, DailyPlanSourceItem[]>();
@@ -414,6 +428,7 @@ export function buildDailyPlanDays(input: {
     am: [],
     pm: [],
     running: date === input.visitDay,
+    onLeave: leaveDays.has(date),
   });
 
   return dailyPlanDates(input.period).flatMap((date): DailyPlanDay[] => {
@@ -437,7 +452,7 @@ export function buildDailyPlanDays(input: {
           hoursText: item.hoursText,
           exceptionLabel: item.exceptionLabel,
           exceptionNote: item.exceptionNote,
-          status: dailyPlanVisitStatus({ date, visitDay: input.visitDay, visited: visit !== null }),
+          status: dailyPlanVisitStatus({ date, visitDay: input.visitDay, visited: visit !== null, onLeave: leaveDays.has(date) }),
           visitedMinute: visit ? cairoMinuteOfInstant(visit.capturedAt) : null,
           offPlan: visit?.offPlan ?? null,
         };

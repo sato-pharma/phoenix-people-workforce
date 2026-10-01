@@ -30,9 +30,11 @@ import {
   type DailyPlanSourceStarts,
   type DailyPlanSourceVisit,
 } from "@/lib/phoenix-crm/daily-plan-report";
+import { leaveDatesFor } from "@/lib/phoenix-crm/plan-leave";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPlannerReferences } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPlanActivities } from "@/lib/phoenix-crm/server/plan-activities";
@@ -184,14 +186,16 @@ export async function loadDailyPlanReport(viewer: PhoenixCrmViewer, raw: ReportF
     includeTest,
   };
   const seat = chooseTerritory(viewer, raw);
-  if (!seat) return { ...view, territory: null, days: [] };
+  if (!seat) return { ...view, territory: null, days: [], leaveUnread: false };
 
   const dates = dailyPlanDates(period);
   const weekStarts = [...new Set(dates.map(fieldWeekStart))];
-  const [planRows, visits, names] = await Promise.all([
+  const [planRows, visits, names, leave] = await Promise.all([
     weekStarts.length > 0 ? loadPlans(seat.seatId, weekStarts, includeTest) : Promise.resolve([] as Row[]),
     loadVisits(seat.seatId, period, includeTest),
     loadPeopleNames([seat.occupantHrId]),
+    // 🔴 A day HR approved his leave reads "On leave", never "Not visited" (owner, 2026-10-01).
+    loadSeatLeaveDays([seat], period),
   ]);
   const planIds = planRows.map((row) => String(row.id));
   const [itemRows, events] = await Promise.all([loadPlanItemRows(planIds, DAILY_PLAN_ITEM_COLUMNS), loadPlanEvents(planIds)]);
@@ -283,6 +287,17 @@ export async function loadDailyPlanReport(viewer: PhoenixCrmViewer, raw: ReportF
       lineName: seat.lineName,
       repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null,
     },
-    days: buildDailyPlanDays({ period, cairoToday: viewer.cairoToday, visitDay: viewer.visitDay, plans, items, activities, starts, visits }),
+    days: buildDailyPlanDays({
+      period,
+      cairoToday: viewer.cairoToday,
+      visitDay: viewer.visitDay,
+      plans,
+      items,
+      activities,
+      starts,
+      visits,
+      leaveDays: leaveDatesFor(leave.days, seat.seatId, dates),
+    }),
+    leaveUnread: leave.unread,
   };
 }

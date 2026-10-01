@@ -1,8 +1,9 @@
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { dayActivityLabel, parseDayActivityDraft, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { readTestFlag, territoryForRead, territoryForRepWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { callPhoenixCrm, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { validationError } from "@/lib/http/api-errors";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -13,7 +14,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * (HR's vacation module stays the only leave record).
  *
  * Nothing in this file is read by a `phoenix_crm_report_*` function, and nothing here reads one. That
- * separation is the ruling, written down.
+ * separation is the ruling, written down. Since 2026-10-01 the plan-against-actual SCREEN prints the
+ * day's activity beside its misses ("show it beside the miss") through `loadSeatDayActivities` — shown,
+ * never counted, and `tests/phoenix-crm-day-activities` holds that it never reaches a figure.
  */
 
 type Row = Record<string, unknown>;
@@ -55,6 +58,43 @@ export async function loadDayActivityOn(seatId: string, isTest: boolean, date: s
     .maybeSingle();
   throwIfError(error);
   return data ? mapRow(data as Row) : null;
+}
+
+/**
+ * Every territory's day activities between two days, keyed `seatId|date` — for plan against actual,
+ * which SHOWS the day's activity beside its misses (owner, 2026-10-01: "show it beside the miss").
+ *
+ * 🔴 SHOWN, NEVER COUNTED — the 2026-09-26 ruling at the top of this file stands: a day activity
+ * moves no plan-against-actual figure. A planned customer missed on a meeting day is still missed;
+ * the manager reads WHY beside it. The caller has already scoped the territories, so no access test
+ * is repeated here.
+ */
+export async function loadSeatDayActivities(
+  seatIds: readonly string[],
+  isTest: boolean,
+  range: { from: string; to: string },
+): Promise<Map<string, DayActivityRow>> {
+  const out = new Map<string, DayActivityRow>();
+  if (seatIds.length === 0) return out;
+  for (const part of chunk([...seatIds], 150)) {
+    const rows = await fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_day_activities")
+          .select("id, seat_id, activity_date, activity_type, half_day, note")
+          .eq("is_test", isTest)
+          .gte("activity_date", range.from)
+          .lte("activity_date", range.to)
+          .in("seat_id", part),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+    for (const row of rows) {
+      const activity = mapRow(row);
+      const seatId = textOrNull(row.seat_id);
+      if (activity && seatId) out.set(`${seatId}|${activity.activityDate.slice(0, 10)}`, activity);
+    }
+  }
+  return out;
 }
 
 /** The day activities on one territory between two days, newest first. */
