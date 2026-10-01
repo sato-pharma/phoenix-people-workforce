@@ -25,12 +25,13 @@ marketing code's `reference_status` / `master_match_kind`: only a code that reso
 row. See [[marketing-not-found-codes-have-three-root-causes]] for how to repair one that doesn't.
 
 **What saves you today is that the order form passes no distributor at all** —
-`direct-order-submit-form.tsx:900` renders `<PharmacyComboBox>` with no `distributorCode` prop, so
+`direct-order-submit-form.tsx` renders `<PharmacyComboBox>` with no `distributorCode` prop, so
 the rep's search is unfiltered and finds everything. The distributor-scoped path is the *new-pharmacy
 registration* form's code picker (`distributor-customer-picker.tsx` →
 `/api/direct-orders/customers` → `searchDistributorCustomers`, over
 `source_of_sales_customer_map`), which is a **different lookup entirely** — do not confuse the two
 when someone reports "I can't find the pharmacy". Ask which screen they are on first.
 
-The manual registration path in `pharmacy-validation.ts:700-740` already wrote this link row
-correctly and is the model the transfer now mirrors.
+The manual registration path — `decideDirectOrderPharmacyValidation` in
+`src/lib/direct-orders/pharmacy-validation.ts` — already wrote this link row correctly and is the
+model the transfer now mirrors.

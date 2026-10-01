@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: b97ef79e-b43d-4c90-9bd4-88f5626ee922
-  modified: 2026-08-13T22:54:18.806Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **RESOLVED — PR #1605 squash-merged as `549635be` on 2026-08-02 00:15 Cairo.** All five
@@ -37,7 +37,7 @@ short `\0` form specifically to match the convention already in the repo:
 - `src/lib/sales/normalizer/customer-propagate.ts` — chain/branch key, 3 bytes
 
 **The repo already had a correct convention for this**: the six-character escape
-`\` `u0000`, used in 15 places across 7 files — e.g. `src/lib/attendance/metrics.ts:76`
+`\` `u0000`, used in 15 places across 7 files — e.g. `src/lib/attendance/metrics.ts`
 builds the identical kind of composite key with it. The four broken files were the
 outliers, and all four were converted to match it. That longer escape is also strictly
 safer than `\0`: a `\0` followed by a **digit** is a legacy octal escape and a

@@ -6,8 +6,8 @@ metadata:
 ---
 
 **`APP_ENV` was set on Railway `production` and NOT set on `staging`** (verified 2026-08-27: 43
-staging variables, no `APP_ENV`). Both `isProductionRuntime()` (`src/config/system-settings.ts:61`)
-and `currentEnvironmentLabel()` (`src/lib/error-monitor/service.ts:69`) read
+staging variables, no `APP_ENV`). Both `isProductionRuntime()` (`src/config/system-settings.ts`)
+and `currentEnvironmentLabel()` (`src/lib/error-monitor/service.ts`) read
 `APP_ENV || VERCEL_ENV || NODE_ENV`, and a Next.js production build sets `NODE_ENV=production`
 **on staging too**. So **staging identified itself as production** to every one of those checks.
 
