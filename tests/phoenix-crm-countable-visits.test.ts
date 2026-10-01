@@ -23,12 +23,38 @@ import { stripComments } from "./support/comment-strip.ts";
  *
  * And one path must NOT move: the anti-fraud judge reads every capture, decided or not. A visit
  * waiting for a decision is exactly the one you most want judged.
+ *
+ * ── THE SECOND HALF OF THE PREDICATE (owner, 2026-10-01) ──────────────────────────────────────────
+ *
+ * "The customer can be not validated normally and added to the plan normally, also can normally log a
+ * visit with validation, but not counted in KPIs till validated." Planning him and visiting him have
+ * been free since 2026-09-22 (plan-rules.ts, phoenix-crm-plan-never-blocked). The last clause is a
+ * SECOND question about a visit — is its customer on the list yet — and for two years' worth of
+ * reading habits it lived nowhere near the first: the view answered only the approval, and each
+ * phoenix_crm_report_* function re-typed `validated_at is not null` by hand. That works for a
+ * function and cannot work for a PostgREST reader, which has no join to forget, so the Team calendar
+ * and the exceptions board counted visits that every report counted at zero.
+ *
+ * `phoenix_crm_countable_visits.customer_validated` now carries it, and this file pins WHICH READERS
+ * ASK FOR IT — including the two that must not, with the reason they give, because a filter added
+ * there "for consistency" would turn the rep's own "3 visits saved here, not counting yet" into "No
+ * visits saved here yet" and would put a working rep on the never-started list.
  */
 
 const MIGRATION = "supabase/migrations/20260926163000_phoenix_crm_unplanned_visits.sql";
+const VALIDATED_VIEW_MIGRATION = "supabase/migrations/20261001060500_phoenix_crm_countable_visits_validated.sql";
 
 function source(path: string): string {
   return stripComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n"));
+}
+
+/**
+ * The file WITH its comments, for the two readers whose correctness is the stated reason they do not
+ * filter. A pin on the `.eq` alone cannot see the difference between a deliberate omission and one
+ * nobody has noticed yet, so what is pinned there is the reason.
+ */
+function raw(path: string): string {
+  return readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 }
 
 /** One function's body out of the migration, comments already stripped. */
@@ -145,6 +171,158 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
     const body = list.slice(start, start + 900);
     assert.ok(body.includes('.from("phoenix_crm_countable_visits")'), "loadMonthVisitCounts must read the countable view");
     assert.equal(body.includes('.from("phoenix_crm_visits")'), false, "and never the raw table");
+  }
+
+  // ── The SECOND half: the customer's own admission to the list (owner, 2026-10-01) ─────────────
+  //
+  // The view carries it as a column rather than a filter. A filter would read tidier — "the one
+  // predicate, finally one thing" — and would break the rep's own screens, which is why the shape is
+  // pinned and not only the column's existence.
+  {
+    const validated = source(VALIDATED_VIEW_MIGRATION);
+    assert.ok(
+      validated.includes("create or replace view public.phoenix_crm_countable_visits"),
+      "the view is recreated with the validation half on it",
+    );
+    assert.match(
+      validated,
+      /phoenix_crm_countable_visits\s*\nwith \(security_invoker = true\)/,
+      "and still inherits the base table's RLS — without it the view is a hole through the module's service-role-only rule",
+    );
+    // 🔴 THE STATEMENT, NOT THE FILE. `stripComments` is a JS/TS lexer and leaves SQL's own `--`
+    // prose in place, so a negative assertion read against the whole file is answered by the header
+    // explaining the rule — the first cut of this test went red on its own documentation, on the word
+    // "nowhere" sitting 80 characters from a quoted `validated_at is not null`.
+    const create = validated.lastIndexOf("create or replace view public.phoenix_crm_countable_visits");
+    assert.notEqual(create, -1, "the view's own CREATE is in this migration");
+    const whereAt = validated.indexOf("where", create);
+    assert.notEqual(whereAt, -1, "and it has a WHERE");
+    const statement = validated.slice(create, validated.indexOf(";", whereAt) + 1);
+    const whereClause = statement.slice(statement.indexOf("where"));
+
+    assert.match(statement, /\(c\.validated_at is not null\) as customer_validated/, "the column is the customer's own admission");
+    // INNER, not left: phoenix_crm_visits.customer_id is not null and carries the foreign key, so no
+    // visit can fall out of the view through this join — and a left join would let a null stand for
+    // "no customer", which cannot happen.
+    assert.match(statement, /join public\.phoenix_crm_customers c on c\.id = v\.customer_id/, "joined to the customer");
+    assert.equal(
+      /left join public\.phoenix_crm_customers/.test(statement),
+      false,
+      "the customer join is inner: a left join would invent a third state for a column that has two",
+    );
+    // 🔴 THE WHERE IS UNCHANGED. The column must not become a filter: the rows it would remove are
+    // the ones the rep is shown as "saved here, not counting yet".
+    assert.equal(
+      whereClause.replace(/\s+/g, " ").trim(),
+      "where not v.is_unplanned or u.status = 'approved' or v.unplanned_kind = 'out_of_list';",
+      "no row leaves the view — the validation half is a column each reader asks for, never a filter",
+    );
+    assert.equal(
+      whereClause.includes("validated_at"),
+      false,
+      "a WHERE on validation would turn the rep's 'saved here, not counting yet' into 'no visits saved here yet'",
+    );
+    assert.match(validated, /revoke all on table public\.phoenix_crm_countable_visits from public, anon, authenticated;/);
+    assert.match(validated, /grant select on table public\.phoenix_crm_countable_visits to service_role;/);
+
+    // And it is the LAST word on the view: a later migration replacing it without the column would
+    // leave every `.eq("customer_validated", true)` below failing the WHOLE read, which is how
+    // PostgREST answers a column that is not there.
+    const migrations = readdirSync(new URL("../supabase/migrations/", import.meta.url))
+      .filter((name) => name.endsWith(".sql"))
+      .sort();
+    const latestView = migrations
+      .filter((file) => source(`supabase/migrations/${file}`).includes("create or replace view public.phoenix_crm_countable_visits"))
+      .pop();
+    assert.equal(
+      latestView,
+      VALIDATED_VIEW_MIGRATION.replace("supabase/migrations/", ""),
+      "the newest definition of the view is the one carrying customer_validated",
+    );
+  }
+
+  // ── Which readers ask for it, and which deliberately do not ───────────────────────────────────
+  {
+    const problems: string[] = [];
+
+    // A tally or a rate — something a person is measured by. Every one of these filters, or two
+    // screens disagree about one rep's day with nothing to say which is lying.
+    const filters: Array<{ path: string; from: string; reads: number }> = [
+      // AM · PM · Pharmacies per rep per day, and the probe that chooses the month it opens on:
+      // what counts as work must be what colours a cell.
+      { from: "async function loadVisitDays", path: "src/lib/phoenix-crm/server/team-calendar.ts", reads: 1 },
+      { from: "async function latestWorkedMonth", path: "src/lib/phoenix-crm/server/team-calendar.ts", reads: 1 },
+      // The exceptions board, where an inflated tally REMOVES the row rather than showing a wrong
+      // number: the board exists to raise the territory whose count is low.
+      { from: "async function loadVisitTallies", path: "src/lib/phoenix-crm/server/exceptions.ts", reads: 1 },
+      // Frequency and the tracking sheet.
+      { from: "async function visitDaysByCustomer", path: "src/lib/phoenix-crm/server/reports.ts", reads: 1 },
+    ];
+    for (const { path, from, reads } of filters) {
+      const text = source(path);
+      const start = text.indexOf(from);
+      if (start === -1) {
+        problems.push(`${path}: ${from} is gone — re-point this pin at whatever replaced it`);
+        continue;
+      }
+      // To the next top-level declaration, so one function's reads cannot be read as another's.
+      const next = text.indexOf("\n}\n", start);
+      const body = text.slice(start, next === -1 ? text.length : next);
+      const found = [...body.matchAll(/\.from\("phoenix_crm_countable_visits"\)/g)].length;
+      const filtered = [...body.matchAll(/\.eq\("customer_validated", true\)/g)].length;
+      if (found !== reads) problems.push(`${path}: ${from} reads the countable view ${found} time(s), expected ${reads}`);
+      if (filtered !== reads) problems.push(`${path}: ${from} asks for customer_validated ${filtered} time(s), expected ${reads}`);
+    }
+
+    // 🔴 THE TWO THAT MUST NOT FILTER, pinned by the REASON they give. The `.eq` is one line; the
+    // reason is what stops the next session adding it "for consistency".
+    //
+    //   loadMonthVisitCounts — feeds "3 visits saved here, not counting yet" beside a customer the
+    //     rep has not validated. Filtered, that honest sentence becomes "No visits saved here yet"
+    //     about visits he really made.
+    //   loadVisitFirsts     — the adoption board asks whether a territory has STARTED. A rep logging
+    //     a visit to a carried-over doctor has plainly started; filtering would put him on the
+    //     "never touched it" list for doing the work, and would look truest in the first weeks, when
+    //     almost nobody is validated yet.
+    const exempt: Array<{ path: string; from: string; says: RegExp }> = [
+      {
+        from: "export async function loadMonthVisitCounts",
+        path: "src/lib/phoenix-crm/server/list.ts",
+        says: /DOES NOT ASK FOR `customer_validated`, AND MUST NOT/,
+      },
+      {
+        from: "async function loadVisitFirsts",
+        path: "src/lib/phoenix-crm/server/adoption.ts",
+        says: /NO `customer_validated` FILTER, DELIBERATELY/,
+      },
+    ];
+    for (const { path, from, says } of exempt) {
+      const text = source(path);
+      const start = text.indexOf(from);
+      if (start === -1) {
+        problems.push(`${path}: ${from} is gone — re-point this pin at whatever replaced it`);
+        continue;
+      }
+      const next = text.indexOf("\n}\n", start);
+      const body = text.slice(start, next === -1 ? text.length : next);
+      if (body.includes('.eq("customer_validated", true)')) {
+        problems.push(`${path}: ${from} must NOT filter on customer_validated — it is counting what was SAVED, not what counts`);
+      }
+      // The comment, read off the file with its comments intact.
+      if (!says.test(raw(path))) {
+        problems.push(`${path}: the stated reason ${from} does not filter is gone — without it the omission reads as an oversight`);
+      }
+    }
+
+    assert.deepEqual(problems, [], problems.join("; "));
+  }
+
+  // ── And the rep's own screens still say his saved work was saved ──────────────────────────────
+  {
+    const labels = source("src/components/phoenix-crm/labels.ts");
+    // The count rides in from `plural(...)`, so the pin is the words around it.
+    assert.match(labels, /saved here, not counting yet/, "the sentence loadMonthVisitCounts exists to be able to say");
+    assert.match(labels, /plan them and visit them as normal/, "and the planner says so in the rep's own words");
   }
 
   // ── The anti-fraud path must NOT be filtered ─────────────────────────────────────────────────

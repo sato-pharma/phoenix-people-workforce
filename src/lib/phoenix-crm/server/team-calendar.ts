@@ -31,9 +31,13 @@ import { emptyVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-coun
  * 2026-09-29; `team-calendar.ts` beside this file holds what that screen does and why the colour
  * here says WHICH HALVES of the day were worked rather than how busy the day was.
  *
- * 🔴 IT READS `phoenix_crm_countable_visits`, NEVER THE RAW TABLE. Every KPI in this module reads
- * the countable view — an off-plan visit that is not yet approved counts in nothing — and a
- * calendar built on the raw table would show a manager work that no other screen agrees exists.
+ * 🔴 IT READS `phoenix_crm_countable_visits`, NEVER THE RAW TABLE, AND IT READS
+ * `customer_validated = true` ON IT. Every KPI in this module reads the countable view — an off-plan
+ * visit that is not yet approved counts in nothing — and a calendar built on the raw table would show
+ * a manager work that no other screen agrees exists. The view answers only the APPROVAL half of
+ * "does this count"; the other half is the customer's own admission to the list, which the owner
+ * ruled on again on 2026-10-01 ("not counted in KPIs till validated"), and which a PostgREST reader
+ * has to ask for by name. Reading the view without it is not half-right — it is a second opinion.
  *
  * 🔴 AM AND PM COME FROM `list_type`, AND A PHARMACY IS A DISTINCT NAME, NOT A ROW. That is
  * Phoenix CRM's own convention, already set by `today-rules.ts`: a pharmacy here is feedback
@@ -185,6 +189,10 @@ async function loadVisitDays(
           .from("phoenix_crm_countable_visits")
           .select("id, seat_id, visit_date, list_type, pharmacy_name")
           .eq("is_test", isTest)
+          // The second half of the predicate, named here because a PostgREST read has no join to
+          // forget — see the header. A visit to a customer nobody has validated is work the rep
+          // really did, and it is counted nowhere until he is on the list.
+          .eq("customer_validated", true)
           .gte("visit_date", bounds.from)
           .lte("visit_date", bounds.to)
           .in("seat_id", part),
@@ -255,7 +263,9 @@ async function loadActivityDays(
  *
  * 🔴 WHAT COUNTS AS WORK IS WHAT COLOURS A CELL. A visit or a recorded day activity; never leave,
  * never a Friday. Opening the month on a grid of F and dashes would answer the owner's request
- * with the letter and not the point.
+ * with the letter and not the point. That is also why the visit probe carries
+ * `customer_validated = true`: the grid it opens is built by `loadVisitDays`, which counts only
+ * those, so a probe without it could open a manager on a month whose every cell then reads 0.
  *
  * Two one-row reads rather than the full month loaders: this runs before anything is known, on
  * every first open of the tab, and it needs a MAXIMUM rather than the rows themselves. It is
@@ -301,6 +311,7 @@ async function latestWorkedMonth(
           .from("phoenix_crm_countable_visits")
           .select("seat_id, visit_date")
           .eq("is_test", isTest)
+          .eq("customer_validated", true)
           .lte("visit_date", lastDayOfCap)
           .in("seat_id", part)
           .order("visit_date", { ascending: false })

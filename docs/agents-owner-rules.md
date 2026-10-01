@@ -3832,6 +3832,85 @@ Shipped in #4897. Pinned by `testTheTerritoryRouteIsAreaAndLine` in
 `tests/medical-rep-marketing-scope.test.ts`, which runs in the required `validate` job and is built on
 the production seats and area id so it reads as the incident.
 
+## A customer is planned and visited before validation, and counted after it — owner, 2026-10-01
+
+### What he said
+
+> "when making a plan in phoenix crm the customer can be not validated normally and added to the plan
+> normally also can normal log a visist with validation but not counted in kpis till validated"
+
+Three clauses. The first two restate his ruling of 2026-09-22 — nothing about the list ever stops a
+rep planning, and a customer carried over from iReports360 and not validated yet is planned and
+visited like any other. Those were already true and already pinned
+(`src/lib/phoenix-crm/plan-rules.ts`, `tests/phoenix-crm-plan-never-blocked.test.ts`), and the rep's
+own screens already say so in words: `pendingListNote` reads *"… not validated yet — plan them and
+visit them as normal. Validate each one at the clinic and its visits start counting."*
+
+The third clause is the one that had a hole in it.
+
+### Why the hole was structural, not anybody's slip
+
+`phoenix_crm_countable_visits` calls itself *the ONE predicate for whether a visit counts*, and it
+answered only **one** of the two halves of that question — the off-plan APPROVAL. The other half, the
+customer's own admission to the list, lived nowhere in the view: it was re-typed by hand as
+`join phoenix_crm_customers c on … and c.validated_at is not null` inside each of the four
+`phoenix_crm_report_*` functions, and the view's own comment then said *"every report joins the
+customer's validated_at"* as though that settled it.
+
+It does not settle it for a reader that is a PostgREST `.from()` in TypeScript, because such a reader
+has **no join to forget**. Two of them counted every visit, validated or not, and both are things a
+manager reads as a rep's work:
+
+| Reader | What it feeds |
+| --- | --- |
+| `server/team-calendar.ts` `loadVisitDays` | AM · PM · Pharmacies per rep per day — the tab he called "the most important" of the three reports |
+| `server/exceptions.ts` `loadVisitTallies` | the exceptions board's AM/PM tallies over the rolling window |
+
+So `phoenix_crm_report_visits_by_day` printed 0 for a Tuesday on which the Team calendar printed 3 —
+two screens disagreeing about one rep's day with nothing to say which was lying. On the exceptions
+board the failure is worse than a wrong number: it **removes** a row, because the board exists to
+raise the territory whose count is low, so a rep whose whole window was visits to unvalidated
+customers read as a rep who had worked.
+
+**Measured on production, 2026-10-01, before and after.** The module is pre-rollout — 7 visits on
+file, all test personas, and **13 of 9,219 customers validated** — so the two reads were `7`
+(calendar, exceptions) against `2` (`phoenix_crm_report_visits_by_day`). After the fix the calendar
+reads `2`. At rollout, with nearly every customer still unvalidated, the gap would have been almost
+the whole of every early figure.
+
+### The fix is a COLUMN, and deliberately not a filter
+
+`phoenix_crm_countable_visits` gained `customer_validated` (migration
+`20261001060500_phoenix_crm_countable_visits_validated.sql`, applied to staging and production that
+day). No row leaves the view and the `where` is untouched.
+
+Making it a filter would read tidier — *the one predicate, finally one thing* — and would break the
+rep's own screens. `loadMonthVisitCounts` feeds the line **"3 visits saved here, not counting yet"**
+beside a customer he has not validated; a view that dropped those rows would turn that honest
+sentence into "No visits saved here yet" about visits he really made. With a column, each reader
+states which question it is asking in one visible `.eq("customer_validated", true)`.
+
+**The two readers that must NOT filter, and why:**
+
+- `server/list.ts` `loadMonthVisitCounts` — it is counting what the rep SAVED, not what counts; the
+  sentence above is its whole purpose. For a customer on the list the question does not arise:
+  `phoenix_crm_customers_active_is_validated` makes `active` and validated one statement.
+- `server/adoption.ts` `loadVisitFirsts` — the adoption board asks whether a territory has STARTED. A
+  rep logging a visit to a carried-over doctor has plainly started; filtering would put him on the
+  "never touched it" list for doing the work, and would look truest in the first weeks, when almost
+  nobody is validated yet.
+
+The anti-fraud path (`phoenix_crm_location_integrity`) still reads the raw table and judges every
+capture, exactly as before.
+
+### The trap
+
+**A reader of the countable view that asks only "is it in the view" is asking half the question, and
+the half it skips is silent.** The view's name and its own comment both invite that mistake. Pinned by
+`tests/phoenix-crm-countable-visits.test.ts`, which now names every one of the six PostgREST readers —
+the four that filter, and the two that must not **together with the stated reason they give**, because
+a pin on the `.eq` alone cannot tell a deliberate omission from one nobody has noticed yet.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.

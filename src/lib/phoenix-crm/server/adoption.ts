@@ -54,6 +54,15 @@ type VisitFirsts = { firstVisitOn: string | null; visitsEver: number };
  *
  * No date floor: "ever" is the question, and a territory that worked in the first week of the
  * rollout and stopped is exactly the row a floor would hide.
+ *
+ * 🔴 AND NO `customer_validated` FILTER, DELIBERATELY — THE ONE BOARD IN THE MODULE THAT COUNTS A
+ * VISIT TO A CUSTOMER NOBODY HAS VALIDATED YET. The owner's rule of 2026-10-01 is that such a visit
+ * is counted in no KPI until the customer is on the list, and every tally and rate here obeys it
+ * (team-calendar.ts, exceptions.ts, reports.ts, and every phoenix_crm_report_* function). This board
+ * is not a KPI: it asks whether a territory has STARTED, and a rep standing at a clinic logging a
+ * visit to a carried-over doctor he has not validated yet has plainly started. Filtering would put
+ * him on the "never touched it" list for doing the work — and would read as truest at the moment it
+ * is most wrong, in the first weeks, when almost nobody is validated yet.
  */
 async function loadVisitFirsts(seatIds: string[], isTest: boolean): Promise<Map<string, VisitFirsts>> {
   const out = new Map<string, VisitFirsts>();

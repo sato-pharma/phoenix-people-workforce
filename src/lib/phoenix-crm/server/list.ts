@@ -484,6 +484,16 @@ export async function loadTerritoryCustomers(
  * read and not one of the phoenix_crm_report_* functions, so "I moved every report to the view" does
  * not reach it; leave it on the raw table and an off-plan visit nobody has approved quietly satisfies
  * a frequency norm everywhere a rep plans.
+ *
+ * 🔴 IT DOES NOT ASK FOR `customer_validated`, AND MUST NOT — THIS IS THE ONE COUNT THAT IS NOT A KPI.
+ * The owner's rule of 2026-10-01 is that a visit to a customer who is not validated yet counts in no
+ * KPI, and the tallies and rates all filter on it now. This number is a different sentence: beside an
+ * unvalidated customer every screen prints it as `pendingVisitsText` — "3 visits saved here, not
+ * counting yet" — which exists precisely to tell the rep his work was SAVED while saying plainly that
+ * it is not counting. Filter here and that line becomes "No visits saved here yet" about three visits
+ * he really made, which is the lie the sentence was written to avoid. For a customer on the list the
+ * question does not arise: `phoenix_crm_customers_active_is_validated` makes `active` and validated
+ * one statement, so his standing against his grade norm is unaffected either way.
  */
 export async function loadMonthVisitCounts(seatId: string, isTest: boolean, monthStart: string, through: string): Promise<Map<string, number>> {
   const rows = await fetchAllRowsKeyset<Row>(
