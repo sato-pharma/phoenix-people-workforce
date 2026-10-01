@@ -2189,6 +2189,7 @@ import { runRailwaySecretPolicyTests } from "./railway-secret-policy.test.ts";
 import { runDockerfileParseGateTests } from "./dockerfile-parse-gate.test.ts";
 import { runPortalLinkPrefetchTests } from "./portal-link-prefetch.test.ts";
 import { runPortalRepNavigationSpeedTests } from "./portal-rep-navigation-speed.test.ts";
+import { runPhoenixCrmForecastWhatsAppTests } from "./phoenix-crm-forecast-whatsapp.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -8163,6 +8164,11 @@ await runTest(
 await runTest(
   "the rep's pages never queue a read behind one it does not need: Phoenix CRM's List, board, chunked mirror reads, Reports and shared chunk, and the landing snapshot",
   runPortalRepNavigationSpeedTests,
+);
+
+await runTest(
+  "the agreed forecast reaches WhatsApp with nothing typed — the picker form, no phone number, and the Cairo day never parsed as a Date",
+  runPhoenixCrmForecastWhatsAppTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
