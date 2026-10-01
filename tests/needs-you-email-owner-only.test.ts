@@ -102,10 +102,12 @@ export function runNeedsYouEmailOwnerOnlyTests() {
   );
   // The existing pin in phoenix-crm-email-block.test.ts requires the CRM block to be the LAST line.
   // This guard is chained BEFORE it, following the outstation guard's documented precedent — the two
-  // key on disjoint modules, so order changes nothing and no existing test has to be edited.
+  // key on disjoint modules, so order changes nothing and no existing test has to be edited. Since
+  // 2026-10-01 the CRM block also takes the event type, for its one owner-ordered exception (the
+  // request to edit a sent week) — still the last line, the same form its own test pins.
   assert.match(
     base[1],
-    /return enforcePhoenixCrmEmailBlock\(\w+, input\.module\);\s*$/,
+    /return enforcePhoenixCrmEmailBlock\(\w+, input\.module, input\.eventType\);\s*$/,
     "the phoenix_crm block must remain the chain's last line — it is pinned by its own test",
   );
 

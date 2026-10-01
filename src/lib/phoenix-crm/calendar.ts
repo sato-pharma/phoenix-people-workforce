@@ -50,8 +50,9 @@ export function planDayListTypes(isoDay: string): PhoenixCrmListType[] {
 }
 
 /**
- * The weeks a rep can plan: this week while it still has a day ahead, and every field-week through
- * the end of NEXT month.
+ * The weeks a plan can be READ and REVIEWED in: this week while it still has a day ahead, and every
+ * field-week through the end of NEXT month. Since 2026-10-01 a rep WRITES one week only —
+ * `repPlanWeek` below — and this stays the reviewers' window, the overview's and the daily report's.
  *
  * Until 2026-09-29 this was "the next three weeks", and it clashed with the monthly due date: October
  * was due on Thursday 24 September, when only the weeks of 3 and 10 October could be saved — so the
@@ -71,12 +72,36 @@ export function plannableWeeks(cairoToday: string): string[] {
 }
 
 /**
- * When a week sent on its own is due: the Thursday before it (owner, 2026-09-29 — "if he chooses the
- * weekly plan it is the last Thursday of every week"). A late week is accepted and stamped, never
- * refused, exactly as a late month is. `phoenix_crm_plan_transition` writes the same arithmetic.
+ * 🔴 THE ONE WEEK A REP MAY PLAN (owner, 2026-10-01 — "the plan is entered weekly only; I cannot enter
+ * a week that passed or a week ahead; it opens on the week the plan should be entered in").
+ *
+ * The field week that begins on the COMING Saturday: on Thursday 1 and Friday 2 October that is the
+ * week of Saturday 3 October, and on Saturday 3 October it is already the week of the 10th. Never this
+ * week, never a week after the next one. `plannableWeeks` stays the REVIEWERS' window; a rep reads his
+ * own through `repWeekState` (plan-rules.ts), which the server enforces on every save and send.
+ */
+export function repPlanWeek(cairoToday: string): string {
+  return addDaysIso(fieldWeekStart(cairoToday), 7);
+}
+
+/**
+ * Weeks whose due date the owner moved by hand — never a rule, each one a ruling with its date.
+ *
+ * 2026-10-03: the Delta reps' first week was planned on Thursday 1 October in the old screen, wiped
+ * with everything else entered in it, and sent again on Friday 2 October. The owner ruled those
+ * re-sends on time ("not late: they sent on time"), so this one week is due on the Friday.
+ * `phoenix_crm_week_due_on` holds the same table; tests/phoenix-crm-plan-weekly-only.test.ts pins that
+ * the two agree.
+ */
+export const PLAN_WEEK_DUE_OVERRIDES: Readonly<Record<string, string>> = { "2026-10-03": "2026-10-02" };
+
+/**
+ * When a week is due: the Thursday before it (owner, 2026-09-29 — "if he chooses the weekly plan it is
+ * the last Thursday of every week"). A late week is accepted and stamped, never refused.
+ * `phoenix_crm_week_due_on` writes the same arithmetic, overrides included.
  */
 export function weeklyPlanDueOn(weekStart: string): string {
-  return addDaysIso(weekStart, -2);
+  return PLAN_WEEK_DUE_OVERRIDES[weekStart] ?? addDaysIso(weekStart, -2);
 }
 
 /** "Week 1", "Week 2"… — a field-week's place in the month its Saturday falls in. */
@@ -248,6 +273,24 @@ export function leadingFieldDaysOfMonth(monthStart: string): string[] {
 export function leadingFieldWeekOfMonth(monthStart: string): string | null {
   if (leadingFieldDaysOfMonth(monthStart).length === 0) return null;
   return fieldWeekStart(monthStartOf(monthStart));
+}
+
+/**
+ * The week a month's BOARD opens with: the leading week above, else — on the month of the rep's open
+ * week only — the RUNNING week, when it still has a day ahead and is not one of the month's own weeks.
+ *
+ * Needed since the rep plans one week at a time (owner, 2026-10-01): his board opens on the month of
+ * `repPlanWeek`, and the week he is in the middle of has to stay reachable from it, because that is
+ * where its "Ask to edit this week" button lives. A month that starts on a Friday or a Saturday has no
+ * leading week, so without this its running week would be on no board at all.
+ */
+export function boardLeadingWeek(monthStart: string, cairoToday: string): string | null {
+  const leading = leadingFieldWeekOfMonth(monthStart);
+  if (leading) return leading;
+  if (monthStartOf(repPlanWeek(cairoToday)) !== monthStartOf(monthStart)) return null;
+  const running = fieldWeekStart(cairoToday);
+  if (fieldWeeksOfMonth(monthStart).includes(running)) return null;
+  return addDaysIso(running, 5) >= cairoToday ? running : null;
 }
 
 /**

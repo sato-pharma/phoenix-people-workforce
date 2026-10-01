@@ -190,7 +190,10 @@ function openingTab(overview: PhoenixCrmOverview, requested: string | null): Tab
   const allowed = allowedTabs(overview.tabs);
   if (isTabKey(requested) && allowed.includes(requested)) return requested;
   const { tabs, viewer, visitSeatIds, waitingForYou } = overview;
-  const decisions = waitingForYou.isTest && !viewer.isTestPersona ? 0 : waitingForYou.plans + waitingForYou.requests;
+  // HR's acknowledgements are real entries even for the Super Admin, so they count in either world.
+  const decisions =
+    (waitingForYou.isTest && !viewer.isTestPersona ? 0 : waitingForYou.plans + waitingForYou.requests + waitingForYou.planEdits) +
+    waitingForYou.hrAcknowledgements;
   if (tabs.team && !viewer.isRep && decisions > 0) return "team";
   if (tabs.team && !viewer.isSuperAdmin && visitSeatIds.length === 0) return "team";
   // A2 (owner, 2026-09-26): he opens the app onto his DAY, not onto a tab bar. A manager with a real
@@ -414,8 +417,12 @@ export function PhoenixCrmApp({
     single && activeTab === "list" && validateParam && Number.isFinite(Number(validateParam))
       ? { seatId: seats.list ?? "", test, contactCrmId: Number(validateParam), customerName: customerNameParam ?? "" }
       : null;
-  // The Super Admin's counts are test entries: they show in test mode only.
-  const waitingCount = overview.waitingForYou.isTest === test ? overview.waitingForYou.plans + overview.waitingForYou.requests : 0;
+  // The Super Admin's counts are test entries: they show in test mode only — except HR's
+  // acknowledgements of a request to edit a week, which are real and show out of test mode.
+  const { waitingForYou } = overview;
+  const waitingCount =
+    (waitingForYou.isTest === test ? waitingForYou.plans + waitingForYou.requests + waitingForYou.planEdits : 0) +
+    (test ? 0 : waitingForYou.hrAcknowledgements);
   const tabId = (key: TabKey) => `${idPrefix}-tab-${key}`;
   const panelId = (key: TabKey) => `${idPrefix}-panel-${key}`;
   /** A tab kept behind the others because it holds work (and is still one of the viewer's tabs). */

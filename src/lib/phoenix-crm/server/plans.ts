@@ -33,6 +33,7 @@
 
 import { addDaysIso } from "@/lib/crm/dates";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
   editablePlanDays,
   fieldWeekDays,
@@ -42,6 +43,7 @@ import {
   monthStartOf,
   planDayListTypes,
   plannableWeeks,
+  repPlanWeek,
   weeklyPlanDueOn,
 } from "@/lib/phoenix-crm/calendar";
 import { summarizeReadiness } from "@/lib/phoenix-crm/coverage";
@@ -92,6 +94,7 @@ import {
   type PlannedActivityRow,
 } from "@/lib/phoenix-crm/server/plan-activities";
 import { loadPlanDayStarts, savePlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
+import { assertRepMayChangeWeek, loadPlanEditState, repStateOf } from "@/lib/phoenix-crm/server/plan-edits";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
@@ -465,12 +468,16 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   const viewerIsReviewer = canReviewTerritory(viewer, seat, isTest);
   const weekOpen = weeks.includes(weekStart) && editablePlanDays(weekStart, today).length > 0;
   const status = plan?.status ?? null;
+  // One week at a time (owner, 2026-10-01): the same answer the server gives a save or a send.
+  const edit = viewerIsRep && planRow && status === "draft" ? ((await loadPlanEditState([String(planRow.id)], isTest, { names: false })).get(String(planRow.id)) ?? null) : null;
+  const repState = viewerIsRep ? repStateOf({ weekStart, cairoToday: today, status, edit }) : "closed";
   let blockedReason: string | null = null;
   if (viewerIsRep) {
     // Owner, 2026-09-22: nothing about the list ever stops a rep planning. Only the week itself and a
     // territory with no line can, and neither is about the customers on it.
     if (!weekOpen) blockedReason = "This week has passed. Choose a week ahead to plan.";
     else if (!seat.lineCode) blockedReason = "This territory has no line in the organogram, so it cannot be planned.";
+    else if (repState === "closed") blockedReason = `You plan one week at a time: the week starting ${formatPhoenixLongDate(repPlanWeek(today))}.`;
   }
   const itemCount = itemRows.length;
   const staleOnOpenDays = days.some((day) => day.editable && day.items.some((item) => item.stale));
@@ -498,9 +505,10 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     customers: plannerCustomers,
     viewerIsRep,
     viewerIsReviewer,
-    canEdit: viewerIsRep && blockedReason === null && (status === null || isPlanEditable(status)),
-    canSubmit: viewerIsRep && blockedReason === null && status !== null && isPlanEditable(status) && itemCount > 0 && !staleOnOpenDays,
-    canReopen: viewerIsRep && weekOpen && (status === "submitted" || status === "approved"),
+    canEdit: viewerIsRep && blockedReason === null && repState === "plan",
+    canSubmit: viewerIsRep && blockedReason === null && repState === "plan" && status !== null && isPlanEditable(status) && itemCount > 0 && !staleOnOpenDays,
+    // A sent week is changed through "Ask to edit this week" now, never taken back by the rep.
+    canReopen: false,
     canApprove: viewerIsReviewer && status === "submitted",
     canReturn: weekOpen && canReturnTerritoryPlan(viewer, seat, isTest) && (status === "submitted" || status === "approved"),
     blockedReason,
@@ -531,6 +539,10 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
   const weekStart = body.weekStart;
   const editableDays = editablePlanDays(weekStart, today);
   if (editableDays.length === 0) throw conflictError("This week has passed. Reload the planner.");
+  // 🔴 One week at a time (owner, 2026-10-01): the week he plans now, or one his manager returned or
+  // an edit request reopened. A week ahead, a passed one, or a sent one is refused here as well as
+  // greyed on the board.
+  await assertRepMayChangeWeek(viewer, seat, isTest, weekStart);
 
   // Stamps the territory ready the first time its list is complete; it then stays ready. It is a
   // progress mark for the manager's Team tab, and it has never refused a plan since 2026-09-22.
@@ -667,9 +679,16 @@ export async function transitionPlan(
       throw notFoundError("This plan is no longer there. Reload the page.");
     }
     actorRole = "rep";
+    // Owner, 2026-10-01: a sent week is no longer taken back by the rep — he asks to edit it, and the
+    // district manager, SFE and HR open it for him (plan-edits.ts). A phone one release behind still
+    // posts "reopen"; it is told what to press instead.
+    if (action === "reopen") {
+      throw conflictError("A sent week is no longer taken back. Open it and press Ask to edit this week.");
+    }
     if (editablePlanDays(String(planRow.week_start), today).length === 0) {
       throw conflictError("This week has passed. Reload the planner.");
     }
+    await assertRepMayChangeWeek(viewer, seat, isTest, String(planRow.week_start));
     if (action === "submit") {
       const openRows = (await loadPlanItemRows([planId], ITEM_COLUMNS)).filter((row) => String(row.plan_date) >= today);
       if (openRows.some(isStaleItem)) {

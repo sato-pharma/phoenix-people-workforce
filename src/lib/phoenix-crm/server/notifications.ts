@@ -3,7 +3,8 @@
  *
  * Owner rules: in-app and Telegram, never email (the module's email is hard-blocked in
  * src/lib/notifications/phoenix-crm-channel-guard.ts; the policy row is the intent, the guard the
- * enforcement).
+ * enforcement) — with ONE exception the owner ordered on 2026-10-01: a rep's request to edit a week he
+ * already sent goes by email too, at every step (`phoenixCrmChannels` names the five event types).
  *
  * 🔴 THE TEST WORLD TELLS THE TEST ACCOUNTS, AND ONLY THEM (owner, 2026-09-28). A test-world notice
  * is addressed to the employee it mirrors — that is the id the bell queries by — and carries the
@@ -17,6 +18,12 @@
  *   - a weekly plan is sent for review   → the reviewing manager;
  *   - a plan is approved or returned     → the rep; a plan the SFE Manager returns also tells the
  *                                          reviewing manager, whose approval it undoes.
+ *
+ *   - a rep asks to edit a sent week, and each step after it (owner, 2026-10-01) → the next person to
+ *                                          act (the district manager, then SFE, then HR — Omar
+ *                                          Gawish), the rep, the district manager and the SFE
+ *                                          Manager, minus whoever just acted. Email, in-app and
+ *                                          Telegram.
  *
  *   - a CNS rep sends his daily forecast → the territory's reviewing manager (his district manager),
  *                                          IN-APP ONLY, once a day (owner, 2026-10-01: "an in-app
@@ -32,12 +39,15 @@
  */
 
 import { formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
+import { phoenixCrmChannels } from "@/lib/notifications/phoenix-crm-channel-guard";
+import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { testAccountsMirroring } from "@/lib/auth/test-persona-directory";
 import { logError } from "@/lib/observability/log";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
+import { PLAN_EDIT_ACKNOWLEDGER_HR_ID, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
-import { territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { personKey, territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
 
@@ -130,6 +140,21 @@ export type PhoenixCrmNotice =
       enteredByAdmin?: boolean;
     }
   | {
+      kind: "plan_edit";
+      org: OrgIndex;
+      seat: OrgSeat;
+      requestId: string;
+      /** The request's version after this step — every step moves it, so every step's key is its own. */
+      version: number;
+      weekStart: string;
+      /** Where the request stands after this step. */
+      status: PlanEditStatus;
+      repHrId: string;
+      /** Who just acted: the rep on a raise, the decider on a step. Told nothing about his own act. */
+      actorHrId: string;
+      note: string | null;
+    }
+  | {
       kind: "forecast_sent";
       org: OrgIndex;
       seat: OrgSeat;
@@ -188,8 +213,98 @@ const REQUEST_WAITING: Record<PhoenixCrmRequestKind, { eventType: string }> = {
   },
 };
 
-async function describe(notice: PhoenixCrmNotice): Promise<Delivery | null> {
+/** The SFE Managers by hr id — a ROLE with no seat in the organogram, so read from the accounts. */
+async function sfeManagerHrIds(): Promise<string[]> {
+  const { hrIds } = await resolveHrIdsForRole("SFE Manager", "Phoenix CRM plan edit — SFE Managers");
+  // A test account holds the role it mirrors; its TEST- id is never a real person to tell.
+  return hrIds.filter((hrId) => !hrId.startsWith("TEST-"));
+}
+
+/**
+ * A request to edit a sent week, at one of its steps (owner, 2026-10-01: "emails, in-app and Telegram
+ * for every step" — to the next person to act, the rep, the district manager and SFE). Two deliveries:
+ * the managers' copy opens the Team tab where they decide, the rep's opens his Plan.
+ */
+async function describePlanEdit(notice: Extract<PhoenixCrmNotice, { kind: "plan_edit" }>): Promise<Delivery[]> {
   const territory = territoryName(notice.seat);
+  const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
+  const sfe = await sfeManagerHrIds();
+  const names = await loadPeopleNames([notice.repHrId, notice.actorHrId]);
+  const rep = nameOf(names, notice.repHrId, "A rep");
+  const actor = nameOf(names, notice.actorHrId, "The approver");
+  const week = formatPhoenixLongDate(notice.weekStart);
+  const status = notice.status;
+  const raised = notice.actorHrId === notice.repHrId && (status === "manager_pending" || status === "sfe_pending");
+  // Read as booleans first, so the eventType line below carries event NAMES and nothing else.
+  const reopened = status === "reopened";
+  const refused = status === "refused";
+  const expired = status === "expired";
+  const note = notice.note ? ` Note: ${notice.note}` : "";
+
+  const next: string[] =
+    status === "manager_pending" ? (reviewer ? [reviewer.hrId] : []) : status === "sfe_pending" ? sfe : status === "hr_pending" ? [PLAN_EDIT_ACKNOWLEDGER_HR_ID] : [];
+  const actorKey = personKey(notice.actorHrId);
+  const repKey = personKey(notice.repHrId);
+  const managers = [...new Set([...next, ...(reviewer ? [reviewer.hrId] : []), ...sfe])].filter((hrId) => {
+    const key = personKey(hrId);
+    return key !== null && key !== actorKey && key !== repKey;
+  });
+
+  const nextStep =
+    status === "manager_pending"
+      ? "The district manager decides first, then SFE, then HR."
+      : status === "sfe_pending"
+        ? raised
+          ? "SFE decides first (the territory has no district manager), then HR."
+          : "SFE decides next, then HR."
+        : status === "hr_pending"
+          ? "It opens again once HR acknowledges it."
+          : "";
+  const title = raised
+    ? `Request to edit a weekly plan: ${rep}`
+    : reopened
+      ? `Weekly plan open to edit: ${rep}, week starting ${week}`
+      : refused
+        ? `Refused: ${rep}'s request to edit a weekly plan`
+        : expired
+          ? `Expired: ${rep}'s request to edit a weekly plan`
+          : `Approved by ${actor}: ${rep}'s request to edit a weekly plan`;
+  const message = raised
+    ? `${rep} asks to edit the ${territory} plan for the week starting ${week}, which is already sent. ${nextStep}`
+    : reopened
+      ? `HR acknowledged ${rep}'s request. The ${territory} plan for the week starting ${week} is open again for him to change and send again.`
+      : refused
+        ? `${actor} refused ${rep}'s request to edit the ${territory} plan for the week starting ${week}. The week stays as it was sent.${note}`
+        : expired
+          ? `The week starting ${week} passed before ${rep}'s request to edit the ${territory} plan was settled.`
+          : `${actor} approved ${rep}'s request to edit the ${territory} plan for the week starting ${week}. ${nextStep}${note}`;
+  const repMessage = reopened
+    ? `HR acknowledged your request. Your plan for the week starting ${week} is open again: change the days from today on and send it again. Until you send it, your visits this week count as off-plan.`
+    : refused
+      ? `${actor} refused your request to edit your plan for the week starting ${week}. The week stays as you sent it.${note}`
+      : expired
+        ? `The week starting ${week} passed before your request to edit it was settled.`
+        : `${actor} approved your request to edit your plan for the week starting ${week}. ${nextStep}${note}`;
+
+  const base = {
+    eventType: raised ? "plan_edit_waiting" : reopened ? "plan_edit_reopened" : refused ? "plan_edit_refused" : expired ? "plan_edit_expired" : "plan_edit_moved_on",
+    recordId: notice.requestId,
+    subjectHrId: notice.repHrId,
+  };
+  const key = `phoenix_crm:plan_edit:${notice.requestId}:v${notice.version}:${status}`;
+  const deliveries: Delivery[] = [];
+  if (managers.length > 0) deliveries.push({ ...base, recipients: managers, title, message, tab: "team", idempotencyKey: key });
+  // The rep asked; his own press is not news to him. Every step after it is.
+  if (!raised && repKey !== actorKey) {
+    deliveries.push({ ...base, recipients: [notice.repHrId], title, message: repMessage, tab: "plan", idempotencyKey: `${key}:rep` });
+  }
+  return deliveries;
+}
+
+async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[] | null> {
+  const territory = territoryName(notice.seat);
+
+  if (notice.kind === "plan_edit") return describePlanEdit(notice);
 
   if (notice.kind === "request_created") {
     const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
@@ -406,57 +521,61 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | null> {
 
 export async function notifyPhoenixCrm(notice: PhoenixCrmNotice, isTest: boolean): Promise<void> {
   try {
-    const delivery = await describe(notice);
-    if (!delivery) return;
-    const actionUrl = `${PHOENIX_CRM_PORTAL_PATH}?tab=${delivery.tab}`;
-    const base = {
-      actionUrl,
-      category: PHOENIX_CRM_NOTIFICATION_CATEGORY,
-      eventType: delivery.eventType,
-      message: delivery.message,
-      module: PHOENIX_CRM_NOTIFICATION_MODULE,
-      priority: "normal" as const,
-      recordId: delivery.recordId,
-      subjectHrId: delivery.subjectHrId,
-      title: delivery.title,
-    };
-
-    if (!isTest) {
-      await createSystemNotificationForRecipients(
-        {
-          ...base,
-          channels: delivery.inAppOnly ? ["in_app"] : ["in_app", "telegram"],
-          metadata: { idempotencyKey: delivery.idempotencyKey, seatId: notice.seat.seatId },
-          ...(delivery.inAppOnly ? {} : { telegram: { ctaLabel: "Open Phoenix CRM", ctaUrl: actionUrl } }),
-        },
-        delivery.recipients,
-      );
-      return;
-    }
-
-    // The test world. Each recipient becomes the TEST- login that mirrors him, and a recipient no
-    // test account mirrors is dropped rather than told — never addressed to the real person.
-    const mirrors = await testAccountsMirroring(delivery.recipients);
-    for (const mirror of mirrors) {
-      await createSystemNotificationForRecipients(
-        {
-          ...base,
-          // In-app alone. `createSystemNotificationForRecipient` enforces this again from the
-          // marker, so neither a policy nor a preference can put a test entry on her Telegram.
-          channels: ["in_app"],
-          // A DIFFERENT key from the real notice's. They share an `event_key` upsert
-          // (onConflict: "event_key"), so reusing it would overwrite a real person's notification
-          // row with a test one — the leak this whole path is built to avoid.
-          metadata: { idempotencyKey: `${delivery.idempotencyKey}:test:${mirror.loginId}`, seatId: notice.seat.seatId },
-          testLoginId: mirror.loginId,
-        },
-        [mirror.hrId],
-      );
-    }
+    const described = await describe(notice);
+    const deliveries = described === null ? [] : Array.isArray(described) ? described : [described];
+    for (const delivery of deliveries) await deliver(notice, delivery, isTest);
   } catch (error) {
     logError("Phoenix CRM notification failed", {
       labels: { event: "phoenix_crm_notify_failed", kind: notice.kind },
       error,
     });
+  }
+}
+
+async function deliver(notice: PhoenixCrmNotice, delivery: Delivery, isTest: boolean): Promise<void> {
+  const actionUrl = `${PHOENIX_CRM_PORTAL_PATH}?tab=${delivery.tab}`;
+  const base = {
+    actionUrl,
+    category: PHOENIX_CRM_NOTIFICATION_CATEGORY,
+    eventType: delivery.eventType,
+    message: delivery.message,
+    module: PHOENIX_CRM_NOTIFICATION_MODULE,
+    priority: "normal" as const,
+    recordId: delivery.recordId,
+    subjectHrId: delivery.subjectHrId,
+    title: delivery.title,
+  };
+
+  if (!isTest) {
+    await createSystemNotificationForRecipients(
+      {
+        ...base,
+        channels: phoenixCrmChannels(delivery.eventType, delivery.inAppOnly),
+        metadata: { idempotencyKey: delivery.idempotencyKey, seatId: notice.seat.seatId },
+        ...(delivery.inAppOnly ? {} : { telegram: { ctaLabel: "Open Phoenix CRM", ctaUrl: actionUrl } }),
+      },
+      delivery.recipients,
+    );
+    return;
+  }
+
+  // The test world. Each recipient becomes the TEST- login that mirrors him, and a recipient no
+  // test account mirrors is dropped rather than told — never addressed to the real person.
+  const mirrors = await testAccountsMirroring(delivery.recipients);
+  for (const mirror of mirrors) {
+    await createSystemNotificationForRecipients(
+      {
+        ...base,
+        // In-app alone. `createSystemNotificationForRecipient` enforces this again from the
+        // marker, so neither a policy nor a preference can put a test entry on her Telegram.
+        channels: ["in_app"],
+        // A DIFFERENT key from the real notice's. They share an `event_key` upsert
+        // (onConflict: "event_key"), so reusing it would overwrite a real person's notification
+        // row with a test one — the leak this whole path is built to avoid.
+        metadata: { idempotencyKey: `${delivery.idempotencyKey}:test:${mirror.loginId}`, seatId: notice.seat.seatId },
+        testLoginId: mirror.loginId,
+      },
+      [mirror.hrId],
+    );
   }
 }

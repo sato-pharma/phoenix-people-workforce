@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   doctorFilterActive,
@@ -129,4 +130,18 @@ export function runPhoenixCrmPlanFiltersTests() {
   assert.equal(windowOverlapsRange({ startMinute: 840, endMinute: null }, 905, 1000), false, "and closes after that hour");
   assert.equal(receivesInRange([timing(6, 840, 960)], 6, false, 900, 1000), true, "receivesInRange reads the weekday's windows");
   assert.equal(receivesInRange([timing(6, 840, 960)], 0, false, 900, 1000), false, "and nothing on a weekday he does not receive");
+
+  // ── 🔴 Filters are dropdowns, pickers are buttons (owner, 2026-10-01) ─────────────────────────────
+  // On the first Delta (1) session reps pressed "Receives on" — a grid of day buttons, the same square
+  // buttons as the Week and Day pickers — believing they were choosing the day they were planning.
+  {
+    const bar = readFileSync("src/components/phoenix-crm/plan-filter-bar.tsx", "utf8");
+    assert.doesNotMatch(bar, /<CrmChoice\b|import \{[^}]*\bCrmChoice\b/, "the customer filter holds no button grid at all");
+    assert.ok((bar.match(/<CrmSelect\b/g) ?? []).length >= 5, "Receives on, AM or PM, Grade, Brick and Speciality are all dropdowns");
+    assert.match(bar, /label="Receives on"/, "the weekday filter is still there, as a dropdown");
+    const board = readFileSync("src/components/phoenix-crm/plan-board.tsx", "utf8");
+    const weekPanel = readFileSync("src/components/phoenix-crm/plan-week-panel.tsx", "utf8");
+    assert.match(board, /<CrmChoice\s+columns=\{4\}\s+label="Week"/, "the Week picker stays a row of buttons");
+    assert.match(weekPanel, /<CrmChoice\s+columns=\{3\}\s+label="Day"/, "and so does the Day picker");
+  }
 }

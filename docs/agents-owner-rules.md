@@ -3246,7 +3246,9 @@ weekday a customer receives, brick, AM/PM, grade, speciality. Copy last month (W
 N's weekday), copy last week, and copy a day from the same weekday one or two weeks back. A customer not
 validated yet can be planned. The month is due the last Thursday of the month before; a week sent alone
 the Thursday before it; late is accepted and stamped. The planning window now reaches the whole of next
-month, which the old three-week window made impossible by the month's own due date.
+month, which the old three-week window made impossible by the month's own due date. 🔴 **Superseded on
+2026-10-01 by "Weekly only" below**: the rep plans one week, has no month send and no Copy last month,
+and a sent week changes only by request.
 
 **Hours never block a plan (2026-09-30).** Reviewing the plan as `TEST-AYA`, he saw "Does not receive on
 Wednesday" and ruled: "never block, because the rep didn't add his time — add a column for timings but
@@ -3280,7 +3282,8 @@ planned or unplanned"* — and, for what the rep sees, *"marked as entered by ad
 
 **Who and where.** The Super Admin alone (`canEnterMissedRecords`, `territoryForMissedRecord` in
 `src/lib/phoenix-crm/server/access.ts`) — not the SFE Manager, not a district manager, never a test
-account. It is the SECOND real-data write he makes in Phoenix CRM, beside moving a validated place; with
+account. It is the SECOND real-data write he makes in Phoenix CRM, beside moving a validated place (a
+third, HR's acknowledgement of a request to edit a sent week, came on the same day — "Weekly only"); with
 test mode on it is a test entry like everything else he does there. The territory must have a rep (a
 vacant seat has nobody to enter for) and, for a real entry, a line that has opened. He enters it on the
 day's own page: the team calendar opens EVERY day that has begun for him, the empty ones included, and
@@ -3326,6 +3329,72 @@ not removed this way — he clears his own from the same panel, as before.
 Pinned by `tests/phoenix-crm-missed-records.test.ts`; the database half is
 `supabase/migrations/20261001044221_phoenix_crm_admin_entry.sql` (`phoenix_crm_admin_enter_visit`) and
 `supabase/migrations/20261001055833_phoenix_crm_admin_remove_visit.sql` (`phoenix_crm_admin_remove_visit`).
+
+## Weekly only — the rep plans one week, and a sent week changes only by request (owner rulings, 2026-10-01)
+
+**What happened.** On Thursday 1 October the first wave of Delta (1) reps used the plan board, and the
+owner came back from the session with: *"the plan is entered weekly only, weekly only, and I cannot enter
+a week that passed or a week ahead; by default it opens on the week the plan should be entered in"*.
+Production showed why. The board opened on SEPTEMBER — the first plannable month, because the week of 26
+September still had Thursday 1 October open — so every rep had to find October himself; four of fourteen
+pressed "Send the month" and were stamped late against a month due 24 September; one made an empty plan
+for the week of 26 September; one saved sixteen times. And reps pressed the "Receives on" filter — a grid
+of day buttons, the same square buttons as the Week and the Day pickers — believing it chose the day.
+
+**The rulings, in his words where he gave them.**
+- **One week, the coming Saturday's.** *"We are now Thursday, tomorrow will be Friday … when he is
+  submitting the plan, he will submit the Saturday week plan."* `repPlanWeek(today)` is the week after
+  the running one: Thursday 1 and Friday 2 October → Saturday 3 October; Saturday 3 October → the 10th.
+  A week that has begun is never planned any more; a week ahead is not open yet.
+- **One path.** Plan opens on that week's month, that week active and every other week greyed; its
+  days; a day's customers; tick. The rep's own board has no month chooser, no month header, no "Send the
+  month" and no "Copy last month". A manager reviewing from Team keeps his month chooser.
+- **Filters are dropdowns, pickers are buttons.** *"The days filter … make it different from the filter
+  you made for the days with which I choose the weeks, because they look alike."* Receives on, AM or PM
+  and Grade became native dropdowns beside Brick and Speciality; Week and Day stay buttons.
+- **No more take-back — a request instead.** *"REQUEST TO EDIT FROM DISTRICT MANAGER APPROVAL THEN SFE
+  THE HR ACKNOWLEDGEMENT WITH EMAILS IN APP AND TELEGRAM FOR EVERY STEP."* Asked who HR is, he answered
+  **himself** (Omar Gawish, B-10); asked when the week opens, **only after HR acknowledges**; asked who
+  is told, **the next approver, the rep, the district manager and SFE**; asked whether the rep writes a
+  reason, **"No, just the button."** One refusal ends it (a note is required, the rep reads it); a vacant
+  manager chain starts at SFE; a request whose week passes is closed as expired.
+- **The Delta re-send is on time.** Everything entered on 1 October in the old screen — real and test,
+  plans and validations — was wiped once the new flow was live, and the reps sent the week of 3 October
+  again on Friday 2 October. He ruled those *"not late: they sent on time"*, so that one week is due
+  the Friday (`PLAN_WEEK_DUE_OVERRIDES` / `phoenix_crm_week_due_on`).
+- **One pull request**, at his choice, over splitting the urgent half.
+
+**How it is held.**
+- The server, not the board, is the rule: `assertRepMayChangeWeek` (`server/plan-edits.ts`) runs before
+  every save and every send, and `repWeekState` (`plan-rules.ts`) answers `plan` only for his one week,
+  a week his manager RETURNED, or a week an edit request REOPENED. A rep's `reopen` and his month send
+  and take-back are refused with a sentence, so a screen one release behind is told what to press.
+- `plannableWeeks` is unchanged and is now the REVIEWERS' window — the manager's week list, the overview
+  counts and the daily plan report all read it. Never shrink it to the rep's one week.
+- The edit chain is `phoenix_crm_plan_edit_requests` (manager_pending → sfe_pending → hr_pending →
+  reopened · refused · expired) with its events table, `phoenix_crm_raise_plan_edit_request` and
+  `phoenix_crm_decide_plan_edit_request`, whose HR step sets the plan back to draft and writes the plan's
+  `reopened` event (with `edit_request_id`) in the same transaction, under the plan's own advisory lock.
+  `phoenix_crm_plan_transition` was replaced with its live body: the due date comes from
+  `phoenix_crm_week_due_on`, and a week sent again after an acknowledged edit KEEPS its first send's
+  late verdict — a change his managers agreed to must never stamp a rep late.
+- **HR's acknowledgement is the Super Admin's third real-data act** (`canAcknowledgePlanEdits`, beside
+  moving a place and entering a missed record), and it is **B-10's alone**, compared as a person
+  (`isSamePerson`, so his console login counts). Another Super Admin does not take that step.
+- **The one Phoenix CRM notice that emails.** The module's email block stays; `phoenix-crm-channel-guard.ts`
+  lets exactly five event types keep email — `plan_edit_waiting`, `plan_edit_moved_on`,
+  `plan_edit_refused`, `plan_edit_reopened`, `plan_edit_expired` — and strips it from everything else,
+  the 06:55 digest included. `tests/phoenix-crm-email-block.test.ts` pins the list exactly.
+- **While a week is reopened it is a draft**, so the day's visits count as off-plan until he sends it
+  again — the same rule the planned-visit check has always kept (a plan that had reached review BEFORE
+  the visit). The request form and the reopened note say so.
+
+**What this supersedes:** "the month is due the last Thursday of the month before" and the rep's own
+month send; "Take this week back"; the month-hopping "+ Make weekly plan" search; and "Copy last month"
+on the rep's board. A month SENT before 1 October still shows its status and its reviewer's decision.
+
+Pinned by `tests/phoenix-crm-plan-weekly-only.test.ts` and `tests/phoenix-crm-plan-edit-requests.test.ts`;
+the database half is `supabase/migrations/20261002002251_phoenix_crm_plan_edit_requests.sql`.
 
 ## The Business Review reads live — owner ruling, 2026-09-28
 

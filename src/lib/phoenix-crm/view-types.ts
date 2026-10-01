@@ -45,8 +45,9 @@ export type { PhoenixCrmDayDetail } from "@/lib/phoenix-crm/server/day-detail";
 export type { EnteredMissedVisit, MissedRecordCustomer, MissedRecordForm } from "@/lib/phoenix-crm/server/missed-records";
 export type { DoctorDirectoryRow, DoctorDirectoryView } from "@/lib/phoenix-crm/server/doctors";
 export type { TodayView } from "@/lib/phoenix-crm/server/today";
-export type { TeamRequest, TeamTerritoryRow, TeamUnplannedVisit, TeamView } from "@/lib/phoenix-crm/server/team";
+export type { TeamPlanEdit, TeamRequest, TeamTerritoryRow, TeamUnplannedVisit, TeamView } from "@/lib/phoenix-crm/server/team";
 export type { UnplannedVisitView } from "@/lib/phoenix-crm/server/unplanned";
+export type { PlanEditRequestView, PlanEditResult } from "@/lib/phoenix-crm/server/plan-edits";
 export type {
   PlanCopySourceView,
   PlanDayView,

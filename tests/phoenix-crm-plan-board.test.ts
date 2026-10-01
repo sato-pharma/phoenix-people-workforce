@@ -53,7 +53,6 @@ import {
   weekProblems,
   weekScope,
   weekSignature,
-  weekToPlanMove,
   dayFullness,
   savedWeekStarts,
   brickTickPress,
@@ -207,6 +206,12 @@ export function runPhoenixCrmPlanBoardTests(): void {
   {
     for (let saturday = "2026-01-03"; saturday <= "2028-12-30"; saturday = addDaysIso(saturday, 7)) {
       const due = weeklyPlanDueOn(saturday);
+      // The one week the owner moved by hand (2026-10-02): the Delta reps' week of 3 October, sent again
+      // on Friday after the old screen's entries were wiped, is on time (phoenix-crm-plan-weekly-only).
+      if (saturday === "2026-10-03") {
+        assert.equal(due, "2026-10-02", "the week of 3 October 2026 is due Friday 2 October, by the owner's ruling");
+        continue;
+      }
       assert.equal(due, addDaysIso(saturday, -2), `the week of ${saturday} is due two days before its Saturday`);
       assert.equal(weekdayOfIsoDay(due), 4, `the week of ${saturday} is due on a Thursday`);
     }
@@ -504,39 +509,13 @@ export function runPhoenixCrmPlanBoardTests(): void {
       "else the first open week",
     );
 
-    // Found on the walk of 2026-09-30: on 30 September every September week was past or sent, and the
-    // button opened the sent Week 4 instead of the week of 3 October. It moves on to the next month.
-    const lateSeptember = [
-      { weekStart: "2026-09-05", open: false, status: null },
-      { weekStart: "2026-09-26", open: true, status: "submitted" },
-    ];
-    const months = [{ monthStart: "2026-09-01" }, { monthStart: "2026-10-01" }];
-    assert.deepEqual(
-      weekToPlanMove({ weeks: lateSeptember, monthStart: "2026-09-01", months, mayChangeMonth: true }),
-      { kind: "month", monthStart: "2026-10-01" },
-      "a month with no week left to plan hands over to the next month",
-    );
-    assert.deepEqual(
-      weekToPlanMove({ weeks: lateSeptember, monthStart: "2026-09-01", months, mayChangeMonth: false }),
-      { kind: "week", week: lateSeptember[1] },
-      "unsaved ticks here, or a move already made: never switch month again, open the first open week",
-    );
-    assert.deepEqual(
-      weekToPlanMove({ weeks: [{ weekStart: "2026-10-03", open: true, status: null }], monthStart: "2026-10-01", months, mayChangeMonth: false }),
-      { kind: "week", week: { weekStart: "2026-10-03", open: true, status: null } },
-      "in the next month it opens the first week still to plan",
-    );
-    assert.deepEqual(
-      weekToPlanMove({ weeks: lateSeptember, monthStart: "2026-10-01", months, mayChangeMonth: true }),
-      { kind: "week", week: lateSeptember[1] },
-      "no later month to go to: the first open week here",
-    );
+    // Since 2026-10-01 (owner — weekly only) "+ Make weekly plan" and the rep's own board both open on
+    // his ONE week, `view.repWeek`, and its month is the server's default. The month-hopping search it
+    // replaced (found on the walk of 2026-09-30) is gone: it existed only because the board opened on the
+    // first plannable month, which on 1 October was still September.
+    // tests/phoenix-crm-plan-weekly-only.test.ts pins the new path.
     const board = readFileSync("src/components/phoenix-crm/plan-board.tsx", "utf8");
-    assert.match(
-      board,
-      /mayChangeMonth: weekSearch\.movedTo === null && !anyDirty/,
-      "the board moves month only once, and never over unsaved ticks",
-    );
+    assert.doesNotMatch(board, /weekToPlanMove|weekSearch/, "the month-hopping week search is gone");
 
     // The note limit is the table's own.
     const server = readFileSync("src/lib/phoenix-crm/server/plan-activities.ts", "utf8");
@@ -1019,11 +998,12 @@ export function runPhoenixCrmPlanBoardTests(): void {
       }
     }
 
-    // The board reaches it, and is told the one thing that would otherwise repeat his morning: the
-    // MONTH's own Send does not take it.
+    // The board reaches it, and says which month the week belongs to. Since 2026-10-01 there is no
+    // month Send for it to be confused with (owner — weekly only), so the note no longer warns of one.
     const server = stripComments(readFileSync("src/lib/phoenix-crm/server/monthly-plans.ts", "utf8"));
     assert.match(server, /weeks: leadingView \? \[leadingView, \.\.\.weekViews\] : weekViews/, "the leading week is offered first");
-    assert.match(server, /Sending \$\{formatPhoenixMonth\(monthStart\)\} does not send it/, "and it says the month's Send will not take it");
+    assert.match(server, /which belongs to \$\{previousMonth\}/, "and it says the week belongs to the month before");
+    assert.doesNotMatch(server, /does not send it/, "nothing mentions a month Send that no longer exists");
     // 🔴 Out of every meter: its items are filtered off `itemRows`, which is what the tallies, the two
     // list meters and the call rate are all built from.
     assert.match(
@@ -1031,11 +1011,10 @@ export function runPhoenixCrmPlanBoardTests(): void {
       /const itemRows = leadingId \? allItemRows\.filter\(\(row\) => String\(row\.plan_id\) !== leadingId\) : allItemRows;/,
       "its placements never enter the month's numbers",
     );
-    assert.match(server, /const staleOnOpenDays = weekViews\.some/, "and the month's own Send is gated on the month's own weeks");
 
     const board = stripComments(readFileSync("src/components/phoenix-crm/plan-board.tsx", "utf8"));
-    assert.match(board, /state\.editable && !state\.week\.leading/, "Copy last month and weeks-left stay on the month's own weeks");
-    assert.match(board, /Every week of \{view\.monthLabel\} goes with it/, "the month's confirmation no longer claims every week on screen");
+    assert.match(board, /const ownWeeks = states\.filter\(\(state\) => !state\.week\.leading\);/, "weeks-left counts the month's own weeks only");
+    assert.doesNotMatch(board, /Send the month|Copy last month|transitionMonth/, "the rep sends a week at a time: no month Send, no Copy last month");
   }
 
   console.log("phoenix-crm plan board: OK");

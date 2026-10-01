@@ -28,6 +28,7 @@ import { canDecideListRequest, canReviewTerritory, testModeFor, testReadSeats, t
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadReadiness, loadRequestRows, mapRequestRow, requestPeople, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
+import { canDecidePlanEditRow, loadPlanEditRows, mapPlanEditRow, planEditPeople, type PlanEditRequestView } from "@/lib/phoenix-crm/server/plan-edits";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import {
   canDecideUnplannedRow,
@@ -137,6 +138,9 @@ export type TeamRequest = ListRequest & { seatId: string; territoryName: string;
 
 export type TeamUnplannedVisit = UnplannedVisitView & { territoryName: string; canDecide: boolean };
 
+/** A rep's request to edit a sent week (owner, 2026-10-01), with whether THIS viewer acts at its step. */
+export type TeamPlanEdit = PlanEditRequestView & { territoryName: string; canDecide: boolean };
+
 export type TeamView = {
   isTest: boolean;
   territories: TeamTerritoryRow[];
@@ -148,6 +152,12 @@ export type TeamView = {
    * or drop decision already does.
    */
   unplannedVisits: TeamUnplannedVisit[];
+  /**
+   * Requests to edit a sent week waiting on a step, the longest-waiting first: the district manager's,
+   * then SFE's, then HR's acknowledgement (owner, 2026-10-01). In this payload for the same reason the
+   * off-plan visits are — one decision refreshes the whole tab.
+   */
+  planEdits: TeamPlanEdit[];
   summary: {
     territories: number;
     vacant: number;
@@ -159,6 +169,9 @@ export type TeamView = {
     unplannedWaiting: number;
     /** Off-plan visits at a step this viewer decides — the manager's, or the SFE's. */
     unplannedWaitingForYou: number;
+    planEditsWaiting: number;
+    /** Requests to edit a week at a step this viewer takes — the manager's, SFE's, or HR's. */
+    planEditsWaitingForYou: number;
   };
 };
 
@@ -167,10 +180,11 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   const seats: OrgSeat[] = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const seatIds = seats.map((seat) => seat.seatId);
 
-  const [readiness, requestRows, unplannedRows, todayBySeat] = await Promise.all([
+  const [readiness, requestRows, unplannedRows, planEditRows, todayBySeat] = await Promise.all([
     isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
     seatIds.length === 0 ? Promise.resolve([]) : loadRequestRows(seatIds, isTest, { pendingOnly: true }),
     loadUnplannedRows(seatIds, isTest),
+    loadPlanEditRows(seatIds, isTest, viewer.cairoToday),
     // The VISIT day (until 02:00 the day that just ended), the same day the rep's own Today shows.
     seatIds.length === 0 ? Promise.resolve(new Map<string, TeamTodayFigures>()) : loadTeamToday(seatIds, isTest, viewer.visitDay),
   ]);
@@ -183,7 +197,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   // Test mode shows only the territories the Super Admin has tried; real mode shows every territory in
   // scope. A territory whose only waiting item is an off-plan visit — or only a day being worked —
   // still belongs in the test list.
-  const unplannedSeats = new Set(unplannedRows.map((row) => String(row.seat_id)));
+  const unplannedSeats = new Set([...unplannedRows, ...planEditRows].map((row) => String(row.seat_id)));
   const workedToday = (seatId: string) => {
     const figures = todayBySeat.get(seatId);
     return Boolean(figures && (figures.planSent || figures.amLogged > 0 || figures.pmLogged > 0));
@@ -195,6 +209,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     ...territoryPeople(viewer.org, rowSeats),
     ...requestPeople(requestRows),
     ...unplannedPeople(unplannedRows),
+    ...planEditPeople(planEditRows),
   ]);
 
   const summaries = new Map(rowSeats.map((seat) => [seat.seatId, describeTerritory(viewer.org, seat, names)]));
@@ -248,12 +263,26 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     })
     .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.raisedAt.localeCompare(right.raisedAt));
 
+  const planEdits = planEditRows
+    .map((row): TeamPlanEdit => {
+      const view = mapPlanEditRow(row, names);
+      const seat = seatsById.get(view.seatId);
+      return {
+        ...view,
+        territoryName: summaries.get(view.seatId)?.name ?? "Territory",
+        // The step it is ON decides who may press the button: the district manager's, SFE's, or HR's.
+        canDecide: seat ? canDecidePlanEditRow(viewer, seat, isTest, view.status) : false,
+      };
+    })
+    .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.raisedAt.localeCompare(right.raisedAt));
+
   const realRows = territories.filter((row) => row.readiness);
   return {
     isTest,
     territories,
     requests,
     unplannedVisits,
+    planEdits,
     summary: {
       territories: territories.length,
       vacant: territories.filter((row) => !row.territory.repHrId).length,
@@ -263,6 +292,8 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       waitingForYou: requests.filter((request) => request.canDecide).length,
       unplannedWaiting: unplannedVisits.length,
       unplannedWaitingForYou: unplannedVisits.filter((visit) => visit.canDecide).length,
+      planEditsWaiting: planEdits.length,
+      planEditsWaitingForYou: planEdits.filter((edit) => edit.canDecide).length,
     },
   };
 }
