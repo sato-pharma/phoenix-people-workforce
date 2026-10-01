@@ -143,11 +143,25 @@ export async function generateTargetsTemplate(opts?: {
    * and uploaded back rather than re-typed from nothing.
    */
   existing?: ReadonlyMap<string, { targetUnits: number | null; targetValue: number | null }>;
+  /**
+   * The factory price of a product IN A MONTH (product-period-price.ts). A price can differ by month —
+   * Saginko is 111.15 through 2026-09 and 170.52 from 2026-10 — and `target_value` is STORED while the
+   * sales it is divided into are priced per month, so a target valued at the wrong month's price
+   * inflates achievement (53% for Saginko). Every row is priced at its OWN Period, in the cached
+   * figures and in the sheet's formula, so a semester laid out across October still values October
+   * at 170.52. Absent, every row takes the product's `factoryPrice`, as before.
+   */
+  priceFor?: (productCode: string, period: string) => number | null;
   now?: Date;
 }): Promise<ArrayBuffer> {
   const lineLabel = opts?.lineLabel?.trim() || "All lines";
   const areas = opts?.areas ?? [];
   const products = opts?.products ?? [];
+  const priceIn = (product: TargetTemplateProduct | undefined, period: string): number | null => {
+    if (!product) return null;
+    const dated = opts?.priceFor?.(product.productCode, period);
+    return dated != null && dated > 0 ? dated : (product.factoryPrice ?? null);
+  };
   // The dropdown offers the rolling 18 months PLUS every month this sheet was laid out for, so a
   // populated download of a past month still validates against its own Period cells.
   const months = [...new Set([...(opts?.periods ?? []), ...buildMonths(opts?.now ?? new Date())])].sort();
@@ -207,7 +221,10 @@ export async function generateTargetsTemplate(opts?: {
   // Formula builders (ExcelJS formulae carry NO leading "=").
   const codeFx = (r: number) => `IF($B${r}="","",IFERROR(VLOOKUP($B${r},${q(prodSheetName)}!$A:$D,2,FALSE),""))`;
   const lineFx = (r: number) => `IF($B${r}="","",IFERROR(VLOOKUP($B${r},${q(prodSheetName)}!$A:$D,3,FALSE),""))`;
-  const priceFx = (r: number) => `IF($B${r}="","",IFERROR(VLOOKUP($B${r},${q(prodSheetName)}!$A:$D,4,FALSE),""))`;
+  // The price of THIS row's product in THIS row's Period, from the dated table on Lists (C:D, keyed
+  // "Product Name|YYYY-MM"); a month missing from it falls back to the Products tab's price.
+  const priceFx = (r: number) =>
+    `IF($B${r}="","",IFERROR(VLOOKUP($B${r}&"|"&$A${r},${q(listsSheetName)}!$C:$D,2,FALSE),IFERROR(VLOOKUP($B${r},${q(prodSheetName)}!$A:$D,4,FALSE),"")))`;
   const areaFx = (r: number) => `IF($E${r}="","",IFERROR(VLOOKUP($E${r},${q(areaSheetName)}!$A:$C,2,FALSE),""))`;
   const valueFx = (r: number) => `IF(OR($G${r}="",$H${r}=""),"",$G${r}*$H${r})`;
 
@@ -260,7 +277,7 @@ export async function generateTargetsTemplate(opts?: {
   for (let i = 0; i < dataRows; i += 1) {
     const r = FIRST_DATA_ROW + i;
     const sample = planned[i];
-    const price = sample?.product?.factoryPrice ?? null;
+    const price = sample ? priceIn(sample.product, sample.period) : null;
     // A value-only target (units unknown) must survive the round trip, so the Target Value cell
     // carries the stored number as a LITERAL rather than the units × price formula.
     const valueIsLiteral = !!sample && sample.units == null && sample.value != null;
@@ -342,6 +359,16 @@ export async function generateTargetsTemplate(opts?: {
   );
   const listsWs = wb.addWorksheet(listsSheetName);
   writeReferenceSheet(listsWs, ["Target Month"], [16], months.map((m) => [m]), ["@"]);
+  // Beside the months, every product's price in every month the sheet offers — what the Unit Price
+  // formula reads, so a row's price follows its Period whichever month the dropdown is set to.
+  writeReferenceSheet(
+    listsWs,
+    ["Price Key", "Unit Price (EGP)"],
+    [30, 16],
+    products.flatMap((product) => months.map((month) => [`${product.productName}|${month}`, priceIn(product, month) ?? ""])),
+    ["@", PRICE_FMT],
+    3,
+  );
 
   // ── Read Me (branded how-to + column reference) ──
   buildReadMe(wb, lineLabel);
@@ -356,10 +383,12 @@ function writeReferenceSheet(
   widths: number[],
   rows: (string | number)[][],
   numFmts: (string | undefined)[],
+  /** 1-based column the table starts in, so a second table can sit beside the first. */
+  startColumn = 1,
 ): void {
   headers.forEach((h, i) => {
-    sheet.getColumn(i + 1).width = widths[i] ?? 16;
-    const cell = sheet.getCell(1, i + 1);
+    sheet.getColumn(startColumn + i).width = widths[i] ?? 16;
+    const cell = sheet.getCell(1, startColumn + i);
     cell.value = h;
     cell.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 10.5 };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: REF_HEADER_FILL } };
@@ -369,7 +398,7 @@ function writeReferenceSheet(
   rows.forEach((cells, ri) => {
     const excelRow = sheet.getRow(2 + ri);
     cells.forEach((value, ci) => {
-      const cell = excelRow.getCell(ci + 1);
+      const cell = excelRow.getCell(startColumn + ci);
       cell.value = value;
       if (numFmts[ci]) cell.numFmt = numFmts[ci] as string;
       cell.font = { color: { argb: SLATE }, name: "Calibri", size: 10.5 };

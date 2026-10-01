@@ -9,6 +9,7 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { restrictedProductNameSet } from "@/lib/sales/access-scope";
+import { productPeriodPricesFromRows, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
 import { roundMarketingMoney } from "@/lib/marketing-requests/roi";
 import {
   chunk,
@@ -76,7 +77,8 @@ type NearMissScanRow = {
 };
 
 async function loadNearMisses(params: {
-  factoryByCode: Map<string, number>;
+  /** The factory price that values a product in a month — the same rule as phx_factory_price. */
+  prices: Pick<ProductPeriodPrices, "priceFor">;
   nameBySosCode: Map<string, string>;
   siblingCodes: string[];
   supabase: ReturnType<typeof getSupabaseAdmin>;
@@ -88,7 +90,7 @@ async function loadNearMisses(params: {
   windowPeriods: string[];
 }): Promise<RoiNearMissReport | null> {
   const {
-    factoryByCode, nameBySosCode, siblingCodes, supabase, targetCodes, targetCodeSet,
+    prices, nameBySosCode, siblingCodes, supabase, targetCodes, targetCodeSet,
     targetDistributorCodes, targetProductCodes, validatedBatchIds, windowPeriods,
   } = params;
 
@@ -116,8 +118,9 @@ async function loadNearMisses(params: {
     const valueRaw = row.is_direct === true
       ? Number(row.value) || 0
       // UNITS ARE UNITS (2026-09-07): a distributor row is qty x factory price. This mirrors
-      // phx_marketing_request_roi_actuals, so the two lost the discount factor together.
-      : qty * (factoryByCode.get(productCode) ?? 0);
+      // phx_marketing_request_roi_actuals, so the two lost the discount factor together — and, since
+      // 2026-09-28, price the row at ITS invoice month (Saginko 170.52 from 2026-10), as that RPC does.
+      : qty * (prices.priceFor(productCode, String(row.invoice_period ?? "").trim() || null) ?? 0);
     const list = rowsByKind.get(kind) ?? [];
     list.push({
       clientCode: normalizePharmacyCode(row.client_code),
@@ -321,18 +324,27 @@ export async function explainMarketingRequestRoi(
 
   // SoS product master is a small reference table → build a normalized-name → code index in TS,
   // exactly mirroring the RPC's `lower(btrim(normalized_product_name))` join key.
-  const sosProducts = await supabase
-    .from("source_of_sales_products")
-    .select("product_code, normalized_product_name, factory_price");
+  // The dated prices come with it: a distributor row is valued at its own invoice month's price
+  // (Saginko 111.15 through 2026-09, 170.52 from 2026-10), as phx_marketing_request_roi_actuals does.
+  const [sosProducts, sosPriceHistory] = await Promise.all([
+    supabase.from("source_of_sales_products").select("product_code, normalized_product_name, factory_price"),
+    supabase.from("source_of_sales_product_price_history").select("product_code, effective_period, factory_price"),
+  ]);
   if (sosProducts.error) throw sosProducts.error;
+  if (sosPriceHistory.error) throw sosPriceHistory.error;
   const sosProductByNorm = new Map<string, string>();
-  const sosFactoryByCode = new Map<string, number>();
-  for (const row of (sosProducts.data ?? []) as Array<{ product_code?: string | null; normalized_product_name?: string | null; factory_price?: unknown }>) {
+  const sosProductRows = (sosProducts.data ?? []) as Array<{ product_code?: string | null; normalized_product_name?: string | null; factory_price?: unknown }>;
+  for (const row of sosProductRows) {
     const code = String(row.product_code ?? "").trim().toUpperCase();
     const key = lowerTrim(row.normalized_product_name);
     if (key && !sosProductByNorm.has(key)) sosProductByNorm.set(key, code);
-    if (code && !sosFactoryByCode.has(code)) sosFactoryByCode.set(code, Number(row.factory_price) || 0);
   }
+  const sosPrices = productPeriodPricesFromRows(
+    sosProductRows.map((row) => ({ productCode: row.product_code, factoryPrice: row.factory_price })),
+    ((sosPriceHistory.data ?? []) as Array<{ product_code?: string | null; effective_period?: string | null; factory_price?: unknown }>).map(
+      (row) => ({ productCode: row.product_code, effectivePeriod: row.effective_period, factoryPrice: row.factory_price }),
+    ),
+  );
 
   const products: RoiExplainProduct[] = [];
   for (const row of productRows) {
@@ -530,8 +542,10 @@ export async function explainMarketingRequestRoi(
         const qty = Number(row.qty) || 0;
         const valueRaw = row.is_direct === true
           ? Number(row.value) || 0
-          // UNITS ARE UNITS (2026-09-07) — same rule, and the same pairing with the RPC.
-          : qty * (sosFactoryByCode.get(upperProduct) ?? 0);
+          // UNITS ARE UNITS (2026-09-07) — same rule, and the same pairing with the RPC, priced at the
+          // row's own invoice month. A flat price here made the rebuilt total miss the RPC's from
+          // October and silently dropped every per-row source link.
+          : qty * (sosPrices.priceFor(upperProduct, String(row.invoice_period ?? "").trim() || null) ?? 0);
         rebuilt.push({
           ledgerKey: rowId,
           sosRowId: Number(row.id),
@@ -594,7 +608,7 @@ export async function explainMarketingRequestRoi(
   }
 
   const nearMisses = await loadNearMisses({
-    factoryByCode: sosFactoryByCode,
+    prices: sosPrices,
     nameBySosCode,
     siblingCodes,
     supabase,
