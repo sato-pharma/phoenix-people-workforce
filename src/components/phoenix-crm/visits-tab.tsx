@@ -19,7 +19,7 @@
  * AM and PM are counted apart on every figure and never added together (the call-rate rule).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import { crmUrl, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
@@ -44,12 +44,14 @@ import {
   CrmStatGrid,
   CrmTable,
   crmInputClassName,
+  crmPanelClassName,
   crmTdClassName,
   crmThClassName,
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { customersFor, OutOfPlanReason, VisitCustomerPicker } from "@/components/phoenix-crm/visit-customer-picker";
-import { decidersText, VisitLogForm, type LogVisitType } from "@/components/phoenix-crm/visit-log-form";
+import { CrmStepFooter, CrmStepForm, CrmStepFrame, type CrmStep } from "@/components/phoenix-crm/step-form";
+import { decidersText, VisitLogForm, type LogVisitType, type VisitFormPart } from "@/components/phoenix-crm/visit-log-form";
 import { saveDayActivity, UnplannedChoice, VisitStart } from "@/components/phoenix-crm/visit-start";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
@@ -531,7 +533,44 @@ type AddStep =
   | { name: "out_of_plan" }
   | { name: "out_of_list" }
   | { name: "reason"; customerId: string; reason: string; back: AddStep | null }
-  | { name: "form"; customerId: string; visitType: LogVisitType; reason: string | null; back: AddStep | null };
+  | { name: "form"; customerId: string; visitType: LogVisitType; reason: string | null; back: AddStep | null; part?: VisitFormPart };
+
+/**
+ * Add visit as the step form (owner, 2026-10-02 — Report It's form for visits and plans alike): 1 the
+ * visit type, 2 the customer (and, off plan, why), 3 the products and the comment, 4 the visit read
+ * back with the ONE Log visit. A tap on a type or a customer moves him on by itself — no Next for a
+ * step whose answer is a choice.
+ */
+const VISIT_STEPS: ReadonlyArray<CrmStep> = [
+  { label: "Visit type", description: "Planned, out of plan or out of list", title: "What kind of visit" },
+  { label: "Customer", description: "Who you visited", title: "Choose the customer" },
+  { label: "Products and comment", description: "What you discussed", title: "Products and comment" },
+  { label: "Log the visit", description: "Check it, then log it", title: "Log the visit" },
+];
+
+function visitStepOf(step: AddStep): number {
+  if (step.name === "start" || step.name === "unplanned") return 1;
+  if (step.name === "form") return step.part === "log" ? 4 : 3;
+  return 2;
+}
+
+function visitChip(step: AddStep): string {
+  switch (step.name) {
+    case "planned":
+      return "Planned visit";
+    case "unplanned":
+      return "Unplanned visit";
+    case "out_of_plan":
+    case "reason":
+      return "Out of plan";
+    case "out_of_list":
+      return "Out of list";
+    case "form":
+      return step.visitType === "planned" ? "Planned visit" : step.visitType === "out_of_plan" ? "Out of plan" : "Out of list";
+    default:
+      return "Add visit";
+  }
+}
 
 /** Steps holding something he has started: a hand-off from Today never replaces them. */
 function holdsWork(step: AddStep | null): boolean {
@@ -578,8 +617,37 @@ function AddFlow({
   const resource = useCrmGet<VisitFormView>(crmUrl("/api/phoenix-crm/visits/form", { seatId, test }), "form");
   const form = resource.data;
 
-  if (step.name === "start") {
+  /**
+   * One screen of Add visit inside the step form. Steps 1 and 2 take the form's own foot (Back — a tap
+   * on a choice is what moves him on); steps 3 and 4 are the visit form, whose bar under his thumb is
+   * the foot. The rail goes back, never forward: forward is only ever by answering the step.
+   */
+  function shell(current: AddStep, content: ReactNode, back: () => void) {
+    const n = visitStepOf(current);
     return (
+      <section className={cn(crmPanelClassName, "min-w-0")}>
+        <CrmStepForm
+          aside="The visit is saved only when you press Log visit."
+          canJump={(target) => target < n && (n < 3 || target >= 3)}
+          chip={visitChip(current)}
+          footer={n >= 3 ? undefined : <CrmStepFooter back={back} />}
+          onJump={(target) => {
+            if (target === 3 && current.name === "form") onStep({ ...current, part: "details" });
+            else if (target === 1) onStep({ name: "start" });
+          }}
+          required={n === 3}
+          step={n}
+          steps={VISIT_STEPS}
+        >
+          <CrmStepFrame>{content}</CrmStepFrame>
+        </CrmStepForm>
+      </section>
+    );
+  }
+
+  if (step.name === "start") {
+    return shell(
+      step,
       <VisitStart
         canSetDayActivity={canSetDayActivity}
         dayActivity={dayActivity}
@@ -591,7 +659,8 @@ function AddFlow({
         plannedCount={form ? customersFor("planned", form.customers).length : null}
         seatId={seatId}
         test={test}
-      />
+      />,
+      onClose,
     );
   }
 
@@ -644,36 +713,43 @@ function AddFlow({
 
   switch (current.name) {
     case "planned":
-      return (
+      return shell(
+        current,
         <VisitCustomerPicker
           allCustomers={loaded.customers}
           mode="planned"
           onBack={() => onStep({ name: "start" })}
           onChooseUnplanned={() => onStep({ name: "unplanned" })}
           onPick={(customerId) => onStep({ name: "form", customerId, visitType: "planned", reason: null, back: { name: "planned" } })}
-        />
+        />,
+        () => onStep({ name: "start" }),
       );
     case "unplanned":
-      return (
+      return shell(
+        current,
         <UnplannedChoice
           onBack={() => onStep({ name: "start" })}
           onOutOfList={() => onStep({ name: "out_of_list" })}
           onOutOfPlan={() => onStep({ name: "out_of_plan" })}
           outOfPlanCount={customersFor("out_of_plan", loaded.customers).length}
           waitingCount={loaded.customers.filter((customer) => customer.outside).length}
-        />
+        />,
+        () => onStep({ name: "start" }),
       );
     case "out_of_plan":
-      return (
+      return shell(
+        current,
         <VisitCustomerPicker
           allCustomers={loaded.customers}
           mode="out_of_plan"
           onBack={() => onStep({ name: "unplanned" })}
           onPick={(customerId) => onStep({ name: "reason", customerId, reason: "", back: { name: "out_of_plan" } })}
-        />
+        />,
+        () => onStep({ name: "unplanned" }),
       );
     case "out_of_list":
-      return (
+      return shell(
+        current,
         <OutOfListEntry
           canAddNew={loaded.enteredAs === "rep"}
           customers={loaded.customers}
@@ -686,13 +762,15 @@ function AddFlow({
           }}
           seatId={seatId}
           test={test}
-        />
+        />,
+        () => onStep({ name: "unplanned" }),
       );
     case "reason": {
       const reasonStep = current;
       const customer = find(reasonStep.customerId);
       if (!customer) return missing(null);
-      return (
+      return shell(
+        reasonStep,
         <OutOfPlanReason
           customer={customer}
           deciders={decidersText(loaded)}
@@ -702,14 +780,16 @@ function AddFlow({
           onContinue={(reason) =>
             onStep({ name: "form", customerId: customer.customerId, visitType: "out_of_plan", reason, back: { ...reasonStep, reason } })
           }
-        />
+        />,
+        () => (reasonStep.back ? onStep(reasonStep.back) : onClose()),
       );
     }
     case "form": {
       const formStep = current;
       const customer = find(formStep.customerId);
       if (!customer) return missing(null);
-      return (
+      return shell(
+        formStep,
         <VisitLogForm
           customer={customer}
           form={loaded}
@@ -717,11 +797,14 @@ function AddFlow({
           initialVisitType={formStep.visitType}
           key={formStep.customerId}
           onBack={() => (formStep.back ? onStep(formStep.back) : onClose())}
+          onPart={(part) => onStep({ ...formStep, part })}
           onReload={resource.reload}
           onSaved={onSaved}
+          part={formStep.part ?? "details"}
           seatId={seatId}
           test={test}
-        />
+        />,
+        () => (formStep.back ? onStep(formStep.back) : onClose()),
       );
     }
     default:
