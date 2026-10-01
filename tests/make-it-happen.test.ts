@@ -37,6 +37,7 @@ import {
   parseGoalPct,
   pediaHalves,
   parsePlannerFilters,
+  repPaceSatoHalf,
   rowFigures,
   scenarioSummary,
   suggestedScenario,
@@ -433,6 +434,22 @@ export async function runMakeItHappenTests() {
   const splitHtml = buildForecastPdfHtml(splitModel);
   assert.ok(splitHtml.includes("Sato half"), "the PDF states the Sato half");
   assert.ok(splitHtml.includes("Nov, Dec not forecast, no target yet"), "the PDF names the months it does not forecast");
+
+  // ── The team list shows a Pedia rep's Sato half beside the total (rule 7, owner 2026-10-02) ──
+  // splitLine: Sato target 2,000 / graded 600, Guamusin + Ivyronc expected 20 units each at EGP 10 =
+  // EGP 400 at pace, so Sato pace achievement = (600 + 400) / 2,000 = 50% — below the 90% floor,
+  // while the line total paces far higher. One number would hide that.
+  const satoAtPace = repPaceSatoHalf([splitLine]);
+  assert.ok(satoAtPace, "a Pedia rep has a Sato half");
+  assert.equal(satoAtPace?.hasTarget, true);
+  assert.equal(satoAtPace?.achievement, 0.5, "the Sato half at the rep's own steady pace");
+  assert.equal(satoAtPace?.productNames, "Guamusin and Ivyronc", "named, never coded");
+  assert.equal(repPaceSatoHalf([cnsLine]), null, "a non-Pedia rep has no Sato half");
+  const noSatoTarget = repPaceSatoHalf([
+    { ...splitLine, satoHalf: { ...splitLine.satoHalf!, targetValue: null } },
+  ]);
+  assert.equal(noSatoTarget?.hasTarget, false, "no Sato target yet is told apart from a real 0%");
+  assert.equal(noSatoTarget?.achievement, null, "and reads null, never 0%");
 
   // ── Gap to target, per product ──
   const alphaFigures = rowFigures(alpha, true, 20);

@@ -56,6 +56,7 @@ import {
   type ConcentrationPlanRow,
   type LinePlanGroup,
   type MakeItHappenWorkspace,
+  type RepPlanSummary,
   type SavedPlanSummary,
   type TrendKind,
   type TrendReading,
@@ -1672,6 +1673,45 @@ function LineSection({
   );
 }
 
+/**
+ * A team row's "at current pace" cell. For a Pedia rep (engine.ts rule 7) it shows BOTH halves —
+ * Total (the rep's `expectedAchievement`) and Sato (Guamusin + Ivyronc at pace) — because one
+ * number would hide a Sato half that pays nothing while the line total looks fine. Every other rep
+ * keeps the single pace meter.
+ */
+function TeamPaceCell({ rep }: { rep: RepPlanSummary }) {
+  if (!rep.pediaSato) return <AchievementMeter value={rep.expectedAchievement} />;
+  return (
+    <div className="space-y-1.5">
+      <div>
+        <p className="flex items-baseline justify-between gap-2 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">
+          Total
+          <span className={cn("text-phx-xs tabular-nums tracking-normal", achievementTone(rep.expectedAchievement))}>
+            {formatPct(rep.expectedAchievement)}
+          </span>
+        </p>
+        <ProportionBar color={achievementHex(rep.expectedAchievement)} fraction={rep.expectedAchievement ?? 0} />
+      </div>
+      <div>
+        <p className="flex items-baseline justify-between gap-2 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">
+          Sato
+          <span
+            className={cn(
+              "text-phx-xs tabular-nums tracking-normal",
+              rep.pediaSato.achievement != null && rep.pediaSato.achievement < INCENTIVE_FLOOR
+                ? "text-red-700"
+                : achievementTone(rep.pediaSato.achievement),
+            )}
+          >
+            {rep.pediaSato.hasTarget ? formatPct(rep.pediaSato.achievement) : "No target"}
+          </span>
+        </p>
+        <ProportionBar color={achievementHex(rep.pediaSato.achievement)} fraction={rep.pediaSato.achievement ?? 0} />
+      </div>
+    </div>
+  );
+}
+
 function TeamSection({
   data,
   href,
@@ -1801,7 +1841,7 @@ function TeamSection({
                     </td>
                     <td className="px-3 py-2.5 text-right font-bold tabular-nums text-slate-900">{formatEgpFull(rep.gradedValue)}</td>
                     <td className="px-3 py-2.5">
-                      <AchievementMeter value={rep.expectedAchievement} />
+                      <TeamPaceCell rep={rep} />
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       <Link
@@ -1822,8 +1862,8 @@ function TeamSection({
                 <Link className={cn("block space-y-1.5 px-4 py-3 transition-colors hover:bg-orange-50/40", FOCUS_RING)} href={repHref(rep.key)}>
                   <span className="flex items-start justify-between gap-3">
                     <span className="min-w-0 break-words font-bold text-slate-900">{rep.name}</span>
-                    <span className="w-24 shrink-0">
-                      <AchievementMeter value={rep.expectedAchievement} />
+                    <span className="w-28 shrink-0">
+                      <TeamPaceCell rep={rep} />
                     </span>
                   </span>
                   <span className="block text-xs text-slate-500">
