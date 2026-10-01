@@ -1748,6 +1748,7 @@ import { runPortalCanonicalSalesRowsTests } from "./portal-canonical-sales-rows.
 import { runCanonicalDashboardRowsTests } from "./canonical-dashboard-rows.test.ts";
 import { runEmployee360CanonicalSalesTests } from "./employee-360-canonical-sales.test.ts";
 import { runNationalHolidaysObservanceFilterTests } from "./national-holidays-observance-filter.test.ts";
+import { runHolidaySubstituteDayOffTests } from "./holiday-substitute-day-off.test.ts";
 import { runBenignClientDisconnectTests } from "./benign-client-disconnect.test.ts";
 import { runDescribeThrownTests } from "./describe-thrown.test.ts";
 import { runManagerCascadeFrozenTablesTests } from "./manager-cascade-frozen-tables.test.ts";
@@ -3065,6 +3066,10 @@ await runTest("attendance device-user latest punch (no 5,000 cap, order on resol
 await runTest("attendance last_seen_punch_at is written for MAPPED device users too", runAttendanceLastSeenPunchWriterTests);
 await runTest("attendance skipped punches split unknown vs deliberately ignored", runAttendanceSkippedPunchClassificationTests);
 await runTest("attendance bulk holiday calendar", runAttendanceHolidayOverridesTests);
+await runTest(
+  "a postponed national holiday is ONE day off — Google's `Day off for X` supersedes X (6 vs 8 October)",
+  runHolidaySubstituteDayOffTests,
+);
 await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
 await runTest("field workforce compliance eligibility", runFieldWorkforceComplianceEligibilityTests);
 await runTest("field workforce compliance live snapshots", runFieldWorkforceComplianceLiveSnapshotsTests);
