@@ -157,7 +157,7 @@ function repSection(months: readonly ReviewKpiMonth[]): PackSection | null {
   const planOnly = (value: (row: KpiRepRow) => PackCell) => (row: KpiRepRow) => (row.hasMeasurablePlan ? value(row) : "No plan");
   return {
     align: ["left", ...months.map((): PackAlign => "right")],
-    columns: ["", ...labels.map((month) => periodColumnLabel(month, labels))],
+    columns: ["Measure", ...labels.map((month) => periodColumnLabel(month, labels))],
     metric: "crm-kpis",
     note: `Coverage is the doctors on your plan you visited at least once — the floor is ${COVERAGE_TARGET_FLOOR_PCT}%. Frequency is the doctors you visited exactly as often as your plan asked; visiting more often than planned is off the plan too. Only regular visits count in either. ${basisNote(months, true)}`.trim(),
     rows: [

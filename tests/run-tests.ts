@@ -739,6 +739,7 @@ import { runBusinessReviewPackLeaverMarkTests } from "./business-review-pack-lea
 import { runBusinessReviewPackFullDataTests } from "./business-review-pack-full-data.test.ts";
 import { runBusinessReviewPackFilenameTests } from "./business-review-pack-filename.test.ts";
 import { runBusinessReviewFieldLinkTests } from "./business-review-field-link.test.ts";
+import { runBusinessReviewCrmKpisTests } from "./business-review-crm-kpis.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
 import { runSalesStrictConformanceTests } from "./sales-strict-conformance.test.ts";
@@ -4884,6 +4885,10 @@ await runTest(
 await runTest(
   "business review field link (owner, 2026-10-01 — \"every brick, how many class A doctors and I visit how many, vs the brick's sales … if a DM over-focused some MRs in double visits and forgot others … a medical rep's BR must show all data but simple\": AM · PM · Pharmacies stay apart and only the PM list at grade A is a class A doctor; every brick reading fires where it should, a doctor on two lists is one doctor and an off-list visit is still the brick's work; the class A to-do list holds only unvisited grade-A doctors and accounts, best-selling brick first; the owner's own double-visit example reads never / rarely / most against a month-by-month fair share, and a rep with no field day is never 'forgotten'; a rep's pack opens on plain sentences in his own voice, never shows an awareness activity's cost or an HR id; and the route reads the linked facts for the viewer's OWN scope from the contact register, the CRM door and the ROI engine)",
   runBusinessReviewFieldLinkTests,
+);
+await runTest(
+  "business review CRM KPIs (owner, 2026-10-01 — \"add all three\": each rep's coverage and frequency against his own plan and his call rate, AM against 2 a day and PM against 10, read from the CRM KPIs board itself; the team arithmetic has ONE copy the board and the pack share; the pack keeps exactly its own reps on the board's canonical hr id; AM, PM and pharmacies stay three figures, never averaged or joined by a slash, and No GPS feed, No plan, No calls and an unread month each say so instead of a zero; a district reads rep by rep, a line or the company team by team; and a rep's requests table lists every request for his line in his area, his own as You)",
+  runBusinessReviewCrmKpisTests,
 );
 await runTest(
   "business review pack metrics (one catalogue read by the picker, the PDF and the workbook: every metric is offered only at a level that can answer it, a rep is never offered a line comparison or his own reps, a link built at company level narrows rather than rendering empty slides, the customer-grain read stays opt-in, and no level ticks everything by default)",
