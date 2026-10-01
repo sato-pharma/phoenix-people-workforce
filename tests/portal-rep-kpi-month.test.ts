@@ -148,6 +148,14 @@ export function runPortalRepKpiMonthTests() {
     center.includes("mrSalesAchievement.targetValue > 0"),
     `${CENTER}: a published month with no target has an achievement of 0 by arithmetic, and must not be drawn as one`,
   );
+  // The alert row under the tiles names the month in its own detail line — "20 of 90 covered ·
+  // September 2026" — and its Open button must land on that same month. A bare link was correct
+  // only while the landing page could show nothing but the running month; with the picker it makes
+  // one row name September and open October, which is the page contradicting itself in one click.
+  assert.ok(
+    /href=\{`\/employee-portals\/kpis\?month=\$\{kpiMonth\}`\}/.test(center),
+    `${CENTER}: the missed-doctors row must open the KPIs board on the month it just named`,
+  );
 
   // ── 6. The control itself ────────────────────────────────────────────────────────────────────
   const pickerRaw = readFileSync(PICKER, "utf8");
