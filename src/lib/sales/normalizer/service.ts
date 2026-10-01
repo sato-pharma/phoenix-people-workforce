@@ -5,9 +5,10 @@ import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { logError } from "@/lib/observability/log";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { collectUnmappedProducts, computeBrickCoverage, countBrickDrift, saveBrickCoverageSnapshot } from "@/lib/sales/import-coverage";
-import { assertNotADuplicateUpload } from "@/lib/sales/import-duplicate-guard";
+import { assertNotADuplicateUpload, totalValueAtPeriod } from "@/lib/sales/import-duplicate-guard";
 import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { loadProductPeriodPrices } from "@/lib/sales/product-period-price";
 import type { MappingReferences } from "@/lib/sales/normalizer/brick-area";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
@@ -497,7 +498,10 @@ export async function persistNormalizedBatch(input: {
   const totalValue = rows.reduce((s, r) => s + (Number.isFinite(r.value) ? r.value : 0), 0);
 
   // The same workbook already loaded under another period: refuse before the batch row exists, with
-  // exactly the figures the insert below stores (see import-duplicate-guard.ts).
+  // exactly the figures the insert below stores (see import-duplicate-guard.ts). Each stored batch is
+  // compared on its own month's price basis, so a file re-dated across a reprice still matches.
+  const prices = await loadProductPeriodPrices();
+  const repriceable = rows.map((r) => ({ isDirect: r.isDirect, period: r.invoiceDate, productCode: r.productCode, value: r.value }));
   await assertNotADuplicateUpload({
     distributorCode: input.distributorCode,
     fileName: input.fileName,
@@ -505,6 +509,7 @@ export async function persistNormalizedBatch(input: {
     totalRows: rows.length,
     totalQty: Number(totalQty.toFixed(6)),
     totalValue: Number(totalValue.toFixed(6)),
+    totalValueAt: (atPeriod) => totalValueAtPeriod(repriceable, prices, atPeriod),
   });
 
   const batchInsert = await supabase

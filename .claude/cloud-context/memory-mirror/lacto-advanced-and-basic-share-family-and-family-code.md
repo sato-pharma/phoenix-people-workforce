@@ -55,7 +55,7 @@ harmless: **no application code and no database function reads that table** (swe
   definition that no longer agrees with the master.
 - `PRODUCT_FAMILY` (`src/lib/business-review/canonical.ts`) hardcodes `LA001/LA002 -> "Lacto"`,
   deliberately keyed on code and independent of the master. The CEO business review therefore still
-  prints "Lacto"; `dashboard.client.tsx:462` also shortens "Lacto Advanced" to "Lacto" on purpose.
+  prints "Lacto"; `dashboard.client.tsx` also shortens "Lacto Advanced" to "Lacto" on purpose.
 
 **HISTORY — the state this memory was written to warn about (verified 2026-08-27, superseded
 2026-08-31).** All four rows read `family = 'Lacto'` and `family_code = 'LA'`; the ONLY

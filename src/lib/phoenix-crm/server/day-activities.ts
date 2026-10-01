@@ -1,5 +1,6 @@
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { dayActivityLabel, parseDayActivityDraft, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
+import { isActivityEnteredForRep } from "@/lib/phoenix-crm/missed-records";
 import { readTestFlag, territoryForRead, territoryForRepWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { validationError } from "@/lib/http/api-errors";
@@ -27,7 +28,15 @@ export type DayActivityRow = {
   activityLabel: string;
   halfDay: boolean;
   note: string | null;
+  /**
+   * Entered for the rep by the Super Admin — a day he missed recording (owner, 2026-10-01). Only the
+   * rep writes his own day, so anyone else who did is the Super Admin (`isActivityEnteredForRep`).
+   */
+  enteredByAdmin: boolean;
 };
+
+/** Who wrote the day and for whom ride along, so the row can say it was entered for him. */
+const DAY_ACTIVITY_COLUMNS = "activity_date, activity_type, half_day, note, entered_by_hr_id, rep_hr_id";
 
 function mapRow(row: Row): DayActivityRow | null {
   const activityType = textOrNull(row.activity_type);
@@ -39,6 +48,7 @@ function mapRow(row: Row): DayActivityRow | null {
     activityLabel: dayActivityLabel(activityType as PhoenixCrmDayActivity),
     halfDay: row.half_day === true,
     note: textOrNull(row.note),
+    enteredByAdmin: isActivityEnteredForRep({ enteredBy: row.entered_by_hr_id, rep: row.rep_hr_id }),
   };
 }
 
@@ -51,7 +61,7 @@ function mapRow(row: Row): DayActivityRow | null {
 export async function loadDayActivityOn(seatId: string, isTest: boolean, date: string): Promise<DayActivityRow | null> {
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_day_activities")
-    .select("activity_date, activity_type, half_day, note")
+    .select(DAY_ACTIVITY_COLUMNS)
     .eq("seat_id", seatId)
     .eq("is_test", isTest)
     .eq("activity_date", date)
@@ -81,7 +91,7 @@ export async function loadSeatDayActivities(
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_day_activities")
-          .select("id, seat_id, activity_date, activity_type, half_day, note")
+          .select(`id, seat_id, ${DAY_ACTIVITY_COLUMNS}`)
           .eq("is_test", isTest)
           .gte("activity_date", range.from)
           .lte("activity_date", range.to)
@@ -108,7 +118,7 @@ export async function loadDayActivities(
 
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_day_activities")
-    .select("activity_date, activity_type, half_day, note")
+    .select(DAY_ACTIVITY_COLUMNS)
     .eq("seat_id", seat.seatId)
     .eq("is_test", isTest)
     .gte("activity_date", from)

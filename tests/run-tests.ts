@@ -1161,6 +1161,7 @@ import { runCrmShutterFixTests } from "./crm-shutter-fix.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
 import { runProductPeriodPriceTests } from "./product-period-price.test.ts";
 import { runClosingDetailsPeriodPriceTests } from "./closing-details-period-price.test.ts";
+import { runImportStoredValuePeriodPriceTests } from "./import-stored-value-period-price.test.ts";
 import { runVerifiedCapturesTests } from "./verified-captures.test.ts";
 import { runSpotlightRankingTests } from "./spotlight-ranking.test.ts";
 import { runOfficeReceiptExplainsItsRowCountTests } from "./office-receipt-explains-its-row-count.test.ts";
@@ -1328,6 +1329,7 @@ import { runAutomatedPayrollDismissalSettlementTests } from "./automated-payroll
 import { runAutomatedPayrollInsuranceWageTests } from "./automated-payroll-insurance-wage.test.ts";
 import { runPayrollReadySheetLeaverProrationTests } from "./payroll-ready-sheet-leaver-proration.test.ts";
 import { runAutomatedPayrollVacationReconfirmTests } from "./automated-payroll-vacation-reconfirm.test.ts";
+import { runAutomatedPayrollCrmLeaveSettlementSlotTests } from "./automated-payroll-crm-leave-settlement-slot.test.ts";
 import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-drift.test.ts";
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
 import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
@@ -1611,6 +1613,7 @@ import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
 import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-customers.test.ts";
 import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list-board.test.ts";
 import { runPhoenixCrmDayActivitiesTests } from "./phoenix-crm-day-activities.test.ts";
+import { runPhoenixCrmMissedRecordsTests } from "./phoenix-crm-missed-records.test.ts";
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
@@ -2192,6 +2195,7 @@ import { runDockerfileParseGateTests } from "./dockerfile-parse-gate.test.ts";
 import { runPortalLinkPrefetchTests } from "./portal-link-prefetch.test.ts";
 import { runPortalRepNavigationSpeedTests } from "./portal-rep-navigation-speed.test.ts";
 import { runPhoenixCrmForecastWhatsAppTests } from "./phoenix-crm-forecast-whatsapp.test.ts";
+import { runKpiBoardAgentsTests } from "./kpi-board-agents.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -2454,6 +2458,10 @@ await runTest(
 await runTest(
   "automated payroll: confirming the vacation step twice reaches the same answer twice",
   runAutomatedPayrollVacationReconfirmTests,
+);
+await runTest(
+  "automated payroll: a run never retires a leave settlement it cannot replace, nor one it did not write",
+  runAutomatedPayrollCrmLeaveSettlementSlotTests,
 );
 await runTest(
   "automated payroll: a confirmed deduction the Deductions module has since changed is surfaced",
@@ -4462,6 +4470,7 @@ await runTest('pharmacy code suggestions (ranked by where the rep stood, NOTHING
 await runTest('capture trust readout (the super admin sees photo vs location, and unmeasured is not suspicion)', runCaptureTrustReadoutTests);
 await runTest('PERIOD-SCOPED FACTORY PRICE (Saginko 170.52 from 2026-10; July/August must not move)', runProductPeriodPriceTests);
 await runTest('closing Details price each row at the CLOSING month (Saginko 170.52 from 2026-10, like the Matrix; July-September unchanged)', runClosingDetailsPeriodPriceTests);
+await runTest("the importer stores each row at its own month's price (Saginko 170.52 from 2026-10), re-prices a re-dated row, and still catches a re-dated duplicate", runImportStoredValuePeriodPriceTests);
 await runTest('Verified Captures (Super Admin + SFE Manager gate, rep/DM/search filter)', runVerifiedCapturesTests);
 await runTest('SPOTLIGHT (achievement summed never averaged, targeted months only, completed-window gate)', runSpotlightRankingTests);
 await runTest('the Office receipt explains what its Rows Read number is', runOfficeReceiptExplainsItsRowCountTests);
@@ -5550,6 +5559,11 @@ await runTest(
 await runTest(
   "Phoenix CRM records a day that was not a call (E1 — owner, 2026-09-26: a meeting, training, a conference, admin work, travelling or a health day, so a rep at a training day stops looking like a rep who did nothing; a RECORD ONLY that no report, no coverage and no call rate reads; LEAVE IS NOT HERE because HR's vacation module is the only leave record; an unknown kind is refused rather than coerced; one row a day, replaced not piled up; and the date is the server's Cairo today, never the body's)",
   runPhoenixCrmDayActivitiesTests,
+);
+
+await runTest(
+  "Phoenix CRM: the Super Admin enters a record a rep MISSED (owner, 2026-10-01: \"if he missed a visit or a record, admin can enter it for him … anyone, anytime, anywhere\", \"I choose planned or unplanned\", \"marked as entered by admin\" — the Super Admin alone, any day that has begun, a rep who exists on a line that has opened; planned or unplanned is HIS required choice; it adds what is missing and never rewrites the rep's own record; the mark is read from who entered the visit because capture_source is rep-blind; and an entered visit has NO location, so the location checks, the behaviour sweep and place-against-actual all leave it out — the coordinate read no longer turns a missing reading into 0°N 0°E)",
+  runPhoenixCrmMissedRecordsTests,
 );
 
 await runTest(
@@ -8177,6 +8191,10 @@ await runTest(
 await runTest(
   "the agreed forecast reaches WhatsApp with nothing typed — the picker form, no phone number, and the Cairo day never parsed as a Date",
   runPhoenixCrmForecastWhatsAppTests,
+);
+await runTest(
+  "the KPIs board reads only its scope's reps and every figure is the company-wide one (a rep named only on plan rows, a first plan row with no hr id, a native rep, a reused CRM slot; small scopes only, anything doubtful reads company-wide)",
+  runKpiBoardAgentsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

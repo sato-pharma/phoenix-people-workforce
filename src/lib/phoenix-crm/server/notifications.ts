@@ -118,6 +118,11 @@ export type PhoenixCrmNotice =
       customerName: string;
       visitDate: string;
       clarification: string;
+      /**
+       * The Super Admin entered it for the rep, who missed logging it (owner, 2026-10-01) — so the
+       * reason is the Super Admin's words, not the rep's, and the notice says whose they are.
+       */
+      enteredByAdmin?: boolean;
     }
   | {
       kind: "unplanned_visit_decided";
@@ -294,11 +299,14 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | null> {
     if (!reviewer) return null;
     const names = await loadPeopleNames([notice.repHrId]);
     const rep = nameOf(names, notice.repHrId, "A rep");
+    const day = formatPhoenixLongDate(notice.visitDate);
     return {
       recipients: [reviewer.hrId],
       eventType: "unplanned_visit_waiting",
       title: `Off-plan visit to approve: ${notice.customerName}`,
-      message: `${rep} visited ${notice.customerName} on ${territory} off his plan on ${formatPhoenixLongDate(notice.visitDate)}. He wrote: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until you and then SFE approve it.`,
+      message: notice.enteredByAdmin
+        ? `The Super Admin entered a visit ${rep} missed logging: ${notice.customerName} on ${territory}, off the plan, on ${day}. The reason given: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until you and then SFE approve it.`
+        : `${rep} visited ${notice.customerName} on ${territory} off his plan on ${day}. He wrote: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until you and then SFE approve it.`,
       tab: "team",
       recordId: notice.visitId,
       idempotencyKey: `phoenix_crm:unplanned:${notice.visitId}:raised`,

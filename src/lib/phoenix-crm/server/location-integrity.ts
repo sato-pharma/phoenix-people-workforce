@@ -37,12 +37,26 @@ const REPLAY_HISTORY_DAYS = 180;
 /** Half of the last place a six-decimal coordinate can hold, for an index-friendly equality band. */
 const COORDINATE_BAND = 0.5 / 10 ** REPLAY_DECIMALS;
 
+/**
+ * A stored coordinate, or null when there is none.
+ *
+ * 🔴 NEVER `Number(row.lat)` ALONE: `Number(null)` is 0, which is finite, so a missing reading became a
+ * fix at 0°N 0°E — and the rep's next real visit, in Egypt, read as IMPOSSIBLE TRAVEL from the Gulf of
+ * Guinea. A visit the Super Admin entered for a rep who missed logging it (owner, 2026-10-01) has no
+ * reading at all, by design: he was not at the door. It is no fix, and it never accuses anybody.
+ */
+function coordinate(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function toPriorFix(row: Row, customerKey: string): PhoenixCrmPriorFix | null {
-  const lat = Number(row.lat);
-  const lon = Number(row.lon);
+  const lat = coordinate(row.lat);
+  const lon = coordinate(row.lon);
   const capturedAt = new Date(String(row.captured_at));
   const repHrId = String(row.rep_hr_id ?? "").toUpperCase();
-  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Number.isNaN(capturedAt.getTime()) || !repHrId) return null;
+  if (lat === null || lon === null || Number.isNaN(capturedAt.getTime()) || !repHrId) return null;
   const accuracy = row.accuracy_meters === null || row.accuracy_meters === undefined ? null : Number(row.accuracy_meters);
   return {
     lat,
@@ -73,7 +87,16 @@ async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, i
   const placeColumns = "lat, lon, accuracy_meters, captured_at, rep_hr_id:created_by_hr_id, customer_id";
 
   const [ownVisits, ownPlaces, replayVisits, replayPlaces] = await Promise.all([
-    supabase.from("phoenix_crm_visits").select(visitColumns).eq("rep_hr_id", repHrId).eq("is_test", isTest).gte("captured_at", ownSince).limit(500),
+    // Visits with a reading only: one the Super Admin entered for the rep has none, and must not spend
+    // a row of the 500 — toPriorFix would drop it anyway.
+    supabase
+      .from("phoenix_crm_visits")
+      .select(visitColumns)
+      .eq("rep_hr_id", repHrId)
+      .eq("is_test", isTest)
+      .gte("captured_at", ownSince)
+      .not("lat", "is", null)
+      .limit(500),
     supabase.from("phoenix_crm_places").select(placeColumns).eq("created_by_hr_id", repHrId).eq("is_test", isTest).gte("captured_at", ownSince).limit(500),
     supabase
       .from("phoenix_crm_visits")

@@ -29,6 +29,14 @@ import { fakeSupabaseClient } from "./fixtures/fake-supabase-table.ts";
  * months as a first entry and a second entry, because his salary is split across the instalments.
  * Duplicate detection is therefore scoped to the part; a rule that ignored the part would refuse
  * to seed half his pay.
+ *
+ * THIS FILE ONCE WROTE TO THE REAL AUDIT LOG (fixed 2026-10-01). Every seed was read and written
+ * through the fake below except its last step, the `non_employee_recurring_seeded` audit row,
+ * which always went to the real admin client. A local run loads `.env.local`, which is production,
+ * so every local run of this file sent five inserts to production's automated_payroll_audit;
+ * Postgres refused them only because `run-september` is not a uuid. CI and the CI box hold no
+ * Supabase credentials, so there the write failed before leaving the machine. The audit row now
+ * goes to the same client as every other write, and the assertions below find it in the fake.
  */
 
 const RUN = "run-september";
@@ -101,6 +109,7 @@ export async function runAutomatedPayrollNonEmployeeSeedingTests() {
   );
   assert.deepEqual(afterHandTyped.skippedAsDuplicate, ["Medhat Makram"], "and they are named, not just counted");
   assert.deepEqual(rowsOn(handTyped), ["Medhat Makram|first"], "the run still holds exactly one of them");
+  assert.equal(handTyped.rows("automated_payroll_audit").length, 0, "nothing was seeded, so nothing is audited");
 
   // The bank account wins over the name, because it is what the money is actually sent to.
   const renamed = world(
@@ -132,6 +141,19 @@ export async function runAutomatedPayrollNonEmployeeSeedingTests() {
   assert.equal(afterSplit.inserted, 2, "a salary split across both instalments is two entries, not a duplicate");
   assert.deepEqual(afterSplit.skippedAsDuplicate, []);
   assert.deepEqual(rowsOn(split), ["Anwar Gaweesh|first", "Anwar Gaweesh|second"]);
+
+  // ---- THE AUDIT ROW GOES TO THE CLIENT THE SEED WAS GIVEN -----------------------------------------
+  // Found in the fake, not sent to the real database: before 2026-10-01 this row always went to the
+  // real admin client, so the fake held no audit row at all and a local run wrote to production.
+  assert.deepEqual(
+    split.rows("automated_payroll_audit").map((row) => ({
+      action: row.action,
+      inserted: (row.detail as { inserted?: unknown }).inserted,
+      runId: row.run_id,
+    })),
+    [{ action: "non_employee_recurring_seeded", inserted: 2, runId: RUN }],
+    "the seed's audit row must land in the client the seed was handed, like every other write it makes",
+  );
 
   // ---- A PART WHOSE MONEY IS OUT CANNOT BE ADDED TO ---------------------------------------------
   const afterPart1 = world(

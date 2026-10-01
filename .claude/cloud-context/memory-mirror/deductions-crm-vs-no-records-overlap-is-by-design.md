@@ -53,7 +53,7 @@ in scope. Verified July 2026:
   **21 visits across 4 days as the tagged double** ⇒ has signal ⇒ still flagged
   for her other 16 days at **22,193.55 EGP**.
 
-**#1584's own doc comment (`crm.ts:327`) is factually wrong**: it states A-8 had
+**#1584's own doc comment (`crm.ts`) is factually wrong**: it states A-8 had
 *"0 CRM rows all month"*. She had 21. That PR could only ever fix A-9's
 30,967.74 — **the "53,161 EGP" figure was never fully in scope**, and I repeated
 it to the owner three times before checking. My verification query only read

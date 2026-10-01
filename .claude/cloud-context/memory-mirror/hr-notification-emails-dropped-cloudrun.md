@@ -5,15 +5,15 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6dae059d-117a-4fde-aa3e-dc1706d915a6
-  modified: 2026-08-22T22:25:49.463Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 Full env-var audit on 2026-07-17 (all 89 runtime `process.env` keys vs live Cloud Run env + Secret Manager + GitHub secrets) found exactly ONE real production gap: **`HR_NOTIFICATION_EMAILS` is unset on the live Cloud Run service** (`phoenix-hr`, revision phoenix-hr-00213-nax). It exists as a GitHub secret from the Vercel era but was dropped in the GCP migration — same drift pattern as [[notification-outages-cloudrun-env-drift-2026-07-11]].
 
 It has NO default and is the sole source of the "HR inbox" recipient mode, so absence fails silently:
 1. Every `"general"`-type notification email routes ONLY via `recipientMode: "hr_notifications"` → empty list → skipped with "routing resolved no recipient emails" (not an error). Goes to nobody.
-2. HR loses its CC copy on probation / contract-renewal / resignation workflow emails (policies with `includeHrInbox: true`, `src/lib/notifications/email.ts:673`).
-3. Excuse "HR-visibility" in-app/Telegram notifications reach nobody (`src/lib/excuses/service.ts:332-343 resolveHrNotificationRecipients` returns `[]`).
+2. HR loses its CC copy on probation / contract-renewal / resignation workflow emails (policies with `includeHrInbox: true`, `src/lib/notifications/email.ts`).
+3. Excuse "HR-visibility" in-app/Telegram notifications reach nobody (`src/lib/excuses/service.ts resolveHrNotificationRecipients` returns `[]`).
 
 **RE-VERIFIED LIVE 2026-08-27 — the diagnosis above is OUT OF DATE and the remaining failure has a DIFFERENT cause.**
 

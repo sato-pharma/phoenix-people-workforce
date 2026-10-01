@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e33bc510-fa9c-48dd-9f02-36e8d91f528d
-  modified: 2026-08-29T20:05:00.000Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **A raw count of WhatsApp intake events is not a count of applicants, and the gap is roughly 20x.**
@@ -66,7 +66,7 @@ to it — the stored notification body reads *"Omar Anwar (+201280955558) wrote:
 asked them to send it as a file"*, with `asked: true`. `handleTextOnlyMessage` returns
 `reason: "import_sender"` before any of that for a listed sender, so the value it read did not
 contain the number at that moment. The value changed between then and 01:20; who changed it was not
-established, and the `isImportSender: false` at whatsapp-text-only-applicant.ts:335 is a correct
+established, and the `isImportSender: false` at whatsapp-text-only-applicant.ts is a correct
 short-circuit after the early return, **not** a bypass — do not "fix" it.
 
 **The general rule this cost:** an env-var membership claim is live configuration, not a durable

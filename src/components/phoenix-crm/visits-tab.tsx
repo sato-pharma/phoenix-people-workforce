@@ -55,6 +55,7 @@ import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES } from "@/lib/phoenix-crm/day-activities";
 import type { ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
+import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { outOfListVisitNote, unplannedKindLabel } from "@/lib/phoenix-crm/unplanned-rules";
 import type { DayActivityRow, SavedVisit, VisitCustomerOption, VisitDayView, VisitFormView, VisitRow } from "@/lib/phoenix-crm/view-types";
@@ -102,6 +103,16 @@ function visitPeople(visit: VisitRow): Array<{ name: string; role: string }> {
 /** A visit a manager entered for the rep's territory says so; the rep's own entries need no line. */
 function enteredByOther(visit: VisitRow): boolean {
   return visit.repName !== null && visit.enteredByName !== visit.repName;
+}
+
+/**
+ * The line saying who entered a visit, when it was not the rep. A visit the Super Admin entered because
+ * the rep missed logging it says so in the owner's own words (2026-10-01, "marked as entered by
+ * admin"); a manager's says his name, as before.
+ */
+function enteredByLine(visit: VisitRow): string | null {
+  if (visit.enteredByAdmin) return MISSED_RECORD_MARK;
+  return enteredByOther(visit) ? `Entered by ${visit.enteredByName}` : null;
 }
 
 function dayFigures(visits: ReadonlyArray<VisitRow>) {
@@ -273,7 +284,7 @@ function VisitDetails({ visit }: { visit: VisitRow }) {
       <SampleLine visit={visit} />
       <OutcomeLines visit={visit} />
       <OffPlanLines visit={visit} />
-      {enteredByOther(visit) ? <p className="break-words">Entered by {visit.enteredByName}</p> : null}
+      {enteredByLine(visit) ? <p className="break-words">{enteredByLine(visit)}</p> : null}
     </div>
   );
 }
@@ -335,7 +346,7 @@ function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
                     <span className="text-xs text-slate-500"> · {person.role}</span>
                   </span>
                 ))}
-                {enteredByOther(visit) ? <span className="mt-1 block text-xs text-slate-500">Entered by {visit.enteredByName}</span> : null}
+                {enteredByLine(visit) ? <span className="mt-1 block text-xs text-slate-500">{enteredByLine(visit)}</span> : null}
               </td>
               <td className={crmTdClassName}>
                 <span className="block">{visit.products.join(", ") || "—"}</span>
@@ -457,6 +468,8 @@ function DayActivityBlock({ onChanged, view }: { onChanged: () => void; view: Vi
           {current.note}
         </p>
       ) : null}
+      {/* A day the rep missed recording, entered for him by the Super Admin (owner, 2026-10-01). */}
+      {current.enteredByAdmin ? <p className="mt-1 text-xs font-semibold text-slate-500">{MISSED_RECORD_MARK}</p> : null}
     </>
   ) : null;
 

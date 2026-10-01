@@ -44,6 +44,14 @@ export type CallRateInput = {
    * be out of one and in the other. Omitted, the report reads its own.
    */
   holidays?: CallRateHolidayLookup;
+  /**
+   * Read only these reps' visits and check-ins, by either id — the KPIs board's narrowing for a
+   * scope of a few people (crm/kpi-board-agents.ts says how the ids are chosen, and why the rows are
+   * then exactly the ones the whole-field-force read gives those reps). Every rate is still computed
+   * per rep by the same code from the same rows; this only stops reading everyone else's month.
+   * Omitted, the whole field force is read as before.
+   */
+  agents?: { crmIds: readonly number[]; hrIds: readonly string[] };
 };
 
 /**
@@ -87,13 +95,18 @@ export function scopeCallRateRows<
 export async function loadCallRateReport(
   input: CallRateInput,
 ): Promise<CallRateReport & { holidaysComplete: boolean }> {
+  // The duplicate collapse below keys on the agent's CRM id, and the rate matches a check-in to a
+  // visit of the SAME agent, so neither ever looks across reps: these reps' rows give these reps'
+  // figures whether or not anyone else's month was read beside them.
+  const narrowTo = input.agents ? { agentCrmOrHrIds: { crmIds: input.agents.crmIds, hrIds: input.agents.hrIds } } : {};
   const [rawVisits, checkins, holidays, cutover] = await Promise.all([
     queryVisits<VisitForCallRate & { crm_visit_id: number | null; double_crm_id: number | null }>({
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
       columns: VISIT_COLUMNS,
+      ...narrowTo,
     }),
-    queryCheckins<CheckinRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: CHECKIN_COLUMNS }),
+    queryCheckins<CheckinRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: CHECKIN_COLUMNS, ...narrowTo }),
     input.holidays ?? loadCallRateHolidays(input.dateFrom, input.dateTo),
     // Phase 6: from the CRM cutover every submitted regular visit counts. With no date set, or an
     // unreadable setting, this answers the old rule and nothing on any screen moves.

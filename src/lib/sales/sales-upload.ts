@@ -16,6 +16,7 @@ import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { describeRefusedRow, isRefusedRow, listRowLines, summarizeRefusedRows } from "@/lib/sales/normalizer/row-messages";
 import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 import type { CodedRow, NormalizeException, NormalizeResult } from "@/lib/sales/normalizer/types";
+import { repriceValue, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
 import { RECOGNITION_ENGINE_VERSION, recognizeDistributorWorkbook, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
 import { validateNormalizedUpload, type DistributorCrossCheck, type ValidationContext, type ValidationFinding, type ValidationReport, type ValidationSeverity } from "@/lib/sales/upload-validation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -114,9 +115,25 @@ export function resolveUploadPeriod(codedPeriods: (string | null | undefined)[],
 // file under one chosen period, every row's invoiceDate is rewritten to that period — which can turn
 // rows that had distinct source months into true duplicates. Validation MUST run on this consolidated
 // result (not the raw one) so the duplicate/period checks see what actually gets imported.
-export function applyPeriodConsolidation(result: NormalizeResult, decision: PeriodDecision): NormalizeResult {
+//
+// A re-dated distributor row is re-PRICED too: the engine valued it at the month the sheet gave it (or
+// at the flat master price when the sheet has no date at all), and it is stored under the chosen month,
+// which is the price the closing values it at — Saginko is 170.52 from 2026-10, 111.15 before. A
+// direct row keeps its deal value, and a row no reprice reaches keeps its exact figure (repriceValue).
+export function applyPeriodConsolidation(
+  result: NormalizeResult,
+  decision: PeriodDecision,
+  prices?: Pick<ProductPeriodPrices, "priceFor">,
+): NormalizeResult {
   if (decision.kind !== "ok" || !decision.consolidate) return result;
-  return { ...result, coded: result.coded.map((r) => ({ ...r, invoiceDate: decision.period })) };
+  return {
+    ...result,
+    coded: result.coded.map((r) => ({
+      ...r,
+      invoiceDate: decision.period,
+      value: prices && !r.isDirect ? repriceValue(prices, r.productCode, r.value, r.invoiceDate, decision.period) : r.value,
+    })),
+  };
 }
 
 /**
@@ -424,7 +441,7 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
   // A picked month that re-dates rows is named from the rows as the sheet dated them.
   const validation = withPeriodGateFinding(
     withRefusedRowsFinding(
-      await runStrictValidation(distributorCode, rec, applyPeriodConsolidation(rec.result, decision), resolvedPeriod, crossCheck),
+      await runStrictValidation(distributorCode, rec, applyPeriodConsolidation(rec.result, decision, rec.prices), resolvedPeriod, crossCheck),
       rec.result.exceptions,
     ),
     decision,
@@ -499,7 +516,7 @@ export async function commitMonthlyUpload(input: {
   // Consolidate every row under the chosen month only when the user explicitly picked one. Build this
   // BEFORE validation so the strict checks run on exactly what gets persisted (consolidation can turn
   // distinct-month rows into true duplicates).
-  const stamped: NormalizeResult = applyPeriodConsolidation(result, decision);
+  const stamped: NormalizeResult = applyPeriodConsolidation(result, decision, rec.prices);
 
   // Strict server-side re-validation with the FINAL resolved period (never trust the client). report.ok
   // is false only for a hard-block error (duplicate sheet, unreadable/unrecognized file, or broken

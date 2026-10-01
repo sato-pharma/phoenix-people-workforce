@@ -73,6 +73,62 @@ function code(value: unknown): string {
 }
 
 /**
+ * A value already priced in `fromPeriod`, moved to `toPeriod`'s price: scaled by the product's price
+ * in `toPeriod` over its price in `fromPeriod`. A value of 0, an unknown price, or two equal prices
+ * leave it EXACTLY as it was — so a row no override reaches keeps its figure to the last digit.
+ *
+ * For an import that values a row at one month and then files it under another (a date-less sheet
+ * consolidated under the month the operator picked), and for comparing a file against a batch stored
+ * under a different month.
+ */
+export function repriceValue(
+  prices: Pick<ProductPeriodPrices, "priceFor">,
+  productCode: string,
+  value: number,
+  fromPeriod: string | null | undefined,
+  toPeriod: string | null | undefined,
+): number {
+  if (!Number.isFinite(value) || value === 0) return value;
+  const from = prices.priceFor(productCode, fromPeriod);
+  const to = prices.priceFor(productCode, toPeriod);
+  if (from == null || to == null || from <= 0 || to === from) return value;
+  return (value * to) / from;
+}
+
+/** One `source_of_sales_product_price_history` row, as a caller that already read it holds it. */
+export type ProductPriceOverrideRow = { productCode: string; effectivePeriod: string; factoryPrice: number };
+
+/**
+ * The same rule, built from rows a caller already holds. The import paths read the product master
+ * as part of their reference set, so they resolve against THAT set — the products they can price —
+ * rather than reading the master a second time.
+ */
+export function productPeriodPricesFromRows(
+  products: readonly { productCode: unknown; factoryPrice: unknown }[],
+  overrides: readonly { productCode: unknown; effectivePeriod: unknown; factoryPrice: unknown }[],
+): ProductPeriodPrices {
+  const base = new Map<string, number>();
+  for (const product of products) {
+    const productCode = code(product.productCode);
+    const price = num(product.factoryPrice);
+    if (productCode && price != null) base.set(productCode, price);
+  }
+
+  const byProduct = new Map<string, ProductPriceOverride[]>();
+  for (const row of overrides) {
+    const productCode = code(row.productCode);
+    const effectivePeriod = String(row.effectivePeriod ?? "").trim();
+    const price = num(row.factoryPrice);
+    if (!productCode || !effectivePeriod || price == null) continue;
+    const list = byProduct.get(productCode) ?? [];
+    list.push({ effectivePeriod, factoryPrice: price });
+    byProduct.set(productCode, list);
+  }
+
+  return buildProductPeriodPrices(base, byProduct);
+}
+
+/**
  * Loads the product master's prices and every period override once, and resolves per call.
  *
  * Both tables are tiny — around 30 products and, today, a single override row — so this is one
@@ -91,27 +147,20 @@ export async function loadProductPeriodPrices(): Promise<ProductPeriodPrices> {
   if (master.error) throw master.error;
   if (history.error) throw history.error;
 
-  const base = new Map<string, number>();
-  for (const row of master.data ?? []) {
-    const record = row as Record<string, unknown>;
-    const productCode = code(record.product_code);
-    const price = num(record.factory_price);
-    if (productCode && price != null) base.set(productCode, price);
-  }
-
-  const overrides = new Map<string, ProductPriceOverride[]>();
-  for (const row of history.data ?? []) {
-    const record = row as Record<string, unknown>;
-    const productCode = code(record.product_code);
-    const effectivePeriod = String(record.effective_period ?? "").trim();
-    const price = num(record.factory_price);
-    if (!productCode || !effectivePeriod || price == null) continue;
-    const list = overrides.get(productCode) ?? [];
-    list.push({ effectivePeriod, factoryPrice: price });
-    overrides.set(productCode, list);
-  }
-
-  return buildProductPeriodPrices(base, overrides);
+  return productPeriodPricesFromRows(
+    (master.data ?? []).map((row) => {
+      const record = row as Record<string, unknown>;
+      return { productCode: record.product_code, factoryPrice: record.factory_price };
+    }),
+    (history.data ?? []).map((row) => {
+      const record = row as Record<string, unknown>;
+      return {
+        productCode: record.product_code,
+        effectivePeriod: record.effective_period,
+        factoryPrice: record.factory_price,
+      };
+    }),
+  );
 }
 
 /** The `product_code -> price` map shape that the single-period callers want. */

@@ -23,7 +23,7 @@ server/route code becomes a compile-time-constant `false` in every built
 deployment, indistinguishable between real production and a CI/preview build. It
 silently defeats itself as "dead code" rather than throwing — easy to ship
 believing it works. This also means the existing pattern in
-`src/lib/security/origins.ts:90`
+`src/lib/security/origins.ts`
 (`NODE_ENV !== "production" || PHOENIX_CI_SMOKE_LOGIN === "true"`) is weaker than
 it looks: on Vercel the NODE_ENV clause is always false too, so it only actually
 differs from "always production" under local `next dev`.
