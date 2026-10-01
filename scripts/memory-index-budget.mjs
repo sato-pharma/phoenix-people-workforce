@@ -350,7 +350,22 @@ function repoShareLines(verdict) {
     ];
   }
 
-  const enforced = `  ENFORCED (what CI grades): CLAUDE.md + AGENTS.md ${verdict.repoBytes} of ${verdict.repoShare} bytes`;
+  // 🔴 THE LABEL NAMES WHERE CI GRADES IT, BECAUSE THIS NUMBER IS MEASURED SOMEWHERE ELSE. CI grades
+  // the PR HEAD; this is measured from the checkout the session is sitting in, and in the shared
+  // primary that tree is routinely a commit or two behind `origin/main` — sessions here merge about
+  // 46 times a day. The old label, "what CI grades", read as a verdict on the merged repository.
+  //
+  // Measured 2026-10-02: the banner reported `125586 of 125600 — 14 bytes left` while `origin/main`
+  // stood at 124819, i.e. 781 bytes of room. The checkout was ONE commit behind, and that commit
+  // (#5089) had just moved an account out of AGENTS.md and freed 767 bytes. A session reading 14
+  // bytes concludes it cannot add a single hook and starts trimming room that already exists — the
+  // exact opposite of what the session that freed it was doing.
+  //
+  // It is not fixed by measuring `origin/main` instead: §2.2 allows a union for REPORTING, but the
+  // figure above it is deliberately the SESSION'S OWN tree (see the hook's note on why a worktree's
+  // half-finished AGENTS.md must count), and two figures from two refs in one block is worse than
+  // one figure that says which ref it came from.
+  const enforced = `  ENFORCED SHARE (CI grades it on your PR head): CLAUDE.md + AGENTS.md ${verdict.repoBytes} of ${verdict.repoShare} bytes`;
 
   if (verdict.repoStatus === "over") {
     return [
@@ -365,5 +380,7 @@ function repoShareLines(verdict) {
     enforced + ` — ${verdict.repoHeadroom} bytes left`,
     "  Budget against THIS, not the slack above: the gate allows the index its full cliff whatever",
     "  it weighs today, so the total's slack is always the friendlier of the two figures.",
+    "  Measured from THIS checkout — one behind `origin/main` reports a stale margin in either",
+    "  direction, so `git fetch` before acting on a tight one.",
   ];
 }
