@@ -69,14 +69,24 @@ const row = (over: Partial<SplitPlanSourceRow> = {}): SplitPlanSourceRow => ({ .
 
 export function runImportSplitPreviewTests() {
   // ── The period gate is reported, not left to be inferred from an empty list ───────────────────
-  const july = buildImportSplitPlan({ period: "2026-07", rows: [row()] });
-  assert.equal(july.splitActive, false, "July predates the split — the plan says so explicitly");
-  assert.equal(july.splittingCustomers, 0);
-  assert.equal(july.customers[0].willSplit, false);
+  // JUNE, not July: the gate moved to 2026-07 on the owner's "FIX JULY" ruling (2026-10-02), so June
+  // is now the newest month that predates the split. The assertion is about the plan SAYING SO
+  // rather than returning a silently empty list, which is true of whichever month is before the gate.
+  const june = buildImportSplitPlan({ period: "2026-06", rows: [row()] });
+  assert.equal(june.splitActive, false, "June predates the split — the plan says so explicitly");
+  assert.equal(june.splittingCustomers, 0);
+  assert.equal(june.customers[0].willSplit, false);
   assert.match(
-    july.customers[0].reason ?? "",
-    /does not apply to 2026-07/,
+    june.customers[0].reason ?? "",
+    /does not apply to 2026-06/,
     "and the reason names the period rather than blaming the customer",
+  );
+  // And July is on the other side of the gate now — the same file imported for July DOES split.
+  const julySinceTheRuling = buildImportSplitPlan({ period: "2026-07", rows: [row()] });
+  assert.equal(
+    julySinceTheRuling.splitActive,
+    true,
+    "July splits since 'FIX JULY', so an import preview for it must show the distribution, not a gate notice",
   );
 
   // ── El Qema, 600 packs from Benha: step 2, then the صعيد pass ─────────────────────────────

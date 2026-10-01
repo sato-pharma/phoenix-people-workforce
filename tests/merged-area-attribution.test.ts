@@ -33,6 +33,11 @@ const REPO = resolve(import.meta.dirname, "..");
 const KEEPS_AREAS_APART: readonly string[] = [
   "scripts/backfill-attribution-store-split.ts",
   "src/lib/sales/attribution-store-split-refresh.ts",
+  // Added 2026-10-02, deliberately, which is what this list exists to force. The drift detector
+  // compares the frozen net against a live recompute, so it has to build its rows the way the net
+  // was built or every merged-area cell would read as drift that never happened. It is a third
+  // attribution-net builder, not a reader of one.
+  "src/lib/sales/store-split-drift.ts",
 ];
 
 const SEARCH_ROOTS = ["src", "app", "scripts", "tests"];

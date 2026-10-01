@@ -84,16 +84,29 @@ export async function runClosingConsolidatedExportTests() {
     "before + net = after still holds across the span",
   );
 
-  // A month the split was not applied to (July) is left out once any month was split: its movement
-  // is hypothetical and the Closing Matrix beside the sheet does not carry it.
+  // A month the split was not applied to is left out once any month was split: its movement is
+  // hypothetical and the Closing Matrix beside the sheet does not carry it. JUNE, not July — the
+  // gate moved to 2026-07 on the owner's "FIX JULY" ruling (2026-10-02), so July is an APPLIED
+  // month now and June is the newest unapplied one. The invariant is unchanged; only the month that
+  // demonstrates it.
+  const withJune = foldStoreSplitByArea([
+    { period: "2026-06", rows: [{ ...QEMA_SALE, qty: 900, salesValue: 243_000 }] },
+    { period: "2026-08", rows: august },
+  ]);
+  assert.equal(
+    withJune.find((entry) => entry.areaCode === "D11")?.movedOutValue,
+    40_500,
+    "June's unapplied split does not ride into a span that includes August",
+  );
+  // And the other side of the ruling: July DOES ride in now, because it is an applied month.
   const withJuly = foldStoreSplitByArea([
     { period: "2026-07", rows: [{ ...QEMA_SALE, qty: 900, salesValue: 243_000 }] },
     { period: "2026-08", rows: august },
   ]);
   assert.equal(
     withJuly.find((entry) => entry.areaCode === "D11")?.movedOutValue,
-    40_500,
-    "July's unapplied split does not ride into a span that includes August",
+    283_500,
+    "July's split is applied since 'FIX JULY', so its 243,000 is added to August's 40,500",
   );
 
   // ── Who, and how many months ─────────────────────────────────────────────────────────────────
