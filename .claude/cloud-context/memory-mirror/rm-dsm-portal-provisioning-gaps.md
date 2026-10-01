@@ -33,7 +33,11 @@ computed-but-unrendered on the DSM view (dead data).
 
 **Live portal tab diffs:** RM-only = Weekly/Monthly Plan, Planning Calendar, Direct
 Orders Approvals (RM is an approval rung; DSM isn't), + deeper Sales Analytics
-(Executive Comparison + Reconciliation, portal-access.ts:41 `canViewPortalDetailedAnalytics`).
+(Executive Comparison + Reconciliation). 🔴 **That Sales Analytics half is DEAD —
+the module was retired 2026-09-17 by the owner's Ruling 11** and the gate this line used to name,
+`canViewPortalDetailedAnalytics` in `src/lib/analytics/portal-access.ts`, is absent from the whole
+tree along with its directory. Do not look for it and do not restore it; two tests in the suite fail
+the PR if it comes back. See [[analytics-open-to-all-scoped-plan]]. The rest of this tab diff stands.
 DSM-only = Team Performance, Team Coaching, Vacancies, Probation Tracker (all gated on
 `isDistrictManager`).
 
