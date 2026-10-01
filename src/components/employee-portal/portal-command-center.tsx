@@ -1109,12 +1109,22 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
   const selectedYear = Number(kpiMonth.slice(0, 4));
   const selectedMonth = Number(kpiMonth.slice(5, 7));
 
+  // 🔒 THE FALLBACK IS THE OWNER'S OWN RULING, PUT TO HIM AND ANSWERED (2026-10-01): "keep the
+  // achievement tile falling back to the last published month". It was raised as an open question
+  // the morning the month picker shipped, precisely because the tile can read AUG 2026 beside three
+  // tiles reading SEP 2026 and that looks like a defect. It is not. DO NOT "FIX" IT into an empty
+  // state, a "September not published yet" message, or a blank — that reads as a bug to whoever
+  // meets it next, and ripping it out deletes a decision he made in writing.
+  //
   // mrSalesAchievement is the SELECTED month, and it is null until that month's Monthly Closing is
-  // PUBLISHED — which never happens while the month is still running (owner rule). So a running
-  // month is always null here, and the card falls back to the newest published ("closed") month and
-  // labels which month is on screen, because a tile with a number available that prints none is the
-  // empty square the owner banned. A published month with NO TARGET is treated the same way: its
-  // achievement is 0 by arithmetic, not by performance, and drawing it would read as a collapse.
+  // PUBLISHED — which never happens while the month is still running (the closing golden rule). So
+  // a running month is always null here, and the card falls back to the newest published ("closed")
+  // month AND NAMES IT in its own meta, because a tile with a number available that prints none is
+  // the empty square the owner banned. The label is what keeps the fallback honest: the tile never
+  // claims the picked month's achievement, it says which month it is showing.
+  //
+  // A published month with NO TARGET takes the same path: its achievement is 0 by arithmetic, not
+  // by performance, and drawing it would read as a collapse.
   const latestClosed = closed.length > 0 ? closed[closed.length - 1] : null;
   const achFromSelected = mrSalesAchievement != null && mrSalesAchievement.targetValue > 0;
   const achValue = achFromSelected ? mrSalesAchievement : latestClosed;
