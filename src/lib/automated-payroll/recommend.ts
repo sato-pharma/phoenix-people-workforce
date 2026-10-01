@@ -1472,12 +1472,19 @@ export async function computeVacationDeductionTotals(
  * Both require an explicit "Approved for Payroll" in the module, so nothing is
  * deducted here that HR has not decided.
  *
- * THE LEAVE-BALANCE DRAW-DOWN IS DELIBERATELY UNTOUCHED. Confirming this step
- * still settles CRM-only leave against the balance ledger via
- * computeVacationDeductionTotals inside run-service.ts (owner rule 2026-07-21) —
- * that is leave BOOKKEEPING, a different question from what salary is deducted,
- * and it runs independently of what this feeder displays. Sourcing the money
- * from the module does not change how many balance days an employee consumed.
+ * THE LEAVE-BALANCE DRAW-DOWN DOES NOT HAPPEN IN THE CONFIRM AT ALL ANY MORE.
+ * This paragraph used to say the confirm "still settles CRM-only leave against
+ * the balance ledger via computeVacationDeductionTotals inside run-service.ts".
+ * That stopped being true on 2026-10-01: the settlement write is REMOVED and
+ * `scripts/import-crm-vacation-backfill.ts` is the one path a CRM leave day
+ * reaches a balance by (owner's decision). The standing note further down, where
+ * that write used to live, carries the account and the reason it must not be
+ * rebuilt — DO NOT read this paragraph as evidence a draw-down still runs here.
+ *
+ * What survives unchanged is the distinction it was drawing: leave BOOKKEEPING is
+ * a different question from what salary is deducted, and sourcing the money from
+ * the Deductions module does not change how many balance days an employee
+ * consumed. The bookkeeping is simply the importer's job now.
  */
 function recommendVacation(
   members: PopulationMember[],
