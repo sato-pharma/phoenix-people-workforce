@@ -362,7 +362,8 @@ export function runBusinessReviewCrmKpisTests() {
   {
     const rows = (month: string) => [
       kpiRow({ agentHrId: "rep-1", repName: "Rep One" }),
-      kpiRow({ agentHrId: "rep-2", areaName: "Area Zero", coveragePct: 60, repName: "Rep Two", visitedDoctors: 60 }),
+      // "Alexandria" sorts before "Area One", so Rep Two leads although he is listed second.
+      kpiRow({ agentHrId: "rep-2", areaName: "Alexandria", coveragePct: 60, repName: "Rep Two", visitedDoctors: 60 }),
       kpiRow({ agentHrId: "rep-3", coveragePct: 97, meetsCoverageFloor: true, repName: "Rep Three", visitedDoctors: 97 }),
     ].map((row) => ({ ...row, workingDays: month === "2026-07" ? 22 : 20 }));
     const july = monthOf("2026-07", rows("2026-07"));
@@ -587,13 +588,17 @@ export function runBusinessReviewCrmKpisTests() {
       ["You", "Manager One"],
       "his own read \"You\"; his manager's request for his doctors is on his table too",
     );
-    assert.match(requests.note, /counted on his district/, "and it says why the cost page counts fewer");
+    assert.match(requests.note, /The cost page counts only the requests you raised yourself/, "and it says why the cost page counts fewer");
     const summary = sectionOf(rep.sections, "review-summary");
     assert.equal(
       rowLabelled(summary, "Marketing requests")[1],
       "2 requests for your area were paid in the period, 1 raised by you: EGP 25,000 committed, EGP 52,500 of sales brought back so far.",
     );
-    assert.match(sectionOf(rep.sections, "marketing-committed").note, /A request your manager raised for your doctors is counted on his district/);
+    assert.match(
+      sectionOf(rep.sections, "marketing-committed").note,
+      /Requests others raised for your doctors are listed in "Marketing requests for your area" and are not counted here/,
+      "his cost page says whose requests it counts — the ones he raised (it places a request on its requester)",
+    );
 
     const district = buildSalesReviewPack(
       packInput("district", ["requests-return"], { areas: [area("CA1", [REP])], fieldLink: facts, people: [person(REP, "Rep One")] }),

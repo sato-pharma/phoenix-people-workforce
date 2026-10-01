@@ -907,7 +907,7 @@ export function requestsSection(_input: PackInput, ctx: LinkContext | null): Pac
     ],
     metric: "requests-return",
     note: ctx.isRep
-      ? "Every marketing request for your line in your area paid in the period — the ones you raised and the ones your managers raised for your doctors. A request should bring back ten times its cost in sales; the figure is the Marketing ROI module's own matching, from the month it was paid. The cost page counts only the requests you raised yourself: a request your manager raised is counted on his district."
+      ? "Every marketing request for your line in your area paid in the period, whoever raised it. A request should bring back ten times its cost in sales; the figure is the Marketing ROI module's own matching, from the month it was paid. The cost page counts only the requests you raised yourself."
       : "Marketing requests paid in the period, for these areas and lines. 'Sales brought back so far' is the Marketing ROI engine's own matching since the pay month — its figure, not the Monthly Closing's — and a request must bring back ten times its cost. Pending and refused requests have no return. The confidential Head Office products are never counted.",
     rows: requests.map((request) => [
       periodLabel(request.period),
@@ -1053,7 +1053,7 @@ const REP_WORDS: Partial<Record<ReviewMetricId, { title: string; note?: string }
     title: "Customers each month",
   },
   "marketing-committed": {
-    note: "The marketing requests you raised and the outstation you claimed. A request your manager raised for your doctors is counted on his district, and listed in \"Marketing requests for your area\". Spend per point is what each point of achievement cost — lower is better.",
+    note: "The marketing requests you raised yourself and the outstation you claimed. Requests others raised for your doctors are listed in \"Marketing requests for your area\" and are not counted here. Spend per point is what each point of achievement cost — lower is better.",
     title: "What your area cost",
   },
   "marketing-vs-trend": {
