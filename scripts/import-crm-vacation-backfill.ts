@@ -47,15 +47,25 @@ import {
 /**
  * Stamped into every created row so the whole batch is identifiable and exactly reversible.
  *
- * IT IS A FLAG, NOT A CONSTANT, AND THAT IS THE WHOLE POINT. It was hardcoded to
- * `CRM_BACKFILL_2026-08-03` through the 2026-08-03 and 2026-08-24 runs, so the second run's rows
- * carry the FIRST run's date — `notes like '[CRM_BACKFILL_2026-08-03]%'` matches 260 rows spanning
- * both. Reversing one batch without the other is then impossible, which is exactly what the marker
- * exists to make possible. A later run reusing it would fold a third batch into the same bucket.
+ * IT IS A FLAG, NOT A HAND-EDITED CONSTANT, AND THAT IS THE WHOLE POINT.
+ *
+ * 🔴 CORRECTED 2026-10-01. An earlier version of this note said the 2026-08-03 and 2026-08-24 runs
+ * shared one marker and could not be separated. THAT WAS WRONG, and measured wrong on production
+ * the same day: the three batches are cleanly disjoint —
+ * `[CRM_BACKFILL_2026-08-03]` 260 rows / 62 people, `[CRM_BACKFILL_2026-08-24]` 208 rows / 66
+ * people, `[CRM_BACKFILL_2026-10-01]` 61 rows / 31 people. The constant was hand-edited before the
+ * second run, so both August batches are reversible on their own.
+ *
+ * THE REAL DEFECT IS THE ONE THAT REMAINS, AND IT IS WHY THIS IS A FLAG. The constant was left
+ * reading `2026-08-03` in the committed file after the 2026-08-24 run — a stale value that looks
+ * deliberate. Editing it is a step someone has to remember, and the one time it mattered it was
+ * forgotten: the NEXT run (September's) would have stamped its rows `2026-08-03` and folded them
+ * silently into a batch from two months earlier. A required flag cannot be forgotten; a constant
+ * that happens to be correct for one run cannot be relied on for the next.
  *
  * So the date must be passed and must be the date of THIS run (`--marker 2026-10-01`). The default
  * is deliberately absent rather than today's date: a default would be silently accepted, and a
- * batch marker that nobody chose is the defect above.
+ * batch marker that nobody chose is the same class of defect.
  */
 const MARKER_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -93,8 +103,9 @@ if (!inputPath) throw new Error("--input <path to target-rows.json> is required.
 if (!markerDate || !MARKER_PATTERN.test(markerDate)) {
   throw new Error(
     "--marker <YYYY-MM-DD> is required: the date of THIS run, stamped into every row so this batch "
-      + "can be identified and reversed on its own. The 2026-08-03 and 2026-08-24 runs share one "
-      + "hardcoded marker and cannot be separated; do not reuse a previous run's date.",
+      + "can be identified and reversed on its own. Do not reuse a previous run's date: the "
+      + "committed constant was last left reading 2026-08-03, and a run inheriting it would fold "
+      + "its rows into a batch from months earlier.",
   );
 }
 const BATCH_MARKER = `CRM_BACKFILL_${markerDate}`;
