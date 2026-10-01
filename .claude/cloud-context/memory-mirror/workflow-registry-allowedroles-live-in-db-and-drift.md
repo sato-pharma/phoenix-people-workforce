@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 281f4a6a-00a3-41f1-8658-a5380d1970d3
-  modified: 2026-08-02T14:15:58.137Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 `workflow_registry_modules.actions[].allowedRoles` is **live database data**, editable from the
@@ -54,7 +54,7 @@ row (`Employee / expenses / create / false`) — so the static matrix really is 
   not do one, because `access` was `Pick<AccessContext,"role">` with no hrId. Only the *narrow
   grant* stopped this being "any account can resign the CEO". **Fixed and shipped 2026-08-02 —
   PR #1637, squash `07f76787`, live on prod 75s after merge.** The guard now sits at
-  `src/lib/resignations/service.ts:1207`, mirroring `resignEmployeeAndOpenVacancy`. Covered by
+  `src/lib/resignations/service.ts`, mirroring `resignEmployeeAndOpenVacancy`. Covered by
   `tests/resignation-scope-check.test.ts` (break-verified). Lesson: a missing authorization check
   can be masked by a narrow grant rather than by any real scoping — check the guard, not the
   grant list.

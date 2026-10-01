@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: ac63cfc1-6251-4c01-afbd-b51e164335b2
-  modified: 2026-07-28T13:26:03.205Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **RESOLVED BY OWNER DESIGN 2026-07-28 (PR #1425 MERGED `2e08c0b5`).** Owner ruled: do NOT retire
@@ -32,7 +32,7 @@ attribution engine.
 Answer to the owner's 2026-07-27 question "why do I have duplicate reports".
 
 **The visible cause:** `/admin/marketing-roi` is a HUB page (card grid, no data of its own).
-`marketingRoiPageItems` in `src/config/system-navigation.ts:1482` lists **four ROI cards side
+`marketingRoiPageItems` in `src/config/system-navigation.ts` lists **four ROI cards side
 by side** with non-disambiguating descriptions: "ROI Dashboard" (→ `/admin/sales-marketing-intelligence`),
 "ROI Tracking" (→ `/admin/marketing-requests/roi-tracking`, **Super Admin only**),
 "Marketing ROI Report" (→ `/admin/marketing-roi-report`), "Marketing Coverage Report".

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 38cac8f5-eef9-4ca8-9b4c-3c23b0534074
-  modified: 2026-08-19T10:52:49.409Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 Owner rule, stated 2026-08-19 after spotting it live: **"Never skip the national sales manager in
@@ -41,7 +41,7 @@ before/after counts: `notification_deliveries` where `channel='email'` stayed at
 in-flight DM request is missing its NSM step.
 
 **If you ever need to re-notify someone by hand, this is the safe recipe:** explicit
-`channels: [...]` wins outright at `resolveBasePolicyChannels` (system.ts:355) and every downstream
+`channels: [...]` wins outright at `resolveBasePolicyChannels` (system.ts) and every downstream
 guard only ever REMOVES channels, so `['in_app']` cannot reach email. Take the four counts above
 before and after, and prove the email count did not move. See [[never-fire-bulk-emails-ever]].
 

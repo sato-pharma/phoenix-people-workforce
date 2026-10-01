@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 78db7cee-29fb-4521-b842-dc76f3d165f6
-  modified: 2026-08-01T22:34:48.156Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **Both connectors are meant to run.** `service.ts:533`: *"Three detectors noticing
@@ -42,7 +42,7 @@ to clear one side before July can publish.
 
 ## 🔴 The zero-signal guard counts DOUBLE-VISIT tags as signal
 
-`loadZeroCrmSignalHrIdKeys` (`crm.ts:379`) builds its signal set from
+`loadZeroCrmSignalHrIdKeys` (`crm.ts`) builds its signal set from
 `agent_hr_id`/`agent_crm_id` **and** `double_hr_id`/`double_crm_id`. So a
 manager who never logs a visit but is TAGGED on rep visits has signal and stays
 in scope. Verified July 2026:

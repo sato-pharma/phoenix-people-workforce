@@ -17,7 +17,7 @@ check and the second write would silently overwrite the first's decision/audit t
 firing duplicate/contradictory notifications.
 
 **Established fix pattern (already proven in this codebase before this fix):**
-`src/lib/vacation/service.ts:1592-1614` (`recordVacationApprovalStepDecision`) — add
+`src/lib/vacation/service.ts` (`recordVacationApprovalStepDecision`) — add
 `.eq("status", "<expected>")` to the `UPDATE`'s `WHERE` clause (DB-level compare-and-swap),
 switch `.single()` → `.maybeSingle()`, then `if (!data) throw conflictError(...)`
 (`conflictError` from `src/lib/http/api-errors.ts:29`, → HTTP 409, `ApiError extends Error`

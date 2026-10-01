@@ -12,8 +12,8 @@ repo so a cloud session can read them, giving it the same two-tier recall a loca
 
 **Local sessions ignore this mirror** — they have the live originals under `~/.claude/`.
 
-## What is here (generated 1 Oct 2026, 00:46 Cairo)
-- Memory files: **1060** (4.53 MB)
+## What is here (generated 1 Oct 2026, 02:58 Cairo)
+- Memory files: **1061** (4.54 MB)
 - Global standing rules: 18.0 KB
 
 ## Refreshing

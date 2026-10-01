@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: ef7991ee-50e2-4d24-abe4-51291be48b6c
-  modified: 2026-08-29T16:54:45.584Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 ## ✅ STATUS — SHIPPED & RUNNING IN PRODUCTION (verified 2026-08-29)
@@ -13,7 +13,7 @@ metadata:
 **Both defects below are FIXED and live on `main`. Do NOT re-implement — read the code first (a
 session almost rebuilt this from the stale note on 2026-08-29; the live code caught it).**
 
-- **Problem 2 (pre-hire attribution) — LIVE.** `isAttributableOn` (`src/lib/crm/identity.ts:189`)
+- **Problem 2 (pre-hire attribution) — LIVE.** `isAttributableOn` (`src/lib/crm/identity.ts`)
   now refuses any row dated before the employee's `hire_date`
   (`if (hireDate && visitDay < hireDate) return false`), backed by `hireDateByHrId` in the identity
   maps, `blockReasonFor` (pre_hire vs post_exit counted apart), an employment-scoped manual override,
@@ -81,7 +81,7 @@ hands the account to the replacement in the same area *by overwriting the accoun
 person's details*, so the newcomer inherits the contact list. The vendor then serves **the whole
 history under the new label**, so the historic rows become the new person's.
 
-**Why the existing guard misses it: `isAttributableOn` (`src/lib/crm/identity.ts:128`) tests
+**Why the existing guard misses it: `isAttributableOn` (`src/lib/crm/identity.ts`) tests
 `last_working_date` ONLY — the post-exit side. There is no `hire_date` test at all.** And its label
 comparison cannot save it either: measured `crm_labels_on_those_rows = 1` for Soad Atef, i.e. the
 CRM had rewritten the label on every historic row, so the record's label matches her roster label

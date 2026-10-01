@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: ac63cfc1-6251-4c01-afbd-b51e164335b2
-  modified: 2026-07-28T09:18:52.960Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 Deep audit 2026-07-27 (8 parallel agents, read-only). The four ROI report surfaces sit on
@@ -34,7 +34,7 @@ verified against the stale branch. **Before reporting any code finding, diff the
 `origin/main`, not just the working tree.** The other findings in this file were re-verified
 against `origin/main` and DO still hold.
 
-**CRITICAL BUG 2:** TS `resolveRoiResultStatus` (`roi-report-service.ts:671-681`) has 4 states
+**CRITICAL BUG 2:** TS `resolveRoiResultStatus` (`roi-report-service.ts`) has 4 states
 incl. `awaiting_data`; the SQL in `phx_marketing_roi_customer_dashboard` (baseline :5747-5751)
 has only 3 and falls through to `behind`. So a mid-window campaign reads "Data pending" in ROI
 Tracking and **"Behind"** in the ROI Dashboard; every `behind_requests` rollup over-counts, and

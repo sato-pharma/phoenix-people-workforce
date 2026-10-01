@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 5f6e15e1-d34d-44e7-957b-76b67e0453b9
-  modified: 2026-08-27T09:05:00.000Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **SUPERSEDED ON THE SAME DAY — A WORKING KEY IS BACK. Read this paragraph before acting on
@@ -72,7 +72,7 @@ exactly that reason.
 
 **BUT THAT EXCLUSION HAS A TYPO AND IT LEAKS — confirmed 2026-08-21 10:20 Cairo.** The set in
 `scripts/recruitment-reread-never-read-cvs.ts:152` is `["phoenix-rules", "phoenix-ocr"]`, but the
-code writes **`"phoenix-rules+ocr"`** (`OCR_EXTRACTION_MODEL`, `src/lib/recruitment/cv-extraction.ts:144`).
+code writes **`"phoenix-rules+ocr"`** (`OCR_EXTRACTION_MODEL`, `src/lib/recruitment/cv-extraction.ts`).
 `"phoenix-ocr"` appears **nowhere in `src/`**. So an OCR row is treated as a real model read and the
 candidate is removed from the re-read set **permanently**. 4 candidates are already frozen this way.
 Fix the string, do not add a second entry. **FIXED — verified live 2026-08-27.**
