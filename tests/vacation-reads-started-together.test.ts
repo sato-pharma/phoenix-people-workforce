@@ -34,13 +34,13 @@ import {
  * with a stubbed `fetch` always getting its own answer.
  *
  * Nothing here reaches a database: the client is a small in-memory query engine, like
- * tests/fixtures/fake-supabase-table.ts, extended with `ilike`, a per-read failure hook and a count
- * of reads in flight. The suite runs with production credentials, so these functions can never be
- * exercised against a real client from a test.
+ * tests/fixtures/fake-supabase-table.ts, extended with `ilike`, `or`, a per-read failure hook and a
+ * count of reads in flight. The suite runs with production credentials, so these functions can never
+ * be exercised against a real client from a test.
  */
 
 type Row = Record<string, unknown>;
-type FilterOp = "eq" | "neq" | "in" | "is" | "gte" | "lt" | "ilike";
+type FilterOp = "eq" | "neq" | "in" | "is" | "gte" | "lt" | "ilike" | "or";
 type Filter = { column: string; op: FilterOp; value: unknown };
 type ReadRecord = { filters: Filter[]; table: string };
 type ReadFailure = { kind: "error" | "reject"; message: string };
@@ -82,7 +82,27 @@ function rowMatches(row: Row, filter: Filter): boolean {
       return String(value ?? "") < String(filter.value);
     case "ilike":
       return ilikeToRegExp(String(filter.value)).test(String(value ?? ""));
+    // PostgREST's `or=(...)`: any one term admits the row, each read the same SQL way — so
+    // `run_id.is.null` keeps the NULL row that `run_id.neq.x` on its own would drop.
+    case "or":
+      return (filter.value as Filter[]).some((term) => rowMatches(row, term));
   }
+}
+
+/**
+ * The terms of an `or=(...)` filter. Only what balanceSettledDaysInPeriod sends is read —
+ * `column.eq|neq.value` and `column.is.null`; anything else throws rather than matching rows it
+ * should not.
+ */
+function parseOrTerms(filters: string): Filter[] {
+  return filters.split(",").map((term) => {
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)\.(eq|neq|is)\.([^,()"]+)$/.exec(term.trim());
+    if (!match || (match[2] === "is" && match[3] !== "null")) {
+      throw new Error(`the stub cannot read the or() term "${term}"`);
+    }
+    const op = match[2] as FilterOp;
+    return { column: match[1], op, value: op === "is" ? null : match[3] };
+  });
 }
 
 // Plain fields, not constructor parameter properties: the runner strips types and cannot transform
@@ -167,6 +187,9 @@ class StubQuery implements PromiseLike<ReadResult> {
   ilike(column: string, pattern: string) {
     return this.add("ilike", column, pattern);
   }
+  or(filters: string) {
+    return this.add("or", "", parseOrTerms(filters));
+  }
 
   then<TResult1 = ReadResult, TResult2 = never>(
     onfulfilled?: ((value: ReadResult) => TResult1 | PromiseLike<TResult1>) | null,
@@ -223,11 +246,16 @@ function request(id: string, employeeHrId: string, startDate: string, paid: numb
   };
 }
 
+// Run ids are uuids: `run_id` is a uuid column, and the exclusion refuses to place anything else
+// inside its filter.
+const RUN_A = "aaaaaaaa-0000-4000-8000-00000000000a";
+const RUN_OTHER = "cccccccc-0000-4000-8000-00000000000c";
+
 function settlement(compact: string, startDate: string, days: number, extra: Partial<SettlementRow> = {}): SettlementRow {
   return {
     balance_days_consumed: days,
     employee_hr_id_compact: compact,
-    run_id: "run-other",
+    run_id: RUN_OTHER,
     settlement_method: "balance",
     start_date: startDate,
     superseded_at: null,
@@ -274,7 +302,7 @@ const TABLES: Tables = {
     request("c2", "C-1", "2000-06-01", 40),
   ],
   settlements: [
-    settlement("b7", "2019-12-01", 2, { run_id: "run-A" }),
+    settlement("b7", "2019-12-01", 2, { run_id: RUN_A }),
     settlement("b7", "2020-09-01", 3, { settlement_method: "partial_balance" }),
     settlement("b7", "2020-10-01", 5, { superseded_at: "2020-10-02T00:00:00Z" }),
     settlement("b7", "2020-11-01", 4, { settlement_method: "salary" }),
@@ -343,7 +371,10 @@ function usedPaidDaysByDefinition(input: PeriodReadInput, tables: Tables): numbe
       && ["balance", "partial_balance", "defer_to_balance"].includes(row.settlement_method)
       && row.superseded_at === null
       && inPeriod(row.start_date)
-      && (!input.excludeSettlementRunId || (row.run_id !== null && row.run_id !== input.excludeSettlementRunId)))
+      // Corrected 2026-10-01: a settlement written outside any payroll run (run_id NULL) is somebody
+      // else's spending and counts. The one-at-a-time code dropped it — `neq` is SQL `<>` — and this
+      // definition had copied that faithfully.
+      && (!input.excludeSettlementRunId || row.run_id === null || row.run_id !== input.excludeSettlementRunId))
     .reduce((sum, row) => sum + row.balance_days_consumed, 0);
   const attendanceDays = tables.charges
     .filter((row) => row.employee_hr_id.toLowerCase() === input.employeeHrId.trim().toLowerCase() && inPeriod(row.work_date))
@@ -621,14 +652,32 @@ async function runApprovedPaidDaysInPeriod() {
   {
     const engine = engineFor(TABLES);
     const used = await approvedPaidDaysInPeriod(
-      { employeeHrId: "B-7", excludeRequestId: "r1", excludeSettlementRunId: "run-A", ...period1, vacationType: "annual" },
+      { employeeHrId: "B-7", excludeRequestId: "r1", excludeSettlementRunId: RUN_A, ...period1, vacationType: "annual" },
       engine as never,
     );
     assert.equal(
       used,
-      usedPaidDaysByDefinition({ employeeHrId: "B-7", excludeRequestId: "r1", excludeSettlementRunId: "run-A", ...period1, vacationType: "annual" }, TABLES),
+      usedPaidDaysByDefinition({ employeeHrId: "B-7", excludeRequestId: "r1", excludeSettlementRunId: RUN_A, ...period1, vacationType: "annual" }, TABLES),
     );
-    assert.equal(used, 6, "18 less request r1's 10 days and run-A's 2 settled days");
+    assert.equal(used, 6, "18 less request r1's 10 days and run A's 2 settled days");
+  }
+
+  // ...while a settlement written outside any payroll run (run_id NULL) still counts. A bare `neq`
+  // is SQL `<>` and dropped it, so the run read more balance left than there was.
+  {
+    const withOutsideRun: Tables = {
+      ...TABLES,
+      settlements: [...TABLES.settlements, settlement("b7", "2019-10-01", 1.5, { run_id: null })],
+    };
+    const used = await approvedPaidDaysInPeriod(
+      { employeeHrId: "B-7", excludeRequestId: "r1", excludeSettlementRunId: RUN_A, ...period1, vacationType: "annual" },
+      engineFor(withOutsideRun) as never,
+    );
+    assert.equal(
+      used,
+      usedPaidDaysByDefinition({ employeeHrId: "B-7", excludeRequestId: "r1", excludeSettlementRunId: RUN_A, ...period1, vacationType: "annual" }, withOutsideRun),
+    );
+    assert.equal(used, 7.5, "the same 6, plus the 1.5 days settled outside any run");
   }
 
   // A fail-closed ledger read still throws, and a fail-open one still reads as 0.

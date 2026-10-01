@@ -1,6 +1,6 @@
 /**
  * A minimal, in-memory stand-in for a Supabase/PostgREST query builder — NOT a mock that just
- * records calls, an actual tiny query engine. `.eq`/`.neq`/`.is`/`.gte`/`.lt`/`.lte`/`.in` apply as real
+ * records calls, an actual tiny query engine. `.eq`/`.neq`/`.is`/`.gte`/`.lt`/`.lte`/`.in`/`.or` apply as real
  * predicates against a shared, mutable row array; `.update`, `.insert` and `.delete` really mutate
  * it. That matters here specifically: the payroll copilot's "defer" mechanisms are money-safety code
  * (whether an outstation expense or a vacation settlement gets paid out this run), and this
@@ -23,6 +23,42 @@ function parseSelectedColumns(columns: string | undefined): string[] | null {
   const unmodelled = names.find((name) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name));
   if (unmodelled) throw new Error(`fake-supabase-table cannot project "${unmodelled}": only plain column names are modelled.`);
   return names;
+}
+
+// SQL `<>`. A NULL on either side makes the comparison unknown, never true, so the row is dropped.
+// A plain `!==` kept it, and so passed a test for code that drops those rows in production.
+function isSqlNotEqual(current: unknown, value: unknown) {
+  if (current === null || current === undefined || value === null || value === undefined) return false;
+  return current !== value;
+}
+
+// PostgREST sends a filter value as text and Postgres compares it in the column's own type. The
+// columns these terms are used on hold text in the fixture's rows, so the comparison is on the text.
+function asFilterText(value: unknown) {
+  return value === null || value === undefined ? value : String(value);
+}
+
+// The terms of PostgREST's `or=(...)`: comma-separated `column.operator.value`. Only what the code
+// under test sends is modelled — `eq`, `neq` and `is.null`. A nested group, a `not.` prefix, a quoted
+// value or any other operator is refused rather than guessed at, so a filter this fixture cannot
+// read fails loudly instead of matching rows it should not.
+function parseOrTerms(filters: string): Array<(row: FakeRow) => boolean> {
+  if (/[()"]/.test(filters)) {
+    throw new Error(`fake-supabase-table cannot read or(${filters}): nested groups and quoted values are not modelled.`);
+  }
+  return filters.split(",").map((term) => {
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)\.(eq|neq|is)\.(.+)$/.exec(term.trim());
+    if (!match) {
+      throw new Error(`fake-supabase-table cannot read the or() term "${term}": only column.eq|neq|is.value is modelled.`);
+    }
+    const [, column, operator, value] = match;
+    if (operator === "is") {
+      if (value !== "null") throw new Error(`fake-supabase-table cannot read the or() term "${term}": only is.null is modelled.`);
+      return (row: FakeRow) => (row[column] ?? null) === null;
+    }
+    if (operator === "eq") return (row: FakeRow) => asFilterText(row[column]) === value;
+    return (row: FakeRow) => isSqlNotEqual(asFilterText(row[column]), value);
+  });
 }
 
 class FakeQueryBuilder {
@@ -109,7 +145,14 @@ class FakeQueryBuilder {
   }
 
   neq(column: string, value: unknown) {
-    this.filters.push((row) => row[column] !== value);
+    this.filters.push((row) => isSqlNotEqual(row[column], value));
+    return this;
+  }
+
+  /** Any one of the terms admits the row; the group is ANDed with every other filter, as PostgREST does. */
+  or(filters: string) {
+    const terms = parseOrTerms(filters);
+    this.filters.push((row) => terms.some((term) => term(row)));
     return this;
   }
 
