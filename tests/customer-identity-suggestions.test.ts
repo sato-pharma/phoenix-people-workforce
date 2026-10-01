@@ -522,6 +522,57 @@ export function runCustomerIdentitySuggestionTests(): void {
     assert.match(route, /0-9a-f\]\{8\}-/, "the id shape is checked before the read");
   }
 
+  // ── The pharmacy names the reps typed ───────────────────────────────────────────────────────
+  {
+    // Owner, 2026-09-30, asked directly: typed pharmacy names from visit feedback "become link
+    // suggestions like any other source; nothing links until the Super Admin confirms".
+    const typed = (over: Partial<IdentityCandidate>) =>
+      candidate({ source: "visit_feedback", sourceId: "D14|صيدلية النور", kind: "pharmacy", name: "صيدلية النور", brickCode: "D14", ...over });
+
+    // It behaves as a source: a typed name and a real pharmacy in the same brick are offered.
+    const shop = candidate({ source: "marketing", sourceId: "70", kind: "pharmacy", name: "صيدلية النور", brickCode: "D14" });
+    assert.equal(judgePair(typed({}), shop)?.band, "likely", "same name, same brick — the pair is offered");
+    assert.equal(suggestIdentityPairs([typed({}), shop]).length, 1, "and the sweep finds it");
+
+    // 🔴 IT CARRIES NO COORDINATES, AND THAT IS THE POINT. The only point available is the
+    //    DOCTOR'S clinic, and the shop is near it, not on it — attaching it would measure 0 m
+    //    between a pharmacy and a clinic and promote the pair to `strong` on a distance nothing
+    //    measured. So the band it can reach on geography is `likely`, never `strong`.
+    const reads = stripComments(readFileSync("src/lib/customer-identity/server/reads.ts", "utf8"));
+    const typedReader = reads.slice(reads.indexOf("async function typedPharmacyCandidates"));
+    const readerBody = typedReader.slice(0, typedReader.indexOf("\n}\n") + 1);
+    assert.doesNotMatch(readerBody, /\blat\b|\blon\b/, "a typed name is given no coordinates");
+    assert.match(readerBody, /\.eq\("is_test", false\)/, "and only real visits feed it");
+    assert.match(readerBody, /phoenix_crm_places/, "its geography comes from the place the name was typed in");
+    assert.match(readerBody, /\$\{where\.brick \?\? where\.region\}\|\$\{name\}/, "the id is brick-first so an Arabic name may contain a bar");
+    assert.match(readerBody, /if \(!nameKey \|\| !where \|\| \(!where\.brick && !where\.region\)\) continue/, "a name with no geography is dropped, never offered inert");
+
+    // Every source the engine can offer must be accepted by the decide route, or confirming a
+    // pair it put in front of him is refused as a malformed body with nothing to explain it.
+    const decide = stripComments(readFileSync("app/api/customer-identity/decide/route.ts", "utf8"));
+    assert.match(decide, /"visit_feedback"/, "the decide route accepts the source it can be shown");
+
+    // The 360 view reads the id back rather than looking it up — there is no table to look in.
+    const loaderSource = stripComments(readFileSync("src/lib/customer-identity/server/profile.ts", "utf8"));
+    assert.match(loaderSource, /if \(source === "visit_feedback"\)/, "the profile resolves a typed name from its own id");
+    assert.ok(
+      loaderSource.indexOf('source === "visit_feedback"') < loaderSource.indexOf('from("direct_order_pharmacies")'),
+      "and does so BEFORE the direct-order branch, which would hand a non-uuid to Postgres and fail the whole read",
+    );
+
+    // Both screens name it for what it is, so nobody hunts for a register to open.
+    for (const file of [
+      "src/components/customer-identity/customer-links-workspace.tsx",
+      "src/components/customer-identity/customer-identity-profile.tsx",
+    ]) {
+      assert.match(stripComments(readFileSync(file, "utf8")), /visit_feedback: "Typed on a visit"/, `${file} labels the source`);
+    }
+
+    // 🔴 THE WHOLESALER GUARD STILL APPLIES. A rep can type a warehouse's name as easily as a
+    //    shop's, and a مخزن is never offered as a pharmacy identity, whatever typed it.
+    assert.equal(isLinkableCandidate(typed({ name: "مخزن النور للادويه", sourceId: "D14|مخزن النور للادويه" })), false, "a typed warehouse is refused like any other");
+  }
+
   // ── Where a pharmacy's distributor codes are read from ──────────────────────────────────────
   {
     const reads = stripComments(readFileSync("src/lib/customer-identity/server/reads.ts", "utf8"));

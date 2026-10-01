@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { suggestIdentityPairs } from "@/lib/customer-identity/suggestions";
+import { identityNameKey, suggestIdentityPairs } from "@/lib/customer-identity/suggestions";
 import type {
   DistributorCodePair,
   IdentityCandidate,
@@ -295,7 +295,99 @@ async function directOrderCandidates(): Promise<IdentityCandidate[]> {
 }
 
 /**
- * Every row the engine may compare, from all four systems.
+ * The pharmacy names the REPS THEMSELVES TYPED, from the feedback on a visit (owner, 2026-09-30,
+ * asked directly: "YES — they become link suggestions like any other source; nothing links until
+ * the Super Admin confirms").
+ *
+ * 🔴 A TYPED NAME IS NOT A ROW, SO THE GRAIN IS THE SPELLING AND THE BRICK IT WAS TYPED IN. There
+ * is no id to carry: the same shop is typed on many visits, often spelled differently, and a
+ * chain is typed in several bricks. One candidate per spelling per brick keeps each branch of a
+ * chain matching its own neighbourhood, never asserts a single location for a name typed in two,
+ * and lets the Super Admin attach each spelling to the master in its own right — which is how the
+ * system learns that spelling. Matching still folds them together: `identityNameKey` is what
+ * `judgePair` compares, so two spellings of one shop both reach the same pharmacy.
+ *
+ * 🔴 `sourceId` IS `brick|name`, BRICK FIRST AND SPLIT ON THE FIRST BAR. It has to carry the name
+ * because `customer_identity_links` stores only `source` and `source_id`, and the 360 view has no
+ * table to look a typed name up in — the id IS the record. Brick first because a brick id cannot
+ * contain a bar and an Arabic shop name might.
+ *
+ * 🔴 IT CARRIES NO COORDINATES, DELIBERATELY. The only point to hand is the DOCTOR'S place — the
+ * clinic the rep was standing in when he typed the name — and the pharmacy is near it, not on it.
+ * Attaching it would make `judgePair` measure 0 m between a shop and a clinic and promote the
+ * pair to `strong` on a distance nothing measured. Brick and region are what the visit honestly
+ * knows, and they reach `likely` and `possible` on their own.
+ *
+ * 🔴 A NAME WITH NEITHER BRICK NOR REGION IS DROPPED, not offered. With no geography a name match
+ * reaches no band at all (`judgePair` returns null), so the row could only ever add noise to the
+ * review screen.
+ *
+ * 🔴 REAL VISITS ONLY — `is_test` false. A test persona's entries carry the real employee's hr id
+ * and must never reach a real report; this is a real report.
+ *
+ * Golden rule #1 is untouched: this reads what a rep wrote and shows it to the Super Admin alone,
+ * exactly as every other source here. Nothing is written back, and no rep screen changes.
+ */
+async function typedPharmacyCandidates(): Promise<IdentityCandidate[]> {
+  const admin = getSupabaseAdmin();
+
+  // Paged by range and ordered by id, like every other read in this file. `pageActive` cannot
+  // serve here: a visit has no `active` column, so filtering on one would read nothing at all.
+  const named: { place_id: string | null; pharmacy_name: string | null }[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await admin
+      .from("phoenix_crm_visits")
+      .select("id, place_id, pharmacy_name")
+      .eq("is_test", false)
+      .not("pharmacy_name", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`customer-identity: reading phoenix_crm_visits failed — ${error.message}`);
+    const rows = (data ?? []) as unknown as { place_id: string | null; pharmacy_name: string | null }[];
+    for (const row of rows) {
+      if (text(row.pharmacy_name).length > 0 && text(row.place_id).length > 0) named.push(row);
+    }
+    if (rows.length < PAGE) break;
+  }
+  if (named.length === 0) return [];
+
+  // The geography of the clinic each name was typed in, read in slices: a `.in()` list is a URL
+  // query string, and a few thousand place ids in one call is refused by the gateway, not paged.
+  const placeIds = [...new Set(named.map((row) => String(row.place_id)))];
+  const places = new Map<string, { brick: string | null; region: string | null }>();
+  for (let at = 0; at < placeIds.length; at += 150) {
+    const { data, error } = await admin
+      .from("phoenix_crm_places")
+      .select("id, brick_id, region_code")
+      .in("id", placeIds.slice(at, at + 150));
+    if (error) throw new Error(`customer-identity: reading phoenix_crm_places failed — ${error.message}`);
+    for (const row of (data ?? []) as unknown as { id: string; brick_id: string | null; region_code: string | null }[]) {
+      places.set(String(row.id), { brick: text(row.brick_id) || null, region: text(row.region_code) || null });
+    }
+  }
+
+  const byKey = new Map<string, IdentityCandidate>();
+  for (const row of named) {
+    const name = text(row.pharmacy_name);
+    const nameKey = identityNameKey(name);
+    const where = places.get(String(row.place_id));
+    if (!nameKey || !where || (!where.brick && !where.region)) continue;
+    const sourceId = `${where.brick ?? where.region}|${name}`;
+    if (byKey.has(sourceId)) continue;
+    byKey.set(sourceId, {
+      brickCode: where.brick,
+      kind: "pharmacy" as const,
+      name,
+      regionCode: where.region,
+      source: "visit_feedback" as const,
+      sourceId,
+    });
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * Every row the engine may compare, from all five systems.
  *
  * 🔴 A PHOENIX CRM CUSTOMER AND THE iREPORTS360 CONTACT IT WAS CREATED FROM ARE ONE ENTITY, NOT A
  * SUGGESTION. `phoenix_crm_customers.reference_contact_crm_id` already states the tie — the row
@@ -314,11 +406,12 @@ async function directOrderCandidates(): Promise<IdentityCandidate[]> {
  * the self-agreement is dropped.
  */
 export async function loadIdentityCandidates(): Promise<IdentityCandidate[]> {
-  const [phoenix, vendor, marketing, direct] = await Promise.all([
+  const [phoenix, vendor, marketing, direct, typed] = await Promise.all([
     phoenixCrmCandidates(),
     ireports360Candidates(),
     marketingCandidates(),
     directOrderCandidates(),
+    typedPharmacyCandidates(),
   ]);
 
   const vendorById = new Map<number, IdentityCandidate>();
@@ -342,7 +435,7 @@ export async function loadIdentityCandidates(): Promise<IdentityCandidate[]> {
   // the ones where a duplicate is a real finding rather than a restatement.
   const remainingVendor = vendor.filter((row) => row.contactCrmId == null || !carriedOver.has(row.contactCrmId));
 
-  return [...folded, ...remainingVendor, ...marketing, ...direct];
+  return [...folded, ...remainingVendor, ...marketing, ...direct, ...typed];
 }
 
 /**

@@ -51,6 +51,28 @@ async function readSource(source: IdentitySource, ids: readonly string[]): Promi
   if (ids.length === 0) return out;
   const admin = getSupabaseAdmin();
 
+  // 🔴 A TYPED NAME HAS NO TABLE, SO ITS ID IS ITS RECORD. `visit_feedback` ids are `brick|name`,
+  //    written that way by `typedPharmacyCandidates` precisely because `customer_identity_links`
+  //    stores nothing but the source and the id. It is read back here rather than looked up, and
+  //    it can never be `missing`: the name a rep typed is still the name he typed even after the
+  //    visit is gone. Falling through to the branches below would hand a non-uuid to
+  //    `direct_order_pharmacies` and fail the whole read with a Postgres type error.
+  if (source === "visit_feedback") {
+    for (const id of ids) {
+      const bar = id.indexOf("|");
+      const where = bar === -1 ? "" : id.slice(0, bar);
+      const name = bar === -1 ? id : id.slice(bar + 1);
+      out.set(id, {
+        brickCode: where || null,
+        kind: "pharmacy",
+        name,
+        source,
+        sourceId: id,
+      });
+    }
+    return out;
+  }
+
   if (source === "phoenix_crm") {
     const { data, error } = await admin
       .from("phoenix_crm_customers")

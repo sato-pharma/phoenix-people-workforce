@@ -17,12 +17,20 @@
  */
 
 /**
- * Which of the four systems a row comes from.
+ * Which of the five systems a row comes from.
  *
  * `ireports360` is the vendor mirror the carried-over lists came from; `phoenix_crm` is a rep's own
  * validated customer; `marketing` is the venue register; `direct_order` is the ordering desk's.
+ *
+ * 🔴 `visit_feedback` IS THE ODD ONE: a pharmacy NAME a rep typed on a visit, not a row in any
+ * table (owner, 2026-09-30, asked directly — typed names "become link suggestions like any other
+ * source"). It has no id of its own, so its `sourceId` is the folded name and the brick it was
+ * typed in, and it carries no coordinates: the only point available is the DOCTOR'S clinic, and
+ * the shop is near it, not on it. `typedPharmacyCandidates` in `server/reads.ts` holds the
+ * reasoning. Everything downstream treats it like any other source — it is a suggestion, and
+ * nothing links until the Super Admin confirms it.
  */
-export type IdentitySource = "phoenix_crm" | "marketing" | "direct_order" | "ireports360";
+export type IdentitySource = "phoenix_crm" | "marketing" | "direct_order" | "ireports360" | "visit_feedback";
 
 /**
  * 🔴 PM, AM AND PHARMACY NEVER MIX (owner, 2026-09-30, asked directly: PM *and* AM customers are
