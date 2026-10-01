@@ -2,6 +2,7 @@ import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { logError } from "@/lib/observability/log";
 import { roundCurrency } from "@/lib/payroll/money";
 import { getPayrollSalarySourcesByHrId } from "@/lib/payroll/salary-source";
+import { PayrollConflictError } from "@/lib/payroll/errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import type { VacationType } from "@/lib/vacation/types";
@@ -9,6 +10,11 @@ import type { VacationType } from "@/lib/vacation/types";
 import { lookupSource } from "./assemble.ts";
 import { compactHrKey } from "./feeders.ts";
 import { dailyRate } from "./proration.ts";
+import {
+  describeSlotHolder,
+  HOLIDAY_BRIDGE_EXCLUDED_METHOD,
+  writeIntoSettlementSlot,
+} from "./settlement-slot.ts";
 import type { CopilotPeriod } from "./types.ts";
 
 /**
@@ -162,7 +168,7 @@ async function loadExistingExclusions(
     const { data, error } = await getSupabaseAdmin()
       .from("payroll_copilot_vacation_settlements")
       .select("employee_hr_id_compact,start_date,decided_at,decided_by")
-      .eq("settlement_method", "holiday_bridge_excluded")
+      .eq("settlement_method", HOLIDAY_BRIDGE_EXCLUDED_METHOD)
       .is("superseded_at", null)
       .gte("start_date", start)
       .lte("start_date", end);
@@ -289,42 +295,127 @@ export async function buildHolidayBridgingSalaryTotals(period: CopilotPeriod): P
 }
 
 /**
- * Records or reverts HR's exclusion of one bridging candidate (one employee +
- * one bridging date). Supersedes any existing live exclusion for that pair
- * first — a re-decision must never leave two live rows. `action: "include"`
- * simply supersedes (back to the default mandatory-include state); no new row.
+ * Records or reverts HR's exclusion of one bridging candidate (one employee + one bridging date).
+ * `action: "include"` retires the live exclusion (back to the default mandatory-include state); no
+ * new row.
+ *
+ * THE INSERT GOES FIRST, AND NOTHING IS RETIRED UNTIL IT IS KNOWN TO BE REPLACEABLE.
+ *
+ * This used to supersede first and insert second, with the supersede's own error discarded — the
+ * same shape as the defect removed from the automated-payroll writer in #5032, where a confirm
+ * destroyed a real employee's leave settlement on production on 2026-08-04. Here the insert could
+ * not succeed AT ALL until 2026-10-01: the row sets neither salary_deduction_amount nor
+ * balance_days_consumed, and
+ * `payroll_copilot_vacation_settlements_method_values_check` carried no branch for
+ * 'holiday_bridge_excluded' (the 2026-07-11 baseline re-pinned four of the five the archived
+ * migrations had built), so every insert was refused 23514 — measured on production, where no such
+ * row has ever existed, and proved on staging. The constraint now carries that branch
+ * (20261001054326_vacation_settlements_allow_holiday_bridge_excluded.sql), so this path can finally
+ * write — which is precisely why the ordering has to be right before it does.
+ *
+ * The second reason the old order was unsafe is the live-slot index. `..._live_idx` is UNIQUE over
+ * (employee_hr_id_compact, start_date) WHERE superseded_at IS NULL, so a bridging exclusion and an
+ * ordinary unpaid-vacation settlement for the same employee and the same date CANNOT both be live —
+ * the archived migration's comment claimed they could never collide, which is false against this
+ * schema. A re-exclusion whose insert then collided with somebody else's live settlement would have
+ * retired HR's own earlier exclusion and replaced it with nothing, handing the employee back a
+ * mandatory salary deduction they had been excused.
  */
-export async function recordHolidayBridgingDecision(input: {
-  runId: string;
-  requestId: string;
-  employeeHrId: string;
-  bridgingDate: string;
-  action: "exclude" | "include";
-  decidedBy: string;
-}): Promise<void> {
-  const supabase = getSupabaseAdmin();
+export async function recordHolidayBridgingDecision(
+  input: {
+    runId: string;
+    requestId: string;
+    employeeHrId: string;
+    bridgingDate: string;
+    action: "exclude" | "include";
+    decidedBy: string;
+  },
+  /** Injected only by the test — production always uses the admin client. The same seam the sibling settlement writers carry, and for the same reason: this suite runs with PRODUCTION credentials. */
+  client: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
+): Promise<void> {
+  const supabase = client;
   const compact = compactHrKey(input.employeeHrId);
   if (!compact) throw new Error("Invalid employee HR id for holiday-bridging decision.");
 
-  await supabase
-    .from("payroll_copilot_vacation_settlements")
-    .update({ superseded_at: new Date().toISOString() })
-    .eq("employee_hr_id_compact", compact)
-    .eq("start_date", input.bridgingDate)
-    .eq("settlement_method", "holiday_bridge_excluded")
-    .is("superseded_at", null);
+  const labels = {
+    event: "holiday_bridging_decision",
+    hrId: input.employeeHrId,
+    bridgingDate: input.bridgingDate,
+    runId: input.runId || null,
+  };
 
-  if (input.action === "include") return;
+  // "Include" is a pure retirement: back to the default mandatory-include state, no replacement row.
+  // It is scoped to this writer's OWN method so it can never retire a payment decision, and unlike
+  // before its error is read — an include that silently failed left HR believing the mandatory
+  // deduction was off when it was still on.
+  if (input.action === "include") {
+    const { error } = await supabase
+      .from("payroll_copilot_vacation_settlements")
+      .update({ superseded_at: new Date().toISOString() })
+      .eq("employee_hr_id_compact", compact)
+      .eq("start_date", input.bridgingDate)
+      .eq("settlement_method", HOLIDAY_BRIDGE_EXCLUDED_METHOD)
+      .is("superseded_at", null);
+    if (error) {
+      logError("Holiday-bridging exclusion could not be lifted — the exclusion still stands", {
+        labels: { ...labels, event: "holiday_bridging_include_failed" },
+        error,
+      });
+      throw error;
+    }
+    return;
+  }
 
-  const { error } = await supabase.from("payroll_copilot_vacation_settlements").insert({
+  const row = {
     run_id: input.runId || null,
     employee_hr_id: input.employeeHrId,
     employee_hr_id_compact: compact,
     vacation_request_ids: [input.requestId],
     start_date: input.bridgingDate,
     unpaid_days: 1,
-    settlement_method: "holiday_bridge_excluded",
+    settlement_method: HOLIDAY_BRIDGE_EXCLUDED_METHOD,
     decided_by: input.decidedBy,
+  };
+
+  const outcome = await writeIntoSettlementSlot(supabase, {
+    employeeHrIdCompact: compact,
+    startDate: input.bridgingDate,
+    row,
+    // Only this writer's OWN marker is its own earlier answer. Anything else in the slot is a
+    // payment decision, and clearing a settlement to make room for an exclusion is the destruction
+    // this ordering exists to prevent.
+    ownsHolder: (holder) => holder.settlementMethod === HOLIDAY_BRIDGE_EXCLUDED_METHOD,
   });
-  if (error) throw error;
+
+  if (outcome.kind === "conflict") {
+    logError("Holiday-bridging slot is held by a settlement decision — left alone", {
+      labels: {
+        ...labels,
+        event: "holiday_bridging_slot_held_by_settlement",
+        heldByMethod: outcome.holder.settlementMethod,
+        heldByDecider: outcome.holder.decidedBy,
+      },
+    });
+    throw new PayrollConflictError(
+      `This leave day already carries ${await describeSlotHolder(outcome.holder)}, so it cannot also be recorded as a holiday-bridging exclusion. Resolve that settlement first — nothing has been changed.`,
+    );
+  }
+
+  if (outcome.kind === "failed") {
+    logError(
+      outcome.retiredAndNotReplaced
+        ? "Holiday-bridging exclusion was retired, its replacement failed, and it could NOT be put back"
+        : "Holiday-bridging exclusion could not be recorded — nothing was retired",
+      {
+        labels: {
+          ...labels,
+          event: outcome.retiredAndNotReplaced
+            ? "holiday_bridging_exclusion_retired_and_unrestored"
+            : "holiday_bridging_exclusion_write_failed",
+        },
+        error: outcome.error,
+      },
+    );
+    throw outcome.error;
+  }
 }

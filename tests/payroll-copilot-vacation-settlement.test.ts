@@ -115,6 +115,12 @@ export async function runPayrollCopilotVacationSettlementTests() {
         settlement_method: "salary",
         superseded_at: null,
         salary_deduction_amount: 1500,
+        // THIS REQUEST's own earlier answer, which is what makes it this decision's to supersede.
+        // recordVacationSettlementDecision always stores [requestId]; a CRM-sourced correction
+        // stores [], and that is the documented discriminator between the two. The field was
+        // missing from this fixture, which no production row ever is — and with it absent the row
+        // reads as somebody else's decision and is correctly left alone.
+        vacation_request_ids: ["vac-1"],
       },
     ],
   });
@@ -135,7 +141,7 @@ export async function runPayrollCopilotVacationSettlementTests() {
   );
 
   // -------------------------------------------------------------------------------------------
-  // "salary" path — the ordinary case, still on the shared supersede-then-insert code path.
+  // "salary" path — the ordinary case, on the shared insert-into-slot code path.
   // -------------------------------------------------------------------------------------------
   const salaryClient = fakeSupabaseClient({ payroll_copilot_vacation_settlements: [] });
   await recordVacationSettlementDecision(
@@ -160,6 +166,12 @@ export async function runPayrollCopilotVacationSettlementTests() {
         settlement_method: "salary",
         superseded_at: null,
         salary_deduction_amount: 1500,
+        // THIS REQUEST's own earlier answer, which is what makes it this decision's to supersede.
+        // recordVacationSettlementDecision always stores [requestId]; a CRM-sourced correction
+        // stores [], and that is the documented discriminator between the two. The field was
+        // missing from this fixture, which no production row ever is — and with it absent the row
+        // reads as somebody else's decision and is correctly left alone.
+        vacation_request_ids: ["vac-1"],
       },
     ],
   });
