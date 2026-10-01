@@ -1,4 +1,5 @@
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { isOfficeDistributorCode } from "@/lib/sales/office-distributor";
 import { repriceValue, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -71,15 +72,37 @@ export type DuplicateUploadCandidate = {
 
 /** One row of the file being saved, as totalValueAtPeriod re-prices it. */
 export type RepriceableUploadRow = {
-  isDirect: boolean;
+  /**
+   * The row's value does not follow its month's price, so it never moves. A direct row is a deal at its
+   * own price; an Office row is units × the MASTER price in every month (the owner's locked Office rule,
+   * office-allocation.ts), so re-pricing it would make September's Office file, loaded again as
+   * October, read as a different file.
+   */
+  keepsValue: boolean;
   period: string | null;
   productCode: string;
   value: number;
 };
 
+/** A row of the file being saved, as totalValueAtPeriod reads it: Direct and Office keep their value. */
+export function repriceableUploadRow(row: {
+  distributorCode: string | null | undefined;
+  isDirect: boolean;
+  period: string | null;
+  productCode: string;
+  value: number;
+}): RepriceableUploadRow {
+  return {
+    keepsValue: row.isDirect || isOfficeDistributorCode(row.distributorCode),
+    period: row.period,
+    productCode: row.productCode,
+    value: row.value,
+  };
+}
+
 /**
  * The file's total if every row were dated `atPeriod`: each distributor row's stored value moved from
- * its own month's price to `atPeriod`'s (repriceValue). A direct row is a deal at its own price and
+ * its own month's price to `atPeriod`'s (repriceValue). A row that keeps its value (Direct, Office)
  * never moves, and a product with the same price in both months adds its value untouched — so on any
  * file the reprice does not reach, this is exactly `totalValue`.
  */
@@ -91,7 +114,7 @@ export function totalValueAtPeriod(
   let total = 0;
   for (const row of rows) {
     const value = Number.isFinite(row.value) ? row.value : 0;
-    total += row.isDirect ? value : repriceValue(prices, row.productCode, value, row.period, atPeriod);
+    total += row.keepsValue ? value : repriceValue(prices, row.productCode, value, row.period, atPeriod);
   }
   return total;
 }

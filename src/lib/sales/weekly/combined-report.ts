@@ -8,7 +8,8 @@ import {
   type BatchProductItem,
   type BatchSummaryItem,
 } from "@/lib/sales/weekly/export-batches-workbook";
-import { livePriceMap, liveSalesValue } from "@/lib/sales/weekly/live-price";
+import { productPeriodPricesFromRows, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
+import { livePriceMap, liveSalesValue, weeklyRowPeriod } from "@/lib/sales/weekly/live-price";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 
 // The weekly Upload screen's "Combined Report": what it reads, and the file it hands back. The route
@@ -40,10 +41,17 @@ import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 // default would be a fail-open — and an upload the scope took rows from prints the row count, the units
 // and the value of the rows the viewer may see, never the totals stored on the upload, which add the
 // hidden rows too.
+//
+// A DATED PRICE COVERS ITS OWN MONTHS (owner, 2026-10-01): Saginko is 170.52 from 2026-10 while its
+// master price stays 111.15, so a row is priced at the dated price that covers its cycle month — the
+// same rule and the same month as the dashboard — and a dated list that cannot be read fails the export
+// too, rather than print October's Saginko at the old price.
 
 type WeeklyProductRow = {
   id: number;
   batch_id: string | null;
+  week_start: string | null;
+  cycle_month: string | null;
   distributor_code: string | null;
   product_code: string | null;
   product_name: string | null;
@@ -56,6 +64,8 @@ type WeeklyProductRow = {
 };
 
 type MasterPriceRow = { product_code: string | null; factory_price: number | string | null; active: boolean | null };
+
+type DatedPriceRow = { product_code: string | null; effective_period: string | null; factory_price: number | string | null };
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error) return String(error.message);
@@ -79,6 +89,31 @@ export async function loadCombinedReportPrices(supabase: SupabaseClient): Promis
   }
   return livePriceMap(
     rows.filter((row) => row.active === true).map((row) => ({ productCode: row.product_code, factoryPrice: row.factory_price })),
+  );
+}
+
+/** The dated prices over today's list (`prices`), resolved the way the dashboard resolves them. */
+export async function loadCombinedReportDatedPrices(
+  supabase: SupabaseClient,
+  prices: ReadonlyMap<string, number>,
+): Promise<Pick<ProductPeriodPrices, "priceFor">> {
+  const { data, error } = await supabase
+    .from("source_of_sales_product_price_history")
+    .select("product_code, effective_period, factory_price");
+  if (error) {
+    throw new SalesWorkflowError(
+      "load_failed",
+      `The dated Product Master prices could not be read, so the Combined Report cannot be priced. ${errorMessage(error)}`,
+      500,
+    );
+  }
+  return productPeriodPricesFromRows(
+    [...prices].map(([productCode, factoryPrice]) => ({ productCode, factoryPrice })),
+    ((data ?? []) as DatedPriceRow[]).map((row) => ({
+      productCode: row.product_code,
+      effectivePeriod: row.effective_period,
+      factoryPrice: row.factory_price,
+    })),
   );
 }
 
@@ -106,6 +141,7 @@ export async function loadCombinedReportProducts(
   batchIds: string[],
   prices: ReadonlyMap<string, number>,
   scope: WeeklyAccessScope,
+  datedPrices?: Pick<ProductPeriodPrices, "priceFor">,
 ): Promise<CombinedReportProducts> {
   let productRows: WeeklyProductRow[];
   try {
@@ -114,7 +150,7 @@ export async function loadCombinedReportProducts(
       () =>
         supabase
           .from("weekly_sales_rows")
-          .select("id, batch_id, distributor_code, product_code, product_name, net_qty, sales_value, stock_qty, official_line, region_code, area_code")
+          .select("id, batch_id, week_start, cycle_month, distributor_code, product_code, product_name, net_qty, sales_value, stock_qty, official_line, region_code, area_code")
           .in("batch_id", batchIds),
       { cursorColumn: "id", cursorOf: (row) => row.id },
     );
@@ -151,8 +187,15 @@ export async function loadCombinedReportProducts(
     const netQty = Number(row.net_qty ?? 0);
     const stockQty = Number(row.stock_qty ?? 0);
     const salesValue = liveSalesValue(
-      { distributorCode: row.distributor_code, productCode: row.product_code, netQty, storedValue: Number(row.sales_value ?? 0) },
+      {
+        distributorCode: row.distributor_code,
+        productCode: row.product_code,
+        netQty,
+        storedValue: Number(row.sales_value ?? 0),
+        period: weeklyRowPeriod(row.cycle_month, row.week_start),
+      },
       prices,
+      datedPrices,
     );
     const kept = keptTotals.get(batchId) ?? { rows: 0, netQty: 0, stockQty: 0 };
     kept.rows += 1;
@@ -202,7 +245,8 @@ export async function buildCombinedReportExport(
   if (!batchRows || batchRows.length === 0) return null;
 
   const prices = await loadCombinedReportPrices(supabase);
-  const { productsByBatch, scopedTotals } = await loadCombinedReportProducts(supabase, batchIds, prices, scope);
+  const datedPrices = await loadCombinedReportDatedPrices(supabase, prices);
+  const { productsByBatch, scopedTotals } = await loadCombinedReportProducts(supabase, batchIds, prices, scope, datedPrices);
 
   // An upload's stored total is the sum of its rows at import prices (every one of the 67 uploads on
   // production, 2026-09-18), so its total at today's prices is the sum of its repriced rows. An upload

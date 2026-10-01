@@ -20,7 +20,7 @@ import {
 } from "@/lib/sales/closing-organogram-regions";
 import { applyClosingAreaMerges, markMergedAreaRowsStatic } from "@/lib/sales/closing-area-merges";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
-import { assertNotADuplicateUpload, totalValueAtPeriod } from "@/lib/sales/import-duplicate-guard";
+import { assertNotADuplicateUpload, repriceableUploadRow, totalValueAtPeriod } from "@/lib/sales/import-duplicate-guard";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "@/lib/sales/july-2026-direct-orders";
 import {
   addClosingSales,
@@ -3315,13 +3315,17 @@ export async function persistDistributorSalesUpload(
   if (result.status === "validated") {
     // Each stored batch is compared on ITS month's price basis, so a file re-dated across a reprice
     // (September's file loaded again as October) still reads as the same file — see totalValueAtPeriod.
+    // Office rows arrive here too, valued at the master price in every month, so they keep their value.
     const prices = await loadProductPeriodPrices();
-    const repriceable = parsedRows.map((row) => ({
-      isDirect: row.isDirect,
-      period: row.invoicePeriod,
-      productCode: row.productCode,
-      value: row.value,
-    }));
+    const repriceable = parsedRows.map((row) =>
+      repriceableUploadRow({
+        distributorCode: row.distributorCode,
+        isDirect: row.isDirect,
+        period: row.invoicePeriod,
+        productCode: row.productCode,
+        value: row.value,
+      }),
+    );
     await assertNotADuplicateUpload({
       distributorCode: result.distributor.code,
       fileName: result.fileName,
