@@ -17,9 +17,11 @@
  *   3. Those plans' items, counted per plan.
  *   4. Countable visits over the rolling window, which also answers the last field day.
  *
- * 🔴 The visits read is `phoenix_crm_countable_visits`, never `phoenix_crm_visits`. An off-plan visit
- * waiting for approval counts in NOTHING until it is approved (owner, 2026-09-26), and a board that
- * counted it would quietly tell a manager a rep is fine on a day whose visits may yet be refused.
+ * 🔴 The visits read is `phoenix_crm_countable_visits`, never `phoenix_crm_visits`, and it asks that
+ * view for `customer_validated = true`. An off-plan visit waiting for approval counts in NOTHING
+ * until it is approved (owner, 2026-09-26), and a board that counted it would quietly tell a manager
+ * a rep is fine on a day whose visits may yet be refused. The customer's own admission to the list is
+ * the second half of the same question (owner, 2026-10-01) and fails the same quiet way.
  *
  * ## It reads nothing of the integrity evidence
  *
@@ -125,6 +127,13 @@ type VisitTally = { am: number; pm: number; lastDay: number };
  * AM and PM are tallied APART and never summed into a rate — the call-rate golden rule. `lastDay` is
  * the one place they are added, and only to answer "was there anything at all?", which is a different
  * question from a rate and is never printed as one.
+ *
+ * 🔴 `customer_validated = true`, AND ON THIS BOARD THE OMISSION FAILS QUIET. Owner, 2026-10-01: a
+ * customer may be planned and visited before he is validated, "but not counted in KPIs till
+ * validated". Here an inflated tally does not show up as a wrong number on a screen — it REMOVES a
+ * row, because this board exists to raise the territory whose count is low. So a rep whose whole
+ * window was visits to customers nobody has validated would read as a rep who worked, and the one
+ * exception worth seeing is the one that never appears.
  */
 async function loadVisitTallies(
   seatIds: string[],
@@ -143,6 +152,7 @@ async function loadVisitTallies(
           .from("phoenix_crm_countable_visits")
           .select("id, seat_id, visit_date, list_type")
           .eq("is_test", isTest)
+          .eq("customer_validated", true)
           .gte("visit_date", from)
           .lte("visit_date", to)
           .in("seat_id", part),

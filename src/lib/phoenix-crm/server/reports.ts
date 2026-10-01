@@ -1014,6 +1014,12 @@ export async function loadCustomerFrequencyReport(
  * `phoenix_crm_countable_visits`, never the raw table — an off-plan visit that is not yet approved
  * counts in nothing. An earlier cut took the table as a PARAMETER, which reads as flexibility and
  * is really a way of hiding the name from every sweep that looks for who reads what.
+ *
+ * 🔴 AND `customer_validated = true`, WHICH IS CURRENTLY BELT AND BRACES AND STAYS ANYWAY. Owner,
+ * 2026-10-01: a customer is planned and visited before validation, and counted only after it. Both
+ * reports built from this map walk `listedCustomers`, which is already validated-only, so an
+ * unvalidated customer's days are dropped at the join today — but that is a property of the CALLER,
+ * one edit away from changing, and this is the read whose own name says what it counts.
  */
 async function visitDaysByCustomer(seatId: string, includeTest: boolean, month: ReportMonth): Promise<Map<string, string[]>> {
   const rows = await fetchAllRowsKeyset<Row>(
@@ -1023,6 +1029,7 @@ async function visitDaysByCustomer(seatId: string, includeTest: boolean, month: 
         .select("id, customer_id, visit_date")
         .eq("seat_id", seatId)
         .eq("is_test", includeTest)
+        .eq("customer_validated", true)
         .gte("visit_date", month.monthStart)
         .lte("visit_date", month.monthEnd),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
