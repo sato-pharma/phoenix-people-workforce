@@ -23,9 +23,11 @@ import {
   buildPlanScenarios,
   describePlannerFilters,
   filterPlanLines,
+  pediaHalves,
   scenarioSummary,
   trendLabel,
   type FilteredLine,
+  type GoalCheck,
   type PlanScenario,
   type PlannerFilters,
 } from "@/lib/sales/make-it-happen/scenarios";
@@ -57,6 +59,8 @@ export type ForecastExportModel = {
     gapValue: number | null;
   };
   lines: ForecastExportLine[];
+  /** The two Pedia halves on this forecast, Sato first — empty for every plan without Pedia. */
+  halves: GoalCheck[];
   scenarios: PlanScenario[];
   shownRows: number;
   totalRows: number;
@@ -131,6 +135,7 @@ export function buildForecastExportModel(input: {
     },
     // Lines the filter emptied are dropped from the file, as they are from the screen.
     lines: lines.filter((line) => line.rows.length > 0),
+    halves: pediaHalves(workspace, units, goalPct),
     scenarios: buildPlanScenarios(workspace, goalPct),
     shownRows: filtered.reduce((sum, line) => sum + line.rows.length, 0),
     totalRows: workspace.lines.reduce((sum, line) => sum + line.rows.length, 0),
@@ -151,6 +156,28 @@ export function forecastExportFilename(model: ForecastExportModel, format: Forec
 function gapText(gap: number | null): string {
   if (gap == null) return "No target";
   return gap > 0 ? `${money(gap)} to go` : gap < 0 ? `${money(-gap)} above` : "Met";
+}
+
+/** "54.8% of its own target · EGP 1,234 short of the 100% goal" — one Pedia half, in words. */
+export function halfText(half: GoalCheck, goalPct: number): string {
+  if (half.targetValue == null) return "No target";
+  const standing =
+    half.reachesGoal === false ? `${money(half.shortOfGoal ?? 0)} short of the ${goalPct}% goal` : `reaches the ${goalPct}% goal`;
+  return `${pct(half.achievement)} of its own target · ${standing}`;
+}
+
+/** Said on every page that states a Pedia half. */
+const HALVES_NOTE =
+  "Pedia is paid on two halves: one month of basic on the Sato products against their own target, one on the whole line. Other products lift only the total half. Below 90% a half pays nothing.";
+
+/** The line note, naming the open months that carry no target and so are not forecast. */
+function forecastNote(line: ForecastExportLine["line"]): string {
+  const untargeted =
+    line.untargetedMonthLabels.length > 0
+      ? ` ${line.untargetedMonthLabels.join(", ")} carry no target yet and are not forecast.`
+      : "";
+  if (line.remainingMonths > 0) return `Forecasting ${line.forecastMonthLabels.join(", ")}.${untargeted}`;
+  return untargeted ? `No open month carries a target yet.${untargeted}` : "Every month of this period is closed for this line.";
 }
 
 // ── Excel ────────────────────────────────────────────────────────────────────
@@ -178,6 +205,8 @@ export async function buildForecastWorkbook(model: ForecastExportModel): Promise
       ["Your forecast", money(model.totals.forecastValue)],
       ["Forecast achievement", pct(model.totals.achievement)],
       ["Gap to target", gapText(model.totals.gapValue)],
+      ...model.halves.map((half): [string, string] => [half.label, halfText(half, model.goalPct)]),
+      ...(model.halves.length > 0 ? [["How Pedia is paid", HALVES_NOTE] as [string, string]] : []),
       ["Filters", model.filterNote ?? "None. This file covers every product in the plan."],
       ["Products in this file", `${INTEGER.format(model.shownRows)} of ${INTEGER.format(model.totalRows)}`],
       ["Generated", `${model.generatedAtLabel} (Cairo)`],
@@ -248,10 +277,7 @@ export async function buildForecastWorkbook(model: ForecastExportModel): Promise
         line.gapValue,
         null,
       ],
-      note:
-        line.line.remainingMonths > 0
-          ? `Forecasting ${line.line.forecastMonthLabels.join(", ")}.`
-          : "Every month of this period is closed for this line.",
+      note: forecastNote(line.line),
     });
   }
 
@@ -365,6 +391,7 @@ export function buildForecastPdfHtml(model: ForecastExportModel): string {
     ["Achievement", pct(model.totals.achievement)],
     ["Gap to target", gapText(model.totals.gapValue)],
     ["Goal", `${model.goalPct}%`],
+    ...model.halves.map((half): [string, string] => [half.key === "sato" ? "Sato half" : "Total half", pct(half.achievement)]),
   ];
 
   const scenarioTable = `<h2>Three scenarios <span>for a ${model.goalPct}% goal · whole plan</span></h2>
@@ -390,7 +417,8 @@ export function buildForecastPdfHtml(model: ForecastExportModel): string {
       : model.lines
           .map((line) => {
             const subtitle = [
-              line.line.remainingMonths > 0 ? `forecasting ${line.line.forecastMonthLabels.join(", ")}` : "every month closed",
+              line.line.remainingMonths > 0 ? `forecasting ${line.line.forecastMonthLabels.join(", ")}` : "nothing open to forecast",
+              line.line.untargetedMonthLabels.length > 0 ? `${line.line.untargetedMonthLabels.join(", ")} not forecast, no target yet` : null,
               line.rows.length < line.totalRows ? `${line.rows.length} of ${line.totalRows} products` : null,
             ]
               .filter(Boolean)
@@ -430,6 +458,8 @@ export function buildForecastPdfHtml(model: ForecastExportModel): string {
     "Sold so far counts closed months only. Achievement is sales so far plus forecast, over target value.",
     "Units are never added across different products; every total is value.",
     model.filterNote ? "A line's total row covers the whole line, including products the filter leaves out." : null,
+    ...model.halves.map((half) => `${half.label}: ${halfText(half, model.goalPct)}.`),
+    model.halves.length > 0 ? HALVES_NOTE : null,
     realistic?.reachesGoal === false ? `${HONESTY_SENTENCE}.` : null,
   ].filter((note): note is string => Boolean(note));
 

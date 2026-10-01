@@ -7,6 +7,7 @@ import { HONESTY_SENTENCE, isFaithfulRewrite, templateCoachMessage } from "@/lib
 import {
   achievementOf,
   buildRealisticMix,
+  forecastMonthsOf,
   gradeRows,
   offeredPeriods,
   parseForecastUnits,
@@ -32,6 +33,7 @@ import {
   filterPlanLines,
   goalGapValue,
   parseGoalPct,
+  pediaHalves,
   parsePlannerFilters,
   rowFigures,
   scenarioSummary,
@@ -77,6 +79,34 @@ export async function runMakeItHappenTests() {
   assert.equal(periodKeyOf("quarter", "2026-11"), "2026-Q4");
   assert.equal(periodKeyOf("semester", "2026-03"), "2026-H1");
   assert.equal(periodLabel("quarter", "2026-Q3"), "Q3 2026 · July to September");
+  assert.equal(
+    periodLabel("semester", "2026-H2"),
+    "Semester 2 2026 · July to December",
+    "Semester 1 and 2, never 'half' or H1/H2 (owner, 2026-09-23) — only the key keeps its H",
+  );
+
+  // ── A forecast fills only months that carry a target (rule 6) ──
+  const closedSet = new Set(["2026-07", "2026-08"]);
+  const targetedSet = new Set(["2026-07", "2026-08", "2026-09", "2026-10"]);
+  assert.deepEqual(
+    forecastMonthsOf(
+      ["2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"],
+      (month) => closedSet.has(month),
+      (month) => targetedSet.has(month),
+    ),
+    { forecast: ["2026-09", "2026-10"], untargeted: ["2026-11", "2026-12"] },
+    "Pedia Semester 2 on 2026-10-01: Nov and Dec carry no target, so they are named and never forecast against Jul-Oct targets",
+  );
+  assert.deepEqual(
+    forecastMonthsOf(["2026-10", "2026-11", "2026-12"], () => false, (month) => month === "2026-10"),
+    { forecast: ["2026-10"], untargeted: ["2026-11", "2026-12"] },
+    "Q4 with only October targeted forecasts October — three months of pace over one month of target read Pedia at 171%",
+  );
+  assert.deepEqual(
+    forecastMonthsOf(["2026-10", "2026-11", "2026-12"], () => false, () => false),
+    { forecast: ["2026-10", "2026-11", "2026-12"], untargeted: [] },
+    "with no target anywhere there is no achievement to inflate, so the pace fills every open month",
+  );
   assert.deepEqual(
     offeredPeriods("month", "2026-09").map((option) => option.value),
     ["2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"],
@@ -202,11 +232,11 @@ export async function runMakeItHappenTests() {
   const gamma = planRow({ productCode: "C", name: "Gamma", family: "Fam1", price: 50 });
   const cnsLine: LinePlanGroup = {
     lineCode: "CNS", lineName: "CNS", remainingMonths: 2, closedMonthLabels: ["Jul"], forecastMonthLabels: ["Aug", "Sep"],
-    targetValue: 2000, gradedValue: 500, actualValue: 500, rows: [alpha, beta],
+    untargetedMonthLabels: [], targetValue: 2000, gradedValue: 500, actualValue: 500, satoHalf: null, rows: [alpha, beta],
   };
   const pediaLine: LinePlanGroup = {
     lineCode: "PD", lineName: "Pedia", remainingMonths: 0, closedMonthLabels: ["Jul", "Aug", "Sep"], forecastMonthLabels: [],
-    targetValue: null, gradedValue: 0, actualValue: 0, rows: [gamma],
+    untargetedMonthLabels: [], targetValue: null, gradedValue: 0, actualValue: 0, satoHalf: null, rows: [gamma],
   };
   const workspace: MakeItHappenWorkspace = {
     periodKind: "quarter", periodKey: "2026-Q3", periodLabel: "Q3 2026 · July to September",
@@ -238,6 +268,98 @@ export async function runMakeItHappenTests() {
   for (const scenario of [...buildPlanScenarios(workspace, 100), ...easyGoal]) {
     assert.doesNotMatch(scenarioSummary(scenario, 100, money), /\bAI\b|artificial|model/i);
   }
+
+  // ── Pedia is planned on two halves (engine.ts rule 7, owner 2026-10-01) ──
+  // From Semester 2 2026 Pedia pays one month of basic on Guamusin + Ivyronc alone and one on the
+  // whole line. The plan-only mix closed the gap with Lacto — biggest headroom value — and read
+  // 100% while the Sato half sat at 50%, below the 90% floor, paying nothing.
+  const guamusin = planRow({
+    productCode: "GU001", name: "Guamusin", price: 10, targetUnits: 100, targetValue: 1000, gradedUnits: 30, gradedValue: 300,
+    trend: { kind: "growing", historyMonths: 4, spikesIgnored: 0, expectedUnits: 20, realisticMaxUnits: 30 },
+  });
+  const ivyronc = planRow({
+    productCode: "IV001", name: "Ivyronc", price: 10, targetUnits: 100, targetValue: 1000, gradedUnits: 30, gradedValue: 300,
+    trend: { kind: "growing", historyMonths: 4, spikesIgnored: 0, expectedUnits: 20, realisticMaxUnits: 30 },
+  });
+  const lacto = planRow({
+    productCode: "LA001", name: "Lacto Advanced 1", price: 100, targetUnits: 80, targetValue: 8000, gradedUnits: 30, gradedValue: 3000,
+    trend: { kind: "growing", historyMonths: 4, spikesIgnored: 0, expectedUnits: 30, realisticMaxUnits: 60 },
+  });
+  const splitLine: LinePlanGroup = {
+    lineCode: "pedia", lineName: "Pedia", remainingMonths: 2, closedMonthLabels: ["Jul", "Aug"], forecastMonthLabels: ["Sep", "Oct"],
+    untargetedMonthLabels: ["Nov", "Dec"], targetValue: 10000, gradedValue: 3600, actualValue: 3600,
+    satoHalf: { productCodes: ["GU001", "IV001"], productNames: "Guamusin and Ivyronc", targetValue: 2000, gradedValue: 600 },
+    rows: [guamusin, ivyronc, lacto],
+  };
+  const pediaWorkspace: MakeItHappenWorkspace = {
+    ...workspace, lines: [splitLine], totals: { targetValue: 10000, gradedValue: 3600, actualValue: 3600 },
+  };
+  const splitItems = [guamusin, ivyronc, lacto].map((entry) => ({
+    key: entry.productCode, price: entry.price, expectedUnits: entry.trend.expectedUnits,
+    realisticMaxUnits: entry.trend.realisticMaxUnits, unitsStillToTarget: (entry.targetUnits ?? 0) - entry.gradedUnits,
+  }));
+  const planOnly = buildRealisticMix(splitItems, 6400);
+  assert.deepEqual(planOnly.units, { GU001: 20, IV001: 20, LA001: 60 }, "the old plan-only rule closes the whole gap with Lacto");
+
+  const [splitPace, splitRealistic, splitStretch] = buildPlanScenarios(pediaWorkspace, 100);
+  assert.deepEqual(
+    splitRealistic.units,
+    { GU001: 30, IV001: 30, LA001: 58 },
+    "the Sato products are raised to their realistic max FIRST, and Lacto only covers what is left of the total",
+  );
+  assert.equal(splitRealistic.planReachesGoal, true, "the line total reaches 100%");
+  assert.deepEqual(splitRealistic.checks.map((check) => check.key), ["sato"], "Pedia alone: the total half IS the whole plan");
+  assert.equal(splitRealistic.checks[0].achievement, 0.6);
+  assert.equal(splitRealistic.checks[0].shortOfGoal, 800);
+  assert.equal(
+    splitRealistic.reachesGoal,
+    false,
+    "a plan whose Sato half falls short does NOT reach the goal, however good the total looks",
+  );
+  const realisticText = scenarioSummary(splitRealistic, 100, money);
+  assert.ok(realisticText.includes(HONESTY_SENTENCE), "a short Sato half says the owner's sentence");
+  assert.match(realisticText, /Sato half · Guamusin and Ivyronc reaches only 60\.0% of its own target, EGP 800 short/);
+  assert.equal(splitPace.checks[0].achievement, 0.5);
+  assert.match(scenarioSummary(splitPace, 100, money), /Sato half/);
+  assert.deepEqual(splitStretch.aboveRealistic, { GU001: 40, IV001: 40 }, "the stretch lands the Sato shortfall on the Sato products, never on Lacto");
+  assert.equal(splitStretch.checks[0].reachesGoal, true);
+  assert.equal(splitStretch.reachesGoal, true);
+
+  const halvesNow = pediaHalves(pediaWorkspace, { GU001: 20, IV001: 20, LA001: 60 }, 100);
+  assert.deepEqual(halvesNow.map((half) => half.label), ["Sato half · Guamusin and Ivyronc", "Total half · all Pedia"]);
+  assert.deepEqual(halvesNow.map((half) => half.achievement), [0.5, 1], "the typed plan reads 100% total and 50% Sato — both on screen");
+  assert.deepEqual(pediaHalves(workspace, {}, 100), [], "no Pedia split, no halves");
+
+  const mixedLines = buildPlanScenarios({ ...pediaWorkspace, lines: [cnsLine, splitLine], totals: { targetValue: 12000, gradedValue: 4100 } }, 100);
+  assert.deepEqual(
+    mixedLines[1].checks.map((check) => check.key),
+    ["sato", "pedia"],
+    "beside another line, the Pedia total is its own half",
+  );
+
+  const halfCoach = {
+    periodLabel: "Semester 2 2026 · July to December", projectedAchievementLabel: "100.0%", shortValueLabel: null, reachable: true,
+    onTrack: false, earlyHistory: false, picks: [{ name: "Lacto Advanced 1", unitsLabel: "58" }],
+    halves: [{ label: "Sato half · Guamusin and Ivyronc", achievementLabel: "60.0%", shortValueLabel: "EGP 800" }],
+  };
+  const halfMessage = templateCoachMessage(halfCoach);
+  assert.match(halfMessage, /Sato half · Guamusin and Ivyronc realistically reaches only 60\.0% of its own target, EGP 800 short\./);
+  assert.ok(halfMessage.includes(HONESTY_SENTENCE), "a short half carries the owner's sentence even when the total is reached");
+  assert.equal(isFaithfulRewrite(halfCoach, halfMessage, halfMessage), true);
+  assert.equal(
+    isFaithfulRewrite(halfCoach, halfMessage, halfMessage.replace("Sato half · Guamusin and Ivyronc", "The Sato products")),
+    false,
+    "a rewrite that drops the half's name is refused",
+  );
+
+  const splitModel = buildForecastExportModel({
+    workspace: pediaWorkspace, units: { GU001: 20, IV001: 20, LA001: 60 }, goalPct: 100, filters: NO_PLANNER_FILTERS,
+    now: new Date("2026-10-01T10:00:00Z"),
+  });
+  assert.equal(splitModel.halves.length, 2);
+  const splitHtml = buildForecastPdfHtml(splitModel);
+  assert.ok(splitHtml.includes("Sato half"), "the PDF states the Sato half");
+  assert.ok(splitHtml.includes("Nov, Dec not forecast, no target yet"), "the PDF names the months it does not forecast");
 
   // ── Gap to target, per product ──
   const alphaFigures = rowFigures(alpha, true, 20);
