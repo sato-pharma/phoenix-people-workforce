@@ -171,6 +171,22 @@ export function CustomerLinksWorkspace({
   const pickedKeys = useMemo(() => [...picked].filter((key) => !settled.has(key)), [picked, settled]);
   const liveClusters = clusters.filter((cluster) => cluster.pairs.some((pair) => !settled.has(pair.pairKey)));
 
+  /**
+   * Selecting a whole page at once — the half of "bulk or by hand, full control" that was missing.
+   *
+   * 🔴 THESE SELECT AND NOTHING ELSE. There is still no confirm-all on this screen: he presses
+   * "Confirm these are the same" himself after reading what is ticked, exactly as before, and the
+   * test pins that by counting the two places that may call `decide` with "confirm" — a button
+   * that both selected and confirmed would add a third and go red. The difference is 2 presses
+   * instead of 18 on a page of pharmacies, not a decision taken for him.
+   *
+   * "The certain ones" is scoped to the `fact` band because that is the band whose evidence needs
+   * no judgement — the two rows carry the same contact id or the same code at one distributor. The
+   * weaker bands rest on a name, a distance or a brick, and he reads those one at a time.
+   */
+  const livePairsOnPage = liveClusters.flatMap((cluster) => cluster.pairs.filter((pair) => !settled.has(pair.pairKey)));
+  const certainPairsOnPage = livePairsOnPage.filter((pair) => pair.band === "fact");
+
   return (
     <div className="mx-auto w-full max-w-[1400px] space-y-4 p-3 sm:p-4" dir="auto">
       <AdminPageHero
@@ -222,19 +238,54 @@ export function CustomerLinksWorkspace({
         />
       </div>
 
-      <nav className="flex min-w-0 flex-wrap gap-2 border border-slate-200/80 bg-white px-5 py-4">
-        {([null, "PM", "AM", "pharmacy"] as const).map((one) => (
-          <a
-            className={`border px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${
-              kind === one ? "border-orange-500 bg-orange-50 text-orange-700" : "border-slate-200 bg-white text-slate-600"
-            }`}
-            href={one ? `/admin/customer-links?kind=${one}` : "/admin/customer-links"}
-            key={one ?? "all"}
-          >
-            {one ? KIND_LABEL[one] : "Everything"}
-          </a>
-        ))}
-      </nav>
+      <div className="min-w-0 border border-slate-200/80 bg-white">
+        <nav className="flex min-w-0 flex-wrap gap-2 px-5 py-4">
+          {([null, "PM", "AM", "pharmacy"] as const).map((one) => (
+            <a
+              className={`border px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${
+                kind === one ? "border-orange-500 bg-orange-50 text-orange-700" : "border-slate-200 bg-white text-slate-600"
+              }`}
+              href={one ? `/admin/customer-links?kind=${one}` : "/admin/customer-links"}
+              key={one ?? "all"}
+            >
+              {one ? KIND_LABEL[one] : "Everything"}
+            </a>
+          ))}
+        </nav>
+
+        {livePairsOnPage.length > 0 ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-2 border-t border-slate-200/80 px-5 py-3">
+            <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">Select</p>
+            <button
+              className="border border-emerald-500 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-emerald-700 disabled:opacity-50"
+              disabled={certainPairsOnPage.length === 0}
+              onClick={() => toggleCluster(certainPairsOnPage, true)}
+              type="button"
+            >
+              The certain ones ({certainPairsOnPage.length})
+            </button>
+            <button
+              className="border border-slate-300 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-700"
+              onClick={() => toggleCluster(livePairsOnPage, true)}
+              type="button"
+            >
+              Everything on this page ({livePairsOnPage.length})
+            </button>
+            {pickedKeys.length > 0 ? (
+              <button
+                className="px-2 py-1.5 text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-500"
+                onClick={() => setPicked(new Set())}
+                type="button"
+              >
+                Clear
+              </button>
+            ) : null}
+            <p className="min-w-0 basis-full break-words text-phx-2xs font-semibold leading-4 text-slate-500">
+              Selecting ticks the boxes. Nothing is recorded until you press a decision yourself.
+            </p>
+          </div>
+        ) : null}
+      </div>
 
       {/* The bulk bar appears only when something is selected, so the screen never offers a
           "confirm all" he did not ask for. */}
