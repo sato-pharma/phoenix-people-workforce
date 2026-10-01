@@ -1265,25 +1265,16 @@ export async function getKpisBoard(input: {
   const totals = sumKpiTeamTotals(reps);
   const noGpsFeedShown = reps.filter((row) => row.noGpsFeed).length;
 
-  // The team rate is the team's calls over ONE rep-equivalent's working days times the head count —
-  // i.e. the average rep's rate, not the sum. Summing the rates instead would make a district of six
-  // look six times better than any of its reps.
-  //
-  // Summed per rep rather than `callRate.workingDays * reps`. Under the old rules every row carries
-  // the same working days, so the two are the same number; under the Phoenix rules a mid-month
-  // joiner carries only the days he was employed (rule 4), and multiplying would charge him the rest.
-  const denominator = totals.repWorkingDays;
-  const teamCoveragePct = pct(totals.visitedDoctors, totals.plannedDoctors);
   // Hoisted out of the `totals` literal below so the OVERALL KPI averages the very numbers the
   // tiles print. Computed twice — once for the tile, once for the average — is how the one figure
-  // and the four beside it would drift the first time either expression changed.
-  const teamFrequencyPct = phoenix
-    ? pct(totals.onPlanDoctors, totals.gradedDoctors)
-    : pct(totals.onPlanDoctors, totals.plannedDoctors);
-  const teamAmAttainmentPct =
-    denominator > 0 ? Math.round((totals.amVerified / (denominator * AM_CALL_RATE_TARGET)) * 100) : null;
-  const teamPmAttainmentPct =
-    denominator > 0 ? Math.round((totals.pmVerified / (denominator * PM_CALL_RATE_TARGET)) * 100) : null;
+  // and the four beside it would drift the first time either expression changed. The arithmetic is
+  // `kpiTeamFigures`, which the Business Review pack reads as well.
+  const team = kpiTeamFigures(totals, phoenix ? "phoenix" : "legacy");
+  const denominator = totals.repWorkingDays;
+  const teamCoveragePct = team.coveragePct;
+  const teamFrequencyPct = team.frequencyPct;
+  const teamAmAttainmentPct = team.amAttainmentPct;
+  const teamPmAttainmentPct = team.pmAttainmentPct;
 
   return {
     ...empty,
@@ -1320,8 +1311,8 @@ export async function getKpisBoard(input: {
       workingDays: callRate.workingDays,
       amVerified: totals.amVerified,
       pmVerified: totals.pmVerified,
-      amRate: denominator > 0 ? totals.amVerified / denominator : null,
-      pmRate: denominator > 0 ? totals.pmVerified / denominator : null,
+      amRate: team.amRate,
+      pmRate: team.pmRate,
       amReported: totals.amReported,
       pmReported: totals.pmReported,
       amReportedRate: denominator > 0 ? totals.amReported / denominator : null,
@@ -1331,7 +1322,7 @@ export async function getKpisBoard(input: {
       plannedDoctors: totals.plannedDoctors,
       visitedDoctors: totals.visitedDoctors,
       coveragePct: teamCoveragePct,
-      meetsCoverageFloor: totals.plannedDoctors > 0 ? teamCoveragePct >= COVERAGE_TARGET_FLOOR_PCT : null,
+      meetsCoverageFloor: team.meetsCoverageFloor,
       onPlanDoctors: totals.onPlanDoctors,
       underDoctors: totals.underDoctors,
       overDoctors: totals.overDoctors,
@@ -1342,7 +1333,7 @@ export async function getKpisBoard(input: {
       amAttainmentPct: teamAmAttainmentPct,
       pmAttainmentPct: teamPmAttainmentPct,
       pharmacyVerified: totals.pharmacyVerified,
-      pharmacyRate: denominator > 0 ? totals.pharmacyVerified / denominator : null,
+      pharmacyRate: team.pharmacyRate,
       pharmacyReported: totals.pharmacyReported,
       pharmacyReportedRate: denominator > 0 ? totals.pharmacyReported / denominator : null,
     },
@@ -1415,4 +1406,37 @@ export function sumKpiTeamTotals(reps: readonly KpiRepRow[]) {
     accumulator.regularNoCheckin += row.phoenix?.regularNoCheckin ?? 0;
   }
   return accumulator;
+}
+
+/**
+ * A team's coverage, frequency and call rate, from its summed rows — the ONE copy of the team
+ * arithmetic. This board's tiles and overall KPI read it, and so does the Business Review pack
+ * (owner, 2026-10-01: "add all three"), so a district's coverage in the pack can never differ from
+ * the same district on this board.
+ *
+ * The team rate is the team's calls over its rep-days — the average rep's rate, never the sum of the
+ * rates, which would make a district of six look six times better than any of its reps. Summed per
+ * rep rather than working days times head count: under the Phoenix rules a mid-month joiner carries
+ * only the days he was employed (rule 4), and multiplying would charge him the rest. AM and PM are
+ * each scored against their OWN target and never blended (owner, 2026-09-04). Frequency is judged
+ * over GRADED doctors under the Phoenix rules (rule 7), over the planned list before them.
+ */
+export function kpiTeamFigures(totals: ReturnType<typeof sumKpiTeamTotals>, rules: KpiRules) {
+  const denominator = totals.repWorkingDays;
+  const coveragePct = pct(totals.visitedDoctors, totals.plannedDoctors);
+  return {
+    coveragePct,
+    meetsCoverageFloor: totals.plannedDoctors > 0 ? coveragePct >= COVERAGE_TARGET_FLOOR_PCT : null,
+    frequencyPct:
+      rules === "phoenix"
+        ? pct(totals.onPlanDoctors, totals.gradedDoctors)
+        : pct(totals.onPlanDoctors, totals.plannedDoctors),
+    amRate: denominator > 0 ? totals.amVerified / denominator : null,
+    pmRate: denominator > 0 ? totals.pmVerified / denominator : null,
+    pharmacyRate: denominator > 0 ? totals.pharmacyVerified / denominator : null,
+    amAttainmentPct:
+      denominator > 0 ? Math.round((totals.amVerified / (denominator * AM_CALL_RATE_TARGET)) * 100) : null,
+    pmAttainmentPct:
+      denominator > 0 ? Math.round((totals.pmVerified / (denominator * PM_CALL_RATE_TARGET)) * 100) : null,
+  };
 }

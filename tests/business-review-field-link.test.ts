@@ -498,10 +498,10 @@ export function runBusinessReviewFieldLinkTests() {
     assert.match(route, /loadFieldLinkFacts\(/, "the route reads the linked facts");
     assert.match(
       route,
-      /repHrIds: scope\.kind === "rep" \? \[scope\.hrId\]/,
+      /packRepHrIds = scope\.kind === "rep" \? \[scope\.hrId\]/,
       "a medical rep's read names HIM alone — never a colleague's list",
     );
-    assert.match(route, /ownRequestsOf: scope\.kind === "rep" \? scope\.hrId : null/, "and only his own marketing requests");
+    assert.ok(!/ownRequestsOf/.test(route), "a rep's requests are every request on his patch, whoever raised them (owner, 2026-10-01)");
     assert.match(route, /keptAreas\.has\(`\$\{line\}:/, "brick sales are cut by line AND area — an area is not per line");
 
     const loader = stripComments(readFileSync("src/lib/business-review/sources/field-link.ts", "utf8"));
