@@ -184,12 +184,15 @@ export function accuracyReading(delivered: number | null): AccuracyReading | nul
 
 /**
  * The board's order: the territories that have NOT sent today first — they are what a manager opens
- * the board to find — then by region and name, so a region reads together.
+ * the board to find — then by region and name, so a region reads together. Vacant territories come
+ * after all of them: nobody can send for one, so it is never part of the "not sent".
  */
 export function compareBoardRows(
-  left: { sent: boolean; regionName: string | null; name: string },
-  right: { sent: boolean; regionName: string | null; name: string },
+  left: { sent: boolean; regionName: string | null; name: string; vacant?: boolean },
+  right: { sent: boolean; regionName: string | null; name: string; vacant?: boolean },
 ): number {
+  // A vacant territory goes last: nobody can send for it, so it is never one of the "not sent".
+  if (Boolean(left.vacant) !== Boolean(right.vacant)) return left.vacant ? 1 : -1;
   if (left.sent !== right.sent) return left.sent ? 1 : -1;
   const region = (left.regionName ?? "").localeCompare(right.regionName ?? "");
   return region !== 0 ? region : left.name.localeCompare(right.name);

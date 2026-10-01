@@ -23,8 +23,11 @@
  * file can be read by a client component without dragging server code into the bundle.
  */
 
-/** One line as it appears in the message: the name the rep reads, and the boxes he agreed. */
-export type ForecastMessageLine = { readonly productName: string; readonly units: number };
+/**
+ * One line as it appears in the message: the name the rep reads, the boxes he agreed, and the product
+ * family it belongs to (Tebofortin, Rispadex, …), which is what the message groups the lines under.
+ */
+export type ForecastMessageLine = { readonly productName: string; readonly units: number; readonly family?: string | null };
 
 export type ForecastMessageInput = {
   /**
@@ -58,7 +61,17 @@ export function forecastDayLabel(day: string): string {
 }
 
 /**
- * The message itself.
+ * The message itself: units per concentration, per product (owner, 2026-10-01). Each product family is
+ * a block under its own bold heading, and every concentration in it is its own line with its own boxes;
+ * a family with only one line today is that line alone, because "Dolabactin" over "Dolabactin: 10"
+ * says the name twice. Families come in the form's order — the biggest daily share first — and so do
+ * the lines inside each.
+ *
+ * 🔴 NO TOTAL, EVER. A box of Tebofortine 40 mg and a box of Tebofortine Forte 80 are not the same
+ * quantity, and a box of Rispadex is not a box of either — so no line here adds boxes together, across
+ * products OR across one product's concentrations. The first version ended "Total: 319 boxes"; the
+ * owner ruled it out on sight. A total of anything across products is summed by VALUE, and the group
+ * message deliberately carries none.
  *
  * Only products with boxes appear: a list padded with zeroes is longer, harder to read on a phone, and
  * says nothing. When every figure is zero it says so in words rather than arriving as a bare heading,
@@ -69,15 +82,24 @@ export function composeForecastMessage(input: ForecastMessageInput): string {
 
   const withBoxes = input.lines
     .filter((line) => Number.isFinite(line.units) && line.units > 0)
-    .map((line) => ({ productName: line.productName.trim(), units: Math.trunc(line.units) }));
+    .map((line) => ({
+      productName: line.productName.trim(),
+      units: Math.trunc(line.units),
+      // A product the master gives no family is a group of its own, under its own name.
+      family: (line.family ?? "").trim() || line.productName.trim(),
+    }));
 
   if (withBoxes.length === 0) return `${head}\n\nNo boxes forecast today.`;
 
-  const body = withBoxes.map((line) => `${line.productName}: ${line.units}`).join("\n");
-  // The total is spelled out because the group's question is always "how much altogether", and a
-  // reader adding six numbers on a phone gets it wrong.
-  const total = withBoxes.reduce((sum, line) => sum + line.units, 0);
-  return `${head}\n\n${body}\n\nTotal: ${total} ${total === 1 ? "box" : "boxes"}`;
+  const families = new Map<string, Array<{ productName: string; units: number }>>();
+  for (const line of withBoxes) families.set(line.family, [...(families.get(line.family) ?? []), line]);
+
+  const blocks = [...families.entries()].map(([family, lines]) =>
+    lines.length === 1
+      ? `${lines[0].productName}: ${lines[0].units}`
+      : [`*${family}*`, ...lines.map((line) => `${line.productName}: ${line.units}`)].join("\n"),
+  );
+  return `${head}\n\n${blocks.join("\n\n")}`;
 }
 
 /**

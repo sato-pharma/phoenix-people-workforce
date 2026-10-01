@@ -28,32 +28,61 @@ import {
 
 export function runPhoenixCrmForecastWhatsAppTests(): void {
   // ── The message ───────────────────────────────────────────────────────────────────────────────
+  // Hager's real pre-filled day in Alex East, 1 October 2026, in the form's order (biggest share first).
   const message = composeForecastMessage({
     day: "2026-10-01",
     lines: [
-      { productName: "Depakine Chrono 500", units: 12 },
-      { productName: "Nothing today", units: 0 },
-      { productName: "Tegretol CR 400", units: 3 },
+      { productName: "Tebofortine Forte 80", family: "Tebofortin", units: 94 },
+      { productName: "Tebofortine 40 mg", family: "Tebofortin", units: 71 },
+      { productName: "Rispadex 3 mg UPA", family: "Rispadex", units: 34 },
+      { productName: "Conviban 25 mg", family: "Conviban", units: 27 },
+      { productName: "Rispadex 1mg Syp", family: "Rispadex", units: 15 },
+      { productName: "Tebofortin 120 mg Intens", family: "Tebofortin", units: 11 },
+      { productName: "Dolabactin", family: "Dolabactin", units: 10 },
+      { productName: "Conviban 50 mg", family: "Conviban", units: 0 },
+      { productName: "Dopaminect 1mg", family: "Dopaminict", units: 5 },
     ],
-    territoryName: "Cairo 1",
+    territoryName: "Alex East",
   });
 
-  assert.match(message, /^Daily forecast — Cairo 1\n1 October 2026\n\n/, `the heading must name the territory and the day:\n${message}`);
-  assert.match(message, /Depakine Chrono 500: 12/, "a product's own NAME and its boxes, never a code");
-  assert.match(message, /Tegretol CR 400: 3/, "every product with boxes appears");
-  assert.doesNotMatch(
+  // 🔴 UNITS PER CONCENTRATION, PER PRODUCT (owner, 2026-10-01) — and the whole message, exactly.
+  assert.equal(
     message,
-    /Nothing today/,
-    "a product with zero boxes must NOT appear — a list padded with zeroes is longer, harder to read on a phone, and says nothing",
+    [
+      "Daily forecast — Alex East",
+      "1 October 2026",
+      "",
+      "*Tebofortin*",
+      "Tebofortine Forte 80: 94",
+      "Tebofortine 40 mg: 71",
+      "Tebofortin 120 mg Intens: 11",
+      "",
+      "*Rispadex*",
+      "Rispadex 3 mg UPA: 34",
+      "Rispadex 1mg Syp: 15",
+      "",
+      "Conviban 25 mg: 27",
+      "",
+      "Dolabactin: 10",
+      "",
+      "Dopaminect 1mg: 5",
+    ].join("\n"),
+    `each product a block, each concentration its own line with its own boxes, the biggest first:\n${message}`,
   );
-  assert.match(message, /\nTotal: 15 boxes$/, `the total is spelled out, because the group's question is always "how much altogether":\n${message}`);
+  // 🔴 NEVER A TOTAL. The first version ended "Total: 319 boxes" — 94 Tebofortine Forte + 71
+  // Tebofortine 40 + … + 1 Dopaminict — and the owner ruled it out: boxes of different products, and of
+  // different concentrations of one product, are not the same quantity and are never added.
+  assert.doesNotMatch(message, /total/i, "no total line of any kind — boxes of unlike products are never added");
+  assert.doesNotMatch(message, /\b(176|49|267)\b/, "and no figure that is a sum of the lines above it (176 Tebofortin, 49 Rispadex, 267 altogether)");
+  assert.doesNotMatch(message, /Conviban 50 mg/, "a concentration with zero boxes must NOT appear — a list padded with zeroes says nothing");
+  assert.doesNotMatch(message, /\*(Conviban|Dolabactin|Dopaminict)\*/, "a product with ONE line today is that line alone — no heading repeating its own name");
   assert.doesNotMatch(message, /…|\.\.\./, "no ellipsis anywhere — the owner's standing rule");
 
-  // One box reads "box", not "boxes". Small, but it is the line's own group reading it.
+  // A line the master gives no family still appears, as its own group.
   assert.match(
-    composeForecastMessage({ day: "2026-10-01", lines: [{ productName: "Tegretol CR 400", units: 1 }], territoryName: "Cairo 1" }),
-    /Total: 1 box$/,
-    "a single box must not read as boxes",
+    composeForecastMessage({ day: "2026-10-01", lines: [{ productName: "Tegretol CR 400", units: 3 }], territoryName: "Cairo 1" }),
+    /\n\nTegretol CR 400: 3$/,
+    "a product with no family is listed under its own name",
   );
 
   // Every figure zero still says something, in words.
@@ -86,7 +115,8 @@ export function runPhoenixCrmForecastWhatsAppTests(): void {
     /wa\.me\/\d/,
     "🔴 a phone number in the share URL opens a chat with THAT PERSON instead of the group picker — the line's forecast would go to one individual",
   );
-  assert.ok(url.includes(encodeURIComponent("Total: 15 boxes")), "the whole composed message must be in the link, or the rep still has to type");
+  assert.ok(url.includes(encodeURIComponent("Dopaminect 1mg: 5")), "the whole composed message must be in the link, or the rep still has to type");
+  assert.ok(url.endsWith(encodeURIComponent(message)), "and nothing is added to it on the way");
   assert.doesNotMatch(url, /\n/, "the message must be percent-encoded, not carried raw with newlines");
 
   // ── Where the button is allowed to appear ─────────────────────────────────────────────────────
@@ -99,6 +129,12 @@ export function runPhoenixCrmForecastWhatsAppTests(): void {
     buttonAt > sentBlock,
     "🔴 the WhatsApp share must stay INSIDE the already-sent branch. Offered before the figures are " +
       "recorded, it puts a number in the CNS group that Phoenix does not hold, and the two disagree.",
+  );
+
+  assert.match(
+    tab,
+    /family: line\.productFamily/,
+    "the button hands each product's family through, or the message cannot group concentrations under their product",
   );
 
   // 🔴 COMMENTS STRIPPED FIRST, and this caught itself: the component EXPLAINS that the organogram

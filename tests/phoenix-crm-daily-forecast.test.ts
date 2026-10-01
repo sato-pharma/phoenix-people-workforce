@@ -246,6 +246,26 @@ export function runPhoenixCrmDailyForecastTests(): void {
       "who has NOT sent is what a manager opens the board to find",
     );
     assert.equal(periodOfDay("2026-10-01"), "2026-10");
+
+    // 🔴 A VACANT territory is nobody's to send. Nine of the 35 CNS territories were vacant the day the
+    // board shipped, and counting them as "not sent" buried the reps who really had not sent: they go
+    // LAST, behind every held territory, and never into a region's "X of Y sent".
+    const withVacant = [
+      { sent: false, regionName: "Alex-BHR", name: "Alex West", vacant: true },
+      { sent: true, regionName: "Cairo", name: "Heliopolis", vacant: false },
+      { sent: false, regionName: "Upper Egypt", name: "Qena 1", vacant: false },
+    ].sort(compareBoardRows);
+    assert.deepEqual(
+      withVacant.map((row) => row.name),
+      ["Qena 1", "Heliopolis", "Alex West"],
+      "a vacant territory sorts after every held one, sent or not",
+    );
+    const service = source("src/lib/phoenix-crm/server/daily-forecast.ts");
+    assert.match(service, /vacant: !seat\.occupantHrId,/, "each board row says whether anyone holds the territory");
+    assert.match(service, /if \(seat\.occupantHrId\) entry\.territories \+= 1;/, "a region counts only the territories someone can send for");
+    const tab = source("src/components/phoenix-crm/forecast-tab.tsx");
+    assert.match(tab, /const held = view\.rows\.filter\(\(row\) => !row\.vacant\)\.length;/, "the board's Not sent figure is over held territories only");
+    assert.match(tab, /if \(row\.vacant\) return <CrmPill tone="neutral">Vacant<\/CrmPill>;/, "and a vacant row reads Vacant, never Not sent");
   }
 
   // ── 9. It is a module of its own, beside the Plan ───────────────────────────────────────────────
