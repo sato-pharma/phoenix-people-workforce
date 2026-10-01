@@ -420,6 +420,39 @@ export function runPhoenixCrmWave2ReportTests(): void {
     // seat and nobody else's, so there is no path by which he is handed a colleague.
     assert.match(service, /testReadSeats\(viewer, isTest, viewer\.scopeTerritories\)/, "the rows are built from the viewer's own scope");
 
+    // 🔴 IT OPENS ON THE LAST MONTH WITH WORK IN IT (owner, 2026-10-01). Opening on the CURRENT
+    //    month means opening on an empty grid every 1st of the month, and he had to press
+    //    Previous month every single time to see anything at all.
+    assert.match(service, /const asked = .*raw\.month.*\? String\(raw\.month\) : null/, "an explicit month is read first");
+    assert.match(service, /const month = asked \?\?/, "and it always wins — this decides the FIRST load only, never a month somebody chose");
+    assert.match(service, /latestWorkedMonth\(seatIds, isTest, thisMonth\)/, "otherwise the server finds the last worked month");
+    assert.match(service, /\?\? thisMonth\)/, "and a scope that has never worked falls back to the current month");
+
+    // What counts as work is what COLOURS a cell — a visit or a day activity, never leave and
+    // never a Friday. Opening on a grid of F and dashes would answer the letter and not the point.
+    assert.match(service, /newestOf\(\s*"phoenix_crm_countable_visits"/, "visits count as work");
+    assert.match(service, /newestOf\(\s*"phoenix_crm_day_activities"/, "and so does a recorded day activity");
+    assert.doesNotMatch(service, /newestOf\(\s*"[^"]*leave/i, "leave is not work");
+    // 🔴 EACH SELECT LIST IS A LITERAL. PostgREST's types parse it at COMPILE time, so a template
+    //    literal built from a column name resolves to a ParserError and not a row shape — the
+    //    typecheck caught exactly that on the first cut of this function.
+    assert.match(service, /\.select\("seat_id, visit_date"\)/, "the visit read names its columns literally");
+    assert.match(service, /\.select\("seat_id, activity_date"\)/, "and so does the activity read");
+    assert.doesNotMatch(service, /\.select\(`/, "no select list is ever built from a variable");
+    // Capped, so an activity recorded ahead of time cannot open a manager on a month that has not
+    // happened; and a BROKEN read throws rather than reading as "this scope has never worked",
+    // which would quietly restore the old behaviour for ever.
+    assert.match(service, /\.lte\("visit_date", lastDayOfCap\)/, "the search is capped at the current month");
+    assert.match(service, /if \(error\) throw new Error/, "a failed read is an error, never an empty answer");
+
+    // The client's half: it asks for NO month on the first load, which is what lets the server
+    // choose, and its arrows step from the month ON SCREEN rather than from its own null.
+    const screenSource = stripComments(readFileSync("src/components/phoenix-crm/calendar-tab.tsx", "utf8"));
+    assert.match(screenSource, /useState<string \| null>\(null\)/, "no month is picked until he picks one");
+    assert.match(screenSource, /month: picked/, "so the first request names none and the server answers with the month");
+    assert.match(screenSource, /const month = picked \?\? view\.data\?\.month \?\?/, "the heading follows the server until he chooses");
+    assert.match(screenSource, /setPicked\(shiftMonth\(month, step\.by\)\)/, "and an arrow steps from what is on screen, not from this month");
+
     const overview = stripComments(readFileSync("src/lib/phoenix-crm/server/overview.ts", "utf8"));
     assert.match(overview, /calendar: readsCalendar\(viewer\)/, "the tab reads the service's predicate rather than restating it");
 
