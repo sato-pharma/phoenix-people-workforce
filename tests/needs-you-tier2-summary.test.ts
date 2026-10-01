@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { buildNeedsYouDailyMessage } from "../src/lib/needs-you/deliver/daily.ts";
 import { NEEDS_YOU_SUMMARY_MODEL, summarizeNeedsYouBoard, summaryFactsFrom } from "../src/lib/needs-you/ai/summarize.ts";
-import { SUMMARY_MAX_CHARS } from "../src/lib/needs-you/ai/summary.ts";
+import { SUMMARY_JSON_WORD, SUMMARY_MAX_CHARS, buildSummaryPrompt } from "../src/lib/needs-you/ai/summary.ts";
 import { TELEGRAM_BUDGET } from "../src/lib/needs-you/render/telegram.ts";
 import { needsYouSourceIds, type NeedsYouBoard, type NeedsYouItem } from "../src/lib/needs-you/types.ts";
 
@@ -35,6 +35,7 @@ import { stripComments } from "./support/comment-strip.ts";
  *  4. The nano default, or the 25s timeout calibrated for it.
  *  5. Telemetry recorded against the shared client instead of this feature.
  *  6. A refusal swallowed, so a summary that quietly stopped appearing reads as a quiet week.
+ *  7. The word "json" leaving the INPUT, which is a 400 on every call and no summary at all.
  */
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
@@ -178,5 +179,32 @@ export async function runNeedsYouTier2SummaryTests() {
       `${DAILY}: the silent refusals must match summary.ts's own wording exactly, or a reworded refusal ` +
         "starts being printed as though it were a failure",
     );
+  }
+
+  // 7 — THE INPUT CARRIES THE WORD "json". The Responses API refuses `text.format: json_object`
+  //     with a 400 unless the word appears in the INPUT messages; `instructions` does not count,
+  //     however many times it says JSON. Every production run from the feature shipping on
+  //     2026-09-28 to the fix returned exactly that 400 in about a second, so tier 2 produced no
+  //     summary at all and three mornings printed the dropped-summary notice instead of a lead.
+  {
+    const { input, instructions } = buildSummaryPrompt({
+      items: [{ name: "Anti Infective closing", reason: "not published" }],
+      notProvenCount: 0,
+    });
+    assert.match(
+      input,
+      /json/i,
+      "the prompt INPUT must contain the word \"json\". Without it OpenAI answers 400 " +
+        "(\"Response input messages must contain the word 'json' in some form to use 'text.format' of " +
+        "type 'json_object'\") on every single call, and the written summary never appears — the " +
+        "instructions saying JSON does not satisfy it.",
+    );
+    assert.ok(
+      input.includes(SUMMARY_JSON_WORD),
+      "the carrier line must be the exported constant, so rewording it cannot quietly drop the word",
+    );
+    assert.match(instructions, /json/i, "the instructions still state the shape that is wanted");
+    // The word is all that is added: no count, no verdict, no lane the model could reassure about.
+    assert.doesNotMatch(input, /notProven|verdict|all clear|nothing/i, "assertion 2's boundary still holds");
   }
 }

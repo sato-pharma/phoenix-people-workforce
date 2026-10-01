@@ -42,6 +42,14 @@ export const NEEDS_YOU_SUMMARY_PURPOSE = "needs_you_daily_summary";
 /** A lead longer than this is not a lead. Telegram's whole budget is 900 characters. */
 export const SUMMARY_MAX_CHARS = 220;
 
+/**
+ * The one line that carries the word the Responses API demands — see {@link buildSummaryPrompt}.
+ *
+ * Named rather than inlined so the regression test asserts the WORD is in the input, which is what
+ * OpenAI actually checks, rather than matching a sentence someone may reword.
+ */
+export const SUMMARY_JSON_WORD = "Reply with a json object.";
+
 /** The minimal facts tier 2 needs. Note what is ABSENT: any verdict, and any failure count. */
 export type SummaryBoardFacts = {
   /** The items waiting on him, in the board's own order. */
@@ -76,9 +84,21 @@ export function buildSummaryPrompt(facts: SummaryBoardFacts): { instructions: st
   ].join("\n");
 
   // Only `yours`. No notProvenCount, no verdict, no totals.
-  const input = JSON.stringify({
+  const payload = JSON.stringify({
     items: facts.items.map((item, index) => ({ index, name: item.name, reason: item.reason })),
   });
+
+  // 🔴 THE WORD "json" MUST APPEAR IN THE INPUT, NOT ONLY IN THE INSTRUCTIONS. The Responses API
+  // refuses `text.format: { type: "json_object" }` with a 400 unless the INPUT messages contain
+  // the word in some form — the `instructions` field does not satisfy it, however many times it
+  // says JSON. Measured in production: every run since the feature shipped on 2026-09-28 returned
+  // `400 Response input messages must contain the word 'json' in some form to use 'text.format'
+  // of type 'json_object'.` in about a second, so tier 2 never produced a single summary — three
+  // mornings of the digest printing the dropped-summary notice instead of a lead.
+  //
+  // It says nothing the model was not already told: no count, no verdict, no lane. The line below
+  // is the whole fix, and {@link SUMMARY_JSON_WORD} exists so the test can name it.
+  const input = `${SUMMARY_JSON_WORD}\n${payload}`;
 
   return { instructions, input };
 }
