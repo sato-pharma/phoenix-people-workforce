@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
-import { buildPhoenixCrmReportsWorkbook, packSections, type ReportsPackInput } from "../src/lib/phoenix-crm/server/reports-workbook.ts";
+import {
+  buildPhoenixCrmReportsWorkbook,
+  calendarSheetName,
+  packSections,
+  type ReportsPackInput,
+} from "../src/lib/phoenix-crm/server/reports-workbook.ts";
 import { accessRegistry } from "../src/lib/security/access-registry.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -534,6 +539,26 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     const built = await sheetsOf(pack(threeViews));
     for (const name of wanted) assert.ok(built.includes(name), `${name} is really in the built workbook`);
     assert.deepEqual(built.filter((name) => wanted.includes(name)), wanted, "and in that order");
+
+    // 🔴 THE CALENDAR'S TAB IS NAMED FOR WHOSE MONTH IT HOLDS. A rep has read this report since
+    //    2026-10-01, scoped to himself, so "Team calendar" on his own download names a thing he
+    //    does not have. Read back out of the REAL workbook, because the cover and the sheet are
+    //    written by two different calls and the failure this guards is them disagreeing — a cover
+    //    promising a tab the file does not contain reads as a corrupt download.
+    const ownViews = { ...threeViews, calendar: { ...(threeViews as { calendar: object }).calendar, scope: "own" } } as Partial<ReportsPackInput>;
+    const ownSheets = await sheetsOf(pack(ownViews));
+    assert.ok(ownSheets.includes("Your month"), "a rep's workbook carries Your month");
+    assert.equal(ownSheets.includes("Team calendar"), false, "and never Team calendar as well");
+    assert.ok(packSections(pack(ownViews)).includes("Your month"), "the cover promises the same name the tab carries");
+    assert.equal(
+      packSections(pack(ownViews)).filter((name) => ownSheets.includes(name)).length,
+      packSections(pack(ownViews)).length,
+      "every name the cover promises is really a tab in the file",
+    );
+    // And the manager's name is untouched: this renames one reader's tab, not the report.
+    assert.equal(calendarSheetName({ scope: "team" }), "Team calendar");
+    assert.equal(calendarSheetName({ scope: "own" }), "Your month");
+    assert.equal(calendarSheetName(null), "Team calendar", "and an absent view falls back to the name the file has always used");
 
     const route = stripComments(readFileSync("app/api/phoenix-crm/reports/export/route.ts", "utf8"));
     // 🔴 NO TERRITORY MEANS NO SHEET. Both per-customer reports answer `needsOneTerritory` for a
