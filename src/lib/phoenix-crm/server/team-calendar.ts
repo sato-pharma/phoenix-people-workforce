@@ -102,18 +102,34 @@ export async function loadTeamCalendar(
   // A rep reads only himself, so the screen can say so. Read from the PREDICATE, never from how
   // many rows came back — a manager whose team is down to one person still reads a team.
   const scope: "own" | "team" = readsTeamReports(viewer) ? "team" : "own";
-  const month = /^\d{4}-\d{2}$/.test(String(raw.month ?? "")) ? String(raw.month) : viewer.cairoToday.slice(0, 7);
-  const bounds = monthBounds(month);
   const isTest = testModeFor(viewer, raw.test);
   const seats = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const missedRecords = canEnterMissedRecords(viewer)
     ? { through: viewer.visitDay, seatIds: seats.filter((seat) => canEnterMissedRecordOn(viewer, seat, isTest)).map((seat) => seat.seatId) }
     : null;
+
+  // 🔴 ASKING FOR NO MONTH MEANS "THE LAST MONTH WITH WORK IN IT" (owner, 2026-10-01). It used to
+  //    open on the CURRENT month, which on the 1st is empty by definition — he had to press
+  //    Previous month every single time to see anything. The arrows always send an explicit
+  //    month, so this decides the FIRST load only and never overrides a month somebody chose.
+  //
+  //    With no work anywhere it falls back to the current month, which is both the old behaviour
+  //    and the right answer for a rep who has not started.
+  //
+  //    It reads `cairoToday`, never `viewer.visitDay`: the 02:00 cutoff belongs to Today, the
+  //    visit form and day activities, while plans and reports keep the calendar day. `through`
+  //    on `missedRecords` above is the other half of that rule and is correctly the visit day —
+  //    it bounds what a Super Admin may still ENTER, which is a day, not a month.
+  const asked = /^\d{4}-\d{2}$/.test(String(raw.month ?? "")) ? String(raw.month) : null;
+  const thisMonth = viewer.cairoToday.slice(0, 7);
+  const seatIds = seats.map((seat) => seat.seatId);
+  const month = asked ?? (seats.length === 0 ? thisMonth : ((await latestWorkedMonth(seatIds, isTest, thisMonth)) ?? thisMonth));
+
+  const bounds = monthBounds(month);
   if (!bounds || seats.length === 0) {
     return { days: monthDays(month), isTest, missedRecords, month, rows: [], scope, totals: emptyVisitCountSplit() };
   }
 
-  const seatIds = seats.map((seat) => seat.seatId);
   const [visits, activities, people] = await Promise.all([
     loadVisitDays(seatIds, isTest, bounds),
     loadActivityDays(seatIds, isTest, bounds),
@@ -232,6 +248,81 @@ async function loadActivityDays(
     }
   }
   return out;
+}
+
+/**
+ * The newest month this scope has anything on, or null for a scope that has never worked.
+ *
+ * 🔴 WHAT COUNTS AS WORK IS WHAT COLOURS A CELL. A visit or a recorded day activity; never leave,
+ * never a Friday. Opening the month on a grid of F and dashes would answer the owner's request
+ * with the letter and not the point.
+ *
+ * Two one-row reads rather than the full month loaders: this runs before anything is known, on
+ * every first open of the tab, and it needs a MAXIMUM rather than the rows themselves. It is
+ * capped at `notAfter` so a day activity recorded ahead of time cannot open a manager on a month
+ * that has not happened yet.
+ */
+async function latestWorkedMonth(
+  seatIds: readonly string[],
+  isTest: boolean,
+  notAfter: string,
+): Promise<string | null> {
+  const lastDayOfCap = monthBounds(notAfter)?.to;
+  if (!lastDayOfCap) return null;
+
+  // 🔴 THE SELECT LIST IS A LITERAL IN EACH READ, NEVER BUILT FROM THE COLUMN NAME. The first cut
+  //    of this passed `\`seat_id, ${dayColumn}\`` and the typecheck refused it: PostgREST's types
+  //    parse the select string at COMPILE time, so a template literal resolves to a ParserError
+  //    rather than a row shape. It is the same house rule the sweeps in `reads.ts` follow, and
+  //    the reason the two reads below are written out instead of parameterised.
+  const newestOf = async (
+    table: string,
+    run: (part: string[]) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+    dayOf: (row: Row) => unknown,
+  ): Promise<string | null> => {
+    let newest: string | null = null;
+    for (const part of chunk([...seatIds], 150)) {
+      const { data, error } = await run(part);
+      // A scope with no rows is the normal answer here, not a fault — but a BROKEN read must not
+      // read as one, or the tab would quietly go back to opening on the current month for ever.
+      if (error) throw new Error(`phoenix-crm calendar: reading the newest day in ${table} failed — ${error.message}`);
+      const row = (data as Row[] | null)?.[0];
+      const day = row ? cleanDay(dayOf(row)) : null;
+      if (day && (newest === null || day > newest)) newest = day;
+    }
+    return newest;
+  };
+
+  const [lastVisit, lastActivity] = await Promise.all([
+    newestOf(
+      "phoenix_crm_countable_visits",
+      (part) =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_countable_visits")
+          .select("seat_id, visit_date")
+          .eq("is_test", isTest)
+          .lte("visit_date", lastDayOfCap)
+          .in("seat_id", part)
+          .order("visit_date", { ascending: false })
+          .limit(1),
+      (row) => row.visit_date,
+    ),
+    newestOf(
+      "phoenix_crm_day_activities",
+      (part) =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_day_activities")
+          .select("seat_id, activity_date")
+          .eq("is_test", isTest)
+          .lte("activity_date", lastDayOfCap)
+          .in("seat_id", part)
+          .order("activity_date", { ascending: false })
+          .limit(1),
+      (row) => row.activity_date,
+    ),
+  ]);
+  const newest = [lastVisit, lastActivity].filter((day): day is string => day !== null).sort().pop();
+  return newest ? newest.slice(0, 7) : null;
 }
 
 /**
