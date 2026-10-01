@@ -71,7 +71,7 @@ re-read script now excludes `phoenix-rules`/`phoenix-ocr` rows from its "already
 exactly that reason.
 
 **BUT THAT EXCLUSION HAS A TYPO AND IT LEAKS — confirmed 2026-08-21 10:20 Cairo.** The set in
-`scripts/recruitment-reread-never-read-cvs.ts:152` is `["phoenix-rules", "phoenix-ocr"]`, but the
+`scripts/recruitment-reread-never-read-cvs.ts` is `["phoenix-rules", "phoenix-ocr"]`, but the
 code writes **`"phoenix-rules+ocr"`** (`OCR_EXTRACTION_MODEL`, `src/lib/recruitment/cv-extraction.ts`).
 `"phoenix-ocr"` appears **nowhere in `src/`**. So an OCR row is treated as a real model read and the
 candidate is removed from the re-read set **permanently**. 4 candidates are already frozen this way.

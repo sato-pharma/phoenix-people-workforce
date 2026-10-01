@@ -1,6 +1,6 @@
 ---
 name: directory-active-filter-gate
-description: "The canonical active/terminal employee filter is isActiveDirectoryEmployee, defined at src/lib/employees/employee-directory.ts:404 and applied as the default gate at :1580 - modules bypassing the directory miss it. Line numbers re-verified 2026-09-04 (the old :1437 pointer was stale). A SECOND, WEAKER copy exists at src/lib/employee-portal/service.ts:2535 that checks only employmentStatus."
+description: "The canonical active/terminal employee filter is isActiveDirectoryEmployee in src/lib/employees/employee-directory.ts, applied as the default gate at the end of getEmployeeDirectoryRows - a module that bypasses the directory misses it. Cite both by NAME: the definition and the gate were line-pinned on 2026-09-04 and BOTH numbers had rotted by 2026-10-01. A SECOND, WEAKER copy exists in src/lib/employee-portal/service.ts that checks only employmentStatus."
 metadata: 
   node_type: memory
   type: reference
@@ -9,9 +9,14 @@ metadata:
 
 `getEmployeeDirectoryRows()` and `getEmployeeDirectory()` BOTH filter to active
 employees by default via `.filter(e => options.includeInactive || isActiveDirectoryEmployee(e))`
-(defined at src/lib/employees/employee-directory.ts:404; the default gate is applied at :1580 - line
-numbers re-verified 2026-09-04, the old :1437 pointer was stale). `isActiveDirectoryEmployee` requires
-employment_status in active/on_leave + organogram_visible + headcount-eligible.
+(defined in `src/lib/employees/employee-directory.ts`; the default gate is the
+`includeInactive || isActiveDirectoryEmployee(employee)` call at the end of `getEmployeeDirectoryRows`).
+🔴 **Cite both by NAME, never by line. This memory re-verified its two line numbers on 2026-09-04
+and BOTH had rotted by 2026-10-01** - the definition 404 → 528, the gate 1580 → 1804, in a file that
+grew to 2,759 lines - and the 2026-09-04 pass had itself replaced an earlier stale `:1437`. That is
+three numbers, three rots, and one symbol name that never moved once.
+`isActiveDirectoryEmployee` requires employment_status in active/on_leave + organogram_visible +
+headcount-eligible.
 
 So any module that sources employees from the directory ALREADY excludes
 resigned/terminal employees — claims that "resigned employees leak into

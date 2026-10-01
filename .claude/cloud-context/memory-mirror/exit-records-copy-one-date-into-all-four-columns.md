@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: edc71556-4013-4eca-9919-93ac229cd4c4
-  modified: 2026-08-28T09:14:17.979Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **`last_working_date` is not an observed fact in this system. It is a copy.** Measured in production
@@ -42,7 +42,7 @@ evidence, so each is right-or-early and never late. If HR paperwork says later, 
 
 **Why the wrong date had not already stripped Mohamed's 19 calls.** `isAttributableOn` still
 attributes a post-exit row when the record carries **that employee's own CRM label**
-(`src/lib/crm/identity.ts:194-195`) — a deliberate escape hatch, because the risk being guarded is a
+(`src/lib/crm/identity.ts`) — a deliberate escape hatch, because the risk being guarded is a
 reused slot, not an own-label one. So the damage was latent: the calls stayed credited only until the
 CRM admin next renames that slot. Do not read "the calls are credited" as "the dates are fine."
 

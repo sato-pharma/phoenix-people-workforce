@@ -53,7 +53,7 @@ region everywhere):
 - SoS portal — correct subtree regions via `regionsWithinManagerHierarchy` (portal-sos-dashboard.ts:170-217). ✅
 - Monthly-Closing (the landing "Line Sales Pacing" widget) — `applyRegionScope` fails **OPEN**
   to the whole line when the RM's coarse region label (e.g. "Alexandria + Delta") matches no
-  single SoS region (monthly-closing-portal.ts:267-274). **VERIFIED** — RM pacing can show
+  single SoS region (monthly-closing-portal.ts). **VERIFIED** — RM pacing can show
   line-wide numbers labeled as region (bounded to line, never cross-line).
 - Weekly — own region + Pedia hardcode {AB,D1,D2}, fail-closed (weekly/access.ts:163-168). agent-reported, verify.
 - Analytics — own region, fail-closed to nothing (analytics/scope.ts:60-70). agent-reported, verify.

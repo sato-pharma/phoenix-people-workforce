@@ -5,11 +5,11 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 1e92ac6c-8bb7-4d65-855c-6c7ae9cf22de
-  modified: 2026-08-22T21:56:23.374Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 `resolveAccessContext` / `resolveAccessContextFromPage` fall through to `anonymousAccessContext`
-(`src/lib/auth/server.ts:76`) when there is no session cookie:
+(`src/lib/auth/server.ts`) when there is no session cookie:
 
 ```ts
 const anonymousAccessContext = createAccessContext({ hrId: null, role: "Employee", source: "guest" });

@@ -34,7 +34,7 @@ narrows SELF/TEAM/HIERARCHY viewers to `allowedRegionNames = {own employees.regi
 Saad's row says ALEX-BHR → region code AB → **all 1,165 CNS D16 fact rows (7,350 units)
 are invisible to him**, so his own Kafr El-Sheikh rep's sales are missing from every
 Source-of-Sales-derived surface: portal SoS (`portal-sos-dashboard.ts:302`), admin SoS
-(`sos-dashboard.ts:460`), Sales Analytics (`analytics/scope.ts`), Weekly Sales
+(`sos-dashboard.ts`), Sales Analytics (`analytics/scope.ts`), Weekly Sales
 (`weekly/access.ts:163`), Monthly Closing (`monthly-closing-portal.ts` /
 `-details.ts:418`), Direct Orders (`direct-orders/service.ts:1115`), Territory Management
 (`territory-management/service.ts:203`).

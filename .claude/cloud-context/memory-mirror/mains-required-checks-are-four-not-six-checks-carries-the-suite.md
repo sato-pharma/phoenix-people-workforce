@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 7509adda-7142-43a9-b3e4-1dd559563d31
-  modified: 2026-09-29T19:11:38.747Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 🔴 **THE FILENAME SAYS FOUR AND IT IS WRONG — the list is TWO.** Read live from the protection API
@@ -51,7 +51,7 @@ purpose:** CI and the gate docs are the Repository health audit session's domain
 reported to the owner instead of edited.
 
 **Both docs were corrected the same night** (verified on `origin/main` at 4c7f9a25c): `AGENTS.md:73`
-now says four, carries the 4→5→6→4 history and forbids quoting itself; `AGENTS.md:467` says the unit
+now says four, carries the 4→5→6→4 history and forbids quoting itself; `AGENTS.md` says the unit
 suite is a step inside `checks`; `.claude/skills/ship/SKILL.md` line 55 names the four and its
 description says to read them live. **Corrected 2026-09-27: an earlier version of this memory said
 the docs had NOT been corrected** - that was true when written and stale within the hour, because the

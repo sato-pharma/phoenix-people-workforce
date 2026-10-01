@@ -1,23 +1,32 @@
 ---
 name: outstation-payroll-notifications-dead-code
-description: "SPLIT VERDICT re-verified 2026-09-04: the outstation SUBMIT notification is LIVE (notifyOutstationSubmitted, rebuilt by PR #1050, fires from 4 call sites in src/lib/outstation/service.ts). The payroll-import one is STILL dead - notifyExpensesAddedToPayroll sits at src/lib/outstation/expenses.ts:1299 and is called by nothing. Do not cite the 2026-06 'both are dead' finding as current."
+description: "SPLIT VERDICT, re-verified 2026-10-01: the outstation SUBMIT notification is LIVE (notifyOutstationSubmitted in src/lib/outstation/service.ts, rebuilt by PR #1050, four call sites). The payroll-import one is no longer merely dead - notifyExpensesAddedToPayroll was DELETED on 2026-09-19 at the owner's instruction and tests/outstation-notifications.test.ts pins its absence, so expenses.ts sends nothing at all and a new expense notification is new work with channels agreed first. Do not cite the 2026-06 'both are dead' finding, nor the 2026-09-04 'sits at expenses.ts and is called by nothing' one, as current."
 metadata: 
   node_type: memory
   type: project
   originSessionId: ed35b8f5-5eb6-4d42-9da0-50c378aeda1e
 ---
 
-> **RE-VERIFIED 2026-09-04 - the 2026-06-20 finding below is HALF WRONG NOW. Read this first.**
+> **RE-VERIFIED 2026-10-01 - the 2026-06-20 finding below is HALF WRONG, and the 2026-09-04
+> re-verification under it has itself gone stale. Read this first.**
 >
-> - **Outstation submit: LIVE.** `notifyOutstationSubmitted` is defined at
->   `src/lib/outstation/service.ts:1388` and called from four sites (2030, 2721, 2938, 3463). It was
+> - **Outstation submit: LIVE.** `notifyOutstationSubmitted` is defined in
+>   `src/lib/outstation/service.ts` and called from four sites. **Cited by name, not by line: the
+>   definition and all four call sites had moved by 2026-10-01** (1388 -> 1671, and every call site
+>   with it), which is exactly the rot a number buys. It was
 >   REBUILT by PR #1050 (*feat(outstation): notify Super Admin on submit*) after PR #349 removed the
 >   dead scaffolding. The line below reading "the function does not exist anywhere in code" is no
 >   longer true, and managers/Super Admin ARE alerted on submit.
-> - **Payroll import: STILL DEAD.** `notifyExpensesAddedToPayroll` is defined at
->   `src/lib/outstation/expenses.ts:1299` and called by NOTHING. **Note the path** - PR #1031 moved the
->   expenses module out of `src/lib/payroll/` into `src/lib/outstation/`, so the file named below no
->   longer exists.
+> - **Payroll import: GONE, not dormant.** `notifyExpensesAddedToPayroll` no longer exists anywhere
+>   in `src/` - it was **DELETED on 2026-09-19 at the owner's instruction**, and
+>   `tests/outstation-notifications.test.ts` asserts both that the import emits no added-to-payroll
+>   alert and that *"the unused added-to-payroll email sender must stay deleted"*. `expenses.ts` now
+>   sends **no notification of any kind** (the test bans `createSystemNotification` there too). So do
+>   not go looking for a dormant function to wire up, and do not restore one: **a new expense
+>   notification is new work, and AGENTS.md section 4 makes its recipients a question for the owner
+>   first.** The earlier reading - "defined at `expenses.ts:1299` and called by NOTHING" - was true on
+>   2026-09-04 and is not true now. **Note the path** - PR #1031 had moved the expenses module out of
+>   `src/lib/payroll/` into `src/lib/outstation/`, so the file named below no longer exists either.
 > - `notifyOutstationDecision` still fires on reject, exactly as recorded below.
 
 Discovered 2026-06-20 while isolating the LA003 fix (see [[la003-la004-confidential-products]]) off the tangled branch `codex/sos-territory-template-registry`.

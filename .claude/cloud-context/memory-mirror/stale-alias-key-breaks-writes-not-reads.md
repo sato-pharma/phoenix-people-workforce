@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: reference
   originSessionId: cfb1b008-82c7-4a44-b3f1-382f5e0f94a9
-  modified: 2026-08-10T08:08:08.512Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 Checked live 2026-08-10 while auditing the 2026-08-09/10 handover, which states the opposite as a
@@ -14,7 +14,7 @@ standing rule ("a stored key that does not match what the code computes is invis
 **The read path recomputes and never reads the stored column.** `buildAliasIndex`
 ([crosswalks.ts:34](src/lib/sales/normalizer/crosswalks.ts:34)) and the per-distributor product
 alias loop ([crosswalks.ts:157](src/lib/sales/normalizer/crosswalks.ts:157)) both call
-`normalizeAliasKey(row.alias)`. crosswalks.ts:101 says so in as many words — "consistent regardless
+`normalizeAliasKey(row.alias)`. crosswalks.ts says so in as many words — "consistent regardless
 of how the stored normalized_alias was produced". So a stale `normalized_alias` cannot stop an alias
 from matching an incoming distributor value.
 

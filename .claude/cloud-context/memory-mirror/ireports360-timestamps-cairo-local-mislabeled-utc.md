@@ -64,9 +64,9 @@ error. After the one genuine fix (`crm-sync-status-panel.tsx`, PR #2937) there i
 instance** of the bug; all 43 remaining UTC sites are correct and now carry a comment saying why.
 
 **`cairoMinutesOfDay()` LIES IN ITS NAME — and is correct.**
-`src/lib/field-workforce-compliance/ireports360-source.ts:217` formats with `timeZone: "UTC"`
+`src/lib/field-workforce-compliance/ireports360-source.ts` formats with `timeZone: "UTC"`
 despite the name, because it is fed `saveDate` (case 2). That is the compute half of the pending
 audit and it needs **no change**: `computeLoggingTiming`'s late-start verdict is right. Do not
 "resolve the inconsistency" by making the body match the name — that is precisely the double-shift.
-The invariant itself is now written down at `src/lib/crm/sync.ts:148` as the VENDOR TIMESTAMP
+The invariant itself is now written down at `src/lib/crm/sync.ts` as the VENDOR TIMESTAMP
 INVARIANT.

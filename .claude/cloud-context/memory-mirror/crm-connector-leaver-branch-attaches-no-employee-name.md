@@ -5,11 +5,11 @@ metadata:
   node_type: memory
   type: project
   originSessionId: de3d5355-ce2f-47ce-91e5-037397fd3f85
-  modified: 2026-08-23T17:16:32.522Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 Every deduction candidate produced through the **leaver** path lands with `employee_name = NULL`,
-and `src/components/admin/deductions-workspace.tsx:64` renders that as the literal string
+and `src/components/admin/deductions-workspace.tsx` renders that as the literal string
 **"Name unavailable"** — so the Pending screen shows an amount against a blank. That breaks the
 owner's standing rule that human-readable names, never codes, appear in UI and chat.
 

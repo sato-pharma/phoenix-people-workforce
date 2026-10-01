@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 24788870-9156-47da-a9f7-edb4bdd743dc
-  modified: 2026-08-12T11:36:34.123Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **Approving an outstation request writes a FAKE Excel upload.** There is no ledger writer other
@@ -58,7 +58,7 @@ See also [[outstation-payroll-import-is-locked-out-by-batch-status]] ·
 Re-read against current `main`. Two halves of this file now age differently:
 
 **Still exactly right:** `outstation_expense_reports` holds 38 rows of which **36 are synthetic
-`.workflow` artefacts** and only **2 are real uploads** (`src/lib/outstation/expenses.ts:764`). The
+`.workflow` artefacts** and only **2 are real uploads** (`src/lib/outstation/expenses.ts`). The
 94.7% figure this file records is confirmed, and it is why any report-scoped read looks plausible and
 returns the wrong set.
 
