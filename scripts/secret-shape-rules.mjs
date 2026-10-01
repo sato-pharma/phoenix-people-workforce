@@ -39,6 +39,18 @@ export const KEY_SHAPES = [
     pattern: /^gsk_[A-Za-z0-9]{20,}$/,
     describe: "must look like gsk_… — letters and digits only after the prefix, with no spaces, dots or line breaks",
   },
+  {
+    // Google reCAPTCHA v3, for the public careers apply endpoint. Registered 2026-10-01 BEFORE a key
+    // exists, same reason as GROQ_API_KEY above: it will be pasted into Railway by hand off a screen.
+    // 🔴 DELIBERATELY NOT ANCHORED ON THE "6L" PREFIX. Google's classic keys begin 6L and Enterprise
+    // keys do not, and this rule must never be the thing that rejects the owner's real key — a false
+    // reject here reads as "the key is bad" when the key is fine. Length and charset are what catch
+    // the failure that actually happens: a truncated or masked paste. The generic masked-paste check
+    // covers dots and asterisks for every variable, so this one only has to catch short and dirty.
+    name: "RECRUITMENT_APPLY_RECAPTCHA_SECRET",
+    pattern: /^[A-Za-z0-9_-]{32,}$/,
+    describe: "must be at least 32 characters of letters, digits, _ and - only — no spaces, dots or line breaks. The 6L prefix on Google classic keys is NOT required, because Enterprise keys do not carry it",
+  },
 ];
 
 /**

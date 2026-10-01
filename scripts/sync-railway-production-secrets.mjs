@@ -113,6 +113,13 @@ const variables = [
     { railway: "PHOENIX_APP_URL", github: ["PHOENIX_APP_URL"], required: true },
     { railway: "PHOENIX_LIVE_CRM_POLL", github: ["PHOENIX_LIVE_CRM_POLL"], required: true },
     { railway: "PHOENIX_STRICT_SUPABASE_BRIDGE", github: ["PHOENIX_STRICT_SUPABASE_BRIDGE"], required: false },
+    // Added 2026-10-01, BEFORE any key exists, so the carrying path is in place the moment the
+    // owner mints one at Google. 🔴 required:false DELIBERATELY, and it must stay that way until the
+    // careers form sends a token: src/lib/security/recaptcha.ts treats an unset secret as SKIP, so
+    // requiring it here would abort an emergency secret sync over a variable whose absence is the
+    // current, intended state. Promoting it is a two-file change — REQUIRED_VARIABLES in
+    // scripts/secret-policy.mjs moves in the same commit, or tests/railway-secret-policy.test.ts reds.
+    { railway: "RECRUITMENT_APPLY_RECAPTCHA_SECRET", github: ["RECRUITMENT_APPLY_RECAPTCHA_SECRET"], required: false },
     { railway: "RECRUITMENT_EMAIL_IMPORT_SENDERS", github: ["RECRUITMENT_EMAIL_IMPORT_SENDERS"], required: false },
     { railway: "RECRUITMENT_WHATSAPP_IMPORT_SENDERS", github: ["RECRUITMENT_WHATSAPP_IMPORT_SENDERS"], required: false },
     { railway: "RECRUITMENT_WHATSAPP_SILENCE_ALERT_HOURS", github: ["RECRUITMENT_WHATSAPP_SILENCE_ALERT_HOURS"], required: false },
