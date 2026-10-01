@@ -165,6 +165,8 @@ status, give it its own line.
 - **What earns a line — all three:** — `staleness-sweeps-scoped-by-topic-miss-the-dangerous-ones`
 - **A relocation's condition is present in the checkout you trim from — and from a worktree the classifier cannot read that checkout.** — `memory-reachability-classifier-reads-the-primarys-agents-md` **(inline — load-bearing)**
 - **Session history lives in THREE stores with two retention keys — an empty `~/.claude/projects` proves nothing.** — `two-session-stores-two-retention-keys` **(inline — load-bearing)**
+- **A ledger version never matches the repo filename for a migration applied through the Supabase MCP, so "absent from the ledger" is the expected state and not drift — and the stamped minute invites a guess about WHO, which the database cannot answer.** — `a-ledger-version-never-matches-the-file` **(inline — load-bearing)**
+- **A stale-citation sweep's false positives have four shapes — the retired citation is the SUBJECT, the ABSENCE is the claim, the TITLE contradicts its own description, and elided-prefix shorthand looks corrupted.** — `the-four-shapes-a-stale-citation-sweep-misreads` **(inline — load-bearing)**
 
 ## 2.3 Production and approval hooks
 

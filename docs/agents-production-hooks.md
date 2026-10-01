@@ -1031,6 +1031,16 @@ and cost every request to hold, so they live here now and the rules stay there:
 - **The four third-party suites** — `sentry`, `claude`, `vercel`, `railway-app` — were measured
   sitting at `queued` forever on two commits that deployed `success`, which is why they never hold
   the gate and are never worth chasing.
+- **Dependabot, which is not a workflow in this repository at all**, 2026-09-30: it cannot patch a
+  TRANSITIVE advisory (`allowed-updates: direct`), so it retried, failed, and attached a red suite to
+  whatever commit was `main` HEAD each time — **withholding THREE production deploys, one of them the
+  repair for the critical `next/og` RCE**, which sat unshipped for 32 minutes and reached production
+  only because an unrelated revert merged behind it and carried it forward. Re-running Dependabot green
+  resurrects nothing; the cure is an override in `pnpm-workspace.yaml`. This is the reason the hook says
+  to read `check-suites` rather than the CI run: `ci.yml` was green on every one of the three.
+- **A suite that goes red AFTER the deploy already reached `success` costs nothing** — #4919 and #4915
+  both shipped carrying one. That is why the tell is red WHILE Railway is still waiting, and not merely
+  red on the commit; a session using the looser test reports healthy deploys as withheld.
 - **The benign supersede**, 2026-09-28 on `047a33388`: one `inactive` status, no `in_progress` at
   all, and the commit was carried forward inside the next deploy.
 - **Two rows per commit, both ending `inactive`**, measured 2026-09-29 across five merges: on a
