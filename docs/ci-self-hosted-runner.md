@@ -240,6 +240,43 @@ up a second time.
 two PRs cleanly and `--settle` closed the originals 55 seconds after it merged. The difference was
 the members-checks wait landing in between.
 
+### 🔴 The second shape: the member goes green INSIDE the wait, and the owner's approval is already in hand — measured 2026-10-01
+
+Everything above is about a session merging a member it was told not to. This one is not
+carelessness and no comment could have caught it, because **the roll-up PR did not exist yet**: it
+was still inside `--apply`'s own 25-minute members-checks wait. Neither clause in AGENTS.md §6
+reaches that window — one says *do not merge a member once a roll-up is **open***, the other says
+*build it the moment the tool names one*. Between those two sentences there is a gap of up to 25
+minutes, and the owner's approval lands in it by construction.
+
+**The arc, 2026-10-01, Cairo:**
+
+| | |
+| --- | --- |
+| 05:51 | `rollup-prs.mjs` names #5047 + #5043 — 2 merges → 1, ~28 billable minutes |
+| ~05:52 | `--apply` starts; no roll-up PR exists yet, it is waiting on both members' checks |
+| 05:52 | the session puts **#5047** to the owner, who answers `merge 5047 when green` |
+| 05:55 | #5047 goes green; #5043 is still running, 23 minutes left of the wait |
+| 05:56 | **#5047 merged** on that standing approval |
+| 05:5x | the roll-up opens as #5048 carrying a member already on `main`; #5043 is merged separately anyway; #5048 closed as `carried` |
+
+**Two merges where the tool had just offered one.** No work was lost and nothing broke — the cost is
+purely the bill.
+
+🔴 **The rule, and it is about what the session QUOTES, not about what the owner types.** Once
+`--apply` is running, the next-step box must name **the roll-up**, never a member — and a member
+going green first is the trigger to *wait*, not to merge. A session that has already quoted a
+member's number holds the approval the moment that member goes green, so the only thing standing
+between the tool's offer and two merges is whose number was put in front of him. This is the one
+guard that works here, because it acts before the approval exists rather than trying to withdraw it
+afterwards: the comment on a PR could not help, and neither could `--settle`.
+
+**The honest trade, so nobody over-corrects.** Holding a green member for up to 25 minutes is not
+free either — it spends the owner's turns, and his standing rule is that triaging PRs is never his
+job. So hold it *silently*: say in one line that a roll-up is building and carry on, rather than
+asking him to decide between the two numbers. If the wait expires without a roll-up, the member's
+own merge is still there to put to him.
+
 ## 🔴 Where the money actually is — and why the run COUNT lies
 
 **Counting runs gives the wrong answer, and a session acted on it.** On 2026-09-27 the owner was told
