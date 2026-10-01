@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 
+import { isPlanEditable, isPlanSentForReview } from "../src/lib/phoenix-crm/plan-rules.ts";
 import { emptyPlanCounts, emptyVisitCounts, groupPlanByTerritory, groupVisitsByRep, planKeptPercent } from "../src/lib/phoenix-crm/report-rules.ts";
+import { plannedStartEmptyNote } from "../src/lib/phoenix-crm/today-rules.ts";
 import {
   isUnplannedVisitStatus,
   isUnplannedVisitWaiting,
@@ -230,6 +232,59 @@ export async function runPhoenixCrmUnplannedVisitTests(): Promise<void> {
       }
     }
     assert.deepEqual(problems, [], problems.join("; "));
+  }
+
+  // ── Why "Planned visit" has nobody to offer (owner, 2026-10-01) ───────────────────────────────
+  //
+  // His own morning: "I submitted the doctors … the doctors in the plan are not appearing and I'm
+  // obligatory should enter them as unplanned visits — why". He had SAVED five accounts on Thursday
+  // 1 October and SENT the weeks of 3 and 10 October; 1 October belongs to the field week starting
+  // Saturday 26 September, so today's stops sat in a DRAFT. Refusing to offer them was right — it is
+  // the whole point of the status filter. Saying only "Nobody on today's sent plan yet" was not.
+  {
+    assert.equal(
+      plannedStartEmptyNote({ saved: 5, status: "draft" }),
+      "5 planned for today, but your plan for this week is still a draft. Open Plan to send it.",
+      "the exact case that cost him the morning: what he placed, what state it is in, and where to go",
+    );
+    assert.match(plannedStartEmptyNote({ saved: 0, status: "draft" }), /still a draft/);
+    assert.ok(!plannedStartEmptyNote({ saved: 0, status: "draft" }).includes("0 planned"), "never '0 planned for today'");
+    assert.match(plannedStartEmptyNote({ saved: 3, status: "returned" }), /^3 planned for today, but your plan for this week was sent back/);
+    assert.equal(plannedStartEmptyNote({ saved: 0, status: null }), "No plan sent for this week yet. Open Plan to send it.");
+
+    // Sent or approved with nobody on today is the ONE case where "nobody" is the whole answer: he
+    // planned the day empty, and there is nothing of his left to send.
+    for (const status of ["submitted", "approved"] as const) {
+      assert.equal(plannedStartEmptyNote({ saved: 0, status }), "Nobody on today's sent plan yet.");
+    }
+
+    // Golden Rule #1: this is HIS OWN WORK, so it is visible — and it judges nothing. No "late", no
+    // "overdue", no ellipsis (his no-truncation rule), and always the one screen that fixes it.
+    for (const status of ["draft", "returned", null] as const) {
+      const note = plannedStartEmptyNote({ saved: 2, status });
+      assert.match(note, /Open Plan/, `${status ?? "a week with no plan row"} names where to go`);
+      assert.doesNotMatch(note, /late|overdue|should have|…/i, `${status ?? "a week with no plan row"} accuses him of nothing`);
+    }
+
+    // The complement, named for what it means at the door: a draft and a returned plan are the rep's
+    // own to edit TODAY, which is exactly why neither can make a visit planned.
+    for (const status of ["draft", "submitted", "approved", "returned"] as const) {
+      assert.equal(isPlanSentForReview(status), !isPlanEditable(status), `${status}: sent for review is exactly "not his to edit"`);
+    }
+    assert.equal(isPlanSentForReview(null), false, "no plan row at all is not a sent plan");
+  }
+
+  // The wiring, which is where this would rot back: the screen asks the rule instead of carrying a
+  // sentence of its own, the form carries the state that rule needs, and — the half that must never
+  // be widened to fix the other — the picker is still fed the SENT set alone.
+  {
+    const start = stripComments(readFileSync(new URL("../src/components/phoenix-crm/visit-start.tsx", import.meta.url), "utf8"));
+    assert.match(start, /plannedStartEmptyNote\(planToday\)/, "Add visit asks the rule for the empty note");
+    assert.ok(!start.includes("Nobody on today's sent plan yet"), "the bare sentence no longer lives on the screen");
+
+    const visits = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/visits.ts", import.meta.url), "utf8"));
+    assert.match(visits, /planToday: \{ status: planDay\.status, saved: planDay\.customerIds\.length \}/, "the form carries today's plan state");
+    assert.match(visits, /isPlanSentForReview\(planDay\.status\) \? planDay\.customerIds : \[\]/, "and the picker is still fed the SENT set alone");
   }
 
   console.log("phoenix-crm unplanned visit: OK");

@@ -36,7 +36,8 @@ import { crmPost, useCrmAction } from "@/components/phoenix-crm/api";
 import { countText } from "@/components/phoenix-crm/format";
 import { CrmBackBar, CrmBlock, CrmButton, CrmCheck, CrmField, CrmNote, CrmPanel, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { DAY_ACTIVITY_NOTE_MAX, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
-import type { DayActivityRow } from "@/lib/phoenix-crm/view-types";
+import { plannedStartEmptyNote } from "@/lib/phoenix-crm/today-rules";
+import type { DayActivityRow, VisitFormView } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
 /** What a day was, when it was not only calls. Null clears the day back to a field day. */
@@ -182,6 +183,7 @@ export function VisitStart({
   onBack,
   onPlanned,
   onUnplanned,
+  planToday,
   plannedCount,
   seatId,
   test,
@@ -199,6 +201,11 @@ export function VisitStart({
   onBack: () => void;
   onPlanned: () => void;
   onUnplanned: () => void;
+  /**
+   * Today's plan as it stands — its status and the stops he has SAVED for today, sent or not. Null
+   * while the form is still loading. It is what lets the empty note say WHY (owner, 2026-10-01).
+   */
+  planToday: VisitFormView["planToday"] | null;
   /** How many customers today's sent plan holds; null while the form is still loading. */
   plannedCount: number | null;
   seatId: string;
@@ -228,10 +235,12 @@ export function VisitStart({
                 icon={CalendarCheck}
                 label="Planned visit"
                 note={
-                  plannedCount === null
+                  plannedCount === null || planToday === null
                     ? "A customer on today's plan"
                     : plannedCount === 0
-                      ? "Nobody on today's sent plan yet"
+                      ? // Never a bare "nobody": it says whether the plan is a draft, was sent back, or
+                        // was never started, and how many he has already placed (today-rules.ts).
+                        plannedStartEmptyNote(planToday)
                       : `${countText(plannedCount)} on today's plan`
                 }
                 onClick={onPlanned}
