@@ -1365,7 +1365,14 @@ const NATIONAL_HOLIDAYS_2026: ReadonlyMap<string, string> = new Map([
   ["2026-06-30", "30 June Revolution"],
   ["2026-07-23", "23 July Revolution"],
   ["2026-08-26", "Prophet's Birthday"],
-  ["2026-10-06", "Armed Forces Day"],
+  // Armed Forces Day is officially 6 October, which falls on a TUESDAY in 2026, so the day off is
+  // observed on Thursday 8 October (owner, 2026-10-01) — and the observed date is the only one that
+  // belongs here, because this map labels the days agents actually logged as leave. 6 October is a
+  // normal working day: leave logged on it is an ordinary vacation, not a national holiday, and
+  // labelling it as one would excuse a day nobody was off. The confirmed date lives in
+  // attendance_holiday_overrides (official 2026-10-06 → observed 2026-10-08) for every other
+  // consumer; this map is the one hand-rolled copy of it.
+  ["2026-10-08", "Armed Forces Day"],
 ]);
 
 /** Comment fragments (Arabic is case-insensitive; English lowercased) that mark an official/national
