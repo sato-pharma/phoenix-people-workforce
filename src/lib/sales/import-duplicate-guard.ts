@@ -1,4 +1,5 @@
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { repriceValue, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Nothing compared an incoming distributor workbook against what was already loaded, so the same
@@ -58,7 +59,42 @@ export type DuplicateUploadCandidate = {
   totalRows: number;
   totalQty: number;
   totalValue: number;
+  /**
+   * What this file's value WOULD have been, stored under another month. Rows are valued at the price
+   * of their own month (Saginko: 111.15 through 2026-09, 170.52 from 2026-10), so the same workbook
+   * stored under September and again under October carries two different totals — and comparing it
+   * with `totalValue` would let exactly the re-dated duplicate this guard exists for walk through.
+   * Absent, the stored figure is compared as it always was.
+   */
+  totalValueAt?: (period: string | null) => number;
 };
+
+/** One row of the file being saved, as totalValueAtPeriod re-prices it. */
+export type RepriceableUploadRow = {
+  isDirect: boolean;
+  period: string | null;
+  productCode: string;
+  value: number;
+};
+
+/**
+ * The file's total if every row were dated `atPeriod`: each distributor row's stored value moved from
+ * its own month's price to `atPeriod`'s (repriceValue). A direct row is a deal at its own price and
+ * never moves, and a product with the same price in both months adds its value untouched — so on any
+ * file the reprice does not reach, this is exactly `totalValue`.
+ */
+export function totalValueAtPeriod(
+  rows: readonly RepriceableUploadRow[],
+  prices: Pick<ProductPeriodPrices, "priceFor">,
+  atPeriod: string | null,
+): number {
+  let total = 0;
+  for (const row of rows) {
+    const value = Number.isFinite(row.value) ? row.value : 0;
+    total += row.isDirect ? value : repriceValue(prices, row.productCode, value, row.period, atPeriod);
+  }
+  return total;
+}
 
 /** A stored batch as the lookup reads it. A numeric column can arrive as a string. */
 export type StoredUploadBatch = {
@@ -97,9 +133,11 @@ export function pickDuplicateUploadClash(
     const rowPeriod = typeof row.period === "string" ? row.period : null;
     if (rowPeriod === period) return false;
     if (Number(row.total_rows) !== candidate.totalRows) return false;
+    // On the stored batch's own price basis — see DuplicateUploadCandidate.totalValueAt.
+    const candidateValue = candidate.totalValueAt ? candidate.totalValueAt(rowPeriod) : candidate.totalValue;
     return (
       Math.abs(Number(row.total_qty) - candidate.totalQty) < QTY_TOLERANCE &&
-      Math.abs(Number(row.total_value) - candidate.totalValue) < VALUE_TOLERANCE
+      Math.abs(Number(row.total_value) - candidateValue) < VALUE_TOLERANCE
     );
   });
   if (!clash) return null;

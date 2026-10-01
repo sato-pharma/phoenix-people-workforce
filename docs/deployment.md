@@ -428,6 +428,15 @@ Do not run `gcloud` to verify anything.
 
 ## Config as Code is deprecated — and the CLI's own migration command is DESTRUCTIVE here
 
+🔴 **OWNER DECISION, 2026-10-01: `.railway/railway.ts` STAYS INERT — DO NOT APPLY IT** (his words,
+*"leave the railway IaC inert for now"*). The file is committed and current, read from
+`railway config pull`, and **nothing applies it**: the live project is still driven by the two
+`railway.toml` files and the dashboard. **A session may not apply it, plan-then-apply it, or treat
+the 2026-12-01 deadline as authority to act** — a deadline is a reason to ask him, never a mandate,
+and the window is wide. **Only he lifts this, in his own words, about the IaC.** Until then the file
+is a prepared cutover sitting ready, not a migration half-done: finishing it is not a tidy-up, and
+the table below is why that distinction is worth a paragraph.
+
 Railway now warns on every CLI call that `railway.json` / `railway.toml` is superseded by
 Infrastructure as Code in `.railway/railway.ts`, and that **existing files keep working until
 2026-12-01**. Two `railway.toml` files are in scope: the repo root (the app's `/api/readyz`

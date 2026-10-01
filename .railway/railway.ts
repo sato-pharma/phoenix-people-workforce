@@ -1,5 +1,9 @@
 // Railway Infrastructure as Code for Phoenix-HR-Workforce.
 //
+// 🔴 OWNER DECISION, 2026-10-01: IT STAYS THAT WAY UNTIL HE SAYS OTHERWISE — "leave the railway
+// IaC inert for now". A session may not apply it, nor read the 2026-12-01 deadline as permission to:
+// the deadline is a reason to ask him, never a mandate. Only he lifts this, in his own words.
+//
 // 🔴 THIS FILE IS NOT APPLIED YET, AND NOTHING APPLIES IT AUTOMATICALLY. It is the reviewed
 // authoring file for the cutover away from `railway.json` / `railway.toml`, which Railway deprecated
 // with existing files working until 2026-12-01. Both `railway.toml` files are still in place and are

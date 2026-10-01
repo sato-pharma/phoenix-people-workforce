@@ -3,6 +3,8 @@
 // coded rows by translating the distributor's own item/territory/customer codes into Phoenix
 // Product ID + Brick ID, then deriving Area + Region from the brick hierarchy.
 
+import type { ProductPeriodPrices } from "@/lib/sales/product-period-price";
+
 // One Phoenix brick with its parent hierarchy (from the brick master).
 export type BrickRef = {
   areaCode: string;
@@ -21,6 +23,11 @@ export type Crosswalks = {
   areaByCode: Map<string, { areaCode: string; areaName: string; regionCode: string; regionName: string }>;
   regionByCode: Map<string, { regionCode: string; regionName: string }>;
   productByCode: Map<string, { productCode: string; productName: string; factoryPrice: number; line: string }>;
+  // The price of a productByCode product IN A GIVEN MONTH: its `factoryPrice` unless a dated override
+  // covers that month (Saginko is 170.52 from 2026-10 while the master stays 111.15). A row is valued
+  // at its own month's price. Optional so hand-built test fixtures stay valid; loadCrosswalks always
+  // sets it, and absent means the flat price.
+  prices?: Pick<ProductPeriodPrices, "priceFor">;
   // Master product-NAME index (normalized name -> Phoenix code), collision-safe. Drives NAME-FIRST
   // product resolution. Optional so hand-built test fixtures stay valid; loadCrosswalks always sets it.
   productByName?: Map<string, string>;

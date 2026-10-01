@@ -553,12 +553,18 @@ export function normalizeRows(
     const bonusQty = 0;
     const discount = discountFrac(discountRaw);
     const sheetValue = parseNum(valueCell, true);
+    // The month this row is invoiced in — what it is stored under, and so the month whose price values it.
+    const rowPeriod = periodFrom(firstValue(row, header, profile.dateColumns), dayFirst);
     // Units times the factory price, full stop — the discount factor came out on 2026-09-07 by the
     // owner's instruction. `discount` is still parsed and still stored on the row; it just no longer
-    // multiplies anything.
+    // multiplies anything. The price is the one OF THE ROW'S MONTH, never the master's flat price: the
+    // closing prices every month through phx_factory_price(code, period), and Saginko is 111.15 through
+    // 2026-09 and 170.52 from 2026-10 while the master stays 111.15 (see Crosswalks.prices).
     const value = profile.valueSource === "sheet"
       ? sheetValue
-      : (Number.isFinite(qty) ? qty * (product?.factoryPrice ?? 0) : 0);
+      : (Number.isFinite(qty)
+        ? qty * (product ? (maps.prices?.priceFor(productCode, rowPeriod) ?? product.factoryPrice) : 0)
+        : 0);
 
     // A cell the parser cannot read must NOT become a zero.
     //
@@ -614,7 +620,7 @@ export function normalizeRows(
       clientName: firstValue(row, header, profile.customerNameColumns) || null,
       discount,
       distributorCode: profile.distributorCode,
-      invoiceDate: periodFrom(firstValue(row, header, profile.dateColumns), dayFirst) ?? "",
+      invoiceDate: rowPeriod ?? "",
       // The exact date the sheet carries, kept alongside the month so a mislabelled file is visible
       // in the data rather than only after someone reconciles it against the source workbook.
       invoiceDay: dateFrom(firstValue(row, header, profile.dateColumns), dayFirst),

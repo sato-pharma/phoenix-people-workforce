@@ -1,6 +1,7 @@
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { normalizeAliasKey, normalizeCodeKey, numericCanonicalKey } from "@/lib/sales/normalizer/resolvers";
 import type { Crosswalks } from "@/lib/sales/normalizer/types";
+import { productPeriodPricesFromRows } from "@/lib/sales/product-period-price";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type SupabaseAdmin = ReturnType<typeof getSupabaseAdmin>;
@@ -219,5 +220,9 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
     else if (existing !== brick) { customerBrickByCanonicalKey.delete(ckey); customerCanonConflict.add(ckey); }
   }
 
-  return { ambiguousAliasKeys, areaAliasByKey, areaByCode, brickById, customerBrickByKey, customerBrickByCanonicalKey, ownerVerifiedCustomerKeys, productAliasByKey, productByCode, productByName, productByCanonicalCode, regionAliasByKey, regionByCode, territoryAliasByKey };
+  // The price of each product in productByCode IN A GIVEN MONTH — the master's flat price unless a
+  // dated override covers that month (Saginko from 2026-10). The engine values every coded row with it.
+  const prices = productPeriodPricesFromRows(refs.products, refs.productPriceOverrides ?? []);
+
+  return { ambiguousAliasKeys, areaAliasByKey, areaByCode, brickById, customerBrickByKey, customerBrickByCanonicalKey, ownerVerifiedCustomerKeys, prices, productAliasByKey, productByCode, productByName, productByCanonicalCode, regionAliasByKey, regionByCode, territoryAliasByKey };
 }
