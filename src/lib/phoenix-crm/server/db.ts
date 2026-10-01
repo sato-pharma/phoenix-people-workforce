@@ -84,6 +84,9 @@ const REFUSALS: Record<string, Refusal> = {
   not_forecast_line: { status: 403, message: "The daily forecast is for the CNS line only." },
   // A record a rep missed, entered by the Super Admin (owner, 2026-10-01): any day that has begun.
   future_day: { status: 400, message: "That day has not begun yet. Choose today or an earlier day." },
+  // ...and taken back by him when entered by mistake: his own entry only.
+  visit_not_found: { status: 404, message: "This visit is no longer there. Reload the page." },
+  not_entered_by_you: { status: 403, message: "Only a visit you entered for a rep can be removed. A rep's own visit stays his record." },
 };
 
 function messageOf(error: unknown): string {

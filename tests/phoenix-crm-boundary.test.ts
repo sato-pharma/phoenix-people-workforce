@@ -499,6 +499,9 @@ const LATER_MIGRATIONS = [
   // capture_source 'admin', and lat/lon nullable on that one source only. It replaces no save_visit,
   // so it appends safely at the end.
   "supabase/migrations/20261001044221_phoenix_crm_admin_entry.sql",
+  // ...and removes one he entered by mistake (owner, 2026-10-01): one new table, the copy of what was
+  // removed, and one brand-new function. It replaces nothing, so it appends safely at the end.
+  "supabase/migrations/20261001055833_phoenix_crm_admin_remove_visit.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

@@ -2,7 +2,7 @@
 
 import { cairoClock, dayLabelLong } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
-import { MissedRecordPanel } from "@/components/phoenix-crm/missed-record-panel";
+import { MissedRecordPanel, RemoveEnteredVisit } from "@/components/phoenix-crm/missed-record-panel";
 import {
   CrmBlock,
   CrmCard,
@@ -104,6 +104,18 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
               {visits.map((visit) => (
                 <CrmCard
                   accent="border-l-orange-500"
+                  // The Super Admin takes back a visit HE entered by mistake (owner, 2026-10-01) — drawn
+                  // only on his own entries; the database refuses every other visit anyway.
+                  actions={
+                    view.removesEnteredVisits && visit.enteredByAdmin ? (
+                      <RemoveEnteredVisit
+                        customerName={visit.customerName}
+                        isTest={view.isTest}
+                        seatId={territory.seatId}
+                        visitId={visit.visitId}
+                      />
+                    ) : undefined
+                  }
                   key={visit.visitId}
                   meta={`${timeOf(visit)} · ${listText(visit.listType)} · ${visit.kindLabel}`}
                   status={
