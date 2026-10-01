@@ -9,7 +9,7 @@ import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/naviga
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
-import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/page";
+import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/page";
 import { hasInterviewCalendarAccess } from "@/lib/recruitment/interview-calendar";
 
 export const runtime = "nodejs";
@@ -38,7 +38,7 @@ export async function GET(request: Request) {
       getEmployeePortalShellData(access),
       access.hrId ? employeeHasActiveDeviceMapping(access.hrId).catch(() => false) : Promise.resolve(false),
       access.hrId ? hasInterviewCalendarAccess(access).catch(() => false) : Promise.resolve(false),
-      access.hrId ? phoenixCrmEntryAvailable(access).catch(() => false) : Promise.resolve(false),
+      access.hrId ? phoenixCrmSidebarEntries(access).catch(() => NO_PHOENIX_CRM_ENTRIES) : Promise.resolve(NO_PHOENIX_CRM_ENTRIES),
     ]);
 
     if (!data) {
@@ -56,7 +56,8 @@ export async function GET(request: Request) {
       data.employee.hrId,
       hasDeviceMapping,
       sharedInterviewCalendar,
-      phoenixCrm,
+      phoenixCrm.crm,
+      phoenixCrm.forecast,
     );
 
     const activeLocks = await locksPromise;

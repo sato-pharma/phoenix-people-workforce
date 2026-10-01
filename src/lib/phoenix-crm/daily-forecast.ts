@@ -45,6 +45,21 @@ export function isForecastLine(lineCode: string | null | undefined): boolean {
 }
 
 /**
+ * Whether the daily forecast is offered to this viewer at all: the Super Admin (in test mode), or
+ * anyone with a CNS territory in scope — a CNS rep (his own), a CNS manager (beneath him), the CEO
+ * and the SFE Manager (the company). The Phoenix CRM tab and the portal sidebar's "Daily Forecast"
+ * row both ask THIS, so the row can never offer a door the tab then refuses.
+ *
+ * Structural rather than `PhoenixCrmViewer`, because this module is pure and imports no server code.
+ */
+export function forecastIsOffered(viewer: {
+  isSuperAdmin: boolean;
+  scopeTerritories: ReadonlyArray<{ lineCode: string | null }>;
+}): boolean {
+  return viewer.isSuperAdmin || viewer.scopeTerritories.some((seat) => isForecastLine(seat.lineCode));
+}
+
+/**
  * One product's pre-filled boxes for one day: the month's target units ÷ the month's working days,
  * rounded to a whole box. Null when there is no target to share (a month not yet loaded, a product
  * with no target for this area) or no working day to share it over — never a made-up zero.

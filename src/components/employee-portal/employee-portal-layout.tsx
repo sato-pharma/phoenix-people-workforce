@@ -68,6 +68,7 @@ import {
   BookUser,
   TrendingUp,
   Package,
+  PackageCheck,
   PackageSearch,
   Sunrise,
   Star,
@@ -354,6 +355,7 @@ function buildEmployeePortalSections({
   showPrivateCalendarTab = false,
   showMyVisitsTab = true,
   showPhoenixCrmTab = false,
+  showDailyForecastTab = false,
   showDeductionsTab = true,
   showMyCoachingTab: _showMyCoachingTab = false,
   showTeamCoachingTab: _showTeamCoachingTab = false,
@@ -514,6 +516,11 @@ function buildEmployeePortalSections({
       title: "Forecast & Target",
       items: [
         ...(showMakeItHappenTab ? [{ href: "/employee-portals/make-it-happen", label: "Make It Happen", icon: Sparkles }] : []),
+        // Daily Forecast — the CNS reps' boxes for today, pre-filled from the target (owner,
+        // 2026-10-01: "put it under forecast in sidebar"). It is the Phoenix CRM tab of that name, so
+        // it is gated by the module's own answer (`forecastIsOffered`: a CNS territory in scope),
+        // never a role list — a Pedia or Anti Infective rep is never offered it.
+        ...(showDailyForecastTab ? [{ href: "/employee-portals/field-crm/forecast", label: "Daily Forecast", icon: PackageCheck }] : []),
         // Read-only Targets. /sales/targets keeps the authoring tools and bounces portal roles away;
         // a Medical Rep is served their own targets only (owner, 2026-09-16).
         ...(showTargetsTab ? [{ href: "/employee-portals/targets", label: "Targets", icon: Target }] : []),

@@ -14,7 +14,7 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getPayslipPortalData } from "@/lib/employee-portal/service";
-import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/page";
+import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/page";
 
 export const dynamic = "force-dynamic";
 
@@ -60,9 +60,9 @@ export default async function PayslipsPage() {
         employeeHasActiveDeviceMapping(access.hrId).catch(() => false),
         // The same gate the portal shell asks. This page builds its own chrome, so a flag left out
         // here is a sidebar row that disappears the moment the rep opens his payslips.
-        phoenixCrmEntryAvailable(access).catch(() => false),
+        phoenixCrmSidebarEntries(access).catch(() => NO_PHOENIX_CRM_ENTRIES),
       ])
-    : ([false, false] as [boolean, boolean]);
+    : ([false, NO_PHOENIX_CRM_ENTRIES] as const);
 
   const visibility = resolveEmployeePortalNavVisibility(
     data.employee.roleLabel,
@@ -75,7 +75,8 @@ export default async function PayslipsPage() {
     // from the payslips rail. Left as it stands — passed explicitly only because the CRM flag sits
     // behind it in the argument list.
     false,
-    phoenixCrm,
+    phoenixCrm.crm,
+    phoenixCrm.forecast,
   );
 
   if (navigationMode === "admin") {

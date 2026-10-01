@@ -34,7 +34,7 @@ import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
-import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/page";
+import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries, type PhoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/page";
 import { hasInterviewCalendarAccess } from "@/lib/recruitment/interview-calendar";
 
 export const dynamic = "force-dynamic";
@@ -80,15 +80,15 @@ export default async function EmployeePortalProfilePage() {
   // read `access` alone — never the shell data — so they run beside it instead of queueing behind
   // it. Each settles to false on its own failure, so this can never reject unobserved, and it is
   // awaited below at the point where it used to be started.
-  const navFlags: Promise<[boolean, boolean, boolean]> = access.hrId
+  const navFlags: Promise<[boolean, boolean, PhoenixCrmSidebarEntries]> = access.hrId
     ? Promise.all([
         employeeHasActiveDeviceMapping(access.hrId).catch(() => false),
         hasInterviewCalendarAccess(access).catch(() => false),
         // The same gate the portal shell asks, asked again because this page builds its own chrome.
         // A flag left out here is a sidebar row that disappears the moment the rep opens his profile.
-        phoenixCrmEntryAvailable(access).catch(() => false),
+        phoenixCrmSidebarEntries(access).catch(() => NO_PHOENIX_CRM_ENTRIES),
       ])
-    : Promise.resolve<[boolean, boolean, boolean]>([false, false, false]);
+    : Promise.resolve<[boolean, boolean, PhoenixCrmSidebarEntries]>([false, false, NO_PHOENIX_CRM_ENTRIES]);
 
   let data: Awaited<ReturnType<typeof getEmployeePortalShellData>> | null = null;
   try {
@@ -135,7 +135,8 @@ export default async function EmployeePortalProfilePage() {
     employee.hrId,
     hasDeviceMapping,
     sharedInterviewCalendar,
-    phoenixCrm,
+    phoenixCrm.crm,
+    phoenixCrm.forecast,
   );
 
   const employmentRows: Array<{

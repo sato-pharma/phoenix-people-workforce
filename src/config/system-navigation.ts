@@ -37,6 +37,7 @@ import {
   ListChecks,
   Lock,
   Package,
+  PackageCheck,
   PackageSearch,
   LayoutDashboard,
   LayoutGrid,
@@ -1289,6 +1290,12 @@ export const adminNavigationSectionSeeds = [
       // Manager and Super Admin were named; the CEO was not. Enforced by canUseMakeItHappen in
       // src/lib/sales/make-it-happen/scope.ts; portal roles are redirected to their own twin.
       { href: "/sales/make-it-happen", icon: Sparkles, label: "Make It Happen", permissions: [{ action: "read", resource: "sales" }], roles: ["Super Admin", "SFE Manager"] },
+      // Daily Forecast — the CNS reps' boxes for today, pre-filled from the target: the Phoenix CRM tab
+      // of that name, given a row under Make It Happen (owner, 2026-10-01: "put it under forecast in
+      // sidebar"). The three admin-shell holders of phoenix_crm read who read the company, and so hold
+      // every CNS territory; the tab itself is offered by forecastIsOffered, and the Training Manager
+      // (who holds phoenix_crm for the Doctors directory alone) is not listed.
+      { href: "/admin/field-crm?tab=forecast", activeTab: "forecast", icon: PackageCheck, label: "Daily Forecast", permissions: [{ action: "read", resource: "phoenix_crm" }], roles: ["Super Admin", "CEO", "SFE Manager"] },
     ],
     label: "Sales vs Target",
   },

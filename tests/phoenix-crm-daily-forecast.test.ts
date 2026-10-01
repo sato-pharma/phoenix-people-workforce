@@ -10,6 +10,7 @@ import {
   accuracyReading,
   compareBoardRows,
   dailyShare,
+  forecastIsOffered,
   forecastShareOfDay,
   isForecastLine,
   monthAccuracy,
@@ -64,11 +65,23 @@ export function runPhoenixCrmDailyForecastTests(): void {
       assert.equal(isForecastLine(other), false, `${String(other)} is not the forecast's line`);
     }
 
+    // Offered to a viewer with a CNS territory in scope, and to the Super Admin — nobody else.
+    const cns = { lineCode: "cns" };
+    const pedia = { lineCode: "pedia" };
+    assert.equal(forecastIsOffered({ isSuperAdmin: false, scopeTerritories: [pedia, cns] }), true, "a CNS territory in scope opens it");
+    assert.equal(forecastIsOffered({ isSuperAdmin: false, scopeTerritories: [pedia] }), false, "a scope with no CNS territory never sees it");
+    assert.equal(forecastIsOffered({ isSuperAdmin: false, scopeTerritories: [] }), false, "no scope, no forecast");
+    assert.equal(forecastIsOffered({ isSuperAdmin: true, scopeTerritories: [] }), true, "the Super Admin tries it in test mode");
+
+    // 🔴 The Phoenix CRM tab AND the portal sidebar row ask that ONE function, so the sidebar can
+    // never offer a door the tab then refuses (owner, 2026-10-01: "put it under forecast in sidebar").
     const overview = source("src/lib/phoenix-crm/server/overview.ts");
+    assert.match(overview, /forecast: forecastIsOffered\(viewer\),/, "the tab is offered by the shared gate");
+    const entryGate = source("src/lib/phoenix-crm/server/page.ts");
     assert.match(
-      overview,
-      /forecast: viewer\.isSuperAdmin \|\| scope\.some\(\(seat\) => isForecastLine\(seat\.lineCode\)\)/,
-      "the tab is offered only to a viewer with a CNS territory in scope (and the Super Admin)",
+      entryGate,
+      /forecast: crm && forecastIsOffered\(viewer\)/,
+      "the sidebar row is offered by the same gate, and only to someone the module lets in at all",
     );
 
     const service = source("src/lib/phoenix-crm/server/daily-forecast.ts");

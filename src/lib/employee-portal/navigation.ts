@@ -115,6 +115,14 @@ export type EmployeePortalNavVisibility = {
    * with a reference list waiting had never opened the module once.
    */
   showPhoenixCrmTab?: boolean;
+  /**
+   * Daily Forecast — the CNS reps' pre-filled boxes for the day, a Phoenix CRM tab given its own row
+   * under Forecast & Target (owner, 2026-10-01: "put it under forecast in sidebar"). NOT a role test,
+   * for the same reason as the row above: `phoenixCrmSidebarEntries` answers it with the very function
+   * that offers the tab (`forecastIsOffered` — a CNS territory in scope), so a Pedia or Anti Infective
+   * rep never sees a row that opens onto "not yours to open".
+   */
+  showDailyForecastTab?: boolean;
   // Sales Intelligence (Product / Group Product Managers): line- or product-scoped
   // analytics surfaces that mirror the admin dashboards inside the employee portal.
   showRoiIntelligenceTab?: boolean;
@@ -518,6 +526,7 @@ export function resolveEmployeePortalNavVisibility(
   hasDeviceMapping?: boolean,
   hasInterviewCalendarAccess?: boolean,
   hasPhoenixCrmEntry?: boolean,
+  hasPhoenixCrmForecast?: boolean,
 ): EmployeePortalNavVisibility {
   const resolvedRole = resolvePortalRole(roleLabel, accessRole);
   const normalizedLine = String(employeeLineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -886,6 +895,8 @@ export function resolveEmployeePortalNavVisibility(
     // module's own gate and already answers permission, territory and line opening together; a second
     // list of roles here would drift from it the first time the owner opens or closes a line.
     showPhoenixCrmTab: hasPhoenixCrmEntry === true,
+    // The same module gate, its forecast half — never a role list either.
+    showDailyForecastTab: hasPhoenixCrmForecast === true,
     showRoiIntelligenceTab,
     // Mirrors PORTAL_SOS_ACTION_ROLES (portal-sos-dashboard.ts). Medical Rep added 2026-09-14 (owner):
     // he sees his own area's pharmacy action lists only, never the distributor dashboard.

@@ -93,8 +93,8 @@ export function runPhoenixCrmLineNotOpenTests(): void {
   {
     const page = stripComments(source("src/lib/phoenix-crm/server/page.ts"));
     assert.ok(
-      /return phoenixCrmHasSomethingToSay\(viewer\);/.test(page),
-      "phoenixCrmEntryAvailable must delegate to the predicate rather than re-testing the lengths itself — two copies of this rule is how the manager was lost",
+      /const crm = phoenixCrmHasSomethingToSay\(viewer\);/.test(page),
+      "phoenixCrmSidebarEntries (which phoenixCrmEntryAvailable reads) must delegate to the predicate rather than re-testing the lengths itself — two copies of this rule is how the manager was lost",
     );
 
     // The viewer must actually carry the waiting scope, or the predicate is reading an absent field.

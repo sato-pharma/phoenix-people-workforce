@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -660,10 +660,15 @@ export function isRedirectOnlyStub(source: string): boolean {
  * `stripHrPrefix` exists because the HR shell mounts the same pages under /hr — /hr/probation is
  * served by app/(admin)/probation/page.tsx. Only the HR seat test wants that rewrite; applying it
  * everywhere would resolve an admin href to the wrong file.
+ *
+ * `matchDynamicSegment` resolves an href's LAST segment the way Next.js does when no static folder
+ * exists: through the one `[param]` folder beside it — /employee-portals/field-crm/forecast is served
+ * by app/employee-portals/field-crm/[module]/page.tsx. Opt-in, because a guard that used to skip such
+ * an href would start reading a page it never read; only the registry-permission guard asks for it.
  */
 export function pageFileFor(
   href: string,
-  options: { repoRoot: string; stripHrPrefix?: boolean },
+  options: { repoRoot: string; stripHrPrefix?: boolean; matchDynamicSegment?: boolean },
 ): string | null {
   if (!href.startsWith("/")) return null;
   const rest = options.stripHrPrefix
@@ -679,6 +684,20 @@ export function pageFileFor(
     path.join(options.repoRoot, "app", rel, "page.tsx"),
   ]) {
     if (existsSync(candidate)) return candidate;
+  }
+  if (options.matchDynamicSegment && rel.includes("/")) {
+    const parentRel = rel.slice(0, rel.lastIndexOf("/"));
+    for (const parent of [
+      path.join(options.repoRoot, "app", "(admin)", parentRel),
+      path.join(options.repoRoot, "app", parentRel),
+    ]) {
+      if (!existsSync(parent)) continue;
+      // A single `[param]` folder only — never a catch-all `[...param]`, and never a guess between two.
+      const dynamic = readdirSync(parent).filter(
+        (name) => /^\[[A-Za-z0-9_]+\]$/.test(name) && existsSync(path.join(parent, name, "page.tsx")),
+      );
+      if (dynamic.length === 1) return path.join(parent, dynamic[0], "page.tsx");
+    }
   }
   return null;
 }
