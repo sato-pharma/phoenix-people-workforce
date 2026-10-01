@@ -1455,6 +1455,16 @@ export async function computeVacationDeductionTotals(
 }
 
 /**
+ * The live-row collision on payroll_copilot_vacation_settlements_live_idx, the partial unique
+ * index over (employee_hr_id_compact, start_date) WHERE superseded_at IS NULL. It is the ONE
+ * insert failure that a supersede can legitimately clear; every other failure means the row was
+ * never going to land, so nothing may be retired on its behalf.
+ */
+function isLiveSettlementCollision(error: unknown): boolean {
+  return String((error as { code?: unknown } | null)?.code ?? "") === "23505";
+}
+
+/**
  * Durably records the balance-first-else-salary settlement for each employee's CRM-only
  * leave days this period, reusing the SAME payroll_copilot_vacation_settlements ledger a
  * formal Phoenix unpaid-request settlement writes to (balanceSettledDaysInPeriod in
@@ -1462,30 +1472,48 @@ export async function computeVacationDeductionTotals(
  * against the employee's real balance in every FUTURE balance check, not just this month's
  * payroll sheet. vacation_request_ids stays [] (no formal request exists); that's also how a
  * CRM-sourced row is told apart from a Copilot-decided one when reviewing the table directly.
- * Idempotent: re-confirming the same step supersedes the prior live row for that
- * employee+startDate before inserting, so a re-run never double-counts.
+ *
+ * THE INSERT IS ATTEMPTED FIRST, AND NOTHING IS RETIRED UNTIL IT IS KNOWN TO BE REPLACEABLE.
+ *
+ * This used to supersede first and insert second, unscoped and with the supersede's own error
+ * discarded — so a confirm retired ANY live row for that employee+start_date, whoever wrote it,
+ * and then carried on past a failed insert with `continue`. Both halves fired on production. The
+ * insert has never once succeeded: `run_id` carries an automated_payroll_runs id while the column
+ * is a foreign key onto payroll_copilot_runs, so every insert is refused `23503` (proved on
+ * staging, 2026-10-01) — and on 2026-08-04 07:49:03 Cairo the July run's first confirm used that
+ * unscoped supersede to retire Khaled Mohamed Ali Bedair's 1.00-day balance settlement of
+ * 2026-07-12, written by `system:crm-correction-2026-07-21`, and replaced it with nothing.
+ *
+ * So the order is inverted. The insert goes first with nothing retired; a failure that is NOT the
+ * live-row collision leaves the ledger exactly as it was. Only the collision justifies a
+ * supersede, only THIS RUN's own earlier row may be superseded by it (the re-confirm case — a
+ * Copilot decision or a system correction holding that slot is somebody else's and is left alone,
+ * reported instead), and the supersede's error is now read rather than dropped.
  */
-export async function settleCrmLeaveBalanceForPeriod(input: {
-  crmLeaveSettlements: CrmLeaveBalanceSettlement[];
-  actorHrId: string;
-  runId?: string | null;
-}): Promise<{ settled: number }> {
-  const supabase = getSupabaseAdmin();
+export async function settleCrmLeaveBalanceForPeriod(
+  input: {
+    crmLeaveSettlements: CrmLeaveBalanceSettlement[];
+    actorHrId: string;
+    runId?: string | null;
+  },
+  /**
+   * Injected only by the test — production always uses the admin client. The same seam
+   * `buildSettledSalaryDeductionTotals` and `recordVacationSettlementDecision` already carry, and
+   * for the same reason: this suite runs with PRODUCTION credentials (`.env.local` points at
+   * production), so a function that writes the leave-balance ledger can never be exercised
+   * against a real client from a test.
+   */
+  client: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
+): Promise<{ settled: number }> {
+  const supabase = client;
   let settled = 0;
   for (const settlement of input.crmLeaveSettlements) {
     if (settlement.totalDays <= 0) continue;
 
-    await supabase
-      .from("payroll_copilot_vacation_settlements")
-      .update({ superseded_at: new Date().toISOString() })
-      .eq("employee_hr_id_compact", settlement.compact)
-      .eq("start_date", settlement.startDate)
-      .is("superseded_at", null);
-
     const method: "balance" | "partial_balance" | "salary" =
       settlement.unpaidDays <= 0 ? "balance" : settlement.balanceDaysConsumed > 0 ? "partial_balance" : "salary";
 
-    const { error } = await supabase.from("payroll_copilot_vacation_settlements").insert({
+    const row = {
       balance_days_consumed: method === "salary" ? null : settlement.balanceDaysConsumed,
       decided_by: input.actorHrId,
       employee_hr_id: settlement.employeeHrId,
@@ -1495,16 +1523,78 @@ export async function settleCrmLeaveBalanceForPeriod(input: {
       settlement_method: method,
       start_date: settlement.startDate,
       unpaid_days: settlement.totalDays,
-      vacation_request_ids: [],
-    });
-    if (error) {
-      logError("Automated payroll: CRM leave balance settlement insert failed", {
+      vacation_request_ids: [] as string[],
+    };
+    const labels = {
+      event: "automated_payroll_crm_leave_balance_settlement_insert_failed",
+      hrId: settlement.employeeHrId,
+      runId: input.runId ?? null,
+    };
+
+    const firstAttempt = await supabase.from("payroll_copilot_vacation_settlements").insert(row);
+    if (!firstAttempt.error) {
+      settled += 1;
+      continue;
+    }
+
+    // Not the live-row collision: this row cannot land at all, so the ledger is left untouched.
+    // The old code had already retired the live row by this point.
+    if (!isLiveSettlementCollision(firstAttempt.error)) {
+      logError("Automated payroll: CRM leave balance settlement insert failed — nothing was retired", {
+        labels,
+        error: firstAttempt.error,
+      });
+      continue;
+    }
+
+    // A live settlement holds this employee+start_date. Read WHO holds it before touching it.
+    const { data: holder, error: holderError } = await supabase
+      .from("payroll_copilot_vacation_settlements")
+      .select("id,run_id,decided_by")
+      .eq("employee_hr_id_compact", settlement.compact)
+      .eq("start_date", settlement.startDate)
+      .is("superseded_at", null)
+      .maybeSingle();
+    if (holderError || !holder) {
+      logError("Automated payroll: CRM leave settlement slot is held but could not be read — nothing was retired", {
+        labels,
+        error: holderError ?? firstAttempt.error,
+      });
+      continue;
+    }
+
+    const holderRow = holder as { id: string; run_id: string | null; decided_by: string | null };
+    if (!input.runId || String(holderRow.run_id ?? "") !== input.runId) {
+      logError("Automated payroll: CRM leave settlement slot is held by a decision this run did not make — left alone", {
         labels: {
-          event: "automated_payroll_crm_leave_balance_settlement_insert_failed",
-          hrId: settlement.employeeHrId,
-          runId: input.runId ?? null,
+          ...labels,
+          event: "automated_payroll_crm_leave_balance_settlement_slot_held_by_another_decider",
+          heldByRunId: holderRow.run_id ?? null,
+          heldByDecider: holderRow.decided_by ?? null,
         },
-        error,
+      });
+      continue;
+    }
+
+    // This run's own earlier answer for the same employee+start_date — the re-confirm case.
+    const { error: supersedeError } = await supabase
+      .from("payroll_copilot_vacation_settlements")
+      .update({ superseded_at: new Date().toISOString() })
+      .eq("id", holderRow.id)
+      .is("superseded_at", null);
+    if (supersedeError) {
+      logError("Automated payroll: CRM leave settlement supersede failed — the earlier row still stands", {
+        labels: { ...labels, event: "automated_payroll_crm_leave_balance_settlement_supersede_failed" },
+        error: supersedeError,
+      });
+      continue;
+    }
+
+    const retry = await supabase.from("payroll_copilot_vacation_settlements").insert(row);
+    if (retry.error) {
+      logError("Automated payroll: CRM leave settlement was retired and its replacement failed to insert", {
+        labels: { ...labels, event: "automated_payroll_crm_leave_balance_settlement_replacement_failed" },
+        error: retry.error,
       });
       continue;
     }
