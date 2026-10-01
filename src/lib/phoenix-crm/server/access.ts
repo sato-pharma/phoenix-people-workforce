@@ -12,8 +12,9 @@
  *   - a line's reps and managers use the module from the line's opening day;
  *   - the Super Admin's own entries are ALWAYS test entries (owner, 2026-09-16: the Super Admin tries
  *     Add Visit and the report from day one; those try-outs never reach a real report), on any territory, open or not —
- *     with TWO real-data exceptions, each its own gate below: moving a validated place
- *     (`canMovePlaces`), and entering a record a rep MISSED, for that rep (`territoryForMissedRecord`);
+ *     with THREE real-data exceptions, each its own gate below: moving a validated place
+ *     (`canMovePlaces`), entering a record a rep MISSED, for that rep (`territoryForMissedRecord`), and
+ *     acknowledging, as HR, a rep's request to edit a sent week (`canAcknowledgePlanEdits`);
  *   - a TEST ACCOUNT (owner, 2026-09-27; src/lib/auth/test-persona.ts) is the employee it mirrors, with
  *     that person's own territories, scope and authority — but every read and every save it makes is in
  *     the test world, always, whatever flag the screen sends. It decides test entries only, as the
@@ -21,6 +22,7 @@
  *     together without either ever touching a real row.
  */
 
+import { isSamePerson } from "@/lib/auth/identity-aliases";
 import { canAccess, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { ApiError, forbiddenError, notFoundError } from "@/lib/http/api-errors";
 import { currentCairoDateOnlyIso, formatPhoenixLongDate } from "@/lib/i18n/format";
@@ -37,6 +39,7 @@ import {
   type ScopeBasis,
 } from "@/lib/phoenix-crm/scope";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
+import { PLAN_EDIT_ACKNOWLEDGER_HR_ID, type PlanEditStage } from "@/lib/phoenix-crm/plan-edit-rules";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import type { PhoenixCrmRequestStage } from "@/lib/phoenix-crm/types";
 import type { UnplannedVisitStage } from "@/lib/phoenix-crm/unplanned-rules";
@@ -365,6 +368,54 @@ export function assertUnplannedVisitApprover(
   );
 }
 
+// ── Asking to edit a sent week: the manager, then SFE, then HR ─────────────────────────────────
+
+/**
+ * HR's step on a request to edit a week — Omar Gawish himself (owner, 2026-10-01: "district manager
+ * approval, then SFE, then HR acknowledgement", and HR is him). Compared as a PERSON, never as a raw
+ * id: he also signs in as the system console, which is the same human (identity-aliases.ts).
+ *
+ * 🔴 One of the Super Admin's REAL-DATA acts in Phoenix CRM, beside `canMovePlaces` and
+ * `territoryForMissedRecord` — everywhere else his entries are test entries (owner, 2026-09-16). It
+ * changes no figure: an acknowledgement only opens a week that a district manager and SFE already
+ * agreed may change, and the rep still sends it again for the ordinary approval.
+ */
+export function canAcknowledgePlanEdits(viewer: PhoenixCrmViewer): boolean {
+  return !viewer.isTestPersona && viewer.isSuperAdmin && viewer.canApprove && isSamePerson(viewer.hrId, PLAN_EDIT_ACKNOWLEDGER_HR_ID);
+}
+
+/**
+ * Whether the viewer may act at THIS step of a request to edit a week. `stage` is the row's own step,
+ * never the phone's. The manager's and SFE's steps are the same two authorities an off-plan visit runs
+ * through (`canDecideUnplannedVisit`); HR's is `canAcknowledgePlanEdits`. In the test world the Super
+ * Admin takes every step, and a test account takes the manager's as the person it mirrors.
+ */
+export function canDecidePlanEdit(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean, stage: PlanEditStage): boolean {
+  if (viewer.isTestPersona) {
+    return isTest && stage === "manager" && viewer.canApprove && isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId);
+  }
+  if (isTest) return viewer.isSuperAdmin;
+  if (stage === "hr") return canAcknowledgePlanEdits(viewer);
+  if (viewer.isSuperAdmin || !viewer.canApprove) return false;
+  if (stage === "sfe") return viewer.isSfeManager && viewer.scopeTerritories.some((entry) => entry.seatId === seat.seatId);
+  return isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId);
+}
+
+/** The assert twin. The stage comes from the row's own status, never from the phone. */
+export function assertPlanEditApprover(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean, stage: PlanEditStage): void {
+  if (viewer.isTestPersona && !isTest) throw testAccountRealEntry();
+  if (isTest && !viewer.isSuperAdmin && !viewer.isTestPersona) throw forbiddenError("Test entries are the Super Admin's.");
+  if (canDecidePlanEdit(viewer, seat, isTest, stage)) return;
+  if (!isTest && viewer.isSuperAdmin && stage !== "hr") throw superAdminTestOnly();
+  throw forbiddenError(
+    stage === "hr"
+      ? "This request is waiting for HR's acknowledgement."
+      : stage === "sfe"
+        ? "This request is waiting for SFE, and only the SFE Manager decides that step."
+        : "Only the territory's district manager decides this step.",
+  );
+}
+
 /** Settings: the Super Admin. */
 export function assertSettingsWriter(viewer: PhoenixCrmViewer): void {
   if (!viewer.isSuperAdmin || !viewer.canUpdate) throw forbiddenError("Only the Super Admin changes Phoenix CRM settings.");
@@ -474,8 +525,9 @@ export function assertListRequestApprover(
  * Whether the viewer may MOVE a validated place (owner, 2026-09-29: "the location never changes,
  * ever — only the system administrator", widened by him the same day to the SFE Manager).
  *
- * 🔴 One of the TWO real-data writes the Super Admin makes in Phoenix CRM (the other is
- * `territoryForMissedRecord`). Everywhere else his own entries are test entries (owner, 2026-09-16); a
+ * 🔴 One of the THREE real-data writes the Super Admin makes in Phoenix CRM (the others are
+ * `territoryForMissedRecord` and `canAcknowledgePlanEdits`). Everywhere else his own entries are test
+ * entries (owner, 2026-09-16); a
  * place he moves is a real place, so the move carries a written reason and an audited event
  * (phoenix_crm_move_place). A test account never moves one.
  */
@@ -499,7 +551,8 @@ export function assertPlaceMover(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest
  * his records, but if he missed a visit or a record, admin can enter it for him … for anyone, anytime,
  * anywhere"). The Super Admin, and only him: a test account never does, and neither does any other role.
  *
- * 🔴 The second of the Super Admin's two real-data writes (beside `canMovePlaces`). With test mode on it
+ * 🔴 The second of the Super Admin's three real-data writes (beside `canMovePlaces` and
+ * `canAcknowledgePlanEdits`). With test mode on it
  * enters a test record, exactly like everything else he does in test mode; with it off the record is
  * real, for the real rep, and every screen marks it "Entered by the Super Admin".
  */

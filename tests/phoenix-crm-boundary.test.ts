@@ -133,6 +133,11 @@ const ROUTE_GATES: RouteGate[] = [
   post("plans", "create"),
   post("plans/submit", "create"),
   post("plans/decide", "approve"),
+  // A sent week is changed through a request (owner, 2026-10-01): the rep asks (`create`); the district
+  // manager, SFE and HR take their steps (`approve`, narrowed again in the service to the one person
+  // whose STEP it is — read from the row, never the body).
+  post("plans/edit-requests", "create"),
+  post("plans/edit-requests/decide", "approve"),
   get("plans/reviews"),
   // Last month's iReports360 plan, read-only, as the "Copy last month" reference (server/plan-history).
   get("plans/history"),
@@ -502,6 +507,11 @@ const LATER_MIGRATIONS = [
   // ...and removes one he entered by mistake (owner, 2026-10-01): one new table, the copy of what was
   // removed, and one brand-new function. It replaces nothing, so it appends safely at the end.
   "supabase/migrations/20261001055833_phoenix_crm_admin_remove_visit.sql",
+  // Weekly only, and asking to edit a sent week (owner, 2026-10-01): two new tables, three brand-new
+  // functions (the due date, the raise, the decision — whose HR step reopens the week and writes the
+  // plan's fifth event insert), and phoenix_crm_plan_transition replaced with its live body, its due
+  // date read from phoenix_crm_week_due_on. It replaces no save_visit, so it appends safely at the end.
+  "supabase/migrations/20261002002251_phoenix_crm_plan_edit_requests.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
@@ -839,11 +849,13 @@ function runMigrationReviewFixTests(sql: string) {
     "the planned customers are the items of those sent days only",
   );
   assert.doesNotMatch(planVsActual, /\bpl\.status\b/, "plan against actual never reads a plan's status today — a reopened or returned plan would take finished days out");
-  // The report trusts every plan event to carry the status it left the plan in. Four places write a
-  // weekly plan event: submit, reopen and decide in the weekly transition, plus the monthly plan's
-  // transition, which cascades the month's field weeks and records each week's own event.
+  // The report trusts every plan event to carry the status it left the plan in. Five inserts write a
+  // weekly plan event: the save's own two ('created', 'saved'), the weekly transition's one (submit,
+  // reopen and decide), the monthly plan's transition, which cascades the month's field weeks and
+  // records each week's own event, and HR's acknowledgement of a request to edit a sent week, which
+  // reopens it (owner, 2026-10-01). Each carries its to_status — a reopened week reads 'draft'.
   const eventInserts = [...sql.matchAll(/insert into public\.phoenix_crm_plan_events \(([^)]*)\)/g)];
-  assert.equal(eventInserts.length, 4, "plans write their events in four places");
+  assert.equal(eventInserts.length, 5, "plans write their events in five places");
   for (const insert of eventInserts) {
     assert.ok(insert[1].split(",").map((column) => column.trim()).includes("to_status"), `a plan event is written without its status: (${insert[1]})`);
   }

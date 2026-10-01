@@ -129,6 +129,13 @@ export function runPhoenixCrmDailyDigestTests(): void {
       ["in_app", "telegram"],
       "the module guard strips email on the MODULE key, so no call site can opt back in",
     );
+    // The guard's one exception (owner, 2026-10-01) is the five steps of a plan edit, named exactly —
+    // the digest's own event type is not one of them, so it is stripped as before.
+    assert.deepEqual(
+      enforcePhoenixCrmEmailBlock(["in_app", "telegram", "email"], "phoenix_crm", "crm_daily_digest"),
+      ["in_app", "telegram"],
+      "the digest is never emailed, whatever event type it is sent under",
+    );
     const runner = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/daily-digest.ts", import.meta.url), "utf8"));
     assert.ok(runner.includes('channels: ["in_app", "telegram"]'), "and the runner asks for neither");
     assert.equal(/"email"/.test(runner), false);

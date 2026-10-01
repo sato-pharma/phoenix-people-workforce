@@ -8,15 +8,20 @@
  * The narrowings are independent (plan-filters.ts). This bar only holds the controls and reports the
  * change; the filtering itself is filterPlannerCustomers, so one test covers the logic.
  *
+ * 🔴 EVERY FILTER IS A DROPDOWN, AND THE PICKERS ARE BUTTONS (owner, 2026-10-01). "Receives on" used to
+ * be a grid of day buttons — the same square buttons as the Week and the Day pickers above it — and on
+ * the first Delta (1) session reps pressed it believing they were choosing the day they were planning.
+ * So nothing in this bar is a button grid any more: Week and Day CHOOSE where he is, and these
+ * dropdowns only NARROW the list. Do not turn one back into a `CrmChoice`.
+ *
  * The time window reads only with a weekday chosen — "between 2 and 4" means nothing without a day. The
- * bar wraps to one column on a phone and never scrolls sideways; a native select opens the phone picker.
+ * bar wraps on a phone and never scrolls sideways; a native select opens the phone's own picker.
  */
 
-import { CrmButton, CrmChoice, CrmField, CrmSearchField, CrmSelect, crmInputClassName } from "@/components/phoenix-crm/ui";
+import { CrmButton, CrmField, CrmSearchField, CrmSelect, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { EMPTY_DOCTOR_FILTER, doctorFilterActive, type DoctorFilter, type DoctorSessionFilter } from "@/lib/phoenix-crm/plan-filters";
 import { PHOENIX_CRM_WEEKDAY_NAMES, PHOENIX_CRM_WEEKDAY_ORDER } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
-import { cn } from "@/lib/utils";
 
 /** "14:30" ↔ minutes after midnight; a blank field is the open end of the range. */
 function minutesToTime(minute: number | null): string {
@@ -36,6 +41,10 @@ const SESSION_OPTIONS: ReadonlyArray<{ value: DoctorSessionFilter; label: string
   { value: "AM", label: "AM" },
   { value: "PM", label: "PM" },
 ];
+
+function isSession(value: string): value is DoctorSessionFilter {
+  return value === "all" || value === "AM" || value === "PM";
+}
 
 export function PlanFilterBar({
   bricks,
@@ -64,6 +73,9 @@ export function PlanFilterBar({
   /** Specialities present on the list, for the speciality picker; empty hides it. */
   specialities?: ReadonlyArray<string>;
 }) {
+  const weekdayId = `${idPrefix}-filter-weekday`;
+  const sessionId = `${idPrefix}-filter-session`;
+  const gradeId = `${idPrefix}-filter-grade`;
   const brickId = `${idPrefix}-filter-brick`;
   const specialityId = `${idPrefix}-filter-speciality`;
   const searchId = `${idPrefix}-filter-search`;
@@ -95,76 +107,62 @@ export function PlanFilterBar({
         <CrmSearchField id={searchId} label="Find a customer" onChange={onQueryChange} placeholder="Name, speciality, brick or place" value={query} />
       ) : null}
 
-      {showWeekday ? (
-        <CrmField label="Receives on">
-          <CrmChoice
-            columns={4}
-            label="Receives on"
-            onChange={(next) => onChange({ ...filter, weekday: next === "any" ? null : Number(next), fromMinute: null, toMinute: null })}
-            options={[
-              { value: "any", label: "Any day", disabled: locked },
-              ...PHOENIX_CRM_WEEKDAY_ORDER.filter((weekday) => weekday !== 5).map((weekday) => ({
-                value: String(weekday),
-                label: PHOENIX_CRM_WEEKDAY_NAMES[weekday],
-                disabled: locked,
-              })),
-            ]}
-            value={filter.weekday === null ? "any" : String(filter.weekday)}
-          />
-        </CrmField>
-      ) : null}
-
-      {dayChosen || !showWeekday ? (
-        <div className="grid min-w-0 grid-cols-2 gap-3 sm:max-w-md">
-          <CrmField hint="Optional" htmlFor={fromId} label="From">
-            <input
-              className={crmInputClassName}
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {showWeekday ? (
+          <CrmField hint="Narrows the list only" htmlFor={weekdayId} label="Receives on">
+            <CrmSelect
               disabled={locked}
-              id={fromId}
-              onChange={(event) => onChange({ ...filter, fromMinute: timeToMinutes(event.target.value) })}
-              type="time"
-              value={minutesToTime(filter.fromMinute)}
-            />
+              id={weekdayId}
+              onChange={(event) =>
+                onChange({ ...filter, weekday: event.target.value === "" ? null : Number(event.target.value), fromMinute: null, toMinute: null })
+              }
+              value={filter.weekday === null ? "" : String(filter.weekday)}
+            >
+              <option value="">Any day</option>
+              {PHOENIX_CRM_WEEKDAY_ORDER.filter((weekday) => weekday !== 5).map((weekday) => (
+                <option key={weekday} value={String(weekday)}>
+                  {PHOENIX_CRM_WEEKDAY_NAMES[weekday]}
+                </option>
+              ))}
+            </CrmSelect>
           </CrmField>
-          <CrmField hint="Optional" htmlFor={toId} label="To">
-            <input
-              className={crmInputClassName}
-              disabled={locked}
-              id={toId}
-              onChange={(event) => onChange({ ...filter, toMinute: timeToMinutes(event.target.value) })}
-              type="time"
-              value={minutesToTime(filter.toMinute)}
-            />
-          </CrmField>
-        </div>
-      ) : null}
+        ) : null}
 
-      <CrmField label="AM or PM">
-        <CrmChoice
-          columns={3}
-          label="AM or PM"
-          onChange={(session) => onChange({ ...filter, session })}
-          options={SESSION_OPTIONS.map((option) => ({ ...option, disabled: locked }))}
-          value={filter.session}
-        />
-      </CrmField>
-
-      {grades.length > 0 ? (
-        <CrmField label="Grade">
-          <CrmChoice
-            columns={4}
-            label="Grade"
-            onChange={(next) => onChange({ ...filter, grade: next === "any" ? null : next })}
-            options={[
-              { value: "any" as const, label: "Any grade", disabled: locked },
-              ...grades.map((grade) => ({ value: grade, label: `Grade ${grade}`, disabled: locked })),
-            ]}
-            value={filter.grade ?? "any"}
-          />
+        <CrmField htmlFor={sessionId} label="AM or PM">
+          <CrmSelect
+            disabled={locked}
+            id={sessionId}
+            onChange={(event) => {
+              if (isSession(event.target.value)) onChange({ ...filter, session: event.target.value });
+            }}
+            value={filter.session}
+          >
+            {SESSION_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </CrmSelect>
         </CrmField>
-      ) : null}
 
-      <div className={cn("grid min-w-0 gap-3", bricks.length > 0 && specialities.length > 0 ? "sm:grid-cols-2" : undefined)}>
+        {grades.length > 0 ? (
+          <CrmField htmlFor={gradeId} label="Grade">
+            <CrmSelect
+              disabled={locked}
+              id={gradeId}
+              onChange={(event) => onChange({ ...filter, grade: event.target.value === "" ? null : (event.target.value as PhoenixCrmGrade) })}
+              value={filter.grade ?? ""}
+            >
+              <option value="">Any grade</option>
+              {grades.map((grade) => (
+                <option key={grade} value={grade}>
+                  Grade {grade}
+                </option>
+              ))}
+            </CrmSelect>
+          </CrmField>
+        ) : null}
+
         {bricks.length > 0 ? (
           <CrmField htmlFor={brickId} label="Brick">
             <CrmSelect
@@ -201,6 +199,31 @@ export function PlanFilterBar({
           </CrmField>
         ) : null}
       </div>
+
+      {dayChosen || !showWeekday ? (
+        <div className="grid min-w-0 grid-cols-2 gap-3 sm:max-w-md">
+          <CrmField hint="Optional" htmlFor={fromId} label="From">
+            <input
+              className={crmInputClassName}
+              disabled={locked}
+              id={fromId}
+              onChange={(event) => onChange({ ...filter, fromMinute: timeToMinutes(event.target.value) })}
+              type="time"
+              value={minutesToTime(filter.fromMinute)}
+            />
+          </CrmField>
+          <CrmField hint="Optional" htmlFor={toId} label="To">
+            <input
+              className={crmInputClassName}
+              disabled={locked}
+              id={toId}
+              onChange={(event) => onChange({ ...filter, toMinute: timeToMinutes(event.target.value) })}
+              type="time"
+              value={minutesToTime(filter.toMinute)}
+            />
+          </CrmField>
+        </div>
+      ) : null}
     </div>
   );
 }

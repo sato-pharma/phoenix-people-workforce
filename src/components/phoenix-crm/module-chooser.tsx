@@ -44,7 +44,8 @@ const MODULE_ICONS: Record<PhoenixCrmModuleKey, typeof ClipboardList> = {
 export function PhoenixCrmModuleChooser({ base, overview }: { base: string; overview: PhoenixCrmOverview }) {
   const modules = allowedPhoenixCrmModules(overview.tabs);
   // The Super Admin's counts are test entries, so the badge follows the same rule the tab bar uses.
-  const waiting = overview.waitingForYou.plans + overview.waitingForYou.requests;
+  const waiting =
+    overview.waitingForYou.plans + overview.waitingForYou.requests + overview.waitingForYou.planEdits + overview.waitingForYou.hrAcknowledgements;
 
   return (
     <div className="grid min-w-0 gap-4">

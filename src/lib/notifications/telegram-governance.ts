@@ -77,7 +77,7 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   // fail-safe drops Telegram and a manager in the field is left with the in-app bell alone. Not
   // genericOnly: the customer, the proposed grade or drop reason and the week ARE what a manager
   // decides on; the notices carry no money and no personal data beyond the rep's name.
-  { enabled: true, genericOnly: false, module: "phoenix_crm", notes: "Grade and drop requests and weekly plans waiting for the reviewing manager, and their decisions; in-app and Telegram only, email permanently blocked.", optional: false },
+  { enabled: true, genericOnly: false, module: "phoenix_crm", notes: "Grade and drop requests and weekly plans waiting for the reviewing manager, and their decisions; in-app and Telegram, email blocked except the five steps of a request to edit a sent week (owner, 2026-10-01).", optional: false },
   // Deductions per-line push (owner rule 2026-09-22): when the Super Admin pushes ONE employee's
   // ONE deduction, the employee gets in-app + Telegram, cc'ing the manager chain — never email
   // (deductions notices carry no email path; see notify-deduction.ts). Not genericOnly, but the

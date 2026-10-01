@@ -12,10 +12,12 @@
  *     works as the person it mirrors, and its "waiting for you" counts test entries for the same reason.
  */
 
+import { addDaysIso } from "@/lib/crm/dates";
 import { plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { forecastIsOffered } from "@/lib/phoenix-crm/daily-forecast";
+import { PLAN_EDIT_WAITING_STATUSES, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { managerChain, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { canReviewTerritory, lineOpeningText, readsCalendar, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canAcknowledgePlanEdits, canReviewTerritory, lineOpeningText, readsCalendar, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { isDirectoryCompanyRole } from "@/lib/phoenix-crm/server/doctors";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -76,7 +78,19 @@ export type PhoenixCrmOverview = {
    * List requests (a grade, a drop, an add, a bring-back) at a step this viewer decides, and submitted
    * plans, waiting for this viewer's decision.
    */
-  waitingForYou: { requests: number; plans: number; isTest: boolean };
+  waitingForYou: {
+    requests: number;
+    plans: number;
+    /** Requests to edit a sent week at a step this viewer takes (owner, 2026-10-01), in `isTest`'s world. */
+    planEdits: number;
+    isTest: boolean;
+    /**
+     * HR's acknowledgements, REAL entries, whatever world the counts above are in: Omar Gawish takes HR's
+     * step on real requests himself (access.ts `canAcknowledgePlanEdits`), while every other count of
+     * his is a test count. Zero for everyone else.
+     */
+    hrAcknowledgements: number;
+  };
   /** Why the viewer has nothing to open yet, in one sentence; null when the module is open for them. */
   closedMessage: string | null;
 };
@@ -138,6 +152,33 @@ async function countWaiting(
   return total;
 }
 
+/** Requests to edit a sent week waiting at the given steps, on weeks that still have a day ahead. */
+async function countPlanEdits(statuses: PlanEditStatus[], isTest: boolean, seatIds: string[] | null, cairoToday: string): Promise<number> {
+  const supabase = getSupabaseAdmin();
+  const count = (seatPart: string[] | null) => {
+    let query = supabase
+      .from("phoenix_crm_plan_edit_requests")
+      .select("id", { count: "exact", head: true })
+      .in("status", statuses)
+      .eq("is_test", isTest)
+      .gte("week_start", addDaysIso(cairoToday, -5));
+    if (seatPart) query = query.in("seat_id", seatPart);
+    return query;
+  };
+  if (seatIds === null) {
+    const { count: total, error } = await count(null);
+    throwIfError(error);
+    return total ?? 0;
+  }
+  let total = 0;
+  for (const part of chunk(seatIds, 100)) {
+    const { count: partCount, error } = await count(part);
+    throwIfError(error);
+    total += partCount ?? 0;
+  }
+  return total;
+}
+
 export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<PhoenixCrmOverview> {
   const scope = viewer.scopeTerritories;
   const ownSeatIds = viewer.isSuperAdmin ? [] : viewer.ownTerritories.map((seat) => seat.seatId);
@@ -161,7 +202,7 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
   const sfeSeatIds =
     !viewer.isSuperAdmin && !viewer.isTestPersona && viewer.isSfeManager && viewer.canApprove ? scope.map((seat) => seat.seatId) : [];
 
-  const [names, reviewerRequests, sfeRequests, plans] = await Promise.all([
+  const [names, reviewerRequests, sfeRequests, plans, managerEdits, sfeEdits, hrAcknowledgements] = await Promise.all([
     loadPeopleNames([viewer.hrId, ...territoryPeople(viewer.org, [...scope, ...viewer.waitingTerritories])]),
     reviewSeatIds !== null && reviewSeatIds.length === 0
       ? 0
@@ -170,6 +211,13 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     reviewSeatIds !== null && reviewSeatIds.length === 0
       ? 0
       : countWaiting("phoenix_crm_plans", "submitted", waitingIsTest, reviewSeatIds, plannableWeeks(viewer.cairoToday)[0]),
+    // A request to edit a sent week (owner, 2026-10-01): the district manager's step, SFE's, and HR's.
+    // The Super Admin's test count holds every step, as his list-request count does.
+    reviewSeatIds !== null && reviewSeatIds.length === 0
+      ? 0
+      : countPlanEdits(reviewSeatIds === null ? [...PLAN_EDIT_WAITING_STATUSES] : ["manager_pending"], waitingIsTest, reviewSeatIds, viewer.cairoToday),
+    sfeSeatIds.length === 0 ? 0 : countPlanEdits(["sfe_pending"], false, sfeSeatIds, viewer.cairoToday),
+    canAcknowledgePlanEdits(viewer) ? countPlanEdits(["hr_pending"], false, null, viewer.cairoToday) : 0,
   ]);
 
   const territories = scope
@@ -223,7 +271,13 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       territory: describeTerritory(viewer.org, seat, names),
       message: lineOpeningText(viewer, seat),
     })),
-    waitingForYou: { requests: reviewerRequests + sfeRequests, plans, isTest: waitingIsTest },
+    waitingForYou: {
+      requests: reviewerRequests + sfeRequests,
+      plans,
+      planEdits: managerEdits + sfeEdits,
+      isTest: waitingIsTest,
+      hrAcknowledgements,
+    },
     closedMessage: closedMessage(viewer),
   };
 }

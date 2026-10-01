@@ -91,6 +91,10 @@ export const START_GUIDE_UI_LABELS = [
   "Capture location",
   "Phone",
   "Change the details",
+  // The plan, one week at a time (owner, 2026-10-01).
+  "Plan",
+  "Send this week",
+  "Ask to edit this week",
 ] as const;
 
 interface GuideContent {
@@ -151,7 +155,7 @@ const CONTENT: Record<StartGuideLanguage, GuideContent> = {
       ],
       [
         "Your plan",
-        "The month is due on the last Thursday of the month before; a week you send on its own, on the Thursday before it. A late plan is always accepted, never refused.",
+        `You plan one week at a time: the coming week, due on the Thursday before it. Open ${ui("Plan")}, pick a day, tick your customers and press ${ui("Send this week")}. A late week is still accepted. To change a week you already sent, press ${ui("Ask to edit this week")}: your district manager, then SFE, then HR approve it.`,
       ],
     ],
     footer: "Sato Pharma · Phoenix CRM",
@@ -199,7 +203,7 @@ const CONTENT: Record<StartGuideLanguage, GuideContent> = {
       ],
       [
         "خطتك",
-        "الخطة الشهرية موعدها آخر خميس من الشهر السابق، والأسبوع الذي ترسله وحده موعده الخميس الذي يسبقه. الخطة المتأخرة مقبولة دائماً ولا تُرفض.",
+        `تخطط أسبوعاً واحداً في كل مرة: الأسبوع القادم، وموعده الخميس الذي يسبقه. افتح ${ui("Plan")}، واختر اليوم، وعلّم على عملائك، ثم اضغط ${ui("Send this week")}. الأسبوع المتأخر مقبول أيضاً. لتعديل أسبوع أرسلته اضغط ${ui("Ask to edit this week")}: يوافق مدير المنطقة، ثم SFE، ثم الموارد البشرية.`,
       ],
     ],
     footer: "ساتو فارما · Phoenix CRM",

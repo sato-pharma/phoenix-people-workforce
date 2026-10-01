@@ -210,6 +210,15 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "payroll.*": { bypassQuietHours: true, channels: ["in_app", "email", "push"], permissionResource: "payroll", priority: "critical", recipientStrategy: ["permission_based"], sensitive: "payroll" },
   "password_reset.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
   "password_setup.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
+  // Phoenix CRM's one emailed notice (owner, 2026-10-01): each step of a rep's request to edit a week
+  // he already sent — district manager, then SFE, then HR — goes by email, in-app and Telegram to the
+  // next person to act, the rep, the district manager and SFE. phoenix-crm-channel-guard.ts lets these
+  // five through and strips email from every other Phoenix CRM notice.
+  "phoenix_crm.plan_edit_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_edit_moved_on": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_edit_refused": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_edit_reopened": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_edit_expired": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // Phoenix CRM (owner rule 2026-09-16): a grade or drop request and a weekly plan waiting for the
   // reviewing manager, and the decision back to the rep — in-app and Telegram, never email.
   // Recipients are passed explicitly (src/lib/phoenix-crm/server/notifications.ts), hence "cc". The
