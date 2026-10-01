@@ -161,6 +161,23 @@ class FakeQueryBuilder {
     return this;
   }
 
+  /**
+   * PostgREST `ilike` — case-insensitive, `%` = any run, `_` = one character, and `\` escapes any
+   * of the three. Needed because `attendanceChargedDaysInPeriod` in vacation/service.ts matches an
+   * HR id with it, so every read reaching `approvedPaidDaysInPeriod` passes through here.
+   */
+  ilike(column: string, pattern: string) {
+    const source = String(pattern).replace(/\\(.)|[.*+?^${}()|[\]]|[%_]/g, (match, escaped) => {
+      if (escaped !== undefined) return escaped.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (match === "%") return ".*";
+      if (match === "_") return ".";
+      return `\\${match}`;
+    });
+    const expression = new RegExp(`^${source}$`, "i");
+    this.filters.push((row) => expression.test(String(row[column] ?? "")));
+    return this;
+  }
+
   private matchIndexes(): number[] {
     const indexes: number[] = [];
     this.rows.forEach((row, index) => {
