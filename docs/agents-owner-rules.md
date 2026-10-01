@@ -3306,8 +3306,26 @@ behaviour sweep leaves it out, and place-against-actual has no actual for it.
 day page, the day's activity. It is read from WHO entered the visit (somebody who was not on it), never
 from `capture_source`, which is a rep-blind column (`tests/phoenix-crm-blind-half.test.ts`).
 
+**Taking one back** (owner, the same day: *"add a way to remove a missed visit I entered by mistake"*).
+The day page draws "Remove this visit" on a visit HE entered, and only there; a second tap confirms it.
+**The database decides which visit may go, from the row itself** (`phoenix_crm_admin_remove_visit`):
+`capture_source = 'admin'` AND `entered_by_hr_id` = the person asking. A rep's own visit stays his record
+whatever the screen sends (`not_entered_by_you`) — that is the same "the rep is responsible for all his
+records" ruling, and it is not to be widened into a general delete. The gate is apart from entering
+(`territoryForMissedRecordRemoval`): the Super Admin alone, but with no rep-in-the-seat or open-line
+condition, so his own mistake stays his to take back after the rep has left the seat or the line has
+closed again. **Nothing is lost:** production has no point-in-time recovery, so before one row is deleted
+the visit, its off-plan approval and that approval's events are copied whole into
+`phoenix_crm_removed_visits` (service role only, one row per visit, and the migration header says how
+to put one back). Then the events, the approval and the visit go, in that order — they are the only rows
+that point at a visit, and neither foreign key cascades — so an unplanned entry also leaves the
+manager's and SFE's queues. 🔴 **One trace stays:** a reviewing manager already told in-app or on
+Telegram about that off-plan visit keeps the notice; opening it finds nothing waiting. A day activity is
+not removed this way — he clears his own from the same panel, as before.
+
 Pinned by `tests/phoenix-crm-missed-records.test.ts`; the database half is
-`supabase/migrations/20261001044221_phoenix_crm_admin_entry.sql` (`phoenix_crm_admin_enter_visit`).
+`supabase/migrations/20261001044221_phoenix_crm_admin_entry.sql` (`phoenix_crm_admin_enter_visit`) and
+`supabase/migrations/20261001055833_phoenix_crm_admin_remove_visit.sql` (`phoenix_crm_admin_remove_visit`).
 
 ## The Business Review reads live — owner ruling, 2026-09-28
 

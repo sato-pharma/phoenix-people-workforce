@@ -1,7 +1,7 @@
 import { ApiError } from "@/lib/http/api-errors";
 import { dayDetailCounts, type DayDetailCounts } from "@/lib/phoenix-crm/day-detail";
 import { isMissedRecordDay } from "@/lib/phoenix-crm/missed-records";
-import { canEnterMissedRecordOn, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canEnterMissedRecordOn, canEnterMissedRecords, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadVisitDay, type VisitDayView } from "@/lib/phoenix-crm/server/visits";
 import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -39,6 +39,12 @@ export type PhoenixCrmDayDetail = VisitDayView &
      * gate (`territoryForMissedRecord`) is asserted again.
      */
     missedRecords: { seatId: string; through: string } | null;
+    /**
+     * The Super Admin may take back a visit HE entered on this page (owner, 2026-10-01). Apart from
+     * `missedRecords` on purpose: his own mistake stays his to remove after the rep has left the seat or
+     * the line has closed again, where nothing new may be entered (`territoryForMissedRecordRemoval`).
+     */
+    removesEnteredVisits: boolean;
   };
 
 export async function loadPhoenixCrmDayDetail(
@@ -81,7 +87,7 @@ export async function loadPhoenixCrmDayDetail(
       ? { seatId: seat.seatId, through: viewer.visitDay }
       : null;
 
-  return { ...day, counts, missedRecords, onLeave, pharmacies };
+  return { ...day, counts, missedRecords, onLeave, pharmacies, removesEnteredVisits: canEnterMissedRecords(viewer) };
 }
 
 /**

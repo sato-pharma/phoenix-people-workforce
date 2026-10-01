@@ -5,7 +5,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { validationError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
-import { enterMissedActivity, enterMissedVisit, loadMissedRecordForm } from "@/lib/phoenix-crm/server/missed-records";
+import { enterMissedActivity, enterMissedVisit, loadMissedRecordForm, removeMissedVisit } from "@/lib/phoenix-crm/server/missed-records";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -16,7 +16,8 @@ export const dynamic = "force-dynamic";
 //
 // GET  = what can be entered for one territory on one day: its customers, the line's products and the
 //        day's activity.
-// POST = enter a missed visit (`record: "visit"`) or a missed day activity (`record: "activity"`).
+// POST = enter a missed visit (`record: "visit"`) or a missed day activity (`record: "activity"`), or
+//        remove a visit he entered by mistake (`record: "remove-visit"`).
 //
 // `update`, the Super Admin's own permission here (the same gate as Settings), and narrowed AGAIN in the
 // service to the Super Admin alone — `territoryForMissedRecord` — so holding `update` is not enough.
@@ -52,6 +53,11 @@ export async function POST(request: Request) {
     if (body.record === "activity") {
       const saved = await enterMissedActivity(viewer, body);
       return NextResponse.json({ saved, success: true });
+    }
+    // Taking back a visit he entered by mistake — his own entry only, decided by the database.
+    if (body.record === "remove-visit") {
+      const removed = await removeMissedVisit(viewer, body);
+      return NextResponse.json({ removed, success: true });
     }
     throw validationError("Choose whether this is a visit or the day's activity.");
   } catch (error) {

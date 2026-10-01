@@ -11,12 +11,14 @@ import {
   opensForMissedRecords,
   parseMissedActivity,
   parseMissedVisit,
+  parseRemoveMissedVisit,
   parseVisitTime,
 } from "../src/lib/phoenix-crm/missed-records.ts";
 import {
   canEnterMissedRecordOn,
   canEnterMissedRecords,
   territoryForMissedRecord,
+  territoryForMissedRecordRemoval,
   type PhoenixCrmViewer,
 } from "../src/lib/phoenix-crm/server/access.ts";
 import { buildOrgIndex, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
@@ -368,8 +370,65 @@ export function runPhoenixCrmMissedRecordsTests(): void {
       "the day page shows WHY the visit was off the plan",
     );
     const panel = source("src/components/phoenix-crm/missed-record-panel.tsx");
-    assert.equal((panel.match(/crmPost<[^>]+>\("\/api\/phoenix-crm\/missed-records"/g) ?? []).length, 3, "a visit, a day activity, and clearing one");
+    assert.equal(
+      (panel.match(/crmPost<[^>]+>\("\/api\/phoenix-crm\/missed-records"/g) ?? []).length,
+      4,
+      "a visit, a day activity, clearing one, and removing a visit he entered",
+    );
     assert.match(panel, /setPlanned\(next\.onSentPlan \? "planned" : "unplanned"\);/, "it starts from the plan, and he turns it either way");
+  }
+
+  // ── 10 · Taking back a visit he entered by mistake (owner, 2026-10-01) ─────────────────────────
+  {
+    const parsed = parseRemoveMissedVisit({ visitId: VISIT_ID.toUpperCase() });
+    assert.ok(parsed.ok && parsed.value.visitId === VISIT_ID, "the visit is named by its id, as stored");
+    assert.equal(parseRemoveMissedVisit({ visitId: "not-a-uuid" }).ok, false);
+    assert.equal(parseRemoveMissedVisit({}).ok, false);
+
+    // The Super Admin alone — and WITHOUT the entry's rep-and-open-line conditions: his own mistake stays
+    // his to take back after the rep has left the seat or the line has closed again.
+    assert.equal(territoryForMissedRecordRemoval(viewer(), REP.seatId, false).isTest, false);
+    assert.equal(territoryForMissedRecordRemoval(viewer(), VACANT.seatId, false).seat.seatId, VACANT.seatId, "a seat the rep has left");
+    assert.equal(territoryForMissedRecordRemoval(viewer(), CLOSED_LINE.seatId, false).seat.seatId, CLOSED_LINE.seatId, "a line closed again");
+    const nobodyElse: Array<[string, Partial<PhoenixCrmViewer>]> = [
+      ["the SFE Manager", { role: "SFE Manager", isSuperAdmin: false, isSfeManager: true }],
+      ["the CEO", { role: "CEO", isSuperAdmin: false }],
+      ["the territory's district manager", { role: "District Manager", isSuperAdmin: false, hrId: "B-12", basis: "tree" }],
+      ["a test account", { isTestPersona: true }],
+      ["a Super Admin whose matrix row cannot update", { canUpdate: false }],
+    ];
+    for (const [who, patch] of nobodyElse) {
+      refused(() => territoryForMissedRecordRemoval(viewer(patch), REP.seatId, false), /Only the Super Admin/, `${who} removes no visit`);
+    }
+
+    // 🔴 WHICH visit may go is the DATABASE's to decide, from the row: his entry and nobody else's, and a
+    // copy of everything before a single row is deleted — production has no point-in-time recovery.
+    const removal = source("supabase/migrations/20261001055833_phoenix_crm_admin_remove_visit.sql");
+    assert.match(
+      removal,
+      /if v_visit\.capture_source <> 'admin' or v_visit\.entered_by_hr_id is distinct from v_actor then\s*raise exception 'phoenix_crm:not_entered_by_you';/,
+      "a rep's own visit, or another person's entry, is refused",
+    );
+    const copyAt = removal.indexOf("insert into public.phoenix_crm_removed_visits");
+    const eventsAt = removal.indexOf("delete from public.phoenix_crm_unplanned_visit_events where visit_id = v_id;");
+    const approvalAt = removal.indexOf("delete from public.phoenix_crm_unplanned_visits where visit_id = v_id;");
+    const visitAt = removal.indexOf("delete from public.phoenix_crm_visits where id = v_id;");
+    assert.ok(copyAt > 0 && copyAt < eventsAt && eventsAt < approvalAt && approvalAt < visitAt, "the copy first, then the children, then the visit");
+    assert.match(removal, /to_jsonb\(v_visit\), v_unplanned, v_events/, "the copy holds the visit, its approval and the approval's events");
+
+    // The service passes the gate first and sends him as the one asking; the route takes it as a record kind.
+    const service = source("src/lib/phoenix-crm/server/missed-records.ts");
+    const remove = service.slice(service.indexOf("export async function removeMissedVisit("));
+    assert.match(remove, /territoryForMissedRecordRemoval\(viewer, body\.seatId, readTestFlag\(body\.test\)\)/);
+    assert.match(remove, /p: \{ visit_id: parsed\.value\.visitId, seat_id: seat\.seatId, actor_hr_id: viewer\.hrId, is_test: isTest \}/);
+    const route = source("app/api/phoenix-crm/missed-records/route.ts");
+    assert.match(route, /if \(body\.record === "remove-visit"\) \{\s*const removed = await removeMissedVisit\(viewer, body\);/);
+
+    // On the day page, on his own entries only.
+    const view = source("src/components/phoenix-crm/day-detail-view.tsx");
+    assert.match(view, /view\.removesEnteredVisits && visit\.enteredByAdmin \? \(\s*<RemoveEnteredVisit/, "Remove is drawn on a visit he entered, and only there");
+    const detail = source("src/lib/phoenix-crm/server/day-detail.ts");
+    assert.match(detail, /removesEnteredVisits: canEnterMissedRecords\(viewer\)/);
   }
 
   console.log("phoenix-crm missed records: OK");

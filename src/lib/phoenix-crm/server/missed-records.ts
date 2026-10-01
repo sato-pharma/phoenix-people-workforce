@@ -24,9 +24,14 @@
 
 import { conflictError, validationError } from "@/lib/http/api-errors";
 import { parseGrade } from "@/lib/phoenix-crm/entry-rules";
-import { isMissedRecordDay, parseMissedActivity, parseMissedVisit } from "@/lib/phoenix-crm/missed-records";
+import { isMissedRecordDay, parseMissedActivity, parseMissedVisit, parseRemoveMissedVisit } from "@/lib/phoenix-crm/missed-records";
 import { territoryReviewer } from "@/lib/phoenix-crm/scope";
-import { readTestFlag, territoryForMissedRecord, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import {
+  readTestFlag,
+  territoryForMissedRecord,
+  territoryForMissedRecordRemoval,
+  type PhoenixCrmViewer,
+} from "@/lib/phoenix-crm/server/access";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { ensureReferenceCustomers, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
@@ -262,4 +267,33 @@ export async function enterMissedActivity(
     },
   });
   return { cleared: false, activity: await loadDayActivityOn(seat.seatId, isTest, entry.activityDate) };
+}
+
+// ── Removing a visit he entered by mistake ──────────────────────────────────────────────────────
+
+/**
+ * Take back a visit the Super Admin entered (owner, 2026-10-01: "add a way to remove a missed visit I
+ * entered by mistake").
+ *
+ * 🔴 ONLY HIS OWN ENTRY, AND THE DATABASE DECIDES IT from the row: phoenix_crm_admin_remove_visit
+ * refuses anything that is not capture_source 'admin' entered by him (`not_entered_by_you`), so a rep's
+ * own visit — his record — can never go through here, whatever the screen sends.
+ *
+ * 🔴 NOTHING IS LOST: the function keeps the visit, its off-plan approval and that approval's events in
+ * phoenix_crm_removed_visits before deleting a row. An off-plan entry already sent to the manager simply
+ * leaves his queue; the notice he was sent stays in his bell, with nothing behind it to open.
+ */
+export async function removeMissedVisit(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ removed: true; visitId: string; visitDate: string }> {
+  const body = record(raw);
+  const { seat, isTest } = territoryForMissedRecordRemoval(viewer, body.seatId, readTestFlag(body.test));
+  const parsed = parseRemoveMissedVisit(body);
+  if (!parsed.ok) throw validationError(parsed.error);
+
+  const result = await callPhoenixCrm<Row>("phoenix_crm_admin_remove_visit", {
+    p: { visit_id: parsed.value.visitId, seat_id: seat.seatId, actor_hr_id: viewer.hrId, is_test: isTest },
+  });
+  return { removed: true, visitId: String(result.visit_id), visitDate: String(result.visit_date) };
 }

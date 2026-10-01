@@ -532,3 +532,17 @@ export function territoryForMissedRecord(
   if (!seat.occupantHrId) throw forbiddenError("This territory has no rep, so there is nobody to enter a record for.");
   return { seat, isTest: test, repHrId: seat.occupantHrId };
 }
+
+/**
+ * The territory a visit the Super Admin ENTERED is removed from (owner, 2026-10-01: "add a way to remove
+ * a missed visit I entered by mistake").
+ *
+ * The Super Admin alone, as for entering one — but WITHOUT the rep-and-open-line conditions: his own
+ * mistake stays his to take back after the rep has left the seat or the line has been closed again.
+ * Which visit may go is the database's to decide from the row itself (phoenix_crm_admin_remove_visit:
+ * capture_source 'admin', and entered by him), so a rep's own visit can never be removed through here.
+ */
+export function territoryForMissedRecordRemoval(viewer: PhoenixCrmViewer, seatId: unknown, test: boolean): TerritoryAccess {
+  if (!canEnterMissedRecords(viewer)) throw forbiddenError("Only the Super Admin removes a visit he entered.");
+  return { seat: territory(viewer, seatId), isTest: test };
+}

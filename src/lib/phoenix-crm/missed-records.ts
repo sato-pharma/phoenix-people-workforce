@@ -153,6 +153,19 @@ export function parseMissedActivity(raw: unknown, visitDay: string): MissedActiv
   return { ok: true, value: { activityDate: body.activityDate, clear: false, draft: draft.value } };
 }
 
+export type RemoveMissedVisitParse = { ok: true; value: { visitId: string } } | { ok: false; error: string };
+
+/**
+ * Which entered visit to remove (owner, 2026-10-01: "add a way to remove a missed visit I entered by
+ * mistake"). The wire names the visit and nothing else: whether it may go — a visit HE entered, never a
+ * rep's own — is phoenix_crm_admin_remove_visit's to decide, from the row itself.
+ */
+export function parseRemoveMissedVisit(raw: unknown): RemoveMissedVisitParse {
+  const body = bodyOf(raw);
+  if (!isUuid(body.visitId)) return { ok: false, error: "Reload the page and try again." };
+  return { ok: true, value: { visitId: String(body.visitId).toLowerCase() } };
+}
+
 function personKey(value: unknown): string {
   return typeof value === "string" ? value.trim().toUpperCase() : "";
 }
