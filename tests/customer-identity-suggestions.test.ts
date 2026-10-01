@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 import {
   betterBand,
+  companyWordOnOneSideOnly,
   identityNameKey,
   identityPairKey,
   isLinkableCandidate,
@@ -426,6 +427,57 @@ export function runCustomerIdentitySuggestionTests(): void {
     /Nothing is recorded until you press a decision yourself/,
     "and the screen says so where the select controls are, so a big selection never reads as a done deal",
   );
+
+  // ── A company word on ONE side of a certain pair ─────────────────────────────────────────────
+  // 🔴 MEASURED, NOT GUESSED, AND THE OBVIOUS VERSION WAS REJECTED. `المتحدةشركة صيدليات عابدين
+  //    فارما` shares one IS account with `صيدلية العروبة - عابدين` in another governorate and
+  //    reached `fact` — the band that skips the name check. The wholesaler guard cannot help: that
+  //    name contains `صيدليات`, which matches the never-store keyword `صيدلية`, so the pharmacy
+  //    protector wins first and BOTH tiers read it clean (measured 2026-10-01). And "the two names
+  //    disagree" fires on 14 of the 27 certain pharmacy pairs, 13 of them plainly one shop — a
+  //    `صيدلية` prefix, a middle name, a branch suffix `ن.م`, a spelling variant — which is worse
+  //    than no warning by the owner's own rule that a false positive costs more than a missed
+  //    catch. The asymmetric company word fired on exactly 1 of the 27.
+  {
+    const chain = candidate({
+      source: "marketing",
+      sourceId: "co-1",
+      kind: "pharmacy",
+      name: "المتحدةشركة صيدليات عابدين فارما",
+      distributorPairs: [{ code: "421516", distributorId: "IS" }],
+    });
+    const shop = candidate({
+      source: "marketing",
+      sourceId: "co-2",
+      kind: "pharmacy",
+      name: "صيدلية العروبة - عابدين",
+      distributorPairs: [{ code: "421516", distributorId: "IS" }],
+    });
+    assert.equal(companyWordOnOneSideOnly(shop, chain), true, "a company word on one side only is what separates a chain from a shop");
+    const judged = judgePair(shop, chain);
+    assert.equal(judged?.band, "fact", "the caution does NOT change the band — the shared code still stands");
+    assert.match(String(judged?.caution), /company/i, "and it carries one sentence of warning for the human");
+
+    // 🔴 IT REFUSES NOTHING, which is the whole difference between this and the hard-blocked tier.
+    const offered = suggestIdentityPairs([shop, chain]);
+    assert.equal(offered.length, 1, "the pair is still offered, never dropped");
+    assert.notEqual(offered[0]?.caution, undefined, "and the caution reaches the screen on the pair itself");
+
+    // Neither side carrying one, and BOTH carrying one, are both silent: the signal is the
+    // ASYMMETRY. Two chains sharing an account are as likely to be one chain as two shops are.
+    const plainA = candidate({ source: "marketing", sourceId: "co-3", kind: "pharmacy", name: "صيدلية النور", distributorPairs: [{ code: "777111", distributorId: "IS" }] });
+    const plainB = candidate({ source: "direct_order", sourceId: "co-4", kind: "pharmacy", name: "صيدلية النور", distributorPairs: [{ code: "777111", distributorId: "IS" }] });
+    assert.equal(companyWordOnOneSideOnly(plainA, plainB), false, "no company word anywhere is nothing to warn about");
+    assert.equal(judgePair(plainA, plainB)?.caution, undefined, "so that pair carries no caution");
+    const chainB = candidate({ source: "direct_order", sourceId: "co-5", kind: "pharmacy", name: "شركة صيدليات النور فارما", distributorPairs: [{ code: "777111", distributorId: "IS" }] });
+    assert.equal(companyWordOnOneSideOnly(chain, chainB), false, "two company names are symmetric — the signal is the asymmetry");
+
+    // The screen shows it beside the band, says it in words, and leaves it out of the one-press
+    // selection (his choice, 2026-10-01) while "Everything on this page" still reaches it.
+    assert.match(workspace, /pair\.band === "fact" && !pair\.caution/, 'a cautioned pair is not swept in by "The certain ones"');
+    assert.match(workspace, /Worth a look/, "and the pair carries a visible chip beside its band");
+    assert.match(workspace, /\{pair\.caution\}/, "with the sentence itself on the row, not only a chip");
+  }
 
   assert.equal(STRONG_METRES, 200, "the strong band is 200 m — measured against the 127 validated links, not tuned");
 

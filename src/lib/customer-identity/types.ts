@@ -96,6 +96,12 @@ export type IdentitySuggestion = {
   pairKey: string;
   /** Why this pair is being offered, in plain words — never a score and never a percentage. */
   reason: string;
+  /**
+   * One sentence of warning that does NOT change the band — or absent when there is nothing to warn
+   * about. It is read by a human and refuses nothing, exactly as `suspectedWholesalerFlag` does on
+   * the validation desk (AGENTS.md §4.1: that tier "only FLAGS, NEVER refuses").
+   */
+  caution?: string;
 };
 
 /**

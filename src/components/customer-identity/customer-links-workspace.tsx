@@ -183,9 +183,15 @@ export function CustomerLinksWorkspace({
    * "The certain ones" is scoped to the `fact` band because that is the band whose evidence needs
    * no judgement — the two rows carry the same contact id or the same code at one distributor. The
    * weaker bands rest on a name, a distance or a brick, and he reads those one at a time.
+   *
+   * 🔴 AND A CAUTIONED PAIR IS LEFT OUT OF IT — his choice on 2026-10-01, put to him with the
+   * measurement that the test fires on exactly 1 of the 27 certain pharmacy pairs. A caution never
+   * changes the band and refuses nothing: the pair is shown, it keeps its Certain chip, and he can
+   * still tick it by hand or with "Everything on this page". What it may not do is ride in on ONE
+   * press, because that press is the whole point of the control and the evidence says look.
    */
   const livePairsOnPage = liveClusters.flatMap((cluster) => cluster.pairs.filter((pair) => !settled.has(pair.pairKey)));
-  const certainPairsOnPage = livePairsOnPage.filter((pair) => pair.band === "fact");
+  const certainPairsOnPage = livePairsOnPage.filter((pair) => pair.band === "fact" && !pair.caution);
 
   return (
     <div className="mx-auto w-full max-w-[1400px] space-y-4 p-3 sm:p-4" dir="auto">
@@ -358,8 +364,20 @@ export function CustomerLinksWorkspace({
                         <span className={`border px-2 py-px text-phx-3xs font-black uppercase tracking-[0.08em] ${BAND_INK[pair.band]}`}>
                           {BAND_LABEL[pair.band]}
                         </span>
+                        {/* Beside the band, never instead of it: the evidence still holds, and this
+                            is the one thing about it worth a second look. */}
+                        {pair.caution ? (
+                          <span className="border border-amber-500 bg-amber-50 px-2 py-px text-phx-3xs font-black uppercase tracking-[0.08em] text-amber-800">
+                            Worth a look
+                          </span>
+                        ) : null}
                         <span className="break-words text-xs font-semibold leading-5 text-slate-600">{pair.reason}</span>
                       </span>
+                      {pair.caution ? (
+                        <span className="mt-1.5 block break-words text-phx-2xs font-semibold leading-4 text-amber-800" dir="auto">
+                          {pair.caution}
+                        </span>
+                      ) : null}
                       <span className="mt-2.5 grid min-w-0 gap-2 md:grid-cols-2">
                         <Side pair={pair} which="left" />
                         <Side pair={pair} which="right" />

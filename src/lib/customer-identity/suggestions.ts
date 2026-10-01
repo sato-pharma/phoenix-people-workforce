@@ -15,6 +15,7 @@
 import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { metresBetween } from "@/lib/crm/location-confidence";
 import { placeNameKey } from "@/lib/geo/arabic-name-key";
+import { matchedStoreKeywords } from "@/lib/sales/customer-channel";
 import { isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 import {
   BAND_ORDER,
@@ -220,7 +221,32 @@ export function isLinkableCandidate(candidate: IdentityCandidate): boolean {
   return !codes.some((pair) => isCertainWholesalerVenue(candidate.name, pair.code, pair.distributorId));
 }
 
-type PairVerdict = { band: EvidenceBand; reason: string } | null;
+type PairVerdict = { band: EvidenceBand; caution?: string; reason: string } | null;
+
+/**
+ * One side reads as a COMPANY and the other does not — a reason to look, never a verdict.
+ *
+ * 🔴 WHY THE WHOLESALER GUARD CANNOT ANSWER THIS. `المتحدةشركة صيدليات عابدين فارما` shares one IS
+ * account with `صيدلية العروبة - عابدين`, in another governorate, and reached `fact` — the band that
+ * skips the name check. Yet BOTH tiers of `wholesaler-venue-guard` read it CLEAN, measured
+ * 2026-10-01: the name contains `صيدليات`, which matches the never-store keyword `صيدلية`, so
+ * `isPharmacyProtectedVenue` wins first and `suspectedWholesalerFlag` returns false even though the
+ * keyword matcher does find `فارما`. That precedence is the owner's own ("pharmacy overrides win
+ * first") and governs the direct-order and marketing flows too, so it is not ours to change here.
+ *
+ * 🔴 AND THE OBVIOUS ALTERNATIVE WAS MEASURED AND REJECTED. "The two names disagree" fires on 14 of
+ * the 27 certain pharmacy pairs, and 13 are plainly one shop — a `صيدلية` prefix, a middle name, a
+ * branch suffix `ن.م`, a spelling variant. A caution that cries wolf 13 times in 14 is worse than
+ * none, by the owner's own rule that a false positive costs more than a missed catch. THIS test
+ * fires on exactly 1 of the 27: the pair above. It asks whether one side carries a company word
+ * (فارما · شركة · تريد · الجمعية · للتجارة) while the other carries none, which is what separates a
+ * shop from the chain that shares its account.
+ */
+export function companyWordOnOneSideOnly(left: IdentityCandidate, right: IdentityCandidate): boolean {
+  const mine = matchedStoreKeywords(left.name).length > 0;
+  const theirs = matchedStoreKeywords(right.name).length > 0;
+  return mine !== theirs;
+}
 
 /**
  * The bands, in the order they are tested — the first one that holds wins, because they are
@@ -236,15 +262,22 @@ export function judgePair(left: IdentityCandidate, right: IdentityCandidate): Pa
   if (!isLinkableCandidate(left) || !isLinkableCandidate(right)) return null;
   if (specialityConflicts(left, right)) return null;
 
+  // The caution rides on `fact` ALONE, because `fact` is the one band that skips the name check —
+  // every band below it already requires the two names to match, so a company word on one side and
+  // not the other cannot arise there.
+  const caution = companyWordOnOneSideOnly(left, right)
+    ? "One side reads as a company, the other as a single shop — a chain can share one account."
+    : undefined;
+
   // FACT — the systems themselves already say it is one row.
   if (left.contactCrmId != null && left.contactCrmId === right.contactCrmId) {
-    return { band: "fact", reason: `Both carry iReports360 contact ${left.contactCrmId}.` };
+    return { band: "fact", caution, reason: `Both carry iReports360 contact ${left.contactCrmId}.` };
   }
   // `sharedProvingDistributorPair`, not `sharedDistributorPair`: EP-PHS issues one code to more than
   // one name at a time, so its code is a reason to look and never the proof. See the constant above.
   const shared = left.kind === "pharmacy" ? sharedProvingDistributorPair(left, right) : null;
   if (shared) {
-    return { band: "fact", reason: `Both carry customer code ${shared.code} at ${shared.distributorId}.` };
+    return { band: "fact", caution, reason: `Both carry customer code ${shared.code} at ${shared.distributorId}.` };
   }
 
   const nameKey = identityNameKey(left.name);
@@ -342,7 +375,15 @@ export function suggestIdentityPairs(
         if (ruledOut.has(pairKey) || found.has(pairKey)) continue;
         const verdict = judgePair(left, right);
         if (!verdict) continue;
-        found.set(pairKey, { band: verdict.band, kind: left.kind, left, pairKey, reason: verdict.reason, right });
+        found.set(pairKey, {
+          band: verdict.band,
+          kind: left.kind,
+          left,
+          pairKey,
+          reason: verdict.reason,
+          right,
+          ...(verdict.caution ? { caution: verdict.caution } : {}),
+        });
       }
     }
   }
