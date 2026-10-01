@@ -257,8 +257,30 @@ export function runAutoloadFootprintBudgetTests() {
     healthy.repoHeadroom < healthy.headroomToBudget,
     "the enforced margin is the smaller of the two whenever the index is under its ceiling",
   );
-  assert.match(text(healthy), /ENFORCED \(what CI grades\)/, "the printed line must label which figure the gate uses");
+  assert.match(
+    text(healthy),
+    /ENFORCED SHARE \(CI grades it on your PR head\)/,
+    "the printed line must label which figure the gate uses — and WHERE it is graded",
+  );
   assert.match(text(healthy), /Budget against THIS/, "and must tell the reader which of the two to trust");
+  // 🔴 AND IT MUST SAY WHICH TREE IT MEASURED. The number comes from the session's own checkout; CI
+  // grades the PR head. In the shared primary that tree is routinely a commit or two behind
+  // `origin/main` — sessions here merge about 46 times a day — so the margin is stale in either
+  // direction, while a tight one reads as a verdict on the merged repository, which it is not.
+  // Measured 2026-10-02: the banner said `125586 of 125600 — 14 bytes left` while `origin/main`
+  // stood at 124819, i.e. 781 bytes of room, because the checkout was ONE commit behind the merge
+  // that had just freed 767 of them by moving an account out of AGENTS.md. A session acting on 14
+  // bytes trims room it already has, undoing the work of the session that freed it.
+  assert.match(
+    text(healthy),
+    /Measured from THIS checkout/,
+    "the enforced margin must say it came from this tree, not from what CI will grade",
+  );
+  assert.match(
+    text(healthy),
+    /git fetch` before acting on a tight one/,
+    "and must name the one action that settles a tight margin",
+  );
 
   // REFUSING TO GUESS. An unmarked part must make the enforced margin UNKNOWN rather than a
   // plausible smaller number: leaving a repo file out of the sum would report MORE room than the
