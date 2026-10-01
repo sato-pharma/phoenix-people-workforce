@@ -42,7 +42,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
-import { cairoStamp, countText, dayLabel, plural, type Tone } from "@/components/phoenix-crm/format";
+import { cairoStamp, countText, plural, weekLabel, type Tone } from "@/components/phoenix-crm/format";
 import { pendingListNote, territoryLine } from "@/components/phoenix-crm/labels";
 import type { CopiedPlacements, SuggestContext } from "@/components/phoenix-crm/plan-copy-menu";
 import { decisionBusy, PlanDecision, type PlanDecisionAction } from "@/components/phoenix-crm/plan-decision";
@@ -942,25 +942,36 @@ export function PlanBoard({
               onChange={chooseWeek}
               options={states.map((state) => {
                 // 🔴 GREYED on the rep's own plan (owner, 2026-10-01): one week at a time. A week ahead
-                // of his is not open yet; a week behind it has passed or was never sent.
+                // of his is not open yet; a week behind it has passed — it keeps the word for what was
+                // sent, and one never sent reads "Closed", never "Not started", which invites a tap.
                 const closed = repBoard && state.week.repState === "closed";
+                const status = closed
+                  ? state.week.weekStart > view.repWeek
+                    ? "Not open yet"
+                    : state.week.status && state.week.status !== "draft"
+                      ? state.week.statusLabel
+                      : "Closed"
+                  : [
+                      state.week.statusLabel,
+                      state.week.plan?.submittedLate ? "sent late" : null,
+                      state.week.overdue ? "overdue" : null,
+                      state.dirty ? "unsaved" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
                 return {
                   value: state.week.weekStart,
                   label: <ChoiceLabel chosen={state.week.weekStart === selected?.week.weekStart}>{state.week.label}</ChoiceLabel>,
                   disabled: closed,
-                  note: closed
-                    ? state.week.weekStart > view.repWeek
-                      ? "Not open yet"
-                      : state.week.statusLabel
-                    : [
-                        state.week.statusLabel,
-                        `due ${dayLabel(state.week.dueOn)}`,
-                        state.week.plan?.submittedLate ? "sent late" : null,
-                        state.week.overdue ? "overdue" : null,
-                        state.dirty ? "unsaved" : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · "),
+                  // The week's own DAYS under its status, never its due date (owner, 2026-10-02: "Week 1 ·
+                  // Not started · Sat 3 Oct – Thu 8 Oct … not Fri 2 Oct"). The due date stays in the week's
+                  // panel, where it is labelled DUE and cannot be read as the week's first day.
+                  note: (
+                    <>
+                      <span className="block">{status}</span>
+                      <span className="block">{weekLabel(state.week.weekStart)}</span>
+                    </>
+                  ),
                 };
               })}
               value={selected?.week.weekStart ?? null}

@@ -177,6 +177,19 @@ export function runPhoenixCrmPlanWeeklyOnlyTests(): void {
     assert.match(board, /\{repBoard \? \([\s\S]*?\) : \(\s*<CrmBlock title="Month">/, "the month chooser is a reviewer's only");
     assert.match(board, /const closed = repBoard && state\.week\.repState === "closed";/, "every week that is not his is greyed");
     assert.match(board, /disabled: closed,/, "greyed means it cannot be pressed");
+    assert.match(
+      board,
+      /\? "Not open yet"\s*: state\.week\.status && state\.week\.status !== "draft"\s*\? state\.week\.statusLabel\s*: "Closed"/,
+      "a greyed week behind his reads what was sent, or Closed — never Not started, which invites a tap",
+    );
+    // Owner, 2026-10-02: "Week 1 · Not started · Sat 3 Oct – Thu 8 Oct … not Fri 2 Oct". A week's button
+    // shows its own days under its status; the due date lives in the week's panel only.
+    assert.match(
+      board,
+      /<span className="block">\{status\}<\/span>\s*<span className="block">\{weekLabel\(state\.week\.weekStart\)\}<\/span>/,
+      "a week's button shows its status, then its own days",
+    );
+    assert.doesNotMatch(board, /`due \$\{dayLabel\(state\.week\.dueOn\)\}`/, "the due date is not on the week's button");
     assert.match(board, /view\.weeks\.find\(\(week\) => week\.weekStart === view\.repWeek\)/, "it opens on his week");
     assert.doesNotMatch(board, /crmPost<[^>]*>\(\s*"\/api\/phoenix-crm\/monthly-plans"/, "it never posts a month send");
     assert.doesNotMatch(board, /action: "reopen"/, "and never takes a week back");

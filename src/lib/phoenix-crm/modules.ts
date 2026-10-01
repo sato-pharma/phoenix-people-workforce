@@ -58,7 +58,7 @@ export type PhoenixCrmModule = {
 export const PHOENIX_CRM_MODULES: readonly PhoenixCrmModule[] = [
   { key: "visits", slug: "visits", label: "Visits", blurb: "Add a visit, and read back the ones you entered today." },
   { key: "list", slug: "list", label: "List", blurb: "Your customers: validate them at the clinic, keep their days and hours, ask to add or drop." },
-  { key: "plan", slug: "plan", label: "Plan", blurb: "Build the month and its weeks, and send them for approval." },
+  { key: "plan", slug: "plan", label: "Plan", blurb: "Plan the coming week day by day, and send it for approval." },
   // 🔴 CNS ONLY (owner, 2026-10-01: "build the daily forecast module in Phoenix ONLY FOR CNS LINE"). It
   // replaces the "Daily forecast" the CNS reps typed into the line's WhatsApp group: the boxes come
   // pre-filled from the month's target, he changes what he disagrees with, and sends. A manager of CNS
