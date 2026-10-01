@@ -191,10 +191,12 @@ async function runAmerQutbRulingTests(): Promise<void> {
     "store",
     "and every screen shows the Elgomhouria account as a store",
   );
-  // 🔴 THE POINT OF THIS KEY IS THAT IT MOVES NOTHING YET. Its only production periods are 2026-01,
-  // 2026-06 and 2026-07, all before the split gate, so no figure changes. It decides the FIRST month
-  // at or after August in which this account sells — pinned here so a later session measuring 0.00
-  // reads it as correct rather than as a broken override.
+  // 🔴 WHAT THIS KEY MOVES CHANGED WITH THE GATE. Its only production periods are 2026-01, 2026-06
+  // and 2026-07; when the gate was 2026-08 all three were before it and the key moved 0.00, which is
+  // what the note here used to pin. Since the owner's 2026-10-02 "FIX JULY" ruling the gate is
+  // 2026-07, so its July CNS row (810.00 on CA4) now divides across Cairo while its January and June
+  // rows still do not. Pinned so a later session reads either figure as correct rather than as a
+  // broken override.
   assert.equal(
     isSplitEligible(
       amerRow({
@@ -271,9 +273,11 @@ async function runAmerQutbRulingTests(): Promise<void> {
 
   // ── the control: earlier months cannot move, because the SPLIT is period-gated ─────────────
   // This customer also has 2026-01, 2026-02 and 2026-07 CNS rows. The override is not dated, so it
-  // re-answers "warehouse?" for them too — and none of them divides, because no month before
-  // 2026-08 splits at all. That gate, not the override, is what keeps published months still.
-  assert.equal(isStoreCitySplitActive("2026-07"), false, "July 2026 never splits, so its 2,409.75 cannot move");
+  // re-answers "warehouse?" for them too — and the GATE, not the override, is what decides which of
+  // them divides. Since the owner's 2026-10-02 "FIX JULY" ruling the gate is 2026-07, so its July
+  // 2,409.75 now divides while January and February still cannot.
+  assert.equal(isStoreCitySplitActive("2026-07"), true, "July 2026 splits since 'FIX JULY', so its 2,409.75 moves");
+  assert.equal(isStoreCitySplitActive("2026-02"), false, "February cannot — it is still before the gate");
   assert.equal(isStoreCitySplitActive("2026-01"), false, "nor January");
   assert.equal(isStoreCitySplitActive("2026-08"), true, "August 2026 does");
 
@@ -365,8 +369,11 @@ async function runAlFatehRulingTests(): Promise<void> {
     "each Gharbia area takes 8,595.00 of the 17,190.00, so Mahalla (D15) gives up 8,595.00 to Tanta (D14)",
   );
 
-  // ── the control: July never splits, so its 50 units stay whole on Mahalla ───────────────────
-  assert.equal(isStoreCitySplitActive("2026-07"), false, "July 2026 never splits, so the July Anti Infective line cannot move");
+  // ── the control moved with the gate: July splits since "FIX JULY", June still does not ──────
+  // Its July Anti Infective 50 units sat whole on Mahalla while the gate was 2026-08; the owner's
+  // 2026-10-02 ruling divides them across Gharbia's two areas like August's. June is the line now.
+  assert.equal(isStoreCitySplitActive("2026-07"), true, "July 2026 splits since 'FIX JULY', so its 50 units divide");
+  assert.equal(isStoreCitySplitActive("2026-06"), false, "June 2026 does not — it keeps what it published");
 
   // ── the two zero-move siblings are stores on every screen, and move nothing today ───────────
   assert.equal(classifyCustomerChannel("الفاتح طنطا", "0001552831", "PS"), "store", "the Tanta account shows as a store");
@@ -472,12 +479,14 @@ async function runBadrRulingTests(): Promise<void> {
     "الرساله فارم already splits in August on the keyword alone",
   );
 
-  // ── the control: the city split itself is gated off before August, so no pre-August line moves ──
-  assert.equal(isStoreCitySplitActive("2026-07"), false, "July 2026 is before the city-split gate, so بدر's July lines cannot move");
+  // ── the control: the city split is gated off before JULY (owner, 2026-10-02 "FIX JULY") ────────
+  assert.equal(isStoreCitySplitActive("2026-06"), false, "June 2026 is before the city-split gate, so بدر's June lines cannot move");
+  assert.equal(isStoreCitySplitActive("2026-07"), true, "July 2026 is on since 'FIX JULY', so بدر's July lines restate too");
   assert.equal(isStoreCitySplitActive("2026-08"), true, "August 2026 is on, which is why بدر restates");
 
-  // ── دار الطب-الفاتح-طنطا (RM|7010216, Gharbia): keyed as a store, but moves 0.00 — its only row is a
-  //    July return, before the gate. The key just governs how it is treated the first time it sells. ──
+  // ── دار الطب-الفاتح-طنطا (RM|7010216, Gharbia): keyed as a store. Its only row is a July return,
+  //    which moved 0.00 while the gate was 2026-08 and now divides across Gharbia since "FIX JULY"
+  //    (owner, 2026-10-02) — a NEGATIVE row splits exactly like a positive one. ──
   assert.ok(isStoreOverride("7010216", "RM"), "دار الطب-الفاتح-طنطا at RM is recognised");
   assert.ok(isStoreOverride("0007010216", " rm "), "padding and casing do not defeat its key");
   assert.ok(!isStoreOverride("7010216", "IS"), "its code is not a licence at another distributor");

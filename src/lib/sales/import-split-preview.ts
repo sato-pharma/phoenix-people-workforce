@@ -127,7 +127,8 @@ function reasonNotSplit(row: StoreSplitRow, period: string, thresholdQty?: numbe
  * What the city split WILL do to this file, computed before a single row is written.
  *
  * `period` decides two separate things and both matter: whether the split runs at all
- * (STORE_CITY_SPLIT_FROM_PERIOD, August 2026) and which warehouse rule says who is a wholesaler
+ * (STORE_CITY_SPLIT_FROM_PERIOD, July 2026 since the owner's 2026-10-02 "FIX JULY" ruling) and
+ * which warehouse rule says who is a wholesaler
  * (warehouseRuleFromPeriod — PER LINE: August for Pedia, September for everything else). A file for
  * a month before either gate is not broken — it simply does not split, and `splitActive` says so
  * rather than leaving the reader to infer it from an empty list.

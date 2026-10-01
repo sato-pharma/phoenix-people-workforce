@@ -2205,6 +2205,7 @@ import { runPhoenixCrmForecastWhatsAppTests } from "./phoenix-crm-forecast-whats
 import { runKpiBoardAgentsTests } from "./kpi-board-agents.test.ts";
 import { runPayrollCopilotSettlementSlotSafetyTests } from "./payroll-copilot-settlement-slot-safety.test.ts";
 import { runPrivateCalendarDoubleVisitDaysTests } from "./private-calendar-double-visit-days.test.ts";
+import { runStoreSplitDriftTests } from "./store-split-drift.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -8236,6 +8237,10 @@ await runTest(
 await runTest(
   "the Private Calendar reads only the days its people are on, whole, and every double and chain visit is the whole-month one (a chain, an ambiguous chain, a reused CRM account, a duplicate save, a lowercase hr id; small scopes only, anything doubtful reads the whole month)",
   runPrivateCalendarDoubleVisitDaysTests,
+);
+await runTest(
+  "the frozen wholesaler split is compared to the rule by VALUE, because both nets total zero units by construction and a units-only check is blind to the whole drift class (a redistribution, a cell on one side only in either direction, a price change that is not drift, float noise, folded duplicates)",
+  runStoreSplitDriftTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

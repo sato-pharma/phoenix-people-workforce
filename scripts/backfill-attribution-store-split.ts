@@ -12,10 +12,16 @@
  * phx_write_monthly_store_split_net replaces a period wholesale, and the computation is a pure
  * function of the closing detail rows.
  *
- * WHICH PERIODS. The store city split itself starts at 2026-08, so anything earlier produces an
- * empty net by construction and is skipped rather than written. Within a period the PER-LINE
- * warehouse gate still applies — Pedia uses the 2026-09 rulings from August, every other line does
- * not until September — and that is decided inside the split, not here.
+ * WHICH PERIODS. The store city split itself starts at `STORE_CITY_SPLIT_FROM_PERIOD` — 2026-07
+ * since the owner's 2026-10-02 "FIX JULY" ruling — so anything earlier produces an empty net by
+ * construction and is skipped rather than written. Within a period the PER-LINE warehouse gate still
+ * applies — Pedia uses the 2026-09 rulings from August, every other line does not until September —
+ * and that is decided inside the split, not here.
+ *
+ * 🔴 A PUBLISHED PERIOD IS REFUSED, SILENTLY-ISH. `phx_write_monthly_store_split_net` returns 0 and
+ * raises a NOTICE (not an error) for any period holding a live `monthly_closing_publications` row —
+ * the freeze of 20260927213000. So running this for July while July is published writes NOTHING and
+ * reports success. Unpublish the period first, then re-stamp the rollup afterwards.
  *
  * 🔴 THIS SCRIPT DOES NOT REFRESH THE ATTRIBUTION ROLLUP. Writing the net changes what
  * au.f_monthly_attribution RETURNS, but au.f_monthly_achievement serves the materialised
