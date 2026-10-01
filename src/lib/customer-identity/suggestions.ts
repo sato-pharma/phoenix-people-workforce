@@ -131,6 +131,49 @@ export function sharesDistributorCode(left: IdentityCandidate, right: IdentityCa
   return sharedDistributorPair(left, right) !== null;
 }
 
+/**
+ * 🔴 EP-PHS ISSUES ONE CODE TO MORE THAN ONE NAME AT A TIME, SO ITS CODE CANNOT BE THE PROOF.
+ *
+ * Measured on production 2026-08-23 across all eight distributors: **232 EP-PHS codes carry two or
+ * three different pharmacy names, 168 of them CONCURRENTLY** — the two names invoicing in overlapping
+ * months, which is the test that separates a real reuse from a rename. Every other distributor came
+ * back clean: PS had 224 multi-name codes and 0 concurrent, IS 108 and 0, EG/IS-S/EP-BK/SF 38 and 0.
+ * So this is one distributor's numbering, not a general caveat, and the set below holds exactly it.
+ *
+ * 🔴 WHAT IS *NOT* ESTABLISHED, because the first write-up of this overstated it and the owner caught
+ * it: whether those concurrent names are two real shops, one shop written two ways, or a bad lookup
+ * in the sheet the importer reads. The address column turned out to be a byte-identical copy of the
+ * name column, so it corroborated nothing. Do not repeat "two different pharmacies on one code" as
+ * fact.
+ *
+ * Either way it disqualifies the `fact` band, and that is the whole point: `fact` means the systems
+ * themselves already say it is one row, and it is the ONE band that skips the name check entirely
+ * (see `judgePair`). On an EP-PHS code that combination offered two unlike names as certain — which
+ * is precisely the shape the owner's standing rule calls worse than a missed catch, because the
+ * Super Admin confirming it would be recording a merge on evidence that says "look", not "yes".
+ *
+ * Such a pair is NOT hidden. It falls through to the name-based bands and stands on its own
+ * evidence — `strong` if the places sit together, `likely` on a shared brick or phone, nothing at all
+ * if the names do not match. Keep this narrow: widening it to another distributor throws away real
+ * evidence, and `sharedDistributorPair` above is deliberately left alone for callers asking the plain
+ * question "do these two share a code?".
+ */
+export const DISTRIBUTORS_WHOSE_CODE_IS_NOT_PROOF: ReadonlySet<string> = new Set(["EP-PHS"]);
+
+/** A shared code that is strong enough to stand as `fact` — every distributor except the set above. */
+export function sharedProvingDistributorPair(
+  left: IdentityCandidate,
+  right: IdentityCandidate,
+): DistributorCodePair | null {
+  for (const mine of distributorPairsOf(left)) {
+    if (DISTRIBUTORS_WHOSE_CODE_IS_NOT_PROOF.has(mine.distributorId.trim().toUpperCase())) continue;
+    for (const theirs of distributorPairsOf(right)) {
+      if (mine.distributorId === theirs.distributorId && mine.code === theirs.code) return mine;
+    }
+  }
+  return null;
+}
+
 /** Trimmed, both halves present, duplicates dropped — the one place a pair is read from a row. */
 function distributorPairsOf(candidate: IdentityCandidate): DistributorCodePair[] {
   const seen = new Set<string>();
@@ -197,7 +240,9 @@ export function judgePair(left: IdentityCandidate, right: IdentityCandidate): Pa
   if (left.contactCrmId != null && left.contactCrmId === right.contactCrmId) {
     return { band: "fact", reason: `Both carry iReports360 contact ${left.contactCrmId}.` };
   }
-  const shared = left.kind === "pharmacy" ? sharedDistributorPair(left, right) : null;
+  // `sharedProvingDistributorPair`, not `sharedDistributorPair`: EP-PHS issues one code to more than
+  // one name at a time, so its code is a reason to look and never the proof. See the constant above.
+  const shared = left.kind === "pharmacy" ? sharedProvingDistributorPair(left, right) : null;
   if (shared) {
     return { band: "fact", reason: `Both carry customer code ${shared.code} at ${shared.distributorId}.` };
   }
