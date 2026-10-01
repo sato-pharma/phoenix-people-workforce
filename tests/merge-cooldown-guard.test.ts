@@ -43,7 +43,15 @@ type Decision = { decision: "allow" | "deny"; reason: string };
  * for anything else — so a hook that started shelling out to gh for something new would be caught
  * here rather than in production.
  */
-function ghShim(dir: string, changedFiles: number | "fail", mergeState?: string): string {
+function ghShim(
+  dir: string,
+  changedFiles: number | "fail",
+  mergeState?: string,
+  // The required checks on the head sha: what C10 falls back to when GitHub answers UNKNOWN for
+  // mergeability. "absent" leaves those four calls failing, which is the world before
+  // 2026-10-01 and must keep every refusal below exactly as it was.
+  checks: "green" | "red" | "absent" = "absent",
+): string {
   const binDir = mkdtempSync(join(dir, "bin-"));
   // A shim given no `mergeState` answers the SIZE question only and exits non-zero for the state
   // one — which is the pre-2026-10-01 world, and is why every refusal below still refuses: an
@@ -55,6 +63,12 @@ function ghShim(dir: string, changedFiles: number | "fail", mergeState?: string)
   // every green PR while the tests passed. Caught 2026-10-01 by replicating the call by hand.
   const [prState = "", statusName = ""] = (mergeState ?? "").split("/");
   const stateJson = `{"state":"${prState}","mergeStateStatus":"${statusName}"}`;
+  // Both required contexts, last-run-wins. "red" fails only the SECOND one, so a shim that
+  // stopped at the first context would read green and the red case below would pass wrongly.
+  const checkRunsJson = JSON.stringify([
+    { name: "validate", status: "completed", conclusion: "success" },
+    { name: "checks", status: "completed", conclusion: checks === "red" ? "failure" : "success" },
+  ]);
   const body =
     changedFiles === "fail"
       ? { sh: "exit 1\n", cmd: "@echo off\r\nexit /b 1\r\n" }
@@ -69,6 +83,14 @@ function ghShim(dir: string, changedFiles: number | "fail", mergeState?: string)
           sh:
             `#!/bin/sh\ncase "$*" in\n  *"pr view"*changedFiles*) echo ${changedFiles} ;;\n` +
             `  *"pr view"*mergeStateStatus*--jq*) exit 1 ;;\n` +
+            // C10 asks these four ONLY when mergeability reads UNKNOWN. Matched before the state
+            // branch so a `pr view --json headRefOid` is never taken for the state query.
+            (checks === "absent"
+              ? ""
+              : `  *nameWithOwner*) echo o/r ;;\n` +
+                `  *required_status_checks*) echo '[\"validate\","checks\"]' ;;\n` +
+                `  *headRefOid*) echo deadbeef ;;\n` +
+                `  *check-runs*) echo '${checkRunsJson}' ;;\n`) +
             (mergeState ? `  *"pr view"*mergeStateStatus*) echo '${stateJson}' ;;\n` : "") +
             `  *) exit 1 ;;\nesac\n`,
           // cmd.exe has no case/esac: branch on whether the arguments mention mergeStateStatus.
@@ -77,7 +99,14 @@ function ghShim(dir: string, changedFiles: number | "fail", mergeState?: string)
           // query with the file count instead of failing — and the fail-closed assertion below then
           // passed against a guard that had been broken open (caught 2026-10-01 by breaking it).
           cmd:
-            `@echo off\r\necho %* | findstr /C:"mergeStateStatus" >nul\r\nif errorlevel 1 (echo ${changedFiles}\r\n  exit /b 0\r\n)\r\n` +
+            `@echo off\r\n` +
+            (checks === "absent"
+              ? ""
+              : `echo %* | findstr /C:\"nameWithOwner\" >nul\r\nif not errorlevel 1 (echo o/r\r\n  exit /b 0\r\n)\r\n` +
+                `echo %* | findstr /C:\"required_status_checks\" >nul\r\nif not errorlevel 1 (echo [\"validate\",\"checks\"]\r\n  exit /b 0\r\n)\r\n` +
+                `echo %* | findstr /C:\"headRefOid\" >nul\r\nif not errorlevel 1 (echo deadbeef\r\n  exit /b 0\r\n)\r\n` +
+                `echo %* | findstr /C:\"check-runs\" >nul\r\nif not errorlevel 1 (echo ${checkRunsJson}\r\n  exit /b 0\r\n)\r\n`) +
+            `echo %* | findstr /C:"mergeStateStatus" >nul\r\nif errorlevel 1 (echo ${changedFiles}\r\n  exit /b 0\r\n)\r\n` +
             `echo %* | findstr /C:"--jq" >nul\r\nif not errorlevel 1 exit /b 1\r\n` +
             (mergeState ? `echo ${stateJson}\r\n` : `exit /b 1\r\n`),
         };
@@ -358,6 +387,46 @@ export function runMergeCooldownGuardTests(): void {
         "allow",
         "an UNKNOWN merge state is asked again: GitHub had not computed mergeability yet, which is not a " +
           "reason to refuse a green PR",
+      );
+    }
+
+    {
+      // 🔴 UNKNOWN THAT STAYS UNKNOWN, WHICH IS THE MEASURED COMMON CASE AND NOT AN EDGE. On
+      // 2026-10-01 twelve merges landed on `main` inside 45 minutes and mergeability read UNKNOWN
+      // for MINUTES at a time, long past the one 1.5s retry above, while `gh pr checks` showed both
+      // required contexts `pass`. Two sessions were refused a green PR in that window and one of
+      // them went looking for the documented stand-down, which is exactly the wrong instinct to
+      // teach. `mergeStateStatus` conflates "the checks passed" with "GitHub has finished its
+      // bookkeeping", and only the first decides whether this PR's run is already paid — so the
+      // hook now reads the required contexts off branch protection and their check-runs on the head.
+      const gh = ghShim(dir, 2, "OPEN/UNKNOWN", "green");
+      assert.equal(
+        runGuard(dir, "gh pr merge 5047 --squash", { ghDir: gh }).decision,
+        "allow",
+        "mergeability stuck at UNKNOWN must not refuse a PR whose required checks have all passed — its PR run is already paid, so refusing saves nothing and only risks the work being rebuilt",
+      );
+    }
+
+    {
+      // And the fallback must not become a way past a RED check. Only the second required context
+      // fails here, so a fallback that stopped at the first would read green and this would pass
+      // against a guard broken open.
+      const gh = ghShim(dir, 2, "OPEN/UNKNOWN", "red");
+      assert.equal(
+        runGuard(dir, "gh pr merge 5047 --squash", { ghDir: gh }).decision,
+        "deny",
+        "a failing required check must still refuse the merge, however UNKNOWN the mergeability reads",
+      );
+    }
+
+    {
+      // Unreadable protection or check-runs keeps TODAY'S REFUSAL rather than failing open — one
+      // `gh` hiccup must not retire the clause, which is the failure a guard cannot report on itself.
+      const gh = ghShim(dir, 2, "OPEN/UNKNOWN", "absent");
+      assert.equal(
+        runGuard(dir, "gh pr merge 5047 --squash", { ghDir: gh }).decision,
+        "deny",
+        "an unreadable required-check list must leave the size refusal exactly as it was",
       );
     }
 
