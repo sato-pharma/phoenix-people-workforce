@@ -166,37 +166,27 @@ export async function runHolidayCalendarOutageGateTests(): Promise<void> {
     );
   }
 
-  // ── Automated Payroll part 2: CRM leave against the balance ledger ───────────────────────────
-  {
-    const recommend = readFileSync("src/lib/automated-payroll/recommend.ts", "utf8");
-    const loader = recommend.slice(
-      recommend.indexOf("async function loadCrmLeaveDatesByCompact"),
-      recommend.indexOf("async function loadV2VacationDatesByCompact"),
-    );
-    assert.ok(loader.length > 0 && loader.length < recommend.length / 4, "the CRM-leave loader slice must find both of its markers");
-    assert.match(
-      loader,
-      /if \(preview\.metadata\?\.holidayCalendarReachable === false \|\| preview\.metadata\?\.holidayConnected === false\) \{\s*throw new PayrollCrmLeaveUnavailableError\(period, "the Egypt national-holiday calendar"\);/,
-      "CRM leave raised on an unconfirmed Eid is written into the leave-balance ledger for good — the step must refuse while the calendar is unreadable",
-    );
-    assert.ok(
-      loader.indexOf("holidayCalendarReachable === false") < loader.indexOf("for (const candidate of preview.reviewCandidates)"),
-      "…and it must refuse BEFORE reading a single candidate, not after building the map",
-    );
-    assert.match(
-      loader,
-      /if \(error instanceof PayrollCrmLeaveUnavailableError\) throw error;/,
-      "the catch must let that refusal through unchanged — relabelling it as a failed CRM read hides the real cause from the run",
-    );
-    // The same two metadata fields the live Field Workforce Compliance engine gates on. Renaming
-    // one there without renaming it here would leave this guard silently reading `undefined`.
-    const fwc = readFileSync("src/lib/field-workforce-compliance/recommendations.ts", "utf8");
-    assert.match(
-      fwc,
-      /metadata\?\.holidayCalendarReachable === false \|\| metadata\?\.holidayConnected === false/,
-      "both readers must gate on the same two metadata fields, so the payroll guard cannot drift into reading a field that no longer exists",
-    );
-  }
+  // ── Automated Payroll part 2: RETIRED 2026-10-01, and deliberately not re-added ──────────────
+  //
+  // This block used to pin the Egypt national-holiday refusal inside `loadCrmLeaveDatesByCompact`
+  // in automated-payroll/recommend.ts: CRM leave raised on an unconfirmed Eid would be written into
+  // the leave-balance ledger for good, so the step had to refuse while the calendar was unreadable.
+  //
+  // That gate protected nothing by the end. The owner made `scripts/import-crm-vacation-backfill.ts`
+  // the ONE path a CRM leave day reaches a balance by (2026-10-01), which left the loader reachable
+  // only from `computeVacationDeductionTotals` — and that was reachable from nothing: no route, cron,
+  // script, step definition or dispatch. The assertions stayed green while guarding a code path no
+  // caller could enter, which is worse than no pin at all: it reads as coverage. The function, both
+  // its loaders and their error class were deleted; git history has them.
+  //
+  // WHERE THE LIVE PROTECTION IS NOW, so this is not re-added as a "missing" gate:
+  //   - the importer's own refusal — `validateOfficialHolidayAdjacency`, driven behaviourally
+  //     against a stubbed outage further up this file;
+  //   - that the importer actually calls it — tests/automated-payroll-crm-leave-one-mechanism.test.ts,
+  //     which also pins that neither recommend.ts nor run-service.ts writes that ledger at all;
+  //   - the Field Workforce engine's own `holidayCalendarReachable` gate, pinned behaviourally with
+  //     positive and negative controls in tests/field-workforce-compliance-eligibility.test.ts
+  //     (which is why the source-regex cross-check that used to sit here was dropped, not moved).
 
   // ── The weekly review's own day: approving a deduction on a day that may be an Eid ───────────
   {

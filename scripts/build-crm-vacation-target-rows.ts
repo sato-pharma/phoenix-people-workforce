@@ -11,8 +11,11 @@
  * So the derivation lives here, in code, reusing the engines that already own each rule rather
  * than restating any of them:
  *
- *   · WHICH DAYS ARE CRM LEAVE — `buildFieldWorkforceCompliancePreviewFromVisitsReport`, the same
- *     source `loadCrmLeaveDatesByCompact` reads in automated payroll. Annual Vacation (-4) maps to
+ *   · WHICH DAYS ARE CRM LEAVE — `buildFieldWorkforceCompliancePreviewFromVisitsReport`, the engine
+ *     automated payroll's own CRM-leave loader used to read (both it and the
+ *     `computeVacationDeductionTotals` above it were deleted on 2026-10-01, once this importer
+ *     became the one path a CRM leave day reaches a balance by and nothing could reach them any
+ *     more — so this script is now that engine's only reader on the leave path). Annual Vacation (-4) maps to
  *     "AV" and surfaces as a `vacation_signal` review candidate. Fridays, future days, ineligible
  *     titles and the public-holiday calendar are already applied there; it REFUSES outright when
  *     the holiday calendar cannot be read, so a holiday can never be mistaken for a working day.

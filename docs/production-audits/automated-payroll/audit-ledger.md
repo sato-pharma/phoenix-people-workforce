@@ -314,10 +314,23 @@ account is a seat the vendor renames to its next occupant), national-holiday adj
 2026-09-16 protection, now sitting in front of the write that actually happens — and overlap
 containment against an existing request.
 
-**The CRM read left the confirm with it.** Nothing downstream consumed
-`computeVacationDeductionTotals`, so leaving the call would have let an unreachable Egypt holiday
-calendar refuse a payroll confirm for no benefit at all. The function is kept, unwired, as the only
-measurement of how many CRM-only leave days a period holds; its three reads still fail closed.
+**The CRM read left the confirm with it, and the function itself followed on 2026-10-01.** Nothing
+downstream consumed `computeVacationDeductionTotals`, so leaving the call would have let an
+unreachable Egypt holiday calendar refuse a payroll confirm for no benefit at all. It was first kept
+unwired, as the only measurement of how many CRM-only leave days a period holds. Re-measured against
+`origin/main` on **2026-10-01** it was reachable from **nothing** — no route, cron, script, step
+definition, barrel re-export, namespace or dynamic import, or string-keyed dispatch — and with it
+died its two Supabase loaders (`loadCrmLeaveDatesByCompact`, `loadV2VacationDatesByCompact`), the
+`PayrollCrmLeaveUnavailableError` class, the `VacationDeductionTotal` type and this file's last
+import of the Field Workforce engine. The whole cluster is **removed**: ~280 lines of
+`recommend.ts`, plus `tests/automated-payroll-crm-leave-fails-closed.test.ts`, whose every
+assertion pinned fail-closed behaviour behind a door no caller could open — green forever, guarding
+nothing, and reading as coverage. The Egypt holiday pin in
+`tests/holiday-calendar-outage-gates.test.ts` went the same way, replaced by a note naming the three
+places the live protection actually sits. Git history holds the function if the September figure
+(**95 CRM-only AV day-rows across 43 people**, measured on production 2026-10-01) is ever wanted on
+a screen; `tests/automated-payroll-reads-deductions-module.test.ts` now asserts, comment-stripped,
+that it does not come back unwired.
 
 ## The ruling on the fourteen — MOOT, resolved 2026-09-12 (cycle 4)
 

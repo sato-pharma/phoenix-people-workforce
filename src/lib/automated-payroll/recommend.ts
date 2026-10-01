@@ -54,15 +54,14 @@ import {
   salarySourceLookupKeys,
   type PayrollSalarySource,
 } from "@/lib/payroll/salary-source-model.ts";
-// The Field Workforce engine is no longer a source of any DEDUCTION figure
-// (owner rule 2026-08-04: the Deductions module is the only source of truth).
-// This one import survives for loadCrmLeaveDatesByCompact, which feeds the leave
-// BALANCE ledger on confirm — leave bookkeeping, not money.
-import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source.ts";
+// The Field Workforce engine is deliberately NOT imported here: it is no longer a source of any
+// DEDUCTION figure (owner rule 2026-08-04 — the Deductions module is the only source of truth),
+// and the last reader of it in this file, the CRM leave-balance measurement, was retired on
+// 2026-10-01 along with its loaders. The banned-call list in
+// tests/automated-payroll-reads-deductions-module.test.ts keeps it out.
 import { crmVisitTypeMeaningStrict } from "@/lib/crm/visit-type-meaning";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { calculatePaymentForRequest } from "@/lib/vacation/service";
 
 import { listPriorMonthHolds } from "./draft-store.ts";
 import { resolveHoldReason } from "./hold-reason.ts";
@@ -570,109 +569,6 @@ function eachDateInclusive(startIso: string, endIso: string): string[] {
   if (!Number.isFinite(ms) || !Number.isFinite(endMs)) return dates;
   for (; ms <= endMs; ms += 86400000) dates.push(new Date(ms).toISOString().slice(0, 10));
   return dates;
-}
-
-/**
- * A failed read on the payroll vacation path: a refusal whose words reach the step, never an empty
- * map. An empty CRM-leave map reads as "nobody took CRM leave this month", which silently books ZERO
- * leave days against the balance ledger — indistinguishable from a real answer. An empty v2-dates
- * map double-counts a day a Phoenix request already covers, and a swallowed balance check prices
- * every CRM leave day as a salary deduction. All three refuse instead.
- */
-export class PayrollCrmLeaveUnavailableError extends Error {
-  constructor(period: PayrollPeriod, what: string) {
-    super(
-      `Conflict: ${what} for ${monthNameAndYear(period.month, period.year)} could not be read, so this payroll run ` +
-        "cannot compute vacation deductions without CRM leave data. Try again in a moment.",
-    );
-    this.name = "PayrollCrmLeaveUnavailableError";
-  }
-}
-
-/**
- * CRM-recorded leave (AV / vacation-signal) dates per employee, reusing the FWC live engine
- * so the visit-type→AV mapping + excuse nuances stay identical to the Field Workforce
- * Compliance report (owner rule 2026-07-20: treat CRM leave as real vacation). Fails closed:
- * a failed read throws PayrollCrmLeaveUnavailableError rather than returning an empty map.
- */
-async function loadCrmLeaveDatesByCompact(period: PayrollPeriod): Promise<Map<string, Set<string>>> {
-  const byCompact = new Map<string, Set<string>>();
-  try {
-    const preview = await buildFieldWorkforceCompliancePreviewFromVisitsReport({
-      month: period.month,
-      year: period.year,
-    });
-    // A Google Calendar outage still returns company and fixed-date public holidays, so the
-    // compliance engine reads an unconfirmed Eid, Islamic New Year, the Prophet's Birthday or
-    // Coptic Easter as an ordinary working day and can raise CRM leave on it. That day is written
-    // into the leave-balance ledger for good and settles to salary once the balance runs out, so
-    // refuse the whole step rather than take a public holiday off someone's balance (owner,
-    // 2026-09-16).
-    if (preview.metadata?.holidayCalendarReachable === false || preview.metadata?.holidayConnected === false) {
-      throw new PayrollCrmLeaveUnavailableError(period, "the Egypt national-holiday calendar");
-    }
-    for (const candidate of preview.reviewCandidates) {
-      if (candidate.type !== "vacation_signal" || !candidate.dateIso) continue;
-      const compact = compactHrKey(candidate.hrId);
-      if (!compact) continue;
-      const dates = byCompact.get(compact) ?? new Set<string>();
-      dates.add(candidate.dateIso);
-      byCompact.set(compact, dates);
-    }
-  } catch (error) {
-    // The holiday-calendar refusal above is already the right answer and already names its cause —
-    // don't relabel it as a failed CRM read.
-    if (error instanceof PayrollCrmLeaveUnavailableError) throw error;
-    logError("Automated payroll: CRM leave load failed — the run cannot compute vacation deductions", {
-      labels: { event: "automated_payroll_crm_leave_load_failed", month: period.month, year: period.year },
-      error,
-    });
-    throw new PayrollCrmLeaveUnavailableError(period, "the CRM leave records");
-  }
-  return byCompact;
-}
-
-/** Approved/pending v2 vacation dates per employee — used to de-dup CRM leave already on Phoenix. */
-async function loadV2VacationDatesByCompact(period: PayrollPeriod): Promise<Map<string, Set<string>>> {
-  const byCompact = new Map<string, Set<string>>();
-  try {
-    const { start, end } = periodBounds(period);
-    const { data, error } = await getSupabaseAdmin()
-      .from("v2_vacation_requests")
-      .select("employee_hr_id,start_date,end_date,status")
-      .in("status", ["approved", "pending_manager"])
-      .lte("start_date", end)
-      .gte("end_date", start);
-    if (error) {
-      logError("Automated payroll: v2 vacation dates load failed", {
-        labels: { event: "automated_payroll_v2_vacation_dates_load_failed", month: period.month, year: period.year },
-        error,
-      });
-      throw new PayrollCrmLeaveUnavailableError(period, "the Phoenix vacation requests");
-    }
-    for (const row of (data ?? []) as Array<{
-      employee_hr_id: string | null;
-      start_date: string | null;
-      end_date: string | null;
-    }>) {
-      const compact = compactHrKey(row.employee_hr_id ?? "");
-      if (!compact || !row.start_date || !row.end_date) continue;
-      const dates = byCompact.get(compact) ?? new Set<string>();
-      for (const date of eachDateInclusive(row.start_date, row.end_date)) {
-        if (date >= start && date <= end) dates.add(date);
-      }
-      byCompact.set(compact, dates);
-    }
-  } catch (error) {
-    // The refusal raised inside the try above is already the answer; only a THROWN read is logged here.
-    if (error instanceof PayrollCrmLeaveUnavailableError) throw error;
-    logError("Automated payroll: v2 vacation dates load threw an exception", {
-      labels: { event: "automated_payroll_v2_vacation_dates_load_threw", month: period.month, year: period.year },
-      error,
-    });
-    throw new PayrollCrmLeaveUnavailableError(period, "the Phoenix vacation requests");
-  }
-  return byCompact;
 }
 
 /**
@@ -1254,181 +1150,6 @@ function expenseRowOutsideRun(trips: PayoutExpenseTrip[]): StepRow {
   };
 }
 
-type VacationDeductionTotal = {
-  v2Days: number;
-  v2Amount: number;
-  crmDays: number;
-  crmUnpaidDays: number;
-  crmAmount: number;
-  /**
-   * CRM leave days the employee's balance absorbed, costing no salary. Surfaced
-   * so a 0-deduction row explains itself: those employees are on this step
-   * because confirming it debits their balance, not because they owe money.
-   */
-  crmBalanceDays: number;
-};
-
-/**
- * Vacation deduction totals for every member (Phoenix v2 unpaid days + CRM-recorded leave,
- * balance-first), with one detail line per CRM leave date.
- *
- * READ-ONLY, AND CURRENTLY CALLED BY NOTHING. It writes no leave-balance row. The owner rule of
- * 2026-07-21 — a vacation day, CRM-sourced or from a formal Phoenix request, subtracts from the
- * balance first and salary only for what the balance cannot cover — is honoured by
- * `scripts/import-crm-vacation-backfill.ts`, which imports each CRM vacation signal as a real
- * Phoenix request in `v2_vacation_requests`. That is the ONE path a CRM leave day reaches a
- * balance by (owner's decision, 2026-10-01). See the note where the settlement write used to
- * live, below.
- *
- * Kept rather than deleted because it is the only measurement of how many CRM-only leave days a
- * period holds and how much of that the balance would cover — the figure that says whether the
- * importer still has work to do for a month (September 2026: 95 CRM-only AV day-rows across 43
- * people, measured on production 2026-10-01). Its three reads still fail CLOSED, pinned by
- * `tests/automated-payroll-crm-leave-fails-closed.test.ts`.
- *
- * DO NOT WIRE IT BACK INTO THE CONFIRM PATH. Nothing downstream consumes the result, so its
- * refusal on an unreadable CRM feed or Egypt holiday calendar would block a payroll confirm for no
- * benefit. Surfacing it on a screen, or retiring it, is a separate change.
- */
-export async function computeVacationDeductionTotals(
-  members: PopulationMember[],
-  sources: Map<string, PayrollSalarySource>,
-  period: PayrollPeriod,
-): Promise<{
-  totals: Map<string, VacationDeductionTotal>;
-  detailsByCompact: Map<string, StepRowDetail[]>;
-}> {
-  const byCompact = new Map(members.map((member) => [member.compact, member]));
-  const totals = new Map<string, VacationDeductionTotal>();
-  const detailsByCompact = new Map<string, StepRowDetail[]>();
-  const ensure = (compact: string) => {
-    const existing =
-      totals.get(compact) ??
-      { v2Days: 0, v2Amount: 0, crmDays: 0, crmUnpaidDays: 0, crmAmount: 0, crmBalanceDays: 0 };
-    totals.set(compact, existing);
-    return existing;
-  };
-  const addDetail = (compact: string, line: StepRowDetail) => {
-    const lines = detailsByCompact.get(compact) ?? [];
-    lines.push(line);
-    detailsByCompact.set(compact, lines);
-  };
-
-  // 1) Phoenix-submitted unpaid vacations (existing v2 balance-aware settlement).
-  const v2Candidates = await listUnpaidVacationCandidates(period);
-  for (const candidate of v2Candidates) {
-    const compact = compactHrKey(candidate.employeeHrId);
-    if (!compact) continue;
-    const entry = ensure(compact);
-    entry.v2Days += Number(candidate.unpaidDays ?? 0);
-    entry.v2Amount += roundCurrency(candidate.salaryDeductionAmount);
-    // Deliberately reports "Covered by Balance" as 0 and deducts the full
-    // salaryDeductionAmount, mirroring what the line above actually adds up.
-    // listUnpaidVacationCandidates only returns requests already carrying
-    // payment_status='unpaid', so the balance question was settled when the
-    // request was classified; its balanceDaysToConsume figure is advice for the
-    // Copilot's separate settle-from-balance workflow, NOT a reduction applied
-    // here. Showing it as coverage would imply a smaller deduction than the row
-    // actually charges.
-    addDetail(compact, {
-      Source: "Phoenix request",
-      Dates: formatDateRange(candidate.startDate, candidate.endDate),
-      Type: candidate.vacationType,
-      Days: roundCurrency(Number(candidate.unpaidDays ?? 0)),
-      "Covered by Balance": 0,
-      "Deducted Days": roundCurrency(Number(candidate.unpaidDays ?? 0)),
-      Deduction: roundCurrency(candidate.salaryDeductionAmount),
-      Basis: "Request already marked unpaid — deducted in full",
-    });
-  }
-
-  // 2) CRM-recorded leave (owner rule 2026-07-20): the balance covers what it can; the
-  //    remainder is a salary deduction. CRM dates already covered by a Phoenix vacation are
-  //    excluded so the same leave day is never counted twice.
-  const [crmLeaveDates, v2Dates] = await Promise.all([
-    loadCrmLeaveDatesByCompact(period),
-    loadV2VacationDatesByCompact(period),
-  ]);
-  for (const [compact, avDates] of crmLeaveDates) {
-    const member = byCompact.get(compact);
-    if (!member) continue;
-    const covered = v2Dates.get(compact);
-    const crmOnly = [...avDates].filter((date) => !covered?.has(date)).sort();
-    if (crmOnly.length === 0) continue;
-
-    let balanceDays = 0;
-    try {
-      const snapshot = await calculatePaymentForRequest({
-        durationDays: crmOnly.length,
-        employeeHrId: member.employee.hrId,
-        // No `excludeSettlementRunId`. That exclusion existed to stop a run reading back the
-        // settlement its OWN previous confirm had written; this step writes no settlement now, so
-        // it has nothing of its own to exclude and the read is simply the live balance. The
-        // parameter is still carried by `balanceSettledDaysInPeriod` in vacation/service.ts for
-        // whoever writes a run-scoped settlement next (the Payroll Copilot) — deliberately left
-        // in place there, with its tests.
-        hireDate: member.employee.hireDate,
-        startDate: crmOnly[0],
-        vacationType: "annual",
-      });
-      balanceDays = Math.max(0, Number(snapshot.balanceBeforeDays ?? 0));
-    } catch (error) {
-      logError("Automated payroll: CRM leave balance check failed", {
-        labels: { event: "automated_payroll_crm_leave_balance_check_failed", hrId: member.employee.hrId },
-        error,
-      });
-      // Swallowing this left balanceDays at 0, which priced every CRM leave day as a salary
-      // deduction and settled the ledger as "salary" — a wrong answer that looks like a real one.
-      throw new PayrollCrmLeaveUnavailableError(
-        period,
-        `the vacation balance of ${member.employee.fullName || member.employee.hrId}`,
-      );
-    }
-    const unpaidDays = Math.max(0, crmOnly.length - balanceDays);
-    const base = roundCurrency(lookupSource(sources, member.employee.hrId)?.baseSalary ?? 0);
-    const amount =
-      unpaidDays > 0
-        ? calculateDeductionAmountFromBaseSalary({
-            baseSalary: base,
-            deductionDays: unpaidDays,
-            month: period.month,
-            year: period.year,
-          }) ?? 0
-        : 0;
-    const entry = ensure(compact);
-    entry.crmDays += crmOnly.length;
-    entry.crmUnpaidDays += unpaidDays;
-    entry.crmAmount += amount;
-    entry.crmBalanceDays += Math.min(Math.floor(balanceDays), crmOnly.length);
-
-    // One line per CRM leave DATE — this is the "which days" the aggregate hides.
-    // crmOnly is already sorted, and the balance is consumed in date order, so
-    // the first `covered` dates are the free ones and the rest are charged. The
-    // charged dates split `amount` exactly (see distributeAmount) so the panel
-    // always foots to the row's Deduction Value.
-    const coveredCount = Math.min(Math.floor(balanceDays), crmOnly.length);
-    const perDeductedDay = distributeAmount(amount, crmOnly.length - coveredCount);
-    crmOnly.forEach((dateIso, index) => {
-      const isCovered = index < coveredCount;
-      addDetail(compact, {
-        Source: "CRM leave",
-        Dates: dateIso,
-        // Annual Vacation (-4) only. Health Day (-15) is working time and no
-        // longer classifies as leave at all, so it never reaches this step —
-        // see src/lib/crm/visit-type-meaning.ts.
-        Type: "Annual vacation",
-        Days: 1,
-        "Covered by Balance": isCovered ? 1 : 0,
-        "Deducted Days": isCovered ? 0 : 1,
-        Deduction: isCovered ? 0 : (perDeductedDay[index - coveredCount] ?? 0),
-        Basis: isCovered ? "Vacation balance covered it" : "Beyond balance — deducted from salary",
-      });
-    });
-  }
-
-  return { detailsByCompact, totals };
-}
-
 /**
  * THE PART 2 VACATION CONFIRM WRITES NO LEAVE-BALANCE ROW, AND MUST NOT BE GIVEN ONE AGAIN.
  *
@@ -1474,12 +1195,15 @@ export async function computeVacationDeductionTotals(
  *
  * THE LEAVE-BALANCE DRAW-DOWN DOES NOT HAPPEN IN THE CONFIRM AT ALL ANY MORE.
  * This paragraph used to say the confirm "still settles CRM-only leave against
- * the balance ledger via computeVacationDeductionTotals inside run-service.ts".
- * That stopped being true on 2026-10-01: the settlement write is REMOVED and
- * `scripts/import-crm-vacation-backfill.ts` is the one path a CRM leave day
- * reaches a balance by (owner's decision). The standing note further down, where
- * that write used to live, carries the account and the reason it must not be
- * rebuilt — DO NOT read this paragraph as evidence a draw-down still runs here.
+ * the balance ledger", through a `computeVacationDeductionTotals` that lived in
+ * this file. That stopped being true on 2026-10-01: the settlement write is
+ * REMOVED, `scripts/import-crm-vacation-backfill.ts` is the one path a CRM leave
+ * day reaches a balance by (owner's decision), and the measurement function left
+ * behind it — which nothing ever called again — was deleted on the same ruling.
+ * Both are recoverable from git history if the figure is ever wanted on a screen.
+ * The standing note further down, where that write used to live, carries the
+ * account and the reason it must not be rebuilt — DO NOT read this paragraph as
+ * evidence a draw-down still runs here.
  *
  * What survives unchanged is the distinction it was drawing: leave BOOKKEEPING is
  * a different question from what salary is deducted, and sourcing the money from
