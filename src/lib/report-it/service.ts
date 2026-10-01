@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canAccess } from "@/lib/auth/permissions";
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -6,7 +8,14 @@ import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 import type { ReportItPayload, ReportItReportRow } from "./types";
 
 // Roles with report_it:export permission OR users listed in report_it_dashboard_access can see all reports.
-export async function canViewAllReports(access: AccessContext): Promise<boolean> {
+//
+// MEMOIZED PER REQUEST (React cache(), 2026-10-01, "slow to transfer between page and page"): the
+// Report It page asks this to choose its view, then listReports asks it again for the same viewer
+// before it reads a row — the same override read and dashboard-access read, twice per open. Both
+// receive the page's request-cached `access` by reference, so the second call is a hit and the
+// answer is the one gate either way. cache() never spans two requests, so a grant or a revocation
+// still reaches the very next one; outside a render (an API route) it is a plain call, as before.
+export const canViewAllReports = cache(async (access: AccessContext): Promise<boolean> => {
   if (await canAccess(access, "report_it", "export")) return true;
   if (!access.hrId) return false;
   const supabase = getSupabaseAdmin();
@@ -16,7 +25,7 @@ export async function canViewAllReports(access: AccessContext): Promise<boolean>
     .eq("hr_id", canonicalHrIdKey(access.hrId) ?? "")
     .maybeSingle();
   return data !== null;
-}
+});
 
 // ─── Submit a new report ────────────────────────────────────────────────────
 

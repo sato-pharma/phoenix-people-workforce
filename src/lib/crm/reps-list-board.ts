@@ -406,10 +406,7 @@ async function assembleBoard(cascade: RepsCascade, month: string | undefined): P
   // The list is found by the rep's HR id, so a rep with no CRM account still gets his list. Gated on
   // the summary counts only — pharmacies included, since a pharmacy-only list is still a list.
   const selectedRep = cascade.selected;
-  const rawList =
-    selectedRep && selectedRep.contactCount + selectedRep.pharmacyCount > 0
-      ? await getRepsListForAgent({ agentCrmId: selectedRep.agentCrmId, hrId: selectedRep.hrId }, cascade.repNameByRepKey)
-      : null;
+  const hasList = Boolean(selectedRep && selectedRep.contactCount + selectedRep.pharmacyCount > 0);
 
   // THE ACTIVITY MUST NEVER TAKE THE CONTACT LIST DOWN WITH IT. The list is this board's whole
   // purpose and it comes from a different mirror; the plan mirror is newer than several
@@ -419,18 +416,23 @@ async function assembleBoard(cascade: RepsCascade, month: string | undefined): P
   //
   // A REP WITH NO CRM ACCOUNT GETS HIS ACTIVITY TOO. The loader reads by the CRM id when there is one
   // and by the HR id only when there is not; with neither it answers unavailable, never "unvisited".
-  let activityIndex: Map<number, RepsListActivity> | null = null;
-  if (rawList && selectedRep && (selectedRep.agentCrmId != null || selectedRep.hrId)) {
-    try {
-      activityIndex = await loadRepsListActivity({
-        agentCrmId: selectedRep.agentCrmId,
-        hrId: selectedRep.hrId,
-        month: activityMonth,
-      });
-    } catch {
-      activityIndex = null;
-    }
-  }
+  //
+  // STARTED BESIDE THE LIST, NOT AFTER IT (2026-10-01, "slow to transfer between page and page"). It
+  // needs the rep and the month, never the list, so waiting for the list made the board as slow as
+  // both added together. It is only ever READ for a board that has a list, exactly as before, and a
+  // failure settles to "unavailable" the moment it happens — so it can never reject unobserved.
+  const activityRead: Promise<Map<number, RepsListActivity> | null> =
+    hasList && selectedRep && (selectedRep.agentCrmId != null || selectedRep.hrId)
+      ? loadRepsListActivity({ agentCrmId: selectedRep.agentCrmId, hrId: selectedRep.hrId, month: activityMonth }).catch(
+          () => null,
+        )
+      : Promise.resolve(null);
+
+  const rawList =
+    hasList && selectedRep
+      ? await getRepsListForAgent({ agentCrmId: selectedRep.agentCrmId, hrId: selectedRep.hrId }, cascade.repNameByRepKey)
+      : null;
+  const activityIndex = rawList ? await activityRead : null;
 
   const list = rawList ? withActivity(rawList, activityIndex) : null;
   const activityUnvisited =

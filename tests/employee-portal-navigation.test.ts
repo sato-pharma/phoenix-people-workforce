@@ -29,6 +29,9 @@ export function runEmployeePortalNavigationTests() {
     .map((filePath) => `${filePath}\n${readFileSync(filePath, "utf8")}`)
     .join("\n");
   const dashboardSource = readFileSync("src/components/employee-portal/employee-portal-dashboard.tsx", "utf8");
+  // Request Support left the dashboard for its own file on 2026-10-01, so the form stops downloading
+  // the dashboard's charts; the assertions that pinned it inside the dashboard now read it here.
+  const supportPageSource = readFileSync("src/components/employee-portal/contact-hr-support-page.tsx", "utf8");
   const layoutSource = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
   const marketingDraftsSource = readFileSync("src/components/employee-portal/marketing-request-drafts.tsx", "utf8");
   const portalPrimitivesSource = readFileSync("src/components/employee-portal/portal-primitives.tsx", "utf8");
@@ -45,15 +48,17 @@ export function runEmployeePortalNavigationTests() {
     "Employee portal source should not contain mojibake in UI text, comments, or fallback strings.",
   );
   assert.doesNotMatch(dashboardSource, /href="#"/, "Employee portal dashboard must not ship dead hash links.");
+  assert.doesNotMatch(supportPageSource, /href="#"/, "Request Support must not ship dead hash links.");
   // Request Support once offered three "desks" whose Email / WhatsApp buttons pointed at placeholder
   // addresses (hr-support@phoenix.local, wa.me/201000000001…) — a rep who tapped one wrote to nobody.
-  // Every request now goes through the tracked form; no placeholder contact may come back.
+  // Every request now goes through the tracked form; no placeholder contact may come back — in its
+  // own file, or back in the dashboard it came from.
   assert.doesNotMatch(
-    dashboardSource,
+    `${dashboardSource}\n${supportPageSource}`,
     /@phoenix\.local|wa\.me\/20100000000/,
     "Request Support must not offer placeholder HR contacts; requests go through the tracked form.",
   );
-  assert.match(dashboardSource, /Loading\.\.\./);
+  assert.match(supportPageSource, /Loading\.\.\./);
   assert.match(layoutSource, /searchMatches/);
   assert.match(layoutSource, /navigateToSearchResult/);
   assert.match(layoutSource, /Search portal pages\.\.\./);

@@ -6,6 +6,7 @@ import {
   PHOENIX_CRM_WEEKLY_PLAN_HREF,
   portalQuickActions,
 } from "../src/lib/employee-portal/portal-quick-actions.ts";
+import { phoenixCrmModulePath } from "../src/lib/phoenix-crm/modules.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -13,8 +14,8 @@ import { stripComments } from "./support/comment-strip.ts";
  * and the top bar should include Add visit and Make weekly plan; Phoenix CRM is the module medical reps
  * use most").
  *
- * The two actions are plain links, `?tab=visits&add=visit` and `?tab=plan&add=week`, and the module's
- * page answers them. Three ways this breaks silently, each pinned below:
+ * The two actions are plain links to the module's own page, `/visits?add=visit` and `/plan?add=week`,
+ * and that page answers them. Three ways this breaks silently, each pinned below:
  *
  *   1. The link names a tab or an ask the page does not read — the rep lands on the page and nothing
  *      opens, which looks exactly like a slow phone.
@@ -32,10 +33,28 @@ export function runPhoenixCrmPortalIntentTests(): void {
   // ── 1. The links name what the page reads ──────────────────────────────────────────────────────
   const visit = new URL(PHOENIX_CRM_ADD_VISIT_HREF, "https://phoenix.local");
   const plan = new URL(PHOENIX_CRM_WEEKLY_PLAN_HREF, "https://phoenix.local");
-  assert.equal(visit.pathname, "/employee-portals/field-crm", "Add visit opens the Phoenix CRM page");
-  assert.equal(plan.pathname, "/employee-portals/field-crm", "Make weekly plan opens the Phoenix CRM page");
-  assert.deepEqual([visit.searchParams.get("tab"), visit.searchParams.get("add")], ["visits", "visit"]);
-  assert.deepEqual([plan.searchParams.get("tab"), plan.searchParams.get("add")], ["plan", "week"]);
+  // The module's OWN page, never the chooser's `?tab=`: the chooser only redirects a `?tab=` to this
+  // same address, so pointing the "+" at it cost every tap a second server round trip.
+  assert.equal(
+    visit.pathname,
+    phoenixCrmModulePath("/employee-portals/field-crm", "visits"),
+    "Add visit opens the Visits module's own page, not the chooser that would only redirect there",
+  );
+  assert.equal(
+    plan.pathname,
+    phoenixCrmModulePath("/employee-portals/field-crm", "plan"),
+    "Make weekly plan opens the Plan module's own page, not the chooser that would only redirect there",
+  );
+  assert.deepEqual([visit.searchParams.get("tab"), visit.searchParams.get("add")], [null, "visit"]);
+  assert.deepEqual([plan.searchParams.get("tab"), plan.searchParams.get("add")], [null, "week"]);
+  const modulePage = source("app/employee-portals/field-crm/[module]/page.tsx");
+  assert.match(modulePage, /initialTab=\{moduleKey\}/, "the module page opens the module its address names");
+  const chooser = source("app/employee-portals/field-crm/page.tsx");
+  assert.match(
+    chooser,
+    /redirect\(`\$\{phoenixCrmModulePath\(PHOENIX_CRM_PORTAL_PATH, tab\)\}\$\{add \? `\?add=\$\{add\}` : ""\}`\)/,
+    "and the chooser still forwards an old `?tab=…&add=…` to that same address, so a saved link keeps working",
+  );
 
   const app = source("src/components/phoenix-crm/phoenix-crm-app.tsx");
   const order = /const TAB_ORDER: readonly TabKey\[\] = \[([^\]]+)\]/.exec(app)?.[1] ?? "";

@@ -498,7 +498,15 @@ export function runPhoenixCrmTodayTests(): void {
     // It is wired in, for the rep and through the one switch.
     assert.ok(centre.includes("<RepTodayPlanPanel plan={repTodayPlan} />"), "the rep's landing page draws it");
     const home = source("app/employee-portals/page.tsx");
-    assert.ok(home.includes("const repTodayPlan = await loadRepTodayPlan(access);"), "and the page loads it");
+    // Loaded BESIDE the home snapshot, not after it (2026-10-01, "slow to transfer between page and
+    // page"): started first, awaited once the snapshot is in. It never rejects, which is what makes
+    // leaving it running safe when the snapshot fails.
+    const started = home.indexOf("const repTodayPlanPromise = loadRepTodayPlan(access);");
+    // The prefix only: the call also carries the rep's picked keycard month (#5005).
+    const snapshot = home.indexOf("snapshot = await getPortalHomeSnapshot(access");
+    assert.ok(started !== -1, "and the page loads it");
+    assert.ok(snapshot !== -1 && started < snapshot, "starting it before the home snapshot is awaited, so the two run together");
+    assert.ok(home.includes("const repTodayPlan = await repTodayPlanPromise;"), "and waiting for it only after");
   }
 
   // ── AM · PM · PHARMACIES — the rule the third chip prints ───────────────────────────────────────

@@ -20,12 +20,31 @@ import {
 import { loadClosingStoreSplitNet } from "@/lib/sales/closing-store-split-net";
 import { applyStoreSplitToMatrix } from "@/lib/sales/store-split-matrix";
 
+/** The pair a store split is read for, trimmed exactly as loadClosingStoreSplit trims its arguments. */
+function storeSplitPairKey(line: string | null | undefined, period: string | null | undefined): string {
+  return `${String(line ?? "").trim()}|${String(period ?? "").trim()}`;
+}
+
 export async function loadMonthlyClosingPartsWithStoreSplit(input?: {
   line?: string | null;
   period?: string | null;
 }): Promise<MonthlyClosingParts> {
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): when the caller names
+  // both the line and the month, the store split is read for that pair beside the closing parts
+  // instead of after them. The parts can still land on another pair — a line or month that is not
+  // available falls back to the first one that is — so the early read is used ONLY when the parts'
+  // own line and month are the pair it was read for; otherwise the split is read for the parts'
+  // pair, exactly as before. The guard keeps an early read nobody uses from surfacing unhandled.
+  const requestedLine = input?.line;
+  const requestedPeriod = input?.period;
+  const earlyNet = requestedLine && requestedPeriod ? loadClosingStoreSplitNet(requestedLine, requestedPeriod) : null;
+  earlyNet?.catch(() => {});
   const parts = await loadMonthlyClosingParts(input);
-  const net = await loadClosingStoreSplitNet(parts.combined.line, parts.combined.period);
+  const earlyNetFits =
+    storeSplitPairKey(requestedLine, requestedPeriod) === storeSplitPairKey(parts.combined.line, parts.combined.period);
+  const net = earlyNet && earlyNetFits
+    ? await earlyNet
+    : await loadClosingStoreSplitNet(parts.combined.line, parts.combined.period);
   if (net.size === 0) return parts;
   return {
     combined: applyStoreSplitToMatrix(parts.combined, net).matrix,

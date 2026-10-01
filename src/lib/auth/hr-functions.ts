@@ -154,7 +154,7 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // (death, hospitalisation, congenital anomaly), suspected medicines, patient outcomes. It is
       // regulatory patient-safety data and has nothing to do with employee concerns, despite a name
       // that reads like a grievance channel. Its `export` action is the read-EVERY-report gate
-      // (canViewAllReports, src/lib/report-it/service.ts:8) and is held by three roles only:
+      // (canViewAllReports in src/lib/report-it/service.ts) and is held by three roles only:
       // Super Admin, CEO, Finance Manager. The retired Talent Acquisition seat never had it, and
       // handing it to HR by composition would have widened a patient-privacy boundary sideways
       // under cover of a rename. If a NAMED person in HR ever needs to see all reports, the

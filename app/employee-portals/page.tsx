@@ -46,6 +46,15 @@ export default async function EmployeePortalsHomePage({ searchParams }: PageProp
     throw error;
   }
 
+  // The rep's day, which replaced the Phoenix CRM Today module (owner, 2026-09-30). It never throws
+  // — a closed line, a missing permission or a failed read all answer null and the panel renders
+  // nothing, because a landing page that fails to paint over one panel is worse than one panel short.
+  //
+  // STARTED BESIDE THE SNAPSHOT, not after it (2026-10-01, "slow to transfer between page and page"):
+  // the two read different things and neither needs the other, so awaiting them in turn made the
+  // landing page as slow as both added together. Never rejecting is what makes it safe to leave
+  // running when the snapshot fails below.
+  const repTodayPlanPromise = loadRepTodayPlan(access);
   const params = (await searchParams) ?? {};
 
   let snapshot;
@@ -64,10 +73,7 @@ export default async function EmployeePortalsHomePage({ searchParams }: PageProp
     );
   }
 
-  // The rep's day, which replaced the Phoenix CRM Today module (owner, 2026-09-30). It never throws
-  // — a closed line, a missing permission or a failed read all answer null and the panel renders
-  // nothing, because a landing page that fails to paint over one panel is worse than one panel short.
-  const repTodayPlan = await loadRepTodayPlan(access);
+  const repTodayPlan = await repTodayPlanPromise;
 
   return <PortalCommandCenter access={access} repTodayPlan={repTodayPlan} snapshot={snapshot} />;
 }

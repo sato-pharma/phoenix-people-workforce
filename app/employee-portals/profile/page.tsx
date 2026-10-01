@@ -76,6 +76,20 @@ export default async function EmployeePortalProfilePage() {
   }
   await assertPermission(access, "employee_profile", "read");
 
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the three sidebar flags
+  // read `access` alone — never the shell data — so they run beside it instead of queueing behind
+  // it. Each settles to false on its own failure, so this can never reject unobserved, and it is
+  // awaited below at the point where it used to be started.
+  const navFlags: Promise<[boolean, boolean, boolean]> = access.hrId
+    ? Promise.all([
+        employeeHasActiveDeviceMapping(access.hrId).catch(() => false),
+        hasInterviewCalendarAccess(access).catch(() => false),
+        // The same gate the portal shell asks, asked again because this page builds its own chrome.
+        // A flag left out here is a sidebar row that disappears the moment the rep opens his profile.
+        phoenixCrmEntryAvailable(access).catch(() => false),
+      ])
+    : Promise.resolve<[boolean, boolean, boolean]>([false, false, false]);
+
   let data: Awaited<ReturnType<typeof getEmployeePortalShellData>> | null = null;
   try {
     data = await getEmployeePortalShellData(access);
@@ -112,15 +126,7 @@ export default async function EmployeePortalProfilePage() {
     .map((part) => part.charAt(0))
     .join("")
     .toUpperCase();
-  const [hasDeviceMapping, sharedInterviewCalendar, phoenixCrm] = access.hrId
-    ? await Promise.all([
-        employeeHasActiveDeviceMapping(access.hrId).catch(() => false),
-        hasInterviewCalendarAccess(access).catch(() => false),
-        // The same gate the portal shell asks, asked again because this page builds its own chrome.
-        // A flag left out here is a sidebar row that disappears the moment the rep opens his profile.
-        phoenixCrmEntryAvailable(access).catch(() => false),
-      ])
-    : ([false, false, false] as [boolean, boolean, boolean]);
+  const [hasDeviceMapping, sharedInterviewCalendar, phoenixCrm] = await navFlags;
   const navVisibility = resolveEmployeePortalNavVisibility(
     employee.roleLabel,
     access.role,

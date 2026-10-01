@@ -33,7 +33,7 @@ import { unstable_cache } from "next/cache";
 
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
-import { loadAchievementCacheStamp } from "@/lib/sales/vs-target";
+import { loadAchievementCacheStamp, shareTokenKeyedRead } from "@/lib/sales/vs-target";
 
 import {
   availableReviewPeriods,
@@ -102,6 +102,13 @@ export function reviewBundleCacheKeyParts(
   return [BUNDLE_CACHE_PREFIX, window.from, window.to, adjustment ?? "-", stamp];
 }
 
+/**
+ * Bundle cache reads in flight, keyed by the full cache key. The key carries the achievement stamp,
+ * so a render arriving after the sales moved never joins a build that began before — see
+ * shareTokenKeyedRead. What is shared is the PACKED string; every caller unpacks its own bundle.
+ */
+const bundleReadsInFlight = new Map<string, Promise<string | null>>();
+
 // ───────────────────────────────── the entry point ─────────────────────────────────
 
 export type BusinessReviewResult = {
@@ -129,20 +136,26 @@ export async function loadBusinessReview(input?: {
   from?: string | null;
   to?: string | null;
 }): Promise<BusinessReviewResult> {
-  const available = await availableReviewPeriods();
+  // READ TOGETHER (2026-10-01, "slow to transfer between page and page"): the month list and the
+  // freshness stamp are two independent reads — the stamp does not depend on the window — and
+  // neither can throw (each answers [] / null on failure), so one round trip's wait instead of two.
+  const [available, stamp] = await Promise.all([availableReviewPeriods(), loadAchievementCacheStamp()]);
   const resolution = resolveReviewWindow(input?.from ?? null, input?.to ?? null, available);
   const { window, adjustment } = resolution;
 
   // No stamp ⇒ build live rather than risk serving a stale attribution. Slow-but-correct.
-  const stamp = await loadAchievementCacheStamp();
   if (!stamp) return { review: await loadReviewBundle(window, adjustment), resolution, available };
 
-  const cached = unstable_cache(
-    async () => packBundle(await loadReviewBundle(window, adjustment)),
-    reviewBundleCacheKeyParts(window, adjustment, stamp),
-    { revalidate: BUNDLE_CACHE_TTL_SECONDS },
+  // SHARED WHILE IN FLIGHT: two viewers opening the same window together join one cache read instead
+  // of each building the whole bundle on a miss. Same key, same builder, same bundle.
+  const keyParts = reviewBundleCacheKeyParts(window, adjustment, stamp);
+  const packed = await shareTokenKeyedRead(bundleReadsInFlight, keyParts, () =>
+    unstable_cache(
+      async () => packBundle(await loadReviewBundle(window, adjustment)),
+      keyParts,
+      { revalidate: BUNDLE_CACHE_TTL_SECONDS },
+    )(),
   );
-  const packed = await cached();
   // null means this window does not fit even compressed, so nothing usable was stored. Build live:
   // correct-but-slow is the right trade against handing the data cache an entry that would take
   // the process down. The null marker itself is cached, so later calls skip straight to here.
@@ -171,11 +184,28 @@ export async function loadBusinessReview(input?: {
 export async function loadReviewConcentration(input: {
   coverage: Pick<ReviewCoverage, "figureWindow">;
   viewer: SourceMaskViewer;
+  /**
+   * The review lines whose rows the caller will read. Omitted = all three, which is what the pack
+   * route and every other existing caller get, unchanged.
+   *
+   * NARROWED TO WHAT THE CALLER KEEPS (2026-10-01, "slow to transfer between page and page"). The
+   * portal's rep, district and narrowed views read `byLine[...]` for their own line(s) and nothing
+   * else, so every other line was one customer-grain RPC per month read only to be thrown away. A
+   * line's rows do not depend on which other lines are read — one RPC per (line, month), masked row
+   * by row — so `byLine` for a requested line is identical either way. `rows`, `periodsWithData` and
+   * `masked` then describe the requested lines only, which is why only a caller reading `byLine`
+   * alone may pass this.
+   */
+  lines?: readonly ReviewLine[];
 }): Promise<ClosingDetailLoad> {
   const periods = input.coverage.figureWindow?.periods ?? [];
+  const wanted = input.lines ? new Set<ReviewLine>(input.lines) : null;
   return loadClosingDetailFacts({
     figurePeriods: periods,
-    lines: REVIEW_LINES.map(({ id }) => ({ lineCode: REVIEW_LINE_CODES[id], officialLine: OFFICIAL_LINE[id] })),
+    lines: REVIEW_LINES.filter(({ id }) => wanted === null || wanted.has(id)).map(({ id }) => ({
+      lineCode: REVIEW_LINE_CODES[id],
+      officialLine: OFFICIAL_LINE[id],
+    })),
     viewer: input.viewer,
   });
 }

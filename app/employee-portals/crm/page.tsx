@@ -62,6 +62,12 @@ async function PortalCrmContent({
   access: AccessContext;
   params: { [key: string]: string | string[] | undefined };
 }) {
+  // STARTED BESIDE THE DATA (2026-10-01, "slow to transfer between page and page"): the cutover
+  // setting reads nothing the scope or the master data reads, and it settles to null on its own
+  // failure, so it can never reject unobserved. It is awaited where it always was, below.
+  const vendorSyncRetiredAtRead = getCrmCutoverSetting()
+    .then((setting) => setting.vendorSyncRetiredAt)
+    .catch(() => null);
   const scope = await resolvePortalCrmScope(access);
   const scopeView = toPortalCrmScopeView(scope, access.role);
 
@@ -121,9 +127,7 @@ async function PortalCrmContent({
   // a Super-Admin-only endpoint, so a field manager must never see it. retiredAt drives the "iReports360
   // was retired" line; an unreadable setting leaves the panel exactly as it would be otherwise.
   const today = todayIso();
-  const vendorSyncRetiredAt = await getCrmCutoverSetting()
-    .then((setting) => setting.vendorSyncRetiredAt)
-    .catch(() => null);
+  const vendorSyncRetiredAt = await vendorSyncRetiredAtRead;
 
   // Remount the client table whenever ANY applied input changes, so its filter inputs re-seed — the
   // same rule the admin hub keys on. Keyed on the page and dates alone, removing a filter chip left the

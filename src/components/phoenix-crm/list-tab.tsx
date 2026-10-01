@@ -38,7 +38,7 @@ import { Plus, Search } from "lucide-react";
 
 import { RepsListTiles } from "@/components/crm/reps-list-board";
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
-import { useCrmGet } from "@/components/phoenix-crm/api";
+import { useCrmGet, type CrmResource } from "@/components/phoenix-crm/api";
 import { CustomerListBoard, CustomerRowAction, type CustomerListVariant } from "@/components/phoenix-crm/customer-list-board";
 import { countText, dayLabel, dayLabelWithYear } from "@/components/phoenix-crm/format";
 import { placeName, territoryLine } from "@/components/phoenix-crm/labels";
@@ -60,7 +60,8 @@ import {
   type ListScreenBase,
   type SavedPlace,
 } from "@/components/phoenix-crm/list-screens";
-import { releaseCapturedPhoto, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
+import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
+import type { CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { PlaceMoveScreen } from "@/components/phoenix-crm/place-move-screen";
 import type { PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card";
@@ -95,6 +96,23 @@ import { cn } from "@/lib/utils";
 /** The parts of the list home, in the order the owner named them (2026-09-29). */
 type HomeSection = "board" | "to_validate" | "your_list" | "outside" | "requests" | "archive" | "timetable";
 type TypeFilter = "all" | PhoenixCrmListType;
+
+/**
+ * The part of the list home on screen: the one he picked, else the one waiting on him, else the board.
+ *
+ * One function for its two readers — ListHome draws the part, and ListTab reads from it when the
+ * board is on screen and so when the board's own request is wanted — so the two can never disagree.
+ */
+function homeSectionFor(view: TerritoryListView, section: HomeSection | null): HomeSection {
+  const pendingCount = view.customers.filter((customer) => customer.section === "to_validate").length;
+  const decidableCount = view.requests.filter((request) => request.status === "pending" && request.canDecide).length;
+  const hasReference = view.reference.length > 0 || pendingCount > 0;
+  // The board is where the list opens (owner, 2026-09-24: "I don't need the My List separated, I need
+  // it in Phoenix CRM"), unless something is actually waiting on the viewer — a validation to finish or
+  // a request to decide outranks a reading view, as it did before the board arrived.
+  const defaultSection: HomeSection = view.canEdit && pendingCount > 0 ? "to_validate" : decidableCount > 0 ? "requests" : "board";
+  return section === "to_validate" && !hasReference ? "board" : (section ?? defaultSection);
+}
 
 /**
  * A visit just saved on a customer who is not validated yet, handed back to this tab's Validate screen
@@ -228,6 +246,20 @@ export function ListTab({
   }
 
   const view = resource.data;
+
+  // 🔴 THE BOARD'S REQUEST LIVES HERE, NOT IN ITS SECTION (2026-10-01, "slow to transfer between page
+  // and page", Phoenix CRM first). It was `useCrmGet` inside BoardSection, which unmounts whenever he
+  // picks another part of the list or opens a customer, so every return to "The list" asked for the
+  // heaviest read in the module all over again. Now it is asked for the first time the board is on
+  // screen and kept for the life of the tab. Nothing it shows goes stale by that: the board is the
+  // iReports360 mirror, and the rows join to `view.customers` at render time, so a save that reloads
+  // the list still reaches the board's buttons at once.
+  const boardOnScreen = view !== null && current.name === "home" && homeSectionFor(view, section) === "board";
+  const [boardWanted, setBoardWanted] = useState(false);
+  // State derived while rendering, never in an effect — the same shape the page uses for its address.
+  if (boardOnScreen && !boardWanted) setBoardWanted(true);
+  const board = useCrmGet<RepsListBoard | null>(boardWanted ? listBoardUrl(seatId, test) : null, "board");
+
   let body: ReactNode;
 
   if (!view) {
@@ -400,6 +432,7 @@ export function ListTab({
       default:
         body = (
           <ListHome
+            board={board}
             cairoToday={cairoToday}
             error={resource.error}
             notice={notice}
@@ -435,6 +468,7 @@ export function ListTab({
 // ── The list's home ─────────────────────────────────────────────────────────────────────────────
 
 function ListHome({
+  board,
   cairoToday,
   error,
   notice,
@@ -456,6 +490,8 @@ function ListHome({
   view,
   weekday,
 }: {
+  /** The board part's request, held by the tab so it survives this home unmounting (see ListTab). */
+  board: CrmResource<RepsListBoard | null>;
   cairoToday: string;
   /** A reload failed while the last list stayed on screen. */
   error: string | null;
@@ -490,11 +526,9 @@ function ListHome({
   const decidable = waiting.filter((request) => request.canDecide);
   const hasReference = view.reference.length > 0 || pending.length > 0;
 
-  // The board is where the list opens (owner, 2026-09-24: "I don't need the My List separated, I need
-  // it in Phoenix CRM"), unless something is actually waiting on the viewer — a validation to finish or
-  // a request to decide outranks a reading view, as it did before the board arrived.
-  const defaultSection: HomeSection = view.canEdit && pending.length > 0 ? "to_validate" : decidable.length > 0 ? "requests" : "board";
-  const current: HomeSection = section === "to_validate" && !hasReference ? "board" : (section ?? defaultSection);
+  // Where the list opens, and why, is `homeSectionFor` — the tab reads the same answer to know when
+  // the board's request is wanted.
+  const current: HomeSection = homeSectionFor(view, section);
 
   const needle = query.trim().toLowerCase();
   const typeMatches = (listType: PhoenixCrmListType) => typeFilter === "all" || typeFilter === listType;
@@ -586,7 +620,7 @@ function ListHome({
         </CrmBlock>
       ) : null}
 
-      {current === "board" ? <BoardSection onRowAction={onRowAction} seatId={seatId} test={test} view={view} /> : null}
+      {current === "board" ? <BoardSection onRowAction={onRowAction} resource={board} view={view} /> : null}
 
       {current === "to_validate" ? (
         <CustomerSection
@@ -695,16 +729,14 @@ function customerMatches(needle: string, customer: ListCustomer): boolean {
  */
 function BoardSection({
   onRowAction,
-  seatId,
-  test,
+  resource,
   view,
 }: {
   onRowAction: (customer: ListCustomer, action: ListRowAction) => void;
-  seatId: string;
-  test: boolean;
+  /** The board's request, held by the tab so it survives this section unmounting (see ListTab). */
+  resource: CrmResource<RepsListBoard | null>;
   view: TerritoryListView;
 }) {
-  const resource = useCrmGet<RepsListBoard | null>(listBoardUrl(seatId, test), "board");
   const board = resource.data;
 
   // The join. A pending customer carries the iReports360 contact id he was minted from, and that is

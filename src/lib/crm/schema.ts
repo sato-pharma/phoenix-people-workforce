@@ -22,21 +22,26 @@ export function isCrmSchemaMissingError(error: unknown): boolean {
   );
 }
 
-/** Cheap head-count probe: is the visits mirror queryable? */
+/** Cheap head probe: is the visits mirror queryable?
+ *
+ * NO COUNT (2026-10-01, "slow to transfer between page and page"): it used to ask `count: "exact"`,
+ * which made every probe a COUNT(*) of the whole mirror — and nothing here reads the number, only
+ * whether the request errored. A one-row HEAD errors, or does not, exactly as the counted one did. */
 export async function isCrmVisitsSchemaReady(): Promise<boolean> {
   const { error } = await getSupabaseAdmin()
     .from(CRM_VISITS_TABLE)
-    .select("id", { count: "exact", head: true })
+    .select("id", { head: true })
     .limit(1);
   return !isCrmSchemaMissingError(error);
 }
 
-/** Cheap head-count probe: is the check-ins mirror queryable? (CRM Integrity correlates
- * visits + check-ins, so it gates on the check-ins table specifically.) */
+/** Cheap head probe: is the check-ins mirror queryable? (CRM Integrity correlates
+ * visits + check-ins, so it gates on the check-ins table specifically.) No COUNT, for the same
+ * reason as the visits probe above. */
 export async function isCrmCheckinsSchemaReady(): Promise<boolean> {
   const { error } = await getSupabaseAdmin()
     .from(CRM_CHECKINS_TABLE)
-    .select("id", { count: "exact", head: true })
+    .select("id", { head: true })
     .limit(1);
   return !isCrmSchemaMissingError(error);
 }

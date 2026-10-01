@@ -33,6 +33,7 @@ import {
   applyRepScope,
   applySeatScope,
   loadReviewPortalScope,
+  mayHoldReviewScope,
 } from "@/lib/business-review/portal-scope";
 import { concentrationForAreas, type ConcentrationFacts } from "@/lib/business-review/concentration";
 import { PackPicker } from "@/components/business-review/pack-picker.client";
@@ -104,6 +105,19 @@ type PageProps = {
 
 export default async function PortalBusinessReviewPage({ searchParams }: PageProps) {
   const access = await resolveAuthenticatedPageAccess();
+  // `from`/`to` are raw request input and are resolved, not trusted — see loadBusinessReview.
+  const params = await searchParams;
+  const reviewWindow = {
+    from: firstSearchParam(params?.from) ?? null,
+    to: firstSearchParam(params?.to) ?? null,
+  };
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the review bundle is
+  // the same for every viewer of a window — it depends on `from`/`to` alone, never on the scope — so
+  // it no longer waits for the seat map. Only for a role that can hold a scope at all: a role the
+  // resolver always refuses never sets off the company-wide read. A viewer refused below never
+  // awaits it, and the guard keeps that rejection, if any, from surfacing unhandled.
+  const reviewLoad = mayHoldReviewScope(access.role) ? loadBusinessReview(reviewWindow) : null;
+  reviewLoad?.catch(() => {});
   const { scope, resolvedAt } = await loadReviewPortalScope({
     hrId: access.hrId,
     sessionRole: access.role,
@@ -124,12 +138,7 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   }
 
   // ONE canonical range call for all three lines and every month in the window — never per scope.
-  // `from`/`to` are raw request input and are resolved, not trusted.
-  const params = await searchParams;
-  const { review, resolution, available } = await loadBusinessReview({
-    from: firstSearchParam(params?.from) ?? null,
-    to: firstSearchParam(params?.to) ?? null,
-  });
+  const { review, resolution, available } = await (reviewLoad ?? loadBusinessReview(reviewWindow));
   const window = resolution.window;
   const coverage = review.coverage;
   // The span the figures ANSWER, which is the requested window minus any month whose distributor
@@ -183,7 +192,8 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
     // leaves the rest of his page correct.
     let repConcentration: ConcentrationFacts | null = null;
     try {
-      const detail = await loadReviewConcentration({ coverage, viewer: access });
+      // His own line only: `byLine` for that line is all this reads (2026-10-01, speed).
+      const detail = await loadReviewConcentration({ coverage, viewer: access, lines: [scope.line] });
       repConcentration = concentrationForAreas(
         detail.byLine[REVIEW_LINE_CODES[scope.line]] ?? [],
         mine.areas.map((a) => a.areaCode),
@@ -312,7 +322,8 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
     let narrowedConcentration: ConcentrationFacts | null = null;
     try {
       if (needsClosingDetail(metrics)) {
-        const detail = await loadReviewConcentration({ coverage, viewer: access });
+        // The filtered lines only: `byLine` for those is all this reads (2026-10-01, speed).
+        const detail = await loadReviewConcentration({ coverage, viewer: access, lines: filter.lines });
         const rows = filter.lines.flatMap((line) => detail.byLine[REVIEW_LINE_CODES[line]] ?? []);
         narrowedConcentration = concentrationForAreas(rows, fAreas.map((a) => a.areaCode));
       }
@@ -510,7 +521,8 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   let concentration: ConcentrationFacts | null = null;
   try {
     if (needsClosingDetail(metrics)) {
-      const detail = await loadReviewConcentration({ coverage, viewer: access });
+      // This district's line only: `byLine` for that line is all this reads (2026-10-01, speed).
+      const detail = await loadReviewConcentration({ coverage, viewer: access, lines: [scope.line] });
       concentration = concentrationForAreas(
         detail.byLine[REVIEW_LINE_CODES[scope.line]] ?? [],
         areas.map((area) => area.areaCode),

@@ -460,6 +460,40 @@ async function loadAchievementRangeUncached(from: string, to: string): Promise<A
 }
 
 /**
+ * Concurrent reads of ONE token-keyed cache entry share a single run of `read`.
+ *
+ * `unstable_cache` does not dedupe a MISS: every caller that arrives before the first one has written
+ * the entry runs the callback itself, so two portal pages rendering the same cold month paid the same
+ * ~870 ms achievement read twice (2026-10-01, "slow to transfer between page and page"). This is the
+ * keyed form of `singleFlight` (utils/single-flight.ts), which holds one slot: here it is one slot per
+ * cache key, dropped the moment its run settles — resolved OR rejected — so it holds nothing
+ * afterwards, is never a cache, and a failure reaches only the callers already waiting on it.
+ *
+ * Only for entries whose key carries the freshness token (the achievement stamp): a caller that
+ * arrives after the data moved gets a different token, so a different key, and never joins a run that
+ * began against the old data. Share a PACKED value and unpack it per caller, so no two callers ever
+ * hold the same row objects.
+ */
+export function shareTokenKeyedRead<T>(
+  flights: Map<string, Promise<T>>,
+  keyParts: readonly string[],
+  read: () => Promise<T>,
+): Promise<T> {
+  const key = JSON.stringify(keyParts);
+  const pending = flights.get(key);
+  if (pending) return pending;
+  // A synchronous throw becomes a rejection of the shared run, exactly as in singleFlight.
+  const started: Promise<T> = new Promise<T>((resolve) => resolve(read())).finally(() => {
+    if (flights.get(key) === started) flights.delete(key);
+  });
+  flights.set(key, started);
+  return started;
+}
+
+/** In-flight month reads, keyed by the full cache key — see shareTokenKeyedRead. */
+const achievementMonthReadsInFlight = new Map<string, Promise<string | null>>();
+
+/**
  * ONE month, from the cross-request cache, computed live only on a miss.
  *
  * The token in the key is the entire invalidation story — see loadAchievementCacheStamp. A null
@@ -467,14 +501,21 @@ async function loadAchievementRangeUncached(from: string, to: string): Promise<A
  * cache an entry that would take the dev server down; that null marker is itself cached for the
  * epoch, so the next caller skips straight to the live read instead of re-compressing a payload
  * already known not to fit.
+ *
+ * SHARED WHILE IN FLIGHT (2026-10-01, "slow to transfer between page and page"): concurrent callers
+ * asking for the same month under the same token join one cache read — see shareTokenKeyedRead. The
+ * key, the function and therefore every row are exactly what each caller would have read alone; each
+ * caller still unpacks its own copy of the rows.
  */
 async function loadAchievementMonth(period: string, token: string): Promise<AchievementRow[]> {
-  const cached = unstable_cache(
-    async () => packAchievementRows(await loadAchievementRangeUncached(period, period)),
-    achievementMonthCacheKeyParts(period, token),
-    { revalidate: ACHIEVEMENT_MONTH_CACHE_TTL_SECONDS },
+  const keyParts = achievementMonthCacheKeyParts(period, token);
+  const packed = await shareTokenKeyedRead(achievementMonthReadsInFlight, keyParts, () =>
+    unstable_cache(
+      async () => packAchievementRows(await loadAchievementRangeUncached(period, period)),
+      keyParts,
+      { revalidate: ACHIEVEMENT_MONTH_CACHE_TTL_SECONDS },
+    )(),
   );
-  const packed = await cached();
   if (packed === null) return loadAchievementRangeUncached(period, period);
   return unpackAchievementRows(packed);
 }

@@ -792,11 +792,63 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     isTest ? Promise.resolve(null) : loadReadiness([seat.seatId]),
   ]);
 
-  const names = await loadPeopleNames([
-    ...territoryPeople(viewer.org, [seat]),
-    ...requestPeople(requestRows),
-    ...customers.map((row) => text(row.validated_by_hr_id)),
-    reference[0]?.source_hr_id ?? null,
+  // 🔴 WHO ELSE CARRIES THESE CUSTOMERS (owner, 2026-09-30: "if a doctor is shared between this rep
+  // and another rep, it was highlighted"). Answered against the iReports360 roster, because only a
+  // company-wide read can see the other rep's row — Phoenix CRM's own tables hold one territory.
+  //
+  // It NEVER takes the List down with it. A vacant territory has no rep to compare against, a test
+  // world has no iReports360 rows at all, and the mirror can be missing entirely on a fresh
+  // environment; every one of those is an ordinary answer of "nobody", not a failure to report. A
+  // highlight is a nicety; the list itself is the page.
+  //
+  // 🔴 STARTED HERE, BESIDE THE NAMES AND THE BRICK NAMES, NOT AFTER THEM (2026-10-01, "slow to
+  // transfer between page and page", Phoenix CRM first). All three need only what the wave above
+  // answered — the mirror reads the reference contact behind each customer and the seat's occupant —
+  // so awaiting them in turn made the List as slow as the three added together. The keys are the
+  // same set as before; the order they are read in changes nothing, since every answer is per contact.
+  const sharedKeys = customers
+    .map((row) => numberOrNull(row.reference_contact_crm_id))
+    .filter((id): id is number => typeof id === "number");
+  // `occupantHrId`, not `repHrId` — OrgSeat has no such field, and reading one that does not exist
+  // made this whole block silently unreachable: no sharing, no check-in point, and no error to see.
+  // NOT gated on `isTest`. Both reads key on the REAL iReports360 contact behind a customer
+  // (`referenceContactCrmId`) and on the seat's real occupant, so they answer the same in a test
+  // world as in the real one — and gating them out made the whole feature invisible to the one
+  // account it would be tried on, since a TEST- login always reads as the test world.
+  //
+  // 🔴 AND WHERE EACH DOCTOR ACTUALLY IS, averaged from the check-ins the reps have already taken on
+  // him (owner, 2026-09-30). Both questions are answered against the same mirror, so they are asked
+  // together rather than one page load apart.
+  // 🔴 AND WHEN HE IS USUALLY PLANNED, off the same mirror (owner, 2026-09-30: "based on the
+  // reference weekly plans from iReports360, tell him you are visiting this doctor Sunday and Tuesday
+  // in the first and the fourth week"). Four months of plan dates: long enough that a week-4-only
+  // doctor has had chances to appear, short enough that a pattern abandoned in the spring is not read
+  // back to him as current.
+  const occupantHrId = seat.occupantHrId;
+  const mirrorReads =
+    occupantHrId && sharedKeys.length > 0
+      ? Promise.all([
+          loadSharedCustomersFor(sharedKeys, occupantHrId),
+          loadObservedPointsFor(sharedKeys),
+          loadPlanDatesFor(sharedKeys, monthsBack(viewer.cairoToday, PLAN_PATTERN_MONTHS)),
+          loadVisitHistoryFor(sharedKeys),
+        ])
+      : null;
+  // Handled the moment it starts, because it is awaited only once the names are in: a failure landing
+  // while they load would otherwise be an UNHANDLED rejection. The `await` below still receives it,
+  // and logs it exactly as before.
+  mirrorReads?.catch(() => undefined);
+
+  const [names, referenceBrickMeta] = await Promise.all([
+    loadPeopleNames([
+      ...territoryPeople(viewer.org, [seat]),
+      ...requestPeople(requestRows),
+      ...customers.map((row) => text(row.validated_by_hr_id)),
+      reference[0]?.source_hr_id ?? null,
+    ]),
+    // The name and area of every brick iReports360 carries a reference customer in — so a pending
+    // customer groups under his known brick rather than an amber "not yet mapped" heading.
+    loadBrickNames(reference.map((row) => row.brick_id).filter((brickId): brickId is string => Boolean(brickId))),
   ]);
   const requests = requestRows.map((row) => {
     const request = mapRequestRow(row, names);
@@ -816,11 +868,6 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   }
 
   const referenceByContact = new Map(reference.map((row) => [Number(row.contact_crm_id), row]));
-  // The name and area of every brick iReports360 carries a reference customer in — so a pending
-  // customer groups under his known brick rather than an amber "not yet mapped" heading.
-  const referenceBrickMeta = await loadBrickNames(
-    reference.map((row) => row.brick_id).filter((brickId): brickId is string => Boolean(brickId)),
-  );
 
   const listCustomers: ListCustomer[] = customers.map((row) => {
     const customerId = String(row.id);
@@ -892,39 +939,10 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   });
   listCustomers.sort((left, right) => left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name));
 
-  // 🔴 WHO ELSE CARRIES THESE CUSTOMERS (owner, 2026-09-30: "if a doctor is shared between this rep
-  // and another rep, it was highlighted"). Answered against the iReports360 roster, because only a
-  // company-wide read can see the other rep's row — Phoenix CRM's own tables hold one territory.
-  //
-  // It NEVER takes the List down with it. A vacant territory has no rep to compare against, a test
-  // world has no iReports360 rows at all, and the mirror can be missing entirely on a fresh
-  // environment; every one of those is an ordinary answer of "nobody", not a failure to report. A
-  // highlight is a nicety; the list itself is the page.
-  const sharedKeys = listCustomers
-    .map((customer) => customer.referenceContactCrmId)
-    .filter((id): id is number => typeof id === "number");
-  // `occupantHrId`, not `repHrId` — OrgSeat has no such field, and reading one that does not exist
-  // made this whole block silently unreachable: no sharing, no check-in point, and no error to see.
-  // NOT gated on `isTest`. Both reads key on the REAL iReports360 contact behind a customer
-  // (`referenceContactCrmId`) and on the seat's real occupant, so they answer the same in a test
-  // world as in the real one — and gating them out made the whole feature invisible to the one
-  // account it would be tried on, since a TEST- login always reads as the test world.
-  if (seat.occupantHrId && sharedKeys.length > 0) {
+  // The mirror reads started beside the names above; a highlight they cannot give leaves the list whole.
+  if (mirrorReads) {
     try {
-      // 🔴 AND WHERE EACH DOCTOR ACTUALLY IS, averaged from the check-ins the reps have already
-      // taken on him (owner, 2026-09-30). Both questions are answered against the same mirror, so
-      // they are asked together rather than one page load apart.
-      // 🔴 AND WHEN HE IS USUALLY PLANNED, off the same mirror (owner, 2026-09-30: "based on the
-      // reference weekly plans from iReports360, tell him you are visiting this doctor Sunday and
-      // Tuesday in the first and the fourth week"). Four months of plan dates: long enough that a
-      // week-4-only doctor has had chances to appear, short enough that a pattern abandoned in the
-      // spring is not read back to him as current.
-      const [sharedByContact, observedByContact, planDatesByContact, historyByContact] = await Promise.all([
-        loadSharedCustomersFor(sharedKeys, seat.occupantHrId),
-        loadObservedPointsFor(sharedKeys),
-        loadPlanDatesFor(sharedKeys, monthsBack(viewer.cairoToday, PLAN_PATTERN_MONTHS)),
-        loadVisitHistoryFor(sharedKeys),
-      ]);
+      const [sharedByContact, observedByContact, planDatesByContact, historyByContact] = await mirrorReads;
       for (const customer of listCustomers) {
         if (customer.referenceContactCrmId === null) continue;
         const shared = sharedByContact.get(customer.referenceContactCrmId) ?? null;

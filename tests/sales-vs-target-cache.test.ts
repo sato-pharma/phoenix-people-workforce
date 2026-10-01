@@ -7,6 +7,7 @@ import {
   achievementMonthCacheKeyParts,
   achievementPeriodsInRange,
   packAchievementRows,
+  shareTokenKeyedRead,
   unpackAchievementRows,
 } from "../src/lib/sales/vs-target.ts";
 import type { AchievementRow } from "../src/lib/sales/monthly-targets.ts";
@@ -322,5 +323,60 @@ export async function runSalesVsTargetCacheTests() {
   assert.equal(clamped.length, 24, "the fan-out must stay clamped at ACHIEVEMENT_MAX_MONTHS");
   for (const period of [...ninePeriods, ...clamped]) {
     assert.match(period, /^\d{4}-\d{2}$/, "every fetch window must be a single YYYY-MM month");
+  }
+
+  // 19. Concurrent misses of ONE key share a single run, and the slot holds nothing once it settles
+  //     (2026-10-01, "slow to transfer between page and page"). `unstable_cache` does not dedupe a
+  //     miss, so two pages rendering the same cold month each paid the ~870 ms read. The sharing is
+  //     safe only because the key carries the freshness token (test 1) and the slot is dropped the
+  //     moment its run settles — so it can never become a second cache with its own staleness.
+  {
+    const flights = new Map<string, Promise<string>>();
+    let runs = 0;
+    let release: (value: string) => void = () => undefined;
+    const slow = () => {
+      runs += 1;
+      return new Promise<string>((resolve) => {
+        release = resolve;
+      });
+    };
+    const keyA = achievementMonthCacheKeyParts("2026-09", "tok-1");
+    const first = shareTokenKeyedRead(flights, keyA, slow);
+    const second = shareTokenKeyedRead(flights, keyA, slow);
+    assert.equal(runs, 1, "two concurrent callers of one key run the read ONCE");
+    assert.equal(first, second, "and wait on the same run");
+    const otherToken = shareTokenKeyedRead(flights, achievementMonthCacheKeyParts("2026-09", "tok-2"), () => Promise.resolve("fresh"));
+    assert.equal(runs, 1, "a different freshness token is a different key — it never joins a run begun against older data");
+    release("packed-rows");
+    assert.deepEqual(await Promise.all([first, second, otherToken]), ["packed-rows", "packed-rows", "fresh"]);
+    assert.equal(flights.size, 0, "a settled run leaves nothing behind: the slot is not a cache");
+    let laterRuns = 0;
+    const later = await shareTokenKeyedRead(flights, keyA, () => {
+      laterRuns += 1;
+      return Promise.resolve("again");
+    });
+    assert.equal(later, "again");
+    assert.equal(laterRuns, 1, "and the next caller after it settles runs its own read, never the old answer");
+
+    // A failure reaches only the callers already waiting on it, and is not remembered.
+    let failures = 0;
+    const failing = () => {
+      failures += 1;
+      return Promise.reject(new Error("db down"));
+    };
+    const waitingA = shareTokenKeyedRead(flights, keyA, failing);
+    const waitingB = shareTokenKeyedRead(flights, keyA, failing);
+    await assert.rejects(waitingA, /db down/);
+    await assert.rejects(waitingB, /db down/);
+    assert.equal(failures, 1, "the failing run was shared, not repeated per caller");
+    assert.equal(flights.size, 0, "and a REJECTED run is dropped too, so the next caller retries");
+    assert.equal(await shareTokenKeyedRead(flights, keyA, () => Promise.resolve("recovered")), "recovered");
+
+    // A read that throws synchronously becomes a rejection of the shared run, never an escape.
+    const throwing = shareTokenKeyedRead(flights, keyA, () => {
+      throw new Error("threw before awaiting");
+    });
+    await assert.rejects(throwing, /threw before awaiting/);
+    assert.equal(flights.size, 0, "and leaves no slot behind");
   }
 }

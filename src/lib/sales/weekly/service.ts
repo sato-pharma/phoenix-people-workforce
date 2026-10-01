@@ -67,6 +67,14 @@ import type {
 import { weeklyUnitViewProduct, weeklyWeekKey, weeklyZeroSalesBranches } from "@/lib/sales/weekly/unit-totals";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { asyncPool } from "@/lib/utils/async-pool";
+
+/**
+ * How many 100-batch chunks of weekly_sales_rows are walked at once in loadWeeklyDashboard. Each
+ * chunk is still a serial keyset walk; four keep the PostgREST pool as calm as the other bounded
+ * fan-outs in sales. asyncPool clamps it to one in development.
+ */
+const WEEKLY_ROW_CHUNK_CONCURRENCY = 4;
 
 // ── distributor dropdown (only distributors with a registered weekly template) ─────────────────
 
@@ -1033,6 +1041,13 @@ export async function loadWeeklyDashboard(filters: {
   const accessScope = requireWeeklyAccessScope(filters?.accessScope);
   const supabase = getSupabaseAdmin();
 
+  // STARTED HERE, READ BELOW (2026-10-01, "slow to transfer between page and page"): the Product
+  // Master behind the live price sync depends on nothing this function reads, so it runs beside the
+  // batch list and the row fetch instead of after them. Consumed exactly where it always was, inside
+  // the same best-effort try; the guard only keeps an early empty answer from leaving it unhandled.
+  const liveReferenceLoad = loadSalesReferenceData({ includeCustomerBricks: false });
+  liveReferenceLoad.catch(() => {});
+
   // Validated batches — ordered newest-first; limit to 200 in the common case (200 ÷ 8 distributors
   // ≈ 25 weeks of dropdown history). allWeeks skips the limit so the full history stays available.
   let batchQuery = supabase
@@ -1283,9 +1298,18 @@ export async function loadWeeklyDashboard(filters: {
   // all weekly_sales_rows DB time). Keyset lets the PK index scan resume where the previous page
   // ended and stop after pageSize matches: ~2.4ms/page, identical rows in the identical id order.
   // The exact row count is gone with it — it only ever drove the OFFSET math.
+  //
+  // CHUNKS WALKED FOUR AT A TIME (2026-10-01, "slow to transfer between page and page"), where they
+  // used to go one after another. Each chunk still pages by keyset inside itself, and the chunks'
+  // rows are joined back in CHUNK order — asyncPool keeps input order — so `allRows` holds the
+  // identical rows in the identical order the one-by-one walk produced, which is what de-cumulation
+  // and every figure below read. Serial in development, by asyncPool's own clamp.
   let totalPagesFetched = 0;
-  for (let bi = 0; bi < batchIdsForRows.length; bi += 100) {
-    const batchIdBatch = batchIdsForRows.slice(bi, bi + 100);
+  const batchIdChunks: string[][] = [];
+  for (let bi = 0; bi < batchIdsForRows.length; bi += 100) batchIdChunks.push(batchIdsForRows.slice(bi, bi + 100));
+  const chunkResults = await asyncPool(WEEKLY_ROW_CHUNK_CONCURRENCY, batchIdChunks, async (batchIdBatch) => {
+    const chunkRows: FactRow[] = [];
+    let chunkPages = 0;
     let cursor: number | null = null;
     for (;;) {
       let q = supabase
@@ -1300,10 +1324,10 @@ export async function loadWeeklyDashboard(filters: {
       const page = await q;
       if (page.error) throw new SalesWorkflowError("load_failed", page.error.message, 500);
       const rows = page.data ?? [];
-      totalPagesFetched += 1;
+      chunkPages += 1;
       for (const row of rows) {
         if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
-        allRows.push({
+        chunkRows.push({
           batchId: String(row.batch_id ?? ""),
           weekStart: String(row.week_start ?? ""),
           cycleMonth: String(row.cycle_month ?? ""),
@@ -1327,6 +1351,11 @@ export async function loadWeeklyDashboard(filters: {
       if (rows.length < pageSize) break; // short page ⇒ chunk exhausted
       cursor = Number(rows[rows.length - 1].id); // advance by last FETCHED id (before validIds filter)
     }
+    return { rows: chunkRows, pages: chunkPages };
+  });
+  for (const chunk of chunkResults) {
+    for (const row of chunk.rows) allRows.push(row);
+    totalPagesFetched += chunk.pages;
   }
   console.info(JSON.stringify({
     event: "weekly_sales_rows_fetch",
@@ -1351,7 +1380,7 @@ export async function loadWeeklyDashboard(filters: {
   // "DO" is shared by both Dopaminict and Dolabactin, so grouping on it would merge two families.
   const familyByCode = new Map<string, string>();
   try {
-    const reference = await loadSalesReferenceData({ includeCustomerBricks: false });
+    const reference = await liveReferenceLoad;
     priceMap = livePriceMap(reference.products);
     for (const masterProduct of reference.products) {
       const code = normalizeCode(masterProduct.productCode);

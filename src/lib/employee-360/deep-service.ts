@@ -1444,7 +1444,7 @@ export async function getEmployee360Profile(
     pmSalesFamilies.length > 0
       ? getEmployeeSalesByFamilies(pmSalesFamilies, viewerRole)
       : getEmployeeSales(salesTeam, viewerRole);
-  const [visits, checkins, sales, tmIds, expenses, leadership, bricks, listsByContact, fieldBenchmarks] = await Promise.all([
+  const [visits, checkins, sales, tmIds, expenses, leadership, bricks, listsByContact, fieldBenchmarks, coaching] = await Promise.all([
     fetchVisitRows(hrId, window),
     fetchCheckinRows(hrId, window),
     salesPromise,
@@ -1457,8 +1457,12 @@ export async function getEmployee360Profile(
     roleCategory === "medical-rep" ? loadEmployee360BrickPanel(hrId, window, viewerRole) : Promise.resolve(null),
     roleCategory === "medical-rep" ? loadRepListsByContact(hrId) : Promise.resolve(undefined),
     getFieldBenchmarks(viewerRole),
+    // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the coaching reports
+    // are read by the employee alone — nothing above feeds them — so they load with the rest instead
+    // of after it. Still read even where the page hides the coaching section: the impact figures
+    // below are built from its dates.
+    getEmployeeCoaching(hrId, nameByHrId),
   ]);
-  const coaching = await getEmployeeCoaching(hrId, nameByHrId);
 
   const visitSummary = summarizeVisits(visits, window, listsByContact);
   const checkinSummary = summarizeCheckins(checkins, visits, visitSummary);

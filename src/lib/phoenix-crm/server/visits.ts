@@ -537,12 +537,16 @@ function monthsBackFrom(isoDay: string, months: number): string {
  * `.lt("visit_date", today)` is load-bearing: without it a second visit to the same customer on the
  * same day would prefill itself, which is not carrying anything over. One read for the whole
  * territory rather than one per customer — it rides in the form's existing Promise.all.
+ *
+ * The line's products arrive as a PROMISE (2026-10-01, "slow to transfer between page and page"): the
+ * read needs none of them, only the pick below does, so the read starts at once instead of waiting
+ * for the product families to land first.
  */
 async function loadLastVisits(
   seatId: string,
   isTest: boolean,
   today: string,
-  lineProducts: readonly string[],
+  lineProductsRead: Promise<readonly string[]>,
 ): Promise<{ products: Map<string, LastVisitProducts>; nextSteps: Map<string, LastNextStep> }> {
   const rows = await fetchAllRowsKeyset<Row>(
     () =>
@@ -555,6 +559,7 @@ async function loadLastVisits(
         .gte("visit_date", monthsBackFrom(today, LAST_VISIT_MONTHS)),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
+  const lineProducts = await lineProductsRead;
   const base = rows.map((row) => ({
     customerId: String(row.customer_id ?? ""),
     visitDate: String(row.visit_date ?? ""),
@@ -625,21 +630,42 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   const today = viewer.visitDay;
   const chain = managerChain(viewer.org, seat.seatId);
 
-  await ensureReferenceCustomers(seat, isTest);
-  const [{ customers, placesByCustomer }, visitCounts, planned, visitRows, productFamilies, pharmacies] = await Promise.all([
+  // 🔴 ONE WAVE, NOT FOUR (2026-10-01, "slow to transfer between page and page", Phoenix CRM first —
+  // this is the screen a rep opens most). The form waited for the reference mint, then its reads,
+  // then the last visits, then the names. Only the customer list depends on the mint — the mint can
+  // add customers to it — and nothing else here can name a customer minted a moment ago: he has no
+  // visit, no plan row and no last visit yet. So every other read starts BESIDE the mint; the last
+  // visits' read no longer waits for the product families (only its pick does); and the names ride on
+  // the day's visits, the one read they need. The mint's own failure is still the one that surfaces,
+  // first, exactly as when it ran alone.
+  const ensured = ensureReferenceCustomers(seat, isTest);
+  const visitRowsRead = loadVisitRows(seat.seatId, isTest, today);
+  const productFamiliesRead = lineProductsByFamily(seat.lineName);
+  // The products the last visits are narrowed to. `loadLastVisits` awaits this only once its own read
+  // is in, so it is handled here, the moment it exists: a failure landing first must never be an
+  // UNHANDLED rejection. The families' own failure still fails the wave below, as it always did.
+  const lineProductsRead = productFamiliesRead.then((families) => families.map((entry) => entry.family));
+  lineProductsRead.catch(() => undefined);
+  const wave = Promise.all([
     // The list, and the customers waiting outside it: a second visit to someone met outside the list
     // is another out-of-list visit to the same customer, never a second customer.
-    loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true, includeOutside: true }),
+    ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true, includeOutside: true })),
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
     plannedCustomerIds(seat.seatId, isTest, today),
-    loadVisitRows(seat.seatId, isTest, today),
-    lineProductsByFamily(seat.lineName),
+    visitRowsRead,
+    productFamiliesRead,
     loadSeatPharmacies(seat.seatId, isTest),
+    // Narrowed to what the line still sells, which is why its pick waits for the families.
+    loadLastVisits(seat.seatId, isTest, today, lineProductsRead),
+    visitRowsRead.then((rows) =>
+      loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...chain.map((member) => member.hrId), ...visitPeople(rows)]),
+    ),
   ]);
+  // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
+  wave.catch(() => undefined);
+  await ensured;
+  const [{ customers, placesByCustomer }, visitCounts, planned, visitRows, productFamilies, pharmacies, lastVisits, names] = await wave;
   const products = productFamilies.map((entry) => entry.family);
-  // After the families, because what he discussed last time is narrowed to what the line still sells.
-  const lastVisits = await loadLastVisits(seat.seatId, isTest, today, products);
-  const names = await loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...chain.map((member) => member.hrId), ...visitPeople(visitRows)]);
   const visitedToday = new Set(visitRows.map((row) => String(row.customer_id)));
   const ramadan = isRamadanDay(today, viewer.config.ramadanOverrides);
   const settings = viewer.config.settings;

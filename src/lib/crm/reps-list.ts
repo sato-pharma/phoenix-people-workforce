@@ -68,6 +68,7 @@ import {
   CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE,
   CRM_REGION_BRICK_RESOLUTIONS_TABLE,
 } from "@/lib/crm/tables";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -79,6 +80,22 @@ const IN_CHUNK = 50;
 
 /** PostgREST caps a page at 1000 rows. Both resolution tables are read whole, so both are paged. */
 const PAGE_SIZE = 1000;
+
+/**
+ * Chunks read at once. Each chunk is its own round trip, and one rep's list is two to six of them, so
+ * reading them one after another made the board as slow as all of them added up (2026-10-01, "slow
+ * to transfer between page and page"). Four at a time answers a whole list in one or two trips.
+ */
+const CHUNK_CONCURRENCY = 4;
+
+/**
+ * `ids` cut into `.in()`-sized chunks, in order. Every chunked read below folds its answers IN THIS
+ * ORDER once they are all in, so it returns exactly what its old one-chunk-at-a-time loop returned —
+ * the same rows, the same first-seen pin, the same first error — however the reads interleave.
+ */
+function inChunks<T>(ids: readonly T[]): T[][] {
+  return Array.from({ length: Math.ceil(ids.length / IN_CHUNK) }, (_unused, index) => ids.slice(index * IN_CHUNK, (index + 1) * IN_CHUNK));
+}
 
 /** One brick heading on the board, with the rows — contacts AND pharmacies — that sit under it. */
 export type RepsListGroup = {
@@ -335,14 +352,15 @@ async function loadContactBrickMap(contactIds: readonly number[]): Promise<Map<n
   const map = new Map<number, string>();
   if (contactIds.length === 0) return map;
   const supabase = getSupabaseAdmin();
-  for (let from = 0; from < contactIds.length; from += IN_CHUNK) {
-    const chunk = contactIds.slice(from, from + IN_CHUNK);
-    const { data, error } = await supabase
+  const answers = await mapWithConcurrency(inChunks(contactIds), CHUNK_CONCURRENCY, async (chunk) =>
+    supabase
       .from(CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE)
       .select("crm_contact_id, brick_id, status")
       .in("crm_contact_id", chunk)
       .eq("status", "mapped")
-      .not("brick_id", "is", null);
+      .not("brick_id", "is", null),
+  );
+  for (const { data, error } of answers) {
     if (error) {
       if (isCrmSchemaMissingError(error)) return map;
       throw new Error(`Could not read customer brick mappings: ${error.message}`);
@@ -424,12 +442,24 @@ async function loadBrickMeta(
  */
 export type ContactCheckins = { points: CheckinPoint[]; seenAt: ContactSeenAt };
 
+type CheckinRow = {
+  address: string | null;
+  agent_crm_id: number | null;
+  agent_hr_id: string | null;
+  check_date: string | null;
+  contact_crm_id: number;
+  lat: number;
+  lon: number;
+};
+
 export async function loadCheckins(contactIds: readonly number[]): Promise<Map<number, ContactCheckins>> {
   const byContact = new Map<number, ContactCheckins>();
   const supabase = getSupabaseAdmin();
   const ids = [...new Set(contactIds)];
-  for (let from = 0; from < ids.length; from += IN_CHUNK) {
-    const chunk = ids.slice(from, from + IN_CHUNK);
+  // One chunk's pages, in order. A failed page hands back the pages before it WITH its error rather
+  // than throwing, so the fold below meets the error exactly where the old serial loop did.
+  const readChunk = async (chunk: number[]): Promise<{ error: { message: string } | null; rows: CheckinRow[] }> => {
+    const rows: CheckinRow[] = [];
     for (let page = 0; ; page += 1) {
       const { data, error } = await supabase
         .from(CRM_CHECKINS_UNIFIED_VIEW)
@@ -442,41 +472,38 @@ export async function loadCheckins(contactIds: readonly number[]): Promise<Map<n
         // duplicates one check-in and drops another, quietly changing the score.
         .order("crm_checkin_id", { ascending: false })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
-      if (error) {
-        // The board is about the contact list; a missing or unreadable check-in table costs the
-        // observed address and nothing else, so it degrades to the CRM address rather than 500ing.
-        if (isCrmSchemaMissingError(error)) return byContact;
-        throw new Error(`Could not read contact check-ins: ${error.message}`);
+      if (error) return { error, rows };
+      const pageRows = (data ?? []) as CheckinRow[];
+      rows.push(...pageRows);
+      if (pageRows.length < PAGE_SIZE) return { error: null, rows };
+    }
+  };
+  const answers = await mapWithConcurrency(inChunks(ids), CHUNK_CONCURRENCY, readChunk);
+  for (const { error, rows } of answers) {
+    for (const row of rows) {
+      // Keyed like the roster, so a rep with no CRM account counts as an observer and a partner.
+      const point: CheckinPoint = {
+        at: row.check_date,
+        lat: row.lat,
+        lon: row.lon,
+        repKey: repDoctorListRepKey(row.agent_crm_id, row.agent_hr_id),
+      };
+      const existing = byContact.get(row.contact_crm_id);
+      if (existing) {
+        existing.points.push(point);
+        continue;
       }
-      const rows = (data ?? []) as Array<{
-        address: string | null;
-        agent_crm_id: number | null;
-        agent_hr_id: string | null;
-        check_date: string | null;
-        contact_crm_id: number;
-        lat: number;
-        lon: number;
-      }>;
-      for (const row of rows) {
-        // Keyed like the roster, so a rep with no CRM account counts as an observer and a partner.
-        const point: CheckinPoint = {
-          at: row.check_date,
-          lat: row.lat,
-          lon: row.lon,
-          repKey: repDoctorListRepKey(row.agent_crm_id, row.agent_hr_id),
-        };
-        const existing = byContact.get(row.contact_crm_id);
-        if (existing) {
-          existing.points.push(point);
-          continue;
-        }
-        // Newest first, so the FIRST row seen for a contact is the pin the board shows.
-        byContact.set(row.contact_crm_id, {
-          points: [point],
-          seenAt: { address: row.address?.trim() || null, at: row.check_date, lat: row.lat, lon: row.lon },
-        });
-      }
-      if (rows.length < PAGE_SIZE) break;
+      // Newest first, so the FIRST row seen for a contact is the pin the board shows.
+      byContact.set(row.contact_crm_id, {
+        points: [point],
+        seenAt: { address: row.address?.trim() || null, at: row.check_date, lat: row.lat, lon: row.lon },
+      });
+    }
+    if (error) {
+      // The board is about the contact list; a missing or unreadable check-in table costs the
+      // observed address and nothing else, so it degrades to the CRM address rather than 500ing.
+      if (isCrmSchemaMissingError(error)) return byContact;
+      throw new Error(`Could not read contact check-ins: ${error.message}`);
     }
   }
   return byContact;
@@ -591,16 +618,17 @@ export async function loadPinsFor(contactIds: readonly number[]): Promise<Map<nu
   const ids = [...new Set(contactIds)];
   if (ids.length === 0) return pins;
   const supabase = getSupabaseAdmin();
-  for (let from = 0; from < ids.length; from += IN_CHUNK) {
-    const chunk = ids.slice(from, from + IN_CHUNK);
-    const { data, error } = await supabase
+  const answers = await mapWithConcurrency(inChunks(ids), CHUNK_CONCURRENCY, async (chunk) =>
+    supabase
       .from(CRM_CHECKINS_UNIFIED_VIEW)
       .select("contact_crm_id, lat, lon, check_date")
       .in("contact_crm_id", chunk)
       .not("lat", "is", null)
       .not("lon", "is", null)
       .order("check_date", { ascending: false })
-      .limit(PAGE_SIZE);
+      .limit(PAGE_SIZE),
+  );
+  for (const { data, error } of answers) {
     if (error) {
       if (isCrmSchemaMissingError(error)) return pins;
       throw new Error(`Could not read check-ins for the shared-customer check: ${error.message}`);
@@ -635,6 +663,15 @@ export async function getRepsListForAgent(
   repNames: ReadonlyMap<string, string>,
 ): Promise<RepsListForRep> {
   const { agentCrmId: ownCrmId, hrId } = typeof agent === "number" ? { agentCrmId: agent, hrId: null } : agent;
+  // STARTED WITH THE LIST, NOT AFTER IT (2026-10-01, "slow to transfer between page and page"). The
+  // region brick map, the company-wide roster and the trade counterparties take nothing from the
+  // rep's rows, so they ride beside the list read instead of queueing behind it. Each is still
+  // awaited exactly where it was, so its answer and its error arrive where they always did; each is
+  // also handled the moment it starts, so a failure while the list is loading is never UNHANDLED.
+  const regionBrickMapRead = loadRegionBrickMap();
+  const rosterRead = loadContactRoster();
+  const counterpartiesRead = loadTradeCounterparties();
+  for (const read of [regionBrickMapRead, rosterRead, counterpartiesRead]) read.catch(() => undefined);
   // The HR id wins whenever it is known: it is who the rep IS, and it also finds his rows written by
   // a Phoenix list change, which carry no CRM account.
   const rows = hrId ? await getRepContactList(hrId) : ownCrmId != null ? await getAgentContactList(ownCrmId) : [];
@@ -653,9 +690,9 @@ export async function getRepsListForAgent(
   const contactIds = rows.map((row) => row.contactCrmId);
   const [brickByContactId, brickByRegionName, checkins, roster] = await Promise.all([
     loadContactBrickMap(contactIds),
-    loadRegionBrickMap(),
+    regionBrickMapRead,
     loadCheckins(contactIds),
-    loadContactRoster(),
+    rosterRead,
   ]);
 
   const needed = new Set<string>();
@@ -691,7 +728,7 @@ export async function getRepsListForAgent(
   const [metaByBrickId, otherPins, counterparties] = await Promise.all([
     loadBrickMeta([...needed]),
     loadPinsFor(candidateIds),
-    loadTradeCounterparties(),
+    counterpartiesRead,
   ]);
 
   // HAS PHOENIX ACTUALLY TRADED WITH THIS ROW? Matched here rather than inside `contact-trade.ts`

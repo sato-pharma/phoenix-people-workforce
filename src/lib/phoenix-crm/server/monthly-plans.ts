@@ -247,34 +247,56 @@ export async function loadMonthlyPlanner(
   const monthStart = resolveMonth(raw.month, months);
   const weeks = fieldWeeksOfMonth(monthStart);
 
-  await ensureReferenceCustomers(seat, isTest);
+  // 🔴 TWO CHAINS SIDE BY SIDE, NOT THREE WAVES IN A ROW (2026-10-01, "slow to transfer between page
+  // and page", Phoenix CRM first) — the weekly planner's own shape, see loadPlanner in plans.ts. The
+  // customer list and the readiness count follow the reference mint, which can change what they read,
+  // and the references follow the customer list; the month's plan headers, its weeks and this month's
+  // visit counts cannot name a customer minted a moment ago, so they start beside the mint, and the
+  // items, activities, starts and names follow the plan rows alone. The three plan reads still fail in
+  // the order they always did, and the mint's own failure is still the one that surfaces first.
   const supabase = getSupabaseAdmin();
-  const [headerResult, monthsResult, planRowsResult, { customers, placesByCustomer }, visitCounts, readiness] = await Promise.all([
-    supabase.from("phoenix_crm_monthly_plans").select(MONTHLY_PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).eq("month_start", monthStart).maybeSingle(),
-    supabase.from("phoenix_crm_monthly_plans").select("month_start, status").eq("seat_id", seat.seatId).eq("is_test", isTest).in("month_start", months),
-    weeks.length > 0
-      ? supabase.from("phoenix_crm_plans").select(PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).in("week_start", weeks)
-      : Promise.resolve({ data: [] as Row[], error: null }),
-    loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
+  const ensured = ensureReferenceCustomers(seat, isTest);
+  const planPartsRead = (async () => {
+    const [headerResult, monthsResult, planRowsResult] = await Promise.all([
+      supabase.from("phoenix_crm_monthly_plans").select(MONTHLY_PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).eq("month_start", monthStart).maybeSingle(),
+      supabase.from("phoenix_crm_monthly_plans").select("month_start, status").eq("seat_id", seat.seatId).eq("is_test", isTest).in("month_start", months),
+      weeks.length > 0
+        ? supabase.from("phoenix_crm_plans").select(PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).in("week_start", weeks)
+        : Promise.resolve({ data: [] as Row[], error: null }),
+    ]);
+    throwIfError(headerResult.error);
+    throwIfError(monthsResult.error);
+    throwIfError(planRowsResult.error);
+    const headerRow = headerResult.data as Row | null;
+    const planRows = (planRowsResult.data ?? []) as Row[];
+    const [itemRows, names, activities, starts] = await Promise.all([
+      loadPlanItemRows(
+        planRows.map((row) => String(row.id)),
+        ITEM_COLUMNS,
+      ),
+      loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...planPeople(headerRow ? [headerRow, ...planRows] : planRows)]),
+      loadPlanActivities(planRows.map((row) => String(row.id))),
+      loadPlanDayStarts(planRows.map((row) => String(row.id))),
+    ]);
+    return { monthsResult, headerRow, planRows, itemRows, names, activities, starts };
+  })();
+  const customersRead = ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }));
+  const wave = Promise.all([
+    planPartsRead,
+    customersRead,
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
-    territoryReadiness(seat.seatId, isTest, false),
+    ensured.then(() => territoryReadiness(seat.seatId, isTest, false)),
+    customersRead.then(({ customers }) => loadPlannerReferences(seat.seatId, isTest, customers)),
   ]);
-  throwIfError(headerResult.error);
-  throwIfError(monthsResult.error);
-  throwIfError(planRowsResult.error);
-  const headerRow = headerResult.data as Row | null;
-  const planRows = (planRowsResult.data ?? []) as Row[];
-
-  const [itemRows, names, activities, starts, references] = await Promise.all([
-    loadPlanItemRows(
-      planRows.map((row) => String(row.id)),
-      ITEM_COLUMNS,
-    ),
-    loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...planPeople(headerRow ? [headerRow, ...planRows] : planRows)]),
-    loadPlanActivities(planRows.map((row) => String(row.id))),
-    loadPlanDayStarts(planRows.map((row) => String(row.id))),
-    loadPlannerReferences(seat.seatId, isTest, customers),
-  ]);
+  wave.catch(() => undefined);
+  await ensured;
+  const [
+    { monthsResult, headerRow, planRows, itemRows, names, activities, starts },
+    { customers, placesByCustomer },
+    visitCounts,
+    readiness,
+    references,
+  ] = await wave;
 
   const settings = viewer.config.settings;
   const isRamadan = (isoDay: string) => isRamadanDay(isoDay, viewer.config.ramadanOverrides);

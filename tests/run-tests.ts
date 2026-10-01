@@ -984,6 +984,7 @@ import { runVacationOverlapWarningsTests } from "./vacation-overlap-warnings.tes
 import { runVacationReportFilterEquivalenceTests } from "./vacation-report-filter-equivalence.test.ts";
 import { runVacationBalanceReservesPendingTests } from "./vacation-balance-reserves-pending.test.ts";
 import { runVacationEntitlementsBalanceIgnoresFiltersTests } from "./vacation-entitlements-balance-ignores-filters.test.ts";
+import { runVacationReadsStartedTogetherTests } from "./vacation-reads-started-together.test.ts";
 import { runPortalHomeAnnualLeaveLeftTests } from "./portal-home-annual-leave-left.test.ts";
 import { runPortalHomeAnnualLeaveLeftRmStandardTests } from "./portal-home-annual-leave-left-rm-standard.test.ts";
 import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
@@ -1758,6 +1759,7 @@ import { runMarketingDraftBlockersTests } from "./marketing-draft-blockers.test.
 // Registered beside its marketing siblings, not appended: this one pins the 2026-08-19 territory
 // ruling, and a PR that touches marketing visibility must see it in the same block it edits.
 import { runMarketingCustomerAreaOwnershipTests } from "./marketing-customer-area-ownership.test.ts";
+import { runMarketingChunkReadsInOrderTests } from "./marketing-chunk-reads-in-order.test.ts";
 // Registered next to the area-ownership test it reuses: that one pins who may SEE a customer, this
 // one pins that the two write paths actually ask before raising a request against one.
 import { runMarketingRequestCustomerScopeGuardTests } from "./marketing-request-customer-scope-guard.test.ts";
@@ -2185,6 +2187,8 @@ import { runScheduledAlarmsNeverWithholdTests } from "./scheduled-alarms-never-w
 import { runStaleDomainGateTests } from "./stale-domain-gate.test.ts";
 import { runRailwaySecretPolicyTests } from "./railway-secret-policy.test.ts";
 import { runDockerfileParseGateTests } from "./dockerfile-parse-gate.test.ts";
+import { runPortalLinkPrefetchTests } from "./portal-link-prefetch.test.ts";
+import { runPortalRepNavigationSpeedTests } from "./portal-rep-navigation-speed.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4106,6 +4110,12 @@ await runTest(
   "vacation balance reserves submitted-but-undecided leave for DISPLAY only (pricing stays "
   + "approved-only so payroll and deductions are untouched)",
   runVacationBalanceReservesPendingTests,
+);
+await runTest(
+  "vacation balance reads started together stay output-identical (carried debt equals the one-at-a-time "
+  + "walk to the last digit, same periods and 50-period cap, first failure in period order; the holiday "
+  + "feed is downloaded once for many months and a swapped fetch gets its own answer)",
+  runVacationReadsStartedTogetherTests,
 );
 await runTest(
   "portal home Medical Rep tile shows annual leave LEFT (entitlement minus taken, via "
@@ -6213,6 +6223,10 @@ await runTest(
   runMarketingCustomerAreaOwnershipTests,
 );
 await runTest(
+  "marketing id-list reads run a few chunks at a time and still answer in chunk order (rows concatenated in chunk order, the first failed chunk in ORDER is thrown unwrapped, at most six at once)",
+  runMarketingChunkReadsInOrderTests,
+);
+await runTest(
   "marketing request customer scope guard (a spend request can only be raised against a customer the requester can see — both the create and the resubmit path check, before anything is written)",
   runMarketingRequestCustomerScopeGuardTests,
 );
@@ -8141,6 +8155,14 @@ await runTest(
 await runTest(
   "the Dockerfile gate catches a typo, an unknown --from stage, the legacy ENV form and an orphaned $VAR — and stays silent on RUN shell variables",
   runDockerfileParseGateTests,
+);
+await runTest(
+  "portal links never full-prefetch; the touch-time upgrade is backed by experimental.dynamicOnHover and the router cache stays bounded",
+  runPortalLinkPrefetchTests,
+);
+await runTest(
+  "the rep's pages never queue a read behind one it does not need: Phoenix CRM's List, board, chunked mirror reads, Reports and shared chunk, and the landing snapshot",
+  runPortalRepNavigationSpeedTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

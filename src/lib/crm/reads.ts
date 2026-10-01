@@ -22,6 +22,7 @@ import { isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, hasRealVendorTime, todayIso } from "@/lib/crm/dates";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CrmCheckinRow, CrmVisitRow } from "@/lib/crm/types";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
@@ -1906,8 +1907,12 @@ export async function readContactVisitHistory(contactCrmIds: readonly number[]):
   const supabase = getSupabaseAdmin();
   const CHUNK = 50;
   const PAGE = 1000;
-  for (let from = 0; from < ids.length; from += CHUNK) {
-    const chunk = ids.slice(from, from + CHUNK);
+  // Chunks read at once — the Reps List's own figure.
+  const CHUNK_CONCURRENCY = 4;
+  type HistoryRow = { contact_crm_id: number | null; visit_date: string | null };
+  // One chunk's pages, in order; a failed page hands back the pages before it WITH its error.
+  const readChunk = async (chunk: number[]): Promise<{ error: { message: string } | null; rows: HistoryRow[] }> => {
+    const rows: HistoryRow[] = [];
     for (let page = 0; ; page += 1) {
       const { data, error } = await supabase
         .from(CRM_VISITS_UNIFIED_VIEW)
@@ -1915,25 +1920,35 @@ export async function readContactVisitHistory(contactCrmIds: readonly number[]):
         .in("contact_crm_id", chunk)
         .order("visit_date", { ascending: false })
         .range(page * PAGE, page * PAGE + PAGE - 1);
-      if (error) {
-        // A missing mirror costs this one line. It must never fall back to the Phoenix count, which
-        // is the wrong number for exactly the rows that ask for this.
-        if (isCrmSchemaMissingError(error)) return byContact;
-        throw new Error(error.message);
+      if (error) return { error, rows };
+      const pageRows = (data ?? []) as HistoryRow[];
+      rows.push(...pageRows);
+      if (pageRows.length < PAGE) return { error: null, rows };
+    }
+  };
+  // 🔴 A FEW CHUNKS AT ONCE, FOLDED IN CHUNK ORDER (2026-10-01, "slow to transfer between page and
+  // page", Phoenix CRM first). Every page of every chunk used to wait on the one before it, before the
+  // List could paint; folded in order once they are in, the counts and dates are the ones the serial
+  // loop gave, and the first failure ends the read exactly where it ended before.
+  const chunks = Array.from({ length: Math.ceil(ids.length / CHUNK) }, (_unused, index) => ids.slice(index * CHUNK, (index + 1) * CHUNK));
+  const answers = await mapWithConcurrency(chunks, CHUNK_CONCURRENCY, readChunk);
+  for (const { error, rows } of answers) {
+    for (const row of rows) {
+      if (row.contact_crm_id == null) continue;
+      const found = byContact.get(row.contact_crm_id);
+      // Ordered newest first, so the first date seen for a contact is the latest one.
+      if (found) {
+        found.visits += 1;
+        found.lastVisitedOn ??= row.visit_date;
+      } else {
+        byContact.set(row.contact_crm_id, { lastVisitedOn: row.visit_date, visits: 1 });
       }
-      const rows = (data ?? []) as Array<{ contact_crm_id: number | null; visit_date: string | null }>;
-      for (const row of rows) {
-        if (row.contact_crm_id == null) continue;
-        const found = byContact.get(row.contact_crm_id);
-        // Ordered newest first, so the first date seen for a contact is the latest one.
-        if (found) {
-          found.visits += 1;
-          found.lastVisitedOn ??= row.visit_date;
-        } else {
-          byContact.set(row.contact_crm_id, { lastVisitedOn: row.visit_date, visits: 1 });
-        }
-      }
-      if (rows.length < PAGE) break;
+    }
+    if (error) {
+      // A missing mirror costs this one line. It must never fall back to the Phoenix count, which
+      // is the wrong number for exactly the rows that ask for this.
+      if (isCrmSchemaMissingError(error)) return byContact;
+      throw new Error(error.message);
     }
   }
   return byContact;

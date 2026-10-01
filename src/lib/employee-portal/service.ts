@@ -789,8 +789,14 @@ function findDirectoryEmployeeByHrId(
  * table by HR_ID. Used so an employee's own hero card always shows their direct
  * manager even under self-scope (where the scoped directory may not surface the
  * manager record). Returns null only when there is genuinely no manager (CEO/top).
+ *
+ * MEMOIZED PER REQUEST (React cache(), 2026-10-01, "slow to transfer between page and page"): the
+ * portal shell in the layout and the page under it both name the same manager on a hard load, and
+ * each asked the employees table twice to do it. Keyed on the HR id string (compared by value), so
+ * one request resolves it once; cache() never spans two requests, so a manager change made a
+ * moment ago is still read live on the next one. It never throws — every read ignores its error.
  */
-async function resolveDirectManagerName(employeeHrId: string | null | undefined) {
+const resolveDirectManagerName = cache(async (employeeHrId: string | null | undefined) => {
   const target = String(employeeHrId ?? "").trim();
   if (!target) return null;
   const supabase = getSupabaseAdmin();
@@ -811,7 +817,7 @@ async function resolveDirectManagerName(employeeHrId: string | null | undefined)
   const managerRow = manager as { full_name?: string | null; nickname?: string | null } | null;
   const fullName = managerRow?.full_name;
   return fullName ? resolveEmployeeDisplayName(String(fullName), managerRow?.nickname) : null;
-}
+});
 
 function formatBatchLabel(month?: number | null, year?: number | null) {
   if (!month || !year) return "No payroll period";
@@ -1011,7 +1017,13 @@ function resolveSalesFilterValues(filters: PortalSalesFilters) {
   };
 }
 
-async function resolvePortalCurrentUser(access: AccessContext): Promise<PortalCurrentUser> {
+// MEMOIZED PER REQUEST (React cache(), 2026-10-01, "slow to transfer between page and page"): the
+// portal shell, the page and the loaders the page calls (getMedicalRepPortalData, then
+// getEmployeePortalData inside it, and every team/vacancy panel) each resolved the viewer again —
+// one to two app_auth_users reads apiece on every navigation. `access` is the request-cached object
+// resolveAccessContextFromPage hands every caller by reference, so it is a stable key. No caller
+// mutates the returned object (it is only read), and cache() never spans two requests.
+const resolvePortalCurrentUser = cache(async (access: AccessContext): Promise<PortalCurrentUser> => {
   const supabase = getSupabaseAdmin();
   const fallbackHr = normalizeHrId(resolveEmployeeIdentityId(access));
   const loginId = normalizeHrId(access.loginId);
@@ -1069,7 +1081,7 @@ async function resolvePortalCurrentUser(access: AccessContext): Promise<PortalCu
   }
 
   return currentUser;
-}
+});
 
 async function fetchPortalPayslips(hrId: string): Promise<PortalPayrollRecord[]> {
   const supabase = getSupabaseAdmin();
@@ -2306,13 +2318,30 @@ async function buildEmployeePortalOverviewData(input: {
 export async function getPayslipPortalData(access: AccessContext): Promise<MedicalRepPortalData> {
   const currentUser = await resolvePortalCurrentUser(access);
   const currentHrId = normalizeHrId(currentUser.hrId);
-  const directory = await getEmployeeDirectory();
-  const employee = currentHrId
-    ? findDirectoryEmployeeByHrId(directory, currentHrId) ?? fallbackEmployee(access)
-    : fallbackEmployee(access);
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the payslip history
+  // and the salary structure are keyed by the viewer's HR id alone, and the manager's name and the
+  // photo by the directory row alone — none reads another's answer, so they overlap instead of
+  // queueing one behind the other. Every value below is still computed from the same four answers.
+  // The payroll pair never rejects (each swallows its own read error), so the directory is still
+  // the only read here whose failure can fail the page, exactly as before.
+  const [identity, payrollDashboard, salaryStructure] = await Promise.all([
+    (async () => {
+      const directory = await getEmployeeDirectory();
+      const employee = currentHrId
+        ? findDirectoryEmployeeByHrId(directory, currentHrId) ?? fallbackEmployee(access)
+        : fallbackEmployee(access);
+      const [manager, photoUrl] = await Promise.all([
+        resolveDirectManagerName(employee.hrId),
+        uploadedEmployeePhotoUrl(employee.hrId),
+      ]);
+      return { employee, manager, photoUrl };
+    })(),
+    currentHrId ? getEmployeePortalPayrollDashboard(currentHrId) : Promise.resolve(null),
+    currentHrId ? fetchEmployeeSalaryStructure(currentHrId) : Promise.resolve(null),
+  ]);
+  const { employee } = identity;
   const profileLinked =
     currentHrId !== null && toCanonicalPortalHrId(employee.hrId) === toCanonicalPortalHrId(currentHrId);
-  const payrollDashboard = currentHrId ? await getEmployeePortalPayrollDashboard(currentHrId) : null;
   const latestRecord = payrollDashboard?.records[0] ?? null;
   const previousRecord = payrollDashboard?.previousRecords[0] ?? null;
   const latestBatch = payrollDashboard?.batch ?? payrollDashboard?.batches[0] ?? null;
@@ -2333,7 +2362,6 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
     positionTitle: employee.positionTitle,
     year: latestBatch?.year,
   });
-  const salaryStructure = currentHrId ? await fetchEmployeeSalaryStructure(currentHrId) : null;
   const fixedSalary = resolveFixedSalaryReference({
     employee,
     fallbackAllowances,
@@ -2408,8 +2436,8 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
       fullName: employee.displayName,
       hrId: employee.hrId,
       line: employee.lineName,
-      manager: (await resolveDirectManagerName(employee.hrId)) ?? employee.managerName,
-      photoUrl: await uploadedEmployeePhotoUrl(employee.hrId),
+      manager: identity.manager ?? employee.managerName,
+      photoUrl: identity.photoUrl,
       roleLabel: employee.jobTitle || employee.positionTitle || currentUser.role || "Employee",
       status: employee.employmentStatus ?? "active",
       territory: employee.regionName ?? employee.areaName,

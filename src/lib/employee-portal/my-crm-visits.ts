@@ -116,15 +116,36 @@ function byVisitDateDesc(a: { visitDate: string | null }, b: { visitDate: string
   return (b.visitDate ?? "").localeCompare(a.visitDate ?? "");
 }
 
-/** The caller's own GPS check-in log — also used internally by {@link fetchMyVisits} to
- * resolve the GPS/Logged visit-time badge. */
-export async function fetchMyCheckins(hrId: string, window: MyCrmWindow): Promise<MyCrmCheckinRow[]> {
-  const rows = await queryCheckins<RawCheckin>({
+/**
+ * The caller's own raw check-ins for the window, SHARED WHILE IN FLIGHT (2026-10-01, "slow to
+ * transfer between page and page"). The My Visits page asks for the same person's same 90 days twice
+ * at once — {@link fetchMyVisits} for the GPS/Logged badge, {@link fetchMyCheckins} for the check-in
+ * tab — so the second caller now waits on the first's read instead of running it again. Nothing is
+ * kept once it settles, a failure included, and neither caller mutates the rows (one indexes them,
+ * the other maps them into new objects), so sharing one array changes nothing either sees.
+ */
+const myCheckinsInFlight = new Map<string, Promise<RawCheckin[]>>();
+
+function readMyCheckinRows(hrId: string, window: MyCrmWindow): Promise<RawCheckin[]> {
+  const key = `${hrId}|${window.dateFrom}|${window.dateTo}`;
+  const inFlight = myCheckinsInFlight.get(key);
+  if (inFlight) return inFlight;
+  const request: Promise<RawCheckin[]> = queryCheckins<RawCheckin>({
     agentHrIds: [hrId],
     dateFrom: window.dateFrom,
     dateTo: window.dateTo,
     columns: CHECKIN_COLUMNS,
+  }).finally(() => {
+    if (myCheckinsInFlight.get(key) === request) myCheckinsInFlight.delete(key);
   });
+  myCheckinsInFlight.set(key, request);
+  return request;
+}
+
+/** The caller's own GPS check-in log — also used internally by {@link fetchMyVisits} to
+ * resolve the GPS/Logged visit-time badge. */
+export async function fetchMyCheckins(hrId: string, window: MyCrmWindow): Promise<MyCrmCheckinRow[]> {
+  const rows = await readMyCheckinRows(hrId, window);
   return rows
     .map((row) => ({ address: row.address, checkDate: row.check_date, contactName: row.contact_name, id: row.id }))
     .sort((a, b) => (b.checkDate ?? "").localeCompare(a.checkDate ?? ""));
@@ -147,7 +168,8 @@ export async function fetchMyVisits(hrId: string, window: MyCrmWindow): Promise<
       dateFrom: window.dateFrom,
       dateTo: window.dateTo,
     }),
-    queryCheckins<RawCheckin>({ agentHrIds: [hrId], columns: CHECKIN_COLUMNS, dateFrom: window.dateFrom, dateTo: window.dateTo }),
+    // The same read fetchMyCheckins makes for the check-in tab — shared while in flight.
+    readMyCheckinRows(hrId, window),
   ]);
   const index = indexCheckinsByAgentContactDay(checkins);
   const rows = visits.map((row): MyCrmVisitRow => {

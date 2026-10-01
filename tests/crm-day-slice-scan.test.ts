@@ -306,6 +306,38 @@ function runScanWiringGuards() {
   assert.match(checkins, /order: compareCheckinScanOrder,\s+sortDays: false,/, "check-in days are joined end to end, a short probe sorted by (check_date, id)");
 }
 
+// THE PLAN MIRROR HAD THE SAME FAULT, on the busiest page in the portal. `scanPlanEntries` OFFSET-paged a
+// company-wide window: every page re-read and re-sorted all 25,862 September rows (62 ms each, measured
+// on production 2026-10-01), and all 26 pages ran one after another on EVERY rep landing, because the
+// KPI tile reads the board company-wide. It now rides the same probe-then-days read as the visits door.
+// Its end-to-end proof, run on production the same night: September 25,862 rows, August 25,584, one
+// week 5,636 and October's first 812 — every row identical, in the same order, to the OFFSET scan.
+function runPlanScanWiringGuards() {
+  const source = readFileSync("src/lib/crm/rep-doctor-lists.ts", "utf8");
+  const plan = functionBody(source, "export async function scanPlanEntries");
+  assert.match(
+    plan,
+    /const days = agentChunks\.length === 1 && agentChunks\[0\] === null \? dayScanSlices\(from, to\) : null;/,
+    "the plan scan slices only a window that names nobody",
+  );
+  assert.match(plan, /\.eq\("plan_date", day\);/, "each plan request is narrowed to its day");
+  assert.match(
+    plan,
+    /if \(cursor !== null\) query = query\.gt\("crm_plan_entry_id", cursor\);/,
+    "a day pages by keyset on the mirror's primary key, never by OFFSET",
+  );
+  assert.match(
+    plan,
+    /\.gte\("plan_date", from\)\s+\.lte\("plan_date", to\)\s+\.limit\(PLAN_PAGE_SIZE\);/,
+    "the plan probe is an UNORDERED page of the whole window",
+  );
+  assert.match(
+    plan,
+    /order: \(left, right\) => Number\(left\.crm_plan_entry_id\) - Number\(right\.crm_plan_entry_id\),\s+sortDays: true,/,
+    "the joined days come back in the single scan's entry-id order",
+  );
+}
+
 export async function runCrmDaySliceScanTests() {
   await runDayScanSlicesTests();
   runNamesPeopleTests();
@@ -313,4 +345,5 @@ export async function runCrmDaySliceScanTests() {
   await runReadCompanyWindowTests();
   runCheckinDayBoundaryTests();
   runScanWiringGuards();
+  runPlanScanWiringGuards();
 }

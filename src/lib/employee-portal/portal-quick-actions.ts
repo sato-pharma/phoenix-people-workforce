@@ -22,12 +22,18 @@ export type PortalQuickActionKey = "crm-visit" | "crm-plan" | "vacation" | "expe
 
 /**
  * Phoenix CRM's two quick actions (owner, 2026-09-29: "the + in the bottom bar and the top bar — Add
- * visit and Make weekly plan; Phoenix CRM is the module medical reps use most"). They open the module on
- * the right screen through its own address (`?tab=…&add=…`, read by phoenix-crm-app.tsx); nothing is
+ * visit and Make weekly plan; Phoenix CRM is the module medical reps use most"). They open the module's
+ * OWN page with the ask on it (`/field-crm/<module>?add=…`, read by phoenix-crm-app.tsx); nothing is
  * saved by the tap.
+ *
+ * 🔴 THE MODULE'S OWN ADDRESS, NEVER THE CHOOSER'S `?tab=` (2026-10-01, "slow to transfer between page
+ * and page", Phoenix CRM first). /employee-portals/field-crm answers a `?tab=` only by REDIRECTING to
+ * exactly these addresses, so every tap on "+" paid two server round trips — the chooser's, then the
+ * module's — before the form could open. The chooser still forwards `?tab=` for the notification links
+ * and saved addresses that carry it.
  */
-export const PHOENIX_CRM_ADD_VISIT_HREF = "/employee-portals/field-crm?tab=visits&add=visit";
-export const PHOENIX_CRM_WEEKLY_PLAN_HREF = "/employee-portals/field-crm?tab=plan&add=week";
+export const PHOENIX_CRM_ADD_VISIT_HREF = "/employee-portals/field-crm/visits?add=visit";
+export const PHOENIX_CRM_WEEKLY_PLAN_HREF = "/employee-portals/field-crm/plan?add=week";
 
 export type PortalQuickAction = {
   /** The section this action lands in — the command bar shows it beside the label. */

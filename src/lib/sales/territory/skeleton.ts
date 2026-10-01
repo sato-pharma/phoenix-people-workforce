@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { foldAreaOptionsForLine, scopeAndFoldAreaChildren } from "@/lib/sales/closing-area-merges";
 import { closingRegionsAsOfDate } from "@/lib/sales/closing-organogram-regions";
-import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { loadSalesNameMastersOncePerRender } from "@/lib/sales/medical-rep-area-scope";
 
 import type { TerritoryDiagnostic, TerritoryRootScope, TerritorySkeleton } from "./types";
 
@@ -242,7 +242,11 @@ export async function buildTerritorySkeleton(
   const auLineCode = resolveAuLineCode(rootScope.officialLine);
 
   const [references, baseAreas, auRegionNames, lineAreaRegions] = await Promise.all([
-    loadSalesReferenceData({ includeCustomerBricks: false }),
+    // The name masters (includeCustomerBricks: false), read ONCE per page render: a Medical Rep's
+    // root scope already read them to confirm his own areas, so this render reuses that read rather
+    // than making a second (2026-10-01, "slow to transfer between page and page"). Nothing below
+    // mutates them — the blocks and bricks are filtered and copied, never edited in place.
+    loadSalesNameMastersOncePerRender(),
     rootScope.level === "area"
       ? loadCanonicalAreas()
       : auLineCode

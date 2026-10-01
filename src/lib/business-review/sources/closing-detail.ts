@@ -130,32 +130,42 @@ export async function loadClosingDetailFacts(input: {
   // codes, everywhere in the system. The master is one small indexed read (701 rows, all named on
   // production), and a failed load reads "Brick not named" rather than taking the whole pack down —
   // never the id, which the owner ruled out in plain words on 2026-10-01.
-  const brickNames = new Map<string, string>();
-  try {
-    const { data } = await db.from("source_of_sales_bricks").select("brick_id, brick_name");
-    for (const b of (data ?? []) as { brick_id?: unknown; brick_name?: unknown }[]) {
-      const id = text(b.brick_id);
-      const name = text(b.brick_name);
-      if (id && name) brickNames.set(id, name);
+  //
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the master shares
+  // nothing with the RPC fan-out below, so it no longer holds the first RPC back. It still resolves
+  // before a single row is labelled, and it still cannot fail the load — it answers an empty map.
+  const brickNamesLoad = (async (): Promise<Map<string, string>> => {
+    const names = new Map<string, string>();
+    try {
+      const { data } = await db.from("source_of_sales_bricks").select("brick_id, brick_name");
+      for (const b of (data ?? []) as { brick_id?: unknown; brick_name?: unknown }[]) {
+        const id = text(b.brick_id);
+        const name = text(b.brick_name);
+        if (id && name) names.set(id, name);
+      }
+    } catch {
+      // The section still ships, keyed by id and labelled in words, rather than failing the export.
     }
-  } catch {
-    // The section still ships, keyed by id and labelled in words, rather than failing the export.
-  }
+    return names;
+  })();
 
   const jobs: { line: ClosingDetailLine; period: string }[] = [];
   for (const line of input.lines) for (const period of periods) jobs.push({ line, period });
 
-  const loaded = await Promise.all(
-    jobs.map(async ({ line, period }) => {
-      const data = (await rpcAll<CustomerRpcRow>(
-        db,
-        "phx_closing_customers",
-        { p_line: line.officialLine, p_period: period },
-        ["client_code", "distributor_code"],
-      )) as CustomerRpcRow[];
-      return { line, period, rows: data };
-    }),
-  );
+  const [brickNames, loaded] = await Promise.all([
+    brickNamesLoad,
+    Promise.all(
+      jobs.map(async ({ line, period }) => {
+        const data = (await rpcAll<CustomerRpcRow>(
+          db,
+          "phx_closing_customers",
+          { p_line: line.officialLine, p_period: period },
+          ["client_code", "distributor_code"],
+        )) as CustomerRpcRow[];
+        return { line, period, rows: data };
+      }),
+    ),
+  ]);
 
   // Customer NAMES, never the code (owner, 2026-10-01: "NEVER SHOW CODES ALWAYS SHOW NAMES"). The
   // direct-order book's rows reach the RPC with an EMPTY client name and the pharmacy's Phoenix code

@@ -774,16 +774,19 @@ html:has(.admin-shell) {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* THE PAGE ARRIVES FAST (owner, 2026-10-01: "slow to transfer between page and page"). The same
+   rise-and-fade, with the two costly parts taken out: the `filter: blur(4px)` and the `scale()`.
+   Both repaint the WHOLE page on every frame of the animation, which a rep's tablet does at a
+   stutter, and the old timings stacked 0.28 s of skeleton fade on 0.34 s of page fade before
+   anything was fully legible. Opacity and translate stay on the compositor. */
 @keyframes employee-portal-page-enter {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.994);
-    filter: blur(4px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
-    filter: blur(0);
+    transform: translateY(0);
   }
 }
 
@@ -833,12 +836,12 @@ html:has(.admin-shell) {
 }
 
 .employee-portal-page-transition {
-  animation: employee-portal-page-enter 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: employee-portal-page-enter 0.16s cubic-bezier(0.22, 1, 0.36, 1) both;
   transform-origin: top center;
 }
 
 .employee-portal-route-loading {
-  animation: employee-portal-loading-enter 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: employee-portal-loading-enter 0.12s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .employee-portal-skeleton {

@@ -87,9 +87,39 @@ export async function buildMakeItHappenWorkspace(
   const months = periodMonths(periodKind, periodKey) ?? [current];
   const periodEnd = months[months.length - 1];
   const rangeTo = periodEnd > current ? periodEnd : current;
-
-  const bound = await resolveMakeItHappenBound(ctx);
   const ownerKey = canonicalHrIdForDisplay(ctx.hrId);
+
+  // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"). The achievement range,
+  // the publication keys and the product masters depend on the window alone, never on who is asking,
+  // so they no longer wait for the bound — which is still applied to the rows below before anything
+  // is totalled. A `none` bound returns the empty shell without awaiting them; the guards keep that
+  // quiet. Each is still awaited, and still throws, where it is used.
+  const boundLoad = resolveMakeItHappenBound(ctx);
+  const windowLoads = Promise.all([
+    loadAchievementRange(MAKE_IT_HAPPEN_FLOOR, rangeTo),
+    loadPublishedPeriodKeys(MAKE_IT_HAPPEN_FLOOR, rangeTo),
+    loadProductNameMap(),
+    loadProductPeriodPrices(),
+    loadProductFamilyMap(),
+  ]);
+  windowLoads.catch(() => {});
+  // Employee names are read only for a TEAM bound: `personName` names the rep being viewed and the
+  // per-rep list, and both exist only for a team. A single rep's own workspace never reads one.
+  const employeeNamesLoad = boundLoad.then((resolved) =>
+    isTeamBound(resolved) ? loadEmployeeNameMap() : new Map<string, string>(),
+  );
+  employeeNamesLoad.catch(() => {});
+  // A non-team viewer's saved plans are his OWN and nobody else's — no rep to view, no rep list — so
+  // the owner list is known the moment the bound is, and his plans read beside the range instead of
+  // after it. Wrapped, because null from listPlansForOwners already means "no plans table".
+  const ownPlansLoad = boundLoad.then((resolved) =>
+    resolved.rows.kind !== "none" && !isTeamBound(resolved)
+      ? listPlansForOwners([ownerKey ?? ""], periodKind, periodKey).then((plans) => ({ plans }))
+      : null,
+  );
+  ownPlansLoad.catch(() => {});
+
+  const bound = await boundLoad;
 
   const shell: MakeItHappenWorkspace = {
     periodKind,
@@ -108,13 +138,9 @@ export async function buildMakeItHappenWorkspace(
   };
   if (bound.rows.kind === "none") return shell;
 
-  const [rawRows, publishedKeys, productNames, prices, families, employeeNames] = await Promise.all([
-    loadAchievementRange(MAKE_IT_HAPPEN_FLOOR, rangeTo),
-    loadPublishedPeriodKeys(MAKE_IT_HAPPEN_FLOOR, rangeTo),
-    loadProductNameMap(),
-    loadProductPeriodPrices(),
-    loadProductFamilyMap(),
-    loadEmployeeNameMap(),
+  const [[rawRows, publishedKeys, productNames, prices, families], employeeNames] = await Promise.all([
+    windowLoads,
+    employeeNamesLoad,
   ]);
 
   const namesByKey = new Map<string, string>();
@@ -273,7 +299,10 @@ export async function buildMakeItHappenWorkspace(
   }
 
   const planOwners = viewingRep ? [viewingRep.key] : [ownerKey ?? "", ...reps.map((rep) => rep.key)];
-  const storedPlans = await listPlansForOwners(planOwners, periodKind, periodKey);
+  // A non-team viewer's list is `[ownerKey ?? ""]` exactly — `viewingRep` and `reps` are team-only —
+  // which is the read already made above; a team viewer's needs his reps, so it is made here.
+  const ownPlans = await ownPlansLoad;
+  const storedPlans = ownPlans ? ownPlans.plans : await listPlansForOwners(planOwners, periodKind, periodKey);
   const plansAvailable = storedPlans !== null;
   const plansByOwner = new Map<string, SavedPlanSummary[]>();
   for (const plan of storedPlans ?? []) {

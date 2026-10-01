@@ -23,7 +23,7 @@ import { UserPlus } from "lucide-react";
 import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { CustomerPhoneField } from "@/components/phoenix-crm/customer-phone";
 import { customerMetaText, listText } from "@/components/phoenix-crm/labels";
-import { releaseCapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
+import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { emptyPlaceDraft, PlaceEditor, placeDraftProblem, placePayload, type PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import { CrmBackBar, CrmBlock, CrmButton, CrmChoice, CrmField, CrmNote, CrmPanel, CrmPill, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { CUSTOMER_NAME_MAX, parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";

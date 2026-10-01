@@ -1893,7 +1893,15 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const problem = readsPeriod ? periodProblem(period, today, view?.maxDays ?? REPORT_MAX_DAYS) : null;
 
   function sectionUrl(name: ReportSection): string | null {
-    if (!view || name !== activeSection) return null;
+    if (name !== activeSection) return null;
+    // 🔴 THE FIRST FIGURES DO NOT WAIT FOR THE SCOPE (2026-10-01, "slow to transfer between page and
+    // page", Phoenix CRM first). Outside the test world the page opens on Visits for this month with
+    // no filter, and that address reads nothing the scope answers: `withTest` is false whatever the
+    // scope says, and the section and the period are this page's own. So it is asked for BESIDE the
+    // scope rather than after it, as the very URL the loaded page builds — `useCrmGet` keys on the
+    // URL, so the answer is simply already there when the scope lands. Every other section, and a
+    // viewer who may include test accounts, still waits for the scope exactly as before.
+    if (!view && (test || name !== "visits")) return null;
     //  is left OUT of the URL rather than sent: the server reads a missing value as off, and a
     // URL that carries every default is a URL nobody can read.
     const comparing = COMPARABLE_SECTIONS.includes(name) && compare !== "off" ? compare : null;

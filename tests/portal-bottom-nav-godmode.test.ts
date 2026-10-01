@@ -89,8 +89,8 @@ export function runPortalBottomNavGodmodeTests() {
   const crmActions = portalQuickActions({ ...noFlags, showPhoenixCrmTab: true, showMedicalRepExpensesTab: true }).slice(0, 2);
   assert.deepEqual(
     crmActions.map((action) => action.href),
-    ["/employee-portals/field-crm?tab=visits&add=visit", "/employee-portals/field-crm?tab=plan&add=week"],
-    "each opens the module on its own screen through the page's address",
+    ["/employee-portals/field-crm/visits?add=visit", "/employee-portals/field-crm/plan?add=week"],
+    "each opens the module's own page directly — the chooser's `?tab=` would only redirect there, a second round trip per tap",
   );
   const widgetsSrc = readFileSync(WIDGETS, "utf8");
   assert.match(widgetsSrc, /"crm-visit": Stethoscope/, "Add visit has its own glyph");

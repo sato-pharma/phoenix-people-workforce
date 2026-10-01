@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 
-import { ContactHRSupportPage } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
+// The form's OWN module, never employee-portal-dashboard-dynamic (2026-10-01, "slow to transfer
+// between page and page"). That wrapper is a server module holding four `import()`s, and a page that
+// imports any of them is handed every target's chunks — so this page downloaded the dashboard and
+// recharts (91 KB gzip) for one form, measured on the production build.
+import { ContactHRSupportPage } from "@/components/employee-portal/contact-hr-support-page";
 import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,

@@ -25,8 +25,10 @@ export default async function EmployeeBusinessCardsPage() {
   let card: OwnBusinessCard | null = null;
   let myRequests: BusinessCardRequestRow[] = [];
   try {
-    card = await getOwnBusinessCard(access);
-    myRequests = await listBusinessCardRequestsForViewer(access);
+    // READ TOGETHER (2026-10-01, "slow to transfer between page and page"): the card and the caller's
+    // own requests are two independent reads. Either failing still shows the "not ready" state, as
+    // the one-after-the-other reads did.
+    [card, myRequests] = await Promise.all([getOwnBusinessCard(access), listBusinessCardRequestsForViewer(access)]);
   } catch {
     card = null;
   }

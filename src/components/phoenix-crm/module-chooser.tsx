@@ -1,6 +1,7 @@
-import Link from "next/link";
 import { CalendarDays, CalendarRange, ClipboardList, FileBarChart, ListChecks, Search, Settings, Target, Users } from "lucide-react";
 
+// The one client piece: it starts the module's page and its screen at the touch (module-link.tsx).
+import { PhoenixCrmModuleLink } from "@/components/phoenix-crm/module-link";
 import { allowedPhoenixCrmModules, phoenixCrmModulePath, type PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 // Through `view-types`, never `server/overview`: a component may not import server code (the
 // boundary test), and that file exists to re-export exactly these shapes for the screens.
@@ -14,8 +15,9 @@ import type { PhoenixCrmOverview } from "@/lib/phoenix-crm/view-types";
  * landed straight on Today with every other module mounted beside it in one screen; now it opens this,
  * and each module is its own page with its own address.
  *
- * It is a server component and plain links: no state, no client bundle, and the browser's own Back
- * works between the chooser and a module.
+ * It is a server component and links: no state, and the browser's own Back works between the chooser
+ * and a module. The only client code is each card's link (module-link.tsx), which starts the module's
+ * page and its screen downloading at the touch (2026-10-01, "slow to transfer between page and page").
  *
  * Square corners and no ellipsis, per the module's look. One column on a phone, two from `sm`, three
  * from `lg` — the cards carry a sentence each, so three across is the widest that keeps them readable.
@@ -55,9 +57,10 @@ export function PhoenixCrmModuleChooser({ base, overview }: { base: string; over
           const badge = module.key === "team" && waiting > 0 ? waiting : null;
           return (
             <li className="min-w-0" key={module.key}>
-              <Link
+              <PhoenixCrmModuleLink
                 className="flex min-h-full min-w-0 items-start gap-3 rounded-none border border-l-[3px] border-slate-200 border-l-orange-500 bg-white px-4 py-3.5 transition hover:border-slate-300 hover:bg-orange-50/40"
                 href={phoenixCrmModulePath(base, module.key)}
+                moduleKey={module.key}
               >
                 <Icon aria-hidden className="mt-0.5 h-5 w-5 shrink-0 text-orange-700" />
                 <span className="min-w-0 flex-1">
@@ -71,7 +74,7 @@ export function PhoenixCrmModuleChooser({ base, overview }: { base: string; over
                   </span>
                   <span className="mt-1 block break-words text-xs font-semibold leading-5 text-slate-500">{module.blurb}</span>
                 </span>
-              </Link>
+              </PhoenixCrmModuleLink>
             </li>
           );
         })}
