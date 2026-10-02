@@ -104,3 +104,26 @@ export const HIT_TEST_EXPRESSION = `(element) => {
 
 /** Dispatch a click on the node, bypassing whatever is painted over it. */
 export const NODE_CLICK_EXPRESSION = `(element) => { element.click(); }`;
+
+/**
+ * Empty a field before typing into it.
+ *
+ * 🔴 Puppeteer's `type()` APPENDS, and this driver reuses one page for every candidate in a run — so
+ * a second search left the box holding both addresses joined together (measured on production
+ * 2026-10-02: 54 characters of `adel.srour@…` + `asmaa.zaghloul@…`). A box in that state filters to
+ * nothing, and the "already exists" test then answers about a string nobody searched for.
+ *
+ * Done on the element, with an `input` event so a controlled React field notices, rather than with
+ * select-all keystrokes that depend on focus and on platform modifiers.
+ */
+export const CLEAR_FIELD_EXPRESSION = `(element) => {
+  try {
+    if (!("value" in element)) return;
+    element.focus();
+    element.value = "";
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  } catch {
+    // A field that cannot be cleared is left alone; typing still appends, which is the old behaviour.
+  }
+}`;

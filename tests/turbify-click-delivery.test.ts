@@ -23,6 +23,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  CLEAR_FIELD_EXPRESSION,
   CONSOLE_VIEWPORT,
   decideClickDelivery,
   HIT_TEST_EXPRESSION,
@@ -105,7 +106,46 @@ function runWiringCases(): void {
   );
 }
 
+/**
+ * Typing must not append to what the last candidate left behind.
+ *
+ * 🔴 Measured on production 2026-10-02: the driver reuses ONE page per run, and `handle.type()`
+ * appends — so the search box held `adel.srour@satopharma.comasmaa.zaghloul@satopharma.com`, 54
+ * characters of two addresses. A box in that state filters to nothing, and the "does this address
+ * already exist?" test reads that result, so its answer is about a string nobody searched for. On a
+ * robot that creates mailboxes, an existence check answering about the wrong string is the dangerous
+ * end of this.
+ */
+function runClearFieldCases(): void {
+  // It clears the value and tells a controlled field about it — a React input that is not notified
+  // re-renders the old value straight back.
+  assert.match(CLEAR_FIELD_EXPRESSION, /element\.value = ""/);
+  assert.match(CLEAR_FIELD_EXPRESSION, /dispatchEvent\(new Event\("input"/);
+  assert.match(CLEAR_FIELD_EXPRESSION, /bubbles: true/);
+  // It refuses to touch something that is not a field at all.
+  assert.match(CLEAR_FIELD_EXPRESSION, /"value" in element/);
+  // And it fails open: a field it cannot clear keeps the old append behaviour rather than throwing
+  // in the middle of a run.
+  assert.match(CLEAR_FIELD_EXPRESSION, /catch \{/);
+  // It never submits or clicks.
+  assert.doesNotMatch(CLEAR_FIELD_EXPRESSION, /\.click\(|\.submit\(/);
+
+  // The driver must route every fill through it.
+  const driver = readFileSync(
+    new URL("src/lib/new-hire-mailbox/robot/turbify-joiner.ts", new URL("../", import.meta.url)), "utf8");
+  assert.match(driver, /CLEAR_FIELD_EXPRESSION/, "fillOne must clear before typing");
+  // The bare append form must be gone. The source is collapsed to one line first, so this does
+  // not depend on how the file happens to be wrapped.
+  const flat = driver.replace(/\s+/g, " ");
+  assert.equal(
+    flat.includes("const fillOne = (page: ConsolePage, locator: Locator, value: string) => act(page, locator, (handle) => handle.type("),
+    false,
+    "fillOne must not type straight into a field that may already hold the last candidate's value",
+  );
+}
+
 export function runTurbifyClickDeliveryTests(): void {
+  runClearFieldCases();
   runDecisionCases();
   runViewportCases();
   runExpressionCases();
