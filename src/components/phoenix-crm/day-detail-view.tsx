@@ -14,7 +14,9 @@ import {
   CrmStatGrid,
 } from "@/components/phoenix-crm/ui";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
+import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
+import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 // Through `view-types`, never `server/day-detail`: a component may not import server code, and an
 // `import type` counts — the boundary test caught exactly this on the first run.
 import type { PhoenixCrmDayDetail } from "@/lib/phoenix-crm/view-types";
@@ -43,7 +45,7 @@ function timeOf(visit: { capturedAt: string }): string {
 }
 
 export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
-  const { counts, dayActivity, onLeave, pharmacies, territory, visits } = view;
+  const { awaitingApproval, awaitingValidation, counts, dayActivity, onLeave, pharmacies, territory, visits } = view;
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -55,13 +57,31 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
         title={`${territory.repName ?? "Seat is vacant"} · ${dayLabelLong(view.date)}`}
       >
         <CrmBlock title="The day">
-          {/* 🔴 Three figures apart. There is no combined number on this page. */}
+          {/* 🔴 Three figures apart. There is no combined number on this page. And they are the
+              CALENDAR CELL's own figures — only the visits that count in a KPI — so the grid and the
+              page the grid links to can never print two different numbers for one Tuesday. */}
           <CrmStatGrid>
-            <CrmStat label="AM" value={counts.am} />
-            <CrmStat label="PM" value={counts.pm} />
+            <CrmStat label="AM" note="Counted in the KPIs" value={counts.am} />
+            <CrmStat label="PM" note="Counted in the KPIs" value={counts.pm} />
             <CrmStat label="Pharmacies" note="Counted apart, never inside AM or PM" value={counts.pharmacies} />
             <CrmStat label="Territory" value={territory.name} />
           </CrmStatGrid>
+          {/* 🔴 Saved, real, and in no figure yet — so a 0 above a list of visits says WHY. The same
+              sentence both call-rate boards and the calendar print, and the two reasons stay apart. */}
+          {awaitingValidationNote({ awaitingValidation }) ? (
+            <CrmNote title="Some of this day is not scored yet" tone="info">
+              <p>{awaitingValidationNote({ awaitingValidation })}</p>
+            </CrmNote>
+          ) : null}
+          {awaitingApproval > 0 ? (
+            <CrmNote title="Off the plan, still with the approvers" tone="info">
+              <p>
+                {awaitingApproval === 1
+                  ? "1 off-plan visit is waiting for a decision, so it is in none of the figures above."
+                  : `${awaitingApproval} off-plan visits are waiting for a decision, so they are in none of the figures above.`}
+              </p>
+            </CrmNote>
+          ) : null}
           {view.isTest ? (
             <CrmNote title="Test entries" tone="info">
               <p>This day is being read in test mode, so it shows test entries and not the field force&apos;s own.</p>
@@ -69,7 +89,7 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
           ) : null}
         </CrmBlock>
 
-        {dayActivity || onLeave ? (
+        {dayActivity || onLeave || view.leaveUnread ? (
           <CrmBlock title="What else this day was">
             {dayActivity ? (
               <p className="break-words text-sm font-semibold leading-6 text-slate-700">
@@ -89,6 +109,11 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
               <p className="mt-1 break-words text-sm font-semibold leading-6 text-slate-700">
                 HR has approved leave covering this day.
               </p>
+            ) : null}
+            {/* 🔴 Said, never swallowed: without it a day of approved leave reads exactly like a day
+                the rep worked and logged nothing. */}
+            {view.leaveUnread ? (
+              <p className="mt-1 break-words text-sm font-semibold leading-6 text-amber-800">{LEAVE_UNREAD_NOTE}</p>
             ) : null}
           </CrmBlock>
         ) : null}
@@ -122,6 +147,14 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                     <span className="flex min-w-0 flex-wrap gap-1.5">
                       {visit.unplanned ? <CrmPill tone="warn">{visit.unplanned.statusLabel}</CrmPill> : null}
                       {visit.outOfList ? <CrmPill tone="warn">{visit.outOfList.label}</CrmPill> : null}
+                      {/* 🔴 The row's own answer to the question the headline figures ask, so a
+                          reader counting the cards can see which ones the numbers above are made of.
+                          It is a fact about the LIST — the customer has not been admitted yet — and
+                          never a mark against the rep. An out-of-list visit already says it in its
+                          own words above, so it is not said twice. */}
+                      {!visit.customerValidated && !visit.outOfList ? (
+                        <CrmPill tone="neutral">Not scored yet — the customer is not validated</CrmPill>
+                      ) : null}
                       {visit.clockOff ? <CrmPill tone="warn">The phone&apos;s clock was off</CrmPill> : null}
                     </span>
                   }
@@ -219,7 +252,10 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
 
         {pharmacies.length > 0 ? (
           <CrmBlock title="Pharmacies he took feedback from">
-            {/* Each one once, whatever the spelling, and beside the visits rather than inside them. */}
+            {/* Each one once, whatever the spelling, and beside the visits rather than inside them.
+                🔴 EVERY pharmacy is listed — the feedback was really taken — while the FIGURE above
+                counts the ones a scored visit named, which is what the calendar cell counts. The
+                difference is said on the line rather than left as two numbers that disagree. */}
             <div className="grid min-w-0 gap-1.5">
               {pharmacies.map((pharmacy) => (
                 <p className="break-words text-xs font-semibold leading-5 text-slate-600" key={pharmacy.name}>
@@ -227,6 +263,7 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                     {pharmacy.name}
                   </span>
                   {` · from ${cairoClock(pharmacy.firstCapturedAt)} · on the visit to ${pharmacy.fromCustomers.join(", ")}`}
+                  {pharmacy.counted ? "" : " · not in the figure above yet"}
                 </p>
               ))}
             </div>

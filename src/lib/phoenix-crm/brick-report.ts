@@ -113,14 +113,30 @@ export type BrickCrmRow = {
   visits: number;
 };
 
-/** One brick's booked sales, already masked and already summed across the months. */
-export type BrickSalesTotal = { brickId: string; areaCode: string; value: number };
+/**
+ * One brick's booked sales for ONE LINE, already masked.
+ *
+ * 🔴 `lineCode` IS NOT DECORATION — WITHOUT IT THIS BOARD ADDS EVERY LINE'S SALES ONTO ONE BRICK.
+ * The closing's brick grain is per line, and the loader is called once per line per landed month; the
+ * first cut flattened those results into `{ brickId, areaCode, value }` and dropped which line each
+ * row came from, so `salesByBrick` keyed by brick alone summed CNS, Anti Infective and Pedia together.
+ * Every territory's brick then showed all three lines' money, and another line's bricks appeared on
+ * it as "Sells here, nobody on the list" — the one row the board exists to raise, manufactured. It
+ * hit the default view of the SFE Manager, the CEO and the Super Admin, who open on "All lines".
+ */
+export type BrickSalesTotal = { lineCode: string; brickId: string; areaCode: string; value: number };
 
 /** The brick master, so a brick with sales and nobody on it still has a NAME and not an id. */
 export type BrickName = { brickId: string; brickName: string; areaCode: string };
 
-/** The territory a row belongs to, resolved by the caller from the seat model. */
-export type BrickTerritory = { seatId: string; territoryName: string; areaCodes: readonly string[] };
+/**
+ * The territory a row belongs to, resolved by the caller from the seat model.
+ *
+ * `lineCode` is what the sales half is matched on (see {@link BrickSalesTotal}). Null for a seat the
+ * organogram gives no line: it then gets no sales-only bricks at all, which is the honest answer —
+ * there is no line whose closing could be said to belong to it.
+ */
+export type BrickTerritory = { seatId: string; territoryName: string; lineCode: string | null; areaCodes: readonly string[] };
 
 const up = (value: string | null | undefined) => String(value ?? "").trim().toUpperCase();
 
@@ -143,6 +159,26 @@ const STATUS_ORDER: Record<BrickCoverageStatus, number> = {
   idle: 3,
 };
 
+/**
+ * The WORDS each status is read as — one map, shared by the screen and the workbook.
+ *
+ * 🔴 The export used to print the raw key: a manager opening the pack read `sales-no-list` in the
+ * Standing column where the screen says "Sells here, nobody on the list". A workbook leaves the
+ * building without the screen, so it is the one place a reader cannot look up what a key meant. The
+ * ink (the pill's tone and the row's accent) stays on the screen, because that is a design decision;
+ * the sentence is a FACT about the row and belongs where both sides can read it.
+ */
+export const BRICK_STATUS_LABELS: Record<BrickCoverageStatus, string> = {
+  "sales-no-list": "Sells here, nobody on the list",
+  "list-no-sales": "On the list, no sales booked",
+  covered: "Covered",
+  idle: "Neither",
+};
+
+export function brickStatusLabel(status: BrickCoverageStatus): string {
+  return BRICK_STATUS_LABELS[status] ?? status;
+}
+
 function statusOf(customers: number, sales: number): BrickCoverageStatus {
   if (sales > 0 && customers === 0) return "sales-no-list";
   if (sales <= 0 && customers > 0) return "list-no-sales";
@@ -150,12 +186,22 @@ function statusOf(customers: number, sales: number): BrickCoverageStatus {
   return "idle";
 }
 
+/** One line's sales on one brick — the key `salesByBrick` is built on. */
+function salesKey(lineCode: string | null, brickId: string): string {
+  return `${up(lineCode)}|${brickId}`;
+}
+
 /**
  * Join the territory's bricks, its CRM coverage and the closing's brick sales.
  *
  * Every brick that appears on EITHER side is a row: the rep's own bricks, and every brick of his
- * area(s) the closing booked to. That union is the whole point — a brick present only in the sales
- * half is the one a manager most needs to see.
+ * area(s) the closing booked to, ON HIS OWN LINE. That union is the whole point — a brick present
+ * only in the sales half is the one a manager most needs to see.
+ *
+ * 🔴 THE SALES ARE KEYED BY LINE AND BRICK, NEVER BY BRICK ALONE. A territory sells one line; the
+ * closing's brick grain is per line; and a board that added every line's money onto one brick both
+ * inflated the covered rows and invented "Sells here, nobody on the list" rows out of other lines'
+ * geography. See {@link BrickSalesTotal}.
  */
 export function buildBrickCoverageReport(input: {
   territories: readonly BrickTerritory[];
@@ -168,16 +214,19 @@ export function buildBrickCoverageReport(input: {
   const salesByBrick = new Map<string, number>();
   for (const row of input.sales) {
     if (!row.brickId) continue;
-    salesByBrick.set(row.brickId, (salesByBrick.get(row.brickId) ?? 0) + row.value);
+    const key = salesKey(row.lineCode, row.brickId);
+    salesByBrick.set(key, (salesByBrick.get(key) ?? 0) + row.value);
   }
 
   const rows: BrickCoverageRow[] = [];
   for (const territory of input.territories) {
     const areaSet = new Set(territory.areaCodes.map(up));
+    const line = territory.lineCode;
     const seen = new Set<string>();
     const emit = (brickId: string | null, crm: BrickCrmRow | null) => {
       const master = brickId ? nameOfBrick.get(brickId) : undefined;
-      const sales = brickId ? (salesByBrick.get(brickId) ?? 0) : 0;
+      // A seat with no line has no line's closing to read, so every brick of it shows no sales.
+      const sales = brickId && line ? (salesByBrick.get(salesKey(line, brickId)) ?? 0) : 0;
       const customers = crm?.customers ?? 0;
       rows.push({
         seatId: territory.seatId,
@@ -205,10 +254,14 @@ export function buildBrickCoverageReport(input: {
       emit(crm.brickId, crm);
     }
 
-    // The sales half's own bricks, for the areas this territory carries. A brick already emitted
-    // above is skipped; one that is new here is a `sales-no-list` row, which is the board's point.
+    // The sales half's own bricks, for the areas this territory carries AND on its own line. A brick
+    // already emitted above is skipped; one that is new here is a `sales-no-list` row, which is the
+    // board's point. 🔴 The line test is what keeps another line's brick off this rep's board: an
+    // area is worked by one rep per line, so without it a Pedia rep was listed as missing the CNS
+    // rep's bricks in the same area.
     for (const sale of input.sales) {
       if (!sale.brickId || seen.has(sale.brickId)) continue;
+      if (!line || up(sale.lineCode) !== up(line)) continue;
       if (!areaSet.has(up(sale.areaCode))) continue;
       seen.add(sale.brickId);
       emit(sale.brickId, null);

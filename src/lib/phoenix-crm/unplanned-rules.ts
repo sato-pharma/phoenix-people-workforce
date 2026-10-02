@@ -121,6 +121,41 @@ export function unplannedFirstStatus(hasReviewer: boolean): Extract<UnplannedVis
   return hasReviewer ? "manager_pending" : "sfe_pending";
 }
 
+/**
+ * 🔴 DOES THIS VISIT COUNT IN A KPI — THE TYPESCRIPT TWIN OF `phoenix_crm_countable_visits` AND ITS
+ * `customer_validated` COLUMN, WORD FOR WORD.
+ *
+ * Both halves of the one question (the view's own comment says the same thing from the SQL side):
+ *
+ *   APPROVAL        an off-plan visit counts in nothing until the manager and then SFE approve it
+ *                   (owner, 2026-09-26); an OUT-OF-LIST visit has no approval of its own and waits
+ *                   on its customer instead, which is the other half;
+ *   VALIDATION      a visit to a customer nobody has validated is saved and counts in nothing
+ *                   (owner, 2026-10-01: "not counted in KPIs till validated").
+ *
+ * It exists because a reader of the RAW table has no view to ask. The day page is exactly that: it
+ * reads `phoenix_crm_visits` (it has to — it lists every visit, with its status), and its three
+ * headline figures counted every row, while the calendar cell that OPENS it counts only the rows the
+ * view and the column agree on. So one rep's Tuesday read 3 on the grid and 5 on the page it links
+ * to, with nothing on either screen to say which was right.
+ *
+ * `false` is never "this visit is not real" — it is "not yet", or, on a refusal, "not ever". The
+ * caller says which in words; nothing here is a verdict about the rep.
+ */
+export function visitCountsInKpi(input: {
+  isUnplanned: boolean;
+  unplannedKind: UnplannedKind | null;
+  /** The off-plan approval's own status, where there is one. */
+  unplannedStatus: UnplannedVisitStatus | null;
+  /** `phoenix_crm_customers.validated_at is not null` for the visited customer. */
+  customerValidated: boolean;
+}): boolean {
+  if (!input.customerValidated) return false;
+  if (!input.isUnplanned) return true;
+  if (input.unplannedKind === "out_of_list") return true;
+  return input.unplannedStatus === "approved";
+}
+
 export type UnplannedReasonResult = { ok: true; value: string } | { ok: false; error: string };
 
 /**

@@ -580,6 +580,13 @@ const LATER_MIGRATIONS = [
   // phoenix_crm_decide_plan_edit_request and so leaves that function the only writer of `expired`.
   // It replaces nothing, no save_visit, no table.
   "supabase/migrations/20261002220047_phoenix_crm_activity_and_plan_edit_expiry.sql",
+  // Plan against actual asks the day-by-day sent rule, and takes a DROPPED customer out of the
+  // denominator (2026-10-02). It REPLACES phoenix_crm_report_plan_vs_actual with its live body and
+  // those two changes; nothing else in the module replaces that function, so it appends safely at the
+  // end. No table, no new function, no save_visit. `runMigrationReviewFixTests` reads the spliced
+  // result — so without this entry that check would go on reading SQL the database has stopped
+  // running, which is the exact failure `liveMigrationSql` exists to prevent.
+  "supabase/migrations/20261002221947_phoenix_crm_plan_vs_actual_sent_days.sql",
   // A visit is never dated onto an EARLIER visit day than the one it arrived on (the 2026-10-02
   // audit). It REPLACES phoenix_crm_save_visit, so it is now the LAST entry that does and must stay
   // last among them — liveMigrationSql applies each replacement in order and the last one wins. One
@@ -910,12 +917,19 @@ function runMigrationReviewFixTests(sql: string) {
 
   // Plan against actual counts a day when the plan stood sent at the END of that Cairo day, read from
   // the plan's own events — never from the plan's status today, which a reopen or a return changes.
+  //
+  // 🔴 AND "SENT" IS SUBMITTED OR APPROVED, NOT 'returned'. It used to accept 'returned' too, which
+  // made a WHOLE-week return — and the returned day of a one-day return — count as PLANNED here while
+  // `phoenix_crm_save_visit` stamped the rep's visit on it `is_unplanned`. The rule is day-by-day
+  // since 20261002221947; tests/phoenix-crm-plan-review.test.ts section 5e holds the whole of it.
   const planVsActual = functionSql(sql, "phoenix_crm_report_plan_vs_actual");
   assert.match(
     planVsActual,
-    /select e\.to_status\s+from public\.phoenix_crm_plan_events e\s+where e\.plan_id = d\.plan_id\s+and e\.to_status is not null\s+and e\.created_at < \(\(d\.plan_date \+ 1\)::timestamp at time zone 'Africa\/Cairo'\)\s+order by e\.created_at desc, e\.id desc\s+limit 1\s+\) in \('submitted', 'approved', 'returned'\)/,
-    "a plan day counts when the plan's last status before that Cairo day ended was sent, approved or returned",
+    /select e\.to_status, e\.details, e\.created_at\s+from public\.phoenix_crm_plan_events e\s+where e\.plan_id = d\.plan_id\s+and e\.to_status is not null\s+and e\.created_at < \(\(d\.plan_date \+ 1\)::timestamp at time zone 'Africa\/Cairo'\)\s+order by e\.created_at desc, e\.id desc\s+limit 1\s+\) latest/,
+    "the plan's last status before that Cairo day ended is what decides the day",
   );
+  assert.match(planVsActual, /where latest\.to_status in \('submitted', 'approved'\)/, "and sent means submitted or approved");
+  assert.doesNotMatch(planVsActual, /in \('submitted', 'approved', 'returned'\)/, "a returned week is not authority by its status alone");
   assert.match(
     planVsActual,
     /from sent_days s\s+join public\.phoenix_crm_plans pl on pl\.id = s\.plan_id\s+join public\.phoenix_crm_plan_items i on i\.plan_id = s\.plan_id and i\.plan_date = s\.plan_date/,

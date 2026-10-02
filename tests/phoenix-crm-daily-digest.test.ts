@@ -29,8 +29,11 @@ import { enforcePhoenixCrmEmailBlock } from "../src/lib/notifications/phoenix-cr
  * perfectly, look fine in staging, and only fail as a manager who stopped reading.
  */
 
-const DAY = "2026-09-24";
-const DAY_LABEL = "Thursday 24 September 2026";
+// 🔴 A WEDNESDAY, not the Thursday this fixture used to carry. The digest only ever speaks about a
+// WORKING day (Saturday to Wednesday, holidays out) since 2026-10-02, and a fixture dated on a day
+// the feature can no longer report on is a fixture that teaches the next reader the wrong rule.
+const DAY = "2026-09-23";
+const DAY_LABEL = "Wednesday 23 September 2026";
 
 function row(overrides: Partial<TerritoryException> = {}): TerritoryException {
   return {
@@ -39,8 +42,8 @@ function row(overrides: Partial<TerritoryException> = {}): TerritoryException {
     lineName: "Pedia",
     repName: "Ahmed Samir",
     kind: "no_visit",
-    label: "No visit on the last field day",
-    why: "The last full field day has no visit on it.",
+    label: "No visit on the last working day",
+    why: "The last working day has no visit on it.",
     detail: null,
     ...overrides,
   };
@@ -79,7 +82,7 @@ export function runPhoenixCrmDailyDigestTests(): void {
     );
     assert.equal(digests.length, 1, "one message, not one per problem");
     const [digest] = digests;
-    assert.equal(digest.title, "2 territories need you · Thursday 24 September 2026");
+    assert.equal(digest.title, "2 territories need you · Wednesday 23 September 2026");
     assert.ok(digest.message.indexOf("Aaa") < digest.message.indexOf("Zzz"), "worst first inside the message too");
     assert.ok(digest.message.includes("Aaa · No rep: No rep in this seat"), "a vacant seat says so where the name would be");
     assert.ok(digest.message.includes("Zzz · Ahmed Samir: Below the PM call rate — 9.0 a day against 10"));
@@ -89,7 +92,7 @@ export function runPhoenixCrmDailyDigestTests(): void {
 
     // One territory reads as one, not "1 territories".
     const single = planPhoenixCrmDigest([row()], [manager(["SEAT-1"])], DAY, DAY_LABEL);
-    assert.equal(single[0].title, "1 territory needs you · Thursday 24 September 2026");
+    assert.equal(single[0].title, "1 territory needs you · Wednesday 23 September 2026");
   }
 
   // ── 🔴 Idempotent per manager per DAY, not per fire ───────────────────────────────────────────
@@ -100,7 +103,7 @@ export function runPhoenixCrmDailyDigestTests(): void {
     const first = planPhoenixCrmDigest([row()], [manager(["SEAT-1"])], DAY, DAY_LABEL);
     const again = planPhoenixCrmDigest([row()], [manager(["SEAT-1"])], DAY, DAY_LABEL);
     assert.equal(first[0].idempotencyKey, again[0].idempotencyKey, "the same day twice is the same key");
-    assert.equal(first[0].idempotencyKey, "phoenix_crm:digest:2026-09-24:B-200");
+    assert.equal(first[0].idempotencyKey, "phoenix_crm:digest:2026-09-23:B-200");
     const tomorrow = planPhoenixCrmDigest([row()], [manager(["SEAT-1"])], "2026-09-26", DAY_LABEL);
     assert.notEqual(first[0].idempotencyKey, tomorrow[0].idempotencyKey, "a new day is a new message");
     // Two managers on the same day are two keys, or the second one never hears.
@@ -152,8 +155,19 @@ export function runPhoenixCrmDailyDigestTests(): void {
     // the same territory on the same morning, which nobody would notice for a month.
     assert.ok(runner.includes("gatherExceptions({"), "the digest calls the board's own gathering");
     assert.equal(/judgeTerritory|buildExceptions/.test(runner), false, "and judges nothing itself");
-    assert.ok(runner.includes("const DIGEST_WINDOW_FIELD_DAYS = 1;"), "one field day — at 06:55 he wants yesterday");
-    assert.ok(runner.includes("windowFieldDays: DIGEST_WINDOW_FIELD_DAYS"));
+    assert.ok(runner.includes("const DIGEST_WINDOW_WORKING_DAYS = 1;"), "one working day — at 06:55 he wants yesterday");
+    assert.ok(runner.includes("windowWorkingDays: DIGEST_WINDOW_WORKING_DAYS"));
+
+    // 🔴 AND THAT DAY IS A WORKING DAY, NEVER "the last day that was not a Friday". The digest used
+    //    to judge THURSDAY every Friday morning — a day that holds no PM call by design — so every
+    //    active territory in the company read "Below the PM call rate · 0.0", and on a holiday
+    //    Thursday such as 8 October 2026 it read "No visit". That lands on managers' Telegram, and
+    //    it is the 2026-09-28 flood in a different shape.
+    assert.ok(runner.includes("const day = board.lastWorkingDay;"), "the day comes from the board's own working-day answer");
+    assert.equal(/lastFinishedFieldDay/.test(runner), false, "the Friday-only rule is gone from the digest");
+    // A morning with no working day behind it sends NOTHING — and says so, so a correct silence is
+    // tellable from a broken one.
+    assert.ok(runner.includes("skippedNotAWorkingDay: true"), "a day that is not a working day is skipped");
 
     // A territory whose line has not opened has no app to have been used, and putting it on a
     // manager's message would accuse him of a decision that is the owner's.
