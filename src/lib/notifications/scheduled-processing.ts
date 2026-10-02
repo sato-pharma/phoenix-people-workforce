@@ -11,7 +11,7 @@ import { processDeferredDeliveryRetries, processPushDeliveryRetries, processTele
 import { processDueProbationReminderEvents } from "@/lib/probation/service";
 import { cleanupStalePendingSosBatches } from "@/lib/sales/source-of-sales-batch-supersede";
 import { reapStaleIReports360SyncRuns } from "@/lib/crm/sync";
-import { logError } from "@/lib/observability/log";
+import { logError, logInfo } from "@/lib/observability/log";
 
 // This cron runs many steps serially under the route's `maxDuration = 300`. Each step is
 // bounded by a soft per-step cap and a global deadline (see step-runner.ts) so a single
@@ -35,8 +35,12 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   // measured against it, which is what keeps a row inserted mid-run from reading as stranded.
   const runStartedAtIso = new Date(enteredAt).toISOString();
   if (inFlightStartedAt !== null && enteredAt - inFlightStartedAt < OVERLAP_LOCK_MS) {
-    console.warn(
+    // logInfo, not console.warn. The overlap guard DOING ITS JOB is the healthy outcome on a
+    // per-minute cron, and console.warn goes to stderr, which Railway reads as an error — so the
+    // one thing proving the lock works read as a fault. `labels.event` keeps it searchable.
+    logInfo(
       `[cron:process] previous run still in flight (${enteredAt - inFlightStartedAt}ms ago) — skipping this invocation to avoid overlap`,
+      { labels: { event: "cron_process_overlap_skipped", job: "phoenix-process-notifications" } },
     );
     return { skipped: true as const, reason: "overlapping-run" as const };
   }

@@ -1,5 +1,6 @@
 import { isCountryLevelGeocode } from "@/lib/google-maps/geocode-precision";
 import { describeRoutesFailure } from "@/lib/google-maps/routes-error";
+import { logWarning } from "@/lib/observability/log";
 
 type LatLng = { lat: number; lng: number };
 
@@ -336,9 +337,18 @@ export async function googleGeocodeAddress(address: string): Promise<LatLng | nu
   // employees' homes in the middle of the Western Desert. Treat it as no result at all: every
   // caller already handles null correctly (omit the columns, mark 'failed', don't cache).
   if (isCountryLevelGeocode({ lat, lng, types: top?.types })) {
-    console.warn(
+    // logWarning, not console.warn. Node writes console.warn to STDERR, and Railway classifies
+    // stderr as ERROR whatever the author intended — so this designed-success path (the `return
+    // null` below IS the correct outcome, and every caller handles it) was 273 lines of the error
+    // channel in 40 hours, measured 02 Oct 2026. logWarning goes to stdout and carries
+    // `labels.event`, so it becomes searchable rather than merely loud.
+    //
+    // Three inputs produce almost all of it: "meeting expense (no travel)", "baniseaf", "مصر".
+    // Those are data-quality items, not geocoder faults.
+    logWarning(
       `[google-maps] geocode for "${address}" resolved only to the country `
       + `(${top?.formatted_address ?? "Egypt"}); discarding it rather than storing the centroid`,
+      { labels: { event: "google_maps_country_level_geocode" } },
     );
     return null;
   }

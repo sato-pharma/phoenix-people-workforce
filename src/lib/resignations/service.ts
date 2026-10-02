@@ -8,7 +8,7 @@ import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { DECLINE_OFFER_WINDOW_DAYS, isDeclineOfferEligible } from "@/lib/resignations/decline-offer-eligibility";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { resolveNotificationPersonRecipients, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
+import { resolveNotificationPersonRecipients, resolveRoleRecipientHrIds } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import { isEmploymentAccessRevoked } from "@/lib/auth/session-lifecycle";
 import { getOutstandingDevicesByEmployee } from "@/lib/devices/service";
@@ -2334,13 +2334,11 @@ export async function runResignationSlaDaily(): Promise<{ processed: number; err
     .in("status", ["submitted", "under_review"]);
   if (error) return { processed: 0, errors: 1 };
 
-  const notifyRoles = await resolveNotificationRoleRecipients("resignation_sla_reminder");
-  const { data: hrApprovers } = await supabase
-    .from("app_auth_users")
-    .select("hr_id")
-    .in("role", notifyRoles)
-    .eq("is_active", true);
-  const hrHrIds = (hrApprovers ?? []).map((a) => String(a.hr_id)).filter(Boolean);
+  // Resolved, filtered and deduped by person in one place — see resolveRoleRecipientHrIds. The line
+  // this replaces was `.map((a) => String(a.hr_id)).filter(Boolean)`, which turned the admin-HR
+  // console's NULL hr_id into the string "NULL" and failed this reminder's notification insert on
+  // its foreign key, once per overdue resignation, every day at 06:36 Cairo.
+  const hrHrIds = await resolveRoleRecipientHrIds("resignation_sla_reminder");
   if (hrHrIds.length === 0) return { processed: 0, errors: 0 };
 
   let processed = 0;

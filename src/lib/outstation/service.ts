@@ -117,7 +117,7 @@ import {
   resolveOutstationSubmitRouting,
 } from "@/lib/outstation/submit-recipients";
 import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
-import { resolveNotificationRoleEnabled, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
+import { resolveNotificationRoleEnabled, resolveRoleRecipientHrIds } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
 import {
   canViewEmployeeExpenseScope,
@@ -4801,14 +4801,11 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
     .eq("status", "submitted");
   if (error) return { processed: 0, errors: 1 };
 
-  // Find HR-level approver HR IDs from app_auth_users
-  const notifyRoles = await resolveNotificationRoleRecipients("outstation_sla_reminder");
-  const { data: approvers } = await supabase
-    .from("app_auth_users")
-    .select("hr_id")
-    .in("role", notifyRoles)
-    .eq("is_active", true);
-  const approverHrIds = (approvers ?? []).map((a) => String(a.hr_id)).filter(Boolean);
+  // Find HR-level approver HR IDs — resolved, filtered and deduped by person in one place.
+  // This carried the identical `String(a.hr_id)` hole as the resignation reminder and was quiet only
+  // because `outstation_sla_reminder` is disabled by default; enabling it would have produced the
+  // same daily foreign-key failure on the admin-HR console's NULL hr_id.
+  const approverHrIds = await resolveRoleRecipientHrIds("outstation_sla_reminder");
   if (approverHrIds.length === 0) return { processed: 0, errors: 0 };
 
   let processed = 0;
