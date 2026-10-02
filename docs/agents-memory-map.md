@@ -186,6 +186,9 @@ status, give it its own line.
 - **Production has NO PITR — 7 daily physical backups are the whole recovery story** — `production-supabase-has-no-pitr-only-daily-backups`
 - **Payroll NEVER reads social_insurance_status — the social_insurance_wage column…** — `payroll-reads-the-insurance-wage-never-the-status` **(inline — load-bearing)** · `social-insurance-and-tax-never-reduce-take-home-pay` **(inline — load-bearing)**
 - **A HELD payroll row is DROPPED at publish, silently.** `a-held-payroll-row-is-dropped-at-publish-and-leaves-no-trace` **(inline — load-bearing)**
+- **A vacation balance is RECOMPUTED, never read from a snapshot — INSERT missing days, never UNPAID, and `salary_records.unpaid_vacations` is a second path that has taken money** — `vacation-balance-is-recomputed-live-snapshots-are-display-only` **(inline — load-bearing)**
+- **Hiring ONE person breaks achievement everywhere — the insert auto-seats them and flips `line_area_map.area_state`, which is hashed into the fingerprint; re-stamp after any hire** — `an-employee-insert-auto-fills-a-vacant-seat-and-restamps-nothing` **(inline — load-bearing)**
+- **Auth metadata keys `phoenix_role`, not `role`, so a migration writing `role` matches 0 rows and verifies itself green; `banned_until` is not deactivation** — `auth-metadata-role-key-is-phoenix-role-not-role` · `deactivated-accounts-are-mostly-not-banned-at-the-auth-layer` **(inline — load-bearing)**
 - **A LOCAL run writes PRODUCTION but silently skips every email** — `local-run-against-prod-db-silently-skips-every-email` · `local-resend-key-is-restricted-use-railway-run-to-send-from-production`
 - **STAGING cannot rehearse a PRODUCTION shape.** — `staging-cannot-rehearse-shapes-only-prod-surgery-made`
 - **APP_ENV was UNSET on Railway staging, so staging identified itself as PRODUCTION** — `app-env-unset-on-staging-made-it-look-like-production`
