@@ -356,11 +356,11 @@ export async function runJobHeartbeatRegisterTests() {
   // retired job is not a broken job.
   const retiredSlugRow = {
     slug: "phoenix-interview-digest",
-    first_seen_at: "2026-09-26T14:39:00.000Z",
-    last_outcome: null,
-    last_success_at: null,
-    last_fail_at: null,
-    last_detail: null,
+    firstSeenAt: "2026-09-26T14:39:00.000Z",
+    lastOutcome: null,
+    lastSuccessAt: null,
+    lastFailAt: null,
+    lastDetail: null,
   };
   const withRetired = assessJobHeartbeats({
     declarations: [DAILY_0636],
