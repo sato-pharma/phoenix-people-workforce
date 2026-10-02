@@ -882,6 +882,36 @@ eslint cache per run. `~/remote-check/work` is no longer used. The bash lives in
 `scripts/remote-check-plan.mjs`; `tests/remote-check.test.ts` runs it for real against a throwaway
 bare repo with two overlapping invocations on two commits.
 
+### REVERSED the same day — PRs back on hosted, the box is previews only, 2026-09-30
+
+The owner widened it in the morning and reversed it that evening, in his own words: *"put PRs back
+on hosted and keep the box for previews only"*. `CI_SELF_HOSTED` went **off** — the kill switch, not
+an edit to the `runs-on` expression, exactly as "The safety rules" requires. The expression is
+UNCHANGED and still reaches every same-repo pull request, so one variable restores widening; the
+"Widening it" section above stays as the account of how it is wired, not as a description of what is
+running.
+
+**It was reversed because the box could not carry it, and the measurement is the reason.** `tsc`
+peaks at **5.55 GB** on a box with **7.7 GB**, so TWO concurrent `checks` jobs cannot fit. On
+2026-09-30 two typechecks sitting at **4.6 GB + 1.3 GB** drove it **3,579 MB into swap**, and the
+queue read **9 runs queued and 0 in progress** — CI had stopped rather than slowed, which is the
+failure a shared box makes look like slowness. Capped to ONE runner (`phoenix-ci-nbg1-b` stopped,
+masked and deregistered), the two required jobs then SERIALISE at **~305s against ~209s hosted**.
+That is why hosted won: the box is faster per job and slower per PR, and a PR is what the owner
+waits on.
+
+🔴 **The runner self-updates and does not come back.** It upgraded **2.331.0 → 2.337.0**, exited
+`no retry needed` with code **0**, and `svc.sh`'s generated systemd unit carries `Restart=no` — so
+it read **offline** while every job queued behind the other runner, with nothing red anywhere to say
+so. Both units now carry a `Restart=always` drop-in. **Never register a runner without checking
+`systemctl show <unit> -p Restart`.**
+
+What survives the reversal, and is why the safety rules above are not now dead letters: the
+`github.event_name == 'pull_request'` clause is the ONLY thing keeping `main` hosted, and `main`'s CI
+is the production deploy gate; the same-repo clause is what stops a fork PR executing arbitrary code
+on his box; and the hardware refusal stands (*"I WILL NOT BUY THIS"*, of two CPX32s at
+€70.98/month — he bought ONE box himself). The box keeps serving `phx-preview`.
+
 ## Turning it off
 
 ```bash
