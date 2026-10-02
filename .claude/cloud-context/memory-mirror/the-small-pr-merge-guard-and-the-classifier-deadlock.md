@@ -1,12 +1,47 @@
 ---
 name: the-small-pr-merge-guard-and-the-classifier-deadlock
-description: "A merge of a SMALL PR (<= 4 changed files) is refused twice and cannot be completed by a session at all: bash-guard clause C10 blocks the plain `gh pr merge` and names `PHX_MERGE_OK=1` as its stand-down, and the auto-mode classifier then refuses THAT as a [Safety Bypass Flag] — and the refusal can tighten the whole session's Bash, so a plain read-only `git status` comes back [Auto-Mode Bypass]. The way out is the owner's own click on Squash and merge, never a third spelling. Measured 2026-10-01 on PR #4988."
+description: "The merge guard now has TWO clauses. C13 (live 2026-10-02) DENIES `gh pr merge` of any PR an open roll-up's body lists as a member — the comment that was supposed to stop that never did, and the ~3-minute window was lost at least four times with the rule loaded. C10 refuses a SMALL PR (<= 4 files) while it is not yet green; its old deadlock with the classifier's [Safety Bypass Flag] is FIXED. Both stand down with PHX_MERGE_OK=1, and both come from the worktree you run in, not from main."
 metadata:
   node_type: memory
   type: feedback
   originSessionId: c4c4b0e5-a5a1-4db6-ad2f-a8cb9d275542
-  modified: 2026-09-30T23:33:57.278Z
+  modified: 2026-10-02T09:04:02.605Z
 ---
+
+## C13 — a roll-up's members are now REFUSED, not reminded (live 2026-10-02, PR #5109)
+
+🔴 **`gh pr merge <n>` is DENIED when an open roll-up's body lists `<n>` as a member.** The two
+sections at the bottom of this file describe the same failure from the other end, and they document
+the rule that was supposed to prevent it — *check the open PRs for a `codex/rollup-*` first*, in
+`AGENTS.md` §6 since 2026-09-30. It did not hold. Counting only what is measured: three members on
+2026-09-30 (one roll-up losing both of its own within ninety seconds of being commented on, plus
+#4814), **#5092 merged eighteen seconds after the roll-up carrying it was opened**, and **#5100
+merged 1m54s BEFORE the roll-up built to carry it**. Different sessions, different days, the rule
+loaded every time.
+
+The reason is structural and the rule states it itself — **a comment on a PR is not enforcement**:
+the session pressing merge is reading the PR it was told to merge, not the roll-up that quietly
+became its owner a minute ago.
+
+**How it decides, and why nothing new is marked.** It reads the roll-up PR's own body — the only
+place members are recorded, written by `--apply` and parsed by the same `rollupMembers()` the
+builder uses. A label, a draft flip or a registry file would be a second source of truth free to
+drift; the body cannot drift from itself. The branch test is `isRollupBranch()`, which matches the
+generated SHAPE `codex/rollup-YYYYMMDD-HHMM` — 🔴 **never `startsWith('codex/rollup-')`**, which
+flags `codex/rollup-member-guard` and every other roll-up-TOOL branch as a roll-up. I made exactly
+that mistake in a throwaway query while testing C13 and reported the false positive to the owner
+before catching it; the repo had already found and fixed the same thing on `codex/rollup-dup-guard`.
+
+**What it never refuses:** the roll-up itself, and a roll-up whose body cannot be parsed. The second
+is deliberately the opposite of `overlappingRollup`'s stance on the same input — refusing to BUILD
+over an unreadable body delays one roll-up, while refusing to MERGE on one would block every merge
+in the repository until that PR is closed. It fails open on an unreachable `gh` too, and
+`PHX_MERGE_OK=1` stands it down.
+
+**How to apply:** when C13 fires, merge the roll-up it names — that is the one approval replacing
+this one — then `node scripts/rollup-prs.mjs --settle` closes the member after proving every file
+byte-identical on `main`. Never merge the member to "catch up". Pinned by
+`tests/rollup-member-guard.test.ts`.
 
 ✅ **FIXED AND LIVE — #4997 merged 2026-10-01, so C10 now stands aside for an `OPEN`/`CLEAN` PR with
 no stand-down at all, and the deadlock below is history.** Proven the same night: roll-up #5002, two
