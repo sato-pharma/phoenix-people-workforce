@@ -29,6 +29,9 @@ const REFUSALS: Record<string, Refusal> = {
   place_retired: { status: 409, message: "This place was already removed." },
   last_place: { status: 409, message: "A customer keeps at least one place. To take the customer off the list, ask for a drop." },
   note_required: { status: 400, message: "Write a note explaining why." },
+  // Removing a clinic is kept on record exactly as a move is (2026-10-02), so the reason has the same
+  // bounds and the same sentence: the person refused here is a mover, and he is told the length.
+  reason_required: { status: 400, message: "Write why the place is removed (at least 10 characters)." },
   not_validated: { status: 409, message: "Validate this customer first." },
   same_grade: { status: 409, message: "The customer already has this grade." },
   already_pending: { status: 409, message: "A request for this customer is already waiting for a decision." },

@@ -70,6 +70,7 @@ import {
   crmTextareaClassName,
   type NoteTone,
 } from "@/components/phoenix-crm/ui";
+import type { ReferenceState } from "@/lib/phoenix-crm/coverage";
 import { CUSTOMER_NAME_MAX, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
 import { listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
 import { receivingDaysLabel } from "@/lib/phoenix-crm/timings";
@@ -350,14 +351,34 @@ function RequestNoteField({ disabled, id, onChange, value }: { disabled: boolean
 /** A customer carried over from iReports360, or "Add new customer" (validated on the spot). */
 export type ValidateSubject = { mode: "reference"; contactCrmId: number } | { mode: "new" };
 
-function validateGone(view: TerritoryListView, subject: ValidateSubject, reference: ListReferenceEntry | null): string | null {
+/**
+ * The state of a carried-over customer read from his OWN surviving row, for when iReports360 no longer
+ * has the rep assigned to the contact and the live reference entry is therefore gone.
+ *
+ * 🔴 THIS IS THE CLIENT HALF OF `phoenix_crm_reference_entry`, AND WITHOUT IT THE CUSTOMER IS STUCK.
+ * The database has resolved both doors from the surviving row since 2026-09-22 — he can be validated
+ * and he can be dropped — but this screen gated on `view.reference`, which is the LIVE list, so the
+ * one button his row carries (Validate) opened a dead end reading "no longer on the territory's
+ * reference list" with Back as its only control. He could be neither validated nor dropped from the
+ * web, which is the exact state the owner's rule 1 forbids: a carried-over customer leaves the list
+ * only by being validated or removed. The vocabulary below is the SQL's, case for case, so the screen
+ * can never offer a step the database would refuse.
+ */
+function carriedOverState(customer: ListCustomer | null): ReferenceState | null {
+  if (!customer) return null;
+  if (customer.status === "dropped") return "dropped";
+  if (customer.status === "active") return "validated";
+  return customer.waiting.some((entry) => entry.kind === "drop") ? "drop_pending" : "open";
+}
+
+function validateGone(view: TerritoryListView, subject: ValidateSubject, state: ReferenceState | null): string | null {
   // A manager of the territory validates a CARRIED-OVER customer beside its rep (owner, 2026-10-02);
   // "Add new customer" stays the rep's, because the request it files is the manager's to decide.
   if (subject.mode === "reference" ? !view.canValidateReference : !view.canEdit) return EDIT_ONLY;
   if (subject.mode === "reference") {
-    if (!reference) return "This customer is no longer on the territory's reference list.";
-    if (reference.state === "validated") return "This customer is already validated. Find it under Your list.";
-    if (reference.state === "dropped") return "This customer is in the Archive. Open it there to ask to bring it back to your list.";
+    if (!state) return "This customer is no longer on the territory's reference list.";
+    if (state === "validated") return "This customer is already validated. Find it under Your list.";
+    if (state === "dropped") return "This customer is in the Archive. Open it there to ask to bring it back to your list.";
   }
   return null;
 }
@@ -412,11 +433,19 @@ export function ValidateScreen({
   const [problem, setProblem] = useState<string | null>(null);
 
   const reference = subject.mode === "reference" ? (view.reference.find((entry) => entry.contactCrmId === subject.contactCrmId) ?? null) : null;
-  // The carried-over customer this entry was minted as, while he waits to be validated.
-  const pendingCustomer =
-    subject.mode === "reference"
-      ? (view.customers.find((customer) => customer.referenceContactCrmId === subject.contactCrmId && customer.status === "pending") ?? null)
-      : null;
+  // The carried-over customer this entry was minted as, whatever became of him since. Read whatever his
+  // status, because he is the fallback when iReports360 ended the rep's assignment and the live
+  // reference entry above is gone (`carriedOverState`); the pending one is what a drop is asked for.
+  const carried =
+    subject.mode === "reference" ? (view.customers.find((customer) => customer.referenceContactCrmId === subject.contactCrmId) ?? null) : null;
+  const pendingCustomer = carried?.status === "pending" ? carried : null;
+  // His name, kind and grade: iReports360's while it still carries him, else his own row's.
+  const subjectFacts = reference ?? carried;
+  // Only the LIVE entry carries what iReports360 knows about where he is and when he was last seen.
+  const subjectReference = reference ?? carried?.reference ?? null;
+  const subjectState = reference?.state ?? carriedOverState(carried);
+  /** iReports360 no longer has him assigned to this rep, and his row is all that is left of him. */
+  const carriedOverOnly = subject.mode === "reference" && !reference && carried !== null;
   const title = subject.mode === "new" ? "Add new customer" : "Validate a customer";
 
   function close() {
@@ -425,13 +454,13 @@ export function ValidateScreen({
     onBack();
   }
 
-  const gone = validateGone(view, subject, reference);
+  const gone = validateGone(view, subject, subjectState);
   if (gone) {
     return <ListGone backLabel={backLabel} message={gone} onBack={close} refreshing={refreshing} title={title} />;
   }
 
   const cleanName = normalizedName(name);
-  const customerName = reference?.name ?? cleanName;
+  const customerName = subjectFacts?.name ?? cleanName;
   const specialityOptions = subject.mode === "new" ? knownSpecialities(view) : [];
   const canAskToDrop = Boolean(onAskToDrop && pendingCustomer && movesOf(pendingCustomer).includes("ask_to_drop"));
 
@@ -522,7 +551,7 @@ export function ValidateScreen({
     }
   }
 
-  const referenceAddress = referenceAddressText(reference);
+  const referenceAddress = referenceAddressText(subjectReference);
 
   return (
     <CrmPanel>
@@ -531,15 +560,23 @@ export function ValidateScreen({
         <p className="break-words text-sm font-semibold text-slate-600">{territoryLine(view.territory)}</p>
       </CrmBlock>
 
-      {reference ? (
+      {subjectFacts ? (
         <CrmBlock className="border-t border-slate-100" title="Customer">
-          <CustomerHeading customer={reference}>
+          <CustomerHeading customer={subjectFacts}>
             <div className="mt-2">
               {referenceAddress ? <Detail label="Address in iReports360">{referenceAddress}</Detail> : null}
-              <Detail label="Last visit in iReports360">{referenceLastVisitText(reference)}</Detail>
+              <Detail label="Last visit in iReports360">{referenceLastVisitText(subjectReference)}</Detail>
             </div>
           </CustomerHeading>
-          {reference.state === "drop_pending" ? (
+          {/* His assignment in iReports360 ended; his row on this list did not, and the rule is that he
+              leaves it only by being validated or dropped. Said plainly and with no blame: nothing he
+              did caused it, and both doors below still work. */}
+          {carriedOverOnly ? (
+            <CrmNote className="mt-3" tone="info">
+              iReports360 no longer has this customer on your list. He is still on yours: validate him here, or ask to drop him below.
+            </CrmNote>
+          ) : null}
+          {subjectState === "drop_pending" ? (
             <CrmNote className="mt-3" tone="info">
               You asked for this customer to leave the list. Validating withdraws that request.
             </CrmNote>

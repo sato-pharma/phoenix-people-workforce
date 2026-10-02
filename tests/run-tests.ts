@@ -1697,6 +1697,7 @@ import { runPhoenixCrmInsightReportsTests } from "./phoenix-crm-insight-reports.
 import { runPhoenixCrmListAdmissionTests } from "./phoenix-crm-list-admission.test.ts";
 import { runPhoenixCrmListRowFactsTests } from "./phoenix-crm-list-row-facts.test.ts";
 import { runPhoenixCrmPlanPatternTests } from "./phoenix-crm-plan-pattern.test.ts";
+import { runPhoenixCrmListEdgeTests } from "./phoenix-crm-list-edges.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
@@ -6065,6 +6066,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's five reports of 2026-10-02 keep the owner's rulings: grade against capacity weighs each list's grade numbers from Settings against the month's own field days (Thursday AM only, Friday nothing, the confirmed holidays out) and calls itself list size, never coverage, saying the carried-over grades are used; what the field heard counts what customers said by product, speciality and area, AM and PM apart, with no 'no objection' figure, no rate and no row per rep, and the product and marketing managers read it for their own products company-wide with no area while every other board stays the managers'; missing stock is each pharmacy's latest answer through the customer card's own grouping with no limit and no sales figure, printed in Cairo time; samples are a record and never a stock, and units of different products are never added — across items it counts visits; the customer's timeline is newest first with no location, distance or flag; and Export all sections carries the four boards behind the screen's own gates, a product manager's pack holding his own report and nothing else",
   runPhoenixCrmInsightReportsTests,
+);
+
+await runTest(
+  "Phoenix CRM's seven list edges of 2026-10-02: a carried-over customer whose iReports360 assignment ended is resolved from his own surviving row, so he can still be validated or dropped instead of reaching a dead end; a seat's reference list is what was assigned while its rep held THAT seat, with a fallback that leaves every ordinary seat untouched, and the rows the old resolution minted into the wrong seat are pre-imaged into their own dated schema before they are deleted; removing a clinic needs a written reason of ten characters, keeps it on the audited event and measures every visit to the customer again through the one restamp door, which the second door no longer bypasses; a clinic captured AFTER a visit never judges that visit, while a visit logged before validation still gets its distance from the place the validation captured; the frozen Archive refuses an edit to an archived customer's place and the retired restore mode that inserted an active place into it; the duplicates page reads active, pending and outside rows only, keys each group by kind so PM, AM and Pharmacy never mix, and returns null for a vacant seat; and on a territory with no district manager SFE grades an add, decides a grade change and is the one who is told",
+  runPhoenixCrmListEdgeTests,
 );
 
 await runTest(

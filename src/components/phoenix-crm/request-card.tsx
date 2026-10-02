@@ -24,7 +24,7 @@ import { cairoStamp } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
 import { CrmButton, CrmCard, CrmChoice, CrmField, CrmNote, CrmPill, crmTextareaClassName, type PillTone } from "@/components/phoenix-crm/ui";
 import { DROP_REASON_MAX, POTENTIAL_GRADES, type PotentialGrade } from "@/lib/phoenix-crm/entry-rules";
-import { isTwoStepKind, requestStageLabel } from "@/lib/phoenix-crm/list-request-rules";
+import { isTwoStepKind, requestStageLabel, setsAdmissionGrades } from "@/lib/phoenix-crm/list-request-rules";
 import type { PhoenixCrmGrade, PhoenixCrmRequestStatus } from "@/lib/phoenix-crm/types";
 import type { ListRequest } from "@/lib/phoenix-crm/view-types";
 
@@ -142,8 +142,13 @@ export function RequestCard({
   const pill = statusPill(request);
   const pending = request.status === "pending";
   const decides = pending && canDecide && request.canDecide;
-  // The district manager's step of an add: he confirms or changes the grade and sets the potential.
-  const admitting = decides && request.kind === "add" && request.stage === "manager";
+  // Who grades an add: the district manager at his step, and SFE where the territory has no manager at
+  // all (one pure rule, `setsAdmissionGrades`, so the card can never differ from what the server takes).
+  const admitting =
+    decides &&
+    setsAdmissionGrades({ kind: request.kind, stage: request.stage, managerDecidedAt: request.managerDecision?.at ?? null });
+  // Said plainly on the card, because SFE is doing somebody else's job here and should know why.
+  const admittingForVacantSeat = admitting && request.stage === "sfe";
   const decided = decisionLine(request);
   const managerStep = managerStepLine(request);
   const admission = admissionLine(request);
@@ -260,6 +265,11 @@ export function RequestCard({
         <div className="mt-3 grid min-w-0 gap-3 border-t border-slate-100 pt-3">
           {admitting ? (
             <>
+              {admittingForVacantSeat ? (
+                <CrmNote tone="info">
+                  This territory has no district manager, so the grading is yours: confirm or change the grade, and set the potential.
+                </CrmNote>
+              ) : null}
               <CrmField hint="The grade the customer's visits are planned and counted by. The rep proposed it; confirm it or change it." label="Grade">
                 <CrmChoice
                   columns={3}

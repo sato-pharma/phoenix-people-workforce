@@ -71,10 +71,14 @@ function checkService(): void {
   const retireCall = retire.indexOf("callPhoenixCrm");
   assert.ok(retireGate > -1 && retireCall > -1 && retireGate < retireCall, "removing a clinic is the movers' alone, checked first");
 
-  // The rep's own edit path can no longer remove a clinic: its retire branch asks for a mover too.
+  // A removal is kept exactly as a move is (2026-10-02): a written reason, and the customer's visits
+  // measured again. Both live in retirePlace, so the rep's own edit path REFUSES a removal rather than
+  // reaching the same RPC with neither — a second implementation is how one of them silently drifts.
+  assert.match(retire, /reason\.length < PLACE_MOVE_REASON_MIN/, "a removal needs the same written reason a move does");
+  assert.match(retire, /restampVisitLocationsQuietly\(\{[\s\S]*?scope: "all",[\s\S]*?\}\)/, "and re-measures the customer's visits");
   const list = read("src/lib/phoenix-crm/server/list.ts");
   const update = functionBody(list, "updatePlace");
-  assert.match(update, /if \(action === "retire"\) \{[\s\S]*?assertPlaceMover\(viewer, access\.seat, access\.isTest\);/, "the edit route's retire branch is the movers' alone");
+  assert.match(update, /if \(body\.action === "retire"\) \{\s+throw validationError\(/, "the edit route refuses a removal: retirePlace is the one door");
 }
 
 function checkAccess(): void {
@@ -130,7 +134,12 @@ function checkScreens(): void {
   const removeButton = customer.indexOf("Remove this place");
   const removeGate = customer.lastIndexOf("{view.canMovePlaces && customer.places.length > 1 ? (", removeButton);
   assert.ok(removeButton > -1 && removeGate > -1 && removeButton - removeGate < 400, "Remove this place is the movers' too, and a customer keeps his last clinic");
-  assert.match(customer, /"\/api\/phoenix-crm\/list\/places\/move", \{ seatId, test, placeId: place\.placeId, action: "retire" \}/, "removing goes through the movers' route");
+  assert.match(
+    customer,
+    /"\/api\/phoenix-crm\/list\/places\/move",\s*\{ seatId, test, placeId: place\.placeId, action: "retire", reason: reason\.trim\(\) \}/,
+    "removing goes through the movers' route, and carries the written reason (2026-10-02)",
+  );
+  assert.match(customer, /disabled=\{reasonLength < PLACE_REASON_MIN\}/, "and Remove cannot be pressed without one");
 
   const tab = read("src/components/phoenix-crm/list-tab.tsx");
   assert.match(tab, /case "move-place": \{[\s\S]*?<PlaceMoveScreen\b/, "the List opens the move screen, which itself refuses anyone but a mover");

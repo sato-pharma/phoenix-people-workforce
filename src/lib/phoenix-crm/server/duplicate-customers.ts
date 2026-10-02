@@ -1,6 +1,7 @@
 import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { isLinkableName, specialityConflicts } from "@/lib/customer-identity/suggestions";
-import type { IdentityCandidate } from "@/lib/customer-identity/types";
+import type { IdentityCandidate, IdentityKind } from "@/lib/customer-identity/types";
+import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { territoryName } from "@/lib/phoenix-crm/scope";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -40,6 +41,12 @@ const PAGE = 1000;
 
 const text = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 
+/** `phoenix_crm_customers.list_type` as the identity engine's kind — AM, PM and Pharmacy never mix. */
+function identityKindOf(listType: unknown): IdentityKind {
+  const parsed = parseListType(listType);
+  return parsed === "Pharmacy" ? "pharmacy" : parsed;
+}
+
 /** One row of a rep's list, as this report reads it. */
 export type DuplicateCustomerEntry = {
   customerId: string;
@@ -50,7 +57,7 @@ export type DuplicateCustomerEntry = {
 };
 
 export type DuplicateCustomerGroup = {
-  /** The folded name the rows share — the key, never shown as a label. */
+  /** The kind and the folded name the rows share — the key, never shown as a label. */
   nameKey: string;
   entries: DuplicateCustomerEntry[];
   repName: string | null;
@@ -101,9 +108,14 @@ export function groupSameRepDuplicates(
     if (!isLinkableName(candidate.name)) continue;
     const key = normalizeContactName(candidate.name);
     if (!key) continue;
-    const held = byName.get(key) ?? [];
+    // 🔴 THE KIND IS PART OF THE KEY — PM, AM AND PHARMACY NEVER MIX (the identity engine's own rule,
+    //    owner 2026-09-30). A doctor a rep sees in his clinic in the afternoon and in a hospital in
+    //    the morning is two rows on purpose; so is a pharmacy that happens to be named after him. This
+    //    page invites the SFE to have a row removed, so folding two kinds together would ask him to
+    //    delete one half of a pair the owner himself ruled correct.
+    const held = byName.get(`${candidate.kind}:${key}`) ?? [];
     held.push(candidate);
-    byName.set(key, held);
+    byName.set(`${candidate.kind}:${key}`, held);
   }
 
   const out = new Map<string, (IdentityCandidate & { sourceId: string })[]>();
@@ -147,6 +159,12 @@ export async function loadDuplicateCustomers(viewer: PhoenixCrmViewer): Promise<
       .from("phoenix_crm_customers")
       .select("id, name, speciality, grade, list_type, seat_id")
       .eq("is_test", false)
+      // 🔴 THE ARCHIVE IS LEFT OUT, OR THE LIST NEVER CLEARS. Removing a duplicate means dropping one
+      //    row, and a dropped row is `dropped` — it stays in the database for ever, so a group that
+      //    counted it reappeared the morning after the SFE had already dealt with it. The three
+      //    statuses here are the rows a rep can actually be asked to visit: on his list, carried over
+      //    and waiting to be validated, and met outside it and waiting to be added.
+      .in("status", ["active", "pending", "outside"])
       .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`phoenix-crm: reading the customer lists failed — ${error.message}`);
@@ -162,7 +180,10 @@ export async function loadDuplicateCustomers(viewer: PhoenixCrmViewer): Promise<
     if (!seatId || !name) continue;
     const held = bySeat.get(seatId) ?? [];
     held.push({
-      kind: "PM",
+      // The row's OWN kind, never a flat "PM". A pharmacy is not a contact and an AM contact is not a
+      // PM one; `parseListType` is the single reader of that column, so a value nobody expected lands
+      // as PM here exactly as it does everywhere else rather than inventing a fourth kind.
+      kind: identityKindOf(row.list_type),
       name,
       source: "phoenix_crm",
       sourceId: text(row.id),
@@ -201,7 +222,11 @@ export async function loadDuplicateCustomers(viewer: PhoenixCrmViewer): Promise<
           };
         }),
         nameKey,
-        repName: nameOf(names, seat?.rep ?? null),
+        // 🔴 NULL FOR A VACANT SEAT, WHICH IS WHAT THE PAGE READS. `nameOf` answers "Unknown person"
+        //    for an id it cannot resolve AND for no id at all, and the page prints "Seat vacant" only
+        //    on null — so a territory with nobody in it was filed under a phrase that reads like a data
+        //    fault. A vacant seat is a fact about the organogram, not a missing name.
+        repName: seat?.rep ? nameOf(names, seat.rep) : null,
         seatId,
         territoryName: seat?.territory ?? null,
       });

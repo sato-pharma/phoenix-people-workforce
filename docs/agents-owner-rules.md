@@ -4527,6 +4527,71 @@ failure — the `indexOf("const offlineClaim = parseOfflineCaptureClaim")` slice
 `tests/phoenix-crm-offline-clock.test.ts`, whose anchor the TypeScript half detached: `indexOf` would
 have returned −1, `slice(-1, …)` returns the file's last character, and the "a clock argument must
 never cost a rep a real visit" check would have passed on one byte with nothing going red.
+## A seat's carried-over list belongs to the SEAT — owner's pick, 2026-10-02 (evening)
+
+**What he was asked.** A rep who changes LINE but keeps his area: does his carried-over iReports360
+doctor list follow him to the new seat, or does it stay with the seat he left? He was shown the measured
+state and the consequence of each answer, and chose **the seat**.
+
+**What the measurement said.** On production (`ozucdzovmcqvepbozvqf`), read 2026-10-02:
+
+| Rep | From | To | iReports360 rows that moved with him | Already minted as pending |
+| --- | --- | --- | --- | --- |
+| AI-0002 | `SEAT-AIF-REP-AB1` (Anti Infective, Alex/Beheira 1) | `SEAT-PED-REP-AB1` (Pedia, same area) | 154 (145 AM/PM + 9 Pharmacy) | 105 |
+| B-177 | `SEAT-AIF-REP-AB5` (Anti Infective, Alex/Beheira 5) | `SEAT-PED-REP-AB5` (Pedia, same area) | 189 (188 + 1) | 124 |
+
+Both moves were effective 2026-10-01, same region and area, different LINE and different district
+manager. `phoenix_crm_seat_reference` picks the seat's occupant and then reads **his** live
+`crm_contact_assignments`, and iReports360 keys an assignment to the PERSON — so each pedia seat
+inherited its rep's anti-infective doctor list, and `ensure_reference_customers` had already minted 229
+of them as pending `phoenix_crm_customers` stamped `line_code = 'pedia'`. The rows were minted
+2026-09-28 17:32 UTC, three days before the move took effect, because a future-dated occupancy row
+carries `effective_to is null` and therefore reads as current from the day it is entered.
+
+**Why the fix is safe, measured rather than argued.** The resolution now attributes each assignment to
+the rep seat its agent held **when the assignment was made** (`rep_spells`). Compared seat by seat
+against every REP seat in the company: **exactly two change**, both to zero, and no other seat's
+reference moves by a single row. 8,568 of 8,597 live AM/PM assignments fall inside one of their own
+agent's rep-seat spells; the 29 that fall inside none — one agent with no rep seat at all, plus four
+strays — keep today's behaviour through an explicit fallback, which is the clause that makes the change
+surgical instead of sweeping.
+
+**The 229 rows.** All `pending`, `origin = 'reference'`, with no place, no visit, no plan item, no list
+request, no unplanned visit and no visit ask — nothing had happened to any of them; their only record is
+one `customer_minted` event each, which is KEPT (nothing references
+`phoenix_crm_list_events.customer_id`). They are deleted by
+`20261002224250_phoenix_crm_seat_reference_and_place_removal.sql`, pre-imaged first into
+`phoenix_crm_backup_20261002.misminted_reference_customers` in the same transaction, because production
+has no point-in-time recovery.
+
+🔴 **The one thing this must never be confused with.** A pending row whose assignment merely **ENDED**
+is not this. That one survives on purpose (`20260922233000`, the owner's rule 1: a carried-over customer
+leaves the list only by being validated or removed), and the cleanup's predicate excludes it by
+requiring that the assignment was made during a spell in ANOTHER seat and during none in this one.
+
+## Removing a clinic is kept exactly as a move is — 2026-10-02
+
+Moving a validated place has needed a written reason and an audited event since 2026-09-29, and
+re-measures every visit to the customer. **Removing** one — the same two seats, the same consequence for
+where the customer is — had neither: `phoenix_crm_update_place` wrote `place_retired` with `'{}'` for
+details, so *why* a clinic went existed nowhere at all, and the visits already stamped against it kept
+their distance and their "ok", measured against a door the movers had just decided was not the
+customer's. A wrongly added clinic is precisely how a far visit reads as near on the place-vs-actual
+report, so the removal is now kept and re-measured identically: a reason of 10–500 characters on the
+event, and `restampVisitLocationsQuietly` with scope `all`.
+
+Two shapes were found beside it and closed in the same change:
+
+- **Two doors to the same RPC.** `updatePlace` (the rep's edit path) also accepted `action: "retire"`.
+  `assertPlaceMover` guarded it, so it was never a privilege hole — it was a second implementation, and
+  a removal through it would have carried neither the reason nor the re-measure, silently. It refuses a
+  removal now; `retirePlace` is the one door.
+- **A clinic captured AFTER a visit was judging that visit.** Scope `all` measured every visit against
+  every ACTIVE place, which is the laundering `visit-locations.ts`'s own comment says cannot happen: a
+  second clinic added in October plus any later move retroactively made a September visit "ok". Each
+  visit is now measured only against the places captured before it, falling back to the EARLIEST place
+  for a visit logged before the customer was validated — which is the other half of the owner's rule of
+  2026-09-29, that his earlier visits get their distance from the place the validation captured.
 
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 

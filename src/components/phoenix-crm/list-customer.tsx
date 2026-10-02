@@ -51,12 +51,15 @@ import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { pointSourceText } from "@/components/phoenix-crm/place-move-screen";
 import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card";
 import { TimingsReadout } from "@/components/phoenix-crm/timings-editor";
-import { CrmBackBar, CrmBlock, CrmButton, CrmFacts, CrmNote, CrmPanel, CrmPill } from "@/components/phoenix-crm/ui";
+import { CrmBackBar, CrmBlock, CrmButton, CrmFacts, CrmField, CrmNote, CrmPanel, CrmPill, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import { neverAdmitted, requestKindLabel, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
 import type { CustomerPharmacy, ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 
 const PLACE_RELOAD = new Set(["phoenix_crm_last_place", "phoenix_crm_place_not_found", "phoenix_crm_place_retired"]);
+/** The written reason removing a clinic needs — the same bounds a move has (place-move.ts). */
+const PLACE_REASON_MIN = 10;
+const PLACE_REASON_MAX = 500;
 const MOVE_RELOAD = new Set(["phoenix_crm_not_outside", "phoenix_crm_customer_not_found"]);
 
 /**
@@ -546,9 +549,11 @@ function PlaceCard({
   view: TerritoryListView;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
+  const reasonLength = reason.trim().length;
   const name = placeName(place, index);
   // The FIXED location, as it was separated at capture: clean address, part of town, then the Phoenix
   // territory the point fell in — brick, area, region (owner, 2026-09-23). None of it is editable, so
@@ -568,8 +573,13 @@ function PlaceCard({
     setBusy(true);
     setProblem(null);
     try {
-      // Removing a clinic changes where the customer is, so it is the movers' alone (owner, 2026-09-29).
-      await crmPost<unknown>("/api/phoenix-crm/list/places/move", { seatId, test, placeId: place.placeId, action: "retire" }, "place");
+      // Removing a clinic changes where the customer is, so it is the movers' alone (owner, 2026-09-29)
+      // and, like a move, it carries a written reason onto the record.
+      await crmPost<unknown>(
+        "/api/phoenix-crm/list/places/move",
+        { seatId, test, placeId: place.placeId, action: "retire", reason: reason.trim() },
+        "place",
+      );
       onNotice({ tone: "good", title: `Clinic removed: ${name}`, message: `${customer.name} keeps ${plural(remaining, "clinic", "clinics")}.` });
     } catch (error) {
       if (PLACE_RELOAD.has(errorCodeOf(error) ?? "")) reload();
@@ -621,15 +631,35 @@ function PlaceCard({
       {editsHours || view.canMovePlaces ? (
         <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
           {confirming ? (
-            <>
-              <span className="min-w-0 break-words text-sm font-bold text-slate-700">Remove this clinic from {customer.name}?</span>
-              <CrmButton busy={busy} onClick={() => void retire()} size="sm" variant="danger">
-                Remove
-              </CrmButton>
-              <CrmButton disabled={busy} onClick={() => setConfirming(false)} size="sm">
-                Keep it
-              </CrmButton>
-            </>
+            // A removal is a change of where the customer is, exactly as a move is, so it is kept on
+            // record the same way: a written reason, and every visit to him measured again afterwards.
+            <div className="min-w-0 basis-full">
+              <CrmField
+                hint={`Needed · at least ${PLACE_REASON_MIN} characters · ${reasonLength} of ${PLACE_REASON_MAX}`}
+                htmlFor={`phoenix-crm-retire-reason-${place.placeId}`}
+                label={`Why this clinic is removed from ${customer.name}`}
+              >
+                <textarea
+                  className={crmTextareaClassName}
+                  disabled={busy}
+                  id={`phoenix-crm-retire-reason-${place.placeId}`}
+                  maxLength={PLACE_REASON_MAX}
+                  onChange={(event) => {
+                    setReason(event.target.value);
+                    setProblem(null);
+                  }}
+                  value={reason}
+                />
+              </CrmField>
+              <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+                <CrmButton busy={busy} disabled={reasonLength < PLACE_REASON_MIN} onClick={() => void retire()} size="sm" variant="danger">
+                  Remove
+                </CrmButton>
+                <CrmButton disabled={busy} onClick={() => setConfirming(false)} size="sm">
+                  Keep it
+                </CrmButton>
+              </div>
+            </div>
           ) : (
             <>
               {editsHours ? (
