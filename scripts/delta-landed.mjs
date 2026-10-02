@@ -71,7 +71,10 @@ function run(argv, { cwd, env, input } = {}) {
  * A merge commit answers false: `git show` gives it no single-parent diff, and a merge was never the
  * thing cherry flagged anyway.
  *
- * @param {{ dir?: string, sha: string }} input
+ * `upstream` exists because `countUnpushedCommits` takes one as a parameter: hardcoding `origin/main`
+ * there would have made this answer a different question from the one it was asked.
+ *
+ * @param {{ dir?: string, sha: string, upstream?: string }} input
  * @returns {boolean}
  */
 export function commitDeltaLandedOnMain({ dir, sha, upstream = 'origin/main' }) {

@@ -41,6 +41,7 @@
 import { formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
 import { phoenixCrmChannels } from "@/lib/notifications/phoenix-crm-channel-guard";
 import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
+import { withdrawInAppNotificationsByEventKeyPrefix } from "@/lib/notifications/in-app";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { testAccountsMirroring } from "@/lib/auth/test-persona-directory";
 import { logError } from "@/lib/observability/log";
@@ -465,7 +466,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
         : `${rep} visited ${notice.customerName} on ${territory} off his plan on ${day}. He wrote: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until you and then SFE approve it.`,
       tab: "team",
       recordId: notice.visitId,
-      idempotencyKey: `phoenix_crm:unplanned:${notice.visitId}:raised`,
+      idempotencyKey: `${phoenixCrmVisitNoticeKeyPrefix(notice.visitId)}raised`,
       subjectHrId: notice.repHrId,
     };
   }
@@ -491,7 +492,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
           : `${decider} approved your off-plan visit to ${notice.customerName} on ${day}. It counts once SFE approves it too.${note}`,
       tab: "visits",
       recordId: notice.visitId,
-      idempotencyKey: `phoenix_crm:unplanned:${notice.visitId}:v${notice.version}:${notice.status}`,
+      idempotencyKey: `${phoenixCrmVisitNoticeKeyPrefix(notice.visitId)}v${notice.version}:${notice.status}`,
       subjectHrId: notice.repHrId,
     };
   }
@@ -527,6 +528,41 @@ export async function notifyPhoenixCrm(notice: PhoenixCrmNotice, isTest: boolean
   } catch (error) {
     logError("Phoenix CRM notification failed", {
       labels: { event: "phoenix_crm_notify_failed", kind: notice.kind },
+      error,
+    });
+  }
+}
+
+/** Every notice ever raised about one visit — both kinds, every version, and the test-world copies. */
+export function phoenixCrmVisitNoticeKeyPrefix(visitId: string): string {
+  return `phoenix_crm:unplanned:${visitId}:`;
+}
+
+/**
+ * Take back the notices about a visit that no longer exists (owner, 2026-10-02: "close the stale
+ * manager notice when an entered visit is removed").
+ *
+ * 🔴 ONLY A REMOVED VISIT, AND IT IS THE RECORD'S ABSENCE THAT JUSTIFIES IT. The manager was told to
+ * approve an off-plan visit; the Super Admin then took back the entry he had made for the rep, so the
+ * queue item is gone and the notice is a to-do with nothing behind it. Every notice naming that visit
+ * goes the same way — the rep's "approved"/"refused" copies describe the same vanished visit — and
+ * the prefix names ONE visit, never the category.
+ *
+ * A PLANNED entered visit raises no notice at all, so this is a no-op for one, and it stays correct
+ * rather than conditional: the keys simply match nothing.
+ *
+ * Never throws, exactly like `notifyPhoenixCrm`: a notice that cannot be withdrawn must not undo the
+ * removal that has already happened in the database.
+ */
+export async function withdrawPhoenixCrmVisitNotices(
+  visitId: string,
+  client?: Parameters<typeof withdrawInAppNotificationsByEventKeyPrefix>[1],
+): Promise<void> {
+  try {
+    await withdrawInAppNotificationsByEventKeyPrefix(phoenixCrmVisitNoticeKeyPrefix(visitId), client);
+  } catch (error) {
+    logError("Phoenix CRM notice withdrawal failed", {
+      labels: { event: "phoenix_crm_notice_withdraw_failed", visitId },
       error,
     });
   }

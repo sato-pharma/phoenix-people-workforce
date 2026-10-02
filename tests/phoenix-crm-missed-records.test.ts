@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { fakeSupabaseClient } from "./fixtures/fake-supabase-table.ts";
 import { stripComments } from "./support/comment-strip.ts";
+
+import { withdrawInAppNotificationsByEventKeyPrefix } from "../src/lib/notifications/in-app.ts";
+import { phoenixCrmVisitNoticeKeyPrefix, withdrawPhoenixCrmVisitNotices } from "../src/lib/phoenix-crm/server/notifications.ts";
 
 import {
   isActivityEnteredForRep,
@@ -138,7 +142,7 @@ function refused(run: () => unknown, pattern: RegExp, message: string): void {
   assert.throws(run, (error: unknown) => error instanceof Error && pattern.test(error.message), message);
 }
 
-export function runPhoenixCrmMissedRecordsTests(): void {
+export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
   // ── 1 · The day: any day that has begun, never one still to come ───────────────────────────────
   {
     assert.equal(isMissedRecordDay("2026-10-01", VISIT_DAY), true, "the visit day running now");
@@ -429,6 +433,87 @@ export function runPhoenixCrmMissedRecordsTests(): void {
     assert.match(view, /view\.removesEnteredVisits && visit\.enteredByAdmin \? \(\s*<RemoveEnteredVisit/, "Remove is drawn on a visit he entered, and only there");
     const detail = source("src/lib/phoenix-crm/server/day-detail.ts");
     assert.match(detail, /removesEnteredVisits: canEnterMissedRecords\(viewer\)/);
+  }
+
+  // ── 11 · The notice goes with the visit (owner, 2026-10-02) ────────────────────────────────────
+  {
+    // Both notices a visit can raise are built from the SAME prefix the withdrawal searches by, so a
+    // renamed key cannot leave one behind — and the keys stay byte-for-byte what they were, or the
+    // idempotency of every notice already sent breaks.
+    const prefix = phoenixCrmVisitNoticeKeyPrefix(VISIT_ID);
+    assert.equal(prefix, `phoenix_crm:unplanned:${VISIT_ID}:`);
+    assert.equal(`${prefix}raised`, `phoenix_crm:unplanned:${VISIT_ID}:raised`, "the key production already wrote");
+    const crmNotices = source("src/lib/phoenix-crm/server/notifications.ts");
+    assert.match(crmNotices, /idempotencyKey: `\$\{phoenixCrmVisitNoticeKeyPrefix\(notice\.visitId\)\}raised`/);
+    assert.match(crmNotices, /idempotencyKey: `\$\{phoenixCrmVisitNoticeKeyPrefix\(notice\.visitId\)\}v\$\{notice\.version\}:\$\{notice\.status\}`/);
+
+    // Removing withdraws them, and only AFTER the database agreed the visit could go at all.
+    const service = source("src/lib/phoenix-crm/server/missed-records.ts");
+    const remove = service.slice(service.indexOf("export async function removeMissedVisit("));
+    // ONCE, and after the database call — counted as well as ordered, because an extra call added
+    // ahead of the removal leaves the later one in place and an ordering test alone reads as fine.
+    assert.equal((remove.match(/withdrawPhoenixCrmVisitNotices\(/g) ?? []).length, 1, "withdrawn once");
+    assert.ok(
+      remove.indexOf('callPhoenixCrm<Row>("phoenix_crm_admin_remove_visit"') < remove.indexOf("withdrawPhoenixCrmVisitNotices("),
+      "the removal runs first — withdrawing before it would take a notice back from a manager whose visit is still there",
+    );
+
+    // The real withdrawal, against rows shaped like the real tables.
+    const other = "11111111-2222-3333-4444-555555555555";
+    const event = (id: string, key: string, hrId: string) => ({ employee_hr_id: hrId, event_key: key, id, recipient_user_id: `user-${hrId}` });
+    const client = fakeSupabaseClient(
+      {
+        notification_events: [
+          event("n1", `phoenix_crm:unplanned:${VISIT_ID}:raised`, "B-12"),
+          event("n2", `phoenix_crm:unplanned:${VISIT_ID}:v1:approved`, "B-7"),
+          event("n3", `phoenix_crm:unplanned:${VISIT_ID}:raised:test:TEST-SFE-1`, "B-12"),
+          event("n4", `phoenix_crm:unplanned:${other}:raised`, "B-12"),
+          // `_` is a LIKE wildcard and every key here contains `phoenix_crm`, so an unescaped prefix
+          // would clear this one too — a notice about a visit nobody touched.
+          event("n5", `phoenixXcrm:unplanned:${VISIT_ID}:raised`, "B-12"),
+        ],
+        // The viewer's own row, in the shape this table stores: `archiveInAppNotification` and
+        // `markInAppNotificationRead` both key it by normalizeHrId — the lowercase canonical id.
+        notification_user_states: [
+          { archived_at: null, hr_id: "b-7", id: "state-1", notification_event_id: "n2", read_at: "2026-10-02T06:00:00.000Z" },
+        ],
+      },
+      { projectColumns: true },
+    );
+
+    const withdrawn = await withdrawInAppNotificationsByEventKeyPrefix(prefix, client as never);
+    assert.equal(withdrawn.withdrawn, 3, "the manager's, the rep's, and the test-world copy");
+
+    const states = client.rows("notification_user_states");
+    const stateFor = (eventId: string) => states.find((row) => row.notification_event_id === eventId);
+    for (const eventId of ["n1", "n2", "n3"]) assert.ok(stateFor(eventId)?.archived_at, `${eventId} leaves the bell`);
+    assert.equal(stateFor("n4"), undefined, "a notice about another visit is untouched");
+    assert.equal(stateFor("n5"), undefined, "`_` is escaped, so a lookalike key is not swept up");
+    // 🔴 THE CANONICAL LOWERCASE ID, which is what makes the withdrawal land at all: the bell reads
+    // this table by normalizeHrId, so writing the event's raw "B-12" would add a SECOND row the
+    // manager's own read never matches, and the notice would stay on his bell looking untouched.
+    assert.equal(stateFor("n1")?.hr_id, "b-12", "archived for the person the event names, in the form the table is keyed by");
+    assert.equal(stateFor("n1")?.user_id, "user-B-12");
+    // The row already there is UPDATED, not duplicated, and what he had read survives: the conflict
+    // target is (notification_event_id, hr_id).
+    assert.equal(states.filter((row) => row.notification_event_id === "n2").length, 1, "one state row per person per notice");
+    assert.equal(stateFor("n2")?.read_at, "2026-10-02T06:00:00.000Z", "withdrawing does not erase what he had already read");
+    assert.equal(client.rows("notification_events").length, 5, "ARCHIVED, never deleted — the event rows stay for the audit");
+
+    // A PLANNED entry raises no notice at all, so the ordinary case is a no-op rather than a branch.
+    assert.deepEqual(
+      await withdrawInAppNotificationsByEventKeyPrefix(phoenixCrmVisitNoticeKeyPrefix(other), fakeSupabaseClient({ notification_events: [] }) as never),
+      { withdrawn: 0 },
+    );
+    assert.deepEqual(
+      await withdrawInAppNotificationsByEventKeyPrefix("   ", client as never),
+      { withdrawn: 0 },
+      "an empty prefix clears nothing — it would otherwise match every notice in the system",
+    );
+
+    // It never throws into the caller: the visit is already gone, so a failed withdrawal must not
+    // turn a finished removal into an error on his screen.
+    await withdrawPhoenixCrmVisitNotices(VISIT_ID, fakeSupabaseClient({}, { failOn: { notification_events: "boom" } }) as never);
   }
 
   console.log("phoenix-crm missed records: OK");

@@ -661,3 +661,70 @@ export async function archiveAllInAppNotifications(access: AccessContext) {
   }
   return { archived: notifications.length - failures.length };
 }
+
+/** LIKE reads `%` and `_` as wildcards, and every event key here contains `phoenix_crm`. */
+function likePrefix(prefix: string): string {
+  return `${prefix.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+}
+
+/**
+ * Withdraw every in-app notice whose event key starts with `prefix`, for the people it went to.
+ *
+ * 🔴 THIS IS THE SYSTEM RETRACTING ITS OWN NOTICE, AND IT IS THE ONE PLACE THAT WRITES ANOTHER
+ * PERSON'S ARCHIVE STATE. Everywhere else that row is the viewer's own: `archiveInAppNotification`
+ * refuses an id not addressed to him, and `archiveStaleApprovalNotifications` deliberately does not
+ * write a test login's host's row. The exception earns itself only because the RECORD behind the
+ * notice is gone — a to-do that can never be done is worse than no notice at all. So it must be
+ * called with a prefix naming ONE record, never a whole category, which would clear notices that
+ * still have work behind them.
+ *
+ * Each `notification_events` row is already per-recipient (`createNotificationEvent` writes
+ * `employee_hr_id` and a one-element `recipients`), so the row itself names whose state to write —
+ * nothing is inferred, and a test-world copy carries its own key and is withdrawn with the rest.
+ *
+ * ARCHIVED, never deleted: the event row stays for the audit and only the bell's filter changes.
+ */
+export async function withdrawInAppNotificationsByEventKeyPrefix(
+  prefix: string,
+  client: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
+): Promise<{ withdrawn: number }> {
+  const cleanedPrefix = cleanText(prefix);
+  if (!cleanedPrefix) return { withdrawn: 0 };
+
+  let events: Array<{ employee_hr_id?: unknown; id?: unknown; recipient_user_id?: unknown }> = [];
+  try {
+    const { data, error } = await client
+      .from("notification_events")
+      .select("id,employee_hr_id,recipient_user_id")
+      .like("event_key", likePrefix(cleanedPrefix));
+    if (error) throw error;
+    events = (data ?? []) as typeof events;
+  } catch (error) {
+    if (notificationSchemaMissing(error)) return { withdrawn: 0 };
+    throw error;
+  }
+
+  const rows = events
+    .map((event) => ({
+      hr_id: normalizeHrId(cleanText(event.employee_hr_id as string | null | undefined)),
+      notification_event_id: cleanText(event.id as string | null | undefined),
+      user_id: cleanText(event.recipient_user_id as string | null | undefined) || null,
+    }))
+    .filter((row) => row.notification_event_id && row.hr_id);
+  if (rows.length === 0) return { withdrawn: 0 };
+
+  const now = new Date().toISOString();
+  try {
+    const { error } = await client
+      .from("notification_user_states")
+      .upsert(
+        rows.map((row) => ({ ...row, archived_at: now, updated_at: now })),
+        { onConflict: NOTIFICATION_STATE_CONFLICT_TARGET },
+      );
+    if (error) throw error;
+    return { withdrawn: rows.length };
+  } catch (error) {
+    if (stateSchemaMissing(error)) return { withdrawn: 0 };
+    throw error;
+  }
+}
