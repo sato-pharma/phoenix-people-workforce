@@ -551,7 +551,14 @@ export function runPhoenixCrmPlanBoardTests(): void {
     assert.equal((board.match(/"\/api\/phoenix-crm\/plans\/decide"/g) ?? []).length, 1, "one place posts a week's decision");
     assert.equal((board.match(/"\/api\/phoenix-crm\/monthly-plans\/reviews"/g) ?? []).length, 1, "one place posts the month's decision");
     assert.equal((board.match(/\bdecideWeek\(/g) ?? []).length, 2, "decideWeek is declared, and called from one place");
-    assert.match(board, /onDecide=\{\(action, note\) => decideWeek\(selected, action, note\)\}/, "that one place is the week's decision block");
+    // That one place hands the week's decision on to both blocks that offer it — the whole board's and the
+    // review steps' (owner, 2026-10-02) — with the ONE day a return may name.
+    assert.match(
+      board,
+      /const onDecideWeek = \(action: PlanDecisionAction, note: string, day: string \| null\) => \(selected \? decideWeek\(selected, action, note, day\) : Promise\.resolve\(false\)\);/,
+      "that one place is the week's decision",
+    );
+    assert.equal((board.match(/onDecide=\{onDecideWeek\}/g) ?? []).length, 2, "the week's decision block and the review steps both use it");
     assert.equal((board.match(/\bdecideMonth\b/g) ?? []).length, 2, "decideMonth is declared, and handed to one decision block");
     assert.match(board, /onDecide=\{decideMonth\}/);
     assert.match(decision, /onClick=\{\(\) => void decide\("approve"\)\}/, "Approve is a button press");

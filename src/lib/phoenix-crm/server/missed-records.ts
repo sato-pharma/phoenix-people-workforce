@@ -25,6 +25,7 @@
 import { conflictError, validationError } from "@/lib/http/api-errors";
 import { parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { isMissedRecordDay, parseMissedActivity, parseMissedVisit, parseRemoveMissedVisit } from "@/lib/phoenix-crm/missed-records";
+import { isPlanSentForReview } from "@/lib/phoenix-crm/plan-rules";
 import { territoryReviewer } from "@/lib/phoenix-crm/scope";
 import {
   readTestFlag,
@@ -106,8 +107,9 @@ export async function loadMissedRecordForm(
   throwIfError(visitedRead.error);
 
   // Sent means gone for review: a draft or a returned plan is the rep's own to edit, and is no authority
-  // on who was planned — the same line the rep's own visit form draws.
-  const planSent = plan.status === "submitted" || plan.status === "approved";
+  // on who was planned — the same line the rep's own visit form draws, on the same DAY's status
+  // (`plannedCustomersOn`): a week returned for one OTHER day still stands as sent on this one.
+  const planSent = isPlanSentForReview(plan.status);
   const onPlan = new Set(planSent ? plan.customerIds : []);
   const visited = new Set(((visitedRead.data ?? []) as Row[]).map((row) => String(row.customer_id)));
 

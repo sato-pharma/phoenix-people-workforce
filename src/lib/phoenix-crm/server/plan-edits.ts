@@ -33,7 +33,7 @@ import {
   type PlanEditStage,
   type PlanEditStatus,
 } from "@/lib/phoenix-crm/plan-edit-rules";
-import { isUuid, planStatusLabel, repWeekState, type RepWeekState } from "@/lib/phoenix-crm/plan-rules";
+import { isUuid, planStatusLabel, repChangeableDays, repWeekState, standingReturnedDay, type RepWeekState } from "@/lib/phoenix-crm/plan-rules";
 import { territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { assertPlanEditApprover, canDecidePlanEdit, territoryForRepWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -78,6 +78,8 @@ export type PlanEditRequestView = {
   sfeDecidedByName: string | null;
   sfeNote: string | null;
   hrAcknowledgedByName: string | null;
+  /** When HR acknowledged it — what tells an edit that opened the week from a one-day return after it. */
+  hrAcknowledgedAt: string | null;
 };
 
 /** The hr ids a batch of rows needs names for. */
@@ -116,6 +118,7 @@ export function mapPlanEditRow(row: Row, names: PeopleNames): PlanEditRequestVie
     sfeDecidedByName: person(row.sfe_decided_by_hr_id),
     sfeNote: textOrNull(row.sfe_note),
     hrAcknowledgedByName: person(row.hr_acknowledged_by_hr_id),
+    hrAcknowledgedAt: textOrNull(row.hr_acknowledged_at),
   };
 }
 
@@ -182,6 +185,11 @@ export async function loadPlanEditState(
   return state;
 }
 
+/** When HR acknowledged the week's latest request, if that request is the one that reopened it. */
+export function editAcknowledgedAt(edit: PlanEditState | null): string | null {
+  return edit?.latest?.status === "reopened" ? edit.latest.hrAcknowledgedAt : null;
+}
+
 /** The rep's state for one week, from its plan row and its requests. */
 export function repStateOf(input: {
   weekStart: string;
@@ -200,16 +208,28 @@ export function repStateOf(input: {
   });
 }
 
+/** What the rep may change of a week he may plan: the days, and the one day returned when only one was. */
+export type RepWeekAccess = {
+  /** The ONLY days a save may touch — every day from today on, or the one returned day while it stands. */
+  editableDays: string[];
+  /** The ONE day his manager returned, while it stands (owner, 2026-10-02: "Only that day"); else null. */
+  returnedDay: string | null;
+};
+
 /**
  * 🔴 THE RULE ON THE SERVER: a rep saves and sends ONE week — the one he plans now, or one his manager
  * returned or an edit request reopened. Called before every save and every send of a week; a phone one
  * release behind, or a hand-made request, meets the same refusal the greyed week shows.
+ *
+ * It answers with the days he may change (owner, 2026-10-02): a week his manager returned for ONE day
+ * opens that day alone, and `savePlan` hands the database nothing else to touch — so the days left as
+ * he sent them are refused on the server, not merely greyed on his board.
  */
-export async function assertRepMayChangeWeek(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean, weekStart: string): Promise<void> {
+export async function assertRepMayChangeWeek(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean, weekStart: string): Promise<RepWeekAccess> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("phoenix_crm_plans")
-    .select("id, status")
+    .select("id, status, returned_day, decided_at")
     .eq("seat_id", seat.seatId)
     .eq("is_test", isTest)
     .eq("week_start", weekStart)
@@ -217,12 +237,23 @@ export async function assertRepMayChangeWeek(viewer: PhoenixCrmViewer, seat: Org
   throwIfError(error);
   const planRow = data as Row | null;
   const status = planRow ? planStatusOf(planRow.status) : null;
+  const storedDay = planRow && status === "returned" ? textOrNull(planRow.returned_day) : null;
   let edit: PlanEditState | null = null;
-  if (planRow && status === "draft") {
+  // A draft may be one an edit request reopened; a week returned for one day may since have been opened
+  // whole by an acknowledged edit. Both answers are on the week's requests.
+  if (planRow && (status === "draft" || storedDay !== null)) {
     edit = (await loadPlanEditState([String(planRow.id)], isTest, { names: false })).get(String(planRow.id)) ?? null;
   }
   const state = repStateOf({ weekStart, cairoToday: viewer.cairoToday, status, edit });
-  if (state === "plan") return;
+  if (state === "plan") {
+    const returnedDay = standingReturnedDay({
+      status,
+      returnedDay: storedDay,
+      decidedAt: planRow ? textOrNull(planRow.decided_at) : null,
+      editAcknowledgedAt: editAcknowledgedAt(edit),
+    });
+    return { editableDays: repChangeableDays({ weekStart, cairoToday: viewer.cairoToday, returnedDay }), returnedDay };
+  }
   if (state === "sent" || state === "asked") {
     throw conflictError("This week is already sent. To change it, ask to edit this week. Reload the planner.");
   }

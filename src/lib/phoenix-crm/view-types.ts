@@ -49,6 +49,14 @@ export type { TeamPlanEdit, TeamRequest, TeamTerritoryRow, TeamUnplannedVisit, T
 export type { UnplannedVisitView } from "@/lib/phoenix-crm/server/unplanned";
 export type { PlanEditRequestView, PlanEditResult } from "@/lib/phoenix-crm/server/plan-edits";
 export type {
+  DoubleVisitDayView,
+  DoubleVisitManagerOption,
+  DoubleVisitPlanReach,
+  DoubleVisitPlanView,
+  DoubleVisitRepOption,
+  DoubleVisitSlotView,
+} from "@/lib/phoenix-crm/server/double-visit-plans";
+export type {
   PlanCopySourceView,
   PlanDayView,
   PlanItemView,

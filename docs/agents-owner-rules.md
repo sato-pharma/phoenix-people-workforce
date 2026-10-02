@@ -4085,6 +4085,51 @@ the half it skips is silent.** The view's name and its own comment both invite t
 the four that filter, and the two that must not **together with the stated reason they give**, because
 a pin on the `.eq` alone cannot tell a deliberate omission from one nobody has noticed yet.
 
+## The weekly plan's second wave — owner rulings, 2026-10-02
+
+The first Delta (1) team planned the week of 3 October in the new weekly screen. The owner picked 19
+improvements in one sitting and answered each business question in chat. Every ruling below was his
+answer to a multiple-choice question. The code and its test hold the rule; this section holds the why.
+
+### Reaching the rep about his own week
+
+- **"Your coming week is not sent" goes to TEAMS THAT STARTED only.** That is the 06:55 digest's own
+  rule (`territoriesOfStartedTeams`): a team is the territories under one district manager. A team still
+  on iReports360 hears nothing, and every rep of a team that started hears it, including one whose own
+  entries were wiped. The reminder runs at 12:57 and 17:57 Cairo, from the due day to the day before the
+  week. The 17:57 tick tells whoever is STILL not sent a second time ("Yes, remind again"), in its own
+  words. It goes to the rep and his district manager, in-app, by Telegram and to the phone, never by email.
+  The cron-job.org job is `8562812`. Pinned by `tests/phoenix-crm-plan-reminder.test.ts`.
+- **Phone push reaches every Phoenix CRM notice EXCEPT the 06:55 digest.** He ruled the digest "in app or
+  telegram only" on 2026-09-28, and it stays that way. On the day: 16 of 74 reps allowed Phoenix push,
+  and Telegram reached none.
+
+### Days off
+
+- **A public holiday from the company's confirmed calendar is a day off on the plan.** It is greyed,
+  holds no list, is skipped by Suggest and every copy, and a save naming it is refused. The day comes
+  from the confirmed calendar, never the official date: 6 October 2026 stays a working day and 8 October
+  is the day off he moved it to.
+- **A full day of the rep's own approved leave is a day off the same way.** A half day is not.
+
+### The manager's review
+
+- **The district manager's double-visit plan is INVISIBLE to the rep** ("Rep does not see it"). Only
+  that district manager, the SFE Manager and the Super Admin read it, and nothing notifies anyone.
+- **Coverage on the review counts VALIDATED customers only.** On the day, all 8,234 customers were still
+  pending, so the panel says so plainly rather than counting iReports360 grades.
+- **"Return one day" reopens ONLY that day ("Only that day").** The other days stay as sent: the server
+  refuses changes to them, and the rep's visits on them STILL COUNT AS PLANNED until he sends the week
+  again ("Still planned"). The visit save and the plan-vs-actual report both read the one-day return off
+  the `returned` event's `returned_day`.
+
+### The trap
+
+**A whole-week return and a one-day return look identical in `phoenix_crm_plans.status`.** Both read
+`returned`. A rule that asks only "is the plan sent" therefore turns a rep's untouched days off-plan
+the moment his manager returns one of them. Every reader that decides "was this day on a sent plan" must
+ask the event's `returned_day` as well.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.

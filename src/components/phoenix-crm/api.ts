@@ -49,10 +49,19 @@ export function crmGet<T>(url: string, key: string, signal?: AbortSignal): Promi
   return request<T>(url, { signal }, key, "Phoenix could not load this. Try again.");
 }
 
-export function crmPost<T>(path: string, payload: unknown, key: string): Promise<T> {
+/**
+ * `keepalive` lets the request outlive the page — the plan's own save, flushed as the page is hidden or
+ * closed (owner, 2026-10-02: the rep's board saves itself), so a tick made a second before is not lost.
+ */
+export function crmPost<T>(path: string, payload: unknown, key: string, options: { keepalive?: boolean } = {}): Promise<T> {
   return request<T>(
     path,
-    { body: JSON.stringify(payload), headers: { "content-type": "application/json" }, method: "POST" },
+    {
+      body: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+      ...(options.keepalive ? { keepalive: true } : {}),
+    },
     key,
     "Phoenix could not save this. Try again.",
   );

@@ -31,7 +31,7 @@ import { fieldWeekStart, weekdayOfIsoDay, weekNumberInMonth } from "@/lib/phoeni
 import { dayActivityRank, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import type { CopySourcePlacement, CopyWeek } from "@/lib/phoenix-crm/plan-copy";
 import { hasDayStarts, startsForDay, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
-import { PLAN_EXCEPTION_TYPES, type PlanExceptionType, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
+import { PLAN_EXCEPTION_TYPES, planDayLabel, type PlanDayOff, type PlanExceptionType, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import type { PlannerCustomer, PlannerPlace } from "@/lib/phoenix-crm/suggestions";
 import { windowsForWeekday } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmListType, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
@@ -66,6 +66,8 @@ export type DraftDay = {
   listTypes: ReadonlyArray<PhoenixCrmListType>;
   /** The public holiday this day is, by name; its `listTypes` are then empty (server/plan-holidays.ts). */
   holiday?: string | null;
+  /** The day off it is — a public holiday, or a full day of his approved leave; its `listTypes` are then empty. */
+  dayOff?: PlanDayOff | null;
   ramadan: boolean;
   /** Today or later: the rep may still change it. */
   editable: boolean;
@@ -127,6 +129,14 @@ export function indexCustomers(customers: ReadonlyArray<PlannerCustomer>): Map<s
   return new Map(customers.map((customer) => [customer.customerId, customer]));
 }
 
+/**
+ * The day off a day of the week is (owner, 2026-10-02): the public holiday or his own approved leave the
+ * server named, else null. A day read before `dayOff` existed still carries its holiday by name.
+ */
+export function dayOffOf(day: Pick<DraftDay, "holiday" | "dayOff">): PlanDayOff | null {
+  return day.dayOff ?? (day.holiday ? { kind: "holiday", name: day.holiday } : null);
+}
+
 // ── The saved week, and a draft over it ─────────────────────────────────────────────────────────
 
 /** The saved placements of the days the rep may still change — what a draft starts from. */
@@ -170,11 +180,19 @@ function savedWeekContent(week: DraftWeek): WeekContent {
 /**
  * The draft still belongs to the week on screen: same territory and week, and over the version on screen
  * (or the one its own save made). A version it does not know means the week changed somewhere else.
+ *
+ * Once the draft has saved, an OLDER version of the same plan fits too: it is a read that set out before
+ * that save landed. The rep's board saves itself as he ticks (owner, 2026-10-02), so a save can overtake
+ * the read that followed the save before it — and the database refuses a save made against any version
+ * but the latest, so every version up to the draft's own save is one it already stood over. Only a NEWER
+ * one is a week changed somewhere else.
  */
 export function draftFits(draft: WeekDraft | null | undefined, scope: string, week: DraftWeek): draft is WeekDraft {
   if (!draft || draft.scope !== scope) return false;
   const current = weekBasis(week.plan);
-  return draft.basis === current || (draft.saved !== null && `${draft.saved.planId}|${draft.saved.version}` === current);
+  if (draft.basis === current) return true;
+  if (draft.saved === null) return false;
+  return week.plan !== null && week.plan.planId === draft.saved.planId && week.plan.version <= draft.saved.version;
 }
 
 export function startDraft(scope: string, week: DraftWeek): WeekDraft {
@@ -198,12 +216,49 @@ export function markWeekSaved(scope: string, week: DraftWeek, saved: { planId: s
   };
 }
 
+/**
+ * 🔴 WHAT A SAVE LEAVES ON THE PAGE WHEN HE KEPT TICKING WHILE IT WAS ON ITS WAY (owner, 2026-10-02: the
+ * rep's board saves itself as he ticks). `markWeekSaved` puts back exactly what was sent, which is right
+ * for a Save he pressed and waited for — and wrong here: the answer to one save would wipe the tick he
+ * made while it travelled, and nothing would ever save it.
+ *
+ * So the draft keeps what he has NOW and stands over the version the save made:
+ *   - its customers and start times are read the way every save sends them (a customer who left the
+ *     list off, a moved place at his place for the day, a passed day left as saved), so what was just
+ *     saved never reads as a change of his and saves again — that would be a save every 1.5 seconds;
+ *   - its activities stay exactly as he typed them. A note is never trimmed under his cursor: a pause
+ *     after a space would otherwise eat the space. The signature reads a note the way the save sends it;
+ *   - `saved` is what the save wrote, so whatever he ticked since is still unsaved — and saves next.
+ */
+export function settleSavedDraft(input: {
+  current: WeekDraft;
+  week: DraftWeek;
+  saved: { planId: string; version: number };
+  /** The three lists the save sent (its payload). */
+  sent: WeekContent;
+  customers: ReadonlyArray<PlannerCustomer>;
+}): WeekDraft {
+  const now = buildWeekSavePayload({ seatId: "", test: false, week: input.week, draft: input.current, customers: input.customers });
+  const open = new Set(input.week.days.filter((day) => day.editable).map((day) => day.date));
+  return {
+    scope: input.current.scope,
+    basis: weekBasis(input.week.plan),
+    items: now.items,
+    activities: input.current.activities.filter((activity) => open.has(activity.planDate)),
+    starts: now.starts,
+    saved: { items: input.sent.items, activities: input.sent.activities, starts: input.sent.starts, planId: input.saved.planId, version: input.saved.version },
+  };
+}
+
 function itemSignature(item: PlanItemDraft): string {
   return ["item", item.planDate, item.customerId, item.placeId ?? "", item.exceptionType ?? "", (item.exceptionNote ?? "").trim()].join("|");
 }
 
 function activitySignature(activity: PlannedActivity): string {
-  return ["activity", activity.planDate, activity.activityType, activity.halfDay ? "half" : "whole", (activity.note ?? "").trim()].join("|");
+  // Read the way the save sends it — trimmed, and never past the table's limit — so a note as he typed
+  // it and the same note as it was saved are one note.
+  const note = (activity.note ?? "").trim().slice(0, PLANNED_ACTIVITY_NOTE_MAX);
+  return ["activity", activity.planDate, activity.activityType, activity.halfDay ? "half" : "whole", note].join("|");
 }
 
 function startSignature(start: PlannedDayStart): string {
@@ -476,6 +531,7 @@ export function dayFullness(
 export type DraftProblem =
   | { kind: "morning"; date: string; name: string }
   | { kind: "holiday"; date: string; name: string; holiday: string }
+  | { kind: "leave"; date: string; name: string; leave: string }
   | { kind: "cap"; date: string; listType: PhoenixCrmListType; count: number; cap: number };
 
 /** Named before the save leaves the page, in the order the rep meets them. */
@@ -489,10 +545,13 @@ export function weekProblems(
   for (const day of week.days) {
     if (!day.editable) continue;
     const rows = resolveDayRows(day, items, byId);
+    const off = dayOffOf(day);
     for (const row of rows) {
       if (row.gone) continue;
-      // A day his saved hours do not cover is never a problem (owner, 2026-09-30): only a Thursday PM is.
-      if (day.holiday) problems.push({ kind: "holiday", date: day.date, name: row.name, holiday: day.holiday });
+      // A day his saved hours do not cover is never a problem (owner, 2026-09-30): only a Thursday PM is,
+      // and a day off — a public holiday, or his own approved leave (2026-10-02) — holds nobody at all.
+      if (off?.kind === "holiday") problems.push({ kind: "holiday", date: day.date, name: row.name, holiday: off.name });
+      else if (off) problems.push({ kind: "leave", date: day.date, name: row.name, leave: off.name });
       else if (!day.listTypes.includes(row.listType)) problems.push({ kind: "morning", date: day.date, name: row.name });
     }
     const counts = dayCounts(rows);
@@ -507,6 +566,88 @@ export function weekFixes(week: DraftWeek, items: ReadonlyArray<PlanItemDraft>, 
   return week.days
     .filter((day) => day.editable)
     .reduce((sum, day) => sum + resolveDayRows(day, items, byId).filter((row) => row.gone || row.moved).length, 0);
+}
+
+// ── At Send: the days left empty ────────────────────────────────────────────────────────────────
+
+/**
+ * The days of the week that are still his to change, hold a list, and carry NOTHING in the draft — no
+ * customer and no other activity (owner, 2026-10-02: on 1 October, 15 working days went out empty
+ * across 14 sent weeks). A day off holds no list (`listTypes` empty), so a public holiday or a day of
+ * his approved leave is never named; a day that has passed keeps what was saved and is not his to fill.
+ *
+ * Said at Send, and NEVER a refusal: an empty day may be exactly what he means — he reads it and can
+ * still press Send.
+ */
+export function emptyPlanDays(
+  week: DraftWeek,
+  items: ReadonlyArray<PlanItemDraft>,
+  activities: ReadonlyArray<PlannedActivity>,
+  byId: ReadonlyMap<string, PlannerCustomer>,
+): string[] {
+  return week.days
+    .filter((day) => {
+      if (!day.editable || day.listTypes.length === 0) return false;
+      const counts = dayCounts(resolveDayRows(day, items, byId));
+      return counts.AM + counts.PM === 0 && activitiesOn(activities, day.date).length === 0;
+    })
+    .map((day) => day.date);
+}
+
+/** "Tuesday 6 Oct has no customers and no activity." */
+export function emptyDayText(date: string): string {
+  return `${planDayLabel(date)} has no customers and no activity.`;
+}
+
+// ── The rep's board saves itself ────────────────────────────────────────────────────────────────
+
+/**
+ * How long the rep's board waits after his last change before the week saves itself (owner, 2026-10-02:
+ * "save as he ticks" — on 1 October one rep pressed Save 16 times, several 9 or 10). Long enough that a
+ * brick ticked customer by customer is one save, short enough that he never waits on it.
+ */
+export const PLAN_AUTOSAVE_DELAY_MS = 1500;
+
+/**
+ * A week whose draft may save itself: his to change, holding a change, and nothing the server would
+ * refuse. A week that changed underneath him waits for his choice (keep his ticks, or the saved week),
+ * and one with a problem waits for the fix — the board says which, and saves the moment it is made.
+ */
+export function canSaveItself(state: { editable: boolean; dirty: boolean; hold: "changed" | "unchecked" | null; problems: ReadonlyArray<unknown> }): boolean {
+  return state.editable && state.dirty && state.hold !== "changed" && state.problems.length === 0;
+}
+
+/**
+ * What the next save would write, by week: the version it stands over and every tick in it. A save that
+ * failed is not tried again for the same key — only once the draft changes, the connection comes back,
+ * or he presses Try again — so a refusal is never sent every 1.5 seconds.
+ */
+export function selfSaveKey(weeks: ReadonlyArray<{ scope: string; draft: WeekDraft | null }>): string {
+  return weeks
+    .map(({ scope, draft }) => {
+      if (!draft) return scope;
+      const over = draft.saved ? `${draft.saved.planId}|${draft.saved.version}` : draft.basis;
+      return `${scope}#${over}#${weekSignature(draft)}`;
+    })
+    .join("\n");
+}
+
+export type SaveStatus = { kind: "saving" | "saved" | "not_saved"; text: string; canRetry: boolean };
+
+/**
+ * The rep's board's ONE status line, in place of the Save button and its "Unsaved changes" bar (owner,
+ * 2026-10-02): "Saving…", "Saved", or "Not saved — <why>". Null until something of his has saved.
+ *
+ *   - `blocked`: a week cannot save itself — a problem the server would refuse, or a week changed
+ *     underneath him. The why is the board's own sentence for it, and the fix is his.
+ *   - `failed`: the last save of exactly this draft did not go through. He can try again.
+ *   - `saving`: a week waits out its 1.5 seconds, or its save is on its way.
+ */
+export function saveStatusLine(input: { saving: boolean; blocked: string | null; failed: string | null; savedOnce: boolean }): SaveStatus | null {
+  if (input.blocked) return { kind: "not_saved", text: `Not saved — ${input.blocked}`, canRetry: false };
+  if (input.failed) return { kind: "not_saved", text: `Not saved — ${input.failed}`, canRetry: true };
+  if (input.saving) return { kind: "saving", text: "Saving…", canRetry: false };
+  return input.savedOnce ? { kind: "saved", text: "Saved", canRetry: false } : null;
 }
 
 // ── The save ────────────────────────────────────────────────────────────────────────────────────

@@ -20,6 +20,10 @@
  * day" and "Suggest the week" hand their placements to the SAME `onPlace` a copy does, so a suggestion
  * lands in the draft exactly like a copy — the unsaved-changes bar appears, and nothing is saved or
  * sent until the rep presses Save or Send.
+ *
+ * On the rep's OWN board the week saves itself as he ticks (owner, 2026-10-02), and a copy or a
+ * suggestion is a tick like any other: it is kept a moment later, and still nothing is SENT until he
+ * presses Send. `autosave` says so in the words under the buttons and in the report after them.
  */
 
 import { useState } from "react";
@@ -79,7 +83,12 @@ function missedSentence(summary: Pick<CopySummary, "full" | "noPlace" | "notOnLi
   return `${countText(missed)} could not be placed: ${parts.join(", ")}.`;
 }
 
-function reportOf(summary: CopySummary, from: string): CopyReport {
+/** Under the buttons: what a press keeps, and what still waits for him. */
+function keptLine(autosave: boolean): string {
+  return autosave ? "Nothing is sent until you press Send." : "Nothing is saved or sent until you do.";
+}
+
+function reportOf(summary: CopySummary, from: string, autosave: boolean): CopyReport {
   const missed = missedSentence(summary);
   if (summary.placed === 0) {
     return {
@@ -91,7 +100,12 @@ function reportOf(summary: CopySummary, from: string): CopyReport {
   return {
     tone: "good",
     title: `Copied ${plural(summary.placed, "planned visit", "planned visits")} from ${from}`,
-    message: [missed, "Nothing is saved or sent yet. Check the days, then save."].filter(Boolean).join(" "),
+    message: [
+      missed,
+      autosave ? "They save by themselves. Check the days — nothing is sent until you press Send." : "Nothing is saved or sent yet. Check the days, then save.",
+    ]
+      .filter(Boolean)
+      .join(" "),
   };
 }
 
@@ -109,6 +123,7 @@ function dayFinder(weeks: ReadonlyArray<DraftWeek>): (date: string) => DraftDay 
 }
 
 export function PlanCopyMenu({
+  autosave = false,
   caps,
   compact = false,
   customers,
@@ -118,6 +133,8 @@ export function PlanCopyMenu({
   seatId,
   test,
 }: {
+  /** The rep's own board, which saves itself (owner, 2026-10-02): the words say a copy is kept, not that it waits for Save. */
+  autosave?: boolean;
   caps: DailyCaps;
   /**
    * The rep's step 3 (owner, 2026-10-02: "where the suggest? where the copy iReports period and week
@@ -177,7 +194,7 @@ export function PlanCopyMenu({
       }
       if (byWeek.size > 0) onPlace(byWeek);
       const summary = summarizeCopy({ source: source.placements, targetDayOf, byId, alreadyOn: alreadyOnOf(copyWeeks), placed });
-      return reportOf(summary, monthLabel(monthKeyOf(previousMonth)));
+      return reportOf(summary, monthLabel(monthKeyOf(previousMonth)), autosave);
     }
 
     // His first Phoenix month: last month's iReports360 plan, placed by the weekdays he had then.
@@ -205,7 +222,7 @@ export function PlanCopyMenu({
     }
     if (byWeek.size > 0) onPlace(byWeek);
     const notOnList = entries.filter((entry) => !entry.nativeCustomerId || !byId.has(entry.nativeCustomerId)).length;
-    return reportOf({ placed: placed.length, full: 0, noPlace, notOnList }, `your iReports360 plan for ${history.historyMonthLabel}`);
+    return reportOf({ placed: placed.length, full: 0, noPlace, notOnList }, `your iReports360 plan for ${history.historyMonthLabel}`, autosave);
   }
 
   /** Copy last week: the previous field-week, weekday onto weekday. */
@@ -218,7 +235,7 @@ export function PlanCopyMenu({
     const settled = settleCopiedPlaces(drafts, dayFinder([target.week]), byId);
     if (settled.kept.length > 0) onPlace(new Map([[target.week.weekStart, settled.kept]]));
     const summary = summarizeCopy({ source: source.placements, targetDayOf, byId, alreadyOn: alreadyOnOf([targetWeek]), placed: settled.kept });
-    return reportOf(summary, weekLabel(previous));
+    return reportOf(summary, weekLabel(previous), autosave);
   }
 
   /** Copy a day: the same weekday one or two weeks back, onto this day. */
@@ -238,7 +255,7 @@ export function PlanCopyMenu({
     const settled = settleCopiedPlaces(drafts, dayFinder([target.week]), byId);
     if (settled.kept.length > 0) onPlace(new Map([[target.week.weekStart, settled.kept]]));
     const summary = summarizeCopy({ source: source.placements, targetDayOf, byId, alreadyOn: alreadyOnOf([targetWeek]), placed: settled.kept });
-    return reportOf(summary, dayLabel(from));
+    return reportOf(summary, dayLabel(from), autosave);
   }
 
   const locked = disabled || busy !== null;
@@ -266,7 +283,7 @@ export function PlanCopyMenu({
 
   return (
     <div className={compact ? "contents" : "grid min-w-0 gap-2"}>
-      {compact ? null : <p className="break-words text-xs font-semibold leading-5 text-slate-500">{explain} Nothing is saved or sent until you do.</p>}
+      {compact ? null : <p className="break-words text-xs font-semibold leading-5 text-slate-500">{explain} {keptLine(autosave)}</p>}
       <div className={compact ? "contents" : "grid gap-2 sm:flex sm:flex-wrap"}>
         {buttons.map((button) => (
           <CrmButton busy={busy === button.key} disabled={locked} key={button.key} onClick={button.onClick} size="sm">
@@ -299,7 +316,7 @@ function suggestedTitle(result: SuggestResult, morningOnly: boolean, scope: Sugg
   return `Placed ${lists}${where}${when}`;
 }
 
-function suggestReport(result: SuggestResult, morningOnly: boolean, scope: SuggestScope): CopyReport {
+function suggestReport(result: SuggestResult, morningOnly: boolean, scope: SuggestScope, autosave: boolean): CopyReport {
   if (result.placements.length === 0) {
     const days = scope.kind === "day" ? `on ${PHOENIX_CRM_WEEKDAY_NAMES[weekdayOfIsoDay(scope.date)]}` : "on the days left";
     return {
@@ -314,7 +331,7 @@ function suggestReport(result: SuggestResult, morningOnly: boolean, scope: Sugge
     title: suggestedTitle(result, morningOnly, scope),
     message: [
       noHours > 0 ? `${plural(noHours, "of them has", "of them have")} no days and hours yet.` : null,
-      "Nothing is saved or sent yet. Review them, then save.",
+      autosave ? "They save by themselves. Review them — nothing is sent until you press Send." : "Nothing is saved or sent yet. Review them, then save.",
     ]
       .filter(Boolean)
       .join(" "),
@@ -327,12 +344,15 @@ function suggestReport(result: SuggestResult, morningOnly: boolean, scope: Sugge
  * cannot take one, the button stays on screen, disabled, with the reason under it in plain words.
  */
 export function PlanSuggestMenu({
+  autosave = false,
   blockedReason,
   disabled,
   input,
   onPlace,
   scope,
 }: {
+  /** The rep's own board, which saves itself (owner, 2026-10-02): the words say a suggestion is kept, not that it waits for Save. */
+  autosave?: boolean;
   /** Why the day or week cannot take a suggestion; null when it can. */
   blockedReason: string | null;
   /** The board is saving or reading: nothing may land in the draft under it. */
@@ -351,7 +371,7 @@ export function PlanSuggestMenu({
     if (disabled || blockedReason !== null || !input) return;
     const result = scope.kind === "day" ? suggestDay({ ...input, date: scope.date }) : suggestWeek(input);
     if (result.placements.length > 0) onPlace(new Map([[input.week.weekStart, result.placements]]));
-    setReport(suggestReport(result, morningOnly, scope));
+    setReport(suggestReport(result, morningOnly, scope, autosave));
   }
 
   const explain =
@@ -361,7 +381,7 @@ export function PlanSuggestMenu({
 
   return (
     <div className="grid min-w-0 content-start gap-2">
-      <p className="break-words text-xs font-semibold leading-5 text-slate-500">{explain} Nothing is saved or sent until you do.</p>
+      <p className="break-words text-xs font-semibold leading-5 text-slate-500">{explain} {keptLine(autosave)}</p>
       <div className="grid gap-2 sm:flex sm:flex-wrap">
         <CrmButton disabled={disabled || blockedReason !== null || !input} onClick={run} size="sm">
           {scope.kind === "day" ? "Suggest this day" : "Suggest the week"}

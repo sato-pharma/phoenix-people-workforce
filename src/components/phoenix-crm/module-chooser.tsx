@@ -2,7 +2,10 @@ import { CalendarDays, CalendarRange, ClipboardList, FileBarChart, ListChecks, S
 
 // The one client piece: it starts the module's page and its screen at the touch (module-link.tsx).
 import { PhoenixCrmModuleLink } from "@/components/phoenix-crm/module-link";
+// The other: "Get Phoenix CRM messages on Telegram", a client card the server decides to draw.
+import { TelegramConnectCard } from "@/components/phoenix-crm/telegram-connect-card";
 import { allowedPhoenixCrmModules, phoenixCrmModulePath, type PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
+import { showsTelegramCard } from "@/lib/phoenix-crm/telegram-card";
 // Through `view-types`, never `server/overview`: a component may not import server code (the
 // boundary test), and that file exists to re-export exactly these shapes for the screens.
 import type { PhoenixCrmOverview } from "@/lib/phoenix-crm/view-types";
@@ -49,6 +52,9 @@ export function PhoenixCrmModuleChooser({ base, overview }: { base: string; over
 
   return (
     <div className="grid min-w-0 gap-4">
+      {/* Owner, 2026-10-02: the reps and managers the notices go to are asked to connect Telegram, at the
+          top of Phoenix CRM, until the server says they have. */}
+      {showsTelegramCard(overview.telegram) ? <TelegramConnectCard cairoToday={overview.cairoToday} /> : null}
       <p className="break-words text-sm font-semibold leading-6 text-slate-600">
         Choose what to open. Each one is its own page, so you can keep its address and come back to it.
       </p>

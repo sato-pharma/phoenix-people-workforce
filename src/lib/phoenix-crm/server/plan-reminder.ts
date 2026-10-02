@@ -11,7 +11,7 @@
  * still on iReports360 hears nothing. It joins on its own the day one of its reps starts.
  *
  * 🔴 NEVER FIRED FROM A LAPTOP. It is a production cron. A hand-run spends the day's keys, so the
- * real tick later that day stays silent for everyone it reached. Real territories only: the test
+ * real tick it stands for stays silent for everyone it reached. Real territories only: the test
  * world has no reminder.
  */
 
@@ -22,10 +22,12 @@ import {
   isUnsentStatus,
   managerReminder,
   planReminderDay,
+  reminderTickOf,
   repReminder,
   territoriesOfStartedTeams,
   type PlanReminderDay,
   type PlanReminderNotice,
+  type PlanReminderTick,
 } from "@/lib/phoenix-crm/plan-reminder-rules";
 import { territoryReviewer } from "@/lib/phoenix-crm/scope";
 import { seatsWithRealActivity } from "@/lib/phoenix-crm/server/daily-digest";
@@ -43,6 +45,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type PlanReminderRun = {
   /** Null when today is not a reminder day; the run then reads nothing and sends nothing. */
   weekStart: string | null;
+  /** The 12:57 tick or the 17:57 one, which says "still". */
+  tick: PlanReminderTick;
   late: boolean;
   /** Territories in an open line, with a rep, in a team that has started. */
   territories: number;
@@ -54,6 +58,12 @@ export type PlanReminderRun = {
   /** Territories with a rep whose team has not started: left alone, and counted so a quiet run reads as one. */
   waitingForFirstUse: number;
 };
+
+/** The hour it is in Cairo now, 0–23 — which of the day's two ticks a run is. */
+function cairoHourNow(): number {
+  const hour = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: "Africa/Cairo" }).format(new Date());
+  return Number(hour);
+}
 
 async function loadWeekStatuses(seatIds: ReadonlyArray<string>, weekStart: string): Promise<Map<string, string>> {
   const statuses = new Map<string, string>();
@@ -100,10 +110,12 @@ async function deliver(notice: PlanReminderNotice): Promise<void> {
 export async function runPhoenixCrmPlanReminder(
   send: (notice: PlanReminderNotice) => Promise<void> = deliver,
   cairoToday: string = currentCairoDateOnlyIso(),
+  tick: PlanReminderTick = reminderTickOf(cairoHourNow()),
 ): Promise<PlanReminderRun> {
   const day: PlanReminderDay | null = planReminderDay(cairoToday);
   const empty: PlanReminderRun = {
     weekStart: null,
+    tick,
     late: false,
     territories: 0,
     unsent: 0,
@@ -135,7 +147,7 @@ export async function runPhoenixCrmPlanReminder(
     const rep = seat.occupantHrId as string;
     if (!reps.has(rep)) {
       reps.add(rep);
-      notices.push(repReminder({ hrId: rep, day, cairoToday, draftStarted: statuses.has(seat.seatId) }));
+      notices.push(repReminder({ hrId: rep, day, cairoToday, tick, draftStarted: statuses.has(seat.seatId) }));
     }
     const manager = territoryReviewer(org, seat.seatId)?.hrId;
     if (manager && manager !== rep) {
@@ -147,7 +159,7 @@ export async function runPhoenixCrmPlanReminder(
   }
   let managers = 0;
   for (const [hrId, repNames] of byManager) {
-    const notice = managerReminder({ hrId, day, cairoToday, repNames });
+    const notice = managerReminder({ hrId, day, cairoToday, tick, repNames });
     if (!notice) continue;
     managers += 1;
     notices.push(notice);
@@ -170,6 +182,7 @@ export async function runPhoenixCrmPlanReminder(
 
   return {
     weekStart: day.weekStart,
+    tick,
     late: day.late,
     territories: seats.length,
     unsent: unsent.length,

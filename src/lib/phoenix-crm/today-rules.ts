@@ -63,6 +63,11 @@ export type TodayStop = {
   reference?: PlannerReference | null;
   /** A place is saved for him (named or not). Optional for the same reason as the three above. */
   hasPlace?: boolean;
+  /**
+   * Google Maps' way to that saved place (owner, 2026-10-02; `directionsUrl` in directions.ts), or
+   * null when none is saved with a usable point. Optional for the same reason as the fields above.
+   */
+  directionsUrl?: string | null;
   done: boolean;
   /** Cairo clock of the visit, when it is done. */
   doneAt: string | null;

@@ -104,6 +104,11 @@ export function runPortalRepNavigationSpeedTests(): void {
       "the day's references start the moment the list and the plan land, not after the whole wave",
     );
     assert.doesNotMatch(today, /const names = await loadPeopleNames\(/, "and the territory's names are read with the rest, never after it");
+    // His own week (owner, 2026-10-02) is one more read of the same wave — never awaited after it.
+    assertBefore(today, "loadWeekProgress(seat.seatId, isTest, date),", "const stops: PlannedStop[] = [];", "the week's read is inside the day's one wave");
+    assert.doesNotMatch(today, /await loadWeekProgress\(/, "and never awaited on its own");
+    const week = functionBody(source("src/lib/phoenix-crm/server/week-progress.ts"), "export async function loadWeekProgress(");
+    assertBefore(week, "visitsRead.catch(() => undefined);", "await supabase", "and inside it, the visits' read starts beside the plan's, not after it");
   }
 
   // ── Phoenix CRM · the week and month planners ──────────────────────────────────────────────────

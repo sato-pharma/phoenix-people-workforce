@@ -28,6 +28,10 @@
  *     its figure on the day's button), and a day whose every list is full lights an emerald rail.
  *   - Ticking numbers the row IN ITS OWN LIST, in the order he ticked: 1 AM, 1 PM, 2 PM, 3 PM (owner,
  *     2026-09-30) — so the day he is building reads as a sequence, and AM and PM are counted apart.
+ *   - Each row says when he was LAST SEEN — the latest of iReports360 and Phoenix — with a validated
+ *     customer's month beside it; iReports360's USUAL DAYS while he has no days and hours of his own;
+ *     and a FOLLOW-UP his latest visit left due inside this week (owner, 2026-10-02; plan-insight.ts).
+ *     His own history and his own commitments — nothing on them judges him.
  *
  * Nothing here judges the rep: no distance, no spread and no nearest-customer figure reaches his own
  * plan. The day's spread is shown only on a reviewer's reading of a sent plan (`showSpread`).
@@ -46,7 +50,7 @@ import { Check } from "lucide-react";
 
 import { countText, dayLabel, dayLabelLong } from "@/components/phoenix-crm/format";
 import type { BrickTint } from "@/components/phoenix-crm/brick-tints";
-import { customerMetaText, matchesWords, PENDING_PILL } from "@/components/phoenix-crm/labels";
+import { customerMetaText, matchesWords, PENDING_PILL, plannerRowInsight } from "@/components/phoenix-crm/labels";
 import { PlanFilterBar } from "@/components/phoenix-crm/plan-filter-bar";
 import {
   CrmBlock,
@@ -63,17 +67,20 @@ import {
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
 import { clusterByBrick, NO_BRICK_KEY } from "@/lib/phoenix-crm/brick-groups";
-import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import { fieldWeekStart, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import { gradeTarget } from "@/lib/phoenix-crm/coverage";
 import { dayActivityLabel, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { describeDayStarts, startInputValue, startMinuteFromInput, type PlanDayStarts } from "@/lib/phoenix-crm/plan-day-starts";
 import { filterPlannerCustomers, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
-import type { PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
+import { dayOffPhrase, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
+import type { GradeTargets } from "@/lib/phoenix-crm/plan-suggest";
 import {
   brickTickPress,
   brickTickState,
   customerOnDay,
   dayCounts,
   dayFullness,
+  dayOffOf,
   indexCustomers,
   PLANNED_ACTIVITY_NOTE_MAX,
   resolveDayRows,
@@ -114,6 +121,12 @@ type TickRow = {
   noRamadanTime: boolean;
   startMinute: number | null;
   placed: boolean;
+  /** "Last seen Tue 29 Sept", with a validated customer's month beside it. Null when it was not read. */
+  lastSeen: string | null;
+  /** "Usually seen Sun, Tue (iReports360)" — only while he has no days and hours of his own. */
+  usual: string | null;
+  /** "Follow-up due Tue 6 Oct" — his latest visit's next step, due inside this week. */
+  followUp: string | null;
 };
 
 const NO_HOURS = "No days and hours yet";
@@ -141,6 +154,7 @@ export function PlanDayPanel({
   filter,
   filterOptions,
   focus,
+  gradeTargets,
   idPrefix,
   items,
   locked,
@@ -153,6 +167,7 @@ export function PlanDayPanel({
   onStarts,
   planCopyMenu,
   query,
+  reviewList,
   showSpread,
   starts,
   suggestMenu,
@@ -181,6 +196,8 @@ export function PlanDayPanel({
    * for this day". Unset is the whole day at once — a manager reviewing from Team.
    */
   focus?: PhoenixCrmListType;
+  /** The grade numbers: a validated customer's row reads his month against his grade's. */
+  gradeTargets: GradeTargets;
   idPrefix: string;
   /** The week's drafted placements. */
   items: ReadonlyArray<PlanItemDraft>;
@@ -197,6 +214,11 @@ export function PlanDayPanel({
   /** The step form's week copies — last week's plan and the period plan — beside "Copy a day". */
   planCopyMenu?: ReactNode;
   query: string;
+  /**
+   * A reviewer's steps (owner, 2026-10-02): the day he is reading, ONE list at a time — its AM, then its
+   * PM — read only. Unset shows the whole day. Never set on the rep's own plan.
+   */
+  reviewList?: PhoenixCrmListType;
   /** A reviewer's reading: the day's spread may show. Never true for a rep on his own plan. */
   showSpread: boolean;
   /** The day's Start AM / Start PM: the draft's while he is changing the day, else what was saved. */
@@ -212,7 +234,10 @@ export function PlanDayPanel({
   const weekday = weekdayOfIsoDay(day.date);
   const weekdayName = PHOENIX_CRM_WEEKDAY_NAMES[weekday];
   const dayName = dayLabel(day.date);
-  const morning = !day.listTypes.includes("PM");
+  // A day off holds no list at all (owner, 2026-10-02) — a public holiday, or his own approved leave —
+  // so it is never read as a Thursday morning.
+  const off = dayOffOf(day);
+  const morning = !off && !day.listTypes.includes("PM");
   const byId = indexCustomers(customers);
   // Full: the day's rail turns emerald and the colour blooms off it (owner, 2026-09-30).
   const drafted = editing ? resolveDayRows(day, items, byId) : [];
@@ -225,6 +250,7 @@ export function PlanDayPanel({
         <span className="flex max-w-full flex-wrap gap-1">
           {day.date === today ? <CrmPill tone="info">Today</CrmPill> : null}
           {!day.editable ? <CrmPill>Passed</CrmPill> : null}
+          {off ? <CrmPill tone="warn">Day off</CrmPill> : null}
           {day.ramadan ? <CrmPill tone="orange">Ramadan</CrmPill> : null}
           {morning ? <CrmPill>Morning · AM only</CrmPill> : null}
           {showSpread && !editing && day.farApart ? <CrmPill tone="warn">Far apart · {day.spanKm} km</CrmPill> : null}
@@ -242,9 +268,10 @@ export function PlanDayPanel({
       ) : startsText ? (
         <p className="mt-1 break-words text-sm font-bold text-slate-700">{startsText}</p>
       ) : null}
-      {!day.editable || morning || day.ramadan ? (
+      {!day.editable || off || morning || day.ramadan ? (
         <div className="mt-3 grid min-w-0 gap-2">
           {!day.editable ? <CrmNote>This day has passed. It shows what was planned.</CrmNote> : null}
+          {off ? <CrmNote tone="warn">{`${dayName} is ${dayOffPhrase(off)}: it holds no customer.`}</CrmNote> : null}
           {morning ? <CrmNote>Thursday is a morning: it holds AM only.</CrmNote> : null}
           {day.ramadan ? <CrmNote tone="info">A Ramadan day: each customer&apos;s Ramadan hours are used.</CrmNote> : null}
         </div>
@@ -276,7 +303,7 @@ export function PlanDayPanel({
             <p className="text-sm font-medium text-slate-500">No other activity planned.</p>
           )}
         </CrmBlock>
-        <PlannedDayView day={day} idPrefix={idPrefix} showSpread={showSpread} tints={tints} weekdayName={weekdayName} />
+        <PlannedDayView day={day} idPrefix={idPrefix} only={reviewList} showSpread={showSpread} tints={tints} weekdayName={weekdayName} />
       </div>
     );
   }
@@ -294,6 +321,8 @@ export function PlanDayPanel({
     order.set(row.customerId, seen[row.listType]);
   }
   const allowed = new Set(filterPlannerCustomers(customers, { ...filter, ramadan: day.ramadan }).map((customer) => customer.customerId));
+  // The week this day belongs to: a follow-up shows when it is due inside it.
+  const weekStart = fieldWeekStart(day.date);
 
   const tickRows: TickRow[] = [];
   let offered = 0;
@@ -313,6 +342,7 @@ export function PlanDayPanel({
     const address = fit.place ? fit.place.address : reference?.address ?? null;
     const area = fit.place ? null : reference?.area ?? null;
     const timings = fit.place ? weekTimingsText(fit.place.timings, day.ramadan) : "";
+    const insight = plannerRowInsight(customer, { target: gradeTarget({ gradeTargets }, customer.listType, customer.grade), today, weekStart });
     tickRows.push({
       customerId: customer.customerId,
       name: customer.name,
@@ -330,6 +360,9 @@ export function PlanDayPanel({
       startMinute: fit.windows[0]?.startMinute ?? null,
       placed: placed !== null,
       position: placed ? (order.get(customer.customerId) ?? null) : null,
+      lastSeen: insight.lastSeen,
+      usual: insight.usual,
+      followUp: insight.followUp,
     });
   }
   const shownUnplaced = tickRows.filter((row) => !row.placed).length;
@@ -370,7 +403,7 @@ export function PlanDayPanel({
         <div className="mt-3" />
         {!day.listTypes.includes(listType) ? (
           <CrmNote className="mb-3" tone="bad">
-            {day.holiday ? `${dayName} is a public holiday (${day.holiday}). Take these off it.` : `${dayName} is a morning for AM only. Take these off it.`}
+            {off ? `${dayName} is ${dayOffPhrase(off)}. Take these off it.` : `${dayName} is a morning for AM only. Take these off it.`}
           </CrmNote>
         ) : null}
         {groups.length === 0 ? (
@@ -435,7 +468,7 @@ export function PlanDayPanel({
       <CrmBlock className="border-t border-slate-100" title="No longer on the list">
         <CrmNote tone="warn">
           {gone.map((row) => row.name).join(", ")} {gone.length === 1 ? "was" : "were"} planned on {dayName} before leaving your list. They come off the plan
-          when you save.
+          at the next save.
         </CrmNote>
       </CrmBlock>
     ) : null;
@@ -502,8 +535,9 @@ export function PlanDayPanel({
                   </CrmButton>
                 ) : null}
               </div>
+              {/* His own board saves itself as he ticks (owner, 2026-10-02): a fill is kept, and only Send sends it. */}
               <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
-                The period plan is last month&apos;s — your iReports360 plan if you had none in Phoenix. Nothing is saved or sent until you do.
+                The period plan is last month&apos;s — your iReports360 plan if you had none in Phoenix. Nothing is sent until you press Send.
               </p>
               <div className="mt-3 min-w-0">{filterBar}</div>
             </>,
@@ -811,12 +845,26 @@ function WhereLine({ where }: { where: string | null }) {
 }
 
 function RowPills({ row }: { row: TickRow }) {
-  if (!row.noRamadanTime) return null;
+  if (!row.noRamadanTime && !row.followUp) return null;
   return (
     <span className="mt-1 flex max-w-full flex-wrap gap-1">
-      <CrmPill tone="warn">No Ramadan hours</CrmPill>
+      {/* His own commitment from his latest visit, due this week — the one thing on the row that asks him to act. */}
+      {row.followUp ? <CrmPill tone="info">{row.followUp}</CrmPill> : null}
+      {row.noRamadanTime ? <CrmPill tone="warn">No Ramadan hours</CrmPill> : null}
     </span>
   );
+}
+
+/** "Last seen Tue 29 Sept · 1 of 3 visits this month" — when he was last seen, and a validated customer's month. */
+function SeenLine({ lastSeen }: { lastSeen: string | null }) {
+  if (!lastSeen) return null;
+  return <span className="mt-0.5 block break-words text-xs font-semibold leading-5 text-slate-600">{lastSeen}</span>;
+}
+
+/** iReports360's usual days, quietly, while he has no days and hours of his own — a hint, never a rule. */
+function UsualLine({ usual }: { usual: string | null }) {
+  if (!usual) return null;
+  return <span className="mt-0.5 block break-words text-xs font-medium leading-5 text-slate-500">{usual}</span>;
 }
 
 /** A phone's row: the whole row is the tick box's target. */
@@ -841,6 +889,8 @@ function TickCard({ dayName, locked, onToggle, room, row }: TickRowProps) {
           <MetaLine parts={[row.grade ? `Grade ${row.grade}` : "No grade", row.speciality, row.placeName]} pending={row.pending} />
           <WhereLine where={row.where} />
           <span className="mt-0.5 block break-words text-sm font-bold text-slate-800">{row.timings}</span>
+          <UsualLine usual={row.usual} />
+          <SeenLine lastSeen={row.lastSeen} />
           <RowPills row={row} />
         </span>
       </label>
@@ -873,11 +923,15 @@ function TickTableRows({ dayName, idPrefix, locked, onToggle, room, row }: TickR
           </span>
           <MetaLine parts={[row.grade ? `Grade ${row.grade}` : "No grade", row.placeName]} pending={row.pending} />
           <WhereLine where={row.where} />
+          <SeenLine lastSeen={row.lastSeen} />
         </label>
         <RowPills row={row} />
       </td>
       <td className={crmTdClassName}>{row.speciality ?? "—"}</td>
-      <td className={crmTdClassName}>{row.timings}</td>
+      <td className={crmTdClassName}>
+        {row.timings}
+        <UsualLine usual={row.usual} />
+      </td>
     </tr>
   );
 }
@@ -891,24 +945,28 @@ function TickTableRows({ dayName, idPrefix, locked, onToggle, room, row }: TickR
 function PlannedDayView({
   day,
   idPrefix,
+  only,
   showSpread,
   tints,
   weekdayName,
 }: {
   day: PlanDayView;
   idPrefix: string;
+  /** One list alone — a reviewer's step reads AM, then PM (owner, 2026-10-02). Unset: both. */
+  only?: PhoenixCrmListType;
   showSpread: boolean;
   tints: ReadonlyMap<string, BrickTint>;
   weekdayName: string;
 }) {
-  if (day.items.length === 0) {
+  const shown = only ? day.items.filter((item) => item.listType === only) : day.items;
+  if (shown.length === 0) {
     return (
-      <CrmBlock className="border-t border-slate-100" title="Customers">
-        <p className="text-sm font-medium text-slate-500">Nothing was planned on this day.</p>
+      <CrmBlock className="border-t border-slate-100" title={only ? `${only} customers` : "Customers"}>
+        <p className="text-sm font-medium text-slate-500">{only ? `No ${only} customer was planned on this day.` : "Nothing was planned on this day."}</p>
       </CrmBlock>
     );
   }
-  const sections = (["AM", "PM"] as const).filter((listType) => day.items.some((item) => item.listType === listType));
+  const sections = (["AM", "PM"] as const).filter((listType) => shown.some((item) => item.listType === listType));
   return (
     <>
       {sections.map((listType) => {

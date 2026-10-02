@@ -27,13 +27,21 @@
  *      Saturday to the 5 AM / 15 PM cap would have used a whole AM list in five days).
  *   6. Last, customers with no days and hours yet (not validated) fill the room still left. Nothing is
  *      known against them, so they are planned as they are — the owner's 2026-09-22 ruling — but after
- *      everyone the day is known to suit.
+ *      everyone the day is known to suit. Among them, the ones iReports360 usually saw on that weekday
+ *      come first, then the ones it knows nothing about, then the ones it usually saw on other days
+ *      (owner, 2026-10-02; plan-insight.ts `usualDayRank`) — an ORDER only: nobody is left out for it.
+ *
+ * And ahead of all of it (owner, 2026-10-02): a customer whose LATEST visit left a next step due inside
+ * this week, and who is not on the week yet, goes first — the earliest due first. Every rule above still
+ * holds for him: the day's caps, his own list, a day he receives, and never over his grade.
  *
  * A day with a whole-day other activity (a meeting, a conference, training…) takes no visits; a half
  * day leaves half the day's room. A day that has passed takes nothing.
  */
 
+import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget } from "@/lib/phoenix-crm/coverage";
+import { followUpInWeek, usualDayRank } from "@/lib/phoenix-crm/plan-insight";
 import type { PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import {
   customerOnDay,
@@ -214,7 +222,17 @@ type Candidate = {
   /** 0 fresh and receiving · 1 again this week, receiving · 2 fresh, no hours yet · 3 again, no hours yet. */
   band: 0 | 1 | 2 | 3;
   startMinute: number;
+  /** His latest visit's next step falls due this week and he is not on the week yet: he goes first. */
+  followUpOn: string | null;
+  /** With no hours yet: 0 iReports360 usually saw him on this weekday · 1 nothing known · 2 other days. */
+  usual: 0 | 1 | 2;
 };
+
+/** A follow-up due this week before everyone else, the earliest due first; the rest keep their order. */
+function compareFollowUps(left: Candidate, right: Candidate): number {
+  if (left.followUpOn !== null && right.followUpOn !== null) return left.followUpOn.localeCompare(right.followUpOn);
+  return Number(right.followUpOn !== null) - Number(left.followUpOn !== null);
+}
 
 function compareWithinBrick(left: Candidate, right: Candidate): number {
   return (
@@ -244,6 +262,7 @@ export function suggestDay(input: SuggestInput & { date: string }): SuggestResul
   const onDay = new Set(rows.map((row) => row.customerId));
   const onWeek = weekCounts(input.week, input.items);
   const weeksLeft = Math.max(1, Math.floor(input.weeksLeft ?? 1));
+  const weekday = weekdayOfIsoDay(day.date);
 
   // The bricks he has already started the day in: the day stays in them first.
   const dayBricks = new Set<string>();
@@ -272,6 +291,9 @@ export function suggestDay(input: SuggestInput & { date: string }): SuggestResul
       need,
       band: noHours ? (already > 0 ? 3 : 2) : already > 0 ? 1 : 0,
       startMinute: fit.windows[0]?.startMinute ?? 9999,
+      // Once he is on the week the follow-up is planned, so the week's own spreading decides the rest.
+      followUpOn: already > 0 ? null : followUpInWeek(customer, input.week.weekStart),
+      usual: usualDayRank(customer, weekday),
     });
   }
 
@@ -299,10 +321,13 @@ export function suggestDay(input: SuggestInput & { date: string }): SuggestResul
     .map(([key]) => key);
   const brickRank = new Map(brickOrder.map((key, index) => [key, index]));
 
+  // A follow-up due this week first; then the bands, the known days by brick and, with no hours yet,
+  // iReports360's usual days for this weekday ahead of the rest.
   const ordered = [...candidates].sort(
     (left, right) =>
+      compareFollowUps(left, right) ||
       left.band - right.band ||
-      (left.band < 2 ? (brickRank.get(left.brick) ?? 0) - (brickRank.get(right.brick) ?? 0) : 0) ||
+      (left.band < 2 ? (brickRank.get(left.brick) ?? 0) - (brickRank.get(right.brick) ?? 0) : left.usual - right.usual) ||
       compareWithinBrick(left, right),
   );
 
