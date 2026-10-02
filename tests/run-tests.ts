@@ -6895,6 +6895,12 @@ await runTest(
     + "unknown — gh unreachable, no head SHA, an unreadable HEAD — holds the branch, and the rule "
     + "lives in exactly one place because both callers print that command)",
   runRepoDoctorNewestPrTests,
+);
+await runTest(
+  "a cherry `+` is re-asked whether its delta is already applied on `main`, so a roll-up's squashed "
+    + "member stops holding its worktree for ever — while a commit whose change is genuinely absent "
+    + "(the grpc-js floor `main` made moot by dropping @google-cloud/logging) still holds it, and "
+    + "every unreadable reading answers NOT landed",
   runDeltaLandedVerdictTests,
 );
 await runTest("the CRM client's timeout bounds the response BODY, and an empty body is not a shape change", runCrmClientTimeoutsTests);
