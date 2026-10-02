@@ -118,6 +118,7 @@ import {
 } from "./memory-index-budget.mjs";
 import { classifyMemoryReachabilityAcrossRefs, memoryReachabilityLines } from "./memory-index-reachability.mjs";
 import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
+import { commitDeltaLandedOnMain } from "./delta-landed.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 import {
   classifyLooseObjects,
@@ -813,13 +814,26 @@ for (const r of live) {
   //
   // Returns null on ANY failure, which the classifier holds back. Never collapse a failed compare
   // into "nothing unmerged": that is the `?? null` discipline this file keeps everywhere else.
+  //
+  // 🔴 AND A `+` FROM CHERRY IS NOT THE LAST WORD EITHER (owner, 2026-10-02). A patch-id matches only
+  // when something upstream carries the SAME diff — which a roll-up's squash never does, and which a
+  // `main` that solved the same problem differently never does. Measured that morning on
+  // `codex/next-16-3-8-grpc-1-14-5`: `84cb8dd92` ("next 16.3.8 and a grpc-js floor close two HIGH
+  // advisories") was `+`, so the worktree was held and the reason NAMED A HIGH ADVISORY — while the
+  // `next` bump was on `main` and the grpc-js override was moot, `main` having removed
+  // `@google-cloud/logging`, the only path pulling grpc-js in. Dependabot read zero open alerts.
+  //
+  // So every `+` is re-asked the question patch-id is a means to: is this delta already applied on
+  // `main` (delta-landed.mjs, the instrument `rollup-prs.mjs --settle` uses). Only a commit that fails
+  // BOTH tests is reported, and any failure to read answers NOT landed, so the worktree is still held —
+  // the conservative side, unchanged.
   const cherryProbe = (atTip) => {
     const out = git(["-C", r.dir, "cherry", "-v", "origin/main", atTip]);
     if (out === null) return null;
     const unmerged = [];
     for (const line of out.split(String.fromCharCode(10))) {
       const m = /^\+\s+([0-9a-f]{7,40})\s*(.*)$/.exec(line.trim());
-      if (m) unmerged.push({ sha: m[1], subject: m[2] });
+      if (m && !commitDeltaLandedOnMain({ dir: r.dir, sha: m[1] })) unmerged.push({ sha: m[1], subject: m[2] });
     }
     return { unmerged };
   };

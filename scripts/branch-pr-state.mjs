@@ -164,7 +164,8 @@ export function listBranchPrs(branch, { run = runGh } = {}) {
  * @param {string | null} tip The worktree's current HEAD SHA. null = could not be read.
  * @param {((tip: string) => { unmerged: Array<{ sha: string, subject: string }> } | null) | null} [probe]
  *   Answers the CONTENT question when the tip has moved off the merged head: which commits on it
- *   are NOT upstream by patch-id. repo-doctor.mjs answers it with `git cherry`. Omitted or null
+ *   are neither upstream by patch-id nor already applied on `main` as a delta. repo-doctor.mjs
+ *   answers it with `git cherry` and then delta-landed.mjs for each `+`. Omitted or null
  *   reproduces the old sha-only behaviour, which holds the worktree back — the conservative side.
  * @returns {{ verdict: "retirable" | "held" | "none" | "unknown", pr: number | null, reason: string }}
  *   `retirable` is the ONLY verdict a caller may print a `git branch -D` for. `none` means the
@@ -223,7 +224,8 @@ export function classifyBranchPr(prs, tip, probe = null) {
           reason:
             `HEAD ${tip.slice(0, 9)} is not the commit PR #${newest.number} merged ` +
             `(${newest.headRefOid.slice(0, 9)}) — amended or rebased after the merge — but every ` +
-            "patch on it is already upstream by patch-id, so nothing is stranded",
+            "patch on it is already on `main` — by patch-id, or by its own delta being applied " +
+            "there — so nothing is stranded",
         };
       }
       const named = probed.unmerged
@@ -236,8 +238,8 @@ export function classifyBranchPr(prs, tip, probe = null) {
         pr: newest.number,
         reason:
           `PR #${newest.number} merged, but ${probed.unmerged.length} commit(s) on this branch are ` +
-          `NOT upstream by patch-id: ${named}${more}. Read them before retiring — an amend after the ` +
-          "merge is harmless, a later fixup is not.",
+          `neither upstream by patch-id NOR applied on \`main\` as a delta: ${named}${more}. Read them ` +
+          "before retiring — an amend after the merge is harmless, a later fixup is not.",
       };
     }
     return {

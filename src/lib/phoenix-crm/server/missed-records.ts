@@ -35,7 +35,7 @@ import {
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { ensureReferenceCustomers, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
-import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
+import { notifyPhoenixCrm, withdrawPhoenixCrmVisitNotices } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
@@ -280,8 +280,9 @@ export async function enterMissedActivity(
  * own visit — his record — can never go through here, whatever the screen sends.
  *
  * 🔴 NOTHING IS LOST: the function keeps the visit, its off-plan approval and that approval's events in
- * phoenix_crm_removed_visits before deleting a row. An off-plan entry already sent to the manager simply
- * leaves his queue; the notice he was sent stays in his bell, with nothing behind it to open.
+ * phoenix_crm_removed_visits before deleting a row. An off-plan entry already sent to the manager leaves
+ * his queue, and the notice he was sent is WITHDRAWN with it (owner, 2026-10-02) — before that it stayed
+ * in his bell as a to-do with nothing behind it to open.
  */
 export async function removeMissedVisit(
   viewer: PhoenixCrmViewer,
@@ -295,5 +296,13 @@ export async function removeMissedVisit(
   const result = await callPhoenixCrm<Row>("phoenix_crm_admin_remove_visit", {
     p: { visit_id: parsed.value.visitId, seat_id: seat.seatId, actor_hr_id: viewer.hrId, is_test: isTest },
   });
-  return { removed: true, visitId: String(result.visit_id), visitDate: String(result.visit_date) };
+
+  // AFTER the removal, never before: the database is what decides whether this visit may go at all,
+  // so withdrawing first would take a notice back from a manager whose visit is still sitting there.
+  // Awaited, so the reply reports a finished act — and it swallows its own failures, so a notice that
+  // cannot be withdrawn still leaves the visit removed.
+  const visitId = String(result.visit_id);
+  await withdrawPhoenixCrmVisitNotices(visitId);
+
+  return { removed: true, visitId, visitDate: String(result.visit_date) };
 }
