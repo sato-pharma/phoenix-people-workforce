@@ -22,13 +22,21 @@ export type RobotStepResult = "done" | "already";
 /**
  * The two actions the Turbify console actually offers per mailbox, and nothing else.
  *
- * 🔴 WHY NOT `clearAppPasswords`. The original design cleared app passwords after a reset, because
- * Yahoo app passwords survive a password change. But the admin console has NO control that clears
- * them — app passwords are managed by the mailbox's own user in their personal Yahoo security page,
- * which an admin cannot reach. The console's only per-mailbox actions are Reset password, Edit,
- * Transfer account and Delete user (confirmed against the live console, 2026-09-24). So the robot
- * cannot reach the register's `revoked` state by reset-plus-clear; the only way it closes the door
- * for good is to DELETE the mailbox — which is why the owner chose "reset now, delete after N days".
+ * 🔴 WHY `clearAppPasswords` IS NOT HERE — AND WHY IT IS NO LONGER IMPOSSIBLE. Yahoo app passwords
+ * survive a password change, so a reset alone leaves the phone and the Outlook already configured
+ * syncing mail. The admin console has NO control that clears them: they live in the MAILBOX OWNER's
+ * own account security pages, and its only per-mailbox actions are Reset password, Edit, Transfer
+ * account and Delete user (confirmed against the live console, 2026-09-24). All of that is still
+ * true, and it is why this ADMIN driver has no such step.
+ *
+ * What has changed is that the robot no longer has to be an admin to reach them — it can sign in AS
+ * the mailbox, which the joiner robot already does to mint one, and the console's own Reset hands
+ * back a one-time password for any mailbox whatever the employee had set. So reset-then-clear does
+ * reach the register's `revoked` state, and it lives in its own narrow driver beside this one:
+ * `robot/clear-app-passwords.ts`. It is gated by `APP_PASSWORD_CLEAR_CALIBRATED`, because the
+ * controls that LIST and REMOVE an existing app password have never been read off the live page.
+ * Until that is observed, `deleteMailbox` is still the only step that closes the door for good —
+ * which is the reasoning behind the owner's "reset now, delete after N days".
  *
  * `resetPassword` blocks web login and any NEW device immediately (the reversible, done-now step);
  * `deleteMailbox` is the permanent one, gated hard and only run after the grace period.
