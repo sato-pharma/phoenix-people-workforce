@@ -27,6 +27,8 @@
 
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { isCodeShapedName } from "@/lib/customer-360/labels";
+import { loadAlsoKnownAs } from "@/lib/customer-identity/server/profile";
+import type { AlsoKnownAs } from "@/lib/customer-identity/types";
 import {
   buildCustomerSalesView,
   type CustomerSalesRollupRow,
@@ -99,6 +101,14 @@ export type CustomerDirectOrderRow = {
 
 export type Customer360Profile = {
   readonly address: string | null;
+  /**
+   * The other rows a CONFIRMED identity master holds for this pharmacy, or null.
+   *
+   * 🔴 NULL MEANS TWO DIFFERENT THINGS AND THE SCREEN MUST NOT DISTINGUISH THEM: nobody has linked
+   * this pharmacy to anything yet, or this viewer is not allowed to be told. Both render as no
+   * section at all, which is what the page looked like before, so neither state announces itself.
+   */
+  readonly alsoKnownAs: AlsoKnownAs | null;
   readonly areaName: string | null;
   readonly codes: CustomerCodeLink[];
   readonly directOrders: CustomerDirectOrderRow[];
@@ -412,9 +422,21 @@ async function loadSalesRows(pairs: readonly CustomerCodePair[]): Promise<Custom
   return collected;
 }
 
+/**
+ * One pharmacy, everything this company knows about it.
+ *
+ * 🔴 `canSeeIdentityLinks` IS PASSED IN, NEVER DERIVED HERE, and it is the company-scope bound the
+ * page already computed (`scope.canViewAllSales`). A master reaches across territories by its
+ * nature — the whole point is that one shop is two rows in two books — so naming its counterpart
+ * to a viewer bounded by area or region would print a customer `access.ts` would never have
+ * offered him in the picker, which is the leak that file exists to prevent. Deriving it from the
+ * role here instead would put a second answer to "who may see what" beside the page's own, and
+ * the two would drift.
+ */
 export async function getCustomer360Profile(
   ref: CustomerSubjectRef,
   role: PhoenixRole,
+  canSeeIdentityLinks = false,
 ): Promise<Customer360Profile | null> {
   const supabase = getSupabaseAdmin();
   const names = await loadNameMaps();
@@ -513,8 +535,21 @@ export async function getCustomer360Profile(
   const lineId = head.line_id == null ? null : Number(head.line_id);
   const areaFromCodes = codes.find((code) => code.areaCode)?.areaCode ?? null;
 
+  // The identity module is a NOTE on this page, never a dependency of it: a pharmacy whose links
+  // cannot be read still renders every register fact above, because the page's job is to show what
+  // this company knows and a missing annotation is not a reason to show nothing.
+  let alsoKnownAs: AlsoKnownAs | null = null;
+  if (canSeeIdentityLinks) {
+    try {
+      alsoKnownAs = await loadAlsoKnownAs(ref.register === "marketing" ? "marketing" : "direct_order", ref.recordId);
+    } catch {
+      alsoKnownAs = null;
+    }
+  }
+
   return {
     address: text(head.captured_address) ?? text(head.pharmacy_address),
+    alsoKnownAs,
     areaName: area?.name ?? text(head.area_code) ?? areaFromCodes,
     codes,
     directOrders,

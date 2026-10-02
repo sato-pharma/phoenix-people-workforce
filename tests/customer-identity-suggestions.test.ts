@@ -560,12 +560,24 @@ export function runCustomerIdentitySuggestionTests(): void {
       "and does so BEFORE the direct-order branch, which would hand a non-uuid to Postgres and fail the whole read",
     );
 
-    // Both screens name it for what it is, so nobody hunts for a register to open.
+    // It is named for what it IS, so nobody hunts for a register to open — and named ONCE, since a
+    // third screen (Customer 360's "also known as") now says it too. The per-screen copies this
+    // used to read moved into `labels.ts`; asserting them in place again would re-invite exactly
+    // the drift that consolidating them removed.
+    assert.match(
+      stripComments(readFileSync("src/lib/customer-identity/labels.ts", "utf8")),
+      /visit_feedback: "Typed on a visit"/,
+      "the shared label map names the typed source for what it is",
+    );
     for (const file of [
       "src/components/customer-identity/customer-links-workspace.tsx",
       "src/components/customer-identity/customer-identity-profile.tsx",
     ]) {
-      assert.match(stripComments(readFileSync(file, "utf8")), /visit_feedback: "Typed on a visit"/, `${file} labels the source`);
+      assert.match(
+        stripComments(readFileSync(file, "utf8")),
+        /identitySourceLabel/,
+        `${file} names a source through the shared label`,
+      );
     }
 
     // 🔴 THE WHOLESALER GUARD STILL APPLIES. A rep can type a warehouse's name as easily as a

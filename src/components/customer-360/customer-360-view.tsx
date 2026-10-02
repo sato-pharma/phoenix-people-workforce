@@ -1,6 +1,7 @@
-import { Ban, Building2, Eye, Info, Landmark, MapPin, Receipt, ShoppingCart, Sparkles, User } from "lucide-react";
+import { Ban, Building2, Eye, Info, Landmark, Link2, MapPin, Receipt, ShoppingCart, Sparkles, User } from "lucide-react";
 
 import { validationStatusLabel, venueTypeLabel } from "@/lib/customer-360/labels";
+import { identitySourceLabel } from "@/lib/customer-identity/labels";
 import type { Customer360Profile } from "@/lib/customer-360/service";
 import { customerRegisterLabel } from "@/lib/customer-360/subject";
 
@@ -70,6 +71,65 @@ export function Customer360View({ profile }: { profile: Customer360Profile }) {
           ))}
         </dl>
       </Section>
+
+      {/* 🔴 ONLY A CONFIRMED LINK REACHES THIS PAGE, and the section simply does not exist
+          otherwise — no "nothing linked yet", no empty state. The engine's suggestions are the
+          Super Admin's to judge on his own screen; printed here beside hard register facts a
+          maybe reads as settled, and the next person acts on it. The absence is also deliberately
+          silent about WHY: not linked and not permitted look identical, which is the page exactly
+          as it was before this existed.
+
+          🔴 IT NAMES, IT DOES NOT JOIN. No figure on this page moves because of a link, nothing is
+          merged and no id is re-pointed — the owner's treasure rule holds for a shop just as it
+          does for a doctor carried on two lines. A reader is told where else to look; that is all. */}
+      {profile.alsoKnownAs ? (
+        <Section
+          icon={<Link2 className="h-4 w-4" />}
+          title="Also known as"
+          subtitle={`Confirmed by hand as one customer${
+            profile.alsoKnownAs.displayName ? ` · ${profile.alsoKnownAs.displayName}` : ""
+          }`}
+        >
+          <table className="w-full table-fixed border-collapse">
+            <colgroup>
+              <col className="w-[58%]" />
+              <col className="w-[42%]" />
+            </colgroup>
+            <thead>
+              <tr className="border-b border-slate-200 text-left">
+                <th className="py-1.5 text-[11px] font-black uppercase tracking-wide text-slate-400">Name there</th>
+                <th className="py-1.5 text-[11px] font-black uppercase tracking-wide text-slate-400">System</th>
+              </tr>
+            </thead>
+            <tbody>
+              {profile.alsoKnownAs.others.map((row) => (
+                <tr key={`${row.source}:${row.sourceId}`} className="border-b border-slate-100 last:border-0">
+                  {/* A counterpart's name is free text and very often Arabic, exactly like the
+                      page header's — so it takes the same per-element dir="auto" the house style
+                      uses for a single-language value, while the English label beside it must not. */}
+                  {/* `pr-3` is PHYSICAL on purpose, where this file's other cells need no padding
+                      at all. An Arabic name under dir="auto" renders right-aligned inside a cell
+                      the table still lays out left-to-right, so its last letter lands flush on the
+                      column boundary and touches the English label beside it — measured at 375px.
+                      A logical `pe-3` would follow the cell's own resolved RTL and pad the left,
+                      which is the side that already has room. */}
+                  <td dir="auto" className="break-words py-1.5 pr-3 text-[13px] font-semibold text-slate-800">
+                    {row.name || "Unnamed"}
+                    {row.missing ? (
+                      <span className="ml-1.5 bg-slate-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                        Gone from its system
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="break-words py-1.5 text-[13px] font-semibold text-slate-600">
+                    {identitySourceLabel(row.source)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Section>
+      ) : null}
 
       <Section
         icon={<Landmark className="h-4 w-4" />}

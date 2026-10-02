@@ -8,6 +8,7 @@ import {
   AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { identitySourceLabel } from "@/lib/customer-identity/labels";
 // Through `types`, never `server/profile`: a component may not name server code, and an
 // `import type` counts — the boundary rule this module wrote for `SuggestionCluster`.
 import type { IdentityProfile, IdentityProfileRow } from "@/lib/customer-identity/types";
@@ -29,16 +30,6 @@ import type { IdentityProfile, IdentityProfileRow } from "@/lib/customer-identit
  * A server component: it reads and links, and nothing on it acts. The decisions are made on the
  * review screen, which is where the permission to make them is gated.
  */
-
-const SOURCE_LABEL: Record<string, string> = {
-  direct_order: "Direct orders",
-  ireports360: "iReports360",
-  marketing: "Marketing register",
-  phoenix_crm: "Phoenix CRM",
-  // Named for what it IS, so nobody reads it as a register that could be opened: it is a name a
-  // rep wrote on a visit, and there is no row behind it to look up.
-  visit_feedback: "Typed on a visit",
-};
 
 const BAND_WORD: Record<string, string> = {
   fact: "A fact — the systems already tie these two together",
@@ -171,7 +162,7 @@ export function CustomerIdentityProfile({ profile }: { profile: IdentityProfile 
                     {row.name}
                   </p>
                   <p className="mt-0.5 break-words text-xs font-semibold text-slate-500">
-                    {SOURCE_LABEL[row.source] ?? row.source} · {KIND_WORD[row.kind] ?? row.kind}
+                    {identitySourceLabel(row.source)} · {KIND_WORD[row.kind] ?? row.kind}
                   </p>
                 </div>
                 <div className="flex min-w-0 flex-wrap gap-1.5">

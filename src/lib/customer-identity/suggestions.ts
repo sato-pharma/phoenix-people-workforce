@@ -398,3 +398,26 @@ export function suggestIdentityPairs(
       a.pairKey.localeCompare(b.pairKey),
   );
 }
+
+/**
+ * What "also known as" MEANS, given a master's confirmed rows and the one row a page is showing.
+ *
+ * Pure, and here rather than beside the reader, because it is the whole rule a borrowing page
+ * leans on and a database is no way to prove it.
+ *
+ * 🔴 THE ROW ASKED ABOUT IS NOT ONE OF ITS OWN ALIASES. Leaving it in is the obvious-looking
+ * version and it renders as a pharmacy that is also itself — worse, a master holding exactly one
+ * link then reads as a confirmed cross-system match when nothing has been matched to it at all.
+ *
+ * 🔴 COMPARED ON SOURCE **AND** ID, NEVER THE ID ALONE. A marketing pharmacy and a direct-order
+ * pharmacy are rows in different tables and nothing stops the two registers holding the same uuid;
+ * dropping by id alone would silently hide the one counterpart the section exists to name.
+ */
+export function othersOnMaster<T extends { source: string; sourceId: string }>(
+  rows: readonly T[],
+  source: string,
+  sourceId: string,
+): T[] {
+  const id = (sourceId ?? "").trim();
+  return rows.filter((row) => !(row.source === source && row.sourceId === id));
+}
