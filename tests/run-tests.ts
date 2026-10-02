@@ -1920,6 +1920,7 @@ import { runSalesCommandBandFitsALaptopTests } from "./sales-command-band-fits-a
 import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.test.ts";
 
 import { runRepoDoctorWorktreeRestoreAdviceTests } from "./repo-doctor-worktree-restore-advice.test.ts";
+import { runWorktreeRemoveHeadShaGateTests } from "./worktree-remove-head-sha-gate.test.ts";
 import { runWorktreeRemoveRemoteContainmentTests } from "./worktree-remove-remote-containment.test.ts";
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
@@ -6856,6 +6857,10 @@ await runTest("repo-doctor never advises pnpm install in a worktree (restore is 
 await runTest(
   "worktree removal frees a tip that is on origin under ANOTHER branch's name (confirmed against the remote, fails closed)",
   runWorktreeRemoveRemoteContainmentTests,
+);
+await runTest(
+  "worktree removal names the merged PR by HEAD SHA, refuses while an open PR carries the head, and retires a roll-up member on file content",
+  runWorktreeRemoveHeadShaGateTests,
 );
 await runTest("no source-pinning test strips comments unsafely — a regex that eats the code it pins, or a line filter blind to a comment block", runCommentStripRatchetTests);
 
