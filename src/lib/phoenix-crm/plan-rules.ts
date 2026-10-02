@@ -66,9 +66,22 @@ export function planStatusLabel(status: PhoenixCrmPlanStatus | null): string {
  */
 export function planDueLabel(dueOn: string | null | undefined): string {
   if (!dueOn) return "—";
-  // "at", not a comma: the long date already carries one after the weekday, and "Thursday, 8 October
-  // 2026, 11:55 PM" reads as a list rather than as a time.
-  return `${formatPhoenixLongDate(dueOn)} at ${PLAN_DEADLINE_LABEL}`;
+  return withPlanDeadline(formatPhoenixLongDate(dueOn));
+}
+
+/**
+ * The deadline joined onto a due date someone has ALREADY formatted — for a screen with its own date
+ * style, so it can carry the hour without being dragged onto the long format.
+ *
+ * The Team tab is why this exists (owner, 2026-10-02): a reviewer reads "Thu 8 Oct 2026" there, in a
+ * compact row beside a dozen reps, and a long date would not fit it. The join and the wording still live
+ * in ONE place, so the two screens can never drift to two different deadlines.
+ *
+ * "at", not a comma: the long date already carries one after the weekday, and "Thursday, 8 October 2026,
+ * 11:55 PM" reads as a list rather than as a time.
+ */
+export function withPlanDeadline(dateText: string): string {
+  return `${dateText} at ${PLAN_DEADLINE_LABEL}`;
 }
 
 /** A rep edits a draft or a returned plan. Submitted and approved plans are reopened first. */

@@ -9,7 +9,7 @@ import {
   planDeadlinePassed,
   weeklyPlanDueOn,
 } from "../src/lib/phoenix-crm/calendar.ts";
-import { planDueLabel } from "../src/lib/phoenix-crm/plan-rules.ts";
+import { planDueLabel, withPlanDeadline } from "../src/lib/phoenix-crm/plan-rules.ts";
 import { planReminderDay, repReminder, managerReminder } from "../src/lib/phoenix-crm/plan-reminder-rules.ts";
 
 /**
@@ -49,6 +49,19 @@ export function runPhoenixCrmPlanDeadlineTests(): void {
     assert.equal(planDueLabel("2026-10-08"), "Thursday, 8 October 2026 at 11:55 PM");
     assert.equal(planDueLabel(null), "—", "and nothing invents a deadline where there is no due date");
     assert.ok(planDueLabel("2026-10-08").includes(PLAN_DEADLINE_LABEL), "the composer uses the one wording");
+
+    // 🔴 THE JOIN IS SHARED, THE DATE STYLE IS NOT. The Team tab reads a compact date in a row beside a
+    // dozen reps, so it keeps "Thu 8 Oct 2026" and takes the deadline through the same joiner — one
+    // wording for both screens, which is what stops a reviewer and his rep reading two deadlines.
+    assert.equal(withPlanDeadline("Thu 8 Oct 2026"), "Thu 8 Oct 2026 at 11:55 PM");
+    assert.ok(planDueLabel("2026-10-08").endsWith(`at ${PLAN_DEADLINE_LABEL}`), "the rep's label is built from that joiner");
+    const teamTab = readFileSync(new URL("../src/components/phoenix-crm/team-tab.tsx", import.meta.url), "utf8");
+    assert.match(
+      teamTab,
+      /Due \{withPlanDeadline\(dayLabelWithYear\(row\.plan\.dueOn\)\)\}/,
+      "the Team tab's Due cell shows the hour that decided the reviewer's own 'Sent late' pill",
+    );
+    assert.ok(!/Due \{dayLabelWithYear\(/.test(teamTab), "and nothing there prints a bare due date beside it");
   }
 
   // ── 2. The instant, and the once-a-year fold ─────────────────────────────────────────────────────
