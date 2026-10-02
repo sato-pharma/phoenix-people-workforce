@@ -1198,3 +1198,24 @@ than only in memory, because that is the layer cloud can read. It is wrong for a
 tribal knowledge unless the prompt carries that knowledge. Practically: a cloud task's prompt states
 the facts, the files, and the exact outcome, and never assumes the session can see local state, the
 standing rules, or memory.
+
+## A browser look at pushed code goes on the Hetzner preview box, not a local dev server
+
+A local `next dev` is the single heaviest thing that runs on this 16 GB machine — measured
+2026-09-30: **4,126 MB and 3.05 of 12 cores**, sitting at `dev-server.mjs`'s own 4 GB heap cap and
+GC-looping, i.e. HALF of all CPU actually in use. That one server ending took the laptop from
+**626 MB free / 52% CPU to 4,782 MB / 15%**. The same server on the box costs this laptop **12 MB
+and no measurable CPU** — an ssh tunnel, nothing more.
+
+The owner starts it with `phx-preview [branch]` (`~/.claude/scripts/phx-preview.ps1`, aliased in his
+PowerShell profile, `-Stop` to end it); a session ASKS HIM to run it instead of starting a local
+server.
+
+**It serves PUSHED branches only** — the box clones from GitHub and cannot see uncommitted edits, so
+read `git status --porcelain` and `git rev-list --count origin/<branch>..HEAD` FIRST and say plainly
+whether the preview would show the work. A local server stays right for uncommitted edits, a
+dev-auth role sweep, or anything needing local files — and is stopped as soon as the look is done.
+
+The box is 4 vCPU / 7.7 GB, idle ~97% of the day, loopback-bound behind `ufw` with only SSH open,
+holding 13 Supabase/auth/Maps keys and never `SUPABASE_DB_URL`, the mailbox password, Resend,
+Telegram or OpenAI.
