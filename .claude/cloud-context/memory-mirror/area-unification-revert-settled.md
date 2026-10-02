@@ -1,11 +1,11 @@
 ---
 name: area-unification-revert-settled
-description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: The org-chart PAGE uses the AU seat model (au_v_org_tree) ... suppressFilledVacancyRows only affects the Vacancies report + CEO seat count (see `organogram-has-two-data-paths-suppress-only-hits-vacancies`). Older text follows: The 2026-07-02 area/region/line 'unification' (line_area_region_map / line_zones / line_zone_regions + employees.region_code) was FULLY REVERTED at the owner's request and employees.region_code was DROPPED — do not resurrect either. Sales scope resolves via employees.region_name (NOT region_code) → regionCodesForNames, and fails CLOSED to empty on any region_name/line-name drift. Durable facts it surfaced: the organogram renders only from position_vacancies, a 'team' spans many areas by design, and Head-Office confidentiality rests on a hardcoded line keyset now backed by a write-time allow-list."
+description: "The 2026-07-02 area/region/line 'unification' (line_area_region_map / line_zones / line_zone_regions + employees.region_code) was FULLY REVERTED and employees.region_code DROPPED — do not resurrect either. Sales scope resolves via employees.region_name → regionCodesForNames and fails CLOSED on any region_name/line-name drift. Durable: the org-chart PAGE renders from the AU seat model (au_v_org_tree), position_vacancies only feeds the Vacancies report + CEO seat count; a 'team' spans many areas by design; Head-Office confidentiality rests on a hardcoded line keyset + a write-time allow-list."
 metadata:
   node_type: memory
   type: project
   originSessionId: 9103a28a-2cb3-4ee2-a65e-bff753683245
-  modified: 2026-09-26T00:35:25.846Z
+  modified: 2026-10-02T16:40:41.395Z
 ---
 
 ## Settled: the unification is reverted — do not resurrect it
@@ -26,10 +26,17 @@ scope by region, so it is not a gap.
 
 ## Durable facts this surfaced
 
-- 🔴 **The organogram renders EXCLUSIVELY from `position_vacancies` rows.** An active `areas` row with
-  **0 employees AND 0 vacancy rows is invisible** — not even shown as vacant (this is what hid "Anti
-  Infective Tanta"). To make an empty structure seat appear, open a `position_vacancies` row for it; that
-  is purely additive. Same four-layer lesson as [[organogram-3line-reconciliation-2026-07]].
+- 🔴 **The org-chart PAGE renders from the AU seat model, NOT from `position_vacancies`.**
+  `getOrganogramReport` → `buildOrganogramSeatReport()` reads `public.au_v_org_tree`; `position_vacancies`
+  (+ `employees`) feeds only the Vacancies report and the CEO-landing open-seat count
+  ([[organogram-has-two-data-paths-suppress-only-hits-vacancies]]). So a seat missing from the chart is
+  an AU seat-model question, and opening a `position_vacancies` row will not make it appear. The module
+  rule: the Organogram / AU seat model is the source of truth for org-structure and vacancy data, and a
+  reconciliation fix changes the Vacancy Report / `position_vacancies` side, never the Organogram. In
+  July 2026 the chart did read `position_vacancies` — an active `areas` row with 0 employees and 0
+  vacancy rows was invisible, which is what hid "Anti Infective Tanta". Same four-layer lesson as
+  [[organogram-3line-reconciliation-2026-07]].
+  **Superseded 2026-10-02:** previously "the organogram renders EXCLUSIVELY from `position_vacancies`; open a vacancy row to make a seat appear" — the AU seat-model chart path (`organogram-has-two-data-paths-suppress-only-hits-vacancies`, org module rule).
 - 🔴 **A "team" is a region/DSM grouping that spans MANY areas BY DESIGN** ("Delta 1" ~12 areas, "Upper
   Egypt" ~9; ~85 team rows, ~13 distinct names). The employee-import validator was deliberately relaxed so
   a known team name under a NEW area **auto-creates an area-scoped team instead of hard-blocking** — **do

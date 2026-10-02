@@ -1,11 +1,11 @@
 ---
 name: deductions-module-god-mode
-description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: Owner decisions (2026-08-01): Day rate = Base ÷ ACTUAL calendar days, EVERYWHERE. Payroll adopts the Deductions rule (payroll used ÷30) (see `start-implementing-a-plan-agile-kazoo-phase5`). Older text follows: The unified Deductions module (src/lib/deductions/**, /admin/deductions, deductions_candidates/deductions_decisions tables) — the SOLE place deductions are decided; Automated Payroll is read-only for deductions. Distinct from the older deductions-governance module. Holds the owner mandates, the day-rate divisor rule (Base ÷ ACTUAL calendar days, scoped to this module ONLY), the month_key GENERATED-column trap, and the never-fan-out-audit-writes / size-the-work-before-diagnosing lessons."
+description: "The unified Deductions module (src/lib/deductions/**, /admin/deductions, deductions_candidates/deductions_decisions tables) — the SOLE place deductions are decided; Automated Payroll is read-only for deductions. Distinct from the older deductions-governance module. Holds the owner mandates, the day-rate divisor rule (Base ÷ ACTUAL calendar days, EVERYWHERE — owner 2026-08-01, payroll adopts it), the month_key GENERATED-column trap, and the never-fan-out-audit-writes / size-the-work-before-diagnosing lessons."
 metadata: 
   node_type: memory
   type: project
   originSessionId: e6f0b8c9-551d-4fe5-998a-6ab6fa3f6abd
-  modified: 2026-09-26T05:55:03.271Z
+  modified: 2026-10-02T16:34:28.768Z
 ---
 
 Unified **Deductions** module — one candidate ledger + publish pipeline replacing 5 fragmented
@@ -27,11 +27,16 @@ timeout, then restored and is now the live pipeline. **It is a DIFFERENT, newer 
 - 🔴 **Day-rate divisor = `Base Salary ÷ ACTUAL calendar days in that month` (28–31), NOT a flat ÷30** (owner
   reversed his own earlier ÷30 answer). Implemented via `calculateDeductionAmountFromBaseSalary` /
   `resolveDayBasedDeductionAmount` in `src/lib/deductions/calculations.ts`, reusing `calendarDaysInMonth()`
-  from `payroll/copilot/proration.ts` so the two can't drift (both require month/year). 🔴 **This is scoped to
-  `src/lib/deductions/` ONLY** — every other divisor site still uses a flat ÷30 DELIBERATELY
-  (`deductions-governance/calculations.ts`, `attendance/*`, `automated-payroll/recommend.ts`,
-  `payroll/copilot/report-exports.ts`); do NOT "fix" those without a fresh owner decision. **Fingerprint is
-  NOT affected** — its amount comes pre-computed read-only from `attendance/fingerprint-report.ts`
+  from `payroll/copilot/proration.ts` so the two can't drift (both require month/year). 🔴 **The rule is
+  EVERYWHERE, not this module only — owner decision 2026-08-01: "Day rate = Base ÷ ACTUAL calendar days,
+  EVERYWHERE. Payroll adopts the Deductions rule (payroll used ÷30)"**
+  ([[start-implementing-a-plan-agile-kazoo-phase5]], decision 1 — do not re-litigate). So a divisor site
+  still on a flat ÷30 (the 2026-07 list was `attendance/*`, `automated-payroll/recommend.ts`,
+  `payroll/copilot/report-exports.ts`; `deductions-governance/` code was removed 2026-08-30 per
+  [[two-live-deduction-engines-p0]]) is NOT a protected deliberate exception any more — but read the site's
+  own comment for a later, narrower owner rule before touching it, because it moves real pay.
+  **Superseded 2026-10-02:** previously "scoped to `src/lib/deductions/` ONLY; every other site stays ÷30 deliberately until a fresh owner decision" — that fresh decision is the owner's 2026-08-01 ruling (`start-implementing-a-plan-agile-kazoo-phase5`).
+  **Fingerprint is NOT affected by this module's calculation** — its amount comes pre-computed read-only from `attendance/fingerprint-report.ts`
   (`getFingerprintAttendanceReport()`), which divides by flat 30 internally and stays out of scope.
 - **Delivery discipline:** report progress category-by-category, one concern per commit.
 

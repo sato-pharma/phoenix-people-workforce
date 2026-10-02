@@ -1,10 +1,11 @@
 ---
 name: resignation-employee-scope-check
-description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: PR #692 (merged 2026-07-02) added PER-RECORD scope checks (canSeeEmployee / canSeeContractRow) to runResignationWorkflow and runContractRenewalWorkflow (see `resignation-contract-scope-check-audit-2026-07`). Older text follows: PR #689 (2026-07-02): resignEmployeeAndOpenVacancy now scope-checks the target employee via canSeeEmployee, not just role; runResignationWorkflow/runContractRenewalWorkflow still don't"
+description: "PR #689 (2026-07-02): resignEmployeeAndOpenVacancy scope-checks the target employee via canSeeEmployee, not just role; its follow-up PR #692 (merged the same day) gave runResignationWorkflow/runContractRenewalWorkflow per-record checks too (canSeeEmployee / canSeeContractRow) — the gap is closed, do not re-open it. Never thread access through the probation-termination call site."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 8e9b4490-fc7c-4dd6-99a9-edaac55824e1
+  modified: 2026-10-02T16:38:58.651Z
 ---
 
 `resignEmployeeAndOpenVacancy` (`src/lib/resignations/service.ts`) previously only
@@ -25,13 +26,16 @@ let an out-of-scope role terminate an out-of-scope employee. Also closed the gap
 direct API caller `app/api/employees/[hrId]/resign/route.ts`, which had no per-record scope
 check at all before this.
 
-**Deliberately NOT done in this same PR** (confirmed by direct code read, not assumption):
-`runResignationWorkflow` (transitions an existing resignation record: approve/reject/
+**Deliberately NOT done in this same PR — and since closed by the follow-up PR #692 (merged
+2026-07-02):** `runResignationWorkflow` (transitions an existing resignation record: approve/reject/
 complete/cancel/reopen) and `runContractRenewalWorkflow` (transitions an existing contract
-renewal request) have the identical role-only gap — neither calls
-`canSeeEmployee`/`canSeeHrScopedRecord` before mutating. Left as a follow-up per explicit
-user decision to keep PR #689 narrowly scoped; spawned as background task `task_d0ec82fe`,
-started by the user in a separate session same day.
+renewal request) had the identical role-only gap when PR #689 shipped. PR #692 added per-record
+scope checks to both — `canSeeEmployee` on the resignation side, `canSeeContractRow` on the contracts
+side (which needed `getEmployeeDirectoryRows({ includeInactive: true })` so actions such as `cancel`
+on an already-inactive employee's request are not wrongly blocked) — see
+[[resignation-contract-scope-check-audit-2026-07]]. Kept narrow at the time per explicit user
+decision; the follow-up ran as background task `task_d0ec82fe` the same day.
+**Superseded 2026-10-02:** previously "`runResignationWorkflow`/`runContractRenewalWorkflow` still don't scope-check" — PR #692 (`resignation-contract-scope-check-audit-2026-07`).
 
 **Also deliberately NOT done — and should stay that way:** threading `access` through the
 probation-termination call site. See [[probation-scope-broader-than-generic-canseeemployee]]

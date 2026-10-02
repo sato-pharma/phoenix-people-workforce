@@ -1,11 +1,11 @@
 ---
 name: approvals-hub-vacation-excuse-build
-description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: a District Manager's weekly plan chain is exactly submit -> NSM (or RSM if applicable) approves -> HR acknowledges. No CEO stage exists on it (see `the-system-never-auto-approves-a-plan`). Older text follows: The Approvals Hub (Vacation + Excuse + Plan) is BUILT and LIVE in both shells — app/(admin)/admin/approvals-hub and app/employee-portals/approvals-hub, wired in system-navigation.ts, with pending-count APIs. Not open work. Keep for the access-model rulings (Super Admin has NO turn-jumping bypass; NSM never receives an excuse; HR-acknowledge is Super-Admin-only) and the reusable plan-workflow traps (the 2nd approval is hard-wired to the CEO; `ceo_approved` is a dead legacy enum — gate on `final_approved`)."
+description: "The Approvals Hub (Vacation + Excuse + Plan) is BUILT and LIVE in both shells — app/(admin)/admin/approvals-hub and app/employee-portals/approvals-hub, wired in system-navigation.ts, with pending-count APIs. Not open work. Keep for the access-model rulings (Super Admin has NO turn-jumping bypass; NSM never receives an excuse; HR-acknowledge is Super-Admin-only) and the plan-workflow traps (a DM plan is submit -> NSM/RSM -> HR ack with NO CEO stage; `ceo_approved` is a dead legacy enum — gate on `final_approved`)."
 metadata: 
   node_type: memory
   type: project
   originSessionId: db90c0ef-8e72-4dda-bc89-00d392e2760c
-  modified: 2026-09-26T03:07:55.599Z
+  modified: 2026-10-02T16:31:43.282Z
 ---
 
 The Approvals Hub consolidates Vacation, Excuse and Weekly/Monthly Plan approvals into a dedicated
@@ -49,11 +49,18 @@ replacing it, so check which one a change belongs in before editing.
 
 ## Reusable plan-workflow traps
 
-- 🔴 **The plan workflow hard-wires every plan's 2nd approval to the CEO** (`weekly-planning/workflow.ts`
-  + `assertCeoReviewer`) — there is NO manager-of-manager step in code, so the owner's
-  mgr→mgr-of-mgr→HR model only matches the PM case today. Honoring it fully is a workflow + DB-function
-  migration, **DEFERRED** (along with the Marketing Requests Approvals module and the who-approves-whom
-  routing corrections: Finance Mgr approves reports, Financial Advisor↔Finance Mgr, CEO↔Financial Advisor).
+- 🔴 **A District Manager's weekly plan has NO CEO stage** — its chain is exactly **submit → NSM (or
+  RSM if applicable) approves → HR acknowledges** (owner, 2026-09-05/06; production DM `ceo_approve`
+  rows deleted, guarded by `resolvePlanCeoDecision` + `tests/dm-plan-has-no-ceo-stage.test.ts`) — see
+  [[the-system-never-auto-approves-a-plan]]. The CEO 2nd-approval stage (`weekly-planning/workflow.ts`
+  + `assertCeoReviewer`) remains live for every NON-DM plan. One exception (AGENTS.md §4): DMs
+  reporting to Hany Saad run submit → Hany → Ali Mohamed Ali → HR auto-ack, Ali's decision riding the
+  `ceo_*` slot (`second-approver.ts`). The wider mgr→mgr-of-mgr→HR model for other roles was
+  **DEFERRED** when this note was written (along with the Marketing Requests Approvals module and the
+  who-approves-whom routing corrections: Finance Mgr approves reports, Financial Advisor↔Finance Mgr,
+  CEO↔Financial Advisor).
+  **Superseded 2026-10-02:** previously "every plan's 2nd approval is hard-wired to the CEO, no
+  manager-of-manager step" — owner ruling of 2026-09-05/06 removed the CEO stage from DM plans.
 - 🔴 **`ceo_approved` is a legacy CHECK-constraint enum the live workflow NEVER produces** — the real
   transition is `manager_approved → final_approved` DIRECTLY (0 production rows ever held `ceo_approved`).
   Gate HR-acknowledge, the awaiting bucket and the stage label on **`final_approved`** ("HR acknowledgement",
