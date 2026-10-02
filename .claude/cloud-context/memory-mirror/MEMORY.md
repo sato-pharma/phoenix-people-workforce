@@ -97,6 +97,7 @@
 - 🔴 [HR seats COMPOSED from 8 functions](hr-seats-are-composed-from-a-function-catalogue.md) - OWNER RULE: never name a role after a job title; read `permissionMatrix[role]`. Retired seats alias `Employee`.·[**"Report It" = PATIENT DATA**](report-it-sounds-like-hr-and-is-patient-data.md) - ADRs not HR; `report_it:export` reads EVERY report.
 
 ## Traps that bite any session
+- 🔴 [a watcher's exit code judges the WATCHER](a-watchers-exit-code-is-a-verdict-about-the-watcher.md) - `STILL NOT LIVE` twice for deploys that SHIPPED: unfetched shas, then `git` not on PATH. Keep it git-free; test ancestry by hand in the repo, never an exact sha.
 - 🔴 [DV downward rule SHIPPED](double-visit-skips-the-downward-rule.md) - out-of-scope rows leave totals too; UNRANKED visitors SHOWN (owner).
 - 🔴 [a hire-date fix DOUBLES probation reminders](hire-date-change-doubles-probation-reminders.md) - never key a dedupe on DERIVED mutable data.·[coaching BEFORE hire is CORRECT](coaching-dates-legitimately-predate-the-hire-date.md) - owner "trust hiring date"; never "fix" either side.
 - 🔴 [a grant can die in a filter BELOW the gate](organogram-head-office-was-dropped-by-a-filter-below-the-gate.md) - the portal builds its OWN sidebar AND line picker; [`system-navigation.ts` drives NEITHER](portal-sidebar-real-source.md)·[a NEW route needs 3 CI companion files](a-new-portal-route-needs-its-companion-declarations.md) - access-registry+`loading.tsx`+MODULE_PLACEMENT(`src/lib`, NOT `mobile/`) or `validate` reds one-by-one.
