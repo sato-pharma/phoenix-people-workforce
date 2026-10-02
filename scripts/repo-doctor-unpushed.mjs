@@ -49,6 +49,8 @@
 
 import { execFileSync } from "node:child_process";
 
+import { commitDeltaLandedOnMain } from "./delta-landed.mjs";
+
 /** 64MB: a branch's cumulative diff and a range's file list both blow past the 1MB default. */
 const MAX_BUFFER = 64 * 1024 * 1024;
 
@@ -177,6 +179,22 @@ export function countUnpushedCommits(dir, upstream = "origin/main") {
   if (cherry === null) return stranded.size;
   for (const line of cherry.split("\n")) {
     if (line.startsWith("-")) stranded.delete(line.slice(1).trim());
+  }
+  if (stranded.size === 0) return 0;
+
+  // 3. Commits whose DELTA is already applied upstream, which no patch-id can see (owner, 2026-10-02;
+  //    delta-landed.mjs carries the measurement). A roll-up is a SQUASH, so the carrier's diff is
+  //    strictly larger than any one member's and their patch-ids never match — so step 2 leaves a
+  //    carried member counted as stranded. In `new-session.mjs --remove` that REFUSES to retire a
+  //    worktree whose work is serving in production; in repo-doctor it reports that work as not
+  //    backed up. Measured on `f50c5c725`, the footprint-diff trap carried into `main` by roll-up
+  //    #5098: `+` to cherry, and its delta reverse-applies cleanly.
+  //
+  //    This step only ever REMOVES from `stranded`, and every failure inside it leaves the commit
+  //    counted — so its worst case is exactly the behaviour that was already here: over-report, and
+  //    the caller refuses. That is the cheap direction and it does not change.
+  for (const sha of [...stranded]) {
+    if (commitDeltaLandedOnMain({ dir, sha, upstream })) stranded.delete(sha);
   }
   return stranded.size;
 }

@@ -74,13 +74,13 @@ function run(argv, { cwd, env, input } = {}) {
  * @param {{ dir?: string, sha: string }} input
  * @returns {boolean}
  */
-export function commitDeltaLandedOnMain({ dir, sha }) {
+export function commitDeltaLandedOnMain({ dir, sha, upstream = 'origin/main' }) {
   if (!sha) return false;
   const patch = run(['show', '--binary', '--format=', sha], { cwd: dir });
   if (!patch || !patch.trim()) return deltaLandedVerdict({ hasDelta: false });
   const indexFile = join(mkdtempSync(join(tmpdir(), 'phx-delta-')), 'index');
   try {
-    if (run(['read-tree', 'origin/main'], { cwd: dir, env: { GIT_INDEX_FILE: indexFile } }) === null) {
+    if (run(['read-tree', upstream], { cwd: dir, env: { GIT_INDEX_FILE: indexFile } }) === null) {
       return deltaLandedVerdict({ hasDelta: true, reverseApplies: false });
     }
     const applied = run(['apply', '--cached', '--check', '--reverse', '-'], {
