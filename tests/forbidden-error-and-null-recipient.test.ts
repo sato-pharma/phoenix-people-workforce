@@ -4,6 +4,7 @@ import { ApiError, forbiddenError, validationError } from "../src/lib/http/api-e
 import { isForbiddenError } from "../src/lib/auth/server.ts";
 import { TEST_ACCOUNT_SAVE_REFUSAL } from "../src/lib/auth/test-persona.ts";
 import { canonicalPersonHrId } from "../src/lib/auth/identity-aliases.ts";
+import { pickRecipientHrIds } from "../src/lib/notifications/role-recipients.ts";
 
 /**
  * TWO PRODUCTION DEFECTS THAT SHARE A SHAPE: a value that looks right to a string test and is not.
@@ -77,11 +78,49 @@ export async function runForbiddenErrorAndNullRecipientTests() {
   assert.equal(canonicalPersonHrId(""), null, "an empty login is not an id either");
 
   // Dedupe by person is what stops the owner being notified twice now that admin-HR resolves: both
-  // rows collapse to one key. This is the contract resolveRoleRecipientHrIds relies on.
+  // rows collapse to one key.
   assert.equal(
     canonicalPersonHrId("admin-HR"),
     canonicalPersonHrId("B-10"),
     "admin-HR and B-10 share one person key, so they share one notification",
+  );
+
+  // ── (2b) THE MAPPING ITSELF, against the exact two production rows ───────────────────────
+  // `app_auth_users` where role is Super Admin and is_active: B-10 (hr_id "B-10") and admin-HR
+  // (hr_id NULL). That second row is the entire defect.
+  const production = pickRecipientHrIds([
+    { hr_id: "B-10", login_id: "b10" },
+    { hr_id: null, login_id: "admin-HR" },
+  ]);
+  assert.deepEqual(production.hrIds, ["B-10"], "the two Super Admin logins resolve to one person, once");
+  assert.deepEqual(production.unresolved, [], "admin-HR is resolved, not discarded — it is a known alias");
+  assert.ok(
+    !production.hrIds.some((id) => id.toUpperCase() === "NULL"),
+    "and the string 'NULL' can never appear in the recipient list again",
+  );
+
+  // Order must not matter: the alias arriving first still collapses onto the canonical id.
+  assert.deepEqual(
+    pickRecipientHrIds([{ hr_id: null, login_id: "admin-HR" }, { hr_id: "B-10", login_id: "b10" }]).hrIds,
+    ["B-10"],
+    "the alias row first resolves to the same single recipient",
+  );
+
+  // A login that is NOT a declared alias and has no hr_id is reported, not forced into the FK.
+  const stranger = pickRecipientHrIds([{ hr_id: null, login_id: "ops-console" }]);
+  assert.deepEqual(stranger.hrIds, [], "an unresolvable recipient is dropped rather than written as a literal");
+  assert.deepEqual(stranger.unresolved, ["ops-console"], "and it is named, so a misconfigured login is visible");
+
+  // The shapes that used to survive .filter(Boolean).
+  assert.deepEqual(pickRecipientHrIds([{ hr_id: "   ", login_id: null }]).hrIds, [], "whitespace is not an hr id");
+  assert.deepEqual(pickRecipientHrIds([{ hr_id: undefined, login_id: undefined }]).hrIds, [], "nor is undefined");
+  assert.deepEqual(pickRecipientHrIds([]).hrIds, [], "no rows, no recipients");
+
+  // Two genuinely different people both come through — the dedupe must not over-collapse.
+  assert.deepEqual(
+    pickRecipientHrIds([{ hr_id: "B-10", login_id: "b10" }, { hr_id: "HR-009", login_id: "yasmeena" }]).hrIds,
+    ["B-10", "HR-009"],
+    "two real people are two recipients",
   );
 
   console.log("forbidden-error-and-null-recipient: ok");

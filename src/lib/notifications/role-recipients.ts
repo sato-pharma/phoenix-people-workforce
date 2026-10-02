@@ -7,11 +7,11 @@
 // row) silently falls back to the exact hardcoded default, reproducing today's behavior
 // rather than newly breaking an unrelated daily notification.
 
-import { canonicalPersonHrId } from "@/lib/auth/identity-aliases";
+import { canonicalPersonHrId, sharedIdentityGroups } from "@/lib/auth/identity-aliases";
 import { phoenixRoles, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -686,22 +686,7 @@ export async function resolveRoleRecipientHrIds(key: NotificationRoleKey): Promi
     return [];
   }
 
-  const byPerson = new Map<string, string>();
-  const unresolved: string[] = [];
-  for (const row of data ?? []) {
-    // The stored spelling when there is one, the person behind the login when there is not. Never
-    // String(row.hr_id), which is where "NULL" came from.
-    const stored = typeof row.hr_id === "string" && row.hr_id.trim() ? row.hr_id.trim() : null;
-    const resolved = stored ?? canonicalPersonHrId(typeof row.login_id === "string" ? row.login_id : null);
-    if (!resolved) {
-      unresolved.push(typeof row.login_id === "string" ? row.login_id : "(no login id)");
-      continue;
-    }
-    // Dedupe by PERSON, not by string: B-10 and its admin-HR console are one human, so they get one
-    // notification between them rather than two identical ones.
-    const personKey = canonicalHrIdKey(canonicalPersonHrId(resolved) ?? resolved) ?? resolved;
-    if (!byPerson.has(personKey)) byPerson.set(personKey, resolved);
-  }
+  const { hrIds, unresolved } = pickRecipientHrIds(data ?? []);
 
   if (unresolved.length > 0) {
     logWarning("Skipped notification recipients whose login resolves to no HR id", {
@@ -710,5 +695,55 @@ export async function resolveRoleRecipientHrIds(key: NotificationRoleKey): Promi
     });
   }
 
-  return [...byPerson.values()];
+  return hrIds;
+}
+
+/**
+ * The canonical HR_ID a login is a DECLARED alias of, or null.
+ *
+ * Deliberately not `canonicalPersonHrId`, which answers "what is the canonical form of this id" and
+ * hands an unknown id straight back. This answers the narrower question the recipient list needs:
+ * "is this login a known second console for a real person?" — and null for everything else.
+ */
+function declaredAliasCanonicalHrId(login: string | null): string | null {
+  const key = canonicalHrIdKey(login);
+  if (!key) return null;
+  const group = sharedIdentityGroups.find((candidate) =>
+    candidate.aliasHrIds.some((alias) => canonicalHrIdKey(alias) === key),
+  );
+  return group ? canonicalHrIdForDisplay(group.canonicalHrId) : null;
+}
+
+/**
+ * The pure half of `resolveRoleRecipientHrIds` — rows in, HR_IDs out.
+ *
+ * Split out so it can be tested without a database, because the defect it fixes was entirely in
+ * this mapping and nothing to do with the query. That is the only reason it is exported.
+ */
+export function pickRecipientHrIds(
+  rows: readonly { hr_id?: unknown; login_id?: unknown }[],
+): { hrIds: string[]; unresolved: string[] } {
+  const byPerson = new Map<string, string>();
+  const unresolved: string[] = [];
+  for (const row of rows) {
+    // The stored spelling when there is one, the person behind the login when there is not.
+    // NEVER String(row.hr_id) — that is where the four-character "NULL" came from.
+    const stored = typeof row.hr_id === "string" && row.hr_id.trim() ? row.hr_id.trim() : null;
+    const login = typeof row.login_id === "string" ? row.login_id : null;
+    // 🔴 `canonicalPersonHrId` is NOT usable here. For an id it does not recognise it returns that
+    // id back, display-canonicalised — so `canonicalPersonHrId("ops-console")` is `"OPS-CONSOLE"`,
+    // and taking it would write a LOGIN NAME into a column that FKs `employees(hr_id)`. That is the
+    // same defect as the "NULL" string, one step further along, and a test caught it here before it
+    // shipped. Only a DECLARED alias may stand in for a missing hr_id.
+    const resolved = stored ?? declaredAliasCanonicalHrId(login);
+    if (!resolved) {
+      unresolved.push(login ?? "(no login id)");
+      continue;
+    }
+    // Dedupe by PERSON, not by string: B-10 and its admin-HR console are one human, so they get one
+    // notification between them rather than two identical ones.
+    const personKey = canonicalHrIdKey(canonicalPersonHrId(resolved) ?? resolved) ?? resolved;
+    if (!byPerson.has(personKey)) byPerson.set(personKey, resolved);
+  }
+  return { hrIds: [...byPerson.values()], unresolved };
 }
