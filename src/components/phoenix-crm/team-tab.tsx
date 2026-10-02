@@ -51,6 +51,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { fieldWeekStart, plannableWeeks } from "@/lib/phoenix-crm/calendar";
+import { withPlanDeadline } from "@/lib/phoenix-crm/plan-rules";
 import { teamTodayLine, teamTodayTone } from "@/lib/phoenix-crm/team-today";
 import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 import type {
@@ -819,7 +820,9 @@ function MonthsSection({
           </p>
           {row.plan?.dueOn ? (
             <p className="break-words text-xs font-semibold text-slate-500">
-              Due {dayLabelWithYear(row.plan.dueOn)}
+              {/* The hour as well as the day (owner, 2026-10-02): a reviewer judging "Sent late" has to
+                  be able to see the line that decided it. Its own compact date, the shared deadline. */}
+              Due {withPlanDeadline(dayLabelWithYear(row.plan.dueOn))}
               {row.plan.submittedAt ? ` · sent ${cairoStamp(row.plan.submittedAt)}` : ""}
             </p>
           ) : null}
