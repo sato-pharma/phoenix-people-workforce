@@ -1,4 +1,5 @@
 import { emptyVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { todayPharmacies, type TodayVisit } from "@/lib/phoenix-crm/today-rules";
 
 /**
@@ -55,7 +56,7 @@ export function dayDetailCounts(visits: readonly DayDetailVisit[]): DayDetailCou
   const asToday: TodayVisit[] = visits.map((visit) => ({
     customerId: visit.customerId,
     doneAt: visit.capturedAt,
-    listType: visit.listType === "AM" ? "AM" : "PM",
+    listType: parseListType(visit.listType),
     name: visit.customerName,
     pharmacyName: visit.pharmacyName ?? null,
   }));

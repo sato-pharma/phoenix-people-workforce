@@ -25,6 +25,7 @@
 import { conflictError, validationError } from "@/lib/http/api-errors";
 import { parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { isMissedRecordDay, parseMissedActivity, parseMissedVisit, parseRemoveMissedVisit } from "@/lib/phoenix-crm/missed-records";
+import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isPlanSentForReview } from "@/lib/phoenix-crm/plan-rules";
 import { territoryReviewer } from "@/lib/phoenix-crm/scope";
 import {
@@ -118,7 +119,7 @@ export async function loadMissedRecordForm(
     return {
       customerId,
       name: String(row.name),
-      listType: row.list_type === "AM" ? "AM" : "PM",
+      listType: parseListType(row.list_type),
       grade: parseGrade(row.grade),
       speciality: textOrNull(row.speciality),
       onSentPlan: onPlan.has(customerId),

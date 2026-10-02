@@ -26,6 +26,7 @@
 import { sharePercent } from "@/lib/phoenix-crm/coverage";
 import { dayActivityRank, isDayActivity, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { tallyDoctorMonth } from "@/lib/phoenix-crm/monthly-plan-rules";
+import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
@@ -221,7 +222,10 @@ export function parseSentSnapshot(details: unknown): SentSnapshot | null {
     const customerId = typeof entry.customer_id === "string" ? entry.customer_id.toLowerCase() : null;
     if (!planDate || !customerId) continue;
     const name = typeof entry.name === "string" ? entry.name.trim() : "";
-    items.push({ planDate, customerId, listType: entry.list_type === "AM" ? "AM" : "PM", name: name || null });
+    // A pharmacy is never planned (owner, 2026-10-02), so a row naming one is not a plan item.
+    const listType = doctorListType(entry.list_type);
+    if (listType === null) continue;
+    items.push({ planDate, customerId, listType, name: name || null });
   }
   const activities: SentActivity[] = [];
   for (const raw of body.activities) {

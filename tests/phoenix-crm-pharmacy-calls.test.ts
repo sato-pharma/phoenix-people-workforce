@@ -160,12 +160,15 @@ export function runPhoenixCrmPharmacyCallTests(): void {
     }
   }
 
-  // ── 8. The ratchet: 26 binary readers of `list_type`, and they may FALL, never rise ───────────
+  // ── 8. The ratchet: ZERO binary readers of `list_type` left, and it may never rise ───────────
   {
-    // Nothing else can catch these. Widening the `PhoenixCrmListType` union does not: every one of
-    // them narrows to "AM" | "PM" and keeps compiling, so the typechecker stays green while an
-    // imported pharmacy is filed among the doctors. Each is converted as its surface is given a
-    // decision about whether it shows pharmacies at all; this only stops a NEW one appearing.
+    // There were 26 of these across 17 files when the pharmacies were imported, and every one filed
+    // a pharmacy among the DOCTORS. Nothing else could catch them: each narrows to "AM" | "PM" and
+    // keeps compiling, so the typechecker stayed green while the count was wrong. All 26 are now
+    // converted — `parseListType` where the value is a label and the surface shows all three lists,
+    // `doctorListType` where it feeds a plan, a capacity, a coverage or frequency figure, and there
+    // the caller DROPS the row rather than counting it. This keeps the ground: a new one is a new
+    // wrong count that nothing else would report.
     const files = [...walkSource("src"), ...walkSource("app")];
     assert.ok(files.length > 1000, `only ${files.length} source files were scanned — the walk is not reaching the tree, so the count means nothing`);
 
@@ -179,16 +182,17 @@ export function runPhoenixCrmPharmacyCallTests(): void {
       offenders.push(`${file.split(path.sep).join("/")} x${matches.length}`);
     }
 
-    // Anti-vacuity: if the pattern stops matching, a count of zero would read as a clean sweep.
-    assert.ok(offenders.length >= 10, `only ${offenders.length} files matched — the pattern has stopped matching, so a low count is meaningless`);
+    // Anti-vacuity, now that the honest answer IS zero: prove the pattern still finds the shape it
+    // is looking for, in a string this file controls, so a regex that has stopped matching anything
+    // can never read as a clean sweep.
+    const canary = 'const x = v === "AM" ? "AM" : "PM";';
+    assert.equal(canary.match(pattern)?.length, 1, "the pattern no longer matches the very shape it exists to find — the count below would be meaningless");
 
     assert.ok(
-      occurrences <= 26,
-      `binary list_type readers rose to ${occurrences} (baseline 26). A new \`=== "AM" ? "AM" : "PM"\` files a pharmacy among the doctors and nothing else will catch it — use parseListType and decide whether that surface shows pharmacies at all.\n  ${offenders.join("\n  ")}`,
+      occurrences === 0,
+      `binary list_type readers rose to ${occurrences} (baseline 0). A new \`=== "AM" ? "AM" : "PM"\` files a pharmacy among the doctors and nothing else will catch it — use parseListType and decide whether that surface shows pharmacies at all.\n  ${offenders.join("\n  ")}`,
     );
-    if (occurrences < 26) {
-      console.log(`  binary list_type readers fell to ${occurrences} — lower the baseline in this file to ${occurrences} so the ground cannot be given back.`);
-    }
+
   }
 
   console.log("phoenix-crm pharmacy calls: OK");

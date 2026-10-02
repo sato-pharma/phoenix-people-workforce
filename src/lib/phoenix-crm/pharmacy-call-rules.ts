@@ -18,19 +18,19 @@ import type { VisitCountBucket } from "@/lib/crm/visit-count-buckets";
  * the customer's own `list_type` carries `Pharmacy`, the vendor's own spelling (`LIST_TYPES` in
  * `src/lib/crm/contacts-web-client.ts`), which is also where each rep's pharmacies are imported from.
  *
- * 🔴 EVERY EXISTING READER OF `list_type` IS A BINARY — `row.list_type === "AM" ? "AM" : "PM"` — and
- * there are **26 of them, across 17 files** (counted 2026-10-02; 25 inside `src/lib/phoenix-crm`,
- * and `server/plan-history.ts` carries two on ONE line, which is why the ratchet counts occurrences
- * and not lines).
- * Every one files a pharmacy under PM, silently, which is precisely the golden rule's failure mode,
- * and **widening the `PhoenixCrmListType` union does not catch a single one** — they all narrow to
- * `"AM" | "PM"` and keep compiling. So the compiler cannot help here and a ratchet test does the
- * work instead: `tests/phoenix-crm-pharmacy-calls.test.ts` pins the count and lets it FALL, never
- * rise, as each surface is converted to {@link parseListType} and decides for itself whether it
- * shows pharmacies at all.
+ * 🔴 EVERY READER OF `list_type` WAS A BINARY — `row.list_type === "AM" ? "AM" : "PM"` — and there
+ * were **26 of them across 17 files** when the pharmacies were imported (25 inside
+ * `src/lib/phoenix-crm`; `server/plan-history.ts` carried two on ONE line). Every one filed a
+ * pharmacy among the DOCTORS, and **widening the `PhoenixCrmListType` union catches none of
+ * them** — they all narrow to `"AM" | "PM"` and keep compiling, so the typechecker stays green
+ * while the count is wrong.
  *
- * That is why the import migration is not a complete feature on its own: until a surface has been
- * converted, it would file an imported pharmacy among the doctors.
+ * All 26 are converted, each with its own decision rather than one sweep:
+ *   · {@link parseListType} where the value is a LABEL and the surface shows all three lists —
+ *     the rep's list, a visit row, a customer's timeline, today's stops, what the field heard.
+ *   · {@link doctorListType} where it feeds a PLAN, a capacity, a coverage or frequency figure,
+ *     a grade target — and there the caller DROPS the row, because a pharmacy is in no KPI.
+ * `tests/phoenix-crm-pharmacy-calls.test.ts` now holds the count at zero so it cannot come back.
  *
  * ── 2. A PHARMACY IS NEVER PLANNED ────────────────────────────────────────────────────────────────
  * Owner, 2026-10-02: *"the pharmacy is not added to the weekly plan. He can add any pharmacy, any
@@ -94,6 +94,20 @@ export function isPharmacyListType(value: unknown): boolean {
 /** Whether a customer may be ticked on a weekly plan. False for a pharmacy, always (rule 2). */
 export function isPlannableListType(value: unknown): boolean {
   return PLANNABLE_LIST_TYPES.includes(parseListType(value));
+}
+
+/**
+ * The two halves of a rep's DAY — for a surface that measures doctors and accounts and must not see
+ * a pharmacy at all: a plan, a capacity, a coverage or frequency figure, a grade target.
+ *
+ * It answers **null** for a pharmacy, and that is the whole point of it existing beside
+ * {@link parseListType}. The binary it replaces answered `"PM"`, which is not a refusal but a wrong
+ * answer — the pharmacy was counted, among the doctors, and nothing anywhere went red. A caller
+ * handling `null` has to decide what to do with the row, which is the decision the binary hid.
+ */
+export function doctorListType(value: unknown): "AM" | "PM" | null {
+  const listType = parseListType(value);
+  return listType === PHARMACY_LIST_TYPE ? null : listType;
 }
 
 /** Which of the three figures a call to this customer belongs in. Never adds a pharmacy to AM or PM. */

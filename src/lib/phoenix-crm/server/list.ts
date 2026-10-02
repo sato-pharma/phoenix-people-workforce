@@ -88,7 +88,7 @@ import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
-import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { isPharmacyListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { parseTimings, sortTimings } from "@/lib/phoenix-crm/timings";
 import { isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 import type {
@@ -753,7 +753,7 @@ export function mapRequestRow(row: Row, names: ReadonlyMap<string, string>): Lis
     customerId: text(row.customer_id),
     referenceContactCrmId: numberOrNull(row.reference_contact_crm_id),
     customerName: String(row.customer_name),
-    listType: row.list_type === "AM" ? "AM" : "PM",
+    listType: parseListType(row.list_type),
     currentGrade: parseGrade(row.current_grade),
     proposedGrade: parseGrade(row.proposed_grade),
     dropReason,
@@ -907,7 +907,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
 
   const listCustomers: ListCustomer[] = customers.map((row) => {
     const customerId = String(row.id);
-    const listType: PhoenixCrmListType = row.list_type === "AM" ? "AM" : "PM";
+    const listType: PhoenixCrmListType = parseListType(row.list_type);
     const grade = parseGrade(row.grade);
     const visits = visitCounts.get(customerId) ?? 0;
     const target = gradeTarget(viewer.config.settings, listType, grade);
@@ -1241,7 +1241,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   const validated: ValidateResult = {
     customerId: String(result.customer_id),
     customerName: String(result.customer_name),
-    listType: result.list_type === "AM" ? "AM" : "PM",
+    listType: parseListType(result.list_type),
     placeId: String(result.place_id),
     capturedAt: String(result.captured_at),
     restored: result.restored === true,
@@ -1496,7 +1496,7 @@ export async function createListRequest(
     requestKind: kind,
     stage,
     customerName: String(result.customer_name),
-    listType: result.list_type === "AM" ? "AM" : "PM",
+    listType: parseListType(result.list_type),
     proposedGrade,
     dropReason,
   });

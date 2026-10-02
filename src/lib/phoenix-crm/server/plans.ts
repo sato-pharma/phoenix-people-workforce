@@ -104,6 +104,7 @@ import { assertRepMayChangeWeek, editAcknowledgedAt, loadPlanEditState, repState
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
+import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { PlannerCustomer, PlannerInsight } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -115,8 +116,11 @@ function record(raw: unknown): Row {
   return (raw && typeof raw === "object" ? raw : {}) as Row;
 }
 
-export function listTypeOf(value: unknown): PhoenixCrmListType {
-  return value === "AM" ? "AM" : "PM";
+// A pharmacy is NEVER planned (owner, 2026-10-02: "He don't plan it. We don't want extra"), so
+// nothing in this file — a plan row, a plan's own counts, the customers offered for planning —
+// may carry one. null is that refusal, and every caller drops the row.
+export function listTypeOf(value: unknown): PhoenixCrmListType | null {
+  return doctorListType(value);
 }
 
 export function statusOf(value: unknown): PhoenixCrmPlanStatus {
@@ -357,6 +361,7 @@ export function buildDays(input: {
       const place = record(row.place);
       const customerId = String(row.customer_id);
       const listType = listTypeOf(row.list_type);
+      if (listType === null) continue;
       counts[listType] += 1;
       const exceptionType = textOrNull(row.exception_type);
       const nearest = spread.nearestKmById[customerId];
@@ -483,12 +488,15 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   const plan = planRow ? mapPlan(planRow, names) : null;
   const weekDays = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave });
 
-  const plannerCustomers: PlannerCustomer[] = customers.map((row) => {
+  const plannerCustomers: PlannerCustomer[] = customers.flatMap((row) => {
     const customerId = String(row.id);
+    // A pharmacy is never planned, so it is not offered to the planner at all.
+    const listType = listTypeOf(row.list_type);
+    if (listType === null) return [];
     return {
       customerId,
       name: String(row.name),
-      listType: listTypeOf(row.list_type),
+      listType,
       grade: parseGrade(row.grade),
       speciality: textOrNull(row.speciality),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
@@ -625,17 +633,22 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
     loadSeatDaysOff(seat, { from: weekStart, to: addDaysIso(weekStart, 5) }),
   ]);
   const ruleCustomers = new Map<string, PlanRuleCustomer>(
-    customers.map((row) => {
+    customers.flatMap((row): Array<[string, PlanRuleCustomer]> => {
       const customerId = String(row.id);
+      // Same reason: a pharmacy never reaches the plan rules, so it is not one of their customers.
+      const listType = listTypeOf(row.list_type);
+      if (listType === null) return [];
       return [
+        [
         customerId,
         {
           customerId,
           name: String(row.name),
-          listType: listTypeOf(row.list_type),
+          listType,
           pending: row.status === "pending",
           places: (placesByCustomer.get(customerId) ?? []).map((place) => ({ placeId: place.placeId, timings: place.timings })),
         },
+        ],
       ];
     }),
   );
@@ -936,7 +949,9 @@ export async function loadPlanReviews(viewer: PhoenixCrmViewer, raw: { test: unk
     let exceptions = 0;
     let staleItems = 0;
     for (const item of items) {
-      if (listTypeOf(item.list_type) === "AM") accounts += 1;
+      const itemListType = listTypeOf(item.list_type);
+      if (itemListType === null) continue;
+      if (itemListType === "AM") accounts += 1;
       else doctors += 1;
       if (item.receives !== true) exceptions += 1;
       if (isStaleItem(item)) staleItems += 1;

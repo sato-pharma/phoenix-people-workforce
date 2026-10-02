@@ -69,6 +69,7 @@ import { readsFieldHeardByProduct, readsTeamReports, reportIncludesTest, type Ph
 import { chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { groupCustomerPharmacies, normalizePharmacyName, type PharmacyFeedback } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { doctorListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
 import { chooseTerritories, periodOf, type ChosenTerritories, type ReportFilterInput } from "@/lib/phoenix-crm/server/reports";
@@ -164,8 +165,11 @@ async function countableVisits(
   return rows;
 }
 
-function listTypeOf(value: unknown): PhoenixCrmListType {
-  return value === "AM" ? "AM" : "PM";
+// CAPACITY is a KPI, and a pharmacy is in none of them (owner, 2026-10-02): a pharmacy on the
+// rep's list is not part of what his day has room for, and is not graded against a target.
+// null says so; the two callers below drop the row rather than file it among the doctors.
+function listTypeOf(value: unknown): PhoenixCrmListType | null {
+  return doctorListType(value);
 }
 
 function gradeOf(value: unknown): PhoenixCrmGrade | null {
@@ -219,7 +223,9 @@ async function capacityLists(seats: ReadonlyArray<OrgSeat>, includeTest: boolean
       const status = String(row.status);
       if (status !== "active" && status !== "pending") continue;
       const list: SeatList = lists.get(seatId) ?? { customers: [], source: "phoenix" };
-      list.customers.push({ listType: listTypeOf(row.list_type), grade: gradeOf(row.grade), validated: textOrNull(row.validated_at) !== null });
+      const capacityListType = listTypeOf(row.list_type);
+      if (capacityListType === null) continue;
+      list.customers.push({ listType: capacityListType, grade: gradeOf(row.grade), validated: textOrNull(row.validated_at) !== null });
       lists.set(seatId, list);
     }
   }
@@ -237,7 +243,9 @@ async function capacityLists(seats: ReadonlyArray<OrgSeat>, includeTest: boolean
       if (textOrNull(row.customer_id) !== null || row.state === "dropped") continue;
       const seatId = String(row.seat_id);
       const list: SeatList = lists.get(seatId) ?? { customers: [], source: "reference" };
-      list.customers.push({ listType: listTypeOf(row.list_type), grade: gradeOf(row.grade), validated: false });
+      const referenceListType = listTypeOf(row.list_type);
+      if (referenceListType === null) continue;
+      list.customers.push({ listType: referenceListType, grade: gradeOf(row.grade), validated: false });
       lists.set(seatId, list);
     }
   }
@@ -347,7 +355,7 @@ async function heardVisits(seats: ReadonlyArray<OrgSeat>, period: ReportPeriod, 
     const seat = seatsById.get(String(row.seat_id));
     return {
       visitDate: String(row.visit_date ?? "").slice(0, 10),
-      listType: listTypeOf(row.list_type),
+      listType: parseListType(row.list_type),
       products: Array.isArray(row.products) ? row.products.map((entry) => String(entry)) : [],
       objection: textOrNull(row.objection),
       objectionNote: textOrNull(row.objection_note),

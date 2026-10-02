@@ -1,6 +1,7 @@
 import { isRamadanDay, planDayListTypes, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import { directionsUrl } from "@/lib/phoenix-crm/directions";
 import { parseGrade } from "@/lib/phoenix-crm/entry-rules";
+import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { describeDayWindows } from "@/lib/phoenix-crm/plan-rules";
 import { canWriteAsRep, isLocationBlind, readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
@@ -126,7 +127,7 @@ export async function loadPhoenixCrmToday(
     stops.push({
       customerId,
       name: String(row.name),
-      listType: row.list_type === "AM" ? "AM" : "PM",
+      listType: parseListType(row.list_type),
       speciality: textOrNull(row.speciality),
       // A customer not validated yet clusters with his own brick-mates, so the route holds together.
       brick: place?.brickName ?? reference?.brick ?? null,

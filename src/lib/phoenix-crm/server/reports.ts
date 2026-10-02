@@ -48,6 +48,7 @@ import {
   type VisitCounts,
 } from "@/lib/phoenix-crm/report-rules";
 import { monthEndOf } from "@/lib/phoenix-crm/calendar";
+import { doctorListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { buildTrackingSheet, type TrackingSheetRow } from "@/lib/phoenix-crm/tracking-sheet";
 import { monthDays } from "@/lib/phoenix-crm/team-calendar";
 import {
@@ -885,7 +886,7 @@ export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: Rep
       territoryName: seat ? territoryName(seat) : "Territory",
       repName: nameOf(names, textOrNull(row.rep_hr_id) ?? textOrNull(row.entered_by_hr_id)),
       customerName: textOrNull((customer ?? {}).name) ?? "Customer",
-      listType: row.list_type === "AM" ? "AM" : "PM",
+      listType: parseListType(row.list_type),
       placeLabel: textOrNull(placeRow.label),
       placeAddress: textOrNull(placeRow.address),
       placeWhere: where || null,
@@ -996,7 +997,11 @@ export async function loadCustomerFrequencyReport(
   ]);
 
   const rows = buildCustomerFrequencyReport(
-    listed.map((row): CustomerFrequencyInput => {
+    // Frequency is a KPI and a pharmacy is in none of them (owner, 2026-10-02), so the pharmacies on
+    // the rep's list never reach this report — not at 0, not at any number.
+    listed
+      .filter((row) => doctorListType(row.list_type) !== null)
+      .map((row): CustomerFrequencyInput => {
       const planned = plannedOutsideLeave({
         planDays: planDaysByCustomer.get(String(row.id)) ?? [],
         visitDays: daysByCustomer.get(String(row.id)) ?? [],
@@ -1005,7 +1010,7 @@ export async function loadCustomerFrequencyReport(
       return {
         customerId: String(row.id),
         grade: (textOrNull(row.grade) as PhoenixCrmGrade | null) ?? null,
-        listType: String(row.list_type) === "AM" ? "AM" : "PM",
+        listType: doctorListType(row.list_type) ?? "PM",
         name: textOrNull(row.name) ?? "Unnamed customer",
         planned: planned.planned,
         plannedOnLeave: planned.onLeave,

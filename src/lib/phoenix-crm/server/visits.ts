@@ -49,6 +49,7 @@ import { checkVisitLocation, formatDistance } from "@/lib/phoenix-crm/geo";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
 import { isEnteredForRep } from "@/lib/phoenix-crm/missed-records";
 import { deriveOfflineCaptureTime, parseOfflineCaptureClaim } from "@/lib/phoenix-crm/offline-clock";
+import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { describeSamples, narrowSamplesToLine, parseSamplesGiven } from "@/lib/phoenix-crm/samples";
 import {
   pickLastNextStep,
@@ -301,7 +302,7 @@ function mapVisitRow(row: Row, names: PeopleNames, options: { blind: boolean; or
     capturedAt: String(row.captured_at),
     customerId: String(row.customer_id),
     customerName: textOrNull(record(row.customer).name) ?? "Customer",
-    listType: row.list_type === "AM" ? "AM" : "PM",
+    listType: parseListType(row.list_type),
     kind,
     kindLabel: KIND_LABEL[kind],
     repName: person(row.rep_hr_id),
@@ -722,7 +723,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
 
   const options: VisitCustomerOption[] = customers.map((row) => {
     const customerId = String(row.id);
-    const listType: PhoenixCrmListType = row.list_type === "AM" ? "AM" : "PM";
+    const listType: PhoenixCrmListType = parseListType(row.list_type);
     const grade = parseGrade(row.grade);
     const customerPlaces = placesByCustomer.get(customerId) ?? [];
     // His first place's brick — a customer with several places is grouped by the one he was captured

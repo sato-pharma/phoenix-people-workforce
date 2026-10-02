@@ -15,6 +15,7 @@ import { addDaysIso } from "@/lib/crm/dates";
 import { isIsoDay, isMonthKey, monthEndOf, monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { sharePercent } from "@/lib/phoenix-crm/coverage";
 import { isLeaveDay, NO_LEAVE_DAYS, type LeaveDays } from "@/lib/phoenix-crm/plan-leave";
+import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 export const REPORT_MAX_DAYS = 31;
@@ -30,8 +31,11 @@ function count(value: unknown): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
 }
 
-function listTypeOf(value: unknown): PhoenixCrmListType {
-  return value === "AM" ? "AM" : "PM";
+// Every figure in this file is a KPI — visits per half-day, plan against actual, coverage and
+// frequency — and a pharmacy is in none of them (owner, 2026-10-02). null means "not one of the
+// two halves", and each caller skips the row rather than adding it to the doctors.
+function listTypeOf(value: unknown): PhoenixCrmListType | null {
+  return doctorListType(value);
 }
 
 function textOf(value: unknown): string | null {
@@ -224,6 +228,7 @@ export function groupVisitsByRep(rows: ReadonlyArray<Row>): { groups: RepVisitGr
       unplannedWaiting: count(row.unplanned_waiting),
     };
     const listType = listTypeOf(row.list_type);
+    if (listType === null) continue;
     addVisitCounts(listType === "AM" ? day.am : day.pm, counts);
     addVisitCounts(listType === "AM" ? group.am : group.pm, counts);
     addVisitCounts(totals[listType], counts);
@@ -341,6 +346,7 @@ export function groupPlanByTerritory(
       unplannedRefused: count(row.unplanned_refused),
     };
     const listType = listTypeOf(row.list_type);
+    if (listType === null) continue;
     addPlanCounts(listType === "AM" ? day.am : day.pm, counts);
     addPlanCounts(listType === "AM" ? group.am : group.pm, counts);
     addPlanCounts(totals[listType], counts);
@@ -412,6 +418,7 @@ export function groupCoverageByTerritory(rows: ReadonlyArray<Row>): { groups: Te
       visits: count(row.visits),
     };
     const listType = listTypeOf(row.list_type);
+    if (listType === null) continue;
     addCoverageCounts(listType === "AM" ? group.am : group.pm, counts);
     addCoverageCounts(totals[listType], counts);
   }

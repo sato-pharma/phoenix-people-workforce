@@ -45,6 +45,7 @@ import { activeRoleSignIns } from "@/lib/employees/role-lookup";
 import { ApiError, conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
+import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
@@ -305,7 +306,7 @@ function mapAsk(row: Row, viewer: PhoenixCrmViewer, names: PeopleNames): VisitAs
     territoryName: seat ? territoryName(seat) : "A territory no longer in the organogram",
     repName: nameOf(names, textOrNull(row.rep_hr_id), "A rep"),
     customerName: textOrNull(customer.name) ?? "Customer",
-    customerListType: customer.list_type === "AM" ? "AM" : "PM",
+    customerListType: parseListType(customer.list_type),
     askedName: nameOf(names, askedHrId, "The person asked"),
     askedTitle: titleOf(viewer, kind, askedHrId),
     toldName: toldHrId ? nameOf(names, toldHrId, "The manager above") : null,
@@ -506,7 +507,7 @@ export async function raiseVisitAsk(viewer: PhoenixCrmViewer, raw: unknown): Pro
         askedHrId: resolved.value.askedHrId,
         toldHrId: resolved.value.toldHrId,
         customerName: textOrNull(result.customer_name) ?? "a customer",
-        listType: result.customer_list_type === "AM" ? "AM" : "PM",
+        listType: parseListType(result.customer_list_type),
         wishedOn: textOrNull(result.wished_on),
         visitOn: null,
       },
@@ -566,7 +567,7 @@ export async function raiseVisitAskFromVisit(
           askedHrId,
           toldHrId: null,
           customerName: textOrNull(result.customer_name) ?? "a customer",
-          listType: result.customer_list_type === "AM" ? "AM" : "PM",
+          listType: parseListType(result.customer_list_type),
           wishedOn: textOrNull(result.wished_on),
           visitOn: null,
         },
@@ -695,7 +696,7 @@ export async function answerVisitAsk(viewer: PhoenixCrmViewer, raw: unknown): Pr
         askedHrId: String(row.asked_hr_id),
         toldHrId: textOrNull(row.told_hr_id),
         customerName: textOrNull(result.customer_name) ?? textOrNull(customer.name) ?? "the customer",
-        listType: customer.list_type === "AM" ? "AM" : "PM",
+        listType: parseListType(customer.list_type),
         wishedOn: textOrNull(row.wished_on),
         visitOn: textOrNull(result.visit_on),
       },

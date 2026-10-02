@@ -19,6 +19,7 @@ import { getAgentPlanEntriesForWindow } from "@/lib/crm/plan-board";
 import { formatPhoenixMonth } from "@/lib/i18n/format";
 import { isMonthKey, monthEndOf, monthStartOf, plannableMonths, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import { parseGrade } from "@/lib/phoenix-crm/entry-rules";
+import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadReference } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -112,7 +113,14 @@ export async function loadPlanHistory(
     const referenceRow = referenceByContact.get(contactCrmId) ?? null;
     // Prefer the native list's own answer for a mapped contact; fall back to the mirror for a doctor
     // planned last month who has since left the seat's list.
-    const listType: PhoenixCrmListType = referenceRow ? (referenceRow.list_type === "AM" ? "AM" : "PM") : aggregate.ampm === "AM" ? "AM" : "PM";
+    // This is a history of what was PLANNED, and a pharmacy is never planned (owner, 2026-10-02),
+    // so one on the seat's list has nothing to show here and is left out rather than filed as PM.
+    const listType: PhoenixCrmListType | null = referenceRow
+      ? doctorListType(referenceRow.list_type)
+      : aggregate.ampm === "AM"
+        ? "AM"
+        : "PM";
+    if (listType === null) continue;
     entries.push({
       contactCrmId,
       nativeCustomerId: referenceRow?.customer_id ?? null,

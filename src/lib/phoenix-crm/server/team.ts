@@ -51,6 +51,7 @@ import {
   type UnplannedVisitView,
 } from "@/lib/phoenix-crm/server/unplanned";
 import { loadVisitAskSummary, type VisitAskSummary } from "@/lib/phoenix-crm/server/visit-asks";
+import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import {
   emptyTeamToday,
   summarizeTeamToday,
@@ -88,8 +89,10 @@ function chunks<T>(items: ReadonlyArray<T>, size: number): T[][] {
   return out;
 }
 
-function listTypeOf(value: unknown): PhoenixCrmListType {
-  return value === "AM" ? "AM" : "PM";
+// Today's plan-against-actual for a manager. A pharmacy is never planned and is in no KPI, so a
+// pharmacy row is not one of these counts at all.
+function listTypeOf(value: unknown): PhoenixCrmListType | null {
+  return doctorListType(value);
 }
 
 function withClock(figures: TeamTodayFigures): TeamTodayFigures & { lastVisitClock: string | null } {
@@ -144,11 +147,14 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
       throwIfError(items.error);
       for (const row of (items.data ?? []) as Row[]) {
         const seatId = seatByPlan.get(String(row.plan_id));
-        if (seatId) planned.push({ seatId, customerId: String(row.customer_id), listType: listTypeOf(row.list_type) });
+        const plannedListType = listTypeOf(row.list_type);
+        if (seatId && plannedListType !== null) planned.push({ seatId, customerId: String(row.customer_id), listType: plannedListType });
       }
     }
     for (const row of (dayVisits.data ?? []) as Row[]) {
-      visits.push({ seatId: String(row.seat_id), customerId: String(row.customer_id), listType: listTypeOf(row.list_type), capturedAt: String(row.captured_at) });
+      const visitListType = listTypeOf(row.list_type);
+      if (visitListType === null) continue;
+      visits.push({ seatId: String(row.seat_id), customerId: String(row.customer_id), listType: visitListType, capturedAt: String(row.captured_at) });
     }
   }
   return summarizeTeamToday({ seatIds, seatsWithPlan, planned, visits });
