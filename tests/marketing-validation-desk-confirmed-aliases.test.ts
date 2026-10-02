@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { uniqueAliasNames } from "../src/lib/marketing-requests/service.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -47,7 +48,27 @@ export function runMarketingValidationDeskAliasTests() {
   // ── It is not a verdict and cannot become one ────────────────────────────────────────────────
   const mapper = service.slice(service.indexOf("function mapValidationReportRows"));
   const mapperBody = mapper.slice(0, mapper.indexOf("\n}\n") + 1);
-  assert.match(mapperBody, /alsoKnownAs: params\.aliasesByPharmacyId\?\.get\(pharmacy\.id\) \?\? \[\]/, "each row carries its venue's confirmed names");
+  assert.match(
+    mapperBody,
+    /alsoKnownAs: uniqueAliasNames\(params\.aliasesByPharmacyId\?\.get\(pharmacy\.id\) \?\? \[\], pharmacy\.displayName\)/,
+    "each row carries its venue's confirmed names, deduped and without its own",
+  );
+
+  // 🔴 BOTH HALVES WERE FOUND ON A REAL SCREEN, NOT IN REVIEW. `othersOnMaster` drops the row
+  //    ASKED ABOUT by source and id; it cannot know a DIFFERENT row on the same master carries
+  //    the identical spelling. On production, Victoria hospital's master listed
+  //    "صيدلية مستشفي فيكتوريا" twice and "السيد ابو الفتوح" read as an alias of itself.
+  assert.deepEqual(
+    uniqueAliasNames(["صيدلية مستشفي فيكتوريا", "صيدلية مستشفي فيكتوريا", "مستشفي فيكتوريا"], "صيدلية مستشفى فيكتوريا"),
+    ["صيدلية مستشفي فيكتوريا", "مستشفي فيكتوريا"],
+    "a spelling confirmed on two rows of one master is printed once",
+  );
+  assert.deepEqual(
+    uniqueAliasNames(["السيد ابو الفتوح"], "السيد ابو الفتوح"),
+    [],
+    "a venue is never an alias of itself, however many rows the master holds",
+  );
+  assert.deepEqual(uniqueAliasNames([" ", ""], "x"), [], "blank names are not aliases");
   // 🔴 THE ONE THING THAT MUST NEVER HAPPEN: a confirmed link changing what the desk reports as
   //    validated. `validationStatus` comes from the LINK and from nothing else.
   assert.match(mapperBody, /validationStatus: link\.validationStatus/, "the status still comes from the link alone");

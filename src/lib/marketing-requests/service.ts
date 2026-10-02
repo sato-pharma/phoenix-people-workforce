@@ -5466,6 +5466,24 @@ async function refreshLinksAfterPharmacyCompletion(input: {
   return promoted;
 }
 
+/**
+ * The confirmed names worth printing beside a venue: each one once, and never the venue's own.
+ *
+ * Pure and named, rather than inline, because both halves were found by reading a real screen
+ * rather than the code — and a rule learned that way is the kind that gets quietly dropped the
+ * next time this list is touched.
+ */
+export function uniqueAliasNames(names: readonly string[], ownName: string): string[] {
+  const own = (ownName ?? "").trim();
+  const seen = new Set<string>();
+  for (const raw of names) {
+    const name = (raw ?? "").trim();
+    if (!name || name === own) continue;
+    seen.add(name);
+  }
+  return [...seen];
+}
+
 function mapValidationReportRows(params: {
   /**
    * Confirmed cross-system names, keyed by marketing pharmacy id. Optional and defaulted, so the
@@ -5509,7 +5527,15 @@ function mapValidationReportRows(params: {
       // Confirmed links only, and never a suggestion: the engine's maybes stay on the Super
       // Admin's own review screen. A maybe printed beside a verdict that cannot be corrected is
       // the worst place in the system to show one.
-      alsoKnownAs: params.aliasesByPharmacyId?.get(pharmacy.id) ?? [],
+      //
+      // 🔴 DEDUPED, AND THE VENUE'S OWN NAME DROPPED — both caught on production, not in review.
+      //    `othersOnMaster` removes the row ASKED ABOUT, by source and id; it cannot know that a
+      //    DIFFERENT row on the same master carries the identical spelling. Victoria hospital's
+      //    master holds four marketing rows and listed "صيدلية مستشفي فيكتوريا" twice, and
+      //    "السيد ابو الفتوح" read as an alias of itself. Neither is bad data — it is what a
+      //    human confirmed — but a venue "also known as" its own name reads as a defect and
+      //    teaches the desk to distrust the line.
+      alsoKnownAs: uniqueAliasNames(params.aliasesByPharmacyId?.get(pharmacy.id) ?? [], pharmacy.displayName),
       id: link.id,
       inferredFromHistory: isInferredFromHistory(link.validationNotes),
       pharmacy,
