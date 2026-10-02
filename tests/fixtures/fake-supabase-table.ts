@@ -74,9 +74,10 @@ class FakeQueryBuilder {
   /** When set, every await of this builder answers with this error and no data. */
   private failure: { message: string } | null = null;
   private filters: Array<(row: FakeRow) => boolean> = [];
-  private mode: "select" | "update" | "insert" | "delete" = "select";
+  private mode: "select" | "update" | "insert" | "upsert" | "delete" = "select";
   private updatePayload: FakeRow | null = null;
   private insertPayload: FakeRow[] | null = null;
+  private conflictColumns: string[] = [];
   private wantsSingle = false;
   /** An update or delete followed by `.select(...)` answers with the rows it touched, as PostgREST does. */
   private returning = false;
@@ -112,6 +113,21 @@ class FakeQueryBuilder {
   insert(payload: FakeRow | FakeRow[]) {
     this.mode = "insert";
     this.insertPayload = Array.isArray(payload) ? payload : [payload];
+    return this;
+  }
+
+  /**
+   * PostgREST `upsert` — `onConflict` names the columns that decide identity, so a payload matching
+   * an existing row MERGES into it and anything else is inserted. Without the merge half a test
+   * cannot tell a second write from a duplicate row, which is the whole point of an upsert.
+   */
+  upsert(payload: FakeRow | FakeRow[], options: { onConflict?: string } = {}) {
+    this.mode = "upsert";
+    this.insertPayload = Array.isArray(payload) ? payload : [payload];
+    this.conflictColumns = String(options.onConflict ?? "")
+      .split(",")
+      .map((column) => column.trim())
+      .filter(Boolean);
     return this;
   }
 
@@ -175,13 +191,22 @@ class FakeQueryBuilder {
    * HR id with it, so every read reaching `approvedPaidDaysInPeriod` passes through here.
    */
   ilike(column: string, pattern: string) {
+    return this.matchPattern(column, pattern, "i");
+  }
+
+  /** PostgREST `like` — the same wildcards as `ilike`, case-SENSITIVE. */
+  like(column: string, pattern: string) {
+    return this.matchPattern(column, pattern, "");
+  }
+
+  private matchPattern(column: string, pattern: string, flags: string) {
     const source = String(pattern).replace(/\\(.)|[.*+?^${}()|[\]]|[%_]/g, (match, escaped) => {
       if (escaped !== undefined) return escaped.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       if (match === "%") return ".*";
       if (match === "_") return ".";
       return `\\${match}`;
     });
-    const expression = new RegExp(`^${source}$`, "i");
+    const expression = new RegExp(`^${source}$`, flags);
     this.filters.push((row) => expression.test(String(row[column] ?? "")));
     return this;
   }
@@ -232,14 +257,25 @@ class FakeQueryBuilder {
       resolve({ data: this.returning ? this.shape(deleted) : null, error: null });
       return;
     }
-    if (this.mode === "insert") {
-      const inserted: FakeRow[] = [];
+    if (this.mode === "insert" || this.mode === "upsert") {
+      const written: FakeRow[] = [];
       for (const row of this.insertPayload ?? []) {
-        const stored = { id: `fake-${this.rows.length}-${inserted.length}`, ...row };
+        const existing =
+          this.mode === "upsert" && this.conflictColumns.length > 0
+            ? this.rows.find((candidate) =>
+                this.conflictColumns.every((column) => asFilterText(candidate[column]) === asFilterText(row[column])),
+              )
+            : undefined;
+        if (existing) {
+          Object.assign(existing, row);
+          written.push(existing);
+          continue;
+        }
+        const stored = { id: `fake-${this.rows.length}-${written.length}`, ...row };
         this.rows.push(stored);
-        inserted.push(stored);
+        written.push(stored);
       }
-      resolve({ data: this.shape(inserted), error: null });
+      resolve({ data: this.shape(written), error: null });
       return;
     }
     const matched = this.matchIndexes().map((index) => this.rows[index]);

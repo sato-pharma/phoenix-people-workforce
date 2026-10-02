@@ -3322,9 +3322,24 @@ the visit, its off-plan approval and that approval's events are copied whole int
 `phoenix_crm_removed_visits` (service role only, one row per visit, and the migration header says how
 to put one back). Then the events, the approval and the visit go, in that order — they are the only rows
 that point at a visit, and neither foreign key cascades — so an unplanned entry also leaves the
-manager's and SFE's queues. 🔴 **One trace stays:** a reviewing manager already told in-app or on
-Telegram about that off-plan visit keeps the notice; opening it finds nothing waiting. A day activity is
-not removed this way — he clears his own from the same panel, as before.
+manager's and SFE's queues. A day activity is not removed this way — he clears his own from the same
+panel, as before.
+
+**And the notice goes with it** (owner, 2026-10-02: *"close the stale manager notice when an entered
+visit is removed"*). The manager had been told to approve an off-plan visit; once the entry behind it was
+gone his bell held a to-do that could never be done. `withdrawPhoenixCrmVisitNotices` runs after the
+removal — never before, because the database is what decides whether the visit may go at all — and
+archives every in-app notice whose event key names that visit: the manager's, the rep's own copies, and
+the test-world ones, which carry their own keys. Both notice keys are built from
+`phoenixCrmVisitNoticeKeyPrefix`, so a renamed key cannot leave one behind, and the LIKE prefix is
+escaped because every key contains `phoenix_crm` and `_` is a wildcard. 🔴 **It is the ONE place that
+writes ANOTHER person's archive state** — everywhere else that row is the viewer's own — and it earns
+the exception only because the record behind the notice is gone, so it must always be called with a
+prefix naming ONE visit, never a whole category. Archived, never deleted: the event rows stay for the
+audit, and the hr id is written in the canonical lowercase form the bell reads by, or the write lands on
+a row nobody queries. It swallows its own failures — a notice that cannot be withdrawn must not undo a
+removal that already happened. 🔴 **A Telegram message already sent is NOT recalled**: it is on his
+phone, nothing here reaches it, and only the in-app notice is withdrawn.
 
 Pinned by `tests/phoenix-crm-missed-records.test.ts`; the database half is
 `supabase/migrations/20261001044221_phoenix_crm_admin_entry.sql` (`phoenix_crm_admin_enter_visit`) and
