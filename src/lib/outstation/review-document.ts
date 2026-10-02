@@ -25,6 +25,13 @@
  * string with no network, no clock and no Chromium — which is what makes it testable.
  */
 
+import {
+  formatPharmacyFigure,
+  pharmacyFigureText,
+  pharmacyRecordingOf,
+  pharmacyTileFigure,
+  type VisitCountSplit,
+} from "@/lib/crm/visit-count-buckets";
 import { bidi } from "@/lib/field-activity/document";
 import { cairoDate, cairoDateTime } from "@/lib/format/cairo-datetime";
 import { resolveCaptureTimeliness } from "@/lib/outstation/capture-timeliness";
@@ -57,9 +64,26 @@ export type ReviewDocumentWorkloadDay = {
   campaign: number;
   date: string;
   pharmacies: number;
+  /** Of the day's visits, how many are Phoenix CRM's own — it logs no pharmacy visit. */
+  phoenix?: number;
   pm: number;
   regular: number;
 };
+
+/**
+ * The live figures as the golden-rule split (src/lib/crm/visit-count-buckets.ts): a trip or day logged
+ * in Phoenix CRM, which records no pharmacy visit, reads "not recorded in Phoenix" — never 0. The
+ * declared figure keeps its own wording ("not counted separately").
+ */
+function liveSplit(figures: { am: number; pm: number; pharmacies: number; phoenix?: number }): VisitCountSplit {
+  return { am: figures.am, pm: figures.pm, pharmacies: figures.pharmacies, ...(figures.phoenix ? { phoenix: figures.phoenix } : {}) };
+}
+
+/** One day's pharmacy cell: "2", "Not recorded" or "2 (iReports360 only)". */
+function livePharmacyCell(day: ReviewDocumentWorkloadDay): string {
+  const split = liveSplit(day);
+  return pharmacyRecordingOf(split) === "not-recorded" ? pharmacyTileFigure(split).value : pharmacyFigureText(split);
+}
 
 /**
  * The live CRM read, or a plain statement that it was not available. Never a zero standing in for
@@ -71,7 +95,7 @@ export type ReviewDocumentWorkload =
       available: true;
       days: ReviewDocumentWorkloadDay[];
       freshnessHeadline: string | null;
-      live: { am: number; campaign: number; pharmacies: number; pm: number; regular: number };
+      live: { am: number; campaign: number; pharmacies: number; phoenix?: number; pm: number; regular: number };
       matchStatus: string;
     };
 
@@ -252,7 +276,7 @@ function workloadBlock(request: OutstationExpenseRequest, workload: ReviewDocume
         <tbody>${workload.days
           .map(
             (day) =>
-              `<tr><td>${escapeHtml(cairoDate(day.date))}</td><td class="num">${day.am}</td><td class="num">${day.pm}</td><td class="num">${day.pharmacies}</td><td class="num">${day.regular}</td><td class="num">${day.campaign}</td></tr>`,
+              `<tr><td>${escapeHtml(cairoDate(day.date))}</td><td class="num">${day.am}</td><td class="num">${day.pm}</td><td class="num">${escapeHtml(livePharmacyCell(day))}</td><td class="num">${day.regular}</td><td class="num">${day.campaign}</td></tr>`,
           )
           .join("")}</tbody>
       </table>`
@@ -263,7 +287,7 @@ function workloadBlock(request: OutstationExpenseRequest, workload: ReviewDocume
     ${workload.freshnessHeadline ? `<div class="amber"><p class="amber__k">Stored verdict is out of date</p><p class="amber__v">${escapeHtml(workload.freshnessHeadline)}</p></div>` : ""}
     <div class="boxes boxes--3">
       <div class="box"><p class="box__k">Declared (sheet)</p><p class="box__v">${declared}</p></div>
-      <div class="box${differs ? " box--flag" : ""}"><p class="box__k">Actual (evidence)</p><p class="box__v">AM ${live.am} &middot; PM ${live.pm} &middot; Pharmacies ${live.pharmacies}</p>
+      <div class="box${differs ? " box--flag" : ""}"><p class="box__k">Actual (evidence)</p><p class="box__v">AM ${live.am} &middot; PM ${live.pm} &middot; ${escapeHtml(formatPharmacyFigure(liveSplit(live)))}</p>
         ${differs ? `<p class="box__flag">&ne; declared (${actualTotal} actual vs ${declaredTotal} declared)</p>` : ""}</div>
       <div class="box"><p class="box__k">Visit type</p><p class="box__v">Regular ${live.regular} &middot; Campaign ${live.campaign}</p></div>
     </div>

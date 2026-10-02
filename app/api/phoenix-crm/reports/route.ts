@@ -10,6 +10,7 @@ import { loadBrickCoverageReport } from "@/lib/phoenix-crm/server/brick-report";
 import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
 import { loadTeamCalendar } from "@/lib/phoenix-crm/server/team-calendar";
 import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
+import { loadCapacityBoard, loadFieldHeardReport, loadMissingStockReport, loadSamplesReport } from "@/lib/phoenix-crm/server/insight-reports";
 import {
   loadCoverageReport,
   loadCustomerFrequencyReport,
@@ -55,6 +56,17 @@ export const dynamic = "force-dynamic";
 //   adoption  how far the ROLLOUT has got — who has never opened the module at all (F3). Same gate,
 //             and it reads the viewer's WAITING territories too, since a territory whose line has
 //             not opened is the other half of the same question. Nothing on it acts.
+//   capacity  grade against capacity (owner, 2026-10-02): what each territory's LIST asks of a month,
+//             by grade, against what the month's field days hold — list size, never coverage. A
+//             manager's board (readsTeamReports), refused to a medical rep inside the service
+//   heard     what the field heard: the products discussed and the customers' objections, by product,
+//             speciality and area, AM and PM apart — counts only, never a "no objection" figure, never
+//             per rep. The managers' board, and the product and marketing managers' one report: their
+//             own products, company-wide, with no area (owner, 2026-10-02)
+//   stock     the missing-stock board: which pharmacies last said they do not have which product, and
+//             the visits that promised to chase it. No sales figure. Managers only
+//   samples   samples and materials left, by month, by product and territory — a record, never a stock
+//             balance. Managers only
 // Filters: seatId, lineCode, from, to, month, includeTest (the Super Admin's only). Scope runs
 // downward only and is applied in the service.
 export async function GET(request: Request) {
@@ -87,6 +99,11 @@ export async function GET(request: Request) {
     else if (section === "exceptions") report = await loadExceptionsBoard(viewer, { test: filters.includeTest });
     else if (section === "bricks") report = await loadBrickCoverageReport(viewer, filters);
     else if (section === "adoption") report = await loadAdoptionReport(viewer, { test: filters.includeTest });
+    // The four insight boards of 2026-10-02. Each one gates and scopes itself in the service.
+    else if (section === "capacity") report = await loadCapacityBoard(viewer, filters);
+    else if (section === "heard") report = await loadFieldHeardReport(viewer, filters);
+    else if (section === "stock") report = await loadMissingStockReport(viewer, filters);
+    else if (section === "samples") report = await loadSamplesReport(viewer, filters);
     // The team calendar. Its own TAB in the module (owner, 2026-09-30) but the module's own report
     // endpoint, so there is one place a Phoenix CRM report section is gated, scoped and audited.
     else if (section === "calendar") report = await loadTeamCalendar(viewer, { month: filters.month, test: filters.includeTest });

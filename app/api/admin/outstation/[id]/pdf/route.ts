@@ -167,6 +167,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             campaign: day.campaign,
             date: day.date,
             pharmacies: day.pharmacies,
+            // Display only: a Phoenix CRM day logs no pharmacy visit, so the document words it.
+            ...(day.phoenix ? { phoenix: day.phoenix } : {}),
             pm: day.pm,
             regular: day.regular,
           })),
@@ -176,6 +178,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             am: live.amWorkload,
             campaign: live.campaignVisits,
             pharmacies: live.pharmacyWorkload ?? 0,
+            ...(live.phoenixWorkload ? { phoenix: live.phoenixWorkload } : {}),
             pm: live.pmWorkload,
             regular: live.regularVisits,
           },

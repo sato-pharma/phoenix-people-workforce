@@ -76,7 +76,14 @@ export async function loadPlanDayFacts(rows: ReadonlyArray<Row>, isTest: boolean
   return facts;
 }
 
-/** What each plan was when it was last returned — its latest return event's `from_status`. */
+/**
+ * What each plan was when it was last returned — its latest RETURN event's `from_status`.
+ *
+ * 🔴 The return EVENT, never the latest event with `to_status` 'returned'. A plan save writes a 'saved'
+ * event with `from_status` = `to_status` = the plan's status, so once the rep saves his returned day the
+ * newest 'returned' row is a save that reads "returned from returned" — and an approved week's other
+ * days would lose their approval on Today. Found 2026-10-02, before any plan was returned on production.
+ */
 async function loadReturnedFrom(planIds: ReadonlyArray<string>): Promise<Map<string, PhoenixCrmPlanStatus | null>> {
   const out = new Map<string, PhoenixCrmPlanStatus | null>();
   for (const batch of chunk([...planIds], 50)) {
@@ -84,7 +91,7 @@ async function loadReturnedFrom(planIds: ReadonlyArray<string>): Promise<Map<str
       .from("phoenix_crm_plan_events")
       .select("plan_id, from_status")
       .in("plan_id", batch)
-      .eq("to_status", "returned")
+      .eq("event_type", "returned")
       .order("created_at", { ascending: false })
       .order("id", { ascending: false });
     throwIfError(error);

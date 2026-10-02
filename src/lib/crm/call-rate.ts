@@ -80,6 +80,19 @@
 // `verifiedRate` is the headline. A caller that sums the three back into a
 // single figure has undone the point of the module.
 //
+// A PHOENIX CRM VISIT IS ITS OWN CHECK-IN (owner's ruling, 2026-10-02: a team
+// that works in Phoenix CRM is counted from it on every other screen, from the
+// team's start — see crm/phoenix-team-starts.ts). Phoenix captures every visit
+// live, with the phone's location read silently, and deliberately shows that
+// location back as NO check-in row (the rep is never told it is read — golden
+// rule #1). So a Phoenix row is `verified` without looking for one, and it is a
+// reading of the rep's GPS feed of its own: without both, every Phoenix rep read
+// 0 or "No GPS feed" while he worked. A vendor row is judged exactly as before.
+// One Phoenix rule rides along: a visit to a customer not validated yet reaches
+// no slice ("not counted in KPIs till validated", owner, 2026-10-01) — it is the
+// `not-validated` reason of {@link callRateExclusionOf}, the one gate every
+// call-rate screen already reads.
+//
 // This file is PURE — it takes rows and returns numbers, so the rules above can
 // be tested without a database. The reader that fetches the rows lives in
 // crm/call-rate-service.ts and goes through the crm/reads.ts single-source door.
@@ -92,6 +105,7 @@ import {
   type CheckinForMatch,
 } from "@/lib/crm/checkin-match";
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
+import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { classifyVisit } from "@/lib/crm/visit-types";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
@@ -190,22 +204,28 @@ export const CATCH_ALL_CONTACT_CRM_ID = 100000;
  * skipped the catch-all half altogether, and it listed 112 Thursday and Friday visits in one
  * September with proof chips and nothing to say they were not in the number above them.
  *
- *   weekend    Thursday or Friday — not Sat–Wed (owner, 2026-09-05)
- *   holiday    a Sat–Wed national holiday, out of the denominator (owner, 2026-09-02)
- *   catch-all  contact {@link CATCH_ALL_CONTACT_CRM_ID}, which is nobody
+ *   weekend        Thursday or Friday — not Sat–Wed (owner, 2026-09-05)
+ *   holiday        a Sat–Wed national holiday, out of the denominator (owner, 2026-09-02)
+ *   catch-all      contact {@link CATCH_ALL_CONTACT_CRM_ID}, which is nobody
+ *   not-validated  a Phoenix CRM visit whose customer is not validated yet: saved, and "not counted in
+ *                  KPIs till validated" (owner, 2026-10-01) — Phoenix CRM's own reports wait for the
+ *                  same thing, and the moment the customer is validated the visit counts in its own day.
+ *                  Pass the visit row to have it asked; a caller that passes none asks the first three.
  *
  * The catch-all is tested FIRST: a Thursday call to nobody is a call to nobody.
  */
-export type CallRateExclusion = "weekend" | "holiday" | "catch-all";
+export type CallRateExclusion = "weekend" | "holiday" | "catch-all" | "not-validated";
 
 export function callRateExclusionOf(
   dateIso: string,
   contactCrmId: number | null | undefined,
   holidays?: CallRateHolidays,
+  visit?: Pick<VisitForCallRate, "crm_visit_id" | "source" | "phoenix_customer_validated">,
 ): CallRateExclusion | null {
   if (contactCrmId === CATCH_ALL_CONTACT_CRM_ID) return "catch-all";
   if (!isCallRateWorkingDay(dateIso)) return "weekend";
   if (holidays?.has(dateIso)) return "holiday";
+  if (visit && isPhoenixNativeVisitRow(visit) && visit.phoenix_customer_validated === false) return "not-validated";
   return null;
 }
 
@@ -457,6 +477,18 @@ export type VisitForCallRate = {
    * routes a call into the pharmacy slice instead of AM/PM — see {@link isPharmacyVisit}.
    */
   speciality: string | null;
+  /**
+   * What marks a Phoenix CRM row ({@link isPhoenixNativeVisitRow}): `source` 'phoenix', or the
+   * NEGATIVE id the unified view gives it. Optional — a caller that selects neither reads every row
+   * as a vendor row, the rule before Phoenix rows existed.
+   */
+  crm_visit_id?: number | null;
+  source?: string | null;
+  /**
+   * On a Phoenix CRM row, whether its customer is validated yet (null on a vendor row). A `false`
+   * keeps the visit out of every slice — {@link callRateExclusionOf}'s `not-validated`.
+   */
+  phoenix_customer_validated?: boolean | null;
 };
 
 function emptySlice<Target extends number | null>(target: Target): CallRateSliceOf<Target> {
@@ -547,6 +579,9 @@ export function classifyCallProof<C extends CheckinForMatch>(
   const { bucket } = classifyVisit(visit.visit_type, visit.comment, visit.visit_type_description);
   if (bucket === "campaign") return "campaign";
   if (bucket !== "regular") return null;
+  // A Phoenix CRM visit was captured on the spot with the phone's location — its own check-in, and
+  // Phoenix shows that location back as no check-in row at all. See the file header.
+  if (isPhoenixNativeVisitRow(visit)) return "verified";
   const matched = pickCheckinForVisit(
     {
       agentCrmId: visit.agent_crm_id,
@@ -596,6 +631,14 @@ export function computeCallRate<C extends CheckinForMatch>(
   for (const checkin of checkins) {
     const agentKey = checkinAgentKey(checkin.agent_crm_id, checkin.agent_hr_id);
     if (agentKey == null || !checkin.check_date) continue;
+    checkinsByAgent.set(agentKey, (checkinsByAgent.get(agentKey) ?? 0) + 1);
+  }
+  // A Phoenix CRM visit is a reading of the same phone's location (see the file header), so a rep who
+  // works in Phoenix CRM has a live feed and is never set aside as "No GPS feed".
+  for (const visit of visits) {
+    if (!isPhoenixNativeVisitRow(visit) || !visit.visit_date) continue;
+    const agentKey = checkinAgentKey(visit.agent_crm_id, visit.agent_hr_id);
+    if (agentKey == null) continue;
     checkinsByAgent.set(agentKey, (checkinsByAgent.get(agentKey) ?? 0) + 1);
   }
 
@@ -663,7 +706,7 @@ export function computeCallRate<C extends CheckinForMatch>(
     // Everything above this line (fieldCalls, campaignCalls, perDay) is deliberately unaffected,
     // because campaignShare and the daily-limit flag are a different feature. The drill-down reads
     // the SAME gate — callRateExclusionOf — so its "not scored" rows are exactly these.
-    if (callRateExclusionOf(day, visit.contact_crm_id, options.holidays)) continue;
+    if (callRateExclusionOf(day, visit.contact_crm_id, options.holidays, visit)) continue;
 
     // Pharmacy is ORTHOGONAL to AM/PM, not a third value of it: a pharmacy call is pulled out
     // regardless of which AM/PM flag it carries (owner, 2026-09-05 — see the header).

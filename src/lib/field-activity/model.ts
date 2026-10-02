@@ -42,6 +42,7 @@
 import {
   addVisitToSplit,
   emptyVisitCountSplit,
+  mergeVisitCountSplits,
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -64,6 +65,12 @@ export type FieldActivityVisitRow = {
   comment: string | null;
   /** `crm_save_date`, read as stored — a Cairo wall clock, never converted. */
   savedAt: string | null;
+  /**
+   * 'phoenix' on a started team's Phoenix CRM visit, 'ireports360' on a vendor row. Phoenix CRM logs no
+   * pharmacy visit, so the day's counts say its pharmacy figure was never recorded rather than print 0
+   * (src/lib/crm/visit-count-buckets.ts). Optional: a row without it reads as a vendor row.
+   */
+  source?: string | null;
 };
 
 export type FieldActivityCheckinRow = {
@@ -400,6 +407,7 @@ export function buildFieldActivityReport(input: {
         addVisitToSplit(counts, {
           ampm: visit.ampm,
           comment: visit.comment,
+          source: visit.source ?? null,
           speciality: visit.speciality,
           visit_type: visit.visitType,
           visit_type_description: visit.visitTypeDescription,
@@ -523,9 +531,7 @@ export function buildFieldActivityReport(input: {
 
   const totals = days.reduce(
     (acc, day) => {
-      acc.counts.am += day.counts.am;
-      acc.counts.pm += day.counts.pm;
-      acc.counts.pharmacies += day.counts.pharmacies;
+      mergeVisitCountSplits(acc.counts, day.counts);
       acc.countedTotal += day.countedTotal;
       acc.stops += day.stops.length;
       acc.movementMetres += day.movementMetres;

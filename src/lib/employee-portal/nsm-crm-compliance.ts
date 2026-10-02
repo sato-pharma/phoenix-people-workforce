@@ -182,6 +182,10 @@ async function fetchCheckinsForDate(date: string): Promise<CheckinRow[]> {
     dateTo: date,
     // agent_hr_id: a rep with no CRM id matches his check-ins on it (see checkin-match.ts).
     columns: "agent_crm_id, agent_hr_id, contact_crm_id, check_date",
+    // The first-visit board sits on the District, Regional and National Sales Managers' home pages only —
+    // no rep reaches it, so a started Phoenix CRM team's visits count as its check-ins here (owner,
+    // 2026-10-02; src/lib/crm/phoenix-team-starts.ts lists every reader that asks).
+    includePhoenixVisits: true,
   });
 }
 

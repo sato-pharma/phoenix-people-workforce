@@ -66,6 +66,26 @@ function dominantSource(score: EarlyBirdsRepScore): keyof typeof SOURCE_BADGE {
   return "none";
 }
 
+// A started Phoenix CRM team's rep starts his day at his first Phoenix visit (owner, 2026-10-02). That
+// start is named for what it is — never GPS, never "not GPS-verified": the rep is never told his
+// location is read (Phoenix CRM golden rule #1).
+const FIRST_VISIT_BADGE = {
+  label: "First visit",
+  className: "bg-emerald-100 text-emerald-700",
+  title: "Each day's start is the time of that day's first visit",
+};
+
+function startBadge(score: EarlyBirdsRepScore): { label: string; className: string; title: string } {
+  if (score.visitStartDays) return FIRST_VISIT_BADGE;
+  const source = dominantSource(score);
+  return score.phoenixClock && source === "save_time" ? SOURCE_BADGE.none : SOURCE_BADGE[source];
+}
+
+/** Days with a start of either kind — what the column counts once a rep is on the first-visit clock. */
+function startDays(score: EarlyBirdsRepScore): number {
+  return score.gpsVerifiedDays + (score.visitStartDays ?? 0);
+}
+
 export function EarlyBirdsRepTable({
   scores,
   profiles,
@@ -78,6 +98,8 @@ export function EarlyBirdsRepTable({
   repLink?: EarlyBirdsRepLinkContext | null;
   openRepHrIdKey?: string | null;
 }) {
+  // A board with a rep on the first-visit clock counts START days, not GPS days, in that column.
+  const phoenixBoard = scores.some((score) => score.phoenixClock);
   return (
     <div className="overflow-hidden border border-slate-200 bg-white" role="region" aria-label="Early Birds detail">
       <SectionHead
@@ -94,7 +116,7 @@ export function EarlyBirdsRepTable({
         <>
           <div className="divide-y divide-slate-100 md:hidden">
             {scores.map((score, index) => {
-              const badge = SOURCE_BADGE[dominantSource(score)];
+              const badge = startBadge(score);
               return (
                 <div className="bg-white px-4 py-3" key={score.hrIdKey}>
                   {/* The phone card. The name wraps (a five-part Egyptian name is the normal case
@@ -130,7 +152,9 @@ export function EarlyBirdsRepTable({
                           : String(score.regularVisitsWithCheckin),
                       ],
                       ["Campaign visits", String(score.campaignVisits)],
-                      ["GPS days", `${score.gpsVerifiedDays}/${score.daysWithSubmission}`],
+                      score.phoenixClock
+                        ? ["Start days", `${startDays(score)}/${score.daysWithSubmission}`]
+                        : ["GPS days", `${score.gpsVerifiedDays}/${score.daysWithSubmission}`],
                       ["First places", String(score.dailyWins)],
                       ["Points", score.eligible ? formatPoints(score.totalScore) : "—"],
                     ].map(([label, value]) => (
@@ -173,7 +197,7 @@ export function EarlyBirdsRepTable({
                   <th className={TH}>Median start</th>
                   <th className={TH}>Days</th>
                   <th className={TH}>Visits</th>
-                  <th className={TH}>GPS days</th>
+                  <th className={TH}>{phoenixBoard ? "Start days" : "GPS days"}</th>
                   <th className={TH}>1st</th>
                   <th className={TH}>Points</th>
                 </tr>
@@ -181,7 +205,7 @@ export function EarlyBirdsRepTable({
               <tbody className="divide-y divide-slate-100">
                 {scores.map((score, index) => {
                   const profile = profiles.get(score.hrIdKey);
-                  const badge = SOURCE_BADGE[dominantSource(score)];
+                  const badge = startBadge(score);
                   return (
                     <tr key={score.hrIdKey} className="bg-white hover:bg-slate-50">
                       <td className={`${TD} font-black text-slate-400`}>{index + 1}</td>
@@ -238,8 +262,8 @@ export function EarlyBirdsRepTable({
                       {/* DAYS, not visits - a day is what the ranking scores, and a day with no
                           check-in has no start time at all. */}
                       <td className={`${TD} tabular-nums`}>
-                        {score.gpsVerifiedDays}/{score.daysWithSubmission}
-                        {score.gpsShare !== null && (
+                        {phoenixBoard ? startDays(score) : score.gpsVerifiedDays}/{score.daysWithSubmission}
+                        {score.gpsShare !== null && !score.phoenixClock && (
                           <span className="ml-1 text-slate-400">({formatPercent(score.gpsShare)})</span>
                         )}
                       </td>

@@ -106,11 +106,24 @@ function RaceRow({
         {/* No time is ever shown here without saying where it came from — the same rule the CRM
             master table states: a clock with no GPS behind it is not proof of being on site.
             Since the 2026-08-09 change only GPS check-ins are ranked, so this badge is GPS or
-            nothing; it stays visible so "no clock" reads as unverified rather than as late. */}
+            nothing; it stays visible so "no clock" reads as unverified rather than as late. A
+            started Phoenix CRM team's rep starts at his first Phoenix visit (owner, 2026-10-02),
+            named as such and never as GPS: he is never told his location is read. */}
         <p className="whitespace-nowrap text-phx-3xs font-bold uppercase tracking-wide">
-          {score.medianStartMinutes === null ? (
+          {score.medianStartMinutes === null && score.phoenixClock ? (
+            <span className="text-slate-400" title="No visit with a start time in this fortnight yet">
+              No start
+            </span>
+          ) : score.medianStartMinutes === null ? (
             <span className="text-slate-400" title="No GPS check-in in this fortnight — worked, but no verified start time">
               No GPS
+            </span>
+          ) : score.visitStartDays ? (
+            <span
+              className="text-emerald-700"
+              title={`Median of ${score.gpsVerifiedDays + score.visitStartDays} day${score.gpsVerifiedDays + score.visitStartDays === 1 ? "" : "s"}, each from the time of the day's first visit`}
+            >
+              First visit · {score.gpsVerifiedDays + score.visitStartDays}d
             </span>
           ) : (
             <span className="text-emerald-700" title={`Median of ${score.gpsVerifiedDays} GPS-verified day${score.gpsVerifiedDays === 1 ? "" : "s"}`}>

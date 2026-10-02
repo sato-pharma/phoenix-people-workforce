@@ -21,7 +21,17 @@
 // which the renderers colour red; a leaver's name is never put inside a sentence, where no renderer
 // could colour it.
 
-import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import {
+  PHARMACIES_IREPORTS360_ONLY,
+  PHARMACIES_NOT_RECORDED_IN_PHOENIX,
+  PHOENIX_LOGS_NO_PHARMACY_VISIT,
+  emptyVisitCountSplit,
+  formatVisitCountSplit,
+  mergeVisitCountSplits,
+  pharmacyFigureText,
+  pharmacyRecordingOf,
+  type VisitCountSplit,
+} from "@/lib/crm/visit-count-buckets";
 
 import { isResignedStatus, leaverLabel } from "../employment-status";
 import {
@@ -66,6 +76,45 @@ const pct0 = (value: number | null) => (value == null ? "—" : `${value.toFixed
 const pct1 = (value: number | null) => (value == null ? "not gradeable" : `${value.toFixed(1)}%`);
 const reachCell = (reach: ReachCount) => (reach.listed === 0 ? "—" : `${reach.reached} of ${reach.listed}`);
 const reachPct = (reach: ReachCount) => sharePct(reach.reached, reach.listed);
+
+// ── PHOENIX CRM LOGS NO PHARMACY VISIT (src/lib/crm/visit-count-buckets.ts) ──
+// From a team's start its visits come from Phoenix CRM, where a pharmacy is feedback on a doctor's
+// visit and never a visit of its own. So a Pharmacies figure built from those visits is not a zero —
+// it was never recorded — and beside iReports360 visits it counts the iReports360 visits alone.
+
+/**
+ * Listed pharmacies reached, judged by the visits behind them: "not recorded in Phoenix" when every one
+ * is Phoenix CRM's (never "0 of 12"), "3 of 12 (iReports360 only)" beside iReports360 visits.
+ */
+const pharmacyReachCell = (reach: ReachCount, visits: VisitCountSplit) => {
+  const recording = pharmacyRecordingOf(visits);
+  if (reach.listed === 0 || recording === "recorded") return reachCell(reach);
+  if (recording === "not-recorded" && reach.reached === 0) return PHARMACIES_NOT_RECORDED_IN_PHOENIX;
+  return `${reachCell(reach)} ${PHARMACIES_IREPORTS360_ONLY}`;
+};
+
+/**
+ * A pack table's Pharmacies cell: the figure; BLANK — never 0 — when every visit behind it is Phoenix
+ * CRM's; or "2 (iReports360 only)" beside iReports360 visits. `fromVisits` judges a customer count by the
+ * visits it was counted from.
+ */
+export function pharmacyCell(split: VisitCountSplit, fromVisits?: VisitCountSplit | null): PackCell {
+  const recording = pharmacyRecordingOf(split, fromVisits);
+  if (recording === "recorded") return num(split.pharmacies);
+  return recording === "not-recorded" ? null : pharmacyFigureText(split, { fromVisits });
+}
+
+/** Said under a table that carries a blank or a qualified Pharmacies cell — the outstation export's rule. */
+export const PHARMACY_PACK_NOTE =
+  `A blank Pharmacies figure (— on the page) is ${PHARMACIES_NOT_RECORDED_IN_PHOENIX}, never 0: ` +
+  `${PHOENIX_LOGS_NO_PHARMACY_VISIT}, a pharmacy there is feedback on a doctor's visit. Beside Phoenix CRM ` +
+  `visits the figure counts the iReports360 visits only ${PHARMACIES_IREPORTS360_ONLY}.`;
+
+/** The section note, with {@link PHARMACY_PACK_NOTE} when any of its Pharmacies figures needed it. */
+export function withPharmacyNote(note: string, splits: ReadonlyArray<readonly [VisitCountSplit, (VisitCountSplit | null)?]>): string {
+  const needed = splits.some(([split, fromVisits]) => pharmacyRecordingOf(split, fromVisits) !== "recorded");
+  return needed ? `${note} ${PHARMACY_PACK_NOTE}` : note;
+}
 const plural = (count: number, one: string, many: string) => `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
 const count0 = (value: number) => value.toLocaleString("en-US");
 
@@ -318,6 +367,23 @@ export function summarySection(input: PackInput, ctx: LinkContext | null): PackS
       }
     }
 
+    // ── The team's field work — read first, because it judges the pharmacy reach below ──
+    const field = ctx.reps
+      .map((rep) =>
+        repFieldSummary({ months: ctx.months, ownManagerHrId: ctx.ownManagerHrId, repDays: ctx.facts.repDays, repHrId: rep, rides: ctx.facts.rides }),
+      )
+      .reduce(
+        (sum, one) => ({
+          fieldDays: sum.fieldDays + one.fieldDays,
+          fieldVisits: sum.fieldVisits + one.fieldVisits,
+          rideDays: sum.rideDays + one.rideDays,
+          rideDaysFromOwnManager: sum.rideDaysFromOwnManager + one.rideDaysFromOwnManager,
+          // Merged by the golden-rule helper, so the Phoenix CRM share travels with the sum.
+          split: mergeVisitCountSplits(sum.split, one.split),
+        }),
+        { fieldDays: 0, fieldVisits: 0, rideDays: 0, rideDaysFromOwnManager: 0, split: emptyVisitCountSplit() },
+      );
+
     // ── Class A doctors ──
     const reach = listReach(listOfReps(ctx, ctx.reps), ctx.facts.visitsByContact);
     if (reach.classA.listed > 0) {
@@ -333,29 +399,11 @@ export function summarySection(input: PackInput, ctx: LinkContext | null): PackS
     if (reach.am.listed > 0 || reach.pharmacies.listed > 0) {
       rows.push([
         "Accounts and pharmacies",
-        `AM accounts reached: ${reachCell(reach.am)}. Pharmacies reached: ${reachCell(reach.pharmacies)}.`,
+        `AM accounts reached: ${reachCell(reach.am)}. Pharmacies reached: ${pharmacyReachCell(reach.pharmacies, field.split)}.`,
       ]);
     }
 
     // ── Field work and who rode along ──
-    const field = ctx.reps
-      .map((rep) =>
-        repFieldSummary({ months: ctx.months, ownManagerHrId: ctx.ownManagerHrId, repDays: ctx.facts.repDays, repHrId: rep, rides: ctx.facts.rides }),
-      )
-      .reduce(
-        (sum, one) => ({
-          fieldDays: sum.fieldDays + one.fieldDays,
-          fieldVisits: sum.fieldVisits + one.fieldVisits,
-          rideDays: sum.rideDays + one.rideDays,
-          rideDaysFromOwnManager: sum.rideDaysFromOwnManager + one.rideDaysFromOwnManager,
-          split: {
-            am: sum.split.am + one.split.am,
-            pharmacies: sum.split.pharmacies + one.split.pharmacies,
-            pm: sum.split.pm + one.split.pm,
-          },
-        }),
-        { fieldDays: 0, fieldVisits: 0, rideDays: 0, rideDaysFromOwnManager: 0, split: { am: 0, pharmacies: 0, pm: 0 } },
-      );
     if (field.fieldVisits > 0) {
       rows.push([
         "Field work",
@@ -465,7 +513,7 @@ export function brickWorkSection(input: PackInput, ctx: LinkContext | null): Pac
     reachCell(row.reach.classA),
     reachCell(row.reach.otherDoctors),
     reachCell(row.reach.am),
-    reachCell(row.reach.pharmacies),
+    pharmacyReachCell(row.reach.pharmacies, row.visits),
     splitTotal(row.visits) > 0 ? formatVisitCountSplit(row.visits) : "No visits",
     BRICK_READING_LABEL[row.reading],
   ]);
@@ -477,7 +525,7 @@ export function brickWorkSection(input: PackInput, ctx: LinkContext | null): Pac
       reachCell(bricks.total.reach.classA),
       reachCell(bricks.total.reach.otherDoctors),
       reachCell(bricks.total.reach.am),
-      reachCell(bricks.total.reach.pharmacies),
+      pharmacyReachCell(bricks.total.reach.pharmacies, bricks.total.visits),
       formatVisitCountSplit(bricks.total.visits),
       "—",
     ]);
@@ -583,6 +631,10 @@ export function areaWorkSection(input: PackInput, ctx: LinkContext | null): Pack
       const fieldDays = ctx.facts.repDays
         .filter((fact) => reps.includes(fact.repHrId) && ctx.months.includes(fact.period))
         .reduce((sum, fact) => sum + fact.fieldDays, 0);
+      // The same reps' visits — they judge the area's pharmacy reach (Phoenix CRM logs no pharmacy visit).
+      const visits = ctx.facts.repDays
+        .filter((fact) => reps.includes(fact.repHrId) && ctx.months.includes(fact.period))
+        .reduce((sum, fact) => mergeVisitCountSplits(sum, fact.split), emptyVisitCountSplit());
       const rideDays = reps.reduce((sum, rep) => sum + rideDaysReceived(ctx.facts.rides, rep, ctx.months), 0);
       const aReach = reachPct(reach.classA);
       const ach = area.allProducts.ach;
@@ -597,7 +649,7 @@ export function areaWorkSection(input: PackInput, ctx: LinkContext | null): Pack
               : ach >= 90
                 ? "on-track"
                 : "watch";
-      return { aReach, area, fieldDays, reach, reading, rideDays };
+      return { aReach, area, fieldDays, reach, reading, rideDays, visits };
     })
     .sort((a, b) => num(b.area.allProducts.sales) - num(a.area.allProducts.sales));
   const charted = rows.filter((row) => row.reach.classA.listed > 0).slice(0, 12);
@@ -638,7 +690,7 @@ export function areaWorkSection(input: PackInput, ctx: LinkContext | null): Pack
       pct1(row.area.allProducts.ach),
       whole(row.area.allProducts.sales),
       reachCell(row.reach.classA),
-      reachCell(row.reach.pharmacies),
+      pharmacyReachCell(row.reach.pharmacies, row.visits),
       row.fieldDays,
       row.rideDays,
       AREA_READING_LABEL[row.reading],
@@ -798,7 +850,7 @@ export function teamScorecardSection(input: PackInput, ctx: LinkContext | null):
         ...(withLine ? [row.area?.lineLabel ?? "—"] : []),
         pct1(row.area?.allProducts.ach ?? null),
         reachCell(row.reach.classA),
-        reachCell(row.reach.pharmacies),
+        pharmacyReachCell(row.reach.pharmacies, row.field.split),
         row.field.fieldDays,
         row.field.fieldVisits > 0 ? formatVisitCountSplit(row.field.split) : "No visits",
         row.field.rideDays,
@@ -1089,5 +1141,7 @@ export function plainForRep(section: PackSection): PackSection {
   if (section.metric === "double-visits") return { ...section, ...REP_DOUBLE_VISIT_WORDS };
   const words = REP_WORDS[section.metric];
   if (!words) return section;
-  return { ...section, note: words.note ?? section.note, title: words.title };
+  // The plainer words replace the note, never the pharmacy rule it carried (withPharmacyNote).
+  const pharmacyRule = words.note && section.note.endsWith(PHARMACY_PACK_NOTE) ? ` ${PHARMACY_PACK_NOTE}` : "";
+  return { ...section, note: words.note ? `${words.note}${pharmacyRule}` : section.note, title: words.title };
 }

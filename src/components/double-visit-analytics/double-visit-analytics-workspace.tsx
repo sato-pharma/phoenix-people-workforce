@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
   CalendarDays,
@@ -31,6 +31,14 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import {
+  PHARMACIES_IREPORTS360_ONLY,
+  formatPharmacyFigure,
+  formatVisitCountSplit,
+  pharmacyRecordingOf,
+  pharmacyTileFigure,
+  type VisitCountSplit,
+} from "@/lib/crm/visit-count-buckets";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type {
   DoubleVisitDashboardData,
@@ -130,13 +138,35 @@ function RoleBadge({ role }: { role: DoubleVisitRoleCode | null }) {
   return <span className={`rounded px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${tone}`}>{role ?? "—"}</span>;
 }
 
+/**
+ * A row of figures as the golden-rule split, with its Phoenix CRM share. Phoenix CRM logs no pharmacy
+ * visit, so a split of its double visits prints "Pharmacies not recorded in Phoenix", never 0, and beside
+ * iReports360 visits "(iReports360 only)" (src/lib/crm/visit-count-buckets.ts).
+ */
+function figureSplit(am: number, pm: number, pharmacies: number, phoenix: number | undefined): VisitCountSplit {
+  return { am, pm, pharmacies, ...(phoenix ? { phoenix } : {}) };
+}
+
+/** A Pharmacies table cell: the count (— for none, as before), "Not recorded", or the count named "(iReports360 only)". */
+function pharmacyCellContent(split: VisitCountSplit): ReactNode {
+  const recording = pharmacyRecordingOf(split);
+  if (recording === "not-recorded") return pharmacyTileFigure(split).value;
+  const figure = split.pharmacies > 0 ? split.pharmacies : <span className="text-slate-300">—</span>;
+  if (recording === "recorded") return figure;
+  return (
+    <>
+      {figure} <span className="text-phx-2xs text-slate-400">{PHARMACIES_IREPORTS360_ONLY}</span>
+    </>
+  );
+}
+
 // THE AM · PM · PHARMACIES GOLDEN RULE: three segments, never a two-way AM/PM split that files the
-// pharmacies among the PM doctors.
-function AmPmBar({ am, pharmacies, pm }: { am: number; pharmacies: number; pm: number }) {
+// pharmacies among the PM doctors. `phoenix` words the tooltip of a Phoenix CRM share.
+function AmPmBar({ am, pharmacies, phoenix, pm }: { am: number; pharmacies: number; phoenix?: number; pm: number }) {
   const total = am + pm + pharmacies;
   const share = (value: number) => (total > 0 ? (value / total) * 100 : 0);
   return (
-    <div className="flex h-2 w-full overflow-hidden bg-slate-100" title={`AM ${am} · PM ${pm} · Pharmacies ${pharmacies}`}>
+    <div className="flex h-2 w-full overflow-hidden bg-slate-100" title={formatVisitCountSplit(figureSplit(am, pm, pharmacies, phoenix))}>
       <div className="h-2 bg-phx-accent" style={{ width: `${share(am)}%` }} />
       <div className="h-2 bg-slate-400" style={{ width: `${share(pm)}%` }} />
       <div className="h-2 bg-emerald-600" style={{ width: `${share(pharmacies)}%` }} />
@@ -251,6 +281,8 @@ type MrVisitRow = {
   lastDate: string | null;
   name: string;
   pharmacies: number;
+  /** Of these double visits, Phoenix CRM's own — it logs no pharmacy visit. */
+  phoenix: number;
   pm: number;
   score: DoubleVisitMrScore | null;
   visits: number;
@@ -270,6 +302,7 @@ function buildManagerProfile(
   const amVisits = allRows.filter((e) => entryCountBucket(e) === "AM").reduce((s, e) => s + e.visitCount, 0);
   const pmVisits = allRows.filter((e) => entryCountBucket(e) === "PM").reduce((s, e) => s + e.visitCount, 0);
   const pharmacyVisits = allRows.filter((e) => entryCountBucket(e) === "Pharmacies").reduce((s, e) => s + e.visitCount, 0);
+  const phoenixVisits = allRows.filter((e) => e.fromPhoenix && entryCountBucket(e) !== null).reduce((s, e) => s + e.visitCount, 0);
   const lastDate = [...new Set(allRows.map((e) => e.date))].sort().at(-1) ?? null;
 
   // All-period visited set — an MR visited in any period is NOT neglected.
@@ -283,12 +316,13 @@ function buildManagerProfile(
     const key = hk(row.visitedHrId) || `name:${row.visitedName ?? "unknown"}`;
     const existing =
       byMr.get(key) ??
-      { am: 0, area: row.area, dates: new Set<string>(), days: 0, firstDate: null, hrId: row.visitedHrId, key, lastDate: null, name: row.visitedName ?? "Unmapped MR", pharmacies: 0, pm: 0, score: null, visits: 0, visitsPerDay: 0 };
+      { am: 0, area: row.area, dates: new Set<string>(), days: 0, firstDate: null, hrId: row.visitedHrId, key, lastDate: null, name: row.visitedName ?? "Unmapped MR", pharmacies: 0, phoenix: 0, pm: 0, score: null, visits: 0, visitsPerDay: 0 };
     existing.visits += row.visitCount;
     const countBucket = entryCountBucket(row);
     if (countBucket === "AM") existing.am += row.visitCount;
     else if (countBucket === "PM") existing.pm += row.visitCount;
     else if (countBucket === "Pharmacies") existing.pharmacies += row.visitCount;
+    if (countBucket && row.fromPhoenix) existing.phoenix += row.visitCount;
     existing.dates.add(row.date.slice(0, 10));
     if (!existing.lastDate || row.date > existing.lastDate) existing.lastDate = row.date;
     if (!existing.firstDate || row.date < existing.firstDate) existing.firstDate = row.date;
@@ -333,6 +367,7 @@ function buildManagerProfile(
     neglectedMrs,
     overFocusedKeys,
     pharmacyVisits,
+    phoenixVisits,
     pmVisits,
     topN,
     totalVisits,
@@ -576,9 +611,9 @@ function RoleRollupCard({ rollup, active, onClick }: { active: boolean; onClick:
         <div className="flex flex-wrap items-center justify-between gap-x-2 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
           <span>AM {rollup.amVisits}</span>
           <span>PM {rollup.pmVisits}</span>
-          <span>Pharmacies {rollup.pharmacyVisits}</span>
+          <span>{formatPharmacyFigure(figureSplit(rollup.amVisits, rollup.pmVisits, rollup.pharmacyVisits, rollup.phoenixVisits))}</span>
         </div>
-        <div className="mt-1"><AmPmBar am={rollup.amVisits} pharmacies={rollup.pharmacyVisits} pm={rollup.pmVisits} /></div>
+        <div className="mt-1"><AmPmBar am={rollup.amVisits} pharmacies={rollup.pharmacyVisits} phoenix={rollup.phoenixVisits} pm={rollup.pmVisits} /></div>
       </div>
     </button>
   );
@@ -649,9 +684,9 @@ function LeaderboardCard({
       <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
         <span>AM {row.amVisits}</span>
         <span>PM {row.pmVisits}</span>
-        <span>Pharmacies {row.pharmacyVisits}</span>
+        <span>{formatPharmacyFigure(figureSplit(row.amVisits, row.pmVisits, row.pharmacyVisits, row.phoenixVisits))}</span>
       </div>
-      <div className="mt-1"><AmPmBar am={row.amVisits} pharmacies={row.pharmacyVisits} pm={row.pmVisits} /></div>
+      <div className="mt-1"><AmPmBar am={row.amVisits} pharmacies={row.pharmacyVisits} phoenix={row.phoenixVisits} pm={row.pmVisits} /></div>
     </PortalRecordCard>
   );
 }
@@ -694,7 +729,7 @@ function MrBreakdownCard({
           },
           { label: "AM", value: row.am > 0 ? row.am : "—" },
           { label: "PM", value: row.pm > 0 ? row.pm : "—" },
-          { label: "Pharmacies", value: row.pharmacies > 0 ? row.pharmacies : "—" },
+          { label: "Pharmacies", value: pharmacyCellContent(figureSplit(row.am, row.pm, row.pharmacies, row.phoenix)) },
           { label: "Span", value: `${fmtDate(row.firstDate)} – ${fmtDate(row.lastDate)}` },
         ]}
       />
@@ -715,7 +750,7 @@ function VacantTerritoryCard({ row }: { row: MrVisitRow }) {
           { label: "Days", value: row.days },
           { label: "AM", value: row.am > 0 ? row.am : "—" },
           { label: "PM", value: row.pm > 0 ? row.pm : "—" },
-          { label: "Pharmacies", value: row.pharmacies > 0 ? row.pharmacies : "—" },
+          { label: "Pharmacies", value: pharmacyCellContent(figureSplit(row.am, row.pm, row.pharmacies, row.phoenix)) },
           { label: "Span", value: `${fmtDate(row.firstDate)} – ${fmtDate(row.lastDate)}` },
         ]}
       />
@@ -734,9 +769,9 @@ function TrendCard({ week }: { week: DoubleVisitTrendPoint }) {
       <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
         <span>AM {week.amVisits}</span>
         <span>PM {week.pmVisits}</span>
-        <span>Pharmacies {week.pharmacyVisits}</span>
+        <span>{formatPharmacyFigure(figureSplit(week.amVisits, week.pmVisits, week.pharmacyVisits, week.phoenixVisits))}</span>
       </div>
-      <div className="mt-1"><AmPmBar am={week.amVisits} pharmacies={week.pharmacyVisits} pm={week.pmVisits} /></div>
+      <div className="mt-1"><AmPmBar am={week.amVisits} pharmacies={week.pharmacyVisits} phoenix={week.phoenixVisits} pm={week.pmVisits} /></div>
     </PortalRecordCard>
   );
 }
@@ -948,6 +983,11 @@ export function DoubleVisitAnalyticsWorkspace({
   const periodLabel = periodFilter === "ALL" ? "" : periodFilter;
   const activeManagerCount = managerSummaries.length;
   const idleCount = executiveSummary?.idleManagers.length ?? 0;
+  // A Phoenix CRM double visit logs no pharmacy visit: the band says so rather than print 0.
+  const kpiPharmacy = pharmacyTileFigure(
+    figureSplit(dashboard.kpis.amVisitCount, dashboard.kpis.pmVisitCount, dashboard.kpis.pharmacyVisitCount ?? 0, dashboard.kpis.phoenixVisitCount),
+    { formatNumber: fmt },
+  );
 
   const TABS: { icon: LucideIcon; id: Tab; label: string }[] = [
     { id: "summary", icon: Sparkles, label: "Summary" },
@@ -1080,7 +1120,7 @@ export function DoubleVisitAnalyticsWorkspace({
               <KpiCard icon={Flame} label="Neglected MRs" value={fmt(weakMrs.length)} hint={`${criticalMrs.length} critical (≥60 days or 0 DVs/90d).`} />
               <KpiCard icon={Activity} label="AM Visits" value={fmt(dashboard.kpis.amVisitCount)} hint="Morning double visit workload." />
               <KpiCard icon={Activity} label="PM Visits" value={fmt(dashboard.kpis.pmVisitCount)} hint="Afternoon double visits to doctors — pharmacies are counted apart." />
-              <KpiCard icon={Activity} label="Pharmacy Visits" value={fmt(dashboard.kpis.pharmacyVisitCount ?? 0)} hint="Double visits to pharmacies, never counted in AM or PM." />
+              <KpiCard icon={Activity} label="Pharmacy Visits" value={kpiPharmacy.note ? kpiPharmacy.value : fmt(dashboard.kpis.pharmacyVisitCount ?? 0)} hint={kpiPharmacy.note ? `Double visits to pharmacies, never counted in AM or PM — ${kpiPharmacy.note}.` : "Double visits to pharmacies, never counted in AM or PM."} />
             </div>
 
             {/* Role rollups */}
@@ -1236,7 +1276,7 @@ export function DoubleVisitAnalyticsWorkspace({
                             {row.concentrationPct != null ? `${row.concentrationPct}%` : "—"}
                           </td>
                           <td className="px-3 py-2.5">
-                            <div className="w-24"><AmPmBar am={row.amVisits} pharmacies={row.pharmacyVisits} pm={row.pmVisits} /></div>
+                            <div className="w-24"><AmPmBar am={row.amVisits} pharmacies={row.pharmacyVisits} phoenix={row.phoenixVisits} pm={row.pmVisits} /></div>
                           </td>
                           <td className="px-3 py-2.5 text-sm text-slate-600">
                             {fmtDate(row.lastDvDate)}
@@ -1377,8 +1417,8 @@ export function DoubleVisitAnalyticsWorkspace({
                 {/* AM · PM · Pharmacies + concentration / focus signal */}
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-400">AM {selectedSummary?.amVisits ?? managerProfile.amVisits} · PM {selectedSummary?.pmVisits ?? managerProfile.pmVisits} · Pharmacies {selectedSummary?.pharmacyVisits ?? managerProfile.pharmacyVisits}</span>
-                    <div className="w-28"><AmPmBar am={selectedSummary?.amVisits ?? managerProfile.amVisits} pharmacies={selectedSummary?.pharmacyVisits ?? managerProfile.pharmacyVisits} pm={selectedSummary?.pmVisits ?? managerProfile.pmVisits} /></div>
+                    <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-400">AM {selectedSummary?.amVisits ?? managerProfile.amVisits} · PM {selectedSummary?.pmVisits ?? managerProfile.pmVisits} · {formatPharmacyFigure(figureSplit(selectedSummary?.amVisits ?? managerProfile.amVisits, selectedSummary?.pmVisits ?? managerProfile.pmVisits, selectedSummary?.pharmacyVisits ?? managerProfile.pharmacyVisits, selectedSummary ? selectedSummary.phoenixVisits : managerProfile.phoenixVisits))}</span>
+                    <div className="w-28"><AmPmBar am={selectedSummary?.amVisits ?? managerProfile.amVisits} pharmacies={selectedSummary?.pharmacyVisits ?? managerProfile.pharmacyVisits} phoenix={selectedSummary ? selectedSummary.phoenixVisits : managerProfile.phoenixVisits} pm={selectedSummary?.pmVisits ?? managerProfile.pmVisits} /></div>
                   </div>
                   {selectedSummary?.teamMrCount != null && (
                     <MiniStat tone="orange" value={`${selectedSummary.distinctMrs}/${selectedSummary.teamMrCount}`} label="team MRs visited" />
@@ -1473,7 +1513,7 @@ export function DoubleVisitAnalyticsWorkspace({
                                 <td className="px-3 py-2.5 text-xs text-slate-500">{fmtDate(row.firstDate)} – {fmtDate(row.lastDate)}</td>
                                 <td className="px-3 py-2.5 text-right text-sm tabular-nums text-orange-600">{row.am > 0 ? row.am : <span className="text-slate-300">—</span>}</td>
                                 <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-600">{row.pm > 0 ? row.pm : <span className="text-slate-300">—</span>}</td>
-                                <td className="px-3 py-2.5 text-right text-sm tabular-nums text-emerald-700">{row.pharmacies > 0 ? row.pharmacies : <span className="text-slate-300">—</span>}</td>
+                                <td className="px-3 py-2.5 text-right text-sm tabular-nums text-emerald-700">{pharmacyCellContent(figureSplit(row.am, row.pm, row.pharmacies, row.phoenix))}</td>
                                 <td className="px-3 py-2.5">
                                   {row.score ? (
                                     <span className={`rounded px-2 py-0.5 text-xs font-black uppercase ring-1 ${bandClass(row.score.band)}`}>{row.score.band}</span>
@@ -1537,7 +1577,7 @@ export function DoubleVisitAnalyticsWorkspace({
                                   <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">{row.days}</td>
                                   <td className="px-3 py-2.5 text-right text-sm tabular-nums text-orange-600">{row.am > 0 ? row.am : <span className="text-slate-300">—</span>}</td>
                                   <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-600">{row.pm > 0 ? row.pm : <span className="text-slate-300">—</span>}</td>
-                                  <td className="px-3 py-2.5 text-right text-sm tabular-nums text-emerald-700">{row.pharmacies > 0 ? row.pharmacies : <span className="text-slate-300">—</span>}</td>
+                                  <td className="px-3 py-2.5 text-right text-sm tabular-nums text-emerald-700">{pharmacyCellContent(figureSplit(row.am, row.pm, row.pharmacies, row.phoenix))}</td>
                                   <td className="px-3 py-2.5 text-xs text-slate-500">{fmtDate(row.firstDate)} – {fmtDate(row.lastDate)}</td>
                                 </tr>
                               ))}
@@ -1710,7 +1750,7 @@ export function DoubleVisitAnalyticsWorkspace({
                       <tr key={week.weekStart} className="border-t border-slate-100">
                         <td className="px-3 py-2.5 font-semibold text-slate-800">{fmtDate(week.weekStart)}</td>
                         <td className="px-3 py-2.5 text-right font-black tabular-nums text-slate-950">{fmt(week.totalDvs)}</td>
-                        <td className="px-3 py-2.5"><div className="w-28"><AmPmBar am={week.amVisits} pharmacies={week.pharmacyVisits} pm={week.pmVisits} /></div></td>
+                        <td className="px-3 py-2.5"><div className="w-28"><AmPmBar am={week.amVisits} pharmacies={week.pharmacyVisits} phoenix={week.phoenixVisits} pm={week.pmVisits} /></div></td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{week.distinctMrs}</td>
                       </tr>
                     ))}

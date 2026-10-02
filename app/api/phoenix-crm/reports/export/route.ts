@@ -4,14 +4,16 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
-import { readsCalendar, readsTeamReports, reportIncludesTest, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { capacityMonthsOffered } from "@/lib/phoenix-crm/capacity-board";
+import { readsCalendar, readsFieldHeardByProduct, readsTeamReports, reportIncludesTest, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadBrickCoverageReport } from "@/lib/phoenix-crm/server/brick-report";
 import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
 import { loadDailyPlanReport } from "@/lib/phoenix-crm/server/daily-plan-report";
 import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
+import { loadCapacityBoard, loadFieldHeardReport, loadMissingStockReport, loadSamplesReport } from "@/lib/phoenix-crm/server/insight-reports";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
-import { buildPhoenixCrmReportsWorkbook } from "@/lib/phoenix-crm/server/reports-workbook";
+import { buildPhoenixCrmReportsWorkbook, type ReportsPackInput } from "@/lib/phoenix-crm/server/reports-workbook";
 import { loadTeamCalendar } from "@/lib/phoenix-crm/server/team-calendar";
 import {
   loadCoverageReport,
@@ -28,11 +30,42 @@ import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Seven sections, several of them fanning out over a line's months. The default 15 s is not enough
-// for a national scope, and a truncated workbook is worse than a slow one.
+// Every section at once, several of them fanning out over a line's months. The default 15 s is not
+// enough for a national scope, and a truncated workbook is worse than a slow one.
 export const maxDuration = 60;
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+/** Every section absent — the starting point of a pack that holds one report and nothing else. */
+const NO_SECTIONS: Omit<ReportsPackInput, "viewerName" | "periodText" | "scopeText" | "includeTest" | "generatedAtIso"> = {
+  adoption: null,
+  bricks: null,
+  calendar: null,
+  capacity: null,
+  coverage: null,
+  dailyPlan: null,
+  exceptions: null,
+  frequency: null,
+  heard: null,
+  locations: null,
+  managers: null,
+  plan: null,
+  samples: null,
+  stock: null,
+  tracking: null,
+  visits: null,
+};
+
+function xlsxResponse(buffer: Buffer, filename: string): NextResponse {
+  return new NextResponse(buffer as unknown as ArrayBuffer, {
+    headers: {
+      "cache-control": "no-store",
+      "content-disposition": `attachment; filename="${filename}"`,
+      "content-type": XLSX,
+    },
+    status: 200,
+  });
+}
 
 /**
  * GET = the whole reports pack as one workbook, in the house identity.
@@ -44,8 +77,13 @@ const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
  * manager-only sections are gated by `readsTeamReports`, the same predicate their own services use,
  * so the workbook can never be a way around a screen's refusal.
  *
- * The rate limit runs BEFORE any load: seven sections is a heavy read, and a limiter that fires after
- * the work has been done has protected nothing.
+ * The four insight boards of 2026-10-02 are manager sections too, behind the same predicate. A product
+ * or marketing manager — who reads ONE of them, what the field heard about his own products, and has
+ * no export button on the screen — gets a pack holding that sheet and nothing else, never an empty tab
+ * for each report he has no reach into.
+ *
+ * The rate limit runs BEFORE any load: every section at once is a heavy read, and a limiter that fires
+ * after the work has been done has protected nothing.
  */
 export async function GET(request: Request) {
   try {
@@ -66,6 +104,38 @@ export async function GET(request: Request) {
     };
     const includeTest = reportIncludesTest(viewer, search.get("includeTest"));
     const managerSections = readsTeamReports(viewer);
+
+    // A product or marketing manager reads ONE section (owner, 2026-10-02): what the field heard about
+    // his own products, company-wide. His pack is that sheet and its cover; the service narrows it to
+    // his products exactly as it does on the screen.
+    if (!managerSections && readsFieldHeardByProduct(viewer)) {
+      const [ownNames, ownHeard] = await Promise.all([loadPeopleNames([viewer.hrId]), loadFieldHeardReport(viewer, filters)]);
+      const heardBuffer = await buildPhoenixCrmReportsWorkbook({
+        ...NO_SECTIONS,
+        generatedAtIso: new Date().toISOString(),
+        heard: ownHeard,
+        includeTest,
+        periodText: `${ownHeard.period.from} to ${ownHeard.period.to}`,
+        scopeText: "Your products, company-wide",
+        viewerName: nameOf(ownNames, viewer.hrId),
+      });
+      await writeAuditLog({
+        actorLoginId: access.loginId ?? null,
+        entityId: null,
+        entityType: "phoenix_crm_reports_export",
+        summary: `Exported what the field heard about their own products (${ownHeard.period.from} to ${ownHeard.period.to})`,
+      });
+      return xlsxResponse(heardBuffer, `phoenix-crm-what-the-field-heard-${ownHeard.period.from}-to-${ownHeard.period.to}.xlsx`);
+    }
+
+    // Grade against capacity reads this month or the next — its own month, sent as `capacityMonth`. A
+    // month it does not offer (a tab left open into a new month) reads this month rather than failing
+    // the whole pack over one sheet.
+    const capacityMonth = search.get("capacityMonth");
+    const capacityFilters: ReportFilterInput = {
+      ...filters,
+      month: capacityMonth && capacityMonthsOffered(viewer.cairoToday).includes(capacityMonth) ? capacityMonth : null,
+    };
     // The daily plan keeps its own days — they reach forward, which the shared period refuses — so it
     // travels as two parameters of its own. Without them it writes no sheet.
     const dailyFrom = search.get("dailyFrom");
@@ -92,6 +162,10 @@ export async function GET(request: Request) {
       trackingRaw,
       calendarRaw,
       daily,
+      capacity,
+      heard,
+      stock,
+      samples,
     ] = await Promise.all([
       // The cover says who it was prepared for, by NAME — the owner's standing rule, and a saved
       // workbook is exactly the artefact where an HR code would outlive anyone who could decode it.
@@ -117,6 +191,14 @@ export async function GET(request: Request) {
       // Every viewer's, as on the screen: a rep's own plan is his to keep. It reads ONE territory and
       // answers with none when several are in reach and none is chosen — that writes no sheet.
       dailyFrom && dailyTo ? loadDailyPlanReport(viewer, { ...filters, from: dailyFrom, to: dailyTo }) : Promise.resolve(null),
+      // The four insight boards of 2026-10-02: manager sections like the four above, behind the same
+      // predicate their own services refuse a medical rep with — so the file can never hold one the
+      // screen would refuse. What the field heard reads the line or the whole scope, never one
+      // territory, exactly as on the screen.
+      managerSections ? loadCapacityBoard(viewer, capacityFilters) : Promise.resolve(null),
+      managerSections ? loadFieldHeardReport(viewer, filters) : Promise.resolve(null),
+      managerSections ? loadMissingStockReport(viewer, filters) : Promise.resolve(null),
+      managerSections ? loadSamplesReport(viewer, filters) : Promise.resolve(null),
     ]);
     const dailyPlan = daily?.territory ? daily : null;
 
@@ -134,18 +216,23 @@ export async function GET(request: Request) {
       adoption,
       bricks,
       calendar,
+      capacity,
       coverage,
       dailyPlan,
       exceptions,
       frequency,
       generatedAtIso: new Date().toISOString(),
+      heard,
       includeTest,
       locations,
       managers,
       periodText:
-        `${visits.period.from} to ${visits.period.to} · coverage for ${coverage.month.month}`
+        `${visits.period.from} to ${visits.period.to} · coverage${samples ? " and samples" : ""} for ${coverage.month.month}`
+        + (capacity ? ` · grade against capacity for ${capacity.month.month}` : "")
         + (dailyPlan ? ` · daily plan ${dailyPlan.period.from} to ${dailyPlan.period.to}` : ""),
       plan,
+      samples,
+      stock,
       tracking,
       scopeText: [chosenTerritory, chosenLine, `${scope.territories.length} territories in scope`]
         .filter((part): part is string => Boolean(part))
@@ -166,15 +253,7 @@ export async function GET(request: Request) {
         + `daily plan ${dailyPlan ? `of ${dailyPlan.territory?.name} ${dailyPlan.period.from} to ${dailyPlan.period.to}` : "not included"})`,
     });
 
-    const filename = `phoenix-crm-reports-${visits.period.from}-to-${visits.period.to}.xlsx`;
-    return new NextResponse(buffer as unknown as ArrayBuffer, {
-      headers: {
-        "cache-control": "no-store",
-        "content-disposition": `attachment; filename="${filename}"`,
-        "content-type": XLSX,
-      },
-      status: 200,
-    });
+    return xlsxResponse(buffer, `phoenix-crm-reports-${visits.period.from}-to-${visits.period.to}.xlsx`);
   } catch (error) {
     if (isApiRateLimitError(error)) {
       return NextResponse.json(

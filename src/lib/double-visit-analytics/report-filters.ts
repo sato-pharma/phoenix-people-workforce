@@ -1,3 +1,4 @@
+import { pharmacyRecordingOf, pharmacyValueText, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { entryCountBucket, entryPeriodLabel } from "@/lib/double-visit-analytics/count-bucket";
 import type {
   DoubleVisitFocusProbationEntry,
@@ -91,6 +92,26 @@ function countDistinct<T>(values: Array<T | null | undefined>) {
   return new Set(values.filter((value): value is T => value !== null && value !== undefined)).size;
 }
 
+/**
+ * The Pharmacy Visits figure: the count, or — when Phoenix CRM double visits are behind it, which log
+ * no pharmacy visit — the words "Not recorded in Phoenix", or the count named "(iReports360 only)"
+ * (src/lib/crm/visit-count-buckets.ts). Never a 0 that reads as "no pharmacy visits".
+ */
+function pharmacyVisitsMetric(rows: DoubleVisitReportRow[]): number | string {
+  const split: VisitCountSplit = { am: 0, pm: 0, pharmacies: 0 };
+  let phoenix = 0;
+  for (const row of rows) {
+    const bucket = entryCountBucket(row);
+    if (!bucket) continue;
+    if (bucket === "AM") split.am += row.visitCount;
+    else if (bucket === "PM") split.pm += row.visitCount;
+    else split.pharmacies += row.visitCount;
+    if (row.fromPhoenix) phoenix += row.visitCount;
+  }
+  if (phoenix > 0) split.phoenix = phoenix;
+  return pharmacyRecordingOf(split) === "recorded" ? split.pharmacies : pharmacyValueText(split);
+}
+
 export function buildReportSummaryMetrics(filtered: {
   logRows: DoubleVisitReportRow[];
   neverVisitedRows: DoubleVisitFocusRosterEntry[];
@@ -107,7 +128,7 @@ export function buildReportSummaryMetrics(filtered: {
     // AM · PM · Pharmacies, three figures apart — a pharmacy is never counted among the PM doctors.
     { metric: "AM Visits", value: sumVisitCount(logRows.filter((row) => entryCountBucket(row) === "AM")) },
     { metric: "PM Visits", value: sumVisitCount(logRows.filter((row) => entryCountBucket(row) === "PM")) },
-    { metric: "Pharmacy Visits", value: sumVisitCount(logRows.filter((row) => entryCountBucket(row) === "Pharmacies")) },
+    { metric: "Pharmacy Visits", value: pharmacyVisitsMetric(logRows) },
     { metric: "Regular Visits", value: sumVisitCount(logRows.filter((row) => row.visitKind === "Regular")) },
     { metric: "Campaign Visits", value: sumVisitCount(logRows.filter((row) => row.visitKind !== "Regular")) },
     { metric: "Never Visited / At Risk (filtered)", value: neverVisitedRows.length },

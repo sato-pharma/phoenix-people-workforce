@@ -58,6 +58,7 @@ import {
   isVisitObjection,
   type LastNextStep,
 } from "@/lib/phoenix-crm/visit-outcome";
+import { raisesVisitAsk } from "@/lib/phoenix-crm/visit-ask-rules";
 import { describeDayWindows, isPlanSentForReview, isUuid, planDayStatus } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, resolveVisitParticipants, territoryReviewer, type OrgIndex } from "@/lib/phoenix-crm/scope";
 import { canWriteAsRep, isLocationBlind, readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -66,11 +67,13 @@ import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/ph
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { ensureReferenceCustomers, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
+import { loadPlannedOtherDays } from "@/lib/phoenix-crm/server/offplan-day";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
+import { raiseVisitAskFromVisit, visitAskSavedNote } from "@/lib/phoenix-crm/server/visit-asks";
 import { describeTerritory, personSeatTitle, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import {
@@ -441,6 +444,13 @@ export type VisitCustomerOption = {
    */
   lastNextStep: LastNextStep | null;
   plannedToday: boolean;
+  /**
+   * The OTHER days of this field week on which he stands on the rep's SENT plan and has not been seen
+   * yet (owner, 2026-10-02: "Moved-day reason pre-filled"). When the rep picks Out of plan for him, the
+   * reason fills itself in from these days and the rep can still change it — no step added, typing
+   * removed. Empty for everyone else. His own plan, never a check on him.
+   */
+  plannedOtherDays: string[];
   visitedToday: boolean;
   visitsThisMonth: number;
   target: number | null;
@@ -692,11 +702,14 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     visitRowsRead.then((rows) =>
       loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...chain.map((member) => member.hrId), ...visitPeople(rows)]),
     ),
+    // The other days of this week each customer stands on the SENT plan, for the reason Out of plan
+    // fills in by itself (owner, 2026-10-02). One more read of the same wave, never awaited after it.
+    loadPlannedOtherDays(seat.seatId, isTest, today),
   ]);
   // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
   wave.catch(() => undefined);
   await ensured;
-  const [{ customers, placesByCustomer }, visitCounts, planDay, visitRows, productFamilies, pharmacies, lastVisits, names] = await wave;
+  const [{ customers, placesByCustomer }, visitCounts, planDay, visitRows, productFamilies, pharmacies, lastVisits, names, plannedOtherDays] = await wave;
   // The SENT set, and only it, is what the picker offers and what the ordering follows — a draft is the
   // rep's own to edit today, so counting one would let him place the doctor at the door and never be off
   // plan (plan-rules.ts `isPlanSentForReview`). The count he has SAVED rides beside it, for the sentence.
@@ -737,6 +750,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
         todayWindows: describeDayWindows(place.timings, today, ramadan),
       })),
       plannedToday: planned.has(customerId),
+      plannedOtherDays: plannedOtherDays.get(customerId) ?? [],
       visitedToday: visitedToday.has(customerId),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       target: gradeTarget(settings, listType, grade),
@@ -792,6 +806,12 @@ export type SavedVisit = {
   /** Which way it was off the plan, if it was — out of plan, or out of list. */
   unplannedKind: UnplannedKind | null;
   unplannedNote: string | null;
+  /**
+   * What became of the double visit his next step "Arrange a double visit" asked for (owner,
+   * 2026-10-02): who is asked, or that it was already asked. Null when the step was something else, or
+   * when there was nobody to ask — the ask is HIS request, so its words are his to read.
+   */
+  visitAskNote: string | null;
 };
 
 export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise<SavedVisit> {
@@ -997,6 +1017,21 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       isTest,
     );
   }
+  // "Arrange a double visit" (owner, 2026-10-02): the rep's own next step asks his manager for it, by
+  // itself and once per visit — the database keys the ask on the visit id, so a save sent twice asks
+  // once. Only the rep's own visit: a manager entering a visit is on it already. It never throws and
+  // never costs the visit, which is saved by now (server/visit-asks.ts).
+  const visitAsk =
+    enteredAs === "rep" && raisesVisitAsk(visit.outcome.nextStep)
+      ? await raiseVisitAskFromVisit(viewer, {
+          seat,
+          isTest,
+          visitId,
+          customerId: visit.customerId,
+          repHrId: participants.value.repHrId ?? viewer.hrId,
+          wishedOn: visit.outcome.nextStepOn,
+        })
+      : null;
   // The rep is told his visit is saved and nothing about where he was (Golden Rule #1).
   const location = isLocationBlind(viewer, seat)
     ? BLIND_LOCATION
@@ -1016,5 +1051,6 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
         : unplannedKind === "out_of_plan"
           ? unplannedVisitRepNote(unplannedFirstStatus(reviewer !== null))
           : null,
+    visitAskNote: visitAskSavedNote(visitAsk),
   };
 }

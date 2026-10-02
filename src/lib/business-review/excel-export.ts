@@ -30,7 +30,7 @@ import {
   type BusinessReview,
   type ReviewView,
 } from "./service";
-import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { formatVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 
 import { describePeriods } from "./coverage";
 import { periodColumnLabel } from "./period-format";
@@ -64,9 +64,20 @@ function achFont(ach: number | null): string {
 type Col = { label: string; width: number; kind?: "egp" | "pct" | "num" | "text" };
 
 /** AM · PM · Pharmacies in the house wording — middle dot, never a slash (owner golden rule).
- *  A pharmacy is never counted among the PM doctors, so only the PM figure may be called doctors. */
-const splitOf = (row: { customersAm: number; customersPm: number; customersPharmacy: number }) =>
-  formatVisitCountSplit({ am: row.customersAm, pm: row.customersPm, pharmacies: row.customersPharmacy });
+ *  A pharmacy is never counted among the PM doctors, so only the PM figure may be called doctors.
+ *  Judged by the visits the customers were counted from: Phoenix CRM logs no pharmacy visit, so a
+ *  team that works in it reads "Pharmacies not recorded in Phoenix", never 0 (visit-count-buckets.ts). */
+const splitOf = (row: {
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
+  visitSplit?: VisitCountSplit;
+  customerVisitSplit?: VisitCountSplit;
+}) =>
+  formatVisitCountSplit(
+    { am: row.customersAm, pm: row.customersPm, pharmacies: row.customersPharmacy },
+    { fromVisits: row.customerVisitSplit ?? row.visitSplit },
+  );
 
 function titleBand(sheet: ExcelJS.Worksheet, ncols: number, title: string, subtitle: string, note?: string) {
   sheet.mergeCells(1, 1, 1, ncols);

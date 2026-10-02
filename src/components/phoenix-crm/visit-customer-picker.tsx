@@ -37,6 +37,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
 import { directionsPlace, directionsUrl } from "@/lib/phoenix-crm/directions";
+import { movedDayReason } from "@/lib/phoenix-crm/offplan-day";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
 import type { VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
@@ -289,6 +290,10 @@ export function VisitCustomerPicker({
 /**
  * Why he went to a customer off today's plan — asked BEFORE the visit form, so the form is the same
  * form for every visit. A sentence his manager can act on; it is his own approval, and he sees it.
+ *
+ * A customer on his sent plan for another day of this week arrives with the reason already written —
+ * "Planned for Tuesday 6 Oct; seen today instead." (owner, 2026-10-02) — and he changes it or goes on.
+ * The day his manager sees is read from the plan by the server, not from this box.
  */
 export function OutOfPlanReason({
   customer,
@@ -309,6 +314,10 @@ export function OutOfPlanReason({
   const length = reason.trim().length;
   // Inside Add visit's step form the form's own foot carries Back: one Back, never two.
   const framed = useInsideCrmStepForm();
+  // On his sent plan for another day of this week, the reason arrives already written (owner,
+  // 2026-10-02). Said under the box while it stands as written, the way the products say they came from
+  // his last visit: a prefill he cannot see the source of is worse than asking.
+  const filled = movedDayReason(customer.plannedOtherDays);
 
   function next() {
     if (length < UNPLANNED_REASON_MIN) {
@@ -331,7 +340,13 @@ export function OutOfPlanReason({
         </CrmNote>
         <CrmField
           error={problem}
-          hint={length < UNPLANNED_REASON_MIN ? `At least ${UNPLANNED_REASON_MIN} characters.` : `${countText(UNPLANNED_REASON_MAX - reason.length)} left.`}
+          hint={
+            filled !== null && reason.trim() === filled
+              ? "Filled in from your plan. Change it if you went for another reason."
+              : length < UNPLANNED_REASON_MIN
+                ? `At least ${UNPLANNED_REASON_MIN} characters.`
+                : `${countText(UNPLANNED_REASON_MAX - reason.length)} left.`
+          }
           htmlFor="phoenix-crm-out-of-plan-reason"
           label="Why you went"
         >

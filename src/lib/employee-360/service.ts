@@ -22,6 +22,7 @@ import { normalizeSession } from "@/lib/crm/call-rate";
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { phoenixVisitLane } from "@/lib/crm/phoenix-kpi-rules";
+import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { isCrmDoubleVisitRow, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { visitCountBucket } from "@/lib/crm/visit-count-buckets";
 import { classifyVisit } from "@/lib/crm/visit-types";
@@ -236,6 +237,13 @@ export type VisitSummary = {
   amVisits: number;
   pmVisits: number;
   pharmacyVisits: number;
+  /**
+   * How many of the three figures' visits are Phoenix CRM's own (a started team's). Phoenix CRM logs
+   * no pharmacy visit, so `pharmacyVisits` counts the iReports360 visits alone and the page prints it
+   * through the golden-rule helper — "Pharmacies not recorded in Phoenix", never 0. Optional: a profile
+   * cached before it existed reads as none.
+   */
+  phoenixVisits?: number;
   unknownAmpm: number;
   monthly: MonthlyVisitPoint[];
   // deep analytics
@@ -434,6 +442,7 @@ export function summarizeVisits(
   let amVisits = 0;
   let pmVisits = 0;
   let pharmacyVisits = 0;
+  let phoenixVisits = 0;
   let unknownAmpm = 0;
   const activeDaySet = new Set<string>();
   const customerCount = new Map<string, { name: string; count: number; lanes: Record<CustomerLane, number> }>();
@@ -486,10 +495,14 @@ export function summarizeVisits(
       // A pharmacy is a pharmacy whatever period the rep tagged; a visit with no period at all stays
       // "unmarked", as it always has.
       const period = String(row.ampm ?? "").trim().toUpperCase();
-      if (visitCountBucket(row) === "Pharmacies") pharmacyVisits += 1;
+      const isPharmacy = visitCountBucket(row) === "Pharmacies";
+      if (isPharmacy) pharmacyVisits += 1;
       else if (period === "AM") amVisits += 1;
       else if (period === "PM") pmVisits += 1;
       else unknownAmpm += 1;
+      // A Phoenix CRM visit counted in the three figures: Phoenix logs no pharmacy visit, so the page
+      // says its pharmacy figure was never recorded rather than print a zero (visit-count-buckets.ts).
+      if ((isPharmacy || period === "AM" || period === "PM") && isPhoenixNativeVisitRow(row)) phoenixVisits += 1;
     }
   }
 
@@ -588,6 +601,7 @@ export function summarizeVisits(
     amVisits,
     pmVisits,
     pharmacyVisits,
+    phoenixVisits,
     unknownAmpm,
     monthly,
     activityMix,

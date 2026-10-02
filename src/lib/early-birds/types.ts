@@ -24,6 +24,12 @@ export type EarlyBirdsVisitFact = {
    * never have.
    */
   gpsEligible: boolean;
+  /**
+   * A Phoenix CRM visit of a started team's rep, within its start (crm/phoenix-team-starts.ts). It is
+   * its own check-in — captured at the customer's door — so it earns the Regular credit a GPS-checked
+   * visit earns, and it is never GPS-eligible: his iReports360 check-ins are not read within a start.
+   */
+  phoenixVisit?: boolean;
 };
 
 /** A rep's period context — everything the scorer needs that is NOT a visit. */
@@ -95,8 +101,8 @@ export type EarlyBirdsRepScore = {
   totalVisits: number;
   regularVisits: number;
   /**
-   * Regular visits with a matching GPS check-in — the only ones the `regular` score component
-   * credits. Owner ruling 2026-09-20: a regular visit with no check-in is real activity, so it stays
+   * Regular visits with a matching GPS check-in — or Phoenix CRM visits, each its own check-in
+   * (`EarlyBirdsVisitFact.phoenixVisit`) — the only ones the `regular` score component credits. Owner ruling 2026-09-20: a regular visit with no check-in is real activity, so it stays
    * OFF the "Campaign" line, but it earns no Regular credit either — it must be visible as its own
    * thing, never blended into a number that implies verified fieldwork.
    */
@@ -108,8 +114,17 @@ export type EarlyBirdsRepScore = {
   gpsEligibleVisits: number;
   gpsVerifiedVisits: number;
   /** Days with a real GPS check-in — the days this rep has a verified start at all. The rest are
-   * worked-but-unverified, never 'late'. */
+   * worked-but-unverified, never 'late'. A day whose start is a Phoenix CRM visit is NOT one of
+   * them: it is counted in `visitStartDays`. */
   gpsVerifiedDays: number;
+  /**
+   * Days whose start is the rep's first Phoenix CRM visit (owner, 2026-10-02: "First Phoenix visit") —
+   * present only when there is at least one. Named on every screen as a first visit, never as GPS: the
+   * rep is never told his location is read (Phoenix CRM golden rule #1).
+   */
+  visitStartDays?: number;
+  /** True when a started Phoenix CRM team's start covers any day of this rep's fortnight; absent otherwise. */
+  phoenixClock?: boolean;
   /** null when the rep had no GPS-eligible visit at all — NOT zero. */
   gpsShare: number | null;
   dailyWins: number;

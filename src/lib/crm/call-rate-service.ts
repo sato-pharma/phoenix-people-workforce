@@ -16,8 +16,11 @@ import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
+// `crm_visit_id` and `phoenix_customer_validated` are what the rate reads off a Phoenix CRM row: the
+// first marks it as one (it proves itself), the second keeps a visit to a customer not validated yet
+// out of the rate (crm/phoenix-team-starts.ts; the migration adding it is applied before this ships).
 const VISIT_COLUMNS =
-  "agent_crm_id,agent_hr_id,agent_name,ampm,comment,contact_crm_id,crm_save_date,crm_visit_id,double_crm_id,speciality,visit_date,visit_type,visit_type_description";
+  "agent_crm_id,agent_hr_id,agent_name,ampm,comment,contact_crm_id,crm_save_date,crm_visit_id,double_crm_id,phoenix_customer_validated,speciality,visit_date,visit_type,visit_type_description";
 // `agent_hr_id` is what matches a check-in to the visit of a rep hired after the CRM cutover: both
 // carry a NULL CRM id, so without it every one of his visits reads as unproved.
 const CHECKIN_COLUMNS = "agent_crm_id,agent_hr_id,contact_crm_id,check_date";

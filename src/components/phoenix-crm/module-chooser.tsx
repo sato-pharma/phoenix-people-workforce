@@ -48,7 +48,14 @@ export function PhoenixCrmModuleChooser({ base, overview }: { base: string; over
   const modules = allowedPhoenixCrmModules(overview.tabs);
   // The Super Admin's counts are test entries, so the badge follows the same rule the tab bar uses.
   const waiting =
-    overview.waitingForYou.plans + overview.waitingForYou.requests + overview.waitingForYou.planEdits + overview.waitingForYou.hrAcknowledgements;
+    overview.waitingForYou.plans +
+    overview.waitingForYou.requests +
+    overview.waitingForYou.planEdits +
+    overview.waitingForYou.visitAsks +
+    overview.waitingForYou.hrAcknowledgements;
+  // A product manager has no Team module: the visits his line's reps ask of him wait on Reports
+  // (owner, 2026-10-02), so that card carries the count instead.
+  const reportsWaiting = overview.tabs.team ? 0 : overview.waitingForYou.visitAsks;
 
   return (
     <div className="grid min-w-0 gap-4">
@@ -61,7 +68,8 @@ export function PhoenixCrmModuleChooser({ base, overview }: { base: string; over
       <ul className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {modules.map((module) => {
           const Icon = MODULE_ICONS[module.key];
-          const badge = module.key === "team" && waiting > 0 ? waiting : null;
+          const badge =
+            module.key === "team" && waiting > 0 ? waiting : module.key === "reports" && reportsWaiting > 0 ? reportsWaiting : null;
           return (
             <li className="min-w-0" key={module.key}>
               <PhoenixCrmModuleLink

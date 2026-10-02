@@ -61,10 +61,11 @@ import { dailyPlanActivityText } from "@/lib/phoenix-crm/daily-plan-report";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { isLeaveDay } from "@/lib/phoenix-crm/plan-leave";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
+import { isVisitAskAskableRole } from "@/lib/phoenix-crm/visit-ask-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import type { PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
 import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsFieldHeardByProduct, readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import { loadSeatDayActivities } from "@/lib/phoenix-crm/server/day-activities";
@@ -91,14 +92,19 @@ export type ReportFilterInput = {
   compare?: unknown;
 };
 
-type ChosenTerritories = { seats: OrgSeat[]; includeTest: boolean };
+export type ChosenTerritories = { seats: OrgSeat[]; includeTest: boolean };
 
 function trimmed(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-/** The viewer's territories, narrowed by line and territory; never wider than the viewer. */
-function chooseTerritories(viewer: PhoenixCrmViewer, raw: ReportFilterInput): ChosenTerritories {
+/**
+ * The viewer's territories, narrowed by line and territory; never wider than the viewer.
+ *
+ * Exported for the four insight boards (server/insight-reports.ts) so they narrow through THIS rule and
+ * never a second copy of it.
+ */
+export function chooseTerritories(viewer: PhoenixCrmViewer, raw: ReportFilterInput): ChosenTerritories {
   let seats = viewer.scopeTerritories;
   const lineCode = trimmed(raw.lineCode);
   if (lineCode) {
@@ -113,7 +119,7 @@ function chooseTerritories(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Ch
   return { seats, includeTest: reportIncludesTest(viewer, raw.includeTest) };
 }
 
-function periodOf(viewer: PhoenixCrmViewer, raw: ReportFilterInput): ReportPeriod {
+export function periodOf(viewer: PhoenixCrmViewer, raw: ReportFilterInput): ReportPeriod {
   const result = resolveReportPeriod({ from: raw.from, to: raw.to, cairoToday: viewer.cairoToday });
   if (!result.ok) throw validationError(result.error);
   return result.value;
@@ -243,6 +249,19 @@ export type ReportScopeView = {
    * ruling, same day): what is withheld is the comparison across a team.
    */
   canSeeLocations: boolean;
+  /**
+   * Who the tab is drawn for. `field`: the field force, its managers, SFE, the CEO and the Super Admin
+   * — every section, as each one's own gate allows. `products`: a product or marketing manager (owner,
+   * 2026-10-02), who holds no seat in the sales organogram and reads ONE section — what the field heard
+   * about his own products, company-wide — with no line and no territory to choose.
+   */
+  audience: "field" | "products";
+  /**
+   * Whether the visits reps ask of this viewer are answered above this tab (owner, 2026-10-02): a
+   * Product Manager or Group Product Manager, and the Marketing Manager, whom CNS reps may ask (the
+   * owner's CNS rule). It draws nothing until somebody has asked — an empty inbox, never a refusal.
+   */
+  answersVisitAsks: boolean;
 };
 
 /** The one predicate behind canSeeLocations, so the screen and the service cannot drift apart. */
@@ -276,6 +295,9 @@ export async function loadReportScope(viewer: PhoenixCrmViewer): Promise<ReportS
       .sort((left, right) => left.name.localeCompare(right.name)),
     hasManagers: managersInScope(viewer.org, viewer.hrId, viewer.basis).length > 0,
     canSeeLocations: canReadLocationReport(viewer),
+    // The team's gate first: a product manager who also read team reports would read them as a manager.
+    audience: !readsTeamReports(viewer) && readsFieldHeardByProduct(viewer) ? "products" : "field",
+    answersVisitAsks: !readsTeamReports(viewer) && isVisitAskAskableRole(viewer.role),
   };
 }
 

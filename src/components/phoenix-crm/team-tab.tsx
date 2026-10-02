@@ -17,7 +17,7 @@
  * Admin's Team tab holds test plans and test requests, which the Super Admin decides.
  */
 
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 
 import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
 import { DoubleVisitPlanSection } from "@/components/phoenix-crm/double-visit-plan-section";
@@ -26,7 +26,8 @@ import { matchesWords, PENDING_PILL } from "@/components/phoenix-crm/labels";
 import { PlanBoard } from "@/components/phoenix-crm/plan-board";
 import { PlanEditCard } from "@/components/phoenix-crm/plan-edit-card";
 import { RequestCard } from "@/components/phoenix-crm/request-card";
-import { UnplannedVisitCard } from "@/components/phoenix-crm/unplanned-visit-card";
+import { OffPlanDayCard, type OffPlanDayNotice } from "@/components/phoenix-crm/unplanned-visit-card";
+import { VisitAskInbox } from "@/components/phoenix-crm/visit-asks";
 import {
   CrmBlock,
   CrmButton,
@@ -50,6 +51,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { fieldWeekStart, plannableWeeks } from "@/lib/phoenix-crm/calendar";
+import { splitOffPlanDays, type OffPlanDay } from "@/lib/phoenix-crm/offplan-day";
 import { withPlanDeadline } from "@/lib/phoenix-crm/plan-rules";
 import { teamTodayLine, teamTodayTone } from "@/lib/phoenix-crm/team-today";
 import { teamWaitingLine, teamWeeksToShow } from "@/lib/phoenix-crm/team-waiting";
@@ -72,7 +74,7 @@ import { cn } from "@/lib/utils";
 type TeamSection = "plans" | "edits" | "months" | "unplanned" | "requests" | "lists" | "double";
 type ReviewFilter = "waiting" | "not_sent" | "approved" | "all";
 type ListFilter = "not_ready" | "ready" | "vacant" | "all";
-type TeamNotice = { tone: NoteTone; title: string; message?: string | null };
+type TeamNotice = { tone: NoteTone; title: string; message?: ReactNode };
 type OpenPlan = { seatId: string; weekStart: string };
 /** A rep’s month opened from the review board — the plan board, read only, with Approve and Return on it. */
 type OpenMonth = { seatId: string; month: string };
@@ -344,10 +346,14 @@ export function TeamTab({
     setMonth(next.slice(0, 7));
   }
 
-  function requestDecided(message: string) {
-    setNotice({ tone: "info", title: message });
+  function showNotice(next: TeamNotice) {
+    setNotice(next);
     refresh();
     scrollToTop();
+  }
+
+  function requestDecided(message: string) {
+    showNotice({ tone: "info", title: message });
   }
 
   const fallbackWeeks = plannableWeeks(cairoToday);
@@ -368,7 +374,9 @@ export function TeamTab({
             ? "unplanned"
             : (summary?.waitingForYou ?? 0) > 0
               ? "requests"
-              : "plans"
+              : (summary?.visitAsksWaitingForYou ?? 0) > 0
+                ? "double"
+                : "plans"
       : null);
 
   const monthsWaiting = months.data ? months.data.rows.filter((row) => row.canApprove).length : null;
@@ -385,6 +393,8 @@ export function TeamTab({
           planEdits: summary.planEditsWaitingForYou,
           unplanned: summary.unplannedWaitingForYou,
           requests: summary.waitingForYou,
+          // A viewer who answers no asks is not told "nothing": the kind is left out of the sentence.
+          visitAsks: team.data?.visitAsks?.canAnswer ? summary.visitAsksWaitingForYou : null,
         },
         {
           territories: summary.territories,
@@ -438,6 +448,12 @@ export function TeamTab({
       note: summary ? `${countText(summary.ready)} of ${countText(summary.ready + summary.notReady)} ready` : undefined,
     });
   }
+  // A rep's asks for a visit with somebody (owner, 2026-10-02) live in the same section, apart from the
+  // plan below them: "Asked by your reps" for the people asked and told, every ask for SFE and the
+  // Super Admin. A manager who holds no plan of his own — a national manager a vacant district's asks
+  // reach, the manager above told of a chain visit — is offered the section for them alone.
+  const visitAsks = team.data?.visitAsks ?? null;
+  const asksWaiting = visitAsks?.waitingForYou ?? 0;
   // The district manager's double-visit plan (owner, 2026-10-02) — offered only to the people its
   // route serves: the district manager himself, SFE and the Super Admin. Never the rep.
   const doubleVisits = team.data?.doubleVisits ?? null;
@@ -445,7 +461,19 @@ export function TeamTab({
     sectionOptions.push({
       value: "double",
       label: "Double visits",
-      note: doubleVisits.mode === "own" ? "Which rep you join, and when" : "The district managers' plans",
+      note:
+        asksWaiting > 0
+          ? `${countText(asksWaiting)} asked of you`
+          : doubleVisits.mode === "own"
+            ? "Which rep you join, and when"
+            : "The district managers' plans",
+    });
+  }
+  if (!doubleVisits && visitAsks?.anyToRead) {
+    sectionOptions.push({
+      value: "double",
+      label: "Double visits",
+      note: asksWaiting > 0 ? `${countText(asksWaiting)} asked of you` : "Asked by your reps",
     });
   }
 
@@ -551,12 +579,16 @@ export function TeamTab({
           ) : null}
 
           {current === "unplanned" && team.data ? (
-            <UnplannedSection idPrefix={idPrefix} onChanged={requestDecided} team={team.data} test={test} />
+            <UnplannedSection idPrefix={idPrefix} onBatchDone={showNotice} onChanged={requestDecided} team={team.data} test={test} />
           ) : null}
 
           {current === "requests" && team.data ? <RequestsSection idPrefix={idPrefix} onChanged={requestDecided} team={team.data} test={test} /> : null}
 
           {current === "lists" && team.data ? <ListsSection idPrefix={idPrefix} onOpenList={onOpenList} team={team.data} /> : null}
+
+          {/* What the reps asked of this manager, apart from — and above — his own plan, which the rep
+              never sees. Answering one refreshes the counts on the page. */}
+          {current === "double" && visitAsks ? <VisitAskInbox cairoToday={cairoToday} onChanged={refresh} place="team" test={test} /> : null}
 
           {current === "double" && doubleVisits ? <DoubleVisitPlanSection cairoToday={cairoToday} test={test} /> : null}
         </CrmPanel>
@@ -934,11 +966,6 @@ function MonthsSection({
 }
 
 /**
- * Off-plan visits waiting for a decision. Two steps in order (owner, 2026-09-26): the territory’s own
- * manager, then the SFE. Everyone else in scope reads them and decides nothing — scope is sight, not
- * authority — which is why the split below is by `canDecide` and not by territory.
- */
-/**
  * A rep's requests to edit a week he already sent (owner, 2026-10-01): the district manager decides
  * first, then SFE, then HR acknowledges — and only then does the week open again for him.
  */
@@ -1035,18 +1062,31 @@ function PlanEditsSection({
   );
 }
 
+/**
+ * Off-plan visits waiting for a decision. Two steps in order (owner, 2026-09-26): the territory’s own
+ * manager, then the SFE. Everyone else in scope reads them and decides nothing — scope is sight, not
+ * authority — which is why the split below is by `canDecide` and not by territory.
+ *
+ * One card per rep per visit day, the oldest day first (owner, 2026-10-02: "Off-plan day in one
+ * place"). Every visit on a card is still decided on its own; "Approve all" on a card is that same
+ * decision, once per visit, behind a confirm (unplanned-visit-card.tsx).
+ */
 function UnplannedSection({
   idPrefix,
+  onBatchDone,
   onChanged,
   team,
   test,
 }: {
   idPrefix: string;
+  /** "Approve all" ran on a card: what went through, and by name what did not. */
+  onBatchDone: (notice: OffPlanDayNotice) => void;
   onChanged: (message: string) => void;
   team: TeamView;
   test: boolean;
 }) {
   const [query, setQuery] = useState("");
+  // A page is a number of CARDS — one rep's day each.
   const [limit, setLimit] = useState(PAGE);
   const [othersLimit, setOthersLimit] = useState(PAGE);
 
@@ -1069,11 +1109,12 @@ function UnplannedSection({
   const visits = searchable
     ? team.unplannedVisits.filter((visit) => matchesWords(query, [visit.customerName, visit.territoryName, visit.repName, visit.clarification]))
     : team.unplannedVisits;
-  const forYou = visits.filter((visit) => visit.canDecide);
-  const others = visits.filter((visit) => !visit.canDecide);
+  const { forYou, others } = splitOffPlanDays(visits);
+  const forYouVisits = visits.filter((visit) => visit.canDecide).length;
+  const othersVisits = visits.length - forYouVisits;
 
-  function card(visit: TeamUnplannedVisit) {
-    return <UnplannedVisitCard key={visit.visitId} onChanged={onChanged} visit={visit} />;
+  function card(day: OffPlanDay<TeamUnplannedVisit>) {
+    return <OffPlanDayCard day={day} key={day.key} onBatchDone={onBatchDone} onChanged={onChanged} />;
   }
 
   return (
@@ -1102,10 +1143,11 @@ function UnplannedSection({
 
       {forYou.length > 0 ? (
         <>
-          <CrmBlock className="border-t border-slate-100" title={`Waiting for your decision · ${countText(forYou.length)}`}>
+          <CrmBlock className="border-t border-slate-100" title={`Waiting for your decision · ${countText(forYouVisits)}`}>
             <p className="break-words text-sm font-medium leading-6 text-slate-600">
-              The longest waiting first. Look at the photo and what the rep wrote, then approve it or refuse it with a note he reads. It counts in
-              nothing until both steps approve it.
+              One card for each rep’s day, the oldest first. Each visit shows what he wrote and, when it was moved from another day of his sent
+              plan, the day it was planned for. Approve or refuse each visit — a refusal needs a note he reads — or approve the whole day at once.
+              It counts in nothing until both steps approve it.
             </p>
           </CrmBlock>
           <div className="divide-y divide-slate-100 border-t border-slate-100">{forYou.slice(0, limit).map(card)}</div>
@@ -1115,7 +1157,7 @@ function UnplannedSection({
 
       {others.length > 0 ? (
         <>
-          <CrmBlock className="border-t border-slate-100" title={`Waiting for somebody else · ${countText(others.length)}`}>
+          <CrmBlock className="border-t border-slate-100" title={`Waiting for somebody else · ${countText(othersVisits)}`}>
             <p className="break-words text-sm font-medium leading-6 text-slate-600">
               {forYou.length === 0 && visits.length === team.unplannedVisits.length ? "Nothing waits for your decision. " : ""}
               A visit sits with the territory’s own manager first, then with SFE.

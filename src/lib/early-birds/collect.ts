@@ -6,13 +6,17 @@
 
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { queryCheckins, queryVisits, resolveVisitTime, CRM_DOUBLE_VISIT_TYPE_CODES } from "@/lib/crm/reads";
-import { crmMinutesPastMidnight } from "@/lib/crm/sfe-field-analytics";
+import { crmMinutesPastMidnight, phoenixFirstVisitStarts } from "@/lib/crm/sfe-field-analytics";
 import { cairoTodayIso } from "@/lib/crm/dates";
+import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { getEmployeeDirectoryRows, isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
 import { isMedicalRepDirectoryEmployee } from "@/lib/employee-portal/service";
 import { fieldWorkforceDeductionDayWeight } from "@/lib/field-workforce-compliance/weekend-policy";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { buildEarlyBirdsDailyWinners } from "@/lib/early-birds/daily-board";
+import { startedWindowCovers, type StartedRepWindow } from "@/lib/early-birds/phoenix-start";
+import { logError } from "@/lib/observability/log";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { earlyBirdsPeriodDays, type EarlyBirdsPeriod } from "@/lib/early-birds/period";
 import { EARLY_BIRDS_EARLIEST_PLAUSIBLE_START_MINUTES } from "@/lib/early-birds/scoring";
 import type {
@@ -22,11 +26,43 @@ import type {
 } from "@/lib/early-birds/types";
 import type { NsmCrmCheckinRow, NsmCrmVisitRow } from "@/lib/employee-portal/nsm-crm-compliance";
 
+// `crm_visit_id` and `source` mark a Phoenix CRM row, whose capture time is its rep's clock (phoenix-start.ts).
 const VISIT_COLUMNS =
   "agent_hr_id, agent_crm_id, contact_crm_id, double_hr_id, crm_save_date, synced_at, visit_type, " +
-  "visit_type_description, contact_name, customer_name, comment, visit_date";
+  "visit_type_description, contact_name, customer_name, comment, visit_date, crm_visit_id, source";
 
-type VisitRowWithDate = NsmCrmVisitRow & { visit_date: string | null };
+type VisitRowWithDate = NsmCrmVisitRow & { visit_date: string | null; crm_visit_id?: number | null; source?: string | null };
+
+/**
+ * Every person's days within a started Phoenix CRM team's start (phoenix_crm_started_team_reps). An
+ * unreadable answer — or the function not there yet — reads as NO started team, which is the module as
+ * it was: the clock stays the GPS check-in for everybody, and a Phoenix row still carries its own time.
+ */
+async function loadStartedRepWindows(): Promise<StartedRepWindow[]> {
+  try {
+    const { data, error } = await getSupabaseAdmin().rpc("phoenix_crm_started_team_reps");
+    if (error) throw error;
+    return ((data ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
+      const from = typeof row.counted_from === "string" ? row.counted_from.slice(0, 10) : null;
+      if (!from) return [];
+      const crmId = row.agent_crm_id === null || row.agent_crm_id === undefined ? null : Number(row.agent_crm_id);
+      return [
+        {
+          hrIdKey: normalizeHrIdForAccess(typeof row.hr_id === "string" ? row.hr_id : null),
+          agentCrmId: crmId !== null && Number.isFinite(crmId) ? crmId : null,
+          from,
+          until: typeof row.counted_until === "string" ? row.counted_until.slice(0, 10) : null,
+        },
+      ];
+    });
+  } catch (error) {
+    logError("Early Birds could not read the started Phoenix CRM teams", {
+      labels: { event: "early_birds_started_teams_unreadable" },
+      error,
+    });
+    return [];
+  }
+}
 
 export type EarlyBirdsInputs = {
   reps: EarlyBirdsRepContext[];
@@ -36,9 +72,17 @@ export type EarlyBirdsInputs = {
   profiles: Map<string, EarlyBirdsRepProfile>;
   /**
    * `${hrIdKey}|${dateIso}` -> minutes past Cairo midnight of that rep's FIRST GPS check-in that
-   * day. The only clock the ranking uses. A day absent from this map has no verified start.
+   * day — or, on a day in `phoenixClockRepDays`, of his first countable Phoenix CRM visit (owner,
+   * 2026-10-02: "First Phoenix visit"). The only clock the ranking uses. A day absent from this map has
+   * no verified start.
    */
   gpsStartByRepDay: Map<string, number>;
+  /**
+   * `${hrIdKey}|${dateIso}` of every rep-day a started Phoenix CRM team's start covers. On those days
+   * the rep's clock is his first Phoenix visit and his iReports360 check-ins are not read at all — so the
+   * scorer counts and names such a start as a first visit, never as GPS (phoenix-start.ts).
+   */
+  phoenixClockRepDays: Set<string>;
   /** Last day actually scored — the period end, or today for a mid-period preview. */
   throughIso: string;
 };
@@ -148,11 +192,12 @@ export async function collectEarlyBirdsInputs(input: {
       contestedDays: 0,
       profiles,
       gpsStartByRepDay: new Map(),
+      phoenixClockRepDays: new Set(),
       throughIso,
     };
   }
 
-  const [visits, checkins] = await Promise.all([
+  const [visits, checkins, startedWindows] = await Promise.all([
     queryVisits<VisitRowWithDate>({
       dateFrom: input.period.startIso,
       dateTo: throughIso,
@@ -168,9 +213,33 @@ export async function collectEarlyBirdsInputs(input: {
       // to a particular visit — see gpsStartByRepDay below.
       columns: "agent_crm_id, agent_hr_id, contact_crm_id, check_date",
     }),
+    loadStartedRepWindows(),
   ]);
 
-  const checkinIndex = indexCheckinsByAgentContactDay(checkins);
+  // Every rep-day of this roster within a started Phoenix CRM team's start (phoenix-start.ts): on it his
+  // clock is his first Phoenix visit, and his iReports360 check-ins are read neither as his start, nor
+  // as a visit's check-in, nor on the daily board — the module stays on one clock.
+  const phoenixClockRepDays = new Set<string>();
+  for (const rep of startedWindows.length > 0 ? reps : []) {
+    for (const dateIso of periodDays) {
+      if (startedWindowCovers(startedWindows, { hrId: rep.hrId, crmId: null }, dateIso)) {
+        phoenixClockRepDays.add(`${rep.hrIdKey}|${dateIso}`);
+      }
+    }
+  }
+  const liveCheckins =
+    startedWindows.length === 0
+      ? checkins
+      : checkins.filter(
+          (checkin) =>
+            !startedWindowCovers(
+              startedWindows,
+              { hrId: checkin.agent_hr_id ?? null, crmId: checkin.agent_crm_id },
+              String(checkin.check_date ?? "").slice(0, 10),
+            ),
+        );
+
+  const checkinIndex = indexCheckinsByAgentContactDay(liveCheckins);
   const realVisitTypes = new Set<number>(CRM_DOUBLE_VISIT_TYPE_CODES);
 
   const facts: EarlyBirdsVisitFact[] = [];
@@ -186,7 +255,7 @@ export async function collectEarlyBirdsInputs(input: {
   // is both the honest answer to the question the board asks and immune to that.
   const gpsStartByRepDay = new Map<string, number>();
 
-  for (const checkin of checkins) {
+  for (const checkin of liveCheckins) {
     const dateIso = String(checkin.check_date ?? "").slice(0, 10);
     if (!dateIso) continue;
     const bucket = checkinsByDate.get(dateIso);
@@ -201,6 +270,11 @@ export async function collectEarlyBirdsInputs(input: {
     const key = `${hrIdKey}|${dateIso}`;
     const current = gpsStartByRepDay.get(key);
     if (current === undefined || minutes < current) gpsStartByRepDay.set(key, minutes);
+  }
+
+  // On a rep-day within a start, his first countable Phoenix visit IS the day's start.
+  for (const [key, minutes] of phoenixFirstVisitStarts(visits)) {
+    if (phoenixClockRepDays.has(key)) gpsStartByRepDay.set(key, minutes);
   }
 
   for (const row of visits) {
@@ -230,6 +304,10 @@ export async function collectEarlyBirdsInputs(input: {
       crmSaveDate: row.crm_save_date,
     });
 
+    // A Phoenix CRM visit is its own check-in (crm/call-rate.ts): captured at the customer's door, it
+    // earns the Regular credit a GPS-checked visit earns. No GPS check-in can ever match one — his are
+    // not read within a start — so it never sits in the GPS denominator either.
+    const phoenixVisit = isPhoenixNativeVisitRow(row);
     facts.push({
       hrIdKey,
       // The visit's own date, never the day implied by its timestamp.
@@ -239,7 +317,8 @@ export async function collectEarlyBirdsInputs(input: {
       visitType: row.visit_type,
       // A GPS check-in can only ever match a visit that carries a real contact, so a Campaign row
       // is not in the denominator rather than being a zero in it.
-      gpsEligible: typeof row.contact_crm_id === "number" && row.contact_crm_id !== 0,
+      gpsEligible: !phoenixVisit && typeof row.contact_crm_id === "number" && row.contact_crm_id !== 0,
+      ...(phoenixVisit ? { phoenixVisit: true } : {}),
     });
   }
 
@@ -258,6 +337,7 @@ export async function collectEarlyBirdsInputs(input: {
     contestedDays: daily.contestedDays,
     profiles,
     gpsStartByRepDay,
+    phoenixClockRepDays,
     throughIso,
   };
 }

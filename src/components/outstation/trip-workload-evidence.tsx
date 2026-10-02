@@ -5,6 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 
 import { FieldWorkforceRouteMap } from "@/components/field-workforce-compliance/field-workforce-route-map";
 import { Badge } from "@/components/ui/badge";
+import {
+  formatPharmacyFigure,
+  pharmacyFigureText,
+  pharmacyRecordingOf,
+  pharmacyTileFigure,
+  type VisitCountSplit,
+} from "@/lib/crm/visit-count-buckets";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { resolveWorkloadFreshness } from "@/lib/outstation/workload-freshness";
 import { cn } from "@/lib/utils";
@@ -42,11 +49,22 @@ type WorkloadEvidenceDay = {
   /** THE AM · PM · PHARMACIES GOLDEN RULE: never inside `am`/`pm`. Optional only so a payload from
    * a server built before the split still renders (it reads 0 there). */
   pharmacies?: number;
+  /** Of the day's visits, how many are Phoenix CRM's own — it logs no pharmacy visit. */
+  phoenix?: number;
   pm: number;
   regular: number;
   total: number;
   visits: WorkloadVisitDetail[];
 };
+
+/**
+ * Live evidence as the golden-rule split (src/lib/crm/visit-count-buckets.ts): a trip or day logged in
+ * Phoenix CRM, which records no pharmacy visit, reads "not recorded in Phoenix" — never 0. The declared
+ * figure keeps its own wording ("not counted separately"); the freshness check reads the counts as before.
+ */
+function evidenceSplit(am: number, pm: number, pharmacies: number | undefined, phoenix: number | undefined): VisitCountSplit {
+  return { am, pm, pharmacies: pharmacies ?? 0, ...(phoenix ? { phoenix } : {}) };
+}
 
 export type TripWorkloadEvidence = {
   amWorkload: number;
@@ -57,6 +75,8 @@ export type TripWorkloadEvidence = {
   matchedDates: string[];
   otherVisits: number;
   pharmacyWorkload?: number;
+  /** Of the trip's visits, how many are Phoenix CRM's own — display only, see evidenceSplit. */
+  phoenixWorkload?: number;
   pmWorkload: number;
   regularVisits: number;
   sourceLabel: string;
@@ -223,6 +243,14 @@ export function TripWorkloadEvidencePanel({
 
   const data = state.data;
   const actualPharmacies = data.pharmacyWorkload ?? 0;
+  // A Phoenix CRM day logs no pharmacy visit: "Not recorded", never 0, and a day with both systems
+  // names its figure "(iReports360 only)" — the Actual line says why (visit-count-buckets.ts).
+  const pharmacyCellText = (day: WorkloadEvidenceDay) => {
+    const split = evidenceSplit(day.am, day.pm, day.pharmacies, day.phoenix);
+    return pharmacyRecordingOf(split) === "not-recorded"
+      ? pharmacyTileFigure(split).value
+      : pharmacyFigureText(split, { formatNumber: fmt });
+  };
   // Totals across all three figures: a pharmacy visit is field work (owner, 2026-09-21). A request
   // stamped before the split has NULL here with its pharmacies inside AM/PM, so its total still
   // compares like for like with the live AM + PM + Pharmacies.
@@ -273,7 +301,8 @@ export function TripWorkloadEvidencePanel({
         <div className={cn("rounded-xl border p-3", mismatch ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50")}>
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Actual (evidence)</p>
           <p className="mt-1 font-mono text-sm font-bold text-slate-900">
-            AM {fmt(data.amWorkload)} · PM {fmt(data.pmWorkload)} · Pharmacies {fmt(actualPharmacies)}
+            AM {fmt(data.amWorkload)} · PM {fmt(data.pmWorkload)} ·{" "}
+            {formatPharmacyFigure(evidenceSplit(data.amWorkload, data.pmWorkload, actualPharmacies, data.phoenixWorkload), { formatNumber: fmt })}
           </p>
           {mismatch ? (
             <p className="mt-0.5 text-phx-2xs font-bold text-rose-600">
@@ -314,7 +343,7 @@ export function TripWorkloadEvidencePanel({
                 fields={[
                   { label: "AM", value: fmt(day.am) },
                   { label: "PM", value: fmt(day.pm) },
-                  { label: "Pharmacies", value: fmt(day.pharmacies ?? 0) },
+                  { label: "Pharmacies", value: pharmacyCellText(day) },
                   { label: "Regular", value: fmt(day.regular) },
                   { label: "Campaign", value: fmt(day.campaign) },
                 ]}
@@ -355,7 +384,7 @@ export function TripWorkloadEvidencePanel({
                 <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">{formatDateValue(day.date)}</td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">{fmt(day.am)}</td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">{fmt(day.pm)}</td>
-                <td className="px-3 py-2 text-right font-mono text-slate-900">{fmt(day.pharmacies ?? 0)}</td>
+                <td className="px-3 py-2 text-right font-mono text-slate-900">{pharmacyCellText(day)}</td>
                 <td className="px-3 py-2 text-right font-mono text-sky-700">{fmt(day.regular)}</td>
                 <td className="px-3 py-2 text-right font-mono text-violet-700">{fmt(day.campaign)}</td>
                 <td className="whitespace-nowrap px-3 py-2">

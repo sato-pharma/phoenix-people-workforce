@@ -35,7 +35,7 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import { cn } from "@/lib/utils";
 import type { ReviewPersonRow, ReviewRoleRow } from "@/lib/business-review/sources/roles";
-import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { formatVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { periodColumnLabel } from "@/lib/business-review/period-format";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
@@ -118,11 +118,26 @@ export type CustomerAreaRow = {
   customersAm: number;
   customersPm: number;
   customersPharmacy: number;
+  /** The visits those customers were counted from — what judges their pharmacy figure (below). */
+  visitSplit?: VisitCountSplit;
 };
 
-/** The three figures in the house wording, middle dot and never a slash. */
-const splitOf = (row: { customersAm: number; customersPm: number; customersPharmacy: number }) =>
-  formatVisitCountSplit({ am: row.customersAm, pm: row.customersPm, pharmacies: row.customersPharmacy });
+/**
+ * The three figures in the house wording, middle dot and never a slash — judged by the visits the
+ * customers were counted from, so a team that works in Phoenix CRM (which logs no pharmacy visit)
+ * reads "Pharmacies not recorded in Phoenix", never 0 (src/lib/crm/visit-count-buckets.ts).
+ */
+const splitOf = (row: {
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
+  visitSplit?: VisitCountSplit;
+  customerVisitSplit?: VisitCountSplit;
+}) =>
+  formatVisitCountSplit(
+    { am: row.customersAm, pm: row.customersPm, pharmacies: row.customersPharmacy },
+    { fromVisits: row.customerVisitSplit ?? row.visitSplit },
+  );
 
 /**
  * Customers reached per area, month by month — AM accounts, PM doctors and pharmacies apart.

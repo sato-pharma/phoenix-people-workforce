@@ -20,6 +20,13 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
+  formatPharmacyFigure,
+  pharmacyFigureText,
+  pharmacyRecordingOf,
+  pharmacyTileFigure,
+  type VisitCountSplit,
+} from "@/lib/crm/visit-count-buckets";
+import {
   formatCurrencyValue,
   formatDateValue,
   formatNumberValue,
@@ -189,10 +196,22 @@ type WorkloadEvidenceDay = {
   /** THE AM · PM · PHARMACIES GOLDEN RULE: never inside `am`/`pm`. Optional so a payload from a
    * server built before the split still renders. */
   pharmacies?: number;
+  /** Of the day's visits, how many are Phoenix CRM's own — it logs no pharmacy visit. */
+  phoenix?: number;
   pm: number;
   regular: number;
   total: number;
 };
+
+/**
+ * Live evidence as the golden-rule split (src/lib/crm/visit-count-buckets.ts): a trip or day logged in
+ * Phoenix CRM, which records no pharmacy visit, reads "not recorded in Phoenix" — never 0. The declared
+ * sheet figure keeps its own wording ("not counted separately"); this is the live read only.
+ */
+function evidenceSplit(am: number, pm: number, pharmacies: number | undefined, phoenix: number | undefined): VisitCountSplit {
+  return { am, pm, pharmacies: pharmacies ?? 0, ...(phoenix ? { phoenix } : {}) };
+}
+
 type WorkloadEvidence = {
   amWorkload: number;
   campaignVisits: number;
@@ -206,6 +225,8 @@ type WorkloadEvidence = {
   otherVisits: number;
   pharmacyVisits: number;
   pharmacyWorkload?: number;
+  /** Of the trip's visits, how many are Phoenix CRM's own — display only, see evidenceSplit. */
+  phoenixWorkload?: number;
   pmWorkload: number;
   regularVisits: number;
   sourceLabel: string;
@@ -654,6 +675,14 @@ export function ExpenseReport({
 
     const data = entry.data;
     const actualPharmacies = data.pharmacyWorkload ?? 0;
+    // A Phoenix CRM day logs no pharmacy visit: "Not recorded", never 0, and a day with both systems
+    // names its figure "(iReports360 only)" — the summary line above says why (visit-count-buckets.ts).
+    const pharmacyCellText = (day: WorkloadEvidenceDay) => {
+      const split = evidenceSplit(day.am, day.pm, day.pharmacies, day.phoenix);
+      return pharmacyRecordingOf(split) === "not-recorded"
+        ? pharmacyTileFigure(split).value
+        : pharmacyFigureText(split, { formatNumber });
+    };
     // AM · PM · Pharmacies, all three field work (owner, 2026-09-21). A pre-split trip, or a sheet row
     // whose Pharmacy Workload cell is blank, has no third figure, its pharmacies inside AM/PM, so its
     // total still compares like for like.
@@ -682,7 +711,8 @@ export function ExpenseReport({
           <div className={cn("rounded-xl border p-3", mismatch ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50")}>
             <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-text-secondary">Actual (evidence)</p>
             <p className="mt-1 font-mono text-sm font-semibold text-text">
-              AM {formatNumber(data.amWorkload)} · PM {formatNumber(data.pmWorkload)} · Pharmacies {formatNumber(actualPharmacies)}
+              AM {formatNumber(data.amWorkload)} · PM {formatNumber(data.pmWorkload)} ·{" "}
+              {formatPharmacyFigure(evidenceSplit(data.amWorkload, data.pmWorkload, actualPharmacies, data.phoenixWorkload), { formatNumber })}
             </p>
             {mismatch ? (
               <p className="mt-0.5 text-phx-2xs font-semibold text-rose-600">
@@ -727,7 +757,7 @@ export function ExpenseReport({
                   fields={[
                     { label: "AM", value: formatNumber(day.am) },
                     { label: "PM", value: formatNumber(day.pm) },
-                    { label: "Pharmacies", value: formatNumber(day.pharmacies ?? 0) },
+                    { label: "Pharmacies", value: pharmacyCellText(day) },
                     { label: "Regular", value: formatNumber(day.regular) },
                     { label: "Campaign", value: formatNumber(day.campaign) },
                   ]}
@@ -768,7 +798,7 @@ export function ExpenseReport({
                   <td className="whitespace-nowrap px-3 py-2 font-medium text-text">{formatPayrollDate(day.date)}</td>
                   <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.am)}</td>
                   <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.pm)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.pharmacies ?? 0)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-text">{pharmacyCellText(day)}</td>
                   <td className="px-3 py-2 text-right font-mono text-sky-700">{formatNumber(day.regular)}</td>
                   <td className="px-3 py-2 text-right font-mono text-violet-700">{formatNumber(day.campaign)}</td>
                   <td className="whitespace-nowrap px-3 py-2">

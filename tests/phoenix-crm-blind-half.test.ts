@@ -366,6 +366,16 @@ export function runPhoenixCrmBlindHalfTests(): void {
     }
   }
 
+  // ── 10 · The Team endpoint answers a rep too, so his own off-plan visits leave it blind ─────────
+  // A rep's scope holds his OWN territory, so GET /api/phoenix-crm/team returns his own waiting off-plan
+  // visits. Found 2026-10-02: no rep screen showed their location flag, but the raw answer carried it.
+  {
+    const team = read("src/lib/phoenix-crm/server/team.ts");
+    if (!/locationFlag: !seat \|\| isLocationBlind\(viewer, seat\) \? null : view\.locationFlag,/.test(team)) {
+      problems.push("server/team.ts must clear an off-plan visit's locationFlag for a location-blind viewer (isLocationBlind), failing blind");
+    }
+  }
+
   assert.deepEqual(problems, [], `\n  ${problems.join("\n  ")}\n`);
 
   console.log(`phoenix-crm blind half: OK (${repFacing.length} rep-facing files swept)`);

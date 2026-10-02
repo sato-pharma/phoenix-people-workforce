@@ -28,6 +28,7 @@ import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, expandHrIdFilterValues, getEffectiveExcludedInList, queryCheckins, resolveVisitTime } from "@/lib/crm/reads";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import {
   intersectHrIdAllowLists,
   intersectHrIdKeySets,
@@ -505,6 +506,9 @@ async function preloadCheckinsIndexForExport(range: { dateFrom: string | null; d
       dateFrom: range.dateFrom ?? undefined,
       dateTo: range.dateTo ?? undefined,
       columns: NEAREST_CHECKIN_COLUMNS,
+      // The CRM Master is the Super Admin's — no rep reaches it, so a started Phoenix CRM team's
+      // visits count as its check-ins here, as on its Check-ins tab (owner, 2026-10-02).
+      includePhoenixVisits: true,
     });
     return indexCheckinsByAgentContactDay(data);
   } catch (error) {
@@ -586,6 +590,8 @@ async function attachNearestCheckins(rows: CrmMasterRow[], preloadedIndex?: Map<
         dateFrom: from,
         dateTo: to,
         columns: NEAREST_CHECKIN_COLUMNS,
+        // The Super Admin's page: a started Phoenix CRM team's visits count as its check-ins here.
+        includePhoenixVisits: true,
       });
     } catch (error) {
       // The paginated table view degrades rather than throwing (unlike the export above): the page
@@ -702,7 +708,13 @@ export function attachEffectiveType(
   const alwaysFlagged = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin";
   for (const row of rows) {
     const isRegular = row.visit_type === 0;
-    const noCheckin = alwaysFlagged ? true : knowsCheckin && isRegular && row.checkin_id == null;
+    // A Phoenix CRM row is its own check-in (crm_visits_checkin_flags says the same in SQL): one whose
+    // position was not read is still never "No GPS check-in".
+    const ownCheckin = isPhoenixNativeVisitRow({
+      crm_visit_id: typeof row.crm_visit_id === "number" ? row.crm_visit_id : null,
+      source: typeof row.source === "string" ? row.source : null,
+    });
+    const noCheckin = alwaysFlagged ? true : knowsCheckin && isRegular && row.checkin_id == null && !ownCheckin;
     row.effective_type = noCheckin
       ? REGULAR_NO_GPS_CHECKIN_LABEL
       : resolveVisitTypeLabel(

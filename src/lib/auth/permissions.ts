@@ -1441,6 +1441,14 @@ const defaultPermissionMatrix: PermissionMap = {
     // setting: an edit here changes the coverage rule for all three lines, not just this
     // role's own. Owner accepted that trade-off explicitly when granting it.
     crm_visits: ["read", "update"],
+    // Phoenix CRM — READ ALONE, for ONE report (owner, 2026-10-02: "product managers and marketing see
+    // it too — for their own products, company-wide, never per rep and never any honesty figure"):
+    // what the field heard about his own products. He holds no seat in the sales organogram, so every
+    // other Phoenix CRM read answers him with nothing or a refusal, exactly as it answers the Training
+    // Manager's read; `create`, `update` and `approve` are what resolvePhoenixCrmViewer turns into
+    // entering visits and deciding them, and he does none of those (src/lib/phoenix-crm/server/access.ts
+    // `readsFieldHeardByProduct`, pinned by tests/phoenix-crm-insight-reports.test.ts).
+    phoenix_crm: ["read"],
     early_birds: ["read"],
     overview: [],
     employee_profile: ["read", "update"],
@@ -1471,6 +1479,14 @@ const defaultPermissionMatrix: PermissionMap = {
     // setting: an edit here changes the coverage rule for all three lines, not just this
     // role's own. Owner accepted that trade-off explicitly when granting it.
     crm_visits: ["read", "update"],
+    // Phoenix CRM — READ ALONE, for ONE report (owner, 2026-10-02: "product managers and marketing see
+    // it too — for their own products, company-wide, never per rep and never any honesty figure"):
+    // what the field heard about his own products. He holds no seat in the sales organogram, so every
+    // other Phoenix CRM read answers him with nothing or a refusal, exactly as it answers the Training
+    // Manager's read; `create`, `update` and `approve` are what resolvePhoenixCrmViewer turns into
+    // entering visits and deciding them, and he does none of those (src/lib/phoenix-crm/server/access.ts
+    // `readsFieldHeardByProduct`, pinned by tests/phoenix-crm-insight-reports.test.ts).
+    phoenix_crm: ["read"],
     early_birds: ["read"],
     overview: [],
     employee_profile: ["read", "update"],
@@ -1586,6 +1602,14 @@ const defaultPermissionMatrix: PermissionMap = {
     // setting: an edit here changes the coverage rule for all three lines, not just this
     // role's own. Owner accepted that trade-off explicitly when granting it.
     crm_visits: ["read", "update"],
+    // Phoenix CRM — READ ALONE, for ONE report (owner, 2026-10-02: "product managers and marketing see
+    // it too — for their own products, company-wide, never per rep and never any honesty figure"):
+    // what the field heard about his own products. He holds no seat in the sales organogram, so every
+    // other Phoenix CRM read answers him with nothing or a refusal, exactly as it answers the Training
+    // Manager's read; `create`, `update` and `approve` are what resolvePhoenixCrmViewer turns into
+    // entering visits and deciding them, and he does none of those (src/lib/phoenix-crm/server/access.ts
+    // `readsFieldHeardByProduct`, pinned by tests/phoenix-crm-insight-reports.test.ts).
+    phoenix_crm: ["read"],
     early_birds: ["read"],
     overview: [],
     employee_profile: ["read", "update"],

@@ -16,6 +16,7 @@ import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import { assertUnplannedVisitApprover, canDecideUnplannedVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
+import type { OffPlanVisitRef } from "@/lib/phoenix-crm/server/offplan-day";
 import { nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import {
@@ -35,15 +36,19 @@ function record(raw: unknown): Row {
   return (raw && typeof raw === "object" ? raw : {}) as Row;
 }
 
+// `captured_at` rides on the visit for the moved day (offplan-day.ts): the plan is read as it stood at
+// the instant the visit was logged, which is the instant the database judged it off the plan.
 const UNPLANNED_COLUMNS =
   "visit_id, seat_id, rep_hr_id, entered_by_hr_id, customer_id, visit_date, clarification, status, version, created_at, " +
   "manager_decided_by_hr_id, manager_decided_at, manager_note, sfe_decided_by_hr_id, sfe_decided_at, sfe_note, " +
   "customer:phoenix_crm_customers!customer_id(name, list_type, speciality), " +
-  "visit:phoenix_crm_visits!visit_id(photo_path, location_flag, distance_meters, products, comment)";
+  "visit:phoenix_crm_visits!visit_id(photo_path, location_flag, distance_meters, products, comment, captured_at)";
 
 export type UnplannedVisitView = {
   visitId: string;
   seatId: string;
+  /** Whose visit it is: the Team tab's card is one rep's day. The name is what is shown. */
+  repHrId: string | null;
   repName: string;
   customerName: string;
   customerListType: "AM" | "PM";
@@ -91,6 +96,21 @@ export function unplannedPeople(rows: ReadonlyArray<Row>): Array<string | null> 
   ]);
 }
 
+/**
+ * What the moved-day read needs of a row (offplan-day.ts): whose territory, which customer, which day,
+ * and the instant the visit was logged — read from the plan's own history, never from the reason.
+ */
+export function unplannedVisitRef(row: Row): OffPlanVisitRef {
+  const visit = record(Array.isArray(row.visit) ? row.visit[0] : row.visit);
+  return {
+    visitId: String(row.visit_id),
+    seatId: String(row.seat_id),
+    customerId: String(row.customer_id ?? ""),
+    visitDate: String(row.visit_date),
+    capturedAt: textOrNull(visit.captured_at),
+  };
+}
+
 export function mapUnplannedRow(row: Row, names: PeopleNames): UnplannedVisitView {
   const status: UnplannedVisitStatus = isUnplannedVisitStatus(row.status) ? row.status : "manager_pending";
   const customer = record(Array.isArray(row.customer) ? row.customer[0] : row.customer);
@@ -102,6 +122,7 @@ export function mapUnplannedRow(row: Row, names: PeopleNames): UnplannedVisitVie
   return {
     visitId: String(row.visit_id),
     seatId: String(row.seat_id),
+    repHrId: textOrNull(row.rep_hr_id),
     repName: nameOf(names, textOrNull(row.rep_hr_id)),
     customerName: textOrNull(customer.name) ?? "Customer",
     customerListType: customer.list_type === "AM" ? "AM" : "PM",

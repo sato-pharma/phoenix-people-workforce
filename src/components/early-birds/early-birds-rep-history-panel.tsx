@@ -114,8 +114,11 @@ function DayTimeline({ score, period }: { score: EarlyBirdsRepScore; period: Ear
         ))}
       </div>
       <p className="mt-3 break-words text-phx-2xs font-semibold text-slate-500">
-        Green is before 09:00, amber 09:00-10:00, orange after 10:00. A grey cell is a day with no
-        GPS check-in — worked, but with no verified start; it is never read as late.
+        {/* A started Phoenix CRM team's rep starts at his first visit, and is never told his
+            location is read (golden rule #1) — so his grey cell names no GPS. */}
+        {score.phoenixClock
+          ? "Green is before 09:00, amber 09:00-10:00, orange after 10:00. A grey cell is a day with no start time; it is never read as late."
+          : "Green is before 09:00, amber 09:00-10:00, orange after 10:00. A grey cell is a day with no GPS check-in — worked, but with no verified start; it is never read as late."}
       </p>
     </div>
   );

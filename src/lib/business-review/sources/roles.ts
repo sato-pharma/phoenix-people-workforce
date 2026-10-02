@@ -85,6 +85,13 @@ export type ReviewRoleRow = {
   customersAm: number;
   customersPm: number;
   customersPharmacy: number;
+  /**
+   * The visits the customers above were counted from — the field visits AND the rides led — so their
+   * pharmacy figure is judged by them: Phoenix CRM logs no pharmacy visit, and a customer split built
+   * from its visits prints "not recorded in Phoenix", never 0 (src/lib/crm/visit-count-buckets.ts,
+   * `fromVisits`). Optional: a payload from before it existed judges by `visitSplit`.
+   */
+  customerVisitSplit?: VisitCountSplit;
   outstationClaimed: number;
   outstationApproved: number;
   marketingRequests: number;
@@ -115,6 +122,13 @@ export type ReviewPersonRow = {
   customersAm: number;
   customersPm: number;
   customersPharmacy: number;
+  /**
+   * The visits the customers above were counted from — the field visits AND the rides led — so their
+   * pharmacy figure is judged by them: Phoenix CRM logs no pharmacy visit, and a customer split built
+   * from its visits prints "not recorded in Phoenix", never 0 (src/lib/crm/visit-count-buckets.ts,
+   * `fromVisits`). Optional: a payload from before it existed judges by `visitSplit`.
+   */
+  customerVisitSplit?: VisitCountSplit;
   outstationClaimed: number;
   marketingRequests: number;
   /** Months inside the window in which this person recorded anything. */
@@ -249,6 +263,8 @@ export async function loadLineIdByCode(): Promise<Record<string, number>> {
 type PersonAcc = {
   hrId: string;
   visitSplit: VisitCountSplit;
+  /** Own field visits AND rides led — what the customer sets were counted from. */
+  customerVisits: VisitCountSplit;
   customersAm: Set<number>;
   customersPm: Set<number>;
   customersPharmacy: Set<number>;
@@ -272,6 +288,8 @@ type RoleAcc = {
   headcount: number;
   people: Set<string>;
   visitSplit: VisitCountSplit;
+  /** Own field visits AND rides led — what the customer sets were counted from. */
+  customerVisits: VisitCountSplit;
   customersAm: Set<number>;
   customersPm: Set<number>;
   customersPharmacy: Set<number>;
@@ -369,6 +387,7 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
       acc = {
         hrId: key,
         visitSplit: emptyVisitCountSplit(),
+        customerVisits: emptyVisitCountSplit(),
         customersAm: new Set(), customersPm: new Set(), customersPharmacy: new Set(),
         fieldVisits: 0, regularVisits: 0, campaignVisits: 0,
         ridesLed: 0, reps: new Set(), customers: new Set(),
@@ -388,6 +407,7 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
       acc = {
         role, headcount: 0, people: new Set(),
         visitSplit: emptyVisitCountSplit(),
+        customerVisits: emptyVisitCountSplit(),
         customersAm: new Set(), customersPm: new Set(), customersPharmacy: new Set(),
         fieldVisits: 0, regularVisits: 0, campaignVisits: 0, ridesLed: 0,
         reps: new Set(), customers: new Set(),
@@ -407,9 +427,10 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
     const person = of(fact.agentHrId);
     const role = roleOf(roleFor(fact.agentHrId));
     role.people.add(fact.agentHrId);
-    for (const acc of [person, role] as { visitSplit: VisitCountSplit; fieldVisits: number; regularVisits: number; campaignVisits: number; customers: Set<number>; customersAm: Set<number>; customersPm: Set<number>; customersPharmacy: Set<number> }[]) {
+    for (const acc of [person, role] as { visitSplit: VisitCountSplit; customerVisits: VisitCountSplit; fieldVisits: number; regularVisits: number; campaignVisits: number; customers: Set<number>; customersAm: Set<number>; customersPm: Set<number>; customersPharmacy: Set<number> }[]) {
       acc.fieldVisits += fact.fieldVisits;
       mergeVisitCountSplits(acc.visitSplit, fact.visitSplit);
+      mergeVisitCountSplits(acc.customerVisits, fact.visitSplit);
       acc.regularVisits += fact.regularVisits;
       acc.campaignVisits += fact.campaignVisits;
       for (const id of fact.customers) acc.customers.add(id);
@@ -458,6 +479,8 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
       role.reps.add(rep);
     }
     for (const acc of [person, role]) {
+      // The rides' visits judge the customers they add — a Phoenix CRM ride logs no pharmacy visit.
+      mergeVisitCountSplits(acc.customerVisits, fact.rideSplit);
       for (const id of fact.customers) acc.customers.add(id);
       for (const id of fact.customersAm) acc.customersAm.add(id);
       for (const id of fact.customersPm) acc.customersPm.add(id);
@@ -551,6 +574,7 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
       customersAm: acc.customersAm.size,
       customersPm: acc.customersPm.size,
       customersPharmacy: acc.customersPharmacy.size,
+      customerVisitSplit: { ...acc.customerVisits },
       outstationClaimed: round2(acc.outstationClaimed),
       marketingRequests: acc.marketingRequests,
       activeMonths,
@@ -585,6 +609,7 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
       customersAm: acc.customersAm.size,
       customersPm: acc.customersPm.size,
       customersPharmacy: acc.customersPharmacy.size,
+      customerVisitSplit: { ...acc.customerVisits },
       outstationClaimed: round2(acc.outstationClaimed),
       outstationApproved: round2(acc.outstationApproved),
       marketingRequests: acc.marketingRequests,

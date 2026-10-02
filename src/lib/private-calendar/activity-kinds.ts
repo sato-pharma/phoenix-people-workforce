@@ -86,8 +86,12 @@ export function privateCalendarItemKind(item: Pick<PrivateCalendarItem, "activit
   return item.source;
 }
 
-/** One physical visit behind a double or chain item, and the bucket it counts in. */
-export type PrivateCalendarVisitRecord = { bucket: VisitCountBucket; id: string };
+/**
+ * One physical visit behind a double or chain item, and the bucket it counts in. `phoenix` marks a
+ * Phoenix CRM visit, which logs no pharmacy — so a summary of them says its pharmacy figure was never
+ * recorded rather than printing a zero (src/lib/crm/visit-count-buckets.ts).
+ */
+export type PrivateCalendarVisitRecord = { bucket: VisitCountBucket; id: string; phoenix?: boolean };
 
 export type PrivateCalendarVisitSummary = Record<PrivateCalendarVisitKind, VisitCountSplit> & { all: VisitCountSplit };
 
@@ -122,8 +126,8 @@ export function summarizePrivateCalendarVisits(
       for (const record of item.visitRecords) {
         if (seen.has(record.id)) continue;
         seen.add(record.id);
-        addBucketToSplit(summary[kind], record.bucket);
-        addBucketToSplit(summary.all, record.bucket);
+        addBucketToSplit(summary[kind], record.bucket, 1, record.phoenix === true);
+        addBucketToSplit(summary.all, record.bucket, 1, record.phoenix === true);
       }
     } else if (item.visitCounts) {
       mergeVisitCountSplits(summary[kind], item.visitCounts);
@@ -154,6 +158,8 @@ export type PairableDoubleVisitRow = {
   chain_hinge_name?: string | null;
   double_visitor_hr_id: string | null;
   double_visitor_name: string | null;
+  /** A Phoenix CRM visit (a started team's), which logs no pharmacy — see visit-count-buckets.ts. */
+  from_phoenix?: boolean;
   id: string;
   period: "AM" | "PM" | "UNKNOWN";
   resolved_via_chain?: boolean;

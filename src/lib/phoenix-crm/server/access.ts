@@ -291,6 +291,29 @@ export function readsCalendar(viewer: PhoenixCrmViewer): boolean {
   return readsTeamReports(viewer) || viewer.ownTerritories.length > 0;
 }
 
+/**
+ * The product and marketing managers, who read ONE Phoenix CRM report: what the field heard about their
+ * own products, company-wide (owner, 2026-10-02 — "product managers and marketing see it too, for their
+ * own products, company-wide, never per rep and never any honesty figure").
+ *
+ * Read off the APP ROLE, as every marketing rule in Phoenix is (`productOwnerRoles` and
+ * `companyMarketingRoles` in the marketing-requests module) — never off a job-title parse, which
+ * job-function.ts forbids for anything that grants access. For every live holder the two agree: the
+ * Group Product Manager, the Marketing Manager and both Product Managers each hold the app role their
+ * HR job title names.
+ *
+ * 🔴 THEY HOLD NO SEAT IN THE SALES ORGANOGRAM, so `scopeTerritories` is empty for them and every other
+ * section, list, plan, visit and photo route answers them with nothing or a refusal — the same
+ * position the Training Manager has held since 2026-09-22. This predicate opens the module's door and
+ * the Reports tab to them (overview.ts, page.ts) and nothing else; the report itself narrows them to
+ * their own products (`loadFieldHeardReport`), and never shows them an area, a territory or a rep.
+ */
+const FIELD_HEARD_PRODUCT_ROLES = new Set<PhoenixRole>(["Product Manager", "Group Product Manager", "Marketing Manager"]);
+
+export function readsFieldHeardByProduct(viewer: Pick<PhoenixCrmViewer, "role">): boolean {
+  return FIELD_HEARD_PRODUCT_ROLES.has(viewer.role);
+}
+
 export function canWriteAsRep(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
   if (viewer.isTestPersona) return isTest && viewer.canCreate && viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId);
   if (isTest) return viewer.isSuperAdmin;

@@ -294,6 +294,10 @@ async function loadVisitedBricks(
       columns: "agent_hr_id, lat, lon",
       dateFrom: from,
       dateTo: to,
+      // GPS brick coverage is an admin-shell board (Super Admin, CEO, SFE Manager) — no rep reaches it, so
+      // a started Phoenix CRM team's visits count as its check-ins here (owner, 2026-10-02;
+      // src/lib/crm/phoenix-team-starts.ts lists every reader that asks).
+      includePhoenixVisits: true,
       ...(agentHrIds ? { agentHrIds } : {}),
     }),
   ]);

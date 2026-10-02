@@ -29,7 +29,8 @@
 //                                       through au.f_seat_occupant_asof.
 //   Marketing spend                      marketing_requests, keyed on pay_date.
 //   Outstation spend                     outstation_expenses, keyed on payout_year/payout_month.
-//   Visits, double visits, doctors       ireports360_visits, via the CRM read door.
+//   Visits, double visits, doctors       crm_visits_unified, via the CRM read door: iReports360, and
+//                                       a Phoenix CRM team's own visits from its start (2026-10-02).
 //   Job roles                            employees.job_title, through resolveJobFunctionRole.
 //
 // THE ONE DESIGN DECISION EVERYTHING ELSE HANGS OFF: a person is placed on an area, a district
@@ -51,6 +52,7 @@
 // layer, never discarded to make a total look tidy.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { formatPharmacyFigure } from "@/lib/crm/visit-count-buckets";
 import { applyAchievementAreaMerges, getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import {
   loadAllCanonicalAreaNames,
@@ -995,6 +997,8 @@ function buildCompany(
         customersAm: d.customersAm,
         customersPm: d.customersPm,
         customersPharmacy: d.customersPharmacy,
+        // What judges the customers' pharmacy figure — see CompanyDmRow.visitSplit.
+        visitSplit: d.visitSplit,
         doubleVisits: d.doubleVisits,
         visitsAvailable: datasets[id].visits.available,
       })),
@@ -1032,7 +1036,12 @@ function buildCompany(
       : `${company.customersTotal.toLocaleString("en-US")} unique customers company-wide — ` +
         `${company.customersAm.toLocaleString("en-US")} AM accounts · ` +
         `${company.customersPm.toLocaleString("en-US")} PM doctors · ` +
-        `${company.customersPharmacy.toLocaleString("en-US")} pharmacies. Summing the ` +
+        // Phoenix CRM logs no pharmacy visit, so beside a started team's visits the count is
+        // iReports360's alone — said in words, never a bare figure (src/lib/crm/visit-count-buckets.ts).
+        `${formatPharmacyFigure(
+          { am: company.customersAm, pm: company.customersPm, pharmacies: company.customersPharmacy },
+          { formatNumber: (value) => value.toLocaleString("en-US"), fromVisits: company.visitSplit, label: "pharmacies", numberFirst: true },
+        )}. Summing the ` +
         `lines' own counts gives ${naiveSum.toLocaleString("en-US")}; ${overlap.toLocaleString("en-US")} ` +
         `of those are the same customer covered by more than one line, so they are counted once here.`;
 

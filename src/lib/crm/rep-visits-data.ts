@@ -41,6 +41,8 @@ const VISIT_COLUMNS = [
   "double_crm_id",
   "double_hr_id",
   "double_name",
+  // A Phoenix CRM row's customer, validated or not yet — the rate's `not-validated` (crm/call-rate.ts).
+  "phoenix_customer_validated",
   "speciality",
   "visit_date",
   "visit_type",

@@ -11,10 +11,14 @@
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
-// The doors read the cutover's UNIFIED VIEWS (vendor history before crm_cutover.cutover_date, Phoenix's
-// own rows from it). CRM_VISITS_TABLE stays for the two IDENTITY reads only — who a CRM id belonged
-// to is a fact about the vendor's records, not about visits in general.
+// The doors read the UNIFIED VIEWS: iReports360 rows, and — for a team that works in Phoenix CRM, from
+// its start — that team's own Phoenix visits instead of its reps' vendor rows (phoenix-team-starts.ts).
+// CRM_VISITS_TABLE stays for the two IDENTITY reads only — who a CRM id belonged to is a fact about the
+// vendor's records, not about visits in general.
 import { CRM_CHECKINS_UNIFIED_VIEW, CRM_VISITS_TABLE, CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
+// The one test for "this row is Phoenix CRM's own". src/lib/crm/phoenix-team-starts.ts says why the
+// unified view carries Phoenix rows (owner, 2026-10-02: a started team's visits, from its start).
+import { IREPORTS360_VISIT_SOURCE, isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { CRM_VISIT_TYPE_FILTER_CODES, CRM_VISIT_TYPE_OPTIONS, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
@@ -55,7 +59,7 @@ export function isCrmDoubleVisitRow(row: {
   source?: string | null;
   visit_type: number | null | undefined;
 }): boolean {
-  const isNative = row.source === "phoenix" || (row.crm_visit_id != null && row.crm_visit_id < 0);
+  const isNative = isPhoenixNativeVisitRow(row);
   const hasPartner =
     (row.double_crm_id != null && row.double_crm_id !== 0) ||
     (isNative && String(row.double_hr_id ?? "").trim().length > 0);
@@ -1220,6 +1224,15 @@ export async function queryCheckins<T = CrmCheckinRow>(
      * check-in came from a rep who has since left. Every agent-centric reader
      * (coverage, scoring, reporting) must leave this off. */
     includeResignedAgents?: boolean;
+    /**
+     * Also read each countable Phoenix CRM visit of a started team, from the team's start, as that
+     * day's check-in — its capture time and its position, nothing else (owner, 2026-10-02: "each
+     * visit's silent location counts as a check-in on the SFE and manager screens. Never on the rep's
+     * own screens"). OFF unless the caller asks, and only a reader no rep can reach may ask: which do,
+     * and why each is no rep's, is listed in src/lib/crm/phoenix-team-starts.ts. Every other reader reads
+     * iReports360 check-ins only, exactly as before.
+     */
+    includePhoenixVisits?: boolean;
   },
 ): Promise<T[]> {
   if (options.agentCrmIds && options.agentCrmIds.length === 0) return [];
@@ -1230,6 +1243,7 @@ export async function queryCheckins<T = CrmCheckinRow>(
 
   if (options.limit != null) {
     let query = supabase.from(CRM_CHECKINS_UNIFIED_VIEW).select(options.columns ?? "*");
+    if (!options.includePhoenixVisits) query = query.eq("source", IREPORTS360_VISIT_SOURCE);
     query = applyCheckinFilter(query as unknown as CheckinFilterableQuery, options, excludedInList) as unknown as typeof query;
     query = query.order(options.orderBy ?? "check_date", { ascending: options.ascending ?? true }).limit(options.limit);
     const { data, error } = await query;
@@ -1244,7 +1258,9 @@ export async function queryCheckins<T = CrmCheckinRow>(
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   type Row = T & { check_date: string; id: string };
   const filtered = () => {
-    const query = supabase.from(CRM_CHECKINS_UNIFIED_VIEW).select(projection);
+    const base = supabase.from(CRM_CHECKINS_UNIFIED_VIEW).select(projection);
+    // iReports360 check-ins only, unless the caller asked for the Phoenix ones too (see the option).
+    const query = options.includePhoenixVisits ? base : base.eq("source", IREPORTS360_VISIT_SOURCE);
     return applyCheckinFilter(query as unknown as CheckinFilterableQuery, options, excludedInList) as unknown as typeof query;
   };
   /** One keyset scan of the filter, narrowed to the half-open day [day 00:00, next day 00:00) when
@@ -1984,6 +2000,11 @@ export type CrmContactVisitHistory = {
  * contact's visit days on or after that day, so the planner learns which weekdays a customer not
  * validated yet is usually seen on without a second trip to the mirror. Nothing else changes: the
  * count and the last day are the ones the List has always shown.
+ *
+ * 🔴 iREPORTS360 ROWS ONLY (`source = 'ireports360'`). Since 2026-10-02 the unified view also carries a
+ * started Phoenix CRM team's own visits (src/lib/crm/phoenix-team-starts.ts), and those are the very
+ * visits the List already counts as "saved here" — reading them as iReports360 history too would count
+ * every one of them twice on the rep's own screen.
  */
 export async function readContactVisitHistory(
   contactCrmIds: readonly number[],
@@ -2006,6 +2027,7 @@ export async function readContactVisitHistory(
       const { data, error } = await supabase
         .from(CRM_VISITS_UNIFIED_VIEW)
         .select("contact_crm_id, visit_date")
+        .eq("source", IREPORTS360_VISIT_SOURCE)
         .in("contact_crm_id", chunk)
         .order("visit_date", { ascending: false })
         .range(page * PAGE, page * PAGE + PAGE - 1);

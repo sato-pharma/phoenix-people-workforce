@@ -163,6 +163,11 @@ export async function buildSfeEvidence(
       dateFrom: window.from ?? undefined,
       dateTo: window.to,
       columns: "check_date, contact_crm_id",
+      // Probation SFE evidence is read only with company-wide probation access or by the SFE Manager
+      // (app/api/probation/cases/[caseId]/assessments) — no rep reaches it, so a started Phoenix CRM
+      // team's visits count as its check-ins here (owner, 2026-10-02; src/lib/crm/phoenix-team-starts.ts
+      // lists every reader that asks).
+      includePhoenixVisits: true,
     }),
   ]);
 

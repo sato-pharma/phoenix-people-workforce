@@ -28,14 +28,23 @@
  *     a slash. A reader who wants one figure is a reader about to average a call rate.
  *   - **A brick's sales never add up to the area's closing figure.** The bricks sheet carries the
  *     server's own caveat as a note under the table, in the same words the screen prints.
+ *   - **Units of different products are never added** (the owner's standing rule). The samples sheet
+ *     has no total row: a quantity is summed within its own product only, and what is counted across
+ *     items is VISITS.
+ *
+ * The four insight boards of 2026-10-02 — grade against capacity, what the field heard, missing stock,
+ * samples by month — are manager sections like the screen's, and each carries its screen's own words:
+ * list size and never coverage, counts and never a rate, a shelf and never a stock balance.
  */
 
 import ExcelJS from "exceljs";
 
-import { buildHouseCoverSheet, writeHouseTable, type CellValue, type TableColumn } from "@/lib/export/house-table-workbook";
+import { buildHouseCoverSheet, writeHouseTable, type CellValue, type HouseTableInput, type TableColumn } from "@/lib/export/house-table-workbook";
 import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
+import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
 
 import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import { capacityVerdictText, gradeTargetsText, type ListCapacity } from "@/lib/phoenix-crm/capacity-board";
 import {
   dailyPlanActivityText,
   dailyPlanCustomerNotes,
@@ -45,11 +54,13 @@ import {
   type DailyPlanCustomer,
   type DailyPlanReportView,
 } from "@/lib/phoenix-crm/daily-plan-report";
+import { HEARD_BASIS_TEXT, heardTallyText, type HeardRow } from "@/lib/phoenix-crm/field-heard";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 import { PHOENIX_CRM_WEEKDAY_NAMES } from "@/lib/phoenix-crm/timings";
 import type { AdoptionView } from "@/lib/phoenix-crm/server/adoption";
 import type { BrickCoverageView } from "@/lib/phoenix-crm/server/brick-report";
 import type { ExceptionsView } from "@/lib/phoenix-crm/server/exceptions";
+import type { CapacityBoardView, FieldHeardView, MissingStockView, SamplesReportView } from "@/lib/phoenix-crm/server/insight-reports";
 import type {
   CoverageReportView,
   CustomerFrequencyReportView,
@@ -86,10 +97,17 @@ export type ReportsPackInput = {
   exceptions: ExceptionsView | null;
   adoption: AdoptionView | null;
   bricks: BrickCoverageView | null;
+  /** The four insight boards of 2026-10-02 — manager sections, null (no sheet) for anyone else. */
+  capacity: CapacityBoardView | null;
+  /** A manager's whole report; for a product or marketing manager, his own products and nothing else. */
+  heard: FieldHeardView | null;
+  stock: MissingStockView | null;
+  samples: SamplesReportView | null;
 };
 
 const COUNT = "#,##0";
 const PERCENT = "0.0";
+const ONE_DECIMAL = "0.0";
 
 function pct(value: number | null): CellValue {
   return value === null ? "—" : value;
@@ -665,6 +683,274 @@ function writeAdoption(workbook: ExcelJS.Workbook, view: AdoptionView): void {
   });
 }
 
+// ── The four insight boards of 2026-10-02 ─────────────────────────────────────────────────────────
+
+function capacityCells(capacity: ListCapacity, listType: "AM" | "PM"): CellValue[] {
+  return [
+    capacity.customers,
+    capacity.grades.A,
+    capacity.grades.B,
+    capacity.grades.C,
+    capacity.required,
+    capacity.perDayNeeded === null ? "—" : capacity.perDayNeeded,
+    capacityVerdictText(capacity, listType),
+    capacity.notValidated,
+  ];
+}
+
+function capacityColumns(listType: "AM" | "PM"): TableColumn[] {
+  return [
+    counted(`${listType} on list`),
+    counted(`${listType} grade A`),
+    counted(`${listType} grade B`),
+    counted(`${listType} grade C`),
+    counted(`${listType} visits a month`, 14),
+    { label: `${listType} a day`, numFmt: ONE_DECIMAL, right: true, width: 10 },
+    column(`${listType} against the month`, { width: 20 }),
+    counted(`${listType} not validated yet`, 16),
+  ];
+}
+
+/**
+ * Grade against capacity — what each territory's LIST asks of a month against what the month's field
+ * days hold. The screen's own caveat travels with the figures: list size, never coverage, and a
+ * customer not validated yet counts with the grade iReports360 carried over.
+ */
+function writeCapacity(workbook: ExcelJS.Workbook, view: CapacityBoardView): void {
+  const sheet = workbook.addWorksheet("Grade against capacity");
+  sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
+  const { fieldDays, perDay, summary } = view;
+  writeHouseTable(sheet, 1, {
+    columns: [
+      { ...NAME, label: "Territory" },
+      column("Rep", { width: 22 }),
+      column("Line", { width: 14 }),
+      column("List read from", { width: 15 }),
+      ...capacityColumns("PM"),
+      ...capacityColumns("AM"),
+    ],
+    note: [
+      `The size of each list, not its coverage: a customer not validated yet is counted with the grade iReports360 carried over `
+        + `(${summary.notValidated.AM} AM · ${summary.notValidated.PM} PM of them here), while coverage on the plan review counts validated customers only.`,
+      `${view.month.month} holds ${fieldDays.PM} PM days and ${fieldDays.AM} AM days: Saturday to Wednesday hold both, Thursday holds AM only, Friday holds nothing.`,
+      fieldDays.holidays.length > 0
+        ? `Public holidays taken out: ${fieldDays.holidays.map((holiday) => `${holiday.day} (${holiday.name})`).join(", ")}.`
+        : "No public holiday falls on a field day this month.",
+      `Each grade's visits a month, from Settings: ${gradeTargetsText(view.gradeTargets, "PM")}; ${gradeTargetsText(view.gradeTargets, "AM")}.`,
+      `A day holds ${perDay.PM.target} PM at the call rate and ${perDay.PM.cap} at most; ${perDay.AM.target} AM at the call rate and ${perDay.AM.cap} at most.`,
+      "The verdict is about the list's size against the month, never about the rep. A grade changes only on the List, by the district manager.",
+    ].join(" "),
+    rows: view.rows.map((row) => [
+      row.territoryName,
+      row.repName ?? "No rep",
+      row.lineName ?? "—",
+      row.listSource === "reference" ? "iReports360" : "Phoenix",
+      ...capacityCells(row.pm, "PM"),
+      ...capacityCells(row.am, "AM"),
+    ]),
+    title: `Grade against capacity · ${view.month.month}`,
+  });
+}
+
+function objectionsText(row: HeardRow): string {
+  return row.byObjection.map((entry) => `${entry.label} — ${heardTallyText(entry)}`).join(" · ") || "—";
+}
+
+function heardGrainTable(title: string, label: string, rows: ReadonlyArray<HeardRow>): HouseTableInput {
+  return {
+    columns: [
+      { ...NAME, label },
+      counted("AM visits"),
+      counted("PM visits"),
+      counted("AM objections", 14),
+      counted("PM objections", 14),
+      column("What customers objected to", { width: 40 }),
+      column("Products discussed", { width: 40 }),
+    ],
+    rows: rows.map((row) => [
+      row.label,
+      row.visits.am,
+      row.visits.pm,
+      row.objections.am,
+      row.objections.pm,
+      objectionsText(row),
+      row.products.map((product) => `${product.name} ${heardTallyText(product)}`).join(" · ") || "—",
+    ]),
+    title,
+  };
+}
+
+/**
+ * What the field heard — the products discussed and the objections customers raised, by product, by
+ * speciality and (for the team) by area, AM and PM apart, and what was said in the rep's words. Counts
+ * only: no rate, no figure of visits where nothing was objected to, and no row per rep or territory.
+ * A product or marketing manager's sheet is his own products, company-wide, with no area.
+ */
+function writeHeard(workbook: ExcelJS.Workbook, view: FieldHeardView): void {
+  const sheet = workbook.addWorksheet("What the field heard");
+  sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
+  const period = `${view.period.from} to ${view.period.to}`;
+  const own = view.products;
+  const ownText = own
+    ? own.basis === "every"
+      ? "Your products, company-wide: every product — your sales scope is the whole company."
+      : `Your products, company-wide: ${own.names.join(", ") || "none"} — ${HEARD_BASIS_TEXT[own.basis]}.`
+    : null;
+  const nothing = view.totals.visits.am === 0 && view.totals.visits.pm === 0;
+  let next = writeHouseTable(sheet, 1, {
+    columns: [
+      { ...NAME, label: "Product" },
+      counted("AM discussed", 13),
+      counted("PM discussed", 13),
+      counted("AM objections", 14),
+      counted("PM objections", 14),
+      column("What customers objected to", { width: 44 }),
+    ],
+    note: [
+      ownText ? `${ownText} Never by area and never by rep.` : "It reads the line chosen or the whole scope, never one territory: one territory is one rep.",
+      nothing ? "Nothing heard in these days yet: the report fills as visits are saved." : null,
+      "Counts only: no rate, no figure of visits where nothing was objected to, and nothing per rep. A visit records one "
+        + "objection beside the products discussed on it, so an objection counts against every product discussed on that visit.",
+    ]
+      .filter((part): part is string => part !== null)
+      .join(" "),
+    rows: view.byProduct.map((row) => [row.label, row.visits.am, row.visits.pm, row.objections.am, row.objections.pm, objectionsText(row)]),
+    title: `What the field heard, by product · ${period}`,
+  });
+  next = writeHouseTable(sheet, next + 1, heardGrainTable(`By speciality · ${period}`, "Speciality", view.bySpeciality));
+  // The area grain is the team's only — a place, never the rep who works it — and a product or
+  // marketing manager's report has none at all.
+  if (view.byArea) next = writeHouseTable(sheet, next + 1, heardGrainTable(`By area · ${period}`, "Area", view.byArea));
+
+  const withArea = view.byArea !== null;
+  const notes = view.byProduct.flatMap((row) => row.notes.map((note) => ({ ...note, product: row.label })));
+  if (notes.length > 0) {
+    writeHouseTable(sheet, next + 1, {
+      columns: [
+        column("Day", { width: 13 }),
+        column("List", { width: 7 }),
+        { ...NAME, label: "Product" },
+        column("Objection", { width: 24 }),
+        column("Speciality", { width: 18 }),
+        ...(withArea ? [column("Area", { width: 16 })] : []),
+        column("What was said", { width: 56 }),
+      ],
+      note: "In the rep's own words, newest first under each product — and never the rep's name.",
+      rows: notes.map((note) => [
+        note.visitDate,
+        note.listType,
+        note.product,
+        note.objectionLabel,
+        note.speciality ?? "—",
+        ...(withArea ? [note.area ?? "—"] : []),
+        note.note,
+      ]),
+      title: "What was said",
+    });
+  }
+}
+
+/**
+ * Missing stock — each pharmacy's LATEST answer for each product, the answer the customer's own card
+ * shows. What was on the shelf: never a sales figure and never a stock balance, and a pharmacy is
+ * counted as a pharmacy.
+ */
+function writeStock(workbook: ExcelJS.Workbook, view: MissingStockView): void {
+  const sheet = workbook.addWorksheet("Missing stock");
+  sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
+  const { summary } = view;
+  const next = writeHouseTable(sheet, 1, {
+    columns: [
+      { ...NAME, label: "Product" },
+      column("Pharmacy", { width: 26 }),
+      column("Territory", { width: 22 }),
+      column("Last said, Cairo", { width: 17 }),
+      counted("Visits asked", 12),
+      column("Chase promised", { width: 15 }),
+    ],
+    note:
+      `Each pharmacy's last answer for each product in these days — the same answer the customer's own card shows. `
+      + `${summary.pharmacies} pharmacies answered; ${summary.gaps} pharmacy and product pairs were last said to be missing, `
+      + `across ${summary.productsShort} products. What was on the shelf: never a sales figure and never a stock balance. `
+      + "A pharmacy is counted as a pharmacy, never inside AM or PM.",
+    rows: view.products.flatMap((product) =>
+      product.missing.map((entry) => [
+        product.product,
+        entry.pharmacy,
+        entry.territoryName,
+        cairoDateTimeSortable(entry.lastReportedAt),
+        entry.reports,
+        entry.chasePromised ? "Yes" : "",
+      ]),
+    ),
+    title: `Missing stock · ${view.period.from} to ${view.period.to}`,
+  });
+  if (view.chases.length > 0) {
+    writeHouseTable(sheet, next + 1, {
+      columns: [
+        column("Visit day", { width: 13 }),
+        column("By", { width: 13 }),
+        { ...NAME, label: "Customer" },
+        column("List", { width: 7 }),
+        column("Territory", { width: 22 }),
+        column("Pharmacy", { width: 26 }),
+      ],
+      note: "Every visit whose next step was to chase the pharmacy stock, the soonest first. A promise, never a mark against anybody.",
+      rows: view.chases.map((chase) => [
+        chase.visitDate,
+        chase.dueOn ?? "No day given",
+        chase.customerName,
+        chase.listType,
+        chase.territoryName,
+        chase.pharmacy ?? "Not named on the visit",
+      ]),
+      title: "Chase the pharmacy stock",
+    });
+  }
+}
+
+/**
+ * Samples by month — what was handed over, a product (or material) a row, AM and PM apart. 🔴 NO TOTAL
+ * ROW: units of different products are never added, so what is counted across items is VISITS.
+ */
+function writeSamples(workbook: ExcelJS.Workbook, view: SamplesReportView): void {
+  const sheet = workbook.addWorksheet("Samples by month");
+  sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
+  const next = writeHouseTable(sheet, 1, {
+    columns: [{ ...NAME, label: "Item" }, column("Kind", { width: 13 }), counted("AM left"), counted("PM left")],
+    note:
+      "Each product and each material on its own row, AM and PM apart. Units of different products are never added together, "
+      + "so there is no total row. A record of what was handed over, as each visit saved it — never a stock: no balance, "
+      + "nothing subtracted, and nothing set against what was issued.",
+    rows: view.items.map((item) => [item.label, item.kind === "sample" ? "Free sample" : "Material", item.am, item.pm]),
+    title: `Samples by month · ${view.month.month}`,
+  });
+  writeHouseTable(sheet, next + 1, {
+    columns: [
+      { ...NAME, label: "Territory" },
+      column("Rep", { width: 22 }),
+      column("Line", { width: 14 }),
+      counted("AM visits that left samples", 15),
+      counted("PM visits that left samples", 15),
+      counted("AM visits that left materials", 15),
+      counted("PM visits that left materials", 15),
+      column("What was left", { width: 48 }),
+    ],
+    note: "Every territory chosen, including the ones that left nothing this month. A visit that left both samples and materials is counted in both columns.",
+    rows: view.territories.map((row) => [
+      row.territoryName,
+      row.repName ?? "No rep",
+      row.lineName ?? "—",
+      row.visitsWithSamples.am,
+      row.visitsWithSamples.pm,
+      row.visitsWithMaterials.am,
+      row.visitsWithMaterials.pm,
+      row.items.map((item) => `${item.label} — ${heardTallyText(item)}`).join(" · ") || "Nothing this month",
+    ]),
+    title: `Samples by month, by territory · ${view.month.month}`,
+  });
+}
+
 // ── The pack ────────────────────────────────────────────────────────────────────────────────────
 
 /** The sheets this pack would hold, in order — used by the cover and by the test. */
@@ -684,6 +970,11 @@ export function packSections(input: ReportsPackInput): string[] {
     input.managers ? "Double and chain visits" : null,
     input.locations ? "Where the visit was saved" : null,
     input.adoption ? "Who has started" : null,
+    // The four insight boards of 2026-10-02, in the screen's order.
+    input.capacity ? "Grade against capacity" : null,
+    input.heard ? "What the field heard" : null,
+    input.stock ? "Missing stock" : null,
+    input.samples ? "Samples by month" : null,
   ].filter((name): name is string => name !== null);
 }
 
@@ -721,6 +1012,10 @@ export async function buildPhoenixCrmReportsWorkbook(input: ReportsPackInput): P
   if (input.managers) writeManagers(workbook, input.managers);
   if (input.locations) writeLocations(workbook, input.locations);
   if (input.adoption) writeAdoption(workbook, input.adoption);
+  if (input.capacity) writeCapacity(workbook, input.capacity);
+  if (input.heard) writeHeard(workbook, input.heard);
+  if (input.stock) writeStock(workbook, input.stock);
+  if (input.samples) writeSamples(workbook, input.samples);
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

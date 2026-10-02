@@ -18,12 +18,22 @@
  *     bring back — comes from `listMovesFor` (src/lib/phoenix-crm/list-request-rules.ts), never from a
  *     rule re-derived here;
  *   - there is no "Add visit" here: a visit starts from Visits, Today or the portal's "+".
+ *
+ * Owner, 2026-10-02: the page also carries the customer's own timeline — his past Phoenix visits, newest
+ * first, with what was discussed and what comes next (customer-timeline.tsx) — instead of only the
+ * month's count. It carries no location, distance or flag, so it is the same for the rep and his managers.
+ *
+ * Owner, 2026-10-02 — and the rep's one action here for a visit with somebody: "Ask for a visit with…"
+ * his manager, a product manager of his line, or his manager and the one above (visit-asks.tsx). His
+ * asks show with their answers in plain words; they are his requests, never a check on him.
  */
 
 import { useState } from "react";
 
 import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { CustomerPhoneLink } from "@/components/phoenix-crm/customer-phone";
+import { CustomerTimeline } from "@/components/phoenix-crm/customer-timeline";
+import { CustomerVisitAsks } from "@/components/phoenix-crm/visit-asks";
 import { cairoStamp, plural } from "@/components/phoenix-crm/format";
 import {
   customerMetaText,
@@ -260,6 +270,17 @@ export function CustomerScreen({
         </CrmBlock>
       ) : null}
 
+      {/* A visit asked of his manager, a product manager of his line, or his manager and the one above
+          (owner, 2026-10-02): his own requests, each with its answer. Read on its own, like the timeline,
+          and the key starts a fresh read for another customer. */}
+      <CustomerVisitAsks
+        customerId={customer.customerId}
+        customerName={customer.name}
+        key={`asks:${seatId}:${customer.customerId}`}
+        seatId={seatId}
+        test={test}
+      />
+
       {pending ? (
         <CrmBlock className="border-t border-slate-100" title="Clinics">
           <p className="break-words text-sm font-medium text-slate-500">
@@ -314,6 +335,10 @@ export function CustomerScreen({
           )}
         </CrmBlock>
       ) : null}
+
+      {/* What happened at each visit, newest first (owner, 2026-10-02) — read on its own, so the list is
+          never held up by it. The key starts a fresh read for another customer. */}
+      <CustomerTimeline customerId={customer.customerId} key={`${seatId}:${customer.customerId}`} seatId={seatId} test={test} />
 
       {earlier.length > 0 ? (
         <CrmBlock className="border-t border-slate-100" title="Earlier requests">

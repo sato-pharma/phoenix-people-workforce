@@ -695,6 +695,12 @@ export const accessRegistry = [
   // `crm_visits:update` (Super Admin + SFE Manager) and then narrowed again to Super Admin alone by
   // assertRepDoctorListsAccess, per the owner's "admin account only for now" (2026-08-21).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/rep-doctor-lists/sync", permission: { resource: "crm_visits", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // Teams counted from Phoenix CRM (owner, 2026-10-02: "Only when I start it"). Start or stop counting
+  // a team's Phoenix visits and plans instead of its reps' iReports360 rows on every other screen — the
+  // field-work compliance matrix and the deductions connectors among them. Gated on `crm_visits:update`
+  // and narrowed again to Super Admin alone by assertPhoenixTeamStartsAdmin, both before the write; the
+  // writer (phoenix_crm_set_team_start, service role only) records the audit row in its own transaction.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/phoenix-team-starts", permission: { resource: "crm_visits", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // Plan Verification. The ONLY route in Phoenix that writes into the customer's CRM: a manager
   // signs off one rep's weekly or monthly plan and the vendor's own status moves. Audited as a
   // mutation because it leaves our system and cannot be undone from here — there is no unverify.
@@ -766,6 +772,9 @@ export const accessRegistry = [
   // activity beside each row. It gets its own entry rather than inheriting a blanket because it reads
   // a SECOND source (the iReports360 mirror) beside the CRM's own, behind the CRM's own seat gate.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list/board", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // One customer's past Phoenix visits, newest first, on his page (owner, 2026-10-02): read through the
+  // list's own seat gate (`territoryForRead`) and carrying no location, distance or flag of any kind.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list/timeline", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/validate", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/rename", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/primary-pharmacy", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
@@ -809,6 +818,23 @@ export const accessRegistry = [
   // on his own plan, and by the Super Admin only in test mode.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/double-visit-plans", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/double-visit-plans", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // A rep's ask for a visit with somebody (owner, 2026-10-02): his manager, a product manager of his
+  // line, or a chain visit with his district manager and the manager above. The customer's page reads
+  // the asks through the list's own seat gate (`read`); the rep raises and cancels his own (`create`,
+  // narrowed to the territory's own rep); the inbox of the people an ask reaches — managers, product
+  // managers, SFE and the Super Admin — is a `read` narrowed in the service.
+  //
+  // 🔴 ANSWERING IS `read`, AUDITED AS A MUTATION, AND THAT IS DELIBERATE. A product manager — and the
+  // Marketing Manager, whom CNS reps may ask (the owner's CNS rule) — holds
+  // phoenix_crm `read` alone — `create`, `update` and `approve` are what the module turns into entering
+  // visits and deciding a territory's requests — so gate one is the permission every person asked
+  // already holds, and gate two is IDENTITY, read from the ask's own row (`assertVisitAskAnswerer`):
+  // only the person recorded as asked answers it. The same shape as the direct-order sales month below.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visit-asks", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visit-asks", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visit-asks/cancel", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visit-asks/answer", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visit-asks/inbox", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/reports", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // The whole reports pack as one workbook (C1). Same "read" gate as the screen — it can never be a
   // way round a refusal, because the sections a viewer may not read are never loaded and write no

@@ -17,6 +17,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import {
+  PHARMACIES_IREPORTS360_ONLY,
+  PHARMACIES_NOT_RECORDED_IN_PHOENIX,
+  PHOENIX_LOGS_NO_PHARMACY_VISIT,
+  formatVisitCountSplit,
+  pharmacyFigureText,
+  pharmacyRecordingOf,
+  type VisitCountSplit,
+} from "@/lib/crm/visit-count-buckets";
 import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
 import type {
   FieldActivityDay,
@@ -27,6 +36,19 @@ import type {
 export type FieldActivityDayMap = { dateIso: string; svg: string; caption: string };
 
 const DENSE_STOPS = 8;
+
+/**
+ * "AM 3 &middot; PM 9 &middot; Pharmacies 2" through the golden-rule helper, so a day logged in Phoenix CRM
+ * — which records no pharmacy visit — reads "Pharmacies not recorded in Phoenix", never 0.
+ */
+function countsFact(counts: VisitCountSplit): string {
+  return formatVisitCountSplit(counts).split(" · ").map(escapeHtml).join(" &middot; ");
+}
+
+/** "3 &middot; 9 &middot; 2" for the summary table's one AM · PM · Ph cell, with the same words. */
+function countsCell(counts: VisitCountSplit): string {
+  return `${counts.am} &middot; ${counts.pm} &middot; ${escapeHtml(pharmacyFigureText(counts))}`;
+}
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
@@ -145,7 +167,7 @@ function dayFacts(day: FieldActivityDay): string[] {
   }
   if (day.countedTotal > 0 || day.stops.length > 0) {
     facts.push(
-      fact("Counted visits", `AM ${day.counts.am} &middot; PM ${day.counts.pm} &middot; Pharmacies ${day.counts.pharmacies}`),
+      fact("Counted visits", countsFact(day.counts)),
     );
   }
   if (day.firstCheckin && day.lastCheckin) {
@@ -274,7 +296,7 @@ export function buildFieldActivityDocument(input: {
 
   const rows = report.days
     .map((day) => {
-      const counted = day.countedTotal > 0 ? `${day.counts.am} &middot; ${day.counts.pm} &middot; ${day.counts.pharmacies}` : "&mdash;";
+      const counted = day.countedTotal > 0 ? countsCell(day.counts) : "&mdash;";
       const gps = day.firstCheckin && day.lastCheckin ? `${clock12(day.firstCheckin)} &ndash; ${clock12(day.lastCheckin)}` : day.punches ? `${clock12(day.punches.firstTime)} &ndash; ${clock12(day.punches.lastTime)} (punch)` : "None";
       const what =
         day.kind === "field"
@@ -312,7 +334,7 @@ export function buildFieldActivityDocument(input: {
     <colgroup><col style="width:24%"><col style="width:30%"><col style="width:13%"><col style="width:20%"><col style="width:13%"></colgroup>
     <thead><tr><th>Day</th><th>What the day was</th><th class="num">AM &middot; PM &middot; Ph</th><th>GPS window</th><th class="num">Claimed</th></tr></thead>
     <tbody>${rows}</tbody>
-    <tfoot><tr><td colspan="2">Total</td><td class="num"><strong>${report.totals.counts.am} &middot; ${report.totals.counts.pm} &middot; ${report.totals.counts.pharmacies}</strong></td><td>${report.totals.fieldDays} field day${report.totals.fieldDays === 1 ? "" : "s"}</td><td class="num"><strong>${money(report.totals.claimedTotal)}</strong></td></tr></tfoot>
+    <tfoot><tr><td colspan="2">Total</td><td class="num"><strong>${countsCell(report.totals.counts)}</strong></td><td>${report.totals.fieldDays} field day${report.totals.fieldDays === 1 ? "" : "s"}</td><td class="num"><strong>${money(report.totals.claimedTotal)}</strong></td></tr></tfoot>
   </table>
 
   <h2 class="h2">How to read this report</h2>
@@ -325,7 +347,15 @@ export function buildFieldActivityDocument(input: {
     stops only &mdash; never the representative's own later rounds.</p>
     <p><strong>The vendor's clock can read up to an hour early in summer.</strong> The phones sending
     these times mostly sit on Egypt standard time while Cairo is on summer time, so an iReports360
-    time is not defensible to the minute. Fingerprint punches are exact.</p>
+    time is not defensible to the minute. Fingerprint punches are exact.</p>${
+      pharmacyRecordingOf(report.totals.counts) === "recorded"
+        ? ""
+        : `
+    <p><strong>${escapeHtml(PHOENIX_LOGS_NO_PHARMACY_VISIT)}.</strong> A pharmacy there is feedback on a
+    doctor's visit, so a day logged in Phoenix CRM reads &ldquo;${escapeHtml(PHARMACIES_NOT_RECORDED_IN_PHOENIX)}&rdquo;
+    for pharmacies, never 0, and beside iReports360 visits the figure counts those alone
+    ${escapeHtml(PHARMACIES_IREPORTS360_ONLY)}.</p>`
+    }
   </div>
   ${flagBlock}
   ${footer(report, 1, totalPages, input.generatedOn)}
