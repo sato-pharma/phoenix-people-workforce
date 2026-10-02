@@ -1700,6 +1700,7 @@ import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
+import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
 import { runPhoenixCrmBrickTintsTests } from "./phoenix-crm-brick-tints.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
@@ -5839,6 +5840,11 @@ await runTest(
 await runTest(
   "Phoenix CRM copy last month (owner, 2026-09-25: pre-fill the new month from the rep's iReports360 plan, editable, never auto-submitted; only a doctor still on the list is placed, on his old weekdays' editable days, on the list types the day allows, at his first place; the day's cap is honoured, a doctor already on a day is not doubled, and the order is deterministic)",
   runPhoenixCrmPlanCopyTests,
+);
+
+await runTest(
+  "Phoenix CRM visits awaiting validation (a manager must be able to read a zero the rep did not earn: a Phoenix visit to a customer who is not validated yet is SAVED and scores nothing, and on a team that has just started that is EVERY visit — 0 of Delta (1)'s 1,551 customers were validated the day before it began, so a flat 0 on the board had nothing to explain it. The count is a count of work DONE and never a score: it moves no slice, no rate and no target, validating the customer still moves the visit into its own day, only the validation gate feeds it (never a weekend, a holiday, the catch-all contact or a vendor row), the sentence is a statement about the LIST and never a complaint about the rep, \"No calls\" is replaced because it would be untrue of a rep whose every call is waiting, and the rep's own screens never read it at all)",
+  runPhoenixCrmAwaitingValidationTests,
 );
 
 await runTest(

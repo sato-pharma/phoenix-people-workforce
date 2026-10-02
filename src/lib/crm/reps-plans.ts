@@ -503,6 +503,13 @@ export type RepsPlansRepRow = {
    * Always false from the CRM cutover, when GPS stops deciding the rate.
    */
   noGpsFeed: boolean;
+  /**
+   * Phoenix CRM visits he saved that score nothing yet, because the customer is not validated
+   * (`awaitingValidation` in crm/call-rate.ts). The row prints `awaitingValidationNote` beside his
+   * call rate so a 0 on a team that has just started reads as "the list is still being worked
+   * through" rather than as a rep who did nothing. Never a score and never his to see.
+   */
+  awaitingValidation: number;
 };
 
 function repKeyOf(rep: RepCallRate): string {
@@ -634,6 +641,7 @@ export function toRepsPlansRow(
     jobTitle: placement ? null : jobTitleFor(rep, jobTitleByHrId),
     scored: placement?.scored ?? false,
     noGpsFeed,
+    awaitingValidation: rep.awaitingValidation,
   };
 }
 
