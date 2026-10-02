@@ -1,6 +1,6 @@
 ---
 name: cv-extraction-never-applied-to-candidate-columns
-description: "Inbound CV intake persists a full AI extraction to ats_candidate_cv_extractions but NOTHING ever reads extracted_fields back — 34/34 intake rows unapplied in prod. Design gap since day one, not a regression."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: Owner decided 2026-07-31 that high-confidence AI CV fields auto-apply on inbound intake — PR #1516 MERGED, so this is live behaviour, not a proposal (see `cv-extraction-auto-apply-high-confidence`). Older text follows: Inbound CV intake persists a full AI extraction to ats_candidate_cv_extractions but NOTHING ever reads extracted_fields back — 34/34 intake rows unapplied in prod. Design gap since day one, not a regression."
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,6 @@
 ---
 name: laptop-thrashing-pagefile-feedback-loop
-description: "Machine-wide slowness on this 16 GB laptop is page-file thrashing from too many concurrent Claude sessions — diagnose with Pages Input/sec, not free RAM"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: read free PHYSICAL RAM at the crash time, not commit ... Current machine state ... is authoritative in ~/.claude/CLAUDE.md (see `commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`). Older text follows: Machine-wide slowness on this 16 GB laptop is page-file thrashing from too many concurrent Claude sessions — diagnose with Pages Input/sec, not free RAM"
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,6 @@
 ---
 name: admin-shell-design-rules
-description: "Admin-shell restyle scope (updated 2026-07-24) — ONLY sidebar, topbar/navbar, and CEO identity banner are locked; everything else (especially tables) is free to restyle."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: no round or semi-round corners, anywhere ... the globals.css square sweep must not be treated as removable (owner rule 2026-09-04) (see the module rule 'AGENTS.md section 4 - SQUARE-EDGE GOLDEN RULE (outside the 12 module files; acco'). Older text follows: Admin-shell restyle scope (updated 2026-07-24) — ONLY sidebar, topbar/navbar, and CEO identity banner are locked; everything else (especially tables) is free to restyle."
 metadata:
   type: feedback
   originSessionId: 7a4fd344-9e8e-4a7f-8f44-4e6f52c8d8df

@@ -25,7 +25,7 @@ This file is loaded because this session opened a file of this module (or the mo
 ## Memory notes (5)
 
 - `h1-2026-incentive-sales-analysis-engine` — The H1-2026 incentive sales-analysis engine lives OUTSIDE the repo, and why its grain must stay area x LINE
-- `incentive-policy-lock` — Two incentive/salary files are permanently owner-locked — never edit without unlock phrase
+- `incentive-policy-lock` — OUTDATED IN PART (contradiction sweep 2026-10-02) — current: A shared passphrase is deliberately NOT used - a committed unlock phrase authenticated nobody and was removed on 2026-07-31 (see CLAUDE.md, Protected Files). Older text follows: Two incentive/salary files are permanently owner-locked — never edit without unlock phrase
 - `incentive-semester-was-last-6-loaded-periods` — The incentive payout window was `allTimeTrend.slice(-6)` — the last six months of data that happened to exist — so 27 of 83 reps were scored over a shorter semester than their colleagues
 - `mm-incentive-hidden-policy` — Shipped policy: Marketing Manager is HIDDEN from the portal Incentive tab; GPM still sees it. Don't revert it.
 - `semester-1-incentive-three-layers` — The Semester-1 (H1 2026) incentive is THREE layers — locked curve, in-repo static S1 review bundle, live portal tab — do not conflate them

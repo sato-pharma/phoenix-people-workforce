@@ -1,6 +1,6 @@
 ---
 name: sos-always-todays-geography-rule
-description: "Owner rule: ALL SoS sales — historical and future — are attributed to TODAY'S geography. Never as-was. Implies every brick merge must repoint historical rows too."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: au.f_monthly_attribution/f_monthly_achievement resolve an area's region via au.f_line_area_map_asof(period_end), never today's geography; never resolve closing geography at the run date (see `attribution-is-period-aware-asof-not-todays-geography`). Older text follows: Owner rule: ALL SoS sales — historical and future — are attributed to TODAY'S geography. Never as-was. Implies every brick merge must repoint historical rows too."
 metadata: 
   node_type: memory
   type: feedback

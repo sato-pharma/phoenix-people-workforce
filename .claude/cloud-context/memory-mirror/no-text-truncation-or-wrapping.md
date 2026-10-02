@@ -1,6 +1,6 @@
 ---
 name: no-text-truncation-or-wrapping
-description: "System-wide rule — never truncate text with ellipsis and never let text wrap to multiple lines"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: Wrapping is the permitted answer — break-words, a taller row ... where the two collide the golden rule governs and wrapping wins; clipped text hides data (see `never-horizontal-scroll-always-mobile-and-desktop-friendly`). Older text follows: System-wide rule — never truncate text with ellipsis and never let text wrap to multiple lines"
 metadata: 
   node_type: memory
   type: feedback

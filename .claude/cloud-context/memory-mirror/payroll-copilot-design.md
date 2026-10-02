@@ -1,6 +1,6 @@
 ---
 name: payroll-copilot-design
-description: "The AI Payroll Copilot — assembles a payroll sheet from modules, negotiates flags in chat, feeds the existing batch→approve→lock→payslip machinery. BUILT AND LIVE for CEO+Super Admin (Phases 1-4 shipped 2026-07-07). Read before touching copilot work — holds the owner-confirmed statutory model (Base/Net are IMMUTABLE, tax on Base, Gross is the only value that moves), the universal proration rule, the resignation/joiner rules, and the reusable feeder/deduction wiring."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: Owner replaced the joiner proration rule (2026-08-29): a mid-month hire is now paid Net (Base + ECOL + Fuel) / calendar days x days worked, replacing the day-15 full/half rule (see `a-payroll-rule-change-does-not-reach-an-already-open-run`). Older text follows: The AI Payroll Copilot — assembles a payroll sheet from modules, negotiates flags in chat, feeds the existing batch→approve→lock→payslip machinery. BUILT AND LIVE for CEO+Super Admin (Phases 1-4 shipped 2026-07-07). Read before touching copilot work — holds the owner-confirmed statutory model (Base/Net are IMMUTABLE, tax on Base, Gross is the only value that moves), the universal proration rule, the resignation/joiner rules, and the reusable feeder/deduction wiring."
 metadata: 
   node_type: memory
   type: project

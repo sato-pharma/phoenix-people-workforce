@@ -1,6 +1,6 @@
 ---
 name: au-hire-into-seat-vacancy-wiring
-description: "PR #1411 — au.hire_into_seat wired via a position_vacancies trigger for REPLACEMENT hires only; brand-new headcount and transfers still unwired"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: Inserting a row in public.employees fires a trigger that seats the person ... Do NOT hand-write au.occupancy_history rows after an employee insert - the system has already written them (see `an-employee-insert-auto-fills-a-vacant-seat-and-restamps-nothing`). Older text follows: PR #1411 — au.hire_into_seat wired via a position_vacancies trigger for REPLACEMENT hires only; brand-new headcount and transfers still unwired"
 metadata: 
   node_type: memory
   type: project

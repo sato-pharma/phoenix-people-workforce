@@ -1,6 +1,6 @@
 ---
 name: direct-orders-region-only-no-rep-attribution
-description: "GAP (owner-flagged 2026-07-18) — Direct orders attribute at region level only; reps/DMs get ZERO direct share. ~25% Anti, ~30% Pedia value orphaned."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: the order must be counted to that pharmacy's brick and area IN THAT MONTH. Already honoured end to end (achievement stored vs live: 0 drift) (see `direct-orders-are-counted-in-the-month-finance-books-them`). Older text follows: GAP (owner-flagged 2026-07-18) — Direct orders attribute at region level only; reps/DMs get ZERO direct share. ~25% Anti, ~30% Pedia value orphaned."
 metadata: 
   node_type: memory
   type: project

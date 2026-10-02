@@ -1,6 +1,6 @@
 ---
 name: approvals-hub-vacation-excuse-build
-description: "The Approvals Hub (Vacation + Excuse + Plan) is BUILT and LIVE in both shells — app/(admin)/admin/approvals-hub and app/employee-portals/approvals-hub, wired in system-navigation.ts, with pending-count APIs. Not open work. Keep for the access-model rulings (Super Admin has NO turn-jumping bypass; NSM never receives an excuse; HR-acknowledge is Super-Admin-only) and the reusable plan-workflow traps (the 2nd approval is hard-wired to the CEO; `ceo_approved` is a dead legacy enum — gate on `final_approved`)."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: a District Manager's weekly plan chain is exactly submit -> NSM (or RSM if applicable) approves -> HR acknowledges. No CEO stage exists on it (see `the-system-never-auto-approves-a-plan`). Older text follows: The Approvals Hub (Vacation + Excuse + Plan) is BUILT and LIVE in both shells — app/(admin)/admin/approvals-hub and app/employee-portals/approvals-hub, wired in system-navigation.ts, with pending-count APIs. Not open work. Keep for the access-model rulings (Super Admin has NO turn-jumping bypass; NSM never receives an excuse; HR-acknowledge is Super-Admin-only) and the reusable plan-workflow traps (the 2nd approval is hard-wired to the CEO; `ceo_approved` is a dead legacy enum — gate on `final_approved`)."
 metadata: 
   node_type: memory
   type: project

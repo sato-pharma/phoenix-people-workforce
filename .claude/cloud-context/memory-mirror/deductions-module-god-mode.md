@@ -1,6 +1,6 @@
 ---
 name: deductions-module-god-mode
-description: "The unified Deductions module (src/lib/deductions/**, /admin/deductions, deductions_candidates/deductions_decisions tables) — the SOLE place deductions are decided; Automated Payroll is read-only for deductions. Distinct from the older deductions-governance module. Holds the owner mandates, the day-rate divisor rule (Base ÷ ACTUAL calendar days, scoped to this module ONLY), the month_key GENERATED-column trap, and the never-fan-out-audit-writes / size-the-work-before-diagnosing lessons."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: Owner decisions (2026-08-01): Day rate = Base ÷ ACTUAL calendar days, EVERYWHERE. Payroll adopts the Deductions rule (payroll used ÷30) (see `start-implementing-a-plan-agile-kazoo-phase5`). Older text follows: The unified Deductions module (src/lib/deductions/**, /admin/deductions, deductions_candidates/deductions_decisions tables) — the SOLE place deductions are decided; Automated Payroll is read-only for deductions. Distinct from the older deductions-governance module. Holds the owner mandates, the day-rate divisor rule (Base ÷ ACTUAL calendar days, scoped to this module ONLY), the month_key GENERATED-column trap, and the never-fan-out-audit-writes / size-the-work-before-diagnosing lessons."
 metadata: 
   node_type: memory
   type: project

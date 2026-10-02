@@ -1,6 +1,6 @@
 ---
 name: incentive-policy-lock
-description: "Two incentive/salary files are permanently owner-locked — never edit without unlock phrase"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: A shared passphrase is deliberately NOT used - a committed unlock phrase authenticated nobody and was removed on 2026-07-31 (see CLAUDE.md, Protected Files). Older text follows: Two incentive/salary files are permanently owner-locked — never edit without unlock phrase"
 metadata: 
   node_type: memory
   type: feedback

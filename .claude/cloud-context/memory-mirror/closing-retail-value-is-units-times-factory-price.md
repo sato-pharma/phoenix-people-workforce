@@ -1,6 +1,6 @@
 ---
 name: closing-retail-value-is-units-times-factory-price
-description: "The closing's RETAIL value is effective_units × source_of_sales_products.factory_price — editing source_of_sales_import_rows.value changes nothing on the closing, and factory_price has no period scoping"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: SA001 is 111.15 through 2026-09 and 170.52 from 2026-10; override lives in source_of_sales_product_price_history, read by phx_factory_price(code, period) (see `saginko-repriced-retail-from-october-direct-from-today`). Older text follows: The closing's RETAIL value is effective_units × source_of_sales_products.factory_price — editing source_of_sales_import_rows.value changes nothing on the closing, and factory_price has no period scoping"
 metadata: 
   node_type: memory
   type: reference

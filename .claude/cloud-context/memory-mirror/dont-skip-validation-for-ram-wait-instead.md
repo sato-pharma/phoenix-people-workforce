@@ -1,6 +1,6 @@
 ---
 name: dont-skip-validation-for-ram-wait-instead
-description: "When RAM is saturated, wait and re-check before running typecheck/lint/build — don't substitute manual code review and call it done"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: Push the branch and let the PR's checks answer. No 'quick subset' of lint + typecheck first (see `local-validation-gates-are-gone-ci-is-the-gate`). Older text follows: When RAM is saturated, wait and re-check before running typecheck/lint/build — don't substitute manual code review and call it done"
 metadata: 
   node_type: memory
   type: feedback

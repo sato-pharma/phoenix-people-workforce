@@ -1,6 +1,6 @@
 ---
 name: direct-order-sales-month-is-a-finance-step-not-a-bug
-description: "An approved direct order with sales_month=NULL and no DirectReq batch is NOT broken — booking is a deliberate second step Finance performs; setDirectOrderSalesMonth is what injects into Source of Sales."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: THE MONTH FOLLOWS THE MONEY. AN UNBOOKED ORDER IS NOT A LATE FINANCE MANAGER ... Never chase Ahmed over unbooked orders (see `direct-order-sales-month-is-finance-owned`). Older text follows: An approved direct order with sales_month=NULL and no DirectReq batch is NOT broken — booking is a deliberate second step Finance performs; setDirectOrderSalesMonth is what injects into Source of Sales."
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,6 @@
 ---
 name: reallocation-14-uncovered-bricks
-description: "The 14 live bricks the 668-brick reallocation plan didn't cover are RESOLVED and APPLIED to production 2026-07-24 (3 blocks + 16 bricks inserted, 14 deactivated) — do not re-audit them as open. The ONE live open item: customer_map is STALE for those 14 old ids, so their customers stop resolving in monthly imports until remapped. The wider 668/168 plan itself is still PAUSED. Holds the per-LINE region data fact and the relayed-classification / owner-ground-truth lessons."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: The full 674->668 brick / 142->168 block reallocation plan is LIVE in production as of 2026-07-24; stale customer_map rows repointed (7,824/7,832) the same day (see `reallocation-668-bricks-full-plan-live`, `post-reallocation-stale-brick-audit`). Older text follows: The 14 live bricks the 668-brick reallocation plan didn't cover are RESOLVED and APPLIED to production 2026-07-24 (3 blocks + 16 bricks inserted, 14 deactivated) — do not re-audit them as open. The ONE live open item: customer_map is STALE for those 14 old ids, so their customers stop resolving in monthly imports until remapped. The wider 668/168 plan itself is still PAUSED. Holds the per-LINE region data fact and the relayed-classification / owner-ground-truth lessons."
 metadata: 
   node_type: memory
   type: project

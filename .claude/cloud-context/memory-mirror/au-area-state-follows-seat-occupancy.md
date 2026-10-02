@@ -1,6 +1,6 @@
 ---
 name: au-area-state-follows-seat-occupancy
-description: "PR #1399 — au.line_area_map.area_state now maintained on resign/hire; records the still-open gap that hires never reach the au seat model"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: Inserting a row in public.employees fires a trigger that seats the person ... Do NOT hand-write au.occupancy_history rows after an employee insert - the system has already written them (see `an-employee-insert-auto-fills-a-vacant-seat-and-restamps-nothing`). Older text follows: PR #1399 — au.line_area_map.area_state now maintained on resign/hire; records the still-open gap that hires never reach the au seat model"
 metadata: 
   node_type: memory
   type: project

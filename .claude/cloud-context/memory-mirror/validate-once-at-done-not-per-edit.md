@@ -1,6 +1,6 @@
 ---
 name: validate-once-at-done-not-per-edit
-description: "Run only typecheck while iterating; the full gate (tests/build/harden) runs ONCE when the owner says done"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: check:harden removed ... CI is the gate ... no 'quick subset' of lint + typecheck first (see `local-validation-gates-are-gone-ci-is-the-gate`). Older text follows: Run only typecheck while iterating; the full gate (tests/build/harden) runs ONCE when the owner says done"
 metadata: 
   node_type: memory
   type: feedback

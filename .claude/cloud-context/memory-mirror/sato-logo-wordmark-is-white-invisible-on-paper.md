@@ -1,6 +1,6 @@
 ---
 name: sato-logo-wordmark-is-white-invisible-on-paper
-description: "The Sato Pharma logo's \"SATO\" wordmark is WHITE, so the brand name vanishes on any white background — every printed/exported document needs a recoloured or reversed variant."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: THE INK RULE - no filled areas, anywhere ... no masthead band, no filled table headers ... Brand Deep REPLACES the navy #0B2A4A (see `the-house-document-identity-standard`). Older text follows: The Sato Pharma logo's \"SATO\" wordmark is WHITE, so the brand name vanishes on any white background — every printed/exported document needs a recoloured or reversed variant."
 metadata:
   type: reference
 ---

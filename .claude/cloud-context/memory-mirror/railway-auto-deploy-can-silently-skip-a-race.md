@@ -1,6 +1,6 @@
 ---
 name: railway-auto-deploy-can-silently-skip-a-race
-description: "A merge to main can trigger a Railway deploy that gets marked SKIPPED (not queued, not built, not failed) if another deploy is already mid-build when the webhook arrives — the merge succeeds, CI is green, but production keeps serving the OLDER commit with zero error surfaced anywhere obvious. Fix: `railway redeploy --yes --from-source`, then verify healthz proves your commit is an ancestor of the live revision."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: Recovery is to do NOTHING — the next green merge carries it forward: never `railway redeploy`, never re-merge (see the module rule 'Engineering Rules > Production hooks: 'A FAILED, CANCELLED OR STILL-QUEUED CHECK'). Older text follows: A merge to main can trigger a Railway deploy that gets marked SKIPPED (not queued, not built, not failed) if another deploy is already mid-build when the webhook arrives — the merge succeeds, CI is green, but production keeps serving the OLDER commit with zero error surfaced anywhere obvious. Fix: `railway redeploy --yes --from-source`, then verify healthz proves your commit is an ancestor of the live revision."
 metadata: 
   node_type: memory
   type: project

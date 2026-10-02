@@ -1,6 +1,6 @@
 ---
 name: approval-workflow-sweep-2026-08-19
-description: "The complete inventory of Phoenix approval workflows as swept on 2026-08-19 — production has exactly THREE chain-shaped ones, and offer-approval config is wired to nothing."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: public.ats_offers is now LIVE in production (2026-08-21) ... markOfferSent refuses on ats_offers.approved_at being null (one approval before sending) (see `offer-chain-was-live-in-the-registry-with-a-hole-past-approval`). Older text follows: The complete inventory of Phoenix approval workflows as swept on 2026-08-19 — production has exactly THREE chain-shaped ones, and offer-approval config is wired to nothing."
 metadata: 
   node_type: memory
   type: reference
