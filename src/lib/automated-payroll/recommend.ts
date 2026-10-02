@@ -1477,15 +1477,22 @@ function recommendP1Crm(
     // This month's resignations moved to their own dedicated Resignations CRM
     // tab (owner request 2026-07-26 — see recommendResignationCrm), because a
     // leaver's CRM rules differ: the Working/Non-Working split caps at his DAYS
-    // WORKED (not the whole month) and the deduction divides by the month's
-    // ACTUAL calendar days (not /30). This tab is now one-part CONTINUING
-    // employees only, keeping the old whole-month /30 behavior for them.
+    // WORKED, not the whole month. This tab is one-part CONTINUING employees
+    // only, and their split caps at the whole month.
+    //
+    // THE DIVISOR IS NO LONGER ONE OF THE DIFFERENCES. This comment used to say
+    // the tab kept "the old whole-month /30 behavior" for continuing employees;
+    // the owner's ruling of 2026-09-12 (audit finding 37) retired that flat rate
+    // on every day-driven field, so both tabs now divide by the month's own
+    // calendar days. See dayDrivenMoney in step-definitions.ts.
     if (member.lifecycle === "leaver") continue;
     const draft = drafts.get(member.compact);
     const row = part1ManualDeductionBaseRow(member, source);
     // Working/Non-Working Days cap (owner request 2026-07-25) — the real
-    // calendar day count, deliberately NOT the fixed /30 the money formula uses.
-    // See StepFieldSpec.complementTotalContextKey's doc for why these must stay separate.
+    // calendar day count. The money divisor is the same figure here, but the cap
+    // stays a SEPARATE field from it: on the Resignations CRM tab the cap is the
+    // leaver's days worked while the divisor is still the whole month. See
+    // StepFieldSpec.complementTotalContextKey's doc for why they must not merge.
     const daysInMonth = daysInPeriodMonth(period);
     row.context["Days In Month"] = daysInMonth;
 
@@ -1522,8 +1529,13 @@ function recommendP1Crm(
 
 /**
  * Leaver CRM deduction rate — UNIFIED with the resignation settlement (owner
- * rule 2026-07-26): ÷ the month's ACTUAL calendar days × days, NOT the /30 used
- * for continuing employees.
+ * rule 2026-07-26): ÷ the month's ACTUAL calendar days × days.
+ *
+ * That used to be this function's exception — continuing employees were on a
+ * flat 30 until the owner's ruling of 2026-09-12 (audit finding 37) put every
+ * day-driven field on the month's own length. It is now the one rate the whole
+ * system uses, so a caller must not read "unified with the settlement" as
+ * meaning anything else is still on a different divisor.
  *
  * `monthlyAmount` is the leaver's NET for a whole month — Base + Extra Cost of
  * Living + Fuel. It was the BASE alone until 2026-08-30, which broke the very

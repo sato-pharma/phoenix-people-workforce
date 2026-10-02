@@ -133,3 +133,38 @@ full Playwright E2E suite runs only on manual `workflow_dispatch` (the `full-e2e
 commit's checks finish. So the merge gate and the deploy gate are the same two checks, which is why a
 gate hard-coded to a count from a doc does not merely wait — it waits for checks that no longer exist.
 **Count passes against `branches/main/protection/required_status_checks`, read live.**
+
+### Waiting for the gate: allow-list `SUCCESS`, never deny-list the unfinished states
+
+Measured 2026-10-02 on one pull request, three false verdicts in roughly ten minutes — every one in
+the same direction, claiming the run had finished when it had not, and two of them relayed to the
+owner as a reason to merge.
+
+**The first shape.** A loop whose condition was "does any row say `pending`?" The window right after
+a push has no check runs at all yet — longer when that push CANCELS the previous run before GitHub
+creates the next, which is what happens when fixups land a minute apart. In that window
+`gh pr checks` prints `no checks reported on the '<branch>' branch` and exits **non-zero**. An empty
+list contains no row saying `pending`, so the condition was satisfied and the loop reported the pull
+request settled. Two separate watchers did this inside the same minute, both naming a head whose
+`ci.yml` run was still `in_progress`.
+
+**The second shape, which is the instructive one.** The rewrite asked branch protection for the
+required check names and required each to be *present and not `PENDING`*. It printed
+`ALL REQUIRED GREEN` on a run that was still going, because `gh pr checks --json name,state` returns
+`QUEUED` and `IN_PROGRESS` as well as `PENDING` — and a deny-list naming only `PENDING` treats the
+other two as finished. Fixing the empty-list hole had not fixed the bug; it had only moved it, because
+both versions enumerated the states that mean *wait*, and there was always one more.
+
+**So the rule is about the shape, not the state names.** Read the required contexts live from
+`branches/main/protection/required_status_checks` (never from a doc — see the paragraph above), and
+treat the gate as green **only when every one of them is literally `SUCCESS`**. Absent, `QUEUED`,
+`IN_PROGRESS`, `PENDING`, `NEUTRAL`, `SKIPPED` on a required context, and an unreadable or empty list
+all mean keep waiting; `FAILURE` is red. A watcher built this way can only ever be wrong toward "not
+finished yet", which costs a minute of waiting. The deny-list is wrong in the direction that hands
+the owner a merge approval for a pull request nothing has verified.
+
+Two practical notes. `gh pr checks` exits non-zero both when the list is empty **and** when any check
+is failing, so a wrapper that treats a non-zero exit as an error will throw on the very result it was
+watching for — capture the output and branch on the states, not on the exit code. And a check that
+protection does not require (`mobile`, `full-e2e`) reading `skipping` is not a failure and not a
+gate; only the required contexts decide.

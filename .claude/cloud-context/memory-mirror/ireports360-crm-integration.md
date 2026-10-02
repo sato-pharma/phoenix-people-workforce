@@ -1,11 +1,11 @@
 ---
 name: ireports360-crm-integration
-description: "iReports360 (vendor EGYDEV) is the company's field-force pharma CRM and system of record for field activity — Phoenix integrates it READ-ONLY via its Reporting API v2.0 to replace the Field Workforce Compliance (FWC) report's manual Excel input with live visits + GPS check-ins. Both API endpoints wrap the payload as {success,count,data} — read .data. The day-cell classifier is conservative (0 over-credit); visitType -8 'prospection' is a NORMAL visit (the API docs were wrong), -30 is the campaign marker. Enable by setting IREPORTS360_BASE_URL/USERNAME/PASSWORD env vars; never store the password in memory or git."
+description: "iReports360 (vendor EGYDEV) is the company's field-force pharma CRM and system of record for field activity; Phoenix reads it READ-ONLY (Reporting API v2.0, payload wrapped {success,count,data} — read .data) to feed the FWC report. Day cells: type 0 = visit count; -4 is the ONLY leave (AV); -8 is CAMPAIGN (CP, counted beside coverage); -15 and -30 are CP working time. Classify codes only in src/lib/crm/visit-type-meaning.ts. Never store the password in memory or git."
 metadata:
   node_type: memory
   type: project
   originSessionId: 3c8dd832-1759-43c2-aafa-98c6db7e1468
-  modified: 2026-09-26T01:45:52.060Z
+  modified: 2026-10-02T16:35:38.432Z
 ---
 
 ## What iReports360 is
@@ -52,10 +52,22 @@ HR ID to backfill `employees.crm_id`.
 The report being replaced is the iReports360 **Team Calendar / "Tracker"** — a daily grid whose cell
 vocabulary is exactly `{N, F, CP, AV, numeric count}`, matching the adapter 1:1. Mapping:
 
-- **Regular (0) → the visit count.** A day cell is the count of ALL records that day.
-- 🔴 **visitType `-8` "prospection" is a NORMAL visit (~24% of records) — the API docs were WRONG**; it
-  counts toward the day's activity, not a marker.
-- **`-30` = campaign marker** (a day of ONLY `-30` → "CP"); `-4` / `-15` → AV.
+- **Regular (0) → the visit count.** A day cell is the count of the day's regular (type `0`) visits;
+  every other code is looked up in the ONE table, `src/lib/crm/visit-type-meaning.ts`
+  (`crmVisitTypeMeaningLenient` — an unlisted code reads as CP). Priority: regular count > CP > AV. A
+  mixed day (regular visits AND a campaign-class activity) shows the regular count with a campaign
+  overlay (owner decision 2026-07-20); only a day with no regular visit reads "CP".
+- 🔴 **visitType `-8` is CAMPAIGN (Prospection)** — `CAMPAIGN_TYPE = -8` (`src/lib/crm/visit-types.ts`),
+  classified CP (worked, not a regular visit). Some reps log ALL their field work as `-8`, and campaign
+  is counted BESIDE Doctor Coverage, never inside it (owner ruling 2026-08-27, #2448 —
+  [[campaign-visits-make-a-working-rep-look-like-a-zero]]); plan-vs-actual still counts type `0` only.
+  **Superseded 2026-10-02:** previously "`-8` 'prospection' is a NORMAL visit, it counts toward the day's activity, not a marker" — `CAMPAIGN_TYPE = -8` and the 2026-08-27 campaign-beside-coverage ruling.
+- **`-4` (Annual Vacation) is the ONLY leave type → AV.** `-15` (Health Day) is CP / working time
+  (owner ruling 2026-08-01 — reading it as leave had charged 22 days across 11 employees in July
+  2026), and `-30` is an unlabelled field visit (Pharmacy Visit / Regular by comment) → CP, not a
+  campaign marker. `-5`, `-6` and `-16` are CP working days too
+  ([[crm-visit-type-maps-there-are-three-not-two]]).
+  **Superseded 2026-10-02:** previously "`-30` = campaign marker; `-4` / `-15` → AV" — the owner's 2026-08-01 Health Day ruling and the unified table in `src/lib/crm/visit-type-meaning.ts`.
 - **Friday** shows the count if a visit exists, else "F"; an eligible no-record day → **N**; a future day →
   blank.
 - **The Tracker lists EVERY seat including zero-activity reps (rows of all-N) and vacant seats — the
@@ -74,7 +86,9 @@ the deductions path DISPLAY-FIRST until the campaign-period questions below are 
 
 **Open questions for the vendor/developer:** (1) does the API expose campaign PERIODS (date ranges) or a
 campaigns endpoint? (2) should double/accompanying visits (`doubleID`) credit the second rep? (3) any
-marker visit types beyond `-4` / `-15` / `-30`?
+marker visit types beyond `-4` / `-15` / `-30`? — (3) is since answered in-house: the undocumented
+codes were resolved from the reps' comments and classified in `src/lib/crm/visit-type-meaning.ts`
+([[ireports360-undocumented-visit-type-codes]]).
 
 ## Enabling it, and the security posture
 

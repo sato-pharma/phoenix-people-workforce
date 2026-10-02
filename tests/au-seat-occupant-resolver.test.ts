@@ -226,13 +226,23 @@ export function runAuSeatOccupantResolverTests() {
   }
 
   // ── 5. The current-state views resolve the OPEN span, not the newest one ────
-  for (const name of ["au.v_org_tree", "au.v_org_structure_kpis"]) {
-    const { body } = latest.get(name)!;
-    assert.ok(
-      /o\.effective_to\s+is\s+null/.test(body),
-      `${name} shows CURRENT occupancy and must join au.occupancy_history on effective_to is null`,
-    );
-  }
+  // au.v_org_tree joins au.occupancy_history directly on the open span. au.v_org_structure_kpis
+  // derives its counts FROM au.v_org_tree rather than re-joining occupancy, so it inherits the
+  // open-span resolution (and can never drift from the tree, which is why the retired-seat filter
+  // the tree gained in 20260909234500 now reaches the KPI counts too). The guarantee — no
+  // newest-row resolution — holds whichever way the view reaches current occupancy, so the KPI
+  // view satisfies it by EITHER filtering the open span itself OR reading from the tree.
+  const orgTreeBody = latest.get("au.v_org_tree")!.body;
+  assert.ok(
+    /o\.effective_to\s+is\s+null/.test(orgTreeBody),
+    "au.v_org_tree shows CURRENT occupancy and must join au.occupancy_history on effective_to is null",
+  );
+  const kpiBody = latest.get("au.v_org_structure_kpis")!.body;
+  assert.ok(
+    /o\.effective_to\s+is\s+null/.test(kpiBody) || /\bfrom\s+au\.v_org_tree\b/i.test(kpiBody),
+    "au.v_org_structure_kpis shows CURRENT occupancy: it must either join au.occupancy_history on " +
+      "effective_to is null, or derive from au.v_org_tree (which does, and which also hides retired seats)",
+  );
   assert.ok(
     /m\.effective_to\s+is\s+null/.test(latest.get("public.au_v_line_area_map")!.body),
     "public.au_v_line_area_map is the current-state wrapper the Territory drilldown, monthly targets and the " +

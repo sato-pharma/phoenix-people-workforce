@@ -1,20 +1,25 @@
 ---
 name: crm-contact-list-comes-from-contactslist-aspx-not-the-api
-description: "The rep's doctor list lives on the CRM WEB app ContactsList.aspx (host site10), NOT the Reporting API (site7, which has no contacts endpoint). Phoenix logs in server-side with the iReports360 credentials it already holds. Two traps: list type is t=Pharmacy not t=PH (a wrong t returns an EMPTY grid, not an error), and the CRM's own Yes/No active flag is NOT Phoenix's roster (leavers stay Yes) — drive every sweep from employees + agent_crm_id. ID = contact_crm_id, an exact join; never name-match a rep's list. Mirrored to public.ireports360_contacts by a cron that MUST fire every 5 min across one hour (12 slices)."
+description: "The rep's doctor list is scraped from the CRM WEB app ContactsList.aspx (host site10). The Reporting API (site7) has had agents-contacts since 2026-08-31 (10 swagger paths, carries the contact's lat/lon) — a COMPLEMENT, not a replacement (no phone, Arabic name, city). Traps: t=Pharmacy not t=PH (a wrong t returns an EMPTY grid); the CRM's Yes/No flag is NOT the roster — drive sweeps from employees + agent_crm_id. ID = contact_crm_id, an exact join. Mirror cron MUST fire every 5 min across one hour (12 slices)."
 metadata:
   node_type: memory
   type: project
   originSessionId: 9fb33483-9e95-4e1b-b031-175186fde22c
-  modified: 2026-09-26T00:03:47.056Z
+  modified: 2026-10-02T16:41:37.362Z
 ---
 
-The iReports360 **Reporting API has no contacts endpoint** ([[crm-api-contacts-endpoint-exists-address-is-ours]]).
-The real doctor/pharmacy list is on the CRM **web app**, which Phoenix can log into server-side with the
-credentials it already holds. **Two different hosts — do not confuse them:**
+The iReports360 **Reporting API has had a contacts endpoint since 2026-08-31** — `GET /api/ReportsApi/agents-contacts?agentId=<id>`,
+the only source of the contact's own registered GPS — but it is a **complement, not a replacement**: it
+carries no phone, no Arabic name, no city/zone, and disagrees with the scrape on 256 of ~9,500 links (64 API-only, 192 scrape-only)
+([[crm-api-contacts-endpoint-exists-address-is-ours]]). The full doctor/pharmacy list is on the CRM **web app**,
+which Phoenix can log into server-side with the credentials it already holds. **Two different hosts — do not
+confuse them:**
+**Superseded 2026-10-02:** previously "the Reporting API has no contacts endpoint" — true on 2026-08-28, but the
+vendor shipped `agents-contacts` by 2026-08-31 (swagger 9 → 10 paths), per [[crm-api-contacts-endpoint-exists-address-is-ours]].
 
 | | Host | What it is |
 | --- | --- | --- |
-| Reporting API | `hmaxhmax-001-site7` (`IREPORTS360_BASE_URL`) | 9 JSON paths — visits/checkins/plans only |
+| Reporting API | `hmaxhmax-001-site7` (`IREPORTS360_BASE_URL`) | 10 JSON paths — visits/checkins/plans, plus `agents-contacts` (one agent per call) |
 | CRM web app | **`hmaxhmax-001-site10`** | ASP.NET WebForms + Telerik RadGrid — the contact lists |
 
 **The login that works** (same `IREPORTS360_USERNAME` / `IREPORTS360_PASSWORD`): GET `/Login.aspx`, carry

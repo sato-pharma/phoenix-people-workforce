@@ -1,11 +1,11 @@
 ---
 name: owner-office-allocation-rule-value-share
-description: "The owner's Office allocation rule — Office imported LAST, each area's share of the line's NON-Office value (units x master factory price), one blended share applied to every product; validated 99.78% against his own sheet and NOT what Phoenix does today"
+description: "The owner's Office allocation rule — LIVE and LOCKED in office-allocation.ts: Office imported LAST, each area's share of the line's NON-Office value (units x master factory price), one blended share applied to every product; validated 99.78% against his own sheet. CI pins it and only the owner's password unlock can change it. It doubles any retail placement error — check the retail split before reading an area gap as an Office problem."
 metadata: 
   node_type: memory
   type: project
   originSessionId: cfb1b008-82c7-4a44-b3f1-382f5e0f94a9
-  modified: 2026-08-10T18:32:52.517Z
+  modified: 2026-10-02T16:38:21.845Z
 ---
 
 Stated by the owner 2026-08-10, then validated against his own July CNS workbook.
@@ -29,11 +29,16 @@ Nailed down precisely:
 **96 units out of 42,838 = 0.22%**, and that residual is entirely the EZ-wholesaler area pair.
 Weighting by units instead of value is 4x worse (deviation 0.152 vs 0.035), so value is confirmed.
 
-**Phoenix does something completely different today.**
-[office-allocation.ts](src/lib/sales/office-allocation.ts) runs at **upload** time and splits each
-product's Office units **per product**, **region → brick**, weighted by **units**. All four
-dimensions differ. Replacing it means re-stamping every period, because placement is baked into the
-stored rows.
+**This IS what Phoenix does today — the value-share rule is the live rule, and it is locked.**
+[office-allocation.ts](src/lib/sales/office-allocation.ts) carries it inside the
+`GOLDEN RULE · LOCKED` region, pinned by `tests/office-golden-rule-lock.test.ts` in the required CI
+suite (source + behaviour fingerprints + 4 clause checks + numeric clause assertions); it changes only
+through the owner's password unlock — never re-pin by hand
+([[office-golden-rule-is-mechanically-locked]], CLAUDE.md "Protected Files"). Placement is baked into
+the stored rows at upload, so a period is on the rule only once it was re-stamped — and Pedia and
+Anti-Infective July 2026 keep the PRE-#2015 allocation on purpose
+([[pedia-and-anti-infective-july-are-correct-do-not-restamp]]).
+**Superseded 2026-10-02:** previously "Phoenix does something completely different today (per product, region → brick, weighted by units)" — that was the pre-#2015 code of 2026-08-10; the rule shipped and was locked 2026-08-11 (`office-golden-rule-is-mechanically-locked`, `city-split-hides-same-city-customer-moves`).
 
 Resolved without needing him: Office rows already carry a brick (1,925 rows / 391 bricks in July,
 none carry a customer), so allocate to areas by his rule then sub-split within the area — the area
@@ -55,7 +60,7 @@ gets its Office share wrong in the same direction by roughly the same amount. Me
 2026-08-10 on Sohag: retail was ~520 units apart between his sheet and Phoenix, and the area totals
 came out ~1,058 apart. **Never read a post-rule area gap as an Office problem without checking the
 retail split first** — and never "fix" the rule to chase such a gap. Corollary: shop-placement
-rulings are worth about twice their face value once this ships.
+rulings are worth about twice their face value now that this has shipped.
 
 **Built and validated end to end 2026-08-10.** Lives in PR #2015 (branch
 `codex/office-value-share-allocation`), which after the revert carries only `office-allocation.ts` +

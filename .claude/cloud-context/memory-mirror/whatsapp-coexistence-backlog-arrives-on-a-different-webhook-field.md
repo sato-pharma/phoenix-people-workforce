@@ -1,11 +1,11 @@
 ---
 name: whatsapp-coexistence-backlog-arrives-on-a-different-webhook-field
-description: "READ THE CORRECTION AT THE TOP: the 2026-08-23 QR scan NEVER bound 01159888247 - proven from delivery data, re-proven 2026-09-06 (1,362 whatsapp events, ALL on the Cloud line 201098500699, ZERO on the handset; 110 events arrived FROM it as a hand-forwarder). Coexistence delivers NEW messages on `messages` and the BACKLOG on `history`, a different envelope two levels deeper - and `history` IS subscribed as of 2026-09-06, reversing the 08-23 reading, so the backlog WILL arrive whenever the handset finally links. `smb_message_echoes` IS subscribed since 2026-09-15 (owner) - replies typed on the handset land in the WhatsApp Inbox as origin=handset; `smb_app_state_sync` still off."
+description: "WhatsApp coexistence is LIVE since 2026-09-11 (the 2026-08-23 QR scan never bound 01159888247; the real link came 09-11, phone_number_id 477586495433549). Coexistence delivers NEW messages on `messages` and the BACKLOG on `history`, a different envelope two levels deeper (stamped historyImport) - but the backlog NEVER replayed and is ABANDONED by owner decision: never propose a reconnect/resync. `smb_message_echoes` ON since 2026-09-15 (handset replies land as origin=handset); `smb_app_state_sync` off."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 4ea17475-2526-4b6e-a19c-ddc20cc6bb29
-  modified: 2026-09-15T20:16:00.188Z
+  modified: 2026-10-02T16:40:55.585Z
 ---
 
 > 🔴 **CORRECTION — the sentence below is WRONG and is kept only as the dated record.** The scan did
@@ -14,15 +14,27 @@ metadata:
 > every one delivered to **201098500699** (the Cloud API line), **ZERO** to 201159888247; 8 older
 > rows predate the field. The handset's only role is the opposite one — **110 rows arrived FROM
 > `+201159888247`**, i.e. HR forwarding CVs off it by hand, most recently 2026-09-05 17:32 Cairo.
-> In WhatsApp Manager the number still reads **Unverified**. The same false claim is still
-> uncorrected in `docs/recruitment-inbound-intake.md` §"Coexistence — what changes when the handset
-> is linked". Manual forwarding never ended. See [[whatsapp-coexistence-verified-state-2026-08-24]]
-> — App Review was APPROVED 2026-09-06, so the linking is now possible but has NOT been done.
+> In WhatsApp Manager the number still read **Unverified** on 2026-09-06. The same false claim was
+> then uncorrected in `docs/recruitment-inbound-intake.md` §"Coexistence — what changes when the
+> handset is linked". Manual forwarding had not ended by 2026-09-06. App Review was APPROVED
+> 2026-09-06, and **the handset was finally linked 2026-09-11 ~02:16 Cairo — coexistence is LIVE**:
+> it joined a NEW portfolio `Sato Pharma HR Recruitment` (`phone_number_id 477586495433549`), still
+> runs WhatsApp Business on the phone, and a real CV reached intake that night. See
+> [[whatsapp-coexistence-verified-state-2026-08-24]] for the live wiring and the two ways to break it.
+> **Superseded 2026-10-02:** previously "the linking is now possible but has NOT been done" — the
+> 2026-09-11 onboarding.
 >
 > **Second correction, 2026-09-06: `history` IS subscribed now.** The `whatsapp_business_account`
 > object carries 11 fields and `history` (v25.0) is among them; on 08-23 it carried 10 and `history`
-> was absent. So the "backlog does not arrive at all" conclusion below is SUPERSEDED — it will arrive
-> the moment the handset links and the sync is confirmed, on a path that has never run on real data.
+> was absent. 🔴 **But the backlog NEVER replayed and is ABANDONED — owner decision 2026-09-11.** The
+> handset linked that day with `history`/`messages` v25.0 subscribed and chat-history sharing
+> confirmed at onboarding, yet zero `historical` rows arrived ~10 h later — Meta simply did not send
+> it. Asked and answered: *"ok leave it connected."* **Do not offer the disconnect-and-reconnect /
+> resync again.** The old CVs are not lost — they sit in the handset's own chats; for one that
+> matters, forward it from the handset to `+20 10 98500699`, which auto-captures.
+> **Superseded 2026-10-02:** previously "the backlog will arrive the moment the handset links" — it
+> linked 2026-09-11 and the backlog never came; owner abandoned it the same day
+> ([[whatsapp-coexistence-verified-state-2026-08-24]]).
 > `smb_app_state_sync` is deliberately still off.
 >
 > **Third correction, 2026-09-15 23:11 Cairo: `smb_message_echoes` IS subscribed now**, at the
@@ -48,7 +60,9 @@ The owner completed the Meta Coexistence QR scan for the advertised HR handset `
   records the receiving line and accepts any of them.
 - **The backlog needs `history` SUBSCRIBED in the Meta app.** Read live 2026-08-23 the app
   subscription carries 10 fields including `messages` but **not** `history`,
-  `smb_message_echoes`, or `smb_app_state_sync`. Adding `history` is what triggers the replay.
+  `smb_message_echoes`, or `smb_app_state_sync`. Adding `history` was expected to trigger the replay —
+  it was subscribed (2026-08-23 / confirmed 2026-09-06) and the replay still never came when the
+  handset linked on 2026-09-11; the backlog is abandoned (top of this file).
 - PR #2336 taught the parser both envelopes. Before it, a backfill was answered `200 OK` and
   **discarded** — a whole CV backlog lost with no error anywhere.
 
@@ -63,13 +77,17 @@ exclusion filter must use the `is.null` form — see
 `whatsapp_business_messaging` only; `granular_scopes` exposes no `target_ids`,
 `me/assigned_whatsapp_business_accounts` is empty, `me/businesses` is `(#100) Missing Permission`,
 and `?metadata=1` introspection is off. **The new handset's `phone_number_id` therefore only
-reveals itself on the first inbound message**, via `raw_metadata.deliveredToPhoneNumberId`.
+reveals itself on the first inbound message**, via `raw_metadata.deliveredToPhoneNumberId`. (Now
+known: since the 2026-09-11 link it is `477586495433549`, in portfolio `Sato Pharma HR Recruitment`.)
 
 **Why the Development-mode theory was wrong:** `GET /{phone-number-id}?fields=account_mode` returns
 `LIVE`. Confirmed by a field, not inferred from a 2-of-2 coincidence.
 
-**Still to do once a real inbound proves delivery:** set `RECRUITMENT_WHATSAPP_DIRECT_INTAKE=true`
-and add the handset's id to `WHATSAPP_PHONE_NUMBER_IDS` (currently unset; health probes one line).
+**Still to do once a real inbound proves delivery (written 2026-08-23):** set `RECRUITMENT_WHATSAPP_DIRECT_INTAKE=true`
+and add the handset's id to `WHATSAPP_PHONE_NUMBER_IDS`. The second half is DONE —
+`WHATSAPP_PHONE_NUMBER_IDS` carries both ids (GitHub repo var → Railway, PR #3658), so the silence
+alert watches both lines; the state of `RECRUITMENT_WHATSAPP_DIRECT_INTAKE` is not recorded in a later
+note — read it live before asserting it.
 `RECRUITMENT_WHATSAPP_IMPORT_SENDERS` is `01159888247,201280955558` and stays as is — the handset is
 now a receiver, so it never appears as a sender on a direct application.
 

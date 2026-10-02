@@ -1,11 +1,11 @@
 ---
 name: weekly-sales-has-no-area-grain
-description: "Weekly Sales facts are at distributor-BRANCH (depot) grain with no area/brick/customer, so area scoping needs an owner-maintained branch→area mapping"
+description: "Weekly Sales facts are at distributor-BRANCH (depot) grain with no area/brick/customer. Areas come from the owner's SPLIT RULE — the depot NAME is read and its value split evenly over the governorates, then areas, it names (branch-name-scope.ts / branch-area-split.ts) — unless a hand-set Area on the mapping sheet overrides it; the import parser itself never stamps an area from a name."
 metadata: 
   node_type: memory
   type: project
   originSessionId: fa9757e2-2eab-4f0a-b018-cf9adb57709c
-  modified: 2026-07-30T02:56:10.216Z
+  modified: 2026-10-02T16:39:35.250Z
 ---
 
 `weekly_sales_rows` carries **region_code + branch_code/branch_name only** — no area, no brick, no
@@ -43,7 +43,16 @@ Infective (66) rows are stamped too — correct, since Pedia's D16 is also opera
 `SEAT-PED-DM-AB`. **Rollback:** `update weekly_sales_branch_region_map set area_code=null where
 area_code='D16'; update weekly_sales_rows set area_code=null where area_code='D16';`
 
-**How to apply:** never infer a branch's area from its name — a test pins that the parser cannot
-(`tests/weekly-area-scope.test.ts`). New area attributions are an owner decision entered in the admin
-screen or an explicit seed migration. Related: [[sos-ambiguous-place-name-rule]],
+**How to apply:** the depot NAME *is* read for area — by the owner's split rule, not by the parser. A
+branch splits **evenly across the governorates its name names, then evenly across each governorate's
+areas** (brick → area → governorate → region, most precise first, resolved per line from
+`au_v_line_area_map`), implemented in `src/lib/sales/weekly/branch-name-scope.ts` /
+`branch-area-split.ts`, and the split must be shown with its calculation on the weekly mapping sheet,
+never applied silently ([[weekly-anti-infective-ue-is-95pct-of-all-unmapped-value]]). A multi-area depot
+is SPLITTABLE, not unmappable — do not send the owner a per-branch classification sheet. **A hand-set Area
+on the mapping sheet OUTRANKS the reading** (the owner's override; the branch's whole value goes there),
+and the import parser still must never stamp `area_code` from a name — `tests/weekly-area-scope.test.ts`
+pins that. New hand-set attributions remain an owner decision entered in the admin screen or an explicit
+seed migration.
+**Superseded 2026-10-02:** previously "never infer a branch's area from its name" — the owner's split rule (he rejected per-branch classification sheets) reads depot names to allocate weekly value to areas ([[weekly-anti-infective-ue-is-95pct-of-all-unmapped-value]]). Related: [[sos-ambiguous-place-name-rule]],
 [[sos-brick-authoritative-geography]], [[weekly-sales-module-map]], [[la003-la004-confidential-products]].

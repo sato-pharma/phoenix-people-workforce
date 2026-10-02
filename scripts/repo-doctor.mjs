@@ -116,7 +116,7 @@ import {
   autoloadFootprintLines,
   memoryIndexBudgetLines,
 } from "./memory-index-budget.mjs";
-import { classifyMemoryReachabilityAcrossRefs, memoryReachabilityLines } from "./memory-index-reachability.mjs";
+import { classifyMemoryReachabilityAcrossRefs, memoryReachabilityLines, readModuleMemoryText } from "./memory-index-reachability.mjs";
 import { cloudMirrorDrift, cloudMirrorDriftReport } from "./cloud-mirror-drift.mjs";
 import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
 import { commitDeltaLandedOnMain } from "./delta-landed.mjs";
@@ -1329,6 +1329,8 @@ let autoloadedIndexBytes = null;
     } catch {
       // Left empty on purpose. See above: the safe failure is to under-claim reachability.
     }
+    // Module memory names a note exactly as AGENTS.md does (backticked), and loads with its module.
+    agentsText += "\n" + readModuleMemoryText(primaryRoot);
 
     // But the working tree read above can ALSO be stale in the other direction: the PRIMARY sitting
     // behind origin/main (see the footprint section below) means a slug merged there minutes ago is

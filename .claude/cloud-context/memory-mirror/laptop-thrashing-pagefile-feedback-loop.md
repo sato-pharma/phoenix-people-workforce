@@ -1,11 +1,11 @@
 ---
 name: laptop-thrashing-pagefile-feedback-loop
-description: "Machine-wide slowness on this 16 GB laptop is page-file thrashing from too many concurrent Claude sessions — diagnose with Pages Input/sec, not free RAM"
+description: "Machine-wide slowness on this 16 GB laptop is memory pressure from too many concurrent Claude sessions — judge it by free/available PHYSICAL RAM read live (under ~1.8 GB is the freeze line), not commit; Pages Input/sec (median of ~20 samples) only confirms thrashing. Current machine state is authoritative in ~/.claude/CLAUDE.md."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 9bc3bd8d-69af-4796-a9d6-d8f9a750fcb7
-  modified: 2026-08-01T02:21:47.322Z
+  modified: 2026-10-02T16:36:01.089Z
 ---
 
 On 2026-08-01 "everything is very very slow" was **not** the app, the network, or Claude — the
@@ -14,16 +14,22 @@ and **13,000–18,000 hard page faults/sec**. CPU read 100% but was mostly waiti
 Load was 30 `claude.exe` + 36 `node.exe` (28 of them per-session MCP servers, each session
 spawns its own set) across 17 worktrees.
 
-**Why:** there is a feedback loop that makes this self-worsening. RAM exhaustion grows
-`C:\pagefile.sys` (found at **36.62 GB allocated**, peak use 13.05 GB) — that single file was
-the largest consumer of C:, larger than Docker or Downloads. A fuller C: leaves less room to
-page, which worsens the thrashing. Disk cleanup and RAM pressure are the *same problem* here,
-not two problems.
+**Why (as measured 2026-08-01):** there was a feedback loop that made this self-worsening. RAM
+exhaustion grew `C:\pagefile.sys` (found at **36.62 GB allocated**, peak use 13.05 GB) — that single
+file was the largest consumer of C:, larger than Docker or Downloads. A fuller C: left less room to
+page, which worsened the thrashing. **Today the pagefile is FIXED at 64 GB (commit limit ≈ 80 GB, per
+`~/.claude/CLAUDE.md`), so it no longer grows**, and commit headroom stays green while physical RAM
+runs out — read the current machine state there, never from this file.
 
 **How to apply:**
-- Diagnose with `\Memory\Pages Input/sec` (healthy ≈ 0; >10k = thrashing), **not** free physical
-  RAM — Windows always keeps RAM full with cache, so "0.5 GB free" is normal and stayed ~0.5 GB
-  even after reclaiming 14.5 GB of commit charge. Free RAM is a useless signal on this machine.
+- 🔴 **Judge memory trouble by free/available PHYSICAL RAM, read live — it is what binds, not the
+  commit charge.** The standing rule (`~/.claude/CLAUDE.md`, AGENTS.md §5): available RAM under
+  **~1.8 GB** is the line where this box hard-freezes or bluescreens; read it live, never a
+  remembered figure. Around a crash, read free physical RAM at the crash time
+  ([[commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb]]). `\Memory\Pages Input/sec`
+  (healthy ≈ 0; >10k = thrashing) is a secondary signal that confirms thrashing is happening — use
+  it alongside free RAM, not instead of it.
+  **Superseded 2026-10-02:** previously "diagnose with Pages Input/sec, not free physical RAM — free RAM is a useless signal on this machine" — the later rule that free physical RAM is what binds (`commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`, `~/.claude/CLAUDE.md` "This machine").
 - **Take ~20 samples and use the MEDIAN; a 3-sample snapshot is worthless.** Individual readings
   swing 3 → 14,350 on an otherwise healthy box. Two separate single spikes (15,536 then 21,946)
   each looked like a relapse and each was noise: the 24-sample median was 489, with 18/24 under 1k.
@@ -33,8 +39,9 @@ not two problems.
   12 cores, sustained — the elevated faults tracked that, not memory pressure. The same delta
   check identifies which sessions are safe to close: >0.5s per 8s window means mid-task, and
   age is NOT idleness (a 10h-old session was burning 5s/8s).
-- Check `Get-CimInstance Win32_PageFileUsage` early — a huge pagefile is the *fingerprint* of
-  chronic over-subscription, and it silently eats the OS drive.
+- `Win32_PageFileUsage` no longer reads as a symptom: the pagefile is fixed at 64 GB by design, so
+  its size says nothing about over-subscription — read free physical RAM instead.
+  **Superseded 2026-10-02:** previously "check `Get-CimInstance Win32_PageFileUsage` early — a huge pagefile is the fingerprint of chronic over-subscription" — the fixed 64 GB pagefile recorded in `~/.claude/CLAUDE.md`.
 - Biggest safe C: reclaim found: `AppData\Roaming\Claude\vm_bundles` was **9.3 GB** (regenerable
   cache; deleted cleanly with 30 sessions live, nothing broke). Docker ~10.7 GB and browser
   profiles ~11.4 GB are the next tier.

@@ -1,11 +1,11 @@
 ---
 name: marketing-customer-ownership-gap-is-by-design
-description: "The unowned marketing customers were one 2026-06-20 seed import, NOT a code bug — do not 'fix' the gap as a defect. owner_hr_id is a VISIBILITY control (writing it is a production permissions change), area_id grants sight too and is the right instrument for a cross-line shared customer, and the gap was ultimately closed by AREA not owners — so measure it with `owner_hr_id is null AND area_id is null`, never unowned-count. Holds the evidence routes for placing a customer, the owner rulings, and the CRM/duplicate traps that manufacture false findings."
+description: "The unowned marketing customers were one 2026-06-20 seed import, NOT a code bug — do not 'fix' the gap as a defect. Visibility is TERRITORIAL (owner 2026-08-19): area_id shows a row to every rep on the patch, line-agnostic; owner_hr_id is the audit record of who captured it — never backfill owners, never invent line_id; make a stuck row workable by writing area_id ONLY. Measure the gap with `owner_hr_id is null AND area_id is null`. Holds the evidence routes for placing a customer, the owner rulings, and the CRM/duplicate traps that manufacture false findings."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 9f9d1d5e-92b5-4eaa-a238-ad2fc773fd35
-  modified: 2026-09-26T02:30:36.141Z
+  modified: 2026-10-02T16:37:58.029Z
 ---
 
 ## The gap is by design — do not "fix" it as a defect
@@ -18,15 +18,20 @@ gives seeded rows no owner/area and `evidence_status='missing'` "so they belong 
 query filters them out with `.not("owner_hr_id","is",null)`. The gap was inert — those 155 carried one
 request between them (rejected).
 
-## The two controls, and why AREA is usually the right one
+## The two columns — AREA is the visibility rule, `owner_hr_id` is the audit record
 
-- **`owner_hr_id` is a VISIBILITY control, not a label.** `canSeeMarketingCustomer` reads
-  `owner_hr_id`/`manager_hr_id`, so writing it puts the customer in that rep's marketing-request dropdown —
-  **a bulk backfill is a production permissions change, and a wrong guess lets marketing spend be raised
-  against the wrong shop.** The sanctioned single-row path is the Super Admin **"validate on behalf of"**
-  flow (actor must be Super Admin server-side; target must be an ACTIVE employee whose job function is in
-  `marketingCreatorRoles`; only `owner_hr_id` moves; audit columns keep naming the admin).
-- **AN AREA GRANTS SIGHT TOO, and it is usually the right answer — do not reach for `owner_hr_id` first.**
+- **`owner_hr_id` is the AUDIT record of who captured and validated the row — never the instrument for
+  making a row visible, and never something to backfill** (owner ruling 2026-08-19,
+  [[marketing-customers-belong-to-areas-not-people]], [[seeded-marketing-pharmacies-have-no-area-and-are-invisible]]).
+  `canSeeMarketingCustomer` still carries a hierarchy branch on `owner_hr_id`/`manager_hr_id` (the owner and
+  his management chain see the row) beside the area branch, so writing an owner still changes who can raise
+  marketing spend against that shop — one more reason not to invent one. The sanctioned single-row path for
+  an owner is the Super Admin **"validate on behalf of"** flow (actor must be Super Admin server-side; target
+  must be an ACTIVE employee whose job function is in `marketingCreatorRoles`; only `owner_hr_id` moves; audit
+  columns keep naming the admin).
+  **Superseded 2026-10-02:** previously "`owner_hr_id` is a VISIBILITY control, not a label" — the 2026-08-19
+  territorial ruling made area the visibility rule and owner the audit record.
+- **AREA GRANTS SIGHT, and it is the answer — never reach for `owner_hr_id`.**
   `canSeeMarketingCustomer` ([service.ts:4264](src/lib/marketing-requests/service.ts)) falls through to
   `Number(row.area_id) === viewerAreaId` (the "territory route", 2026-08-19 ruling), and
   `assertMarketingCustomerIsInScope` uses the same predicate — so a customer with `area_id` set and
@@ -41,18 +46,21 @@ request between them (rejected).
   separable per batch); **do not undo or re-run them.** Rollback of any batch = set
   `owner_hr_id`/`manager_hr_id`/`line_id`/`area_id` back to NULL for its marked ids.
 
-## Placing a customer: four columns, and the evidence routes in order
+## Placing a customer: `area_id` only, and the evidence routes in order
 
-- **Four columns move together** — the app create path sets `owner_hr_id`, `manager_hr_id`, `line_id` and
-  `area_id` all from the owner employee, so a backfill writing only `owner_hr_id` leaves the row
-  half-configured (the rep sees it but request validation reads `line_id`/`area_id` too). Leave
+- **A backfill writes `area_id` ONLY** — do NOT invent `line_id` (visibility is line-agnostic; one customer
+  serves every line on the patch) and do NOT invent `owner_hr_id` (the audit record of who actually captured).
+  The app's own create path still stamps `owner_hr_id`, `manager_hr_id`, `line_id` and `area_id` from the
+  capturing employee — that is the capture record, not a recipe for a backfill. Leave
   `created_by_hr_id`/`updated_by_hr_id` untouched when there is no human actor (audit columns stay truthful).
-- 🔴 **Write the CUSTOMER's area into `area_id`, not the owner's — because a MANAGER's `employees.area_id` is
+  **Superseded 2026-10-02:** previously "four columns move together — a backfill writes owner, manager, line
+  and area" — the territorial rule in [[seeded-marketing-pharmacies-have-no-area-and-are-invisible]] limits a
+  backfill to `area_id`.
+- 🔴 **Write the CUSTOMER's area into `area_id`, not a person's — because a MANAGER's `employees.area_id` is
   REGION-level** (`Cairo`=1, `Giza`=7, `Upper Egypt`=16, `ALEX-BHR`=23, `Delta(1)`=29, `egypt`=42…), and
-  area ids elsewhere are 1092–1145. When the owner is a rep on the same patch you may copy their area; when
-  the owner is a manager/region-seat, take `area_id`/`line_id` from the patch and only owner/manager from the
-  person. (An owned customer whose area differs from its pharmacy's master area is NORMAL — area follows the
-  owner's seat, so the owner decides correctness, not the pharmacy link.)
+  area ids elsewhere are 1092–1145. Take `area_id` from the customer's real patch, never from a manager or
+  region seat. (An app-created customer whose area differs from its pharmacy's master area is NORMAL — area
+  follows the capturer's seat and a doctor legitimately prescribes across an area boundary.)
 - **Evidence routes, in this order:**
   1. **CRM `ireports360_visits`** — "does an ACTIVE rep visit this doctor?" FIRST, before any org-cover
      fallback (this was got wrong once: a resigned matched rep was handed to a manager while an active rep

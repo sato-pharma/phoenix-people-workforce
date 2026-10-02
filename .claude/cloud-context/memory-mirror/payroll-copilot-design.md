@@ -1,11 +1,11 @@
 ---
 name: payroll-copilot-design
-description: "The AI Payroll Copilot — assembles a payroll sheet from modules, negotiates flags in chat, feeds the existing batch→approve→lock→payslip machinery. BUILT AND LIVE for CEO+Super Admin (Phases 1-4 shipped 2026-07-07). Read before touching copilot work — holds the owner-confirmed statutory model (Base/Net are IMMUTABLE, tax on Base, Gross is the only value that moves), the universal proration rule, the resignation/joiner rules, and the reusable feeder/deduction wiring."
+description: "The AI Payroll Copilot — assembles a payroll sheet from modules, negotiates flags in chat, feeds the existing batch→approve→lock→payslip machinery. BUILT AND LIVE for CEO+Super Admin (Phases 1-4 shipped 2026-07-07). Read before touching copilot work — holds the owner-confirmed statutory model (Base/Net are IMMUTABLE, tax on Base, Gross is the only value that moves), the proration and resignation rules, the joiner rule (since 2026-08-29: Net (Base + ECOL + Fuel) / calendar days × days worked — the day-15 full/half rule is retired), and the feeder/deduction wiring."
 metadata: 
   node_type: memory
   type: project
   originSessionId: c77ebbe0-6291-4495-b1a7-b13d99435d69
-  modified: 2026-09-26T02:59:09.318Z
+  modified: 2026-10-02T16:38:41.955Z
 ---
 
 The AI **Payroll Copilot** (negotiated 2026-07-06, design LOCKED; Phases 1-4 built and LIVE on production for
@@ -52,7 +52,11 @@ applied AND the per-employee wage is populated. **DEFERRED:** high-earner tax ph
 ## 🔴 Proration, resignation and joiner rules (owner-confirmed, apply to ALL scenarios)
 
 - **Universal proration:** daily rate = **Base Salary ÷ actual calendar days in month** (real 28–31, NEVER a
-  flat 30). **ECOL and Fuel are "extras" — NEVER part of the daily rate, ever.**
+  flat 30). **ECOL and Fuel are "extras" — not part of the daily rate — EXCEPT for a joiner, whose whole Net
+  (Base + ECOL + Fuel) prorates since 2026-08-29 (below).**
+  **Superseded 2026-10-02:** previously "ECOL and Fuel are NEVER part of the daily rate, ever (all scenarios)" —
+  the owner's 2026-08-29 joiner ruling (#2650, [[a-payroll-rule-change-does-not-reach-an-already-open-run]])
+  prorates them for a mid-month hire.
 - **Unpaid leave (continuing employee):** deduction = `(Base ÷ days-in-month) × unpaid days`; only Base-derived
   pay is reduced, ECOL/Fuel always paid in full.
 - **Resignation Rule 1 — two branches by last-working-date vs day 25:**
@@ -68,9 +72,11 @@ applied AND the per-employee wage is populated. **DEFERRED:** high-earner tax ph
   Part1=Basic, Part2=total−Basic; if total < Basic → Part1=total, Part2=0. The existing
   `calculatePayrollParts` two_parts branch (`firstPart = min(basicSalary, totalPayable − forcedSecondPart)`)
   likely implements this for free if fed the correct Rule-1 total as `netSalary` with `forcedSecondPart=0`.
-- **Joiner (new hire mid-month) — a day-15 threshold with a HALF option** (different shape from resignation's
-  zero): hired **≤ day 15 → ECOL+Fuel in FULL**; hired **> day 15 → ECOL+Fuel at HALF** (÷2). Base still
-  follows the universal day-rate proration.
+- **Joiner (new hire mid-month) — the whole NET prorates:** paid `Net (Base + ECOL + Fuel) / calendar days ×
+  days worked`, hire day inclusive (owner, 2026-08-29, merged as #2650). An already-open run keeps its frozen
+  draft overrides until they are cleared — see [[a-payroll-rule-change-does-not-reach-an-already-open-run]].
+  **Superseded 2026-10-02:** previously "a day-15 threshold — hired ≤ day 15 → ECOL+Fuel in FULL, > day 15 →
+  HALF; Base alone prorated" — the owner replaced it on 2026-08-29.
 - **Medical insurance:** `employees.medical_insurance` (numeric, from `employee_compensation`, exposed as
   `EmployeeDirectoryRow.medicalInsurance`) is a FIXED monthly deduction that **ALWAYS applies** (no
   flagging/asking).

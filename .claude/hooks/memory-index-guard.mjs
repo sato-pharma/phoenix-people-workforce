@@ -203,11 +203,14 @@ if (verdict !== null) {
       // and, on its own, is the advice that let AGENTS.md reach 146,898 bytes. A session following
       // it was moving bytes out of the only counter that was watching them, into a file loaded on
       // exactly the same terms. The clause after the dash is the correction.
-      "The index is displacement-only: before adding a hook line, retire a resolved one or relocate "
-        + "it into AGENTS.md, which auto-loads in full and has no cliff of its OWN — but it is inside "
-        + "the footprint budget below, so a relocation buys scannability, never context. Route by "
-        + "KIND of fact: a session or tooling trap to 2.1, a production or approval hook to 2.3, an "
-        + "owner product rule to 4. Put the ACCOUNT in docs/, never in AGENTS.md.",
+      // 2026-10-02: module memory replaced the trim-and-relocate cycle (docs/module-memory.md). The
+      // old advice — relocate a hook into AGENTS.md — is exactly what kept both files at their ceilings.
+      "Module memory (AGENTS.md 2.2): a new note's pointer goes under ## Inbox, and the weekly fold "
+        + "(node scripts/module-memory/fold.mjs --apply) files it under its module and empties the "
+        + "inbox once that PR merges — so nothing is trimmed to make room. Route by WHERE a fact "
+        + "applies: one module to its memory (.claude/rules/<module>.md, ## Rules, in the PR that "
+        + "teaches it), a session or tooling trap to docs/agents-session-traps-clusters.md, a rule "
+        + "true everywhere to AGENTS.md. Put the ACCOUNT in docs/, never in AGENTS.md.",
     ].join("\n"),
   );
 }

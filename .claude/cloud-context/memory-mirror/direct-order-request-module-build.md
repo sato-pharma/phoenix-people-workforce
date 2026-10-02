@@ -1,11 +1,11 @@
 ---
 name: direct-order-request-module-build
-description: "Direct Order Request — governed direct-sales capture, approval and injection, fixing the reps-get-0-of-direct-value gap. BUILT AND LIVE: src/lib/direct-orders/ + a consolidated admin workspace at app/(admin)/admin/direct-orders with approval-exceptions/caps/cleanup/held desks. Holds the LOCKED owner governance rules (approval ladder, 25% bonus cap, value = qty × factory price bonus-EXCLUDED, sales month = CEO-approval month, seat-model rep credit, separate distributor code, approvals only under the Approvals Hub) and the wiring."
+description: "Direct Order Request — governed direct-sales capture, approval and injection, fixing the reps-get-0-of-direct-value gap. BUILT AND LIVE: src/lib/direct-orders/ + admin workspace app/(admin)/admin/direct-orders (exceptions/caps/cleanup/held desks). Holds the LOCKED owner rules — approval ladder, 25% bonus cap, value = qty × public × (1−disc%) or bonus qty × PHARMACY price (factory price BANNED from the module), sales month chosen by Finance ONLY (never the approval month), seat-model rep credit, separate distributor code, approvals only under the Approvals Hub — and the wiring."
 metadata: 
   node_type: memory
   type: project
   originSessionId: e809b225-37bc-4db0-b13f-de36f150f936
-  modified: 2026-09-26T05:38:37.228Z
+  modified: 2026-10-02T16:40:50.312Z
 ---
 
 A money-critical module: a governed replacement/parallel for the free-text `Direct Orders (4).xlsx`, fixing
@@ -21,10 +21,19 @@ with dedicated desks `(desks)/{approval-exceptions,caps,cleanup,held}`.
 - **Bonus cap = 25% of qty (Ivyronc / IV001 = 30%)** — hard block, with a **CEO override that requires a
   reason**. Caps are UI-editable in `direct_order_caps` (`__GLOBAL__` sentinel + per-product overrides; Super
   Admin edits, SFE + CEO view) — the Ivyronc special lives in data, not code.
-- 🔴 **value = approvedQty × master `factory_price`, bonus IGNORED.** Discount deal type instead computes
-  qty × `public_price` × (1 − disc%), no bonus. Pricing is LOCKED — [[direct-order-pricing-rule-locked]].
-- **Sales month = the CEO-approval month.** Only Finance books it, so a NULL sales month is never a bug —
-  [[direct-order-sales-month-is-finance-owned]].
+- 🔴 **value has exactly two formulas: Discount deal = qty × PUBLIC price × (1 − disc%); Bonus deal = qty ×
+  PHARMACY price (bonus units never add value).** 🔴 **The factory price is NEVER used in the Direct Orders
+  module — for anything** (not a basis, not a fallback, not a column, export, email, dropdown or caps screen);
+  a bonus product with no pharmacy price is refused. Pricing is LOCKED and test-enforced —
+  [[direct-order-pricing-rule-locked]].
+  **Superseded 2026-10-02:** previously "value = approvedQty × master `factory_price`, bonus IGNORED" — the
+  owner's 2026-08-04 lock in [[direct-order-pricing-rule-locked]] banned factory price from the module.
+- 🔴 **The sales month is chosen by Finance ONLY (Ahmed El Maraghy, gated on his HR_ID) — never derived from
+  the approval date, and CEO approval NEVER injects sales.** An approved order with no month is in no month by
+  construction (the money has not been collected yet), so a NULL sales month is never a bug, and an agent never
+  books or offers to book one — [[direct-order-sales-month-is-finance-owned]].
+  **Superseded 2026-10-02:** previously "sales month = the CEO-approval month" — the owner's 2026-08-03/04
+  decision (golden rule, restated 2026-08-29) in [[direct-order-sales-month-is-finance-owned]] replaced it.
 - **Achievement is credited to the rep owning the pharmacy's AREA (seat model).**
 - **Runs PARALLEL with the manual Excel under a SEPARATE distributor code (`DirectReq`, never `'Direct'`)** →
   a double-count risk covered by a reconciliation view. Reversal = a reversing entry + re-approval.
@@ -68,5 +77,9 @@ deal-type, editable caps, geo-variance) are built and live (the consolidation sh
 weekly `sales_type='Direct'`, idempotent per request and reversible, with invariant tests) — and Phase D
 (marketing direct-sales linkage) were the outstanding money-critical work as of mid-2026-07; verify their
 live state against production (`phx_closing_distributor_product` + `phx_monthly_closing_direct`) before
-assuming either way, given the age of this note.** Phase C credits value as approvedQty × factory (or
-public × (1−disc) for discount rows), never bonus.
+assuming either way, given the age of this note.** Phase C credits the order's own value by the module's two
+formulas — public × (1−disc) for discount rows, qty × pharmacy price for bonus rows — never factory price, and
+only once Finance has chosen the order's sales month.
+**Superseded 2026-10-02:** previously "Phase C credits value as approvedQty × factory" — banned by the
+2026-08-04 pricing lock ([[direct-order-pricing-rule-locked]]); injection waits on Finance's month
+([[direct-order-sales-month-is-finance-owned]]).

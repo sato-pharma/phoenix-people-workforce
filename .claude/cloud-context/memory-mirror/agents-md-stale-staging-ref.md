@@ -1,11 +1,11 @@
 ---
 name: agents-md-stale-staging-ref
-description: "Canonical staging-Supabase-ref memory — staging is cifwmndunmlxjhyjugxa, izhmxvgiktiafqusolot is DEAD; never trust a ref from prose, resolve with list_projects; both MCP servers see both projects"
+description: "Canonical staging-Supabase-ref memory — staging is cifwmndunmlxjhyjugxa, izhmxvgiktiafqusolot is DEAD; never trust a ref from prose, resolve with list_projects on supabase-production (its project_id is the only separator); supabase-staging is pinned to staging, takes no project_id — call it directly"
 metadata: 
   node_type: memory
   type: reference
   originSessionId: 046c2623-cbf3-474b-84df-74cf5e16d2d3
-  modified: 2026-07-31T16:23:54.999Z
+  modified: 2026-10-02T16:31:12.056Z
 ---
 
 **FIXED AND MERGED** — PR #1397, `6f99eb13` on main, 2026-07-27. `main`'s AGENTS.md now carries the
@@ -26,9 +26,13 @@ confirms a dead ref — and the natural recovery ("staging must be the other one
 PRODUCTION.
 
 **How to apply:** always resolve the ref with `list_projects` before any apply/mutation rather than
-from AGENTS.md prose. Note both Supabase MCP servers (`supabase-staging` and `supabase-production`)
-can see BOTH projects, so the `project_id` argument is the only thing separating staging from
-production — the server name guarantees nothing.
+from AGENTS.md prose. `supabase-production` sees every project its token reaches, so on THAT server
+the `project_id` argument is the only thing separating staging from production — the server name
+guarantees nothing. `supabase-staging` is pinned with `?project_ref=cifwmndunmlxjhyjugxa`: it has no
+`list_projects`, takes NO `project_id` (a passed production one is refused with `unrecognized_keys`),
+and is called directly for staging work — see [[supabase-staging-mcp-server-sees-zero-projects]].
+**Superseded 2026-10-02:** previously "both MCP servers see both projects, `project_id` is the only
+separator" — PR #3726 (2026-09-12) pinned `supabase-staging` to the staging ref.
 
 ## Backstory + two traps (merged 2026-07-31 from `staging-supabase-project-ref-corrected-2026-07-11`)
 
@@ -40,8 +44,11 @@ account entirely.
 
 ⚠️ That 07-11 memory also recorded that `mcp__supabase-staging__*` could see **only** the dead
 project and returned `MCP error -32600: You do not have permission` for the live one. **That is no
-longer true** — both MCP servers now see both projects, which is exactly why the `project_id`
-argument is the only real separator. Do not plan around the old org-scoping.
+longer true** — the refusals were a wrong-account `SUPABASE_STAGING_TOKEN`; since 2026-09-12
+`supabase-staging` runs on the production token pinned to `cifwmndunmlxjhyjugxa` and works directly,
+with no `project_id`. Do not plan around the old org-scoping.
+**Superseded 2026-10-02:** previously "both MCP servers now see both projects" — PR #3726
+(2026-09-12), recorded in [[supabase-staging-mcp-server-sees-zero-projects]].
 
 **AI-mode classifier note, still live and worth expecting:** inserting synthetic test rows into
 `cifwmndunmlxjhyjugxa` got blocked by the auto-mode classifier *even after* the ref was fully

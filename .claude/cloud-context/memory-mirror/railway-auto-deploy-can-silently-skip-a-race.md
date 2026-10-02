@@ -1,11 +1,11 @@
 ---
 name: railway-auto-deploy-can-silently-skip-a-race
-description: "A merge to main can trigger a Railway deploy that gets marked SKIPPED (not queued, not built, not failed) if another deploy is already mid-build when the webhook arrives — the merge succeeds, CI is green, but production keeps serving the OLDER commit with zero error surfaced anywhere obvious. Fix: `railway redeploy --yes --from-source`, then verify healthz proves your commit is an ancestor of the live revision."
+description: "A merge to main can get its Railway production deploy marked SKIPPED (not queued, not built, not failed) — the merge succeeds, CI is green, but production keeps serving the OLDER commit with zero error surfaced anywhere obvious (seen 2026-08-09 as a mid-build race; today's named trigger is a failed/cancelled/queued check suite). Prove shipping by /api/healthz revision + git merge-base --is-ancestor. Recovery is to do NOTHING — the next green merge carries it forward: never `railway redeploy` (with or without --from-source), never re-merge."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 1d7c97a0-5c4a-44b4-8bde-442c58929698
-  modified: 2026-08-28T09:38:55.774Z
+  modified: 2026-10-02T16:39:03.426Z
 ---
 
 **What happened (2026-08-09).** Merged PR #1927 (`gh pr merge --squash`, confirmed `state: MERGED`).
@@ -39,16 +39,19 @@ indistinguishable at a glance from the normal "superseded by a later success" ca
    `git merge-base --is-ancestor <your-merge-sha> <deployed-revision-sha>`. A plain string
    mismatch is not evidence of a problem by itself in this repo — ancestry is the real test.
 2. If the revision is stale after a couple of minutes, run `railway deployment list` (not the
-   GitHub API) and look for your commit's deploy explicitly marked `SKIPPED`.
-3. **`railway redeploy` alone is NOT the fix** — it restarts the last *successful* build artifact
-   (the older, pre-merge one), so healthz will still show the wrong revision afterward and it is
-   easy to mistake that restart for a real fix. The actual fix is
-   **`railway redeploy --yes --from-source`**, which forces a fresh pull-and-build from the
-   current `main` tip. Re-verify healthz/ancestry afterward — do not trust the command's exit
-   code or the deployment list showing `SUCCESS` alone, since a `--from-source` redeploy triggered
-   a few minutes late can itself pick up yet another commit that landed in the meantime (this
-   happened live: the eventual deployed revision was 2 commits ahead of the original merge,
-   confirmed as still including it via ancestry, not by SHA match).
+   GitHub API) and look for your commit's deploy explicitly marked `SKIPPED`. Then classify it by the
+   commit's check suites (`commits/<sha>/check-suites`; `verify-shipped.mjs` prints `WITHHELD` and names
+   the bad suite): the current production hook says a **failed, cancelled or still-queued check suite**
+   makes Railway's Wait-for-CI gate mark the deploy `SKIPPED`, and a withheld deploy whose every suite is
+   green was merely SUPERSEDED.
+3. 🔴 **Recovery is to do NOTHING — the next green merge carries it forward. Never `railway redeploy`
+   (with or without `--from-source`), and never re-merge.** (Plain `railway redeploy` also only restarts
+   the last *successful* build artifact, so healthz still shows the old revision — easy to mistake for a
+   fix.) Keep proving it by healthz + ancestry, never by a SHA string match, because concurrent merges are
+   normal here.
+   **Superseded 2026-10-02:** previously "the actual fix is `railway redeploy --yes --from-source`" — the
+   production hook in AGENTS.md §2.3 / `.claude/rules/engineering.md` ("A FAILED, CANCELLED OR STILL-QUEUED
+   CHECK SUITE … SKIPPED") forbids any `railway redeploy` and prescribes doing nothing.
 
 Related: [[railway-merge-is-the-production-deploy]] (the base assumption this is a caveat to —
 "merge = deploy" is usually true but not unconditionally, and this is the specific failure mode

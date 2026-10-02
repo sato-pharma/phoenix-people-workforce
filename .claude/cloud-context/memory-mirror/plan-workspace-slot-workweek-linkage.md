@@ -1,10 +1,11 @@
 ---
 name: plan-workspace-slot-workweek-linkage
-description: "Weekly/monthly plan editor — slot-bug fix, role-aware workweek, vacation/excuse + weekly→monthly linkage (PR 616, corrected in PR 617): an explicit AM/PM slot field stops the focus loss; the field workweek is Medical Rep/DSM/RM only (NSM is Head Office); plan SUBMISSION is PM/GPM/MM/TM/NSM only."
+description: "Weekly/monthly plan editor — slot-bug fix, role-aware workweek, vacation/excuse + weekly→monthly linkage (PR 616, corrected in PR 617): an explicit AM/PM slot field stops the focus loss; the field workweek is Medical Rep/DSM/RM only (NSM is Head Office); plan SUBMISSION is PM/GPM/MM/TM/NSM plus District Manager (#1120, 2026-07-18) and Regional Manager — never Medical Rep."
 metadata: 
   node_type: memory
   type: project
   originSessionId: a2e5fcec-2299-4393-a3eb-2b6a58223136
+  modified: 2026-10-02T16:38:08.724Z
 ---
 
 Weekly/monthly employee plan workspace (`src/components/employee-portal/plans-workspace.tsx`, `src/lib/weekly-planning/`). Shipped in PR #616 (branch `feat/plan-linkage-workweek-sync`).
@@ -13,7 +14,8 @@ Weekly/monthly employee plan workspace (`src/components/employee-portal/plans-wo
 
 **Role-aware workweek** (in `plan-v1.ts`): `FIELD_WORKWEEK` (Sat–Wed full + Thu **AM only**, Sat-anchored) vs `HEAD_OFFICE_WORKWEEK` (Sun–Thu full, Sun-anchored). `resolvePlanWorkweek({role,jobTitle})`: Field = **Medical Rep / District Manager (DSM) / Regional Manager (RM) ONLY**; everyone else Head Office — including **NSM, PM, GPM, MM, TM** (owner: NSM is Head Office, not field; corrected in PR #617 after #616).
 
-**Correction (2026-07-05):** this workweek-shape list is NOT the same as who can *submit* a weekly/monthly plan. Submission eligibility (`WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES` in `plan-v1.ts`) is **Product Manager / Group Product Manager / Marketing Manager / Training Manager / National Sales Manager only** — Medical Rep/DSM/RM do NOT submit their own plans through this module. See [[plans-single-visit-vacant-areas-fix]]. `buildEmployeePlanPeriod(kind, anchor, workweek?)` is now workweek-aware (defaults to Head Office so legacy callers/keys are unchanged — forward-only). `planRequiredSlotsByDate()` drives both seeding and the guard.
+**Correction (2026-07-05):** this workweek-shape list is NOT the same as who can *submit* a weekly/monthly plan. Submission eligibility (`WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES` in `plan-v1.ts`) is **Product Manager / Group Product Manager / Marketing Manager / Training Manager / National Sales Manager / Regional Manager / District Manager** (read from `plan-v1.ts` 2026-10-02) — District Manager was added 2026-07-18 (PR #1120, [[dsm-plan-eligibility-fix-and-rm-gap]]) and Regional Manager on 2026-07-30 ([[weekly-plan-four-gates-rm-dsm]]). A Medical Rep still does NOT submit his own plan through this module. See [[plans-single-visit-vacant-areas-fix]].
+**Superseded 2026-10-02:** previously "PM/GPM/MM/TM/NSM only — Medical Rep/DSM/RM do NOT submit" — District Manager was made eligible by PR #1120 (2026-07-18) and Regional Manager on 2026-07-30. `buildEmployeePlanPeriod(kind, anchor, workweek?)` is now workweek-aware (defaults to Head Office so legacy callers/keys are unchanged — forward-only). `planRequiredSlotsByDate()` drives both seeding and the guard.
 
 **Submission guard** = server-authoritative `assertSubmissionComplete()` in ALL submit paths of `createEmployeePlan`/`updateEmployeePlan`. Every required slot must be filled (full = full OR am+pm; Field Thu = am only). Marking a day `Vacation`/`Excuse` requires a matching approved request or it BLOCKS.
 

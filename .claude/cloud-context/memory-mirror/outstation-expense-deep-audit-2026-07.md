@@ -1,37 +1,47 @@
 ---
 name: outstation-expense-deep-audit-2026-07
-description: "How the Outstation & Expense module works end-to-end (post-redesign): 'expenses' IS outstation (src/lib/outstation/, no src/lib/expenses/); submit AUTO-DECIDES accept/reject and PERSISTS the rejection; payroll is an ADDITION to net pay, never a deduction; approve/override is Super Admin only though the permission matrix over-states DM/RM/NSM authority; the live eligibility logic is INLINE in service.ts (decision.ts is dead code); and two entry points skip the engine entirely. Holds the owner rulings and the open permission/UX findings."
+description: "How the Outstation & Expense module works: 'expenses' IS outstation (src/lib/outstation/); submit runs every check but NEVER decides — a failed check is flagged and the claim waits as `submitted` for a Super Admin, only a human rejects (an NSM's claim is never held); payroll is an ADDITION to net pay; approve/reject is Super Admin only; the live eligibility logic is INLINE in service.ts (decision.ts is dead code); two entry points skip the full engine. Holds owner rulings and open findings."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 4d2c7ad3-4ca0-47d6-8233-3a6e95d3b5bc
-  modified: 2026-09-26T05:27:21.292Z
+  modified: 2026-10-02T16:37:47.347Z
 ---
 
 Deep read-only audit of the Outstation & Expense module (2026-07-17), then rebuilt and extended. The old
-fraud-score / variance / auto-APPROVE-on-submit model is HISTORICAL — below is the current behaviour.
+fraud-score / variance / auto-APPROVE-on-submit model is HISTORICAL, and so is the auto-decide-at-submit
+model this note first recorded — below is the current behaviour (corrected 2026-10-02).
 
 ## How it works (durable mechanics)
 
 - **ONE module — "expenses" IS outstation.** Everything lives under `src/lib/outstation/`; there is no
   `src/lib/expenses/`. 6 tables, all RLS-enabled, but the app uses the service-role client everywhere, so
   RLS is bypassed at runtime — **the app-layer gate is the real boundary.**
-- **Submit AUTO-DECIDES and PERSISTS.** `submitOutstationRequest` runs the eligibility engine and writes
-  `accepted_by_system` / `rejected_by_system` (folded to approved/rejected by
-  `toOutstationExpenseWorkflowStatus`); a rejection is KEPT and the employee is notified (no throw). A Super
-  Admin OVERRIDE writes `accepted_by_admin` / `rejected_by_admin`, audit-logged. Status columns are free text,
-  so new values never need a migration. There is no human pending queue — EXCEPT the HOLD case: when the
-  destination governorate cannot be confirmed the request holds as status `submitted` (NOT pushed to payroll)
-  and notifies Super Admin (owner chose "hold when unconfirmed" over fail-open).
+- **Submit FLAGS, it never decides — every claim waits for a human.** `submitOutstationRequest` still runs
+  the eligibility engine and records each check's reason, but a failure HOLDS the claim as `submitted` in the
+  pending approvals queue carrying that reason (`reviewHoldReasons`) — `rejected_by_system` is no longer
+  reachable from the submit path, and the submit-time rejection email is gone (owner rule 2026-08-09,
+  [[system-flags-expenses-never-rejects]]). A clean submission also persists as `submitted` and waits
+  (PR #1916, 2026-08-08, [[outstation-submit-used-to-auto-approve-into-payroll]]); `calculation_status` still
+  records `accepted_by_system` vs `submitted` as decision-support only. Only a Super Admin decides —
+  `accepted_by_admin` / `rejected_by_admin`, audit-logged. The one exception: a National Sales Manager's
+  outstation expense is never held (owner rule 2026-08-28). Status columns are free text, so new values never
+  need a migration. The governorate HOLD (destination cannot be confirmed → `submitted`, not pushed to
+  payroll, Super Admin notified; owner chose "hold when unconfirmed" over fail-open) is now one hold reason
+  among several.
+  **Superseded 2026-10-02:** previously "Submit AUTO-DECIDES and PERSISTS `accepted_by_system`/`rejected_by_system`; a rejection is kept and the employee notified; no human pending queue" — PR #1916 (2026-08-08) and the owner's never-auto-reject rule of 2026-08-09.
 - 🔴 **The live eligibility logic is INLINE in `service.ts` — `src/lib/outstation/decision.ts` is DEAD
   CODE** (built during the redesign, never wired). The rules: distance ≥ 60 km (tolerance 58) AND destination
   outside the RESIDENCE governorate (`resolveFirstGovernorate` walks city→area→address) AND, for a DM/TM
   travelling, ≥1 double-visit and ≤2 campaign visits (`visitType -8` = campaign). Fuel = `distance × 2 × rate`
   (round-trip, default 1.8 EGP/km). If asked to change the approval flow, change the inline `service.ts`
   logic, not `decision.ts` and not a queue.
-- 🔴 **Two entry points SKIP the engine and self-approve on insert:** `submitMedicalRepSimpleExpenseRequest`
+- 🔴 **Two entry points SKIP the full engine:** `submitMedicalRepSimpleExpenseRequest`
   (distance/governorate/campaign never applied) and `createManagerExpenseAsAdmin` (distance-only). Only the
-  wizard and its offline wrapper run the full eligibility check.
+  wizard and its offline wrapper run the full eligibility check. Neither self-approves any more: both insert
+  as `submitted` and wait for a Super Admin (checked in `service.ts` 2026-10-02) — except an admin-entered
+  claim for an NSM, which lands `accepted_by_system` under the never-held rule.
+  **Superseded 2026-10-02:** previously "skip the engine and self-approve on insert" — PR #1916 (2026-08-08) made every submit path wait for a human.
 - **Payroll is an ADDITION to net pay** (Part 2 / additions), NEVER a deduction. RPC
   `phx_import_approved_expenses_to_payroll` joins on `lower(hr_id)`, is delta-applied (idempotent), uses
   period = trip month + 1, and refuses before Part 1 is paid. Accepted → payroll; rejected → not. (Owner
@@ -70,8 +80,9 @@ fraud-score / variance / auto-APPROVE-on-submit model is HISTORICAL — below is
 - **`workload-evidence` scoping** was the F2 fix — an `outstation:approve` role could read any employee's
   Double-Visit workload; now scoped via `canViewEmployeeExpenseScope`. Excel import trip-id collisions (R1)
   were fixed by content-hashing (`syntheticTripId`).
-- **Portal UX gaps:** the wizard shows a generic "submitted successfully" toast regardless of the real
-  accept/reject outcome (the decision surfaces only later on the Expense Dashboard status pill), and there is
+- **Portal UX gaps:** the wizard shows a generic "submitted successfully" toast (since #1916 nothing is
+  decided at submit, so the toast is no longer hiding an outcome — the decision surfaces later on the Expense
+  Dashboard status pill), and there is
   no resubmit/edit/cancel path — a rejection means starting over. Held rows are surfaced via a
   `PendingReviewRequestsCard`. Duplicated wizard fields (an editable copy beside a disabled
   "auto-resolved after submission" copy bound to the same state) look like leftover markup.

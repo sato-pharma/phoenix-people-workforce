@@ -1,42 +1,48 @@
 ---
 name: deductions-canonical-but-legacy-has-the-only-daily-cron
-description: "deductions_* is the owner-ruled source of truth, but legacy deduction_* still backs a LIVE attendance day-report decision workflow — freezing it blind breaks that feature; a daily canonical cron is impossible by design"
+description: "deductions_* (src/lib/deductions) is the owner-ruled source of truth and the ONLY live engine — legacy deduction_* code was removed and its tables ARCHIVED off public on 2026-08-30, and the attendance day-report decision now writes deductions_candidates; a daily canonical cron is impossible by design"
 metadata: 
   node_type: memory
   type: project
   originSessionId: 75a0c0fe-3f17-469a-aca9-812ef437e71b
-  modified: 2026-10-01T00:00:00.000Z
+  modified: 2026-10-02T16:33:24.534Z
 ---
 
 Owner ruled 2026-08-13: **`src/lib/deductions/` (`deductions_*`) is the deductions source of truth**
 (payroll reads it via `automated-payroll/deductions-source.ts`). Coverage is complete — its
 connectors supersede every legacy `deduction_*` connector, and `deductions/connectors/crm.ts`
-*corrects* three leaver bugs (B-111) that legacy `deductions-governance/connectors/field-workforce-compliance.ts` still has.
+*corrects* three leaver bugs (B-111) that legacy `deductions-governance/connectors/field-workforce-compliance.ts` had (that module is deleted since 2026-08-30).
 
-**Do NOT build a daily canonical cron, and do NOT freeze legacy as a one-liner.** Both were
-attempted 2026-08-13 and are wrong:
+**Do NOT build a daily canonical cron.** It was attempted 2026-08-13 and is wrong (so was freezing
+legacy as a one-liner that day — moot now that legacy is archived, see below):
 
 - **A daily canonical cron is impossible by design.** `collectAllCandidatesForMonth` is documented
   "NOT safe from an HTTP handler" (#1377 Cloud-Run revert), `isCollectableMonth` HARD-REFUSES the
   current month (owner rule 2026-08-03: collecting an in-progress month charges people for unfinished
   days and CRM publishes with no approval step), and canonical writes are Super-Admin-gated.
   Canonical is **end-of-month, operator-driven by design** — there is no daily gap to fill.
-- **THE REAL FREEZE BLOCKER:** legacy `deduction_*` is NOT a retired shadow. It is the live backing
-  store for `upsertAndDecideEmployeeDayDeduction` (`attendance/employee-day-report.ts`, via
-  `POST /api/attendance/employee-day-report/decisions`) — the attendance day-report per-day
-  deduction decision feature, legacy-only. **Freezing legacy writes breaks this live feature.**
-- The legacy daily `runFieldWorkforceComplianceDeductionsAutoSync` (`notifications/daily/route.ts`
-  ~line 142) writes legacy candidates that payroll no longer reads (payroll reads canonical). Its
-  "creates money records" comment predates the 2026-08-03 canonical bridge and is stale re: payroll.
+- **The attendance day-report decision writes CANONICAL now.** `upsertAndDecideEmployeeDayDeduction`
+  (`attendance/employee-day-report.ts`, via `POST /api/attendance/employee-day-report/decisions`)
+  writes `deductions_candidates` — repointed in the Track C cutover (owner-approved "Reconnect"), so a
+  day-report confirmation charges in live Automated Payroll. Nothing live reads or writes legacy
+  `deduction_*`, which was archived off `public` on 2026-08-30 — see [[two-live-deduction-engines-p0]].
+  **Superseded 2026-10-02:** previously "legacy `deduction_*` is the live backing store for the
+  day-report decision; freezing it breaks that feature" — the Track C cutover (C6 PR #2733, C7 PR
+  #2746, 2026-08-30).
+- The legacy daily `runFieldWorkforceComplianceDeductionsAutoSync` is GONE — it went with the
+  `src/lib/deductions-governance/` module in C6; no caller remains under `src/` or `app/`.
+  **Superseded 2026-10-02:** previously "the daily route still runs it, writing legacy candidates
+  payroll no longer reads" — removed in C6 (PR #2733).
 
-**Safe cutover order:** MIGRATE the attendance day-report decision workflow onto canonical FIRST
-(scoped feature migration, owner sign-off — it changes how per-day deductions are recorded) → then
-freeze legacy behind a compile-time flag (mirror `DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_ENABLED`, keep
-read paths open). The automated monthly scan needs nothing — canonical already supersedes it.
+**Cutover order — DONE.** The planned order (migrate the day-report decision onto canonical first,
+then freeze legacy) was carried out and went further: legacy code deleted (C6) and its 7 tables, 2
+RPCs and trigger fn moved to schema `deductions_governance_backup_20260830` (C7). The automated
+monthly scan never needed anything — canonical already superseded it.
 
 **B-2 is cosmetic, not a hole:** the sync routes gate on `assertPermission(…,"read")` THEN
 `assertDeductionsGovernanceDecisionActor` = Super-Admin-only; every `deductions` role has
-`allActions`. No read→create fix needed. Full analysis:
+`allActions`. No read→create fix needed — and moot since C6 (PR #2733) deleted those legacy sync
+routes. Full analysis:
 `artifacts/phoenix-rationalization-execution/B1_DEDUCTIONS_CUTOVER_SEQUENCING.md` §7.
 Related: [[two-live-deduction-engines-p0]], [[never-auto-publish-deductions-owner-confirms-first]].
 
@@ -52,6 +58,9 @@ Three weeks with no legacy write. A repo-wide search for `deduction_records` / `
 under `src/` and `app/` returns nothing at all.
 
 **How to apply.** The remaining true part is the 324 historical rows the legacy family still holds —
-those are the only copy and must not be dropped casually. The part that is now false is the urgency:
-nothing live reads legacy, so this is a retirement to plan, not a hazard to route around.
-Full write evidence in [[two-live-deduction-engines-p0]].
+those are the only copy and must not be dropped casually. They now live, preserved verbatim, in
+schema `deductions_governance_backup_20260830` (archived 2026-08-30, reversible with
+`ALTER … SET SCHEMA public`), so their absence from `public` is EXPECTED, not data loss. Nothing live
+reads legacy. Full write evidence in [[two-live-deduction-engines-p0]].
+**Superseded 2026-10-02:** previously "this is a retirement to plan" — the retirement shipped
+2026-08-30 (C6 + C7).

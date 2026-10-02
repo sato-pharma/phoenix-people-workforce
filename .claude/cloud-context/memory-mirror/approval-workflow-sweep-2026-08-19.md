@@ -1,11 +1,11 @@
 ---
 name: approval-workflow-sweep-2026-08-19
-description: "The complete inventory of Phoenix approval workflows as swept on 2026-08-19 — production has exactly THREE chain-shaped ones, and offer-approval config is wired to nothing."
+description: "Inventory of Phoenix approval workflows swept 2026-08-19 — exactly THREE chain-shaped step tables (vacation, direct orders, marketing). Offers are no longer fictional: ats_offers is LIVE since 2026-08-21 with ONE Super-Admin approval, enforced by markOfferSent on approved_at; only the candidate-facing half is unbuilt."
 metadata: 
   node_type: memory
   type: reference
   originSessionId: 38cac8f5-eef9-4ca8-9b4c-3c23b0534074
-  modified: 2026-08-19T12:40:00.000Z
+  modified: 2026-10-02T16:32:37.229Z
 ---
 
 Full sweep run 2026-08-19 after the vacation NSM bug, to find every other workflow that could
@@ -39,18 +39,29 @@ stand in for either. The manager stage falls through to the CEO **only** when a 
 step, and DM/RM are excluded from the module entirely), probation, resignation, contract renewal,
 payroll batch.
 
-🔴 **THE WHOLE OFFER & HIRING WORKFLOW IS FICTIONAL — and the owner decided 2026-08-19 to LEAVE IT
-THAT WAY ("skip offers now"). Do not build it, and do not re-propose it.**
+🔴 **THE INTERNAL OFFER IS LIVE AND GOVERNED SINCE 2026-08-21 — ONE Super-Admin approval before
+sending; only the CANDIDATE-FACING half of the offer & hiring workflow is still not built.**
+`public.ats_offers` was applied to production on 2026-08-21 (staging first): prepare → submit →
+approve → send → record-answer run through the workflow registry, approval is Super-Admin-only, and
+`markOfferSent` (`src/lib/recruitment/offers.ts`) refuses while `ats_offers.approved_at` is null —
+the registry alone would let `app_offer_sent` fire from `offer_initiated`, straight past approval
+([[offer-chain-was-live-in-the-registry-with-a-hole-past-approval]]). Still not built, by owner
+decision 2026-08-21: accept/reject links, tokens, an expiry job, and any email to the candidate.
+**Superseded 2026-10-02:** previously "THE WHOLE OFFER & HIRING WORKFLOW IS FICTIONAL — owner decided 2026-08-19 to leave it ('skip offers now'); do not build it" — the owner's "one approval before sending" answer and the `ats_offers` build of 2026-08-21 replaced it.
 
-`workflow-control/definitions.ts` documents an `offer-hiring` workflow in full detail — `job_offers`,
-`job_offer_audit_logs`, secure accept/reject tokens with expiry, candidate emails, employee creation,
-vacancy fill. **None of it exists.** Verified in production 2026-08-19: `job_offers` = 0 tables,
-`job_offer_audit_logs` = 0, and `table_name like '%offer%'` returns **zero rows of any kind**.
+As swept on 2026-08-19, `workflow-control/definitions.ts` documented an `offer-hiring` workflow in
+full detail — `job_offers`, `job_offer_audit_logs`, secure accept/reject tokens with expiry,
+candidate emails, employee creation, vacancy fill — and **none of it existed** then. Verified in
+production 2026-08-19: `job_offers` = 0 tables, `job_offer_audit_logs` = 0, and
+`table_name like '%offer%'` returned **zero rows of any kind**. (`job_offers` /
+`job_offer_audit_logs` were never created and are not planned — `ats_offers` is the offer table.)
 
-Everything around it is scaffolding with no floor:
+As swept on 2026-08-19, everything around it was scaffolding with no floor:
 
 - `src/config/offer-approval.ts` (`OFFER_APPROVAL_ALWAYS_ROLES`, `OFFER_CEO_APPROVAL_CAPS`,
-  `resolvePositionApprovalThreshold`) has **zero call sites outside its own file**.
+  `resolvePositionApprovalThreshold`) had **zero call sites outside its own file** — it was
+  **DELETED on 2026-08-29** by owner decision; approval is one Super-Admin step at any figure, and a
+  threshold chain is a fresh decision if ever wanted, not a file to revive.
 - Stages `offer_draft` / `offer_pending_approval` / `offer_approved` / `offer_generated` /
   `offer_negotiation` and the six `app_offer_*` action keys exist in `recruitment/types.ts` and get a
   colour in `recruitment-workspace.tsx`, but **none appear in `plainTransitionNextStatus`** in
@@ -58,8 +69,8 @@ Everything around it is scaffolding with no floor:
 - `ats_applications.offer_id` is a dangling column; `senior_approval_status` /`senior_approved_by` /
   `senior_approved_at` are **read** in `recruitment/db.ts` and **never written** anywhere.
 
-Usable inputs if it is ever built: `ats_requisitions.salary_band_max` + `hiring_manager_hr_id` are
-exactly what the threshold resolver wants. Active seats are singular — Super Admin = Omar Gawish,
+Usable inputs if a threshold chain is ever wanted: `ats_requisitions.salary_band_max` +
+`hiring_manager_hr_id` are exactly what the (deleted) threshold resolver wanted. Active seats are singular — Super Admin = Omar Gawish,
 Finance Manager = Ahmed El Maraghy, CEO = Anwar Gaweesh, Talent Acquisition = Youmna Kotb; **there is
 no "HR Manager" role holder** despite the workflow doc naming one as the approver.
 
@@ -70,9 +81,16 @@ no "HR Manager" role holder** despite the workflow doc naming one as the approve
 summary; a per-subflow `gaps` line naming what is missing; a red banner on the domain detail; and a
 simulator warning that fires before it walks the domain. `tests/workflow-control.test.ts` pins all of
 it, including that no OTHER domain is mislabelled `Not implemented`. The five subflows and their
-steps were KEPT ON PURPOSE — they are the specification if this is ever built.
+steps were KEPT ON PURPOSE — they are the specification if this is ever built. Since `ats_offers`
+went live the domain reads **`Partially implemented`** — a status reserved for `offer-hiring` alone,
+and `tests/workflow-control.test.ts` pins that it is never `Active` while the candidate-facing half
+is missing and never `Not implemented` now the offer runs.
+**Superseded 2026-10-02:** previously the domain was labelled `Not implemented` — relabelled `Partially implemented` once `ats_offers` shipped 2026-08-21 (`src/lib/workflow-control/definitions.ts`).
 
-**Never tell the owner an offer was approved by anyone** — nothing approves offers today.
+**Never tell the owner an offer was approved unless its `ats_offers.approved_at` is set** — a
+Super Admin's approval is the only approval an offer has, and nothing candidate-facing (acceptance
+link, applicant email) exists to report on.
+**Superseded 2026-10-02:** previously "nothing approves offers today" — the Super-Admin approval gate on `ats_offers` (2026-08-21, [[offer-chain-was-live-in-the-registry-with-a-hole-past-approval]]) replaced it.
 
 **How to apply:** `workflow-control/definitions.ts` lists workflows that were DESIGNED, not ones that
 are wired. Confirm against the database before describing any of them as live.

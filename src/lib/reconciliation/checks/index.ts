@@ -2,6 +2,7 @@ import { crmSalesReconciliationChecks } from "@/lib/reconciliation/checks/crm-sa
 import { deductionsAttendanceReconciliationChecks } from "@/lib/reconciliation/checks/deductions-attendance";
 import { notificationsIntegrityReconciliationChecks } from "@/lib/reconciliation/checks/notifications-integrity";
 import { payrollReconciliationChecks } from "@/lib/reconciliation/checks/payroll";
+import { recruitmentReconciliationChecks } from "@/lib/reconciliation/checks/recruitment";
 import type { ReconciliationCheck } from "@/lib/reconciliation/types";
 
 /**
@@ -14,4 +15,5 @@ export const reconciliationChecks: ReconciliationCheck[] = [
   ...deductionsAttendanceReconciliationChecks,
   ...crmSalesReconciliationChecks,
   ...notificationsIntegrityReconciliationChecks,
+  ...recruitmentReconciliationChecks,
 ];

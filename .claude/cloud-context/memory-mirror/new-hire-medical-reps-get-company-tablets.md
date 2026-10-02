@@ -1,17 +1,35 @@
 ---
 name: new-hire-medical-reps-get-company-tablets
-description: "New-hire medical reps get a company tablet the owner wants CONTROLLED, not just recorded. TWO CONSOLES EXIST: Phoenix's own Android Management API enterprise (enterprises/LC017auv4o, project phoenix-hr-2026) is LIVE but has a ZERO device quota - Google refuses quota for in-house-only use, so no quota form, no DUNS, and /devices/tablets + /devices/managed-play always read '0 tablets'. The FLEET IS CONTROLLED FROM MANAGEENGINE MDM Plus Cloud (free up to 25 devices): login mdm.manageengine.com -> Sign in with Google -> it.satopharma@gmail.com (Super Admin, User ID 939781760); hr@satopharma.com is a SEPARATE account with NO MDM, do not chase it. Managed Google Play in ME is bound to hr@satopharma.com. First tablet enrolled = Lenovo Tab M10 3rd Gen (TB328XU, IMEI 865569071549107, serial HA251XLS), Fully managed, Chrome silent-installed, in Phoenix Device Custody as PHX-TAB-0002 (PHX-TAB-0001 is a TCL TAB 10, in stock). Phoenix's role is Device Custody ONLY (/hr/devices, permission company_devices) - copy IMEI+serial from ME into it; Action1 is Windows/macOS only and never reaches Android. Never re-run the Phoenix AMAPI signup (a 2nd enterprise = a 2nd fleet); never propose a self-built DPC (Play Protect's 2025 allowlist blocks it); the US$25 Play Console fee and DUNS are unnecessary on the iframe route. Owner chose managed Play over sideloading - settled. Console runs in the Chrome he picks via switch_browser ('o')."
+description: "New-hire medical reps get a company tablet the owner wants CONTROLLED, not just recorded. The fleet is controlled from the company's self-hosted Headwind MDM (mdm.satopharma.com, configuration id=3 'Rep tablets'); the Lenovo TB328XU is enrolled there as PHX-TAB-0002, device owner, no Google account. The 2026-09-23 ManageEngine setup is superseded. Phoenix's AMAPI enterprise LC017auv4o holds ZERO devices — never re-run its signup; the managed Play upload was DROPPED 2026-09-28. Phoenix's own register is Device Custody (/hr/devices). Never propose a self-built DPC."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 550d992f-bbc7-4a1b-98e6-6861df800cf0
-  modified: 2026-09-25T22:41:32.538Z
+  modified: 2026-10-02T16:37:50.501Z
 ---
 
 Newly hired medical reps are issued a company **tablet** the owner wants **controlled** from a
-console, not merely recorded. This is the settled state as of 2026-09-23.
+console, not merely recorded. The text below was the settled state as of 2026-09-23; the console has
+since moved to Headwind — read the current state first.
 
-## Two consoles exist — only ManageEngine holds a tablet
+## Current state — the fleet is on Headwind MDM
+
+- **The rep fleet is controlled from the company's own self-hosted Headwind MDM**
+  (`mdm.satopharma.com`), configuration **`id=3` "Rep tablets"**. The Lenovo Tab M10 TB328XU is
+  enrolled there as device id **`PHX-TAB-0002`** — device owner, **no Google account by design**
+  ("never sign into Google first" at enrolment), normal Lenovo home via `runDefaultLauncher=true`.
+  How enrolment, custody and the never-shows-tracking golden rule work:
+  [[rep-tablet-never-shows-tracking-golden-rule]]; the custom launcher:
+  [[headwind-rep-tablet-custom-launcher-build-required]].
+- **Managed Google Play is DROPPED as a delivery route** (owner, 2026-09-28: *"drop the managed play
+  upload since it cannot reach the fleet"*) — Headwind installs an APK it hosts and links to
+  configuration 3 ([[managed-play-cannot-reach-the-rep-tablets]]).
+- Phoenix talks to Headwind through `src/lib/devices/headwind/` (custody and assignment server writes
+  go through that bridge); the ManageEngine sections below are the 2026-09-23/25 setup, kept as
+  history — do not treat ManageEngine as the fleet console.
+**Superseded 2026-10-02:** previously "the fleet is controlled from ManageEngine MDM Plus Cloud and PHX-TAB-0002 is enrolled there" — the later Headwind notes (golden rule 2026-09-26, launcher build 2026-09-27/28, `rep-tablet-never-shows-tracking-golden-rule`, `managed-play-cannot-reach-the-rep-tablets`).
+
+## Two consoles existed on 2026-09-23 — then only ManageEngine held a tablet
 
 - **Phoenix's own Android Management API enterprise** (`enterprises/LC017auv4o`, project
   `phoenix-hr-2026`, bound 2026-09-18) is LIVE — its pages `/devices/tablets` and
@@ -23,7 +41,8 @@ console, not merely recorded. This is the settled state as of 2026-09-23.
   **"0 tablets."** A future session must not read that empty page as "nothing enrolled."
   **Never re-run the Phoenix signup — a second enterprise is a second fleet.** `LC017auv4o` sits
   idle; deleting it is irreversible and nobody asked.
-- **The fleet is controlled from ManageEngine MDM Plus Cloud** (free up to 25 devices). Login:
+- **On 2026-09-23 the fleet was controlled from ManageEngine MDM Plus Cloud** (free up to 25 devices) —
+  superseded by Headwind, see above. Login:
   **mdm.manageengine.com → "Sign in with Google" → `it.satopharma@gmail.com`** (a Gmail, via Zoho
   "Sign in with Google"; profile: Omar Gawish · Super Admin · User ID 939781760).
   🔴 **`hr@satopharma.com` is a SEPARATE account with NO MDM** — its doors land on "MDM Account
@@ -32,7 +51,7 @@ console, not merely recorded. This is the settled state as of 2026-09-23.
   Managed Google Play *inside* ManageEngine is bound to **hr@satopharma.com** (domain "Sato Pharma").
   The console runs in the Chrome the owner picks via `switch_browser` (he chose **"o"**).
 
-## What is configured in ManageEngine (all read back live)
+## What was configured in ManageEngine (read back live 2026-09-23/25 — history, not the live fleet)
 
 - Profile **"Rep tablet rules"** (v2): passcode low/pattern; **Restore Factory Settings = Restrict**,
   **Developer Mode = Restrict** (closes the FRP-bypass on Android 12); Play Protect on; approved apps
@@ -48,14 +67,17 @@ console, not merely recorded. This is the settled state as of 2026-09-23.
 - **First tablet enrolled** (`it.satopharma_TB328XU`): **Lenovo Tab M10 3rd Gen**, model TB328XU,
   IMEI **865569071549107**, serial **HA251XLS**, **Fully managed** (reset-from-Settings blocked),
   Chrome silent-installed. Per-device Actions include Remote Lock, Locate, Enable Lost Mode,
-  Clear/Reset Passcode, and **Deprovision (Wipe)**.
+  Clear/Reset Passcode, and **Deprovision (Wipe)**. **That same tablet (`PHX-TAB-0002`) is now
+  enrolled in Headwind configuration 3**, not ManageEngine.
+  **Superseded 2026-10-02:** previously "first tablet enrolled in ManageEngine" as the live state — its Headwind enrolment (`rep-tablet-never-shows-tracking-golden-rule`, `managed-play-cannot-reach-the-rep-tablets`).
 
 ## Phoenix's role is Device Custody only
 
 `/hr/devices` — "Device Custody" (permission `company_devices`, tables `company_devices` +
 `device_assignments`). `"tablet"` is a first-class `DeviceCategory` with `imei`/`sim_number`/
-`line_number` and an Arabic handover receipt; headline flag `isHeldByLeaver`. **Copy each tablet's
-IMEI and serial from ManageEngine's inventory into this register.** The enrolled Lenovo is registered
+`line_number` and an Arabic handover receipt; headline flag `isHeldByLeaver`. **Each tablet's IMEI
+and serial belong in this register** (on 2026-09-23 they were copied from ManageEngine's inventory;
+the fleet is now Headwind's, and the register syncs through `src/lib/devices/headwind/`). The enrolled Lenovo is registered
 here as **PHX-TAB-0002**; the TCL TAB 10 is **PHX-TAB-0001** (in stock). 🔴 **Never answer a
 tablet-control question from this register — it records custody, it controls nothing**, and
 `src/lib/devices/action1.ts` is a **Windows/macOS RMM with no Android agent**. Do not send him to
@@ -63,18 +85,24 @@ tablet-control question from this register — it records custody, it controls n
 
 ## Cost cap and the routes not to re-propose
 
-Owner cap: ~$25/yr with full control. **ManageEngine Free is $0 up to 25 tablets** and covers the
-whole rule set with nothing to host — so it stays the start. **Tablet 26 is his decision:** pay
-ManageEngine (Standard **$645/yr per 50**, his click on their store — never a chat "yes") or move to
-**Fleet Free** (open source; wipe each tablet remotely, rep re-scans a new QR, ~20 min each). Every
-other MDM checked (Headwind, AirDroid, TinyMDM, Scalefusion, Hexnode, Miradore) costs more for the
-rule set.
+Owner cap: ~$25/yr with full control. **Today the fleet runs on the free, open-source Headwind MDM,
+self-hosted**, and the owner chose a free custom launcher build over Headwind Premium ($2,990
+one-time, ≤300 devices) — do not re-pitch Premium unless he raises it
+([[headwind-rep-tablet-custom-launcher-build-required]]). The 2026-09-23 comparison, kept as history:
+ManageEngine Free was $0 up to 25 tablets; tablet 26 would have meant ManageEngine Standard
+($645/yr per 50) or Fleet Free; AirDroid, TinyMDM, Scalefusion, Hexnode and Miradore all cost more
+for the rule set.
+**Superseded 2026-10-02:** previously "ManageEngine Free stays the start; every other MDM checked (Headwind …) costs more" — the move to self-hosted Headwind with the free custom launcher (`headwind-rep-tablet-custom-launcher-build-required`, `rep-tablet-never-shows-tracking-golden-rule`).
 
 - 🔴 **Never propose a self-built DPC** — Play Protect's 2025 allowlist blocks any non-listed DPC at
   enrollment ("App blocked to protect your device"); appeals run months. Only adb per-cable slips past.
-- 🔴 **Owner chose managed Play over sideloading — settled, do not re-open or re-propose sideloading.**
-  The honest case against sideloading was the unknown-sources hole (`untrustedAppsPolicy` allowing
-  untrusted installs opens *every* app), never the update burden.
+- 🔴 **Managed Google Play is NOT how apps reach the rep tablets — owner decision 2026-09-28 dropped
+  the managed Play upload** because the enterprise has zero enrolled devices and the tablets are
+  Headwind-enrolled; Headwind installs an APK it hosts and links to configuration 3
+  ([[managed-play-cannot-reach-the-rep-tablets]]). Never re-propose the Play upload as the route to
+  the fleet. (The 2026-09-23 case against sideloading on the AMAPI route was the unknown-sources hole —
+  `untrustedAppsPolicy` allowing untrusted installs opens *every* app — never the update burden.)
+  **Superseded 2026-10-02:** previously "owner chose managed Play over sideloading — settled" — the owner's 2026-09-28 decision to drop the managed Play upload (`managed-play-cannot-reach-the-rep-tablets`).
 - 🔴 **The US$25 Play Console fee and a DUNS number are UNNECESSARY on the iframe route** — Managed
   Google Play auto-creates a Play Developer account and waives the $25 when publishing a private app
   through the EMM iframe. Those belong only to a standalone Play Console account (a public listing or
@@ -85,5 +113,6 @@ A native APK **does** exist (package `com.satopharma.phoenixworkforce`, Expo/Rea
 GPS can only live in that native app — AMAPI gives location from Lost Mode alone.
 
 **Why this memory exists:** the device register looks like device management from its name, so a
-session can wrongly answer "Phoenix already does this." It does not — the fleet is ManageEngine. The
+session can wrongly answer "Phoenix already does this." It does not — the fleet is Headwind MDM
+(it was ManageEngine until the Headwind move; superseded 2026-10-02). The
 owner is [[b-10-is-the-owner-himself]].

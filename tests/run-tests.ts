@@ -913,6 +913,10 @@ import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runMailboxOffboardingRobotTests } from "./mailbox-offboarding-robot.test.ts";
+import { runNewHireMailboxRobotTests } from "./new-hire-mailbox-robot.test.ts";
+import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
+import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts";
+import { runNewHireMailboxAdoptTests } from "./new-hire-mailbox-adopt.test.ts";
 import { runMailboxRobotSweepHookTests } from "./mailbox-robot-sweep-hook.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
@@ -1465,6 +1469,7 @@ import { runPediaSplitIncentiveTests } from "./pedia-split-incentive.test.ts";
 import { runPediaIncentivePortalTabTests } from "./pedia-incentive-portal-tab.test.ts";
 
 import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts";
+import { runOverdueAcceptedOffersTests } from "./overdue-accepted-offers.test.ts";
 import { runOutstationSubmitEmailRoutingTests } from "./outstation-submit-email-routing.test.ts";
 import { runOutstationExpenseGateTests } from "./outstation-expense-gate.test.ts";
 import { runOutstationDepartureEvidenceTests } from "./outstation-departure-evidence.test.ts";
@@ -1800,7 +1805,10 @@ import { runMarketingRequestCustomerScopeGuardTests } from "./marketing-request-
 import { runMarketingSalesCodeSyncRerunTests } from "./marketing-sales-code-sync-rerun.test.ts";
 import { runTerritoryAreaIndexTests } from "./territory-area-index.test.ts";
 import { runTerritoryDirectValueTests } from "./territory-direct-value.test.ts";
-import { runTerritoryUnitsEffectiveTests } from "./territory-units-effective.test.ts";
+import {
+  runDirectoryRollupUnitColumnsAgreeTests,
+  runTerritoryUnitsClosingBasisTests,
+} from "./territory-units-closing-basis.test.ts";
 import { runTerritoryUnitBarsValueTests } from "./territory-unit-bars-value.test.ts";
 import { runTerritoryAsofAndLinePickerTests } from "./territory-asof-and-line-picker.test.ts";
 
@@ -2029,6 +2037,7 @@ import { runEmployeeCvTests } from "./employee-cv.test.ts";
 import { runHrbpTerritoryManagementAccessTests } from "./hrbp-territory-management-access.test.ts";
 
 import { runAgentsLongHooksCiteDocsTests } from "./agents-long-hooks-cite-docs.test.ts";
+import { runModuleMemoryTests } from "./module-memory.test.ts";
 
 import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-cancel-rule.test.ts";
 
@@ -3995,6 +4004,36 @@ await runTest(
   runMailboxOffboardingRobotTests,
 );
 await runTest(
+  "new hire mailbox robot (an address held or claimed by anybody else is NEVER created, so one "
+  + "employee's mail can never reach another; a resigned person, a second company mailbox, a "
+  + "malformed local part and a hire more than 14 days out are each refused; and every console "
+  + "locator stays semantic — an aria-label, a form name or visible text, never a captured CSS path)",
+  runNewHireMailboxRobotTests,
+);
+await runTest(
+  "new hire mailbox initial password store (the one recoverable password in the system — so NO role "
+  + "but Super Admin ever receives it, not HR Advisory, HR Operations, the CEO or the Employee an "
+  + "unauthenticated caller presents as; the role is checked BEFORE the seal is opened, a password "
+  + "Turbify would reject is refused at seal time, and an unrecorded one says so rather than "
+  + "returning a blank somebody would pass on as a password)",
+  runNewHireMailboxInitialPasswordStoreTests,
+);
+await runTest(
+  "new hire mailbox runner and sweep wiring (a pass with no usable company password launches NOTHING "
+  + "— not one console call — because discovering it later would leave a live mailbox on a one-time "
+  + "password nobody holds; a mailbox created but not minted is PARTIAL and records nothing, leaving "
+  + "the task open rather than claiming a mailbox Phoenix cannot read; a refused candidate never "
+  + "reaches the console; and the robot is off by default with dry run the default once enabled)",
+  runNewHireMailboxRunnerTests,
+);
+await runTest(
+  "adopting an existing mailbox (a reset locks a WORKING employee out of their mail, so nothing "
+  + "outside the explicitly named list is ever touched and the shipped allow-list is empty; a "
+  + "mailbox Phoenix can already read is refused because adopting it would lock the person out for "
+  + "no gain; and an address that is not that employee's own recorded work email is refused)",
+  runNewHireMailboxAdoptTests,
+);
+await runTest(
   "mailbox revocation robot wired to the daily sweep (off by default; dry run is the default once "
   + "enabled and only PHOENIX_TURBIFY_ROBOT_DRY_RUN=false arms a live run; a live run builds the "
   + "console driver first, so an uncalibrated driver fails closed and the runner is never reached; "
@@ -4871,6 +4910,7 @@ await runTest("Pedia split incentive (two halves SUMMED, never a 2x2 gate; it re
 await runTest("Pedia incentive portal tab (a Pedia seat reads the two-achievement tab, role-free; the simulator is scored on the split and never on the single figure; both achievements are stated and a missing target is not 0%)", runPediaIncentivePortalTabTests);
 
 await runTest("reconciliation harness (a breach names both figures and their sources; a known-open defect never pages nightly; one bad check cannot blind the rest)", runReconciliationHarnessTests);
+await runTest("overdue accepted-offer detector (an accepted offer past its start date with a still-open seat is flagged; a filled seat, a seatless letter, a same-day start and an unreadable date are not)", runOverdueAcceptedOffersTests);
 await runTest("outstation submit email envelope (employee To, his direct manager Cc, Super Admins Bcc; the CEO is dropped from Cc in every case — direct manager or skip-level — with the skip-level stepping in when the direct manager is the CEO; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
 await runTest("outstation two-photo + workload payroll gate (both photos AND a captured workload before payroll; a 'complete' status with no photo behind it never pays; pre-rule requests are exempt, not blocked)", runOutstationExpenseGateTests);
 await runTest("outstation departure photo review (distance is flagged not blocked; both photos at once is flagged; the window closes at the end of the trip's last CAIRO day, DST included)", runOutstationDepartureEvidenceTests);
@@ -6472,8 +6512,13 @@ await runTest(
 );
 
 await runTest(
-  "Territory Management area pharmacies count units on the credited effective-units basis, matching value — never raw total_qty (41 split El Qema/city-rule rows disagreed, gap 1,772.08 units)",
-  runTerritoryUnitsEffectiveTests,
+  "Territory Management area pharmacies count units on the MONTHLY CLOSING's basis — total_qty for the units AND for the non-direct value, so the two can never disagree and the page can never sit under the published closing again (effective_units carried El Qema's own 20%/22% trade discount in the pack count on 41 rows, 1,772.08 packs / 478,461.60 EGP; a direct order still takes its source value)",
+  runTerritoryUnitsClosingBasisTests,
+);
+
+await runTest(
+  "both writers of the customer directory rollup compute effective_units and total_qty from the SAME expression — the premise Territory Management's closing basis rests on, so making one a genuine credited-to-area basis re-opens that decision instead of silently inheriting it",
+  runDirectoryRollupUnitColumnsAgreeTests,
 );
 
 await runTest(
@@ -7294,6 +7339,10 @@ await runTest(
 await runTest(
   "AGENTS.md long hooks cite their account in docs/ (relocate first, never delete a hook)",
   runAgentsLongHooksCiteDocsTests,
+);
+await runTest(
+  "Module memory (owner, 2026-10-02): every memory note is filed under a module, global or history (no orphan); every module's globs match real files and its rules file loads only on demand (paths:, never at startup); generated blocks are current and each file is under its cap; the hook brings a module's memory to a question, a SQL query, a shell read or a new file, records a Read without injecting, and stays under the 2 KB hook-preview cliff; a rule citing one business module's files cannot grow back into AGENTS.md",
+  runModuleMemoryTests,
 );
 await runTest(
   "new hire CRM account setup (the notice carries all seven facts, states a blank instead of dropping it, is email + in-app only, and fires on the CREATE path alone)",

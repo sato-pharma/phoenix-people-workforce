@@ -1,29 +1,45 @@
 ---
 name: whatsapp-silence-alert-is-a-weekend-false-positive
-description: "SETTLED: the WhatsApp intake 'silence' alert is NOT an outage. The advertised recruitment number is the HR HANDSET 01159888247, which is NOT on the Cloud API — applicant CVs sit on that phone and reach the ATS only when a HUMAN forwards a batch to +20 10 98500699, so 'no CVs' = nobody forwarded. The Meta app IS Live. The channel is unmonitorable from config alone (every Meta check reads healthy); measure distinct OUTSIDE senders and compare with email before calling a drought, and split bulkImport before reading WhatsApp volume as demand."
+description: "The WhatsApp intake 'silence' alert is a weekday-gated WARNING, not proof of an outage. Today the advertised apply number on PRODUCTION is the automated 010 line (01098500699, since 2026-08-28) and the HR handset 01159888247 is on the Cloud API by Coexistence (since 2026-09-11), so CVs to either arrive automatically — silence is no longer 'nobody forwarded' and may be a real intake fault. Config checks can read healthy regardless: compare with email and split bulkImport before calling a drought."
 metadata: 
   node_type: memory
   type: project
   originSessionId: f09c1e06-e648-4e1e-bdec-d7aa871f0d10
-  modified: 2026-09-26T05:22:36.196Z
+  modified: 2026-10-02T16:40:10.457Z
 ---
 
-**SETTLED 2026-08-23 — nothing is broken; do NOT re-investigate this as a Meta or code outage.** The
-recurring "WhatsApp intake silent" alert has a HUMAN STEP in the middle that stopped.
+**Current state — the human step is gone** ([[whatsapp-coexistence-verified-state-2026-08-24]]):
 
-**The chain:** the number advertised to applicants is the HR handset **`01159888247`**, a normal WhatsApp
-Business app phone that is **NOT on the Cloud API**. Applicants message it, their CVs sit on that handset, and
-they reach the ATS **only when a person forwards a batch** to the Cloud API number **`+20 10 98500699`**. So
-"no CVs coming" means nobody has forwarded — no Meta fault, no code fault. The Meta app IS in Live mode
-(owner confirmed). This is the owner's own 2026-07-27 "keep forwarding" arrangement after Coexistence proved
-unavailable in the dashboard ([[whatsapp-intake-observability-and-second-number]]).
+- **`RECRUITMENT_APPLY_WHATSAPP_NUMBER` is `01098500699` — the automated 010 Cloud API line — on
+  PRODUCTION since 2026-08-28** (owner: *"automate everything"*); every new advert and `PX-` apply link
+  carries `https://wa.me/201098500699`. Adverts already pasted with 011 still work. Staging is
+  deliberately still `01159888247`.
+- **Coexistence is LIVE since 2026-09-11 ~02:16 Cairo:** the handset **`+20 11 59888247`** reads
+  `Connected` on the Cloud API (`phone_number_id 477586495433549`) AND still runs WhatsApp Business on the
+  phone, so CVs sent to it flow into intake automatically. `WHATSAPP_PHONE_NUMBER_IDS` carries both line
+  ids, so the silence monitor watches both.
+- So **"no CVs" no longer means "nobody forwarded"** — with both lines automatic, a silent channel may be a
+  real intake fault and has to be diagnosed. One phone-side cause to rule out first: the handset's
+  connection drops if the WhatsApp Business app is not opened at least once every 14 days (or if someone
+  taps the *Connected platform* card), and neither recovers without re-running onboarding.
+**Superseded 2026-10-02:** previously "the advertised number is the HR handset, NOT on the Cloud API; CVs reach the ATS only when a human forwards a batch, so 'no CVs' = nobody forwarded" — the 2026-08-28 advertised-number switch and 2026-09-11 Coexistence (`whatsapp-coexistence-verified-state-2026-08-24`).
 
-## Why this channel is unmonitorable as designed
+**What was SETTLED on 2026-08-23 (history):** nothing was broken then — the recurring "WhatsApp intake
+silent" alert had a HUMAN STEP in the middle that had stopped.
 
-🔴 **Every Meta-config check reads healthy, because the dependency is "a person remembering to forward" —
-which config cannot see.** Alerting on "no inbound WhatsApp for N h" is really alerting on "HR hasn't done a
-batch upload this week": a staffing signal dressed as an outage. **Never report this channel healthy from
-config alone.** The two things that actually tell you what is happening:
+**The chain as it stood then:** the number advertised to applicants was the HR handset **`01159888247`**, a
+normal WhatsApp Business app phone that was **NOT on the Cloud API**. Applicants messaged it, their CVs sat on
+that handset, and they reached the ATS **only when a person forwarded a batch** to the Cloud API number
+**`+20 10 98500699`** — still the sanctioned route for an old CV sitting in the handset's chats. The Meta app IS
+in Live mode (owner confirmed). That was the owner's own 2026-07-27 "keep forwarding" arrangement after
+Coexistence proved unavailable in the dashboard ([[whatsapp-intake-observability-and-second-number]]).
+
+## Why this channel cannot be judged from config alone
+
+🔴 **Every Meta-config check could read healthy while no CV arrived** — in 2026-08 because the dependency
+was "a person remembering to forward", which config cannot see; alerting on "no inbound WhatsApp for N h"
+was then really alerting on "HR hasn't done a batch upload this week". **Never report this channel healthy
+from config alone.** The two things that actually tell you what is happening:
 
 - 🔴 **Compare it with EMAIL, an independent transport into the same ATS, before calling a drought.** That
   single comparison is what turned "nobody is applying" into "one road is a manual chute" — email was still
@@ -76,10 +92,11 @@ WhatsApp health object plus email mailbox summaries in one call — the fastest 
   2 delivering numbers" led to a wrong Development-mode conclusion ([[whatsapp-cv-intake-silent-since-2026-07-25]]);
   those two people are simply the two who forward. **Ask which number is advertised BEFORE theorising about
   Meta.**
-- **The durable fix removes the human step**, in priority order: (1) re-check Meta **Coexistence** (refused
-  2026-07-27, would let the handset feed the ATS automatically); (2) advertise `+20 10 98500699` directly
-  (cost: a CLOUD_API number cannot be opened in the WhatsApp app, so HR loses handset chat); (3) at minimum,
-  alert when no batch has arrived in N days.
+- **The durable fix removed the human step — BOTH options are DONE:** (1) Meta **Coexistence** (refused
+  2026-07-27) went LIVE 2026-09-11, so the handset feeds the ATS automatically; (2) `+20 10 98500699` has
+  been the advertised number on production since 2026-08-28. The fallback (3), "alert when no batch has
+  arrived in N days", was framed for the forwarding era. See [[whatsapp-coexistence-verified-state-2026-08-24]].
+  **Superseded 2026-10-02:** previously "the durable fix, in priority order: re-check Coexistence; advertise the 010 line; at minimum alert on no batch" as open options — both done (`whatsapp-coexistence-verified-state-2026-08-24`).
 - ⚠️ **Separate finding — CV extraction is captured but NOT applied to candidate columns, BY DESIGN.**
   `cv-intake-service.ts` applies only the identity triple (fullName/email/phone) on auto-intake; every other
   extracted field is persisted to `ats_candidate_cv_extractions.extracted_fields` as a PROPOSAL, and

@@ -1,11 +1,11 @@
 ---
 name: reallocation-14-uncovered-bricks
-description: "The 14 live bricks the 668-brick reallocation plan didn't cover are RESOLVED and APPLIED to production 2026-07-24 (3 blocks + 16 bricks inserted, 14 deactivated) — do not re-audit them as open. The ONE live open item: customer_map is STALE for those 14 old ids, so their customers stop resolving in monthly imports until remapped. The wider 668/168 plan itself is still PAUSED. Holds the per-LINE region data fact and the relayed-classification / owner-ground-truth lessons."
+description: "The 14 live bricks the 668-brick reallocation plan didn't cover are RESOLVED and APPLIED to production 2026-07-24 (3 blocks + 16 bricks inserted, 14 deactivated) — do not re-audit them as open. The FULL 668/168 plan went LIVE the same day and stale customer_map rows were repointed (7,824 of 7,832; 8 B25-43 outliers left for the owner). Holds the per-LINE region data fact and the relayed-classification / owner-ground-truth lessons."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 13d2cbc9-99e8-4d8f-b6cc-e899420ca975
-  modified: 2026-09-26T11:08:55.203Z
+  modified: 2026-10-02T16:38:37.254Z
 ---
 
 The 14 live production bricks that the 674→668 reallocation plan (`Locked_Area_Brick_Block_Reallocation.xlsx`)
@@ -16,18 +16,24 @@ deactivated (`active=false`), tagged `source_file = 'manual:14-uncovered-bricks-
 reallocations, B106-79 merged into B5-64 (Heliopolis — owner override), B25-43 (a legacy catch-all) split by
 address across Badr/Sadat/Kom Hamada/Buraijat.
 
-🔴 **The one live open item: `source_of_sales_customer_map` is STALE for those 14 old brick ids.** Only the
-brick/block structure was applied; the CUSTOMER moves (the B25-43 split and the direct-reallocation customer
-remaps) are NOT applied, so customers still on the 14 old ids **stop resolving in the next monthly import
-until remapped** — deferred until the owner says go on customers. (The B25-43 split proposal lived in a
-scratchpad CSV that may be gone; scratchpad contents are not durable within a long session —
-[[localappdata-temp-is-live-tool-state]].)
+**The customer remap is DONE too: `source_of_sales_customer_map` was repointed the same day** (owner's
+go-ahead, 2026-07-24): 102 old→new brick_id pairs fixed 7,745 rows, and B25-43's split was re-classified
+from the live rows (brick + area + region together) — **7,824 of 7,832 stale rows fixed; exactly 8 remain on
+`B25-43`/`CA5`/`CA` as genuine outliers for the owner's territory knowledge** (3 share the village "قرية
+النجاح") ([[post-reallocation-stale-brick-audit]]). At the time of the 14-brick fix only the brick/block
+structure was applied and customers on the 14 old ids would have stopped resolving in the next monthly
+import; that is no longer open. (The B25-43 split proposal lived in a scratchpad CSV that may be gone;
+scratchpad contents are not durable within a long session — [[localappdata-temp-is-live-tool-state]].)
+**Superseded 2026-10-02:** previously "the one live open item: customer_map is STALE for those 14 old ids, deferred until the owner says go" — the same-day repoint recorded in [[post-reallocation-stale-brick-audit]].
 
-**The wider 668/168-brick reallocation plan is still PAUSED and NOT applied** (gated on an explicit "ابدأ");
-only this 14-brick fix landed. Live counts are ~441 bricks / ~151 blocks today, NOT the 668/168 eventual
-target — do not conflate today's live count with the full plan's target. (The live block count was already
-higher than the plan's "142→168" headline assumed, so prior legitimate manual block edits exist; verify block
-counts against live, never against the plan's headline.)
+**The wider 668/168-brick reallocation plan is LIVE in production too, applied later on 2026-07-24** (the
+owner confirmed the full scope), and the live master was verified as an EXACT set match to
+`Locked_Area_Brick_Block_Reallocation.xlsx` — 668 active bricks / 168 active blocks, 0 missing, 0 extra
+([[reallocation-668-bricks-full-plan-live]]). Before that batch the live counts were ~441 bricks / ~151
+blocks; never quote those as current. (The live block count was already higher than the plan's "142→168"
+headline assumed, so prior legitimate manual block edits exist; verify block counts against live, never
+against the plan's headline.)
+**Superseded 2026-10-02:** previously "the wider 668/168 plan is still PAUSED and NOT applied; live counts ~441 bricks / ~151 blocks" — the full plan's same-day application recorded in [[reallocation-668-bricks-full-plan-live]].
 
 ## 🔴 The per-LINE region data fact (any master-data deliverable must reflect it)
 

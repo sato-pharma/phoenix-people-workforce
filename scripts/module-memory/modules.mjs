@@ -1,0 +1,443 @@
+// THE MODULE MAP — the single definition every part of module memory reads.
+//
+// WHAT MODULE MEMORY IS (owner-approved 2026-10-02; account: docs/module-memory.md)
+// The auto-loaded rulebook (AGENTS.md + the MEMORY.md index) has a hard ceiling, so every new
+// rule pushed an old one out of sight. Module memory moves each module's rules and memory notes
+// into `.claude/rules/<id>.md`. Claude Code loads that file BY ITSELF the moment a session reads a
+// file matching its `paths:` globs (proven on 2.1.284, 2026-10-02: no file read -> not loaded;
+// another module's file -> not loaded; this module's file -> loaded). Work that never reads a file
+// (a question, a database query, a shell `cat`) is covered by `.claude/hooks/module-memory-injector.mjs`,
+// which matches `keywords` against the prompt and `keywords`/`tables` against tool input.
+//
+// WHO READS THIS FILE
+//   scripts/module-memory/build.mjs   writes each rules file's frontmatter and notes block
+//   .claude/hooks/module-memory-injector.mjs   keyword / table / path matching
+//   scripts/module-memory/fold.mjs    files new inbox notes under a module
+//   tests/module-memory.test.ts       proves the map, the files and the assignments agree
+//
+// GLOBS are matched against repo-relative paths with forward slashes: `**` crosses folders, `*`
+// does not, `{a,b}` is an alternative. Never write a route group's parentheses — `(admin)` is a
+// glob GROUP, not a literal; `app/**/payroll/**` reaches app/(admin)/payroll and its siblings.
+// Every glob must match at least one tracked file (the test refuses a dead one).
+//
+// KEYWORDS are matched case-insensitively as whole words against the owner's message and against
+// shell commands. Keep them SPECIFIC: a generic word ("area", "target", "report") would load a
+// module into every session for nothing.
+
+/** @typedef {{ id: string, title: string, scope: string, globs: string[], keywords: string[], tables: string[] }} MemoryModule */
+
+/** @type {MemoryModule[]} */
+export const MODULES = [
+  {
+    id: "payroll",
+    title: "Payroll, salaries and deductions",
+    scope: "Salary runs and batches, the automated payroll, payslips, deductions, statutory figures, finance exports.",
+    globs: [
+      "src/lib/{payroll,automated-payroll,deductions,daily-deductions,finance,reconciliation,calculator}/**",
+      "src/components/{payroll,automated-payroll}/**",
+      "app/**/{payroll,automated-payroll,m-payroll,payroll-copilot,payroll-management,payslips-center,payslips,daily-deductions,deductions,finance-command-center}/**",
+      "tests/*{payroll,payslip,salary,deduction,statutory}*",
+      "supabase/migrations/*{payroll,salary,payslip,deduction}*",
+    ],
+    keywords: ["payroll", "salary", "salaries", "payslip", "payslips", "deduction", "deductions", "net pay", "gross pay", "basic salary", "social insurance", "salary batch", "مرتب", "مرتبات", "رواتب"],
+    tables: ["salary_records", "salary_batches", "automated_payroll", "payroll_", "payslip", "deduction"],
+  },
+  {
+    id: "sales-closing",
+    title: "Monthly Closing, Source of Sales and attribution",
+    scope: "The monthly closing engine and its exports, sales imports and distributors, attribution, bricks and areas for sales, El Qema, the Office and city rules, targets and achievement, the Business Review.",
+    globs: [
+      "src/lib/sales/*",
+      "src/lib/sales/{ai,master-data,master-map,normalizer,territory,make-it-happen}/**",
+      "src/lib/business-review/**",
+      "src/components/{sales,business-review}/**",
+      "app/**/{sales,monthly-closing,source-of-sales,sales-vs-target,targets,territory-drilldown,brick-coverage,master-data,customers-database,dsms-performance,med-reps-performance,team-performance,make-it-happen,business-review}/**",
+      "tests/*{closing,qema,attribution,source-of-sales,sos-,brick,distributor,office-golden,city-split,business-review,achievement}*",
+      "supabase/migrations/*{closing,attribution,source_of_sales,sos_,brick,distributor,achievement}*",
+    ],
+    keywords: ["monthly closing", "closing", "source of sales", "sos", "attribution", "el qema", "qema", "distributor", "distributors", "brick", "bricks", "sales vs target", "achievement", "factory price", "office rule", "city rule", "business review", "تقفيل", "مبيعات"],
+    tables: ["source_of_sales", "sos_", "phx_closing", "phx_monthly", "monthly_closing", "au.", "line_area_map", "monthly_targets", "distributor"],
+  },
+  {
+    id: "weekly-sales",
+    title: "Weekly sales and stock",
+    scope: "Weekly depot sales and stock uploads, the weekly BI and NSM/DSM exports, weekly mapping.",
+    globs: [
+      "src/lib/sales/weekly/**",
+      "app/**/{weekly-sales,weekly-stock}/**",
+      "tests/*weekly*",
+      "supabase/migrations/*weekly*",
+    ],
+    keywords: ["weekly sales", "weekly stock", "weekly export", "weekly report", "nsm/dsm", "weekly bi"],
+    tables: ["weekly_sales", "weekly_stock", "weekly_"],
+  },
+  {
+    id: "direct-orders",
+    title: "Direct orders",
+    scope: "Direct orders from pharmacies, their pricing, the Finance booking month, the direct-order desk.",
+    globs: [
+      "src/lib/direct-orders/**",
+      "src/components/direct-orders/**",
+      "app/**/{direct-orders,direct-orders-in-my-area}/**",
+      "tests/*direct-order*",
+      "supabase/migrations/*direct_order*",
+    ],
+    keywords: ["direct order", "direct orders", "direct-order"],
+    tables: ["direct_order"],
+  },
+  {
+    id: "incentives",
+    title: "Incentives and targets payout",
+    scope: "The 2026 incentive scheme, achievement-to-payout, semester targets, the portal Incentive tab.",
+    globs: [
+      "src/lib/incentives/**",
+      "app/**/incentive/**",
+      "tests/*incentive*",
+    ],
+    keywords: ["incentive", "incentives", "payout curve", "semester target"],
+    tables: ["incentive"],
+  },
+  {
+    id: "phoenix-crm",
+    title: "Phoenix CRM (the reps' own CRM)",
+    scope: "The rep's visit app on the web, plans and weeks, places and customers, list admission, approvals, location integrity, the CRM admin.",
+    globs: [
+      "src/lib/phoenix-crm/**",
+      "src/components/phoenix-crm/**",
+      "app/**/phoenix-crm/**",
+      "tests/*phoenix-crm*",
+      "supabase/migrations/*phoenix_crm*",
+    ],
+    keywords: ["phoenix crm", "phoenix-crm", "phoenix_crm", "visit app", "rep's app", "list admission", "location integrity", "mock location"],
+    tables: ["phoenix_crm"],
+  },
+  {
+    id: "crm",
+    title: "Field CRM analytics (iReports360) — visits, KPIs, reps lists and plans",
+    scope: "The vendor CRM sync (iReports360), visits and call rates, coverage and frequency, Reps List, Reps Plans, KPIs, double visits, doctor lists, field activity.",
+    globs: [
+      "src/lib/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,visits-report,field-activity,weekly-planning}/**",
+      "src/components/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,double-visit-report,field-activity,weekly-planning}/**",
+      "app/**/{crm,crm-integrity,crm-tools,field-crm,customer-360,double-visit-analytics,double-visit-data-integrity,double-visit-report,dv-planner,doctor-coverage,doctor-coverage-settings,doctor-list,doctor-list-changes,rep-doctor-lists,reps-list,reps-plans,kpis,field-activity,visit-entry,visits,plan-verification,weekly-plans,plans,my-list,contact-review}/**",
+      "tests/*{crm,ireports,visit,reps-list,reps-plans,kpi,double-visit,doctor-list,coverage}*",
+      "tests/dm-plan*",
+      "supabase/migrations/*{crm,ireports,visit}*",
+    ],
+    keywords: ["ireports360", "ireports", "call rate", "reps list", "reps plans", "double visit", "doctor list", "coverage", "frequency", "kpis board", "crm sync", "visit type"],
+    tables: ["crm_", "ireports", "visit"],
+  },
+  {
+    id: "marketing",
+    title: "Marketing requests, venues, pharmacies and ROI",
+    scope: "Marketing requests and approvals, venue and pharmacy validation, distributor codes, customer-pharmacy links, verified captures, market awareness, marketing ROI.",
+    globs: [
+      "src/lib/{marketing-requests,venues,pharmacy-master,pharmacy-search,customer-pharmacy-mapping,verified-captures,market-awareness,sales-marketing-intelligence,evidence}/**",
+      "src/components/{marketing-requests,venues,pharmacy-master,pharmacy-search,customer-pharmacy-mapping,market-awareness,sales-marketing-intelligence,validation}/**",
+      "app/**/{marketing-requests,archived-marketing-requests,marketing,marketing-roi,marketing-roi-report,marketing-roi-tracker,roi,roi-tracker,pharmacy-master,pharmacy-search,customer-pharmacy-mapping,customer-links,verified-captures,market-awareness,sales-marketing-intelligence}/**",
+      "tests/*{marketing,venue,pharmacy,wholesaler,customer-pharmacy,verified-capture,roi}*",
+      "supabase/migrations/*{marketing,venue,pharmacy}*",
+    ],
+    keywords: ["marketing request", "marketing requests", "venue", "venues", "pharmacy code", "distributor code", "makhzan", "wholesaler", "marketing roi", "verified capture", "صيدلية"],
+    tables: ["marketing_", "venue", "pharmacy", "customer_pharmacy"],
+  },
+  {
+    id: "recruitment",
+    title: "Recruitment, CVs and offers",
+    scope: "Candidates and the ATS, CV intake (email and WhatsApp), CV database and lookup, screening, interviews, job offers, vacancies.",
+    globs: [
+      "src/lib/{recruitment,cv,offers,whatsapp-inbox,mailbox-monitor,zoom}/**",
+      "src/components/{recruitment,cv,offers,whatsapp-inbox}/**",
+      "app/**/{recruitment,recruitment-hiring,recruitment-candidates,recruitment-engagement,cv-database,cv-lookup,offers,interview-calendar,vacancies,intake-health,screening-questions,mailbox-monitor,whatsapp-inbox,whatsapp,whatsapp-connect}/**",
+      "tests/*{recruitment,candidate,cv-,cv_,offer,ats,interview,whatsapp,vacanc,screening}*",
+      "supabase/migrations/*{recruitment,candidate,ats_,offer,whatsapp,cv_}*",
+    ],
+    keywords: ["recruitment", "candidate", "candidates", "cv", "cvs", "job offer", "offer letter", "interview", "vacancy", "vacancies", "ats", "whatsapp cv", "screening", "توظيف"],
+    tables: ["ats_", "recruitment", "candidate", "offer", "whatsapp", "cv_"],
+  },
+  {
+    id: "hiring-documents",
+    title: "Hiring documents, contracts and company papers",
+    scope: "The hiring pack, contracts, HR forms and papers, the Sato document identity on paper, seals and print marks, business cards, the spotlight sheet, PDFs and workbook exports.",
+    globs: [
+      "src/lib/{hiring-pack,hiring-documents,contracts,business-cards,spotlight,pdf,export}/**",
+      "src/components/{hiring-pack,hiring-documents,contracts,business-cards,spotlight,phoenix-signature-card}/**",
+      "app/**/{hiring-pack,hiring-documents,contracts,business-cards,business-card-requests,spotlight,print}/**",
+      "tests/*{hiring-pack,hiring-document,contract,hr-forms,business-card,spotlight,house-identity,document-mark,pdf}*",
+    ],
+    keywords: ["hiring pack", "hiring documents", "contract", "contracts", "hr forms", "business card", "business cards", "spotlight", "seal", "stamp", "document identity", "عقد"],
+    tables: ["hiring_", "contract", "business_card", "spotlight"],
+  },
+  {
+    id: "employees",
+    title: "Employees and the HR lifecycle",
+    scope: "Employee master data, hiring into a seat, Employee 360, resignations and exits, retention, the HR command centre, HR seats and functions, test accounts.",
+    globs: [
+      "src/lib/{employees,employee-lifecycle,employee-360,hr,resignations,retention,retention-risk,lifecycle-risk,new-hire-mailbox}/**",
+      "src/components/{employees,employee-360,hr,people,resignations,retention,new-hire-mailbox}/**",
+      "app/**/{employees,employee-360,resignations,retention,people-management,hr-command-center,new-hire-mailboxes,test-accounts,account-activation}/**",
+      "tests/*{employee,hr-,resignation,retention,lifecycle,hire,leaver,test-account}*",
+      "supabase/migrations/*{employee,resignation,retention,lifecycle,hire}*",
+    ],
+    keywords: ["employee master", "employee 360", "resignation", "resignations", "leaver", "leavers", "new hire", "hire date", "last working date", "retention", "hr command", "test account", "موظف"],
+    tables: ["employees", "employee_", "exit_record", "resignation", "retention", "app_auth_users"],
+  },
+  {
+    id: "probation",
+    title: "Probation and employee milestones",
+    scope: "Probation tracking, the Day 30/60/75 milestone emails, probation settings, milestone cards.",
+    globs: [
+      "src/lib/{probation,milestones}/**",
+      "src/components/{probation,milestones}/**",
+      "app/**/{probation,probation-settings,probation-tools,ceo-probation,milestones}/**",
+      "tests/*{probation,milestone}*",
+      "supabase/migrations/*{probation,milestone}*",
+    ],
+    keywords: ["probation", "milestone", "milestones", "day 30", "day 60", "day 75"],
+    tables: ["probation", "milestone"],
+  },
+  {
+    id: "time-off",
+    title: "Vacations, attendance and calendars",
+    scope: "Annual vacation requests and balances, attendance and fingerprints, excuses, Early Birds, the HR and team calendars, private calendars.",
+    globs: [
+      "src/lib/{vacation,attendance,excuses,early-birds,hr-calendar,private-calendar,calendar}/**",
+      "src/components/{vacation,attendance,early-birds,hr-calendar}/**",
+      "app/**/{vacation-request,vacation-control,vacation-report,leave-management,finance-leave-management,attendance,fingerprint-analytics,excuses,early-birds,hr-calendar,company-calendar,team-calendar,private-calendar,private-calendars,private-calendar-disputes}/**",
+      "local-attendance-agent/**",
+      "tests/*{vacation,attendance,excuse,early-bird,calendar,leave}*",
+      "supabase/migrations/*{vacation,attendance,excuse,leave,calendar}*",
+    ],
+    keywords: ["vacation", "vacations", "annual leave", "attendance", "fingerprint", "excuse", "excuses", "early birds", "calendar", "اجازة", "إجازة", "حضور"],
+    tables: ["vacation", "attendance", "excuse", "leave_", "calendar"],
+  },
+  {
+    id: "expenses",
+    title: "Expenses and outstation trips",
+    scope: "Expense claims and submissions, outstation trips and allowances, duplicate-claim holds, the expense dashboard.",
+    globs: [
+      "src/lib/outstation/**",
+      "src/components/outstation/**",
+      "app/**/{outstation,outstation-expenses,outstation-review,expenses,expense-dashboard,expense-submissions,submit-expense,team-expenses}/**",
+      "tests/*{expense,outstation,per-diem,trip}*",
+      "supabase/migrations/*{expense,outstation}*",
+    ],
+    keywords: ["expense", "expenses", "expense claim", "outstation", "per diem", "allowance", "trip", "trips", "مصاريف"],
+    tables: ["expense", "outstation"],
+  },
+  {
+    id: "org",
+    title: "Organogram, territory and geography",
+    scope: "The organogram and AU seat model, lines, regions and areas, territory management, field workforce compliance, Egypt place vocabulary and geocoding.",
+    globs: [
+      "src/lib/{org,workforce,field-workforce-compliance,territory-management,geo,geocoding,google-maps}/**",
+      "src/components/{organogram,field-workforce-compliance,territory-management}/**",
+      "app/**/{organogram,territory-management,field-workforce-compliance,scope-visibility}/**",
+      "tests/*{organogram,org-,seat,territory,geo,region,area-}*",
+      "supabase/migrations/*{org,seat,territory,area,region}*",
+    ],
+    keywords: ["organogram", "org chart", "seat", "seats", "vacant seat", "territory", "region", "governorate", "geocoding", "line manager"],
+    tables: ["au.", "seat", "areas", "regions", "lines", "teams", "territor"],
+  },
+  {
+    id: "portal",
+    title: "Employee portal, dashboards and command centres",
+    scope: "The employee portal shell and landing pages, the admin shell and sidebar, action centre, Needs You, CEO/SFE/HR command centres, company activity report, support requests.",
+    globs: [
+      "src/lib/{employee-portal,navigation,overview,dashboard,action-center,needs-you,ceo,company-activity-report,support-requests,workspace,reports,activity}/**",
+      "src/components/{employee-portal,layout,action-center,company-activity-report,workspace,reports,activity,analytics}/**",
+      "src/config/system-navigation.ts",
+      "app/employee-portals/*",
+      "app/**/{overview,action-center,needs-you,ceo-command-center,sfe-command-center,company-activity-report,support-requests,contact-hr-support,sidebar-layout,workspace,reports,analytics,profile,actions}/**",
+      "tests/*{portal,sidebar,navigation,landing,overview,command-center,needs-you,action-center}*",
+    ],
+    keywords: ["employee portal", "portal", "sidebar", "landing page", "command center", "command centre", "needs you", "action center"],
+    tables: ["portal", "navigation", "support_request"],
+  },
+  {
+    id: "notifications",
+    title: "Email, notifications and messaging",
+    scope: "Outbound email and templates, the notification outbox and recipients, Telegram mirrors, distribution lists, Sato mailboxes and mailbox offboarding, internal messages.",
+    globs: [
+      "src/lib/{email,email-templates,notifications,communication,internal-messages,distribution-lists,sato-email,personal-mailbox,mailbox-offboarding,conversations,whatsapp-videos}/**",
+      "src/components/{notifications,conversations,mailbox-offboarding}/**",
+      "src/emails/**",
+      "app/**/{email-control-center,email-notifications,email-reply-composer,email-templates,notifications,notification-confidence,notification-recipients,distribution-lists,sato-email,mailbox-offboarding,messages,access-communication}/**",
+      "tests/*{email,notification,telegram,outbox,mailbox,distribution-list,digest}*",
+      "supabase/migrations/*{email,notification,outbox,mailbox}*",
+    ],
+    keywords: ["email", "emails", "notification", "notifications", "telegram", "outbox", "mailbox", "distribution list", "resend", "turbify"],
+    tables: ["notification", "email", "outbox", "mailbox"],
+  },
+  {
+    id: "coaching",
+    title: "Coaching, training and visual aids",
+    scope: "Field coaching and coaching analytics, the training manager, visual aids.",
+    globs: [
+      "src/lib/{coaching,visual-aids}/**",
+      "src/components/{coaching,visual-aids}/**",
+      "app/**/{coaching,coaching-analytics,field-coaching,training-manager,visual-aids}/**",
+      "tests/*{coaching,visual-aid,training}*",
+      "supabase/migrations/*{coaching,visual_aid,training}*",
+    ],
+    keywords: ["coaching", "visual aid", "visual aids", "training manager"],
+    tables: ["coaching", "visual_aid", "training"],
+  },
+  {
+    id: "report-it",
+    title: "Report It (pharmacovigilance — patient data)",
+    scope: "Adverse-event reports (patient data, not HR), the pharmacovigilance desk and its export.",
+    globs: [
+      "src/lib/report-it/**",
+      "src/components/report-it/**",
+      "app/**/{report-it,pharmacovigilance}/**",
+      "tests/*report-it*",
+    ],
+    keywords: ["report it", "report-it", "pharmacovigilance", "adverse event", "adr"],
+    tables: ["report_it"],
+  },
+  {
+    id: "approvals",
+    title: "Approvals and workflow",
+    scope: "Approval chains, the approvals hub, the workflow registry and workflow control.",
+    globs: [
+      "src/lib/{approvals-hub,workflow-control,workflow-registry,approvals}/**",
+      "src/components/{approvals-hub,workflow-control}/**",
+      "app/**/{approvals,approvals-hub,workflow-control,workflow-registry}/**",
+      "tests/*{approval,workflow}*",
+      "supabase/migrations/*{approval,workflow}*",
+    ],
+    keywords: ["approval chain", "approvals hub", "workflow registry", "approver", "approval flow"],
+    tables: ["approval", "workflow"],
+  },
+  {
+    id: "devices",
+    title: "Devices and tablet management (Headwind MDM)",
+    scope: "The device register, Headwind MDM, the company tablets as managed devices.",
+    globs: [
+      "src/lib/devices/**",
+      "src/components/devices/**",
+      "app/**/devices/**",
+      "tests/*{device,headwind,manageengine,mdm}*",
+      "docker-compose.headwind.yml",
+    ],
+    keywords: ["headwind", "mdm", "device register", "tablet", "tablets"],
+    tables: ["device"],
+  },
+  {
+    id: "platform",
+    title: "Platform — auth, security, cron, data access and shared UI",
+    scope: "Login and sessions, access control and roles, security, cron jobs and background work, observability and errors, share links, imports and uploads, AI assist, shared UI primitives and styles.",
+    globs: [
+      "src/lib/{auth,security,platform,cron-control,background-jobs,observability,error-monitor,share-links,share,http,imports,uploads,ai,validation,qr,operations,synthetic-journeys,admin,format,i18n,ui,utils}/**",
+      "src/components/{auth,admin,ui,charts}/**",
+      "src/styles/**",
+      "app/api/{auth,cron,health,healthz,readyz,dev-auth,errors,webhooks,share,exports,imports,integrations,public}/**",
+      "app/**/{access,admin-tools,cron-control,error-monitor,logs,monitoring,module-locks,system-cleanup,system-issues,synthetic-journeys,data-backup,data-health,dev-preview,login,password-setup,share}/**",
+      "proxy.ts",
+      "instrumentation.ts",
+      "tests/*{auth,access,role,permission,cron,security,login,session,share-link,error,square-edge,fits-the-screen}*",
+      "supabase/migrations/*{auth,role,permission,cron}*",
+    ],
+    keywords: ["login", "access control", "permission", "permissions", "role sweep", "cron", "cron job", "error monitor", "share link", "dev-auth"],
+    tables: ["auth.", "app_auth", "app_error", "cron."],
+  },
+  {
+    id: "database",
+    title: "Database, migrations and Supabase",
+    scope: "Supabase projects, migrations, RLS, grants, functions and views, PostgREST behaviour.",
+    globs: [
+      "supabase/**",
+      "src/lib/supabase/**",
+      "scripts/*{migration,supabase,sql}*",
+    ],
+    keywords: ["migration", "migrations", "supabase", "rls", "postgrest", "apply_migration", "execute_sql"],
+    tables: [],
+  },
+  {
+    id: "engineering",
+    title: "Engineering — CI, tests, scripts and deploys",
+    scope: "CI and the required checks, PRs and merges, the test runner and how tests prove things, repo scripts, Railway deploys and what is live, the self-hosted runner and preview box.",
+    globs: [
+      ".github/**",
+      "scripts/*",
+      "tests/run-tests.ts",
+      "package.json",
+      "Dockerfile",
+      "railway.toml",
+      "next.config.ts",
+      "infra/**",
+    ],
+    keywords: ["ci", "github actions", "workflow run", "required check", "required checks", "railway", "deploy", "deployed", "test runner", "roll-up", "rollup"],
+    tables: [],
+  },
+  {
+    id: "sessions",
+    title: "Sessions — git, worktrees, parallel work, this laptop and memory",
+    scope: "How sessions work on this repo: git and branches, worktrees and the primary checkout, parallel sessions and locks, Claude Code hooks and the app, the laptop's RAM and dev servers, browser checks, the memory index and module memory itself.",
+    globs: [
+      ".claude/hooks/**",
+      ".claude/settings.json",
+      "scripts/{new-session,repo-doctor,sync-worktree-env,sync-cloud-context,memory-index-budget,memory-index-reachability,dev-server}*",
+      "scripts/module-memory/**",
+      "docs/{module-memory,memory-index-budget,agents-worktree-and-machine-limits,agents-session-traps}*",
+    ],
+    keywords: ["worktree", "worktrees", "primary checkout", "parallel session", "parallel sessions", "session lock", "memory index", "module memory", "dev server", "claude code", "laptop"],
+    tables: [],
+  },
+];
+
+/** Notes that are true everywhere stay in the always-loaded MEMORY.md index. */
+export const GLOBAL = "global";
+/** Notes about retired platforms or frozen areas: listed in docs/module-memory/history.md, never loaded. */
+export const HISTORY = "history";
+
+export const MODULE_IDS = MODULES.map((m) => m.id);
+
+/** Where each module's memory file lives, repo-relative. */
+export const rulesFileOf = (id) => `.claude/rules/${id}.md`;
+
+/** Full memory notes, repo-relative: the cloud mirror of the laptop memory folder (identical content). */
+export const NOTES_DIR = ".claude/cloud-context/memory-mirror";
+
+/** Ceiling for one module file — CI refuses a bigger one; split the module instead. */
+export const MODULE_FILE_MAX_BYTES = 72_000;
+
+/**
+ * Glob -> RegExp. Supports `**` (any depth, including none when followed by `/`), `*` (one
+ * segment), `?` and `{a,b}`. Paths are repo-relative with forward slashes.
+ */
+export function globToRegExp(glob) {
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*") {
+      if (glob[i + 1] === "*") {
+        const slash = glob[i + 2] === "/";
+        re += slash ? "(?:.*/)?" : ".*";
+        i += slash ? 2 : 1;
+      } else {
+        re += "[^/]*";
+      }
+    } else if (c === "?") re += "[^/]";
+    else if (c === "{") re += "(?:";
+    else if (c === "}") re += ")";
+    else if (c === "," && re.lastIndexOf("(?:") > re.lastIndexOf(")")) re += "|";
+    else re += c.replace(/[.+^$()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${re}$`);
+}
+
+/** Which modules own a repo-relative path. */
+export function modulesForPath(relPath) {
+  const p = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
+  return MODULES.filter((m) => m.globs.some((g) => globToRegExp(g).test(p))).map((m) => m.id);
+}
+
+/** Whole-word, case-insensitive keyword test (Arabic-safe: falls back to substring). */
+export function mentions(text, word) {
+  const t = String(text || "").toLowerCase();
+  const w = word.toLowerCase();
+  if (/[^\x00-\x7f]/.test(w)) return t.includes(w);
+  const esc = w.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9_])${esc}($|[^a-z0-9_])`).test(t);
+}

@@ -1,11 +1,11 @@
 ---
 name: au-area-state-follows-seat-occupancy
-description: "PR #1399 — au.line_area_map.area_state now maintained on resign/hire; records the still-open gap that hires never reach the au seat model"
+description: "PR #1399 — au.line_area_map.area_state follows seat occupancy on resign/hire. Hires DO reach the au seat model now: a public.employees insert fires a trigger that seats the person (wired by #1705, 2026-08-04) — never hand-write au.occupancy_history rows after one."
 metadata: 
   node_type: memory
   type: project
   originSessionId: c6c301a6-eb56-4d59-8a41-01125ffb468e
-  modified: 2026-07-27T20:38:54.787Z
+  modified: 2026-10-02T16:33:10.959Z
 ---
 
 PR #1399 (2026-07-27) makes `au.line_area_map.area_state` follow seat occupancy via
@@ -38,8 +38,13 @@ Non-obvious facts established by reading production, worth not re-deriving:
   `SEAT-PED-DM-CA`/PD-0006, run by hand by the owner that day — the first ever hire event).
   The app only ever invokes `au.resign_occupant` via `phx_resign_employee_and_open_vacancy`
   from `src/lib/resignations/service.ts`. Resignations flow into the au seat model
-  automatically; **hires do not** — a new hire gets no occupancy row unless someone runs the
-  RPC manually. This gap is still OPEN and is the largest outstanding item in this area.
+  automatically, and **so do hires — from the database, not the app**: inserting a row in
+  `public.employees` fires `phx_employee_insert_autofill_replacement_vacancy` (AFTER INSERT), which
+  closes the seat's vacant placeholder, writes a `hire`/`hire_rpc` occupancy row dated today and
+  flips `area_state` to `occupied`. **Do NOT hand-write `au.occupancy_history` rows after an employee
+  insert** — the system has already written them, and a manual insert duplicates the seat
+  ([[an-employee-insert-auto-fills-a-vacant-seat-and-restamps-nothing]], measured 2026-08-28).
+  **Superseded 2026-10-02:** previously "hires do not reach the au seat model — a new hire gets no occupancy row unless someone runs the RPC manually; gap still OPEN" — PR #1705 (2026-08-04) fixed the two breaks that left hires unseated, and the insert trigger was measured seating hires on 2026-08-28.
 - **`au.seats.seat_label` had the same stale-state bug** — it baked `(VACANT)` in at seed time.
   Fixed in the same PR by stripping the token and deriving
   `au.v_org_tree.seat_display_label` from the open occupancy span. Do NOT store occupancy in a

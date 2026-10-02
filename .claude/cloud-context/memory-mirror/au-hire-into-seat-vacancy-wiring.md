@@ -1,11 +1,11 @@
 ---
 name: au-hire-into-seat-vacancy-wiring
-description: "PR #1411 — au.hire_into_seat wired via a position_vacancies trigger for REPLACEMENT hires only; brand-new headcount and transfers still unwired"
+description: "PR #1411 — au.hire_into_seat wired via a position_vacancies trigger; since #1705 (2026-08-04) brand-new headcount resolves its seat by line+area too, and an employees INSERT seats the person itself — never hand-write au.occupancy_history after a hire. Transfers go through phx_transfer_au_seat."
 metadata: 
   node_type: memory
   type: project
   originSessionId: c6c301a6-eb56-4d59-8a41-01125ffb468e
-  modified: 2026-07-28T09:29:45.853Z
+  modified: 2026-10-02T16:32:31.098Z
 ---
 
 PR #1411 (2026-07-28, branch `claude/au-hire-into-seat-wiring`, off `origin/main` post-#1399 —
@@ -28,12 +28,21 @@ spans only — NOT `effective_from`, and NOT a bare equality lookup), and calls
 open replacement vacancies from the original #1399 bug resolve, via nothing but occupancy
 history, to exactly the 6 seats already fixed — zero title/tier guessing needed.
 
-**Deliberately still unwired** (documented in `docs/area-unification/vacancy-models.md`):
-- Brand-new headcount (vacancy with no `replacement_for_hr_id`) — no safe way to pick a seat
-  without inventing a job_title→seat_tier map, which `src/lib/employees/access-role.ts` explicitly
-  says not to trust job_title for.
-- Employee transfers between seats while staying employed — `au.transfer_occupant` STILL has no
-  application caller either; separate gap, not touched.
+**Since wired** (originally left unwired here; documented in `docs/area-unification/vacancy-models.md`):
+- Brand-new headcount (vacancy with no `replacement_for_hr_id`) — **seated automatically**. PR #1705
+  (2026-08-04, `20260804090813_fix_hire_into_seat_resolve_seat_for_non_replacement_vacancies.sql`)
+  added Route 2: resolve the seat structurally from line + area (unique across active REP seats, and
+  the seat must be unoccupied), and an audit row whenever it cannot resolve. And an `insert into
+  public.employees` fires `phx_employee_insert_autofill_replacement_vacancy`, which seats the person
+  itself — **do NOT hand-write `au.occupancy_history` rows after an employee insert**, a manual insert
+  duplicates the seat. See [[an-employee-insert-auto-fills-a-vacant-seat-and-restamps-nothing]].
+  **Superseded 2026-10-02:** previously "brand-new headcount still unwired — needs a manual RPC run"
+  — PR #1705 (2026-08-04) and the employee-insert trigger.
+- Employee transfers between seats while staying employed — `public.phx_transfer_au_seat`
+  (`20260804191000_phx_transfer_au_seat.sql`) is the safe wrapper the app calls
+  (`src/lib/employees/seat-transfer.ts`).
+  **Superseded 2026-10-02:** previously "`au.transfer_occupant` has no application caller" — the
+  2026-08-04 transfer primitive.
 
 **Resign-side ORDER BY gap — NOW FIXED, PR #1416** (`20260728100000_au_resign_vacate_all_open_seats.sql`,
 branch `claude/au-resign-vacate-all-open-seats`): `phx_resign_employee_and_open_vacancy` step 5
@@ -56,6 +65,9 @@ invisible to the seat model — a real latent gap. No `replacement_for_hr_id` eq
 transfers; destination-seat resolution would need net-new infra (open-span reverse resolver +
 UI seat-picker or a same-tier inference rule). NOT a safe drop-in like the hire case was. Owner
 decision whether to build.
+**Superseded 2026-10-02:** previously "do not build yet" — built 2026-08-04 as
+`public.phx_transfer_au_seat` (derives the source seat, refuses cross-line/occupied/inactive moves,
+syncs the employee master, writes an `au_seat_transfer` audit row).
 
 **Observability limit, accepted on purpose**: `closeVacancyOnHire()` (TS) clears
 `replacement_for_hr_id` to NULL in the SAME update that sets `status='filled'`, so nothing can

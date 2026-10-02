@@ -1,11 +1,11 @@
 ---
 name: marketing-not-found-codes-have-three-root-causes
-description: "A not_found marketing pharmacy code is usually a WRONG DISTRIBUTOR or a PADDING mistake, not a bad code — chimipharm (and any thin-list distributor) can NEVER match, and a stale reference list is the third cause. Holds the diagnostic order and the reusable traps for placing a pharmacy: GPS>name>code but check for a reused coordinate, town≠markaz, a dead code is safe to retire, and moving a pharmacy's area does not hide it from the capturing rep."
+description: "A not_found marketing pharmacy code is usually a WRONG DISTRIBUTOR or a PADDING mistake, not a bad code — chimipharm (and any thin-list distributor) can NEVER match; a stale reference list is the third cause. Placing a shop: the REGISTERED CODE beats GPS for its area (owner 2026-08-21); unresolved → source_of_sales_bricks, never coordinates. AREA grants sight — backfill area_id only, never owners. Traps: reused coordinate, town≠markaz, a dead code is safe to retire."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 9f9d1d5e-92b5-4eaa-a238-ad2fc773fd35
-  modified: 2026-09-26T03:11:40.222Z
+  modified: 2026-10-02T16:36:41.852Z
 ---
 
 Every `not_found` row in `marketing_pharmacy_distributor_codes` on prod was audited (2026-08-19..23). Almost
@@ -31,8 +31,15 @@ from the picker entirely, so a valid `manual_approved`/`matched` sibling code pa
 
 ## Placing a pharmacy — evidence in order of strength, with the traps
 
-- **Captured GPS > name > code.** `marketing_pharmacies.captured_latitude/longitude/captured_address`
-  (typically ±25 m) beats the name, which beats the code. 🔴 **`area_id` on that table is the SUBMITTER's
+- 🔴 **For the shop's AREA, the REGISTERED DISTRIBUTOR CODE wins — even over a live capture GPS**
+  (owner rule 2026-08-21, asked directly; the code's area matched the real `captured_address` 14 of 15).
+  Resolve it through `marketing_pharmacy_distributor_codes.mapped_area_code` → `areas.code`. **The code
+  only decides when it RESOLVES; when it doesn't, `source_of_sales_bricks` is the authority, never the
+  coordinates** — use the GPS / `captured_address` (typically ±25 m) only to find the town, then the
+  brick table for the area ([[seeded-marketing-pharmacies-have-no-area-and-are-invisible]]). The GPS and
+  name traps below apply to that step and to telling two shops apart.
+  **Superseded 2026-10-02:** previously "Captured GPS > name > code" — the owner's 2026-08-21 code-wins rule (AGENTS.md §4.1 / `.claude/rules/marketing.md`: "The REGISTERED CODE beats live GPS").
+  🔴 **`area_id` on that table is the SUBMITTER's
   coarse area, NOT the shop's** (286 of 309 NULL) — never read geography from it. The master resolver
   (`phx_resolve_marketing_pharmacy_codes`) does not run automatically —
   [[marketing-master-resolver-never-runs-automatically]].
@@ -62,10 +69,16 @@ from the picker entirely, so a valid `manual_approved`/`matched` sibling code pa
   you delete may hold the better code, and the two are often under DIFFERENT distributors, so neither is
   wrong. **Repoint the good code** (`pharmacy_id` update, audit the old id) rather than stranding it on a dead
   record.
-- 🔴 **Moving a pharmacy's `area_id` does NOT hide it from the rep who captured it** — `canReuseMarketingPharmacy`
-  branch 1 keeps it visible via `owner_hr_id` (even a DSM who owns rows outside her own seat area). The area
-  move only changes which OTHER territory's reps additionally see it. Check `owner_hr_id` before fearing an
-  area change hides a shop.
+- 🔴 **AREA is what grants sight of a marketing pharmacy or customer — never backfill ownership**
+  (owner ruling 2026-08-19; AGENTS.md §4.1 "AREA governs both sight and reuse"). A row with an `area_id` is
+  visible to every rep on that patch, whatever line; a row with `area_id` NULL is invisible to every rep.
+  To make a stuck row workable, backfill `area_id` ONLY — never invent `owner_hr_id` (the audit record of
+  who actually captured) or `line_id` ([[seeded-marketing-pharmacies-have-no-area-and-are-invisible]],
+  [[marketing-customers-belong-to-areas-not-people]]). Moving a pharmacy's `area_id` still does not hide it
+  from the rep who captured it: `canReuseMarketingPharmacy` keeps a hierarchy branch on the EXISTING
+  `owner_hr_id`/`manager_hr_id` (checked in code 2026-10-02), so the capturer and his managers keep it; the
+  area move changes which territory's reps see it.
+  **Superseded 2026-10-02:** previously framed `owner_hr_id` as the visibility control to check — the 2026-08-19 area ruling made `area_id` the instrument of sight; `owner_hr_id` stays only as the capture record and is never backfilled.
 - **Two neighbouring shops legitimately end up in different areas** — a town can straddle two bricks in the
   master (the code-wins rule then puts them in different areas, ~80 m apart). That split is pre-existing; do
   NOT "tidy" it.
