@@ -969,6 +969,7 @@ export async function loadCustomerFrequencyReport(
     return {
       includeTest: chosen.includeTest,
       month,
+      awaitingValidation: 0,
       needsOneTerritory: true,
       rows: [],
       seat: null,
@@ -988,6 +989,7 @@ export async function loadCustomerFrequencyReport(
     return {
       includeTest: chosen.includeTest,
       month,
+      awaitingValidation: 0,
       needsOneTerritory: false,
       rows: [],
       seat: { repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null, seatId: seat.seatId, territoryName: territoryName(seat) },

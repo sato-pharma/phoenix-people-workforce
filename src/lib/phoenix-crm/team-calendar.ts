@@ -81,7 +81,10 @@ export type TeamCalendarRow = TeamCalendarPerson & {
   bothDays: number;
 };
 
-type DayInput = { seatId: string; day: string; counts: VisitCountSplit; awaitingValidation: number };
+// `awaitingValidation` is optional, and ABSENT genuinely means NONE here — unlike `gpsCheckins`
+// on a call rate, where absent means "not measured". A day with no visit waiting on a customer
+// simply has none, so a fixture that leaves it out is reading the same day the server builds.
+type DayInput = { seatId: string; day: string; counts: VisitCountSplit; awaitingValidation?: number };
 type ActivityInput = { seatId: string; day: string; activity: PhoenixCrmDayActivity };
 type LeaveInput = { seatId: string; day: string };
 
@@ -165,7 +168,8 @@ export function buildTeamCalendar(
     const found = counts.get(at);
     if (found) mergeVisitCountSplits(found, row.counts);
     else counts.set(at, { ...row.counts });
-    if (row.awaitingValidation > 0) waiting.set(at, (waiting.get(at) ?? 0) + row.awaitingValidation);
+    const rowWaiting = row.awaitingValidation ?? 0;
+    if (rowWaiting > 0) waiting.set(at, (waiting.get(at) ?? 0) + rowWaiting);
   }
 
   const activities = new Map<string, PhoenixCrmDayActivity>();
