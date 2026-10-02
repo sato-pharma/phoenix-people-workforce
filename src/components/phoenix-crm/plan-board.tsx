@@ -1519,7 +1519,7 @@ function MeterLine({ label, note, tone = "neutral", value }: { label: string; no
  * the two lists are never added together (the call-rate golden rule).
  */
 function MeterStrip({ view }: { view: MonthlyPlannerView }) {
-  const lists: ReadonlyArray<PhoenixCrmListType> = ["AM", "PM"];
+  const lists: ReadonlyArray<PhoenixCrmDoctorListType> = ["AM", "PM"];
   return (
     <div className="grid grid-cols-2 gap-2 md:hidden">
       {lists.map((listType) => {
