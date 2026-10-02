@@ -1,11 +1,11 @@
 ---
 name: never-put-his-physical-actions-in-the-next-step-box
-description: "The Next step box is words he SENDS TO CLAUDE and that CLAUDE CAN ACT ON NOW — never a physical act (press, pick a file, reset a tablet, scan a QR), never a MESSAGE HE SENDS TO A PERSON, and never an action BLOCKED BEHIND A GATE such as a running CI run. Each makes the ghost text hand it straight back, and the turn is spent explaining why not. Four times 2026-09-28; three more 2026-09-29 ('tell HR …'); twice again 2026-09-29 with a worktree retirement blocked on CI."
+description: "The Next step box is words he SENDS TO CLAUDE and that CLAUDE CAN ACT ON NOW — never a physical act (press, pick a file, reset a tablet, scan a QR), never a MESSAGE HE SENDS TO A PERSON, and never an action BLOCKED BEHIND A GATE such as a running CI run. Each makes the ghost text hand it straight back, and the turn is spent explaining why not. Four times 2026-09-28; three more 2026-09-29 ('tell HR …'); twice again 2026-09-29 blocked on CI; three more 2026-10-01 — an APPROVAL VERB that is really a click on a screen Claude cannot reach ('decide those 21', 'confirm the 17'), which no clause catches because approvals are what the box is FOR."
 metadata:
   node_type: memory
   type: feedback
   originSessionId: ad19fe4d-689f-439a-a7a2-fab162bd5049
-  modified: 2026-09-29T09:52:00.632Z
+  modified: 2026-10-01T02:53:06.857Z
 ---
 
 🔴 **The quoted words in the `Next step:` line are a MESSAGE HE SENDS TO CLAUDE, not a description
@@ -83,3 +83,53 @@ moment it merges”) and put something in the box that is actionable the instant
 only he holds, a question already put to him, or the next piece of real work. Offer the gated action
 ONCE, in the turn where the gate has actually cleared. Never re-offer it while it is still blocked: the
 second offer is what turns one wasted turn into two.
+
+## 2026-10-01 — a FOURTH failure, and the clause-level hole that let a known one through
+
+Three in one session, all mine, on the Phoenix CRM customer-links screen: `decide those 21`, then
+`confirm the 17 mechanical pharmacy names`, then `open customer links and press The certain ones`.
+Each came back verbatim and each cost a turn.
+
+🔴 **IT HAPPENED FIVE TIMES THAT DAY, THE LAST ONE WRITTEN WITH THIS RULE IN VIEW** — `decide those
+21`, `confirm the 17 mechanical pharmacy names`, `open customer links and press The certain ones`,
+`untick صيدلية العروبة - عابدين before you confirm the rest`, `confirm the 26 certain pharmacy links
+on production`. Five turns, each spent declining. That is why this half is now mechanical too
+(below) rather than one more thing to remember.
+
+🔴 **THE NEW CLASS IS AN APPROVAL VERB THAT IS REALLY A CLICK ON A SCREEN CLAUDE CANNOT REACH.**
+`decide` and `confirm` are exactly what the box is supposed to hold — they are not physical, they name
+no device, they are unambiguously his call, and `APPROVAL_START` deliberately allows them. What makes
+them fail is WHERE the approval is recorded: `merge 5025` is recorded by Claude acting on his message,
+while confirming an identity link is recorded by **his press inside his own authenticated session**,
+which writes `admin_approved` — the field that exists to mean A PERSON LOOKED, as against
+`system_validated` (`AGENTS.md` §4.1). So Claude pressing it forges who looked. **The test to add to
+the other three: where does the record of this approval get WRITTEN? If the answer is a UI Claude
+cannot reach, it is his hands however much it sounds like a decision.**
+
+🔴 **AND IT IS MECHANICAL SINCE 2026-10-01 TOO — `isApprovalWithNothingToActOn`, tested on the OBJECT
+rather than the verb.** The first instinct was to leave it behavioural, on the reasoning that
+mechanising `confirm`/`decide` would block the real chat approvals the box exists for. That was wrong,
+and two more incidents the same hour proved it. What works is to ask whether the line contains
+ANYTHING THIS SESSION CAN ACT ON — a PR number, a `codex/` branch, a `_wt-` worktree, a file path, a
+`node scripts`/`gh pr` command. `confirm 5036 is serving` and `decide codex/rollup-… before the
+members` pass; `confirm the rest` and `accept the remaining pairs` do not. A surface list was tried
+first and discarded: the five lines name five different objects ("those 21", "pharmacy names", "the
+rest", "links on production"), so the list would have been one incident behind for ever.
+🔴 **`link` and `unlink` were in the verb list for exactly one test run and came straight out** —
+they blocked `link the phoenix app to config 3 and push the rules`, which is this memory's own GOOD
+example. The verb is too overloaded, and a false positive costs a real suggestion; `link the two
+victoria rows` still passing is the accepted price. **42/42** on the battery, and removing the one
+clause lets all five of the day's lines through again.
+
+🔴 **AND `ALWAYS_HIS_HANDS` WAS `^`-ANCHORED, SO ONE CONJUNCTION DEFEATED IT.** `press` has been in the
+list since 2026-09-29, yet `open customer links and press The certain ones` passed: the line opens with
+`open`, which is surface-gated, and the `press` behind the `and` was never looked at. **Fixed the same
+day** — `isHisOwnClick` now splits on `and` / `then` / `after that` / `,` / `;` and tests each clause
+with the SAME anchored regex, so the verb still has to OPEN a clause and `add a press release page`
+still passes. Proved by removing the loop and watching both compound lines go through again; 23/23 on
+a battery of real lines from these sessions, blocked and allowed. Backup:
+`~/.claude/backups/hook-backups/next-step-capture.mjs.2026-10-01-clause-level-physical-verb`.
+
+**The generalisation worth keeping:** every extension of this hook has come from a miss, and every
+miss has been the same shape — a list (of surfaces, of verbs, of positions) is only ever as complete
+as the last incident. Prefer the structural fix (test every clause) over lengthening a list.
