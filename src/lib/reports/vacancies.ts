@@ -1,5 +1,6 @@
 ﻿import { getRequiredEnv } from "@/lib/env";
-import type { SeatOfferOut } from "@/lib/offers/seat-offer-label";
+import { offerSeatKeyForVacancy, type SeatOfferOut } from "@/lib/offers/seat-offer-label";
+import { loadOfferOutBySeat } from "@/lib/offers/seat-offers";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getMergedAreaName } from "@/lib/sales/closing-area-merges";
@@ -62,6 +63,14 @@ export type VacancyReportRow = {
   managerReplacementForHrId?: string | null;
   managerName: string | null;
   note: string | null;
+  /**
+   * The offer already out against this open seat, when there is one — so the report's hire
+   * action can open Add Employee pre-filled from an ACCEPTED letter (candidate, agreed salary,
+   * generated id), exactly as the organogram popup does. Null on every row with no live offer,
+   * which is what every row was before this existed. A LABEL, never a state: the seat stays
+   * vacant and open; the hire is still what fills it.
+   */
+  pendingOffer?: SeatOfferOut | null;
   positionId: number | null;
   positionTitle: string | null;
   regionName: string | null;
@@ -473,6 +482,12 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
   const pendingManagerReplacements = await loadEmployeePendingManagerReplacements(
     employeeDirectory.employees.map((employee) => employee.hrId),
   );
+  // Which open seats already have a letter out against them — so the report's "Add employee to
+  // this seat" action can open Add Employee pre-filled from an ACCEPTED offer, the same one-press
+  // hire the organogram popup gives. Keyed by the vacancy's own id (offerSeatKeyForVacancy), which
+  // is this row's `id`. Returns an empty map on any failure, so an offers read that fails can never
+  // be the reason the vacancy report will not build.
+  const offerOutBySeat = await loadOfferOutBySeat();
 
   const mappedRows = vacancyRows.map((row): VacancyReportRow => ({
     areaId: row.area_id,
@@ -498,6 +513,9 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
       ? managerNames.get(row.manager_hr_id) ?? row.manager_name ?? null
       : row.manager_name ?? null,
     note: row.note,
+    // An accepted/sent letter on this open seat, looked up by the vacancy's own id. Only open
+    // vacancies carry a key in the map, so a filled or cancelled row reads null here.
+    pendingOffer: offerOutBySeat.get(offerSeatKeyForVacancy(row.id)) ?? null,
     positionId: row.position_id,
     positionTitle: row.position_id
       ? positionTitles.get(row.position_id) ?? null
@@ -576,6 +594,9 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
     managerHrId: row.managerHrId,
     managerReplacementForHrId: row.managerReplacementForHrId ?? null,
     managerName: row.managerName,
+    // Carried from the list row so the report's embedded chart labels and routes an accepted
+    // offer the same way the standalone organogram does.
+    pendingOffer: row.pendingOffer ?? null,
     positionId: row.positionId,
     positionTitle: row.positionTitle,
     regionName: row.regionName,

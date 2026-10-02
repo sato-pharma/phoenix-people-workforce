@@ -29,6 +29,8 @@ import {
 } from "@/lib/employee-portal/sales-scope";
 import { isEmployeePortalBetaNavEnabled } from "@/lib/employee-portal/navigation";
 import { logError } from "@/lib/observability/log";
+import { loadOfferOutBySeat } from "@/lib/offers/seat-offers";
+import { offerSeatKeyForVacancy, type SeatOfferOut } from "@/lib/offers/seat-offer-label";
 import {
   buildCompanyDsmPerformanceFromSos,
   buildCompanyMedRepPerformanceFromSos,
@@ -4689,6 +4691,13 @@ export type EmployeePortalVacancyRow = {
   managerHrId: string | null;
   managerName: string | null;
   note: string | null;
+  /**
+   * The offer already out against this open seat, when there is one — so the portal's hire action
+   * opens Add Employee pre-filled from an ACCEPTED letter (candidate, agreed salary, generated id),
+   * exactly as the organogram popup and the admin vacancies report do. Null when there is no live
+   * offer. A LABEL, never a state: the seat stays vacant and open.
+   */
+  pendingOffer?: SeatOfferOut | null;
   positionId: number | null;
   positionTitle: string | null;
   regionName: string | null;
@@ -4928,6 +4937,12 @@ export async function getEmployeePortalVacancies(
 
     const uniqueRows = uniqueVacancyRows(scopedRows);
 
+    // Which of these open seats already have a letter out — so the hire action can open Add
+    // Employee pre-filled from an accepted offer, the same one-press hire the organogram gives.
+    // Keyed by the vacancy's own id (offerSeatKeyForVacancy), which is this row's `id`. Returns an
+    // empty map on any failure, so an offers read that fails never stops the vacancies page.
+    const offerOutBySeat = await loadOfferOutBySeat();
+
     const vacancies = uniqueRows.map((row) => ({
       areaId: row.area_id,
       areaName: row.areas?.name ?? row.area_name ?? null,
@@ -4944,6 +4959,9 @@ export async function getEmployeePortalVacancies(
       managerHrId: row.manager_hr_id,
       managerName: row.manager_name,
       note: row.note,
+      // An accepted/sent letter on this open seat, looked up by the vacancy's own id. Only open
+      // vacancies carry a key in the map, so a non-open row would read null here.
+      pendingOffer: offerOutBySeat.get(offerSeatKeyForVacancy(row.id)) ?? null,
       positionId: row.position_id,
       positionTitle: row.positions?.title ?? null,
       regionName: row.region_name,

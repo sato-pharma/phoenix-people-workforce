@@ -9,7 +9,7 @@ import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePortalVacancies } from "@/lib/employee-portal/service";
-import { buildVacancyHireHref } from "@/lib/employees/vacancy-hire-link";
+import { buildSeatHireHref } from "@/lib/employees/vacancy-hire-link";
 
 export const dynamic = "force-dynamic";
 
@@ -473,7 +473,7 @@ export default async function EmployeePortalVacanciesPage({
                           {canAddEmployee && vacancy.status === "open" ? (
                             <a
                               className="mt-1.5 flex w-full items-center justify-center border border-phx-accent bg-phx-accent px-2 py-1 text-center text-phx-2xs font-bold leading-tight text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
-                              href={buildVacancyHireHref("/employee-portals/employees", vacancy)}
+                              href={buildSeatHireHref("/employee-portals/employees", vacancy, vacancy.pendingOffer)}
                             >
                               Add employee to this seat
                             </a>
@@ -558,7 +558,7 @@ export default async function EmployeePortalVacanciesPage({
                     {canAddEmployee && vacancy.status === "open" ? (
                       <a
                         className="mt-2.5 flex w-full items-center justify-center gap-2 border border-phx-accent bg-phx-accent px-4 py-2 text-sm font-bold text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
-                        href={buildVacancyHireHref("/employee-portals/employees", vacancy)}
+                        href={buildSeatHireHref("/employee-portals/employees", vacancy, vacancy.pendingOffer)}
                       >
                         Add employee to this seat
                       </a>
