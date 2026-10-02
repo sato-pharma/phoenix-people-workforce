@@ -913,6 +913,7 @@ import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runMailboxOffboardingRobotTests } from "./mailbox-offboarding-robot.test.ts";
+import { runNewHireMailboxRobotTests } from "./new-hire-mailbox-robot.test.ts";
 import { runMailboxRobotSweepHookTests } from "./mailbox-robot-sweep-hook.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
@@ -3988,6 +3989,13 @@ await runTest(
   + "refused; app passwords are cleared BEFORE the password is reset, so a run that dies between "
   + "them leaves the door shut rather than the half-revoked state that only LOOKS finished)",
   runMailboxOffboardingRobotTests,
+);
+await runTest(
+  "new hire mailbox robot (an address held or claimed by anybody else is NEVER created, so one "
+  + "employee's mail can never reach another; a resigned person, a second company mailbox, a "
+  + "malformed local part and a hire more than 14 days out are each refused; and every console "
+  + "locator stays semantic — an aria-label, a form name or visible text, never a captured CSS path)",
+  runNewHireMailboxRobotTests,
 );
 await runTest(
   "mailbox revocation robot wired to the daily sweep (off by default; dry run is the default once "
