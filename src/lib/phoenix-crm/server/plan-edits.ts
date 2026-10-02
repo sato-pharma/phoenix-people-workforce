@@ -10,7 +10,9 @@
  *     acknowledges; only then does the week open again (`phoenix_crm_decide_plan_edit_request`
  *     reopens it inside the same transaction). One refusal ends it;
  *   - two other weeks open for him, both by somebody else's act: one his manager RETURNED, and one an
- *     edit request REOPENED (plan-rules.ts `repWeekState`).
+ *     edit request REOPENED (plan-rules.ts `repWeekState`);
+ *   - and the week he is IN while he has never sent it (owner, 2026-10-02): a rep who missed the
+ *     deadline still sends it, late and stamped late, from today's day on.
  *
  * The STEP a decision is taken at is read from the row, never from the request, and the database
  * refuses the wrong step as well (`plan_edit_wrong_stage`), so the two guards agree rather than one
@@ -20,7 +22,7 @@
 import { addDaysIso } from "@/lib/crm/dates";
 import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
-import { editablePlanDays, repPlanWeek } from "@/lib/phoenix-crm/calendar";
+import { editablePlanDays, fieldWeekStart, repPlanWeek } from "@/lib/phoenix-crm/calendar";
 import {
   isPlanEditStatus,
   isPlanEditWaiting,
@@ -203,6 +205,7 @@ export function repStateOf(input: {
     open,
     status: input.status,
     repWeek: repPlanWeek(input.cairoToday),
+    runningWeek: fieldWeekStart(input.cairoToday),
     editAsked: Boolean(input.edit?.waiting),
     editReopened: input.edit?.latest?.status === "reopened",
   });

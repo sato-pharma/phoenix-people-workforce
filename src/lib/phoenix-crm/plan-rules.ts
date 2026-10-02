@@ -116,11 +116,13 @@ export function isPlanSentForReview(status: PhoenixCrmPlanStatus | null): boolea
  *   - plan   — he may tick, save and send it;
  *   - sent   — it is sent or approved, and he may ask to edit it;
  *   - asked  — it is sent and his request to edit it is on its way;
- *   - closed — greyed out: a week that has passed, a week ahead of his one, or a draft he never sent.
+ *   - closed — greyed out: a week that has passed, a week ahead of his one, or a week he never sent
+ *              that is not the one he is in.
  *
- * The ONE week he plans is `repPlanWeek`. Two other weeks open for him, both by somebody else's act:
- * one his manager RETURNED (the manager asked for changes), and one an edit request REOPENED. Every
- * other week is closed, which is the whole rule — the board greys it, and the server refuses it.
+ * The ONE week he plans is `repPlanWeek`. Three other weeks open for him: one his manager RETURNED (the
+ * manager asked for changes), one an edit request REOPENED, and the week he is IN while he has never
+ * sent it — late, and stamped late (owner, 2026-10-02). Every other week is closed, which is the whole
+ * rule — the board greys it, and the server refuses it.
  */
 export type RepWeekState = "plan" | "sent" | "asked" | "closed";
 
@@ -131,6 +133,8 @@ export function repWeekState(input: {
   status: PhoenixCrmPlanStatus | null;
   /** The week the rep plans now (calendar.ts `repPlanWeek`). */
   repWeek: string;
+  /** The week he is in (calendar.ts `fieldWeekStart` of today). */
+  runningWeek: string;
   /** A request to edit this week is waiting on somebody. */
   editAsked: boolean;
   /** A request to edit this week was acknowledged, and reopened it. */
@@ -141,6 +145,12 @@ export function repWeekState(input: {
   if (input.weekStart === input.repWeek) return "plan";
   if (input.status === "returned") return "plan";
   if (input.status === "draft" && input.editReopened) return "plan";
+  // 🔴 THE WEEK HE IS IN, NEVER SENT (owner, 2026-10-02 — he ruled it is still sent, late and stamped
+  // late). Without this a rep who missed the deadline could send nothing all week, and every visit he
+  // made was off-plan and waited on two approvals. He plans it from today on (`open` and the
+  // editable days already stop at today), the send is stamped late from the server clock, and his visits
+  // count as planned only from the moment it is sent — `phoenix_crm_save_visit` reads the send itself.
+  if (input.weekStart === input.runningWeek && (input.status === null || input.status === "draft")) return "plan";
   return "closed";
 }
 
