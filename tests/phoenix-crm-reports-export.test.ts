@@ -82,6 +82,19 @@ function coverageView() {
   } as unknown as NonNullable<ReportsPackInput["coverage"]>;
 }
 
+/** The plan-against-actual section, empty but well formed — shared, so its two readers cannot drift. */
+function planView() {
+  const half = { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, onLeave: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null };
+  return {
+    period: PERIOD,
+    includeTest: false,
+    runningDay: null,
+    leaveUnread: false,
+    rows: [],
+    totals: { AM: { ...half }, PM: { ...half } },
+  } as unknown as NonNullable<ReportsPackInput["plan"]>;
+}
+
 function bricksView() {
   return {
     period: PERIOD,
@@ -298,7 +311,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
       exceptions: { rows: [], summary: { territories: 0, needingAttention: 0, byKind: [] }, holidaysUnread: false, isTest: false, lastWorkingDay: "2026-09-23", weekStart: "2026-09-19", windowWorkingDays: 6 } as unknown as NonNullable<ReportsPackInput["exceptions"]>,
       locations: locationsView(),
       managers: { period: PERIOD, includeTest: false, rows: [] } as unknown as NonNullable<ReportsPackInput["managers"]>,
-      plan: { period: PERIOD, includeTest: false, runningDay: null, leaveUnread: false, rows: [], totals: { AM: { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, onLeave: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null }, PM: { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, onLeave: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null } } } as unknown as NonNullable<ReportsPackInput["plan"]>,
+      plan: planView(),
       dailyPlan: dailyPlanView(),
     });
     assert.deepEqual(await sheetsOf(full), ["Cover", ...packSections(full)], "the sheets are exactly what the cover promised, in that order");
@@ -444,18 +457,24 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     //    `row.am.unplannedWaiting + row.pm.unplannedWaiting` under one heading, and "Plan against
     //    actual" printed `row.am.unplanned + row.pm.unplanned` under another. A sum is exactly the
     //    shape the golden rule bans, and the headings read as if they were a single measure.
-    for (const [sheetName, amHeader, pmHeader] of [
-      ["Visits per day", "AM off-plan waiting", "PM off-plan waiting"],
-      ["Plan against actual", "AM off-plan", "PM off-plan"],
+    //
+    //    🔴 ITS OWN WORKBOOK, carrying the PLAN section. The default `pack()` is a REP's pack —
+    //    visits and coverage only — so `getWorksheet("Plan against actual")` on the workbook above
+    //    is `undefined`, and `assert.ok(sheet)` then fails for the one reason that says nothing
+    //    about the columns. A sheet has to be in the pack before its headers can be read.
+    const withPlan = new ExcelJS.Workbook();
+    await withPlan.xlsx.load((await buildPhoenixCrmReportsWorkbook(pack({ plan: planView() }))) as unknown as ArrayBuffer);
+    for (const [sheetName, amHeader, pmHeader, combined] of [
+      ["Visits per day", "AM off-plan waiting", "PM off-plan waiting", "Off-plan waiting"],
+      ["Plan against actual", "AM off-plan", "PM off-plan", "Off-plan"],
     ] as const) {
-      const sheet = workbook.getWorksheet(sheetName);
+      const sheet = withPlan.getWorksheet(sheetName);
       assert.ok(sheet, `${sheetName} is in the pack`);
       const headers: string[] = [];
       sheet.getRow(2).eachCell((cell) => headers.push(String(cell.value ?? "")));
       assert.ok(headers.includes(amHeader), `${sheetName}: off-plan has its own AM column`);
       assert.ok(headers.includes(pmHeader), `${sheetName}: and its own PM column`);
-      assert.equal(headers.includes("Off-plan"), false, `${sheetName}: the combined column is gone`);
-      assert.equal(headers.includes("Off-plan waiting"), false, `${sheetName}: and so is the combined waiting column`);
+      assert.equal(headers.includes(combined), false, `${sheetName}: the combined "${combined}" column is gone`);
     }
   }
 
