@@ -1,0 +1,144 @@
+// MODULE MEMORY — the guard that keeps it working (owner-approved 2026-10-02; docs/module-memory.md).
+//
+// WHY THIS EXISTS. The always-loaded rulebook (AGENTS.md + the MEMORY.md index) has a hard ceiling,
+// so every new rule pushed an older one out of sight and a session returning to an old module no
+// longer knew its rules. Module memory moved each module's rules and notes into
+// `.claude/rules/<id>.md`, which Claude Code loads by itself when a session reads one of the
+// module's files (`paths:` frontmatter), plus a hook for work that opens no file.
+//
+// Every way that silently stops working is pinned here, in the required `validate` job:
+//   - a memory note filed under nothing (an orphan nobody will ever be shown)
+//   - a glob that matches no file (a module that can never load)
+//   - a rules file with no `paths:` (it would load at STARTUP — the cost this exists to end)
+//   - a generated block edited by hand, or a module file over its cap
+//   - the glob dialect drifting from what the route groups need
+//   - the hook losing its routing (prompt, SQL, shell, file tools)
+//   - a single-module rule written back into AGENTS.md, which re-grows the startup file
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+
+import { MODULES, globToRegExp, modulesForPath, mentions } from "../scripts/module-memory/modules.mjs";
+import { checkModuleMemory } from "../scripts/module-memory/build.mjs";
+import { classify, settleIndex } from "../scripts/module-memory/fold.mjs";
+import {
+  modulesFor,
+  normalizePath,
+  ruleHeadlines,
+  renderPointer,
+} from "../.claude/hooks/module-memory-injector.mjs";
+
+const lib = { MODULES, mentions, modulesForPath };
+
+/** Cross-cutting modules: a rule citing their files can legitimately be global. */
+const CROSS_CUTTING = new Set(["engineering", "sessions", "database", "platform"]);
+
+/**
+ * Global rules in AGENTS.md that cite ONE business module's files on purpose. Adding to this list
+ * is a decision: the rule must apply to work in EVERY module, not just the one it cites.
+ */
+const DELIBERATELY_GLOBAL = [
+  "THE DOCUMENT IDENTITY", // every company document in every module wears it; its code lives in hiring-pack
+  "THE SQUARE-EDGE GOLDEN RULE", // every page in every module; one of its pinning tests sits in hiring-pack
+];
+
+export function runModuleMemoryTests() {
+  // 1. The system is consistent: no orphan, no dead glob, nothing stale, nothing loading at startup.
+  assert.deepEqual(
+    checkModuleMemory(),
+    [],
+    "module memory is broken — run `node scripts/module-memory/build.mjs` and read each problem; "
+      + "an ORPHAN note needs a module in scripts/module-memory/assignments.json",
+  );
+
+  // 2. The glob dialect. Route groups are reached with `**`, never with literal parentheses.
+  const g = (glob: string, p: string) => globToRegExp(glob).test(p);
+  assert.ok(g("app/**/payroll/**", "app/(admin)/payroll/page.tsx"), "`**` must cross a route group");
+  assert.ok(g("app/**/payroll/**", "app/api/payroll/run/route.ts"));
+  assert.ok(!g("app/**/payroll/**", "app/(admin)/admin/m-payroll/page.tsx"), "a segment must match whole");
+  assert.ok(g("src/lib/sales/*", "src/lib/sales/closing-period-gate.ts"));
+  assert.ok(!g("src/lib/sales/*", "src/lib/sales/weekly/export.ts"), "`*` must not cross a folder");
+  assert.ok(g("tests/*{closing,qema}*", "tests/qema-warehouse-split.test.ts"), "braces inside a segment");
+  assert.deepEqual(modulesForPath("src/lib/sales/weekly/export.ts"), ["weekly-sales"], "weekly is not closing");
+  assert.ok(modulesForPath("src/lib/payroll/policy.ts").includes("payroll"));
+  assert.ok(modulesForPath("src/lib/phoenix-crm/visit.ts").includes("phoenix-crm"));
+
+  // 3. The hook routes work that opens no file.
+  const root = "F:\\Phoenix Workforce\\_wt-anything";
+  const prompt = modulesFor({ hook_event_name: "UserPromptSubmit", prompt: "why did the held payroll row vanish?" }, lib, root);
+  assert.ok(prompt.touched.includes("payroll") && prompt.inject, "a payroll question must bring payroll memory");
+  const quiet = modulesFor({ hook_event_name: "UserPromptSubmit", prompt: "hello, what time is it in Cairo" }, lib, root);
+  assert.deepEqual(quiet.touched, [], "small talk must load nothing");
+  const sql = modulesFor(
+    { hook_event_name: "PreToolUse", tool_name: "mcp__supabase-production__execute_sql", tool_input: { query: "select * from phoenix_crm_visits" } },
+    lib,
+    root,
+  );
+  assert.ok(sql.touched.includes("phoenix-crm"), "SQL on a module's tables must bring that module");
+  const shell = modulesFor(
+    { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "sed -n 1,40p src/lib/sales/closing-period-gate.ts" } },
+    lib,
+    root,
+  );
+  assert.ok(shell.touched.includes("sales-closing"), "a shell read of a module file must bring that module");
+  const read = modulesFor(
+    { hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: `${root}\\src\\lib\\recruitment\\a.ts` } },
+    lib,
+    root,
+  );
+  assert.deepEqual(read, { touched: ["recruitment"], inject: false }, "a Read is recorded, never injected — Claude Code loads it");
+  assert.equal(normalizePath("F:\\Phoenix Workforce\\_wt-x\\src\\lib\\vacation\\a.ts", root), "src/lib/vacation/a.ts",
+    "a path into ANY checkout — with the space in 'Phoenix Workforce' — must reduce to repo-relative");
+
+  // 4. The pointer stays small: Claude Code shows only a 2 KB preview of hook context over ~10 KB.
+  const biggest = MODULES.map((m) => renderPointer(m, readFileSync(`.claude/rules/${m.id}.md`, "utf8")));
+  for (const p of biggest) assert.ok(Buffer.byteLength(p) < 4_500, `a module pointer must stay well under the preview cliff:\n${p.slice(0, 200)}`);
+  assert.ok(ruleHeadlines(readFileSync(".claude/rules/payroll.md", "utf8")).length > 0, "rule headlines must parse");
+
+  // 5. The fold files a note by its own words when its session left no record.
+  const filed = classify("a-held-payroll-row-test", "---\nname: x\n---\nThe salary batch drops a held payroll row at publish.", lib);
+  assert.equal(filed.module, "payroll");
+
+  // 5b. Settling the index removes ONLY pointers whose notes all load with a module on main: the
+  // owner's RULE #1 block stays whole, global notes stay, the inbox heading stays, and an emptied
+  // section goes. A pointer to a note NOT yet on main stays — the git half lands first.
+  const index = [
+    "# Memory Index",
+    "## 🥇 RULE #1 - never trim, never forget",
+    "- [held row](held-row.md) - payroll, but protected",
+    "## In flight",
+    "- [held row](held-row.md) - goes: filed under payroll on main",
+    "- [owner](owner.md) - stays: global",
+    "- [new](new-note.md) - stays: not on main yet",
+    "## Old topic",
+    "- [crm](crm-note.md) - goes, and the empty section with it",
+    "## Inbox",
+  ].join("\n");
+  const settled = settleIndex(index, { "held-row": "payroll", owner: "global", "crm-note": "crm" });
+  assert.equal(settled.removed, 2);
+  assert.match(settled.text, /RULE #1[^]*held-row\.md\) - payroll, but protected/);
+  assert.match(settled.text, /owner\.md/);
+  assert.match(settled.text, /new-note\.md/);
+  assert.doesNotMatch(settled.text, /## Old topic/);
+  assert.match(settled.text, /## Inbox/);
+
+  // 6. A rule that belongs to ONE business module must not grow back into AGENTS.md.
+  const agents = readFileSync("AGENTS.md", "utf8");
+  const offenders: string[] = [];
+  for (const line of agents.split("\n")) {
+    if (!/^- /.test(line)) continue;
+    if (DELIBERATELY_GLOBAL.some((h) => line.includes(h))) continue;
+    const cited = [...line.matchAll(/`((?:src|app|tests)\/[^`\s]+)`/g)].map((m) => m[1]);
+    if (!cited.length) continue;
+    // Every file the rule cites belongs to a business module (overlapping test-name globs can give
+    // one file two owners — phoenix-crm and crm — so judge per file, never by counting owners).
+    const owned = cited.map((p) => modulesForPath(p).filter((id: string) => !CROSS_CUTTING.has(id)));
+    if (owned.every((o: string[]) => o.length > 0)) offenders.push(`${[...new Set(owned.flat())].join("/")}: ${line.slice(0, 120)}`);
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    "These AGENTS.md rules cite only one module's files, so they belong in that module's memory "
+      + "(.claude/rules/<id>.md, ## Rules) — AGENTS.md is re-sent on every request and holds only rules true everywhere. "
+      + "If a rule truly applies to every module, add its headline to DELIBERATELY_GLOBAL with the reason.",
+  );
+}
