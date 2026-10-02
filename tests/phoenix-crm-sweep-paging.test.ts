@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { PHOTO_CORPUS_MAX, loadPhotoCorpus } from "../src/lib/phoenix-crm/server/photo-dupes.ts";
 import { VISIT_READ_MAX, readMonthVisits } from "../src/lib/phoenix-crm/server/behaviour.ts";
 import { PHOENIX_CRM_PAGE_SIZE, readEveryPage } from "../src/lib/phoenix-crm/server/paged-read.ts";
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * Phoenix CRM — the nightly sweep's reads are PAGED, never capped.
@@ -43,8 +43,17 @@ function source(path: string): string {
   return stripComments(readFileSync(new URL(path, ROOT), "utf8"));
 }
 
+/**
+ * The migration's SQL with its comments gone.
+ *
+ * 🔴 `stripSqlComments`, never a line filter — `tests/comment-strip-ratchet.test.ts` refuses one, and
+ * it caught this file on its first CI run. A `^\s*--` replace judges a line by how it STARTS, so a
+ * `--` written after code survives and a block comment survives entirely; this migration explains
+ * the fix in prose that names the very predicate it pins, so a positive assertion could pass on the
+ * comment, on a file that no longer held the statement.
+ */
 function sql(path: string): string {
-  return readFileSync(new URL(path, ROOT), "utf8").replace(/^\s*--.*$/gm, "");
+  return stripSqlComments(readFileSync(new URL(path, ROOT), "utf8"));
 }
 
 type Row = Record<string, unknown>;
