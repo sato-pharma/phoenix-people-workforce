@@ -1669,6 +1669,7 @@ import { runPhoenixCrmPlanFiltersTests } from "./phoenix-crm-plan-filters.test.t
 import { runPhoenixCrmPlanCopyTests } from "./phoenix-crm-plan-copy.test.ts";
 import { runPhoenixCrmStartGuideTests } from "./phoenix-crm-start-guide.test.ts";
 import { runPhoenixCrmPortalIntentTests } from "./phoenix-crm-portal-intent.test.ts";
+import { runPhoenixCrmTeamShorterTests } from "./phoenix-crm-team-shorter.test.ts";
 import { runPhoenixCrmTeamTodayTests } from "./phoenix-crm-team-today.test.ts";
 import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blocked.test.ts";
 import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
@@ -5883,6 +5884,11 @@ await runTest(
 await runTest(
   "Phoenix CRM Team today (owner, 2026-09-30: easiest, yet controlled): each rep's visit day on his managers' Team tab - the sent plan's progress AM and PM apart and what he logged - read in batches, never per rep, and carrying no integrity signal",
   runPhoenixCrmTeamTodayTests,
+);
+
+await runTest(
+  "Phoenix CRM Team tab, shorter and smarter (owner, 2026-10-02: the page is very long): measured at 3,335px and 4.1 phone screens for a district manager, it said 'Nothing waiting' ten times and printed her own name on every row - so the six tiles became one sentence that NAMES what waits, a zero prints no note at all, the reviewer is named only when it is somebody else, and the nine-week strip shows the weeks with something in them with every week one press away",
+  runPhoenixCrmTeamShorterTests,
 );
 
 await runTest(

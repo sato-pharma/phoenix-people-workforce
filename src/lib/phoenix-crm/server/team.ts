@@ -152,6 +152,12 @@ export type TeamPlanEdit = PlanEditRequestView & { territoryName: string; canDec
 
 export type TeamView = {
   isTest: boolean;
+  /**
+   * The viewer's own HR id, so the screen can stop telling him what he already knows: a district
+   * manager reviews every territory beneath him, and "Reviewed by <his own name>" on every row was
+   * his own name five times over on a five-territory team (owner, 2026-10-02).
+   */
+  viewerHrId: string;
   territories: TeamTerritoryRow[];
   /** Waiting requests, the longest-waiting first. */
   requests: TeamRequest[];
@@ -295,6 +301,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   const realRows = territories.filter((row) => row.readiness);
   return {
     isTest,
+    viewerHrId: viewer.hrId,
     territories,
     requests,
     unplannedVisits,
