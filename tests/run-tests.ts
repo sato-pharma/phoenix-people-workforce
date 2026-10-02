@@ -916,6 +916,7 @@ import { runMailboxOffboardingRobotTests } from "./mailbox-offboarding-robot.tes
 import { runNewHireMailboxRobotTests } from "./new-hire-mailbox-robot.test.ts";
 import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
 import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts";
+import { runNewHireMailboxAdoptTests } from "./new-hire-mailbox-adopt.test.ts";
 import { runMailboxRobotSweepHookTests } from "./mailbox-robot-sweep-hook.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
@@ -4016,6 +4017,13 @@ await runTest(
   + "the task open rather than claiming a mailbox Phoenix cannot read; a refused candidate never "
   + "reaches the console; and the robot is off by default with dry run the default once enabled)",
   runNewHireMailboxRunnerTests,
+);
+await runTest(
+  "adopting an existing mailbox (a reset locks a WORKING employee out of their mail, so nothing "
+  + "outside the explicitly named list is ever touched and the shipped allow-list is empty; a "
+  + "mailbox Phoenix can already read is refused because adopting it would lock the person out for "
+  + "no gain; and an address that is not that employee's own recorded work email is refused)",
+  runNewHireMailboxAdoptTests,
 );
 await runTest(
   "mailbox revocation robot wired to the daily sweep (off by default; dry run is the default once "
