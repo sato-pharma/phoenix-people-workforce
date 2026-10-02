@@ -4284,6 +4284,34 @@ a share of a target, never a denominator. `KPIS_A_PHARMACY_IS_NEVER_IN` names th
 counting them, so adding a sixth measure to the system is a decision about that list and not an
 oversight.
 
+### 5. The two halves of it that were still missing after the first sweep
+
+Both found on 2026-10-02, after the reference import was already written, and both would have shipped
+a feature that did not work.
+
+**A SECOND spelling of the binary.** The sweep converted 26 readers of the shape
+`row.list_type === "AM" ? "AM" : "PM"`. There was another: `listType === "AM" ? am : pm`, which chooses
+a COUNTER rather than a label and so reads nothing like the first. Two places still filed pharmacy calls
+among the doctors through it — `src/lib/phoenix-crm/day-detail.ts` and the team calendar's own buckets —
+and the ratchet, which matches the first shape, could not see either. Both now go through
+`visitCountBucketForListType`, which is the only function that may decide which of the three figures a
+call lands in.
+
+**The database refused the whole thing.** `phoenix_crm_customers` and `phoenix_crm_visits` each carried
+`check (list_type in ('AM', 'PM'))`. So `phoenix_crm_ensure_reference_customers` would have raised 23514
+on the first pharmacy row it tried to mint, and a visit to a pharmacy could never have been saved at
+all — the feature's two writes, both refused, after a migration that reported success. It was found by
+reading `pg_constraint` on production rather than the migration files, which is the §1 rule in one
+sentence. `20261002205435` widens the two; a staging probe then minted **63 pharmacy customers beside 9
+AM and 110 PM** on one seat, and saved a `Pharmacy` visit that the same insert had refused minutes
+before.
+
+🔴 **`phoenix_crm_plan_items` IS LEFT NARROW, AND THAT IS THE RULE, NOT AN OVERSIGHT.** A pharmacy on a
+plan row is exactly what the owner ruled out, so its own `check (list_type in ('AM', 'PM'))` is now the
+database's half of rule 2, under `PLANNABLE_LIST_TYPES` in TypeScript. `phoenix_crm_list_requests` stays
+narrow for the same reason: a pharmacy arrives as a reference and leaves as one, with no grade, drop,
+add or bring-back request to decide.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.

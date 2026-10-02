@@ -542,7 +542,9 @@ export type VisitFormView = {
   /**
    * The product managers of the territory's LINE, for "A product manager" on "Who was on the visit"
    * (owner, 2026-10-02) — the same list the rep's own ask offers (`loadLineProductManagers`). Empty
-   * where the line has none, and then the choice is not offered at all rather than offered greyed.
+   * where the line has none, and the choice is then offered DISABLED with the reason on it, exactly as
+   * "Double visit" is above a territory with no manager — the module's own idiom, and the same shape
+   * the ask already uses for a CNS rep before the Marketing Manager ruling.
    */
   productManagers: VisitProductManager[];
   /** The line's discussed choices — the family names — for "Products discussed". */
