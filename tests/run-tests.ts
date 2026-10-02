@@ -1466,6 +1466,7 @@ import { runPediaSplitIncentiveTests } from "./pedia-split-incentive.test.ts";
 import { runPediaIncentivePortalTabTests } from "./pedia-incentive-portal-tab.test.ts";
 
 import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts";
+import { runOverdueAcceptedOffersTests } from "./overdue-accepted-offers.test.ts";
 import { runOutstationSubmitEmailRoutingTests } from "./outstation-submit-email-routing.test.ts";
 import { runOutstationExpenseGateTests } from "./outstation-expense-gate.test.ts";
 import { runOutstationDepartureEvidenceTests } from "./outstation-departure-evidence.test.ts";
@@ -4874,6 +4875,7 @@ await runTest("Pedia split incentive (two halves SUMMED, never a 2x2 gate; it re
 await runTest("Pedia incentive portal tab (a Pedia seat reads the two-achievement tab, role-free; the simulator is scored on the split and never on the single figure; both achievements are stated and a missing target is not 0%)", runPediaIncentivePortalTabTests);
 
 await runTest("reconciliation harness (a breach names both figures and their sources; a known-open defect never pages nightly; one bad check cannot blind the rest)", runReconciliationHarnessTests);
+await runTest("overdue accepted-offer detector (an accepted offer past its start date with a still-open seat is flagged; a filled seat, a seatless letter, a same-day start and an unreadable date are not)", runOverdueAcceptedOffersTests);
 await runTest("outstation submit email envelope (employee To, his direct manager Cc, Super Admins Bcc; the CEO is dropped from Cc in every case — direct manager or skip-level — with the skip-level stepping in when the direct manager is the CEO; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
 await runTest("outstation two-photo + workload payroll gate (both photos AND a captured workload before payroll; a 'complete' status with no photo behind it never pays; pre-rule requests are exempt, not blocked)", runOutstationExpenseGateTests);
 await runTest("outstation departure photo review (distance is flagged not blocked; both photos at once is flagged; the window closes at the end of the trip's last CAIRO day, DST included)", runOutstationDepartureEvidenceTests);
