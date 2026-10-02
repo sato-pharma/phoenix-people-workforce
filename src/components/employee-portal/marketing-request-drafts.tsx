@@ -44,6 +44,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
+import { roiMonthsWarning } from "@/lib/marketing-requests/roi-duration";
 import { marketingDraftBlockers } from "@/lib/marketing-requests/draft-blockers";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
 import { draftCaptureConfidence, type RoiConfidenceBand } from "@/lib/marketing-requests/roi-confidence";
@@ -1855,6 +1856,18 @@ function MarketingRequestDraftWorkspaceInner() {
                       type="number"
                       value={roiDurationMonths}
                     />
+                    {/* 🔴 IT WARNS, IT DOES NOT CAP (owner, 2026-10-02: "don't cap the ROI
+                        duration, make it at the entry"). A long campaign is his to run, so
+                        nothing here refuses a number and nothing downstream trims one — the
+                        window stays whatever was typed. What this catches is the TYPO, at the
+                        only moment it is cheap: MKT-REQ-20260822-7A234FB1 carries 312 months, a
+                        window running to 2052, and a campaign that can never be judged reads
+                        "waiting for the data" for twenty-six years without ever looking wrong. */}
+                    {roiMonthsWarning(roiDurationMonths) ? (
+                      <p className="mt-1 border border-amber-200 bg-amber-50 px-2 py-1 text-phx-xs font-semibold text-amber-800">
+                        {roiMonthsWarning(roiDurationMonths)}
+                      </p>
+                    ) : null}
                   </Field>
                 </div>
 

@@ -348,9 +348,29 @@ export async function resolveOwnedProductScope(
   return { ownedProductCodes, ownedLineNames };
 }
 
+/**
+ * The last month whose sales are actually LOADED — the ROI report's completeness flag.
+ *
+ * 🔴 IT IS NOT "the newest month any validated batch mentions", AND THE DIFFERENCE IS A VERDICT.
+ * That was the old reading, and on 2026-10-02 it answered 2026-09 on the strength of ONE batch of
+ * eighteen — 41 rows against August's ~44,500. Everything downstream believed September was in:
+ * three campaigns whose window is exactly 2026-09 flipped from `awaiting_data` to `no_data`, which
+ * on this report means "the campaign sold nothing", and the page printed "sales loaded through
+ * 2026-09" underneath. The money had not failed to arrive; the file had.
+ *
+ * 🔴 THE BAR IS THE EVERY-MONTH SET, NEVER A HEADCOUNT. "Not every distributor uploads every
+ * month" is a standing owner rule and "N of 17 missing" is explicitly never a finding, so counting
+ * distributors would mark a month incomplete for ever the moment one feed stops. The set is
+ * measured over the SETTLED months — every month but the newest — because the newest is the one
+ * being judged, and letting it vote would mean a single early file defines the bar it then passes.
+ * Measured on production 2026-10-02: 12 distributors file every month, present 12/12 in each of
+ * 2026-01..2026-08 and 0/12 in 2026-09, so the answer is 2026-08.
+ *
+ * The SQL helper answers the same question; this mirrors it for a database where the function has
+ * not been applied yet, and the two must not drift — a report that silently falls back to a more
+ * optimistic definition is the original bug wearing a different hat.
+ */
 export async function loadLatestValidatedPeriod(supabase: SupabaseAdmin): Promise<string | null> {
-  // Prefer the dedicated helper (fast, exact). Fall back to a bounded row read if the
-  // function is not applied to this database yet.
   try {
     const { data, error } = await supabase.rpc("phx_marketing_roi_latest_validated_period");
     if (!error && typeof data === "string" && data) return data;
@@ -358,25 +378,39 @@ export async function loadLatestValidatedPeriod(supabase: SupabaseAdmin): Promis
   } catch {
     // fall through
   }
+
   try {
-    // Mirror the attribution gate: a row counts only if it is 'valid' AND lives in a 'validated'
-    // batch. Without the batch gate the badge could report a period the actuals don't actually count.
-    const batchResult = await supabase.from("source_of_sales_import_batches").select("id").eq("status", "validated");
-    const batchIds = ((batchResult.data ?? []) as Array<{ id: string | number }>).map((row) => row.id);
-    if (batchIds.length === 0) return null;
-    let latest: string | null = null;
-    for (const part of chunk(batchIds as string[], 200)) {
-      const { data } = await supabase
-        .from("source_of_sales_import_rows")
-        .select("invoice_period")
-        .eq("validation_state", "valid")
-        .in("batch_id", part)
-        .order("invoice_period", { ascending: false })
-        .limit(1);
-      const row = (data ?? [])[0] as { invoice_period?: string | null } | undefined;
-      if (row?.invoice_period && (!latest || row.invoice_period > latest)) latest = row.invoice_period;
+    const { data, error } = await supabase
+      .from("source_of_sales_import_batches")
+      .select("period, distributor_code")
+      .eq("status", "validated");
+    if (error) throw error;
+
+    const byPeriod = new Map<string, Set<string>>();
+    for (const row of (data ?? []) as Array<{ period?: string | null; distributor_code?: string | null }>) {
+      const period = (row.period ?? "").trim();
+      const distributor = (row.distributor_code ?? "").trim();
+      if (!period || !distributor) continue;
+      const held = byPeriod.get(period) ?? new Set<string>();
+      held.add(distributor);
+      byPeriod.set(period, held);
     }
-    return latest;
+    const months = [...byPeriod.keys()].sort();
+    if (months.length === 0) return null;
+    // One month of history is no history: there is no every-month set, the test below would pass
+    // vacuously, and reporting nothing would leave every campaign waiting for ever.
+    if (months.length === 1) return months[0] ?? null;
+
+    const settled = months.slice(0, -1);
+    const everyMonth = [...(byPeriod.get(settled[0] ?? "") ?? new Set<string>())].filter((distributor) =>
+      settled.every((period) => byPeriod.get(period)?.has(distributor)),
+    );
+
+    for (const period of [...months].reverse()) {
+      const present = byPeriod.get(period) ?? new Set<string>();
+      if (everyMonth.every((distributor) => present.has(distributor))) return period;
+    }
+    return null;
   } catch {
     return null;
   }
