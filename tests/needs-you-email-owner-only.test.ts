@@ -100,15 +100,21 @@ export function runNeedsYouEmailOwnerOnlyTests() {
     /enforceNeedsYouOwnerOnlyEmail\(\w+, input\.module, input\.recipientHrId\)/,
     "basePolicyChannels must actually run the guard, keyed on the module AND the recipient",
   );
-  // The existing pin in phoenix-crm-email-block.test.ts requires the CRM block to be the LAST line.
-  // This guard is chained BEFORE it, following the outstation guard's documented precedent — the two
-  // key on disjoint modules, so order changes nothing and no existing test has to be edited. Since
-  // 2026-10-01 the CRM block also takes the event type, for its one owner-ordered exception (the
-  // request to edit a sent week) — still the last line, the same form its own test pins.
+  // The existing pin in phoenix-crm-email-block.test.ts requires the CRM blocks to come LAST. This
+  // guard is chained BEFORE them, following the outstation guard's documented precedent — they key on
+  // disjoint modules, so order changes nothing and no existing test has to be edited. Since
+  // 2026-10-01 the CRM email block also takes the event type, for its one owner-ordered exception
+  // (the request to edit a sent week), and since 2026-10-02 a CRM PUSH block is chained after it for
+  // the 06:55 digest — that one is the chain's last line now, the form its own test pins.
   assert.match(
     base[1],
-    /return enforcePhoenixCrmEmailBlock\(\w+, input\.module, input\.eventType\);\s*$/,
-    "the phoenix_crm block must remain the chain's last line — it is pinned by its own test",
+    /enforcePhoenixCrmEmailBlock\(\w+, input\.module, input\.eventType\)/,
+    "the phoenix_crm email block must stay in the chain after this guard — it is pinned by its own test",
+  );
+  assert.match(
+    base[1],
+    /return enforcePhoenixCrmPushBlock\(\w+, input\.module, input\.eventType\);\s*$/,
+    "and the phoenix_crm push block must remain the chain's last line, for the same reason",
   );
 
   // ── 6. The guard must SEE a resolved recipient, or fail-closed strips his own digest ──

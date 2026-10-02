@@ -218,7 +218,11 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "phoenix_crm.plan_edit_moved_on": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.plan_edit_refused": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.plan_edit_reopened": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
-  "phoenix_crm.plan_edit_expired": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  // The expiry is the one step of a plan edit that NO PERSON takes — a daily pass closes a request
+  // whose week has passed — and the owner, asked directly on 2026-10-02, chose "in-app and Telegram
+  // only, no email" for it. So this row names those two and the guard enforces both halves
+  // (PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES), exactly as his 06:55 digest ruling is enforced.
+  "phoenix_crm.plan_edit_expired": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // Phoenix CRM (owner rule 2026-09-16): a grade or drop request and a weekly plan waiting for the
   // reviewing manager, and the decision back to the rep — in-app, Telegram and (since 2026-10-02) the
   // phone, never email.

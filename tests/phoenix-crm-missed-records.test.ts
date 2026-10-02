@@ -444,7 +444,18 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
     assert.equal(prefix, `phoenix_crm:unplanned:${VISIT_ID}:`);
     assert.equal(`${prefix}raised`, `phoenix_crm:unplanned:${VISIT_ID}:raised`, "the key production already wrote");
     const crmNotices = source("src/lib/phoenix-crm/server/notifications.ts");
-    assert.match(crmNotices, /idempotencyKey: `\$\{phoenixCrmVisitNoticeKeyPrefix\(notice\.visitId\)\}raised`/);
+    // 🔴 THE KEY IS STILL `${prefix}raised` FOR THE MANAGER'S COPY — the value is what must not move,
+    // and only its SPELLING did. Since 2026-10-02 the raised branch also addresses the SFE Managers
+    // when the territory's manager chain is vacant, so the step rides in the key through a ternary:
+    // `raised` where a reviewer exists, `sfe_pending` where none does, which is the same key the
+    // decided branch writes when a manager passes a visit on. Pinning the old literal would have
+    // forced that ternary back out and told SFE twice about the same visit.
+    assert.match(
+      crmNotices,
+      /idempotencyKey: `\$\{phoenixCrmVisitNoticeKeyPrefix\(notice\.visitId\)\}\$\{reviewer \? "raised" : "sfe_pending"\}`/,
+      "the manager's copy still keys on `raised`, byte for byte",
+    );
+    assert.match(crmNotices, /idempotencyKey: `\$\{phoenixCrmVisitNoticeKeyPrefix\(notice\.visitId\)\}sfe_pending`/, "and the SFE step has one key, however it got there");
     assert.match(crmNotices, /idempotencyKey: `\$\{phoenixCrmVisitNoticeKeyPrefix\(notice\.visitId\)\}v\$\{notice\.version\}:\$\{notice\.status\}`/);
 
     // Removing withdraws them, and only AFTER the database agreed the visit could go at all.

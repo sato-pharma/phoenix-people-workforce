@@ -5,6 +5,7 @@ import {
   enforcePhoenixCrmEmailBlock,
   isPhoenixCrmModule,
   PHOENIX_CRM_EMAIL_EVENT_TYPES,
+  PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES,
   phoenixCrmChannels,
 } from "../src/lib/notifications/phoenix-crm-channel-guard.ts";
 import { resolveNotificationPolicy } from "../src/lib/notifications/policy.ts";
@@ -58,18 +59,38 @@ const EVENT_TYPES = [
   "visit_ask_told",
   "visit_ask_accepted",
   "visit_ask_declined",
+  // 🔴 The expiry of a request to edit a week MOVED HERE from the emailing list on 2026-10-02, when
+  // the owner was asked directly whether the new daily pass should email as it closes one and chose
+  // "in-app and Telegram only, no email". It is the one step of a plan edit no PERSON takes — a week
+  // ran out — and the pass closes them in a batch, which is the unprompted-bulk mail he has ruled
+  // out standing. His "only" is enforced on both axes, so it is in PUSH_BLOCKED_EVENT_TYPES below.
+  "plan_edit_expired",
 ];
+
+/**
+ * The notices he has called "in-app and Telegram ONLY": barred from email AND from the phone. The
+ * 06:55 digest is the other one and is pinned in its own test — it never comes through the notifier.
+ */
+const PUSH_BLOCKED_EVENT_TYPES = ["plan_edit_expired"];
 
 /**
  * 🔴 THE ONE EXCEPTION, BY THE OWNER'S OWN ORDER (2026-10-01): a rep's request to edit a week he already
  * sent runs the district manager → SFE → HR, "with emails, in-app and Telegram for every step". These
- * five, and ONLY these five, keep their email — the list is pinned exactly, so widening it is a change
+ * four, and ONLY these four, keep their email — the list is pinned exactly, so widening it is a change
  * this test makes visible rather than one that slips through.
+ *
+ * 🔴 IT WAS FIVE UNTIL 2026-10-02. `plan_edit_expired` left, by his own answer: see EVENT_TYPES above.
+ * Every one left is a step a PERSON took, which is the line the exception is actually drawn on.
  */
-const EMAIL_EVENT_TYPES = ["plan_edit_waiting", "plan_edit_moved_on", "plan_edit_refused", "plan_edit_reopened", "plan_edit_expired"];
+const EMAIL_EVENT_TYPES = ["plan_edit_waiting", "plan_edit_moved_on", "plan_edit_refused", "plan_edit_reopened"];
 
 export function runPhoenixCrmEmailBlockTests() {
-  assert.deepEqual([...PHOENIX_CRM_EMAIL_EVENT_TYPES].sort(), [...EMAIL_EVENT_TYPES].sort(), "exactly the five steps of a plan edit may email");
+  assert.deepEqual([...PHOENIX_CRM_EMAIL_EVENT_TYPES].sort(), [...EMAIL_EVENT_TYPES].sort(), "exactly the four person-taken steps of a plan edit may email");
+  assert.deepEqual(
+    [...PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES].sort(),
+    ["crm_daily_digest", ...PUSH_BLOCKED_EVENT_TYPES].sort(),
+    "and exactly these are barred from the phone too — the 06:55 digest and the plan-edit expiry",
+  );
   for (const eventType of EMAIL_EVENT_TYPES) {
     const policy = resolveNotificationPolicy({ module: "phoenix_crm", eventType });
     for (const channel of ["in_app", "email", "telegram"] as const) {
@@ -83,9 +104,15 @@ export function runPhoenixCrmEmailBlockTests() {
     );
   }
   for (const eventType of EVENT_TYPES) {
+    const phoneBarred = PUSH_BLOCKED_EVENT_TYPES.includes(eventType);
     assert.deepEqual(phoenixCrmChannels(eventType).includes("email"), false, `${eventType} never asks for email`);
-    // The phone since 2026-10-02 (owner): 16 of 74 reps allowed Phoenix push, and Telegram reached none of them.
-    assert.deepEqual(phoenixCrmChannels(eventType), ["in_app", "telegram", "push"], `${eventType} goes in-app, by Telegram and to the phone`);
+    // The phone since 2026-10-02 (owner): 16 of 74 reps allowed Phoenix push, and Telegram reached none of
+    // them — except where he said "in-app and Telegram only", which the call site honours as well as the guard.
+    assert.deepEqual(
+      phoenixCrmChannels(eventType),
+      phoneBarred ? ["in_app", "telegram"] : ["in_app", "telegram", "push"],
+      phoneBarred ? `${eventType} goes in-app and by Telegram, never to the phone` : `${eventType} goes in-app, by Telegram and to the phone`,
+    );
     assert.deepEqual(phoenixCrmChannels(eventType, true), ["in_app"], `a test entry for ${eventType} stays in the app`);
     assert.deepEqual(
       enforcePhoenixCrmEmailBlock(["in_app", "email", "telegram"], "phoenix_crm", eventType),
@@ -98,7 +125,11 @@ export function runPhoenixCrmEmailBlockTests() {
     assert.equal(policy.channels.includes("email"), false, `the phoenix_crm policy for ${eventType} must not request email`);
     assert.equal(policy.channels.includes("telegram"), true, `Telegram is one of the two delivery channels for ${eventType}`);
     assert.equal(policy.channels.includes("in_app"), true, `in-app is the other for ${eventType}`);
-    assert.equal(policy.channels.includes("push"), true, `and the phone for ${eventType} (owner, 2026-10-02)`);
+    assert.equal(
+      policy.channels.includes("push"),
+      !PUSH_BLOCKED_EVENT_TYPES.includes(eventType),
+      `the policy row for ${eventType} agrees with the guard about the phone — the row is the intent, the guard the enforcement`,
+    );
   }
 
   {
@@ -240,13 +271,22 @@ export function runPhoenixCrmEmailBlockTests() {
     // The guard is only enforcement if the delivery path actually calls it, and it must run last so
     // no later step can add email back.
     const system = readFileSync("src/lib/notifications/system.ts", "utf8");
-    assert.match(system, /import \{ enforcePhoenixCrmEmailBlock \} from "@\/lib\/notifications\/phoenix-crm-channel-guard";/);
+    assert.match(system, /enforcePhoenixCrmEmailBlock,\n\s+enforcePhoenixCrmPushBlock,/);
+    assert.match(system, /from "@\/lib\/notifications\/phoenix-crm-channel-guard";/);
     const base = /function basePolicyChannels\([^)]*\) \{([\s\S]*?)\n\}/.exec(system);
     assert.ok(base, "system.ts still has basePolicyChannels");
     assert.match(
       base[1],
-      /return enforcePhoenixCrmEmailBlock\(\w+, input\.module, input\.eventType\);\s*$/,
-      "basePolicyChannels must END by running the phoenix_crm guard — a guard nothing calls blocks nothing",
+      /enforcePhoenixCrmEmailBlock\(\w+, input\.module, input\.eventType\)/,
+      "basePolicyChannels must run the phoenix_crm email guard — a guard nothing calls blocks nothing",
+    );
+    // The chain's last line was the EMAIL block until 2026-10-02, when the push block was chained
+    // after it for the 06:55 digest (see its own section below). Still the last line, and still the
+    // point: nothing downstream of the policy may add a banned channel back.
+    assert.match(
+      base[1],
+      /return enforcePhoenixCrmPushBlock\(\w+, input\.module, input\.eventType\);\s*$/,
+      "and must END on the phoenix_crm push guard, so no later step can add the phone back",
     );
   }
 

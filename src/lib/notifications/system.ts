@@ -26,7 +26,11 @@ import { enforcePayslipEmailBlock } from "@/lib/notifications/payslip-channel-gu
 import { enforceAttendanceAlertEmailBlock } from "@/lib/notifications/attendance-alert-channel-guard";
 import { enforceEarlyBirdsEmailBlock } from "@/lib/notifications/early-birds-channel-guard";
 import { isAttendanceDigestModule, telegramKeepsParagraphs } from "@/lib/notifications/attendance-digest-channels";
-import { enforcePhoenixCrmEmailBlock } from "@/lib/notifications/phoenix-crm-channel-guard";
+import {
+  enforcePhoenixCrmEmailBlock,
+  enforcePhoenixCrmPushBlock,
+  phoenixCrmBlocksTelegramFallback,
+} from "@/lib/notifications/phoenix-crm-channel-guard";
 import { enforceNeedsYouOwnerOnlyEmail } from "@/lib/notifications/needs-you-recipient-guard";
 import { enforceMarketingSlaEmailBlock } from "@/lib/notifications/marketing-sla-channel-guard";
 import { enforceRecruitmentCvEmailBlock } from "@/lib/notifications/recruitment-cv-channel-guard";
@@ -421,7 +425,12 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   // email — see phoenix-crm-channel-guard.ts. Keyed on its own module string; chained, never
   // replacing a block above, because each guards a disjoint set. The event type rides along for the
   // one exception the owner ordered on 2026-10-01: the five steps of a request to edit a sent week.
-  return enforcePhoenixCrmEmailBlock(needsYouOwnerOnly, input.module, input.eventType);
+  const withoutPhoenixCrmEmail = enforcePhoenixCrmEmailBlock(needsYouOwnerOnly, input.module, input.eventType);
+  // And the same for the PUSH axis on the Phoenix CRM 06:55 digest (owner rule 2026-09-28: "in app or
+  // telegram only"). It has to be here rather than at the call site, which already asks for exactly
+  // in-app and Telegram: the Telegram-failure fallback re-sends as ["email", "in_app", "push"], the
+  // line above took the email and nothing took the push. Last in the chain, as the email block was.
+  return enforcePhoenixCrmPushBlock(withoutPhoenixCrmEmail, input.module, input.eventType);
 }
 
 function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {
@@ -1637,6 +1646,9 @@ async function triggerTelegramRetryExhaustionFallback(input: {
 }) {
   if (input.telegram.emailAttempted) return;
   if (!input.recipientHrId && !input.recipientUserId) return;
+  // A notice whose email AND push are both banned has nothing left for this re-send to add, so it
+  // would only duplicate the in-app copy of the original send — the Phoenix CRM 06:55 digest.
+  if (phoenixCrmBlocksTelegramFallback(input.telegram.module, input.telegram.eventType)) return;
   try {
     await createSystemNotification({
       actionUrl: input.telegram.actionUrl ?? null,
@@ -2089,7 +2101,9 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           });
           await audit("delivery skipped", input, eventId, { channel, error: message, reason: "telegram_permanent_needs_relink" });
           deliveries.push({ channel, idempotencyKey, reason: message, status: "skipped" });
-          if (!emailAttempted && preferences.email_enabled) {
+          // Both of the channels this re-send adds are banned for some notices (the Phoenix CRM 06:55
+          // digest), so for those it can only duplicate the in-app copy already delivered — skip it.
+          if (!emailAttempted && preferences.email_enabled && !phoenixCrmBlocksTelegramFallback(input.module, input.eventType)) {
             const fallback = await createSystemNotification({
               ...input,
               channels: ["email", "in_app", "push"],
@@ -2131,7 +2145,8 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         await audit("delivery failed", input, eventId, { channel, error: message, fallback: "email_or_in_app" });
         deliveries.push({ channel, error: message, idempotencyKey, status: "failed" });
 
-        if (!emailAttempted && preferences.email_enabled) {
+        // Same skip as the permanent-failure branch above: nothing for this re-send to add.
+        if (!emailAttempted && preferences.email_enabled && !phoenixCrmBlocksTelegramFallback(input.module, input.eventType)) {
           const fallback = await createSystemNotification({
             ...input,
             channels: ["email", "in_app", "push"],

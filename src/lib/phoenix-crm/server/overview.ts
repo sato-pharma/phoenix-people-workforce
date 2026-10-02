@@ -20,6 +20,7 @@ import { forecastIsOffered } from "@/lib/phoenix-crm/daily-forecast";
 import { PLAN_EDIT_WAITING_STATUSES, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { managerChain, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { telegramCardOffered } from "@/lib/phoenix-crm/telegram-card";
+import { UNPLANNED_FIRST_STATUSES, type UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
 import {
   canAcknowledgePlanEdits,
   canReviewTerritory,
@@ -106,6 +107,17 @@ export type PhoenixCrmOverview = {
      * a manager's on the Team tab, a product manager's on Reports — the one page of the module he opens.
      */
     visitAsks: number;
+    /**
+     * Off-plan visits waiting at THIS viewer's own step, in `isTest`'s world: `manager_pending` on the
+     * territories he reviews, `sfe_pending` for the SFE Manager across his scope.
+     *
+     * 🔴 IT WAS MISSING UNTIL 2026-10-02, AND AN OFF-PLAN VISIT COUNTS IN NOTHING UNTIL IT IS DECIDED
+     * (module memory, the visit-type rule) — so the one item whose delay costs a rep his figures was
+     * the one item no badge mentioned. Inside the Team tab `teamWaitingLine` named it correctly; the
+     * module chooser's card, the tab bar's count and the "open on Team" choice all summed the other
+     * four and left it out. Every sum of this object takes it now.
+     */
+    offPlanVisits: number;
   };
   /** Why the viewer has nothing to open yet, in one sentence; null when the module is open for them. */
   closedMessage: string | null;
@@ -206,6 +218,41 @@ async function countPlanEdits(statuses: PlanEditStatus[], isTest: boolean, seatI
 }
 
 /**
+ * Off-plan visits waiting at the given steps.
+ *
+ * No date filter, unlike `countPlanEdits`: a waiting off-plan visit does not expire with its week —
+ * the visit happened, and it counts in nothing until somebody decides it, however late that is.
+ */
+async function countUnplannedVisits(
+  statuses: ReadonlyArray<UnplannedVisitStatus>,
+  isTest: boolean,
+  seatIds: string[] | null,
+): Promise<number> {
+  const supabase = getSupabaseAdmin();
+  const count = (seatPart: string[] | null) => {
+    let query = supabase
+      .from("phoenix_crm_unplanned_visits")
+      .select("visit_id", { count: "exact", head: true })
+      .in("status", [...statuses])
+      .eq("is_test", isTest);
+    if (seatPart) query = query.in("seat_id", seatPart);
+    return query;
+  };
+  if (seatIds === null) {
+    const { count: total, error } = await count(null);
+    throwIfError(error);
+    return total ?? 0;
+  }
+  let total = 0;
+  for (const part of chunk(seatIds, 100)) {
+    const { count: partCount, error } = await count(part);
+    throwIfError(error);
+    total += partCount ?? 0;
+  }
+  return total;
+}
+
+/**
  * The viewer's Telegram, connected or not — the same row the Notification Settings panel reads. Null
  * when it cannot be read: a page never fails, and nobody is asked to connect, over a status nobody knows.
  */
@@ -271,7 +318,19 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     isSfeManager: viewer.isSfeManager,
   });
 
-  const [names, reviewerRequests, sfeRequests, plans, managerEdits, sfeEdits, hrAcknowledgements, telegramConnected, visitAsks] = await Promise.all([
+  const [
+    names,
+    reviewerRequests,
+    sfeRequests,
+    plans,
+    managerEdits,
+    sfeEdits,
+    hrAcknowledgements,
+    telegramConnected,
+    visitAsks,
+    managerUnplanned,
+    sfeUnplanned,
+  ] = await Promise.all([
     loadPeopleNames([viewer.hrId, ...territoryPeople(viewer.org, [...scope, ...viewer.waitingTerritories])]),
     reviewSeatIds !== null && reviewSeatIds.length === 0
       ? 0
@@ -293,6 +352,13 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     // Never able to fail the page either: a count that cannot be read is no count, and the bell still
     // carries every ask.
     visitAsksWaitingOrZero(viewer, waitingIsTest),
+    // The off-plan visits at his own step. Exactly the two steps `canDecideUnplannedVisit` allows: the
+    // manager's on the territories he reviews, SFE's across his scope — and the Super Admin's test
+    // count holds both steps, as his list-request count does.
+    reviewSeatIds !== null && reviewSeatIds.length === 0
+      ? 0
+      : countUnplannedVisits(reviewSeatIds === null ? UNPLANNED_FIRST_STATUSES : ["manager_pending"], waitingIsTest, reviewSeatIds),
+    sfeSeatIds.length === 0 ? 0 : countUnplannedVisits(["sfe_pending"], false, sfeSeatIds),
   ]);
 
   const territories = scope
@@ -355,6 +421,7 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       isTest: waitingIsTest,
       hrAcknowledgements,
       visitAsks,
+      offPlanVisits: managerUnplanned + sfeUnplanned,
     },
     closedMessage: closedMessage(viewer),
     telegram: telegramConnected === null ? null : { connected: telegramConnected },

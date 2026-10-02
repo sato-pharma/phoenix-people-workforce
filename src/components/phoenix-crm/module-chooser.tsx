@@ -47,10 +47,13 @@ const MODULE_ICONS: Record<PhoenixCrmModuleKey, typeof ClipboardList> = {
 export function PhoenixCrmModuleChooser({ base, overview }: { base: string; overview: PhoenixCrmOverview }) {
   const modules = allowedPhoenixCrmModules(overview.tabs);
   // The Super Admin's counts are test entries, so the badge follows the same rule the tab bar uses.
+  // The off-plan visits are in the sum since 2026-10-02: an off-plan visit counts in nothing until it
+  // is decided, so leaving it out made the one delay that costs a rep his figures the invisible one.
   const waiting =
     overview.waitingForYou.plans +
     overview.waitingForYou.requests +
     overview.waitingForYou.planEdits +
+    overview.waitingForYou.offPlanVisits +
     overview.waitingForYou.visitAsks +
     overview.waitingForYou.hrAcknowledgements;
   // A product manager has no Team module: the visits his line's reps ask of him wait on Reports
