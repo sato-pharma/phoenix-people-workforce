@@ -4528,6 +4528,54 @@ failure — the `indexOf("const offlineClaim = parseOfflineCaptureClaim")` slice
 have returned −1, `slice(-1, …)` returns the file's last character, and the "a clock argument must
 never cost a rep a real visit" check would have passed on one byte with nothing going red.
 
+## The exceptions board and the 06:55 digest count WORKING days — the 2026-10-02 audit
+
+The owner's call-rate rule has two halves, both settled long before this: **working days are Saturday
+to Wednesday** (2026-09-05, *"donot count thursday as working day"*, superseding his own earlier
+"count Thursday as 0.5"), and **national holidays come out of them** (2026-09-02, *"if we have a
+national vacation in this week, then the week will be four"*). `src/lib/crm/call-rate.ts` has
+implemented both since those dates, as `isCallRateWorkingDay`.
+
+The exceptions board did not use it. `src/lib/phoenix-crm/exceptions.ts` carried a rule of its own,
+`isFieldDay`, which excluded **Friday alone** — so Thursdays and public holidays sat in both halves
+of the call rate it reports.
+
+### What that cost, in figures
+
+- **A perfect week read as a failure.** A rep who made exactly **10 PM calls on each of Saturday to
+  Wednesday** — the owner's own standard, met exactly — was divided by **six** days instead of five:
+  50 / 6 = **8.3 a day against 10**, and the board listed him *"Below the PM call rate"*. The AM half
+  did the same against its target of 2. Nothing anywhere said the sixth day was a Thursday.
+- **The 06:55 digest judged Thursday every Friday morning.** It reads a window of ONE day and
+  resolved it as "the last day that was not a Friday", so on a Friday it reported on **Thursday** — a
+  day that holds no PM call by design, because Thursday is a morning for accounts only
+  (`planDayListTypes`). Every active territory therefore produced *"Below the PM call rate · 0.0"*,
+  and on a **holiday** Thursday — such as **8 October 2026**, Armed Forces Day moved from the 6th —
+  *"No visit on the last field day"*. That is pushed to managers' Telegram, which is the same flood
+  as 2026-09-28 wearing a different cause.
+
+### What it is now
+
+Both read `isCallRateWorkingDay`, imported and never re-derived, so the board can no longer disagree
+with Reps List or the KPIs board about which days a rep owed work on:
+
+- `isWorkingDay(isoDay, holidays)` replaces `isFieldDay`; `RATE_WINDOW_WORKING_DAYS` replaces
+  `RATE_WINDOW_FIELD_DAYS`; `TerritoryFacts.windowWorkingDays` and `lastWorkingDayVisits` replace
+  their "field" spellings, so no name says "field day" while meaning something narrower.
+- `lastFinishedWorkingDay` returns **`null`** when no working day has finished inside a month, and
+  `lastWorkingDayVisits` is then null rather than 0 — a fallback to `cairoToday` would have the board
+  judging a day the rep is still working, which is the noise the "day that has ENDED" rule exists to
+  remove. `judgeTerritory` suppresses `no_visit` on a null.
+- **The digest SKIPS a morning with no working day behind it** and reports that it did
+  (`skippedNotAWorkingDay` on the run), because a correct silence must be tellable from a broken one.
+- 🔴 **An unreachable holiday calendar is SAID, not swallowed** (`holidaysUnread`, on the board and in
+  the workbook). `loadCallRateHolidays` never throws — it returns `complete: false` — and a missing
+  holiday leaves the denominator too generous, so a rate reads LOW for a reason nobody performed.
+  A failed data source must never read as a real answer.
+
+Pinned by `tests/phoenix-crm-exceptions.test.ts` (which names the 8.3 figure both ways, so the fix
+cannot be reverted quietly) and `tests/phoenix-crm-daily-digest.test.ts`.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
