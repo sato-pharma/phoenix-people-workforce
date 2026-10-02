@@ -190,6 +190,62 @@ export function territoryForRepWrite(viewer: PhoenixCrmViewer, seatId: unknown, 
   throw forbiddenError("Only the territory's rep changes its list and plan.");
 }
 
+/**
+ * VALIDATING a carried-over customer: the territory's rep, or a MANAGER of it (owner's pick,
+ * 2026-10-02 — "district managers can validate").
+ *
+ * The rep stays primary; this adds his managers beside him, and it works on a VACANT territory too,
+ * which is the case nothing else covers — a seat with no rep has a reference list nobody can work
+ * through. The manager test is the one `territoryForVisit` already uses: in scope AND in this
+ * territory's own manager chain, so scope runs downward only and a peer's territory is refused.
+ *
+ * 🔴 IT IS NOT `territoryForRepWrite` WIDENED, DELIBERATELY. That gate also guards the plan, the day
+ * activities, the forecast and every list change — a drop, a grade, an add, the hours — and those are
+ * the rep's own work. And a manager is only allowed the `reference` mode (`validatedAs` says which he
+ * is): "Add new customer" and an out-of-list validation FILE A REQUEST whose first step is the
+ * territory's reviewer, so a manager doing both would be proposing and approving in one act.
+ */
+export function territoryForValidation(
+  viewer: PhoenixCrmViewer,
+  seatId: unknown,
+  test: boolean,
+): TerritoryAccess & { validatedAs: "rep" | "manager" } {
+  const seat = territory(viewer, seatId);
+  if (viewer.isSuperAdmin) {
+    if (!test) throw superAdminTestOnly();
+    return { seat, isTest: true, validatedAs: "rep" };
+  }
+  if (test && !viewer.isTestPersona) throw forbiddenError("Test entries are the Super Admin's.");
+  if (!viewer.canCreate) throw forbiddenError("Your role cannot validate a customer.");
+  const isTest = viewer.isTestPersona;
+  if (viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId)) return { seat, isTest, validatedAs: "rep" };
+  if (isManagerOfTerritory(viewer, seat)) return { seat, isTest, validatedAs: "manager" };
+  if (viewer.waitingTerritories.some((entry) => entry.seatId === seat.seatId)) throw lineNotOpen(viewer, seat);
+  throw forbiddenError("Only the territory's rep or one of its managers validates its customers.");
+}
+
+/**
+ * In scope AND in this territory's own manager chain — "a manager of this territory", downward only.
+ * The chain is the organogram's, so a vacant district seat passes the territory to the next manager up,
+ * exactly as every other decision about it is routed.
+ */
+function isManagerOfTerritory(viewer: PhoenixCrmViewer, seat: OrgSeat): boolean {
+  if (!viewer.scopeTerritories.some((entry) => entry.seatId === seat.seatId)) return false;
+  return managerChain(viewer.org, seat.seatId).some((member) => member.hrId === viewer.hrId);
+}
+
+/**
+ * The twin of {@link territoryForValidation} for a screen: whether the viewer may validate a
+ * carried-over customer here. True for the rep (where `canWriteAsRep` is) and for a manager of the
+ * territory; the rest of the list screen stays on `canWriteAsRep`.
+ */
+export function canValidateReference(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
+  if (canWriteAsRep(viewer, seat, isTest)) return true;
+  if (viewer.isTestPersona) return isTest && viewer.canCreate && isManagerOfTerritory(viewer, seat);
+  if (isTest) return false;
+  return !viewer.isSuperAdmin && viewer.canCreate && isManagerOfTerritory(viewer, seat);
+}
+
 /** Entering a visit: the territory's rep, a manager of the territory, or the Super Admin in test mode. */
 export function territoryForVisit(
   viewer: PhoenixCrmViewer,

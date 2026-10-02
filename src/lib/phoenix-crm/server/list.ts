@@ -32,7 +32,7 @@ import type { SharedWith } from "@/lib/crm/location-confidence";
 import { loadObservedPointsFor, loadPlanDatesFor, loadSharedCustomersFor, loadVisitHistoryFor, type VisitHistory } from "@/lib/crm/shared-customers";
 import { logError } from "@/lib/observability/log";
 import { resolveEvidenceLocation } from "@/lib/evidence/location-service";
-import { notFoundError, validationError } from "@/lib/http/api-errors";
+import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { monthStartOf, nextRamadan } from "@/lib/phoenix-crm/calendar";
 import { coverageTier, gradeTarget, summarizeReadiness, type CoverageTier, type ReadinessSummary, type ReferenceState } from "@/lib/phoenix-crm/coverage";
 import {
@@ -77,7 +77,9 @@ import {
   canWriteAsRep,
   readTestFlag,
   territoryForRead,
+  canValidateReference,
   territoryForRepWrite,
+  territoryForValidation,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -342,6 +344,12 @@ export type TerritoryListView = {
   isTest: boolean;
   /** The viewer is the territory's rep (or the Super Admin in test mode): the list can be changed. */
   canEdit: boolean;
+  /**
+   * The viewer may VALIDATE a carried-over customer here: the rep, and since 2026-10-02 a MANAGER of
+   * the territory too (the owner's pick). It is deliberately narrower than `canEdit` — a manager
+   * validates, and does not drop, grade, add or change the hours, which are the rep's own work.
+   */
+  canValidateReference: boolean;
   /** The viewer decides this territory's requests. */
   canReview: boolean;
   /** The viewer may move a validated place: the Super Admin and the SFE Manager, nobody else. */
@@ -1023,6 +1031,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     canEdit: canWriteAsRep(viewer, seat, isTest),
+    canValidateReference: canValidateReference(viewer, seat, isTest),
     canReview: canReviewTerritory(viewer, seat, isTest),
     canMovePlaces: canMovePlaces(viewer, seat, isTest),
     canBringBack: canDecideListRequest(viewer, seat, isTest, "sfe"),
@@ -1181,7 +1190,10 @@ export type ValidateResult = {
  */
 export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): Promise<ValidateResult> {
   const body = record(raw);
-  const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
+  // A manager of the territory validates a CARRIED-OVER customer beside its rep (owner, 2026-10-02),
+  // and nothing else here: the three other modes file a request whose first step is the territory's
+  // reviewer, and that is him (`territoryForValidation`).
+  const { seat, isTest, validatedAs } = territoryForValidation(viewer, body.seatId, readTestFlag(body.test));
   const lineCode = lineCodeOf(seat);
   const place = parsePlaceDraft(body.place);
   if (!place.ok) throw validationError(place.error);
@@ -1202,6 +1214,11 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   };
   let proposedGrade: PhoenixCrmGrade | null = null;
   const mode = String(body.mode ?? "");
+  if (validatedAs === "manager" && mode !== "reference") {
+    throw forbiddenError(
+      "A manager validates a customer carried over from iReports360. Adding a customer, or one met outside the list, is the rep's — the request it files is yours to decide.",
+    );
+  }
   if (mode === "reference") {
     const contact = Number(body.referenceContactCrmId);
     if (!Number.isSafeInteger(contact) || contact <= 0) throw validationError("Choose the customer from your reference list.");

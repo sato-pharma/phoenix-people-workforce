@@ -106,6 +106,10 @@ export function CustomerScreen({
   const standing = monthStanding(customer.visitsThisMonth, customer.target);
   const full = customer.places.length >= view.rules.placesMax;
   const moves = view.canEdit ? movesOf(customer) : [];
+  // A manager of the territory validates a carried-over customer beside its rep (owner, 2026-10-02) and
+  // does NOTHING else on this screen: no drop, no grade, no hours, no add — those are the rep's own work
+  // (`canValidateReference` is deliberately narrower than `canEdit`).
+  const canValidateThis = pending && customer.referenceContactCrmId !== null && view.canValidateReference;
   const requests = sortRequests(
     view.requests.filter(
       (request) =>
@@ -215,26 +219,26 @@ export function CustomerScreen({
           </CrmNote>
         ) : null}
 
-        {view.canEdit ? (
+        {view.canEdit || canValidateThis ? (
           <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
-            {pending && customer.referenceContactCrmId !== null ? (
+            {canValidateThis ? (
               <CrmButton onClick={() => onOpen({ name: "validate", contactCrmId: customer.referenceContactCrmId as number })} variant="primary">
                 Validate this customer
               </CrmButton>
             ) : null}
-            {active || outside ? (
+            {view.canEdit && (active || outside) ? (
               <CrmButton disabled={full} onClick={() => onOpen({ name: "add-place", customerId: customer.customerId, draft: null })}>
                 {full ? `${view.rules.placesMax} clinics, the most a customer can have` : "Add another clinic"}
               </CrmButton>
             ) : null}
-            {active ? (
+            {view.canEdit && active ? (
               <CrmButton disabled={customer.pendingGradeRequestId !== null} onClick={() => onOpen({ name: "grade", customerId: customer.customerId })}>
                 Propose a grade
               </CrmButton>
             ) : null}
             {/* Owner, 2026-09-22: the name and the speciality are corrected here, after validating — never
                 inside it. The grade keeps its proposal flow above, because it sets the rep's own target. */}
-            {active || outside ? (
+            {view.canEdit && (active || outside) ? (
               <CrmButton onClick={() => onOpen({ name: "edit-details", customerId: customer.customerId })}>Change the details</CrmButton>
             ) : null}
           </div>

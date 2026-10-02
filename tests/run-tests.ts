@@ -1702,6 +1702,8 @@ import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visit
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
 import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
+import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
+import { runPhoenixCrmManagerValidatesTests } from "./phoenix-crm-manager-validates.test.ts";
 import { runPhoenixCrmBrickTintsTests } from "./phoenix-crm-brick-tints.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
@@ -5856,6 +5858,16 @@ await runTest(
 await runTest(
   "Phoenix CRM reps still recording in iReports360 (from a team's start its reps' iReports360 visits are IGNORED everywhere, owner 2026-10-02 — so a rep who carries on logging there is doing real work that reaches NO figure at all, and the volume is not small: 1,629 vendor visits in the fourteen days before Delta (1) began, 135.8 a day. The question cannot be asked of crm_visits_unified, which anti-joins exactly these rows out and would answer a confident zero for a rep logging every day, so ONE loader reads the raw mirror, inside each rep's own counted_from/counted_until window; the sentence names the people and states the cost and carries no verdict on anyone, because a rep still on the old app is following the habit he was trained in; and it never reaches him — the SERVER empties it with isLocationBlind rather than a screen choosing not to render it, and every file that reads the flag at all is named here)",
   runPhoenixCrmVendorLeftoverTests,
+);
+
+await runTest(
+  "Phoenix CRM a product manager on a visit (owner's pick, 2026-10-02 — the recording half of the ask he already has, in the same four words. What this exists to stop is him being filed as a DOUBLE visit: he holds no seat in the organogram at all, so he is in no territory's manager chain and nothing in the database can check him, and double_visits is counted as kind = 'double' on every board, a figure district managers are judged on. So the rep names one of HIS OWN LINE's product managers from the same cached list his ask offers — an empty list, a missing list, the territory's own DM or himself are each refused — the visit is the rep's and a manager entering it is refused, every other kind answers null so a stale pick cannot ride along, the draft parser clears each slot by the kind, the label IS the ask's wording, his title is his APP ROLE because the tree has no seat to take one from, and the table's own CHECK allows the column on its own kind and nowhere else)",
+  runPhoenixCrmVisitProductManagerTests,
+);
+
+await runTest(
+  "Phoenix CRM a district manager validates (owner's pick, 2026-10-02 — the rep stays primary and his managers join him, including on a VACANT seat, whose reference list nobody else could work through: 0 of Delta (1)'s 1,551 carried-over customers were validated the day before it started, and a visit to one counts in nothing until it is. The two obvious-looking implementations are both refused — territoryForRepWrite is NOT widened, so the plan, the day activities, the forecast and every list change stay the rep's, and a manager may validate only a CARRIED-OVER customer, because \"Add new customer\" and an out-of-list validation file a request whose first step is his own. Scope runs downward only, the screen offers him the Validate button and none of the rep's others, and the place photo slot takes the same gate so the camera cannot refuse the button)",
+  runPhoenixCrmManagerValidatesTests,
 );
 
 await runTest(
