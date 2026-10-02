@@ -79,17 +79,23 @@ export type PlanReminderNotice = {
 
 export function repReminder(input: { hrId: string; day: PlanReminderDay; cairoToday: string; draftStarted: boolean }): PlanReminderNotice {
   const week = reminderDayLabel(input.day.weekStart);
-  const title = `Your week of ${week} is not sent yet`;
+  // 🔴 THE DEADLINE LEADS THE TITLE (owner, 2026-10-02: "show the deadline in the rep's plan reminder on
+  // the phone"). This notice goes out on `push` as well as in-app and Telegram, and a phone shows the
+  // HEADING and cuts it — OneSignal's `headings`, a lock screen, one line. Put the deadline at the end,
+  // the way it reads on a desk, and it is the first thing truncation takes; put it first and he reads it
+  // without opening anything. The week still follows it, named, never a date code.
+  const when = input.day.late ? `Was due ${reminderDayLabel(input.day.dueOn)}, ${PLAN_DEADLINE_LABEL}` : `Due tonight, ${PLAN_DEADLINE_LABEL}`;
+  const title = `${when} — your week of ${week}`;
   const how = input.draftStarted ? "Open Plan, check your days and press Send." : "Open Plan, tick your customers day by day and press Send.";
-  // The reminder is where the deadline reaches his phone, so it names the HOUR as well as the day
-  // (owner, 2026-10-02). "Tonight" alone left him to guess it, and the week is judged on it.
-  const when = input.day.late
-    ? `It was due on ${reminderDayLabel(input.day.dueOn)} at ${PLAN_DEADLINE_LABEL}. Send it before ${week}. A late week is still accepted.`
-    : `It is due tonight at ${PLAN_DEADLINE_LABEL}.`;
+  // The body no longer opens with "It", which pointed at a title that said "is not sent yet" — the title
+  // now leads with the deadline, so the sentence has to carry its own subject.
+  const what = input.day.late
+    ? `Your plan is not sent yet. Send it before ${week}. A late week is still accepted.`
+    : "Your plan is not sent yet.";
   return {
     hrId: input.hrId,
     title,
-    message: `${when} ${how}`,
+    message: `${what} ${how}`,
     idempotencyKey: `phoenix_crm:plan_reminder:rep:${input.hrId}:${input.day.weekStart}:${input.cairoToday}`,
   };
 }

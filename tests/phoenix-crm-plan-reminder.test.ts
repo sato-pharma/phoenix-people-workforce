@@ -79,11 +79,13 @@ export function runPhoenixCrmPlanReminderTests() {
   {
     const due = { weekStart: "2026-10-03", dueOn: "2026-10-02", late: false };
     const rep = repReminder({ hrId: "PD-0013", day: due, cairoToday: "2026-10-02", draftStarted: false });
-    assert.equal(rep.title, "Your week of Saturday 3 Oct is not sent yet");
-    // The hour, not only "tonight" (owner, 2026-10-02 — the deadline is 23:55 Cairo and he is shown it).
-    assert.ok(rep.message.startsWith("It is due tonight at 11:55 PM."), rep.message);
+    // 🔴 The deadline LEADS the title, because a phone shows the heading and cuts it (owner, 2026-10-02).
+    assert.equal(rep.title, "Due tonight, 11:55 PM — your week of Saturday 3 Oct");
+    assert.ok(rep.message.startsWith("Your plan is not sent yet."), rep.message);
+    assert.ok(!rep.message.startsWith("It "), "the body carries its own subject now the title is the deadline");
     assert.equal(rep.idempotencyKey, "phoenix_crm:plan_reminder:rep:PD-0013:2026-10-03:2026-10-02", "one per rep per week per Cairo day");
     const late = repReminder({ hrId: "PD-0013", day: { ...due, late: true }, cairoToday: "2026-10-03", draftStarted: true });
+    assert.equal(late.title, "Was due Friday 2 Oct, 11:55 PM — your week of Saturday 3 Oct", "the day it was due, with its hour");
     assert.ok(late.message.includes("A late week is still accepted."), "late is accepted and says so — never refused");
     assert.ok(late.message.includes("press Send"), late.message);
     assert.notEqual(late.idempotencyKey, rep.idempotencyKey, "a new day is a new key");
