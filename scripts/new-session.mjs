@@ -667,6 +667,17 @@ if (args.includes("--remove")) {
   );
   console.log("  node_modules        " + dropModulesJunction(dir));
 
+  // 🔴 READ THE TIP BEFORE THE FOLDER GOES. The advice printed after the removal tells the reader to
+  // compare the merged PR's `headRefOid` against this sha — that IS the advice, and the sha is the
+  // only part of it they cannot look up from the message. `headSha(dir)` asks git with `cwd: dir`,
+  // so once `worktree remove` has run it throws and returns its "HEAD" fallback, which landed in the
+  // sentence as the literal word: "its headRefOid equal to HEAD". Observed on the first real run of
+  // that advice, 2026-10-02, retiring `_wt-banner-behind-main`.
+  //
+  // The fallback is right for its other caller — the rescue command for a detached HEAD, printed
+  // while the folder still exists — so it stays; what was wrong is asking after the removal.
+  const retiredTip = headSha(dir).slice(0, 9);
+
   git(["worktree", "remove", dir]);
   const husk = fs.existsSync(dir);
   console.log("  worktree removed    " + (husk ? "folder REMAINS — a husk" : "yes, no husk left"));
@@ -691,7 +702,7 @@ if (args.includes("--remove")) {
         entry.branch +
         " still exists locally. Before deleting it, confirm all three:\n" +
         "  1. the merged PR by NUMBER, and its headRefOid equal to " +
-        headSha(dir).slice(0, 9) +
+        retiredTip +
         " — never `--head " +
         entry.branch +
         "`, which answers about the name\n" +

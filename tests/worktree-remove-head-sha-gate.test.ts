@@ -161,6 +161,26 @@ export function runWorktreeRemoveHeadShaGateTests() {
       /Delete it only once `gh pr list --head/,
       "the old name-based instruction must be gone — it is the exact query that vouched for #3588",
     );
+
+    // 🔴 THE SHA MUST BE READ BEFORE THE FOLDER GOES. It is the one part of that advice the reader
+    // cannot look up from the message, and `headSha(dir)` asks git with `cwd: dir` — so called
+    // AFTER `worktree remove` it throws and returns its "HEAD" fallback, which printed as the
+    // literal word: "its headRefOid equal to HEAD". Observed on the first real run of this advice,
+    // retiring `_wt-banner-behind-main` on 2026-10-02. The fallback is right for its other caller
+    // (the rescue command, printed while the folder still exists), so what was wrong is the timing.
+    assert.match(advice, /headRefOid equal to " \+\s*retiredTip/, "the advice must interpolate a tip captured earlier");
+    assert.doesNotMatch(
+      advice,
+      /headRefOid equal to " \+\s*headSha\(dir\)/,
+      "and must never ask git in a folder that has already been removed",
+    );
+    const capture = source.indexOf("const retiredTip");
+    const removal = source.indexOf('git(["worktree", "remove", dir])');
+    assert.ok(capture !== -1 && removal !== -1, "could not locate the capture and the removal — this pin measures nothing");
+    assert.ok(
+      capture < removal,
+      "the tip must be captured BEFORE `worktree remove`, or the advice names the fallback instead of a sha",
+    );
   }
 
   console.log("worktree remove head-sha gate: OK");
