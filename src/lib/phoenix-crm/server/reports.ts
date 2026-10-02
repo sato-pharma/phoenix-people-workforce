@@ -941,6 +941,13 @@ export type CustomerFrequencyReportView = {
   includeTest: boolean;
   /** Null until one territory is chosen — the sentence, not an empty table pretending to be an answer. */
   seat: { seatId: string; territoryName: string; repName: string | null } | null;
+  /**
+   * Phoenix CRM visits in this month that count in NOTHING yet, because the customer is not
+   * validated. Printed as a sentence beside the table so a frequency of 0 on a team that has just
+   * started reads as "the list is still being worked through" and not as a rep who did nothing.
+   * It is never added to any row, any total or any percentage.
+   */
+  awaitingValidation: number;
   needsOneTerritory: boolean;
   rows: CustomerFrequencyRow[];
   totals: ReturnType<typeof customerFrequencyTotals>;
@@ -989,12 +996,13 @@ export async function loadCustomerFrequencyReport(
     };
   }
 
-  const [daysByCustomer, planDaysByCustomer, leave] = await Promise.all([
+  const [visitDays, planDaysByCustomer, leave] = await Promise.all([
     visitDaysByCustomer(seat.seatId, chosen.includeTest, month),
     plannedDaysByCustomer(seat.seatId, chosen.includeTest, month),
     // 🔴 A planning on a day HR approved his leave is never a time he owed (owner, 2026-10-01).
     loadSeatLeaveDays([seat], { from: month.monthStart, to: month.monthEnd }),
   ]);
+  const daysByCustomer = visitDays.days;
 
   const rows = buildCustomerFrequencyReport(
     // Frequency is a KPI and a pharmacy is in none of them (owner, 2026-10-02), so the pharmacies on
@@ -1021,6 +1029,7 @@ export async function loadCustomerFrequencyReport(
   );
 
   return {
+    awaitingValidation: visitDays.awaitingValidation,
     includeTest: chosen.includeTest,
     month,
     needsOneTerritory: false,
@@ -1050,30 +1059,41 @@ export async function loadCustomerFrequencyReport(
  * unvalidated customer's days are dropped at the join today — but that is a property of the CALLER,
  * one edit away from changing, and this is the read whose own name says what it counts.
  */
-async function visitDaysByCustomer(seatId: string, includeTest: boolean, month: ReportMonth): Promise<Map<string, string[]>> {
+async function visitDaysByCustomer(
+  seatId: string,
+  includeTest: boolean,
+  month: ReportMonth,
+): Promise<{ days: Map<string, string[]>; awaitingValidation: number }> {
   const rows = await fetchAllRowsKeyset<Row>(
     () =>
       getSupabaseAdmin()
         .from("phoenix_crm_countable_visits")
-        .select("id, customer_id, visit_date")
+        .select("id, customer_id, visit_date, customer_validated")
         .eq("seat_id", seatId)
         .eq("is_test", includeTest)
-        .eq("customer_validated", true)
+        // NOT filtered here any more: a visit to a customer nobody has validated still counts in
+        // nothing, but the row is read so the report can say how many are waiting rather than
+        // showing a frequency of 0 with no reason for it (owner's pick, 2026-10-02).
         .gte("visit_date", month.monthStart)
         .lte("visit_date", month.monthEnd),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
   const out = new Map<string, string[]>();
+  let awaitingValidation = 0;
   for (const row of rows) {
     const id = textOrNull(row.customer_id);
     const day = textOrNull(row.visit_date)?.slice(0, 10);
     if (!id || !day) continue;
+    if (row.customer_validated !== true) {
+      awaitingValidation += 1;
+      continue;
+    }
     const held = out.get(id) ?? [];
     held.push(day);
     out.set(id, held);
   }
   for (const days of out.values()) days.sort();
-  return out;
+  return { awaitingValidation, days: out };
 }
 
 /**
@@ -1209,7 +1229,7 @@ export async function loadTrackingSheetReport(
     return { days, includeTest: chosen.includeTest, month, needsOneTerritory: false, rows: [], seat: seatView, showsSpacing: managerView };
   }
 
-  const daysByCustomer = await visitDaysByCustomer(seat.seatId, chosen.includeTest, month);
+  const daysByCustomer = (await visitDaysByCustomer(seat.seatId, chosen.includeTest, month)).days;
   const rows = buildTrackingSheet(
     listed.map((row) => ({
       customerId: String(row.id),

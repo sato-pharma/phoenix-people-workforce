@@ -1,5 +1,6 @@
 import { forbiddenError } from "@/lib/http/api-errors";
 import { isDayActivity, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
+import { visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey, territoryName, territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   buildTeamCalendar,
@@ -176,9 +177,10 @@ async function loadVisitDays(
   seatIds: readonly string[],
   isTest: boolean,
   bounds: { from: string; to: string },
-): Promise<{ seatId: string; day: string; counts: VisitCountSplit }[]> {
+): Promise<{ seatId: string; day: string; counts: VisitCountSplit; awaitingValidation: number }[]> {
   const amPm = new Map<string, { am: number; pm: number }>();
   const pharmacies = new Map<string, Set<string>>();
+  const waiting = new Map<string, number>();
 
   for (const part of chunk([...seatIds], 150)) {
     const rows = await fetchAllRowsKeyset<Row>(
@@ -187,12 +189,12 @@ async function loadVisitDays(
           // Named columns, every one read off the live view: PostgREST answers a column that is not
           // there by failing the WHOLE read rather than nulling that one field.
           .from("phoenix_crm_countable_visits")
-          .select("id, seat_id, visit_date, list_type, pharmacy_name")
+          .select("id, seat_id, visit_date, list_type, pharmacy_name, customer_validated")
           .eq("is_test", isTest)
-          // The second half of the predicate, named here because a PostgREST read has no join to
-          // forget — see the header. A visit to a customer nobody has validated is work the rep
-          // really did, and it is counted nowhere until he is on the list.
-          .eq("customer_validated", true)
+          // NOT filtered here any more. A visit to a customer nobody has validated is work the rep
+          // really did, and it still counts in none of the three figures — but the row is read so
+          // the day can SAY how many are waiting instead of showing the manager an empty cell. On a
+          // team that has just started that is every visit it has (owner's pick, 2026-10-02).
           .gte("visit_date", bounds.from)
           .lte("visit_date", bounds.to)
           .in("seat_id", part),
@@ -203,9 +205,16 @@ async function loadVisitDays(
       const seatId = String(row.seat_id ?? "");
       if (!day || !seatId) continue;
       const at = `${seatId}|${day}`;
+      if (row.customer_validated !== true) {
+        waiting.set(at, (waiting.get(at) ?? 0) + 1);
+        continue;
+      }
       const found = amPm.get(at) ?? { am: 0, pm: 0 };
-      if (String(row.list_type ?? "").toUpperCase() === "AM") found.am += 1;
-      else found.pm += 1;
+      // Through the golden rule's own helper: a pharmacy is a third list since 2026-10-02, and an
+      // `=== "AM" ? am : pm` would have filed every one of them among the doctors.
+      const bucket = visitCountBucketForListType(row.list_type);
+      if (bucket === "AM") found.am += 1;
+      else if (bucket === "PM") found.pm += 1;
       amPm.set(at, found);
       const pharmacy = String(row.pharmacy_name ?? "").trim();
       if (pharmacy) {
@@ -216,9 +225,10 @@ async function loadVisitDays(
     }
   }
 
-  return [...new Set([...amPm.keys(), ...pharmacies.keys()])].map((at) => {
+  return [...new Set([...amPm.keys(), ...pharmacies.keys(), ...waiting.keys()])].map((at) => {
     const [seatId = "", day = ""] = at.split("|");
     return {
+      awaitingValidation: waiting.get(at) ?? 0,
       counts: {
         am: amPm.get(at)?.am ?? 0,
         pharmacies: pharmacies.get(at)?.size ?? 0,
@@ -311,7 +321,9 @@ async function latestWorkedMonth(
           .from("phoenix_crm_countable_visits")
           .select("seat_id, visit_date")
           .eq("is_test", isTest)
-          .eq("customer_validated", true)
+          // Not filtered: this asks WHEN he last worked, so that the calendar reaches that far. A
+          // started team whose customers are all unvalidated would otherwise read as never having
+          // worked at all, and the grid would stop before its own visits.
           .lte("visit_date", lastDayOfCap)
           .in("seat_id", part)
           .order("visit_date", { ascending: false })

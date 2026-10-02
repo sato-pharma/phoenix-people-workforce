@@ -48,6 +48,14 @@ export type TeamCalendarDay = {
    *  day, which belongs to the rep's own flow. */
   day: string;
   counts: VisitCountSplit;
+  /**
+   * Phoenix CRM visits the rep SAVED on this day that count in nothing yet, because the customer is
+   * not validated. Without it a worked day reads as an empty one: on a team that has just started,
+   * EVERY visit is in this state (0 of Delta (1)'s 1,551 customers were validated the day before it
+   * began), so the whole row would be blank for a rep who was out all month. It is never added to
+   * `counts` — the three figures stay what they are — and it is the manager's to read, never the rep's.
+   */
+  awaitingValidation: number;
   shape: DayShape;
   /** HR's own approved leave covering this day. A fact, never derived from a gap in the visits. */
   onLeave: boolean;
@@ -73,7 +81,7 @@ export type TeamCalendarRow = TeamCalendarPerson & {
   bothDays: number;
 };
 
-type DayInput = { seatId: string; day: string; counts: VisitCountSplit };
+type DayInput = { seatId: string; day: string; counts: VisitCountSplit; awaitingValidation: number };
 type ActivityInput = { seatId: string; day: string; activity: PhoenixCrmDayActivity };
 type LeaveInput = { seatId: string; day: string };
 
@@ -148,11 +156,16 @@ export function buildTeamCalendar(
   const key = (seatId: string, day: string) => `${seatId}|${day}`;
 
   const counts = new Map<string, VisitCountSplit>();
+  // Kept beside the three figures rather than inside them: a visit waiting on its customer is work
+  // the rep did, and it is counted in nothing until that customer is validated.
+  const waiting = new Map<string, number>();
   for (const row of input.visits ?? []) {
     if (!inMonth.has(row.day)) continue;
-    const found = counts.get(key(row.seatId, row.day));
+    const at = key(row.seatId, row.day);
+    const found = counts.get(at);
     if (found) mergeVisitCountSplits(found, row.counts);
-    else counts.set(key(row.seatId, row.day), { ...row.counts });
+    else counts.set(at, { ...row.counts });
+    if (row.awaitingValidation > 0) waiting.set(at, (waiting.get(at) ?? 0) + row.awaitingValidation);
   }
 
   const activities = new Map<string, PhoenixCrmDayActivity>();
@@ -175,12 +188,13 @@ export function buildTeamCalendar(
       const dayCounts = counts.get(at) ?? emptyVisitCountSplit();
       const activity = activities.get(at) ?? null;
       const onLeave = leave.has(at);
+      const dayWaiting = waiting.get(at) ?? 0;
       const shape = dayShape({ activity, counts: dayCounts, day, onLeave });
       mergeVisitCountSplits(totals, dayCounts);
       if (shape === "am") amOnlyDays += 1;
       else if (shape === "pm") pmOnlyDays += 1;
       else if (shape === "both") bothDays += 1;
-      return { activity, counts: dayCounts, day, onLeave, shape };
+      return { activity, awaitingValidation: dayWaiting, counts: dayCounts, day, onLeave, shape };
     });
     return { ...person, amOnlyDays, bothDays, days: rowDays, pmOnlyDays, totals };
   });

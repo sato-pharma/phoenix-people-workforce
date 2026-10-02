@@ -1,5 +1,5 @@
 import { emptyVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
-import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { parseListType, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { todayPharmacies, type TodayVisit } from "@/lib/phoenix-crm/today-rules";
 
 /**
@@ -61,8 +61,12 @@ export function dayDetailCounts(visits: readonly DayDetailVisit[]): DayDetailCou
     pharmacyName: visit.pharmacyName ?? null,
   }));
   for (const visit of asToday) {
-    if (visit.listType === "AM") counts.am += 1;
-    else counts.pm += 1;
+    // Through the golden rule's own helper, not an `=== "AM" ? am : pm` that files every third
+    // list under the doctors. A pharmacy customer is a third list since 2026-10-02.
+    const bucket = visitCountBucketForListType(visit.listType);
+    if (bucket === "AM") counts.am += 1;
+    else if (bucket === "PM") counts.pm += 1;
+    else counts.pharmacies += 1;
   }
   const pharmacies = todayPharmacies(asToday).map((entry) => ({
     firstCapturedAt: entry.firstAt,
