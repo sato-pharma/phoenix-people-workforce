@@ -27,7 +27,7 @@
  * silences every rung under it, and the board carries ONE kind per territory: the worst true one.
  */
 
-import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import { isCallRateWorkingDay, type CallRateHolidays } from "@/lib/crm/call-rate";
 
 /**
  * Worst first, and this order IS the ranking — the board sorts by the index in this list, so moving a
@@ -40,7 +40,7 @@ export const EXCEPTION_KINDS = [
   { key: "list_not_ready", label: "List still unfinished", why: "The carried-over list has been open more than 30 days." },
   { key: "plan_missing", label: "No plan this week", why: "This week has no plan at all." },
   { key: "plan_unsent", label: "Plan not sent", why: "The week is planned but has not gone for review." },
-  { key: "no_visit", label: "No visit on the last field day", why: "The last full field day has no visit on it." },
+  { key: "no_visit", label: "No visit on the last working day", why: "The last working day has no visit on it." },
   { key: "below_pm_rate", label: "Below the PM call rate", why: "PM calls a day are under the standard." },
   { key: "below_am_rate", label: "Below the AM call rate", why: "AM calls a day are under the standard." },
 ] as const;
@@ -61,13 +61,13 @@ export function exceptionWhy(kind: ExceptionKind): string {
 export const LIST_GRACE_DAYS = 30;
 
 /**
- * The call rate is read over a rolling window of FIELD days, never one day.
+ * The call rate is read over a rolling window of WORKING days, never one day.
  *
  * One bad day is a doctor who cancelled; six is a pattern. The digest (B1) looks at the single
  * previous day, deliberately — a manager reading it at 06:55 wants yesterday — and this board, which
  * he opens when he has a minute, looks at the trend. Two windows on purpose, not a disagreement.
  */
-export const RATE_WINDOW_FIELD_DAYS = 6;
+export const RATE_WINDOW_WORKING_DAYS = 6;
 
 /**
  * 🔴 `no_visit` is the one kind about a single DAY, and it only ever speaks about a day that has
@@ -78,29 +78,55 @@ export const RATE_WINDOW_FIELD_DAYS = 6;
  * which happens every single morning, not only on Fridays. Reading the last day that FINISHED fixes
  * that, and it leaves the board useful on a Friday, which is when a manager most often has a minute
  * to look back at the week. The caller resolves which day that is; this module only names the rule.
+ *
+ * 🔴 AND THE DAY IT SPEAKS ABOUT IS A WORKING DAY — Saturday to Wednesday, holidays out
+ * ({@link lastFinishedWorkingDay}). A Thursday or a public holiday holds no obligation, so there is
+ * nothing on it to be missing.
  */
 export const DAY_KINDS: ReadonlyArray<ExceptionKind> = ["no_visit"];
 
-/** Saturday…Wednesday are full field days; Thursday is a half day; Friday is off. */
-export function isFieldDay(isoDay: string): boolean {
-  return weekdayOfIsoDay(isoDay) !== 5;
+/**
+ * 🔴 A WORKING DAY IS SATURDAY TO WEDNESDAY, MINUS THE NATIONAL HOLIDAYS — the owner's own call-rate
+ * rule, and this board reads no other one.
+ *
+ * It used to exclude FRIDAY ALONE, which put Thursdays and public holidays into both halves of the
+ * call rate: the owner excluded Thursday outright on 2026-09-05 ("donot count thursday as working
+ * day") and took national holidays out of the denominator on 2026-09-02 ("if we have a national
+ * vacation in this week, then the week will be four"). With Thursday counted, a rep who had made
+ * exactly 10 PM calls on each of Saturday to Wednesday read 50 / 6 = 8.3 and was listed "Below the
+ * PM call rate" — a perfect week, reported as a failure, by the calendar rather than by the rep. A
+ * holiday Thursday such as 8 October 2026 (Armed Forces Day, moved) did it twice over.
+ *
+ * `isCallRateWorkingDay` is that rule, imported and never re-derived: the denominator on Reps List
+ * and the KPIs board is the same function, so this board can no longer disagree with them about
+ * which days a rep owed work on. `holidays` is optional only so the pure weekday half can be tested
+ * on its own; every caller on a real board passes the loaded set.
+ */
+export function isWorkingDay(isoDay: string, holidays?: CallRateHolidays): boolean {
+  return isCallRateWorkingDay(isoDay, holidays);
 }
 
 /**
- * The previous field day that has ENDED — never today, whatever day of the week today is.
+ * The previous WORKING day that has ENDED — never today, whatever day of the week today is.
  *
- * Today is excluded even when today is a field day: the rep has hours left to work it, and a board
+ * Today is excluded even when today is a working day: the rep has hours left to work it, and a board
  * that says "no visit" about a morning is a board a manager learns to ignore.
+ *
+ * 🔴 NULL WHEN THERE IS NO SUCH DAY INSIDE A MONTH, AND A NULL IS NOT A DAY. With holidays out, a
+ * long Eid plus the weekend can put several days between today and the last day anybody owed work
+ * on; a fallback to `cairoToday` would have the board judging a day that has not finished, which is
+ * the exact noise this function exists to remove. Every caller must read the null as "there is
+ * nothing to judge yet" — never as a date.
  */
-export function lastFinishedFieldDay(cairoToday: string): string {
+export function lastFinishedWorkingDay(cairoToday: string, holidays?: CallRateHolidays): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cairoToday)) return null;
   const date = new Date(`${cairoToday}T00:00:00Z`);
-  for (let back = 0; back < 10; back += 1) {
+  for (let back = 0; back < 31; back += 1) {
     date.setUTCDate(date.getUTCDate() - 1);
     const day = date.toISOString().slice(0, 10);
-    if (isFieldDay(day)) return day;
+    if (isWorkingDay(day, holidays)) return day;
   }
-  // Unreachable — Friday is the only off day, so at most two steps back is always a field day.
-  return cairoToday;
+  return null;
 }
 
 export type ExceptionRules = {
@@ -123,14 +149,27 @@ export type TerritoryFacts = {
   readiness: { total: number; validated: number; dropped: number; dropPending: number; ready: boolean } | null;
   /** This field week's plan, or null when the week has no plan header at all. */
   planStatus: "draft" | "submitted" | "approved" | "returned" | null;
+  /**
+   * The STANDING one-day return on that plan (`standingReturnedDay`), or null.
+   *
+   * 🔴 A WEEK RETURNED FOR ONE DAY IS STILL SENT ON EVERY OTHER DAY (owner, 2026-10-02, "Still
+   * planned"), so it is NOT "Plan not sent". Reading the week's bare `returned` status listed such a
+   * territory as unsent while the rep's own visits on its other days were counting as planned — the
+   * board contradicting the stamp the database had already put on his work.
+   */
+  planReturnedDay: string | null;
   /** How many customers that plan holds. A header with no items is not a plan. */
   planItems: number;
-  /** Field days in the rolling window that have finished. Zero disables both rate kinds. */
-  windowFieldDays: number;
+  /** Working days in the rolling window that have finished. Zero disables both rate kinds. */
+  windowWorkingDays: number;
   windowAmVisits: number;
   windowPmVisits: number;
-  /** Visits on `lastFinishedFieldDay`, AM and PM together — this one kind only asks "anything?". */
-  lastFieldDayVisits: number;
+  /**
+   * Visits on `lastFinishedWorkingDay`, AM and PM together — this one kind only asks "anything?".
+   * NULL when there was no finished working day to ask about, which suppresses the kind rather than
+   * reading as a zero.
+   */
+  lastWorkingDayVisits: number | null;
 };
 
 export type TerritoryException = {
@@ -200,21 +239,23 @@ export function judgeTerritory(facts: TerritoryFacts, rules: ExceptionRules): Te
   }
 
   if (facts.planStatus === null || facts.planItems === 0) return of("plan_missing", null);
-  if (facts.planStatus === "draft" || facts.planStatus === "returned") {
+  // 🔴 A week returned for ONE day is still sent on its other days, so it is not unsent (owner,
+  // 2026-10-02). Only a draft, or a week returned WHOLE, has never gone for review.
+  if (facts.planStatus === "draft" || (facts.planStatus === "returned" && facts.planReturnedDay === null)) {
     return of("plan_unsent", facts.planStatus === "returned" ? "Returned, not sent again" : "Still a draft");
   }
 
-  if (facts.lastFieldDayVisits === 0) return of("no_visit", null);
+  if (facts.lastWorkingDayVisits === 0) return of("no_visit", null);
 
   // AM and PM are judged APART and never averaged (the call-rate golden rule). PM leads because a
   // doctor list is the bigger half of the day; only ONE of the two is ever shown, so a territory
   // under both reads as the PM one and the AM figure is not lost — it is simply not the headline.
-  if (facts.windowFieldDays > 0) {
-    const pm = rate(facts.windowPmVisits, facts.windowFieldDays);
+  if (facts.windowWorkingDays > 0) {
+    const pm = rate(facts.windowPmVisits, facts.windowWorkingDays);
     if (pm < rules.callRatePmTarget) {
       return of("below_pm_rate", `${oneDecimal(pm)} a day against ${rules.callRatePmTarget}`);
     }
-    const am = rate(facts.windowAmVisits, facts.windowFieldDays);
+    const am = rate(facts.windowAmVisits, facts.windowWorkingDays);
     if (am < rules.callRateAmTarget) {
       return of("below_am_rate", `${oneDecimal(am)} a day against ${rules.callRateAmTarget}`);
     }

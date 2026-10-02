@@ -53,7 +53,7 @@ import { fieldWeekStart, isIsoDay, monthStartOf, weekdayOfIsoDay } from "@/lib/p
 import { capacityMonthsOffered } from "@/lib/phoenix-crm/capacity-board";
 import { dailyPlanPeriodProblem, type DailyPlanReportView } from "@/lib/phoenix-crm/daily-plan-report";
 import type { AdoptionStage } from "@/lib/phoenix-crm/adoption-rules";
-import type { BrickCoverageStatus } from "@/lib/phoenix-crm/brick-report";
+import { BRICK_STATUS_LABELS, type BrickCoverageStatus } from "@/lib/phoenix-crm/brick-report";
 import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import type { CustomerFrequencyRow } from "@/lib/phoenix-crm/customer-frequency";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
@@ -1157,13 +1157,23 @@ function ExceptionsSection({ idPrefix, resource }: { idPrefix: string; resource:
           </div>
         ) : null}
         <p className="mt-3 break-words text-xs font-semibold leading-5 text-slate-500">
-          {`The last full field day is ${dayLabel(report.lastFieldDay)}, and the call rate reads the ${countText(report.windowFieldDays)} field days up to it. This week's plan means the week of ${dayLabel(report.weekStart)}.`}
+          {report.lastWorkingDay === null
+            ? `No working day has finished yet, so nothing is said about any one day. Working days are Saturday to Wednesday, with the national holidays out. This week's plan means the week of ${dayLabel(report.weekStart)}.`
+            : `The last working day is ${dayLabel(report.lastWorkingDay)}, and the call rate reads the ${countText(report.windowWorkingDays)} working days up to it — Saturday to Wednesday, with the national holidays out. This week's plan means the week of ${dayLabel(report.weekStart)}.`}
         </p>
+        {/* 🔴 A failed data source must never read as a real answer. Without the holidays a public
+            holiday stays in the denominator, so a call rate reads LOW for a reason nobody performed. */}
+        {report.holidaysUnread ? (
+          <CrmNote className="mt-3" tone="warn">
+            The national holiday calendar could not be read just now, so a public holiday may still be counted as a working day and a
+            call rate may read low. Reload in a minute.
+          </CrmNote>
+        ) : null}
       </CrmBlock>
       {report.rows.length === 0 ? (
         <div className="border-t border-slate-100">
           <CrmEmpty
-            message="Every territory in your scope has a rep, a sent plan, a visit on the last field day and a call rate on target."
+            message="Every territory in your scope has a rep, a sent plan, a visit on the last working day and a call rate on target."
             title="Nothing needs you"
           />
         </div>
@@ -1223,11 +1233,15 @@ function ExceptionsSection({ idPrefix, resource }: { idPrefix: string; resource:
   );
 }
 
+/**
+ * The INK for each status. The words come from `BRICK_STATUS_LABELS` in the pure module, because the
+ * workbook needs the same sentence and it used to print the raw key (`sales-no-list`) instead.
+ */
 const BRICK_STATUS: Record<BrickCoverageStatus, { label: string; tone: PillTone; accent: string }> = {
-  "sales-no-list": { label: "Sells here, nobody on the list", tone: "bad", accent: "border-l-rose-500" },
-  "list-no-sales": { label: "On the list, no sales booked", tone: "warn", accent: "border-l-amber-500" },
-  covered: { label: "Covered", tone: "good", accent: "border-l-emerald-500" },
-  idle: { label: "Neither", tone: "neutral", accent: "border-l-slate-300" },
+  "sales-no-list": { label: BRICK_STATUS_LABELS["sales-no-list"], tone: "bad", accent: "border-l-rose-500" },
+  "list-no-sales": { label: BRICK_STATUS_LABELS["list-no-sales"], tone: "warn", accent: "border-l-amber-500" },
+  covered: { label: BRICK_STATUS_LABELS.covered, tone: "good", accent: "border-l-emerald-500" },
+  idle: { label: BRICK_STATUS_LABELS.idle, tone: "neutral", accent: "border-l-slate-300" },
 };
 
 /**

@@ -7,11 +7,11 @@ import {
   DAY_KINDS,
   EXCEPTION_KINDS,
   LIST_GRACE_DAYS,
-  RATE_WINDOW_FIELD_DAYS,
+  RATE_WINDOW_WORKING_DAYS,
   buildExceptions,
-  isFieldDay,
+  isWorkingDay,
   judgeTerritory,
-  lastFinishedFieldDay,
+  lastFinishedWorkingDay,
   type ExceptionRules,
   type TerritoryFacts,
 } from "../src/lib/phoenix-crm/exceptions.ts";
@@ -50,11 +50,12 @@ function clean(overrides: Partial<TerritoryFacts> = {}): TerritoryFacts {
     lineOpenedOn: "2026-01-01",
     readiness: { total: 12, validated: 12, dropped: 0, dropPending: 0, ready: true },
     planStatus: "submitted",
+    planReturnedDay: null,
     planItems: 20,
-    windowFieldDays: 6,
+    windowWorkingDays: 6,
     windowAmVisits: 18,
     windowPmVisits: 72,
-    lastFieldDayVisits: 9,
+    lastWorkingDayVisits: 9,
     ...overrides,
   };
 }
@@ -87,7 +88,7 @@ export function runPhoenixCrmExceptionsTests(): void {
       planItems: 0,
       windowAmVisits: 0,
       windowPmVisits: 0,
-      lastFieldDayVisits: 0,
+      lastWorkingDayVisits: 0,
     });
     const row = judgeTerritory(nobody, RULES);
     assert.equal(row?.kind, "vacant", "a vacant seat is not also blamed for having no plan");
@@ -155,11 +156,26 @@ export function runPhoenixCrmExceptionsTests(): void {
     // Sent is sent: a plan the manager has not decided yet is not the rep's problem.
     assert.equal(judgeTerritory(clean({ planStatus: "submitted" }), RULES), null);
     assert.equal(judgeTerritory(clean({ planStatus: "approved" }), RULES), null);
+
+    // 🔴 A WEEK RETURNED FOR ONE DAY IS STILL SENT ON EVERY OTHER DAY (owner, 2026-10-02, "Still
+    //    planned"), so it is NOT "Plan not sent". The board read the week's bare `returned` status
+    //    and listed such a territory as unsent — while the database was stamping that same rep's
+    //    visits on its other days as PLANNED. One screen contradicting the stamp on his own work.
+    assert.equal(
+      judgeTerritory(clean({ planStatus: "returned", planReturnedDay: "2026-09-28" }), RULES),
+      null,
+      "one day back with the rep is not a week that was never sent",
+    );
+    assert.equal(
+      judgeTerritory(clean({ planStatus: "returned", planReturnedDay: null }), RULES)?.kind,
+      "plan_unsent",
+      "a week returned WHOLE is still unsent — that half is unchanged",
+    );
   }
 
   // ── 🔴 AM and PM are judged APART and never averaged ──────────────────────────────────────────
   {
-    assert.equal(RATE_WINDOW_FIELD_DAYS, 6);
+    assert.equal(RATE_WINDOW_WORKING_DAYS, 6);
     // 72 PM over 6 days is 12 a day against 10 — on target — while AM is 18/6 = 3 against 2. Fine.
     assert.equal(judgeTerritory(clean(), RULES), null);
 
@@ -177,35 +193,69 @@ export function runPhoenixCrmExceptionsTests(): void {
     // shown per territory. Never a combined figure anywhere.
     assert.equal(judgeTerritory(clean({ windowAmVisits: 6, windowPmVisits: 6 }), RULES)?.kind, "below_pm_rate");
 
-    // A window with no finished field days in it cannot accuse anybody.
-    assert.equal(judgeTerritory(clean({ windowFieldDays: 0, windowAmVisits: 0, windowPmVisits: 0 }), RULES), null);
+    // A window with no finished working days in it cannot accuse anybody.
+    assert.equal(judgeTerritory(clean({ windowWorkingDays: 0, windowAmVisits: 0, windowPmVisits: 0 }), RULES), null);
+
+    // 🔴 AND THE DENOMINATOR IS WORKING DAYS, WHICH IS WHY THURSDAY HAD TO GO. A rep who made
+    //    exactly 10 PM calls on each of Saturday to Wednesday has a PERFECT week. Counting Friday
+    //    out but Thursday in made that week six days — 50 / 6 = 8.3 — and listed him "Below the PM
+    //    call rate". The owner excluded Thursday outright on 2026-09-05.
+    const perfectWeek = clean({ windowWorkingDays: 5, windowAmVisits: 10, windowPmVisits: 50 });
+    assert.equal(judgeTerritory(perfectWeek, RULES), null, "10 PM on each of five working days is on target, not under it");
+    assert.equal(
+      judgeTerritory({ ...perfectWeek, windowWorkingDays: 6 }, RULES)?.detail,
+      "8.3 a day against 10",
+      "and the old six-day window is exactly the figure that accused him",
+    );
   }
 
   // ── The day kind speaks only about a day that has ENDED ───────────────────────────────────────
   {
     assert.deepEqual(DAY_KINDS, ["no_visit"], "one day kind, and the rest are week or list kinds");
-    assert.equal(judgeTerritory(clean({ lastFieldDayVisits: 0 }), RULES)?.kind, "no_visit");
-    assert.equal(judgeTerritory(clean({ lastFieldDayVisits: 1 }), RULES), null, "one visit is enough — this kind asks nothing about the rate");
+    assert.equal(judgeTerritory(clean({ lastWorkingDayVisits: 0 }), RULES)?.kind, "no_visit");
+    assert.equal(judgeTerritory(clean({ lastWorkingDayVisits: 1 }), RULES), null, "one visit is enough — this kind asks nothing about the rate");
+    // 🔴 NULL IS NOT A ZERO. No finished working day means there is nothing to judge — a fallback
+    //    to today would have the board say "no visit" about a day the rep is still working.
+    assert.equal(judgeTerritory(clean({ lastWorkingDayVisits: null }), RULES), null, "no day to ask about is not a day with no visit");
 
-    // `weekdayOfIsoDay` is plain getUTCDay — 0 Sunday … 6 Saturday — so FRIDAY IS 5, and it is the
-    // only off day. The field week runs Saturday to Thursday, Thursday being the half day. Getting
-    // this backwards is easy and silent: an off-by-one here would have the board reporting "no
-    // visit" against every rep in the company on one day a week, so the real dates are named.
-    assert.equal(isFieldDay("2026-09-24"), true, "Thursday is a field day, the half one");
-    assert.equal(isFieldDay("2026-09-25"), false, "Friday is off");
-    assert.equal(isFieldDay("2026-09-26"), true, "Saturday opens the field week");
-    assert.equal(isFieldDay("2026-09-27"), true, "and Sunday is an ordinary one");
+    // 🔴 A WORKING DAY IS SATURDAY TO WEDNESDAY, HOLIDAYS OUT — the owner's own call-rate rule
+    //    (`isCallRateWorkingDay`), and this board had its own weaker one: it excluded FRIDAY ALONE.
+    //    Getting it wrong is silent and company-wide, so the real dates are named.
+    assert.equal(isWorkingDay("2026-09-23"), true, "Wednesday closes the working week");
+    assert.equal(isWorkingDay("2026-09-24"), false, "🔴 THURSDAY IS NOT A WORKING DAY (owner, 2026-09-05) — it used to read true");
+    assert.equal(isWorkingDay("2026-09-25"), false, "Friday is the weekend");
+    assert.equal(isWorkingDay("2026-09-26"), true, "Saturday opens it");
+    assert.equal(isWorkingDay("2026-09-27"), true, "and Sunday is an ordinary one");
+    // A national holiday inside Saturday-to-Wednesday comes out too (owner, 2026-09-02).
+    assert.equal(isWorkingDay("2026-09-27", new Set(["2026-09-27"])), false, "a Sat-Wed holiday is not a working day either");
+    // Thursday 8 October 2026 is Armed Forces Day, moved — and a Thursday, so doubly not one.
+    assert.equal(isWorkingDay("2026-10-08"), false, "8 October 2026 is a Thursday AND a public holiday");
 
     // 🔴 Never today, whatever day today is — the rep has hours left to work it, and a board that
     // says "no visit" about a morning is a board a manager learns to ignore. This replaces the
     // plan's blunter "a Friday suppresses the day kinds", which only caught one day in seven.
-    assert.equal(lastFinishedFieldDay("2026-09-26"), "2026-09-24", "from a Saturday, Friday is skipped");
-    assert.equal(lastFinishedFieldDay("2026-09-25"), "2026-09-24", "from a Friday, the Thursday before");
-    assert.equal(lastFinishedFieldDay("2026-09-24"), "2026-09-23", "from a Thursday, the Wednesday before");
+    assert.equal(lastFinishedWorkingDay("2026-09-26"), "2026-09-23", "from a Saturday, Friday AND Thursday are skipped");
+    assert.equal(lastFinishedWorkingDay("2026-09-25"), "2026-09-23", "from a Friday, Wednesday — never the Thursday between");
+    assert.equal(lastFinishedWorkingDay("2026-09-24"), "2026-09-23", "from a Thursday, the Wednesday before");
+    assert.equal(lastFinishedWorkingDay("2026-09-28"), "2026-09-27", "and from a Monday, simply the day before");
     for (const day of ["2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27"]) {
-      assert.notEqual(lastFinishedFieldDay(day), day, `${day}: today is never the day it reports on`);
-      assert.equal(isFieldDay(lastFinishedFieldDay(day)), true, `${day}: and it always lands on a field day`);
+      const found = lastFinishedWorkingDay(day);
+      assert.notEqual(found, day, `${day}: today is never the day it reports on`);
+      assert.equal(isWorkingDay(found as string), true, `${day}: and it always lands on a working day`);
     }
+    // With the holidays taken out it still lands on a real working day — Thursday 8 October is a
+    // holiday, 9 October a Friday, so a Saturday-10th board speaks about Wednesday the 7th.
+    const eidWeek = new Set(["2026-10-08"]);
+    assert.equal(lastFinishedWorkingDay("2026-10-10", eidWeek), "2026-10-07", "a holiday Thursday is stepped over, not judged");
+    // 🔴 And a run with no working day in it answers NULL rather than a date it had to invent.
+    const everyDayOff = new Set(
+      Array.from({ length: 40 }, (_, index) => {
+        const date = new Date("2026-10-10T00:00:00Z");
+        date.setUTCDate(date.getUTCDate() - index);
+        return date.toISOString().slice(0, 10);
+      }),
+    );
+    assert.equal(lastFinishedWorkingDay("2026-10-10", everyDayOff), null, "nothing to report on is null, never a fallback to today");
   }
 
   // ── The service: four reads, the countable view, and nothing of the integrity evidence ────────
@@ -233,6 +283,26 @@ export function runPhoenixCrmExceptionsTests(): void {
 
     // The gate is the shared predicate, not a role list, and the service refuses as well as the chip.
     assert.ok(service.includes("if (!readsTeamReports(viewer)) throw forbiddenError("), "the service is the boundary, not the chip");
+
+    // 🔴 THE HOLIDAYS COME FROM THE CALL RATE'S OWN READER AND ARE READ FIRST, because they decide
+    //    which days the window is made of. Without them a public holiday stays in the denominator
+    //    and every rep's rate reads LOW for a reason nobody performed.
+    assert.ok(service.includes("loadCallRateHolidays("), "the board reads the call rate's own holiday lookup");
+    assert.ok(service.includes("lastFinishedWorkingDay(input.cairoToday, holidays.dates)"), "and the day it judges is a working day");
+    assert.ok(service.includes("windowDays(lastDay, input.windowWorkingDays, holidays.dates)"), "as is every day of the window");
+    // 🔴 A FAILED DATA SOURCE MUST NEVER READ AS A REAL ANSWER. The lookup never throws — it
+    //    reports `complete: false` — so an unreachable calendar has to be SAID or it is invisible.
+    assert.ok(service.includes("holidaysUnread: !holidays.complete"), "an unread calendar is carried onto the view");
+    const tab = stripComments(readFileSync(new URL("../src/components/phoenix-crm/reports-tab.tsx", import.meta.url), "utf8"));
+    assert.ok(tab.includes("report.holidaysUnread"), "and the screen says so beside the rates");
+    const workbook = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/reports-workbook.ts", import.meta.url), "utf8"));
+    assert.ok(workbook.includes("view.holidaysUnread"), "and so does the workbook, which leaves the building without the screen");
+
+    // 🔴 THE PLAN'S DAY STATUS COMES FROM THE MODULE'S ONE READER, never `returned_day` raw: a week
+    //    whose edit request was acknowledged after the return is open to the rep again, and
+    //    `loadPlanDayFacts` is the only thing that knows that.
+    assert.ok(service.includes("loadPlanDayFacts(planRows, isTest)"), "the standing one-day return is read, not inferred");
+    assert.ok(service.includes("PLAN_DAY_COLUMNS"), "through the shared column list");
 
     const access = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/access.ts", import.meta.url), "utf8"));
     assert.ok(access.includes("export function readsTeamReports("), "one predicate, in access.ts");

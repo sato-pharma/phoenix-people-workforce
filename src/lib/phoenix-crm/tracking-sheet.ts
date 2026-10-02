@@ -53,13 +53,19 @@ function dayOfMonth(iso: string): string {
  * the longest gap between visits, and longer than a week. A bunched start followed by silence is
  * the pattern he described in his own words, and it is the one a manager can still act on with
  * days left in the month.
+ *
+ * 🔴 `through` IS WHERE THE MONTH HAS GOT TO, NOT WHERE IT ENDS. On a RUNNING month it is TODAY: the
+ * caller passes the earlier of the month's end and today (`reports.ts`). Handed the month's end it
+ * measured the tail against days nobody had lived yet, so on the 3rd of a month every customer read
+ * a 28-day silence and the note fired on all of them — "then not again" about a customer the rep had
+ * seen yesterday. A finished month passes its own end, which is the same thing.
  */
-export function spacingNote(days: readonly string[], monthEnd: string): string | null {
+export function spacingNote(days: readonly string[], through: string): string | null {
   if (days.length < 2) return null;
   const gaps: number[] = [];
   for (let i = 1; i < days.length; i += 1) gaps.push(daysBetween(days[i - 1] as string, days[i] as string));
   const longestGap = Math.max(...gaps);
-  const tail = daysBetween(days[days.length - 1] as string, monthEnd);
+  const tail = daysBetween(days[days.length - 1] as string, through);
   if (tail <= 7 || tail <= longestGap) return null;
   // His own wording, kept exactly: "Seen on the 5th and the 9th, then not again." The article
   // repeats before every date — the opening "Seen on the" supplies the first one, so the joins
@@ -73,9 +79,13 @@ export function spacingNote(days: readonly string[], monthEnd: string): string |
   return `Seen on the ${said}, then not again.`;
 }
 
+/**
+ * `through` is where the month has got to — TODAY on a running month, the month's end on a finished
+ * one. See {@link spacingNote}; passing the month's end for a running month is the defect it names.
+ */
 export function buildTrackingSheet(
   inputs: readonly TrackingSheetInput[],
-  monthEnd: string,
+  through: string,
   options: { managerView: boolean },
 ): TrackingSheetRow[] {
   return inputs
@@ -90,7 +100,7 @@ export function buildTrackingSheet(
         name: input.name,
         // 🔴 Gated HERE as well as by the caller. A report helper that returns the note and trusts
         //    the screen to hide it is one render away from putting a judgement on a rep's phone.
-        spacing: options.managerView ? spacingNote(days, monthEnd) : null,
+        spacing: options.managerView ? spacingNote(days, through) : null,
       };
     })
     .sort((a, b) => b.days.length - a.days.length || a.name.localeCompare(b.name));

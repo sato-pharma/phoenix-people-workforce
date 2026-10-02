@@ -15,6 +15,15 @@ import { todayPharmacies, type TodayVisit } from "@/lib/phoenix-crm/today-rules"
  * one pharmacy. `todayPharmacies` is that grouping, case-insensitive with the most recent spelling,
  * and it is reused rather than rewritten: a second copy is a second answer that will drift.
  *
+ * 🔴 AND THE HEADLINE COUNTS ONLY WHAT COUNTS IN A KPI — THE SAME BASIS AS THE CALENDAR CELL THAT
+ * OPENS THIS PAGE. It used to count every row it was handed, while `server/team-calendar.ts` counts
+ * the rows `phoenix_crm_countable_visits` and `customer_validated` agree on. So a rep's Tuesday read
+ * 3 on the grid and 5 on the page the grid links to, with nothing on either screen to say which was
+ * right — and on a team that has just started the gap is EVERY visit, because none of the
+ * carried-over customers is validated yet. `visitCountsInKpi` is the one predicate both sides now
+ * stand on, and what is held back is REPORTED (`awaitingValidation`, `awaitingApproval`) rather than
+ * quietly dropped: a visit waiting on somebody is work the rep really did.
+ *
  * 🔴 AND THE THREE STAY APART (the AM · PM · Pharmacies golden rule). Nothing here adds them.
  */
 
@@ -26,6 +35,13 @@ export type DayDetailVisit = {
   pharmacyName?: string | null;
   /** The server's own instant, unformatted — see `firstCapturedAt` for why it is not a clock here. */
   capturedAt: string;
+  /**
+   * Whether this visit is inside a KPI figure (`visitCountsInKpi`, read off the row). The headline
+   * counts only these; the list below carries every visit with its own status.
+   */
+  countsInKpi: boolean;
+  /** Whether its customer has been validated and admitted to the list. */
+  customerValidated: boolean;
 };
 
 export type DayDetailPharmacy = {
@@ -42,25 +58,53 @@ export type DayDetailPharmacy = {
    * that renders as a UTC timestamp on a screen whose every other time is Cairo.
    */
   firstCapturedAt: string;
+  /**
+   * Whether a visit that COUNTS named it — so whether this pharmacy is inside the headline figure.
+   * Every pharmacy is still listed: the feedback was really taken, and dropping it would hide work.
+   */
+  counted: boolean;
 };
 
 export type DayDetailCounts = {
   counts: VisitCountSplit;
-  /** Each pharmacy once, whatever the spelling, with where it came from. */
+  /** Each pharmacy once, whatever the spelling, with where it came from and whether it is counted. */
   pharmacies: DayDetailPharmacy[];
+  /**
+   * Visits saved on this day that are in NO figure because their customer is not validated yet. On a
+   * team that has just started that is every visit it has — a flat 0 with nothing to explain it is
+   * exactly what this number exists to prevent (`awaitingValidationNote` is the sentence).
+   */
+  awaitingValidation: number;
+  /** Off-plan visits still waiting for the manager and then SFE: in no figure either, and not refused. */
+  awaitingApproval: number;
 };
 
-/** AM and PM from the list type; pharmacies grouped by name, never counted inside either. */
-export function dayDetailCounts(visits: readonly DayDetailVisit[]): DayDetailCounts {
-  const counts = emptyVisitCountSplit();
-  const asToday: TodayVisit[] = visits.map((visit) => ({
+function asToday(entries: readonly DayDetailVisit[]): TodayVisit[] {
+  return entries.map((visit) => ({
     customerId: visit.customerId,
     doneAt: visit.capturedAt,
     listType: parseListType(visit.listType),
     name: visit.customerName,
     pharmacyName: visit.pharmacyName ?? null,
   }));
-  for (const visit of asToday) {
+}
+
+/** AM and PM from the list type; pharmacies grouped by name, never counted inside either. */
+export function dayDetailCounts(visits: readonly DayDetailVisit[]): DayDetailCounts {
+  const counts = emptyVisitCountSplit();
+
+  let awaitingValidation = 0;
+  let awaitingApproval = 0;
+  for (const visit of visits) {
+    if (visit.countsInKpi) continue;
+    // Why it is not counted, in the order the predicate asks: validation first, because a visit
+    // whose customer is unvalidated is held back whatever its approval says.
+    if (!visit.customerValidated) awaitingValidation += 1;
+    else awaitingApproval += 1;
+  }
+
+  const counting = visits.filter((visit) => visit.countsInKpi);
+  for (const visit of asToday(counting)) {
     // Through the golden rule's own helper, not an `=== "AM" ? am : pm` that files every third
     // list under the doctors. A pharmacy customer is a third list since 2026-10-02.
     const bucket = visitCountBucketForListType(visit.listType);
@@ -68,11 +112,16 @@ export function dayDetailCounts(visits: readonly DayDetailVisit[]): DayDetailCou
     else if (bucket === "PM") counts.pm += 1;
     else counts.pharmacies += 1;
   }
-  const pharmacies = todayPharmacies(asToday).map((entry) => ({
+
+  // The LIST is every pharmacy named on the day; the FIGURE is the ones a counting visit named,
+  // which is what the calendar cell counts. Two passes of the same grouping, never a second copy.
+  const countedNames = new Set(todayPharmacies(asToday(counting)).map((entry) => entry.name.toLocaleLowerCase()));
+  const pharmacies = todayPharmacies(asToday(visits)).map((entry) => ({
+    counted: countedNames.has(entry.name.toLocaleLowerCase()),
     firstCapturedAt: entry.firstAt,
     fromCustomers: entry.fromCustomers,
     name: entry.name,
   }));
-  counts.pharmacies = pharmacies.length;
-  return { counts, pharmacies };
+  counts.pharmacies = pharmacies.filter((entry) => entry.counted).length;
+  return { awaitingApproval, awaitingValidation, counts, pharmacies };
 }

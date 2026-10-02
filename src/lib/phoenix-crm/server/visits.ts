@@ -96,6 +96,7 @@ import {
   unplannedFirstStatus,
   unplannedVisitRepNote,
   unplannedVisitStatusLabel,
+  visitCountsInKpi,
   type UnplannedKind,
   type UnplannedVisitStatus,
 } from "@/lib/phoenix-crm/unplanned-rules";
@@ -237,6 +238,19 @@ export type VisitRow = {
   /** Which way the visit was off the plan, if it was: out of plan, or out of list. */
   unplannedKind: UnplannedKind | null;
   /**
+   * Whether the visit's customer has been validated and admitted to the list. False is NORMAL on a
+   * team that has just started — 0 of Delta (1)'s 1,551 carried-over customers were validated the
+   * day before it began — and the visit is saved and real either way.
+   */
+  customerValidated: boolean;
+  /**
+   * 🔴 Whether this visit is inside a KPI figure — `visitCountsInKpi`, the TypeScript twin of
+   * `phoenix_crm_countable_visits` and its `customer_validated` column. A screen reading the RAW
+   * table has no view to ask, so a count on such a screen reads this instead of counting rows: it is
+   * what keeps the day page's three figures equal to the calendar cell that opens it.
+   */
+  countsInKpi: boolean;
+  /**
    * An out-of-list visit has no approval of its own: it waits on its CUSTOMER being added to the list.
    * Where that has got to, in the rep's words. Null on every other visit.
    */
@@ -268,7 +282,9 @@ const VISIT_COLUMNS =
   "comment, pharmacy_name, product_availability, photo_path, voice_note_path, voice_note_seconds, " +
   "accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, unplanned_kind, " +
   "next_step, next_step_on, objection, objection_note, samples_given, " +
-  "customer:phoenix_crm_customers!customer_id(name, status), " +
+  // `validated_at` is the other half of "does this count" (`visitCountsInKpi`): the approval half is
+  // the embedded `unplanned` row, and a reader of the raw table has to ask for both by name.
+  "customer:phoenix_crm_customers!customer_id(name, status, validated_at), " +
   "unplanned:phoenix_crm_unplanned_visits!visit_id(status, clarification)";
 
 function visitKind(value: unknown): PhoenixCrmVisitKind {
@@ -371,6 +387,8 @@ function mapVisitRow(
     return hrId ? options.productManagerRoles?.get(hrId) ?? null : null;
   };
   const unplannedKind = row.is_unplanned === true ? (isUnplannedKind(row.unplanned_kind) ? row.unplanned_kind : "out_of_plan") : null;
+  const unplannedApproval = unplannedKind === "out_of_plan" ? visitUnplanned(row) : null;
+  const customerValidated = textOrNull(record(row.customer).validated_at) !== null;
   const enteredByAdmin = isEnteredForRep({ enteredBy: row.entered_by_hr_id, rep: row.rep_hr_id, manager: row.manager_hr_id, senior: row.senior_hr_id });
   return {
     visitId: String(row.id),
@@ -402,8 +420,17 @@ function mapVisitRow(
     ...visitLocationFor(options.sight, flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters), enteredByAdmin),
     // The phone's clock is a reading, not a distance: the Super Admin's and the SFE Manager's alone.
     clockOff: options.sight === "full" && skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
-    unplanned: unplannedKind === "out_of_plan" ? visitUnplanned(row) : null,
+    // The same value #5171 computed inline, read from the one `const` above — `countsInKpi` below
+    // needs that approval's status too, and asking `visitUnplanned(row)` twice is two answers.
+    unplanned: unplannedApproval,
     unplannedKind,
+    customerValidated,
+    countsInKpi: visitCountsInKpi({
+      isUnplanned: row.is_unplanned === true,
+      unplannedKind,
+      unplannedStatus: unplannedApproval?.status ?? null,
+      customerValidated,
+    }),
     outOfList: unplannedKind === "out_of_list" ? outOfListVisitNote(textOrNull(record(row.customer).status)) : null,
     outcome: visitOutcome(row),
     samples: describeSamples(parseSamplesGiven(row.samples_given)),
