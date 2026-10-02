@@ -2095,6 +2095,7 @@ import { runProtectedFileGuardTests } from "./protected-file-guard.test.ts";
 import { runTestRegistrationCheckTests } from "./test-registration-check.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
 import { runRollupPrsTests } from "./rollup-prs.test.ts";
+import { runRollupMemberGuardTests } from "./rollup-member-guard.test.ts";
 import { runTestsParseGuardTests } from "./tests-parse-guard.test.ts";
 import { runWaitPrTests } from "./wait-pr.test.ts";
 import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
@@ -7677,6 +7678,11 @@ await runTest(
 await runTest(
   "rollup-prs.mjs groups the open PRs into the fewest SAFE merges and writes nothing by default: two disjoint small PRs roll up, sharing one file keeps them apart (tests/run-tests.ts merges cleanly into a four-argument call), a migration or protected file or frozen path is never folded in, a SUPERSEDED bot PR does not disqualify the PR that supersedes it (which regressed on its first run), a lone small PR proposes nothing, a wide PR rides along but never forms a roll-up on its own, a PR whose REQUIRED checks are QUEUED or IN_PROGRESS stays rollable but reads as NOT settled so --apply waits for it before the branch is created and builds only from the members that finished green (measured 2026-09-30: #4896 was built over #4894 while its checks were queued, #4894 then went red, and the roll-up held the green #4895 hostage), a check that ran BEFORE the head commit is the previous commit's result and never clears the member, a gate that names nothing (an unreadable read, or an empty contexts array on a 200) can confirm nothing so --apply refuses the run, a running check is labelled in_progress rather than 'not started', and `gh pr merge` appears nowhere in the script because merging stays the owner's word",
   runRollupPrsTests,
+);
+
+await runTest(
+  "merging a roll-up MEMBER is refused mechanically (bash-guard C13), because the comment that was supposed to stop it did not: membership is read from the roll-up body through the builder own rollupMembers so the guard cannot drift from what it guards, the roll-up ITSELF is never refused, a title carrying its own issue reference is not read as a phantom member, an UNREADABLE body warns and ALLOWS (the opposite of overlappingRollup, because refusing to merge on one would block every merge in the repo while refusing to build delays one roll-up), the denial names the merge that replaces this one and the stand-down, and C13 runs INSIDE the stand-down check but BEFORE C10 since a member is the wrong merge at any size",
+  runRollupMemberGuardTests,
 );
 
 await runTest(

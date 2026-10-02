@@ -22,6 +22,12 @@
 //       per-PR secret-scan (owner, 2026-09-29), which billed a full minute on ~186 runs a day
 //       for a 23s job. Not installed = warn and ALLOW; the daily scan over main is the backstop.
 //       PHX_SECRETS_OK=1 stands it down for a finding you have read and judged a fixture.
+//   C13 a MERGE of a PR that is a MEMBER of an open roll-up — the one merge that destroys the
+//       roll-up built to replace it. AGENTS.md has said to check for an open `codex/rollup-*`
+//       first since 2026-09-30 and the three-minute window has been lost at least four times
+//       anyway, because a comment on a PR is not enforcement. It reads the roll-up's own body,
+//       which is the only place members are recorded, so nothing extra has to be marked and
+//       nothing can drift. PHX_MERGE_OK=1 stands it down.
 //   C11 a MANUAL dispatch of `synthetic-journeys` past a daily cap — the production smoke suite
 //       bills 3 minutes a run and its 6/day cadence is a cost decision already taken; on
 //       2026-09-29 it was dispatched BY HAND 19 times against 2 scheduled. Machine-wide and
@@ -1097,6 +1103,70 @@ try {
       const after = mergeText.slice(mergeText.search(/gh(?:\.exe)?\s+pr\s+merge/i));
       const prNumber = (after.match(/(?:^|\s)(\d{1,7})(?=\s|$)/) || [])[1];
       if (prNumber) {
+        // C13 — merging a PR that is a MEMBER of an open roll-up is what destroys the roll-up. It
+        // runs BEFORE C10's size check because it is the more fundamental refusal: a member is the
+        // wrong thing to merge at any size, and C10 would wave through a six-file member.
+        //
+        // 🔴 IT IS A CLAUSE RATHER THAN A NOTE BECAUSE THE NOTE DID NOT HOLD. AGENTS.md has said
+        // "check `gh pr list` for an open `codex/rollup-*` before merging anything small" since
+        // 2026-09-30, and the window has been lost at least four times anyway — three members that
+        // day (one roll-up lost both of its own within ninety seconds of being commented on), #5092
+        // merged eighteen seconds after its roll-up opened, and #5100 merged a minute and fifty-four
+        // seconds before the roll-up built to carry it. Every session had the rule loaded. The reason
+        // is structural and the rule says it itself: *a comment on a PR is not enforcement*, because
+        // the session pressing merge is reading the PR it was told to merge, not the roll-up that
+        // quietly became its owner a minute ago.
+        //
+        // NOTHING EXTRA IS MARKED. The roll-up's own body already lists its members in the fixed
+        // shape `rollupMembers()` parses — it is written by `--apply` and by nothing else. A label, a
+        // draft flip or a registry file would be a second source of truth free to drift out of step
+        // with the body; this one cannot drift, because it IS the body.
+        //
+        // FAILS OPEN in every direction: `gh` missing or offline, a body it cannot parse, the
+        // scripts absent (the hook is copied into worktrees, the modules travel with them) — all
+        // allow. A roll-up saves about 28 billable minutes; blocking a real merge on this hook's own
+        // blind spot costs more than that. An UNREADABLE roll-up body warns and allows too, which is
+        // deliberately the opposite of `overlappingRollup`'s stance on the same input: refusing to
+        // BUILD over an unreadable body delays one roll-up, while refusing to MERGE on one would
+        // block every merge in the repository until that PR is closed.
+        try {
+          const ghJson = execFileSync(
+            'gh',
+            ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,headRefName,body'],
+            {
+              cwd: input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd(),
+              encoding: 'utf8',
+              stdio: ['ignore', 'pipe', 'ignore'],
+              timeout: 20000,
+              shell: process.platform === 'win32',
+            },
+          );
+          // Dynamic, and inside this try, so a missing or broken module allows the merge instead of
+          // taking the hook down at load. The outer top-level try would catch it either way; this
+          // keeps the failure local to C13.
+          const dupUrl = new URL('../../scripts/rollup-duplicate-guard.mjs', import.meta.url).href;
+          const guardUrl = new URL('../../scripts/rollup-member-guard.mjs', import.meta.url).href;
+          const { isRollupBranch, rollupMembers } = await import(dupUrl);
+          const { rollupHolding, rollupMemberDenial, unreadableRollups } = await import(guardUrl);
+
+          const rollups = JSON.parse(String(ghJson))
+            .filter((p) => isRollupBranch(p.headRefName))
+            .map((p) => ({ number: p.number, headRefName: p.headRefName, members: rollupMembers(p.body) }));
+
+          const holding = rollupHolding({ merging: Number(prNumber), rollups });
+          if (holding) deny(rollupMemberDenial({ merging: prNumber, rollup: holding }));
+
+          for (const r of unreadableRollups(rollups)) {
+            process.stderr.write(
+              `[bash-guard] C13: roll-up #${r.number} lists no members its body can be parsed for — ` +
+                'allowing this merge rather than blocking every merge in the repo on one unreadable ' +
+                'body. Check it by hand if you built it.\n',
+            );
+          }
+        } catch {
+          // Unreachable gh, unparseable JSON, modules absent — allow. Never block on a blind spot.
+        }
+
         let changedFiles = null;
         try {
           const out = execFileSync(
