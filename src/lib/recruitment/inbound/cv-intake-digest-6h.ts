@@ -22,7 +22,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
 } from "@/emails/general-notification";
 import { sendTemplatedEmail } from "@/lib/email-templates/service";
-import { logError, logInfo } from "@/lib/observability/log";
+import { logError, logInfo, logWarning } from "@/lib/observability/log";
 
 const LOOKBACK_HOURS = 6;
 const ALWAYS_CC = "omar.anwar@satopharma.com";
@@ -253,18 +253,51 @@ export function buildCcList(
   return Array.from(new Set(cc));
 }
 
+/**
+ * A wall-clock ceiling for the per-manager send loop, and why it exists.
+ *
+ * This job went STRANDED in production on 02 Oct 2026 — the sweep read `34 job(s) checked,
+ * 1 stranded, 0 failing`, last success 12:47, nothing at all from the 18:47 fire. Not `failing`:
+ * NOTHING was written. The route pings its heartbeat AFTER this function returns, so once the
+ * handler outlives its ceiling it is torn down before either the success or the fail ping runs, and
+ * the job's own monitor cannot tell "it broke" from "it never ran".
+ *
+ * `maxDuration = 60` is not the real ceiling either — cron-job.org cuts every request at 30 seconds
+ * regardless (scripts/cronjob-sync.mjs). So the loop stops itself well inside that and reports what
+ * it got through, which turns an unreadable strand into a plain number.
+ *
+ * Deferring is safe: `idempotencyKey` is per manager per 6-hour window, so a manager skipped here is
+ * sent on the next tick without duplicating anyone already sent.
+ */
+const SEND_BUDGET_MS = 20_000;
+
 export async function sendCvIntakeDigest6h(now: Date = new Date()): Promise<{
   total: number;
   recipientCount: number;
+  deferred: number;
 }> {
+  const startedAt = Date.now();
   const batches = await loadRecentPushedCandidates(now);
-  if (batches.length === 0) return { total: 0, recipientCount: 0 };
+  if (batches.length === 0) return { total: 0, recipientCount: 0, deferred: 0 };
 
   const totalCvs = batches.reduce((sum, b) => sum + b.candidates.length, 0);
   const windowKey = `${Math.floor(now.getTime() / (LOOKBACK_HOURS * 3600 * 1000))}`;
   let sent = 0;
+  let deferred = 0;
 
-  for (const batch of batches) {
+  for (const [index, batch] of batches.entries()) {
+    if (Date.now() - startedAt > SEND_BUDGET_MS) {
+      deferred = batches.length - index;
+      logWarning("CV intake 6h digest ran out of its send budget; the rest go on the next tick", {
+        labels: {
+          event: "cv_intake_digest_6h_deferred",
+          job: "phoenix-recruitment-cv-digest",
+          sent,
+          deferred,
+        },
+      });
+      break;
+    }
     try {
       const profile = await resolveManagerProfile(batch.managerHrId);
       if (!profile) continue;
@@ -319,8 +352,9 @@ export async function sendCvIntakeDigest6h(now: Date = new Date()): Promise<{
       event: "cv_intake_digest_6h_sent",
       recipientCount: sent,
       total: totalCvs,
+      deferred,
     },
   });
 
-  return { total: totalCvs, recipientCount: sent };
+  return { total: totalCvs, recipientCount: sent, deferred };
 }

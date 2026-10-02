@@ -340,6 +340,41 @@ export async function runJobHeartbeatRegisterTests() {
   assert.equal(noRow.healthy, true, "a slug with no row yet must not page anyone");
   assert.deepEqual(noRow.awaitingBootstrap, [DAILY_0636.slug]);
   assert.equal(noRow.checked, 0);
+  assert.deepEqual(noRow.undeclared, [], "and nothing is undeclared when there are no rows at all");
+
+  // ---------------------------------------------------------------------------
+  // 9b. The OPPOSITE case: a row whose declaration was retired.
+  // ---------------------------------------------------------------------------
+  // `phoenix-interview-digest` was created 26 Sep 17:39 and retired 26 Sep 22:43 — its cron-job.org
+  // job was deleted first, so it never fired once, and the retiring commit removed its route, its
+  // lib, its cronjob-sync block, its docs row and its JOB_SCHEDULES line. What it did NOT remove was
+  // the `job_heartbeats` row, because bootstrapJobHeartbeatRows only ever inserts.
+  //
+  // Before this, such a row was INVISIBLE: assessJobHeartbeats iterates declarations, so it was
+  // never judged, never counted in `checked`, never alerted and never cleared — a NULL
+  // last_success_at sitting there for ever. It is now reported, and still not an alert, because a
+  // retired job is not a broken job.
+  const retiredSlugRow = {
+    slug: "phoenix-interview-digest",
+    first_seen_at: "2026-09-26T14:39:00.000Z",
+    last_outcome: null,
+    last_success_at: null,
+    last_fail_at: null,
+    last_detail: null,
+  };
+  const withRetired = assessJobHeartbeats({
+    declarations: [DAILY_0636],
+    now: noon,
+    rows: [retiredSlugRow],
+  });
+  assert.deepEqual(
+    withRetired.undeclared,
+    ["phoenix-interview-digest"],
+    "a row no declaration claims is reported, not skipped in silence",
+  );
+  assert.equal(withRetired.healthy, true, "but it does not page anyone — tidying is not an incident");
+  assert.equal(withRetired.stranded.length, 0, "and it is not a strand: nothing is supposed to be pinging it");
+  assert.equal(withRetired.checked, 0, "it is still not 'checked' — there is no declaration to check it against");
 
   // ---------------------------------------------------------------------------
   // 10. The write gate that keeps this suite out of the production register.
