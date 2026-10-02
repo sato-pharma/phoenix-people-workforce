@@ -11,6 +11,7 @@ import {
   AdminSectionHeader,
   AdminStatCard,
 } from "@/components/admin/admin-design-system";
+import { identitySourceLabel } from "@/lib/customer-identity/labels";
 import type {
   EvidenceBand,
   IdentityKind,
@@ -44,16 +45,6 @@ import type {
  * Clustered rather than listed flat: production holds thousands of name groups, and a flat list of
  * pairs makes him decide the same name four times over.
  */
-
-const SOURCE_LABEL: Record<string, string> = {
-  direct_order: "Direct orders",
-  ireports360: "iReports360",
-  marketing: "Marketing register",
-  phoenix_crm: "Phoenix CRM",
-  // Named for what it IS, so nobody reads it as a register that could be opened: it is a name a
-  // rep wrote on a visit, and there is no row behind it to look up.
-  visit_feedback: "Typed on a visit",
-};
 
 const BAND_LABEL: Record<EvidenceBand, string> = {
   fact: "Certain",
@@ -459,7 +450,7 @@ function Side({ pair, which }: { pair: IdentitySuggestion; which: "left" | "righ
   return (
     <span className="min-w-0 border border-l-[3px] border-slate-200 border-l-slate-300 bg-slate-50 px-3 py-2.5">
       <span className="block text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">
-        {SOURCE_LABEL[row.source] ?? row.source}
+        {identitySourceLabel(row.source)}
       </span>
       <span className="mt-1 block break-words text-sm font-black leading-5 text-slate-950" dir="auto">
         {row.name}

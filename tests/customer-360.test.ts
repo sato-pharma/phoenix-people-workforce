@@ -18,6 +18,8 @@ import {
   encodeCustomerSubjectId,
   resolveMergeTarget,
 } from "../src/lib/customer-360/subject.ts";
+import { othersOnMaster } from "../src/lib/customer-identity/suggestions.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 const UUID_A = "11111111-2222-3333-4444-555555555555";
 
@@ -268,4 +270,114 @@ export function runCustomer360Tests() {
     "b",
     "a cycle must terminate rather than loop forever",
   );
+}
+
+/**
+ * "Also known as" — the confirmed identity note Customer 360 borrows from `customer-identity`.
+ *
+ * It is one line of a page, and every rule worth having is about what it must NOT do: never show a
+ * suggestion, never show itself, never reach a viewer the picker would have bounded.
+ */
+export function runCustomer360AlsoKnownAsTests() {
+  const root = path.resolve(process.cwd());
+  const read = (relative: string) => readFileSync(path.join(root, relative), "utf8");
+
+  // ── The rule itself ───────────────────────────────────────────────────────────────────────────
+  const rows = [
+    { name: "صيدلية النور", source: "marketing", sourceId: "A" },
+    { name: "El Nour Pharmacy", source: "direct_order", sourceId: "B" },
+    { name: "A pharmacy sharing a uuid", source: "direct_order", sourceId: "A" },
+  ];
+
+  const others = othersOnMaster(rows, "marketing", "A");
+  assert.equal(others.length, 2, "the row being shown is dropped and every other row is kept");
+  assert.ok(
+    !others.some((row) => row.source === "marketing" && row.sourceId === "A"),
+    "a pharmacy must never be listed as one of its own aliases",
+  );
+  // The whole reason the comparison carries the source: the two registers are different tables.
+  assert.ok(
+    others.some((row) => row.source === "direct_order" && row.sourceId === "A"),
+    "a row in the OTHER register sharing the same uuid is a real counterpart and must survive",
+  );
+  assert.equal(
+    othersOnMaster(rows, "marketing", "  A  ").length,
+    2,
+    "a padded id is the same id — a stray space must not turn the subject into its own alias",
+  );
+  assert.equal(
+    othersOnMaster([rows[0]!], "marketing", "A").length,
+    0,
+    "a master holding only this row has no others, which is what makes the reader answer null",
+  );
+
+  // ── Nothing but a CONFIRMED link reaches the page ─────────────────────────────────────────────
+  const service = read("src/lib/customer-360/service.ts");
+  assert.match(
+    service,
+    /import \{ loadAlsoKnownAs \} from "@\/lib\/customer-identity\/server\/profile"/,
+    "the page reads confirmed links through the profile reader",
+  );
+  // The engine is what turns rows into MAYBES. A page that can reach it can print one, and a maybe
+  // printed beside hard register facts is read as settled by the next person who opens the page.
+  assert.doesNotMatch(
+    service,
+    /suggestIdentityPairs|judgePair|customer-identity\/suggestions/,
+    "Customer 360 must never reach the suggestion engine — it shows confirmed links only",
+  );
+  const reader = read("src/lib/customer-identity/server/profile.ts");
+  const slice = reader.slice(reader.indexOf("export async function loadAlsoKnownAs"));
+  const body = slice.slice(0, slice.indexOf("\n}\n") + 1);
+  assert.ok(body.length > 0 && body.length < reader.length / 3, "the reader slice must find its markers");
+  assert.match(body, /customer_identity_links/, "it answers from the confirmed links table");
+  assert.doesNotMatch(body, /suggestIdentityPairs|judgePair/, "and never from the engine");
+
+  // ── Fail closed on who may be told ────────────────────────────────────────────────────────────
+  // A master crosses territories by its nature, so naming a counterpart to an area- or
+  // region-bounded viewer prints a customer `access.ts` would never have offered him in the picker.
+  assert.match(
+    service,
+    /canSeeIdentityLinks = false/,
+    "the service defaults to telling nobody, so a caller that forgets the bound leaks nothing",
+  );
+  assert.match(
+    service,
+    /if \(canSeeIdentityLinks\) \{/,
+    "and the read happens only inside that gate",
+  );
+  const page = read("app/(admin)/customer-360/[subjectId]/page.tsx");
+  assert.match(
+    page,
+    /getCustomer360Profile\(ref, access\.role, visibility\.canViewAllSales\)/,
+    "the page passes the SAME company-scope bound the picker is filtered by, never a second answer",
+  );
+
+  // ── The absent section says nothing at all ────────────────────────────────────────────────────
+  const view = read("src/components/customer-360/customer-360-view.tsx");
+  assert.match(view, /profile\.alsoKnownAs \? \(/, "the section renders only when there is a confirmed link");
+  assert.match(view, /\) : null\}/, "and renders nothing otherwise");
+  // Not-linked and not-permitted must look identical. Wording either one announces the other:
+  // an empty state on a bounded viewer's screen tells him a link he may not see does not exist.
+  // Comments are stripped first — the rule is about what RENDERS, and the note explaining the rule
+  // quotes the very words it bans, which is how a source-text guard fails on its own documentation.
+  assert.doesNotMatch(
+    stripComments(view),
+    /No (?:other )?(?:names|records|links)|[Nn]othing linked|not linked yet/,
+    "an empty state would tell a viewer which of the two reasons applies to him",
+  );
+
+  // ── One label map, not one per screen ─────────────────────────────────────────────────────────
+  for (const file of [
+    "src/components/customer-identity/customer-links-workspace.tsx",
+    "src/components/customer-identity/customer-identity-profile.tsx",
+    "src/components/customer-360/customer-360-view.tsx",
+  ]) {
+    const source = read(file);
+    assert.match(source, /identitySourceLabel/, `${file} names a source through the shared label`);
+    assert.doesNotMatch(
+      source,
+      /const SOURCE_LABEL/,
+      `${file} must not keep its own copy — three screens naming the same five systems is how one of them drifts`,
+    );
+  }
 }

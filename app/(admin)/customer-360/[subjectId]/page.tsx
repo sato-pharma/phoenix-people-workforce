@@ -83,7 +83,10 @@ export default async function Customer360DetailPage({
     redirect("/customer-360");
   }
 
-  const profile = await getCustomer360Profile(ref, access.role);
+  // The "also known as" note crosses territories by its nature, so it is offered on the SAME
+  // company-scope bound the picker uses for its widest tier — never to an area- or region-bounded
+  // viewer, who would otherwise read the name of a pharmacy this page would never have offered him.
+  const profile = await getCustomer360Profile(ref, access.role, visibility.canViewAllSales);
   if (!profile) return <NotFound message="No customer record matches that link." />;
 
   return (

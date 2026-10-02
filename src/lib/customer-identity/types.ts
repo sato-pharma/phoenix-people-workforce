@@ -177,3 +177,32 @@ export type IdentityMasterSummary = {
   displayName: string;
   links: number;
 };
+
+/**
+ * "Also known as" — the other rows a CONFIRMED master holds, for a page that is showing one of
+ * them and would otherwise have no idea the rest exist.
+ *
+ * 🔴 CONFIRMED ONLY. A suggestion never travels in this shape, and must never be rendered through
+ * it: a maybe printed on a page a manager reads becomes a fact the moment he acts on it, and the
+ * whole design of this module is that the Super Admin decides each one by hand. The reader returns
+ * null when the row sits on no master at all, which is the normal case today.
+ *
+ * 🔴 IT IS A NOTE, NOT A JOIN. Nothing here merges two rows, moves a figure, or re-points an id:
+ * the counterpart is named so a human knows to look, exactly as the owner's treasure rule requires
+ * of a customer held on two lines.
+ */
+export type AlsoKnownAsRow = {
+  kind: IdentityKind;
+  /** True when the row has gone from its own system since it was linked. */
+  missing: boolean;
+  name: string;
+  source: IdentitySource;
+  sourceId: string;
+};
+
+export type AlsoKnownAs = {
+  displayName: string;
+  masterId: string;
+  /** Every row on the master EXCEPT the one that was asked about. Never empty when this is non-null. */
+  others: AlsoKnownAsRow[];
+};

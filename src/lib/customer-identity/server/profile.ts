@@ -1,6 +1,8 @@
+import { othersOnMaster } from "@/lib/customer-identity/suggestions";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
+  AlsoKnownAs,
   DistributorCodePair,
   EvidenceBand,
   IdentityCandidate,
@@ -353,4 +355,54 @@ export async function listIdentityMasters(limit = 100): Promise<IdentityMasterSu
     links: counts.get(String(row.id)) ?? 0,
     masterId: String(row.id),
   }));
+}
+
+/**
+ * What else one row is, for a page that is showing it and knows nothing of this module.
+ *
+ * 🔴 IT ANSWERS FROM `customer_identity_links` AND NOWHERE ELSE, so it can only ever report what a
+ * person confirmed. It never runs the engine, never calls `judgePair`, and never sees a
+ * suggestion: a borrowing page therefore cannot accidentally print a maybe as though it were
+ * settled, whatever it does with the result.
+ *
+ * 🔴 NULL IS THE ORDINARY ANSWER, AND MEANS "NOT LINKED", NEVER "NOT THE SAME". A row sitting on
+ * no master is simply a row nobody has been asked about yet — on production today that is almost
+ * all of them — and a caller that renders an empty section for it would be announcing an absence
+ * the owner never stated. Null is also returned for a master holding this row alone, which the
+ * decide path cannot create but a withdrawal could leave behind.
+ *
+ * 🔴 THE ROW ASKED ABOUT IS REMOVED FROM THE ANSWER. "Also known as" is the OTHERS; echoing the
+ * caller's own row back is how a one-link master renders as a pharmacy that is also itself.
+ */
+export async function loadAlsoKnownAs(source: IdentitySource, sourceId: string): Promise<AlsoKnownAs | null> {
+  const id = (sourceId ?? "").trim();
+  if (!id) return null;
+
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin
+    .from("customer_identity_links")
+    .select("master_id")
+    .eq("source", source)
+    .eq("source_id", id)
+    .maybeSingle();
+  // A page borrowing this must not die because the identity module had a bad day: a 360 view that
+  // renders without its "also known as" is still the page, and one that 500s is not.
+  if (error) throw new Error(`customer-identity: reading the link for ${source} failed — ${error.message}`);
+  const masterId = text((data as Row | null)?.master_id);
+  if (!masterId) return null;
+
+  const profile = await loadIdentityProfile(masterId);
+  if (!profile) return null;
+
+  const others = othersOnMaster(profile.rows, source, id)
+    .map((row) => ({
+      kind: row.kind,
+      missing: row.missing,
+      name: row.name,
+      source: row.source,
+      sourceId: row.sourceId,
+    }));
+  if (others.length === 0) return null;
+
+  return { displayName: profile.displayName, masterId: profile.masterId, others };
 }
