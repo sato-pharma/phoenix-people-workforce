@@ -9,6 +9,9 @@ import {
 } from "@/lib/communication/metrics";
 import { canViewerSeeNotification, isPersonalBellCategory, PERSONAL_BELL_CATEGORIES } from "@/lib/notifications/recipients";
 import { notificationHrefForViewerRole } from "@/lib/notifications/hrefs";
+// A LEAF of the Phoenix CRM server tree, chosen deliberately: it imports only access, db and the
+// pure rules, so the bell never ends up in a cycle with that module's own notifications file.
+import { phoenixCrmVisitIdsAwaitingDecision } from "@/lib/phoenix-crm/server/awaiting-decisions";
 import { logError } from "@/lib/observability/log";
 import { fetchVacationNotificationEnrichments } from "@/lib/vacation/notification-enrichment";
 import {
@@ -105,7 +108,10 @@ export function testNoticeVisibleToViewer(viewerTestLoginId: string | null, row:
 // one person whose turn it currently is — the rest of a fanned-out event's copies (a
 // future-stage or awareness-only recipient) are filtered out in classifyActionableApprovalCandidates
 // below using a field already present in that event's own metadata (never guessed/inferred).
-const ACTIONABLE_APPROVAL_NOTIFICATIONS: Record<string, { domain: "excuse" | "plan" | "vacation"; idField: "planId" | "requestId" }> = {
+const ACTIONABLE_APPROVAL_NOTIFICATIONS: Record<
+  string,
+  { domain: "excuse" | "phoenixCrm" | "plan" | "vacation"; idField: "planId" | "requestId" | "visitId" }
+> = {
   "excuse:request_resubmitted": { domain: "excuse", idField: "requestId" },
   "excuse:request_submitted": { domain: "excuse", idField: "requestId" },
   "vacation:next_manager_review": { domain: "vacation", idField: "requestId" },
@@ -126,6 +132,11 @@ const ACTIONABLE_APPROVAL_NOTIFICATIONS: Record<string, { domain: "excuse" | "pl
   // copy would be wrongly archived the instant it's read (HR is never "awaiting" at the
   // manager stage), before the plan ever reaches HR's real stage.
   "weekly_plans:plan_submitted": { domain: "plan", idField: "planId" },
+  // The reviewing manager's "Off-plan visit to approve" (owner, 2026-10-02: "clear the manager's
+  // off-plan notice when he approves it too"). Raised once, at the manager stage, and no longer his
+  // the moment he decides it, it moves on to SFE, or the visit is removed. There is no awareness
+  // copy to tell apart: `unplanned_visit_waiting` goes to the one reviewer and nobody else.
+  "phoenix_crm:unplanned_visit_waiting": { domain: "phoenixCrm", idField: "visitId" },
 };
 
 const VACATION_REQUEST_SUBMITTED_ACTIONABLE_STATUS = "Pending your approval";
@@ -153,7 +164,7 @@ const VACATION_REQUEST_SUBMITTED_ACTIONABLE_STATUS = "Pending your approval";
 const NOTIFICATION_STATE_CONFLICT_TARGET = "notification_event_id,hr_id";
 
 export type ApprovalCandidate = { id: string; requestId: string };
-export type ApprovalCandidatesByDomain = Record<"excuse" | "plan" | "vacation", ApprovalCandidate[]>;
+export type ApprovalCandidatesByDomain = Record<"excuse" | "phoenixCrm" | "plan" | "vacation", ApprovalCandidate[]>;
 
 /**
  * Pure classification: which raw notification rows are approver "please decide" candidates
@@ -161,7 +172,7 @@ export type ApprovalCandidatesByDomain = Record<"excuse" | "plan" | "vacation", 
  * likely to hide the wrong thing if wrong — can be unit-tested without a database.
  */
 export function classifyActionableApprovalCandidates(rows: InAppNotificationEventRow[]): ApprovalCandidatesByDomain {
-  const candidatesByDomain: ApprovalCandidatesByDomain = { excuse: [], plan: [], vacation: [] };
+  const candidatesByDomain: ApprovalCandidatesByDomain = { excuse: [], phoenixCrm: [], plan: [], vacation: [] };
 
   for (const row of rows) {
     const key = `${row.module ?? ""}:${row.event_type ?? ""}`;
@@ -224,6 +235,18 @@ async function archiveStaleApprovalNotifications(access: AccessContext, rows: In
       for (const candidate of candidatesByDomain.plan) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
     } catch {
       // fail-open — leave plan candidates visible
+    }
+  }
+
+  if (candidatesByDomain.phoenixCrm.length > 0) {
+    try {
+      // "Still HIS", not "still open" — at the SFE stage the visit is still waiting, but not on him.
+      const awaitingIds = await phoenixCrmVisitIdsAwaitingDecision(access);
+      for (const candidate of candidatesByDomain.phoenixCrm) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
+    } catch {
+      // fail-open — leave the off-plan candidates visible. A viewer who is not a Phoenix CRM user
+      // at all lands here too (resolvePhoenixCrmViewer throws), and keeping an unreadable notice is
+      // the harmless half of that trade.
     }
   }
 

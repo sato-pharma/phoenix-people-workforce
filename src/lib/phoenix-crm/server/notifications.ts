@@ -192,6 +192,12 @@ type Delivery = {
    * would bury the notices that are waiting for a decision.
    */
   inAppOnly?: boolean;
+  /**
+   * Extra metadata on the notification row. The "approve this off-plan visit" notice carries the
+   * VISIT ID here, which is how the bell knows which visit to ask about before clearing the notice —
+   * the same shape the vacation, excuse and weekly-plan notices already use (`requestId`, `planId`).
+   */
+  metadata?: Record<string, string>;
 };
 
 /**
@@ -468,6 +474,9 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
       recordId: notice.visitId,
       idempotencyKey: `${phoenixCrmVisitNoticeKeyPrefix(notice.visitId)}raised`,
       subjectHrId: notice.repHrId,
+      // What the bell asks about before clearing this notice: once the visit is no longer his to
+      // decide, the "approve it" line has done its job and goes (owner, 2026-10-02).
+      metadata: { visitId: notice.visitId },
     };
   }
 
@@ -587,7 +596,7 @@ async function deliver(notice: PhoenixCrmNotice, delivery: Delivery, isTest: boo
       {
         ...base,
         channels: phoenixCrmChannels(delivery.eventType, delivery.inAppOnly),
-        metadata: { idempotencyKey: delivery.idempotencyKey, seatId: notice.seat.seatId },
+        metadata: { ...(delivery.metadata ?? {}), idempotencyKey: delivery.idempotencyKey, seatId: notice.seat.seatId },
         ...(delivery.inAppOnly ? {} : { telegram: { ctaLabel: "Open Phoenix CRM", ctaUrl: actionUrl } }),
       },
       delivery.recipients,
@@ -608,7 +617,11 @@ async function deliver(notice: PhoenixCrmNotice, delivery: Delivery, isTest: boo
         // A DIFFERENT key from the real notice's. They share an `event_key` upsert
         // (onConflict: "event_key"), so reusing it would overwrite a real person's notification
         // row with a test one — the leak this whole path is built to avoid.
-        metadata: { idempotencyKey: `${delivery.idempotencyKey}:test:${mirror.loginId}`, seatId: notice.seat.seatId },
+        metadata: {
+          ...(delivery.metadata ?? {}),
+          idempotencyKey: `${delivery.idempotencyKey}:test:${mirror.loginId}`,
+          seatId: notice.seat.seatId,
+        },
         testLoginId: mirror.loginId,
       },
       [mirror.hrId],

@@ -90,10 +90,42 @@ export function runNotificationAutoArchiveTests() {
     assert.equal(candidates.vacation.length, 0, "missing id, missing requestId, and an unknown module must all be rejected");
   }
 
+  {
+    // Phoenix CRM's off-plan approval joins the same mechanism (owner, 2026-10-02: "clear the
+    // manager's off-plan notice when he approves it too"). It is keyed by the VISIT id. The rep's
+    // own copies of the same story — approved, refused, passed on — are NOT approver notices:
+    // auto-archiving those would clear his record of what happened to his visit.
+    const candidates = classifyActionableApprovalCandidates([
+      { id: "n13", module: "phoenix_crm", event_type: "unplanned_visit_waiting", metadata: { visitId: "VIS-1" } },
+      { id: "n14", module: "phoenix_crm", event_type: "unplanned_visit_approved", metadata: { visitId: "VIS-1" } },
+      { id: "n15", module: "phoenix_crm", event_type: "unplanned_visit_refused", metadata: { visitId: "VIS-2" } },
+      { id: "n16", module: "phoenix_crm", event_type: "unplanned_visit_moved_on", metadata: { visitId: "VIS-3" } },
+      // Every other Phoenix CRM notice stays put, the daily forecast's alert included.
+      { id: "n17", module: "phoenix_crm", event_type: "forecast_sent", metadata: { visitId: "VIS-4" } },
+      // A waiting notice with no visit id (a row written before this shipped) is left visible
+      // rather than guessed at.
+      { id: "n18", module: "phoenix_crm", event_type: "unplanned_visit_waiting", metadata: {} },
+    ]);
+    assert.deepEqual(candidates.phoenixCrm, [{ id: "n13", requestId: "VIS-1" }], "only the reviewer's waiting notice, keyed by its visit id");
+    assert.equal(candidates.vacation.length + candidates.excuse.length + candidates.plan.length, 0, "a Phoenix CRM notice never lands in another domain");
+  }
+
   // --- API + UI + workflow wiring: static source assertions (matches this repo's
   // approvals-hub.test.ts convention for locking in cross-file wiring without a live server) ---
 
   const inAppSource = readFileSync("src/lib/notifications/in-app.ts", "utf8");
+  // 🔴 "STILL HIS", NEVER "STILL OPEN": at the SFE stage the visit is still waiting, but not on
+  // him. canDecideUnplannedVisit is the single rule both the bell and the Team tab answer from.
+  const crmAwaiting = readFileSync("src/lib/phoenix-crm/server/awaiting-decisions.ts", "utf8");
+  assert.match(crmAwaiting, /canDecideUnplannedVisit\(viewer, seat, row\.is_test === true, stage\)/, "the bell asks the module's own rule whose turn it is");
+  assert.match(crmAwaiting, /\.in\("status", \["manager_pending", "sfe_pending"\]\)/, "a decided visit is not awaiting anyone");
+  assert.doesNotMatch(crmAwaiting, /@\/lib\/phoenix-crm\/server\/(notifications|unplanned)/, "it stays a leaf — importing either would close the cycle back to the bell");
+  assert.match(inAppSource, /"phoenix_crm:unplanned_visit_waiting": \{ domain: "phoenixCrm", idField: "visitId" \}/, "the off-plan approval is in the actionable allowlist");
+  assert.match(inAppSource, /const awaitingIds = await phoenixCrmVisitIdsAwaitingDecision\(access\);/, "and the bell asks Phoenix CRM, not a second copy of the rule");
+  // The visit id has to be ON the notice, or the classifier above can never key it.
+  const crmNotices = readFileSync("src/lib/phoenix-crm/server/notifications.ts", "utf8");
+  assert.match(crmNotices, /metadata: \{ visitId: notice\.visitId \},/, "the waiting notice carries its visit id");
+  assert.match(crmNotices, /metadata: \{ \.\.\.\(delivery\.metadata \?\? \{\}\), idempotencyKey: delivery\.idempotencyKey/, "and the deliverer passes it through");
   assert.match(inAppSource, /export async function archiveAllInAppNotifications/, "archiveAllInAppNotifications must be exported for the Clear All route");
   assert.match(inAppSource, /export async function archiveInAppNotification/, "archiveInAppNotification must be exported");
   assert.match(inAppSource, /archived_at: now/, "archive writes archived_at, distinct from read_at");
