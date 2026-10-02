@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { cloudMirrorDrift, cloudMirrorDriftReport, cloudMirrorSessionLines } from "../scripts/cloud-mirror-drift.mjs";
+import { readMirrorFromRef } from "../scripts/cloud-mirror-source.mjs";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -40,6 +41,7 @@ import { stripComments } from "./support/comment-strip.ts";
 
 const DOCTOR = "scripts/repo-doctor.mjs";
 const GUARD = ".claude/hooks/memory-index-guard.mjs";
+const SOURCE = "scripts/cloud-mirror-source.mjs";
 const flat = (path: string) => stripComments(readFileSync(path, "utf8")).replace(/\s+/g, " ");
 
 const m = (entries: Array<[string, string]>) => new Map(entries);
@@ -175,11 +177,11 @@ export function runCloudMirrorDriftTests() {
     /cloudMirrorSessionLines\(drift\)/.test(guard),
     `${GUARD}: it must use the SessionStart form, not repo-doctor's long report`,
   );
-  // A missing mirror is not drift and not "current" — the same under-claiming direction every other
-  // section of that hook takes.
+  // A mirror that cannot be read at all is not drift and not "current" — the same under-claiming
+  // direction every other section of that hook takes.
   assert.ok(
-    /fs\.existsSync\(mirrorDir\)/.test(guard),
-    `${GUARD}: a checkout with no mirror must be passed over, not reported either way`,
+    /mirror !== null/.test(guard),
+    `${GUARD}: an unreadable mirror must be passed over, not reported either way`,
   );
   // The owner is told as well as the session: the cost of not knowing lands on him, as a cloud run
   // that comes back having redone finished work.
@@ -187,4 +189,61 @@ export function runCloudMirrorDriftTests() {
     /mirrorDrifted > 0\)\s*\{\s*alarms\.push/.test(guard),
     `${GUARD}: drift must reach the human through systemMessage, not only the session's context`,
   );
+
+  // ── 8. BOTH READERS MEASURE `origin/main`, NOT THE WORKING TREE ──────────────────────────────
+  //
+  // 🔴 THE FALSE ALARM THIS REPLACED, MEASURED 2026-10-02: four reports of "2 files DRIFTED" in one
+  // afternoon, every one of them against files byte-identical to live memory on `origin/main`. The
+  // cause is this repo's NORMAL state rather than an edge case — `main` moves every few minutes, so a
+  // checkout is usually a commit or two behind, and reading its working tree compares live memory
+  // against a mirror already superseded. A cloud session clones `main`; the tree on disk only says
+  // what a commit from here would ship. A check that cries wolf at every session start is one people
+  // learn to skip, which costs the real alarm too.
+  for (const [file, text] of [[DOCTOR, doctor], [GUARD, guard]] as Array<[string, string]>) {
+    assert.ok(
+      text.includes("cloud-mirror-source.mjs"),
+      `${file}: must read the mirror through the shared source module, not readdirSync`,
+    );
+    assert.ok(
+      /readCloudMirror\(\{\s*root:/.test(text),
+      `${file}: must ask readCloudMirror for the copy a cloud session would clone`,
+    );
+  }
+  // The label is load-bearing, not decoration: a fallback to the working tree has to announce itself
+  // rather than passing as the real answer, and repo-doctor is where a reader sees which was used.
+  assert.ok(doctor.includes("mirror.label"), `${DOCTOR}: it must print WHICH copy was measured`);
+  // And "cannot measure" must name both sources, or a reader assumes only the disk was tried.
+  assert.ok(
+    doctor.includes("or on origin/main. Do NOT read this as clean."),
+    `${DOCTOR}: an unreadable mirror must say both sources were tried`,
+  );
+
+  const source = flat(SOURCE);
+  // One ls-tree and one cat-file --batch for the whole directory. A `git show` per file would be a
+  // process spawn per memory — over a thousand of them — which no SessionStart hook can afford.
+  assert.ok(/"ls-tree"/.test(source), `${SOURCE}: list the mirror from the tree`);
+  assert.ok(/"cat-file", "--batch"/.test(source), `${SOURCE}: read every blob in ONE batch`);
+  assert.doesNotMatch(source, /"show"/, `${SOURCE}: never a git show per file`);
+  // 🔴 It must NOT fetch. Network I/O at SessionStart slows every session and fails oddly offline;
+  // the ref being only as fresh as the last fetch is the accepted, documented trade.
+  assert.doesNotMatch(source, /"fetch"/, `${SOURCE}: a SessionStart reader must never hit the network`);
+  // An absent ref must answer null so the caller can fall back and SAY so — never an empty Map,
+  // which would read as "the mirror has no files", i.e. every memory missing from it.
+  //
+  // 🔴 PINNED BY BEHAVIOUR, NOT BY SOURCE TEXT. The first version of this assertion matched a
+  // COMMENT (`return null; // no such ref`), and `flat()` strips comments before the source read —
+  // so it failed instantly. It would have been worse had it passed: a test that matches its own
+  // explanation pins nothing. Calling the function is both shorter and real.
+  assert.equal(
+    readMirrorFromRef({ root: process.cwd(), ref: "refs/heads/no-such-branch-for-this-test" }),
+    null,
+    `${SOURCE}: an unreadable ref must answer null, never an empty mirror`,
+  );
+  // And the real ref must come back with files, or the assertion above would pass for the wrong
+  // reason — a reader that always answers null is not a reader.
+  const real = readMirrorFromRef({ root: process.cwd(), ref: "origin/main" });
+  if (real !== null) {
+    assert.ok(real.size > 500, `${SOURCE}: origin/main's mirror should hold the whole memory set`);
+    assert.ok(real.has("MEMORY.md"), `${SOURCE}: the index itself is part of what cloud reads`);
+  }
 }

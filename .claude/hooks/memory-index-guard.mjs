@@ -242,18 +242,31 @@ if (footprintDetail) {
  * and a standing "mirror is current" line would charge every request for the rest of the session to
  * say nothing.
  *
- * COST, measured on this repository 2026-10-02: 294 ms for 1,064 files on each side, nearly all of
- * it the two directory reads. It is paid once per session, and it sits inside a try so it keeps the
- * fail-open contract at the top of this file.
+ * 🔴 THE MIRROR IS READ FROM `origin/main`, NOT FROM THIS WORKING TREE, and that is the difference
+ * between a useful alarm and one that gets ignored. A cloud session clones `main`; a worktree copy
+ * only says what a commit from here would ship. Measured 2026-10-02: the working-tree read raised a
+ * FALSE alarm four times in one afternoon, every time because the checkout was a commit or two behind
+ * `main` — the normal state of this repo, where `main` moves every few minutes — while both named
+ * files were byte-identical to live memory on `origin/main`. A session reading a false "CLOUD MIRROR
+ * IS STALE" at every start learns to skip the block, which costs the real alarm too.
+ *
+ * It does NOT fetch: network I/O at SessionStart would slow every session and fail oddly offline. So
+ * the ref is as fresh as the last fetch — still strictly better than the tree, because after any
+ * fetch HEAD is an ancestor of `origin/main`. The tree stays as a fallback for a clone with no ref.
+ *
+ * COST, measured on this repository 2026-10-02: 299 ms for 1,066 files — one `ls-tree` plus one
+ * `cat-file --batch` for the whole mirror, never a `git show` per file. Paid once per session, inside
+ * a try that keeps the fail-open contract at the top of this file.
  */
 let mirrorDrifted = 0;
 try {
   const mirrorDir = path.join(projectDir, ".claude", "cloud-context", "memory-mirror");
-  // A missing mirror is NOT drift — a checkout can legitimately not carry one — and it is not
-  // "current" either. Nothing is said, which is the same under-claiming direction the sections above
-  // take; `repo-doctor` is where an unreadable mirror is reported out loud.
-  if (memoryDir !== null && fs.existsSync(mirrorDir)) {
+  // A mirror that cannot be read AT ALL is NOT drift — a checkout can legitimately not carry one —
+  // and it is not "current" either. Nothing is said, which is the same under-claiming direction the
+  // sections above take; `repo-doctor` is where an unreadable mirror is reported out loud.
+  if (memoryDir !== null) {
     const { cloudMirrorDrift, cloudMirrorSessionLines } = await import("../../scripts/cloud-mirror-drift.mjs");
+    const { readCloudMirror } = await import("../../scripts/cloud-mirror-source.mjs");
     const readMd = (dir) => {
       const out = new Map();
       for (const name of fs.readdirSync(dir)) {
@@ -262,11 +275,14 @@ try {
       }
       return out;
     };
-    const drift = cloudMirrorDrift({ live: readMd(memoryDir), mirror: readMd(mirrorDir) });
-    const lines = cloudMirrorSessionLines(drift);
-    if (lines.length > 0) {
-      mirrorDrifted = drift.drifted;
-      sections.push(lines.join("\n"));
+    const mirror = readCloudMirror({ root: projectDir, diskDir: mirrorDir });
+    if (mirror !== null) {
+      const drift = cloudMirrorDrift({ live: readMd(memoryDir), mirror: mirror.files });
+      const lines = cloudMirrorSessionLines(drift);
+      if (lines.length > 0) {
+        mirrorDrifted = drift.drifted;
+        sections.push(lines.join("\n"));
+      }
     }
   }
 } catch {
