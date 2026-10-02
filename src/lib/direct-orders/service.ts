@@ -2,6 +2,7 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 // Pure, JSX-free threshold module (it says so at the top of the file, and the plain-TS test loader
 // imports it directly) — so a server service can use it without dragging a component in.
 import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sla-thresholds";
+import { loadAlsoKnownAsBatch } from "@/lib/customer-identity/server/profile";
 import { ceoHrIds } from "@/lib/employees/role-lookup";
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import {
@@ -3518,6 +3519,16 @@ export type DirectOrderPharmacySearchHit = {
   regionName: string;
   phoenixPharmacyCode: string | null;
   verificationStatus: string | null;
+  /**
+   * What else this shop is called, where the Super Admin has CONFIRMED that two rows are one
+   * customer. Empty for every hit nobody has been asked about, which today is almost all of them.
+   *
+   * 🔴 IT IS A LABEL, NOT A FILTER. The picker offers exactly the hits it offered before, in the
+   * same order — a confirmed link adds a line of text and removes nothing. Letting it collapse
+   * two hits into one would be a merge performed by a search box, and the treasure rule puts that
+   * decision in a person's hands.
+   */
+  alsoKnownAs: string[];
 };
 
 /**
@@ -3566,7 +3577,7 @@ export async function searchDirectOrderPharmacyDirectory(
   if (error) throw error;
 
   const geoMaps = await loadDirectOrderGeoNames();
-  return ((data ?? []) as Array<Record<string, unknown>>)
+  const hits = ((data ?? []) as Array<Record<string, unknown>>)
     .map((row): DirectOrderPharmacySearchHit => {
       const areaCode = row.area_code ? String(row.area_code) : null;
       const regionCode = row.region_code ? String(row.region_code) : null;
@@ -3584,12 +3595,65 @@ export async function searchDirectOrderPharmacyDirectory(
         regionName: regionCode ? geoMaps.regionNameByCode.get(regionCode) ?? "" : "",
         phoenixPharmacyCode: row.phoenix_pharmacy_code ? String(row.phoenix_pharmacy_code) : null,
         verificationStatus: row.verification_status ? String(row.verification_status) : null,
+        alsoKnownAs: [],
       };
     })
     .filter((hit) => (hit.areaCode ? unrestricted || allowedAreaCodes.has(hit.areaCode.toUpperCase()) : unrestricted))
     // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never offered as a
     // matchable venue in the submit-form combo box, on either the directory or the Phoenix side.
     .filter((hit) => !isCertainWholesalerVenue(hit.customerName, hit.customerCode, hit.distributorCode));
+
+  return attachConfirmedAliases(hits);
+}
+
+/**
+ * Hangs the confirmed "also known as" names on the hits the picker is about to show.
+ *
+ * 🔴 IT RUNS AFTER THE FILTERS, NEVER BEFORE, so it cannot change which hits exist — a label that
+ * could alter a result set is a filter wearing a label's clothes.
+ *
+ * 🔴 IT NEVER FAILS THE SEARCH. The identity module is an annotation on this picker, not a
+ * dependency of it: a submitter typing a pharmacy name needs the list far more than he needs the
+ * footnote, so a failure here costs the footnote and nothing else.
+ *
+ * Only the Phoenix side can be linked. A directory row is a distributor's own customer record
+ * with no Phoenix pharmacy behind it, so there is no id for a master to hold — which is also why
+ * the lookup is keyed on `phoenix_pharmacy_code` rather than on the name.
+ */
+async function attachConfirmedAliases(
+  hits: DirectOrderPharmacySearchHit[],
+): Promise<DirectOrderPharmacySearchHit[]> {
+  const codes = [...new Set(hits.map((hit) => hit.phoenixPharmacyCode).filter((code): code is string => Boolean(code)))];
+  if (codes.length === 0) return hits;
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("direct_order_pharmacies")
+      .select("id, phoenix_pharmacy_code")
+      .in("phoenix_pharmacy_code", codes);
+    if (error) throw error;
+
+    const idByCode = new Map<string, string>();
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const code = String(row.phoenix_pharmacy_code ?? "").trim();
+      const id = String(row.id ?? "").trim();
+      if (code && id) idByCode.set(code, id);
+    }
+    if (idByCode.size === 0) return hits;
+
+    const aliases = await loadAlsoKnownAsBatch("direct_order", [...idByCode.values()]);
+    if (aliases.size === 0) return hits;
+
+    return hits.map((hit) => {
+      const id = hit.phoenixPharmacyCode ? idByCode.get(hit.phoenixPharmacyCode) : null;
+      const others = id ? aliases.get(id) : null;
+      if (!others || others.length === 0) return hit;
+      return { ...hit, alsoKnownAs: others.map((row) => row.name).filter(Boolean) };
+    });
+  } catch {
+    return hits;
+  }
 }
 
 export async function listDirectOrderDistributorOptions(): Promise<Array<{ distributorCode: string; distributorName: string }>> {
