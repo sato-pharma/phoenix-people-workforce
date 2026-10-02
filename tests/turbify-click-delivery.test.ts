@@ -1,153 +1,202 @@
 /**
  * Clicking the control and not the thing on top of it — what this file protects.
  *
- * 🔴 THE INCIDENT, measured on production 2026-10-02. The joiner failed to create three mailboxes
- * with `Waiting for selector input[name="emailLocal"] failed`, and that form was present the whole
- * time. The driver launched Chromium with no viewport, so puppeteer's default 800x600 applied; at
- * 600px tall Turbify's cookie banner (fixed, z-index 99999, 188px) covered everything below y=412;
- * the "Email user" button sat at y=430. `document.elementFromPoint` at the button's own centre
- * returned the BANNER, `handle.click()` clicked those coordinates, and it reported NO ERROR. The
- * modal never opened and the failure pointed at an innocent selector twenty seconds later.
+ * 🔴 TWO INCIDENTS, AND THE SECOND WAS CAUSED BY THE FIX FOR THE FIRST. Both measured on production
+ * 2026-10-02.
  *
- * So the two things asserted here are:
- *   1. an obstruction is DETECTED and the click is re-delivered on the node, which cannot land
- *      anywhere else because `resolveOne` has already matched exactly one element;
- *   2. the explicit viewport is large enough that a bottom-anchored banner does not reach the
- *      console's controls — the condition that caused the incident is gone, not merely handled.
+ * One: the driver ran at puppeteer's default 800x600 because no viewport was set. Turbify's cookie
+ * banner (fixed, z-index 99999, 188px) covered everything below y=412; the "Email user" button sat
+ * at y=430; `elementFromPoint` at its centre returned the banner; `handle.click()` clicked the
+ * banner and reported NO error. Three mailboxes failed, blaming an innocent selector.
  *
- * And one that is easy to lose: a hit test that cannot answer must NOT become a refusal. The
- * coordinate click is still the normal path; this is a diagnostic improvement on it, not a new gate.
+ * Two: that fix passed its in-page code as a STRING to `page.evaluate(expression, handle)`. A string
+ * is evaluated as an EXPRESSION, so `"(element) => {...}"` yields a function object that serialises
+ * to `{}` and is never called. The hit test returned `{}` → `isTopmost` undefined → every control
+ * read as covered; `obstruction` undefined → the log said "something with no readable text"; and the
+ * node click, also a string, clicked nothing. **Every click in the driver became a no-op.**
+ *
+ * 🔴 SO THIS FILE CALLS THE FUNCTIONS. The first fix shipped with GREEN tests that matched substrings
+ * of an expression which never executed — asserting on the source text of in-page code proves
+ * nothing about whether it runs. Every assertion below exercises real behaviour, and the only
+ * source-level checks left are the ones that cannot be expressed any other way: that the driver
+ * passes a function rather than a string.
  */
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
-  CLEAR_FIELD_EXPRESSION,
+  clearField,
+  clickNode,
   CONSOLE_VIEWPORT,
   decideClickDelivery,
-  HIT_TEST_EXPRESSION,
-  NODE_CLICK_EXPRESSION,
+  readHitTest,
   type HitTest,
 } from "../src/lib/turbify/click-delivery.ts";
 
-function runDecisionCases(): void {
-  // Nothing on top → the faithful, real-user path.
-  const clear = decideClickDelivery({ isTopmost: true, obstruction: null }, "the Email user button");
-  assert.equal(clear.via, "coordinates");
-
-  // 🔴 THE HEADLINE. The real obstruction from the incident, by name.
-  const banner: HitTest = {
-    isTopmost: false,
-    obstruction: { tag: "div", text: "We use tools, such as cookies, to enable essential services" },
+/** A stand-in for a DOM element, enough for the three functions to run against. */
+function fakeElement(options: {
+  rect?: { bottom: number; height: number; left: number; right: number; top: number; width: number };
+  tagName?: string;
+  textContent?: string;
+  value?: unknown;
+} = {}) {
+  const events: string[] = [];
+  let focused = false;
+  const el: Record<string, unknown> = {
+    click: () => { events.push("click"); },
+    contains: (other: unknown) => other === el,
+    dispatchEvent: (event: { type: string }) => { events.push(event.type); return true; },
+    events,
+    focus: () => { focused = true; },
+    getBoundingClientRect: () =>
+      options.rect ?? { bottom: 60, height: 40, left: 100, right: 220, top: 20, width: 120 },
+    tagName: options.tagName ?? "BUTTON",
+    textContent: options.textContent ?? "Email user",
+    wasFocused: () => focused,
   };
-  const covered = decideClickDelivery(banner, "the Email user button");
-  assert.equal(covered.via, "node", "a covered control must be clicked on the node, not at its coordinates");
-  assert.match(covered.via === "node" ? covered.reason : "", /covering the the Email user button|covering the Email user button/);
-  assert.match(covered.via === "node" ? covered.reason : "", /cookies/, "the reason must name what was in the way");
+  if ("value" in options) el.value = options.value;
+  return el;
+}
+
+/** Run `fn` with `document.elementFromPoint` returning `top`. */
+function withElementFromPoint<T>(top: unknown, fn: () => T): T {
+  const scope = globalThis as unknown as { document?: unknown };
+  const had = "document" in scope;
+  const previous = scope.document;
+  scope.document = { elementFromPoint: () => top };
+  try {
+    return fn();
+  } finally {
+    if (had) scope.document = previous;
+    else delete scope.document;
+  }
+}
+
+function runHitTestCases(): void {
+  // The control is topmost — the ordinary, faithful path.
+  const button = fakeElement();
+  const clear = withElementFromPoint(button, () => readHitTest(button as unknown as Element));
+  assert.equal(clear.isTopmost, true);
+  assert.equal(clear.obstruction, null);
+
+  // 🔴 THE BANNER FROM INCIDENT ONE. Something else is at the control's own centre.
+  const banner = fakeElement({
+    tagName: "DIV",
+    textContent: "We use tools, such as cookies, to enable essential services",
+  });
+  const covered = withElementFromPoint(banner, () => readHitTest(button as unknown as Element));
+  assert.equal(covered.isTopmost, false, "a covered control must be reported as covered");
+  assert.equal(covered.obstruction?.tag, "div");
+  assert.match(covered.obstruction?.text ?? "", /cookies/);
+
+  // A child of the control (a button's own <span>) counts as the control, not an obstruction.
+  const span = { contains: () => false, tagName: "SPAN", textContent: "Email user" };
+  const outer = fakeElement();
+  outer.contains = (other: unknown) => other === span;
+  assert.equal(
+    withElementFromPoint(span, () => readHitTest(outer as unknown as Element)).isTopmost, true,
+    "the control's own child is not an obstruction",
+  );
+
+  // Nothing at that point, and a zero-size element, both fall back rather than refusing.
+  assert.equal(withElementFromPoint(null, () => readHitTest(button as unknown as Element)).isTopmost, true);
+  const zero = fakeElement({ rect: { bottom: 0, height: 0, left: 0, right: 0, top: 0, width: 0 } });
+  assert.equal(withElementFromPoint(banner, () => readHitTest(zero as unknown as Element)).isTopmost, true);
+
+  // 🔴 AND IT MUST NOT THROW. In the page there is always a document, but a throw here would
+  // propagate into the middle of a provisioning run.
+  const broken = { getBoundingClientRect: () => { throw new Error("detached"); } };
+  assert.equal(readHitTest(broken as unknown as Element).isTopmost, true);
+}
+
+function runDecisionCases(): void {
+  assert.equal(
+    decideClickDelivery({ isTopmost: true, obstruction: null }, "the Email user button").via,
+    "coordinates",
+  );
+
+  const covered = decideClickDelivery(
+    { isTopmost: false, obstruction: { tag: "div", text: "We use tools, such as cookies" } },
+    "the Email user button",
+  );
+  assert.equal(covered.via, "node");
+  assert.match(covered.via === "node" ? covered.reason : "", /cookies/);
   assert.match(covered.via === "node" ? covered.reason : "", /cannot land anywhere else/);
 
-  // An obstruction with no readable text still produces a usable reason rather than an empty one.
-  const silent = decideClickDelivery({ isTopmost: false, obstruction: { tag: "div", text: "" } }, "the Save button");
-  assert.equal(silent.via, "node");
-  assert.match(silent.via === "node" ? silent.reason : "", /div/);
-  const none = decideClickDelivery({ isTopmost: false, obstruction: null }, "the Save button");
-  assert.equal(none.via, "node");
-  assert.match(none.via === "node" ? none.reason : "", /no readable text/);
+  // 🔴 THE HEADLINE FROM INCIDENT TWO. A malformed hit test must read as NOT covered, so a broken
+  // reader degrades to the ordinary click instead of sending every click down the fallback. `{}` is
+  // exactly what the string-expression bug returned, and it is what routed every click to a no-op.
+  for (const bad of [{} as HitTest, null, undefined, { isTopmost: "false" } as unknown as HitTest]) {
+    assert.equal(
+      decideClickDelivery(bad, "the Email user button").via, "coordinates",
+      `a malformed hit test (${JSON.stringify(bad)}) must not be treated as an obstruction`,
+    );
+  }
+}
+
+function runClickAndClearCases(): void {
+  // clickNode actually clicks the element it is given.
+  const element = fakeElement();
+  clickNode(element as unknown as Element);
+  assert.deepEqual(element.events, ["click"]);
+
+  // clearField empties the value and notifies a controlled field, in that order.
+  const field = fakeElement({ tagName: "INPUT", value: "adel.srour@satopharma.com" });
+  clearField(field as unknown as Element);
+  assert.equal(field.value, "", "the field must be emptied, not appended to");
+  assert.deepEqual(field.events, ["input", "change"], "a controlled React field must be notified");
+  assert.equal((field.wasFocused as () => boolean)(), true);
+
+  // Something that is not a field is left alone rather than mangled.
+  const notAField = fakeElement({ tagName: "DIV" });
+  clearField(notAField as unknown as Element);
+  assert.deepEqual(notAField.events, [], "a non-field must not receive events");
 }
 
 function runViewportCases(): void {
-  // 🔴 The condition that caused the incident: at 600px tall, a 188px bottom-anchored banner reaches
-  // y=412, and the console's buttons sit around y=430. The viewport must leave real headroom.
+  // The condition behind incident one: at 600px tall a 188px bottom banner reaches y=412, and the
+  // console's buttons sit around y=430.
   assert.equal(CONSOLE_VIEWPORT.height, 900);
   assert.equal(CONSOLE_VIEWPORT.width, 1400);
-  const BANNER_HEIGHT = 188;
-  const BUTTON_Y = 442; // measured at 1400x900 on the live console
-  assert.ok(
-    CONSOLE_VIEWPORT.height - BANNER_HEIGHT > BUTTON_Y,
-    `a ${BANNER_HEIGHT}px bottom banner must not reach y=${BUTTON_Y} at ${CONSOLE_VIEWPORT.height}px tall`,
-  );
-  // And the default that broke it would NOT pass that test, which is the whole point.
-  assert.equal(600 - BANNER_HEIGHT > BUTTON_Y, false, "puppeteer's 800x600 default is what failed");
-}
-
-function runExpressionCases(): void {
-  // The hit test must FAIL OPEN: every path that cannot answer returns isTopmost true, so a browser
-  // quirk degrades to the old behaviour rather than refusing to click.
-  assert.match(HIT_TEST_EXPRESSION, /catch\s*\{\s*return \{ isTopmost: true/);
-  assert.equal((HIT_TEST_EXPRESSION.match(/isTopmost: true/g) ?? []).length >= 4, true,
-    "every unanswerable path must fall back to the coordinate click");
-  // It must treat an element inside the control as the control — a button's own <span> is topmost.
-  assert.match(HIT_TEST_EXPRESSION, /element\.contains\(top\)/);
-  assert.match(HIT_TEST_EXPRESSION, /top\.contains\(element\)/);
-  // It reads only geometry and text; it never acts.
-  assert.doesNotMatch(HIT_TEST_EXPRESSION, /\.click\(|\.focus\(|\.submit\(/);
-  // The node click dispatches on the element, which is what makes it unable to hit anything else.
-  assert.match(NODE_CLICK_EXPRESSION, /element\.click\(\)/);
-}
-
-function runWiringCases(): void {
-  const root = new URL("../", import.meta.url);
-  const driver = readFileSync(new URL("src/lib/new-hire-mailbox/robot/turbify-joiner.ts", root), "utf8");
-
-  // 🔴 Every click goes through the hit-tested path. A bare `handle.click()` as the clickOne
-  // implementation is exactly the bug.
-  assert.match(driver, /const clickOne = \(page: ConsolePage, locator: Locator\) => clickResolved\(page, locator\)/);
-  assert.equal(
-    /const clickOne = .*handle\.click\(\)/.test(driver), false,
-    "clickOne must not click by coordinates without the hit test",
-  );
-  // The viewport is set explicitly — the default is what caused the incident.
-  assert.match(driver, /setViewport\(\{ \.\.\.CONSOLE_VIEWPORT \}\)/);
-  // And it never dismisses the consent banner: accepting cookies is not the robot's decision.
-  assert.equal(
-    /Accept All|acceptAll|accept_all/i.test(driver), false,
-    "the robot must never accept cookies on the owner's behalf",
-  );
+  const BANNER = 188;
+  const BUTTON_Y = 442;
+  assert.ok(CONSOLE_VIEWPORT.height - BANNER > BUTTON_Y, "the viewport must leave real headroom");
+  assert.equal(600 - BANNER > BUTTON_Y, false, "puppeteer's 800x600 default is what failed");
 }
 
 /**
- * Typing must not append to what the last candidate left behind.
- *
- * 🔴 Measured on production 2026-10-02: the driver reuses ONE page per run, and `handle.type()`
- * appends — so the search box held `adel.srour@satopharma.comasmaa.zaghloul@satopharma.com`, 54
- * characters of two addresses. A box in that state filters to nothing, and the "does this address
- * already exist?" test reads that result, so its answer is about a string nobody searched for. On a
- * robot that creates mailboxes, an existence check answering about the wrong string is the dangerous
- * end of this.
+ * The one thing no unit call can prove: that the DRIVER hands these to `handle.evaluate(fn)` rather
+ * than `page.evaluate(string, handle)`. That is incident two expressed as a test.
  */
-function runClearFieldCases(): void {
-  // It clears the value and tells a controlled field about it — a React input that is not notified
-  // re-renders the old value straight back.
-  assert.match(CLEAR_FIELD_EXPRESSION, /element\.value = ""/);
-  assert.match(CLEAR_FIELD_EXPRESSION, /dispatchEvent\(new Event\("input"/);
-  assert.match(CLEAR_FIELD_EXPRESSION, /bubbles: true/);
-  // It refuses to touch something that is not a field at all.
-  assert.match(CLEAR_FIELD_EXPRESSION, /"value" in element/);
-  // And it fails open: a field it cannot clear keeps the old append behaviour rather than throwing
-  // in the middle of a run.
-  assert.match(CLEAR_FIELD_EXPRESSION, /catch \{/);
-  // It never submits or clicks.
-  assert.doesNotMatch(CLEAR_FIELD_EXPRESSION, /\.click\(|\.submit\(/);
-
-  // The driver must route every fill through it.
+function runWiringCases(): void {
   const driver = readFileSync(
-    new URL("src/lib/new-hire-mailbox/robot/turbify-joiner.ts", new URL("../", import.meta.url)), "utf8");
-  assert.match(driver, /CLEAR_FIELD_EXPRESSION/, "fillOne must clear before typing");
-  // The bare append form must be gone. The source is collapsed to one line first, so this does
-  // not depend on how the file happens to be wrapped.
-  const flat = driver.replace(/\s+/g, " ");
-  assert.equal(
-    flat.includes("const fillOne = (page: ConsolePage, locator: Locator, value: string) => act(page, locator, (handle) => handle.type("),
-    false,
-    "fillOne must not type straight into a field that may already hold the last candidate's value",
+    new URL("src/lib/new-hire-mailbox/robot/turbify-joiner.ts", new URL("../", import.meta.url)),
+    "utf8",
   );
+  const flat = driver.replace(/\s+/g, " ");
+
+  assert.match(flat, /handle \.evaluate<HitTest>\(readHitTest\)|handle\.evaluate<HitTest>\(readHitTest\)/);
+  assert.match(flat, /handle\.evaluate<void>\(clickNode\)/);
+  assert.match(flat, /handle\.evaluate<void>\(clearField\)/);
+
+  // 🔴 No in-page code may be handed to page.evaluate WITH a handle — that form never runs.
+  assert.equal(
+    /page\.evaluate<[^>]*>\([A-Za-z_]+, handle\)/.test(flat), false,
+    "page.evaluate(string, handle) never binds the handle and never runs the body",
+  );
+  // Every click goes through the hit-tested path.
+  assert.match(flat, /const clickOne = \(page: ConsolePage, locator: Locator\) => clickResolved\(page, locator\)/);
+  assert.equal(/const clickOne = .*handle\.click\(\)/.test(flat), false);
+  // The viewport is explicit, and cookies are never accepted on the owner's behalf.
+  assert.match(flat, /setViewport\(\{ \.\.\.CONSOLE_VIEWPORT \}\)/);
+  assert.equal(/Accept All|acceptAll/i.test(driver), false);
 }
 
 export function runTurbifyClickDeliveryTests(): void {
-  runClearFieldCases();
+  runHitTestCases();
   runDecisionCases();
+  runClickAndClearCases();
   runViewportCases();
-  runExpressionCases();
   runWiringCases();
 }
