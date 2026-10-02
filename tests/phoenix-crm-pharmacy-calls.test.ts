@@ -142,16 +142,21 @@ export function runPhoenixCrmPharmacyCallTests(): void {
       new URL("supabase/migrations/20261002150353_phoenix_crm_pharmacy_reference.sql", ROOT),
       "utf8",
     );
-    // The EXECUTABLE body only, with its `--` comments removed: prose about the guard is welcome
-    // there, a second copy of its Arabic stems and keyword lists is what must never appear.
-    const sqlBody = (migration.split("as $$")[1] ?? "")
-      .split("$$;")[0]
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("--"))
-      .join("\n");
+    // The EXECUTABLE body only — between `as $$` and `$$;`. Nothing here strips its `--` lines: a
+    // line-wise comment filter is blind to a block comment and eats a `--` inside a string literal,
+    // which `tests/comment-strip-ratchet.test.ts` refuses outright, and it caught this very file.
+    // It is not needed either, because what this proves is MECHANISM, not vocabulary.
+    const sqlBody = (migration.split("as $$")[1] ?? "").split("$$;")[0];
     assert.ok(sqlBody.includes("crm_contact_assignments"), "the executable body was not isolated — the next assertions would pass vacuously");
-    for (const word of ["مخزن", "جملة", "makhzan", "wholesal"]) {
-      assert.ok(!sqlBody.includes(word), `the migration body must not restate the wholesaler rules (${word})`);
+
+    // A hand-rolled wholesaler rule can only be a name COMPARISON. These operators never appear in
+    // prose, so the check needs no comment stripping to be honest, and it catches the rule however
+    // it is spelt — Arabic stem, Latin keyword or a regex nobody thought to grep for.
+    for (const operator of [" like ", " ilike ", "~*", "similar to"]) {
+      assert.ok(
+        !sqlBody.toLowerCase().includes(operator),
+        `the migration body matches a name with \`${operator.trim()}\` — the wholesaler test belongs in wholesaler-venue-guard, which shares the monthly closing's own primitives; a second copy in SQL will drift from it`,
+      );
     }
   }
 
