@@ -533,6 +533,7 @@ import { runRecruitmentOfferLetterBridgeTests } from "./recruitment-offer-letter
 import { runOfferPayrollCostOfLivingAgreementTests } from "./offer-payroll-cost-of-living-agreement.test.ts";
 import { runOfferPrefillNoticeNetTests } from "./offer-prefill-notice-net.test.ts";
 import { runOfferOutOnSeatsTests } from "./offer-out-on-seats.test.ts";
+import { runAcceptedOfferAlertTests } from "./accepted-offer-alert.test.ts";
 import { runOfferHireBridgeTests } from "./offer-hire-bridge.test.ts";
 import { runOfferResendTests } from "./offer-resend.test.ts";
 import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-analytics-layout.test.ts";
@@ -3402,6 +3403,7 @@ await runTest("offer bridge (an approved ATS offer pre-fills the letter, and not
 await runTest("resend offer (the same frozen letter, a fresh key, Send's gate, on both surfaces)", runOfferResendTests);
 await runTest("the offer row: Withdraw, and an accepted letter carrying the hire to its vacant seat", runOfferHireBridgeTests);
 await runTest("the offer out on a vacant seat, and the package landing in the NET box", runOfferOutOnSeatsTests);
+await runTest("the accepted-offer alert — recipients, channels, and the accept hook", runAcceptedOfferAlertTests);
 await runTest("the offer prefill notice names the net salary it filled in", runOfferPrefillNoticeNetTests);
 await runTest("the offer and payroll cost-of-living figures mean the same money", runOfferPayrollCostOfLivingAgreementTests);
 await runTest("hiring analytics layout (desktop table, phone cards, square edges, no sideways scroll)", runRecruitmentHiringAnalyticsLayoutTests);

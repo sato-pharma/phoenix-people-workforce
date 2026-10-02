@@ -8,6 +8,7 @@ import {
 import { OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT, OFFER_DEFAULT_THEME } from "@/lib/offers/default-template";
 import { parseLetterDate } from "@/lib/offers/dates";
 import { OFFER_REFERENCE_PREFIX, nextOfferReference, offerTitleCode } from "@/lib/offers/reference";
+import { announceAcceptedOffer } from "@/lib/offers/accepted-offer-alert";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   OfferBlock,
@@ -813,7 +814,14 @@ export async function setOfferStatus(id: string, status: OfferStatus): Promise<O
   const { data, error } = await db.from("offers").update({ status }).eq("id", id).select("*").maybeSingle();
   assertReadable(error, "offers");
   if (!data) throw new OfferNotFoundError("That offer does not exist.");
-  return toOffer(data as OfferRow);
+  const offer = toOffer(data as OfferRow);
+  // An accepted offer means a candidate is ready to be seated — tell whoever hires (owner,
+  // 2026-10-02). Idempotent per offer id and swallows its own failures, so it can never block the
+  // status write; a correction that re-marks the same offer accepted does not fire a second alert.
+  if (offer.status === "accepted") {
+    await announceAcceptedOffer(offer);
+  }
+  return offer;
 }
 
 export function offerErrorMessage(error: unknown): string {
