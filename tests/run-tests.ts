@@ -915,6 +915,7 @@ import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runMailboxOffboardingRobotTests } from "./mailbox-offboarding-robot.test.ts";
 import { runNewHireMailboxRobotTests } from "./new-hire-mailbox-robot.test.ts";
 import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
+import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts";
 import { runMailboxRobotSweepHookTests } from "./mailbox-robot-sweep-hook.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
@@ -4006,6 +4007,14 @@ await runTest(
   + "Turbify would reject is refused at seal time, and an unrecorded one says so rather than "
   + "returning a blank somebody would pass on as a password)",
   runNewHireMailboxInitialPasswordStoreTests,
+);
+await runTest(
+  "new hire mailbox runner and sweep wiring (a pass with no usable company password launches NOTHING "
+  + "— not one console call — because discovering it later would leave a live mailbox on a one-time "
+  + "password nobody holds; a mailbox created but not minted is PARTIAL and records nothing, leaving "
+  + "the task open rather than claiming a mailbox Phoenix cannot read; a refused candidate never "
+  + "reaches the console; and the robot is off by default with dry run the default once enabled)",
+  runNewHireMailboxRunnerTests,
 );
 await runTest(
   "mailbox revocation robot wired to the daily sweep (off by default; dry run is the default once "

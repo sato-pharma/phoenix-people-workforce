@@ -4,6 +4,8 @@ import { runDepartedAccessSweep } from "@/lib/auth/departed-access-sweep";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { runMailboxOffboardingSweep } from "@/lib/mailbox-offboarding/sweep";
 import { runRobotSweepPass } from "@/lib/mailbox-offboarding/robot/sweep-hook";
+import { runJoinerSweepPass } from "@/lib/new-hire-mailbox/robot/sweep-hook";
+import { defaultJoinerSweepDeps } from "@/lib/new-hire-mailbox/robot/sweep-deps";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
@@ -71,6 +73,12 @@ export async function GET(request: Request) {
     // never throws (sweep-hook.ts) and its outcome does not feed the switch below — a robot that
     // could not sign in is a different question from "is a leaver holding a live mailbox?".
     const robot = await runRobotSweepPass();
+    // The joiner robot rides the same pass, for the same reason the revocation robot does: a new
+    // schedule means a new cron-job.org registration against an API that allows 100 requests a day.
+    // It is OFF by default and dry-run by default once enabled, never throws, and like its neighbour
+    // it does not feed the switch below — provisioning a new hire is a different question from "is a
+    // leaver holding a live mailbox?".
+    const joiner = await runJoinerSweepPass(defaultJoinerSweepDeps());
     // Keyed on the error COUNT, not on whether this threw. The sweep catches its own failures and
     // carries on (sweep.ts) — including the worst case, where it could not read the register at all
     // and returns errors: 1. A switch driven by throw/no-throw would call that run green, and green
@@ -81,7 +89,7 @@ export async function GET(request: Request) {
       result.errors > 0 ? "fail" : "success",
       result.errors > 0 ? `${result.errors} error(s) during the sweep` : undefined,
     );
-    return NextResponse.json({ success: true, ...result, departedAccess: access, personalMailboxes, robot });
+    return NextResponse.json({ success: true, ...result, departedAccess: access, joiner, personalMailboxes, robot });
   } catch (error) {
     await pingDeadMansSwitch(
       "phoenix-mailbox-offboarding-sweep",
