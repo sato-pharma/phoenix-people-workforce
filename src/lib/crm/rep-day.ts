@@ -494,6 +494,10 @@ async function fetchRepDayFromMirror(
     dateTo: day,
     orderBy: "check_date",
     ascending: true,
+    // The rep-day drill-down serves HR's field-workforce compliance and the National Sales Manager's team
+    // calendar — no rep reaches it, so a started Phoenix CRM team's visits count as its check-ins here
+    // (owner, 2026-10-02; src/lib/crm/phoenix-team-starts.ts lists every reader that asks).
+    includePhoenixVisits: true,
   });
   const allCheckins = checkinRows.map(checkinFromMirrorRow);
 

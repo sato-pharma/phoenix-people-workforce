@@ -30,6 +30,14 @@
  *                                          alert to the district manager when a CNS rep sends his
  *                                          daily forecast"). A re-send updates the same alert.
  *
+ *   - a rep asks for a visit with somebody (owner, 2026-10-02) → the person asked (his manager, the
+ *                                          product manager he picked, or for a chain visit his district
+ *                                          manager), and the person told: the manager above for a chain
+ *                                          visit ("both are told"), and the rep's district manager for a
+ *                                          product manager's visit — IN-APP ONLY, a courtesy he does not
+ *                                          act on. The answer tells the rep, and the person told again.
+ *                                          A cancelled ask is not announced: its notices are withdrawn.
+ *
  * A PLANNED visit tells nobody: double and chain visits count straight away, and a far visit is
  * flagged on the manager's screens rather than pushed (about 600 visits a working day). An OFF-PLAN
  * visit is the one exception (owner, 2026-09-26) — it counts in nothing until it is approved, so the
@@ -47,10 +55,11 @@ import { testAccountsMirroring } from "@/lib/auth/test-persona-directory";
 import { logError } from "@/lib/observability/log";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
 import { PLAN_EDIT_ACKNOWLEDGER_HR_ID, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
-import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { personKey, territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
+import type { VisitAskKind } from "@/lib/phoenix-crm/visit-ask-rules";
 
 export const PHOENIX_CRM_NOTIFICATION_MODULE = "phoenix_crm";
 export const PHOENIX_CRM_NOTIFICATION_CATEGORY = "phoenix_crm";
@@ -177,6 +186,23 @@ export type PhoenixCrmNotice =
       status: UnplannedVisitStatus;
       deciderHrId: string;
       note: string | null;
+    }
+  | {
+      kind: "visit_ask";
+      seat: OrgSeat;
+      askId: string;
+      askKind: VisitAskKind;
+      /** Where the ask stands after this step: just raised, or answered. A cancel is never announced. */
+      status: "waiting" | "accepted" | "declined";
+      repHrId: string;
+      askedHrId: string;
+      /** The manager above (a chain visit) or the rep's district manager (a product manager's visit). */
+      toldHrId: string | null;
+      customerName: string;
+      listType: PhoenixCrmListType;
+      wishedOn: string | null;
+      /** The day the person asked picked, once accepted. */
+      visitOn: string | null;
     };
 
 type Delivery = {
@@ -184,14 +210,16 @@ type Delivery = {
   eventType: string;
   title: string;
   message: string;
-  tab: "team" | "list" | "plan" | "visits" | "forecast";
+  /** A product manager answers an ask on the Reports page, the one page of the module he opens. */
+  tab: "team" | "list" | "plan" | "visits" | "forecast" | "reports";
   recordId: string;
   idempotencyKey: string;
   subjectHrId: string | null;
   /**
-   * In the bell and nowhere else. Only the daily forecast's alert sets it: the owner asked for an
-   * IN-APP alert, and with some 26 CNS reps sending one every working day, a Telegram ping for each
-   * would bury the notices that are waiting for a decision.
+   * In the bell and nowhere else. Two notices set it. The daily forecast's alert: the owner asked for
+   * an IN-APP alert, and with some 26 CNS reps sending one every working day, a Telegram ping for each
+   * would bury the notices that are waiting for a decision. And the courtesy a district manager gets
+   * when one of his reps asks a product manager for a visit (2026-10-02): nothing waits on him.
    */
   inAppOnly?: boolean;
   /**
@@ -313,10 +341,114 @@ async function describePlanEdit(notice: Extract<PhoenixCrmNotice, { kind: "plan_
   return deliveries;
 }
 
+/**
+ * A rep's ask for a visit with somebody (owner, 2026-10-02), raised or answered.
+ *
+ * Raised: the person asked, who answers it — on the Team tab for a manager, on Reports for a product
+ * manager — and the person told: the manager above for a chain visit ("both are told"), the rep's
+ * district manager for a product manager's visit, in the bell only, a courtesy he does not act on.
+ * Answered: the rep, whose request it is (he sees "accepted, Tue 6 Oct"), and the person told again.
+ * Each delivery has its own key, per ask and status, so a step sent twice reaches nobody twice.
+ */
+async function describeVisitAsk(notice: Extract<PhoenixCrmNotice, { kind: "visit_ask" }>): Promise<Delivery[]> {
+  const names = await loadPeopleNames([notice.repHrId, notice.askedHrId, notice.toldHrId]);
+  return visitAskDeliveries(notice, names);
+}
+
+/**
+ * The deliveries of one visit-ask step, given the people's names. Pure, so who is told of each kind and
+ * each step — and that the district manager's courtesy copy is the one in-app-only notice of an ask —
+ * is tested without a database (tests/phoenix-crm-visit-asks.test.ts).
+ */
+export function visitAskDeliveries(notice: Extract<PhoenixCrmNotice, { kind: "visit_ask" }>, names: PeopleNames): Delivery[] {
+  const territory = territoryName(notice.seat);
+  const rep = nameOf(names, notice.repHrId, "A rep");
+  const asked = nameOf(names, notice.askedHrId, "The person asked");
+  const told = notice.toldHrId ? nameOf(names, notice.toldHrId, "the manager above") : null;
+  const customer = `${notice.customerName} (${notice.listType})`;
+  // Read as booleans first, so the eventType lines below carry event NAMES and nothing else.
+  const chain = notice.askKind === "chain";
+  const productManager = notice.askKind === "product_manager";
+  const raised = notice.status === "waiting";
+  const accepted = notice.status === "accepted";
+  const key = `${phoenixCrmVisitAskNoticeKeyPrefix(notice.askId)}${notice.status}`;
+  const base = { recordId: notice.askId, subjectHrId: notice.repHrId };
+  const day = accepted && notice.visitOn ? formatPhoenixLongDate(notice.visitOn) : "the day agreed";
+  const deliveries: Delivery[] = [];
+
+  if (raised) {
+    const wish = notice.wishedOn ? `He would like ${formatPhoenixLongDate(notice.wishedOn)}.` : "Any day suits him.";
+    const what = chain
+      ? `a chain visit to ${customer} on ${territory}: you, ${told ?? "the manager above"} and him`
+      : productManager
+        ? `a visit with you to ${customer} on ${territory}`
+        : `a double visit with you to ${customer} on ${territory}`;
+    deliveries.push({
+      ...base,
+      recipients: [notice.askedHrId],
+      eventType: "visit_ask_waiting",
+      title: `Visit asked of you: ${notice.customerName}`,
+      message: `${rep} asks for ${what}. ${wish} Accept it and pick the day, or decline it, in Phoenix CRM.`,
+      tab: productManager ? "reports" : "team",
+      idempotencyKey: `${key}:asked`,
+    });
+  } else {
+    const visitWords = chain ? "chain visit" : productManager ? "visit" : "double visit";
+    deliveries.push({
+      ...base,
+      recipients: [notice.repHrId],
+      eventType: accepted ? "visit_ask_accepted" : "visit_ask_declined",
+      title: accepted ? `Visit accepted: ${notice.customerName}` : `Visit declined: ${notice.customerName}`,
+      message: accepted
+        ? `${asked} accepted your ${visitWords} to ${customer}. The visit is on ${day}.${chain && told ? ` ${told} is told too.` : ""}`
+        : `${asked} declined your ${visitWords} to ${customer}.`,
+      tab: "list",
+      idempotencyKey: `${key}:rep`,
+    });
+  }
+
+  // The person told: the manager above for a chain visit, the rep's district manager for a product
+  // manager's. A double visit tells nobody else.
+  if (notice.toldHrId && (chain || productManager)) {
+    const title = raised
+      ? `${chain ? "Chain visit" : "Product manager visit"} asked: ${notice.customerName}`
+      : `${chain ? "Chain visit" : "Product manager visit"} ${accepted ? "accepted" : "declined"}: ${notice.customerName}`;
+    const message = raised
+      ? chain
+        ? `${rep} asks ${asked} and you for a chain visit to ${customer} on ${territory}. ${asked} picks the day, and you are told when it is answered.`
+        : // The VISIT is named, never a title for the person asked: on CNS he is the Marketing Manager.
+          `${rep} asked ${asked} for a product manager visit to ${customer} on ${territory}. You are told when it is answered.`
+      : accepted
+        ? `${asked} accepted ${rep}'s ${chain ? "chain visit" : "visit"} to ${customer} on ${territory}. The visit is on ${day}${chain ? ", and you are on it too." : "."}`
+        : `${asked} declined ${rep}'s ${chain ? "chain visit" : "visit"} to ${customer} on ${territory}.`;
+    const toldDelivery: Delivery = {
+      ...base,
+      recipients: [notice.toldHrId],
+      eventType: raised ? "visit_ask_told" : accepted ? "visit_ask_accepted" : "visit_ask_declined",
+      title,
+      message,
+      tab: "team",
+      idempotencyKey: `${key}:told`,
+    };
+    deliveries.push(
+      productManager
+        ? {
+            ...toldDelivery,
+            // The rep's district manager hears of his rep's product manager visit in the bell and
+            // nowhere else (owner's brief, 2026-10-02: "told (in-app)"): nothing waits on him.
+            inAppOnly: true,
+          }
+        : toldDelivery,
+    );
+  }
+  return deliveries;
+}
+
 async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[] | null> {
   const territory = territoryName(notice.seat);
 
   if (notice.kind === "plan_edit") return describePlanEdit(notice);
+  if (notice.kind === "visit_ask") return describeVisitAsk(notice);
 
   if (notice.kind === "request_created") {
     const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
@@ -586,6 +718,31 @@ export async function withdrawPhoenixCrmVisitNotices(
   } catch (error) {
     logError("Phoenix CRM notice withdrawal failed", {
       labels: { event: "phoenix_crm_notice_withdraw_failed", visitId },
+      error,
+    });
+  }
+}
+
+/** Every notice ever raised about one visit ask — each step, each person, and the test-world copies. */
+export function phoenixCrmVisitAskNoticeKeyPrefix(askId: string): string {
+  return `phoenix_crm:visit_ask:${askId}:`;
+}
+
+/**
+ * Take back the notices of an ask that no longer waits on anybody: the whole ask when the rep cancels it
+ * (a cancel is never announced — the to-do simply goes), and its "waiting" step once it is answered, so
+ * the person asked is not left with an "accept or decline" line he has already acted on (the same rule
+ * the off-plan visit's notice follows, owner, 2026-10-02).
+ *
+ * Never throws, exactly like `notifyPhoenixCrm`: a notice that cannot be withdrawn must not undo the
+ * answer or the cancel that has already happened in the database.
+ */
+export async function withdrawPhoenixCrmVisitAskNotices(askId: string, step: "waiting" | null = null): Promise<void> {
+  try {
+    await withdrawInAppNotificationsByEventKeyPrefix(`${phoenixCrmVisitAskNoticeKeyPrefix(askId)}${step ?? ""}`);
+  } catch (error) {
+    logError("Phoenix CRM visit ask notice withdrawal failed", {
+      labels: { event: "phoenix_crm_visit_ask_withdraw_failed", askId },
       error,
     });
   }

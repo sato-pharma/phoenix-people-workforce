@@ -65,6 +65,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   crm_account_setup: true,
   crm_contact_list_sync: true,
   crm_master_export: true,
+  crm_phoenix_team_start: true,
   crm_plan_sync: true,
   crm_plan_verification: true,
   cron_job_control: true,

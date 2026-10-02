@@ -7,6 +7,11 @@
 // Every visit count below is AM · PM · Pharmacies, three figures apart: a pharmacy visit is never
 // counted in pmVisits (or amVisits), whatever period the CRM tagged it with — THE AM · PM ·
 // PHARMACIES GOLDEN RULE, decided in src/lib/crm/visit-count-buckets.ts.
+//
+// `phoenixVisits` / `phoenixVisitCount` / `fromPhoenix` mark a started team's Phoenix CRM double
+// visits. Phoenix CRM logs no pharmacy visit, so a pharmacy figure built from them is printed through
+// that helper — "not recorded in Phoenix", never 0. Optional everywhere: absent means none, and a
+// payload from before they existed reads exactly as it did.
 
 import type { VisitCountBucket } from "@/lib/crm/visit-count-buckets";
 
@@ -31,6 +36,8 @@ export type DoubleVisitKpis = {
   doubleVisitorCount: number;
   mrCoverageCount: number;
   pharmacyVisitCount: number;
+  /** Of the AM · PM · Pharmacies visits, Phoenix CRM's own — see the note at the top. */
+  phoenixVisitCount?: number;
   pmVisitCount: number;
   totalVisits: number;
   vacantOrUnmappedShare: number;
@@ -91,6 +98,8 @@ export type DoubleVisitLogEntry = {
   date: string;
   doubleVisitorHrId: string | null;
   doubleVisitorName: string | null;
+  /** A Phoenix CRM double visit — see the note at the top. */
+  fromPhoenix?: boolean;
   period: DoubleVisitPeriod;
   visitCount: number;
   visitedHrId: string | null;
@@ -121,6 +130,8 @@ export type DoubleVisitManagerSummary = {
   neglectedMrCount: number | null;
   overFocusedMrCount: number;
   pharmacyVisits: number;
+  /** Of the AM · PM · Pharmacies visits, Phoenix CRM's own — see the note at the top. */
+  phoenixVisits?: number;
   pmVisits: number;
   role: string | null;
   roleCode: DoubleVisitRoleCode | null;
@@ -136,6 +147,8 @@ export type DoubleVisitRoleRollup = {
   distinctMrs: number;
   neglectedMrCount: number | null;
   pharmacyVisits: number;
+  /** Of the AM · PM · Pharmacies visits, Phoenix CRM's own — see the note at the top. */
+  phoenixVisits?: number;
   pmVisits: number;
   roleCode: DoubleVisitRoleCode;
   roleLabel: string;
@@ -239,6 +252,8 @@ export type DoubleVisitTrendPoint = {
   amVisits: number;
   distinctMrs: number;
   pharmacyVisits: number;
+  /** Of the AM · PM · Pharmacies visits, Phoenix CRM's own — see the note at the top. */
+  phoenixVisits?: number;
   pmVisits: number;
   totalDvs: number;
   weekStart: string;
@@ -374,6 +389,8 @@ export type DoubleVisitReportRow = {
   /** The figure this row counts in; null when the CRM recorded no period. Absent on an older payload. */
   countBucket?: VisitCountBucket | null;
   daysSinceVisitedHire: number | null;
+  /** A Phoenix CRM double visit — see the note at the top. */
+  fromPhoenix?: boolean;
   doubleVisitorHrId: string | null;
   doubleVisitorName: string | null;
   /** The double-visitor's job title / role label (e.g. "District Manager"), resolved via

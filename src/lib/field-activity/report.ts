@@ -38,9 +38,10 @@ import type { FieldActivityPanels } from "@/lib/field-activity/access";
 /** PostgREST folds `.in()` into the URL; a few hundred ids overflow the header limit. */
 const IN_CHUNK = 80;
 
+// `source` marks a started team's Phoenix CRM visit, which logs no pharmacy (visit-count-buckets.ts).
 const VISIT_COLUMNS =
   "visit_date, agent_hr_id, agent_name, agent_crm_id, double_hr_id, double_name, contact_crm_id, " +
-  "contact_name, speciality, crm_contact_grade, ampm, visit_type, visit_type_description, comment, crm_save_date";
+  "contact_name, speciality, crm_contact_grade, ampm, visit_type, visit_type_description, comment, crm_save_date, source";
 
 /**
  * What the CRM door hands back. The door has already resolved the union that `rowsOf` below exists
@@ -91,6 +92,7 @@ function toVisitRow(row: Record<string, unknown>): FieldActivityVisitRow {
     visitTypeDescription: (row.visit_type_description as string | null) ?? null,
     comment: (row.comment as string | null) ?? null,
     savedAt: (row.crm_save_date as string | null) ?? null,
+    source: (row.source as string | null) ?? null,
   };
 }
 
@@ -168,6 +170,10 @@ export async function loadFieldActivityReport(input: {
         dateFrom: fromIso,
         dateTo: toIso,
         includeResignedAgents: true,
+        // Field Activity needs double_visit_analytics, which no Medical Rep holds — no rep reaches it, so a
+        // started Phoenix CRM team's visits count as its check-ins here (owner, 2026-10-02;
+        // src/lib/crm/phoenix-team-starts.ts lists every reader that asks).
+        includePhoenixVisits: true,
       });
       for (const record of checkinRows) {
         checkins.push({

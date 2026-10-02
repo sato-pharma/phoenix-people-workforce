@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { logError } from "@/lib/observability/log";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { CRM_PLAN_ENTRIES_UNIFIED_VIEW } from "@/lib/crm/tables";
+import { IREPORTS360_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts";
 import { readContactVisitHistory, type CrmContactVisitHistory } from "@/lib/crm/reads";
 import { averageCheckinPoint, type ObservedPoint } from "@/lib/crm/checkin-location";
 
@@ -51,6 +52,9 @@ export async function loadPlanDatesFor(contactCrmIds: readonly number[], fromIso
       const { data, error } = await supabase
         .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
         .select("contact_crm_id, plan_date")
+        // The iReports360 REFERENCE plans only: since 2026-10-02 the view also carries a started team's
+        // own Phoenix plans (crm/phoenix-team-starts.ts), and those are his, already on his screen.
+        .eq("source", IREPORTS360_VISIT_SOURCE)
         .in("contact_crm_id", chunk)
         .not("plan_date", "is", null)
         .gte("plan_date", fromIsoDay)

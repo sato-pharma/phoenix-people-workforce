@@ -106,6 +106,13 @@ const REFUSALS: Record<string, Refusal> = {
   double_visit_day_passed: { status: 409, message: "This day has passed, so its double visits stay as they were planned. Reload the page." },
   double_visit_week_ahead: { status: 409, message: "Double visits are planned for this week and the coming week. Reload the page." },
   double_visit_changed: { status: 409, message: "This half-day was changed on another screen. Reload the page and choose again." },
+  // A rep's ask for a visit with somebody (owner, 2026-10-02): raised, answered, taken back.
+  visit_ask_not_on_list: { status: 409, message: "This customer is not on your list, so a visit cannot be asked for yet. Ask once the customer is on it." },
+  visit_ask_already_open: { status: 409, message: "You already asked for this visit. Its answer shows on this customer's page." },
+  visit_ask_not_found: { status: 404, message: "This ask is no longer there. Reload the page." },
+  visit_ask_answered: { status: 409, message: "This ask was already answered. Reload the page." },
+  visit_ask_cancelled: { status: 409, message: "The rep cancelled this ask. Reload the page." },
+  visit_ask_bad_day: { status: 409, message: "Choose one of the days offered: today or a field day in the next four weeks, never a Friday. Reload the page." },
 };
 
 function messageOf(error: unknown): string {

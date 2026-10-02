@@ -11,6 +11,7 @@ import { CrmAccountSetupPanel } from "@/components/crm/crm-account-setup-panel";
 import { CrmRecoveredChainsPanel } from "@/components/crm/crm-recovered-chains-panel";
 import { CrmRegionMappingPanel } from "@/components/crm/crm-region-mapping-panel";
 import { CrmCustomerMappingPanel } from "@/components/crm/crm-customer-mapping-panel";
+import { CrmPhoenixTeamStartsPanel } from "@/components/crm/crm-phoenix-team-starts-panel";
 import { getCrmMasterData, type CrmMasterAmpm, type CrmMasterDataset, type CrmMasterMappingStatus } from "@/lib/crm/master";
 import { CRM_SCOPE_ALL } from "@/lib/crm/viewer-scope";
 import { getCrmMappingEmployeeOptions, getLatestVisitsSyncRuns, getUnmappedCrmIdentities } from "@/lib/crm/admin";
@@ -19,6 +20,8 @@ import { getCrmAccountSetupQueue } from "@/lib/crm/account-setup";
 import { getCrmCustomerMappingPunchList } from "@/lib/crm/customer-brick";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getCrmCutoverSetting } from "@/lib/crm/cutover";
+import { loadPhoenixTeamStartsPanel } from "@/lib/crm/phoenix-team-starts-server";
+import { logError } from "@/lib/observability/log";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -184,9 +187,20 @@ export default async function CrmHubPage({
 
   // THE CRM CUTOVER. Once iReports360 is retired the sync panel says so and offers no backfill (the
   // route would answer 409). An unreadable setting leaves the panel exactly as it was.
-  const vendorSyncRetiredAt = await getCrmCutoverSetting()
-    .then((setting) => setting.vendorSyncRetiredAt)
-    .catch(() => null);
+  // Beside it, the teams every other screen counts from Phoenix CRM (owner, 2026-10-02) — read in the
+  // same breath, and an unreadable list says so in its own panel rather than failing the page.
+  const [vendorSyncRetiredAt, phoenixTeamStarts] = await Promise.all([
+    getCrmCutoverSetting()
+      .then((setting) => setting.vendorSyncRetiredAt)
+      .catch(() => null),
+    loadPhoenixTeamStartsPanel().catch((error: unknown) => {
+      logError("Phoenix CRM team start dates unreadable on the CRM hub", {
+        error,
+        labels: { event: "phoenix_crm_team_starts_unreadable" },
+      });
+      return null;
+    }),
+  ]);
 
   return (
     <div className="space-y-5">
@@ -224,6 +238,8 @@ export default async function CrmHubPage({
         latestSyncRuns={syncPanel.latestSyncRuns}
         retiredAt={vendorSyncRetiredAt}
       />
+
+      <CrmPhoenixTeamStartsPanel data={phoenixTeamStarts} />
 
       <CrmTabBar active={activeTab} />
 

@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
+import { PHARMACY_CELL_FOOTNOTE, pharmacyCellNote, pharmacyCellValue } from "@/lib/crm/visit-count-buckets";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import type { PrivateCalendarEmployeeOption, PrivateCalendarSeverity, PrivateCalendarWorkspace } from "@/lib/private-calendar/logic";
 import { privateCalendarItemOccursOn, privateCalendarSourceLabels } from "@/lib/private-calendar/logic";
@@ -344,15 +345,30 @@ export async function buildPrivateCalendarWorkbook(
     ...privateCalendarVisitKinds.map((kind) => ({ label: privateCalendarActivityKindLabels[kind], split: visitSummary[kind], total: false })),
     { label: "ALL VISITS", split: visitSummary.all, total: true },
   ];
+  // A Phoenix CRM visit logs no pharmacy, so its pharmacy cell is BLANK, never 0, and says so in its
+  // note; beside iReports360 visits the figure is the vendor's alone, noted the same way.
+  let pharmacyNoted = false;
   visitRows.forEach(({ label, split, total }) => {
-    const row = wsSum.addRow([label, split.am, split.pm, split.pharmacies]);
+    const row = wsSum.addRow([label, split.am, split.pm, pharmacyCellValue(split)]);
     row.height = 18;
-    row.eachCell((c) => {
+    row.eachCell({ includeEmpty: true }, (c) => {
       c.font = total ? { bold: true, size: 9, color: { argb: X.slate900 } } : { size: 9, color: { argb: X.slate700 } };
       c.alignment = { vertical: "middle", indent: 1 };
       c.border = thinGrid();
     });
+    const note = pharmacyCellNote(split);
+    if (note) {
+      row.getCell(4).note = note;
+      pharmacyNoted = true;
+    }
   });
+  if (pharmacyNoted) {
+    const footnote = wsSum.addRow([PHARMACY_CELL_FOOTNOTE]);
+    wsSum.mergeCells(footnote.number, 1, footnote.number, 4);
+    footnote.height = 64;
+    footnote.getCell(1).font = { italic: true, size: 8, color: { argb: X.slate500 } };
+    footnote.getCell(1).alignment = { vertical: "top", wrapText: true, indent: 1 };
+  }
 
   return wb.xlsx.writeBuffer();
 }

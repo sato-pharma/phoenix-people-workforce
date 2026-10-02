@@ -1680,6 +1680,7 @@ import { runPhoenixCrmPlanSuggestTests } from "./phoenix-crm-plan-suggest.test.t
 import { runPhoenixCrmPlanInsightTests } from "./phoenix-crm-plan-insight.test.ts";
 import { runCustomerIdentitySuggestionTests } from "./customer-identity-suggestions.test.ts";
 import { runPhoenixCrmWave2ReportTests } from "./phoenix-crm-wave2-reports.test.ts";
+import { runPhoenixCrmInsightReportsTests } from "./phoenix-crm-insight-reports.test.ts";
 import { runPhoenixCrmListAdmissionTests } from "./phoenix-crm-list-admission.test.ts";
 import { runPhoenixCrmListRowFactsTests } from "./phoenix-crm-list-row-facts.test.ts";
 import { runPhoenixCrmPlanPatternTests } from "./phoenix-crm-plan-pattern.test.ts";
@@ -1692,6 +1693,7 @@ import { runPhoenixCrmPlanScreenExtrasTests } from "./phoenix-crm-plan-screen-ex
 import { runPhoenixCrmStepFormTests } from "./phoenix-crm-step-form.test.ts";
 import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-requests.test.ts";
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
+import { runPhoenixCrmVisitAsksTests } from "./phoenix-crm-visit-asks.test.ts";
 import { runPhoenixCrmPlanReviewTests } from "./phoenix-crm-plan-review.test.ts";
 import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.ts";
 import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
@@ -2226,6 +2228,8 @@ import { runKpiBoardAgentsTests } from "./kpi-board-agents.test.ts";
 import { runPayrollCopilotSettlementSlotSafetyTests } from "./payroll-copilot-settlement-slot-safety.test.ts";
 import { runPrivateCalendarDoubleVisitDaysTests } from "./private-calendar-double-visit-days.test.ts";
 import { runStoreSplitDriftTests } from "./store-split-drift.test.ts";
+import { runPhoenixCrmVisitsEverywhereTests } from "./phoenix-crm-visits-everywhere.test.ts";
+import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -5922,6 +5926,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM's five reports of 2026-10-02 keep the owner's rulings: grade against capacity weighs each list's grade numbers from Settings against the month's own field days (Thursday AM only, Friday nothing, the confirmed holidays out) and calls itself list size, never coverage, saying the carried-over grades are used; what the field heard counts what customers said by product, speciality and area, AM and PM apart, with no 'no objection' figure, no rate and no row per rep, and the product and marketing managers read it for their own products company-wide with no area while every other board stays the managers'; missing stock is each pharmacy's latest answer through the customer card's own grouping with no limit and no sales figure, printed in Cairo time; samples are a record and never a stock, and units of different products are never added — across items it counts visits; the customer's timeline is newest first with no location, distance or flag; and Export all sections carries the four boards behind the screen's own gates, a product manager's pack holding his own report and nothing else",
+  runPhoenixCrmInsightReportsTests,
+);
+
+await runTest(
   "Phoenix CRM moves a validated place only for the Super Admin and the SFE Manager (owner, 2026-09-29: the location is fixed forever): the service checks the mover before it reads anything, a move needs a written reason of ten characters or more, the new point is resolved by the same function a validation uses, every visit to the customer is measured again, a test account never moves one, and the database writes an audited place_moved event with the point before and after",
   runPhoenixCrmPlaceMoveTests,
 );
@@ -5964,6 +5973,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's double-visit plan is the district manager's own and the rep never sees it (owner, 2026-10-02): he plans which of his reps he joins on which day, AM or PM — this week from today on and the coming week, one rep a half-day, Thursday a morning, never a Friday or a public holiday, never a vacant seat, another district's rep or himself — and a day that has passed stays read-only; a planned half-day is done by the manager report's own rule, judged only once the day's visits have closed, and the week reads Planned 3 · done 2; the rep, another district manager, a national manager and the CEO are refused, SFE reads every plan and writes none, the Super Admin writes only in the test world, a test account only as its district manager; the table is RLS-locked to the service role with is_test in its key and the Cairo day stated, a half-day changed on another screen is refused, nothing the rep touches reads it, and nothing about it notifies anyone",
   runPhoenixCrmDoubleVisitPlanTests,
+);
+
+await runTest(
+  "Phoenix CRM lets a rep ask for a visit with somebody (owner, 2026-10-02): his manager — the territory's reviewer, the next manager up where the district is vacant — a product manager of his own line by name (Pedia: Rasha Sabry and Ahmed SharafEldeen; Anti Infective: Nahed Tarek; CNS: Hossam Mohamed Reda, the Marketing Manager, by the owner's CNS-only rule — by app role, and never the Marketing Manager outside CNS), or a chain visit with his district manager and the manager above, both told; the person asked accepts with a day — today to four weeks on, never a Friday or a public holiday — or declines, and the rep reads \"Waiting for Dina Hamdy\", \"Accepted, Tue 6 Oct\" or \"Declined\"; only the person recorded on the row answers, a test ask only in the test world; the next step \"Arrange a double visit\" asks his manager by itself, once per visit, never costing the visit; every step is told in-app, by Telegram and to the phone, never by email, the product manager visit's district manager in the bell alone; the table is RLS-locked with one ask in play per customer and kind, and nothing of it reads or writes the district manager's own double-visit plan",
+  runPhoenixCrmVisitAsksTests,
 );
 
 await runTest(
@@ -8367,6 +8381,14 @@ await runTest(
 await runTest(
   "the frozen wholesaler split is compared to the rule by VALUE, because both nets total zero units by construction and a units-only check is blind to the whole drift class (a redistribution, a cell on one side only in either direction, a price change that is not drift, float noise, folded duplicates)",
   runStoreSplitDriftTests,
+);
+await runTest(
+  "Phoenix CRM counts everywhere from each team's start (owner, 2026-10-02): Delta (1) from Saturday 3 October by his ruling, every other team only when the Super Admin presses Start (a Saturday, never before this Cairo month, a stop sticks, one audited writer, Super Admin only), and the first real plan on a team not started tells him once; the WHOLE team, its district manager too, leaves iReports360 for exactly the days it sat there, so nothing is counted twice; visits, recorded day activities, plans sent as of the day and positioned visits as check-ins on manager screens only, with no integrity field; AM, PM and Pharmacies apart; countable and real only; Early Birds and the SFE start times begin at the first Phoenix visit, never called GPS; a Phoenix visit is its own check-in and a customer not validated yet stays out of the rate",
+  runPhoenixCrmVisitsEverywhereTests,
+);
+await runTest(
+  "Phoenix CRM off-plan day and moved day (owner, 2026-10-02): the off-plan visits waiting at the viewer's step are one card per rep per visit day, oldest first, and a person still decides each visit — Approve all is the per-visit decision once per visit through the one decide route, behind a confirm, naming any that fail; an out-of-plan visit to a customer on the SENT plan for another day of the same field week (Saturday to Thursday, Friday with the week before) fills the reason with that day for the rep to change, and the approver reads that day from the plan as it stood at the visit's captured_at, never a returned day, a plan sent after, or a passed day he was seen on, and never from the rep's text",
+  runPhoenixCrmOffplanDayTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

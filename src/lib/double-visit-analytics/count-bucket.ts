@@ -55,16 +55,21 @@ export function entryPeriodLabel(entry: BucketedEntry): VisitCountBucket | "UNKN
   return entryCountBucket(entry) ?? "UNKNOWN";
 }
 
-/** AM · PM · Pharmacies totals over rows, each weighted by its own visit count. */
+/**
+ * AM · PM · Pharmacies totals over rows, each weighted by its own visit count. `fromPhoenixOf` marks a
+ * Phoenix CRM row, which logs no pharmacy visit — the split then says its pharmacy figure was never
+ * recorded rather than print 0 (src/lib/crm/visit-count-buckets.ts).
+ */
 export function sumDoubleVisitSplit<T>(
   rows: readonly T[],
   bucketOf: (row: T) => VisitCountBucket | null,
   countOf: (row: T) => number,
+  fromPhoenixOf?: (row: T) => boolean,
 ): VisitCountSplit {
   const split = emptyVisitCountSplit();
   for (const row of rows) {
     const bucket = bucketOf(row);
-    if (bucket) addBucketToSplit(split, bucket, countOf(row));
+    if (bucket) addBucketToSplit(split, bucket, countOf(row), fromPhoenixOf?.(row) === true);
   }
   return split;
 }

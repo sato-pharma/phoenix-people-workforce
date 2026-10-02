@@ -4130,6 +4130,92 @@ answer to a multiple-choice question. The code and its test hold the rule; this 
 the moment his manager returns one of them. Every reader that decides "was this day on a sent plan" must
 ask the event's `returned_day` as well.
 
+## The second Phoenix CRM batch — owner rulings, 2026-10-02 (afternoon)
+
+Right after the second wave merged (#5129), the owner picked ten more items and answered each open
+question in chat as multiple choice. As above, the code and its tests hold each rule; this section
+holds the why.
+
+### Phoenix visits count on every other screen, from each team's start
+
+- **"From the team's start".** Once a team is counted from Phoenix CRM, compliance, Reps List, KPIs,
+  Business Review, Employee 360, Early Birds and the rest count its PHOENIX visits, weekly plans and
+  recorded day activities, and its reps' iReports360 visits and plan entries from that day are ignored,
+  so nothing is counted twice. Before the start, iReports360 stays the record.
+- **"Only when I start it"** (his answer to the risk review, the same afternoon). Delta (1)'s three teams
+  start on Saturday 3 October 2026, as he ruled. Every other team starts ONLY when the Super Admin presses
+  **Start** on it in the "Teams counted from Phoenix CRM" panel on the CRM page, from the Saturday he
+  picks — Saturdays only, the coming Saturday offered first, and **never before the first day of the
+  current Cairo month**, so a collected or published month is never restated. Nothing else starts a team:
+  not a plan, not a visit, not a trigger — every line has been open in the module since 18 September, so
+  a stray draft or one visit must never drop a whole team's iReports360 days. **Stop** sends a team back
+  to iReports360 from a Saturday under the same floor, and a start not reached yet is taken back whole.
+  A stop sticks: only another Start, on or after it, counts the team again. Before he presses anything
+  he reads what it does in words ("From Sat 10 Oct 2026, the iReports360 visits of these 6 reps stop
+  counting and their Phoenix visits count instead"). The route is Super Admin only and asserts its
+  permission before the write; the one writer, `phoenix_crm_set_team_start`, re-checks every rule and
+  writes the audit row in the same transaction.
+- **The notice.** The first time a rep sends a REAL weekly plan on a team with no start, the Super Admin
+  is told once per team — in-app, Telegram and the phone, never email — naming the team (its manager,
+  line and region), the rep and the week, with a link to the panel. A test-world send tells nobody, and
+  the notice never fails or slows the send (`phoenix-team-start-notice.ts`).
+- **"Yes, the whole team".** From the team's start the district manager's own iReports360 visits stop
+  counting too, and his Phoenix visits count instead — the same seat-history rule as his reps', for
+  exactly the days he holds the team's seat. His single visits carry him as the agent, the double and
+  chain visits he makes carry him as the partner, as the vendor shape always credited a manager. Phoenix
+  CRM records no day activity of a manager's own, so his meeting or training day within the start
+  carries no record — the DSM no-record connector may raise it, as a candidate that waits for approval.
+- **A team is the territories under one district-manager SEAT**, not the person, so a manager change
+  or a vacancy keeps its start. `phoenix_crm_team_starts`, `crm_visits_unified`,
+  `crm_plan_entries_unified`, `src/lib/crm/phoenix-team-starts.ts`. Pinned by
+  `tests/phoenix-crm-visits-everywhere.test.ts`.
+- **Only COUNTABLE Phoenix visits are served**, so an off-plan visit counts on these screens only once
+  approved, exactly as inside the module. Deductions and allowances stay decided on their own screens.
+- **What reads Phoenix for a started team, from its start:** every visit reader of the visits door; the
+  PLAN readers — Reps List statuses, KPIs coverage and frequency, SFE doctor coverage, the Reps Weekly
+  Plans tab and its plan actuals — through the plan door, where a day is planned when the rep had SENT
+  that week as of that day, by the module's own rule (one-day returns included; a save is never a change
+  of status); RECORDED day activities (meeting, conference, health day, sales day, training, admin work,
+  travel) as the iReports360 worked-day codes, so a training day no longer reads "no activity"; and
+  Early Birds, whose start and "#1 days" are the first countable Phoenix visit's capture time — a
+  Phoenix visit is its own check-in there as in the call rate, named "First visit", never GPS.
+- **"His first Phoenix visit is his start", and "each visit's silent location counts as a check-in on
+  the SFE and manager screens. Never on the rep's own screens."** The SFE start times read a started rep's
+  first countable Phoenix visit, through the same helper as Early Birds. The CRM Check-ins tab, GPS
+  brick coverage, the integrity page, the managers' first-visit board, the rep-day drill-down, Field
+  Activity and probation SFE evidence read each positioned Phoenix visit as that day's check-in — time
+  and position only, never an integrity field — and his iReports360 check-ins after the start are
+  ignored. Every check-in reader a rep can reach stays on iReports360: My Visits, Employee 360, the
+  KPIs board, the outstation workload and claim validation, the Phoenix CRM List's pins and pharmacy
+  search (src/lib/crm/phoenix-team-starts.ts lists them).
+- **Still read from iReports360 only**, each its own decision for later: the manager's Early Birds
+  decision line ("N GPS-verified"); a customer created new in
+  Phoenix, who has no iReports360 contact id, so no per-doctor figure can name him; the CRM connector's
+  leaver path (it does not check approved leave); a chain visit's senior manager (the vendor shape has
+  one partner column); and owner decision 18, which keys on the global cutover date, not a team's start.
+- **The company has no Training Manager**, so no rule here waits on one.
+
+### What the field heard — the product and marketing managers too
+
+- **"Yes, product managers too".** The Product Manager, Group Product Manager and Marketing Manager app
+  roles hold `phoenix_crm: read` for ONE report: what the field heard about their OWN products
+  (`resolveSalesAccessScope`, the rule Sales already uses), company-wide, never by area, territory or
+  rep. Every other Phoenix CRM read answers them with nothing, because they hold no seat.
+- **Counts only.** No report anywhere shows a "no objection" figure, a rate or a row per rep: that would
+  be an honesty figure, and golden rule #1 keeps those out of every screen but the integrity board.
+
+### The rep's visit asks
+
+- **The rep may ask for a visit with his manager, with a product manager, or for a chain visit, for one
+  customer.** These are the owner's own words, added to the batch: "the medical rep can request a double
+  visit with his manager / product manager / or request a chain visit to a certain dr".
+- **The product manager is "One the rep picks"**, from his line's product managers.
+- **A chain visit is "DM + the manager above"**: his district manager and the next manager up visit with
+  him, and both are told.
+- **When the person asked accepts and picks a day, the rep sees it ("Yes, he asked")**, for example
+  "Accepted, Tue 6 Oct". This is HIS request, so it is his to see. The district manager's own
+  double-visit PLAN stays invisible to him, as ruled in the morning.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.

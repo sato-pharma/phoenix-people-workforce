@@ -60,6 +60,10 @@ async function fetchCheckinsForAgents(agentCrmIds: number[], dateFrom: string, d
     dateTo,
     columns: checkinColumns,
     pageSize: 2000,
+    // The CRM integrity page is the Super Admin's — no rep reaches it, so a started Phoenix CRM team's
+    // visits count as its check-ins here (owner, 2026-10-02; src/lib/crm/phoenix-team-starts.ts lists every
+    // reader that asks).
+    includePhoenixVisits: true,
   });
 }
 

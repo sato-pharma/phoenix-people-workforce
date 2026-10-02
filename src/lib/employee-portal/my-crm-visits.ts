@@ -12,6 +12,7 @@
 // never derived inside this file, and it FAILS CLOSED on an empty set. See its docstring.
 
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
+import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { queryCheckins, queryVisits, queryVisitsLimited, resolveVisitTime } from "@/lib/crm/reads";
 import type { VisitTimeSource } from "@/lib/crm/reads";
 import { isFieldWorkVisit, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
@@ -33,6 +34,8 @@ type RawVisit = {
   double_name: string | null;
   comment: string | null;
   crm_save_date: string | null;
+  crm_visit_id?: number | null;
+  source?: string | null;
 };
 
 type RawDoubleVisit = {
@@ -46,6 +49,8 @@ type RawDoubleVisit = {
   agent_name: string | null;
   comment: string | null;
   crm_save_date: string | null;
+  crm_visit_id?: number | null;
+  source?: string | null;
 };
 
 /** A team row is a self row plus the primary agent's name — see {@link fetchTeamVisits}. */
@@ -75,6 +80,10 @@ export type MyCrmVisitRow = {
   /** A call (regular or campaign) rather than leave, a holiday, a meeting or training — the same
    *  split the KPI drill-down makes. See isFieldWorkVisit in crm/visit-types.ts. */
   fieldWork: boolean;
+  /** A started Phoenix CRM team's own visit (crm/phoenix-team-starts.ts): its time is shown bare, with
+   *  no GPS or "Logged" word — this page reaches the rep, who is never told his location is read
+   *  (Phoenix CRM golden rule #1). Present only when true. */
+  phoenixVisit?: boolean;
 };
 
 /** A subordinate's visit as a manager sees it: the self-visit shape plus whose visit it is. */
@@ -90,6 +99,8 @@ export type MyCrmDoubleVisitRow = {
   customerName: string | null;
   primaryAgentName: string | null;
   comment: string | null;
+  /** As {@link MyCrmVisitRow.phoenixVisit}. */
+  phoenixVisit?: boolean;
 };
 
 export type MyCrmCheckinRow = {
@@ -99,10 +110,11 @@ export type MyCrmCheckinRow = {
   address: string | null;
 };
 
+// `crm_visit_id` and `source` say which rows are a started Phoenix CRM team's own (isPhoenixNativeVisitRow).
 const VISIT_COLUMNS =
-  "id,agent_crm_id,agent_hr_id,contact_crm_id,visit_date,ampm,visit_type,visit_type_description,contact_name,customer_name,double_name,comment,crm_save_date";
+  "id,agent_crm_id,agent_hr_id,contact_crm_id,visit_date,ampm,visit_type,visit_type_description,contact_name,customer_name,double_name,comment,crm_save_date,crm_visit_id,source";
 const DOUBLE_VISIT_COLUMNS =
-  "id,visit_date,ampm,visit_type,visit_type_description,contact_name,customer_name,agent_name,comment,crm_save_date";
+  "id,visit_date,ampm,visit_type,visit_type_description,contact_name,customer_name,agent_name,comment,crm_save_date,crm_visit_id,source";
 const TEAM_VISIT_COLUMNS = `${VISIT_COLUMNS},agent_name`;
 // Imported (for fetchTeamVisits below) and re-exported (for existing server-side callers) from a
 // client-safe module, so the "use client" workspace can read the cap without importing this
@@ -196,6 +208,7 @@ export async function fetchMyVisits(hrId: string, window: MyCrmWindow): Promise<
       visitTime: resolved.time,
       visitTimeSource: resolved.source,
       visitTypeDescription: resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment),
+      ...(isPhoenixNativeVisitRow(row) ? { phoenixVisit: true } : {}),
     };
   });
   return rows.sort(byVisitDateDesc);
@@ -273,6 +286,7 @@ export async function fetchTeamVisits(hrIds: string[], window: MyCrmWindow): Pro
         visitTime: resolved.time,
         visitTimeSource: resolved.source,
         visitTypeDescription: resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment),
+        ...(isPhoenixNativeVisitRow(row) ? { phoenixVisit: true } : {}),
       };
     })
     .sort(byVisitDateDesc);
@@ -307,6 +321,7 @@ export async function fetchMyDoubleVisits(hrId: string, window: MyCrmWindow): Pr
         visitDate: row.visit_date,
         visitTime: resolved.time,
         visitTypeDescription: resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment),
+        ...(isPhoenixNativeVisitRow(row) ? { phoenixVisit: true } : {}),
       };
     })
     .sort(byVisitDateDesc);

@@ -18,8 +18,10 @@
 //     CRM surface applies — so a doctor and his visits can never disagree about where he is.
 //   * VISITS AND RIDES come through the CRM read door (`queryVisits`), with the resigned floor
 //     opened exactly as the review's own visit source opens it, and the same duplicate collapse. The
-//     vendor feed is the record for every month the review covers; Phoenix CRM runs beside it and is
-//     not read here, because adding the two would count one call twice.
+//     door itself decides which system speaks for a rep-day (owner, 2026-10-02): a team that works in
+//     Phoenix CRM is served by its own Phoenix visits from the team's start, and its reps' iReports360
+//     rows from that day are left out of the same view — so nothing here reads Phoenix CRM's tables,
+//     and one call is never counted twice. See src/lib/crm/phoenix-team-starts.ts.
 //   * DIRECT ORDERS are the order table itself: approved, not reversed, not a duplicate, at the
 //     pharmacy's own area — the rows `phx_rebuild_direct_order_sos_batch` turns into the closing's
 //     `DirectReq` sales. The month is the one FINANCE booked; an order it has not booked is shown as
@@ -31,6 +33,7 @@
 
 import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/call-rate";
 import { collapseDuplicateVisitSubmissions, isCrmDoubleVisitRow, queryVisits } from "@/lib/crm/reads";
+import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { addBucketToSplit, emptyVisitCountSplit, visitCountBucket } from "@/lib/crm/visit-count-buckets";
 import { classifyVisit, REGULAR_TYPE } from "@/lib/crm/visit-types";
 import { loadActuals, roiValueBucket } from "@/lib/marketing-requests/roi-report-service";
@@ -192,6 +195,9 @@ export async function loadFieldLinkFacts(scope: FieldLinkScope): Promise<FieldLi
       speciality: row.speciality,
       visit_type: row.visit_type,
     });
+    // A Phoenix CRM row logs no pharmacy visit: the split counts it, so the pack words that pharmacy
+    // figure as not recorded, never 0 (src/lib/crm/visit-count-buckets.ts).
+    const fromPhoenix = isPhoenixNativeVisitRow(row);
 
     // A named customer, reached by a regular visit — never contact 0, never the catch-all slot.
     const contactId =
@@ -207,7 +213,7 @@ export async function loadFieldLinkFacts(scope: FieldLinkScope): Promise<FieldLi
         const key = String(contactId);
         const tally = visitsByContact[key] ?? { brickId: null, lastVisit: null, split: emptyVisitCountSplit(), visits: 0 };
         tally.visits += 1;
-        addBucketToSplit(tally.split, countBucket);
+        addBucketToSplit(tally.split, countBucket, 1, fromPhoenix);
         if (!tally.lastVisit || date > tally.lastVisit) tally.lastVisit = date;
         visitsByContact[key] = tally;
       }
@@ -218,7 +224,7 @@ export async function loadFieldLinkFacts(scope: FieldLinkScope): Promise<FieldLi
           { days: new Set<string>(), fact: { fieldDays: 0, fieldVisits: 0, period, repHrId: agent, split: emptyVisitCountSplit() } };
         entry.days.add(date);
         entry.fact.fieldVisits += 1;
-        addBucketToSplit(entry.fact.split, countBucket);
+        addBucketToSplit(entry.fact.split, countBucket, 1, fromPhoenix);
         repDayKeys.set(key, entry);
       }
     }

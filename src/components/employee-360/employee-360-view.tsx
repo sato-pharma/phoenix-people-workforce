@@ -23,6 +23,7 @@ import {
   pageHeaderRuleClassName,
 } from "@/components/admin/admin-design-tokens";
 import { Card } from "@/components/ui/card";
+import { formatPharmacyFigure, pharmacyTileFigure, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { cn } from "@/lib/utils";
 import { LineChart } from "./charts";
 import type {
@@ -46,6 +47,20 @@ import type { Employee360Comparison, MetricDelta } from "@/lib/employee-360/peri
 import { EMPLOYEE_360_ROLE_META, type Employee360RoleCategory } from "@/lib/employee-360/roles";
 
 const CHART_COLORS = { regular: "#0ea5e9", campaign: "#f97316", sales: "#10b981", target: "#94a3b8", coverage: "#6366f1" };
+
+/**
+ * The profile's visits as the golden-rule split (src/lib/crm/visit-count-buckets.ts), so the pharmacy
+ * figure of a rep whose team works in Phoenix CRM reads "not recorded in Phoenix", never 0 — Phoenix
+ * CRM logs no pharmacy visit. A profile cached before `phoenixVisits` existed reads as none.
+ */
+function visitSplitOf(visits: { amVisits: number; pmVisits: number; pharmacyVisits?: number; phoenixVisits?: number }): VisitCountSplit {
+  return {
+    am: visits.amVisits,
+    pm: visits.pmVisits,
+    pharmacies: visits.pharmacyVisits ?? 0,
+    ...(visits.phoenixVisits ? { phoenix: visits.phoenixVisits } : {}),
+  };
+}
 
 // ── Premium visual system — shared across every section of this report ──────
 type Tone = "sky" | "orange" | "indigo" | "emerald" | "rose" | "violet" | "amber" | "blue";
@@ -960,7 +975,7 @@ export function Employee360View({
             </div>
 
             <div className="mt-4 text-xs text-slate-400">
-              Visit split (self-reported): <span className="font-bold text-slate-700">{intFmt.format(summary.amVisits)} AM · {intFmt.format(summary.pmVisits)} PM · {intFmt.format(summary.pharmacyVisits ?? 0)} Pharmacies</span>
+              Visit split (self-reported): <span className="font-bold text-slate-700">{intFmt.format(summary.amVisits)} AM · {intFmt.format(summary.pmVisits)} PM · {formatPharmacyFigure(visitSplitOf(summary), { formatNumber: (value) => intFmt.format(value), numberFirst: true })}</span>
               {summary.unknownAmpm > 0 ? ` · ${intFmt.format(summary.unknownAmpm)} unmarked` : ""}
             </div>
           </>
@@ -982,6 +997,7 @@ export function Employee360View({
             amVisits: summary.amVisits,
             pmVisits: summary.pmVisits,
             pharmacyVisits: summary.pharmacyVisits ?? 0,
+            phoenixVisits: summary.phoenixVisits ?? 0,
             unknownAmpm: summary.unknownAmpm,
             regularVisits: summary.regularVisits,
             campaignVisits: summary.campaignVisits,
@@ -2067,10 +2083,12 @@ function ExpensesSection({
   activity,
 }: {
   expenses: Employee360Profile["expenses"];
-  activity: { amVisits: number; pmVisits: number; pharmacyVisits: number; unknownAmpm: number; regularVisits: number; campaignVisits: number };
+  activity: { amVisits: number; pmVisits: number; pharmacyVisits: number; phoenixVisits?: number; unknownAmpm: number; regularVisits: number; campaignVisits: number };
 }) {
   const { payroll, outstation } = expenses;
   const hasAny = payroll.hasData || outstation.hasData;
+  // Never "0" for a rep whose team works in Phoenix CRM, which logs no pharmacy visit.
+  const pharmacyTile = pharmacyTileFigure(visitSplitOf(activity), { formatNumber: (value) => intFmt.format(value) });
   const catMax = Math.max(1, ...payroll.categories.map((c) => c.amount));
   const destMax = Math.max(1, ...payroll.byDestination.map((d) => d.cost));
   return (
@@ -2222,7 +2240,7 @@ function ExpensesSection({
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                   <KpiTile label="AM visits" value={intFmt.format(activity.amVisits)} hint={activity.unknownAmpm > 0 ? `${intFmt.format(activity.unknownAmpm)} unmarked` : undefined} />
                   <KpiTile label="PM visits" value={intFmt.format(activity.pmVisits)} />
-                  <KpiTile label="Pharmacy visits" value={intFmt.format(activity.pharmacyVisits)} />
+                  <KpiTile label="Pharmacy visits" value={pharmacyTile.value} hint={pharmacyTile.note ?? undefined} />
                   <KpiTile label="Regular visits" value={intFmt.format(activity.regularVisits)} />
                   <KpiTile label="Campaign visits" value={intFmt.format(activity.campaignVisits)} />
                 </div>

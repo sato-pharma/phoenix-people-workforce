@@ -28,6 +28,7 @@
  */
 
 import { CRM_PLAN_ENTRIES_TABLE, CRM_PLAN_ENTRIES_UNIFIED_VIEW } from "@/lib/crm/tables";
+import { IREPORTS360_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts";
 import { getAgentContactList, getDoctorListRepSummaries } from "@/lib/crm/contact-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
@@ -477,6 +478,9 @@ export async function getAgentPlanEntriesForWindow(
     const { data, error } = await supabase
       .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
       .select("contact_crm_id, ampm, contact_grade, contact_name, speciality, plan_date, plan_frequency")
+      // The rep's iReports360 plan only — "Copy last month" replays the vendor's reference plan; since
+      // 2026-10-02 the view also carries a started team's own Phoenix plans (crm/phoenix-team-starts.ts).
+      .eq("source", IREPORTS360_VISIT_SOURCE)
       .ilike("agent_hr_id", agentHrId)
       .or(`and(plan_date.gte.${start},plan_date.lte.${end}),and(plan_month.eq.${Number(start.slice(5, 7))},plan_year.eq.${Number(start.slice(0, 4))})`)
       .range(offset, offset + PAGE_SIZE - 1);

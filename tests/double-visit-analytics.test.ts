@@ -190,7 +190,11 @@ export function runDoubleVisitAnalyticsTests() {
   assert.doesNotMatch(dvWorkspace, /<AmPmBar am=\{[^}]+\} pm=\{[^}]+\} \/>/, "every AM · PM bar on the dashboard must carry its pharmacies segment");
   assert.doesNotMatch(dvWorkspace, /e\.period === "(AM|PM)"|row\.period === "(AM|PM)"|e\.period === periodFilter/, "the dashboard must count and filter by the golden-rule bucket, never the raw CRM period");
   assert.match(dvWorkspace, /\["ALL", "AM", "PM", "Pharmacies"\] as PeriodFilter\[\]/, "the period filter must offer Pharmacies as its own choice");
-  assert.match(dvWorkspace, /label="Pharmacy Visits" value=\{fmt\(dashboard\.kpis\.pharmacyVisitCount/, "the KPI band must show pharmacy visits as their own figure");
+  assert.match(
+    dvWorkspace,
+    /label="Pharmacy Visits" value=\{kpiPharmacy\.note \? kpiPharmacy\.value : fmt\(dashboard\.kpis\.pharmacyVisitCount/,
+    "the KPI band must show pharmacy visits as their own figure — and say a Phoenix CRM band's was never recorded, never 0",
+  );
   assert.doesNotMatch(dvWorkspace, />AM \/ PM</, "no column header may join AM and PM with a slash");
   // The private calendar DOES opt into seeing resigned-agent rows — a real double visit
   // the calendar owner performed stays real proof of field work even when the visited
@@ -340,6 +344,23 @@ export function runDoubleVisitAnalyticsTests() {
     { am: 0, pharmacies: 2, pm: 1, total: 4 },
     "a pharmacy double visit is counted under Pharmacies, never in PM or AM, and the total still counts every visit",
   );
+  assert.equal(pharmacySummary.phoenixVisits, undefined, "a vendor-only summary keeps its old shape");
+
+  // PHOENIX CRM LOGS NO PHARMACY VISIT (2026-10-02): a district manager whose rides are a started team's
+  // Phoenix CRM visits has his Phoenix share counted, so every screen and the workbook say the pharmacy
+  // figure was never recorded — the figures themselves are untouched (src/lib/crm/visit-count-buckets.ts).
+  const phoenixRows = asRows([
+    { ...dvRow({ date: "2026-10-04", dvHrId: "D-1", period: "AM", visit: 1, visitedHrId: "MA" }), from_phoenix: true },
+    { ...dvRow({ date: "2026-10-04", dvHrId: "D-1", period: "PM", visit: 2, visitedHrId: "MB" }), from_phoenix: true },
+  ]);
+  const phoenixSummary = buildManagerSummariesDetailed(phoenixRows, [], "2026-10-31").summaries[0];
+  assert.deepEqual(
+    { am: phoenixSummary.amVisits, pharmacies: phoenixSummary.pharmacyVisits, phoenix: phoenixSummary.phoenixVisits, pm: phoenixSummary.pmVisits },
+    { am: 1, pharmacies: 0, phoenix: 3, pm: 2 },
+  );
+  assert.match(service, /notePharmacyCells\(activity, /, "the workbook leaves a Phoenix-only Pharmacy Visits cell blank, never 0");
+  assert.match(service, /notePharmacyCells\(byRole, /);
+  assert.match(service, /notePharmacyCells\(trend, /);
   assert.equal(dsm!.teamMrCount, 5, "team = active MR descendants");
   assert.equal(dsm!.coveragePct, 60, "visited 3 of 6-in-team rule (3/5)");
   assert.equal(dsm!.neglectedMrCount, 2);

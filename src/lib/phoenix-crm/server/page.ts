@@ -13,7 +13,7 @@ import { isForbiddenError } from "@/lib/auth/server";
 import { ApiError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { forecastIsOffered } from "@/lib/phoenix-crm/daily-forecast";
-import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsFieldHeardByProduct, resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { PHOENIX_CRM_PORTAL_BASE, type PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 import { loadPhoenixCrmOverview, type PhoenixCrmOverview } from "@/lib/phoenix-crm/server/overview";
 
@@ -66,7 +66,9 @@ export async function loadPhoenixCrmPage(access: AccessContext): Promise<Phoenix
  * from `lineOpeningText` — a line and a date, nothing else.
  *
  * A person with NO seat anywhere still gets nothing, which is right: a closed line must not open the
- * door for someone the organogram does not place in the field at all.
+ * door for someone the organogram does not place in the field at all. The one exception is a role the
+ * owner gave a report of its own: the product and marketing managers read what the field heard about
+ * their own products (owner, 2026-10-02), so the module has that one report to say to them.
  */
 export function phoenixCrmHasSomethingToSay(viewer: PhoenixCrmViewer): boolean {
   return (
@@ -74,7 +76,8 @@ export function phoenixCrmHasSomethingToSay(viewer: PhoenixCrmViewer): boolean {
     viewer.ownTerritories.length > 0 ||
     viewer.scopeTerritories.length > 0 ||
     viewer.waitingTerritories.length > 0 ||
-    viewer.waitingScopeTerritories.length > 0
+    viewer.waitingScopeTerritories.length > 0 ||
+    readsFieldHeardByProduct(viewer)
   );
 }
 

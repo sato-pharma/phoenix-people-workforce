@@ -78,6 +78,7 @@ async function closeDistrictPeriod(input: {
     facts: inputs.facts,
     dailyWinnerHrIdKeys: inputs.dailyWinnerHrIdKeys,
     gpsStartByRepDay: inputs.gpsStartByRepDay,
+    phoenixClockRepDays: inputs.phoenixClockRepDays,
     throughIso: input.period.endIso,
   });
 
@@ -117,7 +118,9 @@ async function closeDistrictPeriod(input: {
       gps_verified_visits: score.gpsVerifiedVisits,
       gps_share: score.gpsShare,
       daily_wins: score.dailyWins,
-      evidence: { timeline: score.timeline },
+      // `visitStartDays` rides along on a Phoenix CRM fortnight, so the frozen announcement names those
+      // starts as first visits, never as GPS (decisions.ts).
+      evidence: { timeline: score.timeline, ...(score.visitStartDays ? { visitStartDays: score.visitStartDays } : {}) },
     };
   });
 

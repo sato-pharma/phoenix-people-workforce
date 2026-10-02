@@ -31,6 +31,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import type { CeoCommandCenterData, CeoAttentionTone, CeoWeeklyTrendPoint } from "@/lib/ceo/command-center";
 import { getCeoLandingDeferred, sosPeriodDisplayLabel } from "@/lib/ceo/command-center";
 import { formatStartMinutes, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
+import { formatPharmacyFigure } from "@/lib/crm/visit-count-buckets";
 import type { UncomputedRate } from "@/lib/platform/metrics";
 import { SALES_ACHIEVEMENT_WINDOW_LABEL } from "@/lib/sales/metrics";
 import type { SfeImsContribution, SfeImsRow, SfeTargetPerformance } from "@/lib/sales/sfe-performance";
@@ -615,6 +616,12 @@ function CrmFieldWidget({ data }: { data: SfeCrmFieldAnalytics }) {
   // (src/lib/crm/visit-count-buckets.ts). An older cached payload without the field reads as zero.
   const pharmacyVisits = data.pharmacyVisits ?? 0;
   const classified = data.amVisits + data.pmVisits + pharmacyVisits;
+  // Phoenix CRM logs no pharmacy visit, so beside a started team's visits the figure is iReports360's
+  // alone, and with only theirs it was never recorded — said in words, never printed as 0.
+  const pharmacyFigure = formatPharmacyFigure(
+    { am: data.amVisits, pm: data.pmVisits, pharmacies: pharmacyVisits, ...(data.phoenixVisits ? { phoenix: data.phoenixVisits } : {}) },
+    { formatNumber: n },
+  );
   const share = (value: number) => (classified > 0 ? (value / classified) * 100 : 0);
   return (
     <div className="space-y-5 p-5">
@@ -640,7 +647,7 @@ function CrmFieldWidget({ data }: { data: SfeCrmFieldAnalytics }) {
           <div className="mb-1 flex items-baseline justify-between">
             <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">AM · PM · Pharmacies</p>
             <p className="text-phx-2xs text-slate-400">
-              AM {n(data.amVisits)} · PM {n(data.pmVisits)} · Pharmacies {n(pharmacyVisits)}
+              AM {n(data.amVisits)} · PM {n(data.pmVisits)} · {pharmacyFigure}
             </p>
           </div>
           <div className="flex h-3 w-full overflow-hidden border border-slate-200">

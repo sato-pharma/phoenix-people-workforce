@@ -85,6 +85,13 @@ export type RepVisitWorkloadDay = {
   other: number;
   pharmacies: number;
   pharmacy: number;
+  /**
+   * Of the day's AM · PM · Pharmacies visits, how many are Phoenix CRM's own (a started team's) —
+   * set by the golden-rule helper only when there are any. Phoenix CRM logs no pharmacy visit, so a
+   * display says the day's pharmacy figure was never recorded rather than print 0. Display only: it is
+   * never stored and never reaches a verdict.
+   */
+  phoenix?: number;
   pm: number;
   regular: number;
   total: number;
@@ -105,6 +112,13 @@ export type RepVisitWorkload = {
   /** The trip's pharmacy visits — the third workload figure, kept out of AM and PM. */
   pharmacyWorkload: number;
   pharmacyVisits: number;
+  /**
+   * Of the trip's AM · PM · Pharmacies visits, how many are Phoenix CRM's own. Phoenix CRM logs no
+   * pharmacy visit, so `pharmacyWorkload` counts the iReports360 visits alone and a display words it
+   * through the golden-rule helper ("not recorded in Phoenix", never 0). Display only — never stored,
+   * never compared, never a verdict. Optional: a payload from before it existed reads as none.
+   */
+  phoenixWorkload?: number;
   pmWorkload: number;
   regularVisits: number;
   sourceLabel: string;
@@ -119,6 +133,8 @@ type WorkloadVisitRow = {
   customer_name: string | null;
   double_crm_id: number | null;
   double_hr_id: string | null;
+  /** 'phoenix' on a started team's Phoenix CRM visit — the helper counts it into `phoenix`. */
+  source: string | null;
   speciality: string | null;
   visit_date: string;
   visit_type: number | null;
@@ -206,7 +222,7 @@ export async function getRepTripVisitWorkload(input: {
   // so his outstation trip carried no workload evidence however many visits he logged.
   const data = await queryVisits<WorkloadVisitRow>({
     columns:
-      "agent_crm_id, agent_hr_id, ampm, contact_name, crm_save_date, customer_name, double_crm_id, double_hr_id, speciality, visit_date, visit_type",
+      "agent_crm_id, agent_hr_id, ampm, contact_name, crm_save_date, customer_name, double_crm_id, double_hr_id, source, speciality, visit_date, visit_type",
     dateFrom: start,
     dateTo: end,
     includeResignedAgents: true,
@@ -357,6 +373,7 @@ export async function getRepTripVisitWorkload(input: {
     otherVisits: dateBreakdown.reduce((sum, day) => sum + day.other, 0),
     pharmacyWorkload: dateBreakdown.reduce((sum, day) => sum + day.pharmacies, 0),
     pharmacyVisits: dateBreakdown.reduce((sum, day) => sum + day.pharmacy, 0),
+    phoenixWorkload: dateBreakdown.reduce((sum, day) => sum + (day.phoenix ?? 0), 0),
     pmWorkload: dateBreakdown.reduce((sum, day) => sum + day.pm, 0),
     regularVisits: dateBreakdown.reduce((sum, day) => sum + day.regular, 0),
     sourceLabel,

@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { noticeFirstPlanOnUnstartedTeam } from "@/lib/crm/phoenix-team-start-notice";
 import { validationError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure } from "@/lib/phoenix-crm/server/http";
@@ -24,6 +25,9 @@ export async function POST(request: Request) {
     const action = body && typeof body === "object" ? (body as Record<string, unknown>).action : null;
     if (action !== "submit" && action !== "reopen") throw validationError("Reload the page and try again.");
     const plan = await transitionPlan(viewer, body);
+    // The first real plan sent on a team that is not counted from Phoenix CRM tells the Super Admin, once
+    // per team (owner, 2026-10-02). After the answer has gone, and never able to fail the send.
+    if (action === "submit" && plan.status === "submitted") after(() => noticeFirstPlanOnUnstartedTeam(plan.planId));
     return NextResponse.json({ plan, success: true });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not send the plan.");

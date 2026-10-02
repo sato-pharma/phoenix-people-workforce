@@ -51,6 +51,13 @@ const EVENT_TYPES = [
   "plan_reminder",
   // The daily nudge to a slow approver (owner, 2026-10-02): the district manager or SFE, never by email.
   "approval_nudge",
+  // A rep's ask for a visit with somebody (owner, 2026-10-02): the person asked, the person told (the
+  // manager above for a chain visit, the rep's district manager for a product manager's), and the rep
+  // when it is answered — in-app, Telegram and the phone, never by email.
+  "visit_ask_waiting",
+  "visit_ask_told",
+  "visit_ask_accepted",
+  "visit_ask_declined",
 ];
 
 /**
@@ -106,11 +113,20 @@ export function runPhoenixCrmEmailBlockTests() {
       1,
       "every Phoenix CRM notice goes out through one send, its channels named by the guard's allowlist, and nothing else",
     );
-    // The in-app-only exception is the daily forecast's alert, and ONLY that one: the owner asked for an
-    // in-app alert, and some 26 reps send one every working day.
-    assert.equal((notify.match(/inAppOnly: true,/g) ?? []).length, 1, "exactly one notice is in-app only");
+    // The in-app-only exceptions are TWO, and ONLY these two: the daily forecast's alert — the owner asked
+    // for an in-app alert, and some 26 reps send one every working day — and the courtesy a district
+    // manager gets when one of his reps asks a product manager for a visit, which waits on nobody
+    // (owner's brief, 2026-10-02: "told (in-app)").
+    assert.equal((notify.match(/inAppOnly: true,/g) ?? []).length, 2, "exactly two notices are in-app only");
     const forecastBranch = notify.slice(notify.indexOf('if (notice.kind === "forecast_sent")'), notify.indexOf('if (notice.kind === "unplanned_visit_raised")'));
-    assert.match(forecastBranch, /inAppOnly: true,/, "and it is the daily forecast's");
+    assert.match(forecastBranch, /inAppOnly: true,/, "one is the daily forecast's");
+    const visitAskBranch = notify.slice(notify.indexOf("async function describeVisitAsk("), notify.indexOf("async function describe(notice"));
+    assert.equal((visitAskBranch.match(/inAppOnly: true,/g) ?? []).length, 1, "the other is the visit ask's, once");
+    assert.match(
+      visitAskBranch,
+      /productManager\s+\?\s+\{\s+\.\.\.toldDelivery,[\s\S]*?inAppOnly: true,\s+\}\s+:\s+toldDelivery,/,
+      "and it is the copy the rep's district manager is told of a product manager visit — the person asked, and a chain visit's manager above, still get Telegram and the phone",
+    );
     assert.match(
       forecastBranch,
       /idempotencyKey: `phoenix_crm:forecast:\$\{notice\.seat\.seatId\}:\$\{notice\.day\}:sent`,/,
@@ -175,6 +191,8 @@ export function runPhoenixCrmEmailBlockTests() {
       "src/lib/phoenix-crm/server/daily-forecast.ts",
       // A request to edit a sent week: raised by the rep, then each step (owner, 2026-10-01).
       "src/lib/phoenix-crm/server/plan-edits.ts",
+      // A rep's ask for a visit: raised from the customer's page or a visit's next step, then answered.
+      "src/lib/phoenix-crm/server/visit-asks.ts",
     ]) {
       const source = readFileSync(file, "utf8");
       const calls = source.split("notifyPhoenixCrm(").slice(1);

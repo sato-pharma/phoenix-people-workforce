@@ -17,17 +17,19 @@
  * The Super Admin's test entries count only when the Super Admin ticks them in.
  */
 
-import { Fragment, useId, useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 import { crmUrl, useCrmGet, type CrmResource } from "@/components/phoenix-crm/api";
 import { DailyPlanDaysFilter, DailyPlanSection, dailyPlanDaysSummary, useDailyPlanDays } from "@/components/phoenix-crm/daily-plan-report";
 import { countText, dayLabel, dayLabelWithYear, monthLabel, percentText, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
-import { listText, matchesWords } from "@/components/phoenix-crm/labels";
+import { DayList, DaysToggle, LIST_WORDS, RefreshFailed, ReportList, SectionWaiting, type DayLine } from "@/components/phoenix-crm/report-list";
+import { CapacitySection, HeardSection, SamplesSection, StockSection } from "@/components/phoenix-crm/insight-reports";
+import { VisitAskInbox } from "@/components/phoenix-crm/visit-asks";
+import { listText } from "@/components/phoenix-crm/labels";
 import {
   CrmBlock,
   CrmButton,
   CrmCard,
-  CrmCardsOnPhone,
   CrmCheck,
   CrmChoice,
   CrmEmpty,
@@ -38,19 +40,17 @@ import {
   CrmNote,
   CrmPanel,
   CrmPill,
-  CrmSearchField,
   CrmSelect,
-  CrmShowMore,
   CrmStat,
   CrmStatGrid,
   CrmTable,
   crmInputClassName,
   crmTdClassName,
-  crmThClassName,
   type CrmChoiceOption,
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { fieldWeekStart, isIsoDay, monthStartOf, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import { capacityMonthsOffered } from "@/lib/phoenix-crm/capacity-board";
 import { dailyPlanPeriodProblem, type DailyPlanReportView } from "@/lib/phoenix-crm/daily-plan-report";
 import type { AdoptionStage } from "@/lib/phoenix-crm/adoption-rules";
 import type { BrickCoverageStatus } from "@/lib/phoenix-crm/brick-report";
@@ -69,8 +69,12 @@ import {
 import type {
   AdoptionView,
   BrickCoverageView,
+  CapacityBoardView,
   CoverageReportView,
   CustomerFrequencyReportView,
+  FieldHeardView,
+  MissingStockView,
+  SamplesReportView,
   TrackingSheetReportView,
   ReportComparison,
   ExceptionsView,
@@ -101,14 +105,15 @@ type ReportSection =
   | "bricks"
   | "managers"
   | "locations"
-  | "adoption";
+  | "adoption"
+  | "capacity"
+  | "heard"
+  | "stock"
+  | "samples";
 type PeriodPreset = "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month";
 type Period = { from: string; to: string };
-type Presence = "all" | "with" | "without";
 
 const REPORTS_PATH = "/api/phoenix-crm/reports";
-const PAGE = 25;
-const SEARCH_FROM = 8;
 const MONTHS_OFFERED = 12;
 /** Phoenix CRM opened in September 2026: no day before it holds an entry, so the pickers stop there. */
 const FIRST_REPORT_DAY = "2026-09-01";
@@ -187,231 +192,6 @@ function amPmText(am: number, pm: number): string {
 function repText(repName: string | null): string {
   return repName ?? "No rep in this territory";
 }
-
-// ── Shared pieces ───────────────────────────────────────────────────────────────────────────────
-
-/** A section's figures while they load, or the sentence saying why they did not. */
-function SectionWaiting({ error, label, onRetry }: { error: string | null; label: string; onRetry: () => void }) {
-  return <div className="border-t border-slate-100">{error ? <CrmLoadError message={error} onRetry={onRetry} /> : <CrmLoading label={label} />}</div>;
-}
-
-/** Figures still on screen after a refresh that failed: they stay, with the reason above them. */
-function RefreshFailed({ error }: { error: string | null }) {
-  if (!error) return null;
-  return (
-    <div className="px-4 pt-4 sm:px-5">
-      <CrmNote title="These figures could not be refreshed" tone="warn">
-        {error}
-      </CrmNote>
-    </div>
-  );
-}
-
-function DaysToggle({ onToggle, open }: { onToggle: () => void; open: boolean }) {
-  return (
-    <CrmButton aria-expanded={open} onClick={onToggle} size="sm" variant="ghost">
-      {open ? "Hide the days" : "Show the days"}
-    </CrmButton>
-  );
-}
-
-type DayLine = { date: string; lines: string[]; muted?: boolean };
-
-/** One row per day: the day, then what happened on it; today is marked as still running. */
-function DayList({ days, today }: { days: ReadonlyArray<DayLine>; today: string }) {
-  if (days.length === 0) return <p className="text-sm font-semibold text-slate-500">No day to show.</p>;
-  return (
-    <ul className="divide-y divide-slate-100 border border-slate-200 bg-white">
-      {days.map((day) => (
-        <li className="grid min-w-0 gap-1 px-3 py-2 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] sm:gap-3" key={day.date}>
-          <p className="break-words text-xs font-black leading-6 text-slate-600">
-            {dayLabel(day.date)}
-            {day.date === today ? " · today, still running" : ""}
-          </p>
-          <div className={cn("min-w-0 text-sm font-semibold leading-6", day.muted ? "text-slate-400" : "text-slate-700")}>
-            {day.lines.map((line, index) => (
-              <p className="break-words" key={index}>
-                {line}
-              </p>
-            ))}
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-// ── The list every section shares: show filter, search, pages, open days ────────────────────────
-
-type ReportListWords = {
-  title: string;
-  all: string;
-  with: string;
-  without: string;
-  searchLabel: string;
-  searchPlaceholder: string;
-  noneMatch: string;
-};
-
-type ReportListProps<T> = {
-  columns: ReadonlyArray<string | null>;
-  explain?: ReactNode;
-  /** Whether the row has anything to report (the "with" side of the show filter). */
-  hasData: (item: T) => boolean;
-  headers: ReadonlyArray<ReactNode>;
-  idPrefix: string;
-  items: ReadonlyArray<T>;
-  keyOf: (item: T) => string;
-  /** The row as a phone card; `open` says whether its days show. */
-  renderCard: (item: T, open: boolean, onToggle: () => void) => ReactNode;
-  /** The row's table cells. */
-  renderCells: (item: T, open: boolean, onToggle: () => void) => ReactNode;
-  /** The row's days, drawn under the row while open. */
-  renderOpen?: (item: T) => ReactNode;
-  searchWords: (item: T) => ReadonlyArray<string | null | undefined>;
-  words: ReportListWords;
-};
-
-function ReportList<T>({
-  columns,
-  explain,
-  hasData,
-  headers,
-  idPrefix,
-  items,
-  keyOf,
-  renderCard,
-  renderCells,
-  renderOpen,
-  searchWords,
-  words,
-}: ReportListProps<T>) {
-  const [presence, setPresence] = useState<Presence>("all");
-  const [query, setQuery] = useState("");
-  const [limit, setLimit] = useState(PAGE);
-  const [openKeys, setOpenKeys] = useState<ReadonlySet<string>>(() => new Set());
-
-  const withCount = items.filter(hasData).length;
-  const hasBoth = withCount > 0 && withCount < items.length;
-  const currentPresence: Presence = hasBoth ? presence : "all";
-  const searchable = items.length > SEARCH_FROM;
-  const rows = items.filter(
-    (item) =>
-      (currentPresence === "all" || hasData(item) === (currentPresence === "with")) &&
-      (!searchable || matchesWords(query, searchWords(item))),
-  );
-  const shown = rows.slice(0, limit);
-  const presenceOptions: Array<CrmChoiceOption<Presence>> = [
-    { value: "all", label: words.all, note: countText(items.length) },
-    { value: "with", label: words.with, note: countText(withCount) },
-    { value: "without", label: words.without, note: countText(items.length - withCount) },
-  ];
-
-  function toggle(key: string) {
-    setOpenKeys((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
-  return (
-    <>
-      <CrmBlock className="border-t border-slate-100" title={words.title}>
-        {explain ? <div className="break-words text-sm font-medium leading-6 text-slate-600">{explain}</div> : null}
-        {hasBoth || searchable ? (
-          <div
-            className={cn(
-              "grid min-w-0 gap-3",
-              explain ? "mt-3" : undefined,
-              hasBoth && searchable ? "md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:items-end" : undefined,
-            )}
-          >
-            {hasBoth ? (
-              <CrmField label="Show">
-                <CrmChoice
-                  columns={3}
-                  label="Show"
-                  onChange={(next) => {
-                    setPresence(next);
-                    setLimit(PAGE);
-                  }}
-                  options={presenceOptions}
-                  value={currentPresence}
-                />
-              </CrmField>
-            ) : null}
-            {searchable ? (
-              <CrmSearchField
-                id={`${idPrefix}-search`}
-                label={words.searchLabel}
-                onChange={(next) => {
-                  setQuery(next);
-                  setLimit(PAGE);
-                }}
-                placeholder={words.searchPlaceholder}
-                value={query}
-              />
-            ) : null}
-          </div>
-        ) : null}
-      </CrmBlock>
-
-      {rows.length === 0 ? (
-        <div className="border-t border-slate-100">
-          <CrmEmpty message="Clear the search or choose another filter." title={words.noneMatch} />
-        </div>
-      ) : (
-        <div className="border-t border-slate-100">
-          <CrmCardsOnPhone>
-            {shown.map((item) => {
-              const key = keyOf(item);
-              return <Fragment key={key}>{renderCard(item, openKeys.has(key), () => toggle(key))}</Fragment>;
-            })}
-          </CrmCardsOnPhone>
-          <CrmTable columns={columns}>
-            <thead>
-              <tr>
-                {headers.map((header, index) => (
-                  <th className={crmThClassName} key={index} scope="col">
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((item) => {
-                const key = keyOf(item);
-                const open = openKeys.has(key);
-                return (
-                  <Fragment key={key}>
-                    <tr>{renderCells(item, open, () => toggle(key))}</tr>
-                    {open && renderOpen ? (
-                      <tr>
-                        <td className="border-b border-slate-100 bg-slate-50 px-3 py-3" colSpan={columns.length}>
-                          {renderOpen(item)}
-                        </td>
-                      </tr>
-                    ) : null}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </CrmTable>
-          <CrmShowMore left={rows.length - limit} onMore={() => setLimit((value) => value + PAGE)} page={PAGE} />
-        </div>
-      )}
-    </>
-  );
-}
-
-const LIST_WORDS = {
-  all: "All",
-  searchLabel: "Find a territory or rep",
-  searchPlaceholder: "Territory, line or rep",
-  noneMatch: "Nothing matches",
-} as const;
 
 // ── Visits per rep per day ──────────────────────────────────────────────────────────────────────
 
@@ -1873,13 +1653,23 @@ const SECTION_TITLES: Record<ReportSection, string> = {
   adoption: "Who has started",
   managers: "Double and chain visits",
   locations: "Where the visit was saved",
+  capacity: "Grade against capacity",
+  heard: "What the field heard",
+  stock: "Missing stock",
+  samples: "Samples by month",
 };
+
+/**
+ * The four insight boards of 2026-10-02. A manager's reports — the server refuses each one to a medical
+ * rep, so leaving one here is UX, never the gate — read by the same predicate as the boards above them.
+ */
+const INSIGHT_SECTIONS: ReadonlyArray<ReportSection> = ["capacity", "heard", "stock", "samples"];
 
 /** The three sections a comparison means anything for. The others are lists, not measures. */
 const COMPARABLE_SECTIONS: ReadonlyArray<ReportSection> = ["visits", "plan", "coverage"];
 
 /** Sections that ask for a MONTH rather than a range of days. */
-const MONTHLY_SECTIONS: ReadonlyArray<ReportSection> = ["coverage", "frequency", "tracking"];
+const MONTHLY_SECTIONS: ReadonlyArray<ReportSection> = ["coverage", "frequency", "tracking", "samples", "capacity"];
 
 /** Sections that read neither a period nor a month — they are about right now. */
 const TIMELESS_SECTIONS: ReadonlyArray<ReportSection> = ["exceptions", "adoption"];
@@ -1906,6 +1696,9 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const [preset, setPreset] = useState<PeriodPreset | null>("this_month");
   const [period, setPeriod] = useState<Period>(() => presetPeriod("this_month", cairoToday));
   const [month, setMonth] = useState(() => cairoToday.slice(0, 7));
+  // Grade against capacity reads this month or the next — the month a plan is built for — so it keeps a
+  // month of its own rather than borrowing one the other sections may have set in the past.
+  const [capacityMonth, setCapacityMonth] = useState(() => cairoToday.slice(0, 7));
   const [includeTest, setIncludeTest] = useState(test);
   // Phones only: the filters fold to a one-line summary, so the figures are not a screen further down.
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -1920,11 +1713,19 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const territories = view?.territories ?? [];
   const lineTerritories = lineCode ? territories.filter((territory) => territory.lineCode === lineCode) : territories;
   const chosen = seatId ? lineTerritories.filter((territory) => territory.seatId === seatId) : lineTerritories;
-  const activeSection: ReportSection =
-    (section === "managers" && view && !view.hasManagers) ||
-    ((section === "locations" || section === "exceptions" || section === "bricks" || section === "adoption") && view && !view.canSeeLocations)
+  // A product or marketing manager reads ONE section — what the field heard about his own products,
+  // company-wide (owner, 2026-10-02) — and the server decides that he is one.
+  const productsAudience = view?.audience === "products";
+  const activeSection: ReportSection = productsAudience
+    ? "heard"
+    : (section === "managers" && view && !view.hasManagers) ||
+        ((section === "locations" || section === "exceptions" || section === "bricks" || section === "adoption" || INSIGHT_SECTIONS.includes(section)) &&
+          view &&
+          !view.canSeeLocations)
       ? "visits"
       : section;
+  const capacityMonths = capacityMonthsOffered(today);
+  const capacityMonthChosen = capacityMonths.includes(capacityMonth) ? capacityMonth : (capacityMonths[0] ?? capacityMonth);
   const withTest = Boolean(view?.canIncludeTest) && includeTest;
   // Checked whichever section is open: the export carries the daily plan's days too, and must never
   // send a range the server would refuse and so fail the whole workbook over one sheet.
@@ -1959,7 +1760,16 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     // Neither is filtered by line or territory: both are about the viewer's WHOLE reach, and a
     // filter would turn "how far has the rollout got" into "how far has it got here".
     if (name === "exceptions" || name === "adoption") return crmUrl(REPORTS_PATH, { section: name, includeTest: withTest });
+    if (name === "capacity") return crmUrl(REPORTS_PATH, { ...filters, month: capacityMonthChosen });
     if (MONTHLY_SECTIONS.includes(name)) return crmUrl(REPORTS_PATH, { ...filters, month });
+    // What the field heard reads a LINE or the whole scope and never one territory, because one
+    // territory is one rep — the server ignores a territory too. A product or marketing manager sends
+    // neither: his report is his products, company-wide.
+    if (name === "heard") {
+      return problem
+        ? null
+        : crmUrl(REPORTS_PATH, { ...filters, lineCode: productsAudience ? null : filters.lineCode, seatId: null, from: period.from, to: period.to });
+    }
     return problem ? null : crmUrl(REPORTS_PATH, { ...filters, from: period.from, to: period.to });
   }
 
@@ -1983,10 +1793,14 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const exceptions = useCrmGet<ExceptionsView>(sectionUrl("exceptions"), "report");
   const bricks = useCrmGet<BrickCoverageView>(sectionUrl("bricks"), "report");
   const adoption = useCrmGet<AdoptionView>(sectionUrl("adoption"), "report");
+  const capacity = useCrmGet<CapacityBoardView>(sectionUrl("capacity"), "report");
+  const heard = useCrmGet<FieldHeardView>(sectionUrl("heard"), "report");
+  const stock = useCrmGet<MissingStockView>(sectionUrl("stock"), "report");
+  const samples = useCrmGet<SamplesReportView>(sectionUrl("samples"), "report");
   // 🔴 EVERY SECTION HAS A KEY HERE. The Refresh button and the busy state read this map, so a
   // section added to `ReportSection` and forgotten here is a TS7053 at build and a crash the
   // moment that section is open. Caught on `frequency` before it shipped.
-  const active = { adoption, bricks, coverage, daily, exceptions, frequency, locations, managers, plan, tracking, visits }[activeSection];
+  const active = { adoption, bricks, capacity, coverage, daily, exceptions, frequency, heard, locations, managers, plan, samples, stock, tracking, visits }[activeSection];
 
   if (!view) {
     return (
@@ -1996,7 +1810,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     );
   }
 
-  if (territories.length === 0) {
+  if (territories.length === 0 && !productsAudience) {
     return (
       <CrmPanel description={REPORTS_DESCRIPTION} eyebrow="Reports" title="Reports">
         <CrmEmpty message="A territory shows here once its line opens in Phoenix CRM." title="No territories to show" />
@@ -2039,6 +1853,9 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     try {
       await downloadXlsxFrom(
         crmUrl(`${REPORTS_PATH}/export`, {
+          // Grade against capacity's own month — this month or the next — so its sheet holds the month
+          // the board shows.
+          capacityMonth: capacityMonthChosen,
           // The daily plan's own days, so its sheet holds what that section shows — and no sheet at all
           // when those days cannot be read, rather than a whole workbook refused over one of them.
           dailyFrom: dailyPeriodProblem ? null : dailyDays.period.from,
@@ -2060,27 +1877,39 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     }
   }
 
-  const sectionOptions: Array<CrmChoiceOption<ReportSection>> = [
-    // First, because it is the one a manager opens the tab FOR. Same gate as the place-vs-actual
-    // report — one predicate, `readsTeamReports`, so the two can never disagree about who is a
-    // manager — and the server refuses it too, since a hidden chip is UX and never the boundary.
-    ...(view.canSeeLocations ? [{ value: "exceptions" as const, label: SECTION_TITLES.exceptions, note: "Only what is wrong" }] : []),
-    { value: "visits", label: SECTION_TITLES.visits, note: "AM and PM apart" },
-    { value: "plan", label: SECTION_TITLES.plan, note: "Visited or missed, day by day" },
-    // Every reader of the tab: a rep reads his own plan here, and a manager a rep's in his scope.
-    { value: "daily", label: SECTION_TITLES.daily, note: "Each day's customers" },
-    { value: "coverage", label: SECTION_TITLES.coverage, note: "The list, month by month" },
-    { value: "frequency", label: SECTION_TITLES.frequency, note: "Grade and plan, apart" },
-    { value: "tracking", label: SECTION_TITLES.tracking, note: "Customer against every day" },
-    // Same gate again: a board comparing bricks ACROSS a team is the manager's (owner, 2026-09-26).
-    ...(view.canSeeLocations ? [{ value: "bricks" as const, label: SECTION_TITLES.bricks, note: "Per brick, with the caveat" }] : []),
-    // A board naming who has never opened the module must not reach the field (F3) — same gate.
-    ...(view.canSeeLocations ? [{ value: "adoption" as const, label: SECTION_TITLES.adoption, note: "How far the rollout got" }] : []),
-    ...(view.hasManagers ? [{ value: "managers" as const, label: SECTION_TITLES.managers, note: "Per manager" }] : []),
-    // Managers, SFE and the Super Admin only — and the server refuses it too, so the chip is not the
-    // gate (system-navigation hiding a link is UX; the boundary is server side).
-    ...(view.canSeeLocations ? [{ value: "locations" as const, label: SECTION_TITLES.locations, note: "Against the saved place" }] : []),
-  ];
+  const sectionOptions: Array<CrmChoiceOption<ReportSection>> = productsAudience
+    ? [{ value: "heard", label: SECTION_TITLES.heard, note: "Your products, company-wide" }]
+    : [
+      // First, because it is the one a manager opens the tab FOR. Same gate as the place-vs-actual
+      // report — one predicate, `readsTeamReports`, so the two can never disagree about who is a
+      // manager — and the server refuses it too, since a hidden chip is UX and never the boundary.
+      ...(view.canSeeLocations ? [{ value: "exceptions" as const, label: SECTION_TITLES.exceptions, note: "Only what is wrong" }] : []),
+      { value: "visits", label: SECTION_TITLES.visits, note: "AM and PM apart" },
+      { value: "plan", label: SECTION_TITLES.plan, note: "Visited or missed, day by day" },
+      // Every reader of the tab: a rep reads his own plan here, and a manager a rep's in his scope.
+      { value: "daily", label: SECTION_TITLES.daily, note: "Each day's customers" },
+      { value: "coverage", label: SECTION_TITLES.coverage, note: "The list, month by month" },
+      { value: "frequency", label: SECTION_TITLES.frequency, note: "Grade and plan, apart" },
+      { value: "tracking", label: SECTION_TITLES.tracking, note: "Customer against every day" },
+      // Same gate again: a board comparing bricks ACROSS a team is the manager's (owner, 2026-09-26).
+      ...(view.canSeeLocations ? [{ value: "bricks" as const, label: SECTION_TITLES.bricks, note: "Per brick, with the caveat" }] : []),
+      // A board naming who has never opened the module must not reach the field (F3) — same gate.
+      ...(view.canSeeLocations ? [{ value: "adoption" as const, label: SECTION_TITLES.adoption, note: "How far the rollout got" }] : []),
+      ...(view.hasManagers ? [{ value: "managers" as const, label: SECTION_TITLES.managers, note: "Per manager" }] : []),
+      // Managers, SFE and the Super Admin only — and the server refuses it too, so the chip is not the
+      // gate (system-navigation hiding a link is UX; the boundary is server side).
+      ...(view.canSeeLocations ? [{ value: "locations" as const, label: SECTION_TITLES.locations, note: "Against the saved place" }] : []),
+      // The four insight boards of 2026-10-02: the same gate as every board above them, and the server
+      // refuses each one to a medical rep as well.
+      ...(view.canSeeLocations
+        ? [
+            { value: "capacity" as const, label: SECTION_TITLES.capacity, note: "The list against the month" },
+            { value: "heard" as const, label: SECTION_TITLES.heard, note: "Products and objections" },
+            { value: "stock" as const, label: SECTION_TITLES.stock, note: "Pharmacies short of a product" },
+            { value: "samples" as const, label: SECTION_TITLES.samples, note: "What was left, month by month" },
+          ]
+        : []),
+      ];
   const presetOptions: Array<CrmChoiceOption<PeriodPreset>> = PRESETS.map(({ label, value }) => {
     const range = presetPeriod(value, today);
     const beforeOpening = range.to < FIRST_REPORT_DAY;
@@ -2097,15 +1926,20 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const chosenTerritory = seatId ? (lineTerritories.find((territory) => territory.seatId === seatId)?.name ?? null) : null;
   const dailySummary = [dailyPlanDaysSummary(dailyDays), chosenLine, chosenTerritory].filter((part): part is string => Boolean(part)).join(" · ");
   const filterSummary = [
-    MONTHLY_SECTIONS.includes(activeSection) ? monthLabel(month) : presetLabel,
+    MONTHLY_SECTIONS.includes(activeSection) ? monthLabel(activeSection === "capacity" ? capacityMonthChosen : month) : presetLabel,
     MONTHLY_SECTIONS.includes(activeSection) ? null : periodText(period),
     chosenLine,
-    chosenTerritory,
+    activeSection === "heard" ? null : chosenTerritory,
   ]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
 
   return (
+    <>
+      {/* A product manager answers the visits his line's reps ask of him here, the one page of the module
+          he opens (owner, 2026-10-02) — and so does the Marketing Manager, whom CNS reps may ask (the
+          owner's CNS rule). The server says who; it draws nothing for one who has never been asked. */}
+      {productsAudience && view?.answersVisitAsks ? <VisitAskInbox cairoToday={today} place="reports" test={test} /> : null}
     <CrmPanel
       actions={
         <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -2114,9 +1948,11 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
             never loaded and write no sheet, so the file has the same shape as his screen — it can
             never be a way round a refusal, and never an empty tab announcing a report exists.
           */}
-          <CrmButton busy={exporting} disabled={Boolean(problem)} onClick={() => void exportPack()} size="sm">
-            {exportFailed ? "Export failed — press to retry" : "Export all sections"}
-          </CrmButton>
+          {productsAudience ? null : (
+            <CrmButton busy={exporting} disabled={Boolean(problem)} onClick={() => void exportPack()} size="sm">
+              {exportFailed ? "Export failed — press to retry" : "Export all sections"}
+            </CrmButton>
+          )}
           <CrmButton busy={scope.loading || active.loading} disabled={Boolean(problem || dailyProblem)} onClick={refresh} size="sm">
             Refresh
           </CrmButton>
@@ -2153,6 +1989,21 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
             <p className="break-words text-sm font-semibold leading-6 text-slate-700">
               This board reads your whole scope, as it stands today. It takes no days and no territory.
             </p>
+          ) : activeSection === "capacity" ? (
+            <CrmField
+              className="md:max-w-md"
+              hint="This month, or the next one being planned. The list is read as it stands today."
+              htmlFor={`${idPrefix}-capacity-month`}
+              label="Month"
+            >
+              <CrmSelect id={`${idPrefix}-capacity-month`} onChange={(event) => setCapacityMonth(event.target.value)} value={capacityMonthChosen}>
+                {capacityMonths.map((key) => (
+                  <option key={key} value={key}>
+                    {key === currentMonth ? `${monthLabel(key)} · this month` : `${monthLabel(key)} · next month`}
+                  </option>
+                ))}
+              </CrmSelect>
+            </CrmField>
           ) : MONTHLY_SECTIONS.includes(activeSection) ? (
             <CrmField className="md:max-w-md" htmlFor={`${idPrefix}-month`} label="Month">
               <CrmSelect id={`${idPrefix}-month`} onChange={(event) => setMonth(event.target.value)} value={month}>
@@ -2223,7 +2074,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
                   </CrmSelect>
                 </CrmField>
               ) : null}
-              {lineTerritories.length > 1 ? (
+              {lineTerritories.length > 1 && activeSection !== "heard" ? (
                 <CrmField htmlFor={`${idPrefix}-territory`} label="Territory">
                   <CrmSelect id={`${idPrefix}-territory`} onChange={(event) => setSeatId(event.target.value)} value={seatId}>
                     <option value="">{activeSection === "daily" ? "Choose a territory" : `Every territory · ${countText(lineTerritories.length)}`}</option>
@@ -2234,6 +2085,11 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
                     ))}
                   </CrmSelect>
                 </CrmField>
+              ) : null}
+              {lineTerritories.length > 1 && activeSection === "heard" ? (
+                <p className="break-words text-xs font-semibold leading-5 text-slate-500 md:self-end">
+                  What the field heard reads a line or your whole scope, never one territory: one territory is one rep.
+                </p>
               ) : null}
             </div>
           ) : null}
@@ -2272,9 +2128,18 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
         <AdoptionSection idPrefix={idPrefix} resource={adoption} />
       ) : activeSection === "locations" ? (
         <LocationsSection idPrefix={idPrefix} resource={locations} />
+      ) : activeSection === "capacity" ? (
+        <CapacitySection idPrefix={idPrefix} resource={capacity} />
+      ) : activeSection === "heard" ? (
+        <HeardSection idPrefix={idPrefix} resource={heard} today={today} />
+      ) : activeSection === "stock" ? (
+        <StockSection idPrefix={idPrefix} resource={stock} />
+      ) : activeSection === "samples" ? (
+        <SamplesSection idPrefix={idPrefix} resource={samples} />
       ) : (
         <ManagersSection idPrefix={idPrefix} resource={managers} today={today} />
       )}
     </CrmPanel>
+    </>
   );
 }

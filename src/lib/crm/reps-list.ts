@@ -58,6 +58,7 @@ import {
   type SharedWith,
 } from "@/lib/crm/location-confidence";
 import { buildPhoenixInsights, type PhoenixInsight } from "@/lib/crm/phoenix-insights";
+import { IREPORTS360_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts";
 import { repDoctorListRepKey } from "@/lib/crm/rep-doctor-lists";
 import type { RepsListActivity } from "@/lib/crm/reps-list-activity";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
@@ -464,6 +465,9 @@ export async function loadCheckins(contactIds: readonly number[]): Promise<Map<n
       const { data, error } = await supabase
         .from(CRM_CHECKINS_UNIFIED_VIEW)
         .select("contact_crm_id, agent_crm_id, agent_hr_id, lat, lon, address, check_date")
+        // iReports360 check-ins only: these pins reach the rep's own Phoenix CRM List (shared-customers.ts),
+        // and a Phoenix visit's position is never shown on a rep's screen (golden rule #1).
+        .eq("source", IREPORTS360_VISIT_SOURCE)
         .in("contact_crm_id", chunk)
         .not("lat", "is", null)
         .not("lon", "is", null)
@@ -622,6 +626,8 @@ export async function loadPinsFor(contactIds: readonly number[]): Promise<Map<nu
     supabase
       .from(CRM_CHECKINS_UNIFIED_VIEW)
       .select("contact_crm_id, lat, lon, check_date")
+      // iReports360 check-ins only, as loadCheckins above: never a Phoenix visit's position.
+      .eq("source", IREPORTS360_VISIT_SOURCE)
       .in("contact_crm_id", chunk)
       .not("lat", "is", null)
       .not("lon", "is", null)

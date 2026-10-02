@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 
 import { FieldWorkforceRouteMap, type RouteCheckin } from "@/components/field-workforce-compliance/field-workforce-route-map";
 import { Card } from "@/components/ui/card";
+import { formatVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 
 type Subject = {
   areaName: string | null;
@@ -49,7 +50,7 @@ type Stop = {
 
 type Day = {
   averageLogLagMinutes: number | null;
-  counts: { am: number; pharmacies: number; pm: number };
+  counts: VisitCountSplit;
   countedTotal: number;
   dateIso: string;
   firstCheckin: string | null;
@@ -90,7 +91,7 @@ type Report = {
   toIso: string;
   totals: {
     claimedTotal: number;
-    counts: { am: number; pharmacies: number; pm: number };
+    counts: VisitCountSplit;
     countedTotal: number;
     fieldDays: number;
     movementMetres: number;
@@ -183,7 +184,7 @@ function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
           />
         ) : null}
         {day.countedTotal > 0 ? (
-          <Fact label="Counted visits" value={`AM ${day.counts.am} · PM ${day.counts.pm} · Pharmacies ${day.counts.pharmacies}`} />
+          <Fact label="Counted visits" value={formatVisitCountSplit(day.counts)} />
         ) : null}
         {day.firstCheckin ? <Fact label="GPS window" value={`${clock12(day.firstCheckin)} to ${clock12(day.lastCheckin)}`} /> : null}
         {day.onTerritoryMinutes != null ? <Fact label="Time on territory" value={duration(day.onTerritoryMinutes)} /> : null}
@@ -593,7 +594,7 @@ export function FieldActivityView({
               {[report.subject.jobTitle, report.subject.lineName, report.subject.areaName].filter(Boolean).join(" · ")}
             </p>
             <div className="mt-3 grid grid-cols-1 border-l border-t border-slate-200 sm:grid-cols-3 lg:grid-cols-5">
-              <Fact label="Counted visits" value={`AM ${report.totals.counts.am} · PM ${report.totals.counts.pm} · Pharmacies ${report.totals.counts.pharmacies}`} />
+              <Fact label="Counted visits" value={formatVisitCountSplit(report.totals.counts)} />
               <Fact label="Field days" value={String(report.totals.fieldDays)} />
               <Fact label="GPS stops" value={String(report.totals.stops)} />
               <Fact label="Movement" value={`${(report.totals.movementMetres / 1000).toFixed(2)} km`} />

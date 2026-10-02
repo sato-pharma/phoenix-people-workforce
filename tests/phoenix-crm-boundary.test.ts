@@ -52,6 +52,15 @@ const GRANTS: ReadonlyArray<readonly [PhoenixRole, readonly PermissionAction[]]>
   // `create`, `update` and `approve` are what resolvePhoenixCrmViewer turns into entering visits,
   // requesting list changes and deciding them, and he does none of those.
   ["Training Manager", ["read"]],
+  // ONE report and nothing else (owner, 2026-10-02: "product managers and marketing see it too — for
+  // their own products, company-wide, never per rep and never any honesty figure"): what the field
+  // heard about their own products. Like the Training Manager they hold no sales seat, so every other
+  // read answers them with nothing or a refusal; READ alone, because the other three actions are what
+  // resolvePhoenixCrmViewer turns into entering and deciding. tests/phoenix-crm-insight-reports.test.ts
+  // pins what the one report shows them.
+  ["Product Manager", ["read"]],
+  ["Group Product Manager", ["read"]],
+  ["Marketing Manager", ["read"]],
 ];
 
 function runPermissionTests() {
@@ -119,6 +128,9 @@ const ROUTE_GATES: RouteGate[] = [
   post("list/rename", "create"),
   // The pharmacy the rep pins as this doctor's primary (owner, 2026-09-24): his own write.
   post("list/primary-pharmacy", "create"),
+  // One customer's past Phoenix visits, newest first, on his page (owner, 2026-10-02). Read through the
+  // same seat gate as the list (`territoryForRead`), and carrying no location, distance or flag.
+  get("list/timeline"),
   post("list/places", "create"),
   post("list/places/update", "create"),
   // Moving or removing a validated place (owner, 2026-09-29): the Super Admin and the SFE Manager only.
@@ -167,6 +179,19 @@ const ROUTE_GATES: RouteGate[] = [
   // (and the Super Admin's test mode). SFE holds no `create`, so it reads and never writes.
   get("double-visit-plans"),
   post("double-visit-plans", "create"),
+  // A rep's ask for a visit with somebody (owner, 2026-10-02) — his manager, a product manager of his
+  // line, or a chain visit with his district manager and the manager above. A SEPARATE workflow from
+  // the double-visit plan above, which the rep never sees. The customer's page reads its asks through
+  // the list's seat gate; the rep raises and cancels his own (`create`, narrowed to the territory's own
+  // rep); the inbox is a `read` narrowed in the service to the people an ask reaches.
+  get("visit-asks"),
+  post("visit-asks", "create"),
+  post("visit-asks/cancel", "create"),
+  // 🔴 Answering is `read` on purpose: a product manager holds phoenix_crm `read` and nothing else, so
+  // it is the narrowest gate that serves every person asked. Gate two is IDENTITY, read from the ask's
+  // own row (`assertVisitAskAnswerer`), never a name in the body — and it is audited as a mutation.
+  post("visit-asks/answer", "read"),
+  get("visit-asks/inbox"),
   // The Doctors directory: validated customers across territories, scoped downward on the server.
   get("doctors"),
   // There is no "integrity" gate here because there is no integrity ROUTE (2026-09-26). It had no
@@ -531,6 +556,14 @@ const LATER_MIGRATIONS = [
   // wins — and it restates phoenix_crm_plan_transition with both the one-day return above and the 23:55
   // deadline (20261002122000) made from one base, still ONE plan-event insert. No table, no new function.
   "supabase/migrations/20261002125244_phoenix_crm_still_planned_after_one_day_return.sql",
+  // A rep's ask for a visit with somebody (owner, 2026-10-02): one new table and three brand-new
+  // functions (raise, answer, cancel). It replaces nothing — no save_visit — so it appends safely at the
+  // end, and it never touches the district manager's own double-visit plan.
+  "supabase/migrations/20261002135638_phoenix_crm_visit_asks.sql",
+  // A save on a week returned for ONE day keeps naming that day (2026-10-02). It REPLACES
+  // phoenix_crm_save_plan with its live body and one changed expression — the 'saved' event's details —
+  // so its two plan-event inserts stay two. No table, no new function, no save_visit.
+  "supabase/migrations/20261002142625_phoenix_crm_saved_event_keeps_the_returned_day.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

@@ -58,6 +58,7 @@ import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES } from "@/lib/phoenix-crm/day-activities";
 import type { ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
+import { movedDayReason } from "@/lib/phoenix-crm/offplan-day";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { outOfListVisitNote, unplannedKindLabel } from "@/lib/phoenix-crm/unplanned-rules";
 import type { DayActivityRow, SavedVisit, VisitCustomerOption, VisitDayView, VisitFormView, VisitRow } from "@/lib/phoenix-crm/view-types";
@@ -442,6 +443,8 @@ function SavedNote({ onOpenList, saved }: { onOpenList?: () => void; saved: Save
       {/* The server's own verdict, not what he chose on the first step — so a rep who picked Planned
           for a customer his plan no longer holds finds out here rather than a month later. */}
       {visit.unplannedNote ? <span className="mt-1 block">{visit.unplannedNote}</span> : null}
+      {/* "Arrange a double visit" asked his manager by itself (owner, 2026-10-02) — his own request. */}
+      {visit.visitAskNote ? <span className="mt-1 block break-words">{visit.visitAskNote}</span> : null}
       {visit.unplannedKind === "out_of_list" && onOpenList ? (
         <span className="mt-2 block">
           <span className="block">On the List, choose Request to add or Drop for this customer.</span>
@@ -589,7 +592,17 @@ function holdsWork(step: AddStep | null): boolean {
 function routeFor(customer: VisitCustomerOption): AddStep {
   if (customer.outside) return { name: "form", customerId: customer.customerId, visitType: "out_of_list", reason: null, back: null };
   if (customer.plannedToday) return { name: "form", customerId: customer.customerId, visitType: "planned", reason: null, back: null };
-  return { name: "reason", customerId: customer.customerId, reason: "", back: null };
+  return { name: "reason", customerId: customer.customerId, reason: filledReason(customer), back: null };
+}
+
+/**
+ * Where the reason starts when he picks Out of plan (owner, 2026-10-02: "Moved-day reason pre-filled").
+ * A customer on his SENT plan for another day of this week starts with that day written for him —
+ * "Planned for Tuesday 6 Oct; seen today instead." — which he can change; anyone else starts empty, as
+ * every reason always has. No step is added: it is the same screen, with the typing already done.
+ */
+function filledReason(customer: Pick<VisitCustomerOption, "plannedOtherDays"> | null): string {
+  return (customer ? movedDayReason(customer.plannedOtherDays) : null) ?? "";
 }
 
 function AddFlow({
@@ -742,7 +755,7 @@ function AddFlow({
           allCustomers={loaded.customers}
           mode="out_of_plan"
           onBack={() => onStep({ name: "unplanned" })}
-          onPick={(customerId) => onStep({ name: "reason", customerId, reason: "", back: { name: "out_of_plan" } })}
+          onPick={(customerId) => onStep({ name: "reason", customerId, reason: filledReason(find(customerId)), back: { name: "out_of_plan" } })}
         />,
         () => onStep({ name: "unplanned" }),
       );

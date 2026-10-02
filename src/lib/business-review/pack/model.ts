@@ -21,7 +21,12 @@
 // A section with nothing to say is DROPPED rather than exported empty. A deck with a blank slide
 // headed "Brick spread" tells the room the district sold through no bricks.
 
-import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import {
+  emptyVisitCountSplit,
+  formatVisitCountSplit,
+  mergeVisitCountSplits,
+  type VisitCountSplit,
+} from "@/lib/crm/visit-count-buckets";
 
 import type { ConcentrationFacts, ReviewSalesDetail } from "../concentration";
 import { describeSpread } from "../concentration";
@@ -43,10 +48,12 @@ import {
   costToServeSection,
   directOrdersSection,
   dvFocusSections,
+  pharmacyCell,
   plainForRep,
   requestsSection,
   summarySection,
   teamScorecardSection,
+  withPharmacyNote,
 } from "./link-sections";
 import { crmKpiSection } from "./kpi-sections";
 import { metricById, type PackSubject, type ReviewMetricId } from "./metrics";
@@ -840,6 +847,9 @@ function visitsSplit({ people, visitsAvailable }: PackInput): PackSection | null
     }),
     { am: 0, campaign: 0, pharmacies: 0, pm: 0, regular: 0, visits: 0 },
   );
+  // The same three figures merged by the golden-rule helper, so the total row knows how many of its
+  // visits were Phoenix CRM's (which logs no pharmacy visit) and never prints that figure as 0.
+  const totalSplit = active.reduce((sum, person) => mergeVisitCountSplits(sum, person.visitSplit), emptyVisitCountSplit());
   return {
     chart:
       plotted.length >= 2
@@ -863,24 +873,34 @@ function visitsSplit({ people, visitsAvailable }: PackInput): PackSection | null
     columns: ["Person", "Field visits", "AM", "PM", "Pharmacies", "Regular", "Campaign"],
     metric: "visits-split",
     // The owner's golden rule, carried with the figures that obey it.
-    note: "AM · PM · Pharmacies are three figures kept apart — a pharmacy is never counted inside PM or AM, and there is no combined call rate. A visit belongs to exactly one person, so these rows add.",
+    note: withPharmacyNote(
+      "AM · PM · Pharmacies are three figures kept apart — a pharmacy is never counted inside PM or AM, and there is no combined call rate. A visit belongs to exactly one person, so these rows add.",
+      [[totalSplit], ...active.map((person) => [person.visitSplit] as const)],
+    ),
     rows: [
       ...active.map((person): PackCell[] => [
         personName(person),
         num(person.fieldVisits),
         num(person.visitSplit.am),
         num(person.visitSplit.pm),
-        num(person.visitSplit.pharmacies),
+        pharmacyCell(person.visitSplit),
         num(person.regularVisits),
         num(person.campaignVisits),
       ]),
       ...(active.length > 1
-        ? [["Everyone above", total.visits, total.am, total.pm, total.pharmacies, total.regular, total.campaign]]
+        ? [["Everyone above", total.visits, total.am, total.pm, pharmacyCell(totalSplit), total.regular, total.campaign]]
         : []),
     ],
     title: "Visits",
   };
 }
+
+/** A person's distinct customers as a split — judged by the visits they were counted from. */
+const customerSplitOf = (person: ReviewPersonRow): VisitCountSplit => ({
+  am: num(person.customersAm),
+  pm: num(person.customersPm),
+  pharmacies: num(person.customersPharmacy),
+});
 
 function coverageFrequency({ people, visitsAvailable }: PackInput): PackSection | null {
   if (!visitsAvailable) return null;
@@ -890,13 +910,16 @@ function coverageFrequency({ people, visitsAvailable }: PackInput): PackSection 
     align: ["left", "right", "right", "right", "right", "right", "right"],
     columns: ["Person", "Customers reached", "AM", "PM", "Pharmacies", "Regular visits", "Visits per customer"],
     metric: "coverage-frequency",
-    note: "From the visits themselves: the distinct customers each person saw, AM · PM · Pharmacies apart, and the regular visits each received on average. Coverage and frequency against each rep's PLAN are the CRM KPIs board's, in \"Coverage, frequency and call rate\". Customers are unions, so these rows are never totalled.",
+    note: withPharmacyNote(
+      "From the visits themselves: the distinct customers each person saw, AM · PM · Pharmacies apart, and the regular visits each received on average. Coverage and frequency against each rep's PLAN are the CRM KPIs board's, in \"Coverage, frequency and call rate\". Customers are unions, so these rows are never totalled.",
+      reached.map((person) => [customerSplitOf(person), person.customerVisitSplit ?? person.visitSplit] as const),
+    ),
     rows: reached.map((person) => [
       personName(person),
       num(person.customers),
       num(person.customersAm),
       num(person.customersPm),
-      num(person.customersPharmacy),
+      pharmacyCell(customerSplitOf(person), person.customerVisitSplit ?? person.visitSplit),
       num(person.regularVisits),
       person.customers > 0 ? (num(person.regularVisits) / person.customers).toFixed(1) : "—",
     ]),
@@ -962,6 +985,8 @@ function roleActivity({ people, visitsAvailable }: PackInput): PackSection | nul
     am: number;
     pm: number;
     pharmacies: number;
+    /** Of those visits, Phoenix CRM's own — it logs no pharmacy visit (visit-count-buckets.ts). */
+    phoenix: number;
     rides: number;
     outstation: number;
     marketing: number;
@@ -970,12 +995,13 @@ function roleActivity({ people, visitsAvailable }: PackInput): PackSection | nul
   for (const person of people) {
     const role = person.role || person.jobTitle || "No role on record";
     const tally =
-      byRole.get(role) ?? { am: 0, marketing: 0, outstation: 0, people: 0, pharmacies: 0, pm: 0, rides: 0, visits: 0 };
+      byRole.get(role) ?? { am: 0, marketing: 0, outstation: 0, people: 0, pharmacies: 0, phoenix: 0, pm: 0, rides: 0, visits: 0 };
     tally.people += 1;
     tally.visits += num(person.fieldVisits);
     tally.am += num(person.visitSplit.am);
     tally.pm += num(person.visitSplit.pm);
     tally.pharmacies += num(person.visitSplit.pharmacies);
+    tally.phoenix += num(person.visitSplit.phoenix ?? 0);
     tally.rides += num(person.ridesLed);
     tally.outstation += num(person.outstationClaimed);
     tally.marketing += num(person.marketingRequests);
@@ -1009,7 +1035,9 @@ function roleActivity({ people, visitsAvailable }: PackInput): PackSection | nul
       role,
       tally.people,
       visitsAvailable ? tally.visits : NO_VISIT_DATA,
-      visitsAvailable ? formatVisitCountSplit({ am: tally.am, pharmacies: tally.pharmacies, pm: tally.pm }) : NO_VISIT_DATA,
+      visitsAvailable
+        ? formatVisitCountSplit({ am: tally.am, pharmacies: tally.pharmacies, pm: tally.pm, ...(tally.phoenix > 0 ? { phoenix: tally.phoenix } : {}) })
+        : NO_VISIT_DATA,
       tally.rides,
       tally.outstation,
       tally.marketing,

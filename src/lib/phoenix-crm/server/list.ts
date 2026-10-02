@@ -544,8 +544,13 @@ type PharmacyAggregate = {
  * recent spelling, each product keeps its latest Has/Doesn't-have answer, and the list is most-recent
  * first. `isPrimary` is left false here and set by the caller, which knows the pinned primary. Pure, so
  * the grouping is tested without a database.
+ *
+ * `max` is how many pharmacies each key keeps — a customer's card shows his 50 most recent. The
+ * missing-stock board (server/insight-reports.ts) groups a whole territory's answers through this SAME
+ * function, one product at a time, and passes no limit: a board that dropped the 51st pharmacy short
+ * of a product would be a board quietly telling a manager it was in stock.
  */
-export function groupCustomerPharmacies(feedback: PharmacyFeedback[]): Map<string, CustomerPharmacy[]> {
+export function groupCustomerPharmacies(feedback: PharmacyFeedback[], max: number = CUSTOMER_PHARMACIES_MAX): Map<string, CustomerPharmacy[]> {
   // Oldest first, so a more recent visit's spelling and answers overwrite earlier ones.
   const rows = [...feedback].sort((left, right) => left.capturedAt.localeCompare(right.capturedAt));
 
@@ -582,7 +587,7 @@ export function groupCustomerPharmacies(feedback: PharmacyFeedback[]): Map<strin
           .sort((left, right) => left.product.localeCompare(right.product)),
       }))
       .sort((left, right) => right.lastFeedbackAt.localeCompare(left.lastFeedbackAt))
-      .slice(0, CUSTOMER_PHARMACIES_MAX);
+      .slice(0, max);
     result.set(customerId, list);
   }
   return result;

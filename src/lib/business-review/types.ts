@@ -372,6 +372,13 @@ export type CompanyDmRow = {
   customersAm: number;
   customersPm: number;
   customersPharmacy: number;
+  /**
+   * The district's field visits, AM · PM · Pharmacies — carried so the customers' pharmacy figure is
+   * judged by the visits it was counted from: Phoenix CRM logs no pharmacy visit, so a team that
+   * works in it reads "Pharmacies not recorded in Phoenix", never 0 (src/lib/crm/visit-count-buckets.ts).
+   * Optional: a payload from before it existed reads the figure as it always did.
+   */
+  visitSplit?: VisitCountSplit;
   doubleVisits: number;
   visitsAvailable: boolean;
 };

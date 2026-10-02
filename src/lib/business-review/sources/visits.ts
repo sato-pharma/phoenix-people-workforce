@@ -45,6 +45,7 @@ import {
   queryVisits,
 } from "@/lib/crm/reads";
 import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/call-rate";
+import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import {
   addBucketToSplit,
   emptyVisitCountSplit,
@@ -280,6 +281,9 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
       speciality: row.speciality,
       visit_type: row.visit_type,
     });
+    // A Phoenix CRM row (its negative id) logs no pharmacy visit: the split counts it, so the review
+    // prints that pharmacy figure as not recorded, never 0 (src/lib/crm/visit-count-buckets.ts).
+    const fromPhoenix = isPhoenixNativeVisitRow(row);
 
     const activityKey = `${period}|${label}`;
     const activityFact = activity.get(activityKey);
@@ -316,7 +320,7 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
     agent.byLabel.set(label, (agent.byLabel.get(label) ?? 0) + 1);
     if (isField) {
       agent.fieldVisits += 1;
-      addBucketToSplit(agent.visitSplit, countBucket);
+      addBucketToSplit(agent.visitSplit, countBucket, 1, fromPhoenix);
     } else agent.adminRows += 1;
     if (isRegular) agent.regularVisits += 1;
     if (row.visit_type === CAMPAIGN_TYPE) agent.campaignVisits += 1;
@@ -372,7 +376,7 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
     }
     if (!manager.managerName && row.double_name) manager.managerName = row.double_name;
     manager.rides += 1;
-    addBucketToSplit(manager.rideSplit, countBucket);
+    addBucketToSplit(manager.rideSplit, countBucket, 1, fromPhoenix);
     if (agentHrId) manager.ridesByRep.set(agentHrId, (manager.ridesByRep.get(agentHrId) ?? 0) + 1);
     if (contactId != null) {
       manager.customers.add(contactId);
@@ -396,7 +400,10 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
   };
 }
 
-export const VISITS_ORIGIN = "public.ireports360_visits via the CRM read door, keyed on visit_date";
+// The door serves iReports360 rows, and a team that works in Phoenix CRM by its own Phoenix visits from
+// the team's start instead of its reps' vendor rows (owner, 2026-10-02 — src/lib/crm/phoenix-team-starts.ts).
+// Kept to one short line: it lands in a merged cell of the pack that does not wrap.
+export const VISITS_ORIGIN = "public.crm_visits_unified via the CRM read door, keyed on visit_date";
 export const VISITS_RULE =
   "A visit is a field row under the shared classifier — regular, campaign, or an unlabelled field " +
   "call. Meetings, leave, admin and BRM days are counted separately and are not visits. Repeat " +

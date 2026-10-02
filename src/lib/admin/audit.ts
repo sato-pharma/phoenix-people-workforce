@@ -212,6 +212,11 @@ export type AuditEntityType =
   // screen's dry run, which hands back no file.
   | "business_cards_export"
   | "crm_plan_sync"
+  // The Super Admin starting or stopping a TEAM's count from Phoenix CRM on every other screen (owner,
+  // 2026-10-02: "Only when I start it"). Written by phoenix_crm_set_team_start itself, in the same
+  // transaction as the change, so a start or a stop can never land without its row. Entity id is the
+  // team's district-manager seat.
+  | "crm_phoenix_team_start"
   // A manager verifying a rep's plan. The ONLY thing Phoenix writes back into the customer's CRM,
   // so who signed off which plan is recorded on our side rather than being recoverable only from
   // the vendor's system. Entity id is the CRM plan id.

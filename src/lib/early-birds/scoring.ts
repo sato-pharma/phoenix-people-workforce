@@ -226,6 +226,13 @@ export function buildEarlyBirdsRanking(input: {
    * silently falling back to paperwork time.
    */
   gpsStartByRepDay?: ReadonlyMap<string, number>;
+  /**
+   * `${hrIdKey}|${dateIso}` of every rep-day within a started Phoenix CRM team's start (owner,
+   * 2026-10-02: "First Phoenix visit"). On such a day the start in `gpsStartByRepDay` is the rep's first
+   * countable Phoenix visit — captured at the customer's door — never a GPS check-in, so it is counted
+   * in `visitStartDays` and named a first visit. Omit it and every start is a GPS check-in, as before.
+   */
+  phoenixClockRepDays?: ReadonlySet<string>;
   /** Clamp for a live preview so future days never count as missed. */
   throughIso?: string;
 }): EarlyBirdsRanking {
@@ -256,17 +263,27 @@ export function buildEarlyBirdsRanking(input: {
     const timeline: EarlyBirdsDayFact[] = [];
     const firstStarts: number[] = [];
     let dailyWins = 0;
+    let visitStartDays = 0;
+    let phoenixClock = false;
 
     for (const dateIso of periodDays) {
       const dayFacts = byDay.get(dateIso) ?? [];
-      // GPS ONLY. A day with visits but no check-in is real work with no verified start — it keeps
-      // counting for submissions, volume, Regular and Campaign, and contributes no start time.
+      // GPS ONLY — or, on a day within a started Phoenix CRM team's start, the first Phoenix visit
+      // (phoenixClockRepDays). A day with visits but no check-in is real work with no verified start —
+      // it keeps counting for submissions, volume, Regular and Campaign, and contributes no start time.
       // Paperwork time is never promoted into the ranking, however tempting the gap looks.
       const gpsStart = input.gpsStartByRepDay?.get(`${rep.hrIdKey}|${dateIso}`);
       const startMinutes =
         gpsStart !== undefined && isPlausibleEarlyBirdsStart(gpsStart) ? gpsStart : null;
-      const timeSource: EarlyBirdsDayFact["timeSource"] = startMinutes === null ? "none" : "gps_checkin";
-      if (startMinutes !== null) firstStarts.push(startMinutes);
+      // Within a start the clock is the first Phoenix visit — its own capture time, never GPS.
+      const phoenixDay = input.phoenixClockRepDays?.has(`${rep.hrIdKey}|${dateIso}`) === true;
+      if (phoenixDay) phoenixClock = true;
+      const timeSource: EarlyBirdsDayFact["timeSource"] =
+        startMinutes === null ? "none" : phoenixDay ? "save_time" : "gps_checkin";
+      if (startMinutes !== null) {
+        firstStarts.push(startMinutes);
+        if (phoenixDay) visitStartDays += 1;
+      }
       const wonDay = input.dailyWinnerHrIdKeys.get(dateIso) === rep.hrIdKey;
       if (wonDay) dailyWins += 1;
       timeline.push({
@@ -285,15 +302,16 @@ export function buildEarlyBirdsRanking(input: {
     // Owner ruling 2026-09-20: only a Regular visit with a matching GPS check-in earns Regular
     // credit. A no-check-in Regular visit is real work — it stays off the Campaign line — but it is
     // identified and counted on its own, never blended into the credited total.
+    // A Phoenix CRM visit is its own check-in (EarlyBirdsVisitFact.phoenixVisit).
     const regularVisitsWithCheckin = repFacts.filter(
-      (fact) => fact.visitType === 0 && fact.timeSource === "gps_checkin",
+      (fact) => fact.visitType === 0 && (fact.timeSource === "gps_checkin" || fact.phoenixVisit === true),
     ).length;
     const regularVisitsNoCheckin = regularVisits - regularVisitsWithCheckin;
     const campaignVisits = repFacts.filter((fact) => fact.visitType === -8).length;
     const gpsEligibleVisits = repFacts.filter((fact) => fact.gpsEligible).length;
     const gpsVerifiedVisits = repFacts.filter((fact) => fact.timeSource === "gps_checkin").length;
     const gpsShare = gpsEligibleVisits > 0 ? gpsVerifiedVisits / gpsEligibleVisits : null;
-    const gpsVerifiedDays = firstStarts.length;
+    const gpsVerifiedDays = firstStarts.length - visitStartDays;
     const medianStartMinutes = median(firstStarts);
 
     const components: EarlyBirdsComponentScores = {
@@ -338,6 +356,9 @@ export function buildEarlyBirdsRanking(input: {
       eligible,
       ineligibleReasons: reasons,
       timeline,
+      // Present only on a Phoenix CRM fortnight, so every other score is exactly what it was.
+      ...(visitStartDays > 0 ? { visitStartDays } : {}),
+      ...(phoenixClock ? { phoenixClock: true } : {}),
     };
   });
 

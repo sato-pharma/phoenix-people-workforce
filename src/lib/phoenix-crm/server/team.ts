@@ -22,13 +22,22 @@
  * in three batched queries (loadTeamToday), never one per rep.
  */
 
+import { logError } from "@/lib/observability/log";
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
-import { canDecideListRequest, canReviewTerritory, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import {
+  canDecideListRequest,
+  canReviewTerritory,
+  isLocationBlind,
+  testModeFor,
+  testReadSeats,
+  type PhoenixCrmViewer,
+} from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { doubleVisitPlanReach, type DoubleVisitPlanReach } from "@/lib/phoenix-crm/server/double-visit-plans";
 import { loadReadiness, loadRequestRows, mapRequestRow, requestPeople, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
+import { loadMovedFromDays } from "@/lib/phoenix-crm/server/offplan-day";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { canDecidePlanEditRow, loadPlanEditRows, mapPlanEditRow, planEditPeople, type PlanEditRequestView } from "@/lib/phoenix-crm/server/plan-edits";
@@ -38,8 +47,10 @@ import {
   loadUnplannedRows,
   mapUnplannedRow,
   unplannedPeople,
+  unplannedVisitRef,
   type UnplannedVisitView,
 } from "@/lib/phoenix-crm/server/unplanned";
+import { loadVisitAskSummary, type VisitAskSummary } from "@/lib/phoenix-crm/server/visit-asks";
 import {
   emptyTeamToday,
   summarizeTeamToday,
@@ -145,7 +156,17 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
 
 export type TeamRequest = ListRequest & { seatId: string; territoryName: string; canDecide: boolean };
 
-export type TeamUnplannedVisit = UnplannedVisitView & { territoryName: string; canDecide: boolean };
+export type TeamUnplannedVisit = UnplannedVisitView & {
+  territoryName: string;
+  canDecide: boolean;
+  /**
+   * The other days of the visit's field week its customer stood on the rep's SENT plan, as the plan
+   * stood when he logged the visit (owner, 2026-10-02: "the approver sees the original day"). Read by
+   * the server from the plan itself (server/offplan-day.ts), never from what the rep wrote; empty when
+   * the visit was not moved from a day.
+   */
+  plannedFor: string[];
+};
 
 /** A rep's request to edit a sent week (owner, 2026-10-01), with whether THIS viewer acts at its step. */
 export type TeamPlanEdit = PlanEditRequestView & { territoryName: string; canDecide: boolean };
@@ -164,7 +185,8 @@ export type TeamView = {
   /**
    * Off-plan visits waiting for a decision, the longest-waiting first. They ride in this payload
    * rather than in a fetch of their own, so one decision refreshes the whole tab exactly as a grade
-   * or drop decision already does.
+   * or drop decision already does. The screen shows them as one card per rep per visit day
+   * (owner, 2026-10-02 — offplan-day.ts `splitOffPlanDays`); each visit is still decided on its own.
    */
   unplannedVisits: TeamUnplannedVisit[];
   /**
@@ -180,6 +202,13 @@ export type TeamView = {
    * manager, the CEO), so the section is never offered to them. The rep never sees it.
    */
   doubleVisits: DoubleVisitPlanReach | null;
+  /**
+   * A rep's asks for a visit with somebody (owner, 2026-10-02): how this viewer reads them — the ones
+   * asked of him or told to him, or every one in scope for SFE and the Super Admin — whether he has any
+   * to read, and how many wait for his answer. Null for everyone the asks never reach (a CEO). They are
+   * drawn in the Double visits section, apart from the district manager's own plan.
+   */
+  visitAsks: VisitAskSummary | null;
   summary: {
     territories: number;
     vacant: number;
@@ -194,21 +223,40 @@ export type TeamView = {
     planEditsWaiting: number;
     /** Requests to edit a week at a step this viewer takes — the manager's, SFE's, or HR's. */
     planEditsWaitingForYou: number;
+    /** Visit asks waiting for this viewer's answer. */
+    visitAsksWaitingForYou: number;
   };
 };
+
+/**
+ * The asks' figures for the Team tab, or null when they cannot be read — the tab still opens, and the
+ * section reads the asks itself.
+ */
+async function visitAskSummaryOrNull(viewer: PhoenixCrmViewer, isTest: boolean): Promise<VisitAskSummary | null> {
+  try {
+    return await loadVisitAskSummary(viewer, isTest);
+  } catch (error) {
+    logError("Phoenix CRM could not read the visit asks for the Team tab", {
+      error,
+      labels: { event: "phoenix_crm_visit_ask_team_failed" },
+    });
+    return null;
+  }
+}
 
 export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<TeamView> {
   const isTest = testModeFor(viewer, raw.test);
   const seats: OrgSeat[] = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const seatIds = seats.map((seat) => seat.seatId);
 
-  const [readiness, requestRows, unplannedRows, planEditRows, todayBySeat] = await Promise.all([
+  const [readiness, requestRows, unplannedRows, planEditRows, todayBySeat, visitAsks] = await Promise.all([
     isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
     seatIds.length === 0 ? Promise.resolve([]) : loadRequestRows(seatIds, isTest, { pendingOnly: true }),
     loadUnplannedRows(seatIds, isTest),
     loadPlanEditRows(seatIds, isTest, viewer.cairoToday),
     // The VISIT day (until 02:00 the day that just ended), the same day the rep's own Today shows.
     seatIds.length === 0 ? Promise.resolve(new Map<string, TeamTodayFigures>()) : loadTeamToday(seatIds, isTest, viewer.visitDay),
+    visitAskSummaryOrNull(viewer, isTest),
   ]);
 
   const pendingBySeat = new Map<string, number>();
@@ -227,11 +275,15 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   const rowSeats = isTest
     ? seats.filter((seat) => pendingBySeat.has(seat.seatId) || unplannedSeats.has(seat.seatId) || workedToday(seat.seatId))
     : seats;
-  const names = await loadPeopleNames([
-    ...territoryPeople(viewer.org, rowSeats),
-    ...requestPeople(requestRows),
-    ...unplannedPeople(unplannedRows),
-    ...planEditPeople(planEditRows),
+  // The day each waiting off-plan visit was moved from rides beside the names: it needs only the rows.
+  const [names, movedFrom] = await Promise.all([
+    loadPeopleNames([
+      ...territoryPeople(viewer.org, rowSeats),
+      ...requestPeople(requestRows),
+      ...unplannedPeople(unplannedRows),
+      ...planEditPeople(planEditRows),
+    ]),
+    loadMovedFromDays(unplannedRows.map(unplannedVisitRef), isTest),
   ]);
 
   const summaries = new Map(rowSeats.map((seat) => [seat.seatId, describeTerritory(viewer.org, seat, names)]));
@@ -277,10 +329,16 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       const seat = seatsById.get(view.seatId);
       return {
         ...view,
+        // 🔴 Golden Rule #1. A rep's scope holds his OWN territory, so this endpoint answers him with his
+        // own waiting off-plan visits — and the location flag is cleared before it leaves the server, not
+        // merely left off his screen (found 2026-10-02: no rep screen showed it, the raw answer carried it).
+        // A territory this view cannot place is treated as his, so it fails blind.
+        locationFlag: !seat || isLocationBlind(viewer, seat) ? null : view.locationFlag,
         territoryName: summaries.get(view.seatId)?.name ?? "Territory",
         // The step it is ON decides who may press the button: the manager's step is the territory's
         // reviewer, the SFE's step is the SFE Manager. Everyone else in scope reads it and no more.
         canDecide: seat ? canDecideUnplannedRow(viewer, seat, isTest, view.status) : false,
+        plannedFor: movedFrom.get(view.visitId) ?? [],
       };
     })
     .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.raisedAt.localeCompare(right.raisedAt));
@@ -307,6 +365,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     unplannedVisits,
     planEdits,
     doubleVisits: doubleVisitPlanReach(viewer, isTest),
+    visitAsks,
     summary: {
       territories: territories.length,
       vacant: territories.filter((row) => !row.territory.repHrId).length,
@@ -318,6 +377,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       unplannedWaitingForYou: unplannedVisits.filter((visit) => visit.canDecide).length,
       planEditsWaiting: planEdits.length,
       planEditsWaitingForYou: planEdits.filter((edit) => edit.canDecide).length,
+      visitAsksWaitingForYou: visitAsks?.waitingForYou ?? 0,
     },
   };
 }

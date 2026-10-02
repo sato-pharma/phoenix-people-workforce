@@ -10,9 +10,12 @@
 // departed-agent exclusion so these totals reconcile with DV Analytics, FWC and the CRM master tab.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isPhoenixNativeVisitRow, PHOENIX_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts";
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { visitCountBucket } from "@/lib/crm/visit-count-buckets";
 import { UNLABELED_FIELD_VISIT_TYPE, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
+import { EARLY_BIRDS_EARLIEST_PLAUSIBLE_START_MINUTES } from "@/lib/early-birds/scoring";
+import { normalizeHrIdForAccess } from "@/lib/hr-id";
 
 export type SfeStartTimeRow = {
   agentHrId: string | null;
@@ -43,6 +46,12 @@ export type SfeCrmFieldAnalytics = {
   amVisits: number;
   pmVisits: number;
   pharmacyVisits: number;
+  /**
+   * How many of those three figures' visits are Phoenix CRM's own (a started team's). Phoenix CRM logs
+   * no pharmacy visit, so `pharmacyVisits` counts the iReports360 visits alone and the bar says so
+   * through the golden-rule helper. Optional: a payload cached before it existed reads as none.
+   */
+  phoenixVisits?: number;
   /** Visits carrying a double/triple visitor — manager field presence. */
   doubleVisits: number;
   byVisitType: Array<{ label: string; count: number }>;
@@ -74,6 +83,7 @@ type CheckinRow = {
   agent_crm_id: number | null;
   agent_hr_id: string | null;
   check_date: string | null;
+  source?: string | null;
 };
 
 const VISIT_COLUMNS =
@@ -82,7 +92,7 @@ const VISIT_COLUMNS =
 // comment is read for those rows alone — across every visit in the window it would dominate the
 // payload (see the note on resolveVisitTypeLabel below).
 const UNLABELED_COMMENT_COLUMNS = "crm_visit_id,comment";
-const CHECKIN_COLUMNS = "agent_crm_id,agent_hr_id,check_date";
+const CHECKIN_COLUMNS = "agent_crm_id,agent_hr_id,check_date,source";
 
 /**
  * Minutes past midnight from a CRM timestamp.
@@ -116,6 +126,49 @@ function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? Math.round((sorted[mid - 1]! + sorted[mid]!) / 2) : sorted[mid]!;
+}
+
+/** A visit row as the day-start helper reads it — every visit reader's own columns, nothing more. */
+export type PhoenixStartRow = {
+  agent_hr_id: string | null;
+  crm_save_date: string | null;
+  crm_visit_id?: number | null;
+  source?: string | null;
+  visit_date: string | null;
+  visit_type: number | null;
+};
+
+/**
+ * THE START OF A STARTED PHOENIX CRM TEAM'S REP-DAY (owner, 2026-10-02: "His first Phoenix visit is his
+ * start"): `${key}|${visit day}` -> minutes past Cairo midnight of the rep's FIRST countable Phoenix
+ * visit that day — its capture time, which the read door carries as Cairo wall clock in
+ * `crm_save_date`. Early Birds (its start and its "#1 days") and the SFE start-time table below read
+ * this one helper, never a copy.
+ *
+ * The read door serves a Phoenix row only within a team's start and only when it counts, so every row
+ * here already is one. A day activity is never a visit (its code is never 0) and never a start. The day
+ * is the visit's own day, which ends at 02:00 Cairo — so a capture between midnight and 02:00 belongs
+ * to the day before, and its clock, like any clock before 05:00, is never a start
+ * (EARLY_BIRDS_EARLIEST_PLAUSIBLE_START_MINUTES, the floor Early Birds puts on a check-in too).
+ * `keyOf` names the person as the caller keys him; by default the roster key.
+ */
+export function phoenixFirstVisitStarts<R extends PhoenixStartRow>(
+  rows: readonly R[],
+  keyOf: (row: R) => string | null = (row) => normalizeHrIdForAccess(row.agent_hr_id),
+): Map<string, number> {
+  const starts = new Map<string, number>();
+  for (const row of rows) {
+    if (!isPhoenixNativeVisitRow(row) || row.visit_type !== 0) continue;
+    const dateIso = String(row.visit_date ?? "").slice(0, 10);
+    const personKey = keyOf(row);
+    if (!dateIso || !personKey) continue;
+    const minutes = crmMinutesPastMidnight(row.crm_save_date);
+    if (minutes === null || minutes < EARLY_BIRDS_EARLIEST_PLAUSIBLE_START_MINUTES) continue;
+    const key = `${personKey}|${dateIso}`;
+    const current = starts.get(key);
+    if (current === undefined || minutes < current) starts.set(key, minutes);
+  }
+  return starts;
 }
 
 /** "07:45" from minutes past midnight. Formatting lives here so every surface renders it alike. */
@@ -186,7 +239,10 @@ export async function getSfeCrmFieldAnalytics(input: {
   const topN = input.topN ?? 6;
   const [rawVisits, checkins, unlabeledComments] = await Promise.all([
     queryVisits<VisitRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: VISIT_COLUMNS }),
-    queryCheckins<CheckinRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: CHECKIN_COLUMNS }),
+    // The SFE Manager's and the CEO's overview — no rep reaches it, so a started Phoenix CRM team's visits
+    // count as its check-ins here (owner, 2026-10-02; src/lib/crm/phoenix-team-starts.ts lists every
+    // reader that asks).
+    queryCheckins<CheckinRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: CHECKIN_COLUMNS, includePhoenixVisits: true }),
     queryVisits<{ comment: string | null; crm_visit_id: number | null }>({
       columns: UNLABELED_COMMENT_COLUMNS,
       dateFrom: input.dateFrom,
@@ -212,14 +268,17 @@ export async function getSfeCrmFieldAnalytics(input: {
   const contacts = new Set<number>();
   const byType = new Map<string, number>();
   const perRep = new Map<string, { label: string; visits: number; contacts: Set<number> }>();
+  const hrIdByKey = new Map<string, string | null>();
   let amVisits = 0;
   let pmVisits = 0;
   let pharmacyVisits = 0;
+  let phoenixVisits = 0;
   let doubleVisits = 0;
 
   for (const visit of visits) {
     const key = agentKeyOf(visit);
     activeReps.add(key);
+    if (!hrIdByKey.has(key)) hrIdByKey.set(key, visit.agent_hr_id);
     if (visit.visit_date) repDays.add(`${key}|${visit.visit_date}`);
     if (visit.contact_crm_id) contacts.add(visit.contact_crm_id);
 
@@ -235,6 +294,7 @@ export async function getSfeCrmFieldAnalytics(input: {
     if (bucket === "Pharmacies") pharmacyVisits++;
     else if (ampm === "AM") amVisits++;
     else if (ampm === "PM") pmVisits++;
+    if ((bucket === "Pharmacies" || ampm === "AM" || ampm === "PM") && isPhoenixNativeVisitRow(visit)) phoenixVisits++;
     if (visit.double_crm_id) doubleVisits++;
 
     // The vendor sends the literal string "Unknown" for seven visit-type codes, which collapsed
@@ -257,15 +317,32 @@ export async function getSfeCrmFieldAnalytics(input: {
     if (visit.contact_crm_id) rep.contacts.add(visit.contact_crm_id);
   }
 
-  const startRows = buildStartTimeRows(
-    checkins.map((row) => ({
-      agentHrId: row.agent_hr_id,
-      agentKey: agentKeyOf(row),
-      // The check-in mirror carries no agent name; borrow it from the visit rows for the same agent.
-      agentName: perRep.get(agentKeyOf(row))?.label ?? "",
-      checkDate: row.check_date,
-    })),
-  );
+  // The day's start: an iReports360 rep's first GPS check-in; a started Phoenix CRM team's rep's first
+  // countable Phoenix visit (owner, 2026-10-02) — the helper Early Birds reads, never the Phoenix
+  // check-in rows, which are those same visits again and would carry an after-midnight capture into
+  // the next calendar day.
+  const phoenixStarts = [...phoenixFirstVisitStarts(visits, agentKeyOf)].map(([key, minutes]) => {
+    const split = key.lastIndexOf("|");
+    const agentKey = key.slice(0, split);
+    return {
+      agentHrId: hrIdByKey.get(agentKey) ?? null,
+      agentKey,
+      agentName: perRep.get(agentKey)?.label ?? "",
+      checkDate: `${key.slice(split + 1)}T${formatStartMinutes(minutes)}:00`,
+    };
+  });
+  const startRows = buildStartTimeRows([
+    ...checkins
+      .filter((row) => row.source !== PHOENIX_VISIT_SOURCE)
+      .map((row) => ({
+        agentHrId: row.agent_hr_id,
+        agentKey: agentKeyOf(row),
+        // The check-in mirror carries no agent name; borrow it from the visit rows for the same agent.
+        agentName: perRep.get(agentKeyOf(row))?.label ?? "",
+        checkDate: row.check_date,
+      })),
+    ...phoenixStarts,
+  ]);
 
   const checkinAgents = new Set(checkins.map((row) => agentKeyOf(row)));
   const repsWithoutCheckins = [...activeReps].filter((key) => !checkinAgents.has(key)).length;
@@ -281,6 +358,7 @@ export async function getSfeCrmFieldAnalytics(input: {
     amVisits,
     pmVisits,
     pharmacyVisits,
+    phoenixVisits,
     doubleVisits,
     byVisitType: [...byType.entries()]
       .map(([label, count]) => ({ label, count }))

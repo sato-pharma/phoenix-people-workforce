@@ -841,9 +841,32 @@ function runStillPlannedTests(): void {
     assert.match(facts, /editAcknowledgedAt: editAcknowledgedAt\(edits\.get\(id\) \?\? null\),/);
     assert.match(
       facts,
-      /\.select\("plan_id, from_status"\)\s*\.in\("plan_id", batch\)\s*\.eq\("to_status", "returned"\)\s*\.order\("created_at", \{ ascending: false \}\)\s*\.order\("id", \{ ascending: false \}\)/,
-      "what the week was when the day went back: the latest return's own from_status",
+      /\.select\("plan_id, from_status"\)\s*\.in\("plan_id", batch\)\s*\.eq\("event_type", "returned"\)\s*\.order\("created_at", \{ ascending: false \}\)\s*\.order\("id", \{ ascending: false \}\)/,
+      "what the week was when the day went back: the latest RETURN event's own from_status",
     );
+    assert.doesNotMatch(
+      facts,
+      /\.eq\("to_status", "returned"\)/,
+      "never the latest row with to_status 'returned': a plan save writes one that reads 'returned from returned'",
+    );
+
+    // A save on a week returned for ONE day keeps naming the day (found 2026-10-02, before any plan was
+    // returned on production): phoenix_crm_save_visit's Still planned test reads the LATEST event with a
+    // to_status, and a save is one.
+    const keeps = readFileSync(
+      new URL("supabase/migrations/20261002142625_phoenix_crm_saved_event_keeps_the_returned_day.sql", ROOT),
+      "utf8",
+    )
+      .replace(/\r\n/g, "\n")
+      .replace(/--.*$/gm, "");
+    assert.match(keeps, /create or replace function public\.phoenix_crm_save_plan\(p jsonb\)/, "the plan save is the one function replaced");
+    assert.match(
+      keeps,
+      /v_plan\.id, 'saved', v_actor, v_plan\.status, v_plan\.status, v_plan\.version,\s*jsonb_build_object\('items', v_count, 'days', to_jsonb\(v_days\)\)\s*\|\| case\s*when v_plan\.status = 'returned' and v_plan\.returned_day is not null\s*then jsonb_build_object\('returned_day', v_plan\.returned_day\)\s*else '\{\}'::jsonb\s*end/,
+      "the 'saved' event carries returned_day while the week stands returned for one day",
+    );
+    assert.match(keeps, /returning pl\.\* into v_plan;\s*insert into public\.phoenix_crm_plan_events/, "read from the row the save just wrote");
+    assert.equal((keeps.match(/insert into public\.phoenix_crm_plan_events/g) ?? []).length, 2, "still the two plan-event inserts the save always had");
 
     // ONE rule: no server reader decides "sent" with a list of its own any more.
     for (const file of readdirSync(new URL("src/lib/phoenix-crm/server/", ROOT)).filter((name) => name.endsWith(".ts"))) {

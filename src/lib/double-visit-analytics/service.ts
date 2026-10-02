@@ -32,7 +32,18 @@ import {
   type ClassifiedDoubleVisitRow,
   type PrivateCalendarVisitKind,
 } from "@/lib/private-calendar/activity-kinds";
-import { addBucketToSplit, emptyVisitCountSplit, formatVisitCountSplit, visitCountSplitTotal } from "@/lib/crm/visit-count-buckets";
+import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
+import {
+  addBucketToSplit,
+  emptyVisitCountSplit,
+  formatVisitCountSplit,
+  pharmacyCellNote,
+  pharmacyCellValue,
+  pharmacyRecordingOf,
+  pharmacyValueText,
+  visitCountSplitTotal,
+  type VisitCountSplit,
+} from "@/lib/crm/visit-count-buckets";
 import { doubleVisitCountBucket, entryPeriodLabel, sumDoubleVisitSplit } from "@/lib/double-visit-analytics/count-bucket";
 import type {
   DoubleVisitBreakdownRow,
@@ -114,11 +125,21 @@ export type DoubleVisitDbRow = {
   // The vendor's contact speciality — 'pharmacy' marks a pharmacy visit, which is counted apart
   // from AM and PM (see src/lib/crm/visit-count-buckets.ts). Sent on regular visits only.
   speciality?: string | null;
+  // A started team's Phoenix CRM visit (its negative crm_visit_id). Phoenix CRM logs no pharmacy
+  // visit, so every AM · PM · Pharmacies figure built from these rows says its pharmacy figure was
+  // never recorded rather than print 0 (src/lib/crm/visit-count-buckets.ts). Absent on a vendor row.
+  from_phoenix?: boolean;
 };
 
 function text(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
+
+/** A Phoenix CRM double visit — it logs no pharmacy visit (src/lib/crm/visit-count-buckets.ts). */
+const fromPhoenixRow = (row: DoubleVisitDbRow) => row.from_phoenix === true;
+
+/** `{ phoenixVisits }` only when there are any, so a vendor-only payload keeps its old shape. */
+const phoenixVisitsOf = (count: number) => (count > 0 ? { phoenixVisits: count } : {});
 
 function nullableText(value: unknown) {
   const normalized = text(value);
@@ -555,6 +576,7 @@ function dbRowFromMirrorVisit(
     source_record_id: String(visit.crm_visit_id),
     source_type: "ireports360",
     speciality: visit.speciality ?? null,
+    ...(isPhoenixNativeVisitRow(visit) ? { from_phoenix: true } : {}),
     visit_count: 1,
     visited_employee_hr_id: effectiveVisitedHrId,
     visited_employee_name: preferRawLabel
@@ -764,10 +786,10 @@ function isoWeekStart(dateIso: string): string {
 }
 
 function buildWeeklyTrend(rows: DoubleVisitDbRow[]): DoubleVisitTrendPoint[] {
-  const byWeek = new Map<string, { am: number; mrs: Set<string>; pharmacies: number; pm: number; total: number }>();
+  const byWeek = new Map<string, { am: number; mrs: Set<string>; pharmacies: number; phoenix: number; pm: number; total: number }>();
   for (const row of rows) {
     const week = isoWeekStart(row.activity_date);
-    const bucket = byWeek.get(week) ?? { am: 0, mrs: new Set<string>(), pharmacies: 0, pm: 0, total: 0 };
+    const bucket = byWeek.get(week) ?? { am: 0, mrs: new Set<string>(), pharmacies: 0, phoenix: 0, pm: 0, total: 0 };
     const count = asNumber(row.visit_count);
     bucket.total += count;
     // AM · PM · Pharmacies apart — a pharmacy visit is never one of the PM doctors (count-bucket.ts).
@@ -775,6 +797,7 @@ function buildWeeklyTrend(rows: DoubleVisitDbRow[]): DoubleVisitTrendPoint[] {
     if (countBucket === "AM") bucket.am += count;
     else if (countBucket === "PM") bucket.pm += count;
     else if (countBucket === "Pharmacies") bucket.pharmacies += count;
+    if (countBucket && row.from_phoenix) bucket.phoenix += count;
     const visitedKey = canonicalHrIdKey(row.visited_employee_hr_id);
     if (visitedKey) bucket.mrs.add(visitedKey);
     byWeek.set(week, bucket);
@@ -784,6 +807,7 @@ function buildWeeklyTrend(rows: DoubleVisitDbRow[]): DoubleVisitTrendPoint[] {
       amVisits: bucket.am,
       distinctMrs: bucket.mrs.size,
       pharmacyVisits: bucket.pharmacies,
+      ...(bucket.phoenix > 0 ? { phoenixVisits: bucket.phoenix } : {}),
       pmVisits: bucket.pm,
       totalDvs: bucket.total,
       weekStart,
@@ -1109,7 +1133,7 @@ export function buildManagerSummariesDetailed(
     const totalDvs = visitorRows.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
     const activeDvDays = new Set(visitorRows.map((row) => row.activity_date).filter(Boolean)).size;
     // AM · PM · Pharmacies apart — a pharmacy visit is never one of the PM doctors (count-bucket.ts).
-    const visitSplit = sumDoubleVisitSplit(visitorRows, doubleVisitCountBucket, (row) => asNumber(row.visit_count));
+    const visitSplit = sumDoubleVisitSplit(visitorRows, doubleVisitCountBucket, (row) => asNumber(row.visit_count), fromPhoenixRow);
     const amVisits = visitSplit.am;
     const pmVisits = visitSplit.pm;
     const pharmacyVisits = visitSplit.pharmacies;
@@ -1174,6 +1198,7 @@ export function buildManagerSummariesDetailed(
       neglectedMrCount,
       overFocusedMrCount,
       pharmacyVisits,
+      ...(visitSplit.phoenix ? { phoenixVisits: visitSplit.phoenix } : {}),
       pmVisits,
       role: dv?.role ?? null,
       roleCode: dv?.roleCode ?? null,
@@ -1386,6 +1411,7 @@ export function buildExecutiveSummary(
       distinctMrs: union.size,
       neglectedMrCount: neglectedValues.length ? neglectedValues.reduce((sum, value) => sum + value, 0) : null,
       pharmacyVisits: group.reduce((sum, summary) => sum + summary.pharmacyVisits, 0),
+      ...phoenixVisitsOf(group.reduce((sum, summary) => sum + (summary.phoenixVisits ?? 0), 0)),
       pmVisits: group.reduce((sum, summary) => sum + summary.pmVisits, 0),
       roleCode,
       roleLabel: DV_ROLE_LABELS[roleCode],
@@ -1488,7 +1514,7 @@ function buildKpis(rows: DoubleVisitDbRow[]): DoubleVisitKpis {
   const activeDoubleVisitDays = new Set(rows.map((row) => `${canonicalHrIdKey(row.double_visitor_hr_id)}|${row.activity_date}`)).size;
   const doubleVisitorCount = new Set(rows.map((row) => canonicalHrIdKey(row.double_visitor_hr_id)).filter(Boolean)).size;
   // AM · PM · Pharmacies apart, so the AM : PM ratio below compares doctors' periods only.
-  const visitSplit = sumDoubleVisitSplit(rows, doubleVisitCountBucket, (row) => asNumber(row.visit_count));
+  const visitSplit = sumDoubleVisitSplit(rows, doubleVisitCountBucket, (row) => asNumber(row.visit_count), fromPhoenixRow);
   const amVisitCount = visitSplit.am;
   const pmVisitCount = visitSplit.pm;
   const pharmacyVisitCount = visitSplit.pharmacies;
@@ -1505,6 +1531,7 @@ function buildKpis(rows: DoubleVisitDbRow[]): DoubleVisitKpis {
     doubleVisitorCount,
     mrCoverageCount: new Set(rows.map((row) => canonicalHrIdKey(row.visited_employee_hr_id)).filter(Boolean)).size,
     pharmacyVisitCount,
+    ...(visitSplit.phoenix ? { phoenixVisitCount: visitSplit.phoenix } : {}),
     pmVisitCount,
     totalVisits,
     vacantOrUnmappedShare: totalVisits > 0 ? round((vacantOrUnmappedVisitCount / totalVisits) * 100, 1) : 0,
@@ -1612,6 +1639,7 @@ export async function getDoubleVisitDashboardData(input: {
       area: nullableText(row.area_name),
       countBucket: doubleVisitCountBucket(row),
       date: row.activity_date,
+      ...(row.from_phoenix ? { fromPhoenix: true } : {}),
       doubleVisitorHrId: nullableText(row.double_visitor_hr_id),
       doubleVisitorName: isLeaverVisitor(row.double_visitor_hr_id) ? null : nullableText(row.double_visitor_name),
       period: row.period,
@@ -2107,6 +2135,7 @@ export async function getDoubleVisitReportData(input: {
         areaName,
         countBucket: doubleVisitCountBucket(row),
         daysSinceVisitedHire: daysBetween(visitedHireDate, dateTo),
+        ...(row.from_phoenix ? { fromPhoenix: true } : {}),
         doubleVisitorHrId: nullableText(row.double_visitor_hr_id),
         doubleVisitorName: nullableText(row.double_visitor_name),
         doubleVisitorRole: resolveDvRole(doubleVisitorEmployee)?.role ?? null,
@@ -2261,7 +2290,7 @@ function doubleVisitCalendarItem(group: ClassifiedCalendarRow[], side: "performe
   const kind = calendarVisitKind(first);
   const kindLabel = privateCalendarActivityKindLabels[kind];
   const split = emptyVisitCountSplit();
-  for (const entry of group) addBucketToSplit(split, entry.bucket);
+  for (const entry of group) addBucketToSplit(split, entry.bucket, 1, entry.row.from_phoenix === true);
   const total = visitCountSplitTotal(split);
   const withNames = joinedDistinct(group.flatMap((entry) => doubleVisitCompanions(entry, side)), "Unmapped or vacant");
   const areaLabel = joinedDistinct(group.map((entry) => entry.row.area_name), "Unmapped");
@@ -2300,7 +2329,11 @@ function doubleVisitCalendarItem(group: ClassifiedCalendarRow[], side: "performe
     time: counts,
     title: `${kindLabel}: ${total} visit${total === 1 ? "" : "s"} with ${withNames} - ${areaLabel}`,
     visitCounts: split,
-    visitRecords: group.map((entry) => ({ bucket: entry.bucket, id: entry.physicalId })),
+    visitRecords: group.map((entry) => ({
+      bucket: entry.bucket,
+      id: entry.physicalId,
+      ...(entry.row.from_phoenix ? { phoenix: true } : {}),
+    })),
   });
 }
 
@@ -2530,6 +2563,27 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
   };
 }
 
+/** A row of figures as the golden-rule split, with its Phoenix CRM share when it has one. */
+function splitOfFigures(am: number, pm: number, pharmacies: number, phoenix: number | undefined): VisitCountSplit {
+  return { am, pm, pharmacies, ...(phoenix ? { phoenix } : {}) };
+}
+
+/**
+ * The "Pharmacy Visits" column of a sheet whose rows were added from `splits`, in order: a row whose
+ * double visits were all Phoenix CRM's is BLANK, never 0, and every cell that is not the whole count
+ * carries the words in its note (src/lib/crm/visit-count-buckets.ts). Values otherwise untouched.
+ */
+function notePharmacyCells(sheet: ExcelJS.Worksheet, splits: readonly VisitCountSplit[]) {
+  const column = sheet.getColumn("pharmacyVisits").number;
+  splits.forEach((split, index) => {
+    const note = pharmacyCellNote(split);
+    if (!note) return;
+    const cell = sheet.getRow(index + 2).getCell(column);
+    cell.value = pharmacyCellValue(split);
+    cell.note = note;
+  });
+}
+
 export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardData) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Phoenix Workforce";
@@ -2667,6 +2721,18 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
     { header: "Last Visit", key: "lastDate", width: 14 },
   ];
   pairs.addRows(buildManagerMrPairs(data.visitLog));
+
+  // A double visit logged in Phoenix CRM, which records no pharmacy visit: the Pharmacy figure is said
+  // in words on the summary and left BLANK, never 0, in a table — with the words in the cell's note.
+  const kpiSplit = splitOfFigures(data.kpis.amVisitCount, data.kpis.pmVisitCount, data.kpis.pharmacyVisitCount, data.kpis.phoenixVisitCount);
+  if (pharmacyRecordingOf(kpiSplit) !== "recorded") {
+    summary.eachRow((row) => {
+      if (row.getCell(1).value === "Pharmacy Activity") row.getCell(2).value = pharmacyValueText(kpiSplit);
+    });
+  }
+  notePharmacyCells(activity, data.managerSummaries.map((row) => splitOfFigures(row.amVisits, row.pmVisits, row.pharmacyVisits, row.phoenixVisits)));
+  notePharmacyCells(byRole, data.executiveSummary.roleRollups.map((row) => splitOfFigures(row.amVisits, row.pmVisits, row.pharmacyVisits, row.phoenixVisits)));
+  notePharmacyCells(trend, data.trend.map((row) => splitOfFigures(row.amVisits, row.pmVisits, row.pharmacyVisits, row.phoenixVisits)));
 
   for (const sheet of workbook.worksheets) {
     sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };

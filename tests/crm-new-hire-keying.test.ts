@@ -432,19 +432,25 @@ export function runCrmNewHireKeyingTests() {
   }
 
   // ── F3: the rep drill-down proves a no-CRM-id rep's visit with his own check-in ──────────────
+  // A row that is not Phoenix CRM's own (a positive id) is matched by the hr-id key, to its OWN
+  // check-in only. A Phoenix CRM row (the negative id the unified view gives it) needs none: since
+  // 2026-10-02 it is its own check-in, because Phoenix shows a visit's location back as no check-in row
+  // at all (src/lib/crm/phoenix-team-starts.ts, tests/phoenix-crm-visits-everywhere.test.ts).
   {
     const own = buildRepVisits(
-      [drilldownVisit()],
+      [drilldownVisit({ crm_visit_id: 9001 })],
       [{ agent_crm_id: null, agent_hr_id: "n-900", contact_crm_id: 555, check_date: "2026-09-20T10:55:00" }],
       { territoryIndex: new Map() },
     );
-    assert.equal(own.rows[0]?.standing, "verified", "F3: the drill-down matches a native visit to its check-in by hr id");
+    assert.equal(own.rows[0]?.standing, "verified", "F3: the drill-down matches a visit with no CRM id to its check-in by hr id");
     const borrowed = buildRepVisits(
-      [drilldownVisit()],
+      [drilldownVisit({ crm_visit_id: 9001 })],
       [{ agent_crm_id: null, agent_hr_id: "N-901", contact_crm_id: 555, check_date: "2026-09-20T10:55:00" }],
       { territoryIndex: new Map() },
     );
     assert.equal(borrowed.rows[0]?.standing, "unverified", "F3: and never to another new hire's check-in");
+    const phoenix = buildRepVisits([drilldownVisit()], [], { territoryIndex: new Map() });
+    assert.equal(phoenix.rows[0]?.standing, "verified", "F3: a Phoenix CRM row is its own check-in — it borrows nobody's and needs none");
   }
 
   // ── F4: the weekly-plans tab finds the plans of a rep with no CRM id ─────────────────────────

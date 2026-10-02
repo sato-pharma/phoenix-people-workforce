@@ -26,7 +26,7 @@ function source(path: string): string {
 }
 
 const CONTEXT = { territories: 5, vacant: 0, ready: 4, notReady: 1, elsewhere: 0, test: false };
-const QUIET = { plans: 0, months: null, planEdits: 0, unplanned: 0, requests: 0 };
+const QUIET = { plans: 0, months: null, planEdits: 0, unplanned: 0, requests: 0, visitAsks: null };
 
 export function runPhoenixCrmTeamShorterTests(): void {
   // ── 1. The headline NAMES what waits ───────────────────────────────────────────────────────────
@@ -39,9 +39,16 @@ export function runPhoenixCrmTeamShorterTests(): void {
     // One thing, singular on both halves.
     assert.equal(teamWaitingLine({ ...QUIET, requests: 1 }, CONTEXT).title, "1 list request is waiting for you");
 
+    // A visit a rep asked him to join is named last, in the feature's own words.
+    assert.equal(teamWaitingLine({ ...QUIET, visitAsks: 1 }, CONTEXT).title, "1 visit ask is waiting for you");
+
+    // Someone who answers no asks is never told "0 visit asks": the kind is left out entirely.
+    assert.equal(teamWaitingLine({ ...QUIET, visitAsks: null, plans: 1 }, CONTEXT).title, "1 weekly plan is waiting for you");
+    assert.equal(teamWaitingLine({ ...QUIET, visitAsks: null }, CONTEXT).title, "Nothing is waiting for you");
+
     // Several kinds read as a sentence, in the order he works them, and the verb follows the TOTAL.
     assert.equal(
-      teamWaitingLine({ plans: 3, months: 1, planEdits: 0, unplanned: 1, requests: 2 }, CONTEXT).title,
+      teamWaitingLine({ plans: 3, months: 1, planEdits: 0, unplanned: 1, requests: 2, visitAsks: 0 }, CONTEXT).title,
       "3 weekly plans, 1 monthly plan, 1 off-plan visit and 2 list requests are waiting for you",
     );
   }

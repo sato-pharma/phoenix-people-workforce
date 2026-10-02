@@ -24,7 +24,7 @@ import {
 } from "./concentration.client";
 import { cn } from "@/lib/utils";
 import { figureWindowLabel, hasFigures, type ReviewCoverage } from "@/lib/business-review/coverage";
-import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { formatVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { periodColumnLabel } from "@/lib/business-review/period-format";
 import type { ReviewWindow } from "@/lib/business-review/period";
 import type { AreaSummary, CompanyLineRow, DmSummary, ProductRow } from "@/lib/business-review/types";
@@ -129,11 +129,22 @@ const num = (n: number | null | undefined) => (n != null && Number.isFinite(n) ?
 /** "no data", never a misleading 0, when the source holds no rows for this window. */
 const numOrNA = (n: number | null | undefined, available: boolean) => (available ? num(n) : "no data");
 /** AM · PM · Pharmacies, the house wording — middle dot, never a slash (owner golden rule). A
- *  pharmacy is never counted among the PM doctors, so only the PM figure may be called doctors. */
-const splitOf = (row: { customersAm: number; customersPm: number; customersPharmacy: number }) =>
-  formatVisitCountSplit({ am: row.customersAm, pm: row.customersPm, pharmacies: row.customersPharmacy });
-const splitOrNA = (row: { customersAm: number; customersPm: number; customersPharmacy: number }, available: boolean) =>
-  available ? splitOf(row) : "no data";
+ *  pharmacy is never counted among the PM doctors, so only the PM figure may be called doctors.
+ *  Judged by the visits the customers were counted from: Phoenix CRM logs no pharmacy visit, so a
+ *  team that works in it reads "Pharmacies not recorded in Phoenix", never 0 (visit-count-buckets.ts). */
+type CustomerCounts = {
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
+  visitSplit?: VisitCountSplit;
+  customerVisitSplit?: VisitCountSplit;
+};
+const splitOf = (row: CustomerCounts) =>
+  formatVisitCountSplit(
+    { am: row.customersAm, pm: row.customersPm, pharmacies: row.customersPharmacy },
+    { fromVisits: row.customerVisitSplit ?? row.visitSplit },
+  );
+const splitOrNA = (row: CustomerCounts, available: boolean) => (available ? splitOf(row) : "no data");
 const egpOrNA = (n: number, available: boolean) => (available ? egp(n) : "no data");
 
 function achClass(a: number | null) {
@@ -1216,6 +1227,7 @@ export function BusinessReviewPortal({
               customersPm: row.customersPm,
               customersPharmacy: row.customersPharmacy,
               customersByMonth: row.customersByMonth,
+              visitSplit: row.visitSplit,
             }))}
             months={months}
             showLine={showLines}

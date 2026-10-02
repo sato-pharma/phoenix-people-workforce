@@ -20,11 +20,19 @@ import { forecastIsOffered } from "@/lib/phoenix-crm/daily-forecast";
 import { PLAN_EDIT_WAITING_STATUSES, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { managerChain, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { telegramCardOffered } from "@/lib/phoenix-crm/telegram-card";
-import { canAcknowledgePlanEdits, canReviewTerritory, lineOpeningText, readsCalendar, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import {
+  canAcknowledgePlanEdits,
+  canReviewTerritory,
+  lineOpeningText,
+  readsCalendar,
+  readsFieldHeardByProduct,
+  type PhoenixCrmViewer,
+} from "@/lib/phoenix-crm/server/access";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { isDirectoryCompanyRole } from "@/lib/phoenix-crm/server/doctors";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
+import { countVisitAsksWaitingForYou } from "@/lib/phoenix-crm/server/visit-asks";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -93,6 +101,11 @@ export type PhoenixCrmOverview = {
      * his is a test count. Zero for everyone else.
      */
     hrAcknowledgements: number;
+    /**
+     * A rep's asks for a visit waiting for THIS viewer's answer (owner, 2026-10-02), in `isTest`'s world:
+     * a manager's on the Team tab, a product manager's on Reports — the one page of the module he opens.
+     */
+    visitAsks: number;
   };
   /** Why the viewer has nothing to open yet, in one sentence; null when the module is open for them. */
   closedMessage: string | null;
@@ -117,6 +130,9 @@ function closedMessage(viewer: PhoenixCrmViewer): string | null {
   // A directory role holds no territory (the Training Manager has no seat in the organogram) and
   // still has the Doctors tab to open, so the module is not closed for them.
   if (isDirectoryCompanyRole(viewer.role)) return null;
+  // A product or marketing manager holds no seat either, and has one report to open: what the field
+  // heard about his own products (owner, 2026-10-02).
+  if (readsFieldHeardByProduct(viewer)) return null;
   const heldClosed = [...viewer.waitingTerritories, ...viewer.managerSeats].find(
     (seat) => !seat.lineCode || !viewer.openLines.has(seat.lineCode),
   );
@@ -205,6 +221,24 @@ async function telegramConnectedOrNull(viewer: PhoenixCrmViewer): Promise<boolea
   }
 }
 
+/**
+ * The visit asks waiting for this viewer's answer (server/visit-asks.ts), or 0 when they cannot be read.
+ * It never fails the page — every Phoenix CRM page opens on this read — and the bell carries each ask
+ * whatever this count says.
+ */
+async function visitAsksWaitingOrZero(viewer: PhoenixCrmViewer, isTest: boolean): Promise<number> {
+  try {
+    // One head count — and none at all for a viewer the asks never reach, a rep among them.
+    return await countVisitAsksWaitingForYou(viewer, isTest);
+  } catch (error) {
+    logError("Phoenix CRM could not count the visit asks waiting", {
+      error,
+      labels: { event: "phoenix_crm_visit_ask_count_failed" },
+    });
+    return 0;
+  }
+}
+
 export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<PhoenixCrmOverview> {
   const scope = viewer.scopeTerritories;
   const ownSeatIds = viewer.isSuperAdmin ? [] : viewer.ownTerritories.map((seat) => seat.seatId);
@@ -237,7 +271,7 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     isSfeManager: viewer.isSfeManager,
   });
 
-  const [names, reviewerRequests, sfeRequests, plans, managerEdits, sfeEdits, hrAcknowledgements, telegramConnected] = await Promise.all([
+  const [names, reviewerRequests, sfeRequests, plans, managerEdits, sfeEdits, hrAcknowledgements, telegramConnected, visitAsks] = await Promise.all([
     loadPeopleNames([viewer.hrId, ...territoryPeople(viewer.org, [...scope, ...viewer.waitingTerritories])]),
     reviewSeatIds !== null && reviewSeatIds.length === 0
       ? 0
@@ -255,6 +289,10 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     canAcknowledgePlanEdits(viewer) ? countPlanEdits(["hr_pending"], false, null, viewer.cairoToday) : 0,
     // In the same wave, and never able to fail the page: an unreadable status draws no card.
     telegramOffered ? telegramConnectedOrNull(viewer) : null,
+    // The visit asks waiting for his answer (owner, 2026-10-02), in the world his other counts are in.
+    // Never able to fail the page either: a count that cannot be read is no count, and the bell still
+    // carries every ask.
+    visitAsksWaitingOrZero(viewer, waitingIsTest),
   ]);
 
   const territories = scope
@@ -280,7 +318,9 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     // Manager read the whole company) gets it without holding a seat — a Training Manager has no
     // territory in the organogram, so `hasScope` alone would leave him with no tab at all.
     doctors: hasScope || isDirectoryCompanyRole(viewer.role),
-    reports: hasScope,
+    // A product or marketing manager reads ONE section of Reports — what the field heard about his own
+    // products, company-wide (owner, 2026-10-02) — and the tab is that section's door.
+    reports: hasScope || readsFieldHeardByProduct(viewer),
     settings: viewer.isSuperAdmin && viewer.canUpdate,
   };
 
@@ -314,6 +354,7 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       planEdits: managerEdits + sfeEdits,
       isTest: waitingIsTest,
       hrAcknowledgements,
+      visitAsks,
     },
     closedMessage: closedMessage(viewer),
     telegram: telegramConnected === null ? null : { connected: telegramConnected },

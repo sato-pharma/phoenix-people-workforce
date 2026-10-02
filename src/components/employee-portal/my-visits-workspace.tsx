@@ -99,8 +99,11 @@ function formatVendorTimeOnly(value: string): string {
 /** The GPS/Logged visit-time badge — ported from the admin CRM master table's
  * VisitTimeCell rather than imported, so this portal module stays structurally
  * independent of the admin surface. */
-function VisitTimeBadge({ source, value }: { source: VisitTimeSource; value: string | null }) {
+function VisitTimeBadge({ source, value, phoenix }: { source: VisitTimeSource; value: string | null; phoenix?: boolean }) {
   if (!value) return <span className="text-slate-400">—</span>;
+  // A started Phoenix CRM team's own visit: its time alone, never "GPS" or "Logged — not GPS-verified".
+  // This page reaches the rep, and he is never told his location is read (Phoenix CRM golden rule #1).
+  if (phoenix) return <span title={formatVendorLocal(value)}>{formatVendorTimeOnly(value)}</span>;
   const isGps = source === "gps_checkin";
   return (
     // flex-wrap: in a narrow Day column the chip drops under the time instead of pushing the cell.
@@ -123,7 +126,7 @@ function VisitCard({ row }: { row: MyCrmVisitRow }) {
     <PortalRecordCard
       accent="orange"
       meta={<span>{formatDateOnly(row.visitDate)}{row.ampm ? ` · ${row.ampm}` : ""}</span>}
-      status={<VisitTimeBadge source={row.visitTimeSource} value={row.visitTime} />}
+      status={<VisitTimeBadge phoenix={row.phoenixVisit} source={row.visitTimeSource} value={row.visitTime} />}
       title={row.contactName || row.customerName || row.visitTypeDescription || "Visit"}
     >
       <PortalRecordFields
@@ -150,7 +153,7 @@ function TeamVisitCard({ row }: { row: TeamCrmVisitRow }) {
     <PortalRecordCard
       accent="emerald"
       meta={<span>{formatDateOnly(row.visitDate)}{row.ampm ? ` · ${row.ampm}` : ""}</span>}
-      status={<VisitTimeBadge source={row.visitTimeSource} value={row.visitTime} />}
+      status={<VisitTimeBadge phoenix={row.phoenixVisit} source={row.visitTimeSource} value={row.visitTime} />}
       title={row.agentName || "Unnamed rep"}
     >
       <PortalRecordFields
@@ -182,7 +185,7 @@ function DoubleVisitCard({ row }: { row: MyCrmDoubleVisitRow }) {
     <PortalRecordCard
       accent="sky"
       meta={<span>{formatDateOnly(row.visitDate)}{row.ampm ? ` · ${row.ampm}` : ""}</span>}
-      status={<VisitTimeBadge source={DOUBLE_VISIT_TIME_SOURCE} value={row.visitTime} />}
+      status={<VisitTimeBadge phoenix={row.phoenixVisit} source={DOUBLE_VISIT_TIME_SOURCE} value={row.visitTime} />}
       title={row.contactName || row.customerName || row.visitTypeDescription || "Visit"}
     >
       <PortalRecordFields
@@ -468,7 +471,7 @@ export function MyVisitsWorkspace({
                             {row.ampm ? ` · ${row.ampm}` : ""}
                           </span>
                           <span className="mt-1 block text-xs">
-                            <VisitTimeBadge source={row.visitTimeSource} value={row.visitTime} />
+                            <VisitTimeBadge phoenix={row.phoenixVisit} source={row.visitTimeSource} value={row.visitTime} />
                           </span>
                         </td>
                         <td className={TD}>
@@ -529,7 +532,7 @@ export function MyVisitsWorkspace({
                             {row.ampm ? ` · ${row.ampm}` : ""}
                           </span>
                           <span className="mt-1 block text-xs">
-                            <VisitTimeBadge source={row.visitTimeSource} value={row.visitTime} />
+                            <VisitTimeBadge phoenix={row.phoenixVisit} source={row.visitTimeSource} value={row.visitTime} />
                           </span>
                         </td>
                         <td className={TD}>
@@ -594,7 +597,7 @@ export function MyVisitsWorkspace({
                             {row.ampm ? ` · ${row.ampm}` : ""}
                           </span>
                           <span className="mt-1 block text-xs">
-                            <VisitTimeBadge source={DOUBLE_VISIT_TIME_SOURCE} value={row.visitTime} />
+                            <VisitTimeBadge phoenix={row.phoenixVisit} source={DOUBLE_VISIT_TIME_SOURCE} value={row.visitTime} />
                           </span>
                         </td>
                         <td className={TD}>

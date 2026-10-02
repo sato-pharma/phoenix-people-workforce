@@ -40,7 +40,12 @@ import type { ConcentrationFacts } from "@/lib/business-review/concentration";
 import type { ReviewWindow } from "@/lib/business-review/period";
 import { periodColumnLabel } from "@/lib/business-review/period-format";
 import type { AreaSummary, Slice } from "@/lib/business-review/types";
-import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import {
+  emptyVisitCountSplit,
+  formatVisitCountSplit,
+  mergeVisitCountSplits,
+  pharmacyTileFigure,
+} from "@/lib/crm/visit-count-buckets";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { cn } from "@/lib/utils";
 
@@ -175,17 +180,14 @@ export function RepBusinessReview({
   // safe to sum. Customer counts are unions and stay PER AREA below.
   const visits = useMemo(() => {
     const total = areas.reduce((sum, a) => sum + a.visits, 0);
-    const split = areas.reduce(
-      (acc, a) => ({
-        am: acc.am + a.visitSplit.am,
-        pharmacies: acc.pharmacies + a.visitSplit.pharmacies,
-        pm: acc.pm + a.visitSplit.pm,
-      }),
-      { am: 0, pharmacies: 0, pm: 0 },
-    );
+    // Merged by the golden-rule helper, so the share of Phoenix CRM visits travels with the sum and
+    // the pharmacy figure of a team that works in Phoenix CRM is never printed as 0.
+    const split = areas.reduce((acc, a) => mergeVisitCountSplits(acc, a.visitSplit), emptyVisitCountSplit());
     const byMonth = months.map((m) => areas.reduce((sum, a) => sum + (a.visitsByMonth[m] ?? 0), 0));
     return { byMonth, split, total };
   }, [areas, months]);
+
+  const pharmacyTile = pharmacyTileFigure(visits.split, { formatNumber: (value) => num(value) });
 
   const sortedAreas = useMemo(
     () => areas.slice().sort((a, b) => (b.allProducts.ach ?? -1) - (a.allProducts.ach ?? -1)),
@@ -421,7 +423,9 @@ export function RepBusinessReview({
               </div>
               <div className={FIELD}>
                 <dt className={FIELD_LABEL}>Pharmacies</dt>
-                <dd className="mt-0.5 text-xl font-black tabular-nums text-slate-950">{num(visits.split.pharmacies)}</dd>
+                <dd className="mt-0.5 text-xl font-black tabular-nums text-slate-950">{pharmacyTile.value}</dd>
+                {/* Phoenix CRM logs no pharmacy visit: "Not recorded", never 0 (visit-count-buckets.ts). */}
+                {pharmacyTile.note ? <dd className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{pharmacyTile.note}</dd> : null}
               </div>
             </dl>
             <dl className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">

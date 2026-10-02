@@ -98,6 +98,15 @@ export type {
 export type { AdoptionView } from "@/lib/phoenix-crm/server/adoption";
 export type { ExceptionsView } from "@/lib/phoenix-crm/server/exceptions";
 export type { BrickCoverageView } from "@/lib/phoenix-crm/server/brick-report";
+export type { CapacityBoardView, FieldHeardView, MissingStockView, SamplesReportView } from "@/lib/phoenix-crm/server/insight-reports";
+export type { CustomerTimelineView } from "@/lib/phoenix-crm/server/customer-timeline";
+export type {
+  VisitAskCustomerView,
+  VisitAskInboxView,
+  VisitAskOffer,
+  VisitAskSummary,
+  VisitAskView,
+} from "@/lib/phoenix-crm/server/visit-asks";
 export type { PhotoSlot } from "@/lib/phoenix-crm/server/photos";
 export type { TimeAnchorView } from "@/lib/phoenix-crm/server/time-anchor";
 export type { PhoenixCrmSettingsView, SettingsLine, SettingsRamadan } from "@/lib/phoenix-crm/server/admin-settings";

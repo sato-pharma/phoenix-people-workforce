@@ -303,7 +303,9 @@ export function toRepVisitRow<C extends CheckinForMatch>(
     visitTypeLabel: label,
     bucket,
     standing,
-    unscored: standing === "excluded" ? null : callRateExclusionOf(dateIso, visit.contact_crm_id, holidays),
+    // The visit itself goes in, so a Phoenix CRM visit to a customer not validated yet reads "not
+    // scored" here exactly as the rate above left it out (crm/phoenix-team-starts.ts).
+    unscored: standing === "excluded" ? null : callRateExclusionOf(dateIso, visit.contact_crm_id, holidays, visit),
     partnerHrId,
     // The directory names the person; the CRM's `double_name` is a login handle. Same waterfall as
     // the board's own rep column — directory first, CRM handle second, never a bare code.
@@ -556,6 +558,8 @@ export const REP_VISIT_STANDING_LABELS: ReadonlyMap<RepVisitStanding, string> = 
 export function unscoredLabel(row: RepVisitRow): string | null {
   if (row.unscored === "catch-all") return "Not scored · the CRM's catch-all contact, not a doctor";
   if (row.unscored === "holiday") return "Not scored · public holiday";
+  // Phoenix CRM's own words for the same visit ("not counting yet"), never a doubt about the visit.
+  if (row.unscored === "not-validated") return "Not scored · customer not validated yet";
   if (row.unscored === "weekend") {
     const weekday = /^\d{4}-\d{2}-\d{2}$/.test(row.dateIso) ? new Date(`${row.dateIso}T00:00:00Z`).getUTCDay() : null;
     return weekday === 4 ? "Not scored · Thursday" : weekday === 5 ? "Not scored · Friday" : "Not scored · not a working day";

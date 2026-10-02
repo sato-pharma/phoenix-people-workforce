@@ -24,6 +24,8 @@ export type TeamWaitingCounts = {
   planEdits: number;
   unplanned: number;
   requests: number;
+  /** Visit asks at this viewer's answer. Null when he cannot answer asks at all. */
+  visitAsks: number | null;
 };
 
 export type TeamWaitingContext = {
@@ -52,6 +54,7 @@ const KINDS: ReadonlyArray<{ key: keyof TeamWaitingCounts; one: string; many: st
   { key: "planEdits", one: "plan edit", many: "plan edits" },
   { key: "unplanned", one: "off-plan visit", many: "off-plan visits" },
   { key: "requests", one: "list request", many: "list requests" },
+  { key: "visitAsks", one: "visit ask", many: "visit asks" },
 ];
 
 function counted(value: number, one: string, many: string): string {

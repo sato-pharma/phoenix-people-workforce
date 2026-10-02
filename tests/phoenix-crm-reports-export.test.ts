@@ -167,6 +167,12 @@ function pack(patch: Partial<ReportsPackInput> = {}): ReportsPackInput {
     frequency: null,
     tracking: null,
     calendar: null,
+    // The four insight boards of 2026-10-02 — required for the same reason; their sheets are pinned in
+    // tests/phoenix-crm-insight-reports.test.ts.
+    capacity: null,
+    heard: null,
+    stock: null,
+    samples: null,
     ...patch,
   };
 }

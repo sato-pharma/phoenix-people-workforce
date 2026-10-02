@@ -361,7 +361,14 @@ async function buildAnnouncement(
       (entry) => normalizeHrIdForAccess(entry.hrId) === normalizeHrIdForAccess(String(row.employee_hr_id ?? "")),
     );
 
-    const evidence = (row.evidence as { timeline?: unknown[] } | null) ?? null;
+    const evidence = (row.evidence as { timeline?: unknown[]; visitStartDays?: unknown } | null) ?? null;
+    const timeline = Array.isArray(evidence?.timeline) ? evidence.timeline : [];
+    // A Phoenix CRM fortnight (close.ts): its starts are first visits, never GPS — the card a whole
+    // district reads never tells a rep his location is read (Phoenix CRM golden rule #1).
+    const visitStartDays = Number(evidence?.visitStartDays ?? 0);
+    const startDayCount = timeline.filter(
+      (day) => typeof day === "object" && day !== null && (day as { startMinutes?: unknown }).startMinutes != null,
+    ).length;
 
     return {
       confirmation_source: source,
@@ -374,10 +381,12 @@ async function buildAnnouncement(
       headline_stats: {
         Days: `${row.days_with_submission}/${row.expected_working_days}`,
         Median: formatStartClock(row.median_start_minutes as number | null),
-        GPS: String(row.gps_verified_visits ?? 0),
+        ...(visitStartDays > 0
+          ? { "Start days": String(startDayCount) }
+          : { GPS: String(row.gps_verified_visits ?? 0) }),
         "1st places": String(row.daily_wins ?? 0),
       },
-      timeline: Array.isArray(evidence?.timeline) ? evidence.timeline : [],
+      timeline,
     };
   } catch {
     return { confirmation_source: source };

@@ -90,9 +90,22 @@ const egpOrNA = (n: number, available: boolean) => (available ? egp(n) : "no dat
  * this page cannot drift from Private Calendar, Double Visit Analytics or Employee 360.
  */
 const splitLabel = (split: VisitCountSplit) => formatVisitCountSplit(split);
-/** The same three figures for distinct CUSTOMERS rather than visits. */
-const customerSplitLabel = (c: { customersAm: number; customersPm: number; customersPharmacy: number }) =>
-  formatVisitCountSplit({ am: c.customersAm, pm: c.customersPm, pharmacies: c.customersPharmacy });
+/**
+ * The same three figures for distinct CUSTOMERS rather than visits, judged by the visits they were
+ * counted from: Phoenix CRM logs no pharmacy visit, so a team that works in it reads "Pharmacies not
+ * recorded in Phoenix", never 0 (src/lib/crm/visit-count-buckets.ts, `fromVisits`).
+ */
+const customerSplitLabel = (c: {
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
+  visitSplit?: VisitCountSplit;
+  customerVisitSplit?: VisitCountSplit;
+}) =>
+  formatVisitCountSplit(
+    { am: c.customersAm, pm: c.customersPm, pharmacies: c.customersPharmacy },
+    { fromVisits: c.customerVisitSplit ?? c.visitSplit },
+  );
 
 function achColor(a: number | null) {
   if (a == null) return "text-muted-foreground";
@@ -1241,6 +1254,7 @@ function DeepTab({
           customersAm: a.customersAm,
           customersPm: a.customersPm,
           customersPharmacy: a.customersPharmacy,
+          visitSplit: a.visitSplit,
         }))}
         months={months}
         visitsAvailable={customersOk}
@@ -1831,6 +1845,7 @@ function CompanyDeepTab({
           customersAm: a.customersAm,
           customersPm: a.customersPm,
           customersPharmacy: a.customersPharmacy,
+          visitSplit: a.visitSplit,
         }))}
         months={months}
         showLine

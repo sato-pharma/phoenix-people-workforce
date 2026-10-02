@@ -194,8 +194,9 @@ function openingTab(overview: PhoenixCrmOverview, requested: string | null): Tab
   const { tabs, viewer, visitSeatIds, waitingForYou } = overview;
   // HR's acknowledgements are real entries even for the Super Admin, so they count in either world.
   const decisions =
-    (waitingForYou.isTest && !viewer.isTestPersona ? 0 : waitingForYou.plans + waitingForYou.requests + waitingForYou.planEdits) +
-    waitingForYou.hrAcknowledgements;
+    (waitingForYou.isTest && !viewer.isTestPersona
+      ? 0
+      : waitingForYou.plans + waitingForYou.requests + waitingForYou.planEdits + waitingForYou.visitAsks) + waitingForYou.hrAcknowledgements;
   if (tabs.team && !viewer.isRep && decisions > 0) return "team";
   if (tabs.team && !viewer.isSuperAdmin && visitSeatIds.length === 0) return "team";
   // A2 (owner, 2026-09-26): he opens the app onto his DAY, not onto a tab bar. A manager with a real
@@ -422,8 +423,12 @@ export function PhoenixCrmApp({
   // The Super Admin's counts are test entries: they show in test mode only — except HR's
   // acknowledgements of a request to edit a week, which are real and show out of test mode.
   const { waitingForYou } = overview;
+  // A rep's asks for a visit waiting for this viewer's answer (owner, 2026-10-02): counted on Team for a
+  // manager, and on Reports for a product manager, who has no Team tab.
+  const visitAskCount = waitingForYou.isTest === test ? waitingForYou.visitAsks : 0;
   const waitingCount =
     (waitingForYou.isTest === test ? waitingForYou.plans + waitingForYou.requests + waitingForYou.planEdits : 0) +
+    visitAskCount +
     (test ? 0 : waitingForYou.hrAcknowledgements);
   const tabId = (key: TabKey) => `${idPrefix}-tab-${key}`;
   const panelId = (key: TabKey) => `${idPrefix}-panel-${key}`;
@@ -678,7 +683,7 @@ export function PhoenixCrmApp({
       <div aria-label="Phoenix CRM" className={cn("grid gap-1.5", TAB_COLUMNS[tabs.length])} role="tablist">
         {tabs.map((key, index) => {
           const selected = key === activeTab;
-          const count = key === "team" ? waitingCount : 0;
+          const count = key === "team" ? waitingCount : key === "reports" && !overview.tabs.team ? visitAskCount : 0;
           const heldAside = !selected && isHeld(key);
           return (
             <button
