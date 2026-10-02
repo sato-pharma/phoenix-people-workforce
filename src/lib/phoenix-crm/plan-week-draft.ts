@@ -34,7 +34,7 @@ import { hasDayStarts, startsForDay, type PlanDayStarts, type PlannedDayStart } 
 import { PLAN_EXCEPTION_TYPES, planDayLabel, type PlanDayOff, type PlanExceptionType, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import type { PlannerCustomer, PlannerPlace } from "@/lib/phoenix-crm/suggestions";
 import { windowsForWeekday } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmListType, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmListType, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
 /** The longest note a planned activity keeps — the table's own limit (server/plan-activities.ts PLAN_ACTIVITY_NOTE_MAX). */
 export const PLANNED_ACTIVITY_NOTE_MAX = 300;
@@ -466,14 +466,14 @@ export function resolveDayRows(day: DraftDay, items: ReadonlyArray<PlanItemDraft
 }
 
 /** AM and PM on a day, apart — a customer who left the list is not counted. */
-export function dayCounts(rows: ReadonlyArray<DraftRow>): Record<PhoenixCrmListType, number> {
-  const counts: Record<PhoenixCrmListType, number> = { AM: 0, PM: 0 };
+export function dayCounts(rows: ReadonlyArray<DraftRow>): Record<PhoenixCrmDoctorListType, number> {
+  const counts: Record<PhoenixCrmDoctorListType, number> = { AM: 0, PM: 0 };
   for (const row of rows) if (!row.gone) counts[row.listType] += 1;
   return counts;
 }
 
 /** What each list's cap still has room for on a day. */
-export function roomOnDay(rows: ReadonlyArray<DraftRow>, caps: DailyCaps): Record<PhoenixCrmListType, number> {
+export function roomOnDay(rows: ReadonlyArray<DraftRow>, caps: DailyCaps): Record<PhoenixCrmDoctorListType, number> {
   const counts = dayCounts(rows);
   return { AM: Math.max(0, caps.amDailyCap - counts.AM), PM: Math.max(0, caps.pmDailyCap - counts.PM) };
 }
@@ -517,7 +517,7 @@ export type DayFullness = { AM: boolean; PM: boolean; day: boolean };
  * a full list simply has no room left to tick.
  */
 export function dayFullness(
-  counts: Record<PhoenixCrmListType, number>,
+  counts: Record<PhoenixCrmDoctorListType, number>,
   caps: DailyCaps,
   listTypes: ReadonlyArray<PhoenixCrmListType>,
 ): DayFullness {

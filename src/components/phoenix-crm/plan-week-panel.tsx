@@ -63,7 +63,7 @@ import {
   type PlannedActivity,
 } from "@/lib/phoenix-crm/plan-week-draft";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 import type { MonthlyWeekView, PlanDayView } from "@/lib/phoenix-crm/view-types";
 
 export const PLAN_STATUS_TONE: Record<PhoenixCrmPlanStatus | "none", PillTone> = {
@@ -182,7 +182,7 @@ function daySuggestReason(block: SuggestBlock | null, date: string, activities: 
  * "2 AM · 15 PM" on a day's button — never added together; a Thursday morning reads AM alone. A list
  * at its cap turns emerald where it stands, so the eye finds the full ones without reading a word.
  */
-function DayPair({ counts, full, listTypes }: { counts: Record<PhoenixCrmListType, number>; full: DayFullness; listTypes: ReadonlyArray<PhoenixCrmListType> }) {
+function DayPair({ counts, full, listTypes }: { counts: Record<PhoenixCrmDoctorListType, number>; full: DayFullness; listTypes: ReadonlyArray<PhoenixCrmListType> }) {
   const figure = (listType: PhoenixCrmListType) => (
     <span className={full[listType] ? "font-black text-emerald-700" : undefined}>
       {countText(counts[listType])} {listType}
@@ -334,7 +334,7 @@ export function PlanWeekPanel({
   const byId = indexCustomers(customers);
   const { plan } = week;
   const status = plan?.status ?? null;
-  const dayCountsOf = (day: PlanDayView): Record<PhoenixCrmListType, number> =>
+  const dayCountsOf = (day: PlanDayView): Record<PhoenixCrmDoctorListType, number> =>
     editable && day.editable ? dayCounts(resolveDayRows(day, items, byId)) : day.counts;
   const totals = week.days.reduce(
     (sum, day) => {

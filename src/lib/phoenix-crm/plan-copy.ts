@@ -33,7 +33,7 @@
 import { fieldWeekStart, weekdayOfIsoDay, weekNumberInMonth } from "@/lib/phoenix-crm/calendar";
 import type { PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 /** The last-month reference this replays: a doctor who maps to a native customer and the weekdays he was on. */
 export type CopyEntry = {
@@ -88,7 +88,7 @@ export function buildCopyPlacements(
       if (!day.editable) continue;
       const weekday = weekdayOfIsoDay(day.date);
       const onDay = new Set(day.items.map((item) => item.customerId));
-      const room: Record<PhoenixCrmListType, number> = {
+      const room: Record<PhoenixCrmDoctorListType, number> = {
         AM: capFor("AM", caps) - day.items.filter((item) => item.listType === "AM").length,
         PM: capFor("PM", caps) - day.items.filter((item) => item.listType === "PM").length,
       };
@@ -133,7 +133,7 @@ function placeOnDay(
 ): PlanItemDraft[] {
   if (!day.editable) return [];
   const onDay = new Set(day.items.map((item) => item.customerId));
-  const room: Record<PhoenixCrmListType, number> = {
+  const room: Record<PhoenixCrmDoctorListType, number> = {
     AM: capFor("AM", caps) - day.items.filter((item) => item.listType === "AM").length,
     PM: capFor("PM", caps) - day.items.filter((item) => item.listType === "PM").length,
   };

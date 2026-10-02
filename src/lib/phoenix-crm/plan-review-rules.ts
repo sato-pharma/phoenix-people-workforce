@@ -28,7 +28,7 @@ import { dayActivityRank, isDayActivity, type PhoenixCrmDayActivity } from "@/li
 import { tallyDoctorMonth } from "@/lib/phoenix-crm/monthly-plan-rules";
 import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 // ── 1. Coverage on the review ───────────────────────────────────────────────────────────────────
 
@@ -89,7 +89,7 @@ export type ReviewListCoverage = {
 export type ReviewCoverage = {
   /** Validated customers on both lists — zero while nobody on the list has been validated at the door. */
   validated: number;
-  lists: Record<PhoenixCrmListType, ReviewListCoverage>;
+  lists: Record<PhoenixCrmDoctorListType, ReviewListCoverage>;
 };
 
 /**
@@ -121,7 +121,7 @@ export function summarizeReviewCoverage(input: {
   placements: ReadonlyMap<string, number>;
   settings: Pick<PhoenixCrmSettings, "gradeTargets">;
 }): ReviewCoverage {
-  const lists = {} as Record<PhoenixCrmListType, ReviewListCoverage>;
+  const lists = {} as Record<PhoenixCrmDoctorListType, ReviewListCoverage>;
   let validated = 0;
   for (const listType of REVIEW_LISTS) {
     const rows = new Map<PhoenixCrmGrade, ReviewGradeRow & { hasTarget: boolean }>(

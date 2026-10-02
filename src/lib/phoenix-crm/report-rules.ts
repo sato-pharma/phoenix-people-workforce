@@ -16,13 +16,13 @@ import { isIsoDay, isMonthKey, monthEndOf, monthStartOf } from "@/lib/phoenix-cr
 import { sharePercent } from "@/lib/phoenix-crm/coverage";
 import { isLeaveDay, NO_LEAVE_DAYS, type LeaveDays } from "@/lib/phoenix-crm/plan-leave";
 import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
-import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 export const REPORT_MAX_DAYS = 31;
 
 export type ReportRuleResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-export type ByList<T> = Record<PhoenixCrmListType, T>;
+export type ByList<T> = Record<PhoenixCrmDoctorListType, T>;
 
 type Row = Record<string, unknown>;
 

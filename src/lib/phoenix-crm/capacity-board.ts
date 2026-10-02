@@ -42,7 +42,7 @@
 import { planDayListTypes } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget, sharePercent } from "@/lib/phoenix-crm/coverage";
 import { monthDays } from "@/lib/phoenix-crm/team-calendar";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 export type CapacitySettings = Pick<PhoenixCrmSettings, "gradeTargets" | "pmDailyCap" | "amDailyCap" | "callRatePmTarget" | "callRateAmTarget">;
 
@@ -232,7 +232,7 @@ export function capacityVerdictText(capacity: Pick<ListCapacity, "verdict" | "pe
 }
 
 /** "PM A 3 · B 2 · C 1" — the grade numbers Settings holds, as the board used them. */
-export function gradeTargetsText(targets: CapacitySettings["gradeTargets"], listType: PhoenixCrmListType): string {
+export function gradeTargetsText(targets: CapacitySettings["gradeTargets"], listType: PhoenixCrmDoctorListType): string {
   const parts = GRADES.map((grade) => {
     const value = targets[listType][grade];
     return `${grade} ${value === null ? "no number" : value}`;

@@ -480,7 +480,8 @@ export function stockChasesOf(rows: ReadonlyArray<Row>, customerNames: ReadonlyM
         pharmacy,
         pharmacyKey: pharmacy ? normalizePharmacyName(pharmacy) : null,
         customerName: customerNames.get(String(row.customer_id)) ?? "Unnamed customer",
-        listType: listTypeOf(row.list_type),
+        // A record of what HAPPENED, not a measure of the rep — a pharmacy call belongs in it.
+        listType: parseListType(row.list_type),
       };
     });
 }
@@ -536,7 +537,8 @@ export async function loadSamplesReport(viewer: PhoenixCrmViewer, raw: ReportFil
     territoryLabels(seats),
   ]);
   const result = buildSamplesReport(
-    rows.map((row) => ({ seatId: String(row.seat_id), listType: listTypeOf(row.list_type), samples: row.samples_given })),
+    // Samples given are a record of what happened, so a pharmacy call counts here like any other.
+    rows.map((row) => ({ seatId: String(row.seat_id), listType: parseListType(row.list_type), samples: row.samples_given })),
     seats.map((seat) => {
       const label = labels.get(seat.seatId);
       return { seatId: seat.seatId, territoryName: label?.territoryName ?? territoryName(seat), lineName: seat.lineName, repName: label?.repName ?? null };

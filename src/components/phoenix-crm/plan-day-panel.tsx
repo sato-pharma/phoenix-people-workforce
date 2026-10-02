@@ -91,7 +91,7 @@ import {
 } from "@/lib/phoenix-crm/plan-week-draft";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import { PHOENIX_CRM_WEEKDAY_NAMES, weekTimingsText } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { PlanDayView, PlanItemView } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -315,7 +315,7 @@ export function PlanDayPanel({
   const placedById = new Map(onTheDay.map((row) => [row.customerId, row]));
   // 1 AM, 1 PM, 2 PM… — each list counted on its own, in the order he ticked (owner, 2026-09-30).
   const order = new Map<string, number>();
-  const seen: Record<PhoenixCrmListType, number> = { AM: 0, PM: 0 };
+  const seen: Record<PhoenixCrmDoctorListType, number> = { AM: 0, PM: 0 };
   for (const row of onTheDay) {
     seen[row.listType] += 1;
     order.set(row.customerId, seen[row.listType]);
@@ -801,11 +801,11 @@ type TickRowProps = {
   idPrefix: string;
   locked: boolean;
   onToggle: (row: TickRow, next: boolean) => void;
-  room: Record<PhoenixCrmListType, number>;
+  room: Record<PhoenixCrmDoctorListType, number>;
   row: TickRow;
 };
 
-function tickDisabled(row: TickRow, room: Record<PhoenixCrmListType, number>, locked: boolean): boolean {
+function tickDisabled(row: TickRow, room: Record<PhoenixCrmDoctorListType, number>, locked: boolean): boolean {
   return locked || (!row.placed && room[row.listType] <= 0);
 }
 

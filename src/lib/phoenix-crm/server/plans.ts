@@ -106,7 +106,7 @@ import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { PlannerCustomer, PlannerInsight } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -289,7 +289,7 @@ export type PlanDayView = {
   /** When the rep means to start his AM and his PM rounds that day — his own statement, never a rule. */
   starts: PlanDayStarts;
   items: PlanItemView[];
-  counts: Record<PhoenixCrmListType, number>;
+  counts: Record<PhoenixCrmDoctorListType, number>;
   spanKm: number;
   /** The day's customers span more than the far-apart distance (highlighted to the reviewer). */
   farApart: boolean;
@@ -354,19 +354,21 @@ export function buildDays(input: {
     });
     const spread = checkDaySpread(points, input.farApartKm);
     const isolated = new Set(spread.isolatedIds);
-    const counts: Record<PhoenixCrmListType, number> = { AM: 0, PM: 0 };
+    const counts: Record<PhoenixCrmDoctorListType, number> = { AM: 0, PM: 0 };
 
-    const items = rows.map((row): PlanItemView => {
+    const items = rows.flatMap((row): PlanItemView[] => {
       const customer = record(row.customer);
       const place = record(row.place);
       const customerId = String(row.customer_id);
+      // A plan row naming a pharmacy cannot exist (one is never planned), and if one ever did
+      // it would not be a plan item — it is dropped rather than counted among the doctors.
       const listType = listTypeOf(row.list_type);
-      if (listType === null) continue;
+      if (listType === null) return [];
       counts[listType] += 1;
       const exceptionType = textOrNull(row.exception_type);
       const nearest = spread.nearestKmById[customerId];
       const pending = customer.status === "pending";
-      return {
+      return [{
         customerId,
         placeId: textOrNull(row.place_id),
         pending,
@@ -387,7 +389,7 @@ export function buildDays(input: {
         stale: isStaleItem(row),
         isolated: isolated.has(customerId),
         nearestKm: nearest === undefined || !Number.isFinite(nearest) ? null : Math.round(nearest * 10) / 10,
-      };
+      }];
     });
     items.sort(
       (left, right) =>

@@ -17,12 +17,12 @@
  * and over beside it. And a running month is not a closed one: "under" can still be caught up.
  */
 
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 /** 0 = not visited this month · 1 = behind its grade · 2 = on or over its grade. Lower plans first. */
 export type CoverageTier = 0 | 1 | 2;
 
-export function gradeTarget(settings: Pick<PhoenixCrmSettings, "gradeTargets">, listType: PhoenixCrmListType, grade: PhoenixCrmGrade | null): number | null {
+export function gradeTarget(settings: Pick<PhoenixCrmSettings, "gradeTargets">, listType: PhoenixCrmDoctorListType, grade: PhoenixCrmGrade | null): number | null {
   if (!grade) return null;
   return settings.gradeTargets[listType]?.[grade] ?? null;
 }

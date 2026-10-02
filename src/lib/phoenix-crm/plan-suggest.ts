@@ -53,7 +53,7 @@ import {
   type DraftWeek,
 } from "@/lib/phoenix-crm/plan-week-draft";
 import { normalizeArea, type PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 export type GradeTargets = PhoenixCrmSettings["gradeTargets"];
 
@@ -160,7 +160,7 @@ function roomOf(
   activity: SuggestActivity | null,
   byId: ReadonlyMap<string, PlannerCustomer>,
   caps: DailyCaps,
-): Record<PhoenixCrmListType, number> {
+): Record<PhoenixCrmDoctorListType, number> {
   const counts = dayCounts(resolveDayRows(day, items, byId));
   const share = (cap: number) => (activity?.halfDay ? Math.floor(cap / 2) : cap);
   const capOf = (listType: PhoenixCrmListType) =>

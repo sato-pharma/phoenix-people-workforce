@@ -89,7 +89,7 @@ import {
   PHOENIX_CRM_WEEKDAY_SHORT,
   windowsForWeekday,
 } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmListType, PhoenixCrmSeason, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmListType, PhoenixCrmSeason, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 import type { ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -128,7 +128,7 @@ function matchesQuery(query: string, parts: ReadonlyArray<string | null>): boole
   return parts.some((part) => part !== null && part.toLowerCase().includes(query));
 }
 
-function countByType<T extends { listType: PhoenixCrmListType }>(rows: ReadonlyArray<T>): Record<PhoenixCrmListType, number> {
+function countByType<T extends { listType: PhoenixCrmListType }>(rows: ReadonlyArray<T>): Record<PhoenixCrmDoctorListType, number> {
   return {
     AM: rows.filter((row) => row.listType === "AM").length,
     PM: rows.filter((row) => row.listType === "PM").length,
@@ -136,7 +136,7 @@ function countByType<T extends { listType: PhoenixCrmListType }>(rows: ReadonlyA
 }
 
 /** "3 AM · 41 PM" — AM and PM side by side, never added together. */
-function pairText(counts: Record<PhoenixCrmListType, number>): string {
+function pairText(counts: Record<PhoenixCrmDoctorListType, number>): string {
   return `${countText(counts.AM)} AM · ${countText(counts.PM)} PM`;
 }
 
