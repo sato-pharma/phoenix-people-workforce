@@ -5,6 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 665f6c6c-8439-4303-9197-34bcf2f067be
+  modified: 2026-10-02T17:23:42.287Z
 ---
 
 Full audit (4 parallel background agents + manual spot-checks, 2026-07-18) of whether Phoenix Workforce shows employee nicknames with fallback to full name everywhere. The canonical helper `resolveEmployeeDisplayName(fullName, nickname)` in `src/lib/employees/display-name.ts` is correct (trims + falls back), and Employee Master/[Organogram]/Employee 360 already use it correctly via `EmployeeDirectoryRow.displayName`. Everywhere else — Approvals Hub, Coaching, Vacation, Probation (heaviest), Resignations, Offers, Marketing Requests, Recruitment, Weekly Planning, Double-Visit Analytics, Outstation, Attendance, Field Workforce Compliance, notification emails, Excel/PDF exports — mostly reads raw `.fullName` instead. No blank-name bugs found anywhere (nobody shows nickname without a full-name fallback); the problem is coverage/adoption, not broken fallback logic.
@@ -15,7 +16,7 @@ Full audit (4 parallel background agents + manual spot-checks, 2026-07-18) of wh
 - **C.** ~15 files run their own raw Supabase query that never selects the `nickname` column at all (`auth/scope-visibility.ts`, `vacation/company-vacation-report.ts`, `probation/intelligence/*`, `offers/service.ts` `getOfferLookups`, `hiring-documents/service.ts`, `attendance/*`, `reports/vacancies.ts`, birthday/contract-renewal cron routes, etc.).
 - **D.** `src/lib/utils.ts:8-16` `formatEmployeeDisplayName()` is a decoy — it only trims whitespace, no nickname logic — but ~15 call sites (coaching pickers, HR Calendar, outstation notices, team-performance leaderboards) call it believing it resolves nicknames.
 
-**Notable finds:** `src/components/employee-portal/identity-card.tsx` (owner-locked file, needs "Sato-1997" unlock phrase to edit) is already correct today — its `employee.fullName` prop is confusingly named but is actually populated from `.displayName` upstream (`employee-portal/service.ts:2369`), so it needs no edit. No shared `EmployeeName`/`EmployeeAvatar` component exists anywhere — every screen reimplements its own name/initials logic, which is part of why this drifted so widely.
+**Notable finds:** `src/components/employee-portal/identity-card.tsx` (owner-locked file — editing it needs the owner's plain approval of that specific change; there is no unlock phrase since 2026-07-31, see [[incentive-policy-lock]]) is already correct today — its `employee.fullName` prop is confusingly named but is actually populated from `.displayName` upstream (`employee-portal/service.ts:2369`), so it needs no edit. No shared `EmployeeName`/`EmployeeAvatar` component exists anywhere — every screen reimplements its own name/initials logic, which is part of why this drifted so widely.
 
 **Owner decisions (made 2026-07-18) and status:**
 1. Persisted `employee_name` snapshot columns — keep raw for audit trail + add live companion field. Done for vacation email greetings, excuses notifications, weekly-plan action-center inbox, and (round 2) Approvals Hub's decision-history/company-request/plan-tracker views and probation's case-detail views. Still open: any remaining persisted-snapshot readers not yet identified — that's Phase 3.
