@@ -118,6 +118,27 @@ export async function resolveOne(
   return indexed[0];
 }
 
+/**
+ * The exactly-one-row rule as a PURE decision, for a driver that counts matches itself.
+ *
+ * `resolveOne` is the version for a reader this module can query. The revocation driver works
+ * directly against puppeteer and counts with `$$eval`, so it needs the same rule without a reader.
+ * Keeping the decision here means there is ONE statement of "exactly one, or stop" for the whole
+ * Turbify console, and that it can be proven without a browser.
+ *
+ * Returns null when it is safe to act, or the refusal to throw. A NEGATIVE or non-finite count means
+ * the page could not be read, which is also a refusal — an unreadable list is not an empty one, and
+ * treating it as empty is how a robot proceeds against a page it never saw.
+ */
+export function rowCountRefusal(count: number, address: string, action = "Reset"): string | null {
+  if (count === 1) return null;
+  const seen = !Number.isFinite(count) || count < 0 ? "an unreadable number of" : String(count);
+  return (
+    `${action} ${address}: after filtering to this address the list showed ${seen} matching rows, `
+    + `so the robot cannot tell which mailbox it would act on. Nothing was clicked.`
+  );
+}
+
 /** Whether the locator resolves at all, without throwing. For verifying a page is the expected one. */
 export async function isPresent(page: CandidateReader, locator: Locator): Promise<boolean> {
   return (await findMatches(page, locator)).length > 0;

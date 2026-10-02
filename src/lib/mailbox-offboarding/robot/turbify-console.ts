@@ -31,6 +31,10 @@
  */
 
 import { loadPuppeteer, resolveChromiumPath, type ChromiumPage } from "@/lib/pdf/chromium";
+// The exactly-one-row rule is stated ONCE for the whole Turbify console, in the shared resolver,
+// so the revocation driver and the provisioning driver cannot drift into two different ideas of
+// when it is safe to click a row action.
+import { rowCountRefusal } from "@/lib/turbify/resolve";
 
 import type { RobotStepResult, TurbifyConsoleDriver } from "./driver";
 
@@ -195,6 +199,8 @@ type ConsolePage = ChromiumPage & {
     options?: Record<string, unknown>,
     ...args: unknown[]
   ) => Promise<unknown>;
+  /** Counts matches in the page, for the exactly-one-row guard before a reset click. */
+  $$eval: <T>(selector: string, fn: (elements: Element[]) => T) => Promise<T>;
   url: () => string;
 };
 
@@ -313,6 +319,20 @@ export async function createTurbifyConsoleDriver(): Promise<TurbifyConsoleDriver
           + `Not resetting a mailbox whose row could not be found.`,
         );
       }
+      // 🔴 2b. EXACTLY ONE ROW, OR NOTHING. Every one of the 288 rows carries its own
+      //     `aria-label="Reset password"`, so `click()` takes whichever is FIRST in the document —
+      //     and that is this mailbox only if the filter above actually narrowed the list. When it
+      //     did not (an address that is a prefix of another, a filter that silently failed), the
+      //     first button belongs to somebody else and the click resets a WORKING employee out of
+      //     their mail. Step 3 would catch it, but only AFTER the reset had happened: detection is
+      //     not prevention, so refuse here instead. `countMatches` is the shared Turbify resolver's
+      //     rule — exactly one, or stop — applied to the one flow that is already armed.
+      const rowCount = await page
+        .$$eval(MAILBOX_SELECTORS.resetPassword.selector, (elements) => elements.length)
+        .catch(() => -1);
+      const ambiguous = rowCountRefusal(rowCount, email);
+      if (ambiguous) throw new Error(ambiguous);
+
       await page.click(MAILBOX_SELECTORS.resetPassword.selector);
 
       // 3. The ONLY success signal: the one-time-password dialog appears NAMING THIS MAILBOX. If it
