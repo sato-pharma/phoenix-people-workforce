@@ -128,15 +128,20 @@ export function managerReminder(input: {
   const week = reminderDayLabel(input.day.weekStart);
   const shown = names.slice(0, PLAN_REMINDER_MAX_NAMES);
   const more = names.length - shown.length;
+  // At 17:57 his count says "still" too (owner, 2026-10-02: "Yes, remind again").
   const still = input.tick === "evening" ? " still" : "";
   const count = names.length === 1 ? `1 of your reps${still} has` : `${names.length} of your reps${still} have`;
-  const when = input.day.late
-    ? `It was due on ${reminderDayLabel(input.day.dueOn)} at ${PLAN_DEADLINE_LABEL}.`
-    : `It is due tonight at ${PLAN_DEADLINE_LABEL}.`;
+  // The deadline leads his title as well (owner, 2026-10-02), for the same reason it leads the rep's:
+  // this notice goes out on `push`, and a phone shows the heading and cuts it. He is the one who can
+  // still chase a rep before 23:55, so the hour is the part he must not have to open the app to read.
+  const when = input.day.late ? `Was due ${reminderDayLabel(input.day.dueOn)}, ${PLAN_DEADLINE_LABEL}` : `Due tonight, ${PLAN_DEADLINE_LABEL}`;
   return {
     hrId: input.hrId,
-    title: `${count} not sent the week of ${week}`,
-    message: `${when} Not sent yet: ${shown.join(", ")}${more > 0 ? `, and ${more} more` : ""}.`,
+    title: `${when} — ${count} not sent the week of ${week}`,
+    // The names carry the body on their own now the deadline has moved into the title; it used to open
+    // with "It", which pointed at a title that no longer says what "it" is.
+    message: `Not sent yet: ${shown.join(", ")}${more > 0 ? `, and ${more} more` : ""}.`,
+    // The tick is part of the key, so the 12:57 and 17:57 notices are two, not one repeated.
     idempotencyKey: `phoenix_crm:plan_reminder:dm:${input.hrId}:${input.day.weekStart}:${input.cairoToday}:${input.tick}`,
   };
 }

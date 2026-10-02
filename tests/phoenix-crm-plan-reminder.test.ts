@@ -100,9 +100,12 @@ export function runPhoenixCrmPlanReminderTests() {
 
     assert.equal(managerReminder({ hrId: "D-1", day: due, cairoToday: "2026-10-02", tick: "noon", repNames: [] }), null, "a manager whose team has all sent hears nothing");
     const one = managerReminder({ hrId: "D-1", day: due, cairoToday: "2026-10-02", tick: "noon", repNames: ["Ebtissam Alaa ElDin Anwar"] });
-    assert.equal(one?.title, "1 of your reps has not sent the week of Saturday 3 Oct");
+    // 🔴 His title leads with the deadline as well (owner, 2026-10-02) — same phone, same cut heading —
+    // and the evening tick's "still" rides INSIDE it rather than replacing it.
+    assert.equal(one?.title, "Due tonight, 11:55 PM — 1 of your reps has not sent the week of Saturday 3 Oct");
+    assert.equal(one?.message, "Not sent yet: Ebtissam Alaa ElDin Anwar.", "the names carry the body on their own");
     const stillOne = managerReminder({ hrId: "D-1", day: due, cairoToday: "2026-10-02", tick: "evening", repNames: ["Ebtissam Alaa ElDin Anwar"] });
-    assert.equal(stillOne?.title, "1 of your reps still has not sent the week of Saturday 3 Oct");
+    assert.equal(stillOne?.title, "Due tonight, 11:55 PM — 1 of your reps still has not sent the week of Saturday 3 Oct");
     const many = managerReminder({
       hrId: "D-1",
       day: due,

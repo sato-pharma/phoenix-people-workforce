@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: bb208cb6-364e-4bfd-9cf7-551847e48bcf
-  modified: 2026-09-05T16:54:37.563Z
+  modified: 2026-10-02T10:31:01.277Z
 ---
 
 **The fact.** A worktree holds `main` — `_wt-dashboard-follow-closing` on 2026-09-05 — and git forbids
@@ -47,4 +47,6 @@ be.
 Full account: `docs/agents-session-traps.md`, "main is not in the primary".
 
 Related: [[a-parallel-session-can-collide-with-no-git-trace]] ·
-[[an-uncommitted-file-in-the-primary-can-be-older-than-main]]
+[[an-uncommitted-file-in-the-primary-can-be-older-than-main]] ·
+[[a-no-commit-merge-probe-actually-merges-in-the-shared-primary]] — the other way a session damages
+this folder while believing it is only looking at it.
