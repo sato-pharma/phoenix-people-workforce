@@ -133,14 +133,24 @@ export function runPhoenixCrmPlanDeadlineTests(): void {
     assert.ok(day, "the due day is a reminder day");
     assert.equal(day.late, false);
     const onTime = repReminder({ hrId: "PD-0001", day, cairoToday: "2026-10-08", draftStarted: true });
-    assert.ok(onTime.message.includes(`due tonight at ${PLAN_DEADLINE_LABEL}`), "it says the hour, not just tonight");
+    // 🔴 ON THE PHONE IT IS THE TITLE THAT SURVIVES (owner, 2026-10-02). This notice goes out on `push`,
+    // where OneSignal's `headings` is what a lock screen shows and then cuts — so the deadline is the
+    // FIRST thing in the title, never the last, and these assert its POSITION, not just its presence.
+    assert.ok(onTime.title.startsWith(`Due tonight, ${PLAN_DEADLINE_LABEL}`), onTime.title);
+    assert.ok(onTime.title.includes("Saturday 10 Oct"), "and the week is still named in it, never a date code");
+    assert.ok(onTime.title.indexOf(PLAN_DEADLINE_LABEL) < 24, "early enough to survive a cut heading — the whole reason it moved");
+    assert.ok(onTime.message.startsWith("Your plan is not sent yet."), "the body carries its own subject");
 
     const after = planReminderDay("2026-10-09");
     assert.ok(after, "the day after is still a reminder day");
     assert.equal(after.late, true);
     const lateNotice = repReminder({ hrId: "PD-0001", day: after, cairoToday: "2026-10-09", draftStarted: true });
-    assert.ok(lateNotice.message.includes(`at ${PLAN_DEADLINE_LABEL}`), "and the late wording carries it too");
+    assert.ok(lateNotice.title.startsWith(`Was due Thursday 8 Oct, ${PLAN_DEADLINE_LABEL}`), lateNotice.title);
     assert.ok(lateNotice.message.includes("A late week is still accepted"), "while still telling him it is accepted");
+    // The tone does not harden with the title: nothing here calls him late, warns him, or scores him.
+    for (const text of [onTime.title, onTime.message, lateNotice.title, lateNotice.message]) {
+      assert.ok(!/\b(overdue|violation|warning|failed|penalty)\b/i.test(text), `no scolding wording: ${text}`);
+    }
 
     const manager = managerReminder({ hrId: "PD-0100", day, cairoToday: "2026-10-08", repNames: ["Aya Ibrahim"] });
     assert.ok(manager, "the manager hears about his own reps");
