@@ -112,7 +112,9 @@ cost, the deploy path or the region.
 | Module | Loads when a session touches |
 | --- | --- |
 | `payroll` — Payroll, salaries and deductions | `src/lib/{payroll,automated-payroll,deductions,daily-deductions,finance,reconciliation,calculator}/**` and 4 more |
-| `sales-closing` — Monthly Closing, Source of Sales and attribution | `src/lib/sales/*` and 6 more |
+| `sales-closing` — Monthly Closing, the Office and El Qema money rules, the Business Review | `src/lib/sales/*` and 6 more |
+| `sales-imports` — Source of Sales — distributor imports, customer mapping and rollups | `src/lib/sales/{normalizer,master-data,master-map,ai}/**` and 5 more |
+| `sales-attribution` — Attribution, achievement, targets and sales territory | `src/lib/sales/territory/**` and 5 more |
 | `weekly-sales` — Weekly sales and stock | `src/lib/sales/weekly/**` and 3 more |
 | `direct-orders` — Direct orders | `src/lib/direct-orders/**` and 4 more |
 | `incentives` — Incentives and targets payout | `src/lib/incentives/**` and 2 more |

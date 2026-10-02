@@ -42,21 +42,66 @@ export const MODULES = [
     keywords: ["payroll", "salary", "salaries", "payslip", "payslips", "deduction", "deductions", "net pay", "gross pay", "basic salary", "social insurance", "salary batch", "مرتب", "مرتبات", "رواتب"],
     tables: ["salary_records", "salary_batches", "automated_payroll", "payroll_", "payslip", "deduction"],
   },
+  // ── The sales area is THREE modules, and the split is deliberately LOPSIDED ──
+  //
+  // One file held all of it until 2026-10-02, when it reached 87% of MODULE_FILE_MAX_BYTES. The cap
+  // is not cosmetic: crossing it fails `build.mjs --check` inside the required `validate` job, so
+  // the next closing note would have turned somebody else's PR red in a place nobody would think to
+  // look. Sales is also the fastest-growing area in this repo, so one file was always going to lose.
+  //
+  // 🔴 `sales-closing` KEEPS the broad `src/lib/sales/*` glob on purpose, and the other two ADD to
+  // it rather than carve it up. Touch an ingestion or an attribution file and you get the closing
+  // rules TOO — because the closing golden rules (the published month is the only sales truth, never
+  // correct an announced month, the Office and El Qema splits) govern what those files are allowed
+  // to produce. The narrow modules only mean the reverse is no longer true: editing the closing
+  // engine no longer drags in every upload-parser and brick-mapping note. Splitting the broad glob
+  // between them would be the obvious-looking tidy-up and would silently drop a money rule from the
+  // sessions that most need it.
   {
     id: "sales-closing",
-    title: "Monthly Closing, Source of Sales and attribution",
-    scope: "The monthly closing engine and its exports, sales imports and distributors, attribution, bricks and areas for sales, El Qema, the Office and city rules, targets and achievement, the Business Review.",
+    title: "Monthly Closing, the Office and El Qema money rules, the Business Review",
+    scope: "The monthly closing engine and its exports, publication and locks, corrections, the store split, the Office allocation and El Qema/city rules, product prices, the Business Review. Source of Sales ingestion is `sales-imports`; attribution, targets and bricks are `sales-attribution`.",
     globs: [
       "src/lib/sales/*",
-      "src/lib/sales/{ai,master-data,master-map,normalizer,territory,make-it-happen}/**",
+      "src/lib/sales/make-it-happen/**",
       "src/lib/business-review/**",
       "src/components/{sales,business-review}/**",
-      "app/**/{sales,monthly-closing,source-of-sales,sales-vs-target,targets,territory-drilldown,brick-coverage,master-data,customers-database,dsms-performance,med-reps-performance,team-performance,make-it-happen,business-review}/**",
-      "tests/*{closing,qema,attribution,source-of-sales,sos-,brick,distributor,office-golden,city-split,business-review,achievement}*",
-      "supabase/migrations/*{closing,attribution,source_of_sales,sos_,brick,distributor,achievement}*",
+      "app/**/{sales,monthly-closing,sales-vs-target,dsms-performance,med-reps-performance,team-performance,make-it-happen,business-review}/**",
+      "tests/*{closing,qema,office-golden,city-split,business-review}*",
+      "supabase/migrations/*{closing,store_split}*",
     ],
-    keywords: ["monthly closing", "closing", "source of sales", "sos", "attribution", "el qema", "qema", "distributor", "distributors", "brick", "bricks", "sales vs target", "achievement", "factory price", "office rule", "city rule", "business review", "تقفيل", "مبيعات"],
-    tables: ["source_of_sales", "sos_", "phx_closing", "phx_monthly", "monthly_closing", "au.", "line_area_map", "monthly_targets", "distributor"],
+    keywords: ["monthly closing", "closing", "el qema", "qema", "office rule", "city rule", "business review", "factory price", "تقفيل", "مبيعات"],
+    tables: ["phx_closing", "phx_monthly", "monthly_closing"],
+  },
+  {
+    id: "sales-imports",
+    title: "Source of Sales — distributor imports, customer mapping and rollups",
+    scope: "Getting sales INTO the system: the distributor uploads and their parsers, the normalizer, master data and the master map, customer/brick mapping and its guards, batch supersede, rollups, source coverage and the import diagnostics. What the closing then does with it is `sales-closing`.",
+    globs: [
+      "src/lib/sales/{normalizer,master-data,master-map,ai}/**",
+      "src/lib/sales/{import,upload,source-of-sales,distributor,customer,mapping,sos}-*",
+      "src/lib/sales/{sales-upload,sales-import-upload-path,monthly-distributor-import,monthly-import-request,parser,recognize,raw-template,bulk-import-gating,source-coverage,source-audit-workbook,master-workbook,offline-lookup-workbook,upload-validation}.ts",
+      "app/**/{source-of-sales,master-data,customers-database}/**",
+      "tests/*{source-of-sales,sos-,distributor,import,mapping}*",
+      "supabase/migrations/*{source_of_sales,sos_,distributor}*",
+    ],
+    keywords: ["source of sales", "sos", "distributor", "distributors", "sales import", "sales upload", "master map", "customer map", "normalizer"],
+    tables: ["source_of_sales", "sos_", "distributor"],
+  },
+  {
+    id: "sales-attribution",
+    title: "Attribution, achievement, targets and sales territory",
+    scope: "Who a sale is credited to and what it is measured against: the `au` attribution engine and its period-aware as-of resolution, achievement, monthly/rep targets, Sales vs Target, seat and area scope, bricks and the dated area moves.",
+    globs: [
+      "src/lib/sales/territory/**",
+      "src/lib/sales/{attribution,brick,vs-target,rep,portal,targets}-*",
+      "src/lib/sales/{monthly-attribution,monthly-targets,employee-achievement,seat-area-scope,medical-rep-area-scope,closing-area-merges,channels-by-rep,sfe-performance,vs-target}.ts",
+      "app/**/{targets,territory-drilldown,brick-coverage}/**",
+      "tests/*{attribution,achievement,brick,upper-egypt,kafr-el-sheikh,delta}*",
+      "supabase/migrations/*{attribution,achievement,brick,monthly_targets}*",
+    ],
+    keywords: ["attribution", "achievement", "sales vs target", "monthly target", "monthly targets", "brick", "bricks", "line area map"],
+    tables: ["au.", "line_area_map", "monthly_targets", "monthly_achievement"],
   },
   {
     id: "weekly-sales",
