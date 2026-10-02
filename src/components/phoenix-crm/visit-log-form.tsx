@@ -30,13 +30,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, Check, ChevronRight, CircleAlert, CircleCheck, History } from "lucide-react";
+import { ArrowDown, Check, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, History } from "lucide-react";
 
 import { crmPost, errorCodeOf, messageOf, newClientId } from "@/components/phoenix-crm/api";
 import { dayLabel } from "@/components/phoenix-crm/format";
 import { customerMetaText, monthVisitsText, PENDING_COUNTS_NOTE, PENDING_PILL, pendingVisitsText } from "@/components/phoenix-crm/labels";
 import { CrmSpeak, type VoiceNoteValue } from "@/components/phoenix-crm/speak";
 import { silentFixPayload, useSilentFix } from "@/components/phoenix-crm/use-silent-fix";
+import { crmStepBackClassName, crmStepNextClassName } from "@/components/phoenix-crm/step-form";
 import { PlaceWindows } from "@/components/phoenix-crm/visit-customer-picker";
 import {
   CrmBackBar,
@@ -98,6 +99,8 @@ function carriedProducts(customer: VisitCustomerOption): string[] {
  * him there, so the sentence that says what is missing is never more than one tap from the box that
  * answers it. The reason and the comment are their own inputs' ids.
  */
+export type VisitFormPart = "details" | "log";
+
 const STEP_REASON = "phoenix-crm-visit-reason";
 const STEP_WHO = "phoenix-crm-visit-who";
 const STEP_PRODUCTS = "phoenix-crm-visit-products";
@@ -202,6 +205,18 @@ function personOptions(people: ReadonlyArray<VisitPerson>): Array<CrmChoiceOptio
   return people.map((person) => ({ value: person.hrId, label: person.name, note: person.title }));
 }
 
+/** One line of step 4's read-back: what was entered, never a box. Long text wraps; Arabic reads right to left. */
+function SummaryLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 border-l-[3px] border-slate-200 pl-3">
+      <dt className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</dt>
+      <dd className="mt-0.5 whitespace-pre-line break-words text-sm font-bold text-slate-900" dir="auto">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
 // ── The pharmacy stock check ────────────────────────────────────────────────────────────────────
 
 // One product's Has / Doesn't-have answer. Tapping the answer it already carries clears it back to
@@ -258,8 +273,10 @@ export function VisitLogForm({
   initialReason,
   initialVisitType,
   onBack,
+  onPart,
   onReload,
   onSaved,
+  part,
   seatId,
   test,
 }: {
@@ -269,6 +286,14 @@ export function VisitLogForm({
   initialReason: string | null;
   initialVisitType: LogVisitType;
   onBack: () => void;
+  /** Move between the step form's step 3 (products and comment) and step 4 (log the visit). */
+  onPart: (next: VisitFormPart) => void;
+  /**
+   * Which step of Add visit's step form this is (owner, 2026-10-02): "details" is step 3, every box
+   * of the visit; "log" is step 4, the visit read back with the ONE Log visit. The form stays mounted
+   * across both, so nothing he entered is lost and the silent clock below keeps running.
+   */
+  part: VisitFormPart;
   /** Read the form again: the customer moved on under the screen (already visited, dropped). */
   onReload: () => void;
   onSaved: (visit: SavedVisit, customerName: string) => void;
@@ -376,7 +401,26 @@ export function VisitLogForm({
     if (!step) return;
     // The reason box may be closed behind "Change the reason"; open it, then scroll once it is drawn.
     if (step === STEP_REASON) setReasonOpen(true);
-    window.requestAnimationFrame(() => document.getElementById(step)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+    // Every box lives on step 3: from the read-back on step 4, go back there first.
+    if (part === "log") onPart("details");
+    window.requestAnimationFrame(() =>
+      window.requestAnimationFrame(() => document.getElementById(step)?.scrollIntoView({ behavior: "smooth", block: "center" })),
+    );
+  }
+
+  /** Step 3's Next: on to the read-back once nothing required is missing, else to the first thing that is. */
+  function toLog() {
+    if (saving) return;
+    if (openStep !== null) {
+      setTried(true);
+      showStep(openStep);
+      return;
+    }
+    // Already visited today is the one refusal no box answers; the bar says it, and he stays here.
+    if (!check.ok) return;
+    setProblem(null);
+    onPart("log");
+    window.requestAnimationFrame(() => document.querySelector("[data-crm-step-form]")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
   function toggleProduct(product: string) {
@@ -548,6 +592,8 @@ export function VisitLogForm({
         // SAME visit again.
         setVisitType("out_of_plan");
         setReasonOpen(true);
+        // The reason box is on step 3.
+        onPart("details");
       } else if (code === "phoenix_crm_id_conflict") {
         visitIdRef.current = null;
       } else if (code === "phoenix_crm_already_visited" || code === "phoenix_crm_customer_dropped" || code === "phoenix_crm_customer_not_found") {
@@ -562,10 +608,51 @@ export function VisitLogForm({
   // refuse, in the save's own words, because it IS the save's check — never a second copy of the rules.
   const check = draft("", null);
 
+  const kindLabel = who.options.find((option) => option.value === kind)?.label ?? "Single visit";
+  const whoLine = [kindLabel, kind !== "single" ? who.manager?.name : null, kind === "chain" ? who.senior?.name : null].filter(Boolean).join(" · ");
+  const objectionLabel = objection ? (VISIT_OBJECTIONS.find((entry) => entry.key === objection)?.label ?? null) : null;
+  const nextStepLabel = nextStep ? (VISIT_NEXT_STEPS.find((entry) => entry.key === nextStep)?.label ?? null) : null;
+  const leftLines = [...form.products.map((product) => ({ key: product, label: product })), ...SAMPLE_MATERIALS]
+    .filter((item) => (samples[item.key] ?? 0) > 0)
+    .map((item) => `${item.label} × ${samples[item.key]}`);
+  const stockAnswered = Object.keys(availability).length;
+
   return (
     <CrmPanel>
       <CrmBackBar backLabel="Back" onBack={close} title="Log visit" />
 
+      {part === "log" ? (
+        // Step 4 (owner, 2026-10-02): the visit read back in one place, then the ONE Log visit below.
+        // Nothing here is a box — a change goes back to step 3, where every box is.
+        <CrmBlock title="Check the visit, then log it">
+          <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <SummaryLine label="Customer" value={`${customer.name} · ${visitType === "planned" ? "Planned" : visitType === "out_of_plan" ? "Out of plan" : "Out of list"}`} />
+            {visitType === "out_of_plan" ? <SummaryLine label="Why you went" value={unplannedReason.trim() || "Not written yet"} /> : null}
+            <SummaryLine label="Who was on the visit" value={whoLine} />
+            <SummaryLine label="Products discussed" value={products.length > 0 ? products.join(", ") : "None chosen yet"} />
+            <SummaryLine
+              label="Comment"
+              value={`${comment.trim() || "Not written yet"}${voiceNote ? "\nYour voice note is kept with the visit." : ""}`}
+            />
+            {pharmacyName.trim() || stockAnswered > 0 ? (
+              <SummaryLine
+                label="Pharmacy"
+                value={[pharmacyName.trim() || null, stockAnswered > 0 ? `${stockAnswered} ${stockAnswered === 1 ? "product" : "products"} answered` : null]
+                  .filter(Boolean)
+                  .join(" · ")}
+              />
+            ) : null}
+            {leftLines.length > 0 ? <SummaryLine label="What you left" value={leftLines.join(", ")} /> : null}
+            {objectionLabel || nextStepLabel ? (
+              <SummaryLine label="What you took away" value={[objectionLabel, nextStepLabel].filter(Boolean).join(" · ")} />
+            ) : null}
+          </dl>
+          <CrmButton className="mt-4" disabled={saving} onClick={() => onPart("details")}>
+            Change something
+          </CrmButton>
+        </CrmBlock>
+      ) : (
+        <>
       <CrmBlock title="1 · Customer">
         <div className="min-w-0 border border-l-[3px] border-orange-200 border-l-orange-500 bg-orange-50/50 px-3 py-2.5">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
@@ -938,6 +1025,8 @@ export function VisitLogForm({
         />
         {isFollowUp(nextStep) ? <p className="mt-2 text-xs font-semibold text-slate-500">It comes back to you at this customer&apos;s door next time.</p> : null}
       </CrmBlock>
+        </>
+      )}
 
       {/* Log visit, held above the portal's bottom bar on phones (the app sets --crm-sticky-bottom to its
           height) the way the plan's save bar is: under his thumb wherever he has scrolled to. It is still
@@ -995,15 +1084,30 @@ export function VisitLogForm({
                 </button>
               )}
             </div>
-            <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto">
-              <CrmButton busy={saving} className="min-h-12 text-base sm:min-w-40" onClick={() => void save(Date.now())} variant="primary">
-                {saving ? "Saving…" : "Log visit"}
-              </CrmButton>
-              {/* Hidden on a phone, where the bar must stay short and the back arrow at the top is the
-                  same exit; shown from sm up. */}
-              <CrmButton className="hidden min-h-12 sm:inline-flex" disabled={saving} onClick={close}>
-                Cancel
-              </CrmButton>
+            {/* The step form's foot, held under his thumb (owner, 2026-10-02): Back on the left, the way
+                on at the right — Next on step 3, the ONE Log visit on step 4. Back from step 3 is the
+                form's own exit (it still warns about an unsaved recording); from step 4 it returns to
+                the boxes. */}
+            <div className="grid w-full grid-cols-[auto_minmax(0,1fr)] gap-2 sm:flex sm:w-auto sm:flex-row-reverse">
+              {part === "log" ? (
+                <CrmButton busy={saving} className="min-h-12 text-base sm:min-w-40" onClick={() => void save(Date.now())} variant="primary">
+                  {saving ? "Saving…" : "Log visit"}
+                </CrmButton>
+              ) : (
+                <button className={cn(crmStepNextClassName, "min-h-12 justify-center text-base sm:min-w-40")} disabled={saving} onClick={toLog} type="button">
+                  Next
+                  <ChevronRight aria-hidden className="h-4 w-4" />
+                </button>
+              )}
+              <button
+                className={cn(crmStepBackClassName, "order-first min-h-12 justify-center sm:order-none")}
+                disabled={saving}
+                onClick={part === "log" ? () => onPart("details") : close}
+                type="button"
+              >
+                <ChevronLeft aria-hidden className="h-4 w-4" />
+                Back
+              </button>
             </div>
           </div>
         )}

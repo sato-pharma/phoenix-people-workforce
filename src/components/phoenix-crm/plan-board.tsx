@@ -42,11 +42,14 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
-import { cairoStamp, countText, plural, weekLabel, type Tone } from "@/components/phoenix-crm/format";
+import { ChevronRight } from "lucide-react";
+
+import { cairoStamp, countText, dayLabel, plural, weekLabel, type Tone } from "@/components/phoenix-crm/format";
 import { pendingListNote, territoryLine } from "@/components/phoenix-crm/labels";
 import type { CopiedPlacements, SuggestContext } from "@/components/phoenix-crm/plan-copy-menu";
 import { decisionBusy, PlanDecision, type PlanDecisionAction } from "@/components/phoenix-crm/plan-decision";
 import { ChoiceLabel, PLAN_STATUS_TONE, PlanWeekPanel, problemText, type WeekBusy, type WeekHold } from "@/components/phoenix-crm/plan-week-panel";
+import { CrmStepFooter, CrmStepForm, CrmStepNext, crmStepBackClassName, type CrmStep } from "@/components/phoenix-crm/step-form";
 import {
   CrmBackBar,
   CrmBlock,
@@ -229,6 +232,10 @@ export function PlanBoard({
   // "+ Make weekly plan" asked for the rep's week; it is brought into view once the board is on screen.
   const [jumpToWeek, setJumpToWeek] = useState(false);
   const [scrollNonce, setScrollNonce] = useState(0);
+  // The rep's step form (owner, 2026-10-02: Report It's form "used in visits entry and plans making"):
+  // 1 the week, 2 its days, 3 one day's customers, 4 send. A board opened on one week starts on its days.
+  const [planStep, setPlanStep] = useState(initialWeekStart ? 2 : 1);
+  const stepRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const weekRef = useRef<HTMLDivElement>(null);
 
@@ -245,6 +252,7 @@ export function PlanBoard({
       setMonth(null);
       setWeekStart(null);
       setDay(null);
+      setPlanStep(2);
       setJumpToWeek(true);
     }
   }
@@ -350,7 +358,7 @@ export function PlanBoard({
   // The week "+ Make weekly plan" opened, brought into view.
   useEffect(() => {
     if (scrollNonce === 0) return;
-    weekRef.current?.scrollIntoView({ block: "start" });
+    (weekRef.current ?? stepRef.current)?.scrollIntoView({ block: "start" });
   }, [scrollNonce]);
 
   function scrollToTop() {
@@ -489,6 +497,7 @@ export function PlanBoard({
       setShowProblems(true);
       setWeekStart(withProblems.week.weekStart);
       setDay(withProblems.problems[0].date);
+      setPlanStep(3);
       show({
         tone: "bad",
         title: `${withProblems.week.label} needs a fix before saving`,
@@ -665,6 +674,7 @@ export function PlanBoard({
 
   function openMonth(monthKey: string) {
     setMonth(monthKey);
+    setPlanStep(1);
     setWeekStart(null);
     setDay(null);
     setNotice(null);
@@ -688,6 +698,23 @@ export function PlanBoard({
     if (repBoard && view?.weeks.find((week) => week.weekStart === next)?.repState === "closed") return;
     setWeekStart(next);
     setDay(null);
+    // On the rep's form a tap on his week moves him on to its days.
+    if (repBoard) goStep(2);
+  }
+
+  /** A step of the rep's form, its top brought into view when he has scrolled past it. */
+  function goStep(next: number) {
+    setPlanStep(next);
+    window.requestAnimationFrame(() => {
+      const top = stepRef.current;
+      if (top && top.getBoundingClientRect().top < 0) top.scrollIntoView({ block: "start" });
+    });
+  }
+
+  /** A day chosen on the rep's form is planned on the next step — the tap moves him on. */
+  function openDay(date: string) {
+    setDay(date);
+    if (repBoard) goStep(3);
   }
 
   function requestBack() {
@@ -778,6 +805,205 @@ export function PlanBoard({
       value: `${cairoStamp(plan.decidedAt)}${plan.decidedByName ? ` · ${plan.decidedByName}` : ""}${plan.decidedBySfe ? " (SFE Manager)" : ""}`,
     });
   }
+
+  // ── The blocks the rep's step form and a reviewer's whole board share ─────────────────────────
+  const monthBlock = (
+    <CrmBlock className="border-t border-slate-100" title="This month">
+      <MeterStrip view={view} />
+      <div className="hidden md:block">
+        <CrmStatGrid>
+          <CrmStat label="AM covered" note={`${countText(view.amMeter.covered)} of ${countText(view.amMeter.panel)} placed`} value={pctText(view.amMeter.coveragePct)} />
+          <CrmStat
+            label="AM frequency"
+            note={`${countText(view.amMeter.metNorm)} of ${countText(view.amMeter.withNorm)} at the grade`}
+            tone={view.amMeter.underNorm > 0 ? "warn" : "neutral"}
+            value={pctText(view.amMeter.frequencyPct)}
+          />
+          <CrmStat label="PM covered" note={`${countText(view.pmMeter.covered)} of ${countText(view.pmMeter.panel)} placed`} value={pctText(view.pmMeter.coveragePct)} />
+          <CrmStat
+            label="PM frequency"
+            note={`${countText(view.pmMeter.metNorm)} of ${countText(view.pmMeter.withNorm)} at the grade`}
+            tone={view.pmMeter.underNorm > 0 ? "warn" : "neutral"}
+            value={pctText(view.pmMeter.frequencyPct)}
+          />
+        </CrmStatGrid>
+        {/* The call rate is AM against its target and PM against its own, side by side — never one averaged figure. */}
+        <CrmStatGrid className="mt-2">
+          <CrmStat
+            label="AM per day"
+            note={`Target ${countText(view.callRate.amTarget)} · ${countText(view.callRate.workingDays)} working days`}
+            tone={view.callRate.amPerDay !== null && view.callRate.amPerDay < view.callRate.amTarget ? "warn" : "neutral"}
+            value={view.callRate.amPerDay === null ? "—" : String(view.callRate.amPerDay)}
+          />
+          <CrmStat label="AM placed" note={`Of ${countText(view.callRate.amExpected)} at the target`} value={countText(view.callRate.amPlacements)} />
+          <CrmStat
+            label="PM per day"
+            note={`Target ${countText(view.callRate.pmTarget)} · ${countText(view.callRate.workingDays)} working days`}
+            tone={view.callRate.pmPerDay !== null && view.callRate.pmPerDay < view.callRate.pmTarget ? "warn" : "neutral"}
+            value={view.callRate.pmPerDay === null ? "—" : String(view.callRate.pmPerDay)}
+          />
+          <CrmStat label="PM placed" note={`Of ${countText(view.callRate.pmExpected)} at the target`} value={countText(view.callRate.pmPlacements)} />
+        </CrmStatGrid>
+      </div>
+      {view.amMeter.overNorm + view.pmMeter.overNorm > 0 ? (
+        <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
+          {countText(view.amMeter.overNorm)} AM and {countText(view.pmMeter.overNorm)} PM planned over the grade — allowed, shown as a deviation.
+        </p>
+      ) : null}
+      {anyDirty ? <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">These count what is saved. Save to see your latest ticks in them.</p> : null}
+    </CrmBlock>
+  );
+
+  const pendingBlock = (
+    <>
+      {/* Owner, 2026-09-22: information, never a refusal — a customer not validated yet is planned as he is. */}
+      {view.pendingCount > 0 && view.viewerIsRep ? (
+        <CrmBlock className="border-t border-slate-100">
+          <CrmNote tone="info" title={`${countText(view.pendingCount)} not validated yet`}>
+            <span className="block">{pendingListNote(view.pendingCount)}</span>
+            {onOpenList ? (
+              <span className="mt-2 block">
+                <CrmButton onClick={onOpenList} size="sm">
+                  Open the list
+                </CrmButton>
+              </span>
+            ) : null}
+          </CrmNote>
+        </CrmBlock>
+      ) : null}
+    </>
+  );
+
+  const weeksBlock = (
+    <CrmBlock className="border-t border-slate-100" title="Weeks">
+      {states.length === 0 ? (
+        <p className="text-sm font-medium text-slate-500">This month has no field-week.</p>
+      ) : (
+        <CrmChoice
+          columns={4}
+          label="Week"
+          onChange={chooseWeek}
+          options={states.map((state) => {
+            // 🔴 GREYED on the rep's own plan (owner, 2026-10-01): one week at a time. A week ahead
+            // of his is not open yet; a week behind it has passed — it keeps the word for what was
+            // sent, and one never sent reads "Closed", never "Not started", which invites a tap.
+            const closed = repBoard && state.week.repState === "closed";
+            const status = closed
+              ? state.week.weekStart > view.repWeek
+                ? "Not open yet"
+                : state.week.status && state.week.status !== "draft"
+                  ? state.week.statusLabel
+                  : "Closed"
+              : [
+                  state.week.statusLabel,
+                  state.week.plan?.submittedLate ? "sent late" : null,
+                  state.week.overdue ? "overdue" : null,
+                  state.dirty ? "unsaved" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+            return {
+              value: state.week.weekStart,
+              label: <ChoiceLabel chosen={state.week.weekStart === selected?.week.weekStart}>{state.week.label}</ChoiceLabel>,
+              disabled: closed,
+              // The week's own DAYS under its status, never its due date (owner, 2026-10-02: "Week 1 ·
+              // Not started · Sat 3 Oct – Thu 8 Oct … not Fri 2 Oct"). The due date stays in the week's
+              // panel, where it is labelled DUE and cannot be read as the week's first day.
+              note: (
+                <>
+                  <span className="block">{status}</span>
+                  <span className="block">{weekLabel(state.week.weekStart)}</span>
+                </>
+              ),
+            };
+          })}
+          value={selected?.week.weekStart ?? null}
+        />
+      )}
+    </CrmBlock>
+  );
+
+  // An arrow, not a declaration: TypeScript keeps "the view has loaded" inside it only then.
+  const weekPanel = (section: "days" | "day" | "send" | undefined) => {
+    if (!selected || !selectedDay) return null;
+    return (
+      <PlanWeekPanel
+        activities={selected.activities}
+        busy={weekBusy}
+        caps={caps}
+        customers={view.customers}
+        dirty={selected.dirty}
+        editable={selected.editable}
+        filter={filter}
+        filterOptions={filterOptions}
+        hold={selected.hold}
+        idPrefix={idPrefix}
+        items={selected.items}
+        key={selected.week.weekStart}
+        locked={locked}
+        onActivity={(date, activityType, next) => planActivity(selected, date, activityType, next)}
+        onAskToEdit={() => void askToEdit(selected)}
+        onCopied={addCopies}
+        onDay={openDay}
+        onDecide={(action, note) => decideWeek(selected, action, note)}
+        onFilter={setFilter}
+        onKeepMine={() => keepMine(selected)}
+        onPlace={(item) => place(selected, item)}
+        onQuery={setQuery}
+        onRemove={(date, customerId) => remove(selected, date, customerId)}
+        onSend={() => void sendWeek(selected)}
+        onShowLatest={() => showLatest(selected)}
+        onStarts={(date, next) => planStarts(selected, date, next)}
+        problems={selected.problems}
+        query={query}
+        reviewerSentence={reviewerSentence(view)}
+        seatId={seatId}
+        section={section}
+        selectedDay={selectedDay}
+        showProblems={showProblems}
+        showSpread={showSpread}
+        starts={selected.starts}
+        suggest={suggest}
+        test={test}
+        tints={tints}
+        today={view.cairoToday}
+        viewerIsRep={view.viewerIsRep}
+        week={selected.week}
+      />
+    );
+  };
+
+  // The rep's four steps. Step 3 names the day it plans.
+  const planSteps: ReadonlyArray<CrmStep> = [
+    { label: "Week", description: "Which week you plan", title: "Choose the week" },
+    { label: "Day", description: "The days of the week", title: "Choose the day" },
+    { label: "Customers", description: "Who you will visit", title: selectedDay ? `Customers on ${dayLabel(selectedDay.date)}` : "Customers" },
+    { label: "Send", description: "Send it for review", title: "Send the week" },
+  ];
+  const dayIndex = selected && selectedDay ? selected.week.days.findIndex((entry) => entry.date === selectedDay.date) : -1;
+  const nextDay = selected && dayIndex >= 0 ? (selected.week.days[dayIndex + 1] ?? null) : null;
+  const planFooter =
+    planStep === 1 ? (
+      <CrmStepFooter back={null}>
+        <CrmStepNext disabled={!selected} onClick={() => goStep(2)} />
+      </CrmStepFooter>
+    ) : planStep === 2 ? (
+      <CrmStepFooter back={() => goStep(1)}>
+        <CrmStepNext onClick={() => goStep(3)} />
+      </CrmStepFooter>
+    ) : planStep === 3 ? (
+      <CrmStepFooter back={() => goStep(2)}>
+        {nextDay ? (
+          <button className={crmStepBackClassName} onClick={() => setDay(nextDay.date)} type="button">
+            Next day · {dayLabel(nextDay.date)}
+            <ChevronRight aria-hidden className="h-4 w-4" />
+          </button>
+        ) : null}
+        <CrmStepNext onClick={() => goStep(4)}>Review and send</CrmStepNext>
+      </CrmStepFooter>
+    ) : (
+      <CrmStepFooter back={() => goStep(3)} />
+    );
 
   return (
     <div className="min-w-0 scroll-mt-24" ref={topRef}>
@@ -870,161 +1096,38 @@ export function PlanBoard({
           </CrmBlock>
         ) : null}
 
-        <CrmBlock className="border-t border-slate-100" title="This month">
-          <MeterStrip view={view} />
-          <div className="hidden md:block">
-            <CrmStatGrid>
-              <CrmStat label="AM covered" note={`${countText(view.amMeter.covered)} of ${countText(view.amMeter.panel)} placed`} value={pctText(view.amMeter.coveragePct)} />
-              <CrmStat
-                label="AM frequency"
-                note={`${countText(view.amMeter.metNorm)} of ${countText(view.amMeter.withNorm)} at the grade`}
-                tone={view.amMeter.underNorm > 0 ? "warn" : "neutral"}
-                value={pctText(view.amMeter.frequencyPct)}
-              />
-              <CrmStat label="PM covered" note={`${countText(view.pmMeter.covered)} of ${countText(view.pmMeter.panel)} placed`} value={pctText(view.pmMeter.coveragePct)} />
-              <CrmStat
-                label="PM frequency"
-                note={`${countText(view.pmMeter.metNorm)} of ${countText(view.pmMeter.withNorm)} at the grade`}
-                tone={view.pmMeter.underNorm > 0 ? "warn" : "neutral"}
-                value={pctText(view.pmMeter.frequencyPct)}
-              />
-            </CrmStatGrid>
-            {/* The call rate is AM against its target and PM against its own, side by side — never one averaged figure. */}
-            <CrmStatGrid className="mt-2">
-              <CrmStat
-                label="AM per day"
-                note={`Target ${countText(view.callRate.amTarget)} · ${countText(view.callRate.workingDays)} working days`}
-                tone={view.callRate.amPerDay !== null && view.callRate.amPerDay < view.callRate.amTarget ? "warn" : "neutral"}
-                value={view.callRate.amPerDay === null ? "—" : String(view.callRate.amPerDay)}
-              />
-              <CrmStat label="AM placed" note={`Of ${countText(view.callRate.amExpected)} at the target`} value={countText(view.callRate.amPlacements)} />
-              <CrmStat
-                label="PM per day"
-                note={`Target ${countText(view.callRate.pmTarget)} · ${countText(view.callRate.workingDays)} working days`}
-                tone={view.callRate.pmPerDay !== null && view.callRate.pmPerDay < view.callRate.pmTarget ? "warn" : "neutral"}
-                value={view.callRate.pmPerDay === null ? "—" : String(view.callRate.pmPerDay)}
-              />
-              <CrmStat label="PM placed" note={`Of ${countText(view.callRate.pmExpected)} at the target`} value={countText(view.callRate.pmPlacements)} />
-            </CrmStatGrid>
+        {repBoard ? (
+          <div className="min-w-0 scroll-mt-24 border-t border-slate-100" ref={stepRef}>
+            <CrmStepForm
+              aside="Nothing reaches your manager until you press Send this week."
+              chip={selected ? weekLabel(selected.week.weekStart) : view.monthLabel}
+              footer={planFooter}
+              onJump={goStep}
+              step={planStep}
+              steps={planSteps}
+            >
+              {planStep === 1 ? (
+                // The step is the week, so its weeks lead; the month the week sits in follows.
+                <>
+                  {weeksBlock}
+                  {monthBlock}
+                  {pendingBlock}
+                </>
+              ) : (
+                weekPanel(planStep === 2 ? "days" : planStep === 3 ? "day" : "send")
+              )}
+            </CrmStepForm>
           </div>
-          {view.amMeter.overNorm + view.pmMeter.overNorm > 0 ? (
-            <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
-              {countText(view.amMeter.overNorm)} AM and {countText(view.pmMeter.overNorm)} PM planned over the grade — allowed, shown as a deviation.
-            </p>
-          ) : null}
-          {anyDirty ? <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">These count what is saved. Save to see your latest ticks in them.</p> : null}
-        </CrmBlock>
-
-
-        {/* Owner, 2026-09-22: information, never a refusal — a customer not validated yet is planned as he is. */}
-        {view.pendingCount > 0 && view.viewerIsRep ? (
-          <CrmBlock className="border-t border-slate-100">
-            <CrmNote tone="info" title={`${countText(view.pendingCount)} not validated yet`}>
-              <span className="block">{pendingListNote(view.pendingCount)}</span>
-              {onOpenList ? (
-                <span className="mt-2 block">
-                  <CrmButton onClick={onOpenList} size="sm">
-                    Open the list
-                  </CrmButton>
-                </span>
-              ) : null}
-            </CrmNote>
-          </CrmBlock>
-        ) : null}
-
-        <CrmBlock className="border-t border-slate-100" title="Weeks">
-          {states.length === 0 ? (
-            <p className="text-sm font-medium text-slate-500">This month has no field-week.</p>
-          ) : (
-            <CrmChoice
-              columns={4}
-              label="Week"
-              onChange={chooseWeek}
-              options={states.map((state) => {
-                // 🔴 GREYED on the rep's own plan (owner, 2026-10-01): one week at a time. A week ahead
-                // of his is not open yet; a week behind it has passed — it keeps the word for what was
-                // sent, and one never sent reads "Closed", never "Not started", which invites a tap.
-                const closed = repBoard && state.week.repState === "closed";
-                const status = closed
-                  ? state.week.weekStart > view.repWeek
-                    ? "Not open yet"
-                    : state.week.status && state.week.status !== "draft"
-                      ? state.week.statusLabel
-                      : "Closed"
-                  : [
-                      state.week.statusLabel,
-                      state.week.plan?.submittedLate ? "sent late" : null,
-                      state.week.overdue ? "overdue" : null,
-                      state.dirty ? "unsaved" : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ");
-                return {
-                  value: state.week.weekStart,
-                  label: <ChoiceLabel chosen={state.week.weekStart === selected?.week.weekStart}>{state.week.label}</ChoiceLabel>,
-                  disabled: closed,
-                  // The week's own DAYS under its status, never its due date (owner, 2026-10-02: "Week 1 ·
-                  // Not started · Sat 3 Oct – Thu 8 Oct … not Fri 2 Oct"). The due date stays in the week's
-                  // panel, where it is labelled DUE and cannot be read as the week's first day.
-                  note: (
-                    <>
-                      <span className="block">{status}</span>
-                      <span className="block">{weekLabel(state.week.weekStart)}</span>
-                    </>
-                  ),
-                };
-              })}
-              value={selected?.week.weekStart ?? null}
-            />
-          )}
-        </CrmBlock>
-
-        <div className="min-w-0 scroll-mt-24" ref={weekRef}>
-          {selected && selectedDay ? (
-            <PlanWeekPanel
-              activities={selected.activities}
-              busy={weekBusy}
-              caps={caps}
-              customers={view.customers}
-              dirty={selected.dirty}
-              editable={selected.editable}
-              filter={filter}
-              filterOptions={filterOptions}
-              hold={selected.hold}
-              idPrefix={idPrefix}
-              items={selected.items}
-              key={selected.week.weekStart}
-              locked={locked}
-              onActivity={(date, activityType, next) => planActivity(selected, date, activityType, next)}
-              onAskToEdit={() => void askToEdit(selected)}
-              onCopied={addCopies}
-              onDay={setDay}
-              onDecide={(action, note) => decideWeek(selected, action, note)}
-              onFilter={setFilter}
-              onKeepMine={() => keepMine(selected)}
-              onPlace={(item) => place(selected, item)}
-              onQuery={setQuery}
-              onRemove={(date, customerId) => remove(selected, date, customerId)}
-              onSend={() => void sendWeek(selected)}
-              onShowLatest={() => showLatest(selected)}
-              onStarts={(date, next) => planStarts(selected, date, next)}
-              problems={selected.problems}
-              query={query}
-              reviewerSentence={reviewerSentence(view)}
-              seatId={seatId}
-              selectedDay={selectedDay}
-              showProblems={showProblems}
-              showSpread={showSpread}
-              starts={selected.starts}
-              suggest={suggest}
-              test={test}
-              tints={tints}
-              today={view.cairoToday}
-              viewerIsRep={view.viewerIsRep}
-              week={selected.week}
-            />
-          ) : null}
-        </div>
+        ) : (
+          <>
+            {monthBlock}
+            {pendingBlock}
+            {weeksBlock}
+            <div className="min-w-0 scroll-mt-24" ref={weekRef}>
+              {weekPanel(undefined)}
+            </div>
+          </>
+        )}
 
         {plan ? (
           <PlanDecision
