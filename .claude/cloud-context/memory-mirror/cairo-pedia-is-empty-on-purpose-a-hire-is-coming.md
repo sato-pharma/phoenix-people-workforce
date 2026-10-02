@@ -1,11 +1,11 @@
 ---
 name: cairo-pedia-is-empty-on-purpose-a-hire-is-coming
-description: "The whole Cairo Pedia branch — the DM seat and all five rep seats — is vacant and the owner has ruled it NEGLECTED until he hires; never report it as a gap, a defect or a next step"
+description: "Seats the owner has ruled NEGLECTED until he hires — the whole Cairo Pedia branch (DM + five reps), and Anti Infective Menoufia 1 with its 94 Phoenix CRM customers; never report either as a gap, a defect or a next step, and never move their customers to a neighbouring rep"
 metadata:
   node_type: memory
   type: project
   originSessionId: f151c304-4f1a-4527-86ae-ce961d80f72e
-  modified: 2026-09-29T21:11:29.094Z
+  modified: 2026-10-02T09:53:42.358Z
 ---
 
 **Owner ruling, 2026-09-30, in his own words: *"we will hire soon neglect cairo pedia dm and reps
@@ -45,5 +45,28 @@ chains.
   is vacant, so nobody reads him as the district manager.
 - When the hire lands, the branch fills through the normal path and this memory retires. Until then
   the silence is the instruction.
+
+## The same ruling, a second seat: Anti Infective Menoufia 1 (2026-10-02)
+
+**His words, asked directly while rolling Phoenix CRM out to Delta (1): *"leave menoufia 1 as it is
+until I hire"*.** Raised because the seat's 94 Phoenix CRM customers have nobody to validate or visit
+them — so the ruling is specifically that those customers WAIT, rather than being shared out.
+
+```
+SEAT-AIF-REP-D12  Menoufia 1 · Delta (1) · anti_infective   vacant since 2026-08-31
+  previous        Warda Farhat (B-55), resign — and she reads employment_status = resigned
+  parent          SEAT-AIF-DM-D1 — Dina Hamdy Fadel Mohamed Bdair (B-12)
+  waiting         94 customers, all status `pending` (the carried-over reference list)
+```
+
+🔴 **Never propose splitting those 94 across Gharbia 1, Gharbia 2, Kafr El-Sheikh 1 or Menoufia 2.**
+That is the obvious-looking fix and he refused it: a place is validated ONCE and fixed forever
+([[territory-is-not-geography]] and the place-move rule), so a neighbour validating them would do
+work the new hire inherits as somebody else's captures, and every visit would have to be measured
+again when the seat fills. The customers simply sit `pending` until there is a rep.
+
+🔴 **And never read "0 validated customers in Menoufia 1" as an adoption failure** in any CRM
+readiness or coverage report — the other four Delta (1) reps are the live ones; this seat is empty on
+purpose, exactly like Cairo Pedia above.
 
 Related: [[never-change-the-organogram-skeleton]] · [[au-org-tree-is-sales-only]]
