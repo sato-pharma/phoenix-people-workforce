@@ -4791,16 +4791,26 @@ read failed, is a message about a real person that cannot be recalled.
 
 | He said | What the code resolves it to | Why that, and not the literal seat |
 | --- | --- | --- |
-| his district manager | `territoryReviewer` — the nearest OCCUPIED manager seat above the territory | 4 of the 23 district seats are vacant (measured 2026-10-03). A literal DM seat would tell NOBODY for those reps. The reviewer is already who his grade request and his weekly plan go to, so "his manager" means one thing across the module. |
-| his national sales manager | the `NSM` seat of his `managerChain` | Each line has exactly one, and all three are occupied — Anti Infective `AI-0008`, CNS `B-122`, Pedia `A-12`. |
+| his district manager | `managerChain[0]` — the nearest OCCUPIED manager seat above the territory | 4 of the 23 district seats are vacant (measured 2026-10-03). A literal DM seat would tell NOBODY for those reps. It is the same person his grade request and his weekly plan go to, so "his manager" means one thing across the module. |
+| the Pedia RSM (added the same day) | every other occupied manager seat in the chain | See the correction below — the rule is the TIER, so the whole chain is addressed and no tier is enumerated. |
+| his national sales manager | the chain's `NSM` seat, which the chain already includes | Each line has exactly one, and all three are occupied — Anti Infective `AI-0008`, CNS `B-122`, Pedia `A-12`. |
 | the SFE | `sfeManagerHrIds()` | The SFE Manager is a ROLE with no seat in the organogram, read from the accounts — the same list the plan edit's SFE step and the daily approval nudge already use. |
 | Omar in the BCC | **nothing in the module** | `sendPhoenixEmail` already puts `ADMIN_STANDING_EMAIL` on the BCC of EVERY email the system sends. Wiring a copy here would send him two. |
 
-**The one person on the chain who is deliberately left off: the Pedia RSM.** Pedia's Upper Egypt has a
-regional manager (`PD-0001`) between the district and the national seat, and he is the only RSM in the
-company. The owner named three people; adding a fourth he did not name is the kind of quiet widening
-that makes a rule untrustworthy, so the notice skips him. If he wants the regional manager on it, that
-is one line in `firstVisitDeliveries`.
+**🔴 THE REGIONAL MANAGER WAS LEFT OFF FIRST, AND THE OWNER CORRECTED IT THE SAME DAY.** Pedia's Upper
+Egypt has a regional manager (`PD-0001`) between the district and the national seat — the only RSM in the
+company. He had named three people, so the first shipped version addressed exactly those three and said
+so; he answered *"add the Pedia RSM to the first-visit email"*, and `firstVisitDeliveries` now addresses
+**`managerChain` entire**.
+
+**Why the fix is the whole chain and not "DM + RSM + NSM" written out.** A tier list is wrong in the
+direction that looks right: a second regional seat, or a tier added between, is **silently** missed, and
+the email still arrives — just without the manager appointed most recently, which nothing surfaces. The
+chain cannot under-report that way. It also cannot over-report: the manager tiers are exactly `DM`,
+`ACTING_DM`, `RSM` and `NSM`, `managerChain` never reaches the CEO, and it already skips a seat the
+territory's own rep holds. The vacant-district rule then stops being a special case at all — an empty
+seat is simply not in the chain. Pinned by *"the district manager, the regional manager between, and the
+national manager — every occupied seat above him"*, which fires the moment the tier list is restored.
 
 **And never the rep** (Golden Rule #1 — his app never lets him feel the system is watching him begin).
 This is not theoretical: an acting district manager holds his own REP seat **under** his acting seat, so

@@ -14,17 +14,18 @@ import { buildOrgIndex, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import { firstVisitDeliveries } from "../src/lib/phoenix-crm/server/notifications.ts";
 
 /**
- * Phoenix CRM — a rep's FIRST visit tells three people (owner, 2026-10-03).
+ * Phoenix CRM — a rep's FIRST visit tells every manager above him, and SFE (owner, 2026-10-03).
  *
  * His words: "every rep submits a visit on Phoenix CRM — only the first visit for each medical rep —
  * his district manager, his national sales manager and the SFE, goes to them an email, and Omar in the
  * BCC. Example: Aya Ibrahim submitted her first visit at the account and its name, and the time the
- * visit was submitted in."
+ * visit was submitted in." Then, the same day: "add the Pedia RSM to the first-visit email" — so the
+ * line is the TIER, every occupied manager seat above the territory, and not a list of three people.
  *
  * What this file pins:
- *   1. the three recipients, resolved from the organogram — the territory's reviewing manager (his
- *      district manager, and the seat above where a district is vacant), the NSM seat of his line, and
- *      the SFE Managers, who hold a ROLE with no seat;
+ *   1. the recipients, resolved from the organogram — EVERY occupied manager seat above him (his
+ *      district manager, a regional manager where his line has one, his national sales manager), the
+ *      seat above where a district is vacant, and the SFE Managers, who hold a ROLE with no seat;
  *   2. that the REP is never on it, even when he also sits on a manager seat (an acting district
  *      manager holds both) — Golden Rule #1: his app never tells him he is being watched begin;
  *   3. the words: the rep's name, the account's name, his territory, and the time the visit was
@@ -107,14 +108,14 @@ function notice(repSeat: OrgSeat, repHrId: string, customerName = "Dr Hani Farou
 }
 
 export function runPhoenixCrmFirstVisitTests() {
-  // ── 1 · the three recipients ──────────────────────────────────────────────────────────────────
+  // ── 1 · every manager above him, nearest first, then SFE ──────────────────────────────────────
   {
     const [delivery] = firstVisitDeliveries(notice(REP1, "B-7"), NAMES, SFE);
     assert.ok(delivery, "a rep with a district manager, a national manager and an SFE Manager tells somebody");
     assert.deepEqual(
       delivery.recipients,
       ["B-40", "A-12", "B-150", "B-151"],
-      "his district manager, then his national sales manager, then the SFE Managers — the owner's three, in his order",
+      "his district manager, then his national sales manager, then the SFE Managers — nearest manager first, in his order",
     );
     assert.equal(delivery.eventType, "first_visit_submitted");
     assert.equal(delivery.tab, "team", "it opens the Team tab, where a manager reads his people");
@@ -122,20 +123,25 @@ export function runPhoenixCrmFirstVisitTests() {
   }
 
   {
-    // A regional manager sits between: the DISTRICT manager is still the nearest, and the NSM is still
-    // found above the RSM. The RSM himself is NOT told — the owner named three people, not four.
+    // 🔴 THE REGIONAL MANAGER IS ON IT (owner, 2026-10-03: "add the Pedia RSM to the first-visit email").
+    // Pedia's Upper Egypt is the one chain in the company with a regional seat between the district and
+    // the national one, and all three are told — district first, then regional, then national.
     const [delivery] = firstVisitDeliveries(notice(REPU, "B-62"), NAMES, SFE);
     assert.deepEqual(
       delivery.recipients,
-      ["B-61", "A-12", "B-150", "B-151"],
-      "the district manager and the national manager, never the regional manager in between",
+      ["B-61", "B-60", "A-12", "B-150", "B-151"],
+      "the district manager, the regional manager between, and the national manager — every occupied seat above him",
     );
+    // The guard against the tier LIST this replaced: a chain is counted, never enumerated, so a seat
+    // added between tiers is included rather than silently missed.
+    const chainCount = delivery.recipients.filter((hrId) => !SFE.includes(hrId)).length;
+    assert.equal(chainCount, 3, "three manager seats above this territory, and all three are addressed");
   }
 
   {
-    // 🔴 A VACANT DISTRICT PASSES UPWARD, exactly as a grade request and a weekly plan do. The nearest
-    // OCCUPIED manager is the national one, so he is the "district manager" of this notice and appears
-    // once, not twice.
+    // 🔴 A VACANT DISTRICT PASSES UPWARD, exactly as a grade request and a weekly plan do, and it falls
+    // out of using the chain rather than needing its own branch: the vacant seat is simply not in it, so
+    // the national manager is both the nearest manager and the national one, and appears once, not twice.
     const [delivery] = firstVisitDeliveries(notice(REPV, "B-80"), NAMES, SFE);
     assert.deepEqual(delivery.recipients, ["A-12", "B-150", "B-151"], "a vacant district leaves the national manager and SFE, and nobody doubled");
   }
