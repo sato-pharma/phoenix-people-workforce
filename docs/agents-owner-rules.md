@@ -3341,7 +3341,24 @@ a row nobody queries. It swallows its own failures — a notice that cannot be w
 removal that already happened. 🔴 **A Telegram message already sent is NOT recalled**: it is on his
 phone, nothing here reaches it, and only the in-app notice is withdrawn.
 
-Pinned by `tests/phoenix-crm-missed-records.test.ts`; the database half is
+**And the same notice clears when he simply DECIDES it** (owner, 2026-10-02: *"clear the manager's
+off-plan notice when he approves it too"*). Removal was only one way that notice went stale; the
+everyday way is the manager approving or refusing the visit, after which his bell still said "approve
+it". Phoenix CRM now joins the bell's existing stale-approval sweep beside vacation, excuse and weekly
+plans: `unplanned_visit_waiting` is an actionable approval keyed by `visitId` (carried in the notice's
+own metadata, like `requestId` and `planId`), and on each bell read `phoenixCrmVisitIdsAwaitingDecision`
+answers whether that visit is still his. 🔴 **"STILL HIS", NEVER "STILL OPEN"** — at the SFE stage the
+visit is still waiting but no longer on him, so `canDecideUnplannedVisit` is the one rule both the bell
+and the Team tab answer from; a second copy of that rule is how the two would start disagreeing about
+whose turn it is. 🔴 **The rep's own copies are NOT approver notices** — auto-archiving his
+"approved"/"refused" lines would clear his record of what became of his visit. It fails OPEN
+throughout: any error leaves the notice visible, because hiding a real to-do is the costly direction.
+🔴 **The loader is a LEAF on purpose** (`server/awaiting-decisions.ts`, importing only `access`, `db`
+and the pure rules): putting it in `unplanned.ts` would close the ring
+in-app → unplanned → notifications → in-app, measured and real, and a cycle leaves whichever module
+initialises second reading the other's exports as undefined.
+
+Pinned by `tests/phoenix-crm-missed-records.test.ts` and `tests/notification-auto-archive.test.ts`; the database half is
 `supabase/migrations/20261001044221_phoenix_crm_admin_entry.sql` (`phoenix_crm_admin_enter_visit`) and
 `supabase/migrations/20261001055833_phoenix_crm_admin_remove_visit.sql` (`phoenix_crm_admin_remove_visit`).
 
