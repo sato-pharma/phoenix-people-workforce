@@ -5,10 +5,17 @@
  * file is only the query, and it lives here because `src/lib/crm` is the single door to the
  * `ireports360_*` tables (`src/lib/crm/phoenix-team-starts.ts`).
  *
- * 🔴 IT READS THE RAW MIRROR ON PURPOSE, AND IT IS THE ONLY WAY TO SEE THESE ROWS. From a team's
- * start `crm_visits_unified` anti-joins exactly these visits out — that is the owner's rule of
- * 2026-10-02 and must never be weakened — so the view cannot answer this question, by construction.
- * Asking it there would read a clean zero for a rep who is logging every day.
+ * 🔴 IT READS THE RAW MIRROR, AND THE MODULE'S OWN READ DOOR CANNOT ANSWER THIS. `queryVisits` in
+ * `src/lib/crm/reads.ts` selects from `crm_visits_unified`, and from a team's start that view
+ * ANTI-JOINS exactly these visits out — the owner's rule of 2026-10-02, and the whole point of it — so
+ * the door would answer a clean zero for a rep logging every day (20261002123958's own header: "his
+ * iReports360 rows are left out of the same view that carries..."). 🔴 **That is invisible until
+ * 2026-10-03**, when Delta (1)'s start lands: before it the view still carries the rows, so a probe
+ * today cannot tell the two apart and only the view's definition can.
+ *
+ * `tests/crm-single-source.test.ts` caught the first draft of this file and was right to: the escape it
+ * offers is the justified allow-list entry, which is what this file carries, NOT a read routed through
+ * a door that structurally cannot see the rows.
  *
  * Two screens share it, keyed by the rep's TERRITORY seat so neither has to key it twice: the Super
  * Admin's team-starts panel folds it up to the team, and the district manager's and SFE Manager's

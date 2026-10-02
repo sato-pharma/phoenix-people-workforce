@@ -59,6 +59,12 @@ export const CRM_VISITS_MIRROR_ALLOW_LIST: Readonly<Record<string, string>> = {
   "src/lib/crm/contacts-sync.ts": "resolves contact-list sync targets (hr id → agent crm id)",
   "src/lib/crm/master.ts": "CRM Master raw-mirror browser (Super Admin exact-mirror tabs)",
   "src/lib/crm/rep-day.ts": "rep-day drill-down: live-first before the CRM cutover, the unified visits view as its fallback and its only source after it",
+  // 🔴 THE DOOR CANNOT ANSWER THIS ONE. `queryVisits` selects from `crm_visits_unified`, and from a
+  // team's start that view ANTI-JOINS its reps' iReports360 rows out — which is the owner's rule of
+  // 2026-10-02 and must never be weakened. So "who is STILL recording in the old app" is exactly the
+  // question the door is built to answer zero to, and the mirror is the only place those rows survive.
+  "src/lib/crm/phoenix-vendor-leftovers.ts":
+    "who is still recording in iReports360 after his team moved — the unified view anti-joins exactly those rows out, so the door would answer a confident zero",
 };
 
 /** Files in src/lib/crm/ allowed to touch the OTHER mirrors (check-ins, sync runs, identity

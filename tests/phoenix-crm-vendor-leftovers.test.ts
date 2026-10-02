@@ -5,6 +5,8 @@ import path from "node:path";
 import { stripComments } from "./support/comment-strip.ts";
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
+import { CRM_VISITS_MIRROR_ALLOW_LIST } from "./crm-single-source.test.ts";
+
 import {
   sortVendorLeftovers,
   vendorLeftoverNote,
@@ -99,14 +101,22 @@ export function runPhoenixCrmVendorLeftoverTests(): void {
     assert.equal(input[0].repName, "Zeinab", "the caller's own array is left alone");
   }
 
-  // ── 4. ONE door to the vendor mirror, and it may never become the unified view ───────────────
+  // ── 4. The mirror, because the module's read door answers zero by design ─────────────────────
   {
     const loader = source("src/lib/crm/phoenix-vendor-leftovers.ts");
     assert.match(loader, /\.from\("ireports360_visits"\)/, "it reads the raw mirror, which is the only place these rows survive");
-    assert.doesNotMatch(
-      loader,
-      /crm_visits_unified/,
-      "the unified view anti-joins exactly these rows out from the team's start — asking it would answer a confident zero for a rep logging every day",
+    // 🔴 `queryVisits` selects from `crm_visits_unified`, and from a team's start that view ANTI-JOINS
+    // its reps' iReports360 rows out — the owner's rule of 2026-10-02. So the door is built to answer
+    // zero to exactly this question, and routing the read through it would look tidy and read wrong.
+    assert.doesNotMatch(loader, /queryVisits|crm_visits_unified/, "the door cannot see these rows; this is not a cleanup to make");
+    assert.match(source("src/lib/crm/reads.ts"), /from\(CRM_VISITS_UNIFIED_VIEW\)/, "which is because the door reads the unified view");
+
+    // The single-source guard's own escape: a NAMED entry with a reason, so the exception is visible
+    // debt rather than a file that quietly reaches past the door.
+    assert.equal(
+      CRM_VISITS_MIRROR_ALLOW_LIST["src/lib/crm/phoenix-vendor-leftovers.ts"],
+      "who is still recording in iReports360 after his team moved — the unified view anti-joins exactly those rows out, so the door would answer a confident zero",
+      "the allow-list entry carries WHY, which is what stops it being removed as dead weight",
     );
 
     // Each rep's OWN window, so a team started later is never judged by visits that still belonged
@@ -123,6 +133,11 @@ export function runPhoenixCrmVendorLeftoverTests(): void {
       })
       .map((file) => file.split(path.sep).join("/"));
     assert.deepEqual(readers, ["src/lib/crm/phoenix-vendor-leftovers.ts"], "exactly one place asks the mirror this question");
+    // And nothing OUTSIDE src/lib/crm may: that is the module boundary, and the two servers below take
+    // the answer rather than the query.
+    for (const consumer of ["src/lib/phoenix-crm/server/team.ts", "src/lib/crm/phoenix-team-starts-server.ts"]) {
+      assert.doesNotMatch(source(consumer), /ireports360_visits/, `${consumer} takes the loader's answer, never the mirror`);
+    }
   }
 
   // ── 5. Golden Rule #1 — the SERVER clears it, the screen decides nothing ─────────────────────

@@ -443,6 +443,12 @@ begin
   );
 end;
 $$;
+-- `create or replace` keeps the ACL, but the migration contract requires every recreated public
+-- SECURITY DEFINER function to restate it: anon and authenticated inherit EXECUTE through PUBLIC, so
+-- revoking only those two is a no-op, and revoking PUBLIC on a default ACL also strips service_role.
+revoke execute on function public.phoenix_crm_save_visit(jsonb) from public, anon, authenticated;
+grant execute on function public.phoenix_crm_save_visit(jsonb) to service_role;
+
 comment on function public.phoenix_crm_save_visit(jsonb) is
   'The ONE writer of a Phoenix CRM visit. Since 2026-10-02 it also stores product_manager_hr_id, on '
   'kind = ''product_manager'' and no other kind; who counts as the line''s product manager is settled '

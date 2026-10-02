@@ -87,7 +87,7 @@ function viewer(patch: Partial<PhoenixCrmViewer> = {}): PhoenixCrmViewer {
     isSuperAdmin: false,
     isSfeManager: false,
     isTestPersona: false,
-    basis: "team",
+    basis: "tree",
     canCreate: true,
     canApprove: true,
     canUpdate: true,
@@ -106,7 +106,7 @@ function viewer(patch: Partial<PhoenixCrmViewer> = {}): PhoenixCrmViewer {
 }
 
 /** The territory's own rep. */
-const repViewer = viewer({ hrId: "B-7", role: "Medical Rep", basis: "own", canApprove: false, ownTerritories: [REP], scopeTerritories: [REP], managerSeats: [] });
+const repViewer = viewer({ hrId: "B-7", role: "Medical Rep", basis: "tree", canApprove: false, ownTerritories: [REP], scopeTerritories: [REP], managerSeats: [] });
 /** Another district's manager, who can see nothing here. */
 const peerViewer = viewer({ hrId: "B-20", scopeTerritories: [OTHER_REP], managerSeats: [OTHER_DM] });
 
