@@ -106,8 +106,11 @@ export function runRollupMemberGuardTests() {
     null,
     "an unreadable roll-up body must NOT refuse — that would block every merge in the repo while it stays open",
   );
+  // `r` is annotated because these modules are untyped `.mjs`: the callback parameter is otherwise
+  // implicitly `any`, which `tsc --noEmit` refuses and the local suite cannot see — it runs under
+  // `--experimental-strip-types`, which ERASES types rather than checking them.
   assert.deepEqual(
-    unreadableRollups(unreadable).map((r) => r.number),
+    unreadableRollups(unreadable).map((r: { number: number }) => r.number),
     [77],
     "but it must be reported, so the one case this cannot judge is still visible",
   );
