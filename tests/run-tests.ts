@@ -1922,7 +1922,7 @@ import { runWorktreeRemoveRemoteContainmentTests } from "./worktree-remove-remot
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
-import { runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
+import { runDeltaLandedVerdictTests, runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
 import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-age.test.ts";
 import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
 import { runRepoDoctorXlsxSnapshotTests } from "./repo-doctor-xlsx-snapshot.test.ts";
@@ -6895,6 +6895,7 @@ await runTest(
     + "unknown — gh unreachable, no head SHA, an unreadable HEAD — holds the branch, and the rule "
     + "lives in exactly one place because both callers print that command)",
   runRepoDoctorNewestPrTests,
+  runDeltaLandedVerdictTests,
 );
 await runTest("the CRM client's timeout bounds the response BODY, and an empty body is not a shape change", runCrmClientTimeoutsTests);
 await runTest("the outstation wizard blocks submit on a stale calculation and never posts its own claimedTotalAmount", runOutstationMobileWizardStaleCalculationTests);

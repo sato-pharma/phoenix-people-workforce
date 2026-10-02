@@ -41,6 +41,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { branchPrQueryArgs, classifyBranchPr, listBranchPrs } from "../scripts/branch-pr-state.mjs";
+import { deltaLandedVerdict } from "../scripts/delta-landed.mjs";
 import { stripComments } from "./support/comment-strip.ts";
 
 type PrRow = { number: number; state: string; headRefOid: string | null };
@@ -138,7 +139,7 @@ export function runRepoDoctorNewestPrTests() {
       unmerged: [{ sha: "4cf9e97d20838d1e", subject: "fix(deps): a later fixup" }],
     }));
     assert.equal(dirty.verdict, "held", "a patch that is NOT upstream must still hold the worktree");
-    assert.match(dirty.reason, /NOT upstream by patch-id/);
+    assert.match(dirty.reason, /neither upstream by patch-id NOR applied on `main` as a delta/);
     assert.match(dirty.reason, /4cf9e97d2/, "the reason must NAME the commit, not just assert a mismatch");
 
     // Fail CLOSED: a probe that cannot answer is not a probe that found nothing. Collapsing null
@@ -256,4 +257,42 @@ export function runRepoDoctorNewestPrTests() {
       `${caller}: the gh PR query belongs in scripts/branch-pr-state.mjs only — a second copy is free to drift back to --state merged`,
     );
   }
+}
+
+// ── A `+` from cherry is not the last word either (owner, 2026-10-02) ─────────────────────────
+//
+// `git cherry` compares by patch-id, which matches only when something upstream carries the SAME
+// diff. A roll-up's squash never does: measured the night of 2026-10-01, `f50c5c725` — the
+// footprint-diff trap, carried into `main` by roll-up #5098 — reads `+` to cherry, so the old check
+// would hold its worktree for ever over work that had shipped. The delta test answers `true` for it.
+//
+// The SAME measurement found the other direction, and it is the half worth keeping honest:
+// `84cb8dd92` ("next 16.3.8 and a grpc-js floor close two HIGH advisories") also reads `+`, and its
+// delta is genuinely NOT applied — `main` dropped `@google-cloud/logging`, so the override it adds is
+// moot rather than landed. A mechanical test cannot see "moot", and this one correctly does not try:
+// it still answers false, and the worktree is still held.
+export function runDeltaLandedVerdictTests(): void {
+  // The only yes: there IS a delta of our own and it is already applied on main.
+  assert.equal(deltaLandedVerdict({ hasDelta: true, reverseApplies: true }), true);
+
+  // Everything else holds the worktree. A false negative costs a folder that lingers a day; a false
+  // positive prints a `git branch -D` for the only copy of somebody's work.
+  assert.equal(deltaLandedVerdict({ hasDelta: true, reverseApplies: false }), false, "a delta that does not apply is not landed");
+  assert.equal(deltaLandedVerdict({ hasDelta: false, reverseApplies: true }), false, "no readable delta proves nothing — an empty commit, or a failed read");
+  assert.equal(deltaLandedVerdict({}), false, "and an unreadable reading is never a yes");
+  assert.equal(deltaLandedVerdict(undefined as never), false, "nor is a missing one");
+
+  const doctor = fs.readFileSync("scripts/repo-doctor.mjs", "utf8");
+  assert.match(
+    doctor,
+    /if \(m && !commitDeltaLandedOnMain\(\{ dir: r\.dir, sha: m\[1\] \}\)\) unmerged\.push/,
+    "every cherry `+` must be re-asked the delta question before it holds a worktree",
+  );
+  const delta = fs.readFileSync("scripts/delta-landed.mjs", "utf8");
+  assert.match(delta, /'apply', '--cached', '--check', '--reverse', '-'/, "asked of main's TREE with --check — no file and no real index is touched");
+  assert.match(delta, /env: \{ GIT_INDEX_FILE: indexFile \}/, "through a throwaway index, because this runs inside live worktrees");
+  assert.match(delta, /rmSync\(dirname\(indexFile\), \{ force: true, recursive: true \}\)/, "which is removed even when the read throws");
+  assert.match(delta, /'show', '--binary', '--format=', sha/, "and the delta is the commit against its FIRST PARENT, never a cumulative branch diff");
+
+  console.log("repo-doctor delta-landed verdict: OK");
 }
