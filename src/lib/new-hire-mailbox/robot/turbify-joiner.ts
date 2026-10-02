@@ -43,6 +43,7 @@ import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
 import { APP_PASSWORD_PAGE, ECP_LOCATORS, ONE_TIME_PASSWORD_DIALOG, type Locator } from "@/lib/turbify/locators";
 import { cssQueryFor, resolveOne, rowCountRefusal, type CandidateReader, type ElementCandidate } from "@/lib/turbify/resolve";
 import {
+  CLEAR_FIELD_EXPRESSION,
   CONSOLE_VIEWPORT,
   decideClickDelivery,
   HIT_TEST_EXPRESSION,
@@ -146,8 +147,23 @@ async function clickResolved(page: ConsolePage, locator: Locator): Promise<void>
 }
 
 const clickOne = (page: ConsolePage, locator: Locator) => clickResolved(page, locator);
+/**
+ * Type into a field, CLEARING it first.
+ *
+ * 🔴 `handle.type()` APPENDS. Measured in the production container 2026-10-02: the robot reuses one
+ * page for every candidate in a run, so searching for a second address left the box reading
+ * `adel.srour@satopharma.comasmaa.zaghloul@satopharma.com` — 54 characters of two addresses joined.
+ * A search box in that state filters to nothing, and the "does this address already exist?" test
+ * reads the result: the answer it gives is about a string nobody searched for.
+ *
+ * Clearing is done on the element rather than with keystrokes so it cannot depend on focus or on
+ * how many characters happen to be there.
+ */
 const fillOne = (page: ConsolePage, locator: Locator, value: string) =>
-  act(page, locator, (handle) => handle.type(value, { delay: 15 }));
+  act(page, locator, async (handle) => {
+    await page.evaluate<void>(CLEAR_FIELD_EXPRESSION, handle).catch(() => {});
+    await handle.type(value, { delay: 15 });
+  });
 
 /** Click the first of several candidate wordings that is present, or refuse naming all of them. */
 async function clickOneOf(page: ConsolePage, wordings: readonly string[], purpose: string): Promise<void> {
