@@ -1,0 +1,122 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { groupSameRepDuplicates } from "../src/lib/phoenix-crm/server/duplicate-customers.ts";
+import { stripComments } from "./support/comment-strip.ts";
+
+/**
+ * One doctor, two rows on one rep's list — the SFE's housekeeping page (owner, 2026-10-02).
+ *
+ * The rules worth having are all about restraint: match a spelling, never a rhyme; never show it
+ * to the rep; never let it act.
+ */
+
+type Row = { kind: "PM"; name: string; source: "phoenix_crm"; sourceId: string; speciality: string | null };
+
+const row = (name: string, sourceId: string, speciality: string | null = null): Row => ({
+  kind: "PM",
+  name,
+  source: "phoenix_crm",
+  sourceId,
+  speciality,
+});
+
+export function runPhoenixCrmDuplicateCustomerTests() {
+  // ── The name bar: a spelling, never a rhyme ──────────────────────────────────────────────────
+  // 🔴 EVERY PAIR BELOW IS REAL PRODUCTION DATA, read 2026-10-02. The engine's `identityNameKey`
+  //    folds through `placeNameKey`, which is built for a pharmacy signboard and treats emphatic
+  //    consonants as interchangeable — on people it collapsed these four pairs of DIFFERENT
+  //    doctors into one, and this page would have invited the SFE to delete one of each.
+  for (const [left, right] of [
+    ["محمود اسماعيل", "محمد اسماعيل"],
+    ["محمود هجرس", "محمد هجرس"],
+    ["محمد سعيد", "محمد سعد"],
+    ["محمد جمال", "محمد جميل"],
+  ]) {
+    const found = groupSameRepDuplicates([row(left!, "1"), row(right!, "2")]);
+    assert.equal(
+      found.size,
+      0,
+      `"${left}" and "${right}" are two different doctors on one list — grouping them asks the SFE to delete a real customer`,
+    );
+  }
+
+  // 🔴 AND THE VARIANT THAT MATTERS IS STILL CAUGHT. ى versus ي at the end of a name is the same
+  //    name typed twice, and raw text misses it — which is why the bar is `normalizeContactName`
+  //    rather than the string itself.
+  assert.equal(
+    groupSameRepDuplicates([row("احمد شلبى", "1"), row("احمد شلبي", "2")]).size,
+    1,
+    "احمد شلبى and احمد شلبي are one doctor spelled two ways",
+  );
+  assert.equal(
+    groupSameRepDuplicates([row("عادل المليسي", "1"), row("عادل المليسي", "2")]).size,
+    1,
+    "the identical name twice on one list is the plainest case there is",
+  );
+
+  // ── A one-word name is never evidence ────────────────────────────────────────────────────────
+  // Two doctors named Mohamed on one list is ordinary; one doctor typed twice under a single word
+  // is not, and the engine's own `isLinkableName` is what says so.
+  assert.equal(groupSameRepDuplicates([row("محمد", "1"), row("محمد", "2")]).size, 0, "a one-word name is not evidence");
+
+  // ── A speciality conflict ends it, and ends it for the WHOLE group ───────────────────────────
+  assert.equal(
+    groupSameRepDuplicates([row("احمد شلبي", "1", "Pediatrics"), row("احمد شلبي", "2", "Dermatology")]).size,
+    0,
+    "one name and two specialities is two people, which on one rep's list is ordinary",
+  );
+  assert.equal(
+    groupSameRepDuplicates([row("احمد شلبي", "1", "Pediatrics"), row("احمد شلبي", "2", null)]).size,
+    1,
+    "a missing speciality is not a disagreement — unknown must not behave like a conflict",
+  );
+  // Three rows where the third disagrees is a pair plus a stranger, and naming the stranger on a
+  // page that invites someone to remove a row is the harm this rule exists to prevent.
+  assert.equal(
+    groupSameRepDuplicates([
+      row("احمد شلبي", "1", "Pediatrics"),
+      row("احمد شلبي", "2", "Pediatrics"),
+      row("احمد شلبي", "3", "Dermatology"),
+    ]).size,
+    0,
+    "a conflict anywhere in the group drops the whole group, never just the row that clashes",
+  );
+
+  // A lone row is not a duplicate, however it is spelled.
+  assert.equal(groupSameRepDuplicates([row("احمد شلبي", "1")]).size, 0, "one row is not a duplicate");
+
+  // ── It is housekeeping, and it never reaches the rep ─────────────────────────────────────────
+  const service = stripComments(readFileSync("src/lib/phoenix-crm/server/duplicate-customers.ts", "utf8"));
+  assert.match(
+    service,
+    /canReadIntegrityBoard\(viewer\)/,
+    "the gate is the integrity board's own two-reader predicate, never a second copy of the role list",
+  );
+  assert.doesNotMatch(
+    service,
+    /identityNameKey/,
+    "the place-name folding must not come back — it is what grouped four pairs of different doctors",
+  );
+
+  const page = stripComments(readFileSync("app/(admin)/admin/phoenix-crm/duplicates/page.tsx", "utf8"));
+  assert.match(page, /canReadIntegrityBoard\(viewer\)/, "the page gates on the same predicate as the service");
+  assert.match(page, /redirect\("\/admin"\)/, "and refuses by redirect, so the page never describes itself to someone who may not read it");
+  // 🔴 NOTHING ON IT ACTS. Removing a duplicate is the district manager's then SFE's two-step
+  //    request; a button here would be a third way into a decision the owner gave to those seats.
+  assert.doesNotMatch(page, /<button|<form|onClick|action=\{/, "the page reads only — no button, no form, no write");
+  // Wording: this is a typing mistake, not a suspicion, and a rep must never be filed under one.
+  // The imports and the shared predicate are machinery, not words a reader sees, so they are
+  // removed first — the page DOES borrow the integrity board's two-reader gate on purpose, and a
+  // check that failed on the gate's own name would be testing the plumbing rather than the page.
+  const wording = page
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("import "))
+    .join("\n")
+    .replaceAll("canReadIntegrityBoard", "");
+  assert.doesNotMatch(
+    wording,
+    /integrity|violation|suspicio|fraud|cheat|caught/i,
+    "a clerical double-entry must never be worded as an integrity case",
+  );
+}
