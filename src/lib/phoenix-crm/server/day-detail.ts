@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/http/api-errors";
+import { logError } from "@/lib/observability/log";
 import { dayDetailCounts, type DayDetailCounts } from "@/lib/phoenix-crm/day-detail";
 import { isMissedRecordDay } from "@/lib/phoenix-crm/missed-records";
 import { canEnterMissedRecordOn, canEnterMissedRecords, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -33,6 +34,12 @@ export type PhoenixCrmDayDetail = VisitDayView &
     /** HR's own approved leave covering this day for the person in the seat. */
     onLeave: boolean;
     /**
+     * 🔴 HR's leave could not be read, so `onLeave` is false for a reason that is not about the rep.
+     * Said on the page: a day of approved leave otherwise reads exactly like a day he worked and
+     * logged nothing.
+     */
+    leaveUnread: boolean;
+    /**
      * The Super Admin may enter a record the rep MISSED on this day (owner, 2026-10-01) — a visit, or how
      * the day was spent. Null for everyone else, for a vacant seat, for a line that has not opened, and
      * for a day still to come. The entry itself is the panel's, through /missed-records, where the same
@@ -57,11 +64,16 @@ export async function loadPhoenixCrmDayDetail(
   // afterwards, and a day is read the way it was lived. The first cut inherited newest-first under
   // a heading that said "in the order they happened", which was simply untrue.
   const day = { ...loaded, visits: [...loaded.visits].sort((left, right) => left.capturedAt.localeCompare(right.capturedAt)) };
-  const { counts, pharmacies } = dayDetailCounts(
+  // 🔴 THE SAME BASIS AS THE CALENDAR CELL THAT OPENED THIS PAGE. `countsInKpi` is the row's own
+  // answer (`visitCountsInKpi`), so the headline here equals the grid's figure; the list below keeps
+  // every visit with its status, and what is held back is said in words rather than dropped.
+  const { awaitingApproval, awaitingValidation, counts, pharmacies } = dayDetailCounts(
     day.visits.map((visit) => ({
       capturedAt: visit.capturedAt,
+      countsInKpi: visit.countsInKpi,
       customerId: visit.customerId,
       customerName: visit.customerName,
+      customerValidated: visit.customerValidated,
       listType: visit.listType,
       pharmacyName: visit.pharmacyName,
     })),
@@ -70,14 +82,25 @@ export async function loadPhoenixCrmDayDetail(
   // Leave is HR's, read through HR's own module (a Phoenix CRM service may not touch that table —
   // `tests/phoenix-crm-boundary`). It is an annotation: losing it must not lose the day, so the
   // throw that module leaves to its caller is caught here.
+  //
+  // 🔴 AND A FAILED READ IS SAID, NEVER SWALLOWED. It used to be caught and discarded, so a day the
+  // rep was on approved leave read exactly like a day he worked and logged nothing — the page's own
+  // "What else this day was" block simply did not appear. `leaveUnread` is the same sentence the
+  // plan report has carried since 2026-10-01 (`plan-leave.ts` LEAVE_UNREAD_NOTE).
   let onLeave = false;
+  let leaveUnread = false;
   const hrId = day.territory.repHrId;
   if (hrId) {
     try {
       const away = await loadApprovedLeaveDays([hrId], { from: day.date, to: day.date });
       onLeave = away.length > 0;
-    } catch {
+    } catch (error) {
       onLeave = false;
+      leaveUnread = true;
+      logError("Phoenix CRM day page could not read approved leave", {
+        error,
+        labels: { event: "phoenix_crm_day_leave_unread" },
+      });
     }
   }
 
@@ -87,7 +110,17 @@ export async function loadPhoenixCrmDayDetail(
       ? { seatId: seat.seatId, through: viewer.visitDay }
       : null;
 
-  return { ...day, counts, missedRecords, onLeave, pharmacies, removesEnteredVisits: canEnterMissedRecords(viewer) };
+  return {
+    ...day,
+    awaitingApproval,
+    awaitingValidation,
+    counts,
+    leaveUnread,
+    missedRecords,
+    onLeave,
+    pharmacies,
+    removesEnteredVisits: canEnterMissedRecords(viewer),
+  };
 }
 
 /**

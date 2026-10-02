@@ -20,8 +20,14 @@
  *
  * Every row comes from `gatherExceptions`, the same call the board makes, so the digest and the
  * screen can never disagree about a territory on the same morning. The one difference is the window,
- * and it is deliberate: the board reads six field days because he opens it wanting the trend, the
+ * and it is deliberate: the board reads six working days because he opens it wanting the trend, the
  * digest reads ONE because at 06:55 he wants yesterday.
+ *
+ * 🔴 AND THAT ONE DAY IS A WORKING DAY — Saturday to Wednesday, holidays out. It used to be "the last
+ * day that was not a Friday", which made every Friday morning a verdict on THURSDAY: a day that holds
+ * no PM call by design, so every active territory read "Below the PM call rate · 0.0" and every
+ * manager got it on Telegram. A day with no working day behind it sends nothing and says so in the
+ * run (`skippedNotAWorkingDay`).
  *
  * ## Channels
  *
@@ -35,7 +41,6 @@ import { currentCairoDateOnlyIso, formatPhoenixLongDate } from "@/lib/i18n/forma
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { planPhoenixCrmDigest, type DigestRecipient, type PhoenixCrmDigest } from "@/lib/phoenix-crm/digest-rules";
-import { lastFinishedFieldDay } from "@/lib/phoenix-crm/exceptions";
 import {
   PHOENIX_CRM_NOTIFICATION_CATEGORY,
   PHOENIX_CRM_NOTIFICATION_MODULE,
@@ -49,8 +54,8 @@ import { loadPhoenixCrmConfig, openLineCodes } from "@/lib/phoenix-crm/server/se
 import { isManagerTier, territoriesBelow, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-/** The digest reads the single previous field day — see the header. */
-const DIGEST_WINDOW_FIELD_DAYS = 1;
+/** The digest reads the single previous WORKING day — see the header. */
+const DIGEST_WINDOW_WORKING_DAYS = 1;
 
 /**
  * Every manager who holds territories, with the seats beneath him.
@@ -129,6 +134,12 @@ export type PhoenixCrmDigestRun = {
    * young this is most of them, and the day it reaches zero the digest is watching the whole field.
    */
   waitingForFirstUse: number;
+  /**
+   * 🔴 The morning no WORKING day had finished, so nothing was judged and nothing was sent — the
+   * day the field owed no work. `day` is empty on such a run. Reported rather than silent, because a
+   * quiet 06:55 that was CORRECT must be tellable from one that failed.
+   */
+  skippedNotAWorkingDay: boolean;
 };
 
 async function deliver(digest: PhoenixCrmDigest): Promise<void> {
@@ -166,7 +177,6 @@ export async function runPhoenixCrmDailyDigest(
   // app to have used — putting it on a manager's 06:55 message would be an accusation about a
   // decision that is the owner's, not the rep's.
   const openSeats: OrgSeat[] = org.territories.filter((seat) => Boolean(seat.lineCode && openLines.has(seat.lineCode)));
-  const day = lastFinishedFieldDay(cairoToday);
 
   // 🔴 AND ONLY THE TERRITORIES WHOSE REP HAS ACTUALLY STARTED (owner, 2026-09-28).
   //
@@ -192,8 +202,29 @@ export async function runPhoenixCrmDailyDigest(
     isTest: false,
     cairoToday,
     config,
-    windowFieldDays: DIGEST_WINDOW_FIELD_DAYS,
+    windowWorkingDays: DIGEST_WINDOW_WORKING_DAYS,
   });
+
+  // 🔴 A DAY THAT IS NOT A WORKING DAY IS SKIPPED, NEVER JUDGED (owner's working-day rule: Saturday
+  // to Wednesday, national holidays out). The digest used to read the last non-FRIDAY day, so every
+  // Friday morning it judged THURSDAY — a day that holds no PM call by design — and every active
+  // territory in the company got "Below the PM call rate · 0.0", or "No visit" on a holiday Thursday
+  // such as 8 October 2026. That is the flood of 2026-09-28 in a different shape, and it reaches
+  // managers' Telegram. `gatherExceptions` resolves the day; a null means there was none to report
+  // on, and the right message then is no message.
+  const day = board.lastWorkingDay;
+  if (!day) {
+    return {
+      day: "",
+      territories: board.summary.territories,
+      needingAttention: 0,
+      recipients: 0,
+      delivered: 0,
+      failed: 0,
+      waitingForFirstUse: openSeats.length - seats.length,
+      skippedNotAWorkingDay: true,
+    };
+  }
 
   const managerIds = [...org.seats.values()].filter((seat) => isManagerTier(seat.tier)).map((seat) => seat.occupantHrId);
   const names = await loadPeopleNames(managerIds);
@@ -223,5 +254,6 @@ export async function runPhoenixCrmDailyDigest(
     delivered,
     failed,
     waitingForFirstUse: openSeats.length - seats.length,
+    skippedNotAWorkingDay: false,
   };
 }

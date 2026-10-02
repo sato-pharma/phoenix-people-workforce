@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
+import { BRICK_STATUS_LABELS } from "../src/lib/phoenix-crm/brick-report.ts";
 import {
   buildPhoenixCrmReportsWorkbook,
   calendarSheetName,
@@ -294,7 +295,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     const full = pack({
       adoption: adoptionView(),
       bricks: bricksView(),
-      exceptions: { rows: [], summary: { territories: 0, needingAttention: 0, byKind: [] }, isTest: false, lastFieldDay: "2026-09-24", weekStart: "2026-09-19", windowFieldDays: 6 } as unknown as NonNullable<ReportsPackInput["exceptions"]>,
+      exceptions: { rows: [], summary: { territories: 0, needingAttention: 0, byKind: [] }, holidaysUnread: false, isTest: false, lastWorkingDay: "2026-09-23", weekStart: "2026-09-19", windowWorkingDays: 6 } as unknown as NonNullable<ReportsPackInput["exceptions"]>,
       locations: locationsView(),
       managers: { period: PERIOD, includeTest: false, rows: [] } as unknown as NonNullable<ReportsPackInput["managers"]>,
       plan: { period: PERIOD, includeTest: false, runningDay: null, leaveUnread: false, rows: [], totals: { AM: { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, onLeave: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null }, PM: { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, onLeave: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null } } } as unknown as NonNullable<ReportsPackInput["plan"]>,
@@ -438,6 +439,41 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
       }
     }
     assert.ok(checked >= 2, `at least two sheets carry AM/PM columns — only ${checked} did, so this check swept almost nothing`);
+
+    // 🔴 AND OFF-PLAN WAS THE ONE PLACE TWO SHEETS ADDED THEM. "Visits per day" printed
+    //    `row.am.unplannedWaiting + row.pm.unplannedWaiting` under one heading, and "Plan against
+    //    actual" printed `row.am.unplanned + row.pm.unplanned` under another. A sum is exactly the
+    //    shape the golden rule bans, and the headings read as if they were a single measure.
+    for (const [sheetName, amHeader, pmHeader] of [
+      ["Visits per day", "AM off-plan waiting", "PM off-plan waiting"],
+      ["Plan against actual", "AM off-plan", "PM off-plan"],
+    ] as const) {
+      const sheet = workbook.getWorksheet(sheetName);
+      assert.ok(sheet, `${sheetName} is in the pack`);
+      const headers: string[] = [];
+      sheet.getRow(2).eachCell((cell) => headers.push(String(cell.value ?? "")));
+      assert.ok(headers.includes(amHeader), `${sheetName}: off-plan has its own AM column`);
+      assert.ok(headers.includes(pmHeader), `${sheetName}: and its own PM column`);
+      assert.equal(headers.includes("Off-plan"), false, `${sheetName}: the combined column is gone`);
+      assert.equal(headers.includes("Off-plan waiting"), false, `${sheetName}: and so is the combined waiting column`);
+    }
+  }
+
+  // ── 4b. The brick standing is the SCREEN's words, never the raw key ────────────────────────────
+  //
+  // 🔴 It printed `row.status` — so a manager opening the pack read `sales-no-list` in the column
+  // the screen reads "Sells here, nobody on the list". A workbook leaves the building without the
+  // screen that could explain a key, which is the one place a reader cannot look it up.
+  {
+    const buffer = await buildPhoenixCrmReportsWorkbook(pack({ bricks: bricksView() }));
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    const sheet = workbook.getWorksheet("Coverage against sales");
+    assert.ok(sheet, "the bricks sheet is there");
+    const cells: string[] = [];
+    sheet.eachRow((row) => row.eachCell((cell) => cells.push(String(cell.value ?? ""))));
+    assert.ok(cells.includes(BRICK_STATUS_LABELS["sales-no-list"]), "the standing is written out in the screen's own words");
+    assert.equal(cells.includes("sales-no-list"), false, "and the raw key never reaches a reader");
   }
 
   // ── 5. The brick caveat travels WITH the figures ───────────────────────────────────────────────

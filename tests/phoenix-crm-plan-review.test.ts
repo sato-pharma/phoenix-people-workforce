@@ -810,19 +810,79 @@ function runStillPlannedTests(): void {
       assert.match(sql, new RegExp(`^revoke execute on function public\\.${fn}\\(jsonb\\) from public, anon, authenticated;$`, "m"), `${fn} stays out of the browser's reach`);
       assert.match(sql, new RegExp(`^grant execute on function public\\.${fn}\\(jsonb\\) to service_role;$`, "m"));
     }
-    assert.ok(!sql.includes("create or replace function public.phoenix_crm_report_plan_vs_actual("), "the report is not replaced: it needs no change");
+    assert.ok(
+      !sql.includes("create or replace function public.phoenix_crm_report_plan_vs_actual("),
+      "this file does not replace the report — 20261002221947 does, and for a different reason (5e)",
+    );
   }
 
-  // ── 5e. Plan against actual already reads every day of a returned week as sent ───────────────────
+  // ── 🔴 5e. PLAN AGAINST ACTUAL ASKS THE SAME DAY-BY-DAY RULE AS THE DOOR ──────────────────────────
+  //
+  // This section used to assert the OPPOSITE, and in doing so it pinned a defect. `sent_days` asked
+  // whether the plan's latest status by the end of that Cairo day was in
+  // ('submitted', 'approved', **'returned'**) — and that third value is wrong twice over:
+  //
+  //   * a week returned WHOLE is back with the rep and is authority on NO day, yet every customer on
+  //     it counted as PLANNED and, unvisited, as MISSED;
+  //   * the RETURNED DAY of a one-day return is back with him too, and counted the same way.
+  //
+  // `phoenix_crm_save_visit` has never agreed: it stamps a visit on such a day `is_unplanned`. So the
+  // rep's own screen read "off the plan, waiting for your manager" while his manager's report read
+  // "missed" — about the same customer, on the same day. Measured on production 2026-10-02, before
+  // Delta (1) started: 0 returned plans, so nothing was wrong YET, which is exactly why it had to
+  // ship before Saturday 3 October rather than after the first return.
+  //
+  // 🔴 The header of 20261002125244 says replacing this report "would change nothing". It is right
+  // about the one-day return's OTHER days and wrong about the two cases above.
   {
     const definers = definersOf("phoenix_crm_report_plan_vs_actual");
+    assert.equal(
+      definers[definers.length - 1],
+      "20261002221947_phoenix_crm_plan_vs_actual_sent_days.sql",
+      "the fix is the LAST definer, so it is the body the database runs",
+    );
     const report = functionSql(sqlOf(`supabase/migrations/${definers[definers.length - 1]}`), "phoenix_crm_report_plan_vs_actual");
     const sentDays = report.slice(report.indexOf("sent_days as ("), report.indexOf("planned as ("));
+
+    // The Cairo-day boundary is unchanged — it is the one half that was already right.
     assert.match(
       sentDays,
-      /e\.created_at < \(\(d\.plan_date \+ 1\)::timestamp at time zone 'Africa\/Cairo'\)[\s\S]*\) in \('submitted', 'approved', 'returned'\)/,
-      "a day is sent when its plan had gone for review by the end of that Cairo day — a RETURNED week included, so a one-day return's other days already read as sent",
+      /e\.created_at < \(\(d\.plan_date \+ 1\)::timestamp at time zone 'Africa\/Cairo'\)/,
+      "still the status the plan held when that Cairo day ENDED",
     );
+    // 🔴 'returned' is no longer a sent status on its own.
+    assert.doesNotMatch(sentDays, /in \('submitted', 'approved', 'returned'\)/, "a returned week is not authority by its status alone");
+    assert.match(sentDays, /latest\.to_status in \('submitted', 'approved'\)/, "sent means submitted or approved");
+    // The ONE exception, written the way `v_on_sent_plan` writes it.
+    assert.match(sentDays, /latest\.to_status = 'returned'/, "a one-day return is the exception");
+    assert.match(sentDays, /nullif\(latest\.details ->> 'returned_day', ''\)::date <> d\.plan_date/, "and it stands on every day but the returned one");
+    assert.match(sentDays, /phoenix_crm_plan_edit_requests r/, "until an acknowledged edit opens the whole week");
+    assert.match(sentDays, /r\.hr_acknowledged_at > latest\.created_at/, "which is read from the two times, never assumed");
+
+    // 🔴 AND A CUSTOMER DROPPED MID-WEEK IS OUT OF THE DENOMINATOR FROM THE DAY HE LEFT. His later
+    // planned days counted as MISSED, while `phoenix_crm_save_visit` raises `customer_dropped` for
+    // him — so the rep was refused the very visit the report blamed him for not making.
+    const planned = report.slice(report.indexOf("planned as ("), report.indexOf("visited as ("));
+    assert.match(planned, /c\.status <> 'dropped'/, "a dropped customer is tested");
+    assert.match(
+      planned,
+      /i\.plan_date <= \(\(c\.status_changed_at at time zone 'Africa\/Cairo'\)::date\)/,
+      "and his days up to the drop still count — read as the CAIRO day, never `status_changed_at::date`",
+    );
+    assert.match(planned, /c\.validated_at is not null/, "the validation filter is untouched");
+
+    // The rest of the function is the live text: nothing about the aggregates or the join moved.
+    assert.match(report, /full join visited vd/, "the full join stands");
+    assert.match(report, /as unplanned_refused/, "and every column it returned before");
+
+    // Out of the browser's reach, like every other reporting function.
+    const fixSql = sqlOf("supabase/migrations/20261002221947_phoenix_crm_plan_vs_actual_sent_days.sql");
+    assert.match(
+      fixSql,
+      /^revoke execute on function public\.phoenix_crm_report_plan_vs_actual\(text\[\], date, date, boolean\) from public, anon, authenticated;$/m,
+      "revoked from PUBLIC, which is what anon and authenticated inherit through",
+    );
+    assert.match(fixSql, /^grant execute on function public\.phoenix_crm_report_plan_vs_actual\(text\[\], date, date, boolean\) to service_role;$/m);
   }
 
   // ── 5f. Every reader asks the one rule ────────────────────────────────────────────────────────────

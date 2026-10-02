@@ -1,4 +1,5 @@
 import { forbiddenError } from "@/lib/http/api-errors";
+import { logError } from "@/lib/observability/log";
 import { isDayActivity, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey, territoryName, territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -81,6 +82,12 @@ export type TeamCalendarView = {
    * work on it, exactly as before.
    */
   missedRecords: { through: string; seatIds: string[] } | null;
+  /**
+   * 🔴 HR's leave could not be read, so an approved vacation is drawn as a run of BLANK days — which
+   * a manager reads as a week the rep did nothing. Said beside the grid, never swallowed: the plan
+   * report has carried the same sentence since 2026-10-01 (`plan-leave.ts` LEAVE_UNREAD_NOTE).
+   */
+  leaveUnread: boolean;
 };
 
 type Row = Record<string, unknown>;
@@ -132,7 +139,7 @@ export async function loadTeamCalendar(
 
   const bounds = monthBounds(month);
   if (!bounds || seats.length === 0) {
-    return { days: monthDays(month), isTest, missedRecords, month, rows: [], scope, totals: emptyVisitCountSplit() };
+    return { days: monthDays(month), isTest, leaveUnread: false, missedRecords, month, rows: [], scope, totals: emptyVisitCountSplit() };
   }
 
   const [visits, activities, people] = await Promise.all([
@@ -142,8 +149,17 @@ export async function loadTeamCalendar(
   ]);
   const leave = await loadLeaveDays(seats, bounds);
 
-  const rows = buildTeamCalendar(month, people, { activities, leave, visits });
-  return { days: monthDays(month), isTest, missedRecords, month, rows, scope, totals: teamCalendarTotals(rows) };
+  const rows = buildTeamCalendar(month, people, { activities, leave: leave.days, visits });
+  return {
+    days: monthDays(month),
+    isTest,
+    leaveUnread: leave.unread,
+    missedRecords,
+    month,
+    rows,
+    scope,
+    totals: teamCalendarTotals(rows),
+  };
 }
 
 /** Who holds each seat, where it is, and the name above it — his A.Manager · TM · Line columns. */
@@ -360,15 +376,18 @@ async function latestWorkedMonth(
  * leave, he is a rep with no visit, and a calendar that conflated the two would accuse people of
  * being away.
  *
- * 🔴 A FAILED LEAVE READ LEAVES THE DAYS UNMARKED RATHER THAN FAILING THE MONTH. The visits are the
- * report; leave is the annotation. Losing the whole calendar because a second table was briefly
- * unreachable trades the thing he asked for against the thing he did not — so the throw that
- * module deliberately leaves to its caller is caught right here, and nowhere deeper.
+ * 🔴 A FAILED LEAVE READ LEAVES THE DAYS UNMARKED RATHER THAN FAILING THE MONTH — AND IT SAYS SO.
+ * The visits are the report; leave is the annotation, so losing the whole calendar because a second
+ * table was briefly unreachable trades the thing he asked for against the thing he did not. But it
+ * used to be caught and DISCARDED, which left a rep's approved vacation drawn as a run of blank
+ * white cells — read by a manager as a week the rep did nothing. The throw is still caught right
+ * here and nowhere deeper; `unread` is what the screen prints beside the grid, exactly as the plan
+ * report already does (`plan-leave.ts` LEAVE_UNREAD_NOTE).
  */
 async function loadLeaveDays(
   seats: readonly OrgSeat[],
   bounds: { from: string; to: string },
-): Promise<{ seatId: string; day: string }[]> {
+): Promise<{ days: { seatId: string; day: string }[]; unread: boolean }> {
   const seatsByHrId = new Map<string, string[]>();
   for (const seat of seats) {
     if (!seat.occupantHrId) continue;
@@ -376,13 +395,18 @@ async function loadLeaveDays(
     held.push(seat.seatId);
     seatsByHrId.set(seat.occupantHrId, held);
   }
-  if (seatsByHrId.size === 0) return [];
+  // A vacant territory has nobody to be on leave, so there is nothing missing and nothing to say.
+  if (seatsByHrId.size === 0) return { days: [], unread: false };
 
   let away: ApprovedLeaveDay[];
   try {
     away = await loadApprovedLeaveDays([...seatsByHrId.keys()], bounds);
-  } catch {
-    return [];
+  } catch (error) {
+    logError("Phoenix CRM team calendar could not read approved leave", {
+      error,
+      labels: { event: "phoenix_crm_calendar_leave_unread" },
+    });
+    return { days: [], unread: true };
   }
 
   const out: { seatId: string; day: string }[] = [];
@@ -391,5 +415,5 @@ async function loadLeaveDays(
     // upper-casing by hand here would miss whatever else `hrIdForStorage` normalises.
     for (const seatId of seatsByHrId.get(personKey(row.hrId) ?? "") ?? []) out.push({ day: row.day, seatId });
   }
-  return out;
+  return { days: out, unread: false };
 }

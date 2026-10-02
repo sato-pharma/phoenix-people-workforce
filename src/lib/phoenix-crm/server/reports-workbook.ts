@@ -54,6 +54,7 @@ import {
   type DailyPlanCustomer,
   type DailyPlanReportView,
 } from "@/lib/phoenix-crm/daily-plan-report";
+import { brickStatusLabel } from "@/lib/phoenix-crm/brick-report";
 import { HEARD_BASIS_TEXT, heardTallyText, type HeardRow } from "@/lib/phoenix-crm/field-heard";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 import { PHOENIX_CRM_WEEKDAY_NAMES } from "@/lib/phoenix-crm/timings";
@@ -134,8 +135,9 @@ function writeVisits(workbook: ExcelJS.Workbook, view: VisitsReportView): void {
   const sheet = workbook.addWorksheet("Visits per day");
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(sheet, 1, {
-    // AM and PM are six columns, never three: a combined column is the thing the call-rate golden
-    // rule exists to prevent, and a workbook is exactly where someone would add one "for convenience".
+    // AM and PM are eight columns, never four: a combined column is the thing the call-rate golden
+    // rule exists to prevent, and a workbook is exactly where someone would add one "for convenience"
+    // — which is exactly what the off-plan column was until 2026-10-02.
     columns: [
       { ...NAME, label: "Rep" },
       column("Territory", { width: 22 }),
@@ -144,14 +146,16 @@ function writeVisits(workbook: ExcelJS.Workbook, view: VisitsReportView): void {
       counted("AM visits"),
       counted("AM double"),
       counted("AM chain"),
+      counted("AM off-plan waiting", 18),
       counted("PM visits"),
       counted("PM double"),
       counted("PM chain"),
-      counted("Off-plan waiting", 16),
+      counted("PM off-plan waiting", 18),
     ],
     note:
       "Off-plan visits waiting for a decision are counted BESIDE the visits, never inside them — a day that reads low only "
-      + "because three visits are with the manager must say so.",
+      + "because three visits are with the manager must say so. AM and PM are apart in every column, this one included: a "
+      + "single off-plan figure was the one place this sheet added them.",
     rows: view.rows.map((row) => [
       row.repName,
       row.territoryName,
@@ -160,10 +164,11 @@ function writeVisits(workbook: ExcelJS.Workbook, view: VisitsReportView): void {
       row.am.visits,
       row.am.doubleVisits,
       row.am.chainVisits,
+      row.am.unplannedWaiting,
       row.pm.visits,
       row.pm.doubleVisits,
       row.pm.chainVisits,
-      row.am.unplannedWaiting + row.pm.unplannedWaiting,
+      row.pm.unplannedWaiting,
     ]),
     title: `Visits per rep · ${view.period.from} to ${view.period.to}`,
     totals: [
@@ -174,10 +179,11 @@ function writeVisits(workbook: ExcelJS.Workbook, view: VisitsReportView): void {
       view.totals.AM.visits,
       view.totals.AM.doubleVisits,
       view.totals.AM.chainVisits,
+      view.totals.AM.unplannedWaiting,
       view.totals.PM.visits,
       view.totals.PM.doubleVisits,
       view.totals.PM.chainVisits,
-      view.totals.AM.unplannedWaiting + view.totals.PM.unplannedWaiting,
+      view.totals.PM.unplannedWaiting,
     ],
   });
 }
@@ -194,12 +200,13 @@ function writePlan(workbook: ExcelJS.Workbook, view: PlanReportView): void {
       counted("AM missed"),
       counted("AM on leave"),
       percentColumn("AM kept %"),
+      counted("AM off-plan", 14),
       counted("PM planned"),
       counted("PM visited"),
       counted("PM missed"),
       counted("PM on leave"),
       percentColumn("PM kept %"),
-      counted("Off-plan"),
+      counted("PM off-plan", 14),
     ],
     note: [
       view.runningDay === null
@@ -207,6 +214,8 @@ function writePlan(workbook: ExcelJS.Workbook, view: PlanReportView): void {
         : `${view.runningDay} is today: its planned customers can still be visited, so "missed" is not final for that day.`,
       // The screen's own rule, written into the file that leaves the building without the screen.
       "A customer planned on a day HR approved the rep's leave, and not seen, is on leave: never missed, and not in planned.",
+      // 🔴 AM and PM apart in every column. Off-plan was the one place this sheet added them.
+      "AM and PM are apart in every column, off-plan included.",
       view.leaveUnread ? LEAVE_UNREAD_NOTE : null,
     ]
       .filter((part): part is string => part !== null)
@@ -219,12 +228,13 @@ function writePlan(workbook: ExcelJS.Workbook, view: PlanReportView): void {
       row.am.missed,
       row.am.onLeave,
       pct(row.am.keptPct),
+      row.am.unplanned,
       row.pm.planned,
       row.pm.visitedPlanned,
       row.pm.missed,
       row.pm.onLeave,
       pct(row.pm.keptPct),
-      row.am.unplanned + row.pm.unplanned,
+      row.pm.unplanned,
     ]),
     title: `Plan against actual · ${view.period.from} to ${view.period.to}`,
     totals: [
@@ -235,12 +245,13 @@ function writePlan(workbook: ExcelJS.Workbook, view: PlanReportView): void {
       view.totals.AM.missed,
       view.totals.AM.onLeave,
       pct(view.totals.AM.keptPct),
+      view.totals.AM.unplanned,
       view.totals.PM.planned,
       view.totals.PM.visitedPlanned,
       view.totals.PM.missed,
       view.totals.PM.onLeave,
       pct(view.totals.PM.keptPct),
-      view.totals.AM.unplanned + view.totals.PM.unplanned,
+      view.totals.PM.unplanned,
     ],
   });
 }
@@ -608,9 +619,20 @@ function writeExceptions(workbook: ExcelJS.Workbook, view: ExceptionsView): void
     // A territory with nothing wrong is ABSENT — the same rule the board runs on. In a workbook that
     // needs saying out loud, because a reader counting rows would otherwise read a short sheet as a
     // failed export rather than as a good week.
-    note:
-      `Only the territories that need a manager, worst first, one line each. A territory with nothing wrong is ABSENT — `
-      + `a short sheet is the good outcome. The last full field day is ${view.lastFieldDay}.`,
+    note: [
+      "Only the territories that need a manager, worst first, one line each. A territory with nothing wrong is ABSENT —"
+      + " a short sheet is the good outcome.",
+      view.lastWorkingDay === null
+        ? "No working day has finished yet, so nothing is said about any one day."
+        : `The last working day is ${view.lastWorkingDay}; working days are Saturday to Wednesday, with the national holidays out.`,
+      // 🔴 It travels WITH the figures: a workbook leaves the building without the screen's warning.
+      view.holidaysUnread
+        ? "The national holiday calendar could not be read when this was built, so a public holiday may still be counted as a"
+          + " working day and a call rate may read low."
+        : null,
+    ]
+      .filter((part): part is string => part !== null)
+      .join(" "),
     rows: view.rows.map((row) => [row.territoryName, row.repName ?? "No rep", row.lineName ?? "—", row.label, row.detail ?? "—"]),
     title: "Needs you today",
   });
@@ -639,7 +661,10 @@ function writeBricks(workbook: ExcelJS.Workbook, view: BrickCoverageView): void 
       row.brickName,
       row.territoryName,
       row.areaName ?? "—",
-      row.status,
+      // 🔴 The screen's own words, from the shared map — never `row.status`, which printed the raw
+      // key `sales-no-list` at a manager in the column the screen reads "Sells here, nobody on the
+      // list". A workbook leaves the building without the screen that could explain a key.
+      brickStatusLabel(row.status),
       row.am,
       row.amVisited,
       row.pm,

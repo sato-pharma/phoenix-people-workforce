@@ -8,6 +8,7 @@ import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import { dayActivityLabel } from "@/lib/phoenix-crm/day-activities";
 import { opensForMissedRecords } from "@/lib/phoenix-crm/missed-records";
 import { PHOENIX_CRM_PORTAL_BASE } from "@/lib/phoenix-crm/modules";
+import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 import type { DayShape, TeamCalendarDay, TeamCalendarRow } from "@/lib/phoenix-crm/team-calendar";
 import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,8 @@ type CalendarView = {
   scope: "own" | "team";
   /** The Super Admin's: the last day and the territories he may enter a missed record on. Null for everyone else. */
   missedRecords: { through: string; seatIds: string[] } | null;
+  /** HR's leave could not be read, so an approved vacation draws as blank days — said, never swallowed. */
+  leaveUnread: boolean;
 };
 
 /** His legend, as ink. Square edges, and one class string per shape so nothing is composed at runtime. */
@@ -279,6 +282,15 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
               <div className="mt-3">
                 <CrmNote title="Some days look emptier than they were" tone="info">
                   {awaitingValidationNote({ awaitingValidation: waitingThisMonth })}
+                </CrmNote>
+              </div>
+            ) : null}
+            {/* 🔴 A failed leave read is SAID, never swallowed. Without it an approved vacation draws
+                as a run of blank white cells, which a manager reads as a week the rep did nothing. */}
+            {view.data.leaveUnread ? (
+              <div className="mt-3">
+                <CrmNote title="Leave could not be read" tone="warn">
+                  {LEAVE_UNREAD_NOTE}
                 </CrmNote>
               </div>
             ) : null}

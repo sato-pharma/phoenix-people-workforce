@@ -57,7 +57,18 @@ function crmRow(patch: Partial<BrickCrmRow> & Pick<BrickCrmRow, "seatId">): Bric
   };
 }
 
-const TERRITORY = { seatId: "SEAT-1", territoryName: "Faisal", areaCodes: ["GZ3"] };
+const TERRITORY = { seatId: "SEAT-1", territoryName: "Faisal", lineCode: "PED", areaCodes: ["GZ3"] };
+
+/**
+ * One line's sales on one brick.
+ *
+ * 🔴 `lineCode` is not decoration — see case 2b. The closing's brick grain is PER LINE and the
+ * loader is called once per line per landed month, so a row that does not carry its line lets the
+ * board add every line's money onto one brick.
+ */
+function sale(brickId: string, areaCode: string, value: number, lineCode = "PED") {
+  return { lineCode, brickId, areaCode, value };
+}
 
 export function runPhoenixCrmBrickCoverageReportTests(): void {
   // ── 1. A brick with sales and NOBODY on the list is a row, and it comes first ───────────────────
@@ -69,10 +80,7 @@ export function runPhoenixCrmBrickCoverageReportTests(): void {
     const report = buildBrickCoverageReport({
       territories: [TERRITORY],
       crmRows: [crmRow({ seatId: "SEAT-1", brickId: "B-1", customers: 4, am: 1, pm: 3, visited: 2, amVisited: 1, pmVisited: 1, visits: 6 })],
-      sales: [
-        { brickId: "B-1", areaCode: "GZ3", value: 1000 },
-        { brickId: "B-2", areaCode: "GZ3", value: 9000 },
-      ],
+      sales: [sale("B-1", "GZ3", 1000), sale("B-2", "GZ3", 9000)],
       brickNames: [
         { brickId: "B-1", brickName: "Faisal", areaCode: "GZ3" },
         { brickId: "B-2", brickName: "Haram", areaCode: "GZ3" },
@@ -102,11 +110,61 @@ export function runPhoenixCrmBrickCoverageReportTests(): void {
     const report = buildBrickCoverageReport({
       territories: [TERRITORY],
       crmRows: [],
-      sales: [{ brickId: "B-9", areaCode: "CA5", value: 500 }],
+      sales: [sale("B-9", "CA5", 500)],
       brickNames: [{ brickId: "B-9", brickName: "Down town", areaCode: "CA5" }],
       salesMonths: ["2026-08"],
     });
     assert.deepEqual(report.rows, [], "a brick of another area never lands on this territory's board");
+  }
+
+  // ── 🔴 2b. AND NEITHER DOES ANOTHER LINE'S MONEY, IN THE SAME AREA ─────────────────────────────
+  //
+  // The area filter alone is not enough, because one AREA is worked by one rep PER LINE. The sales
+  // half is loaded once per line per landed month, and the first cut flattened those results into
+  // `{ brickId, areaCode, value }` — dropping the line — so `salesByBrick`, keyed by brick alone,
+  // summed CNS, Anti Infective and Pedia together. Two things followed, both silent:
+  //
+  //   * a covered brick showed every line's money, so "Booked on it" was simply too big;
+  //   * a brick only ANOTHER line sells into appeared on this rep's board as "Sells here, nobody on
+  //     the list" — the one row the board exists to raise, manufactured out of somebody else's
+  //     geography.
+  //
+  // It hit the DEFAULT view of the SFE Manager, the CEO and the Super Admin, who open on "All lines".
+  {
+    const report = buildBrickCoverageReport({
+      territories: [TERRITORY],
+      crmRows: [crmRow({ seatId: "SEAT-1", brickId: "B-1", customers: 4, am: 1, pm: 3, visited: 2, amVisited: 1, pmVisited: 1, visits: 6 })],
+      sales: [
+        sale("B-1", "GZ3", 1000),
+        // The SAME brick, the same area, a DIFFERENT line.
+        sale("B-1", "GZ3", 7000, "CNS"),
+        // A brick of this area that only CNS sells into.
+        sale("B-7", "GZ3", 4000, "CNS"),
+      ],
+      brickNames: [
+        { brickId: "B-1", brickName: "Faisal", areaCode: "GZ3" },
+        { brickId: "B-7", brickName: "Omraniya", areaCode: "GZ3" },
+      ],
+      salesMonths: ["2026-08"],
+    });
+    assert.equal(report.rows.length, 1, "the CNS-only brick is not this Pedia territory's row");
+    assert.equal(report.rows[0]?.brickId, "B-1");
+    assert.equal(report.rows[0]?.sales, 1000, "and the brick carries ITS OWN line's money — never 8,000");
+    assert.equal(report.summary.salesNoList, 0, "no 'sells here, nobody on the list' is invented out of another line");
+    assert.equal(report.summary.brickSales, 1000);
+
+    // A seat the organogram gives no line reads no line's closing — an honest empty rather than
+    // every line's money at once.
+    const lineless = buildBrickCoverageReport({
+      territories: [{ ...TERRITORY, lineCode: null }],
+      crmRows: [crmRow({ seatId: "SEAT-1", brickId: "B-1", customers: 4, pm: 4 })],
+      sales: [sale("B-1", "GZ3", 1000)],
+      brickNames: [{ brickId: "B-1", brickName: "Faisal", areaCode: "GZ3" }],
+      salesMonths: ["2026-08"],
+    });
+    assert.equal(lineless.rows.length, 1, "its own captured bricks are still listed");
+    assert.equal(lineless.rows[0]?.sales, 0, "but no line's sales are attributed to it");
+    assert.equal(lineless.rows[0]?.status, "list-no-sales");
   }
 
   // ── 3. A customer with no captured place is NAMED, not dropped ─────────────────────────────────
@@ -131,7 +189,7 @@ export function runPhoenixCrmBrickCoverageReportTests(): void {
     const report = buildBrickCoverageReport({
       territories: [TERRITORY],
       crmRows: [crmRow({ seatId: "SEAT-1", customers: 10, am: 2, pm: 8, visited: 5, amVisited: 1, pmVisited: 4, visits: 12 })],
-      sales: [{ brickId: "B-1", areaCode: "GZ3", value: 100 }],
+      sales: [sale("B-1", "GZ3", 100)],
       brickNames: [{ brickId: "B-1", brickName: "Faisal", areaCode: "GZ3" }],
       salesMonths: ["2026-08"],
     });
@@ -185,6 +243,12 @@ export function runPhoenixCrmBrickCoverageReportTests(): void {
     const summed = service.indexOf("buildBrickCoverageReport({ territories, crmRows, sales");
     assert.ok(masked !== -1 && summed !== -1 && masked < summed, "and it masks BEFORE anything is summed");
     assert.ok(service.includes("readsTeamReports"), "the same gate as the other manager sections");
+
+    // 🔴 EACH BATCH CARRIES THE LINE IT WAS ASKED FOR (case 2b). `loadClosingBrickSales` takes the
+    // line and its rows do not name it, so flattening the results loses the one fact the join needs.
+    assert.ok(service.includes("{ lineCode: code, rows: await loadClosingBrickSales("), "the reads are line-tagged pairs, not a flat array");
+    assert.ok(service.includes("lineCode: batch.lineCode"), "and the line reaches every sales row");
+    assert.ok(service.includes("lineCode: seat.lineCode ?? null"), "each territory carries its own line to match on");
 
     // Comments stripped: the migration's own header EXPLAINS why it does not read `phx_closing_brick`,
     // and a header that names the thing it refuses to do must not fail the check for doing it.

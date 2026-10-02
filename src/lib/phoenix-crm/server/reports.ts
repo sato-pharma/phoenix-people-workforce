@@ -58,7 +58,7 @@ import {
   type CustomerFrequencyInput,
   type CustomerFrequencyRow,
 } from "@/lib/phoenix-crm/customer-frequency";
-import { dailyPlanActivityText } from "@/lib/phoenix-crm/daily-plan-report";
+import { cairoDayOfInstant, dailyPlanActivityText } from "@/lib/phoenix-crm/daily-plan-report";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { isLeaveDay } from "@/lib/phoenix-crm/plan-leave";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
@@ -67,7 +67,7 @@ import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsFieldHeardByProduct, readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { callPhoenixCrm, chunk, numberOrNull, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import { loadSeatDayActivities } from "@/lib/phoenix-crm/server/day-activities";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
@@ -836,23 +836,34 @@ export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: Rep
     "customer:phoenix_crm_customers!customer_id(name), " +
     "place:phoenix_crm_places!place_id(label, address, brick_name, area_name, region_name, lat, lon)";
 
+  // 🔴 IT PAGES, AND UNTIL 2026-10-02 IT DID NOT — IT STOPPED DEAD AT 1,000 VISITS PER SEAT BATCH.
+  // PostgREST caps every response at `db-max-rows` (supabase/config.toml: 1000) and says NOTHING
+  // when it does, so a period holding more visits than that lost the rest in silence. Everything on
+  // this report is computed over these rows — `total`, the far / weak-GPS / no-place counts, the
+  // measured count and the farthest distance — so each one was a figure over a truncated set wearing
+  // the shape of a complete one, and the row the manager most needs (the farthest) is exactly the
+  // one a cut-off could drop. A keyset walk on `id`, the shape every other read in this module uses.
   const rows: Row[] = [];
   for (const batch of chunk(chosen.seats.map((seat) => seat.seatId))) {
-    let query = getSupabaseAdmin()
-      .from("phoenix_crm_visits")
-      .select(columns)
-      .in("seat_id", batch)
-      .gte("visit_date", period.from)
-      .lte("visit_date", period.to)
-      // Place against ACTUAL, and a visit the Super Admin entered for a rep who missed logging it has
-      // no actual: nobody was at the door with a phone (owner, 2026-10-01). Its stand-in flag would
-      // read "no place saved" and its missing reading would plot at 0°N 0°E, so it is not a row here.
-      // Every visit that remains carries a reading — phoenix_crm_visits_location_source holds it.
-      .neq("capture_source", "admin");
-    if (!chosen.includeTest) query = query.eq("is_test", false);
-    const { data, error } = await query;
-    throwIfError(error);
-    rows.push(...asRows(data));
+    const page = await fetchAllRowsKeyset<Row>(
+      () => {
+        const query = getSupabaseAdmin()
+          .from("phoenix_crm_visits")
+          .select(columns)
+          .in("seat_id", batch)
+          .gte("visit_date", period.from)
+          .lte("visit_date", period.to)
+          // Place against ACTUAL, and a visit the Super Admin entered for a rep who missed logging it
+          // has no actual: nobody was at the door with a phone (owner, 2026-10-01). Its stand-in flag
+          // would read "no place saved" and its missing reading would plot at 0°N 0°E, so it is not a
+          // row here. Every visit that remains carries a reading — phoenix_crm_visits_location_source
+          // holds it.
+          .neq("capture_source", "admin");
+        return chosen.includeTest ? query : query.eq("is_test", false);
+      },
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+    rows.push(...page);
   }
 
   const seatsById = new Map(chosen.seats.map((seat) => [seat.seatId, seat]));
@@ -1172,8 +1183,14 @@ async function listedCustomers(seatId: string, includeTest: boolean, month: Repo
   );
   return rows.filter((row) => {
     if (String(row.status) === "active") return true;
+    // 🔴 THE CAIRO DAY OF THE CHANGE, NOT `slice(0, 10)` OF A `timestamptz`. PostgREST returns the
+    // instant in UTC, so a customer dropped at 00:30 Cairo on the 1st reads "the 30th" — one day
+    // earlier, in the PREVIOUS month — and this comparison then dropped him from the month he was
+    // actually worked in, taking his visits out of frequency and his row off the tracking sheet.
+    // Cairo is UTC+2/+3, so every drop in the first two or three hours of a month was wrong.
     const changed = textOrNull(row.status_changed_at);
-    return Boolean(changed && changed.slice(0, 10) >= month.monthStart);
+    const changedOn = changed ? cairoDayOfInstant(changed) : null;
+    return Boolean(changedOn && changedOn >= month.monthStart);
   });
 }
 
@@ -1232,13 +1249,19 @@ export async function loadTrackingSheetReport(
   }
 
   const daysByCustomer = (await visitDaysByCustomer(seat.seatId, chosen.includeTest, month)).days;
+  // 🔴 THE SPACING NOTE MUST NOT JUDGE DAYS NOBODY HAS LIVED YET. It measures the tail since the
+  // last visit against the longest gap, and it was handed `month.monthEnd` — so on the 3rd of a
+  // month it read a 28-day tail and said "Seen on the 1st and the 2nd, then not again" about a
+  // customer the rep saw yesterday. Every customer on a running month tripped it at once. The end
+  // of the window is the earlier of the month's end and TODAY.
+  const spacingThrough = month.monthEnd > viewer.cairoToday ? viewer.cairoToday : month.monthEnd;
   const rows = buildTrackingSheet(
     listed.map((row) => ({
       customerId: String(row.id),
       days: daysByCustomer.get(String(row.id)) ?? [],
       name: textOrNull(row.name) ?? "Unnamed customer",
     })),
-    month.monthEnd,
+    spacingThrough,
     { managerView },
   );
 

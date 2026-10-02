@@ -172,6 +172,7 @@ export async function loadBrickCoverageReport(
   const territories: BrickTerritory[] = seats.map((seat) => ({
     seatId: seat.seatId,
     territoryName: territoryName(seat),
+    lineCode: seat.lineCode ?? null,
     areaCodes: [...(areaCodesBySeat.get(seat.seatId) ?? [])],
   }));
 
@@ -180,13 +181,24 @@ export async function loadBrickCoverageReport(
   const lines = [...new Set(seats.map((seat) => seat.lineCode).filter((code): code is string => Boolean(code)))];
   const salesMonths = landedMonthsIn(period, uploaded);
   const masked = { role: viewer.role, scope: scopeForRole(viewer.role) };
+  // 🔴 EACH BATCH CARRIES THE LINE IT WAS ASKED FOR. `loadClosingBrickSales` takes the line and its
+  // rows do not name it, so flattening the results loses the one fact the join needs — and a board
+  // keyed by brick alone then adds every line's money onto one brick (see `BrickSalesTotal`). The
+  // reads are built as `{ lineCode, rows }` pairs rather than a flat array for exactly that reason.
   const rawSales = await Promise.all(
-    lines.flatMap((code) => salesMonths.map((month) => loadClosingBrickSales(lineName(code), month))),
+    lines.flatMap((code) =>
+      salesMonths.map(async (month) => ({ lineCode: code, rows: await loadClosingBrickSales(lineName(code), month) })),
+    ),
   );
   // 🔴 The mask, before anything is summed.
-  const sales: BrickSalesTotal[] = rawSales
-    .flatMap((rows) => [...withoutMaskedSourceRows(rows, masked)])
-    .map((row) => ({ brickId: row.brickId, areaCode: upperCode(row.areaCode), value: row.value }));
+  const sales: BrickSalesTotal[] = rawSales.flatMap((batch) =>
+    [...withoutMaskedSourceRows(batch.rows, masked)].map((row) => ({
+      lineCode: batch.lineCode,
+      brickId: row.brickId,
+      areaCode: upperCode(row.areaCode),
+      value: row.value,
+    })),
+  );
 
   // A brick the closing booked to one of these areas needs its NAME, or the board prints an id at a
   // manager. The CRM half already names the bricks it knows; this covers the sales-only ones.

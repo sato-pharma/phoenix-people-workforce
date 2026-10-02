@@ -191,14 +191,40 @@ export function runPhoenixCrmWave2ReportTests(): void {
     // 🔴 AM AND PM FROM THE LIST TYPE; A PHARMACY IS A DISTINCT NAME AND NOT A ROW. Two visits that
     //    named the same pharmacy are ONE pharmacy, however it was spelled — the grouping is
     //    `todayPharmacies`, reused rather than rewritten, because a second copy of it will drift.
+    const scored = { countsInKpi: true, customerValidated: true };
     const day = dayDetailCounts([
-      { capturedAt: "2026-09-30T07:10:00.000Z", customerId: "1", customerName: "أحمد الهضيمي", listType: "AM", pharmacyName: "صيدلية النور" },
-      { capturedAt: "2026-09-30T10:20:00.000Z", customerId: "2", customerName: "Mona Adel", listType: "PM", pharmacyName: "صيدلية النور " },
-      { capturedAt: "2026-09-30T12:00:00.000Z", customerId: "3", customerName: "Sara Nabil", listType: "PM", pharmacyName: null },
-      { capturedAt: "2026-09-30T13:00:00.000Z", customerId: "4", customerName: "Hany Samir", listType: "pm", pharmacyName: "El Ezaby" },
+      { ...scored, capturedAt: "2026-09-30T07:10:00.000Z", customerId: "1", customerName: "أحمد الهضيمي", listType: "AM", pharmacyName: "صيدلية النور" },
+      { ...scored, capturedAt: "2026-09-30T10:20:00.000Z", customerId: "2", customerName: "Mona Adel", listType: "PM", pharmacyName: "صيدلية النور " },
+      { ...scored, capturedAt: "2026-09-30T12:00:00.000Z", customerId: "3", customerName: "Sara Nabil", listType: "PM", pharmacyName: null },
+      { ...scored, capturedAt: "2026-09-30T13:00:00.000Z", customerId: "4", customerName: "Hany Samir", listType: "pm", pharmacyName: "El Ezaby" },
     ]);
     assert.deepEqual(day.counts, { am: 1, pharmacies: 2, pm: 3 }, "three figures apart, and the two spellings are one pharmacy");
     assert.equal(day.pharmacies.length, 2);
+    assert.equal(day.awaitingValidation, 0);
+    assert.equal(day.awaitingApproval, 0);
+
+    // 🔴 THE HEADLINE IS THE CALENDAR CELL'S OWN BASIS — only the visits that COUNT. It used to
+    //    count every row it was handed, while `server/team-calendar.ts` counts the rows
+    //    `phoenix_crm_countable_visits` and `customer_validated` agree on: one rep's Tuesday read 3
+    //    on the grid and 5 on the page the grid links to, with nothing to say which was right. On a
+    //    team that has just started the gap is EVERY visit — measured 2026-10-02, 0 of Delta (1)'s
+    //    1,551 carried-over customers were validated the day before it began.
+    const held = dayDetailCounts([
+      { ...scored, capturedAt: "2026-09-30T07:10:00.000Z", customerId: "1", customerName: "Scored", listType: "AM", pharmacyName: "El Ezaby" },
+      // Saved, real, and in no figure: nobody has validated this customer yet.
+      { capturedAt: "2026-09-30T08:00:00.000Z", countsInKpi: false, customerValidated: false, customerId: "2", customerName: "Waiting", listType: "PM", pharmacyName: "Seif" },
+      // Validated, but off the plan and still with the approvers — the other half of the question.
+      { capturedAt: "2026-09-30T09:00:00.000Z", countsInKpi: false, customerValidated: true, customerId: "3", customerName: "Off plan", listType: "PM", pharmacyName: null },
+    ]);
+    assert.deepEqual(held.counts, { am: 1, pharmacies: 1, pm: 0 }, "only the scored visit reaches a figure, pharmacies included");
+    assert.equal(held.awaitingValidation, 1, "and what is held back is REPORTED, never dropped — a 0 with no reason is the defect");
+    assert.equal(held.awaitingApproval, 1, "the two reasons stay apart: one is the list, the other is an approval");
+    assert.equal(held.pharmacies.length, 2, "every pharmacy is still LISTED — the feedback was really taken");
+    assert.deepEqual(
+      held.pharmacies.map((entry) => entry.counted),
+      [true, false],
+      "and each one says whether it is inside the figure above it",
+    );
     assert.deepEqual(
       day.pharmacies[0]?.fromCustomers,
       ["أحمد الهضيمي", "Mona Adel"],
@@ -221,9 +247,24 @@ export function runPhoenixCrmWave2ReportTests(): void {
     assert.doesNotMatch(screen, /isLocationBlind|distanceMeters|accuracyMeters/, "the screen never re-decides what a reader may measure");
     assert.match(screen, /visit\.locationLabel/, "it prints the sentence the server chose for this reader");
 
+    // 🔴 AND IT COUNTS FROM THE ROW'S OWN ANSWER, NEVER BY COUNTING ROWS. `countsInKpi` is
+    //    `visitCountsInKpi`, the TypeScript twin of the countable view plus `customer_validated`.
+    assert.match(service, /countsInKpi: visit\.countsInKpi/, "the service hands the row's own answer to the counter");
+    assert.match(service, /customerValidated: visit\.customerValidated/, "and the reason it is held back, so the page can say so");
+    const visits = stripComments(readFileSync("src/lib/phoenix-crm/server/visits.ts", "utf8"));
+    assert.match(visits, /visitCountsInKpi\(\{/, "the row answers it once, through the one predicate");
+    assert.match(visits, /validated_at/, "which means the read has to ask for validated_at by name — a view would have answered it");
+
     // Leave is HR's table, and a Phoenix CRM service may not read it (tests/phoenix-crm-boundary).
     assert.match(service, /loadApprovedLeaveDays/, "leave comes through the vacation module");
     assert.doesNotMatch(service, /v2_vacation_requests/, "and never by naming HR's table here");
+    // 🔴 AND A FAILED LEAVE READ IS SAID, NEVER SWALLOWED. Caught and discarded, a day of approved
+    //    leave reads exactly like a day the rep worked and logged nothing.
+    assert.match(service, /leaveUnread = true/, "the day page reports a leave read it could not make");
+    assert.match(screen, /view\.leaveUnread/, "and the screen prints the sentence");
+    const calendarService = stripComments(readFileSync("src/lib/phoenix-crm/server/team-calendar.ts", "utf8"));
+    assert.match(calendarService, /unread: true/, "the team calendar reports it too");
+    assert.match(calendarService, /leaveUnread: leave\.unread/, "and carries it onto the view");
   }
 
   // ── Frequency per customer ─────────────────────────────────────────────────────
@@ -335,6 +376,20 @@ export function runPhoenixCrmWave2ReportTests(): void {
   assert.equal(spacingNote(["2026-03-20"], "2026-03-31"), null, "one visit is not a pattern");
   assert.equal(spacingNote(["2026-03-05", "2026-03-09"], "2026-03-12"), null, "and nothing is said while the month still has room");
 
+  // 🔴 `through` IS WHERE THE MONTH HAS GOT TO, NOT WHERE IT ENDS — and the service passed the
+  //    month's END for a RUNNING month, so on the 3rd every customer read a 28-day silence and the
+  //    note fired on all of them: "then not again" about a customer the rep had seen yesterday.
+  assert.equal(
+    spacingNote(["2026-03-01", "2026-03-02"], "2026-03-31"),
+    "Seen on the 1st and the 2nd, then not again.",
+    "a FINISHED month measures the tail to its own end",
+  );
+  assert.equal(
+    spacingNote(["2026-03-01", "2026-03-02"], "2026-03-03"),
+    null,
+    "the same two days on the 3rd of a RUNNING month say nothing — there is no silence to report yet",
+  );
+
   // 🔴 THE NOTE IS MANAGERS ONLY, GATED IN THE HELPER AS WELL AS THE SCREEN (Golden rule #1: the
   //    rep's app is blind, and anything that judges how he worked is never his). A helper that
   //    returns the note and trusts the screen to hide it is one render from a rep's phone.
@@ -356,6 +411,21 @@ export function runPhoenixCrmWave2ReportTests(): void {
     assert.match(service, /const managerView = readsTeamReports\(viewer\);/, "the note is a manager's, by the module's own predicate");
     assert.match(service, /buildTrackingSheet\(/, "and the helper gates it a second time, inside");
     assert.match(service, /\{ managerView \}/, "the decision is passed down, never re-made");
+
+    // 🔴 AND THE SPACING WINDOW STOPS AT TODAY ON A RUNNING MONTH. `month.monthEnd` judged days
+    //    nobody had lived yet; the end of the window is the EARLIER of the month's end and today.
+    assert.match(
+      service,
+      /const spacingThrough = month\.monthEnd > viewer\.cairoToday \? viewer\.cairoToday : month\.monthEnd;/,
+      "min(month end, today) — never the month's end on a running month",
+    );
+    assert.match(service, /^\s*spacingThrough,$/m, "and that window — not the month's end — is what reaches the helper");
+
+    // 🔴 THE DROP DATE IS THE CAIRO ONE. `status_changed_at` is a timestamptz, so `slice(0, 10)` is
+    //    the UTC day — and Cairo is UTC+2/+3, so every drop in the first two or three hours of a
+    //    month read as the month before and took that customer out of the month he was worked in.
+    assert.match(service, /cairoDayOfInstant\(changed\)/, "the Cairo day of the change, never a slice of the instant");
+    assert.doesNotMatch(service, /changed\.slice\(0, 10\)/, "the UTC slice is gone");
 
     // 🔴 THE TWO PER-CUSTOMER REPORTS READ THE SAME LIST AND THE SAME VISITS. Coverage's own SQL
     //    resolves "validated, active or retired during the month"; a second resolution here would
@@ -483,6 +553,33 @@ export function runPhoenixCrmWave2ReportTests(): void {
     for (const banned of [/\bmocked\b/, /\baccuracy\b/, /locationFlag/, /integrity/i, /\bmetres\b/, /\bdistance\b/i]) {
       assert.doesNotMatch(screen, banned, `the calendar screen carries no ${String(banned)} — nothing on it judges the person`);
     }
+  }
+
+  // ── 🔴 PLACE AGAINST ACTUAL PAGES, AND BEFORE 2026-10-02 IT STOPPED DEAD AT 1,000 ─────────────
+  //
+  // PostgREST caps every response at `db-max-rows` (supabase/config.toml: 1000) and says NOTHING
+  // when it does. `loadVisitLocationReport` read each seat batch with one unpaged `await query`, and
+  // every figure on the report is computed over those rows — `total`, the far / weak-GPS / no-place
+  // counts, `measured`, and `farthestMeters`. So each one was a figure over a truncated set wearing
+  // the shape of a complete one, and the row a manager most needs (the farthest) is exactly what a
+  // cut-off drops. It is silent by construction: 1,000 is a plausible number.
+  {
+    const service = stripComments(readFileSync("src/lib/phoenix-crm/server/reports.ts", "utf8"));
+    const start = service.indexOf("export async function loadVisitLocationReport(");
+    assert.notEqual(start, -1, "the place-vs-actual service is still there");
+    // 🔴 THE END ANCHOR IS CODE, NEVER A COMMENT. `stripComments` blanks comments in place, so
+    //    `indexOf("// ── Frequency")` finds nothing, returns -1, and `slice(start, -1)` hands back
+    //    the whole rest of the file — every assertion below then reads the other services.
+    const end = service.indexOf("export type CustomerFrequencyReportView", start);
+    assert.ok(end > start, "and the next declaration bounds it");
+    const body = service.slice(start, end);
+    assert.match(body, /fetchAllRowsKeyset<Row>\(/, "the visits are read with a keyset walk");
+    assert.match(body, /cursorColumn: "id"/, "on the primary key, like every other paged read in the module");
+    assert.doesNotMatch(body, /const \{ data, error \} = await query/, "the single unpaged read is gone");
+
+    // The config's cap is the reason, and it is a real number rather than a story.
+    const config = readFileSync("supabase/config.toml", "utf8");
+    assert.match(config, /max_rows\s*=\s*1000/, "the cap this guards against is the configured one");
   }
 
   console.log("phoenix-crm wave 2 reports: OK");

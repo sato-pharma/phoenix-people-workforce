@@ -15,7 +15,11 @@
  *   1. `phoenix_crm_seat_readiness` for every seat (the RPC already takes an array).
  *   2. This field week's plan headers.
  *   3. Those plans' items, counted per plan.
- *   4. Countable visits over the rolling window, which also answers the last field day.
+ *   4. Countable visits over the rolling window, which also answers the last working day.
+ *
+ * Beside them, one lookup that is not per seat at all: the national holidays (`loadCallRateHolidays`,
+ * at most two reads, since it reads per calendar month). It runs FIRST, because it decides which days
+ * the window is made of — see `gatherExceptions`.
  *
  * 🔴 The visits read is `phoenix_crm_countable_visits`, never `phoenix_crm_visits`, and it asks that
  * view for `customer_validated = true`. An off-plan visit waiting for approval counts in NOTHING
@@ -34,13 +38,15 @@
  * "we never read X" here declares this file a reader of X — which it caught on the first run.
  */
 
+import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { forbiddenError } from "@/lib/http/api-errors";
+import { addDaysIso } from "@/lib/crm/dates";
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import {
-  RATE_WINDOW_FIELD_DAYS,
+  RATE_WINDOW_WORKING_DAYS,
   buildExceptions,
-  isFieldDay,
-  lastFinishedFieldDay,
+  isWorkingDay,
+  lastFinishedWorkingDay,
   type ExceptionsBoard,
   type TerritoryFacts,
 } from "@/lib/phoenix-crm/exceptions";
@@ -49,39 +55,60 @@ import { readsTeamReports, testModeFor, testReadSeats, type PhoenixCrmViewer } f
 import { chunk } from "@/lib/phoenix-crm/server/db";
 import { loadReadiness, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import type { CallRateHolidays } from "@/lib/crm/call-rate";
 
 type Row = Record<string, unknown>;
 
 export type ExceptionsView = ExceptionsBoard & {
   isTest: boolean;
-  /** The day `no_visit` speaks about — printed on the board so nobody has to guess which day it means. */
-  lastFieldDay: string;
+  /**
+   * The day `no_visit` speaks about — printed on the board so nobody has to guess which day it
+   * means. NULL when no working day has finished inside the last month (a long holiday run), and the
+   * board then says nothing about any day rather than judging one that has not ended.
+   */
+  lastWorkingDay: string | null;
   /** The field week the two plan kinds speak about. */
   weekStart: string;
-  windowFieldDays: number;
+  windowWorkingDays: number;
+  /**
+   * 🔴 The holiday calendar could not be read, so a public holiday may still be sitting in the call
+   * rate's denominator and a rate may read LOW for a reason nobody performed. Said on the board: a
+   * failed data source must never read as a real answer.
+   */
+  holidaysUnread: boolean;
 };
 
-/** The field days the window covers, counting back from the last finished one. */
-function windowDays(lastDay: string, count: number): string[] {
+/**
+ * How far back the holiday lookup reaches. The window walks back six WORKING days, which is nine
+ * calendar days of ordinary weeks and more across a holiday run — 45 days covers the longest Eid
+ * plus both weekends with room to spare, and costs at most two reads (the lookup is per month).
+ */
+const HOLIDAY_LOOKBACK_DAYS = 45;
+
+/** The working days the window covers, counting back from the last finished one. */
+function windowDays(lastDay: string, count: number, holidays: CallRateHolidays): string[] {
   const days: string[] = [];
   const date = new Date(`${lastDay}T00:00:00Z`);
-  while (days.length < Math.max(1, count)) {
+  // Bounded: with holidays out, a run of non-working days is finite but not two days long, and an
+  // unbounded walk would spin on a calendar that answered "holiday" for everything.
+  for (let back = 0; back < 90 && days.length < Math.max(1, count); back += 1) {
     const day = date.toISOString().slice(0, 10);
-    if (isFieldDay(day)) days.push(day);
+    if (isWorkingDay(day, holidays)) days.push(day);
     date.setUTCDate(date.getUTCDate() - 1);
   }
   return days.reverse();
 }
 
-/** This field week's plan header per seat, and how many customers each one holds. */
+/** This field week's plan header per seat, how many customers it holds, and its standing returned day. */
 async function loadPlanFacts(
   seatIds: string[],
   isTest: boolean,
   weekStart: string,
-): Promise<Map<string, { status: string; items: number }>> {
-  const out = new Map<string, { status: string; items: number }>();
+): Promise<Map<string, { status: string; items: number; returnedDay: string | null }>> {
+  const out = new Map<string, { status: string; items: number; returnedDay: string | null }>();
   if (seatIds.length === 0) return out;
 
   const planRows: Row[] = [];
@@ -90,7 +117,7 @@ async function loadPlanFacts(
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_plans")
-          .select("id, seat_id, status")
+          .select(`id, seat_id, ${PLAN_DAY_COLUMNS}`)
           .eq("is_test", isTest)
           .eq("week_start", weekStart)
           .in("seat_id", part),
@@ -113,8 +140,18 @@ async function loadPlanFacts(
     }
   }
 
+  // 🔴 The STANDING one-day return, through the module's one reader — never `returned_day` raw. A
+  // week whose edit request was acknowledged after the return is open to the rep again, so no day of
+  // it stands as sent, and `loadPlanDayFacts` is the only thing that knows that.
+  const dayFacts = await loadPlanDayFacts(planRows, isTest);
+
   for (const row of planRows) {
-    out.set(String(row.seat_id), { status: String(row.status), items: itemCounts.get(String(row.id)) ?? 0 });
+    const id = String(row.id);
+    out.set(String(row.seat_id), {
+      status: String(row.status),
+      items: itemCounts.get(id) ?? 0,
+      returnedDay: dayFacts.get(id)?.returnedDay ?? null,
+    });
   }
   return out;
 }
@@ -176,26 +213,36 @@ async function loadVisitTallies(
  * The 06:55 digest has no viewer to scope by and reads a window of ONE day, so it calls this
  * directly. Keeping it as one function is what stops the two answering differently about the same
  * territory on the same morning, which is exactly the kind of drift nobody notices for a month.
+ *
+ * 🔴 EVERY DAY IT COUNTS IS A WORKING DAY — Saturday to Wednesday, national holidays out, the
+ * owner's own call-rate rule (`isWorkingDay`). Before 2026-10-02 it excluded Friday alone, so a rep
+ * with a perfect 10 PM calls on each of Saturday to Wednesday read 50 / 6 = 8.3 and was listed
+ * "Below the PM call rate", and the digest judged a Thursday that holds no PM by design.
  */
 export async function gatherExceptions(input: {
   seats: ReadonlyArray<OrgSeat>;
   isTest: boolean;
   cairoToday: string;
   config: PhoenixCrmViewer["config"];
-  /** How many finished field days the call rate reads. The board uses six; the digest uses one. */
-  windowFieldDays: number;
+  /** How many finished WORKING days the call rate reads. The board uses six; the digest uses one. */
+  windowWorkingDays: number;
 }): Promise<ExceptionsView> {
   const { config, isTest, seats } = input;
   const seatIds = seats.map((seat) => seat.seatId);
-  const lastDay = lastFinishedFieldDay(input.cairoToday);
-  const window = windowDays(lastDay, input.windowFieldDays);
   const weekStart = fieldWeekStart(input.cairoToday);
+
+  // 🔴 THE HOLIDAYS COME FIRST, because they decide which days the window is even made of. Read
+  // over the whole lookback rather than the window, since the window's own length depends on them.
+  const holidays = await loadCallRateHolidays(addDaysIso(input.cairoToday, -HOLIDAY_LOOKBACK_DAYS), input.cairoToday);
+  const lastDay = lastFinishedWorkingDay(input.cairoToday, holidays.dates);
+  const window = lastDay ? windowDays(lastDay, input.windowWorkingDays, holidays.dates) : [];
 
   const [readiness, plans, visits, names] = await Promise.all([
     // Readiness is measured on real entries; in test mode nothing is claimed about a list.
     isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
     loadPlanFacts(seatIds, isTest, weekStart),
-    loadVisitTallies(seatIds, isTest, window[0], lastDay, lastDay),
+    // No finished working day means no window: nothing is read and no rate is claimed.
+    lastDay ? loadVisitTallies(seatIds, isTest, window[0] as string, lastDay, lastDay) : Promise.resolve(new Map<string, VisitTally>()),
     loadPeopleNames(seats.map((seat) => seat.occupantHrId)),
   ]);
 
@@ -216,11 +263,12 @@ export async function gatherExceptions(input: {
         ? { total: list.total, validated: list.validated, dropped: list.dropped, dropPending: list.dropPending, ready: list.ready }
         : null,
       planStatus: plan ? (plan.status as TerritoryFacts["planStatus"]) : null,
+      planReturnedDay: plan?.returnedDay ?? null,
       planItems: plan?.items ?? 0,
-      windowFieldDays: window.length,
+      windowWorkingDays: window.length,
       windowAmVisits: tally.am,
       windowPmVisits: tally.pm,
-      lastFieldDayVisits: tally.lastDay,
+      lastWorkingDayVisits: lastDay ? tally.lastDay : null,
     };
   });
 
@@ -230,7 +278,14 @@ export async function gatherExceptions(input: {
     cairoToday: input.cairoToday,
   });
 
-  return { ...board, isTest, lastFieldDay: lastDay, weekStart, windowFieldDays: window.length };
+  return {
+    ...board,
+    holidaysUnread: !holidays.complete,
+    isTest,
+    lastWorkingDay: lastDay,
+    weekStart,
+    windowWorkingDays: window.length,
+  };
 }
 
 export async function loadExceptionsBoard(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<ExceptionsView> {
@@ -241,6 +296,6 @@ export async function loadExceptionsBoard(viewer: PhoenixCrmViewer, raw: { test:
     isTest,
     cairoToday: viewer.cairoToday,
     config: viewer.config,
-    windowFieldDays: RATE_WINDOW_FIELD_DAYS,
+    windowWorkingDays: RATE_WINDOW_WORKING_DAYS,
   });
 }
