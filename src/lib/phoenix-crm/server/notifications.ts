@@ -38,14 +38,17 @@
  *                                          act on. The answer tells the rep, and the person told again.
  *                                          A cancelled ask is not announced: its notices are withdrawn.
  *
- *   - a rep submits his FIRST visit ever   → his district manager, his national sales manager and the
- *     (owner, 2026-10-03)                    SFE Manager, BY EMAIL (and in-app, Telegram and the phone),
- *                                          with the owner on the BCC of every email the system sends.
- *                                          It is an adoption notice, not a decision: ONE per rep, ever,
- *                                          keyed on the REP so nothing can send it twice, and nobody who
- *                                          gets it has anything to do. The rep himself is never told —
- *                                          Golden Rule #1: his app does not tell him he is being watched
- *                                          begin.
+ *   - a rep submits his FIRST visit ever   → EVERY occupied manager seat above him — his district
+ *     (owner, 2026-10-03)                    manager, a regional manager where his line has one, his
+ *                                          national sales manager — and the SFE Managers, BY EMAIL (and
+ *                                          in-app, Telegram and the phone), with the owner on the BCC of
+ *                                          every email the system sends. He named three and then added
+ *                                          the Pedia RSM the same day, so the line is the TIER, not a
+ *                                          person. It is an adoption notice, not a decision: ONE per rep,
+ *                                          ever, keyed on the REP so nothing can send it twice, and
+ *                                          nobody who gets it has anything to do. The rep himself is
+ *                                          never told — Golden Rule #1: his app does not tell him he is
+ *                                          being watched begin.
  *
  * A PLANNED visit tells nobody: double and chain visits count straight away, and a far visit is
  * flagged on the manager's screens rather than pushed (about 600 visits a working day). An OFF-PLAN
@@ -394,15 +397,26 @@ async function describeFirstVisit(notice: Extract<PhoenixCrmNotice, { kind: "fir
 }
 
 /**
- * Who is told of a rep's first visit, and in what words. Pure, so the owner's three recipients — the
- * district manager, the national sales manager and the SFE Manager — and the once-ever key are pinned by
- * a test rather than by reading the code (tests/phoenix-crm-first-visit.test.ts).
+ * Who is told of a rep's first visit, and in what words. Pure, so who it reaches and the once-ever key
+ * are pinned by a test rather than by reading the code (tests/phoenix-crm-first-visit.test.ts).
+ *
+ * 🔒 EVERY OCCUPIED MANAGER SEAT ABOVE HIM, PLUS THE SFE MANAGERS (owner, 2026-10-03). He first named
+ * three — the district manager, the national sales manager and SFE — and then, the same day, *"add the
+ * Pedia RSM to the first-visit email"*. So the line is drawn at the TIER, not at a person: `managerChain`
+ * is already every occupied manager seat above the territory, nearest first, excluding the CEO and
+ * excluding a seat the rep himself holds. Today that is the district manager, Pedia Upper Egypt's
+ * regional manager (`PD-0001`, the company's only RSM seat), and the line's national manager.
+ *
+ * 🔴 WHY THE WHOLE CHAIN AND NOT "DM + RSM + NSM" SPELLED OUT: a second regional seat, or a tier added
+ * between, would be SILENTLY missed by a tier list — and missed in the direction that looks fine, since
+ * the email still arrives, just without the one manager who was appointed last. The chain cannot
+ * under-report that way. It also cannot over-report: the only manager tiers are DM, ACTING_DM, RSM and
+ * NSM, and `managerChain` never reaches the CEO.
  *
  * 🔴 THE DISTRICT MANAGER IS THE TERRITORY'S REVIEWING MANAGER, not "the DM seat": a vacant district
- * passes upward exactly as it does for a grade request and a weekly plan, so a rep whose district seat is
- * empty still has somebody told rather than nobody. The national sales manager is the NSM seat of the
- * chain above him — one per line, all three occupied (measured 2026-10-03) — and a line without one
- * simply leaves that name out; it never silences the notice.
+ * passes upward exactly as it does for a grade request and a weekly plan — which falls out of using the
+ * chain, because `chain[0]` IS that manager — so a rep whose district seat is empty still has somebody
+ * told rather than nobody, and nobody is ever named twice.
  *
  * 🔴 AND NEVER THE REP (Golden Rule #1). The notice says a person has started; the one person it is about
  * is the one person who must not read it, and `personKey` comparison is what keeps him off it when he
@@ -414,15 +428,11 @@ export function firstVisitDeliveries(
   sfeHrIds: readonly string[],
 ): Delivery[] {
   const chain = managerChain(notice.org, notice.seat.seatId);
-  const districtManager = chain[0] ?? null;
-  const national = chain.find((member) => member.seat.tier === "NSM") ?? null;
   const repKey = personKey(notice.repHrId);
-  const recipients = [...new Set([...(districtManager ? [districtManager.hrId] : []), ...(national ? [national.hrId] : []), ...sfeHrIds])].filter(
-    (hrId) => {
-      const key = personKey(hrId);
-      return key !== null && key !== repKey;
-    },
-  );
+  const recipients = [...new Set([...chain.map((member) => member.hrId), ...sfeHrIds])].filter((hrId) => {
+    const key = personKey(hrId);
+    return key !== null && key !== repKey;
+  });
   if (recipients.length === 0) return [];
 
   const rep = nameOf(names, notice.repHrId, "A rep");
