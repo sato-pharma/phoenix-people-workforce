@@ -6999,6 +6999,10 @@ export async function createMarketingValidationRecord(
             : undefined;
 
           rows.push({
+            // A row the desk has just CREATED. Empty rather than looked up: this is a write path,
+            // the note is not part of what the desk decides, and the next workspace load fills it.
+            // Empty here can only ever understate — it never asserts a link that was not confirmed.
+            alsoKnownAs: [],
             customer,
             // A REUSED link can be a desk validation just as easily as a backfill one.
             deskValidated: isDeskValidated(reusedLink.validationNotes),
@@ -7214,6 +7218,10 @@ export async function createMarketingValidationRecord(
         const distributorRow = vendorCode ? distributorsById.get(vendorCode.distributorId) : undefined;
 
         rows.push({
+          // A row the desk has just CREATED. Empty rather than looked up: this is a write path,
+          // the note is not part of what the desk decides, and the next workspace load fills it.
+          // Empty here can only ever understate — it never asserts a link that was not confirmed.
+          alsoKnownAs: [],
           customer,
           // Read from the notes for the same reason as `inferredFromHistory` below: one rule, not
           // one rule and one assumption. An on-behalf submission writes the desk marker here.
