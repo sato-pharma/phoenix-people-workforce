@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { captureClientOf } from "@/lib/phoenix-crm/server/capture-client";
 import { phoenixCrmFailure } from "@/lib/phoenix-crm/server/http";
 import { issueTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -24,6 +25,11 @@ export const dynamic = "force-dynamic";
 // Nothing a rep sees depends on this succeeding. If it fails he simply has no anchor, and a visit
 // captured afterwards is dated at arrival and marked for the board — silently, as Golden Rule #1
 // requires.
+//
+// 🔴 IT IS THE APP'S ROUTE ONLY. An anchor is half of a back-dated visit, and only the app has an
+// offline queue to need one; `issueTimeAnchor` refuses a browser with a flat 404. No web screen
+// calls this, so that takes nothing away — the boundary test's own scan of the screens' calls is
+// what keeps it that way.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
@@ -32,7 +38,7 @@ export async function POST(request: Request) {
     await assertPermission(access, "phoenix_crm", "create");
     const viewer = await resolvePhoenixCrmViewer(access);
     const body = (await request.json()) as unknown;
-    const anchor = await issueTimeAnchor(viewer, body);
+    const anchor = await issueTimeAnchor(viewer, body, captureClientOf(request.headers));
     return NextResponse.json({ anchor, success: true });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not take a time check.");

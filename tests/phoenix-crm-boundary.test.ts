@@ -560,7 +560,7 @@ const LATER_MIGRATIONS = [
   "supabase/migrations/20261002150353_phoenix_crm_pharmacy_reference.sql",
   // A product manager on a visit — replaces phoenix_crm_save_visit, so it belongs AFTER every earlier
   // replacer of it (see the voice-note note above): liveMigrationSql applies these in order and the last
-  // one wins, and this is now the body the database runs.
+  // one wins.
   "supabase/migrations/20261002205436_phoenix_crm_visit_product_manager.sql",
   // 🔴 20261002205435_phoenix_crm_pharmacy_list_type.sql is DELIBERATELY ABSENT and must stay absent.
   // It only widens two CHECK constraints — it defines no function and creates no table — so the guard
@@ -580,6 +580,11 @@ const LATER_MIGRATIONS = [
   // phoenix_crm_decide_plan_edit_request and so leaves that function the only writer of `expired`.
   // It replaces nothing, no save_visit, no table.
   "supabase/migrations/20261002220047_phoenix_crm_activity_and_plan_edit_expiry.sql",
+  // A visit is never dated onto an EARLIER visit day than the one it arrived on (the 2026-10-02
+  // audit). It REPLACES phoenix_crm_save_visit, so it is now the LAST entry that does and must stay
+  // last among them — liveMigrationSql applies each replacement in order and the last one wins. One
+  // block inserted into 20261002205436's body and nothing else: no table, no column, no constraint.
+  "supabase/migrations/20261002222403_phoenix_crm_visit_day_never_before_arrival.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
