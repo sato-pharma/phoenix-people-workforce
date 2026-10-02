@@ -28,17 +28,30 @@
  * ordinary visits, not a script. Every bound here is set beyond what honest work reaches, and where
  * that costs a catch, it costs a catch: a false positive accuses a real person of fraud, and there
  * are about a hundred and forty real people on the other side of this file.
+ *
+ * ## 🔴 THE SAVE TIME IS NOT THE DOOR TIME — owner, 2026-10-02
+ *
+ * Three of the rules below were written when a visit's `captured_at` was the moment the server issued
+ * the DOOR PHOTO's upload slot, so a capture time was where the rep stood and when. Since the one-tap
+ * visit (2026-09-29) there is no photo: the server stamps a visit when the rep SAVES it, and he may
+ * log his day until 02:00. So "five visits inside five minutes", "a metronome" and "the whole day
+ * inside an hour" now describe how he LOGS — his morning from the car, his day at night — and an
+ * honest rep doing exactly what the owner allowed trips all three.
+ *
+ * The owner chose (2026-10-02, asked directly): keep computing them, never strong, and show them only
+ * BESIDE a strong flag — exact repeated durations this month, or a strong position or photo case for
+ * the same rep in the same month. Alone they are kept in `signals.heldBack` and reach no board.
  */
 
 /** What a month of one rep's work can be marked with. */
 export type PhoenixCrmBehaviourFlag =
   /** The visit form took the same number of seconds again and again. */
   | "identical_durations"
-  /** Visits spaced like a metronome, on several days. */
+  /** Visits SAVED like a metronome, on several days. Shown only beside a strong flag. */
   | "constant_cadence"
-  /** More visits inside a few minutes than a person can physically enter. */
+  /** Five visits SAVED inside a few minutes. Shown only beside a strong flag. */
   | "burst_visits"
-  /** Day after day, the whole field day fits in under an hour. */
+  /** Day after day, the whole day's visits SAVED inside an hour. Shown only beside a strong flag. */
   | "day_always_short"
   /** The list is covered and nothing at all sold behind it — in a month the line DID sell. */
   | "flat_coverage_no_sales"
@@ -46,27 +59,46 @@ export type PhoenixCrmBehaviourFlag =
   | "never_a_negative";
 
 /**
- * 🔴 Three of the six stand on their own, and three only corroborate.
+ * 🔴 ONE of the six stands on its own (owner, 2026-10-02 — it was three).
  *
- * The strong three describe something a person cannot do: enter five visits in five minutes, hold a
- * gap constant to the second across a day, or hit one exact duration in seven visits out of ten.
- * The other three describe something a person can do for innocent reasons — a short day is a day
- * with two cancellations, a flat month is a month the stock did not arrive, and a rep with an easy
- * territory really may hear no objections. They are reasons to look at the strong ones beside them,
- * never a case on their own.
+ * Seven visits in ten taking one exact number of seconds on the form is something a person does not
+ * do, and that is still true of the one-tap visit: the form is open while he chooses products and
+ * writes or speaks the comment the save requires. `burst_visits` and `constant_cadence` stood here
+ * too, until the save time stopped being the door time — see the header and
+ * `PHOENIX_CRM_SAVE_TIME_BEHAVIOUR_FLAGS`. Never put either back here: a strong flag on a rep who
+ * logged his morning from the car is an accusation for doing what he was allowed to do.
  */
-export const PHOENIX_CRM_STRONG_BEHAVIOUR_FLAGS: readonly PhoenixCrmBehaviourFlag[] = [
+export const PHOENIX_CRM_STRONG_BEHAVIOUR_FLAGS: readonly PhoenixCrmBehaviourFlag[] = ["identical_durations"];
+
+/**
+ * 🔴 The three rules that read the SAVE time, shown only BESIDE a strong flag (owner, 2026-10-02).
+ *
+ * Each is still worked out every night and its numbers are kept in `signals`, so nothing is lost. But
+ * a month carries them in `flags` — the only thing the board prints — only when the same rep has a
+ * strong flag that month: this month's own exact repeated durations, or a strong position or photo
+ * case (`strongCaseThisMonth`). Alone, they are `signals.heldBack` and nobody sees them.
+ *
+ * The other two corroborating rules are NOT here and keep listing a month on their own, in amber: a
+ * covered list with nothing sold and an outcome that is never once a negative do not read the clock.
+ */
+export const PHOENIX_CRM_SAVE_TIME_BEHAVIOUR_FLAGS: readonly PhoenixCrmBehaviourFlag[] = [
   "burst_visits",
   "constant_cadence",
-  "identical_durations",
+  "day_always_short",
 ];
 
-/** Plain English for the board. The reader is a manager, not an engineer. */
+/**
+ * Plain English for the board. The reader is a manager, not an engineer.
+ *
+ * 🔴 The three save-time labels say SAVED, because that is what they measure now. "More visits in a
+ * few minutes than a person can enter" was true of a photo taken at each door; with one tap it is
+ * false, and a board printing it beside a real case would make an honest habit read as a lie.
+ */
 export const PHOENIX_CRM_BEHAVIOUR_LABELS: Record<PhoenixCrmBehaviourFlag, string> = {
   identical_durations: "The visit form took exactly the same time, again and again",
-  constant_cadence: "Visits spaced like a metronome across a day",
-  burst_visits: "More visits in a few minutes than a person can enter",
-  day_always_short: "The whole field day fits in under an hour, day after day",
+  constant_cadence: "Visits saved at metronome-even intervals on several days",
+  burst_visits: "Several visits saved within a few minutes",
+  day_always_short: "Each day's visits all saved within an hour, day after day",
   flat_coverage_no_sales: "The list is covered and nothing sold behind it",
   never_a_negative: "Dozens of outcomes and not one of them a negative",
 };
@@ -88,22 +120,38 @@ export const IDENTICAL_DURATION_SHARE = 0.7;
  * Five gaps means six visits, and the spread between the shortest and the longest is under a minute
  * — a day where no doctor ran late, no traffic happened and no waiting room was full. One such day
  * is luck. Three in a month is not how a field day behaves.
+ *
+ * 🔴 …EXCEPT THAT IT IS NOW HOW A FIELD DAY IS ENTERED. The gaps are between SAVES, and a rep
+ * working steadily through his list in the evening holds them even to the second. Corroborating
+ * only since 2026-10-02 (`PHOENIX_CRM_SAVE_TIME_BEHAVIOUR_FLAGS`); the bound is unchanged.
  */
 export const CADENCE_MIN_GAPS_A_DAY = 5;
 export const CADENCE_SPREAD_SECONDS = 60;
 export const CADENCE_MIN_DAYS = 3;
 
 /**
- * 🔴 The burst, set by what is PHYSICALLY impossible rather than by what is fast.
+ * The burst — written as what is PHYSICALLY impossible, and no longer that.
  *
- * Each visit needs a photo taken at the door, a customer chosen and a form saved. Four in an hour in
- * one hospital is the commonest good day in the field and must never be touched. Five inside five
- * minutes is not a fast rep; it is somebody entering a morning from one chair.
+ * It was set when each visit needed a photo taken at the door, a customer chosen and a form saved,
+ * so five inside five minutes could not be five doors. Four in an hour in one hospital is the
+ * commonest good day in the field and must never be touched, and that still holds.
+ *
+ * 🔴 WHAT CHANGED: with the one-tap visit the rep logs the visits, not the doors — "somebody
+ * entering a morning from one chair" is now the owner's own permitted habit, allowed until 02:00.
+ * So the bound stays exactly where it is and the flag is corroborating only, never strong
+ * (owner, 2026-10-02; `PHOENIX_CRM_SAVE_TIME_BEHAVIOUR_FLAGS`). Raising it would not help: there is
+ * no number of saves in five minutes that an honest rep cannot reach.
  */
 export const BURST_VISITS = 5;
 export const BURST_WINDOW_SECONDS = 300;
 
-/** A day of five or more visits whose first and last capture are under 45 minutes apart. */
+/**
+ * A day of five or more visits whose first and last capture are under 45 minutes apart.
+ *
+ * 🔴 The same correction as the burst: with one tap this is a rep who entered his day in one
+ * sitting. It was already corroborating, and since 2026-10-02 it is also held back unless a strong
+ * flag stands beside it.
+ */
 export const SHORT_DAY_MIN_VISITS = 5;
 export const SHORT_DAY_SPAN_SECONDS = 45 * 60;
 export const SHORT_DAY_MIN_DAYS = 5;
@@ -157,6 +205,16 @@ export type BehaviourInput = {
   coverage: { customers: number; visited: number } | null;
   /** Null when the closing could not be read for this month at all. */
   sales: BehaviourSales | null;
+  /**
+   * Does this rep already have a STRONG position or photo case in this month?
+   *
+   * 🔴 The second half of the owner's 2026-10-02 ruling. A save-time rule is shown only beside a
+   * strong flag, and a strong flag can come from either of the other two detectors — a spoofed
+   * coordinate or a re-used photograph in the same month is exactly the company this pattern needs
+   * before it means anything. False is "no such case", which is also what an unread detector gives:
+   * the safe direction, because it holds the weak flag back rather than printing it alone.
+   */
+  strongCaseThisMonth?: boolean;
 };
 
 export type BehaviourVerdict = {
@@ -302,11 +360,26 @@ export function judgeBehaviour(input: BehaviourInput): BehaviourVerdict {
   }
 
   const ordered = [...flags].sort();
+  const strong = ordered.some((flag) => PHOENIX_CRM_STRONG_BEHAVIOUR_FLAGS.includes(flag));
+
+  /**
+   * 🔴 THE SAVE-TIME RULES ARE HELD BACK UNLESS SOMETHING STRONG STANDS BESIDE THEM (owner, 2026-10-02).
+   *
+   * `strong` above is read BEFORE this filter, so a month with a real `identical_durations` keeps its
+   * save-time flags and the board shows the whole picture. Without one — and with no strong position
+   * or photo case for the rep that month — they are moved to `signals.heldBack`: computed, kept,
+   * auditable, and shown to nobody. The board prints `flags`, so holding them there is what stops a
+   * rep who logged his morning from the car appearing as a case at all.
+   */
+  const corroborationStands = strong || input.strongCaseThisMonth === true;
+  const heldBack = corroborationStands ? [] : ordered.filter((flag) => PHOENIX_CRM_SAVE_TIME_BEHAVIOUR_FLAGS.includes(flag));
+  if (heldBack.length > 0) signals.heldBack = heldBack;
+
   return {
     ...base,
     measured: true,
-    flags: ordered,
-    strong: ordered.some((flag) => PHOENIX_CRM_STRONG_BEHAVIOUR_FLAGS.includes(flag)),
+    flags: corroborationStands ? ordered : ordered.filter((flag) => !PHOENIX_CRM_SAVE_TIME_BEHAVIOUR_FLAGS.includes(flag)),
+    strong,
     signals,
   };
 }

@@ -1661,6 +1661,7 @@ import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.te
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photos.test.ts";
 import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
+import { runPhoenixCrmSweepPagingTests } from "./phoenix-crm-sweep-paging.test.ts";
 import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test.ts";
 import { runPhoenixCrmOfflineWireTests } from "./phoenix-crm-offline-wire.test.ts";
 import { runPhoenixCrmRefusalMessagesTests } from "./phoenix-crm-refusal-messages.test.ts";
@@ -5736,8 +5737,13 @@ await runTest(
 );
 
 await runTest(
-  "Phoenix CRM judges the SHAPE of a rep's month, silently (D4 — owner, 2026-09-25: the position checks judge one fix and the photo sweep one picture, and both are satisfied by a rep entering twelve real-looking visits from one pavement; six signals over a rep-month, only the three a person CANNOT do standing on their own; half of every fixture is deliberately innocent, so four visits in an hour in one hospital building, durations a second apart, a light day, a rep who never saw the outcome field and a month whose distributor files never landed are all clean; a month under the floor is NOT CHECKED rather than clean, because leave must not read as honest work; it reads the RAW visits table and not the countable view, since an off-plan visit awaiting approval is the one most worth judging; and it does NOT apply the El Qema mask, which would remove real money from a total and manufacture \"the area sold nothing\" for every territory that distributor serves)",
+  "Phoenix CRM judges the SHAPE of a rep's month, silently (D4 — owner, 2026-09-25: the position checks judge one fix and the photo sweep one picture, and both are satisfied by a rep entering twelve real-looking visits from one pavement; six signals over a rep-month, and since 2026-10-02 only ONE of them — the form's own stopwatch repeating exactly — stands on its own, because the other two strong ones read a capture time that stopped being the door time when the one-tap visit removed the photo: the owner, asked directly, kept them computing, never strong, and shown only BESIDE a strong flag, so a rep logging his morning from the car reaches no board at all while his numbers are still kept in signals.heldBack; half of every fixture is deliberately innocent, so four visits in an hour in one hospital building, durations a second apart, a light day, a rep who never saw the outcome field and a month whose distributor files never landed are all clean; a month under the floor is NOT CHECKED rather than clean, because leave must not read as honest work; it reads the RAW visits table and not the countable view, since an off-plan visit awaiting approval is the one most worth judging; and it does NOT apply the El Qema mask, which would remove real money from a total and manufacture \"the area sold nothing\" for every territory that distributor serves)",
   runPhoenixCrmBehaviourIntegrityTests,
+);
+
+await runTest(
+  "the Phoenix CRM nightly sweep reads every row it judges, never PostgREST's first thousand (audit 2026-10-02: `.limit()` above the server's 1,000-row ceiling does NOTHING and the short answer carries no error, so the behaviour pass judged the FIRST ~1,000 visits of a month company-wide — Delta (1) alone makes ~3,700 — and the photo corpus compared each new picture only with the newest 1,000 fingerprints, blind to exactly the re-use it exists to catch; both now page with .range() under a TOTAL order, a row met twice at the seam is kept once because a repeat would invent two captures in the same second, a failed page throws rather than judging a fragment, a judged read REFUSES past its ceiling while the newest-first corpus merely stops, the places read is paged too because a seat silently missing its areas makes flat_coverage_no_sales accuse a rep who covered his list and sold behind it, the fingerprint backlog now requires a photo or a one-tap visit occupies it for ever and the sweep reports success while hashing nothing, the evidence is filed on the visit day that ends at 02:00 rather than the calendar day, and a place is judged on its stored fixed point rather than on the pin)",
+  runPhoenixCrmSweepPagingTests,
 );
 
 await runTest(

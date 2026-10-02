@@ -25,6 +25,8 @@
  * it stops. The board is where a human looks.
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import {
   judgeBehaviour,
   monthBounds,
@@ -33,6 +35,7 @@ import {
   type BehaviourVisit,
 } from "@/lib/phoenix-crm/behaviour-integrity";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
+import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadClosingBrickSales, upperCode } from "@/lib/sales/closing-brick-sales";
 import { lineName } from "@/lib/sales/monthly-targets";
 import { SALES_HISTORY_FLOOR, loadUploadedPeriodsInRange } from "@/lib/sales/vs-target";
@@ -40,8 +43,23 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
-/** Far above a real month for the whole company; low enough that one night cannot pull the table. */
-const VISIT_READ_MAX = 50_000;
+/**
+ * Far above a real month for the whole company; low enough that one night cannot pull the table.
+ *
+ * 🔴 A CEILING, NOT A PAGE SIZE. PostgREST stops every response at 1,000 rows whatever `.limit()`
+ * asks for, so this is reachable only through the pager in `readMonthVisits` — and past it the month
+ * is REFUSED rather than judged on part of itself.
+ */
+export const VISIT_READ_MAX = 50_000;
+
+/** One row per seat (readiness) or per validated place. Far above the company's real numbers. */
+export const SEAT_ROW_READ_MAX = 100_000;
+
+/** Strong position and photo cases in one month. A company-wide month cannot approach this. */
+export const STRONG_CASE_READ_MAX = 20_000;
+
+const JUDGED_VISIT_COLUMNS =
+  "id, seat_id, line_code, customer_id, visit_date, captured_at, rep_hr_id, manager_hr_id, entered_by_hr_id, form_open_seconds, objection, is_test";
 
 export type BehaviourSweepResult = {
   months: string[];
@@ -105,26 +123,109 @@ async function salesByLine(lines: string[], month: string): Promise<Map<string, 
   return out;
 }
 
+/**
+ * Every visit of a month the behaviour rules judge, in capture order.
+ *
+ * 🔴 PAGED. Until 2026-10-02 this read ended in `.limit(VISIT_READ_MAX)`, and PostgREST stops every
+ * response at 1,000 rows with no error — so, read in capture order, the sweep judged the FIRST ~1,000
+ * visits of the month company-wide and never saw the rest. A rep whose month started after them was
+ * judged on nothing, and a rep half inside them on half a month. Past the ceiling the month is
+ * refused, never judged on part of itself (`src/lib/phoenix-crm/server/paged-read.ts`).
+ *
+ * 🔴 The raw table, not the countable view — see the header. And never a visit the Super Admin
+ * entered for a rep who missed logging it (owner, 2026-10-01): its time is the one HE typed, or noon,
+ * and it has no form and no reading, so it says nothing about how the rep works — three of them
+ * entered at noon would read as three visits in the same minute.
+ *
+ * Takes its client so the paging test can hand it a fake that stops at 1,000 rows, as the server does.
+ */
+export async function readMonthVisits(client: Pick<SupabaseClient, "from">, bounds: { from: string; to: string }): Promise<Row[]> {
+  const read = await readEveryPage<Row>(
+    () =>
+      client
+        .from("phoenix_crm_visits")
+        .select(JUDGED_VISIT_COLUMNS)
+        .gte("visit_date", bounds.from)
+        .lte("visit_date", bounds.to)
+        .eq("is_test", false)
+        .neq("capture_source", "admin")
+        // A TOTAL order, or paging drops and repeats rows: two visits can share a capture instant.
+        .order("captured_at", { ascending: true })
+        .order("id", { ascending: true }),
+    { maxRows: VISIT_READ_MAX, whenFull: "refuse", what: "A month of Phoenix CRM visits", uniqueBy: (row) => String(row.id ?? "") },
+  );
+  throwIfError(read.error);
+  return read.rows;
+}
+
+/**
+ * Rows for a set of seats, paged.
+ *
+ * 🔴 NEITHER OF THESE READS HAD A `.limit()` AT ALL, which is not safer than a high one — PostgREST
+ * still stops at 1,000 rows and still says nothing. The places read is the one that can accuse
+ * somebody: past 1,000 real places a seat comes back with no areas, `areaSawSales` is then false for
+ * a rep whose area did sell, and `flat_coverage_no_sales` fires on a rep who covered his list and
+ * sold behind it. Production holds 12 places today and every validated customer adds one, so this is
+ * a defect with a date on it rather than a hypothetical. Refused past the ceiling, never halved.
+ */
+async function readSeatRows(
+  client: Pick<SupabaseClient, "from">,
+  table: "phoenix_crm_territory_readiness" | "phoenix_crm_places",
+  columns: string,
+  seatIds: readonly string[],
+  realOnly: boolean,
+): Promise<Row[]> {
+  const read = await readEveryPage<Row>(
+    () => {
+      const query = client.from(table).select(columns).in("seat_id", [...seatIds]);
+      // A TOTAL order. `seat_id` alone repeats across rows of one seat, which is exactly where an
+      // offset walk loses them; readiness holds one row per seat, and a place carries its own id.
+      return realOnly ? query.eq("is_test", false).order("id", { ascending: true }) : query.order("seat_id", { ascending: true });
+    },
+    { maxRows: SEAT_ROW_READ_MAX, whenFull: "refuse", what: `Phoenix CRM ${table}` },
+  );
+  throwIfError(read.error);
+  return read.rows;
+}
+
+/**
+ * The reps holding a STRONG position or photo case in this month — the company a save-time pattern
+ * needs before the board may print it (owner, 2026-10-02).
+ *
+ * Read by `visit_date`, which is the column both detectors file, so a case follows the visit's own
+ * Cairo day rather than the night the sweep ran. The photo pass runs BEFORE this one in the same
+ * sweep (`runPhoenixCrmIntegritySweep`), so tonight's duplicate photographs are already here.
+ *
+ * A failed read answers with an EMPTY set, deliberately: that holds the weak flags back instead of
+ * printing them alone, and a missed catch is the right side of this rule to fail on.
+ */
+async function readStrongCaseReps(client: Pick<SupabaseClient, "from">, bounds: { from: string; to: string }): Promise<Set<string>> {
+  const read = await readEveryPage<Row>(
+    () =>
+      client
+        .from("phoenix_crm_location_integrity")
+        .select("id, rep_hr_id")
+        .eq("is_test", false)
+        .eq("strong", true)
+        .in("source", ["gps", "photo"])
+        .gte("visit_date", bounds.from)
+        .lte("visit_date", bounds.to)
+        .order("id", { ascending: true }),
+    { maxRows: STRONG_CASE_READ_MAX, whenFull: "stop", what: "Phoenix CRM strong integrity cases" },
+  );
+  if (read.error) {
+    console.error("[phoenix-crm] strong cases not read; save-time patterns stay held back", { month: bounds.from.slice(0, 7) });
+    return new Set<string>();
+  }
+  return new Set(read.rows.map((row) => String(row.rep_hr_id ?? "").toUpperCase()).filter(Boolean));
+}
+
 async function recomputeMonth(month: string, landed: ReadonlySet<string>): Promise<{ reps: number; notChecked: number; flagged: number }> {
   const bounds = monthBounds(month);
   if (!bounds) return { reps: 0, notChecked: 0, flagged: 0 };
   const supabase = getSupabaseAdmin();
 
-  // 🔴 The raw table, not the countable view — see the header. And never a visit the Super Admin
-  // entered for a rep who missed logging it (owner, 2026-10-01): its time is the one HE typed, or noon,
-  // and it has no form and no reading, so it says nothing about how the rep works — three of them
-  // entered at noon would read as three visits in the same minute.
-  const visitRead = await supabase
-    .from("phoenix_crm_visits")
-    .select("id, seat_id, line_code, customer_id, visit_date, captured_at, rep_hr_id, manager_hr_id, entered_by_hr_id, form_open_seconds, objection, is_test")
-    .gte("visit_date", bounds.from)
-    .lte("visit_date", bounds.to)
-    .eq("is_test", false)
-    .neq("capture_source", "admin")
-    .order("captured_at", { ascending: true })
-    .limit(VISIT_READ_MAX);
-  throwIfError(visitRead.error);
-  const rows = (visitRead.data ?? []) as Row[];
+  const rows = await readMonthVisits(supabase, bounds);
   if (rows.length === 0) {
     const cleared = await supabase.from("phoenix_crm_behaviour_integrity").delete().eq("month", month).eq("is_test", false);
     throwIfError(cleared.error);
@@ -150,28 +251,23 @@ async function recomputeMonth(month: string, landed: ReadonlySet<string>): Promi
   const seatIds = [...new Set([...perRep.values()].map((entry) => entry.seatId).filter((id): id is string => Boolean(id)))];
   const lines = [...new Set([...perRep.values()].map((entry) => entry.lineCode).filter((code): code is string => Boolean(code)))];
 
-  const [readinessRead, placeRead, sales] = await Promise.all([
-    seatIds.length === 0
-      ? Promise.resolve({ data: [] as Row[], error: null })
-      : supabase.from("phoenix_crm_territory_readiness").select("seat_id, reference_total, dropped").in("seat_id", seatIds),
-    seatIds.length === 0
-      ? Promise.resolve({ data: [] as Row[], error: null })
-      : // Real places only. Test places sit on real seats too (the Super Admin's try-outs, and every
-        // test account's), and without this their area codes fed the real rep's sales-area verdict.
-        supabase.from("phoenix_crm_places").select("seat_id, area_code").in("seat_id", seatIds).eq("is_test", false),
+  const [readiness, places, strongCases, sales] = await Promise.all([
+    seatIds.length === 0 ? Promise.resolve([] as Row[]) : readSeatRows(supabase, "phoenix_crm_territory_readiness", "seat_id, reference_total, dropped", seatIds, false),
+    // Real places only. Test places sit on real seats too (the Super Admin's try-outs, and every
+    // test account's), and without this their area codes fed the real rep's sales-area verdict.
+    seatIds.length === 0 ? Promise.resolve([] as Row[]) : readSeatRows(supabase, "phoenix_crm_places", "id, seat_id, area_code", seatIds, true),
+    readStrongCaseReps(supabase, bounds),
     // 🔴 Only a month whose distributor files have LANDED can say anything about sales at all.
     landed.has(month) ? salesByLine(lines, month) : Promise.resolve(new Map<string, { areas: Set<string>; sold: boolean }>()),
   ]);
-  throwIfError((readinessRead as { error: unknown }).error);
-  throwIfError((placeRead as { error: unknown }).error);
 
   const listSize = new Map<string, number>();
-  for (const row of ((readinessRead as { data?: Row[] }).data ?? []) as Row[]) {
+  for (const row of readiness) {
     const total = Number(row.reference_total ?? 0) - Number(row.dropped ?? 0);
     listSize.set(String(row.seat_id), Math.max(0, total));
   }
   const areasBySeat = new Map<string, Set<string>>();
-  for (const row of ((placeRead as { data?: Row[] }).data ?? []) as Row[]) {
+  for (const row of places) {
     const code = upperCode(row.area_code ? String(row.area_code) : null);
     if (!code) continue;
     const seat = String(row.seat_id);
@@ -189,6 +285,9 @@ async function recomputeMonth(month: string, landed: ReadonlySet<string>): Promi
       month,
       seatId: entry.seatId,
       visits: entry.visits,
+      // 🔴 The owner's 2026-10-02 ruling needs a company this month: a save-time pattern is shown
+      // only beside a strong flag, and a strong position or photo case counts as one.
+      strongCaseThisMonth: strongCases.has(repHrId),
       coverage: customers === null ? null : { customers, visited: entry.customers.size },
       sales:
         lineSales === null

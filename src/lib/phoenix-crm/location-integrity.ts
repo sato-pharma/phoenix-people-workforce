@@ -32,6 +32,7 @@
  * read, never a verdict and never an action.
  */
 
+import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
 
 /** What a fix can be marked with. Strong flags are individually damning; weak ones corroborate. */
@@ -155,9 +156,18 @@ function isRounded(value: number, decimals: number): boolean {
   return Math.abs(value - roundTo(value, decimals)) < 1e-9;
 }
 
-/** The same calendar day in Cairo, which is the day the visit is filed under. */
+/**
+ * The Cairo VISIT day a capture is filed under — the day that ends at 02:00, not the calendar day.
+ *
+ * 🔴 It was the calendar day until 2026-10-02, and the comment claiming that was "the day the visit
+ * is filed under" was simply wrong: `phoenix_crm_save_visit` has filed a visit under
+ * `((captured_at − 2h) at Cairo)::date` since 2026-09-29, because the owner allows the day's visits
+ * to be logged until 02:00. The two day detectors below group by this, so before the fix a rep's
+ * 01:30 captures were split off into the next day — which both broke up a day that should have been
+ * read together and could have put one capture in a "day" of its own.
+ */
 function cairoDay(at: Date): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
+  return cairoBusinessDay(at);
 }
 
 // ── The detectors ───────────────────────────────────────────────────────────────────────────────
