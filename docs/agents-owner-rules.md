@@ -4772,3 +4772,71 @@ paste. Sending it is his and belongs nowhere in the box. When the bottleneck is 
 phone, say so plainly in the prose with the exact path, and quote something Claude can act on: the
 instruction that FOLLOWS the physical act, a merge, a build Claude fires, or the next change in the
 thread. Memory: `never-put-his-physical-actions-in-the-next-step-box`.
+
+## A rep's first Phoenix CRM visit — owner ruling, 2026-10-03
+
+*"Very important task to be prioritized now. Every rep submit visit on Phoenix CRM … only the first
+visit for each medical rep … his district manager, his national sales manager and the SFE goes to them
+an email and Omar in the BCC. Example: Aya Ibrahim submitted her first visit at the account and its
+name, and the time the visit was submitted in."*
+
+**Why he asked for it on this day.** Measured the same morning: `phoenix_crm_visits` held **7 rows, all
+of them test entries**, from two Super Admin logins — not one real visit in the whole table. Delta (1)
+starts on the module on **Saturday 3 October**, so every real first visit in the company is still ahead
+of this rule rather than behind it, and nothing had to be backfilled. That also makes the rule cheap to
+get wrong in the one direction that matters: a rep announced twice, or announced weeks late because a
+read failed, is a message about a real person that cannot be recalled.
+
+**Who is told, and how each one is resolved.**
+
+| He said | What the code resolves it to | Why that, and not the literal seat |
+| --- | --- | --- |
+| his district manager | `territoryReviewer` — the nearest OCCUPIED manager seat above the territory | 4 of the 23 district seats are vacant (measured 2026-10-03). A literal DM seat would tell NOBODY for those reps. The reviewer is already who his grade request and his weekly plan go to, so "his manager" means one thing across the module. |
+| his national sales manager | the `NSM` seat of his `managerChain` | Each line has exactly one, and all three are occupied — Anti Infective `AI-0008`, CNS `B-122`, Pedia `A-12`. |
+| the SFE | `sfeManagerHrIds()` | The SFE Manager is a ROLE with no seat in the organogram, read from the accounts — the same list the plan edit's SFE step and the daily approval nudge already use. |
+| Omar in the BCC | **nothing in the module** | `sendPhoenixEmail` already puts `ADMIN_STANDING_EMAIL` on the BCC of EVERY email the system sends. Wiring a copy here would send him two. |
+
+**The one person on the chain who is deliberately left off: the Pedia RSM.** Pedia's Upper Egypt has a
+regional manager (`PD-0001`) between the district and the national seat, and he is the only RSM in the
+company. The owner named three people; adding a fourth he did not name is the kind of quiet widening
+that makes a rule untrustworthy, so the notice skips him. If he wants the regional manager on it, that
+is one line in `firstVisitDeliveries`.
+
+**And never the rep** (Golden Rule #1 — his app never lets him feel the system is watching him begin).
+This is not theoretical: an acting district manager holds his own REP seat **under** his acting seat, so
+the chain's nearest manager for his own territory is himself. The recipients are compared with
+`personKey`, which is what keeps him off his own notice, and the same comparison drops a rep who happens
+to hold the SFE role.
+
+**"Submitted" names the person doing it.** A double visit the district manager entered, and a visit the
+Super Admin entered for a rep who missed logging one, are not that rep's first submission — so the gate
+is `enteredAs === "rep"` and the read asks about `entered_by_hr_id`, the actor, not `rep_hr_id`.
+
+**Once per rep, ever, and the key is what guarantees it.** Every other notice in the module keys its
+`idempotencyKey` on the thing that happened — a request id and a version, a visit id, a territory and a
+day. This one keys on the **REP** (`phoenix_crm:first_visit:<hr id>`), because the promise is about the
+person, not the event: a retried save, two visits landing in the same second, or any future second
+reading of "this is his first" upserts the same `notification_events` row instead of sending a second
+email. `personKey` normalises the id first, so a lower-case HR id cannot slip a duplicate through.
+
+**A failed read answers NO.** `isFirstVisitSubmittedBy` returns `false` on an error or an unreadable HR
+id. The asymmetry is the point: a missed announcement is a line nobody sees, while a wrong one tells
+four people that a rep who has been working for weeks has just started.
+
+**What it costs per save, and the index that makes it cheap.** The question "has this person submitted a
+visit before?" had no index — `entered_by_hr_id` was indexed nowhere — and `limit 1` cannot stop early
+in exactly the case the notice exists for, a rep with no earlier row. At the ~600 visits a working day
+this module is built for that is a full scan per save, so
+`supabase/migrations/20261003000705_phoenix_crm_visits_entered_by_idx.sql` adds
+`(entered_by_hr_id, captured_at)`. Applied and verified in `pg_class` on staging
+`cifwmndunmlxjhyjugxa` and production `ozucdzovmcqvepbozvqf` on 2026-10-03.
+
+**The time in the email is the SERVER's.** `captured_at`, as the save returns it, rendered by
+`formatPhoenixDateTime` — "7:42 PM, Saturday, 3 October 2026", Cairo local. The phone's clock dates
+nothing in this module, which is the whole reason the save hands the stamp back.
+
+**What it is NOT.** It is the module's fifth emailed event type and the first that is not a step of
+anything: nobody who reads it has to act, and the message says so. It raises no approval, appears in no
+queue, and changes no figure. Rule: `.claude/rules/phoenix-crm.md`. Pinned by
+`tests/phoenix-crm-first-visit.test.ts` (who is told, the once-ever key, the words, the save-side gate)
+and by `tests/phoenix-crm-email-block.test.ts`, which holds the whole emailed list to exactly five.

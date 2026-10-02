@@ -210,10 +210,10 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "payroll.*": { bypassQuietHours: true, channels: ["in_app", "email", "push"], permissionResource: "payroll", priority: "critical", recipientStrategy: ["permission_based"], sensitive: "payroll" },
   "password_reset.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
   "password_setup.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
-  // Phoenix CRM's one emailed notice (owner, 2026-10-01): each step of a rep's request to edit a week
+  // Phoenix CRM's first emailed notice (owner, 2026-10-01): each step of a rep's request to edit a week
   // he already sent — district manager, then SFE, then HR — goes by email, in-app and Telegram to the
   // next person to act, the rep, the district manager and SFE. phoenix-crm-channel-guard.ts lets these
-  // five through and strips email from every other Phoenix CRM notice.
+  // four, and the first-visit notice below, through — and strips email from every other Phoenix CRM notice.
   "phoenix_crm.plan_edit_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.plan_edit_moved_on": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.plan_edit_refused": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
@@ -223,6 +223,10 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // only, no email" for it. So this row names those two and the guard enforces both halves
   // (PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES), exactly as his 06:55 digest ruling is enforced.
   "phoenix_crm.plan_edit_expired": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  // The FIRST visit a rep ever submits on Phoenix CRM (owner, 2026-10-03): his district manager, his
+  // national sales manager and the SFE Manager, by email — with the owner on the BCC, which
+  // `sendPhoenixEmail` adds to every email the system sends. One per rep, ever; nothing to decide.
+  "phoenix_crm.first_visit_submitted": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // Phoenix CRM (owner rule 2026-09-16): a grade or drop request and a weekly plan waiting for the
   // reviewing manager, and the decision back to the rep — in-app, Telegram and (since 2026-10-02) the
   // phone, never email.

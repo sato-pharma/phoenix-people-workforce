@@ -4,10 +4,17 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
 // request waiting for the district manager, a request decided, a weekly plan sent for review, a
 // plan approved or returned. Email is blocked for the whole module.
 //
-// ONE exception, by the owner's own order (2026-10-01): a rep's request to edit a week he already sent
-// runs the district manager → SFE → HR, and "every step" goes by email, in-app and Telegram to the
-// next person to act, the rep, the district manager and SFE. Those event types — and only those —
-// keep their email. Every other Phoenix CRM notice, the 06:55 digest included, stays email-free.
+// TWO exceptions, each by the owner's own order. Those event types — and only those — keep their
+// email. Every other Phoenix CRM notice, the 06:55 digest included, stays email-free.
+//
+// (1) 2026-10-01: a rep's request to edit a week he already sent runs the district manager → SFE → HR,
+// and "every step" goes by email, in-app and Telegram to the next person to act, the rep, the district
+// manager and SFE.
+//
+// (2) 2026-10-03: the FIRST visit a rep ever submits on Phoenix CRM emails his district manager, his
+// national sales manager and the SFE Manager, with the owner on the BCC — and the BCC needs nothing
+// here, because `sendPhoenixEmail` puts the standing admin on every email the system sends. It is an
+// adoption notice, not a decision: ONE per rep, ever, and nothing waits on anybody who gets it.
 //
 // 🔴 IT IS FOUR, NOT FIVE, SINCE 2026-10-02: the owner was asked directly whether the daily expiry
 // pass should email when it closes a request whose week has passed, and chose "in-app and Telegram
@@ -28,14 +35,16 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
 const PHOENIX_CRM_MODULE = "phoenix_crm";
 
 /**
- * The request to edit a sent week, at each step a PERSON takes (owner, 2026-10-01). Nothing else
- * emails — and the expiry, which no person takes, is not among them (owner, 2026-10-02).
+ * The request to edit a sent week, at each step a PERSON takes (owner, 2026-10-01) — the expiry, which
+ * no person takes, is not among them (owner, 2026-10-02) — and a rep's first visit ever on the module
+ * (owner, 2026-10-03). Nothing else emails.
  */
 export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = [
   "plan_edit_waiting",
   "plan_edit_moved_on",
   "plan_edit_refused",
   "plan_edit_reopened",
+  "first_visit_submitted",
 ];
 
 /**
@@ -68,7 +77,7 @@ function pushBlocked(eventType: string | null | undefined): boolean {
 
 /**
  * The channels a Phoenix CRM notice asks for: in-app, Telegram and the phone, and email only for the
- * four above. Push since 2026-10-02 (owner): 16 of 74 reps had allowed Phoenix on their phone, and
+ * five above. Push since 2026-10-02 (owner): 16 of 74 reps had allowed Phoenix on their phone, and
  * Telegram reached none of them.
  *
  * A notice on the push-blocked list asks for in-app and Telegram and nothing else, so his "only" is

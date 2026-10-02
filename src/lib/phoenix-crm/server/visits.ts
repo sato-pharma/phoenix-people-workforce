@@ -951,6 +951,34 @@ export type SavedVisit = {
 };
 
 /**
+ * Is the visit just saved the FIRST this person has ever submitted (owner, 2026-10-03)?
+ *
+ * Asked of `entered_by_hr_id`, which the database stores upper-cased (`phoenix_crm_save_visit` does
+ * `upper(trim(...))` on the actor), so the question is asked in the same shape — `personKey` here, the
+ * stored key there. One row is enough: ANY other row of his own means this is not the first.
+ *
+ * 🔴 A FAILED READ ANSWERS "NO", NEVER "YES". An email announcing a rep's first visit cannot be taken
+ * back, and a rep who started weeks ago must not be announced because one read errored. The cost of the
+ * wrong answer is asymmetric, so the fallback is the quiet one.
+ *
+ * The test world is asked separately (`is_test`), so a Super Admin trying the form out can never consume
+ * a real rep's one-and-only first visit — nor be announced as one.
+ */
+async function isFirstVisitSubmittedBy(actorHrId: string, visitId: string, isTest: boolean): Promise<boolean> {
+  const actor = personKey(actorHrId);
+  if (!actor) return false;
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_visits")
+    .select("id")
+    .eq("entered_by_hr_id", actor)
+    .eq("is_test", isTest)
+    .neq("id", visitId)
+    .limit(1);
+  if (error) return false;
+  return (data ?? []).length === 0;
+}
+
+/**
  * Save one visit.
  *
  * `client` is which client sent it (`capture-client.ts`), and it decides exactly one thing: whether
@@ -1170,6 +1198,29 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
         customerName: textOrNull(result.customer_name) ?? "a customer",
         visitDate: String(result.visit_date),
         clarification: visit.unplannedReason ?? "",
+      },
+      isTest,
+    );
+  }
+  // The rep's FIRST visit on Phoenix CRM (owner, 2026-10-03): his district manager, his national sales
+  // manager and the SFE Manager are emailed, with the owner on the BCC every system email carries. It is
+  // an adoption notice and nothing waits on anybody — so it is read and sent AFTER the visit is saved,
+  // and `notifyPhoenixCrm` swallows its own failures: a rep must never lose a visit to an email.
+  //
+  // 🔴 ONLY A VISIT THE REP HIMSELF SUBMITTED. "Submitted" is the owner's word and it names the person
+  // doing it, so a double visit a manager entered and a visit the Super Admin entered for a rep who
+  // missed logging one are both NOT his first submission — the read asks for the actor's own rows.
+  if (enteredAs === "rep" && result.duplicate !== true && (await isFirstVisitSubmittedBy(viewer.hrId, visitId, isTest))) {
+    await notifyPhoenixCrm(
+      {
+        kind: "first_visit",
+        org: viewer.org,
+        seat,
+        visitId,
+        repHrId: participants.value.repHrId ?? viewer.hrId,
+        customerName: textOrNull(result.customer_name) ?? "a customer",
+        // The SERVER's stamp, as the save returned it — never the phone's clock.
+        capturedAt: String(result.captured_at),
       },
       isTest,
     );
