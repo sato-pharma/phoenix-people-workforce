@@ -996,7 +996,7 @@ export function PlanBoard({
       query={query}
       reviewerSentence={reviewerSentence(view)}
       seatId={seatId}
-      section={section}
+      section={panelSection}
       selectedDay={selectedDay}
       dayFocus={repBoard && panelSection === "day" ? daySession : undefined}
       onFillDay={() => fillDay(selectedDay.date, true)}
