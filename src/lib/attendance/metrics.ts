@@ -1,6 +1,6 @@
-// The DEDUCTIONS implementation (Base / ACTUAL calendar days). Two functions share this
-// name and the governance one takes no month, so importing it type-checks and silently
-// pays a flat /30. This is the legacy fallback path for policy groups with
+// The day rate is Base / ACTUAL calendar days, and this is now the only implementation of
+// it - the governance twin that shared this name and took no month was deleted with its
+// module on 2026-08-30. This is the legacy fallback path for policy groups with
 // required_minutes IS NULL - 2 of 15 groups, so it is live money.
 import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id.ts";

@@ -21,11 +21,11 @@ import {
   type FlexibleHoursConfig,
 } from "@/lib/attendance/flexible-hours";
 import { isAttendanceDeductionCancelled } from "@/lib/attendance/digest-reconcile";
-// The DEDUCTIONS implementation (Base ÷ ACTUAL calendar days). See the note in
-// attendance/employee-day-report.ts: there are two functions with this name and the
-// ÷30 one takes no month, so importing the wrong one type-checks and silently pays a
-// different number. THIS file is the one the deductions Fingerprint connector reads
-// (`row.deductionValue`), so it is the load site that actually moves money.
+// The day rate is Base ÷ the month's ACTUAL calendar days, and this is now the only
+// implementation of it — see the note in attendance/employee-day-report.ts for the ÷30 twin
+// that used to share this name and the July 2026 figures it got wrong. THIS file is the one
+// the deductions Fingerprint connector reads (`row.deductionValue`), so it is the load site
+// that actually moves money, which is why the month travels with every call below.
 import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
 import { getApprovedLeaveDayMap, isIsoDate } from "@/lib/attendance/working-days";
 import { getApprovedExcuseDayMap } from "@/lib/attendance/approved-excuse-days";

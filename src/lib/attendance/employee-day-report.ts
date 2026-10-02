@@ -33,12 +33,12 @@ import {
   type FlexibleHoursConfig,
 } from "@/lib/attendance/flexible-hours";
 import { validationError } from "@/lib/http/api-errors";
-// The DEDUCTIONS implementation (Base ÷ ACTUAL calendar days), not the
-// deductions-governance one that divides by a flat 30.
+// The day rate is Base ÷ the month's ACTUAL calendar days — the owner's standing rule, and
+// now the only implementation of it that exists.
 //
-// 🔴 THERE ARE TWO FUNCTIONS WITH THIS NAME. They differ only in the divisor, and the
-// ÷30 version takes no month at all — so calling the wrong one is invisible: it type-checks
-// perfectly and simply produces a different number. This file imported the ÷30 version, so
+// THERE USED TO BE TWO FUNCTIONS WITH THIS NAME. They differed only in the divisor, and the
+// ÷30 one took no month at all — so calling the wrong one was invisible: it type-checked
+// perfectly and simply produced a different number. This file imported the ÷30 version, so
 // every fingerprint deduction ignored the owner's standing "day rate = Base ÷ actual
 // calendar days, EVERYWHERE" rule while every other category honoured it.
 //
@@ -47,8 +47,11 @@ import { validationError } from "@/lib/http/api-errors";
 // category that over-charged ~3.3% (~789 EGP of 24,460.21) — and would UNDER-charge 6.7%
 // in February, so it is wrong in both directions, not merely conservative.
 //
-// deductions-governance/calculations.ts keeps its ÷30 deliberately: it still feeds the
-// legacy governance module and Automated Payroll, which are out of scope here.
+// THE ÷30 TWIN IS GONE, so there is no wrong one left to import. This comment used to say
+// deductions-governance/calculations.ts kept its ÷30 deliberately because it fed the legacy
+// governance module and Automated Payroll: that module was deleted on 2026-08-30, and
+// Automated Payroll's own flat rate was retired by the owner's ruling of 2026-09-12 (audit
+// finding 37). One function remains, and its month and year are required arguments.
 import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
 import { getAttendanceRoster } from "@/lib/attendance/roster";
 import { cairoTodayIso } from "@/lib/attendance/working-days";
@@ -190,8 +193,10 @@ export type EmployeeDayByDayReport = {
   employeeName: string;
   jobTitle: string;
   /** For live-recalculating a day's EGP value client-side as its deduction days are edited —
-   * same base/30 x days formula the server always re-derives on Approve, so an edited display
-   * value can never drift from what actually gets saved. */
+   * the grid calls the server's own calculateDeductionAmountFromBaseSalary with the charged
+   * day's month, so an edited display value can never drift from what Approve saves. It said
+   * "base/30 x days" until the 2026-09-12 ruling, and in a 31-day month the figure a reviewer
+   * approved was 3.3% above the one that was stored. */
   baseSalary: number | null;
   /** Null when this employee isn't on the flexible-hours model (required_minutes unset) — the
    * same "excepted" population the digest engine skips entirely. */
