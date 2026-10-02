@@ -145,6 +145,7 @@ import {
   suspectedWholesalerNote,
 } from "@/lib/venues/wholesaler-venue-guard";
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
+import { loadAlsoKnownAsBatch } from "@/lib/customer-identity/server/profile";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
@@ -5466,6 +5467,12 @@ async function refreshLinksAfterPharmacyCompletion(input: {
 }
 
 function mapValidationReportRows(params: {
+  /**
+   * Confirmed cross-system names, keyed by marketing pharmacy id. Optional and defaulted, so the
+   * report builds identically when the identity read failed — the desk's own job does not depend
+   * on an annotation from another module.
+   */
+  aliasesByPharmacyId?: Map<string, string[]>;
   customers: MarketingCustomerDbRow[];
   distributorCodes: MarketingPharmacyDistributorCodeDbRow[];
   distributors: MarketingDistributorDbRow[];
@@ -5499,6 +5506,10 @@ function mapValidationReportRows(params: {
       distributorName: distributorCode
         ? distributorNames.get(distributorCode.distributorId) ?? "Unknown distributor"
         : null,
+      // Confirmed links only, and never a suggestion: the engine's maybes stay on the Super
+      // Admin's own review screen. A maybe printed beside a verdict that cannot be corrected is
+      // the worst place in the system to show one.
+      alsoKnownAs: params.aliasesByPharmacyId?.get(pharmacy.id) ?? [],
       id: link.id,
       inferredFromHistory: isInferredFromHistory(link.validationNotes),
       pharmacy,
@@ -5995,7 +6006,17 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
   );
   const visibleCustomerIds = new Set(visibleCustomers.map((row) => row.id));
   const visibleLinks = links.filter((row) => visibleCustomerIds.has(row.customer_id));
+  // 🔴 READ AFTER THE VISIBILITY FILTER, and only for the pharmacies that survived it. A viewer
+  //    who may not see a customer must not learn one of its venues exists because an alias
+  //    mentions it — `access.ts`'s own rule, applied to the annotation as well as to the rows.
+  //    A failure costs the annotation and nothing else: the desk's job is the verdict.
+  const visiblePharmacyIds = [...new Set(visibleLinks.map((row) => row.pharmacy_id).filter(Boolean))];
+  const aliasesByPharmacyId = await loadAlsoKnownAsBatch("marketing", visiblePharmacyIds)
+    .then((found) => new Map([...found].map(([id, rows]) => [id, rows.map((row) => row.name).filter(Boolean)])))
+    .catch(() => new Map<string, string[]>());
+
   const report = mapValidationReportRows({
+    aliasesByPharmacyId,
     customers: visibleCustomers,
     distributorCodes: codeRows,
     distributors: distributorRows,

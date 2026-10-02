@@ -168,6 +168,7 @@ import { runProbationDomainMigrationReadinessTests } from "./probation-domain-mi
 import { runCrmContactCodeTests } from "./crm-contact-code.test.ts";
 import { runCustomerGeographySpineTests } from "./customer-geography-spine.test.ts";
 import { runCustomer360Tests, runCustomer360AlsoKnownAsTests } from "./customer-360.test.ts";
+import { runMarketingValidationDeskAliasTests } from "./marketing-validation-desk-confirmed-aliases.test.ts";
 import { runDirectOrderPickerAliasTests } from "./direct-order-picker-confirmed-aliases.test.ts";
 import { runPhoenixCrmDuplicateCustomerTests } from "./phoenix-crm-duplicate-customers.test.ts";
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
@@ -3494,6 +3495,10 @@ await runTest("direct channel", runDirectChannelTests);
 await runTest("direct orders land on their own area", runDirectOrdersLandOnTheirOwnAreaTests);
 await runTest("the place spine resolves EXACT customer-code pairs (two .in() filters are independent)", runCustomerGeographySpineTests);
 await runTest("Customer 360 hides confidential money and never offers a picker wider than its viewer", runCustomer360Tests);
+await runTest(
+  "the marketing validation desk's \"also known as\" is a note and never a verdict: confirmed links only, read from the VISIBLE links, never deciding validationStatus, and in neutral ink on a screen that records permanent verdicts",
+  runMarketingValidationDeskAliasTests,
+);
 await runTest(
   "the direct-order pharmacy picker says what else a shop is called: confirmed links only, attached after the wholesaler guard and the area scope, and a failure costs the footnote not the list",
   runDirectOrderPickerAliasTests,
