@@ -1714,6 +1714,7 @@ import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visit
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
 import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
+import { runPhoenixCrmBlindPayloadTests } from "./phoenix-crm-blind-payloads.test.ts";
 import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
 import { runPhoenixCrmManagerValidatesTests } from "./phoenix-crm-manager-validates.test.ts";
 import { runPhoenixCrmBrickTintsTests } from "./phoenix-crm-brick-tints.test.ts";
@@ -5946,6 +5947,11 @@ await runTest(
 await runTest(
   "Phoenix CRM reps still recording in iReports360 (from a team's start its reps' iReports360 visits are IGNORED everywhere, owner 2026-10-02 — so a rep who carries on logging there is doing real work that reaches NO figure at all, and the volume is not small: 1,629 vendor visits in the fourteen days before Delta (1) began, 135.8 a day. The question cannot be asked of crm_visits_unified, which anti-joins exactly these rows out and would answer a confident zero for a rep logging every day, so ONE loader reads the raw mirror, inside each rep's own counted_from/counted_until window; the sentence names the people and states the cost and carries no verdict on anyone, because a rep still on the old app is following the habit he was trained in; and it never reaches him — the SERVER empties it with isLocationBlind rather than a screen choosing not to render it, and every file that reads the flag at all is named here)",
   runPhoenixCrmVendorLeftoverTests,
+);
+
+await runTest(
+  "PHOENIX CRM: who receives a measurement, enforced where the answer LEAVES THE SERVER (audit and owner rulings, 2026-10-02 — a JSON field a browser receives counts as shown even when React hides it, the precedent being team.ts clearing locationFlag that morning. GOLDEN RULE #1: on his own seat the rep receives no farVisits in any row, day or total, no place measurement — the phone-clock verdict, accuracy, both raw readings, the point source, the mover's written reason, the brick distance — and no threshold, each ABSENT rather than zero, through an ALLOW-LIST so a measurement added later is withheld by default, and each loader returns through its shaper; an ACTING District Manager is blind on his own rep seat in the team sections too, and the far total is his team's alone so his own cannot be had by subtraction. THE OWNER'S THREE RULINGS: the mock-location position cases and device_mocked are the Super Admin's alone, never queried for SFE, who keeps the photo cases and the behaviour months, while the duplicates list keeps its own two readers; everyone below the Super Admin and SFE reads the DISTANCE only — a weak reading reads as its plain distance, with no accuracy, no weak-signal wording, no phone-clock warning and no raw readings, on the visit rows, the saved visit, the off-plan cards, the List and the place-vs-actual rows; and the place-vs-actual report, with every far-visit count, is the DM's, the NSM's, SFE's and the Super Admin's, never the CEO's or an RSM's, by its own predicate. And the day page asks gate one before the organogram, so a per-account module lock closes it, as it does the integrity and duplicates pages)",
+  runPhoenixCrmBlindPayloadTests,
 );
 
 await runTest(

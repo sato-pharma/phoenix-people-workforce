@@ -5,7 +5,14 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { capacityMonthsOffered } from "@/lib/phoenix-crm/capacity-board";
-import { readsCalendar, readsFieldHeardByProduct, readsTeamReports, reportIncludesTest, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import {
+  readsCalendar,
+  readsFieldHeardByProduct,
+  readsPlaceVsActual,
+  readsTeamReports,
+  reportIncludesTest,
+  resolvePhoenixCrmViewer,
+} from "@/lib/phoenix-crm/server/access";
 import { loadBrickCoverageReport } from "@/lib/phoenix-crm/server/brick-report";
 import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
 import { loadDailyPlanReport } from "@/lib/phoenix-crm/server/daily-plan-report";
@@ -104,6 +111,10 @@ export async function GET(request: Request) {
     };
     const includeTest = reportIncludesTest(viewer, search.get("includeTest"));
     const managerSections = readsTeamReports(viewer);
+    // 🔴 THE PLACE-VS-ACTUAL SHEET HAS ITS OWN AUDIENCE since 2026-10-02 (owner): the district manager,
+    // the NSM, SFE and the Super Admin — never the CEO or a regional manager, who still read every other
+    // manager section. Behind `managerSections` its service would REFUSE them and fail the whole pack.
+    const locationSection = readsPlaceVsActual(viewer);
 
     // A product or marketing manager reads ONE section (owner, 2026-10-02): what the field heard about
     // his own products, company-wide. His pack is that sheet and its cover; the service narrows it to
@@ -175,7 +186,7 @@ export async function GET(request: Request) {
       loadPlanReport(viewer, filters),
       loadCoverageReport(viewer, filters),
       loadManagerReport(viewer, filters),
-      managerSections ? loadVisitLocationReport(viewer, filters) : Promise.resolve(null),
+      locationSection ? loadVisitLocationReport(viewer, filters) : Promise.resolve(null),
       managerSections ? loadExceptionsBoard(viewer, { test: filters.includeTest }) : Promise.resolve(null),
       managerSections ? loadBrickCoverageReport(viewer, filters) : Promise.resolve(null),
       managerSections ? loadAdoptionReport(viewer, { test: filters.includeTest }) : Promise.resolve(null),

@@ -88,11 +88,16 @@ export function runPhoenixCrmDuplicateCustomerTests() {
 
   // ── It is housekeeping, and it never reaches the rep ─────────────────────────────────────────
   const service = stripComments(readFileSync("src/lib/phoenix-crm/server/duplicate-customers.ts", "utf8"));
+  // 🔴 ITS OWN PREDICATE SINCE 2026-10-02. It borrowed the integrity board's until the owner split the
+  //    board that day (the position cases became the Super Admin's alone) — and a clerical double-entry
+  //    must never inherit a rule written for evidence of dishonesty, in either direction.
   assert.match(
     service,
-    /canReadIntegrityBoard\(viewer\)/,
-    "the gate is the integrity board's own two-reader predicate, never a second copy of the role list",
+    /export function canReadDuplicateCustomers\(viewer: PhoenixCrmViewer\): boolean \{\s*return viewer\.isSuperAdmin \|\| viewer\.isSfeManager;\s*\}/,
+    "the list is the Super Admin's and the SFE Manager's, in a predicate of its own",
   );
+  assert.match(service, /if \(!canReadDuplicateCustomers\(viewer\)\)/, "and the service gates on it");
+  assert.doesNotMatch(service, /canReadIntegrityBoard|integrity-board/, "it no longer borrows the integrity board's gate");
   assert.doesNotMatch(
     service,
     /identityNameKey/,
@@ -100,20 +105,18 @@ export function runPhoenixCrmDuplicateCustomerTests() {
   );
 
   const page = stripComments(readFileSync("app/(admin)/admin/phoenix-crm/duplicates/page.tsx", "utf8"));
-  assert.match(page, /canReadIntegrityBoard\(viewer\)/, "the page gates on the same predicate as the service");
+  assert.match(page, /canReadDuplicateCustomers\(viewer\)/, "the page gates on the same predicate as the service");
   assert.match(page, /redirect\("\/admin"\)/, "and refuses by redirect, so the page never describes itself to someone who may not read it");
   // 🔴 NOTHING ON IT ACTS. Removing a duplicate is the district manager's then SFE's two-step
   //    request; a button here would be a third way into a decision the owner gave to those seats.
   assert.doesNotMatch(page, /<button|<form|onClick|action=\{/, "the page reads only — no button, no form, no write");
   // Wording: this is a typing mistake, not a suspicion, and a rep must never be filed under one.
-  // The imports and the shared predicate are machinery, not words a reader sees, so they are
-  // removed first — the page DOES borrow the integrity board's two-reader gate on purpose, and a
-  // check that failed on the gate's own name would be testing the plumbing rather than the page.
+  // The imports are machinery, not words a reader sees, so they are removed first. (Until 2026-10-02
+  // the page borrowed the integrity board's gate and its name was removed here too; it has its own.)
   const wording = page
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("import "))
-    .join("\n")
-    .replaceAll("canReadIntegrityBoard", "");
+    .join("\n");
   assert.doesNotMatch(
     wording,
     /integrity|violation|suspicio|fraud|cheat|caught/i,

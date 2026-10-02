@@ -3135,7 +3135,10 @@ is never shown.
 2. **The integrity board's audience.** The 2026-09-25 rule made `/admin/phoenix-crm/integrity`
    **Super Admin only**, deliberately — "the fewer people who can open the board, the longer it keeps
    working". This rule adds the **SFE Manager**. That is a widening of an earlier decision, made
-   knowingly, and is recorded here so no later session reads it as drift.
+   knowingly, and is recorded here so no later session reads it as drift. **Narrowed again on
+   2026-10-02** (see "Three visibility rulings" below): the POSITION cases and the phone's own
+   mock-location answer went back to the Super Admin alone; SFE keeps the photo cases and the behaviour
+   months.
 
 ### What it does not license
 
@@ -3143,6 +3146,69 @@ It is not a reason to hide a genuine refusal. If a save is rejected because a re
 missing, the rep is told plainly what to do — silence about *checks* is never silence about *his own
 work failing*. And thresholds stay set so an honest rep cannot trip them: a false positive accuses a
 real person of fraud, which is worse than a missed catch.
+
+### A field his browser receives counts as shown — audit, 2026-10-02
+
+The screens already drew no measurement of the rep, and that was not enough. A field in the JSON his
+phone receives is one network tab from being read and one careless render from being drawn, so the
+SERVER decides, never the screen. `team.ts` cleared `locationFlag` on the rep's own row that
+morning; the Phoenix CRM audit of the same day (against `f14fd8834`) found the same shape in five
+more places, each hidden only by its screen, and all five are closed in one PR:
+
+1. **The Visits report** carried `farVisits` in every row, day and total for a rep reading his own
+   seat — the tab is open to him, and only `reports-tab.tsx` withheld the words.
+2. **The List** carried every place measurement — the phone-clock verdict, the accuracy, both raw
+   readings, where the fixed point came from, the SFE's or the Super Admin's **written reason** for
+   moving it, the brick distance — and the weak-signal threshold.
+3. **The visit form** carried the far and weak-signal thresholds, which nothing on it draws.
+4. **An ACTING District Manager who still holds a rep seat** read his OWN seat's distances in the
+   team-only sections — the place-vs-actual report, the far counts and the tracking spacing note —
+   because `readsTeamReports` is true for anyone holding a manager seat, while every visit screen
+   already blinded him on that seat.
+5. **The day page** never asked gate one (`canAccess(…, "phoenix_crm", "read")`), so a per-account
+   module lock did not close it; nor did the integrity and duplicates pages ask it.
+
+### Three visibility rulings — owner, 2026-10-02
+
+Put to him by the Phoenix CRM audit session the same evening, each with a recommended answer. He took
+the recommended answers there (a fourth, a rep sending his running week late, shipped separately), and
+confirmed in the session that built these three — answering "Add all three here" — that they belong in
+the same PR as the audit fix.
+
+1. **The mock-location evidence is the Super Admin's only.** The integrity board's position cases
+   (`source = 'gps'`) and `device_mocked` are never queried for the SFE Manager — a screen that hid
+   them would leave them one network tab away. SFE keeps the photo-duplicate cases and the behaviour
+   months (`readsPositionCases`). The duplicate-customers page got its own predicate
+   (`canReadDuplicateCustomers`) so a clerical double-entry never inherits a rule written for evidence.
+2. **Everyone below the Super Admin and SFE sees the distance only.** The district manager, the acting
+   one, the RSM, the NSM and the CEO read the distance and the far / at-the-place wording. The accuracy,
+   the weak-signal sentence ("The phone was not sure where it was"), the phone-clock warning, a place's
+   two raw readings and where its fixed point came from are SFE's and the Super Admin's
+   (`locationSight`: `none` for the rep on his own seat, `distance`, `full`). A weak reading is never
+   far (far beats weak, `geo.ts`), so to a distance-only reader it is a visit at the place, read by its
+   plain distance. It covers the day page, the visit rows, the saved visit, the off-plan approval cards,
+   the List's place measurements (enforced in the list response, `seesMeasurements`) and the
+   place-vs-actual report's rows and weak-signal count.
+3. **The place-vs-actual report is the DM's, the NSM's, SFE's and the Super Admin's only.** The CEO and
+   the regional managers came off it. It has its own predicate (`readsPlaceVsActual`: a DM, ACTING_DM or
+   NSM seat, or SFE, or the Super Admin); `readsTeamReports` is unchanged, because the exceptions board,
+   the brick report, the adoption board and the digest still read it and he narrowed none of them. The
+   Reports tab's far-visit count follows the report (`canSeeLocations`), and so does the workbook's
+   location sheet — behind the old manager gate its service would have refused the CEO and failed his
+   whole export.
+
+**How it is closed.** Each loader now ends in a pure shaper in `src/lib/phoenix-crm/server/blind-payloads.ts`.
+A measurement is ABSENT, never zero — `farVisits: 0` would still name the check, and would be a false
+figure. The place shaper is an ALLOW-LIST, so a measurement added to the place later is withheld until
+somebody decides who may have it. The place's point itself STAYS: his own board needs it for the pin
+each address opens and for gathering neighbours (`rowPoint`), and a point is where his customer is,
+never a judgement. The acting manager's own seat leaves the team-only sections through
+`readsSeatLocations` / `locationReportSeats` / `readsTeamReportsOn`, and the far TOTAL becomes his team's alone, so his own
+count cannot be had by subtracting the team from it. The integrity board's readers changed only by the
+owner's ruling above, never as part of the audit fix.
+
+Pinned by `tests/phoenix-crm-blind-payloads.test.ts`, which builds each payload through the loader's
+own mapper, calls the real day-page loader with a locked account and counts any request it makes.
 
 ## The visit type, the off-plan approval and the monthly plan's due date — owner rulings, 2026-09-26
 

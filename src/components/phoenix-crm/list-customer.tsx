@@ -61,11 +61,13 @@ const MOVE_RELOAD = new Set(["phoenix_crm_not_outside", "phoenix_crm_customer_no
 
 /**
  * Whether this viewer may see a clinic's measurements (its coordinates, their accuracy, the phone's
- * clock). The territory's rep never does (Golden Rule #1); his managers, the SFE Manager and the Super
- * Admin do, on this shared page. In test mode the Super Admin is both the rep and a mover, and sees them.
+ * clock): the Super Admin and the SFE Manager alone (owner, 2026-10-02 — the district manager sees the
+ * distance only, and the territory's rep sees nothing, Golden Rule #1). The SERVER decides it
+ * (`readsLocationDetail`) and sends nobody else the fields at all (`placeWithoutMeasurements`,
+ * server/blind-payloads.ts), because a field a browser receives counts as shown.
  */
 function seesMeasurements(view: TerritoryListView): boolean {
-  return !view.canEdit || view.canMovePlaces;
+  return view.seesMeasurements;
 }
 
 export function CustomerScreen({
@@ -600,7 +602,7 @@ function PlaceCard({
             // module renders the same string on the server and in the browser.
             <p className="mt-0.5 break-words text-xs font-semibold leading-5 text-slate-500">
               Fixed point {place.lat.toFixed(5)}, {place.lon.toFixed(5)} ·{" "}
-              {place.accuracyMeters === null ? "accuracy unknown" : `within ${formatDistance(Math.round(place.accuracyMeters))}`}
+              {typeof place.accuracyMeters === "number" ? `within ${formatDistance(Math.round(place.accuracyMeters))}` : "accuracy unknown"}
             </p>
           ) : null}
           {view.canMovePlaces ? <p className="mt-0.5 break-words text-xs font-semibold leading-5 text-slate-500">{pointSourceText(place)}</p> : null}

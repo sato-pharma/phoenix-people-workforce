@@ -2,10 +2,10 @@ import { redirect } from "next/navigation";
 import { CopyCheck, ListChecks, Users } from "lucide-react";
 
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
+import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { canReadIntegrityBoard } from "@/lib/phoenix-crm/server/integrity-board";
-import { loadDuplicateCustomers, type DuplicateCustomerGroup } from "@/lib/phoenix-crm/server/duplicate-customers";
+import { canReadDuplicateCustomers, loadDuplicateCustomers, type DuplicateCustomerGroup } from "@/lib/phoenix-crm/server/duplicate-customers";
 
 export const dynamic = "force-dynamic";
 
@@ -51,10 +51,13 @@ function GroupNames({ group }: { group: DuplicateCustomerGroup }) {
 
 export default async function PhoenixCrmDuplicateCustomersPage() {
   const access = await resolveAccessContextFromPage();
+  // Gate one before the organogram (audit, 2026-10-02): a per-account module lock on Phoenix CRM
+  // closes this page as well, which `canReadDuplicateCustomers` alone — a role test — never did.
+  if (!(await canAccess(access, "phoenix_crm", "read"))) redirect("/admin");
   const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
   // The same refusal shape as the integrity board: a redirect rather than a message, so the page
   // does not describe itself to somebody who may not read it.
-  if (!viewer || !canReadIntegrityBoard(viewer)) redirect("/admin");
+  if (!viewer || !canReadDuplicateCustomers(viewer)) redirect("/admin");
 
   const view = await loadDuplicateCustomers(viewer);
   const reps = new Set(view.groups.map((group) => group.seatId)).size;

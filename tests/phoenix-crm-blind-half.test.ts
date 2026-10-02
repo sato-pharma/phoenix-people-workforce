@@ -330,6 +330,17 @@ export function runPhoenixCrmBlindHalfTests(): void {
     if (!board.includes("canReadIntegrityBoard")) problems.push("the board must gate on canReadIntegrityBoard");
     if (!board.includes("isSuperAdmin")) problems.push("the board's audience must name the Super Admin");
     if (!board.includes("isSfeManager")) problems.push("the board's audience must name the SFE Manager (owner, 2026-09-26)");
+    // 🔴 BUT NOT FOR EVERYTHING ON IT (owner, 2026-10-02 — he picked the recommended answer: "mock-location
+    // evidence is the Super Admin's only; the SFE Manager keeps the photo-duplicate and behaviour
+    // cases"). The position detector's cases and the phone's own mock answer are never QUERIED for the
+    // SFE — a screen that hid them would leave them one network tab away. Pinned on the query itself.
+    if (!/export function readsPositionCases\(viewer: PhoenixCrmViewer\): boolean \{\s*return viewer\.isSuperAdmin;\s*\}/.test(board)) {
+      problems.push("the position cases must be the Super Admin's alone, in one predicate: readsPositionCases");
+    }
+    if (!/if \(!positions\) query = query\.eq\("source", "photo"\);/.test(board)) {
+      problems.push("for anyone else the board must QUERY the photo cases only, never filter GPS cases out afterwards");
+    }
+    if (!/deviceMocked: positions && /.test(board)) problems.push("the phone's mock-location answer must be the Super Admin's alone");
     // A 403 that names the board tells the person asking that the board exists and what it watches.
     if (board.includes("forbiddenError")) {
       problems.push("the board must refuse with notFoundError, never forbiddenError — a 403 naming it IS the disclosure");
@@ -369,10 +380,21 @@ export function runPhoenixCrmBlindHalfTests(): void {
   // ── 10 · The Team endpoint answers a rep too, so his own off-plan visits leave it blind ─────────
   // A rep's scope holds his OWN territory, so GET /api/phoenix-crm/team returns his own waiting off-plan
   // visits. Found 2026-10-02: no rep screen showed their location flag, but the raw answer carried it.
+  // Since the owner's ruling of 2026-10-02 (a manager reads the distance only) the flag goes through
+  // `offPlanLocationFlag` and `locationSight`, whose `none` level is `isLocationBlind` — so both halves
+  // are pinned: the call fails blind for a seat it cannot place, and `none` answers null.
   {
     const team = read("src/lib/phoenix-crm/server/team.ts");
-    if (!/locationFlag: !seat \|\| isLocationBlind\(viewer, seat\) \? null : view\.locationFlag,/.test(team)) {
-      problems.push("server/team.ts must clear an off-plan visit's locationFlag for a location-blind viewer (isLocationBlind), failing blind");
+    if (!/locationFlag: offPlanLocationFlag\(seat \? locationSight\(viewer, seat\) : "none", view\.locationFlag\),/.test(team)) {
+      problems.push("server/team.ts must clear an off-plan visit's locationFlag for a location-blind viewer, failing blind");
+    }
+    const shapers = read("src/lib/phoenix-crm/server/blind-payloads.ts");
+    if (!/export function offPlanLocationFlag\(sight: LocationSight, flag: string \| null\): string \| null \{\s*if \(sight === "none"\) return null;/.test(shapers)) {
+      problems.push("offPlanLocationFlag must answer null at the `none` level — the rep's own off-plan visit carries no flag");
+    }
+    const access = read("src/lib/phoenix-crm/server/access.ts");
+    if (!/return isLocationBlind\(viewer, seat\) \? "none" : "distance";/.test(access)) {
+      problems.push("locationSight's `none` level must be isLocationBlind");
     }
   }
 

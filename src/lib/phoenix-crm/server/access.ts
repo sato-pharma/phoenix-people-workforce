@@ -547,6 +547,74 @@ export function isLocationBlind(viewer: PhoenixCrmViewer, seat: OrgSeat): boolea
   return viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId);
 }
 
+/**
+ * Who reads the measurement BEHIND a distance — the reading's accuracy, the weak-signal verdict, the
+ * phone-clock warning, a place's two raw readings and where its fixed point came from: the Super
+ * Admin and the SFE Manager, and nobody else (owner, 2026-10-02 — "District Managers see the distance
+ * only"). Everyone else who may read a location reads the DISTANCE and the far / at-the-place wording.
+ */
+export function readsLocationDetail(viewer: PhoenixCrmViewer): boolean {
+  return viewer.isSuperAdmin || viewer.isSfeManager;
+}
+
+/**
+ * How much of a visit's or a place's location this viewer is shown on this seat:
+ *   - `none` — his own territory as its rep (Golden Rule #1): no distance, no flag, no check;
+ *   - `distance` — every other reader below the Super Admin and the SFE Manager (owner, 2026-10-02): the
+ *     distance and the far / at-the-place wording, and nothing about the reading behind it;
+ *   - `full` — the Super Admin and the SFE Manager: everything.
+ */
+export type LocationSight = "none" | "distance" | "full";
+
+export function locationSight(viewer: PhoenixCrmViewer, seat: OrgSeat): LocationSight {
+  if (readsLocationDetail(viewer)) return "full";
+  return isLocationBlind(viewer, seat) ? "none" : "distance";
+}
+
+/** The seat tiers whose holder reads the place-vs-actual report: the DM (acting or not) and the NSM. */
+const PLACE_VS_ACTUAL_TIERS = new Set(["DM", "ACTING_DM", "NSM"]);
+
+/**
+ * Who reads the place-vs-actual report — and so a far-visit count at all: the Super Admin, the SFE
+ * Manager, and a viewer holding a District Manager, acting District Manager or National Sales Manager
+ * seat (owner, 2026-09-26, narrowed by his own ruling of 2026-10-02).
+ *
+ * 🔴 ITS OWN PREDICATE, NOT `readsTeamReports`. That one admits a company basis (the CEO) and every
+ * manager seat (the RSM included), and the owner took both off this report on 2026-10-02. It also
+ * answers the exceptions board, the brick report, the adoption board and the digest's recipients,
+ * which he did NOT narrow — so it is left exactly as it was.
+ */
+export function readsPlaceVsActual(viewer: PhoenixCrmViewer): boolean {
+  return readsLocationDetail(viewer) || viewer.managerSeats.some((seat) => PLACE_VS_ACTUAL_TIERS.has(seat.tier));
+}
+
+/**
+ * Whether a location section may measure THIS seat for this viewer: he reads the place-vs-actual
+ * report, and the seat is not his own as its rep.
+ *
+ * 🔴 A VIEWER-LEVEL ANSWER IS THE WRONG QUESTION FOR A SEAT. An ACTING District Manager who still holds
+ * a rep seat is a manager by every viewer-level test, and he read his OWN distances in the
+ * place-vs-actual report and his own far-visit count — while every visit screen already blinded him on
+ * that seat (audit, 2026-10-02). A seat a viewer is blind on is a seat no section measures for him.
+ */
+export function readsSeatLocations(viewer: PhoenixCrmViewer, seat: OrgSeat): boolean {
+  return readsPlaceVsActual(viewer) && !isLocationBlind(viewer, seat);
+}
+
+/** The seats a location section measures: the chosen ones, less any the viewer may not measure. */
+export function locationReportSeats(viewer: PhoenixCrmViewer, seats: ReadonlyArray<OrgSeat>): OrgSeat[] {
+  return seats.filter((seat) => readsSeatLocations(viewer, seat));
+}
+
+/**
+ * Whether a team-only judgement about how a seat was WORKED — the tracking sheet's spacing note — is
+ * shown for this seat: the viewer reads team reports, and the seat is not his own as its rep (the
+ * acting District Manager's own sheet is a rep's sheet; audit, 2026-10-02).
+ */
+export function readsTeamReportsOn(viewer: PhoenixCrmViewer, seat: OrgSeat): boolean {
+  return readsTeamReports(viewer) && !isLocationBlind(viewer, seat);
+}
+
 // ── A list request: one step for a grade, the manager then SFE for everything else ─────────────
 
 /**

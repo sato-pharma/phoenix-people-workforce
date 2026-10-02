@@ -15,6 +15,11 @@
  * audience in the module, and narrow is the point rather than tidiness — the rep is never told he was
  * flagged, so the fewer people who can open this, the longer it keeps working.
  *
+ * 🔴 AND THE MOCK-LOCATION EVIDENCE IS THE SUPER ADMIN'S ALONE (owner, 2026-10-02). The position cases
+ * (`source = 'gps'`) and the phone's own mock-location answer (`device_mocked`) are never read for the
+ * SFE Manager — not filtered out of a screen, never QUERIED. The SFE keeps the photo cases and the
+ * behaviour months, which judge a picture and a month's shape rather than where a phone said it was.
+ *
  * WHAT A FLAG IS AND IS NOT. It is a reason for a human to look — at the photo, at the day, at the
  * rep. It is not a verdict, it triggers nothing, and nobody is told they were flagged. Acting on one
  * is the owner's decision, made after he has looked, exactly as a flagged expense is.
@@ -147,6 +152,15 @@ export function canReadIntegrityBoard(viewer: PhoenixCrmViewer): boolean {
 }
 
 /**
+ * May this viewer read the POSITION cases — the GPS detector's, mock-location included — and the
+ * phone's own mock answer? The Super Admin alone (owner, 2026-10-02). The SFE Manager opens the board
+ * for the photo cases and the behaviour months, and the position cases are never queried for him.
+ */
+export function readsPositionCases(viewer: PhoenixCrmViewer): boolean {
+  return viewer.isSuperAdmin;
+}
+
+/**
  * The months the behaviour pass judged, strongest and most recent first.
  *
  * Read separately from the captures because it IS separate: a behaviour verdict is about a rep and a
@@ -205,6 +219,10 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   // Test captures stay the Super Admin's, as they are everywhere else in the module: the SFE reads
   // the real field, never the Super Admin's own trial entries.
   if (options.includeTest !== true || !viewer.isSuperAdmin) query = query.eq("is_test", false);
+  // The position cases are the Super Admin's alone (owner, 2026-10-02): for anyone else the query asks
+  // for the photo detector's cases only, so a GPS case never leaves the database for him.
+  const positions = readsPositionCases(viewer);
+  if (!positions) query = query.eq("source", "photo");
 
   const [{ data, error }, behaviourRead] = await Promise.all([query, loadBehaviourCases()]);
   throwIfError(error);
@@ -275,7 +293,8 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       lat: row.lat === null || row.lat === undefined ? null : Number(row.lat),
       lon: row.lon === null || row.lon === undefined ? null : Number(row.lon),
       accuracyMeters: row.accuracy_meters === null || row.accuracy_meters === undefined ? null : Number(row.accuracy_meters),
-      deviceMocked: typeof row.device_mocked === "boolean" ? row.device_mocked : null,
+      // The phone's own mock-location answer is position evidence, so it is the Super Admin's alone.
+      deviceMocked: positions && typeof row.device_mocked === "boolean" ? row.device_mocked : null,
       signals: (row.signals && typeof row.signals === "object" ? row.signals : {}) as Record<string, unknown>,
       isTest: row.is_test === true,
     };

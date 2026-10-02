@@ -473,13 +473,22 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
 
     const route = source("app/api/phoenix-crm/reports/export/route.ts");
     assert.ok(route.includes("readsTeamReports(viewer)"), "the route decides the manager sections with the same predicate the services use");
-    for (const gated of ["loadVisitLocationReport", "loadExceptionsBoard", "loadBrickCoverageReport"]) {
+    for (const gated of ["loadExceptionsBoard", "loadBrickCoverageReport"]) {
       assert.match(
         route,
         new RegExp(`managerSections \\? ${gated}\\([^)]*\\) : Promise\\.resolve\\(null\\)`),
         `${gated} is never even CALLED for a viewer who may not read it — the section is absent, not empty`,
       );
     }
+    // The place-vs-actual sheet has its OWN audience since 2026-10-02 (owner: the DM, the NSM, SFE and
+    // the Super Admin — not the CEO or a regional manager). Behind `managerSections` its service would
+    // refuse the CEO and fail his whole pack, so it is gated by the report's own predicate.
+    assert.ok(route.includes("const locationSection = readsPlaceVsActual(viewer);"), "the location sheet is decided by the report's own predicate");
+    assert.match(
+      route,
+      /locationSection \? loadVisitLocationReport\([^)]*\) : Promise\.resolve\(null\)/,
+      "loadVisitLocationReport is never even CALLED for a viewer who may not read it — the section is absent, not empty",
+    );
     // The limiter before the work, not after it: seven sections is a heavy read and a limiter that
     // fires once the work is done has protected nothing.
     const limited = route.indexOf("assertExportRateLimit");

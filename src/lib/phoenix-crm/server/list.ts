@@ -76,12 +76,14 @@ import {
   canReviewTerritory,
   canWriteAsRep,
   readTestFlag,
+  readsLocationDetail,
   territoryForRead,
   canValidateReference,
   territoryForRepWrite,
   territoryForValidation,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
+import { blindTerritoryList } from "@/lib/phoenix-crm/server/blind-payloads";
 import { callPhoenixCrm, chunk, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
@@ -138,8 +140,15 @@ export type ListPlace = {
   address: string | null;
   brickId: string | null;
   brickName: string | null;
-  /** How far the point was from that brick's centre — the only place a wrong brick is visible. */
-  brickDistanceKm: number | null;
+  /**
+   * How far the point was from that brick's centre — the only place a wrong brick is visible.
+   *
+   * 🔴 THIS AND EVERY OTHER OPTIONAL FIELD BELOW IS A MEASUREMENT, AND ONLY THE SUPER ADMIN AND THE SFE
+   * MANAGER RECEIVE ONE (owner, 2026-10-02): `placeWithoutMeasurements` (server/blind-payloads.ts)
+   * rebuilds the place from an allow-list for every other reader — the rep, and his managers too —
+   * before the List leaves the server. Optional because they are ABSENT, never zero or false.
+   */
+  brickDistanceKm?: number | null;
   areaCode: string | null;
   areaName: string | null;
   regionCode: string | null;
@@ -148,22 +157,22 @@ export type ListPlace = {
   /** The FIXED point every later visit is measured against: the photo's reading, else the pin. */
   lat: number;
   lon: number;
-  accuracyMeters: number | null;
+  accuracyMeters?: number | null;
   timings: PhoenixCrmTiming[];
   photoPath: string;
   capturedAt: string;
   /** The phone's clock was more than 15 minutes off the server's when the photo was taken. */
-  clockOff: boolean;
+  clockOff?: boolean;
   /**
    * Where the fixed point came from (owner, 2026-09-29): the photo's own shutter reading, the
    * Capture-location pin when the photo had none, or a move by the Super Admin or the SFE Manager.
    */
-  pointSource: "photo" | "pin" | "moved";
+  pointSource?: "photo" | "pin" | "moved";
   /** The two raw readings, kept beside the fixed point for good. Null where one was not measured. */
-  pinReading: PlaceReading | null;
-  photoReading: PlaceReading | null;
+  pinReading?: PlaceReading | null;
+  photoReading?: PlaceReading | null;
   /** Set once the place was moved: when, and the written reason. */
-  moved: { at: string; reason: string | null } | null;
+  moved?: { at: string; reason: string | null } | null;
 };
 
 export type PlaceReading = { lat: number; lon: number; accuracyMeters: number | null };
@@ -355,6 +364,12 @@ export type TerritoryListView = {
   /** The viewer may move a validated place: the Super Admin and the SFE Manager, nobody else. */
   canMovePlaces: boolean;
   /**
+   * The viewer reads a place's measurements — its accuracy, the phone-clock warning, the raw readings
+   * and where the fixed point came from: the Super Admin and the SFE Manager alone (owner, 2026-10-02,
+   * `readsLocationDetail`). For everyone else the server sends none of them (`blindTerritoryList`).
+   */
+  seesMeasurements: boolean;
+  /**
    * The viewer decides the SFE step, so he may bring an archived customer back himself (the SFE manages
    * the Archive, owner 2026-09-29): the SFE Manager in scope, the Super Admin in test mode.
    */
@@ -366,8 +381,11 @@ export type TerritoryListView = {
   customers: ListCustomer[];
   requests: ListRequest[];
   monthStart: string;
-  /** What the capture and the timings editor need: the weak-signal warning and the places a customer can hold. */
-  rules: { weakGpsMeters: number; placesMax: number };
+  /**
+   * The places a customer can hold, and the weak-signal threshold — which is how a reading is judged,
+   * so only the Super Admin and the SFE Manager receive it (`blindTerritoryList`).
+   */
+  rules: { weakGpsMeters?: number; placesMax: number };
   /** The Ramadan in force or coming next (with the Super Admin's moved days), for the Ramadan hours note. */
   ramadan: { startsOn: string; endsOn: string } | null;
 };
@@ -1027,13 +1045,17 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   const source = reference[0] ?? null;
   const ramadan = nextRamadan(viewer.cairoToday, viewer.config.ramadanOverrides);
 
-  return {
+  // 🔴 THROUGH THE BLIND SHAPER, LAST. The screen hid these measurements, and a field a browser receives
+  // counts as shown even when React draws nothing from it: the rep receives none of them (Golden Rule #1)
+  // and neither does any reader below the Super Admin and SFE (owner, 2026-10-02 — the distance only).
+  return blindTerritoryList(viewer, {
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     canEdit: canWriteAsRep(viewer, seat, isTest),
     canValidateReference: canValidateReference(viewer, seat, isTest),
     canReview: canReviewTerritory(viewer, seat, isTest),
     canMovePlaces: canMovePlaces(viewer, seat, isTest),
+    seesMeasurements: readsLocationDetail(viewer),
     canBringBack: canDecideListRequest(viewer, seat, isTest, "sfe"),
     readiness: { ...summary, ready: summary.ready || Boolean(stored?.readyAt), readyAt: stored?.readyAt ?? null },
     referenceSource: source ? { name: nameOf(names, source.source_hr_id, "") || null, isCurrent: source.source_is_current } : null,
@@ -1043,7 +1065,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     monthStart,
     rules: { weakGpsMeters: viewer.config.settings.weakGpsMeters, placesMax: PHOENIX_CRM_PLACES_MAX },
     ramadan: ramadan ? { startsOn: ramadan.startsOn, endsOn: ramadan.endsOn } : null,
-  };
+  });
 }
 
 // ── Writing ─────────────────────────────────────────────────────────────────────────────────────

@@ -161,7 +161,12 @@ export type VisitCounts = {
   visits: number;
   doubleVisits: number;
   chainVisits: number;
-  farVisits: number;
+  /**
+   * Visits saved far from the customer's place. ABSENT, never zero, on a seat the viewer is blind on
+   * (`readsSeatLocations`): a rep reading his own territory must not receive the field at all, because a
+   * JSON field his browser receives counts as shown even when the screen hides it (Golden Rule #1).
+   */
+  farVisits?: number;
   testVisits: number;
   /**
    * Off-plan visits still waiting for a decision — BESIDE the count, never inside it.
@@ -181,7 +186,7 @@ function addVisitCounts(target: VisitCounts, source: VisitCounts): void {
   target.visits += source.visits;
   target.doubleVisits += source.doubleVisits;
   target.chainVisits += source.chainVisits;
-  target.farVisits += source.farVisits;
+  target.farVisits = (target.farVisits ?? 0) + (source.farVisits ?? 0);
   target.testVisits += source.testVisits;
   target.unplannedWaiting += source.unplannedWaiting;
 }
