@@ -3901,6 +3901,29 @@ Shipped in #4897. Pinned by `testTheTerritoryRouteIsAreaAndLine` in
 `tests/medical-rep-marketing-scope.test.ts`, which runs in the required `validate` job and is built on
 the production seats and area id so it reads as the incident.
 
+## The 06:55 CRM daily digest — refused, then restored — owner, 2026-09-27 and 2026-09-28
+
+**Refused 2026-09-27**, in his own words: *"donot create this digest i donot want it"* — typed before
+a single message had ever been sent. **Restored 2026-09-28**, also in his own words: *"i want it in
+app or telegram only"*, which is exactly how it had been built, so the restoration needed no change
+to the delivery. `JOB_SCHEDULES`, `scripts/cronjob-sync.mjs`, the `docs/observability.md` row and
+cron-job.org job **`8526396`** all carry it. The memory slug still reads *refused*; the memory file
+corrects itself in its first line, and that is deliberate — renaming a slug orphans it.
+
+### The durable rule, and the night that produced it
+
+**A declaration and its cron job move in ONE sitting, never one without the other.** The two failure
+directions are not symmetrical, and both are loud:
+
+- A **declaration with no job behind it** reads to `job-heartbeat-assess` as a job that has STOPPED,
+  and it alarms every Super Admin for ever — there is no state in which it settles.
+- A **restored declaration with no `watchingSince`** alarms about the stand-down window it was never
+  scheduled for, which is the retrospective half of the same defect.
+
+That second one cost a night of **15-minute pages across 2026-09-27/28**, to every Super Admin, about
+a digest that had not been scheduled at all. Pinned by `tests/phoenix-crm-daily-digest.test.ts` and
+`tests/job-heartbeat-register.test.ts`.
+
 ## A customer is planned and visited before validation, and counted after it — owner, 2026-10-01
 
 ### What he said
