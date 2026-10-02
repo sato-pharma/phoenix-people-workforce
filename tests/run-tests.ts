@@ -16,6 +16,7 @@ import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff
 import { runOutstationReviewMapRasterTests } from "./outstation-review-map-raster.test.ts";
 import { runErrorMonitorDerivedStatusTests } from "./error-monitor-derived-status.test.ts";
 import { runClientErrorCrossOriginNoiseTests } from "./client-error-cross-origin-noise.test.ts";
+import { runForbiddenErrorAndNullRecipientTests } from "./forbidden-error-and-null-recipient.test.ts";
 import { runErrorMonitorMessageDecodeTests } from "./error-monitor-message-decode.test.ts";
 import { runErrorMonitorThirdPartyAttributionTests } from "./error-monitor-third-party-attribution.test.ts";
 import { runErrorMonitorAiRedactTests } from "./error-monitor-ai-redact.test.ts";
@@ -2311,6 +2312,10 @@ await runTest("error monitor message decode", runErrorMonitorMessageDecodeTests)
 await runTest(
   "client error noise (1,972 unattributable 'Script error.' rows read as a crash — cap them, keep real ones)",
   runClientErrorCrossOriginNoiseTests,
+);
+await runTest(
+  "a 403 carrying its status and a login carrying no hr_id (552 routes answered 500; a NULL became the string \"NULL\")",
+  runForbiddenErrorAndNullRecipientTests,
 );
 await runTest(
   "error monitor third-party attribution (a Google Maps throw is not an Outstation defect)",

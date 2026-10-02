@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { resolveAccessContext } from "@/lib/auth/server";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { phoenixSessionCookieName, verifySessionToken } from "@/lib/auth/session-token";
 import { recordPageView } from "@/lib/activity/service";
+import { logWarning } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,7 +79,18 @@ export async function POST(request: NextRequest) {
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {
-    console.error("[activity] track endpoint error", error);
+    // A test account's refusal is not a fault, and this is a BEACON: every page view by a TEST-…
+    // login hit the guard in resolveAccessContext and logged a full ApiError stack at error level,
+    // 131 lines in 40 hours (measured 02 Oct 2026) — one of the three signals that made 92% of this
+    // app's error channel not-errors. Nothing was ever wrong: the endpoint already returns 204
+    // either way, because a dropped page-view beacon is not worth telling a browser about.
+    if (isForbiddenError(error)) return new NextResponse(null, { status: 204 });
+    // Anything else is a real fault and stays visible — at WARNING, because a lost page-view
+    // measurement is still not an incident.
+    logWarning("[activity] track endpoint error", {
+      labels: { event: "activity_track_failed", route: "/api/activity/track" },
+      error,
+    });
     return new NextResponse(null, { status: 204 });
   }
 }

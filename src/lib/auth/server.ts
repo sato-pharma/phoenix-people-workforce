@@ -34,6 +34,7 @@ import {
 } from "@/lib/auth/session-lifecycle";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
+import { ApiError } from "@/lib/http/api-errors";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -524,6 +525,13 @@ export async function resolveAccessContext(request: Request): Promise<AccessCont
   // the route runs a line of its own. A test account reads as a real employee, so a save it sent
   // anywhere but Phoenix CRM would be written as her. Refused here, fail-closed; the routes' own
   // try/catch turns it into a 403 with the sentence (src/lib/auth/test-persona.ts).
+  //
+  // That last clause was FALSE until 2026-10-02, for all 552 route files that discriminate with
+  // `isForbiddenError`: the refusal is an ApiError with status 403 whose message begins "This is a
+  // test account: …", and `isForbiddenError` tested only for the literal message prefix
+  // "forbidden:". Every one of those routes therefore answered 500. Measured in production on
+  // 02 Oct: POST /api/notifications/push/register, 19:12:11, a real browser. `isForbiddenError` now
+  // reads the status too — see its own comment.
   assertTestAccountMayRun(access, request);
   return access;
 }
@@ -679,6 +687,25 @@ export async function resolveCurrentUserDisplay(
   }
 }
 
+/**
+ * Is this a refusal the caller is not allowed past, as opposed to a fault?
+ *
+ * 552 route files under `app/api` branch on this to choose 403 over 500, so what it misses, they
+ * all miss. It missed one thing: a refusal carrying its status as DATA rather than as a message
+ * prefix.
+ *
+ * `assertTestAccountMayRun` throws `forbiddenError(TEST_ACCOUNT_SAVE_REFUSAL)` — an `ApiError` with
+ * `status: 403` whose message begins "This is a test account: …". The prefix test below says no, so
+ * every one of those routes fell through to its 500 branch and told a real person the server had
+ * broken when it had merely declined. Measured in production: `POST /api/notifications/push/register`
+ * returned 500 at 02 Oct 2026 19:12:11 Cairo to a Firefox user, and logged nothing anywhere.
+ *
+ * Reading `status` first is also the more honest test: a 403 is a 403 because of its status, and the
+ * message-prefix check only ever worked because `forbiddenError()`'s default message happens to
+ * start with the word. The prefix branch stays for the plain `new Error("Forbidden: …")` throws —
+ * `assertPermission` is one — which carry no status at all.
+ */
 export function isForbiddenError(error: unknown) {
+  if (error instanceof ApiError && error.status === 403) return true;
   return error instanceof Error && error.message.toLowerCase().startsWith("forbidden:");
 }

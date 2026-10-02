@@ -68,9 +68,64 @@ export function logStructured(severity: LogSeverity, message: string, options: L
   // ERROR/CRITICAL → stderr (also flagged ERROR by Cloud Run even without JSON parsing).
   if (severity === "ERROR" || severity === "CRITICAL") {
     console.error(line);
+    persistErrorEvent(message, labels, options.error);
   } else {
     console.log(line);
   }
+}
+
+/**
+ * ALSO put an ERROR somewhere that outlives the log stream.
+ *
+ * Until this existed, every one of the 264 `logError` call sites wrote to stderr and nowhere else.
+ * Railway keeps about 40 hours of that — measured 02 Oct 2026, when the oldest line it would return
+ * moved from 01 Oct 05:59 to 01 Oct 06:10 over forty minutes — and `app_error_events` did not cover
+ * the gap: 77 server rows in seven days, every one an AI-call failure or a statement timeout, with
+ * no API-route 500 captured since 2026-08-12. So a daily failure like
+ * `{resignation_sla_reminder_failed}` existed only for as long as the stream held it.
+ *
+ * Three things keep this safe to put on the hot path of every error:
+ *
+ *   fire-and-forget  the caller is not made to await a database write to log a line, and a rejected
+ *                    promise is swallowed below rather than becoming a second, worse failure.
+ *   dynamic import   `logAppError` reaches Supabase, and this module is imported by edge-safe code.
+ *                    Importing it lazily keeps `log.ts` free of that dependency until an ERROR
+ *                    actually happens, which on most requests is never.
+ *   no recursion     `logAppError` reports its OWN failures through `logError` — `app_error_insert_failed`
+ *                    at service.ts:169 and `log_app_error_threw` at :172. Those come straight back
+ *                    here, so a single failing insert would loop for ever. A `.catch()` cannot stop
+ *                    it, because `logAppError` never rejects: it catches internally and logs. The
+ *                    re-entrancy flag below is the only thing that does, and it is why this is not
+ *                    the obvious three-liner.
+ *
+ * `logAppError` applies its own production gate (`shouldPersistErrorEvents`) and its own
+ * signature-based dedupe, so neither is restated here.
+ */
+let persistingErrorEvent = false;
+
+function persistErrorEvent(message: string, labels: Record<string, string> | undefined, error: unknown) {
+  // While one persist is in flight, every ERROR it logs about itself stays on stderr only. That is
+  // the right trade: the line is never lost, and the alternative is an unbounded loop.
+  if (persistingErrorEvent) return;
+  persistingErrorEvent = true;
+  void import("@/lib/error-monitor/service")
+    .then(({ logAppError }) =>
+      logAppError({
+        source: "server",
+        message,
+        // The most specific identifier the call site gave us, in the order a reader would want it.
+        // `event` is always there by convention, so this is rarely null.
+        route: labels?.route ?? labels?.job ?? labels?.event ?? null,
+        routeType: "structured-log",
+        stack: error instanceof Error ? (error.stack ?? null) : null,
+      }),
+    )
+    .catch(() => {
+      // Only an import failure can land here; logAppError itself never rejects.
+    })
+    .finally(() => {
+      persistingErrorEvent = false;
+    });
 }
 
 export const logInfo = (message: string, options?: LogOptions) => logStructured("INFO", message, options);

@@ -640,3 +640,75 @@ export async function updateNotificationRolePolicy(
     enabled: typeof data.enabled === "boolean" ? data.enabled : enabled,
   };
 }
+
+/**
+ * The HR_IDs to notify for a role-based notification — resolved, filtered and deduped by person.
+ *
+ * WHY THIS EXISTS, rather than each caller querying `app_auth_users` itself. Two callers did, with
+ * the same line:
+ *
+ *   const hrHrIds = (hrApprovers ?? []).map((a) => String(a.hr_id)).filter(Boolean);
+ *
+ * `String(null)` is `"null"`, which is truthy, so `.filter(Boolean)` keeps it. `cleanHrId` in
+ * notifications/system.ts then upper-cases it to the four-character string `"NULL"`, which is
+ * written to `notification_events.employee_hr_id` and rejected by its foreign key to
+ * `employees(hr_id)`. Production has exactly one such row — the `admin-HR` console login, whose
+ * `hr_id` column is NULL — so `{resignation_sla_reminder_failed}` fired once per overdue
+ * resignation, every day at 06:36 Cairo, with SQLSTATE 23503.
+ *
+ * 🔴 The FK is MATCH SIMPLE and the column is already nullable (2,604 rows hold a genuine NULL), so
+ * a real NULL inserts fine. Making the column nullable, or the FK laxer, fixes nothing: the value
+ * being written was never null. This is the `marketing-approver-hrid-casing-fk` class — a non-stored
+ * spelling written into one of the 84 FK columns across 52 tables that reference `employees(hr_id)` —
+ * and it has now broken five features.
+ *
+ * WHAT IT DOES with a login that has no `hr_id`: resolves it through the shared-identity groups by
+ * its `login_id` first. `admin-HR` is a declared alias of `B-10` (one person, owner-confirmed), so
+ * it canonicalises to `B-10` and then dedupes against the real `B-10` row — one notification to one
+ * human, which is what was already happening by accident, now by construction. Anything that still
+ * has no usable id is dropped and logged once, because a recipient nobody can resolve is a
+ * configuration problem to see, not a row to force into a foreign key.
+ */
+export async function resolveRoleRecipientHrIds(key: NotificationRoleKey): Promise<string[]> {
+  const notifyRoles = await resolveNotificationRoleRecipients(key);
+  if (notifyRoles.length === 0) return [];
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("hr_id, login_id")
+    .in("role", notifyRoles)
+    .eq("is_active", true);
+  if (error) {
+    logError("Could not read the role recipients for a notification; sending to nobody this run", {
+      labels: { event: "role_recipient_lookup_failed", notification: key },
+      error,
+    });
+    return [];
+  }
+
+  const byPerson = new Map<string, string>();
+  const unresolved: string[] = [];
+  for (const row of data ?? []) {
+    // The stored spelling when there is one, the person behind the login when there is not. Never
+    // String(row.hr_id), which is where "NULL" came from.
+    const stored = typeof row.hr_id === "string" && row.hr_id.trim() ? row.hr_id.trim() : null;
+    const resolved = stored ?? canonicalPersonHrId(typeof row.login_id === "string" ? row.login_id : null);
+    if (!resolved) {
+      unresolved.push(typeof row.login_id === "string" ? row.login_id : "(no login id)");
+      continue;
+    }
+    // Dedupe by PERSON, not by string: B-10 and its admin-HR console are one human, so they get one
+    // notification between them rather than two identical ones.
+    const personKey = canonicalHrIdKey(canonicalPersonHrId(resolved) ?? resolved) ?? resolved;
+    if (!byPerson.has(personKey)) byPerson.set(personKey, resolved);
+  }
+
+  if (unresolved.length > 0) {
+    logWarning("Skipped notification recipients whose login resolves to no HR id", {
+      labels: { event: "role_recipient_unresolved", notification: key, count: unresolved.length },
+      context: { logins: unresolved },
+    });
+  }
+
+  return [...byPerson.values()];
+}
