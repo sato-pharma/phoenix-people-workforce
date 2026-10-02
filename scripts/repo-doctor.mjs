@@ -118,6 +118,7 @@ import {
 } from "./memory-index-budget.mjs";
 import { classifyMemoryReachabilityAcrossRefs, memoryReachabilityLines, readModuleMemoryText } from "./memory-index-reachability.mjs";
 import { cloudMirrorDrift, cloudMirrorDriftReport } from "./cloud-mirror-drift.mjs";
+import { readCloudMirror } from "./cloud-mirror-source.mjs";
 import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
 import { commitDeltaLandedOnMain } from "./delta-landed.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
@@ -1442,24 +1443,29 @@ let autoloadedIndexBytes = null;
   console.log("CLOUD MIRROR (memory files a cloud session would read stale)");
 
   const memoryDir = memoryDirFor(primaryRoot);
-  // The mirror belongs to the checkout this command runs in, NOT to the primary — deliberately
-  // unlike the memory directory above, which is per-repository and therefore resolved from
-  // `primaryRoot`. This is the copy a commit from here would ship, and it is the one
-  // `sync-cloud-context.mjs` would rewrite: that script resolves its output from its own file's
-  // location, so running it in a worktree refreshes that worktree's mirror and nothing else.
-  // `--show-toplevel` rather than `primaryRoot` is what keeps the two agreeing.
   const checkoutRoot = git(["rev-parse", "--show-toplevel"]) ?? primaryRoot;
   const mirrorDir = path.join(checkoutRoot, ".claude", "cloud-context", "memory-mirror");
 
+  // 🔴 READ FROM `origin/main`, NOT FROM THIS WORKING TREE. A cloud session clones `main`, so that is
+  // the copy deciding what it wakes up knowing; the tree on disk only says what a commit from HERE
+  // would ship. Measured 2026-10-02, FOUR times in one afternoon: this section reported "2 files
+  // DRIFTED" while both were byte-identical to live memory on `origin/main`, every time because the
+  // primary was a commit or two behind — which is this repo's normal state, not an edge case, since
+  // `main` moves every few minutes. Each false report cost a round of hand-proving it was spurious,
+  // and a check that cries wolf is one people switch off. The working tree is kept only as a labelled
+  // fallback (`readCloudMirror`), because a fresh clone or a branch predating the mirror has no ref
+  // to read.
+  //
   // 🔴 AN ABSENT SOURCE MUST NEVER READ AS "no drift". A cloud session running repo-doctor has no
-  // memory directory at all, and a laptop checkout could be missing the mirror entirely — both are
-  // "cannot measure", which is a different sentence from "measured, and it is clean". The
-  // under-claiming direction is the safe one here exactly as it is for memory reachability above.
+  // memory directory at all, and neither source may be readable — both are "cannot measure", which is
+  // a different sentence from "measured, and it is clean". The under-claiming direction is the safe
+  // one here exactly as it is for memory reachability above.
+  const mirror = memoryDir === null ? null : readCloudMirror({ root: checkoutRoot, diskDir: mirrorDir });
   if (memoryDir === null) {
     console.log("  SKIPPED — no session memory directory here, so there is nothing to compare against.");
     console.log("  (A cloud session HAS no local memory; this check only means anything on the laptop.)");
-  } else if (!fs.existsSync(mirrorDir)) {
-    console.log("  -> COULD NOT READ the mirror at " + mirrorDir + ". Do NOT read this as clean.");
+  } else if (mirror === null) {
+    console.log("  -> COULD NOT READ the mirror at " + mirrorDir + " or on origin/main. Do NOT read this as clean.");
   } else {
     const readMd = (dir) => {
       const out = new Map();
@@ -1478,7 +1484,10 @@ let autoloadedIndexBytes = null;
       return out;
     };
 
-    const drift = cloudMirrorDrift({ live: readMd(memoryDir), mirror: readMd(mirrorDir) });
+    // The label says WHICH copy was measured, so a reader is never left guessing — and so a fallback
+    // to the working tree announces itself rather than passing as the real answer.
+    console.log("  " + mirror.label);
+    const drift = cloudMirrorDrift({ live: readMd(memoryDir), mirror: mirror.files });
     for (const line of cloudMirrorDriftReport(drift)) console.log(line);
   }
 }
