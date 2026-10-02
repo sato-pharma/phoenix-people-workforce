@@ -19,10 +19,18 @@ import type { VisitCountBucket } from "@/lib/crm/visit-count-buckets";
  * `src/lib/crm/contacts-web-client.ts`), which is also where each rep's pharmacies are imported from.
  *
  * 🔴 EVERY EXISTING READER OF `list_type` IS A BINARY — `row.list_type === "AM" ? "AM" : "PM"` — and
- * there are several (`server/doctors.ts`, `server/customer-timeline.ts`, `plan-review-rules.ts`,
- * `report-rules.ts`). Every one of them files a pharmacy under PM, silently, which is precisely the
- * golden rule's failure mode. {@link parseListType} is the replacement, and it is the reason this
- * module exports a parser at all rather than a bare constant.
+ * there are **26 of them, across 17 files** (counted 2026-10-02; 25 inside `src/lib/phoenix-crm`,
+ * and `server/plan-history.ts` carries two on ONE line, which is why the ratchet counts occurrences
+ * and not lines).
+ * Every one files a pharmacy under PM, silently, which is precisely the golden rule's failure mode,
+ * and **widening the `PhoenixCrmListType` union does not catch a single one** — they all narrow to
+ * `"AM" | "PM"` and keep compiling. So the compiler cannot help here and a ratchet test does the
+ * work instead: `tests/phoenix-crm-pharmacy-calls.test.ts` pins the count and lets it FALL, never
+ * rise, as each surface is converted to {@link parseListType} and decides for itself whether it
+ * shows pharmacies at all.
+ *
+ * That is why the import migration is not a complete feature on its own: until a surface has been
+ * converted, it would file an imported pharmacy among the doctors.
  *
  * ── 2. A PHARMACY IS NEVER PLANNED ────────────────────────────────────────────────────────────────
  * Owner, 2026-10-02: *"the pharmacy is not added to the weekly plan. He can add any pharmacy, any

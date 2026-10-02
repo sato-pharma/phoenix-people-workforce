@@ -88,7 +88,9 @@ import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
+import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { parseTimings, sortTimings } from "@/lib/phoenix-crm/timings";
+import { isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 import type {
   PhoenixCrmCustomerStatus,
   PhoenixCrmGrade,
@@ -637,11 +639,30 @@ type ReferenceRow = {
   state: ReferenceState;
 };
 
+/**
+ * The seat's live iReports360 list — AM, PM and, since 2026-10-02, the rep's PHARMACIES
+ * (`supabase/migrations/20261002150353_phoenix_crm_pharmacy_reference.sql`).
+ *
+ * 🔴 A WHOLESALER IS FILTERED HERE, AND IT HAS TO BE HERE RATHER THAN IN THE SQL. A makhzan is never
+ * shown as a candidate nor validated as a venue (`AGENTS.md` §4.1, owner 2026-09-22, "never never
+ * never"), and the test for one is `wholesaler-venue-guard`, which reuses the monthly closing's own
+ * name primitives so the two can never disagree and every owner pharmacy-override applies
+ * automatically. Re-stating those rules in SQL would be a second answer that drifts, so the
+ * reference function deliberately does not try, and this read is the one door they all come through.
+ *
+ * Only PHARMACY rows are tested. The rule is about a warehouse posing as a shop; running a
+ * warehouse-name test over doctors would drop a clinic whose name merely reads like one, and no
+ * owner ruling asks for that. Measured on production the day it shipped: of 1,930 vendor pharmacies,
+ * **0 are hard-blocked** and 6 carry the ambiguous فارما word — the guard FLAGS those for a human
+ * rather than refusing them, which is why only the certain half is filtered and the suspected half
+ * travels on.
+ */
 export async function loadReference(seatId: string, isTest: boolean): Promise<ReferenceRow[]> {
-  return rpcAll<ReferenceRow>(getSupabaseAdmin(), "phoenix_crm_seat_reference", { p_seat_ids: [seatId], p_is_test: isTest }, [
+  const rows = await rpcAll<ReferenceRow>(getSupabaseAdmin(), "phoenix_crm_seat_reference", { p_seat_ids: [seatId], p_is_test: isTest }, [
     "list_type",
     "contact_crm_id",
   ]);
+  return rows.filter((row) => !(isPharmacyListType(row.list_type) && isCertainWholesalerVenue(row.name)));
 }
 
 /**
