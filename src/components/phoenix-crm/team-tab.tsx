@@ -42,8 +42,6 @@ import {
   CrmPill,
   CrmSearchField,
   CrmShowMore,
-  CrmStat,
-  CrmStatGrid,
   CrmTable,
   crmTdClassName,
   crmThClassName,
@@ -54,6 +52,7 @@ import {
 import { fieldWeekStart, plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { withPlanDeadline } from "@/lib/phoenix-crm/plan-rules";
 import { teamTodayLine, teamTodayTone } from "@/lib/phoenix-crm/team-today";
+import { teamWaitingLine, teamWeeksToShow } from "@/lib/phoenix-crm/team-waiting";
 import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 import type {
   MonthlyReviewRow,
@@ -109,8 +108,33 @@ function repText(territory: TerritorySummary): string {
   return territory.repName ?? "No rep in this territory";
 }
 
-function reviewerText(territory: TerritorySummary): string {
-  return territory.reviewerName ? `Reviewed by ${territory.reviewerName}` : "No manager above this territory";
+/**
+ * Who reviews this territory — named only when it is SOMEONE ELSE.
+ *
+ * A district manager reviews every territory beneath her, so this printed her own name on every row:
+ * five times on a five-territory team (measured 2026-10-02). The SFE Manager and the Super Admin look
+ * across several managers, so they still read it on every row, and a territory with nobody above it
+ * still says so — that one is a gap worth seeing.
+ */
+function reviewerText(territory: TerritorySummary, viewerHrId: string | null): string | null {
+  if (!territory.reviewerName) return "No manager above this territory";
+  if (viewerHrId && territory.reviewerHrId === viewerHrId) return null;
+  return `Reviewed by ${territory.reviewerName}`;
+}
+
+/** A card's one-line meta: the rep, and the reviewer when he is not the person reading. */
+function metaText(territory: TerritorySummary, viewerHrId: string | null, test: boolean): string {
+  return [repText(territory), test ? null : reviewerText(territory, viewerHrId)].filter(Boolean).join(" · ");
+}
+
+/**
+ * A switcher note, or nothing at all. "Nothing waiting for you" and "0 waiting" are a note that says
+ * nothing: the owner counted ten of them on one screen (2026-10-02), so a zero now prints no note.
+ */
+function waitingNote(forYou: number | null | false, inAll: number | null | false): string | undefined {
+  if (typeof forYou !== "number" || typeof inAll !== "number") return undefined;
+  if (forYou > 0) return `${countText(forYou)} waiting for you`;
+  return inAll > 0 ? `${countText(inAll)} waiting` : undefined;
 }
 
 // ── Plans ───────────────────────────────────────────────────────────────────────────────────────
@@ -128,9 +152,11 @@ function placedText(row: PlanReviewRow): string {
   return `${countText(row.accounts)} AM · ${countText(row.doctors)} PM`;
 }
 
-function planStamp(row: PlanReviewRow): string {
+function planStamp(row: PlanReviewRow): string | null {
   const { plan } = row;
-  if (!plan) return "The rep has not started this week's plan";
+  // Nothing yet: the NOT STARTED pill sits right beside this, and saying it again in a sentence is
+  // half of why the page ran four phone screens (owner, 2026-10-02).
+  if (!plan) return null;
   if (plan.status === "submitted") return `Sent ${cairoStamp(plan.submittedAt)}${plan.submittedByName ? ` by ${plan.submittedByName}` : ""}`;
   if ((plan.status === "approved" || plan.status === "returned") && plan.decidedAt) {
     const who = plan.decidedByName ? ` by ${plan.decidedByName}${plan.decidedBySfe ? " (SFE Manager)" : ""}` : "";
@@ -149,7 +175,8 @@ function reviewFlags(row: PlanReviewRow): Array<{ key: string; label: string }> 
 }
 
 function ReviewFlags({ row }: { row: PlanReviewRow }) {
-  if (!row.plan) return <span className="text-xs font-semibold text-slate-500">Nothing to look at yet</span>;
+  // No plan, nothing to look at: the row already carries a NOT STARTED pill and an Open button.
+  if (!row.plan) return null;
   const flags = reviewFlags(row);
   if (flags.length === 0) return <span className="text-xs font-semibold text-slate-500">Nothing flagged</span>;
   return (
@@ -343,47 +370,60 @@ export function TeamTab({
   // A rep sends a week at a time since 2026-10-01 (owner), so a month only reaches a manager from
   // before that day. The section stays while one is still there to read, and leaves once none is.
   const anyMonthSent = months.data ? months.data.rows.some((row) => row.plan !== null) : false;
+  // One sentence where six tiles used to be. They repeated, word for word, the notes on the switcher
+  // one block below them, and both said "Nothing waiting" when nothing was (owner, 2026-10-02).
+  const waiting = summary
+    ? teamWaitingLine(
+        {
+          plans: plansWaiting,
+          months: anyMonthSent ? monthsWaiting : null,
+          planEdits: summary.planEditsWaitingForYou,
+          unplanned: summary.unplannedWaitingForYou,
+          requests: summary.waitingForYou,
+        },
+        {
+          territories: summary.territories,
+          vacant: summary.vacant,
+          ready: summary.ready,
+          notReady: summary.notReady,
+          elsewhere:
+            summary.requestsWaiting -
+            summary.waitingForYou +
+            (summary.unplannedWaiting - summary.unplannedWaitingForYou) +
+            (summary.planEditsWaiting - summary.planEditsWaitingForYou),
+          test,
+        },
+      )
+    : null;
   const sectionOptions: Array<CrmChoiceOption<TeamSection>> = [
     {
       value: "plans",
       label: "Weekly plans",
-      note: plansWaiting === null ? undefined : plansWaiting > 0 ? `${countText(plansWaiting)} waiting for you` : "Nothing waiting for you",
+      note: plansWaiting !== null && plansWaiting > 0 ? `${countText(plansWaiting)} waiting for you` : undefined,
     },
     {
       value: "edits",
       label: "Plan edits",
-      note: summary
-        ? summary.planEditsWaitingForYou > 0
-          ? `${countText(summary.planEditsWaitingForYou)} waiting for you`
-          : `${countText(summary.planEditsWaiting)} waiting`
-        : undefined,
+      note: waitingNote(summary && summary.planEditsWaitingForYou, summary && summary.planEditsWaiting),
     },
   ];
   if (anyMonthSent || section === "months") {
     sectionOptions.push({
       value: "months",
       label: "Monthly plans",
-      note: monthsWaiting === null ? undefined : monthsWaiting > 0 ? `${countText(monthsWaiting)} waiting for you` : "Nothing waiting for you",
+      note: monthsWaiting !== null && monthsWaiting > 0 ? `${countText(monthsWaiting)} waiting for you` : undefined,
     });
   }
   sectionOptions.push(
     {
       value: "unplanned",
       label: "Off-plan visits",
-      note: summary
-        ? summary.unplannedWaitingForYou > 0
-          ? `${countText(summary.unplannedWaitingForYou)} waiting for you`
-          : `${countText(summary.unplannedWaiting)} waiting`
-        : undefined,
+      note: waitingNote(summary && summary.unplannedWaitingForYou, summary && summary.unplannedWaiting),
     },
     {
       value: "requests",
       label: "List requests",
-      note: summary
-        ? summary.waitingForYou > 0
-          ? `${countText(summary.waitingForYou)} waiting for you`
-          : `${countText(summary.requestsWaiting)} waiting`
-        : undefined,
+      note: waitingNote(summary && summary.waitingForYou, summary && summary.requestsWaiting),
     },
   );
   if (!test) {
@@ -446,57 +486,13 @@ export function TeamTab({
             </div>
           ) : null}
 
-          {summary ? (
+          {summary && waiting ? (
             <>
               {team.error ? <CrmLoadError message={team.error} onRetry={team.reload} /> : null}
               <CrmBlock>
-                <CrmStatGrid>
-                  <CrmStat
-                    label="Plans waiting for you"
-                    note="Sent by the rep for your approval"
-                    tone={(plansWaiting ?? 0) > 0 ? "warn" : "neutral"}
-                    value={countText(plansWaiting)}
-                  />
-                  <CrmStat
-                    label="Plan edits waiting for you"
-                    note={
-                      summary.planEditsWaiting > summary.planEditsWaitingForYou
-                        ? `${countText(summary.planEditsWaiting)} waiting in all`
-                        : "A rep asks to change a week he already sent"
-                    }
-                    tone={summary.planEditsWaitingForYou > 0 ? "warn" : "neutral"}
-                    value={countText(summary.planEditsWaitingForYou)}
-                  />
-                  <CrmStat
-                    label="Off-plan visits waiting for you"
-                    note={
-                      summary.unplannedWaiting > summary.unplannedWaitingForYou
-                        ? `${countText(summary.unplannedWaiting)} waiting in all`
-                        : "They count in nothing until they are approved"
-                    }
-                    tone={summary.unplannedWaitingForYou > 0 ? "warn" : "neutral"}
-                    value={countText(summary.unplannedWaitingForYou)}
-                  />
-                  <CrmStat
-                    label="Requests waiting for you"
-                    note={summary.requestsWaiting > summary.waitingForYou ? `${countText(summary.requestsWaiting)} waiting in all` : "List requests"}
-                    tone={summary.waitingForYou > 0 ? "warn" : "neutral"}
-                    value={countText(summary.waitingForYou)}
-                  />
-                  {test ? null : (
-                    <CrmStat
-                      label="Lists ready"
-                      note={summary.notReady > 0 ? `${countText(summary.notReady)} validating` : "Every list is ready"}
-                      tone={summary.notReady > 0 ? "neutral" : "good"}
-                      value={`${countText(summary.ready)} of ${countText(summary.ready + summary.notReady)}`}
-                    />
-                  )}
-                  <CrmStat
-                    label={test ? "Territories with test requests" : "Territories"}
-                    note={test ? "Waiting for your decision" : summary.vacant > 0 ? `${countText(summary.vacant)} without a rep` : "Every territory has a rep"}
-                    value={countText(summary.territories)}
-                  />
-                </CrmStatGrid>
+                <CrmNote title={waiting.title} tone={waiting.tone}>
+                  {waiting.detail}
+                </CrmNote>
               </CrmBlock>
             </>
           ) : team.error ? (
@@ -523,6 +519,7 @@ export function TeamTab({
               test={test}
               thisWeek={fieldWeekStart(cairoToday)}
               view={reviews.data}
+              viewerHrId={team.data?.viewerHrId ?? null}
               weeks={weeks}
             />
           ) : null}
@@ -575,6 +572,7 @@ function PlansSection({
   test,
   thisWeek,
   view,
+  viewerHrId,
   weeks,
 }: {
   error: string | null;
@@ -586,26 +584,41 @@ function PlansSection({
   test: boolean;
   thisWeek: string;
   view: PlanReviewView | null;
+  viewerHrId: string | null;
   weeks: ReadonlyArray<{ weekStart: string; waiting: number | null }>;
 }) {
   const [filter, setFilter] = useState<ReviewFilter | null>(null);
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
+  const [showAllWeeks, setShowAllWeeks] = useState(false);
 
+  // Nine buttons, nine of them reading "Nothing waiting" (owner, 2026-10-02). The strip now carries
+  // the weeks with something in them, this week and the one he is on; the rest are one press away,
+  // because planning a month ahead still has to be reachable.
+  const shownWeeks = teamWeeksToShow(weeks, { selectedWeek, thisWeek, showAll: showAllWeeks });
   const weekBlock = (
-    <CrmBlock className="border-t border-slate-100" title="Week">
+    <CrmBlock
+      actions={
+        weeks.length > shownWeeks.length || showAllWeeks ? (
+          <CrmButton onClick={() => setShowAllWeeks((value) => !value)} size="sm" variant="ghost">
+            {showAllWeeks ? "Fewer weeks" : `Every week · ${countText(weeks.length)}`}
+          </CrmButton>
+        ) : undefined
+      }
+      className="border-t border-slate-100"
+      title="Week"
+    >
       <CrmChoice
         columns={4}
         label="Week"
         onChange={onWeek}
-        options={weeks.map((week) => ({
+        options={shownWeeks.map((week) => ({
           value: week.weekStart,
           label: weekLabel(week.weekStart),
+          // A week with nothing in it carries no note: "Nothing waiting" printed nine times said
+          // nothing nine times.
           note:
-            [
-              week.weekStart === thisWeek ? "This week" : null,
-              week.waiting === null ? null : week.waiting > 0 ? `${countText(week.waiting)} waiting for you` : "Nothing waiting",
-            ]
+            [week.weekStart === thisWeek ? "This week" : null, (week.waiting ?? 0) > 0 ? `${countText(week.waiting ?? 0)} waiting for you` : null]
               .filter(Boolean)
               .join(" · ") || undefined,
         }))}
@@ -688,9 +701,13 @@ function PlansSection({
             />
           ) : null}
         </div>
-        <p className="mt-3 break-words text-xs font-semibold leading-5 text-slate-500">
-          Far apart: two customers on the same day are more than {countText(view.farApartKm)} km from each other.
-        </p>
+        {/* What the FAR APART flag means — printed only when a plan on this week actually carries
+            one, rather than explaining a flag nobody on screen can see. */}
+        {view.rows.some((row) => row.farApartDays.length > 0) ? (
+          <p className="mt-3 break-words text-xs font-semibold leading-5 text-slate-500">
+            Far apart: two customers on the same day are more than {countText(view.farApartKm)} km from each other.
+          </p>
+        ) : null}
       </CrmBlock>
 
       {rows.length === 0 ? (
@@ -702,20 +719,23 @@ function PlansSection({
           <CrmCardsOnPhone>
             {shown.map((row) => {
               const status = row.plan?.status ?? "none";
+              const stamp = planStamp(row);
               return (
                 <CrmCard
                   accent={STATUS_ACCENT[status]}
                   actions={action(row)}
                   key={row.territory.seatId}
-                  meta={test ? repText(row.territory) : `${repText(row.territory)} · ${reviewerText(row.territory)}`}
+                  meta={metaText(row.territory, viewerHrId, test)}
                   status={<CrmPill tone={STATUS_TONE[status]}>{row.plan?.statusLabel ?? "Not started"}</CrmPill>}
                   title={row.territory.name}
                 >
                   <p className="break-words text-sm font-black text-slate-800">{placedText(row)}</p>
-                  <p className="break-words text-xs font-semibold leading-5 text-slate-500">{planStamp(row)}</p>
-                  <div className="mt-2">
-                    <ReviewFlags row={row} />
-                  </div>
+                  {stamp ? <p className="break-words text-xs font-semibold leading-5 text-slate-500">{stamp}</p> : null}
+                  {row.plan ? (
+                    <div className="mt-2">
+                      <ReviewFlags row={row} />
+                    </div>
+                  ) : null}
                 </CrmCard>
               );
             })}
@@ -743,16 +763,18 @@ function PlansSection({
             <tbody>
               {shown.map((row) => {
                 const status = row.plan?.status ?? "none";
+                const stamp = planStamp(row);
+                const reviewer = test ? null : reviewerText(row.territory, viewerHrId);
                 return (
                   <tr key={row.territory.seatId}>
                     <td className={crmTdClassName}>
                       <p className="font-black text-slate-950">{row.territory.name}</p>
                       <p className="mt-0.5 text-xs text-slate-500">{repText(row.territory)}</p>
-                      {test ? null : <p className="text-xs text-slate-500">{reviewerText(row.territory)}</p>}
+                      {reviewer ? <p className="text-xs text-slate-500">{reviewer}</p> : null}
                     </td>
                     <td className={crmTdClassName}>
                       <CrmPill tone={STATUS_TONE[status]}>{row.plan?.statusLabel ?? "Not started"}</CrmPill>
-                      <p className="mt-1 text-xs text-slate-500">{planStamp(row)}</p>
+                      {stamp ? <p className="mt-1 text-xs text-slate-500">{stamp}</p> : null}
                     </td>
                     <td className={crmTdClassName}>{placedText(row)}</td>
                     <td className={crmTdClassName}>
@@ -1297,7 +1319,7 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
                 accent={row.readiness?.ready ? "border-l-emerald-500" : row.readiness ? "border-l-amber-500" : "border-l-slate-300"}
                 actions={openListButton(row.territory.seatId)}
                 key={row.territory.seatId}
-                meta={`${repText(row.territory)} · ${reviewerText(row.territory)}`}
+                meta={metaText(row.territory, team.viewerHrId, false)}
                 status={<ReadinessPill readiness={row.readiness} />}
                 title={row.territory.name}
               >
@@ -1337,7 +1359,9 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
                   </td>
                   <td className={crmTdClassName}>
                     <p>{repText(row.territory)}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">{reviewerText(row.territory)}</p>
+                    {reviewerText(row.territory, team.viewerHrId) ? (
+                      <p className="mt-0.5 text-xs text-slate-500">{reviewerText(row.territory, team.viewerHrId)}</p>
+                    ) : null}
                   </td>
                   <td className={crmTdClassName}>
                     {row.readiness ? (
