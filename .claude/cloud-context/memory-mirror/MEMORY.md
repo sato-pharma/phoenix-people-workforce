@@ -30,3 +30,4 @@
 
 ## Inbox — new notes land here
 Put each new memory note's pointer here, one line. The weekly fold (`node scripts/module-memory/fold.mjs --apply`) files it under its module in ONE PR; once that merges, the next fold removes the line.
+- [port 3000/3001 may be the PREVIEW TUNNEL, not a dev server](a-listener-on-port-3000-may-be-the-preview-tunnel.md) - read the listener's command line before recommending a stop.
