@@ -917,6 +917,7 @@ import { runNewHireMailboxRobotTests } from "./new-hire-mailbox-robot.test.ts";
 import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
 import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts";
 import { runNewHireMailboxAdoptTests } from "./new-hire-mailbox-adopt.test.ts";
+import { runMailboxAppPasswordClearTests } from "./mailbox-app-password-clear.test.ts";
 import { runMailboxRobotSweepHookTests } from "./mailbox-robot-sweep-hook.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
@@ -4027,6 +4028,16 @@ await runTest(
   + "mailbox Phoenix can already read is refused because adopting it would lock the person out for "
   + "no gain; and an address that is not that employee's own recorded work email is refused)",
   runNewHireMailboxAdoptTests,
+);
+await runTest(
+  "clearing a leaver's app passwords (an app password SURVIVES a password reset, so the phone and "
+  + "Outlook already configured keep syncing — this is the register's half-revoked state. The step "
+  + "resets to get a password nobody stored, then deletes them from inside the mailbox. An "
+  + "UNCALIBRATED build makes NO console call at all, because resetting on the way to a step that "
+  + "cannot finish would reset every named leaver's password for nothing; an active employee and a "
+  + "leaver whose last day has not arrived are both refused, since this disconnects the phone in "
+  + "somebody's pocket; and a mailbox reset but not cleared is never recorded as cleared)",
+  runMailboxAppPasswordClearTests,
 );
 await runTest(
   "mailbox revocation robot wired to the daily sweep (off by default; dry run is the default once "
