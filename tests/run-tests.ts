@@ -1701,6 +1701,7 @@ import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
+import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
 import { runPhoenixCrmBrickTintsTests } from "./phoenix-crm-brick-tints.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
@@ -5850,6 +5851,11 @@ await runTest(
 await runTest(
   "Phoenix CRM pharmacy calls (owner, 2026-10-02, four rulings of which three REMOVE something a reader would add back by analogy with a doctor: a pharmacy is a THIRD list_type and never a row inside AM or PM, so the binary `=== \"AM\" ? \"AM\" : \"PM\"` that every existing reader uses would file it among the doctors with nothing going red; it is NEVER planned — \"He don't plan it. We don't want extra\" reverses his own earlier \"planned like doctors\", and the 10-a-day cap he set that morning capped PLANNING, so nothing is left for it to limit and a cap on VISITS would be the extra he refused; it is NEVER approved — \"no approval for an unplanned pharmacy visit\", because the off-plan approval protects a figure and a pharmacy has none; and NO KPI reads one — no coverage, frequency, monthly target, call rate or capacity, so the Pharmacies figure stays a plain count and never a rate)",
   runPhoenixCrmPharmacyCallTests,
+);
+
+await runTest(
+  "Phoenix CRM reps still recording in iReports360 (from a team's start its reps' iReports360 visits are IGNORED everywhere, owner 2026-10-02 — so a rep who carries on logging there is doing real work that reaches NO figure at all, and the volume is not small: 1,629 vendor visits in the fourteen days before Delta (1) began, 135.8 a day. The question cannot be asked of crm_visits_unified, which anti-joins exactly these rows out and would answer a confident zero for a rep logging every day, so ONE loader reads the raw mirror, inside each rep's own counted_from/counted_until window; the sentence names the people and states the cost and carries no verdict on anyone, because a rep still on the old app is following the habit he was trained in; and it never reaches him — the SERVER empties it with isLocationBlind rather than a screen choosing not to render it, and every file that reads the flag at all is named here)",
+  runPhoenixCrmVendorLeftoverTests,
 );
 
 await runTest(
