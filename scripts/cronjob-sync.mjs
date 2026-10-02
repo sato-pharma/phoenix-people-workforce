@@ -155,6 +155,17 @@ const JOBS = {
     // oldest first, which is why the backlog drains from the old end rather than the new one.
     requestTimeout: 300,
   },
+  "phoenix-crm-plan-reminder": {
+    title: "Phoenix — CRM plan reminder",
+    path: "/api/cron/phoenix-crm-plan-reminder",
+    // 12:57 and 17:57 Cairo, every day (owner, 2026-10-02). It speaks only from the day a week is due
+    // until the day before it starts, to the rep and his district manager in the teams that have
+    // started; every other day it sends nothing. Two ticks so a deploy or a cut tick still leaves
+    // one — the keys are per person per day, so nobody hears twice. On :57, a minute no other job holds.
+    schedule: { hours: [12, 17], minutes: [57], mdays: [-1], months: [-1], wdays: [-1] },
+    // One read of the week's plans, then at most a few dozen notifications.
+    requestTimeout: 300,
+  },
   "job-heartbeat-sweep": {
     title: "Phoenix — job heartbeat sweep",
     path: "/api/cron/job-heartbeat-sweep",

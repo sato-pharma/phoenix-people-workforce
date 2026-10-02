@@ -1020,7 +1020,8 @@ export function PlanBoard({
     { label: "Send", description: "Send it for review", title: "Send the week" },
   ];
   const dayIndex = selected && selectedDay ? selected.week.days.findIndex((entry) => entry.date === selectedDay.date) : -1;
-  const nextDay = selected && dayIndex >= 0 ? (selected.week.days[dayIndex + 1] ?? null) : null;
+  // The next day that holds a list — a public holiday is skipped, the way a Friday is never in the week.
+  const nextDay = selected && dayIndex >= 0 ? (selected.week.days.slice(dayIndex + 1).find((entry) => entry.listTypes.length > 0) ?? null) : null;
   const planFooter =
     planStep === 1 ? (
       <CrmStepFooter back={null}>

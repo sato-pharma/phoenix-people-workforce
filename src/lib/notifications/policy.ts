@@ -214,17 +214,18 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // he already sent — district manager, then SFE, then HR — goes by email, in-app and Telegram to the
   // next person to act, the rep, the district manager and SFE. phoenix-crm-channel-guard.ts lets these
   // five through and strips email from every other Phoenix CRM notice.
-  "phoenix_crm.plan_edit_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
-  "phoenix_crm.plan_edit_moved_on": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
-  "phoenix_crm.plan_edit_refused": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
-  "phoenix_crm.plan_edit_reopened": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
-  "phoenix_crm.plan_edit_expired": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_edit_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_edit_moved_on": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_edit_refused": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_edit_reopened": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_edit_expired": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // Phoenix CRM (owner rule 2026-09-16): a grade or drop request and a weekly plan waiting for the
-  // reviewing manager, and the decision back to the rep — in-app and Telegram, never email.
+  // reviewing manager, and the decision back to the rep — in-app, Telegram and (since 2026-10-02) the
+  // phone, never email.
   // Recipients are passed explicitly (src/lib/phoenix-crm/server/notifications.ts), hence "cc". The
   // hard guarantee is phoenix-crm-channel-guard.ts — this row is the intent, that filter is the
   // enforcement.
-  "phoenix_crm.*": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.*": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "probation.reminder_due": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "probation.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "probation", priority: "high", recipientStrategy: ["direct_manager", "permission_based"], telegramAllowed: true },
   // Owner request 2026-08-15: the "new CV received" notice must never be emailed — in-app and

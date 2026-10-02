@@ -192,6 +192,8 @@ export function resolvePlanItems(input: {
   customers: ReadonlyMap<string, PlanRuleCustomer>;
   settings: Pick<PhoenixCrmSettings, "pmDailyCap" | "amDailyCap">;
   isRamadan: (isoDay: string) => boolean;
+  /** The week's public holidays, `day → name`: a day named here holds no customer (owner, 2026-10-02). */
+  holidays?: ReadonlyMap<string, string>;
 }): PlanRuleResult<ResolvedPlanItem[]> {
   const weekDays = new Set(fieldWeekDays(input.weekStart));
   const resolved: ResolvedPlanItem[] = [];
@@ -209,6 +211,10 @@ export function resolvePlanItems(input: {
     const place = customer.pending ? null : customer.places.find((entry) => entry.placeId === item.placeId);
     if (!customer.pending && !place) {
       return { ok: false, error: `${customer.name}'s place was changed. Reload the planner and place this customer again.` };
+    }
+    const holiday = input.holidays?.get(item.planDate);
+    if (holiday) {
+      return { ok: false, error: `${dayLabel(item.planDate)} is a public holiday (${holiday}). Take ${customer.name} off it.` };
     }
     const allowed = planDayListTypes(item.planDate);
     if (!allowed.includes(customer.listType)) {

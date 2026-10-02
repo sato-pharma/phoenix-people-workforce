@@ -87,6 +87,7 @@ import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/ser
 import { loadPlanActivities } from "@/lib/phoenix-crm/server/plan-activities";
 import { loadPlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
 import { loadPlanEditState, repStateOf, type PlanEditRequestView, type PlanEditState } from "@/lib/phoenix-crm/server/plan-edits";
+import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import {
   buildDays,
   ITEM_COLUMNS,
@@ -364,6 +365,8 @@ export async function loadMonthlyPlanner(
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
     ensured.then(() => territoryReadiness(seat.seatId, isTest, false)),
     customersRead.then(({ customers }) => loadPlannerReferences(seat.seatId, isTest, customers)),
+    // Two weeks either side of the month reach every week the board can show, the leading one included.
+    loadPlanHolidays(addDaysIso(monthStart, -14), addDaysIso(monthEndOf(monthStart), 14)),
   ]);
   wave.catch(() => undefined);
   await ensured;
@@ -373,6 +376,7 @@ export async function loadMonthlyPlanner(
     visitCounts,
     readiness,
     references,
+    holidays,
   ] = await wave;
 
   const settings = viewer.config.settings;
@@ -448,7 +452,7 @@ export async function loadMonthlyPlanner(
   // its own plan row, its own editable window, its own Send. Only its name and its note differ.
   const toWeekView = (weekStart: string, planRow: Row | null, weekItems: Row[], leading: boolean): MonthlyWeekView => {
     const weekStatus = planRow ? statusOf(planRow.status) : null;
-    const days = buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan, activities, starts });
+    const days = buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays });
     const weekPlan = planRow ? mapPlan(planRow, names) : null;
     const dueOn = weekPlan?.dueOn ?? weeklyPlanDueOn(weekStart);
     const open = editablePlanDays(weekStart, today).length > 0;

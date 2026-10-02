@@ -1,0 +1,182 @@
+/**
+ * Phoenix CRM — the "your coming week is not sent" reminder, sent.
+ *
+ * The I/O half of `src/lib/phoenix-crm/plan-reminder-rules.ts`, which holds the owner's words and the
+ * when and to whom. This file reads the week's plans and delivers.
+ *
+ * 🔴 TEAMS THAT STARTED ONLY (owner, 2026-10-02). A team is the territories under one district
+ * manager. It is reminded once ANY of its territories has real Phoenix CRM work
+ * (`seatsWithRealActivity`, the 06:55 digest's own test). Every rep in that team is then reminded,
+ * including one whose own first entries were wiped with the old plan screen on 2 October. A team
+ * still on iReports360 hears nothing. It joins on its own the day one of its reps starts.
+ *
+ * 🔴 NEVER FIRED FROM A LAPTOP. It is a production cron. A hand-run spends the day's keys, so the
+ * real tick later that day stays silent for everyone it reached. Real territories only: the test
+ * world has no reminder.
+ */
+
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
+import { logError } from "@/lib/observability/log";
+import {
+  isUnsentStatus,
+  managerReminder,
+  planReminderDay,
+  repReminder,
+  territoriesOfStartedTeams,
+  type PlanReminderDay,
+  type PlanReminderNotice,
+} from "@/lib/phoenix-crm/plan-reminder-rules";
+import { territoryReviewer } from "@/lib/phoenix-crm/scope";
+import { seatsWithRealActivity } from "@/lib/phoenix-crm/server/daily-digest";
+import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
+import {
+  PHOENIX_CRM_NOTIFICATION_CATEGORY,
+  PHOENIX_CRM_NOTIFICATION_MODULE,
+  PHOENIX_CRM_PORTAL_PATH,
+} from "@/lib/phoenix-crm/server/notifications";
+import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
+import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { loadPhoenixCrmConfig, openLineCodes } from "@/lib/phoenix-crm/server/settings";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+export type PlanReminderRun = {
+  /** Null when today is not a reminder day; the run then reads nothing and sends nothing. */
+  weekStart: string | null;
+  late: boolean;
+  /** Territories in an open line, with a rep, in a team that has started. */
+  territories: number;
+  unsent: number;
+  reps: number;
+  managers: number;
+  delivered: number;
+  failed: number;
+  /** Territories with a rep whose team has not started: left alone, and counted so a quiet run reads as one. */
+  waitingForFirstUse: number;
+};
+
+async function loadWeekStatuses(seatIds: ReadonlyArray<string>, weekStart: string): Promise<Map<string, string>> {
+  const statuses = new Map<string, string>();
+  for (const part of chunk([...seatIds], 200)) {
+    const read = await getSupabaseAdmin()
+      .from("phoenix_crm_plans")
+      .select("seat_id, status")
+      .eq("is_test", false)
+      .eq("week_start", weekStart)
+      .in("seat_id", part);
+    throwIfError(read.error);
+    for (const row of (read.data ?? []) as Array<{ seat_id?: string | null; status?: string | null }>) {
+      if (row.seat_id) statuses.set(String(row.seat_id), String(row.status ?? ""));
+    }
+  }
+  return statuses;
+}
+
+async function deliver(notice: PlanReminderNotice): Promise<void> {
+  const actionUrl = `${PHOENIX_CRM_PORTAL_PATH}/plan`;
+  await createSystemNotificationForRecipients(
+    {
+      actionUrl,
+      category: PHOENIX_CRM_NOTIFICATION_CATEGORY,
+      // In-app, Telegram and the phone. The module's guard strips email whatever is asked for here.
+      channels: ["in_app", "telegram", "push"],
+      eventType: "plan_reminder",
+      message: notice.message,
+      metadata: { idempotencyKey: notice.idempotencyKey },
+      module: PHOENIX_CRM_NOTIFICATION_MODULE,
+      priority: "normal",
+      subjectHrId: notice.hrId,
+      telegram: { ctaLabel: "Open Plan", ctaUrl: actionUrl },
+      title: notice.title,
+    },
+    [notice.hrId],
+  );
+}
+
+/**
+ * One pass. Never throws for a single failed delivery: one rep whose phone is unreachable must not
+ * cost the rest of his team their reminder.
+ */
+export async function runPhoenixCrmPlanReminder(
+  send: (notice: PlanReminderNotice) => Promise<void> = deliver,
+  cairoToday: string = currentCairoDateOnlyIso(),
+): Promise<PlanReminderRun> {
+  const day: PlanReminderDay | null = planReminderDay(cairoToday);
+  const empty: PlanReminderRun = {
+    weekStart: null,
+    late: false,
+    territories: 0,
+    unsent: 0,
+    reps: 0,
+    managers: 0,
+    delivered: 0,
+    failed: 0,
+    waitingForFirstUse: 0,
+  };
+  if (!day) return empty;
+
+  const [org, config] = await Promise.all([loadPhoenixCrmOrg(), loadPhoenixCrmConfig()]);
+  const openLines = openLineCodes(config.lineRollout, cairoToday);
+  // A vacant territory has nobody to plan it, and a vacancy is never raised as a finding.
+  const staffed = org.territories.filter((seat) => Boolean(seat.lineCode && openLines.has(seat.lineCode) && seat.occupantHrId));
+  const started = await seatsWithRealActivity(staffed.map((seat) => seat.seatId));
+  const seats = territoriesOfStartedTeams(org, staffed, started);
+  const statuses = await loadWeekStatuses(
+    seats.map((seat) => seat.seatId),
+    day.weekStart,
+  );
+  const unsent = seats.filter((seat) => isUnsentStatus(statuses.get(seat.seatId)));
+
+  const names = await loadPeopleNames(unsent.map((seat) => seat.occupantHrId));
+  const notices: PlanReminderNotice[] = [];
+  const reps = new Set<string>();
+  const byManager = new Map<string, string[]>();
+  for (const seat of unsent) {
+    const rep = seat.occupantHrId as string;
+    if (!reps.has(rep)) {
+      reps.add(rep);
+      notices.push(repReminder({ hrId: rep, day, cairoToday, draftStarted: statuses.has(seat.seatId) }));
+    }
+    const manager = territoryReviewer(org, seat.seatId)?.hrId;
+    if (manager && manager !== rep) {
+      const list = byManager.get(manager) ?? [];
+      const name = nameOf(names, rep);
+      if (!list.includes(name)) list.push(name);
+      byManager.set(manager, list);
+    }
+  }
+  let managers = 0;
+  for (const [hrId, repNames] of byManager) {
+    const notice = managerReminder({ hrId, day, cairoToday, repNames });
+    if (!notice) continue;
+    managers += 1;
+    notices.push(notice);
+  }
+
+  let delivered = 0;
+  let failed = 0;
+  for (const notice of notices) {
+    try {
+      await send(notice);
+      delivered += 1;
+    } catch (error) {
+      failed += 1;
+      logError("Phoenix CRM plan reminder could not be delivered", {
+        error,
+        labels: { event: "phoenix_crm_plan_reminder_failed", hrId: notice.hrId },
+      });
+    }
+  }
+
+  return {
+    weekStart: day.weekStart,
+    late: day.late,
+    territories: seats.length,
+    unsent: unsent.length,
+    reps: reps.size,
+    managers,
+    delivered,
+    failed,
+    waitingForFirstUse: staffed.length - seats.length,
+  };
+}
