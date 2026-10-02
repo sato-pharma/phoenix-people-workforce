@@ -35,7 +35,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { formatDateOnly } from "@/lib/date-only";
-import { buildVacancyHireHref } from "@/lib/employees/vacancy-hire-link";
+import { buildSeatHireHref } from "@/lib/employees/vacancy-hire-link";
 import { publicVacancyLabel } from "@/lib/reports/organogram-safety";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { cn } from "@/lib/utils";
@@ -651,7 +651,7 @@ export function VacanciesReport({
                   {canAddEmployee && row.status === "open" ? (
                     <a
                       className="mt-3 flex w-full items-center justify-center gap-2 border border-phx-accent bg-phx-accent px-4 py-2.5 text-sm font-bold text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
-                      href={buildVacancyHireHref(hireBasePath, row)}
+                      href={buildSeatHireHref(hireBasePath, row, row.pendingOffer)}
                     >
                       <UserPlus className="h-4 w-4" />
                       Add employee to this seat
@@ -728,7 +728,7 @@ export function VacanciesReport({
                           {canAddEmployee && row.status === "open" ? (
                             <a
                               className="mt-2 flex w-36 items-center justify-center gap-1.5 border border-phx-accent bg-phx-accent px-2.5 py-1 text-center text-xs font-bold leading-tight text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
-                              href={buildVacancyHireHref(hireBasePath, row)}
+                              href={buildSeatHireHref(hireBasePath, row, row.pendingOffer)}
                               title={`Add an employee to the open ${row.positionTitle ?? row.jobTitle ?? "seat"}`}
                             >
                               <UserPlus className="h-3.5 w-3.5 shrink-0" />

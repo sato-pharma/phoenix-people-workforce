@@ -264,6 +264,26 @@ export async function runOrganogramVacancyHireLinkTests() {
     9,
     "the hire action must NOT add a tenth column — the rule is fit by merging, never widening",
   );
+  assert.ok(
+    /buildSeatHireHref\([\s\S]*?row\.pendingOffer/.test(reportSource),
+    "the report's hire action must build its link through buildSeatHireHref, passing the row's pending offer — so an ACCEPTED offer prefills the candidate here too, not just on the organogram popup",
+  );
+
+  // The admin report builder and its row type must carry the same offer the organogram does,
+  // looked up by the vacancy's own id — the whole point is that a seat with an accepted letter
+  // opens Add Employee filled, wherever the hire is started from.
+  const reportBuilder = fs.readFileSync(
+    path.join(process.cwd(), "src", "lib", "reports", "vacancies.ts"),
+    "utf8",
+  );
+  assert.ok(
+    /export type VacancyReportRow = \{[\s\S]*?\bpendingOffer\b/.test(reportBuilder),
+    "VacancyReportRow must carry pendingOffer — the report's hire link reads it to route an accepted offer",
+  );
+  assert.ok(
+    reportBuilder.includes("offerSeatKeyForVacancy(row.id)"),
+    "the vacancy report builder must look the offer up by the vacancy's own id",
+  );
 
   // The employee-portal vacancies page is a THIRD surface with its own service, and its row
   // used to carry names only. The ids are what the Add Employee form matches on, so a row
@@ -284,6 +304,14 @@ export async function runOrganogramVacancyHireLinkTests() {
     /\.select\(\s*(?:\/\/[^\n]*\n\s*)*"[^"]*\bdepartment_id\b[^"]*"/.test(portalService),
     "department_id must be SELECTED, or the mapped field is null however the row is typed",
   );
+  assert.ok(
+    /export type EmployeePortalVacancyRow = \{[\s\S]*?\bpendingOffer\b/.test(portalService),
+    "EmployeePortalVacancyRow must carry pendingOffer — the hire link reads it to route an accepted offer",
+  );
+  assert.ok(
+    portalService.includes("offerSeatKeyForVacancy(row.id)"),
+    "the portal vacancies builder must look the offer up by the vacancy's own id",
+  );
 
   const portalPage = fs.readFileSync(
     path.join(process.cwd(), "app", "employee-portals", "vacancies", "page.tsx"),
@@ -298,8 +326,8 @@ export async function runOrganogramVacancyHireLinkTests() {
     "the portal hire action must be gated on both the capability and an OPEN vacancy",
   );
   assert.ok(
-    portalPage.includes('buildVacancyHireHref("/employee-portals/employees"'),
-    "a portal row must link to the PORTAL Employees route, never the admin one",
+    /buildSeatHireHref\(\s*"\/employee-portals\/employees",[\s\S]*?vacancy\.pendingOffer/.test(portalPage),
+    "a portal row must build its hire link through buildSeatHireHref on the PORTAL Employees route (never the admin one), passing the vacancy's pending offer — so an accepted offer prefills the candidate here too",
   );
   // That table is table-fixed with a colgroup summing to 100% and no horizontal scroller.
   const portalColumnWidths = Array.from(
@@ -341,7 +369,7 @@ export async function runOrganogramVacancyHireLinkTests() {
     "the admin table's button must stay width-bounded, or the full label widens that column",
   );
   assert.ok(
-    /className="[^"]*\bflex w-full\b[^"]*"[\s\S]{0,200}buildVacancyHireHref\("\/employee-portals\/employees"/.test(
+    /className="[^"]*\bflex w-full\b[^"]*"[\s\S]{0,200}buildSeatHireHref\("\/employee-portals\/employees"/.test(
       portalPage,
     ),
     "the portal table's button must fill its fixed column rather than size to its own label",
