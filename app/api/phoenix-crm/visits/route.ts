@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { captureClientOf } from "@/lib/phoenix-crm/server/capture-client";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { loadVisitDay, saveVisit } from "@/lib/phoenix-crm/server/visits";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -34,7 +35,10 @@ export async function POST(request: Request) {
     await assertPermission(access, "phoenix_crm", "create");
     const viewer = await resolvePhoenixCrmViewer(access);
     const body = (await request.json()) as unknown;
-    const visit = await saveVisit(viewer, body);
+    // Which client sent it. It grants nothing and narrows no scope: it decides only whether the body
+    // may date this visit from an offline claim, which only the app can honestly make — the web app
+    // has no offline queue (src/lib/phoenix-crm/server/capture-client.ts).
+    const visit = await saveVisit(viewer, body, captureClientOf(request.headers));
     // 🔴 DO NOT ADD `revalidatePath("/employee-portals")` HERE. It was added on 2026-09-30 to make
     // the rep's day go green when he presses Back from this form, and MEASURED not to: that page is
     // `force-dynamic`, so there is no server cache to invalidate — the stale copy is the browser's

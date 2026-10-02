@@ -4428,6 +4428,106 @@ So what do you recommend?"*
 **Never "fix" it back:** do not remove a point to shorten the form, and do not split step 3 into more
 steps. Both are what he ruled out in the same answer. Pinned by `tests/phoenix-crm-visit-form-ease.test.ts`, section (e).
 
+## A visit is never dated onto an earlier visit day than its arrival — the 2026-10-02 audit
+
+The owner's rule is **the visit day ends at 02:00 Cairo, and it is never a past or a future day**
+(2026-09-29: "maximum 2 AM"). The account of the ruling itself is "The rep's flow rebuilt", earlier in
+this file. This section is the account of the two paths that broke it, found by the 2026-10-02 Phoenix
+CRM audit against `origin/main` f14fd8834, and of why one path keeps its exemption.
+
+Yesterday is not a neutral place to put a visit. It is a day whose plan is closed, whose coverage and
+call rate a manager has already read, and whose `visit_date` the one-a-day unique key, the
+planned-or-not verdict and every report follow.
+
+### 1. The offline claim — the real hole, and it is now the app's alone
+
+`deriveOfflineCaptureTime` (`src/lib/phoenix-crm/offline-clock.ts`) bounds the claimed elapsed time
+only from **above**: it may not exceed the window the server brackets with its own two readings, the
+anchor it issued and the save it received. That bound is made of physics rather than trust, and it is
+the right shape. **There is deliberately no bound from below**, and there must not be — a capture taken
+moments after anchoring is exactly what an honest early-morning visit looks like, and a floor would
+throw away real work. So `capturedAt = anchor.issuedAt + elapsed`, and a SMALL elapsed time back-dates
+freely. The anchor may be 20 hours old (`ANCHOR_MAX_AGE_SECONDS`) and anchors are minted on demand,
+60 an hour, by `POST /api/phoenix-crm/time-anchor`.
+
+**The web app has no offline queue at all.** Nothing under `src/components/phoenix-crm` has ever sent
+an `offline` body or asked for an anchor; the queue that needs one lives in the app. So in a browser
+that field had no honest sender and one dishonest one: mint an anchor on Monday afternoon, post a visit
+on Tuesday with `offline: { anchorId, elapsedMs: 0 }`, and `phoenix_crm_save_visit` — which accepts any
+`offline_captured_at` within a day — files and counts it as Monday's.
+
+The fix is structural rather than a tighter bound, because the capability no web screen ever used is
+simply removed. `captureClientOf` (`src/lib/phoenix-crm/server/capture-client.ts`) answers `app` only
+for a request carrying a bearer token and **no** session cookie, and `browser` for everything else:
+
+- **Both a cookie and a bearer is a BROWSER.** `resolveAccessContextInner` tries the cookie FIRST and
+  returns on it, so a request presenting one was identified by it. Reading this the other way would
+  hand the capability straight back to the page that already holds the cookie — and that includes the
+  app's own WebView, which carries a cookie of its own and renders the web portal's pages.
+- **Neither is a BROWSER too.** A dev-auth role sweep, a system caller, an unauthenticated probe. It
+  fails towards the answer that grants nothing, and losing an offline claim costs a visit nothing: the
+  save still happens, dated at arrival, and the rep is told nothing (Golden Rule #1).
+- **It is not authentication and decides no permission.** `assertPermission` and the territory gates
+  are untouched. It answers one question: may this request's body move a visit's date backwards.
+
+A browser's claim is dropped — not parsed, not partially honoured, not refused — and its mint answers a
+flat 404, so the refusal says nothing about what was refused and no rep ever meets it. The client is a
+**required** argument on both `saveVisit` and `issueTimeAnchor`, so the typechecker, not a convention,
+stops a new caller forgetting it.
+
+🔴 **What this does NOT close, and deliberately does not pretend to.** A bearer token is a token. A rep
+who can reach `/api/auth/login` with an `x-phoenix-client` header can mint one for himself, and from
+the server's side that request is indistinguishable from the app's. `src/lib/auth/native-session.ts`
+already names the hardening that would answer it — a device-bound refresh token — as a later phase, and
+this change does not fake one with a flag. What it removes is the path that needed nothing but devtools
+on a page the rep is already signed into.
+
+### 2. Photo-slot dating — smaller, API-only, and clamped in the database
+
+A visit that names `photoPath` is dated by its slot's **issue** time (`phoenix_crm_take_photo` returns
+`issued_at`), and a slot lives two hours. A `reusePlacePhoto` visit is dated by the place's own
+`captured_at` — itself that photo's slot issue time — and the place need only have been created in the
+last thirty minutes, so up to two and a half hours can separate the date from the arrival. Either can
+carry a save arriving at 02:30 back across 02:00 onto the previous visit day.
+
+Both are API-only today: the one-tap visit form sends no photo at all (2026-09-29), and the app sends
+its own. Neither ever needed the reach. A slot proves **when the photo was taken**; it was never
+evidence of which day the work belongs to.
+
+`phoenix_crm_save_visit` now re-dates such a visit at arrival, with `capture_source` `server` and
+`dwell_seconds` null rather than a made-up zero. Silently — the visit is real, so it is never refused
+and never explained (Golden Rule #1) — and the row then reads `capture_source` `server` beside a
+`photo_path`, which is how the Super Admin and the SFE Manager can see that it happened at all.
+
+🔴 **The clamp compares VISIT DAYS, never calendar dates.** Written against the calendar it would move
+an honest 23:00 photo saved at 00:30 a day forward and silently empty a rep's evening — the same defect
+pointing the other way. `20261002222403_phoenix_crm_visit_day_never_before_arrival.sql`.
+
+### 3. The offline anchor keeps its exemption, and must
+
+A capture at 19:00 synced at 02:30 belongs to the **19:00** day. That is the entire point of the
+offline design, and `tests/phoenix-crm-offline-clock.test.ts` has pinned it since the feature shipped:
+"the arrival time deciding the day … undoes the entire feature". It earns the exemption twice over —
+the server brackets the claim at both ends with its own readings, and after §1 only the app can make
+the claim at all. So the clamp runs **before** the offline block, which overwrites it. Never "fix" the
+two into one.
+
+The Super Admin's `phoenix_crm_admin_enter_visit` is a different function and is untouched: entering a
+visit a rep missed logging, on a day he chooses, is exactly what it is for.
+
+### The trap
+
+`tests/phoenix-crm-visit-dating.test.ts` finds the live `phoenix_crm_save_visit` by **sort order over
+`supabase/migrations/`**, never by a path written into the test. A pin naming a migration file is how a
+check quietly starts reading dead SQL — the text is still in the file and the database stopped running
+it the day a later migration replaced it. The same reading repaired three pins this change would
+otherwise have left stale: `SAVE_VISIT_DEFINER` in `tests/phoenix-crm-plan-review.test.ts`, the writer
+assertions in `tests/phoenix-crm-visit-product-manager.test.ts`, and — a different shape of the same
+failure — the `indexOf("const offlineClaim = parseOfflineCaptureClaim")` slice in
+`tests/phoenix-crm-offline-clock.test.ts`, whose anchor the TypeScript half detached: `indexOf` would
+have returned −1, `slice(-1, …)` returns the file's last character, and the "a clock argument must
+never cost a rep a real visit" check would have passed on one byte with nothing going red.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.

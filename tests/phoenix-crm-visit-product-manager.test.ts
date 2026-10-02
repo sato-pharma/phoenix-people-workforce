@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 import { parseVisitDraft } from "../src/lib/phoenix-crm/entry-rules.ts";
 import { buildOrgIndex, resolveVisitParticipants, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
@@ -25,6 +25,25 @@ const ROOT = new URL("../", import.meta.url);
 
 function source(path: string): string {
   return stripComments(readFileSync(new URL(path, ROOT), "utf8"));
+}
+
+/**
+ * The migration that defines a function LAST — the body the database actually runs.
+ *
+ * Asked of the directory rather than written down, so a later migration that patches the body cannot
+ * leave a pin below reading SQL the database has stopped running.
+ */
+function lastDefinerOf(name: string): string {
+  const files = readdirSync(new URL("supabase/migrations/", ROOT))
+    .filter((file) => file.endsWith(".sql"))
+    .sort()
+    .filter((file) =>
+      stripSqlComments(readFileSync(new URL(`supabase/migrations/${file}`, ROOT), "utf8")).includes(
+        `create or replace function public.${name}(`,
+      ),
+    );
+  assert.ok(files.length > 0, `${name} is defined by some migration`);
+  return files[files.length - 1];
 }
 
 // ── The organogram the resolver is tried against ────────────────────────────────────────────────
@@ -225,10 +244,16 @@ export function runPhoenixCrmVisitProductManagerTests(): void {
     // The column exists only for its own kind — the half that stops a quiet passenger on a double.
     assert.match(migration, /and \(kind = 'product_manager'\) = \(product_manager_hr_id is not null\)/);
     assert.match(migration, /product_manager_hr_id is null or product_manager_hr_id <> coalesce\(rep_hr_id, ''\)/);
-    // And the writer stores it. The body was PATCHED from 20261002125244 rather than retyped, so this
-    // also proves the five edits are all that reached it.
-    assert.match(migration, /v_product_manager text := upper\(nullif\(trim\(coalesce\(p ->> 'product_manager_hr_id', ''\)\), ''\)\);/);
-    assert.match(migration, /v_senior, v_product_manager, v_actor, v_products,/);
+
+    // And the writer stores it — read from the migration that defines `phoenix_crm_save_visit` LAST,
+    // found by SORT ORDER rather than written here. 🔴 Asserting it against the file above would be
+    // reading DEAD SQL the moment another migration patches the body again, which 20261002222403
+    // already has: the text would still be in that file and the database would have stopped running
+    // it. Every later replacer patches the body in place, so these two lines survive each one.
+    const writer = readFileSync(new URL(`supabase/migrations/${lastDefinerOf("phoenix_crm_save_visit")}`, ROOT), "utf8");
+    assert.match(writer, /v_product_manager text := upper\(nullif\(trim\(coalesce\(p ->> 'product_manager_hr_id', ''\)\), ''\)\);/);
+    assert.match(writer, /v_senior, v_product_manager, v_actor, v_products,/);
+    assert.match(writer, /\(v_kind = 'product_manager' and v_rep is not null and v_manager is null and v_senior is null and v_product_manager is not null\)/);
 
     // 🔴 `double_visits` must still count ONE kind. If this ever becomes `kind <> 'single'`, a product
     // manager's call lands in the district managers' double-visit figures.

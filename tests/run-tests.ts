@@ -1665,6 +1665,7 @@ import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photo
 import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
 import { runPhoenixCrmSweepPagingTests } from "./phoenix-crm-sweep-paging.test.ts";
 import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test.ts";
+import { runPhoenixCrmVisitDatingTests } from "./phoenix-crm-visit-dating.test.ts";
 import { runPhoenixCrmOfflineWireTests } from "./phoenix-crm-offline-wire.test.ts";
 import { runPhoenixCrmRefusalMessagesTests } from "./phoenix-crm-refusal-messages.test.ts";
 import { runPhoenixCrmOutboxTests } from "./phoenix-crm-outbox.test.ts";
@@ -5765,6 +5766,11 @@ await runTest(
 await runTest(
   "Phoenix CRM can date a visit captured with no signal, without trusting the phone's clock (A1 phase 1 — owner, 2026-09-27: \"I want the Cairo time, but I don't want the time on the phone because they may install an app that changes the time in the phone\"; the phone sends a DURATION measured on the monotonic clock, never a timestamp, against an ANCHOR the server wrote and looks up, so capturedAt = the server's own anchor time plus the elapsed time; the claim must fit inside the window the server brackets at both ends itself, which makes the bound physics rather than trust; a correction can only ever pull a claim back towards the truth and never past the server's own receipt; a delta measured across a reboot is refused because the monotonic clock resets, while two UNKNOWN boot ids are not a match; a borrowed anchor is refused; and the visit files under the Cairo day it was CAPTURED, never the day it arrived)",
   runPhoenixCrmOfflineClockTests,
+);
+
+await runTest(
+  "Phoenix CRM never dates a visit onto an EARLIER visit day than the one it arrived on (the 2026-10-02 audit's two paths across the 02:00 cutoff). The offline claim was the real hole: its elapsed time is bounded only from ABOVE — correctly, since a capture taken moments after anchoring is honest — and only the APP has an offline queue, so in a browser an anchor minted this afternoon plus `elapsedMs: 0` tomorrow filed the visit on today, counted and read as today's. A browser may now neither make the claim nor mint an anchor, decided from the request's own headers and never from its body, with BOTH a cookie and a bearer reading as the BROWSER because resolveAccessContext returns on the cookie first, and everything else failing towards browser; the client is a required argument on both services, so a new caller cannot forget it. The second path was the photo slot, which lives two hours (two and a half through a reused place photo): the live phoenix_crm_save_visit now dates such a visit at ARRIVAL with capture_source 'server' and no dwell — silently, never a refusal (Golden Rule #1) — found by SORT ORDER rather than a migration path, so the pin cannot start reading dead SQL. The honest late save is deliberately untouched: a door photographed at 23:00 and saved at 00:30 is still that day's work, and a clamp written against the CALENDAR date would have emptied a rep's evening. The offline anchor keeps its exemption — 19:00 synced at 02:30 is still the 19:00 day, which is the whole feature",
+  runPhoenixCrmVisitDatingTests,
 );
 
 await runTest(

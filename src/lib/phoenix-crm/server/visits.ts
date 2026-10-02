@@ -73,6 +73,7 @@ import {
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { blindVisitForm } from "@/lib/phoenix-crm/server/blind-payloads";
+import { type CaptureClient } from "@/lib/phoenix-crm/server/capture-client";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
@@ -922,7 +923,15 @@ export type SavedVisit = {
   visitAskNote: string | null;
 };
 
-export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise<SavedVisit> {
+/**
+ * Save one visit.
+ *
+ * `client` is which client sent it (`capture-client.ts`), and it decides exactly one thing: whether
+ * the body's offline capture claim is read at all. Only the app queues visits, so only the app may
+ * date one before the save arrived; a browser's save is always dated from the server's own clock or
+ * from the photo slot it just took.
+ */
+export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: CaptureClient): Promise<SavedVisit> {
   const body = record(raw);
   if (!isUuid(body.id)) throw validationError("Start the visit again from Add Visit.");
   const visitId = String(body.id).toLowerCase();
@@ -975,8 +984,16 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
    * Every failure is SILENT and non-fatal. A missing, borrowed, stale or impossible claim leaves
    * this null, the save falls through to the photo slot exactly as it always did, and the rep is
    * told nothing (Golden Rule #1). A rep must never lose a real visit to an argument about a clock.
+   *
+   * 🔴 AND ONLY THE APP MAY MAKE THE CLAIM. The bound above is one-sided by design — it stops a
+   * phone claiming MORE elapsed time than passed, and must not stop it claiming less, because a
+   * capture taken moments after anchoring is honest. The web app has no offline queue at all, so in
+   * a browser that one-sidedness is the whole exploit: an anchor taken this afternoon plus
+   * `elapsedMs: 0` tomorrow files the visit on today, counted and read as today's. A browser's claim
+   * is therefore not read, not partially honoured and not refused — the save proceeds exactly as an
+   * ordinary one and is dated at arrival (`capture-client.ts`).
    */
-  const offlineClaim = parseOfflineCaptureClaim(body);
+  const offlineClaim = client === "app" ? parseOfflineCaptureClaim(body) : null;
   let offlineCapturedAt: string | null = null;
   let offlineAnchorId: string | null = null;
   if (offlineClaim) {
