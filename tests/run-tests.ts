@@ -168,6 +168,7 @@ import { runProbationDomainMigrationReadinessTests } from "./probation-domain-mi
 import { runCrmContactCodeTests } from "./crm-contact-code.test.ts";
 import { runCustomerGeographySpineTests } from "./customer-geography-spine.test.ts";
 import { runCustomer360Tests, runCustomer360AlsoKnownAsTests } from "./customer-360.test.ts";
+import { runDirectOrderPickerAliasTests } from "./direct-order-picker-confirmed-aliases.test.ts";
 import { runPhoenixCrmDuplicateCustomerTests } from "./phoenix-crm-duplicate-customers.test.ts";
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
 import { runCrmBlockCountingTests } from "./crm-block-counting.test.ts";
@@ -3490,6 +3491,10 @@ await runTest("direct channel", runDirectChannelTests);
 await runTest("direct orders land on their own area", runDirectOrdersLandOnTheirOwnAreaTests);
 await runTest("the place spine resolves EXACT customer-code pairs (two .in() filters are independent)", runCustomerGeographySpineTests);
 await runTest("Customer 360 hides confidential money and never offers a picker wider than its viewer", runCustomer360Tests);
+await runTest(
+  "the direct-order pharmacy picker says what else a shop is called: confirmed links only, attached after the wholesaler guard and the area scope, and a failure costs the footnote not the list",
+  runDirectOrderPickerAliasTests,
+);
 await runTest(
   "one doctor twice on one rep's list is housekeeping for the SFE: a spelling never a rhyme, never shown to the rep, and nothing on it acts",
   runPhoenixCrmDuplicateCustomerTests,

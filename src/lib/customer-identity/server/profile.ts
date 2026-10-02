@@ -3,6 +3,7 @@ import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   AlsoKnownAs,
+  AlsoKnownAsRow,
   DistributorCodePair,
   EvidenceBand,
   IdentityCandidate,
@@ -405,4 +406,87 @@ export async function loadAlsoKnownAs(source: IdentitySource, sourceId: string):
   if (others.length === 0) return null;
 
   return { displayName: profile.displayName, masterId: profile.masterId, others };
+}
+
+/**
+ * The same answer for MANY rows at once, for a screen that lists rows rather than opening one.
+ *
+ * 🔴 IT EXISTS BECAUSE THE PICKER SEARCHES ON EVERY KEYSTROKE. Calling `loadAlsoKnownAs` per hit
+ * would be thirty round trips per letter typed, and each one loads a master's whole history —
+ * its events, its rulings and the name of everyone who ever touched it — to print one line. This
+ * is four queries however many rows are handed in, and reads only what a label needs.
+ *
+ * 🔴 IT IS STILL CONFIRMED-ONLY, and silence still means "nobody has been asked". A source id
+ * missing from the returned map is a row on no master, never a row somebody ruled apart.
+ */
+export async function loadAlsoKnownAsBatch(
+  source: IdentitySource,
+  sourceIds: readonly string[],
+): Promise<Map<string, AlsoKnownAsRow[]>> {
+  const out = new Map<string, AlsoKnownAsRow[]>();
+  const ids = [...new Set(sourceIds.map((id) => (id ?? "").trim()).filter(Boolean))];
+  if (ids.length === 0) return out;
+
+  const admin = getSupabaseAdmin();
+  const mine: Row[] = [];
+  for (let at = 0; at < ids.length; at += 150) {
+    const { data, error } = await admin
+      .from("customer_identity_links")
+      .select("master_id, source_id")
+      .eq("source", source)
+      .in("source_id", ids.slice(at, at + 150));
+    if (error) throw new Error(`customer-identity: reading the links failed — ${error.message}`);
+    mine.push(...((data ?? []) as Row[]));
+  }
+  if (mine.length === 0) return out;
+
+  const masterOf = new Map<string, string>();
+  for (const row of mine) masterOf.set(text(row.source_id), text(row.master_id));
+  const masterIds = [...new Set([...masterOf.values()])];
+
+  const members: Row[] = [];
+  for (let at = 0; at < masterIds.length; at += 150) {
+    const { data, error } = await admin
+      .from("customer_identity_links")
+      .select("master_id, source, source_id, kind")
+      .in("master_id", masterIds.slice(at, at + 150));
+    if (error) throw new Error(`customer-identity: reading the master's links failed — ${error.message}`);
+    members.push(...((data ?? []) as Row[]));
+  }
+
+  // One read per SOURCE rather than one per row — `readSource` already batches by id.
+  const idsBySource = new Map<IdentitySource, string[]>();
+  for (const member of members) {
+    const memberSource = text(member.source) as IdentitySource;
+    const held = idsBySource.get(memberSource) ?? [];
+    held.push(text(member.source_id));
+    idsBySource.set(memberSource, held);
+  }
+  const resolved = new Map(
+    await Promise.all([...idsBySource].map(async ([one, list]) => [one, await readSource(one, list)] as const)),
+  );
+
+  const byMaster = new Map<string, AlsoKnownAsRow[]>();
+  for (const member of members) {
+    const memberSource = text(member.source) as IdentitySource;
+    const memberId = text(member.source_id);
+    const found = resolved.get(memberSource)?.get(memberId);
+    const held = byMaster.get(text(member.master_id)) ?? [];
+    held.push({
+      kind: text(member.kind) as IdentityKind,
+      missing: !found,
+      // A row whose source has gone still has to appear and still has to say something; its own
+      // id is the only honest label left, exactly as the single-row reader does.
+      name: found?.name ?? memberId,
+      source: memberSource,
+      sourceId: memberId,
+    });
+    byMaster.set(text(member.master_id), held);
+  }
+
+  for (const [sourceId, masterId] of masterOf) {
+    const others = othersOnMaster(byMaster.get(masterId) ?? [], source, sourceId);
+    if (others.length > 0) out.set(sourceId, others);
+  }
+  return out;
 }

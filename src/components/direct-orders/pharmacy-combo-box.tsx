@@ -16,6 +16,8 @@ export type PharmacySearchHit = {
   regionName: string;
   phoenixPharmacyCode: string | null;
   verificationStatus: string | null;
+  /** Other names the Super Admin CONFIRMED are the same customer. Empty for almost every hit. */
+  alsoKnownAs: string[];
 };
 
 type Props = {
@@ -218,6 +220,16 @@ export function PharmacyComboBox({ onSelect, inputClassName, distributorCode }: 
                       appear, the submitter must see WHY rather than a row that looks ordinary. */}
                   {hit.verificationStatus === "rejected" ? (
                     <span className="bg-rose-100 px-1 py-0.5 font-bold text-rose-800">rejected — do not use</span>
+                  ) : null}
+                  {/* 🔴 CONFIRMED LINKS ONLY, AND NEVER A SUGGESTION. This line says a person
+                      decided these rows are one customer; the engine's maybes stay on the Super
+                      Admin's own screen, because a maybe shown at the moment someone is choosing
+                      a pharmacy is a maybe they will act on. It also adds no hit and removes
+                      none — the list is exactly what it was, with one more thing said about it. */}
+                  {hit.alsoKnownAs.length > 0 ? (
+                    <span dir="auto" className="min-w-0 break-words text-slate-500">
+                      also known as {hit.alsoKnownAs.join(" · ")}
+                    </span>
                   ) : null}
                 </span>
                 {hit.address ? (

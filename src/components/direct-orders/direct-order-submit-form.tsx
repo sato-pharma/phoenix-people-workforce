@@ -328,6 +328,10 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
       regionName: hit.regionName,
       phoenixPharmacyCode: hit.phoenixPharmacyCode,
       verificationStatus: null,
+      // Empty rather than looked up: this path is the "did you mean this pharmacy?" suggestion
+      // built from what the submitter has typed so far, not a row the picker returned, so there
+      // is no confirmed link behind it to report — and the server re-reads the catalogue row.
+      alsoKnownAs: [],
     });
     setPharmacyMode("picked");
     setPreflight({ codeConflicts: [], nameMatches: [] });
