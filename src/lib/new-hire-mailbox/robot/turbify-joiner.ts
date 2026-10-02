@@ -43,11 +43,11 @@ import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
 import { APP_PASSWORD_PAGE, ECP_LOCATORS, ONE_TIME_PASSWORD_DIALOG, type Locator } from "@/lib/turbify/locators";
 import { cssQueryFor, resolveOne, rowCountRefusal, type CandidateReader, type ElementCandidate } from "@/lib/turbify/resolve";
 import {
-  CLEAR_FIELD_EXPRESSION,
+  clearField,
+  clickNode,
   CONSOLE_VIEWPORT,
   decideClickDelivery,
-  HIT_TEST_EXPRESSION,
-  NODE_CLICK_EXPRESSION,
+  readHitTest,
   type HitTest,
 } from "@/lib/turbify/click-delivery";
 import { COMPANY_MAIL_DOMAIN } from "./safety";
@@ -61,7 +61,16 @@ const CREATE_SUBMIT_WORDINGS = ["Create", "Create user", "Add user", "Add", "Sav
 /** Candidate wordings for the change-password screen inside a mailbox. */
 const CHANGE_PASSWORD_WORDINGS = ["Change password", "Update password", "Save password", "Save"] as const;
 
-type Handle = { click: () => Promise<void>; type: (text: string, options?: Record<string, unknown>) => Promise<void> };
+type Handle = {
+  click: () => Promise<void>;
+  type: (text: string, options?: Record<string, unknown>) => Promise<void>;
+  /**
+   * 🔴 THE ONLY FORM THAT BINDS THE ELEMENT. `page.evaluate(string, handle)` evaluates the string
+   * as an expression and ignores the handle, so an arrow-function string never runs at all —
+   * measured 2026-10-02, and it made every click in this driver a no-op. Pass a real function.
+   */
+  evaluate: <T>(fn: (element: Element) => T) => Promise<T>;
+};
 type ConsolePage = {
   $$: (selector: string) => Promise<Handle[]>;
   $$eval: <T>(selector: string, fn: (elements: Element[]) => T) => Promise<T>;
@@ -131,8 +140,8 @@ async function act(page: ConsolePage, locator: Locator, action: (handle: Handle)
  */
 async function clickResolved(page: ConsolePage, locator: Locator): Promise<void> {
   await act(page, locator, async (handle) => {
-    const hit = await page
-      .evaluate<HitTest>(HIT_TEST_EXPRESSION, handle)
+    const hit = await handle
+      .evaluate<HitTest>(readHitTest)
       .catch(() => ({ isTopmost: true, obstruction: null }) as HitTest);
     const delivery = decideClickDelivery(hit, locator.purpose);
     if (delivery.via === "coordinates") {
@@ -142,7 +151,7 @@ async function clickResolved(page: ConsolePage, locator: Locator): Promise<void>
     logInfo("Turbify click delivered on the node because something was covering the control", {
       labels: { event: "turbify_click_obstructed", purpose: locator.purpose, reason: delivery.reason },
     });
-    await page.evaluate<void>(NODE_CLICK_EXPRESSION, handle);
+    await handle.evaluate<void>(clickNode);
   });
 }
 
@@ -161,7 +170,7 @@ const clickOne = (page: ConsolePage, locator: Locator) => clickResolved(page, lo
  */
 const fillOne = (page: ConsolePage, locator: Locator, value: string) =>
   act(page, locator, async (handle) => {
-    await page.evaluate<void>(CLEAR_FIELD_EXPRESSION, handle).catch(() => {});
+    await handle.evaluate<void>(clearField).catch(() => {});
     await handle.type(value, { delay: 15 });
   });
 
