@@ -129,10 +129,22 @@ export function runPhoenixCrmPlanWeeklyOnlyTests(): void {
     assert.deepEqual(Object.fromEntries(whens), PLAN_WEEK_DUE_OVERRIDES, "phoenix_crm_week_due_on holds exactly the same overrides");
     assert.match(migration, /else p_week_start - 2/, "and the same Thursday-before rule for every other week");
     // The weekly transition reads it, and a re-send after an acknowledged edit keeps its first verdict.
-    assert.match(migration, /due_on = public\.phoenix_crm_week_due_on\(pl\.week_start\),/, "the transition stamps the due date from the one function");
+    // 🔴 THE LIVE BODY MOVED ON 2026-10-02, so these two read the LATER migration: the cut-off became an
+    // INSTANT (23:55 Cairo), and with `create or replace` only the newest file describes what runs. Left
+    // pointing at the older file they would both still pass while pinning a rule the database has not had
+    // since — the stale-citation shape, with a green test holding it in place.
+    const deadlineMigration = readFileSync(
+      "supabase/migrations/20261002122000_phoenix_crm_plan_deadline_2355.sql",
+      "utf8",
+    ).replace(/--.*$/gm, "");
     assert.match(
-      migration,
-      /submitted_late = case\s+when exists \(\s+select 1 from public\.phoenix_crm_plan_edit_requests r where r\.plan_id = pl\.id and r\.status = 'reopened'\s+\) then pl\.submitted_late\s+else v_today > public\.phoenix_crm_week_due_on\(pl\.week_start\)\s+end,/,
+      deadlineMigration,
+      /due_on = public\.phoenix_crm_week_due_on\(pl\.week_start\),/,
+      "the transition stamps the due date from the one function",
+    );
+    assert.match(
+      deadlineMigration,
+      /submitted_late = case\s+when exists \(\s+select 1 from public\.phoenix_crm_plan_edit_requests r where r\.plan_id = pl\.id and r\.status = 'reopened'\s+\) then pl\.submitted_late\s+else now\(\) > public\.phoenix_crm_week_deadline_at\(pl\.week_start\)\s+end,/,
       "a week sent again after an agreed edit is never stamped late for it",
     );
   }

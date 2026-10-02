@@ -19,7 +19,8 @@
 
 import { CAIRO_MONTHS } from "@/lib/format/cairo-datetime";
 import { isUuid as isUuidText } from "@/lib/http/uuid";
-import { fieldWeekDays, planDayListTypes, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import { formatPhoenixLongDate } from "@/lib/i18n/format";
+import { fieldWeekDays, planDayListTypes, PLAN_DEADLINE_LABEL, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import { formatTimingWindow, PHOENIX_CRM_WEEKDAY_NAMES, windowsForWeekday } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
@@ -52,6 +53,22 @@ export function planStatusLabel(status: PhoenixCrmPlanStatus | null): string {
   if (status === "returned") return "Returned for changes";
   if (status === "draft") return "Draft";
   return "Not started";
+}
+
+/**
+ * When a plan is due, as a rep reads it: the date AND the hour (owner, 2026-10-02 — "the deadline to
+ * submit the plan is thuersday 11:5pm and show themn this").
+ *
+ * ONE composer, so every screen showing a due date shows the same deadline. Showing the date alone is
+ * what this replaces: the cut-off was midnight, nothing said so, and the rep was left to guess the hour
+ * of the one thing his week is judged on. `PLAN_DEADLINE_LABEL` holds the wording and
+ * `planDeadlinePassed` the verdict — never a second copy of either.
+ */
+export function planDueLabel(dueOn: string | null | undefined): string {
+  if (!dueOn) return "—";
+  // "at", not a comma: the long date already carries one after the weekday, and "Thursday, 8 October
+  // 2026, 11:55 PM" reads as a list rather than as a time.
+  return `${formatPhoenixLongDate(dueOn)} at ${PLAN_DEADLINE_LABEL}`;
 }
 
 /** A rep edits a draft or a returned plan. Submitted and approved plans are reopened first. */
