@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { pickMergedPrForTip, removalVerdict } from "../scripts/lib/remove-gate.mjs";
+import { isShaLike, pickMergedPrForTip, removalVerdict } from "../scripts/lib/remove-gate.mjs";
 
 /**
  * `new-session.mjs --remove` must not accept a merged PR that merely SHARES THE BRANCH NAME, and
@@ -74,6 +74,14 @@ export function runWorktreeRemoveHeadShaGateTests() {
     assert.equal(pickMergedPrForTip([], TIP), null);
     assert.equal(pickMergedPrForTip(null as never, TIP), null, "a non-array must not throw inside the gate");
     assert.equal(pickMergedPrForTip([{ headRefOid: TIP, number: 1 }], ""), null, "an unknown tip matches nothing");
+    // 🔴 `headSha` now answers NULL when git cannot say, and this is the call that receives it. The
+    // gate must then refuse rather than accept the first merged PR on the name — a vouch granted
+    // because the tip was UNREADABLE is the original defect with a different cause.
+    assert.equal(
+      pickMergedPrForTip([{ headRefOid: TIP, number: 5106 }], null as never),
+      null,
+      "an unreadable tip must vouch for nothing — not even for a PR whose head really is this branch's",
+    );
   }
 
   // ── 2. An OPEN PR outranks every safety signal ──────────────────────────────────────────────
@@ -168,12 +176,12 @@ export function runWorktreeRemoveHeadShaGateTests() {
     // literal word: "its headRefOid equal to HEAD". Observed on the first real run of this advice,
     // retiring `_wt-banner-behind-main` on 2026-10-02. The fallback is right for its other caller
     // (the rescue command, printed while the folder still exists), so what was wrong is the timing.
-    assert.match(advice, /headRefOid equal to " \+\s*retiredTip/, "the advice must interpolate a tip captured earlier");
-    assert.doesNotMatch(
-      advice,
-      /headRefOid equal to " \+\s*headSha\(dir\)/,
-      "and must never ask git in a folder that has already been removed",
-    );
+    // The PROPERTY, not the adjacency: the advice interpolates the tip captured earlier, and never
+    // re-asks git. Pinning the exact `" + retiredTip` spacing broke the moment a null fallback was
+    // added between them, which is a test measuring its own formatting rather than the rule.
+    assert.match(advice, /headRefOid equal to /, "the advice must still name what to compare");
+    assert.match(advice, /retiredTip/, "and interpolate the tip captured earlier");
+    assert.doesNotMatch(advice, /headSha\(dir\)/, "and must never ask git in a folder that has already been removed");
     const capture = source.indexOf("const retiredTip");
     const removal = source.indexOf('git(["worktree", "remove", dir])');
     assert.ok(capture !== -1 && removal !== -1, "could not locate the capture and the removal — this pin measures nothing");
@@ -181,6 +189,49 @@ export function runWorktreeRemoveHeadShaGateTests() {
       capture < removal,
       "the tip must be captured BEFORE `worktree remove`, or the advice names the fallback instead of a sha",
     );
+  }
+
+  // ── 5. A FAILED READ MUST NOT PASS FOR A SHA, ANYWHERE ──────────────────────────────────────
+  //
+  // `headSha` used to fall back to the string `"HEAD"` — a value that reads as a sha, prints as a
+  // sha and is not one. #5119 fixed the one call site that printed it; this removes the class, so
+  // the next caller to ask at a moment git cannot answer cannot be handed plausible nonsense.
+  {
+    const source = read("scripts/new-session.mjs");
+    const fn = source.slice(source.indexOf("function headSha"), source.indexOf("function shortSha"));
+    assert.ok(fn.length > 50, "could not isolate headSha — this pin is measuring nothing");
+    assert.doesNotMatch(fn, /return "HEAD"/, "the string fallback must be gone — it is the whole defect");
+    assert.match(fn, /return null/, "a failed read answers null");
+    assert.match(
+      fn,
+      /isShaLike\(sha\)/,
+      "and a truthy-but-not-a-sha answer is null too — the point is that nothing may look ok and not be",
+    );
+
+    // THE PREDICATE ITSELF, exercised. `headSha` is module-private and its file runs a CLI at
+    // import, so the shape test lives in `remove-gate.mjs` where a fixture can reach it — the half
+    // the defect actually turned on.
+    assert.equal(isShaLike("HEAD"), false, "the exact string the old fallback returned must not pass for a sha");
+    assert.equal(isShaLike("90f883597"), true, "a short sha is legitimate — rev-parse --short emits one");
+    assert.equal(isShaLike("90f883597b9a7de986346712dbd41eafd56fc4f3"), true, "and so is the full form");
+    assert.equal(isShaLike("DEADBEEF"), false, "uppercase is refused: git emits lowercase, words-that-look-like-hex do not");
+    for (const bad of ["", "abc", "zzzzzzz", "not a sha", "  90f883597  ", null, undefined, 42, {}]) {
+      assert.equal(isShaLike(bad as never), false, `${JSON.stringify(bad)} must not pass for a sha`);
+    }
+
+    // EVERY caller must handle it. A null reaching `.slice()` throws inside a cleanup command, which
+    // is a worse failure than the wrong word it replaced.
+    assert.doesNotMatch(source, /headSha\(dir\)\.slice\(/, "no caller may call .slice() straight on a possibly-null sha");
+
+    // The advice: a reader who gets no sha must still get something runnable, and the branch is
+    // right there at that moment, so this is never a dead end.
+    assert.match(source, /retiredTip \?\?/, "the advice must have a fallback for an unreadable tip");
+    assert.match(source, /git rev-parse " \+ entry\.branch/, "and it must be a command that still answers");
+
+    // The detached-HEAD rescue: with no branch name AND no sha there is nothing to name, so it says
+    // so rather than printing `git branch rescue/detached-null null`.
+    assert.match(source, /detached && detachedSha === null/, "the rescue must handle an unreadable detached tip");
+    assert.match(source, /rev-parse HEAD/, "and point the reader at the folder, which still exists there");
   }
 
   console.log("worktree remove head-sha gate: OK");

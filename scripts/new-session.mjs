@@ -34,7 +34,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { linkNodeModules } from "./lib/link-node-modules.mjs";
-import { pickMergedPrForTip, removalVerdict } from "./lib/remove-gate.mjs";
+import { isShaLike, pickMergedPrForTip, removalVerdict } from "./lib/remove-gate.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 
 // Commit charge, not RAM, is what freezes this machine — and a freeze leaves no
@@ -63,16 +63,38 @@ function fail(message) {
 }
 
 /**
- * The commit a worktree is sitting on. The one thing a DETACHED HEAD still has: `worktrees()` reports
- * its branch as the literal string "(detached)", which is useless in a command, so anything advising
- * the reader how to keep a tip has to name the sha instead.
+ * The commit a worktree is sitting on, or NULL when git could not say.
+ *
+ * The one thing a DETACHED HEAD still has: `worktrees()` reports its branch as the literal string
+ * "(detached)", which is useless in a command, so anything advising the reader how to keep a tip has
+ * to name the sha instead.
+ *
+ * 🔴 IT USED TO FALL BACK TO THE STRING `"HEAD"`, AND THAT IS A VALUE WHICH READS AS A SHA, PRINTS
+ * AS A SHA AND IS NOT ONE. Measured 2026-10-02: `--remove` prints advice telling the reader to
+ * compare the merged PR's `headRefOid` against this sha, and it prints AFTER `git worktree remove`,
+ * so the call threw and the sentence came out as *"its headRefOid equal to HEAD"* — a check against
+ * nothing in particular, in the one line whose whole job was to name a commit. #5119 fixed that call
+ * site by reading the tip earlier; this removes the class, because the next caller to ask at a
+ * moment git cannot answer would have got the same plausible-looking nonsense.
+ *
+ * `null` forces each caller to say what it does not know. Every one of them does now, and the two
+ * that write a runnable command name something the reader can still run — the branch, or a
+ * `rev-parse` against the folder, both of which exist at the moment that advice prints.
  */
 function headSha(dir) {
   try {
-    return git(["rev-parse", "HEAD"], { cwd: dir });
+    const sha = git(["rev-parse", "HEAD"], { cwd: dir });
+    // A truthy-but-empty answer is not a sha either. `git rev-parse` has no business returning one,
+    // and the point of this change is that nothing here may hand back a value that merely looks ok.
+    return isShaLike(sha) ? sha : null;
   } catch {
-    return "HEAD";
+    return null;
   }
+}
+
+/** The short form for a message, or null when there is no sha to shorten. */
+function shortSha(sha) {
+  return typeof sha === "string" ? sha.slice(0, 9) : null;
 }
 
 function powershell(command) {
@@ -630,10 +652,22 @@ if (args.includes("--remove")) {
     // the literal "(detached)" twice — printing `git branch rescue/(detached) (detached)`, which is
     // not a runnable command. Name the sha instead, which is what a detached HEAD actually has.
     const detached = !entry.branch || entry.branch === "(detached)";
-    const rescueName = detached
-      ? "detached-" + headSha(dir).slice(0, 9)
-      : String(entry.branch).replace(/^codex\//, "");
-    const rescueAt = detached ? headSha(dir) : entry.branch;
+    // 🔴 WHEN DETACHED AND THE SHA CANNOT BE READ, THERE IS NOTHING TO NAME — so say that, rather
+    // than build `git branch rescue/detached-null null`. The folder still exists here (this refusal
+    // runs before the removal), so the reader has a command that works: ask it for its own HEAD.
+    const detachedSha = detached ? shortSha(headSha(dir)) : null;
+    if (detached && detachedSha === null) {
+      fail(
+        "that worktree is on a DETACHED HEAD and git could not read its tip here, so there is no sha " +
+          "to put in a rescue command. Read it yourself with `git -C " +
+          JSON.stringify(dir) +
+          " rev-parse HEAD` and keep it with `git branch rescue/<name> <that sha>` before removing " +
+          "anything. Never PUSH a possibly-merged branch to rescue it: that opens a conflicting PR, " +
+          "and a conflicted PR runs no CI at all.",
+      );
+    }
+    const rescueName = detached ? "detached-" + detachedSha : String(entry.branch).replace(/^codex\//, "");
+    const rescueAt = detached ? detachedSha : entry.branch;
     fail(
       "keep the tip with `git branch rescue/" +
         rescueName +
@@ -670,13 +704,14 @@ if (args.includes("--remove")) {
   // 🔴 READ THE TIP BEFORE THE FOLDER GOES. The advice printed after the removal tells the reader to
   // compare the merged PR's `headRefOid` against this sha — that IS the advice, and the sha is the
   // only part of it they cannot look up from the message. `headSha(dir)` asks git with `cwd: dir`,
-  // so once `worktree remove` has run it throws and returns its "HEAD" fallback, which landed in the
-  // sentence as the literal word: "its headRefOid equal to HEAD". Observed on the first real run of
-  // that advice, 2026-10-02, retiring `_wt-banner-behind-main`.
+  // so once `worktree remove` has run it threw and returned its old "HEAD" fallback, which landed in
+  // the sentence as the literal word: "its headRefOid equal to HEAD". Observed on the first real run
+  // of that advice, 2026-10-02, retiring `_wt-banner-behind-main`.
   //
-  // The fallback is right for its other caller — the rescue command for a detached HEAD, printed
-  // while the folder still exists — so it stays; what was wrong is asking after the removal.
-  const retiredTip = headSha(dir).slice(0, 9);
+  // That fallback is now gone — `headSha` answers null — so the remaining question is what the
+  // advice says when the read genuinely fails while the folder still exists. The branch is still
+  // here at that point, so there is always a command that works: `git rev-parse <branch>`.
+  const retiredTip = shortSha(headSha(dir));
 
   git(["worktree", "remove", dir]);
   const husk = fs.existsSync(dir);
@@ -702,7 +737,9 @@ if (args.includes("--remove")) {
         entry.branch +
         " still exists locally. Before deleting it, confirm all three:\n" +
         "  1. the merged PR by NUMBER, and its headRefOid equal to " +
-        retiredTip +
+        // Null says the tip could not be read — so name the command that still answers rather than
+        // print a word that reads as a sha. The branch is right there; this is never a dead end.
+        (retiredTip ?? "the output of `git rev-parse " + entry.branch + "` (its tip could not be read here)") +
         " — never `--head " +
         entry.branch +
         "`, which answers about the name\n" +

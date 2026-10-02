@@ -61,3 +61,21 @@ export function removalVerdict(signals) {
   }
   return { ok: false, reason: "stranded" };
 }
+
+/**
+ * Whether a string is shaped like a git object id — the test that stops a failed read passing for a
+ * sha.
+ *
+ * 🔴 IT LIVES HERE SO IT CAN BE EXERCISED. `headSha` in `new-session.mjs` is module-private, and that
+ * file runs its CLI at import, so a test cannot call it. The predicate is the half worth proving and
+ * the one the defect turned on: `headSha` used to answer the string `"HEAD"` when git could not say
+ * — a value that reads as a sha, prints as a sha, and is not one. It reached the reader on
+ * 2026-10-02 as "its headRefOid equal to HEAD", in the one line whose whole job was to name a commit.
+ *
+ * Deliberately NOT length-40-only: `git rev-parse --short` is legitimate and this guards both forms.
+ * Deliberately case-SENSITIVE: git emits lowercase, and accepting uppercase would admit `DEADBEEF`
+ * and friends — words that look like hex — which is the class being closed.
+ */
+export function isShaLike(value) {
+  return typeof value === "string" && /^[0-9a-f]{7,40}$/.test(value);
+}
