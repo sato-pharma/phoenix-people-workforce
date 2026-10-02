@@ -384,3 +384,55 @@ function repoShareLines(verdict) {
     "  direction, so `git fetch` before acting on a tight one.",
   ];
 }
+
+/**
+ * How far behind `origin/main` the checkout these numbers were measured in is.
+ *
+ * 🔴 WHY A NUMBER, WHEN THE CAVEAT WAS ALREADY THERE. `autoloadFootprintLines` has ended with
+ * "one behind `origin/main` reports a stale margin in either direction" for weeks, and the comment
+ * above `enforced` carries the whole account of the 14-byte misread. Neither stopped it happening
+ * again on 2026-10-02: the primary's banner read **14 bytes left** while `origin/main` had
+ * **1,277**, because that checkout was 20 commits behind a trim that had already landed. A session
+ * read 14, treated it as an emergency, and spent a turn trimming room that existed. A prose caveat
+ * is easy to read past; `20 commit(s) BEHIND origin/main` is not, and it names the remedy by naming
+ * the cause.
+ *
+ * It is not only about bytes. The same stale folder ran a superseded `new-session.mjs --remove`
+ * gate an hour later — so this is the one fact that makes every other number in the banner
+ * conditional, which is why it prints whatever the footprint verdict says.
+ *
+ * THE COUNT IS A FLOOR, AND SAYING SO IS NOT A HEDGE. The local `origin/main` ref is only as fresh
+ * as the last fetch, and a SessionStart hook must not reach the network: seconds added to every
+ * session start is the worse trade. `check-required-checks.mjs` prints the same shape for the same
+ * reason and MAY fetch, because it is a command somebody chose to run.
+ *
+ * `null` means this is not a git checkout at all — a scratch session, a folder that is not a repo —
+ * and then this says NOTHING. That is this file's own rule: nothing to measure is silence,
+ * something present that could not be measured is loud.
+ */
+export function checkoutPositionLines(position) {
+  if (position === null || position === undefined) return [];
+  const sha =
+    typeof position.sha === "string" && position.sha.trim() !== "" ? position.sha.trim() : "?";
+
+  // Present but unreadable: say so out loud rather than let it pass for current. A detached HEAD, a
+  // missing `origin/main` ref and a git that errored all land here, each carrying its own note.
+  if (position.note) {
+    return [`  CHECKOUT ${sha} — POSITION UNKNOWN: ${position.note}. Read every figure above as unverified.`];
+  }
+
+  const behind = Number(position.behind);
+  if (!Number.isFinite(behind) || behind < 0) {
+    return [`  CHECKOUT ${sha} — POSITION UNKNOWN: the origin/main comparison returned no usable count.`];
+  }
+  if (behind === 0) {
+    return [`  CHECKOUT ${sha} — level with the local origin/main ref (a floor: as fresh as the last fetch).`];
+  }
+  return [
+    `  🔴 CHECKOUT ${sha} — ${behind} commit(s) BEHIND origin/main, so every figure above is THIS`,
+    "  checkout's and not `main`'s. A stale tree has reported 14 bytes left where main had 1,277, and",
+    "  has run a superseded repo script from the same folder. At least this many — the local",
+    "  origin/main ref is as fresh as the last fetch. `git fetch` and re-read before trimming;",
+    "  `git merge --ff-only origin/main` where that folder is safe to move.",
+  ];
+}
