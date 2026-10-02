@@ -1707,6 +1707,7 @@ import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-reque
 import { runPhoenixCrmApprovalNoticeTests } from "./phoenix-crm-approval-notices.test.ts";
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
 import { runPhoenixCrmVisitAsksTests } from "./phoenix-crm-visit-asks.test.ts";
+import { runPhoenixCrmPlanDayEdgesTests } from "./phoenix-crm-plan-day-edges.test.ts";
 import { runPhoenixCrmPlanReviewTests } from "./phoenix-crm-plan-review.test.ts";
 import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.ts";
 import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
@@ -6118,6 +6119,11 @@ await runTest(
 await runTest(
   "Phoenix CRM reviews a sent week as steps (owner, 2026-10-02 — managers approved 13 weeks of 51-94 customers in a median two minutes): a reviewer opening a week waiting for his decision walks Week, Day, Customers and Decide, the day read AM then PM and nothing sent but by a press, while the rep's own form and a week he only reads stay as they were; coverage counts VALIDATED customers only, per list and grade against tallyDoctorMonth's one target rule, over the month's sent and approved weeks plus this one, names who is left out, and says in words when nobody is validated yet; each send keeps what was sent, so a re-sent week shows only the customers and activities added and removed; and a reviewer may return ONE day, which alone reopens for the rep — the server hands the database that day and nothing else, sending again clears it, and an acknowledged edit after it opens the whole week; and the rep's visits on the OTHER days still count as planned (\"Still planned\", owner, 2026-10-02) — one day rule for Planned visit, Today, the missed record, the Team tab, the frequency report and the review's coverage, the same one phoenix_crm_save_visit stamps a visit with, beside a transition that carries both the one-day return and the 23:55 deadline",
   runPhoenixCrmPlanReviewTests,
+);
+
+await runTest(
+  "Phoenix CRM closes the six edges the audit of 2026-10-02 found around a plan DAY: HR's acknowledgement of an edit request now CLEARS a standing one-day return and writes the plan event, so the database stops counting the week's other days as sent once the rep saves (an off-plan customer was being stamped PLANNED with no district-manager and no SFE approval, and the reason he typed dropped); the landing chips count the PLAN's own stops done — never every visit of the day, which turned \"AM 3 of 2\" green with a planned stop still undone — and the off-plan work is said beside them, AM and PM apart; his week line counts the days he SENT instead of the week's own status, so a week returned for one day keeps its planned figures; the start guide carries the 23:55 deadline in English and Arabic, interpolated from the one constant; the 12:57 and 17:57 plan reminders skip a rep whose whole week is a holiday or his own approved leave, because that week can never be sent (Golden Rule #1 — never tell a rep to do what he cannot do); and pressing Next or Back while the microphone is still open no longer discards the recording in silence",
+  runPhoenixCrmPlanDayEdgesTests,
 );
 
 await runTest(

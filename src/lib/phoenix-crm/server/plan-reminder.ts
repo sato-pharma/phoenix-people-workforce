@@ -15,6 +15,7 @@
  * world has no reminder.
  */
 
+import { addDaysIso } from "@/lib/crm/dates";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
@@ -25,6 +26,7 @@ import {
   reminderTickOf,
   repReminder,
   territoriesOfStartedTeams,
+  weekIsAllDaysOff,
   type PlanReminderDay,
   type PlanReminderNotice,
   type PlanReminderTick,
@@ -32,6 +34,8 @@ import {
 import { territoryReviewer } from "@/lib/phoenix-crm/scope";
 import { seatsWithRealActivity } from "@/lib/phoenix-crm/server/daily-digest";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { loadSeatsDaysOff } from "@/lib/phoenix-crm/server/leave-days";
+import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import {
   PHOENIX_CRM_NOTIFICATION_CATEGORY,
   PHOENIX_CRM_NOTIFICATION_MODULE,
@@ -57,6 +61,13 @@ export type PlanReminderRun = {
   failed: number;
   /** Territories with a rep whose team has not started: left alone, and counted so a quiet run reads as one. */
   waitingForFirstUse: number;
+  /**
+   * Reps whose whole week is days off — a public holiday or their own approved leave on every working
+   * day — so the week holds no customer and the send would be refused `phoenix_crm:empty_plan`. They
+   * are left out of BOTH notices, and counted here so a run that reaches fewer people than there are
+   * unsent weeks says why (Golden Rule #1: never tell a rep to do what he cannot do).
+   */
+  cannotSend: number;
 };
 
 /** The hour it is in Cairo now, 0–23 — which of the day's two ticks a run is. */
@@ -124,6 +135,7 @@ export async function runPhoenixCrmPlanReminder(
     delivered: 0,
     failed: 0,
     waitingForFirstUse: 0,
+    cannotSend: 0,
   };
   if (!day) return empty;
 
@@ -137,7 +149,22 @@ export async function runPhoenixCrmPlanReminder(
     seats.map((seat) => seat.seatId),
     day.weekStart,
   );
-  const unsent = seats.filter((seat) => isUnsentStatus(statuses.get(seat.seatId)));
+  const stillToSend = seats.filter((seat) => isUnsentStatus(statuses.get(seat.seatId)));
+
+  // 🔴 A WEEK HE CANNOT SEND IS NEVER CHASED (Golden Rule #1). A week whose every working day is a
+  // public holiday or his own approved full-day leave holds no customer, and the send refuses an
+  // empty plan — so "Due tonight, press Send" was an instruction he had no way to follow, and his
+  // manager was told he had not sent it. The holidays are read ONCE for the week and the leave once
+  // for every rep on the list; both readers fail OPEN (no days off), which reminds him, and that is
+  // the safe direction.
+  const weekEnd = addDaysIso(day.weekStart, 5);
+  const [holidays, daysOffBySeat] = await Promise.all([
+    loadPlanHolidays(day.weekStart, weekEnd),
+    loadSeatsDaysOff(stillToSend, { from: day.weekStart, to: weekEnd }),
+  ]);
+  const unsent = stillToSend.filter(
+    (seat) => !weekIsAllDaysOff(day.weekStart, new Set([...holidays.keys(), ...(daysOffBySeat.get(seat.seatId)?.keys() ?? [])])),
+  );
 
   const names = await loadPeopleNames(unsent.map((seat) => seat.occupantHrId));
   const notices: PlanReminderNotice[] = [];
@@ -191,5 +218,6 @@ export async function runPhoenixCrmPlanReminder(
     delivered,
     failed,
     waitingForFirstUse: staffed.length - seats.length,
+    cannotSend: stillToSend.length - unsent.length,
   };
 }

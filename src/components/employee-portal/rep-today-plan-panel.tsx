@@ -168,6 +168,29 @@ function BrickHeading({ brick }: { brick: RepTodayBrick }) {
   );
 }
 
+/**
+ * A line under the stops: a small-caps label, then one figure per part — "This week  AM 10 planned ·
+ * 6 visited", "Also today  AM 1  PM 2".
+ *
+ * ONE component for both, so the second line cannot drift from the first. Each part is its own
+ * element and nothing joins or sums them (AM · PM · Pharmacies apart), and the row WRAPS rather than
+ * scrolling, which is what the fits-the-screen golden rule asks for. No parts, no line at all — the
+ * page's own rule is that it carries no empty tile.
+ */
+function FootLine({ label, parts }: { label: string; parts: readonly string[] }) {
+  if (parts.length === 0) return null;
+  return (
+    <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-slate-200 bg-slate-50 px-3 py-2">
+      <span className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">{label}</span>
+      {parts.map((part) => (
+        <span className="break-words text-phx-xs font-semibold tabular-nums text-slate-600" key={part}>
+          {part}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 export function RepTodayPlanPanel({ plan }: { plan: RepTodayPlan | null }) {
   // NO EMPTY TILE (the page's own rule): no approved day, no panel.
   if (!plan) return null;
@@ -210,19 +233,15 @@ export function RepTodayPlanPanel({ plan }: { plan: RepTodayPlan | null }) {
           </li>
         ))}
       </ul>
+      {/* 🔴 WHAT HE DID OFF THE PLAN, BESIDE IT (2026-10-02). The chips above count the plan's own
+          stops — an off-plan visit used to be added into them, which turned "AM 3 of 2" green with a
+          planned stop still undone. Apart, both figures are true, and the work he did off the plan
+          is still on his screen. AM and PM each their own part, never summed. */}
+      <FootLine label="Also today" parts={plan.alsoParts} />
       {/* 🔴 HIS OWN WEEK, ONE LINE (owner, 2026-10-02): his sent plan for the field week against what he
           has visited so far, AM · PM · Pharmacies APART like the chips above — each figure its own
           part, never added together. It wraps rather than scrolls (the fits-the-screen rule). */}
-      {plan.weekParts.length > 0 ? (
-        <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-slate-200 bg-slate-50 px-3 py-2">
-          <span className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">This week</span>
-          {plan.weekParts.map((part) => (
-            <span className="break-words text-phx-xs font-semibold tabular-nums text-slate-600" key={part}>
-              {part}
-            </span>
-          ))}
-        </p>
-      ) : null}
+      <FootLine label="This week" parts={plan.weekParts} />
     </section>
   );
 }

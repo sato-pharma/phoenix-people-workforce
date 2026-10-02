@@ -66,10 +66,12 @@ export function runPhoenixCrmVisitFormEaseTests(): void {
     const lastStep = form.indexOf('title="7 · What you took away"');
     assert.ok(lastStep !== -1 && barAt > lastStep, "the bar comes after every step, so it closes the form rather than splitting it");
 
-    // Leaving with a recording is said IN the bar, where it is in view from either exit.
-    const warnAt = form.indexOf("{UNSAVED_VOICE_NOTE_WARNING}");
+    // Leaving with a recording is said IN the bar, where it is in view from either exit. Since
+    // 2026-10-02 the sentence is CHOSEN (`voiceNoteLeaveWarning`) — a microphone still running, or a
+    // note recorded and not saved — so the bar renders the chosen one rather than naming a constant.
+    const warnAt = form.indexOf("{leaveWarning.message}");
     assert.ok(warnAt > barAt, "the unsaved-recording sentence is in the bottom bar, in view whichever exit he used");
-    assert.equal((form.match(/\{UNSAVED_VOICE_NOTE_WARNING\}/g) ?? []).length, 1, "and said once, not at the top as well");
+    assert.equal((form.match(/\{leaveWarning\.message\}/g) ?? []).length, 1, "and said once, not at the top as well");
   }
 
   // ── (b) The next missing thing, in the save's own words ─────────────────────────────────────────
