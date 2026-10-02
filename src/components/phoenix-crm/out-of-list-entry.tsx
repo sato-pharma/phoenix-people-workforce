@@ -202,7 +202,8 @@ export function OutOfListEntry({
                     type="button"
                   >
                     <span className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-                      <span className="min-w-0 flex-1">
+                      {/* A floor, not `min-w-0` — see visit-customer-picker.tsx for the measurement. */}
+                      <span className="min-w-[9rem] flex-1">
                         <span className="block break-words text-sm font-black text-slate-950">{customer.name}</span>
                         <span className="mt-0.5 block break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</span>
                       </span>

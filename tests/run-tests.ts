@@ -1641,6 +1641,7 @@ import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
 import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
 import { runPhoenixCrmFieldReachTests } from "./phoenix-crm-field-reach.test.ts";
+import { runPhoenixCrmNameBesidePillsTests } from "./phoenix-crm-name-beside-pills.test.ts";
 import { runPhoenixCrmCardTableParityTests } from "./phoenix-crm-card-table-parity.test.ts";
 import { runPhoenixCrmApprovalNudgeTests } from "./phoenix-crm-approval-nudge.test.ts";
 import { runPhoenixCrmLastVisitProductsTests } from "./phoenix-crm-last-visit-products.test.ts";
@@ -5878,6 +5879,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's field day and reach (owner, 2026-10-02): a Directions link to the customer's SAVED place — the destination only, Google Maps, no key, nothing about where the rep is, and no link with no usable point — on the visit flow's customer card (under it, never inside its button), the visit form's header and his planned day; one line for his own field week, his sent plan against his countable visits, AM · PM · Pharmacies apart and never totalled, read in the day's one parallel wave; and a 'Get Phoenix CRM messages on Telegram' card at the top of Phoenix CRM for the reps and managers until the server says they are connected, through the ONE existing connect flow, hidden for the Cairo day by Later with every storage touch wrapped",
   runPhoenixCrmFieldReachTests,
+);
+
+await runTest(
+  "Phoenix CRM's name-beside-pills row keeps a WIDTH FLOOR on the name (measured on staging's own CSS at 375px, 2026-10-02): the pill group is flex 0 1 auto with min-width auto so it never yields, and with min-w-0 the name's min-content is one broken character — the flex line can never overflow, the parent's flex-wrap is inert, and the name was squeezed to 59px over 6 lines with words broken mid-word while NOTHING scrolled (the portal shell clips), so min-w-[9rem] makes the line overflow and the pills drop to their own row, shrink-0 on the pills is never the fix, and 768px and above do not move",
+  runPhoenixCrmNameBesidePillsTests,
 );
 
 await runTest(

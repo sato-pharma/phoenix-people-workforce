@@ -241,7 +241,13 @@ export function VisitCustomerPicker({
                               type="button"
                             >
                               <span className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-                                <span className="min-w-0 flex-1">
+                                {/* 🔴 A FLOOR, NOT `min-w-0`. The pills are `flex: 0 1 auto` with `min-width: auto`, so they
+                                    never yield; with `min-w-0` here the name's min-content is ONE broken character, the flex
+                                    line can never overflow, and the parent's `flex-wrap` is inert — the name was squeezed to
+                                    59px and broke "Mohamed" mid-word at 375px, while nothing scrolled and no check went red
+                                    (measured on staging's own CSS, 2026-10-02). The floor makes the line overflow, so the
+                                    pills drop to their own row and the name gets the full width. Above a phone nothing moves. */}
+                                <span className="min-w-[9rem] flex-1">
                                   <span className="block break-words text-sm font-black text-slate-950">{customer.name}</span>
                                   <span className="mt-0.5 block break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</span>
                                 </span>
