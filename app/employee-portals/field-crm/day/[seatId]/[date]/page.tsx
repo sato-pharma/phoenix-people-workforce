@@ -26,7 +26,9 @@ export const dynamic = "force-dynamic";
  * would have bounced him to a page that does not exist. The module chooser is untouched: `day` is
  * three segments deep, so it can never be read as a module slug by `[module]`.
  *
- * 🔴 WHO MAY OPEN IT IS DECIDED BY `loadVisitDay`'s OWN GATE, not by a second rule here. It resolves
+ * 🔴 WHO MAY OPEN IT IS DECIDED IN THE LOADER, not by a rule here. `loadPhoenixCrmDayPage` asks gate one
+ * first — the `phoenix_crm` read permission, which a per-account module lock also closes (audit,
+ * 2026-10-02: the day page used to skip it) — and then `loadVisitDay`'s own gate decides. That one resolves
  * the territory through the viewer's scope and refuses anything outside it, and it applies
  * `isLocationBlind`: a manager reads the measured location line, and a REP opening his own day
  * reads "Visit saved" with no distance and no flag (Golden rule #1). A second gate on this page

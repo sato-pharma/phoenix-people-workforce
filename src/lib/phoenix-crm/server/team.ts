@@ -31,10 +31,12 @@ import {
   canDecideListRequest,
   canReviewTerritory,
   isLocationBlind,
+  locationSight,
   testModeFor,
   testReadSeats,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
+import { offPlanLocationFlag } from "@/lib/phoenix-crm/server/blind-payloads";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { doubleVisitPlanReach, type DoubleVisitPlanReach } from "@/lib/phoenix-crm/server/double-visit-plans";
 import { loadReadiness, loadRequestRows, mapRequestRow, requestPeople, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
@@ -352,7 +354,10 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
         // own waiting off-plan visits — and the location flag is cleared before it leaves the server, not
         // merely left off his screen (found 2026-10-02: no rep screen showed it, the raw answer carried it).
         // A territory this view cannot place is treated as his, so it fails blind.
-        locationFlag: !seat || isLocationBlind(viewer, seat) ? null : view.locationFlag,
+        // 🔴 And a manager below the Super Admin and SFE reads the distance only (owner, 2026-10-02): a
+        // weak signal is never far (far beats weak, geo.ts), so for him it is a visit at the place, with
+        // no line on the card — "Weak location signal when it was saved" is not his to read.
+        locationFlag: offPlanLocationFlag(seat ? locationSight(viewer, seat) : "none", view.locationFlag),
         territoryName: summaries.get(view.seatId)?.name ?? "Territory",
         // The step it is ON decides who may press the button: the manager's step is the territory's
         // reviewer, the SFE's step is the SFE Manager. Everyone else in scope reads it and no more.

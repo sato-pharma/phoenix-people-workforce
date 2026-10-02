@@ -633,13 +633,15 @@ const STILL_PLANNED = "supabase/migrations/20261002125244_phoenix_crm_still_plan
 /**
  * The migration that defines `phoenix_crm_save_visit` LAST — the body the database actually runs.
  *
- * It is not {@link STILL_PLANNED} any more: 20261002205436 added `product_manager_hr_id` by PATCHING
- * that body in place (five surgical edits, nothing else), so the "Still planned" branch above is
- * byte-identical in both files and the rule is unchanged. **Move this constant with every later
+ * It is not {@link STILL_PLANNED} any more, and it is no longer 20261002205436 either. Each of those
+ * replacers PATCHED the body in place rather than retyping it — 20261002205436 added
+ * `product_manager_hr_id` in five surgical edits, 20261002222403 inserted one block that stops a
+ * photo slot dating a visit onto an earlier visit day — so the "Still planned" branch below is
+ * byte-identical in all three and the rule is unchanged. **Move this constant with every later
  * migration that recreates the function** — that is the whole point of the assertion it feeds, which
  * is what tells the next session where the live definition lives.
  */
-const SAVE_VISIT_DEFINER = "supabase/migrations/20261002205436_phoenix_crm_visit_product_manager.sql";
+const SAVE_VISIT_DEFINER = "supabase/migrations/20261002222403_phoenix_crm_visit_day_never_before_arrival.sql";
 const ONE_TAP_VISIT = "supabase/migrations/20260929235553_phoenix_crm_one_tap_visit.sql";
 const EDIT_REQUESTS = "supabase/migrations/20261002002251_phoenix_crm_plan_edit_requests.sql";
 const DEADLINE = "supabase/migrations/20261002122000_phoenix_crm_plan_deadline_2355.sql";

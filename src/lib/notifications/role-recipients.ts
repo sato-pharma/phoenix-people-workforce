@@ -12,7 +12,7 @@ import { phoenixRoles, type AccessContext, type PhoenixRole } from "@/lib/auth/p
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
-import { logError } from "@/lib/observability/log";
+import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const notificationRoleKeys = [
@@ -470,6 +470,18 @@ async function loadDeliveryBindings(hrIds: string[], warnings: string[]): Promis
  * reaches its audience. The opposite choice - treating an unreadable table as "exclude everybody" -
  * would silence a retention alert on a transient database error, which is the failure nobody sees.
  * The caller is handed the warning so the run says what it could not read.
+ *
+ * 🔴 IT IS NOT ENOUGH TO ASK `app_auth_users.is_active` (added 2026-10-02). That column lags
+ * `employees.employment_status` - a CSV termination or a contract non-renewal flips the employee
+ * record and leaves the login active - so a departed role-holder kept receiving role-addressed
+ * notices, the Phoenix CRM plan-edit emails among them. The SAME filter
+ * `resolveNotificationPersonRecipients` has carried all along is applied here, with its fail-open
+ * rule intact: an account with no employee row (a system or service login) is KEPT, and an
+ * unreadable `employees` read drops nobody. Measured on production the day it was added: the one
+ * active SFE Manager (A-2) is `active`, so nothing was being misdirected yet.
+ *
+ * An EMPTY answer is logged, not swallowed: every caller addresses an office, so "nobody holds this
+ * role" means a notice reached no one, and that reads exactly like a notice nobody sent.
  */
 export async function resolveHrIdsForRole(
   role: PhoenixRole,
@@ -484,13 +496,48 @@ export async function resolveHrIdsForRole(
       .eq("is_active", true);
     if (error) throw error;
     const rows = (data ?? []) as Array<{ hr_id?: string | null }>;
-    const hrIds = rows.map((row) => String(row.hr_id ?? "").trim().toUpperCase()).filter(Boolean);
-    return { hrIds: Array.from(new Set(hrIds)), warnings };
+    const hrIds = Array.from(new Set(rows.map((row) => String(row.hr_id ?? "").trim().toUpperCase()).filter(Boolean)));
+    const current = hrIds.length > 0 ? await withoutDepartedHrIds(hrIds, warningLabel, warnings) : hrIds;
+    if (current.length === 0) {
+      logWarning(`${warningLabel}: no current holder of the ${role} role`, {
+        labels: { event: "role_recipients_empty", role },
+      });
+    }
+    return { hrIds: current, warnings };
   } catch (error) {
     warnings.push(
       `${warningLabel} unavailable: ${error instanceof Error ? error.message : "unknown error"}`.slice(0, 160),
     );
+    logWarning(`${warningLabel}: the ${role} role could not be read`, {
+      error,
+      labels: { event: "role_recipients_failed", role },
+    });
     return { hrIds: [], warnings };
+  }
+}
+
+/**
+ * The given HR ids minus anyone whose employee record is terminal.
+ *
+ * FAILS OPEN on purpose, the same direction as every resolver here: an unreadable `employees` read
+ * drops nobody and adds a warning, because silencing an office's whole notice stream on a transient
+ * error is the failure nobody sees. An id with no employee row is kept - that is a system or service
+ * login, matching `isTerminalEmploymentStatus`'s own rule.
+ */
+async function withoutDepartedHrIds(hrIds: string[], warningLabel: string, warnings: string[]): Promise<string[]> {
+  try {
+    const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,employment_status").in("hr_id", hrIds);
+    if (error) throw error;
+    const departed = new Set<string>();
+    for (const employee of (data ?? []) as Array<{ hr_id?: string | null; employment_status?: string | null }>) {
+      if (isTerminalEmploymentStatus(employee.employment_status)) departed.add(String(employee.hr_id ?? "").trim().toUpperCase());
+    }
+    return hrIds.filter((hrId) => !departed.has(hrId));
+  } catch (error) {
+    warnings.push(
+      `${warningLabel} employment check unavailable: ${error instanceof Error ? error.message : "unknown error"}`.slice(0, 160),
+    );
+    return hrIds;
   }
 }
 

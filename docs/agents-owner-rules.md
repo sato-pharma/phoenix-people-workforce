@@ -3135,7 +3135,10 @@ is never shown.
 2. **The integrity board's audience.** The 2026-09-25 rule made `/admin/phoenix-crm/integrity`
    **Super Admin only**, deliberately — "the fewer people who can open the board, the longer it keeps
    working". This rule adds the **SFE Manager**. That is a widening of an earlier decision, made
-   knowingly, and is recorded here so no later session reads it as drift.
+   knowingly, and is recorded here so no later session reads it as drift. **Narrowed again on
+   2026-10-02** (see "Three visibility rulings" below): the POSITION cases and the phone's own
+   mock-location answer went back to the Super Admin alone; SFE keeps the photo cases and the behaviour
+   months.
 
 ### What it does not license
 
@@ -3143,6 +3146,69 @@ It is not a reason to hide a genuine refusal. If a save is rejected because a re
 missing, the rep is told plainly what to do — silence about *checks* is never silence about *his own
 work failing*. And thresholds stay set so an honest rep cannot trip them: a false positive accuses a
 real person of fraud, which is worse than a missed catch.
+
+### A field his browser receives counts as shown — audit, 2026-10-02
+
+The screens already drew no measurement of the rep, and that was not enough. A field in the JSON his
+phone receives is one network tab from being read and one careless render from being drawn, so the
+SERVER decides, never the screen. `team.ts` cleared `locationFlag` on the rep's own row that
+morning; the Phoenix CRM audit of the same day (against `f14fd8834`) found the same shape in five
+more places, each hidden only by its screen, and all five are closed in one PR:
+
+1. **The Visits report** carried `farVisits` in every row, day and total for a rep reading his own
+   seat — the tab is open to him, and only `reports-tab.tsx` withheld the words.
+2. **The List** carried every place measurement — the phone-clock verdict, the accuracy, both raw
+   readings, where the fixed point came from, the SFE's or the Super Admin's **written reason** for
+   moving it, the brick distance — and the weak-signal threshold.
+3. **The visit form** carried the far and weak-signal thresholds, which nothing on it draws.
+4. **An ACTING District Manager who still holds a rep seat** read his OWN seat's distances in the
+   team-only sections — the place-vs-actual report, the far counts and the tracking spacing note —
+   because `readsTeamReports` is true for anyone holding a manager seat, while every visit screen
+   already blinded him on that seat.
+5. **The day page** never asked gate one (`canAccess(…, "phoenix_crm", "read")`), so a per-account
+   module lock did not close it; nor did the integrity and duplicates pages ask it.
+
+### Three visibility rulings — owner, 2026-10-02
+
+Put to him by the Phoenix CRM audit session the same evening, each with a recommended answer. He took
+the recommended answers there (a fourth, a rep sending his running week late, shipped separately), and
+confirmed in the session that built these three — answering "Add all three here" — that they belong in
+the same PR as the audit fix.
+
+1. **The mock-location evidence is the Super Admin's only.** The integrity board's position cases
+   (`source = 'gps'`) and `device_mocked` are never queried for the SFE Manager — a screen that hid
+   them would leave them one network tab away. SFE keeps the photo-duplicate cases and the behaviour
+   months (`readsPositionCases`). The duplicate-customers page got its own predicate
+   (`canReadDuplicateCustomers`) so a clerical double-entry never inherits a rule written for evidence.
+2. **Everyone below the Super Admin and SFE sees the distance only.** The district manager, the acting
+   one, the RSM, the NSM and the CEO read the distance and the far / at-the-place wording. The accuracy,
+   the weak-signal sentence ("The phone was not sure where it was"), the phone-clock warning, a place's
+   two raw readings and where its fixed point came from are SFE's and the Super Admin's
+   (`locationSight`: `none` for the rep on his own seat, `distance`, `full`). A weak reading is never
+   far (far beats weak, `geo.ts`), so to a distance-only reader it is a visit at the place, read by its
+   plain distance. It covers the day page, the visit rows, the saved visit, the off-plan approval cards,
+   the List's place measurements (enforced in the list response, `seesMeasurements`) and the
+   place-vs-actual report's rows and weak-signal count.
+3. **The place-vs-actual report is the DM's, the NSM's, SFE's and the Super Admin's only.** The CEO and
+   the regional managers came off it. It has its own predicate (`readsPlaceVsActual`: a DM, ACTING_DM or
+   NSM seat, or SFE, or the Super Admin); `readsTeamReports` is unchanged, because the exceptions board,
+   the brick report, the adoption board and the digest still read it and he narrowed none of them. The
+   Reports tab's far-visit count follows the report (`canSeeLocations`), and so does the workbook's
+   location sheet — behind the old manager gate its service would have refused the CEO and failed his
+   whole export.
+
+**How it is closed.** Each loader now ends in a pure shaper in `src/lib/phoenix-crm/server/blind-payloads.ts`.
+A measurement is ABSENT, never zero — `farVisits: 0` would still name the check, and would be a false
+figure. The place shaper is an ALLOW-LIST, so a measurement added to the place later is withheld until
+somebody decides who may have it. The place's point itself STAYS: his own board needs it for the pin
+each address opens and for gathering neighbours (`rowPoint`), and a point is where his customer is,
+never a judgement. The acting manager's own seat leaves the team-only sections through
+`readsSeatLocations` / `locationReportSeats` / `readsTeamReportsOn`, and the far TOTAL becomes his team's alone, so his own
+count cannot be had by subtracting the team from it. The integrity board's readers changed only by the
+owner's ruling above, never as part of the audit fix.
+
+Pinned by `tests/phoenix-crm-blind-payloads.test.ts`, which builds each payload through the loader's
+own mapper, calls the real day-page loader with a locked account and counts any request it makes.
 
 ## The visit type, the off-plan approval and the monthly plan's due date — owner rulings, 2026-09-26
 
@@ -3429,9 +3495,22 @@ of day buttons, the same square buttons as the Week and the Day pickers — beli
   moving a place and entering a missed record), and it is **B-10's alone**, compared as a person
   (`isSamePerson`, so his console login counts). Another Super Admin does not take that step.
 - **The one Phoenix CRM notice that emails.** The module's email block stays; `phoenix-crm-channel-guard.ts`
-  lets exactly five event types keep email — `plan_edit_waiting`, `plan_edit_moved_on`,
-  `plan_edit_refused`, `plan_edit_reopened`, `plan_edit_expired` — and strips it from everything else,
-  the 06:55 digest included. `tests/phoenix-crm-email-block.test.ts` pins the list exactly.
+  lets exactly four event types keep email — `plan_edit_waiting`, `plan_edit_moved_on`,
+  `plan_edit_refused`, `plan_edit_reopened` — and strips it from everything else, the 06:55 digest
+  included. `tests/phoenix-crm-email-block.test.ts` pins the list exactly.
+
+  🔴 **IT WAS FIVE UNTIL 2026-10-02, AND THE FIFTH LEAVING IS A RULING OF HIS, NOT A TRIM.** The
+  2026-10-02 Phoenix CRM audit built the daily pass that finally closes a request whose week has
+  passed (`phoenix_crm_expire_plan_edit_requests` — until then `status = 'expired'` was reachable only
+  when somebody DECIDED a request, and nobody decides one whose week has gone, so it sat on
+  `manager_pending` for ever). He was asked, in chat and as a choice, whether that pass should email
+  as it closes one, and picked **"in-app and Telegram only, no email"**. So `plan_edit_expired` moved
+  off the email list and into `PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES`, where "only" is enforced on both
+  axes exactly as his 06:55 digest ruling is. **The line the exception is actually drawn on is
+  therefore a step a PERSON took:** the four that remain are a manager, SFE or HR pressing a button,
+  while an expiry is a week running out, closed in a batch — the unprompted bulk mail he has ruled out
+  standing. The policy row agrees with the guard (`policy.ts`), the pass names no channel of its own,
+  and the four are re-pinned beside the new list in `tests/phoenix-crm-approval-notices.test.ts`.
 - **While a week is reopened it is a draft**, so the day's visits count as off-plan until he sends it
   again — the same rule the planned-visit check has always kept (a plan that had reached review BEFORE
   the visit). The request form and the reopened note say so.
@@ -4348,6 +4427,106 @@ So what do you recommend?"*
 
 **Never "fix" it back:** do not remove a point to shorten the form, and do not split step 3 into more
 steps. Both are what he ruled out in the same answer. Pinned by `tests/phoenix-crm-visit-form-ease.test.ts`, section (e).
+
+## A visit is never dated onto an earlier visit day than its arrival — the 2026-10-02 audit
+
+The owner's rule is **the visit day ends at 02:00 Cairo, and it is never a past or a future day**
+(2026-09-29: "maximum 2 AM"). The account of the ruling itself is "The rep's flow rebuilt", earlier in
+this file. This section is the account of the two paths that broke it, found by the 2026-10-02 Phoenix
+CRM audit against `origin/main` f14fd8834, and of why one path keeps its exemption.
+
+Yesterday is not a neutral place to put a visit. It is a day whose plan is closed, whose coverage and
+call rate a manager has already read, and whose `visit_date` the one-a-day unique key, the
+planned-or-not verdict and every report follow.
+
+### 1. The offline claim — the real hole, and it is now the app's alone
+
+`deriveOfflineCaptureTime` (`src/lib/phoenix-crm/offline-clock.ts`) bounds the claimed elapsed time
+only from **above**: it may not exceed the window the server brackets with its own two readings, the
+anchor it issued and the save it received. That bound is made of physics rather than trust, and it is
+the right shape. **There is deliberately no bound from below**, and there must not be — a capture taken
+moments after anchoring is exactly what an honest early-morning visit looks like, and a floor would
+throw away real work. So `capturedAt = anchor.issuedAt + elapsed`, and a SMALL elapsed time back-dates
+freely. The anchor may be 20 hours old (`ANCHOR_MAX_AGE_SECONDS`) and anchors are minted on demand,
+60 an hour, by `POST /api/phoenix-crm/time-anchor`.
+
+**The web app has no offline queue at all.** Nothing under `src/components/phoenix-crm` has ever sent
+an `offline` body or asked for an anchor; the queue that needs one lives in the app. So in a browser
+that field had no honest sender and one dishonest one: mint an anchor on Monday afternoon, post a visit
+on Tuesday with `offline: { anchorId, elapsedMs: 0 }`, and `phoenix_crm_save_visit` — which accepts any
+`offline_captured_at` within a day — files and counts it as Monday's.
+
+The fix is structural rather than a tighter bound, because the capability no web screen ever used is
+simply removed. `captureClientOf` (`src/lib/phoenix-crm/server/capture-client.ts`) answers `app` only
+for a request carrying a bearer token and **no** session cookie, and `browser` for everything else:
+
+- **Both a cookie and a bearer is a BROWSER.** `resolveAccessContextInner` tries the cookie FIRST and
+  returns on it, so a request presenting one was identified by it. Reading this the other way would
+  hand the capability straight back to the page that already holds the cookie — and that includes the
+  app's own WebView, which carries a cookie of its own and renders the web portal's pages.
+- **Neither is a BROWSER too.** A dev-auth role sweep, a system caller, an unauthenticated probe. It
+  fails towards the answer that grants nothing, and losing an offline claim costs a visit nothing: the
+  save still happens, dated at arrival, and the rep is told nothing (Golden Rule #1).
+- **It is not authentication and decides no permission.** `assertPermission` and the territory gates
+  are untouched. It answers one question: may this request's body move a visit's date backwards.
+
+A browser's claim is dropped — not parsed, not partially honoured, not refused — and its mint answers a
+flat 404, so the refusal says nothing about what was refused and no rep ever meets it. The client is a
+**required** argument on both `saveVisit` and `issueTimeAnchor`, so the typechecker, not a convention,
+stops a new caller forgetting it.
+
+🔴 **What this does NOT close, and deliberately does not pretend to.** A bearer token is a token. A rep
+who can reach `/api/auth/login` with an `x-phoenix-client` header can mint one for himself, and from
+the server's side that request is indistinguishable from the app's. `src/lib/auth/native-session.ts`
+already names the hardening that would answer it — a device-bound refresh token — as a later phase, and
+this change does not fake one with a flag. What it removes is the path that needed nothing but devtools
+on a page the rep is already signed into.
+
+### 2. Photo-slot dating — smaller, API-only, and clamped in the database
+
+A visit that names `photoPath` is dated by its slot's **issue** time (`phoenix_crm_take_photo` returns
+`issued_at`), and a slot lives two hours. A `reusePlacePhoto` visit is dated by the place's own
+`captured_at` — itself that photo's slot issue time — and the place need only have been created in the
+last thirty minutes, so up to two and a half hours can separate the date from the arrival. Either can
+carry a save arriving at 02:30 back across 02:00 onto the previous visit day.
+
+Both are API-only today: the one-tap visit form sends no photo at all (2026-09-29), and the app sends
+its own. Neither ever needed the reach. A slot proves **when the photo was taken**; it was never
+evidence of which day the work belongs to.
+
+`phoenix_crm_save_visit` now re-dates such a visit at arrival, with `capture_source` `server` and
+`dwell_seconds` null rather than a made-up zero. Silently — the visit is real, so it is never refused
+and never explained (Golden Rule #1) — and the row then reads `capture_source` `server` beside a
+`photo_path`, which is how the Super Admin and the SFE Manager can see that it happened at all.
+
+🔴 **The clamp compares VISIT DAYS, never calendar dates.** Written against the calendar it would move
+an honest 23:00 photo saved at 00:30 a day forward and silently empty a rep's evening — the same defect
+pointing the other way. `20261002222403_phoenix_crm_visit_day_never_before_arrival.sql`.
+
+### 3. The offline anchor keeps its exemption, and must
+
+A capture at 19:00 synced at 02:30 belongs to the **19:00** day. That is the entire point of the
+offline design, and `tests/phoenix-crm-offline-clock.test.ts` has pinned it since the feature shipped:
+"the arrival time deciding the day … undoes the entire feature". It earns the exemption twice over —
+the server brackets the claim at both ends with its own readings, and after §1 only the app can make
+the claim at all. So the clamp runs **before** the offline block, which overwrites it. Never "fix" the
+two into one.
+
+The Super Admin's `phoenix_crm_admin_enter_visit` is a different function and is untouched: entering a
+visit a rep missed logging, on a day he chooses, is exactly what it is for.
+
+### The trap
+
+`tests/phoenix-crm-visit-dating.test.ts` finds the live `phoenix_crm_save_visit` by **sort order over
+`supabase/migrations/`**, never by a path written into the test. A pin naming a migration file is how a
+check quietly starts reading dead SQL — the text is still in the file and the database stopped running
+it the day a later migration replaced it. The same reading repaired three pins this change would
+otherwise have left stale: `SAVE_VISIT_DEFINER` in `tests/phoenix-crm-plan-review.test.ts`, the writer
+assertions in `tests/phoenix-crm-visit-product-manager.test.ts`, and — a different shape of the same
+failure — the `indexOf("const offlineClaim = parseOfflineCaptureClaim")` slice in
+`tests/phoenix-crm-offline-clock.test.ts`, whose anchor the TypeScript half detached: `indexOf` would
+have returned −1, `slice(-1, …)` returns the file's last character, and the "a clock argument must
+never cost a rep a real visit" check would have passed on one byte with nothing going red.
 
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 

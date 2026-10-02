@@ -285,8 +285,14 @@ export function runPhoenixCrmOfflineClockTests(): void {
     // 🔴 The body must never be the source of the timestamp.
     assert.equal(service.includes("offline_captured_at: body"), false, "🔴 never copied from the request");
     assert.equal(/offline_captured_at:\s*(String\()?body/.test(service), false, "🔴 nor through a cast of it");
-    // A failed derivation must not refuse the visit.
-    const region = service.slice(service.indexOf("const offlineClaim = parseOfflineCaptureClaim"), service.indexOf("offline_captured_at:"));
+    // A failed derivation must not refuse the visit. 🔴 The anchor is the ASSIGNMENT, not the call:
+    // since 2026-10-02 the claim is read only for the app (`client === "app" ? parse… : null`), and a
+    // slice anchored on the call itself returned -1 — which slices the last CHARACTER of the file and
+    // passes vacuously, so this check would have stopped biting with nothing going red.
+    const regionAt = service.indexOf("const offlineClaim =");
+    assert.ok(regionAt > 0, "saveVisit still reads the claim into `offlineClaim`");
+    const region = service.slice(regionAt, service.indexOf("offline_captured_at:"));
+    assert.ok(region.includes("parseOfflineCaptureClaim(body)"), "and the region really is the derivation");
     assert.equal(/throw /.test(region), false, "a clock argument must never cost a rep a real visit");
 
     const migration = stripSqlComments(

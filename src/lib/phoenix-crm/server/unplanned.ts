@@ -76,16 +76,50 @@ export type UnplannedVisitView = {
   sfeNote: string | null;
 };
 
-/** Waiting off-plan visits for a set of territories, the longest-waiting first. */
+/** One PostgREST page of this read — `max_rows` in supabase/config.toml, which it cannot exceed. */
+const UNPLANNED_PAGE = 1000;
+
+/**
+ * Waiting off-plan visits for a set of territories, the longest-waiting first.
+ *
+ * 🔴 IT IS PAGED, AND THE SFE MANAGER IS WHY. For a district manager this read is one small team;
+ * for the SFE Manager it is the queue across EVERY territory in the company, and his step is the
+ * second one, so every visit the district managers approve arrives in it. A PostgREST read with no
+ * range stops at `max_rows = 1000` with no error and no marker (supabase/config.toml), so past that
+ * the Team tab would simply stop showing the oldest waiting visits — the ones most in need of a
+ * decision — and the summary beside it would under-count by the same silent amount.
+ *
+ * Delta (1) is why it is paged NOW rather than later: every visit by a rep whose week was not sent
+ * is off-plan, so the queue starts filling from the first morning.
+ *
+ * KEYSET ON `visit_id`, never `.range()` on an offset: the primary key is unique, so a decision
+ * landing mid-read can shift no row across a page boundary. The caller's own `created_at` sort below
+ * is what puts the longest-waiting first, so reading in key order costs nothing.
+ */
 export async function loadUnplannedRows(seatIds: ReadonlyArray<string>, isTest: boolean, options: { waitingOnly?: boolean } = {}): Promise<Row[]> {
   if (seatIds.length === 0) return [];
   const rows: Row[] = [];
   for (const batch of chunk([...seatIds])) {
-    let query = getSupabaseAdmin().from("phoenix_crm_unplanned_visits").select(UNPLANNED_COLUMNS).in("seat_id", batch).eq("is_test", isTest);
-    if (options.waitingOnly !== false) query = query.in("status", ["manager_pending", "sfe_pending"]);
-    const { data, error } = await query;
-    throwIfError(error);
-    rows.push(...((data ?? []) as unknown as Row[]));
+    let after: string | null = null;
+    for (;;) {
+      let query = getSupabaseAdmin()
+        .from("phoenix_crm_unplanned_visits")
+        .select(UNPLANNED_COLUMNS)
+        .in("seat_id", batch)
+        .eq("is_test", isTest)
+        .order("visit_id", { ascending: true })
+        .limit(UNPLANNED_PAGE);
+      if (options.waitingOnly !== false) query = query.in("status", ["manager_pending", "sfe_pending"]);
+      if (after) query = query.gt("visit_id", after);
+      const { data, error } = await query;
+      throwIfError(error);
+      const page = (data ?? []) as unknown as Row[];
+      rows.push(...page);
+      // A short page is the last page. A full one is read again from its last key — never assumed
+      // to be the end, which is the whole defect this replaces.
+      if (page.length < UNPLANNED_PAGE) break;
+      after = String(page[page.length - 1].visit_id);
+    }
   }
   return rows.sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)));
 }
@@ -179,7 +213,11 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
 
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_unplanned_visits")
-    .select("visit_id, seat_id, rep_hr_id, customer_id, visit_date, status, is_test, customer:phoenix_crm_customers!customer_id(name)")
+    .select(
+      // `clarification` rides along for the notice the SFE step gets when a manager passes the visit
+      // on (notifications.ts): the reason he wrote is what SFE is being asked to judge.
+      "visit_id, seat_id, rep_hr_id, customer_id, visit_date, status, clarification, is_test, customer:phoenix_crm_customers!customer_id(name)",
+    )
     .eq("visit_id", visitId)
     .maybeSingle();
   throwIfError(error);
@@ -222,6 +260,7 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
       status: nextStatus,
       deciderHrId: viewer.hrId,
       note,
+      clarification: textOrNull(row.clarification),
     },
     isTest,
   );

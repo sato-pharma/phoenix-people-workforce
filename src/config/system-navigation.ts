@@ -4260,7 +4260,9 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     // rather than tidiness: the rep is never told he was flagged — his own app shows nothing at all —
     // so the fewer people who can open the board, the longer it keeps working. The enforcing gate is
     // `canReadIntegrityBoard` inside the service AND the page; this card only draws the link. There
-    // is no API route to gate any more: it had no caller and was deleted the same day.
+    // is no API route to gate any more: it had no caller and was deleted the same day. Inside the
+    // board, the POSITION cases are the Super Admin's alone since 2026-10-02 (`readsPositionCases`):
+    // the SFE Manager reads the photo cases and the behaviour months.
     href: "/admin/phoenix-crm/integrity",
     icon: ShieldAlert,
     label: "Location Integrity",
@@ -4275,8 +4277,8 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     // 🔴 THE SAME TWO READERS AS THE BOARD ABOVE, AND DELIBERATELY NOT THE SAME CARD. A duplicate
     // is a typing mistake, not a suspicion, and a rep filed under "Location Integrity" for
     // entering a name twice would be accused of something he did not do. The wording here is
-    // housekeeping throughout; the gate is `canReadIntegrityBoard` inside the page, and this card
-    // only draws the link.
+    // housekeeping throughout; the gate is `canReadDuplicateCustomers` inside the page (its own since
+    // 2026-10-02, when the board split), and this card only draws the link.
     href: "/admin/phoenix-crm/duplicates",
     icon: CopyCheck,
     label: "Duplicate Customers",

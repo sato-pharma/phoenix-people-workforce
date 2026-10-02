@@ -405,10 +405,12 @@ export function runPhoenixCrmWave2ReportTests(): void {
   {
     const service = stripComments(readFileSync("src/lib/phoenix-crm/server/reports.ts", "utf8"));
 
-    // 🔴 WHO GETS THE NOTE IS DECIDED BY THE SERVER, FROM THE ONE PREDICATE THAT ALREADY MEANS
-    //    "is a manager". A second rule here would be a second answer to a settled question, and
-    //    the answer it could get wrong puts a judgement on a rep's own phone (Golden rule #1).
-    assert.match(service, /const managerView = readsTeamReports\(viewer\);/, "the note is a manager's, by the module's own predicate");
+    // 🔴 WHO GETS THE NOTE IS DECIDED BY THE SERVER, FROM THE ONE PREDICATE THAT MEANS "a manager
+    //    reading a seat that is not his own". It was `readsTeamReports(viewer)` until the audit of
+    //    2026-10-02 found the acting District Manager who still holds a rep seat: a manager by that
+    //    predicate, he read the note on his OWN sheet. `readsTeamReportsOn` is `readsTeamReports`
+    //    less every seat the viewer is blind on (tests/phoenix-crm-blind-payloads.test.ts).
+    assert.match(service, /const managerView = readsTeamReportsOn\(viewer, seat\);/, "the note is a manager's, decided per seat");
     assert.match(service, /buildTrackingSheet\(/, "and the helper gates it a second time, inside");
     assert.match(service, /\{ managerView \}/, "the decision is passed down, never re-made");
 

@@ -5,7 +5,7 @@ import { isMissedRecordDay } from "@/lib/phoenix-crm/missed-records";
 import { canEnterMissedRecordOn, canEnterMissedRecords, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadVisitDay, type VisitDayView } from "@/lib/phoenix-crm/server/visits";
 import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
-import type { AccessContext } from "@/lib/auth/permissions";
+import { canAccess, type AccessContext } from "@/lib/auth/permissions";
 import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 
 /**
@@ -142,6 +142,10 @@ export async function loadPhoenixCrmDayPage(
   raw: { seatId: unknown; date: unknown; test: unknown },
 ): Promise<PhoenixCrmDayLoad> {
   try {
+    // 🔴 GATE ONE FIRST, as `loadPhoenixCrmPage` does (audit, 2026-10-02). The organogram is gate two
+    // and decides WHICH territories; it knows nothing of the permission matrix or of a per-account
+    // module lock, so without this line a locked account still opened any day it could link to.
+    if (!(await canAccess(access, "phoenix_crm", "read"))) return { kind: "refused", message: REFUSED };
     const viewer = await resolvePhoenixCrmViewer(access);
     return { kind: "ready", view: await loadPhoenixCrmDayDetail(viewer, raw) };
   } catch (error) {

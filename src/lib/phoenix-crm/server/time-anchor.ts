@@ -20,9 +20,10 @@
  * offline stretch. What bounds it is AGE, checked in the pure module at the moment of use.
  */
 
-import { ApiError, validationError } from "@/lib/http/api-errors";
+import { ApiError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { type TimeAnchorRecord } from "@/lib/phoenix-crm/offline-clock";
 import { readTestFlag, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { type CaptureClient } from "@/lib/phoenix-crm/server/capture-client";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -61,8 +62,18 @@ function bootIdOf(value: unknown): string | null {
  * VISIT, and a visit may be entered by the territory's rep, by a manager of the territory, or by the
  * Super Admin in test mode. Using the narrower gate would leave a district manager unable to enter a
  * double visit in a dead spot.
+ *
+ * 🔴 **AND ONLY FOR THE APP.** An anchor exists to date a visit a phone HELD while it had no signal,
+ * and only the app holds one (`capture-client.ts`). In a browser the mint is the first half of
+ * back-dating a visit by hand: take one this afternoon, use it tomorrow with `elapsedMs: 0`, and the
+ * save lands on today. Nothing on any web screen asks for an anchor, so refusing a browser removes
+ * no capability — it removes the only way the claim can be assembled from one.
+ *
+ * It is a flat 404, so the refusal says nothing about what was refused. No rep ever meets it: no
+ * screen calls this route (Golden Rule #1 — a message would teach the one person it caught).
  */
-export async function issueTimeAnchor(viewer: PhoenixCrmViewer, raw: unknown): Promise<TimeAnchorView> {
+export async function issueTimeAnchor(viewer: PhoenixCrmViewer, raw: unknown, client: CaptureClient): Promise<TimeAnchorView> {
+  if (client !== "app") throw notFoundError("Not found.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const test = readTestFlag(body.test);
   const { seat, isTest } = territoryForVisit(viewer, body.seatId, test);

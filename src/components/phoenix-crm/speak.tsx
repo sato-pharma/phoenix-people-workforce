@@ -145,6 +145,7 @@ async function sendToSlot(slot: VoiceSlot, blob: Blob): Promise<void> {
 export function CrmSpeak({
   disabled = false,
   onAppend,
+  onBusy,
   onChange,
   seatId,
   test,
@@ -153,6 +154,21 @@ export function CrmSpeak({
   disabled?: boolean;
   /** One settled phrase. The caller appends it to its own state and applies its own cap. */
   onAppend: (text: string) => void;
+  /**
+   * 🔴 THE MICROPHONE IS OPEN, OR THE RECORDING IS STILL GOING UP — so the caller can hold its own
+   * navigation (visit-log-form's Next and Back) while it is true.
+   *
+   * It exists because UNMOUNTING THIS CONTROL CANCELS THE RECORDER, by design (`release`), and the
+   * visit form unmounts it the moment the rep presses Next: step 3 and step 4 are two trees, not two
+   * scroll positions. Cancelled, not stopped, so what he had said was discarded with nothing said to
+   * him. The control cannot refuse to be unmounted, so it reports instead and the caller decides.
+   *
+   * 🔴 CALLED FROM THE HANDLERS, NEVER FROM AN EFFECT. A `setState` inside `useEffect` is a lint
+   * error in this repo, and this lands in the caller's state, so an effect here would push the error
+   * one file along rather than remove it. Every path that opens or closes the microphone already
+   * passes through `start`, `stop` or `abort`.
+   */
+  onBusy?: (busy: boolean) => void;
   /** The stored recording, or null when there is none. The caller puts it in the visit's payload. */
   onChange: (value: VoiceNoteValue | null) => void;
   seatId: string;
@@ -236,7 +252,8 @@ export function CrmSpeak({
     release();
     setListening(false);
     setInterim("");
-  }, [release]);
+    onBusy?.(false);
+  }, [onBusy, release]);
 
   // Deferred by a microtask because a setState called SYNCHRONOUSLY inside an effect is a lint error
   // in this repo — it cascades renders. The two controls this replaced got the same deferral for free
@@ -306,8 +323,14 @@ export function CrmSpeak({
     speech?.stop();
     setListening(false);
     setInterim("");
-    if (handle) await store(await handle.stop());
-  }, [store]);
+    try {
+      // Still busy across the whole of `store`: the upload and the writing-out are exactly the window
+      // in which leaving loses the recording, and `store` reports its own failures to the rep.
+      if (handle) await store(await handle.stop());
+    } finally {
+      onBusy?.(false);
+    }
+  }, [onBusy, store]);
 
   useEffect(() => {
     stopRef.current = () => {
@@ -379,12 +402,20 @@ export function CrmSpeak({
             }
           } else setError(message);
 
-          if (!recorder.current) setListening(false);
+          // Nothing left open, so the caller stops holding its navigation — there is no recording to
+          // lose. A recorder still running keeps it held: that half is what Next would discard.
+          if (!recorder.current) {
+            setListening(false);
+            onBusy?.(false);
+          }
         },
         onEnd: () => {
           dictation.current = null;
           setInterim("");
-          if (!recorder.current) setListening(false);
+          if (!recorder.current) {
+            setListening(false);
+            onBusy?.(false);
+          }
         },
       });
     }
@@ -401,6 +432,9 @@ export function CrmSpeak({
     // actually running to produce that file, and reads as nothing at all where one is not.
     setStarted({ audio: Boolean(tape), text: speech ? "live" : engine === "server" && tape ? "server" : "none" });
     setListening(true);
+    // Only once something really opened: the early return above left nothing running, and the caller
+    // must not be holding its navigation for a microphone that never started.
+    onBusy?.(true);
   }
 
   function remove() {

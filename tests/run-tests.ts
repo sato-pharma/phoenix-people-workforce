@@ -1641,6 +1641,7 @@ import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
 import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
 import { runPhoenixCrmFieldReachTests } from "./phoenix-crm-field-reach.test.ts";
+import { runPhoenixCrmNameBesidePillsTests } from "./phoenix-crm-name-beside-pills.test.ts";
 import { runPhoenixCrmCardTableParityTests } from "./phoenix-crm-card-table-parity.test.ts";
 import { runPhoenixCrmApprovalNudgeTests } from "./phoenix-crm-approval-nudge.test.ts";
 import { runPhoenixCrmLastVisitProductsTests } from "./phoenix-crm-last-visit-products.test.ts";
@@ -1664,6 +1665,7 @@ import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photo
 import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
 import { runPhoenixCrmSweepPagingTests } from "./phoenix-crm-sweep-paging.test.ts";
 import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test.ts";
+import { runPhoenixCrmVisitDatingTests } from "./phoenix-crm-visit-dating.test.ts";
 import { runPhoenixCrmOfflineWireTests } from "./phoenix-crm-offline-wire.test.ts";
 import { runPhoenixCrmRefusalMessagesTests } from "./phoenix-crm-refusal-messages.test.ts";
 import { runPhoenixCrmOutboxTests } from "./phoenix-crm-outbox.test.ts";
@@ -1703,8 +1705,10 @@ import { runPhoenixCrmPlanReminderTests } from "./phoenix-crm-plan-reminder.test
 import { runPhoenixCrmPlanScreenExtrasTests } from "./phoenix-crm-plan-screen-extras.test.ts";
 import { runPhoenixCrmStepFormTests } from "./phoenix-crm-step-form.test.ts";
 import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-requests.test.ts";
+import { runPhoenixCrmApprovalNoticeTests } from "./phoenix-crm-approval-notices.test.ts";
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
 import { runPhoenixCrmVisitAsksTests } from "./phoenix-crm-visit-asks.test.ts";
+import { runPhoenixCrmPlanDayEdgesTests } from "./phoenix-crm-plan-day-edges.test.ts";
 import { runPhoenixCrmPlanReviewTests } from "./phoenix-crm-plan-review.test.ts";
 import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.ts";
 import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
@@ -1713,6 +1717,7 @@ import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visit
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
 import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
+import { runPhoenixCrmBlindPayloadTests } from "./phoenix-crm-blind-payloads.test.ts";
 import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
 import { runPhoenixCrmManagerValidatesTests } from "./phoenix-crm-manager-validates.test.ts";
 import { runPhoenixCrmBrickTintsTests } from "./phoenix-crm-brick-tints.test.ts";
@@ -5764,6 +5769,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM never dates a visit onto an EARLIER visit day than the one it arrived on (the 2026-10-02 audit's two paths across the 02:00 cutoff). The offline claim was the real hole: its elapsed time is bounded only from ABOVE — correctly, since a capture taken moments after anchoring is honest — and only the APP has an offline queue, so in a browser an anchor minted this afternoon plus `elapsedMs: 0` tomorrow filed the visit on today, counted and read as today's. A browser may now neither make the claim nor mint an anchor, decided from the request's own headers and never from its body, with BOTH a cookie and a bearer reading as the BROWSER because resolveAccessContext returns on the cookie first, and everything else failing towards browser; the client is a required argument on both services, so a new caller cannot forget it. The second path was the photo slot, which lives two hours (two and a half through a reused place photo): the live phoenix_crm_save_visit now dates such a visit at ARRIVAL with capture_source 'server' and no dwell — silently, never a refusal (Golden Rule #1) — found by SORT ORDER rather than a migration path, so the pin cannot start reading dead SQL. The honest late save is deliberately untouched: a door photographed at 23:00 and saved at 00:30 is still that day's work, and a clamp written against the CALENDAR date would have emptied a rep's evening. The offline anchor keeps its exemption — 19:00 synced at 02:30 is still the 19:00 day, which is the whole feature",
+  runPhoenixCrmVisitDatingTests,
+);
+
+await runTest(
   "Phoenix CRM's save button reaches the queue, so a rep in a dead spot keeps his visit (A1, the wiring — until now the queue had NO caller and could not have one, because `@/*` resolves only to `mobile/src/*` and no phone file could supply `drainOutbox` its rules, so it shipped uncallable; BOTH failure points now end in the queue rather than in a message — a photo upload that never landed is held without even attempting the save, and a save whose connection died after the photo got through is held rather than sending him back to the door; a visit is NEVER held without its stamped photo, because one that can never be sent would never leave; a full queue refuses the NEWEST capture with an instruction he can act on and discards nothing older; the elapsed reading is taken at the PRESS from the monotonic clock, and the claim carries an anchor id, a run id and a duration with no timestamp of any kind; every word he reads says the visit is SAVED on his phone, in green, in the same place a sent visit is confirmed; and a PLACE can never be queued, because the server resolves its brick, area and address from the coordinates at capture)",
   runPhoenixCrmOfflineWireTests,
 );
@@ -5879,6 +5889,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM's name-beside-pills row keeps a WIDTH FLOOR on the name (measured on staging's own CSS at 375px, 2026-10-02): the pill group is flex 0 1 auto with min-width auto so it never yields, and with min-w-0 the name's min-content is one broken character — the flex line can never overflow, the parent's flex-wrap is inert, and the name was squeezed to 59px over 6 lines with words broken mid-word while NOTHING scrolled (the portal shell clips), so min-w-[9rem] makes the line overflow and the pills drop to their own row, shrink-0 on the pills is never the fix, and 768px and above do not move",
+  runPhoenixCrmNameBesidePillsTests,
+);
+
+await runTest(
   "Phoenix CRM UI gaps (audit, 2026-10-02): no raw brick code as a heading or label — an unnamed brick keeps its id as the key and reads as words; every desktop table and its phone card print the same facts (the Reports comparison line, the Locations accuracy and place point, the integrity Position, the Customer lists region, the off-plan note); the native audio player is square on the admin shell; every native date/time field carries appearance-none; and no class list puts shrink-0 beside flex-wrap",
   runPhoenixCrmCardTableParityTests,
 );
@@ -5945,6 +5960,11 @@ await runTest(
 await runTest(
   "Phoenix CRM reps still recording in iReports360 (from a team's start its reps' iReports360 visits are IGNORED everywhere, owner 2026-10-02 — so a rep who carries on logging there is doing real work that reaches NO figure at all, and the volume is not small: 1,629 vendor visits in the fourteen days before Delta (1) began, 135.8 a day. The question cannot be asked of crm_visits_unified, which anti-joins exactly these rows out and would answer a confident zero for a rep logging every day, so ONE loader reads the raw mirror, inside each rep's own counted_from/counted_until window; the sentence names the people and states the cost and carries no verdict on anyone, because a rep still on the old app is following the habit he was trained in; and it never reaches him — the SERVER empties it with isLocationBlind rather than a screen choosing not to render it, and every file that reads the flag at all is named here)",
   runPhoenixCrmVendorLeftoverTests,
+);
+
+await runTest(
+  "PHOENIX CRM: who receives a measurement, enforced where the answer LEAVES THE SERVER (audit and owner rulings, 2026-10-02 — a JSON field a browser receives counts as shown even when React hides it, the precedent being team.ts clearing locationFlag that morning. GOLDEN RULE #1: on his own seat the rep receives no farVisits in any row, day or total, no place measurement — the phone-clock verdict, accuracy, both raw readings, the point source, the mover's written reason, the brick distance — and no threshold, each ABSENT rather than zero, through an ALLOW-LIST so a measurement added later is withheld by default, and each loader returns through its shaper; an ACTING District Manager is blind on his own rep seat in the team sections too, and the far total is his team's alone so his own cannot be had by subtraction. THE OWNER'S THREE RULINGS: the mock-location position cases and device_mocked are the Super Admin's alone, never queried for SFE, who keeps the photo cases and the behaviour months, while the duplicates list keeps its own two readers; everyone below the Super Admin and SFE reads the DISTANCE only — a weak reading reads as its plain distance, with no accuracy, no weak-signal wording, no phone-clock warning and no raw readings, on the visit rows, the saved visit, the off-plan cards, the List and the place-vs-actual rows; and the place-vs-actual report, with every far-visit count, is the DM's, the NSM's, SFE's and the Super Admin's, never the CEO's or an RSM's, by its own predicate. And the day page asks gate one before the organogram, so a per-account module lock closes it, as it does the integrity and duplicates pages)",
+  runPhoenixCrmBlindPayloadTests,
 );
 
 await runTest(
@@ -6088,6 +6108,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM tells the people an approval waits on (the 2026-10-02 audit, before Delta (1) went live): an off-plan visit waiting at a viewer's OWN step is counted in every sum of waitingForYou — the module chooser's card, the tab bar and the tab the page opens on — manager_pending on the territories he reviews and sfe_pending across the SFE Manager's scope, with no week filter because a waiting off-plan visit never expires; the SFE Manager is told when a visit reaches his step, whether it started there on a vacant manager chain or a district manager passed it on, under one key per visit per step and carrying the rep's own reason; the 06:55 digest cannot reach the phone by the Telegram-failure re-send, which is stripped of email AND push and skipped outright; the started-territory gate and the SFE queue are both bounded, by an exists-per-seat function and by keyset paging, where an unranged PostgREST read stops at 1,000 rows with no error; a request to edit a week that has passed is closed daily through the one function that writes 'expired', selected in SQL so no clock skew can approve a live request, and tells nobody until the owner's word because that notice emails; and a departed role-holder with a live login is no longer a recipient, with an office nobody holds logged",
+  runPhoenixCrmApprovalNoticeTests,
+);
+
+await runTest(
   "Phoenix CRM's double-visit plan is the district manager's own and the rep never sees it (owner, 2026-10-02): he plans which of his reps he joins on which day, AM or PM — this week from today on and the coming week, one rep a half-day, Thursday a morning, never a Friday or a public holiday, never a vacant seat, another district's rep or himself — and a day that has passed stays read-only; a planned half-day is done by the manager report's own rule, judged only once the day's visits have closed, and the week reads Planned 3 · done 2; the rep, another district manager, a national manager and the CEO are refused, SFE reads every plan and writes none, the Super Admin writes only in the test world, a test account only as its district manager; the table is RLS-locked to the service role with is_test in its key and the Cairo day stated, a half-day changed on another screen is refused, nothing the rep touches reads it, and nothing about it notifies anyone",
   runPhoenixCrmDoubleVisitPlanTests,
 );
@@ -6100,6 +6125,11 @@ await runTest(
 await runTest(
   "Phoenix CRM reviews a sent week as steps (owner, 2026-10-02 — managers approved 13 weeks of 51-94 customers in a median two minutes): a reviewer opening a week waiting for his decision walks Week, Day, Customers and Decide, the day read AM then PM and nothing sent but by a press, while the rep's own form and a week he only reads stay as they were; coverage counts VALIDATED customers only, per list and grade against tallyDoctorMonth's one target rule, over the month's sent and approved weeks plus this one, names who is left out, and says in words when nobody is validated yet; each send keeps what was sent, so a re-sent week shows only the customers and activities added and removed; and a reviewer may return ONE day, which alone reopens for the rep — the server hands the database that day and nothing else, sending again clears it, and an acknowledged edit after it opens the whole week; and the rep's visits on the OTHER days still count as planned (\"Still planned\", owner, 2026-10-02) — one day rule for Planned visit, Today, the missed record, the Team tab, the frequency report and the review's coverage, the same one phoenix_crm_save_visit stamps a visit with, beside a transition that carries both the one-day return and the 23:55 deadline",
   runPhoenixCrmPlanReviewTests,
+);
+
+await runTest(
+  "Phoenix CRM closes the six edges the audit of 2026-10-02 found around a plan DAY: HR's acknowledgement of an edit request now CLEARS a standing one-day return and writes the plan event, so the database stops counting the week's other days as sent once the rep saves (an off-plan customer was being stamped PLANNED with no district-manager and no SFE approval, and the reason he typed dropped); the landing chips count the PLAN's own stops done — never every visit of the day, which turned \"AM 3 of 2\" green with a planned stop still undone — and the off-plan work is said beside them, AM and PM apart; his week line counts the days he SENT instead of the week's own status, so a week returned for one day keeps its planned figures; the start guide carries the 23:55 deadline in English and Arabic, interpolated from the one constant; the 12:57 and 17:57 plan reminders skip a rep whose whole week is a holiday or his own approved leave, because that week can never be sent (Golden Rule #1 — never tell a rep to do what he cannot do); and pressing Next or Back while the microphone is still open no longer discards the recording in silence",
+  runPhoenixCrmPlanDayEdgesTests,
 );
 
 await runTest(

@@ -66,7 +66,20 @@ import { isVisitAskAskableRole } from "@/lib/phoenix-crm/visit-ask-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readsFieldHeardByProduct, readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import {
+  locationReportSeats,
+  readsFieldHeardByProduct,
+  readsLocationDetail,
+  readsPlaceVsActual,
+  readsTeamReports,
+  readsTeamReportsOn,
+  reportIncludesTest,
+  type PhoenixCrmViewer,
+} from "@/lib/phoenix-crm/server/access";
+import { blindVisitsReport } from "@/lib/phoenix-crm/server/blind-payloads";
+// `throwIfError` lost its last caller here when place-vs-actual became a keyset walk: the pager
+// throws on a failed page itself, which is the whole reason a short answer can no longer read as a
+// complete one. Every other read in this file is an RPC through `callPhoenixCrm`.
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import { loadSeatDayActivities } from "@/lib/phoenix-crm/server/day-activities";
@@ -267,8 +280,10 @@ export type ReportScopeView = {
 
 /** The one predicate behind canSeeLocations, so the screen and the service cannot drift apart. */
 // Lifted into server/access.ts as `readsTeamReports` (2026-09-26) once the exceptions board asked the
-// same question. Kept as a named alias here so every call site still reads as what it is testing.
-const canReadLocationReport = readsTeamReports;
+// same question, and given its OWN predicate on 2026-10-02, when the owner took the CEO and the regional
+// managers off this report and left the exceptions board and the digest as they were. Kept as a named
+// alias here so every call site still reads as what it is testing.
+const canReadLocationReport = readsPlaceVsActual;
 
 export async function loadReportScope(viewer: PhoenixCrmViewer): Promise<ReportScopeView> {
   const seats = viewer.scopeTerritories;
@@ -350,7 +365,11 @@ export async function loadVisitsReport(viewer: PhoenixCrmViewer, raw: ReportFilt
   const chosen = chooseTerritories(viewer, raw);
   const period = periodOf(viewer, raw);
   if (chosen.seats.length === 0) {
-    return { period, includeTest: chosen.includeTest, rows: [], totals: { AM: emptyVisitCounts(), PM: emptyVisitCounts() }, comparison: null };
+    return blindVisitsReport(
+      viewer,
+      { period, includeTest: chosen.includeTest, rows: [], totals: { AM: emptyVisitCounts(), PM: emptyVisitCounts() }, comparison: null },
+      chosen.seats,
+    );
   }
 
   const mode = comparisonModeOf(viewer, raw);
@@ -399,7 +418,9 @@ export async function loadVisitsReport(viewer: PhoenixCrmViewer, raw: ReportFilt
     totals: { AM: totals.AM.visits, PM: totals.PM.visits },
   };
 
-  return {
+  // 🔴 THROUGH THE BLIND SHAPER, LAST (Golden Rule #1, audit 2026-10-02). The tab is open to a rep on
+  // his own seat and only the screen hid his far-visit count; the field itself left the server.
+  return blindVisitsReport(viewer, {
     period,
     includeTest: chosen.includeTest,
     rows,
@@ -415,7 +436,7 @@ export async function loadVisitsReport(viewer: PhoenixCrmViewer, raw: ReportFilt
             peerTerritoryCount: mode === "peers" ? peers.length : null,
             seatIds: chosen.seats.map((seat) => seat.seatId),
           }),
-  };
+  }, chosen.seats);
 }
 
 // ── Plan against actual ─────────────────────────────────────────────────────────────────────────
@@ -797,7 +818,11 @@ export type VisitLocationRow = {
   /** Where he actually stood. */
   visitLat: number;
   visitLon: number;
-  accuracyMeters: number | null;
+  /**
+   * How sure the phone was — the Super Admin's and the SFE Manager's alone (owner, 2026-10-02: the
+   * district manager and the NSM see the distance only). ABSENT for them, never zero.
+   */
+  accuracyMeters?: number | null;
   distanceMeters: number | null;
   distanceText: string;
   locationFlag: string;
@@ -811,7 +836,8 @@ export type VisitLocationReportView = {
   /** The worst first, capped; `total` says how many there were in all. */
   rows: VisitLocationRow[];
   total: number;
-  summary: { visits: number; far: number; weakGps: number; noPlace: number; measured: number; farthestMeters: number | null };
+  /** `weakGps` is a verdict on the reading, so it is the Super Admin's and the SFE Manager's alone. */
+  summary: { visits: number; far: number; weakGps?: number; noPlace: number; measured: number; farthestMeters: number | null };
 };
 
 /** At most this many rows travel to the phone; the summary is measured over every visit in the period. */
@@ -820,15 +846,23 @@ const LOCATION_ROW_CAP = 300;
 export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Promise<VisitLocationReportView> {
   if (!canReadLocationReport(viewer)) throw forbiddenError("This report is for managers, SFE and the Super Admin.");
   const chosen = chooseTerritories(viewer, raw);
+  // 🔴 NEVER HIS OWN SEAT (audit, 2026-10-02). An ACTING District Manager who still holds a rep seat
+  // passes the gate above as a manager, and his own visits' distances were then on this report while
+  // every visit screen blinded him on that seat. A seat he is blind on is a seat it does not measure.
+  const seats = locationReportSeats(viewer, chosen.seats);
   const period = periodOf(viewer, raw);
+  // 🔴 THE DISTANCE, AND THE READING BEHIND IT ONLY FOR THE SUPER ADMIN AND SFE (owner, 2026-10-02).
+  // The district manager and the NSM read how far apart the two points are and whether that is far;
+  // the accuracy, and the weak-signal verdict that is made from it, leave the server for nobody else.
+  const detail = readsLocationDetail(viewer);
   const empty: VisitLocationReportView = {
     period,
     includeTest: chosen.includeTest,
     rows: [],
     total: 0,
-    summary: { visits: 0, far: 0, weakGps: 0, noPlace: 0, measured: 0, farthestMeters: null },
+    summary: { visits: 0, far: 0, ...(detail ? { weakGps: 0 } : {}), noPlace: 0, measured: 0, farthestMeters: null },
   };
-  if (chosen.seats.length === 0) return empty;
+  if (seats.length === 0) return empty;
 
   const columns =
     "id, seat_id, visit_date, captured_at, rep_hr_id, entered_by_hr_id, list_type, lat, lon, accuracy_meters, distance_meters, " +
@@ -844,7 +878,7 @@ export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: Rep
   // the shape of a complete one, and the row the manager most needs (the farthest) is exactly the
   // one a cut-off could drop. A keyset walk on `id`, the shape every other read in this module uses.
   const rows: Row[] = [];
-  for (const batch of chunk(chosen.seats.map((seat) => seat.seatId))) {
+  for (const batch of chunk(seats.map((seat) => seat.seatId))) {
     const page = await fetchAllRowsKeyset<Row>(
       () => {
         const query = getSupabaseAdmin()
@@ -866,7 +900,7 @@ export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: Rep
     rows.push(...page);
   }
 
-  const seatsById = new Map(chosen.seats.map((seat) => [seat.seatId, seat]));
+  const seatsById = new Map(seats.map((seat) => [seat.seatId, seat]));
   const names = await loadPeopleNames(rows.map((row) => textOrNull(row.rep_hr_id) ?? textOrNull(row.entered_by_hr_id)));
 
   let far = 0;
@@ -905,10 +939,12 @@ export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: Rep
       placeLon: numberOrNull(placeRow.lon),
       visitLat: Number(row.lat),
       visitLon: Number(row.lon),
-      accuracyMeters: numberOrNull(row.accuracy_meters),
+      ...(detail ? { accuracyMeters: numberOrNull(row.accuracy_meters) } : {}),
       distanceMeters: distance,
       distanceText: distance === null ? "—" : formatDistance(distance),
-      locationFlag: flag,
+      // A weak reading is never far (far beats weak, geo.ts), so to a distance-only reader it is a visit
+      // at the place, read by its plain distance — never a word about the signal.
+      locationFlag: !detail && flag === "weak_gps" ? "ok" : flag,
       isUnplanned: row.is_unplanned === true,
     };
   });
@@ -927,7 +963,7 @@ export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: Rep
     includeTest: chosen.includeTest,
     rows: mapped.slice(0, LOCATION_ROW_CAP),
     total: mapped.length,
-    summary: { visits: mapped.length, far, weakGps, noPlace, measured, farthestMeters: farthest },
+    summary: { visits: mapped.length, far, ...(detail ? { weakGps } : {}), noPlace, measured, farthestMeters: farthest },
   };
 }
 
@@ -1227,14 +1263,16 @@ export async function loadTrackingSheetReport(
   const monthResult = resolveReportMonth({ month: raw.month, cairoToday: viewer.cairoToday });
   if (!monthResult.ok) throw validationError(monthResult.error);
   const month = monthResult.value;
-  const managerView = readsTeamReports(viewer);
   const days = monthDays(month.month);
 
   if (chosen.seats.length !== 1) {
-    return { days, includeTest: chosen.includeTest, month, needsOneTerritory: true, rows: [], seat: null, showsSpacing: managerView };
+    return { days, includeTest: chosen.includeTest, month, needsOneTerritory: true, rows: [], seat: null, showsSpacing: readsTeamReports(viewer) };
   }
 
   const seat = chosen.seats[0] as OrgSeat;
+  // 🔴 PER SEAT, NOT PER VIEWER (audit, 2026-10-02): an ACTING District Manager reading his OWN rep
+  // seat's sheet is that seat's rep, and the spacing note judges how its rep worked his month.
+  const managerView = readsTeamReportsOn(viewer, seat);
   const [listed, names] = await Promise.all([
     listedCustomers(seat.seatId, chosen.includeTest, month),
     loadPeopleNames([seat.occupantHrId]),

@@ -560,7 +560,7 @@ const LATER_MIGRATIONS = [
   "supabase/migrations/20261002150353_phoenix_crm_pharmacy_reference.sql",
   // A product manager on a visit — replaces phoenix_crm_save_visit, so it belongs AFTER every earlier
   // replacer of it (see the voice-note note above): liveMigrationSql applies these in order and the last
-  // one wins, and this is now the body the database runs.
+  // one wins.
   "supabase/migrations/20261002205436_phoenix_crm_visit_product_manager.sql",
   // 🔴 20261002205435_phoenix_crm_pharmacy_list_type.sql is DELIBERATELY ABSENT and must stay absent.
   // It only widens two CHECK constraints — it defines no function and creates no table — so the guard
@@ -573,6 +573,13 @@ const LATER_MIGRATIONS = [
   // phoenix_crm_save_plan with its live body and one changed expression — the 'saved' event's details —
   // so its two plan-event inserts stay two. No table, no new function, no save_visit.
   "supabase/migrations/20261002142625_phoenix_crm_saved_event_keeps_the_returned_day.sql",
+  // Two brand-new functions and nothing else (2026-10-02): the per-seat "has this territory ever
+  // carried real work" read that the 06:55 digest and the week reminder gate on — an `exists` per
+  // seat per table, where the old six-table SELECT stopped silently at PostgREST's 1,000 rows — and
+  // the daily pass that closes a request to edit a week that has passed, which calls
+  // phoenix_crm_decide_plan_edit_request and so leaves that function the only writer of `expired`.
+  // It replaces nothing, no save_visit, no table.
+  "supabase/migrations/20261002220047_phoenix_crm_activity_and_plan_edit_expiry.sql",
   // Plan against actual asks the day-by-day sent rule, and takes a DROPPED customer out of the
   // denominator (2026-10-02). It REPLACES phoenix_crm_report_plan_vs_actual with its live body and
   // those two changes; nothing else in the module replaces that function, so it appends safely at the
@@ -580,6 +587,11 @@ const LATER_MIGRATIONS = [
   // result — so without this entry that check would go on reading SQL the database has stopped
   // running, which is the exact failure `liveMigrationSql` exists to prevent.
   "supabase/migrations/20261002221947_phoenix_crm_plan_vs_actual_sent_days.sql",
+  // A visit is never dated onto an EARLIER visit day than the one it arrived on (the 2026-10-02
+  // audit). It REPLACES phoenix_crm_save_visit, so it is now the LAST entry that does and must stay
+  // last among them — liveMigrationSql applies each replacement in order and the last one wins. One
+  // block inserted into 20261002205436's body and nothing else: no table, no column, no constraint.
+  "supabase/migrations/20261002222403_phoenix_crm_visit_day_never_before_arrival.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

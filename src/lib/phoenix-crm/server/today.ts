@@ -3,7 +3,7 @@ import { directionsUrl } from "@/lib/phoenix-crm/directions";
 import { parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { describeDayWindows } from "@/lib/phoenix-crm/plan-rules";
-import { canWriteAsRep, isLocationBlind, readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canWriteAsRep, locationSight, readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadPlannedActivitiesOn, type PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
@@ -105,7 +105,7 @@ export async function loadPhoenixCrmToday(
     await Promise.all([
       customersRead,
       plannedRead,
-      loadVisitRowsForDay(seat.seatId, isTest, date, { blind: isLocationBlind(viewer, seat), org: viewer.org }),
+      loadVisitRowsForDay(seat.seatId, isTest, date, { sight: locationSight(viewer, seat), org: viewer.org }),
       loadPlannedActivitiesOn(seat.seatId, isTest, date),
       loadDayActivityOn(seat.seatId, isTest, date),
       plannedStopsRead,
