@@ -146,9 +146,14 @@ function reviewFilterOf(row: PlanReviewRow): Exclude<ReviewFilter, "all"> {
   return "not_sent";
 }
 
-/** "3 AM · 41 PM" — AM and PM side by side, never added together. */
-function placedText(row: PlanReviewRow): string {
-  if (!row.plan) return "No plan yet";
+/**
+ * "3 AM · 41 PM" — AM and PM side by side, never added together.
+ *
+ * Null when there is no plan: the row already carries a NOT STARTED pill, and "No plan yet" beside
+ * it was the third way one row said the same thing (owner, 2026-10-02).
+ */
+function placedText(row: PlanReviewRow): string | null {
+  if (!row.plan) return null;
   return `${countText(row.accounts)} AM · ${countText(row.doctors)} PM`;
 }
 
@@ -720,6 +725,7 @@ function PlansSection({
             {shown.map((row) => {
               const status = row.plan?.status ?? "none";
               const stamp = planStamp(row);
+              const placed = placedText(row);
               return (
                 <CrmCard
                   accent={STATUS_ACCENT[status]}
@@ -729,7 +735,7 @@ function PlansSection({
                   status={<CrmPill tone={STATUS_TONE[status]}>{row.plan?.statusLabel ?? "Not started"}</CrmPill>}
                   title={row.territory.name}
                 >
-                  <p className="break-words text-sm font-black text-slate-800">{placedText(row)}</p>
+                  {placed ? <p className="break-words text-sm font-black text-slate-800">{placed}</p> : null}
                   {stamp ? <p className="break-words text-xs font-semibold leading-5 text-slate-500">{stamp}</p> : null}
                   {row.plan ? (
                     <div className="mt-2">

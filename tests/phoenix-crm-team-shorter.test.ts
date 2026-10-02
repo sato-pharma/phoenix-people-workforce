@@ -115,6 +115,7 @@ export function runPhoenixCrmTeamShorterTests(): void {
     assert.doesNotMatch(tab, /Nothing waiting/, "no note on this page says nothing is waiting");
     assert.doesNotMatch(tab, /has not started this week's plan/, "the NOT STARTED pill says that already");
     assert.doesNotMatch(tab, /Nothing to look at yet/, "and so does the row with no plan on it");
+    assert.doesNotMatch(tab, /No plan yet/, "and so, a third time, did the placed figure");
 
     // The reviewer is named only when it is somebody else.
     assert.match(tab, /function reviewerText\(territory: TerritorySummary, viewerHrId: string \| null\): string \| null/);
