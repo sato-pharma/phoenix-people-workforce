@@ -89,3 +89,33 @@ export function cloudMirrorDriftReport(drift, { max = 10 } = {}) {
   lines.push("     Fix: node scripts/sync-cloud-context.mjs   (then commit the mirror through the normal PR flow)");
   return lines;
 }
+
+/**
+ * The SessionStart form — short, and SILENT when the mirror is current.
+ *
+ * 🔴 SILENCE IS THE DELIBERATE PART, and it is the opposite of what the memory-index guard beside it
+ * does. That guard prints its number every session because the NUMBER is what decides whether the
+ * next append is safe; here there is nothing to decide while the mirror matches, and SessionStart
+ * context is charged to every request for the rest of the session. A standing "mirror is current"
+ * line would cost every session to say nothing. Drift is the only actionable state, so drift is the
+ * only thing said.
+ *
+ * It names at most three files for the same reason — the full list is what `repo-doctor` is for.
+ * What it must always carry is WHY a session should care: the mirror is not this session's memory,
+ * it is what a CLOUD session will read instead, and dispatching cloud work against a stale one is
+ * how a measured 2026-10-02 session would have been sent to redo an applied migration.
+ */
+export function cloudMirrorSessionLines(drift, { max = 3 } = {}) {
+  if (!drift || drift.drifted === 0) return [];
+
+  const named = [...drift.stale, ...drift.missing, ...drift.extra];
+  const shown = named.slice(0, max).join(", ");
+  return [
+    "CLOUD MIRROR IS STALE (AGENTS.md section 5)",
+    `${drift.drifted} of ${drift.compared} mirrored memory files no longer match this laptop's live memory `
+      + `(${drift.stale.length} stale, ${drift.missing.length} missing, ${drift.extra.length} retired-but-shipping).`,
+    `A CLOUD session reads the mirror, never ~/.claude — so these are facts it would have WRONG: ${shown}`
+      + `${named.length > max ? `, and ${named.length - max} more` : ""}.`,
+    "Before sending work to cloud, refresh and ship it: node scripts/sync-cloud-context.mjs",
+  ];
+}

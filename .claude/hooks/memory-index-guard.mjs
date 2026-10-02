@@ -224,6 +224,53 @@ if (footprintDetail) {
   sections.push(["AUTO-LOADED CONTEXT FOOTPRINT (AGENTS.md 2.2)", footprintDetail].join("\n"));
 }
 
+/**
+ * Has the cloud mirror drifted from this laptop's live memory?
+ *
+ * WHY HERE. `repo-doctor` already measures it (its CLOUD MIRROR section), but only when somebody
+ * runs the doctor — and the moment that matters is the moment a session decides to send work to
+ * cloud, which is the start. Same argument as the index budget above: an audit cannot stop a
+ * dispatch that already happened. The drift was found by accident on 2026-10-02, when three mirrored
+ * memories were stale and one would have sent a cloud session to redo an applied production
+ * migration.
+ *
+ * 🔴 SILENT WHEN CURRENT, unlike every other section in this hook. The budget numbers print every
+ * time because the number is what decides the next append; drift is the only actionable state here,
+ * and a standing "mirror is current" line would charge every request for the rest of the session to
+ * say nothing.
+ *
+ * COST, measured on this repository 2026-10-02: 294 ms for 1,064 files on each side, nearly all of
+ * it the two directory reads. It is paid once per session, and it sits inside a try so it keeps the
+ * fail-open contract at the top of this file.
+ */
+let mirrorDrifted = 0;
+try {
+  const mirrorDir = path.join(projectDir, ".claude", "cloud-context", "memory-mirror");
+  // A missing mirror is NOT drift — a checkout can legitimately not carry one — and it is not
+  // "current" either. Nothing is said, which is the same under-claiming direction the sections above
+  // take; `repo-doctor` is where an unreadable mirror is reported out loud.
+  if (memoryDir !== null && fs.existsSync(mirrorDir)) {
+    const { cloudMirrorDrift, cloudMirrorSessionLines } = await import("../../scripts/cloud-mirror-drift.mjs");
+    const readMd = (dir) => {
+      const out = new Map();
+      for (const name of fs.readdirSync(dir)) {
+        if (!name.toLowerCase().endsWith(".md") || name.includes(".bak")) continue;
+        out.set(name, fs.readFileSync(path.join(dir, name), "utf8"));
+      }
+      return out;
+    };
+    const drift = cloudMirrorDrift({ live: readMd(memoryDir), mirror: readMd(mirrorDir) });
+    const lines = cloudMirrorSessionLines(drift);
+    if (lines.length > 0) {
+      mirrorDrifted = drift.drifted;
+      sections.push(lines.join("\n"));
+    }
+  }
+} catch {
+  // Unreadable directory, missing module, anything at all — say nothing. A drift REPORT must never
+  // turn a session's start into an error.
+}
+
 const result = {
   hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: sections.join("\n\n") },
 };
@@ -247,6 +294,15 @@ if (footprint.status === "unknown") {
   alarms.push(
     `Auto-loaded footprint ${footprint.bytes} bytes — over budget, free ${footprint.mustFree} bytes `
       + "by moving detail into docs/.",
+  );
+}
+
+// The human is told about drift too, because the cost of not knowing lands on HIM: a cloud session
+// dispatched against a stale mirror burns a run and comes back having redone finished work.
+if (mirrorDrifted > 0) {
+  alarms.push(
+    `Cloud mirror ${mirrorDrifted} file(s) stale — a cloud session would read those memories wrong; `
+      + "run node scripts/sync-cloud-context.mjs before sending work there.",
   );
 }
 
