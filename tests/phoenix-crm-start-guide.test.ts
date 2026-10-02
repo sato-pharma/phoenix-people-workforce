@@ -120,7 +120,11 @@ export async function runPhoenixCrmStartGuideTests(): Promise<void> {
 
     // EVERY English label is isolated. Strip the ones that went through the helper; if a label is
     // still standing in the body afterwards, it was written bare.
-    let stripped = bodyOf(ar);
+    // Every ISOLATED run goes first — the rule is `<bdi>`, not "one of the registered buttons". The
+    // plan's deadline (2026-10-02) is the first English run here that is not a button name: "11:55 PM"
+    // carries a bare "PM" into the Arabic sentence, and it is isolated exactly as a label is, which is
+    // what the rule asks for. What this must still catch is a label written with no isolation at all.
+    let stripped = bodyOf(ar).replace(/<bdi>[\s\S]*?<\/bdi>/g, "");
     for (const label of START_GUIDE_UI_LABELS) stripped = stripped.split(startGuideUiLabel(label)).join("");
     for (const label of START_GUIDE_UI_LABELS) {
       assert.ok(
