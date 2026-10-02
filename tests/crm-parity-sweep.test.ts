@@ -122,10 +122,32 @@ export function runCrmParitySweepTests() {
   // guard, applied one step earlier so the sweep can record WHY it stopped.
   const truncated = decideParityAction({ crmRows: 1000, mirrorRows: 4200, missingInMirror: 0, extraInMirror: 2101 });
   assert.equal(truncated.action, "refuse", "losing more than half the window reads as a truncated fetch");
+  assert.match(String(truncated.reason), />50%/, "the >50% refusal names its own threshold");
+
+  // ── THE DELETION CEILINGS ─────────────────────────────────────────────────────────────────
+  // Exactly half used to be REPAIRED here, on the reasoning that the guard matched the sync
+  // engine's own >50% threshold. That reasoning held and the guard still did nothing, because
+  // production never came near it: five consecutive nights deleted 366, 351, 353 and 458 rows,
+  // every one between 2.0% and 2.6% of its window. 1,879 rows left under a guard that was never
+  // tested once, against a database with no point-in-time recovery.
+  const halfWindow = decideParityAction({ crmRows: 4200, mirrorRows: 4200, missingInMirror: 0, extraInMirror: 2100 });
+  assert.equal(halfWindow.action, "refuse", "half a window of deletions is refused, not repaired unattended");
+
+  // The ROW ceiling catches the shape that actually happened — a small SHARE of a big window.
+  const measured = decideParityAction({ crmRows: 19769, mirrorRows: 20227, missingInMirror: 0, extraInMirror: 458 });
+  assert.equal(measured.action, "refuse", "the 02 Oct 2026 window (458 of 20,227 = 2.3%) is refused by the row ceiling");
+  assert.match(String(measured.reason), /250-row ceiling/, "the refusal says which ceiling stopped it");
+
+  // The SHARE ceiling catches the same shape in a small window, where 250 rows would be most of it.
+  const smallWindow = decideParityAction({ crmRows: 900, mirrorRows: 1000, missingInMirror: 0, extraInMirror: 100 });
+  assert.equal(smallWindow.action, "refuse", "10% of a window is over the 5% share ceiling despite being under 250 rows");
+  assert.match(String(smallWindow.reason), /5% ceiling/, "the share refusal names the share, not the row count");
+
+  // And a routine difference still repairs — the sweep has to keep working, not merely stop.
   assert.equal(
-    decideParityAction({ crmRows: 4200, mirrorRows: 4200, missingInMirror: 0, extraInMirror: 2100 }).action,
+    decideParityAction({ crmRows: 20000, mirrorRows: 20010, missingInMirror: 0, extraInMirror: 10 }).action,
     "repair",
-    "exactly half is still repaired — the guard is >50%, matching the sync engine's own threshold",
+    "ten rows out of 20,000 is the routine case and is still reconciled",
   );
 
   // ADDITIONS ARE NEVER REFUSED, however large. Adding rows cannot destroy anything, and a big
@@ -150,12 +172,20 @@ export function runCrmParitySweepTests() {
   assert.equal(diff.mirrorRows, 3);
   assert.deepEqual(
     compareVisitIdSets([7, 7, 8], [8, 7]),
-    { crmRows: 2, mirrorRows: 2, missingInMirror: 0, extraInMirror: 0 },
+    { crmRows: 2, mirrorRows: 2, missingInMirror: 0, extraInMirror: 0, missingIds: [], extraIds: [] },
     "duplicate ids in the vendor's answer must not fabricate a difference",
   );
   assert.deepEqual(
     compareVisitIdSets([], []),
-    { crmRows: 0, mirrorRows: 0, missingInMirror: 0, extraInMirror: 0 },
+    { crmRows: 0, mirrorRows: 0, missingInMirror: 0, extraInMirror: 0, missingIds: [], extraIds: [] },
     "two empty windows are equal, not a problem",
   );
+
+  // THE IDS, not just the counts. These are what the sync archives before deleting, so a count that
+  // is right while the id list is wrong would archive the wrong rows and read as success — the
+  // deletion archive is only worth having if these two agree.
+  assert.deepEqual(diff.extraIds, [5], "the id the mirror holds and the CRM does not is the one carried out");
+  assert.deepEqual([...diff.missingIds].sort((a, b) => a - b), [1, 2], "both late-save ids are carried out");
+  assert.equal(diff.extraIds.length, diff.extraInMirror, "extraIds and extraInMirror can never disagree");
+  assert.equal(diff.missingIds.length, diff.missingInMirror, "missingIds and missingInMirror can never disagree");
 }

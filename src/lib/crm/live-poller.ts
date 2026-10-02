@@ -84,7 +84,7 @@ import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
-import { logError } from "@/lib/observability/log";
+import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── Cadence (Africa/Cairo wall-clock) ────────────────────────────────────────────────────────────
@@ -743,10 +743,17 @@ async function runScheduledParitySweep(): Promise<void> {
     );
     // A window that needed repairing is the signal this whole sweep exists to produce: the two
     // systems HAD disagreed, silently, and nothing else would ever have said so.
+    //
+    // logWarning, not logError. This is the line `runScheduledParitySweep`'s own doc comment calls
+    // "a normal finding", and it fired on four of five consecutive nights — an error channel that
+    // reports a routine success nightly is one nobody reads on the night it finally matters. WARNING
+    // goes to stdout rather than stderr (see observability/log.ts) so Railway stops classifying it as
+    // an error, and `labels.event` keeps it exactly as greppable as before.
     if (result.action === "repair") {
-      logError(
+      logWarning(
         `CRM parity sweep repaired ${result.window.from}..${result.window.to}: the mirror was missing ` +
-          `${diff?.missingInMirror ?? 0} visit(s) the CRM holds and held ${diff?.extraInMirror ?? 0} the CRM does not`,
+          `${diff?.missingInMirror ?? 0} visit(s) the CRM holds and held ${diff?.extraInMirror ?? 0} the CRM does not` +
+          `${result.repairedDeleted > 0 ? ` — ${result.repairedDeleted} deleted id(s) archived in ireports360_sync_deletions` : ""}`,
         {
           labels: {
             event: "crm_parity_sweep_repaired",

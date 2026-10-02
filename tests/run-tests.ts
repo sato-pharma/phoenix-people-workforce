@@ -180,6 +180,7 @@ import { runCrmPreHireMappingGuardTests } from "./crm-pre-hire-mapping-guard.tes
 import { runCrmMappingPickerTests } from "./crm-mapping-picker.test.ts";
 import { runCrmOverrideEmploymentScopeTests } from "./crm-override-employment-scope.test.ts";
 import { runCrmParitySweepTests } from "./crm-parity-sweep.test.ts";
+import { runCrmParityDeleteArchiveTests } from "./crm-parity-delete-archive.test.ts";
 import { runCrmSyncRunColumnsTests } from "./crm-sync-run-columns.test.ts";
 import { runProbationDvSourceTests } from "./probation-dv-source.test.ts";
 import { runProbationDvDetectionTests } from "./probation-dv-detection.test.ts";
@@ -2639,6 +2640,7 @@ await runTest("crm mapping picker (map an unmapped CRM account by name or HR ID)
 await runTest("crm override employment scope (one mapping credits both holders of a handed-over slot)", runCrmOverrideEmploymentScopeTests);
 await runTest("crm blocked-attribution counting (a holiday marker on a dead slot is not a handover)", runCrmBlockCountingTests);
 await runTest("crm full-history parity sweep (windows, staleness, and the refuse-to-delete guard)", runCrmParitySweepTests);
+await runTest("crm parity deletes are archived by id before they run, and bounded by a ceiling", runCrmParityDeleteArchiveTests);
 await runTest("crm sync-run columns (every persisted column exists in the schema)", runCrmSyncRunColumnsTests);
 await runTest("probation DV source definition (P3-T01 predicate + attribution + dedup key)", runProbationDvSourceTests);
 await runTest("probation DV-Day detection (P3-T02 grouping + visit_count + unresolved surfacing)", runProbationDvDetectionTests);

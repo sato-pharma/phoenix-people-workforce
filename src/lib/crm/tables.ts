@@ -21,6 +21,13 @@ export const CRM_SYNC_RUNS_TABLE = "ireports360_visits_sync_runs";
  * table rather than a log — what each check actually did is recorded in CRM_SYNC_RUNS_TABLE. */
 export const CRM_PARITY_WINDOWS_TABLE = "ireports360_parity_windows";
 
+/** One row per mirror visit/check-in id the reconciliation DELETED, written before the delete runs.
+ * This is the only place a deleted id survives: CRM_PARITY_WINDOWS_TABLE keeps counts, the sync-run
+ * row keeps `rows_deleted`, and production has no point-in-time recovery — 1,879 rows left across
+ * five nights in Sept/Oct 2026 with no id recorded anywhere. Service-role only; evidence, never
+ * business data. */
+export const CRM_SYNC_DELETIONS_TABLE = "ireports360_sync_deletions";
+
 /** Manual crm_id -> hr_id identity resolutions (override tier of the identity waterfall). */
 export const CRM_IDENTITY_RESOLUTIONS_TABLE = "ireports360_crm_identity_resolutions";
 
