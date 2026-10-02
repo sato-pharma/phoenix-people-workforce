@@ -3015,3 +3015,70 @@ it for the hook's wording. Which memory backs which hook:
 - **A freeze leaves NO dump** — an EMPTY Windows Minidump folder is the EXPECTED signature, and the tell is `dwm.exe` dying `0xC00001AD`. The ceiling is COMMIT, not RAM; §5 carries the mechanics and the live-read rule. **Never judge a process by `VirtualSize`.**
 - **Two decoys sit on that diagnosis:** `nvlddmkm` is what dies when the compositor is starved, not the cause; but the `node.exe` figures in **Event 2004 ARE real**. The largest leak so far is a throwaway ExcelJS probe (22 → 41 GB in 40s, off-heap). Delete such probes when done.
 - **An interrupted session leaves the tree BROKEN ON PURPOSE.** Before acting on a bare "commit it", `git grep BREAK-`.
+
+## A PR's file size read against today's `main` invented a blocked merge — 2026-10-01
+
+The owner had just merged two Phoenix CRM fixes and asked what was next. Three PRs were open, all
+green, and two of them touched `AGENTS.md` — which is graded in CI against a hard ceiling
+(`AUTOLOAD_REPO_SHARE`, 150,000 − 24,400 = **125,600** bytes for `CLAUDE.md` + `AGENTS.md`, asserted
+by `tests/autoload-footprint-budget.test.ts` inside the required `validate` job).
+
+So the footprint was worth checking, and the check was run on the wrong baseline:
+
+| read | `AGENTS.md` | conclusion drawn |
+| --- | --- | --- |
+| `origin/main` | 115,081 | 781 bytes of slack |
+| `refs/remotes/pr/5088` | 115,716 | "#5088 adds **+635**" |
+| `refs/remotes/pr/5090` | 115,338 | "#5090 adds **+257**" |
+
+124,819 + 635 + 257 = 125,711 — over by 111. That was reported to him as a measured fact, with the
+consequence spelled out: merge both and `main`'s own required check goes red, and a red `main` CI
+makes Railway withhold the production deploy silently (§2.3). He was told to merge one and that the
+other needed 111 bytes freed first.
+
+**Every byte in that table is real and the arithmetic between them is fiction.** #5088's branch was
+based on `3d5f6bd15`, where `AGENTS.md` was **115,848** — 767 bytes larger than `main`, because
+#5089 had landed in between and moved the deploy-gate evidence out into its account. A squash merge
+applies the branch's **diff**, not its file, so #5088's delta was **115,716 − 115,848 = −132**. The
+merge made `main`'s copy *smaller*: 115,081 → 114,949. Nothing was over budget, nothing was blocked,
+and the warning described a failure that could not occur.
+
+### Why nothing catches it
+
+- Both PRs read **green**, correctly: each check grades its own tree, and each tree was under the
+  ceiling. The gate was never going to fire.
+- A **positive control** proves nothing here. Both file reads succeed and return true byte counts;
+  what is wrong is the subtraction, which no query validates.
+- The error is **invisible in the direction that matters**. It over-reports: it argues against a
+  merge that was safe. A session that believed it would have held a green PR indefinitely and asked
+  the owner for a trim that nothing needed.
+- It reached the owner **as advice**, in a table, with a production consequence attached — the shape
+  his standing rules exist to prevent (`docs/agents-owner-rules.md`: being confidently wrong is what
+  costs a day).
+
+### The guards
+
+Either one answers in a second:
+
+```bash
+# the delta a squash merge will actually apply
+base=$(git merge-base origin/main refs/remotes/pr/<n>)
+echo $(( $(git cat-file -s refs/remotes/pr/<n>:AGENTS.md) - $(git cat-file -s $base:AGENTS.md) ))   # -132
+
+# or read it off the diff, with THREE dots (merge base), never two against today's main
+git diff --numstat origin/main...refs/remotes/pr/<n> -- AGENTS.md CLAUDE.md
+```
+
+Measured the same evening: the merge-base form printed `-132`, against the `+635` the absolute
+comparison had implied.
+
+**And a margin printed by a hook or a script is about the tree it measured.** #5092 shipped that
+same night to make the enforced-footprint margin say which tree it read, for exactly this reason:
+the SessionStart figure (`125,586 of 125,600 — 14 bytes left`) was read from the local primary
+checkout, one commit behind `origin/main`, where the number was 124,819 with 913 free. Neither
+figure is wrong; neither is a statement about a PR's merge result.
+
+**The cue lives in the CI and PRs cluster** of
+[docs/agents-session-traps-clusters.md](agents-session-traps-clusters.md). It is the same shape as
+the short-sha trap in that cluster and the stale-citation shapes in the memory cluster: a true
+number, read against a baseline it was never measured on.
