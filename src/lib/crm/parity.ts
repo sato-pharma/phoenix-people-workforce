@@ -58,6 +58,29 @@ export const PARITY_SLICE_DAYS = 30;
 export const PARITY_STALE_AFTER_DAYS = 21;
 
 /**
+ * The deletion ceilings, and why 50% was not one.
+ *
+ * Measured on production over five consecutive nights (Sept 29 — Oct 2, 2026): the sweep deleted
+ * 366, 351, 353 and 458 mirror rows from the March, April, May and June windows, every one of them
+ * between 2.0% and 2.6% of its window. The existing >50% guard was never even approached, so in
+ * practice nothing bounded the destructive direction at all — and 1,879 rows left with no id
+ * recorded anywhere, against a database with no point-in-time recovery.
+ *
+ * These two ceilings sit BELOW the >50% one rather than replacing it, because they answer a
+ * different question. 50% asks "did the fetch fail?"; these ask "is this more history than a
+ * routine reconciliation should remove while nobody is watching?" A window over either ceiling is
+ * recorded as a refusal and left unequal, which is visible and reversible; the alternative is a
+ * delete that is neither.
+ *
+ * The owner's locked CRM rule is the reason the bar is this low: the CRM admin deactivates and
+ * CLONES, never deletes (.claude/rules/crm.md). A large one-sided `extraInMirror` is therefore more
+ * likely to be a vendor-side scope or activation artefact than a real deletion, and the sweep
+ * cannot tell the two apart from row counts.
+ */
+export const PARITY_MAX_DELETE_ROWS = 250;
+export const PARITY_MAX_DELETE_SHARE = 0.05;
+
+/**
  * Every window covering [earliest, today], oldest first. The last window is clamped to today rather
  * than allowed to run past it — an unclamped window would ask the vendor for future dates, and a
  * window whose bounds move every day could never be recorded as "verified" against a stable key.
@@ -126,14 +149,36 @@ export type ParityDiff = {
   mirrorRows: number;
 };
 
-export function compareVisitIdSets(crmIds: readonly number[], mirrorIds: readonly number[]): ParityDiff {
+/**
+ * The comparison plus the ids behind each count.
+ *
+ * The ids were always computed here and then thrown away, and that is how 1,879 mirror rows left
+ * across five nights with no id recorded anywhere: `ireports360_parity_windows` keeps counts, the
+ * sync-run row keeps `rows_deleted`, and production has no point-in-time recovery. `extraIds` is
+ * exactly what the repair is about to delete, so it is also what has to be archived first.
+ */
+export type ParityIdSets = ParityDiff & {
+  /** In the CRM's answer, not in the mirror — these get upserted, and adding rows destroys nothing. */
+  missingIds: readonly number[];
+  /** In the mirror, not in the CRM's answer — these are the candidates for DELETION. */
+  extraIds: readonly number[];
+};
+
+export function compareVisitIdSets(crmIds: readonly number[], mirrorIds: readonly number[]): ParityIdSets {
   const crm = new Set(crmIds);
   const mirror = new Set(mirrorIds);
-  let missingInMirror = 0;
-  for (const id of crm) if (!mirror.has(id)) missingInMirror += 1;
-  let extraInMirror = 0;
-  for (const id of mirror) if (!crm.has(id)) extraInMirror += 1;
-  return { crmRows: crm.size, mirrorRows: mirror.size, missingInMirror, extraInMirror };
+  const missingIds: number[] = [];
+  for (const id of crm) if (!mirror.has(id)) missingIds.push(id);
+  const extraIds: number[] = [];
+  for (const id of mirror) if (!crm.has(id)) extraIds.push(id);
+  return {
+    crmRows: crm.size,
+    mirrorRows: mirror.size,
+    missingInMirror: missingIds.length,
+    extraInMirror: extraIds.length,
+    missingIds,
+    extraIds,
+  };
 }
 
 export type ParityAction = "equal" | "repair" | "refuse";
@@ -153,6 +198,9 @@ export type ParityAction = "equal" | "repair" | "refuse";
  *                  the same threshold applied one step earlier — before the destructive call rather
  *                  than inside it — so the sweep can record WHY it stopped instead of running a
  *                  repair that silently skips its own reconciliation.
+ *   bulk deletion  the vendor is missing more than PARITY_MAX_DELETE_SHARE of the window, or more
+ *                  than PARITY_MAX_DELETE_ROWS rows outright. See the constants for why 50% turned
+ *                  out to be no guard at all in practice.
  *
  * Anything else is a real difference and gets repaired. Note that a window needing only ADDITIONS is
  * never refused: extra rows arriving is the late-save case this sweep exists for, and adding rows
@@ -170,6 +218,19 @@ export function decideParityAction(diff: ParityDiff): { action: ParityAction; re
     return {
       action: "refuse",
       reason: `CRM answer is missing ${diff.extraInMirror} of the mirror's ${diff.mirrorRows} rows (>50%) — treating this as a truncated fetch, not a mass deletion.`,
+    };
+  }
+  if (diff.extraInMirror > PARITY_MAX_DELETE_ROWS) {
+    return {
+      action: "refuse",
+      reason: `CRM answer is missing ${diff.extraInMirror} of the mirror's ${diff.mirrorRows} rows, over the ${PARITY_MAX_DELETE_ROWS}-row ceiling for one window — leaving the window unequal for a human to read rather than deleting that many settled rows unattended.`,
+    };
+  }
+  if (diff.mirrorRows > 0 && diff.extraInMirror / diff.mirrorRows > PARITY_MAX_DELETE_SHARE) {
+    const share = ((diff.extraInMirror / diff.mirrorRows) * 100).toFixed(1);
+    return {
+      action: "refuse",
+      reason: `CRM answer is missing ${diff.extraInMirror} of the mirror's ${diff.mirrorRows} rows (${share}%, over the ${PARITY_MAX_DELETE_SHARE * 100}% ceiling) — leaving the window unequal for a human to read rather than deleting that share of a window unattended.`,
     };
   }
   return { action: "repair", reason: null };
@@ -311,6 +372,11 @@ export async function runIReports360ParitySweep(now: Date = new Date()): Promise
 
   const config = getIReports360Config();
   const token = await iReports360Login(config);
+  // Taken BEFORE the fetch, and handed to the sync below as `prefetched.capturedAt`. It is what
+  // keeps the sync's concurrent-insert guard measuring against OUR snapshot instead of an instant
+  // minutes later: a row another sync wrote in between is newer than this and must not be read as
+  // something the vendor deleted.
+  const capturedAt = new Date().toISOString();
   const crmVisits = await iReports360GetVisits(config, token, window.from, window.to);
   const crmIds = crmVisits
     .map((visit) => Number(visit.id))
@@ -335,9 +401,19 @@ export async function runIReports360ParitySweep(now: Date = new Date()): Promise
   if (action === "repair") {
     // Hand the already-fetched visits to the sync so it does not re-query the vendor for the same
     // window, and so its deletion guard measures against the instant WE captured rather than a later
-    // one. Check-ins are fetched by the sync itself (passing an empty list here would read as "the
-    // CRM has no check-ins for this window" and reconcile them all away).
-    const result = await syncIReports360Visits({ dateFrom: window.from, dateTo: window.to, trigger: "cron" });
+    // one. Check-ins are omitted deliberately and the sync fetches those itself — passing an empty
+    // list would read as "the CRM has no check-ins for this window" and reconcile them all away.
+    //
+    // This comment described the intent from the day the file was written, but the call below did
+    // not pass `prefetched` at all, so the vendor was fetched TWICE and the rows actually deleted
+    // came from the second fetch — not from the `extraIds` this sweep measured, logged and (now)
+    // archives. The two agreeing was luck, not a guarantee.
+    const result = await syncIReports360Visits({
+      dateFrom: window.from,
+      dateTo: window.to,
+      trigger: "cron",
+      prefetched: { capturedAt, visits: crmVisits },
+    });
     repairedUpserted = result.rowsUpserted;
     repairedDeleted = result.rowsDeleted;
   }

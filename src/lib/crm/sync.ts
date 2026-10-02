@@ -27,7 +27,12 @@ import {
   type CrmAttribution,
   type CrmIdentityMaps,
 } from "@/lib/crm/identity";
-import { CRM_CHECKINS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
+import {
+  CRM_CHECKINS_TABLE,
+  CRM_SYNC_DELETIONS_TABLE,
+  CRM_SYNC_RUNS_TABLE,
+  CRM_VISITS_TABLE,
+} from "@/lib/crm/tables";
 import { addDaysIso, cairoTodayIso, todayIso } from "@/lib/crm/dates";
 import { selectOrphanedMappedIdentities, selectUnmappedAgentAlerts } from "@/lib/crm/unmapped-alert";
 import { selectUnrecognizedVisitTypeAlerts } from "@/lib/crm/unrecognized-visit-type-alert";
@@ -48,6 +53,48 @@ const visitsTable = CRM_VISITS_TABLE;
 const checkinsTable = CRM_CHECKINS_TABLE;
 const syncRunsTable = CRM_SYNC_RUNS_TABLE;
 const upsertBatchSize = 500;
+
+/** One archive row per id about to be deleted from the mirror. */
+export type SyncDeletionRecord = {
+  kind: "visit" | "checkin";
+  record_id: number;
+  record_date: string | null;
+  synced_at: string | null;
+  window_from: string;
+  window_to: string;
+  sync_run_id: string | null;
+  trigger: VisitsSyncTrigger;
+};
+
+/**
+ * Records what is about to be deleted, and THROWS if it cannot.
+ *
+ * Failing closed is the whole point. Production has no point-in-time recovery — 7 daily backups are
+ * the entire recovery story — and before this existed a reconciliation delete left no id anywhere:
+ * `ireports360_parity_windows` holds counts, the sync-run row holds `rows_deleted`. Five consecutive
+ * nights in Sept/Oct 2026 removed 1,879 mirror visits that way. So an archive that fails is a reason
+ * not to delete, never a warning to log past: the caller's `await` propagates, the run fails, and
+ * the rows are still there to try again.
+ */
+export async function archiveSyncDeletions(
+  // The narrowest shape this needs, rather than the full admin client, so a test can hand it a
+  // three-line fake and prove the fail-closed behaviour without a database.
+  supabase: {
+    from: (table: string) => {
+      insert: (rows: SyncDeletionRecord[]) => PromiseLike<{ error: { message: string } | null }>;
+    };
+  },
+  rows: readonly SyncDeletionRecord[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  const { error } = await supabase.from(CRM_SYNC_DELETIONS_TABLE).insert(rows as SyncDeletionRecord[]);
+  if (error) {
+    throw new Error(
+      `Refusing to delete ${rows.length} mirror ${rows[0]?.kind ?? "row"}(s): the deletion archive write failed (${error.message}). ` +
+        `An unrecorded delete is unrecoverable here — production has no PITR — so the rows were left in place.`,
+    );
+  }
+}
 // At the (now-reverted, see runScheduledIReports360Sync's doc comment) 21-day lookback, a full
 // run chunked into ~26 visits requests + ~25 checkins requests. Run one-at-a-time, each
 // successive request measurably slows under sustained Supabase load (observed 9.9s -> 15s per
@@ -549,10 +596,17 @@ async function backfillMissingCheckinAddresses(
 /** A vendor fetch the live poller already performed for this exact window — passed in so the
  * engine can skip its own login+fetch (halving vendor traffic) and, crucially, so `capturedAt`
  * (taken BEFORE that fetch) drives the concurrent-sync deletion guard instead of a later
- * timestamp, keeping the guard strictly conservative. */
+ * timestamp, keeping the guard strictly conservative.
+ *
+ * `checkins` is OPTIONAL and omitting it is not the same as passing `[]`. An empty array is a
+ * positive claim that the vendor has no check-ins for this window, which reconciles every existing
+ * one away; omitting it means "I did not fetch those", and the engine fetches them itself. The
+ * parity sweep needs exactly that shape — it compares visit ids only — and until this was optional
+ * it could not pass `prefetched` at all, so it re-fetched the whole window and deleted against a
+ * second, later answer than the one it had measured. */
 export type PrefetchedCrmWindow = {
   capturedAt: string;
-  checkins: IReports360Checkin[];
+  checkins?: IReports360Checkin[];
   visits: IReports360Visit[];
 };
 
@@ -617,8 +671,25 @@ export async function syncIReports360Visits(input: {
     let checkinsFailed = false;
     let visits: IReports360Visit[];
     let checkins: IReports360Checkin[];
+    const fetchCheckins = async (): Promise<IReports360Checkin[]> => {
+      const config = getIReports360Config();
+      const token = await iReports360Login(config);
+      // Same posture as the paired fetch below: best-effort, never fails the run, never silent.
+      return iReports360GetCheckins(config, token, input.dateFrom, input.dateTo).catch((error: unknown) => {
+        checkinsFailed = true;
+        logError("iReports360 check-ins fetch failed; visits still synced without the GPS overlay", {
+          labels: { event: "crm_sync_checkins_fetch_failed", dateFrom: input.dateFrom, dateTo: input.dateTo },
+          error,
+        });
+        return [] as IReports360Checkin[];
+      });
+    };
     if (input.prefetched) {
-      ({ visits, checkins } = input.prefetched);
+      visits = input.prefetched.visits;
+      // An omitted `checkins` means the caller did not fetch them, so we must — see
+      // PrefetchedCrmWindow. An explicitly empty array is a real "the vendor has none" answer and
+      // is honoured as one.
+      checkins = input.prefetched.checkins ?? (await fetchCheckins());
     } else {
       const config = getIReports360Config();
       const token = await iReports360Login(config);
@@ -790,6 +861,8 @@ export async function syncIReports360Visits(input: {
       // synced_at per row, so a row written by a CONCURRENT sync after this run took its snapshot
       // can be protected from deletion below.
       const syncedAtById = new Map<number, string>();
+      // visit_date per row, for the deletion archive only — it never affects what is deleted.
+      const visitDateById = new Map<number, string>();
       const reconcilePageSize = 5000;
       // KEYSET, NOT OFFSET. This paged with `.range()` and no `.order()`; Postgres gives no stable
       // row order without ORDER BY, so pages could repeat rows and skip others. That is bad here in
@@ -801,7 +874,9 @@ export async function syncIReports360Visits(input: {
       for (;;) {
         let query = supabase
           .from(visitsTable)
-          .select("crm_visit_id, synced_at")
+          // visit_date rides along purely so the deletion archive can record WHEN each removed
+          // visit was, which is what makes a wrong delete readable later without a restore.
+          .select("crm_visit_id, synced_at, visit_date")
           .gte("visit_date", input.dateFrom)
           .lte("visit_date", input.dateTo)
           .order("crm_visit_id", { ascending: true })
@@ -809,11 +884,12 @@ export async function syncIReports360Visits(input: {
         if (cursor !== null) query = query.gt("crm_visit_id", cursor);
         const { data, error } = await query;
         if (error) throw new Error(error.message);
-        const page = (data ?? []) as Array<{ crm_visit_id: number; synced_at: string | null }>;
+        const page = (data ?? []) as Array<{ crm_visit_id: number; synced_at: string | null; visit_date: string | null }>;
         if (page.length === 0) break;
         existingIds.push(...page.map((row) => row.crm_visit_id));
         for (const row of page) {
           if (row.synced_at) syncedAtById.set(row.crm_visit_id, row.synced_at);
+          if (row.visit_date) visitDateById.set(row.crm_visit_id, row.visit_date);
         }
         if (page.length < reconcilePageSize) break;
         const last = Number(page[page.length - 1]?.crm_visit_id);
@@ -838,6 +914,22 @@ export async function syncIReports360Visits(input: {
       } else {
         for (let index = 0; index < staleIds.length; index += upsertBatchSize) {
           const chunk = staleIds.slice(index, index + upsertBatchSize);
+          // ARCHIVE FIRST, AND FAIL CLOSED. A delete that cannot be recorded does not happen: this
+          // throws, which fails the run and leaves the rows in place, because an unrecorded delete
+          // against a database with no point-in-time recovery is the one outcome with no way back.
+          await archiveSyncDeletions(
+            supabase,
+            chunk.map((id) => ({
+              kind: "visit" as const,
+              record_id: id,
+              record_date: visitDateById.get(id) ?? null,
+              synced_at: syncedAtById.get(id) ?? null,
+              window_from: input.dateFrom,
+              window_to: input.dateTo,
+              sync_run_id: runId,
+              trigger: input.trigger,
+            })),
+          );
           const { error } = await supabase.from(visitsTable).delete().in("crm_visit_id", chunk);
           if (error) throw new Error(error.message);
           rowsDeleted += chunk.length;
@@ -852,13 +944,16 @@ export async function syncIReports360Visits(input: {
       if (dedupedCheckinRows.length > 0) {
         const freshCheckinIds = new Set(dedupedCheckinRows.map((row) => row.crm_checkin_id));
         const existingCheckinIds: number[] = [];
+        // check_date per row, for the deletion archive only.
+        const checkDateById = new Map<number, string>();
         const reconcilePageSize = 5000;
         // Keyset for the same reason as the visits reconcile above — this list also drives deletes.
         let checkinCursor: number | null = null;
         for (;;) {
           let query = supabase
             .from(checkinsTable)
-            .select("crm_checkin_id")
+            // check_date rides along for the deletion archive, as visit_date does above.
+            .select("crm_checkin_id, check_date")
             .gte("check_date", `${input.dateFrom}T00:00:00`)
             .lte("check_date", `${input.dateTo}T23:59:59`)
             .order("crm_checkin_id", { ascending: true })
@@ -866,9 +961,12 @@ export async function syncIReports360Visits(input: {
           if (checkinCursor !== null) query = query.gt("crm_checkin_id", checkinCursor);
           const { data, error } = await query;
           if (error) throw new Error(error.message);
-          const page = (data ?? []) as Array<{ crm_checkin_id: number }>;
+          const page = (data ?? []) as Array<{ crm_checkin_id: number; check_date: string | null }>;
           if (page.length === 0) break;
           existingCheckinIds.push(...page.map((row) => row.crm_checkin_id));
+          for (const row of page) {
+            if (row.check_date) checkDateById.set(row.crm_checkin_id, row.check_date.slice(0, 10));
+          }
           if (page.length < reconcilePageSize) break;
           const last = Number(page[page.length - 1]?.crm_checkin_id);
           if (!Number.isFinite(last)) break;
@@ -878,6 +976,22 @@ export async function syncIReports360Visits(input: {
         if (!(existingCheckinIds.length > 0 && staleCheckinIds.length / existingCheckinIds.length > 0.5)) {
           for (let index = 0; index < staleCheckinIds.length; index += upsertBatchSize) {
             const chunk = staleCheckinIds.slice(index, index + upsertBatchSize);
+            // Archive first here too. This whole block is best-effort — a throw lands in the catch
+            // below and never fails the run — so a failed archive costs the check-in reconciliation
+            // for this window, not the sync, and the rows stay.
+            await archiveSyncDeletions(
+              supabase,
+              chunk.map((id) => ({
+                kind: "checkin" as const,
+                record_id: id,
+                record_date: checkDateById.get(id) ?? null,
+                synced_at: null,
+                window_from: input.dateFrom,
+                window_to: input.dateTo,
+                sync_run_id: runId,
+                trigger: input.trigger,
+              })),
+            );
             const { error } = await supabase.from(checkinsTable).delete().in("crm_checkin_id", chunk);
             if (error) throw new Error(error.message);
           }
