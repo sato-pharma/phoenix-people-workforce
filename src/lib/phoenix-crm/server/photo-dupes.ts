@@ -27,6 +27,9 @@
 
 import crypto from "node:crypto";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { runPhoenixCrmBehaviourSweep, type BehaviourSweepResult } from "@/lib/phoenix-crm/server/behaviour";
 import {
   dhashFromGreyscale,
@@ -36,6 +39,7 @@ import {
   type PhotoFingerprint,
 } from "@/lib/phoenix-crm/duplicate-photos";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
+import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { downloadPhoto } from "@/lib/phoenix-crm/server/photos";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -54,7 +58,12 @@ export const PHOTO_SWEEP_LIMIT = 400;
  */
 export const PHOTO_COMPARE_DAYS = 180;
 
-/** A ceiling on the in-memory corpus, so one night can never pull an unbounded table into RAM. */
+/**
+ * A ceiling on the in-memory corpus, so one night can never pull an unbounded table into RAM.
+ *
+ * 🔴 A CEILING, NOT A PAGE SIZE: PostgREST stops every response at 1,000 rows whatever `.limit()` asks
+ * for, so the corpus reaches this only through the pager in `loadPhotoCorpus`.
+ */
 export const PHOTO_CORPUS_MAX = 20_000;
 
 export type PhotoSweepResult = {
@@ -132,20 +141,34 @@ async function hashBytes(bytes: Uint8Array): Promise<{ sha256: string; dhash: st
   return { sha256, dhash };
 }
 
-/** Everything a new photo is compared against: the recent fingerprints, in one read. */
-async function loadCorpus(includeTest: boolean): Promise<PhotoFingerprint[]> {
+/**
+ * Everything a new photo is compared against: the recent fingerprints, newest first.
+ *
+ * 🔴 PAGED. Until 2026-10-02 this read ended in `.limit(PHOTO_CORPUS_MAX)` — it asked for 20,000 and
+ * PostgREST, which stops every response at 1,000 rows with no error, gave 1,000. Newest first, so a
+ * photo was compared only with the newest 1,000 fingerprints, and a picture re-used from a few weeks
+ * back was never seen at all. At the ceiling the read STOPS rather than refuses: the order puts the
+ * newest first, so the comparison simply looks back less far (`src/lib/phoenix-crm/server/paged-read.ts`).
+ *
+ * Takes its client so the paging test can hand it a fake that stops at 1,000 rows, as the server does.
+ */
+export async function loadPhotoCorpus(client: Pick<SupabaseClient, "from">, includeTest: boolean): Promise<PhotoFingerprint[]> {
   const since = new Date(Date.now() - PHOTO_COMPARE_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  let query = getSupabaseAdmin()
-    .from("phoenix_crm_photo_fingerprints")
-    .select("subject_kind, subject_id, photo_path, rep_hr_id, customer_id, captured_at, sha256, dhash")
-    .gte("captured_at", since)
-    .order("captured_at", { ascending: false })
-    .limit(PHOTO_CORPUS_MAX);
-  if (!includeTest) query = query.eq("is_test", false);
-  const { data, error } = await query;
-  throwIfError(error);
+  const read = await readEveryPage<Row>(
+    () => {
+      let query = client
+        .from("phoenix_crm_photo_fingerprints")
+        .select("subject_kind, subject_id, photo_path, rep_hr_id, customer_id, captured_at, sha256, dhash")
+        .gte("captured_at", since);
+      if (!includeTest) query = query.eq("is_test", false);
+      // A TOTAL order — the photo path is the identity — or paging drops and repeats rows.
+      return query.order("captured_at", { ascending: false }).order("photo_path", { ascending: true });
+    },
+    { maxRows: PHOTO_CORPUS_MAX, whenFull: "stop", what: "The photo corpus", uniqueBy: (row) => String(row.photo_path ?? "") },
+  );
+  throwIfError(read.error);
   const out: PhotoFingerprint[] = [];
-  for (const row of (data ?? []) as Row[]) {
+  for (const row of read.rows) {
     const capturedAt = new Date(String(row.captured_at));
     if (Number.isNaN(capturedAt.getTime())) continue;
     out.push({
@@ -162,8 +185,11 @@ async function loadCorpus(includeTest: boolean): Promise<PhotoFingerprint[]> {
   return out;
 }
 
-const cairoDay = (when: Date): string =>
-  new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(when);
+// 🔴 THE VISIT DAY ENDS AT 02:00 CAIRO (owner, 2026-09-29), and this filed the CALENDAR day until
+// 2026-10-02 — so a visit logged at 01:30 was filed on the day after the one its own visit row,
+// every other CRM reader and the board's own visit column call it. The evidence then named a day the
+// rep did not work, which is the worst possible wording on a page about his honesty. `visit_date` is
+// the same arithmetic as `phoenix_crm_save_visit` now.
 
 /**
  * Read every photo that has none, hash it, and judge the new ones against the recent corpus.
@@ -242,7 +268,7 @@ export async function runPhoenixCrmPhotoSweep(options: { limit?: number; include
   // One corpus read for the whole batch, taken AFTER the insert so this run's own photos compare
   // against each other — a rep who sent the same picture twice in one day is the obvious case, and a
   // corpus read beforehand would be blind to exactly it.
-  const corpus = await loadCorpus(includeTest);
+  const corpus = await loadPhotoCorpus(supabase, includeTest);
   const byPath = new Map(candidates.map((entry) => [entry.photoPath, entry]));
   const evidence: Row[] = [];
   for (const photo of fresh) {
@@ -257,7 +283,7 @@ export async function runPhoenixCrmPhotoSweep(options: { limit?: number; include
       rep_hr_id: photo.repHrId || null,
       customer_id: photo.customerId,
       captured_at: photo.capturedAt.toISOString(),
-      visit_date: cairoDay(photo.capturedAt),
+      visit_date: cairoBusinessDay(photo.capturedAt),
       flags: verdict.flags,
       strong: verdict.strong,
       signals: { ...verdict.signals, photoPath: photo.photoPath },
