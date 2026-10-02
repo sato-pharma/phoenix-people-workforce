@@ -110,6 +110,7 @@ function dayFinder(weeks: ReadonlyArray<DraftWeek>): (date: string) => DraftDay 
 
 export function PlanCopyMenu({
   caps,
+  compact = false,
   customers,
   disabled,
   onPlace,
@@ -118,6 +119,12 @@ export function PlanCopyMenu({
   test,
 }: {
   caps: DailyCaps;
+  /**
+   * The rep's step 3 (owner, 2026-10-02: "where the suggest? where the copy iReports period and week
+   * plan?"): buttons only, in the row beside Suggest this day, named for what they copy. The words
+   * that explain each copy are dropped there — the report after a copy still says what landed.
+   */
+  compact?: boolean;
   customers: ReadonlyArray<PlannerCustomer>;
   /** The board is saving or reading: nothing may land in the draft under it. */
   disabled: boolean;
@@ -241,12 +248,12 @@ export function PlanCopyMenu({
     const { monthStart, weeks } = scope;
     const previousMonth = monthLabel(monthKeyOf(monthStartOf(shiftIsoDay(monthStart, -1))));
     explain = `Week 1 onto Week 1, Saturday onto Saturday, from ${previousMonth}. Only the days you can still change are filled.`;
-    buttons = [{ key: "month", label: "Copy last month", onClick: () => void run("month", () => copyMonth(monthStart, weeks)) }];
+    buttons = [{ key: "month", label: compact ? "Copy the period plan" : "Copy last month", onClick: () => void run("month", () => copyMonth(monthStart, weeks)) }];
   } else if (scope.kind === "week") {
     const { target } = scope;
     const previous = shiftIsoDay(target.week.weekStart, -7);
     explain = `Each day of ${weekLabel(previous)} onto the same day of this week.`;
-    buttons = [{ key: "week", label: "Copy last week", onClick: () => void run("week", () => copyWeek(target)) }];
+    buttons = [{ key: "week", label: compact ? "Copy last week's plan" : "Copy last week", onClick: () => void run("week", () => copyWeek(target)) }];
   } else {
     const { target, date } = scope;
     explain = "The same day one or two weeks back, onto this day.";
@@ -258,9 +265,9 @@ export function PlanCopyMenu({
   }
 
   return (
-    <div className="grid min-w-0 gap-2">
-      <p className="break-words text-xs font-semibold leading-5 text-slate-500">{explain} Nothing is saved or sent until you do.</p>
-      <div className="grid gap-2 sm:flex sm:flex-wrap">
+    <div className={compact ? "contents" : "grid min-w-0 gap-2"}>
+      {compact ? null : <p className="break-words text-xs font-semibold leading-5 text-slate-500">{explain} Nothing is saved or sent until you do.</p>}
+      <div className={compact ? "contents" : "grid gap-2 sm:flex sm:flex-wrap"}>
         {buttons.map((button) => (
           <CrmButton busy={busy === button.key} disabled={locked} key={button.key} onClick={button.onClick} size="sm">
             {button.label}
@@ -268,7 +275,7 @@ export function PlanCopyMenu({
         ))}
       </div>
       {report ? (
-        <CrmNote title={report.title} tone={report.tone}>
+        <CrmNote className={compact ? "w-full basis-full" : undefined} title={report.title} tone={report.tone}>
           {report.message}
         </CrmNote>
       ) : null}

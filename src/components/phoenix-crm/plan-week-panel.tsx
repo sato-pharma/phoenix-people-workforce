@@ -33,6 +33,7 @@ import { PlanCopyMenu, PlanSuggestMenu, type CopiedPlacements, type SuggestConte
 import { PlanDayPanel } from "@/components/phoenix-crm/plan-day-panel";
 import { decisionBusy, PlanDecision, type PlanDecisionAction } from "@/components/phoenix-crm/plan-decision";
 import { CrmBlock, CrmButton, CrmChoice, CrmFacts, CrmNote, CrmPill, type NoteTone, type PillTone } from "@/components/phoenix-crm/ui";
+import { monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { dayActivityLabel, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { planEditRepNote, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { startsOn, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
@@ -147,6 +148,7 @@ export function PlanWeekPanel({
   busy,
   caps,
   customers,
+  dayFocus,
   dirty,
   editable,
   filter,
@@ -160,6 +162,7 @@ export function PlanWeekPanel({
   onCopied,
   onDay,
   onDecide,
+  onFillDay,
   onFilter,
   onKeepMine,
   onPlace,
@@ -189,6 +192,8 @@ export function PlanWeekPanel({
   busy: WeekBusy | null;
   caps: DailyCaps;
   customers: ReadonlyArray<PlannerCustomer>;
+  /** The rep's step form: the one list (AM or PM) step 3 is on. Unset shows the whole day. */
+  dayFocus?: PhoenixCrmListType;
   dirty: boolean;
   /** The rep may still change this week: it is his, open, and a draft or returned. */
   editable: boolean;
@@ -210,6 +215,8 @@ export function PlanWeekPanel({
   onCopied: (placements: CopiedPlacements) => void;
   onDay: (date: string) => void;
   onDecide: (action: PlanDecisionAction, note: string) => Promise<boolean>;
+  /** "Fill the day for me" on the step form: the day's suggestion, applied to the draft. */
+  onFillDay?: () => void;
   onFilter: (next: DoctorFilter) => void;
   onKeepMine: () => void;
   onPlace: (item: PlanItemDraft) => void;
@@ -552,6 +559,7 @@ export function PlanWeekPanel({
           editingDay ? (
             <PlanCopyMenu
               caps={caps}
+              compact={dayFocus !== undefined}
               customers={customers}
               disabled={locked}
               key={selectedDay.date}
@@ -567,11 +575,44 @@ export function PlanWeekPanel({
         editing={editingDay}
         filter={filter}
         filterOptions={filterOptions}
+        focus={dayFocus}
         idPrefix={`${idPrefix}-${week.weekStart}`}
         items={items}
-        key={selectedDay.date}
+        key={`${selectedDay.date}|${dayFocus ?? "day"}`}
         locked={locked}
         onActivity={(activityType, next) => onActivity(selectedDay.date, activityType, next)}
+        onFill={editingDay ? onFillDay : undefined}
+        planCopyMenu={
+          // Step 3 of the rep's form (owner, 2026-10-02): the week's two copies sit beside the day's — last
+          // week's plan, and the period plan (last month's, his iReports360 plan in his first Phoenix month).
+          // Both fill only the days he can still change, and only the draft.
+          dayFocus !== undefined && editable ? (
+            <>
+              <PlanCopyMenu
+                caps={caps}
+                compact
+                customers={customers}
+                disabled={locked}
+                key={`week-${week.weekStart}`}
+                onPlace={onCopied}
+                scope={{ kind: "week", target }}
+                seatId={seatId}
+                test={test}
+              />
+              <PlanCopyMenu
+                caps={caps}
+                compact
+                customers={customers}
+                disabled={locked}
+                key={`period-${week.weekStart}`}
+                onPlace={onCopied}
+                scope={{ kind: "month", monthStart: monthStartOf(week.weekStart), weeks: [target] }}
+                seatId={seatId}
+                test={test}
+              />
+            </>
+          ) : undefined
+        }
         onFilter={onFilter}
         onPlace={onPlace}
         onQuery={onQuery}

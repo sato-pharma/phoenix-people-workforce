@@ -41,7 +41,7 @@
  * a day the rep cannot change, the suggestion stays on screen, disabled, with its reason.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Check } from "lucide-react";
 
 import { countText, dayLabel, dayLabelLong } from "@/components/phoenix-crm/format";
@@ -50,6 +50,7 @@ import { customerMetaText, matchesWords, PENDING_PILL } from "@/components/phoen
 import { PlanFilterBar } from "@/components/phoenix-crm/plan-filter-bar";
 import {
   CrmBlock,
+  CrmButton,
   CrmCardsOnPhone,
   CrmFillBar,
   CrmCheck,
@@ -139,15 +140,18 @@ export function PlanDayPanel({
   editing,
   filter,
   filterOptions,
+  focus,
   idPrefix,
   items,
   locked,
   onActivity,
+  onFill,
   onFilter,
   onPlace,
   onQuery,
   onRemove,
   onStarts,
+  planCopyMenu,
   query,
   showSpread,
   starts,
@@ -170,17 +174,28 @@ export function PlanDayPanel({
     grades: ReadonlyArray<PhoenixCrmGrade>;
     specialities: ReadonlyArray<string>;
   };
+  /**
+   * The rep's step form (owner, 2026-10-02: step 3 "too long, confusing" — he chose all three fixes):
+   * ONE list at a time, AM then PM; only the customers who receive that day (or whose hours are not known
+   * yet) until he asks for the rest; and the start times, activities, copy and filters folded under "More
+   * for this day". Unset is the whole day at once — a manager reviewing from Team.
+   */
+  focus?: PhoenixCrmListType;
   idPrefix: string;
   /** The week's drafted placements. */
   items: ReadonlyArray<PlanItemDraft>;
   locked: boolean;
   /** Ticks one kind of activity on the day, or takes it off (null); the day's other kinds stay. */
   onActivity: (activityType: PhoenixCrmDayActivity, next: Pick<PlannedActivity, "halfDay" | "note"> | null) => void;
+  /** "Fill the day for me": the day's suggestion, on the step form. */
+  onFill?: () => void;
   onFilter: (next: DoctorFilter) => void;
   onPlace: (item: PlanItemDraft) => void;
   onQuery: (next: string) => void;
   onRemove: (customerId: string) => void;
   onStarts: (next: PlanDayStarts) => void;
+  /** The step form's week copies — last week's plan and the period plan — beside "Copy a day". */
+  planCopyMenu?: ReactNode;
   query: string;
   /** A reviewer's reading: the day's spread may show. Never true for a rep on his own plan. */
   showSpread: boolean;
@@ -191,6 +206,9 @@ export function PlanDayPanel({
   tints: ReadonlyMap<string, BrickTint>;
   today: string;
 }) {
+  // The step form's two folds. Hooks first: the panel returns early for a day he is not changing.
+  const [showOthers, setShowOthers] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const weekday = weekdayOfIsoDay(day.date);
   const weekdayName = PHOENIX_CRM_WEEKDAY_NAMES[weekday];
   const dayName = dayLabel(day.date);
@@ -219,7 +237,7 @@ export function PlanDayPanel({
       title="Day"
     >
       <p className="break-words text-lg font-black leading-tight text-slate-950">{dayLabelLong(day.date)}</p>
-      {editing ? (
+      {editing && !focus ? (
         <DayStartsEditor dayName={dayName} idPrefix={`${idPrefix}-${day.date}`} locked={locked} morning={morning} onChange={onStarts} starts={starts} />
       ) : startsText ? (
         <p className="mt-1 break-words text-sm font-bold text-slate-700">{startsText}</p>
@@ -340,6 +358,185 @@ export function PlanDayPanel({
 
   const tickRowProps = { dayName, idPrefix, locked, onToggle: toggle, room };
 
+  /** One list of the day — AM or PM — grouped by brick under its fill bar. `top` sits under the bar. */
+  function listBlock(listType: PhoenixCrmListType, rows: ReadonlyArray<TickRow>, emptyText: string, top?: ReactNode) {
+    const cap = listType === "AM" ? caps.amDailyCap : caps.pmDailyCap;
+    const groups = clusterByBrick(rows, (row) => row.brick, "alphabetical");
+    return (
+      <CrmBlock className="border-t border-slate-100" key={listType} title={`${listType} · ${countText(counts[listType])} of ${countText(cap)} placed`}>
+        {/* The day filling up, in Today's own shape: orange as it fills, emerald at the cap. */}
+        <CrmFillBar full={full[listType]} label={`${listType} on ${dayName}: ${counts[listType]} of ${cap} placed`} of={cap} value={counts[listType]} />
+        {top}
+        <div className="mt-3" />
+        {!day.listTypes.includes(listType) ? (
+          <CrmNote className="mb-3" tone="bad">
+            {dayName} is a morning for AM only. Take these off it.
+          </CrmNote>
+        ) : null}
+        {groups.length === 0 ? (
+          <p className="text-sm font-medium text-slate-500">{emptyText}</p>
+        ) : (
+          <div className="grid min-w-0 gap-3">
+            {groups.map((group) => {
+              const tint = group.key === NO_BRICK_KEY ? NEUTRAL_TINT : (tints.get(group.key) ?? NEUTRAL_TINT);
+              const ticked = group.rows.filter((row) => row.placed).length;
+              return (
+                <div className="min-w-0 border border-slate-200" key={group.key}>
+                  <div className={cn("flex min-w-0 flex-wrap items-center justify-between gap-2 border-l-[3px] px-3 py-2", tint.bar, tint.fill)}>
+                    <BrickTick
+                      dayName={dayName}
+                      label={group.label}
+                      onPress={() => pressBrick(group.rows, listType)}
+                      state={brickTickState(group.rows, room[listType], locked)}
+                    />
+                    <span className="text-xs font-bold text-slate-600">
+                      {countText(ticked)} of {countText(group.rows.length)} placed
+                    </span>
+                  </div>
+                  <CrmCardsOnPhone>
+                    {group.rows.map((row) => (
+                      <TickCard key={row.customerId} row={row} {...tickRowProps} />
+                    ))}
+                  </CrmCardsOnPhone>
+                  <CrmTable columns={["9%", null, "24%", "28%"]}>
+                    <thead>
+                      <tr>
+                        <th className={crmThClassName} scope="col">
+                          <span className="sr-only">On {dayName}</span>
+                        </th>
+                        <th className={crmThClassName} scope="col">
+                          Customer
+                        </th>
+                        <th className={crmThClassName} scope="col">
+                          Speciality
+                        </th>
+                        <th className={crmThClassName} scope="col">
+                          Days and hours
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.rows.map((row) => (
+                        <TickTableRows key={row.customerId} row={row} {...tickRowProps} />
+                      ))}
+                    </tbody>
+                  </CrmTable>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CrmBlock>
+    );
+  }
+
+  const goneNote =
+    gone.length > 0 ? (
+      <CrmBlock className="border-t border-slate-100" title="No longer on the list">
+        <CrmNote tone="warn">
+          {gone.map((row) => row.name).join(", ")} {gone.length === 1 ? "was" : "were"} planned on {dayName} before leaving your list. They come off the plan
+          when you save.
+        </CrmNote>
+      </CrmBlock>
+    ) : null;
+
+  const filterBar = (
+    <PlanFilterBar
+      bricks={filterOptions.bricks}
+      filter={filter}
+      grades={filterOptions.grades}
+      idPrefix={`${idPrefix}-day`}
+      locked={locked}
+      onChange={onFilter}
+      onQueryChange={onQuery}
+      query={query}
+      specialities={filterOptions.specialities}
+    />
+  );
+
+  // ── The rep's step form: one list, the customers of the day, everything else folded ─────────────
+  // Owner, 2026-10-02 ("step 3 needs a smarter way, still too long, confusing" — he chose all three):
+  // AM, then PM, as two short screens (the board moves between them); the day arrives already filled by
+  // its suggestion, which one tap clears; and only the customers he can see that day lead the list.
+  if (focus) {
+    const rows = tickRows.filter((row) => row.listType === focus).sort(compareTickRows);
+    // He receives that day, his hours are not known yet (a customer not validated yet counts as
+    // receiving), or he is already on it. The rest wait behind one button — never refused, only folded.
+    const ofTheDay = rows.filter((row) => row.placed || row.receives);
+    const others = rows.length - ofTheDay.length;
+    const placedHere = onTheDay.filter((row) => row.listType === focus);
+    return (
+      <div className="min-w-0">
+        {header}
+        {offered === 0 && gone.length === 0 ? (
+          <CrmBlock className="border-t border-slate-100">
+            <p className="text-sm font-medium text-slate-500">No {focus} customer to place yet. Customers on your List show here.</p>
+          </CrmBlock>
+        ) : (
+          listBlock(
+            focus,
+            showOthers ? rows : ofTheDay,
+            filtering ? `No ${focus} customer matches the filter. Clear it above.` : `No ${focus} customer receives on ${weekdayName}.`,
+            // Owner, 2026-10-02 ("where the combo box? where the suggest? where the copy iReports period
+            // and week plan? in step 3"): every way to fill the list sits on ONE row above it, and the
+            // filters right under it — none of them folded away.
+            <>
+              <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+                {onFill ? (
+                  <CrmButton disabled={locked || room[focus] <= 0} onClick={onFill} size="sm" variant="primary">
+                    Suggest this day
+                  </CrmButton>
+                ) : null}
+                {copyMenu}
+                {planCopyMenu}
+                {placedHere.length > 0 ? (
+                  <CrmButton
+                    disabled={locked}
+                    onClick={() => {
+                      for (const row of placedHere) onRemove(row.customerId);
+                    }}
+                    size="sm"
+                    variant="danger"
+                  >
+                    Clear {focus}
+                  </CrmButton>
+                ) : null}
+              </div>
+              <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
+                The period plan is last month&apos;s — your iReports360 plan if you had none in Phoenix. Nothing is saved or sent until you do.
+              </p>
+              <div className="mt-3 min-w-0">{filterBar}</div>
+            </>,
+          )
+        )}
+        {others > 0 ? (
+          <CrmBlock className="border-t border-slate-100">
+            <CrmButton onClick={() => setShowOthers((current) => !current)}>
+              {showOthers
+                ? `Hide the ${countText(others)} who do not receive on ${weekdayName}`
+                : `Show ${countText(others)} more who do not receive on ${weekdayName}`}
+            </CrmButton>
+          </CrmBlock>
+        ) : null}
+        {goneNote}
+        <CrmBlock className="border-t border-slate-100" title="More for this day">
+          <CrmButton aria-expanded={moreOpen} onClick={() => setMoreOpen((current) => !current)}>
+            {moreOpen ? "Hide" : "Start times and activities"}
+          </CrmButton>
+          {moreOpen ? (
+            <div className="mt-4 grid min-w-0 gap-5">
+              <DayStartsEditor dayName={dayName} idPrefix={`${idPrefix}-${day.date}`} locked={locked} morning={morning} onChange={onStarts} starts={starts} />
+              <div className="min-w-0">
+                <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Other activities</p>
+                <ActivityEditor activities={activities} dayName={dayName} idPrefix={`${idPrefix}-${day.date}`} locked={locked} onChange={onActivity} />
+              </div>
+            </div>
+          ) : null}
+        </CrmBlock>
+      </div>
+    );
+  }
+
   return (
     <div className="min-w-0">
       {header}
@@ -358,17 +555,7 @@ export function PlanDayPanel({
       ) : null}
 
       <CrmBlock className="border-t border-slate-100" title="Customers">
-        <PlanFilterBar
-          bricks={filterOptions.bricks}
-          filter={filter}
-          grades={filterOptions.grades}
-          idPrefix={`${idPrefix}-day`}
-          locked={locked}
-          onChange={onFilter}
-          onQueryChange={onQuery}
-          query={query}
-          specialities={filterOptions.specialities}
-        />
+        {filterBar}
         <p className="mt-3 break-words text-sm font-semibold leading-6 text-slate-600">
           {morning
             ? `${countText(counts.AM)} of ${countText(caps.amDailyCap)} AM placed.`
@@ -386,91 +573,16 @@ export function PlanDayPanel({
       ) : null}
 
       {offered > 0
-        ? sections.map((listType) => {
-            const rows = tickRows.filter((row) => row.listType === listType).sort(compareTickRows);
-            const cap = listType === "AM" ? caps.amDailyCap : caps.pmDailyCap;
-            const groups = clusterByBrick(rows, (row) => row.brick, "alphabetical");
-            return (
-              <CrmBlock className="border-t border-slate-100" key={listType} title={`${listType} · ${countText(counts[listType])} of ${countText(cap)} placed`}>
-                {/* The day filling up, in Today's own shape: orange as it fills, emerald at the cap. */}
-                <CrmFillBar
-                  full={full[listType]}
-                  label={`${listType} on ${dayName}: ${counts[listType]} of ${cap} placed`}
-                  of={cap}
-                  value={counts[listType]}
-                />
-                <div className="mt-3" />
-                {!day.listTypes.includes(listType) ? (
-                  <CrmNote className="mb-3" tone="bad">
-                    {dayName} is a morning for AM only. Take these off it.
-                  </CrmNote>
-                ) : null}
-                {groups.length === 0 ? (
-                  <p className="text-sm font-medium text-slate-500">No {listType} customer matches the filter. Clear it to see them all.</p>
-                ) : (
-                  <div className="grid min-w-0 gap-3">
-                    {groups.map((group) => {
-                      const tint = group.key === NO_BRICK_KEY ? NEUTRAL_TINT : (tints.get(group.key) ?? NEUTRAL_TINT);
-                      const ticked = group.rows.filter((row) => row.placed).length;
-                      return (
-                        <div className="min-w-0 border border-slate-200" key={group.key}>
-                          <div className={cn("flex min-w-0 flex-wrap items-center justify-between gap-2 border-l-[3px] px-3 py-2", tint.bar, tint.fill)}>
-                            <BrickTick
-                              dayName={dayName}
-                              label={group.label}
-                              onPress={() => pressBrick(group.rows, listType)}
-                              state={brickTickState(group.rows, room[listType], locked)}
-                            />
-                            <span className="text-xs font-bold text-slate-600">
-                              {countText(ticked)} of {countText(group.rows.length)} placed
-                            </span>
-                          </div>
-                          <CrmCardsOnPhone>
-                            {group.rows.map((row) => (
-                              <TickCard key={row.customerId} row={row} {...tickRowProps} />
-                            ))}
-                          </CrmCardsOnPhone>
-                          <CrmTable columns={["9%", null, "24%", "28%"]}>
-                            <thead>
-                              <tr>
-                                <th className={crmThClassName} scope="col">
-                                  <span className="sr-only">On {dayName}</span>
-                                </th>
-                                <th className={crmThClassName} scope="col">
-                                  Customer
-                                </th>
-                                <th className={crmThClassName} scope="col">
-                                  Speciality
-                                </th>
-                                <th className={crmThClassName} scope="col">
-                                  Days and hours
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {group.rows.map((row) => (
-                                <TickTableRows key={row.customerId} row={row} {...tickRowProps} />
-                              ))}
-                            </tbody>
-                          </CrmTable>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CrmBlock>
-            );
-          })
+        ? sections.map((listType) =>
+            listBlock(
+              listType,
+              tickRows.filter((row) => row.listType === listType).sort(compareTickRows),
+              `No ${listType} customer matches the filter. Clear it to see them all.`,
+            ),
+          )
         : null}
 
-      {gone.length > 0 ? (
-        <CrmBlock className="border-t border-slate-100" title="No longer on the list">
-          <CrmNote tone="warn">
-            {gone.map((row) => row.name).join(", ")} {gone.length === 1 ? "was" : "were"} planned on {dayName} before leaving your list. They come off the plan
-            when you save.
-          </CrmNote>
-        </CrmBlock>
-      ) : null}
+      {goneNote}
     </div>
   );
 }
