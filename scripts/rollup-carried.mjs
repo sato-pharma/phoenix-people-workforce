@@ -58,3 +58,45 @@ export function registryAddedLinesLanded(addedLines, mainSource) {
   }
   return { landed: missing.length === 0, missing };
 }
+
+// ---------------------------------------------------------------------------------------------
+// WHY BYTE-IDENTITY IS THE WRONG QUESTION FOR EVERY PATH, NOT JUST THE REGISTRY — 2026-10-02.
+//
+// Measured the night of 2026-10-01. Roll-up #5098 merged and carried #5096's relocation verbatim:
+// the account it moved out of `AGENTS.md` appeared once at #5096's merge base, zero times on its
+// branch, and zero times on `main` afterwards, with the destination doc byte-identical. Its work had
+// fully landed. `--settle` still refused to close it, because `main`'s `AGENTS.md` had moved past the
+// branch's copy (114,585 bytes against the PR's 115,060) — the roll-up carried a SECOND member that
+// touched the same file. Two of the three carried members that night needed a human decision for this
+// reason, and the one that reached the owner cost him a turn.
+//
+// THE OWNER ASKED FOR PATCH-IDS, AND A PATCH-ID CANNOT ANSWER IT ALONE. `git patch-id` compares one
+// diff with another, and `git cherry` uses exactly that to ask "is my commit already upstream" — but a
+// roll-up is a SQUASH of several members, so the carrier commit's diff is strictly larger than any one
+// member's and their patch-ids never match. Measured on #5096: its own patch-id was
+// `828169aa16aa0b5f9940dc89c67558b4e5a5ad1d`, which equals the roll-up's slice for its two files and
+// nothing in `main`'s history. So the instrument is the question patch-id is a means to — IS THIS
+// DELTA ALREADY APPLIED — asked per path by reverse-applying the PR's own delta against `main`'s tree.
+// `git apply --check --reverse` answers it exactly: it succeeds only when every line the delta adds is
+// present and every line it removes is gone.
+//
+// FAILING CLOSED IS UNCHANGED AND IS THE WHOLE SAFETY STORY. An empty delta, an unreadable tree, a
+// patch that does not apply, any error at all: NOT carried, PR left open. The cost of a false negative
+// is one avoidable CI run; the cost of a false positive is a person's work closed on a guess.
+
+/**
+ * Whether a path's delta is proven landed, given the three readings the caller took.
+ *
+ * Kept pure so the decision is testable without a repository: `blobsEqual` is the fast path that was
+ * the whole test before today, and `reverseApplies` is `git apply --check --reverse` against `main`.
+ *
+ * @param {{ blobsEqual?: boolean, hasDelta?: boolean, reverseApplies?: boolean }} r
+ * @returns {boolean} true only when one of the two proofs holds.
+ */
+export function pathDeltaLanded(r) {
+  if (r?.blobsEqual === true) return true;
+  // No delta of our own for this path means there is nothing to prove landed — and nothing that
+  // justifies holding the PR open either, but the bytes already disagreed, so answer NOT carried.
+  if (r?.hasDelta !== true) return false;
+  return r?.reverseApplies === true;
+}
