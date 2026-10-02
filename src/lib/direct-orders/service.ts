@@ -3623,33 +3623,78 @@ export async function searchDirectOrderPharmacyDirectory(
 async function attachConfirmedAliases(
   hits: DirectOrderPharmacySearchHit[],
 ): Promise<DirectOrderPharmacySearchHit[]> {
-  const codes = [...new Set(hits.map((hit) => hit.phoenixPharmacyCode).filter((code): code is string => Boolean(code)))];
-  if (codes.length === 0) return hits;
+  const phoenixCodes = [...new Set(hits.map((hit) => hit.phoenixPharmacyCode).filter((code): code is string => Boolean(code)))];
+  const customerCodes = [...new Set(hits.map((hit) => hit.customerCode).filter((code): code is string => Boolean(code)))];
+  if (phoenixCodes.length === 0 && customerCodes.length === 0) return hits;
 
   try {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("direct_order_pharmacies")
-      .select("id, phoenix_pharmacy_code")
-      .in("phoenix_pharmacy_code", codes);
-    if (error) throw error;
+    const [phoenixRows, marketingRows] = await Promise.all([
+      phoenixCodes.length === 0
+        ? Promise.resolve({ data: [] as Array<Record<string, unknown>>, error: null })
+        : supabase.from("direct_order_pharmacies").select("id, phoenix_pharmacy_code").in("phoenix_pharmacy_code", phoenixCodes),
+      // 🔴 THE RESOLVED PAIR, NOT THE RAW TYPED CODE. `mapped_*` is what the capture-time resolver
+      //    agreed the code means; the raw `distributor_pharmacy_code` beside it is whatever a
+      //    person typed, and §4.1 is explicit that nothing may key on it.
+      customerCodes.length === 0
+        ? Promise.resolve({ data: [] as Array<Record<string, unknown>>, error: null })
+        : supabase
+            .from("marketing_pharmacy_distributor_codes")
+            .select("pharmacy_id, mapped_distributor_code, mapped_customer_code")
+            .in("mapped_customer_code", customerCodes),
+    ]);
+    if (phoenixRows.error) throw phoenixRows.error;
+    if (marketingRows.error) throw marketingRows.error;
 
-    const idByCode = new Map<string, string>();
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const directIdByCode = new Map<string, string>();
+    for (const row of (phoenixRows.data ?? []) as Array<Record<string, unknown>>) {
       const code = String(row.phoenix_pharmacy_code ?? "").trim();
       const id = String(row.id ?? "").trim();
-      if (code && id) idByCode.set(code, id);
+      if (code && id) directIdByCode.set(code, id);
     }
-    if (idByCode.size === 0) return hits;
 
-    const aliases = await loadAlsoKnownAsBatch("direct_order", [...idByCode.values()]);
-    if (aliases.size === 0) return hits;
+    // 🔴 KEYED ON THE PAIR, NEVER ON THE CUSTOMER CODE ALONE. Every distributor numbers its own
+    //    customers, so the same code means a different shop at a different distributor — the
+    //    standing rule that a shared customer code cannot prove two venues are the same. The `.in()`
+    //    above can only filter one column, so the second half of the key is matched here.
+    const marketingIdByPair = new Map<string, string>();
+    for (const row of (marketingRows.data ?? []) as Array<Record<string, unknown>>) {
+      const distributor = String(row.mapped_distributor_code ?? "").trim().toUpperCase();
+      const customer = String(row.mapped_customer_code ?? "").trim().toUpperCase();
+      const id = String(row.pharmacy_id ?? "").trim();
+      if (distributor && customer && id) marketingIdByPair.set(`${distributor}::${customer}`, id);
+    }
+
+    if (directIdByCode.size === 0 && marketingIdByPair.size === 0) return hits;
+
+    const [directAliases, marketingAliases] = await Promise.all([
+      loadAlsoKnownAsBatch("direct_order", [...directIdByCode.values()]),
+      loadAlsoKnownAsBatch("marketing", [...marketingIdByPair.values()]),
+    ]);
+    if (directAliases.size === 0 && marketingAliases.size === 0) return hits;
 
     return hits.map((hit) => {
-      const id = hit.phoenixPharmacyCode ? idByCode.get(hit.phoenixPharmacyCode) : null;
-      const others = id ? aliases.get(id) : null;
-      if (!others || others.length === 0) return hit;
-      return { ...hit, alsoKnownAs: others.map((row) => row.name).filter(Boolean) };
+      const directId = hit.phoenixPharmacyCode ? directIdByCode.get(hit.phoenixPharmacyCode) : null;
+      const pair =
+        hit.distributorCode && hit.customerCode
+          ? `${hit.distributorCode.trim().toUpperCase()}::${hit.customerCode.trim().toUpperCase()}`
+          : null;
+      const marketingId = pair ? marketingIdByPair.get(pair) : null;
+
+      // A hit can be both — a Phoenix pharmacy that marketing also holds under the same code —
+      // and then the two masters' members are one list. Deduped by NAME rather than by source id
+      // because that is what the reader sees: the same shop named twice reads as a mistake.
+      const names = new Set<string>();
+      const own = (hit.customerName ?? "").trim();
+      for (const row of [...(directId ? directAliases.get(directId) ?? [] : []), ...(marketingId ? marketingAliases.get(marketingId) ?? [] : [])]) {
+        const name = (row.name ?? "").trim();
+        // Its own name is not an alias of itself, and the directory's spelling very often equals
+        // one of the linked rows' — which is how a hit ends up "also known as" itself.
+        if (!name || name === own) continue;
+        names.add(name);
+      }
+      if (names.size === 0) return hit;
+      return { ...hit, alsoKnownAs: [...names] };
     });
   } catch {
     return hits;

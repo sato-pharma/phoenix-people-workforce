@@ -34,7 +34,11 @@ export function runDirectOrderPickerAliasTests() {
   const attachBody = attach.slice(0, attach.indexOf("\n}\n") + 1);
   assert.ok(attachBody.length > 0, "the attach slice must find its markers");
   // Every early exit hands the hits back untouched, and the mapping only ever spreads a hit.
-  assert.match(attachBody, /if \(codes\.length === 0\) return hits;/, "no linkable hit means the list is returned as it was");
+  assert.match(
+    attachBody,
+    /if \(phoenixCodes\.length === 0 && customerCodes\.length === 0\) return hits;/,
+    "no linkable hit on EITHER register means the list is returned as it was",
+  );
   assert.match(attachBody, /\{ \.\.\.hit, alsoKnownAs:/, "a hit is only ever extended, never replaced or dropped");
   // Scoped to `hits` on purpose: the step DOES filter the list of codes it looks up, which changes
   // nothing a user sees. What it must never do is filter, reorder or trim the hits themselves.
@@ -72,12 +76,43 @@ export function runDirectOrderPickerAliasTests() {
     "and that shared rule leaves a one-link master with no aliases at all",
   );
 
-  // ── Only the Phoenix side can carry a link ───────────────────────────────────────────────────
-  // A directory row is a distributor's own customer record with no Phoenix pharmacy behind it, so
-  // there is no id for a master to hold — keying on the NAME instead is how a label lands on the
-  // wrong shop.
-  assert.match(attachBody, /phoenix_pharmacy_code/, "the lookup is keyed on the Phoenix pharmacy code");
-  assert.doesNotMatch(attachBody, /customerName|pharmacy_name/, "never on the name, which is exactly what does not match across the two books");
+  // ── Both registers, each keyed on an id and never on a name ─────────────────────────────────
+  // The Phoenix side resolves through the pharmacy code; the marketing side through the resolved
+  // distributor pair. Keying either on the NAME is how a label lands on the wrong shop, and the
+  // names are precisely what does not meet across the two books.
+  assert.match(attachBody, /phoenix_pharmacy_code/, "the Phoenix side is keyed on the pharmacy code");
+  assert.match(attachBody, /marketing_pharmacy_distributor_codes/, "the marketing side is reached through its distributor codes");
+  assert.match(attachBody, /loadAlsoKnownAsBatch\("marketing"/, "and read with the same confirmed-links reader");
+  assert.doesNotMatch(attachBody, /pharmacy_name|display_name/, "neither side matches on a name");
+
+  // 🔴 THE RESOLVED PAIR, NEVER THE RAW TYPED CODE (§4.1). `mapped_*` is what the capture-time
+  //    resolver agreed the code means; the raw `distributor_pharmacy_code` beside it is whatever a
+  //    person typed, and 33 of 479 marketing rows carry one that resolves to a different shop.
+  assert.match(attachBody, /mapped_distributor_code/, "it reads the RESOLVED distributor code");
+  assert.match(attachBody, /mapped_customer_code/, "and the resolved customer code");
+  assert.doesNotMatch(attachBody, /distributor_pharmacy_code/, "never the raw code a person typed");
+
+  // 🔴 KEYED ON THE PAIR, NEVER THE CUSTOMER CODE ALONE. Every distributor numbers its own
+  //    customers, so one code means a different shop at a different distributor — the standing
+  //    rule that a shared customer code cannot prove two venues are the same. PostgREST can only
+  //    filter one column, so the second half of the key has to be matched in code, and a version
+  //    that forgets to is indistinguishable from a working one until it labels the wrong shop.
+  assert.match(
+    attachBody,
+    /marketingIdByPair\.set\(`\$\{distributor\}::\$\{customer\}`/,
+    "the marketing id is keyed on distributor AND customer code together",
+  );
+  assert.match(
+    attachBody,
+    /marketingIdByPair\.get\(pair\)/,
+    "and a hit is matched by that same pair, never by its customer code alone",
+  );
+
+  // ── A shop is never an alias of itself ──────────────────────────────────────────────────────
+  // The directory's spelling very often equals one of the linked rows', which is how a hit ends
+  // up reading "also known as" its own name.
+  assert.match(attachBody, /name === own/, "an alias equal to the hit's own name is dropped");
+  assert.match(attachBody, /new Set<string>\(\)/, "and the two registers' names are deduped rather than concatenated");
 
   // ── The screen says it is confirmed, and shows nothing otherwise ─────────────────────────────
   assert.match(box, /hit\.alsoKnownAs\.length > 0 \?/, "the line renders only when there is a confirmed link");
