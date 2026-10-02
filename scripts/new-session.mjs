@@ -34,6 +34,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { linkNodeModules } from "./lib/link-node-modules.mjs";
+import { pickMergedPrForTip, removalVerdict } from "./lib/remove-gate.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 
 // Commit charge, not RAM, is what freezes this machine — and a freeze leaves no
@@ -461,17 +462,112 @@ if (args.includes("--remove")) {
   // "on no origin ref": backed up, not stranded. Asking about the merged PR is
   // what separates the two, and a squash merge is never an ancestor of main, so
   // `git branch --merged` can never answer this.
+  //
+  // 🔴 AND IT MUST BE THE PR FOR *THESE* COMMITS, NOT FOR THIS NAME. `gh pr list --head <branch>`
+  // asks a question about a STRING. Branch names here are derived from task slugs, and a recurring
+  // task reuses one — so the first merged PR it returns can be months old and about different work.
+  // Measured 2026-10-02: removing `codex/agents-trim` printed "PR #3588 merged them", and #3588 had
+  // used that name on 2026-09-09; the branch in hand was `ef184cc84`, whose work had landed through
+  // a roll-up. The gate vouched, correctly by accident. The same shape on `codex/agents-footprint`
+  // named #3734 from 2026-09-12 while that night's #5089 was still OPEN — deleting on that answer
+  // would have closed #5089 and thrown the work away.
+  //
+  // So the merged PR vouches only when its own `headRefOid` IS this worktree's tip. Anything else
+  // falls through to the content tests below, which do not care what the branch is called.
   const mergedPr = (() => {
     if (!entry.branch || entry.branch === "(detached)") return null;
     try {
       const out = execFileSync(
         "gh",
-        ["pr", "list", "--head", entry.branch, "--state", "merged", "--json", "number", "--jq", ".[0].number"],
+        [
+          "pr",
+          "list",
+          "--head",
+          entry.branch,
+          "--state",
+          "merged",
+          "--json",
+          "number,headRefOid",
+          "--jq",
+          ".[] | [.number, .headRefOid] | @tsv",
+        ],
+        { encoding: "utf8" },
+      ).trim();
+      if (!out) return null;
+      const rows = out.split("\n").map((line) => {
+        const [number, headRefOid] = line.split("\t");
+        return { headRefOid: (headRefOid || "").trim(), number: (number || "").trim() };
+      });
+      return pickMergedPrForTip(rows, headSha(dir));
+    } catch {
+      return null; // gh missing or offline — fall through to the strict refusal
+    }
+  })();
+
+  // 🔴 AN OPEN PR ON THIS HEAD IS A HARD REFUSAL, WHATEVER ELSE PASSES. Deleting the branch closes
+  // that PR and discards the work, and no other signal here can see it: a reused name makes the
+  // merged-PR test answer about older work, and the content tests answer about commits rather than
+  // about whether somebody is still waiting on them. Null means gh could not be asked, which is not
+  // "no open PR" — it leaves the strict refusal in place rather than clearing it.
+  const openPrOnHead = (() => {
+    if (!entry.branch || entry.branch === "(detached)") return null;
+    try {
+      const out = execFileSync(
+        "gh",
+        ["pr", "list", "--head", entry.branch, "--state", "open", "--json", "number", "--jq", ".[0].number"],
         { encoding: "utf8" },
       ).trim();
       return out && out !== "null" ? out : null;
     } catch {
-      return null; // gh missing or offline — fall through to the strict refusal
+      return null;
+    }
+  })();
+
+  // 🔴 THE ONE TEST THAT HOLDS FOR A PR THAT LANDED **CLOSED** — which every roll-up member does.
+  // `rollup-prs.mjs` squashes several PRs into one branch, so when that roll-up merges, each member
+  // is CLOSED rather than merged and its commits are a SUBSET of one larger squash. The merged-PR
+  // test answers null (no PR on this head merged) and `countUnpushedCommits` answers no (a patch-id
+  // for one member can never equal the combined squash's), so without this the normal end state of
+  // a batched merge is a worktree the gate refuses to retire.
+  //
+  // Content is what actually settles it: every file these commits touched, byte-identical at
+  // `origin/main`. The path list is DERIVED from the branch's own commits rather than picked, for
+  // the reason the stranded-work trap gives — hand-picking a subset under-reports to "safe". A file
+  // the branch deleted must be absent on main too, which the null-equals-null case covers.
+  //
+  // It fails CLOSED in both directions that matter: a path git cannot answer for leaves `null`, and
+  // a later commit on main touching the same file makes it `false`. Refusing is the cheap direction.
+  const filesIdenticalOnMain = (() => {
+    if (!unpushed) return true;
+    try {
+      const paths = [
+        ...new Set(
+          execFileSync("git", ["log", "origin/main..HEAD", "--name-only", "--pretty=format:"], {
+            cwd: dir,
+            encoding: "utf8",
+          })
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean),
+        ),
+      ];
+      if (paths.length === 0) return null;
+      for (const file of paths) {
+        const onMain = (() => {
+          try {
+            return git(["rev-parse", "origin/main:" + file]).trim();
+          } catch {
+            return null; // not on main at all — a file the branch added, or one it deleted
+          }
+        })();
+        const here = fs.existsSync(path.join(dir, file))
+          ? execFileSync("git", ["hash-object", file], { cwd: dir, encoding: "utf8" }).trim()
+          : null;
+        if (here !== onMain) return false;
+      }
+      return true;
+    } catch {
+      return null;
     }
   })();
 
@@ -500,7 +596,34 @@ if (args.includes("--remove")) {
     return stranded === 0;
   })();
 
-  if (unpushed && !pushed && !mergedPr && !onAnotherRemoteBranch && !contentBackedUp) {
+  // 🔴 THIS ONE REFUSES ON ITS OWN, BEFORE THE OTHER SIGNALS ARE WEIGHED. Every other answer here is
+  // about whether the commits are SAFE; this is about whether anybody is still waiting on them, and
+  // a branch can be both backed up and in use. Removing the worktree is harmless, but the branch
+  // delete that follows closes the PR.
+  // The decision itself lives in `scripts/lib/remove-gate.mjs`, with fixtures: the ORDER matters
+  // (an open PR overrides every safety signal) and an order is exactly what a source-reading test
+  // cannot check.
+  const verdict = removalVerdict({
+    contentBackedUp,
+    filesIdenticalOnMain,
+    mergedPr,
+    onAnotherRemoteBranch,
+    openPrOnHead,
+    pushed,
+    unpushed,
+  });
+
+  if (verdict.reason === "open-pr") {
+    console.error("  REFUSED — PR #" + openPrOnHead + " is OPEN on " + entry.branch + ".");
+    fail(
+      "deleting that branch would close #" +
+        openPrOnHead +
+        " and discard its work. Land it or close it deliberately first — and note that no other " +
+        "check here can see it: a reused branch name makes the merged-PR test answer about older work.",
+    );
+  }
+
+  if (verdict.reason === "stranded") {
     console.error("  REFUSED — commits here are on no remote branch and no merged PR:");
     for (const line of unpushed.split("\n").slice(0, 10)) console.error("    " + line);
     // A detached HEAD has no branch name to put in a rescue command, and the old advice interpolated
@@ -528,15 +651,19 @@ if (args.includes("--remove")) {
       (!unpushed
         ? "none"
         : mergedPr
-          ? "present, but PR #" + mergedPr + " merged them — squash residue, not stranded work"
+          // Named only when that PR's own head sha IS this tip, so the number printed is about
+          // these commits and not about an older PR that reused the branch name.
+          ? "present, but PR #" + mergedPr + " merged this exact tip — squash residue, not stranded work"
           : pushed
             ? "present, and the branch is on origin"
             : onAnotherRemoteBranch
               ? "present, and on origin as " + onAnotherRemoteBranch + " — not this branch's name"
-              // The detached-HEAD case, and the reason this line exists: without it the chain fell
-              // through and printed "on origin as null", which reads as a bug in the very check that
-              // just cleared the removal.
-              : "present, but their CONTENT is upstream already (patch-id match) — squash residue, not stranded work"),
+              : contentBackedUp
+                // The detached-HEAD case, and the reason this line exists: without it the chain fell
+                // through and printed "on origin as null", which reads as a bug in the very check that
+                // just cleared the removal.
+                ? "present, but their CONTENT is upstream already (patch-id match) — squash residue, not stranded work"
+                : "present, and every file they touch is byte-identical on origin/main — landed inside a larger squash (a roll-up member)"),
   );
   console.log("  node_modules        " + dropModulesJunction(dir));
 
@@ -554,12 +681,25 @@ if (args.includes("--remove")) {
       "\nThat worktree was on a DETACHED HEAD, so no branch was left behind and there is nothing to delete.\n",
     );
   } else {
+    // 🔴 THE OLD ADVICE HERE WAS THE DEFECT THIS FILE NOW GUARDS AGAINST. It said to confirm with
+    // `gh pr list --head <branch> --state merged`, which is a question about a NAME: a recurring
+    // task reuses a slug, so that command can answer with a PR from weeks ago about different work.
+    // Three things settle it, and the gate above has already asked all three — so the advice names
+    // them rather than sending the reader back to the query that misleads.
     console.log(
       "\nThe branch " +
         entry.branch +
-        " still exists locally. Delete it only once `gh pr list --head " +
+        " still exists locally. Before deleting it, confirm all three:\n" +
+        "  1. the merged PR by NUMBER, and its headRefOid equal to " +
+        headSha(dir).slice(0, 9) +
+        " — never `--head " +
         entry.branch +
-        " --state merged` confirms the work landed.\n",
+        "`, which answers about the name\n" +
+        "  2. `gh pr list --head " +
+        entry.branch +
+        " --state open` is empty\n" +
+        "  3. every file the branch changed is byte-identical on origin/main (the only test that\n" +
+        "     also holds for a roll-up member, which lands CLOSED rather than merged)\n",
     );
   }
   process.exit(0);

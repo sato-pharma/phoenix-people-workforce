@@ -46,16 +46,29 @@ export function runWorktreeRemoveRemoteContainmentTests() {
 
   // ── …and that answer must be one of the escapes, not merely computed ───────
   // A check whose result never reaches the condition is the shape that reads as fixed and is not.
-  const refusalStart = source.indexOf("if (unpushed");
-  const refusalEnd = source.indexOf("REFUSED — commits here");
+  //
+  // THE ANCHOR MOVED, THE PROPERTY DID NOT. This used to slice from the inline
+  // `if (unpushed && !pushed && !mergedPr && …)`. That condition now lives in
+  // `scripts/lib/remove-gate.mjs` as `removalVerdict`, because its PRECEDENCE — an open PR
+  // outranking every safety signal — is an ordering, and an ordering is what a source-reading test
+  // cannot check; `tests/worktree-remove-head-sha-gate.test.ts` pins it with fixtures instead. So
+  // the two halves are checked separately: the answer must be PASSED to the decision here, and the
+  // decision must CONSULT it there. Either half alone would read as fixed and not be.
+  const verdictStart = source.indexOf("removalVerdict({");
+  const verdictEnd = source.indexOf("});", verdictStart);
   assert.ok(
-    refusalStart !== -1 && refusalEnd > refusalStart,
-    "could not isolate the refusal condition — this test is measuring nothing until it can",
+    verdictStart !== -1 && verdictEnd > verdictStart,
+    "could not isolate the removal decision — this test is measuring nothing until it can",
   );
   assert.ok(
-    source.slice(refusalStart, refusalEnd).includes("onAnotherRemoteBranch"),
-    "the reachability answer must gate the refusal itself — computing it and refusing anyway is "
-      + "indistinguishable from not having it",
+    source.slice(verdictStart, verdictEnd).includes("onAnotherRemoteBranch"),
+    "the reachability answer must be handed to the removal decision — computing it and deciding "
+      + "without it is indistinguishable from not having it",
+  );
+  assert.ok(
+    read("scripts/lib/remove-gate.mjs").includes("onAnotherRemoteBranch"),
+    "and the decision itself must consult it — a signal passed into a function that ignores it is "
+      + "the same defect one layer down",
   );
 
   // ── A stale remote-tracking ref must not be able to answer it ──────────────
