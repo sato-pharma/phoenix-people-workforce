@@ -64,7 +64,7 @@ import { isLeaveDay } from "@/lib/phoenix-crm/plan-leave";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import { isVisitAskAskableRole } from "@/lib/phoenix-crm/visit-ask-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
-import type { PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsFieldHeardByProduct, readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";

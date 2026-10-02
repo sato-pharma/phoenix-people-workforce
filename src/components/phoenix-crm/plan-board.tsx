@@ -124,7 +124,7 @@ import {
   type WeekContent,
   type WeekDraft,
 } from "@/lib/phoenix-crm/plan-week-draft";
-import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { MonthlyPlannerView, MonthlyWeekView, SavedPlan } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -268,7 +268,9 @@ export function PlanBoard({
   // 1 the week, 2 its days, 3 one day's customers, 4 send. A board opened on one week starts on its days.
   const [planStep, setPlanStep] = useState(initialWeekStart ? 2 : 1);
   // Step 3 is two short screens, AM then PM (owner, 2026-10-02: "step 3 … too long, confusing").
-  const [daySession, setDaySession] = useState<PhoenixCrmListType>("AM");
+  // The half of the DAY the rep is planning — AM or PM. A pharmacy is never planned, so it is not
+  // one of the two (owner, 2026-10-02).
+  const [daySession, setDaySession] = useState<PhoenixCrmDoctorListType>("AM");
   // The days the step form has already filled with their suggestion this visit: a day is filled ONCE,
   // so a day he cleared on purpose stays clear when he comes back to it.
   const [filledDays, setFilledDays] = useState<ReadonlySet<string>>(() => new Set());

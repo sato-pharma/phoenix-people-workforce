@@ -10,7 +10,7 @@ import { ApiError, validationError } from "@/lib/http/api-errors";
 import type { RamadanRange } from "@/lib/phoenix-crm/calendar";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
-import { PHOENIX_CRM_DEFAULT_SETTINGS, type PhoenixCrmGrade, type PhoenixCrmListType, type PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import { PHOENIX_CRM_DEFAULT_SETTINGS, type PhoenixCrmDoctorListType, type PhoenixCrmGrade, type PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type LineRollout = { lineCode: string; opensOn: string | null };

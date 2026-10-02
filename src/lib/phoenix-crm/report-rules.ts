@@ -34,7 +34,7 @@ function count(value: unknown): number {
 // Every figure in this file is a KPI — visits per half-day, plan against actual, coverage and
 // frequency — and a pharmacy is in none of them (owner, 2026-10-02). null means "not one of the
 // two halves", and each caller skips the row rather than adding it to the doctors.
-function listTypeOf(value: unknown): PhoenixCrmListType | null {
+function listTypeOf(value: unknown): PhoenixCrmDoctorListType | null {
   return doctorListType(value);
 }
 
