@@ -243,6 +243,7 @@ function callRateFixture(overrides: Partial<RepCallRate> = {}): RepCallRate {
       attainmentPct: null,
     },
     unspecified: 0,
+    awaitingValidation: 0,
     campaignShare: 0,
     campaignOverLimitDays: [],
     campaignOnlyDays: 0,
