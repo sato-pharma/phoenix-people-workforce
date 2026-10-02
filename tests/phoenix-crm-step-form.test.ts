@@ -70,10 +70,16 @@ export function runPhoenixCrmStepFormTests(): void {
     assert.match(board, /\{repBoard \? \(\s*<div[^>]*ref=\{stepRef\}>\s*<CrmStepForm/, "the rep's own board is the step form");
     assert.match(
       board,
-      /\) : \(\s*<>\s*\{monthBlock\}\s*\{pendingBlock\}\s*\{weeksBlock\}\s*<div className="min-w-0 scroll-mt-24" ref=\{weekRef\}>\s*\{weekPanel\(undefined\)\}/,
+      /\) : \(\s*<>\s*\{monthBlock\}\s*\{pendingBlock\}\s*\{weeksBlock\}\s*<div className="min-w-0 scroll-mt-24" ref=\{weekRef\}>\s*\{weekPanelElement\}/,
       "a manager reviewing from Team keeps the whole board, unchanged",
     );
-    assert.ok(board.includes('weekPanel(planStep === 2 ? "days" : planStep === 3 ? "day" : "send")'), "steps 2 to 4 show the week a part at a time");
+    assert.ok(
+      board.includes('const panelSection: "days" | "day" | "send" | undefined = repBoard ? (planStep === 2 ? "days" : planStep === 3 ? "day" : "send") : undefined;'),
+      "steps 2 to 4 show the week a part at a time",
+    );
+    // An element, never a function called during render: the React compiler reads every handler built
+    // inside such a function as running during render (react-hooks/refs) — lint failed on it 2026-10-02.
+    assert.equal(/weekPanel\(/.test(board), false, "the week panel is an element built once, not a function called in render");
     assert.match(board, /function chooseWeek\(next: string\) \{[\s\S]*?if \(repBoard\) goStep\(2\);/, "a tap on his week moves him to its days");
     assert.match(
       board,
@@ -119,16 +125,31 @@ export function runPhoenixCrmStepFormTests(): void {
     // AM, then PM — two short screens; a Thursday (AM only) has no PM screen.
     assert.ok(board.includes('planStep === 3 && daySession === "AM" && selectedDay?.listTypes.includes("PM")'), "step 3 is AM first, then PM where the day has one");
     assert.match(board, /setDaySession\("PM"\);\s*goStep\(3\);\s*\}\}\s*>\s*Next: PM/, "AM's way on is Next: PM");
-    assert.ok(board.includes('dayFocus={repBoard && section === "day" ? daySession : undefined}'), "the day panel shows the one list the step is on");
+    assert.ok(board.includes('dayFocus={repBoard && panelSection === "day" ? daySession : undefined}'), "the day panel shows the one list the step is on");
     // Suggestion first — once per day, only an empty one, through the same way in as Suggest this day.
     assert.match(board, /function fillDay\(date: string, force: boolean\) \{[\s\S]*?if \(!force && filledDays\.has\(key\)\) return;[\s\S]*?if \(!force && selected\.items\.some\(\(item\) => item\.planDate === date\)\) return;[\s\S]*?suggestDay\([\s\S]*?addCopies\(/, "a day is filled with its suggestion once, only when empty, through addCopies");
-    assert.ok(day.includes("Fill the day for me"), "one tap fills it again");
     assert.match(day, /Clear \{focus\}/, "and one tap clears the list");
+    // Owner, 2026-10-02: "where the combo box? where the suggest? where the copy iReports period and week
+    // plan? in step 3" — every way to fill the list on ONE row above it, the filters under it, none folded.
+    assert.match(
+      day,
+      /variant="primary">\s*Suggest this day\s*<\/CrmButton>\s*\) : null\}\s*\{copyMenu\}\s*\{planCopyMenu\}/,
+      "Suggest this day, the day copies and the week copies share one row",
+    );
+    assert.ok(day.includes('<div className="mt-3 min-w-0">{filterBar}</div>'), "the filter dropdowns sit right above the list, never folded");
+    const weekPanelSource = source("src/components/phoenix-crm/plan-week-panel.tsx");
+    assert.ok(
+      weekPanelSource.includes('scope={{ kind: "month", monthStart: monthStartOf(week.weekStart), weeks: [target] }}'),
+      "the period plan copies onto this week only",
+    );
+    assert.ok(weekPanelSource.includes('scope={{ kind: "week", target }}'), "and last week's plan sits beside it");
+    const copyMenuSource = source("src/components/phoenix-crm/plan-copy-menu.tsx");
+    assert.ok(copyMenuSource.includes('label: compact ? "Copy the period plan" : "Copy last month"'), "named the period plan on step 3");
+    assert.ok(copyMenuSource.includes('crmUrl("/api/phoenix-crm/plans/history"'), "which falls back to his iReports360 plan in his first Phoenix month");
     // Customers first — the ones he can see that day lead; the rest are folded, never refused.
     assert.ok(day.includes("const ofTheDay = rows.filter((row) => row.placed || row.receives);"), "only who receives that day (or whose hours are not known yet) leads");
     assert.match(day, /Show \$\{countText\(others\)\} more who do not receive on \$\{weekdayName\}/, "the others are one button away");
-    assert.ok(day.includes('{moreOpen ? "Hide" : filtering ? "Start times, activities, copy a day" : "Start times, activities, copy a day, filters"}'), "start times, activities, copy and filters are folded");
-    assert.ok(day.includes("{filtering ? <CrmBlock className=\"border-t border-slate-100\">{filterBar}</CrmBlock> : null}"), "but a filter that is on is never folded away");
+    assert.ok(day.includes('{moreOpen ? "Hide" : "Start times and activities"}'), "only the start times and activities are folded");
     assert.ok(day.includes("Nothing is saved or sent until you do."), "and he is told the fill is not saved");
   }
 

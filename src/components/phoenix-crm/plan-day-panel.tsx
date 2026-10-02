@@ -151,6 +151,7 @@ export function PlanDayPanel({
   onQuery,
   onRemove,
   onStarts,
+  planCopyMenu,
   query,
   showSpread,
   starts,
@@ -193,6 +194,8 @@ export function PlanDayPanel({
   onQuery: (next: string) => void;
   onRemove: (customerId: string) => void;
   onStarts: (next: PlanDayStarts) => void;
+  /** The step form's week copies — last week's plan and the period plan — beside "Copy a day". */
+  planCopyMenu?: ReactNode;
   query: string;
   /** A reviewer's reading: the day's spread may show. Never true for a rep on his own plan. */
   showSpread: boolean;
@@ -465,8 +468,6 @@ export function PlanDayPanel({
     return (
       <div className="min-w-0">
         {header}
-        {/* A filter that is on is never folded away: it is why a customer is missing from the list. */}
-        {filtering ? <CrmBlock className="border-t border-slate-100">{filterBar}</CrmBlock> : null}
         {offered === 0 && gone.length === 0 ? (
           <CrmBlock className="border-t border-slate-100">
             <p className="text-sm font-medium text-slate-500">No {focus} customer to place yet. Customers on your List show here.</p>
@@ -476,24 +477,36 @@ export function PlanDayPanel({
             focus,
             showOthers ? rows : ofTheDay,
             filtering ? `No ${focus} customer matches the filter. Clear it above.` : `No ${focus} customer receives on ${weekdayName}.`,
-            <div className="mt-3 grid min-w-0 gap-2 sm:flex sm:flex-wrap sm:items-center">
-              {onFill ? (
-                <CrmButton disabled={locked || room[focus] <= 0} onClick={onFill} variant="primary">
-                  Fill the day for me
-                </CrmButton>
-              ) : null}
-              {placedHere.length > 0 ? (
-                <CrmButton
-                  disabled={locked}
-                  onClick={() => {
-                    for (const row of placedHere) onRemove(row.customerId);
-                  }}
-                >
-                  Clear {focus}
-                </CrmButton>
-              ) : null}
-              <span className="text-xs font-semibold leading-5 text-slate-500">Nothing is saved or sent until you do.</span>
-            </div>,
+            // Owner, 2026-10-02 ("where the combo box? where the suggest? where the copy iReports period
+            // and week plan? in step 3"): every way to fill the list sits on ONE row above it, and the
+            // filters right under it — none of them folded away.
+            <>
+              <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+                {onFill ? (
+                  <CrmButton disabled={locked || room[focus] <= 0} onClick={onFill} size="sm" variant="primary">
+                    Suggest this day
+                  </CrmButton>
+                ) : null}
+                {copyMenu}
+                {planCopyMenu}
+                {placedHere.length > 0 ? (
+                  <CrmButton
+                    disabled={locked}
+                    onClick={() => {
+                      for (const row of placedHere) onRemove(row.customerId);
+                    }}
+                    size="sm"
+                    variant="danger"
+                  >
+                    Clear {focus}
+                  </CrmButton>
+                ) : null}
+              </div>
+              <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
+                The period plan is last month&apos;s — your iReports360 plan if you had none in Phoenix. Nothing is saved or sent until you do.
+              </p>
+              <div className="mt-3 min-w-0">{filterBar}</div>
+            </>,
           )
         )}
         {others > 0 ? (
@@ -508,7 +521,7 @@ export function PlanDayPanel({
         {goneNote}
         <CrmBlock className="border-t border-slate-100" title="More for this day">
           <CrmButton aria-expanded={moreOpen} onClick={() => setMoreOpen((current) => !current)}>
-            {moreOpen ? "Hide" : filtering ? "Start times, activities, copy a day" : "Start times, activities, copy a day, filters"}
+            {moreOpen ? "Hide" : "Start times and activities"}
           </CrmButton>
           {moreOpen ? (
             <div className="mt-4 grid min-w-0 gap-5">
@@ -517,13 +530,6 @@ export function PlanDayPanel({
                 <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Other activities</p>
                 <ActivityEditor activities={activities} dayName={dayName} idPrefix={`${idPrefix}-${day.date}`} locked={locked} onChange={onActivity} />
               </div>
-              {suggestMenu || copyMenu ? (
-                <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-                  {suggestMenu}
-                  {copyMenu}
-                </div>
-              ) : null}
-              {filtering ? null : <div className="min-w-0">{filterBar}</div>}
             </div>
           ) : null}
         </CrmBlock>

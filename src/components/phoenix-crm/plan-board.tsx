@@ -960,57 +960,57 @@ export function PlanBoard({
     </CrmBlock>
   );
 
-  // An arrow, not a declaration: TypeScript keeps "the view has loaded" inside it only then.
-  const weekPanel = (section: "days" | "day" | "send" | undefined) => {
-    if (!selected || !selectedDay) return null;
-    return (
-      <PlanWeekPanel
-        activities={selected.activities}
-        busy={weekBusy}
-        caps={caps}
-        customers={view.customers}
-        dirty={selected.dirty}
-        editable={selected.editable}
-        filter={filter}
-        filterOptions={filterOptions}
-        hold={selected.hold}
-        idPrefix={idPrefix}
-        items={selected.items}
-        key={selected.week.weekStart}
-        locked={locked}
-        onActivity={(date, activityType, next) => planActivity(selected, date, activityType, next)}
-        onAskToEdit={() => void askToEdit(selected)}
-        onCopied={addCopies}
-        onDay={openDay}
-        onDecide={(action, note) => decideWeek(selected, action, note)}
-        onFilter={setFilter}
-        onKeepMine={() => keepMine(selected)}
-        onPlace={(item) => place(selected, item)}
-        onQuery={setQuery}
-        onRemove={(date, customerId) => remove(selected, date, customerId)}
-        onSend={() => void sendWeek(selected)}
-        onShowLatest={() => showLatest(selected)}
-        onStarts={(date, next) => planStarts(selected, date, next)}
-        problems={selected.problems}
-        query={query}
-        reviewerSentence={reviewerSentence(view)}
-        seatId={seatId}
-        section={section}
-        selectedDay={selectedDay}
-        dayFocus={repBoard && section === "day" ? daySession : undefined}
-        onFillDay={() => fillDay(selectedDay.date, true)}
-        showProblems={showProblems}
-        showSpread={showSpread}
-        starts={selected.starts}
-        suggest={suggest}
-        test={test}
-        tints={tints}
-        today={view.cairoToday}
-        viewerIsRep={view.viewerIsRep}
-        week={selected.week}
-      />
-    );
-  };
+  // The week panel as an ELEMENT built once per render — never a function called during render, which
+  // the React compiler reads as running every handler inside it then (react-hooks/refs).
+  const panelSection: "days" | "day" | "send" | undefined = repBoard ? (planStep === 2 ? "days" : planStep === 3 ? "day" : "send") : undefined;
+  const weekPanelElement =
+    selected && selectedDay ? (
+    <PlanWeekPanel
+      activities={selected.activities}
+      busy={weekBusy}
+      caps={caps}
+      customers={view.customers}
+      dirty={selected.dirty}
+      editable={selected.editable}
+      filter={filter}
+      filterOptions={filterOptions}
+      hold={selected.hold}
+      idPrefix={idPrefix}
+      items={selected.items}
+      key={selected.week.weekStart}
+      locked={locked}
+      onActivity={(date, activityType, next) => planActivity(selected, date, activityType, next)}
+      onAskToEdit={() => void askToEdit(selected)}
+      onCopied={addCopies}
+      onDay={openDay}
+      onDecide={(action, note) => decideWeek(selected, action, note)}
+      onFilter={setFilter}
+      onKeepMine={() => keepMine(selected)}
+      onPlace={(item) => place(selected, item)}
+      onQuery={setQuery}
+      onRemove={(date, customerId) => remove(selected, date, customerId)}
+      onSend={() => void sendWeek(selected)}
+      onShowLatest={() => showLatest(selected)}
+      onStarts={(date, next) => planStarts(selected, date, next)}
+      problems={selected.problems}
+      query={query}
+      reviewerSentence={reviewerSentence(view)}
+      seatId={seatId}
+      section={section}
+      selectedDay={selectedDay}
+      dayFocus={repBoard && panelSection === "day" ? daySession : undefined}
+      onFillDay={() => fillDay(selectedDay.date, true)}
+      showProblems={showProblems}
+      showSpread={showSpread}
+      starts={selected.starts}
+      suggest={suggest}
+      test={test}
+      tints={tints}
+      today={view.cairoToday}
+      viewerIsRep={view.viewerIsRep}
+      week={selected.week}
+    />
+    ) : null;
 
   // The rep's four steps. Step 3 names the day it plans.
   const planSteps: ReadonlyArray<CrmStep> = [
@@ -1171,7 +1171,7 @@ export function PlanBoard({
                   {pendingBlock}
                 </>
               ) : (
-                weekPanel(planStep === 2 ? "days" : planStep === 3 ? "day" : "send")
+                weekPanelElement
               )}
             </CrmStepForm>
           </div>
@@ -1181,7 +1181,7 @@ export function PlanBoard({
             {pendingBlock}
             {weeksBlock}
             <div className="min-w-0 scroll-mt-24" ref={weekRef}>
-              {weekPanel(undefined)}
+              {weekPanelElement}
             </div>
           </>
         )}
