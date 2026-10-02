@@ -203,10 +203,18 @@ export function runAutoloadFootprintBudgetTests() {
     hookSource.includes("autoloadFootprintLines"),
     "the SessionStart guard must report the footprint, not only the memory index",
   );
+  // 2026-10-02: the relocation advice itself is retired — module memory (docs/module-memory.md)
+  // replaced "move it into AGENTS.md", which is what kept the startup files at their ceilings. The
+  // guard now routes a module fact to its module and must never send it back to AGENTS.md.
   assert.match(
     hookSource,
-    /no cliff of its OWN/,
-    "the guard's relocation advice must carry the correction: AGENTS.md is inside the footprint budget",
+    /one module to its memory/,
+    "the guard must route a module fact to that module's memory (.claude/rules/<module>.md)",
+  );
+  assert.doesNotMatch(
+    hookSource,
+    /it into AGENTS\.md, which auto-loads in full/,
+    "the retired advice — relocate a hook into AGENTS.md — must not come back",
   );
 
   // 10. THE REPORTED SLACK AND THE ENFORCED MARGIN ARE DIFFERENT NUMBERS, AND ONLY ONE FAILS CI.
