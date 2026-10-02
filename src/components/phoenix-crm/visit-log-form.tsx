@@ -780,7 +780,10 @@ export function VisitLogForm({
       <CrmBlock actions={stepMark(whoDone ? "done" : "required")} className="border-t border-slate-100" title="2 · Who was on the visit">
         <div className="grid min-w-0 gap-3" id={STEP_WHO}>
           <CrmChoice
-            columns={4}
+            // The count follows the options: four for a rep whose line has product managers, three for a
+            // manager entering his own (he is never offered that choice). A fixed 4 would leave a hole in
+            // the last row of his three, which is the unfinished look the owner called out on the List.
+            columns={who.options.length >= 4 ? 4 : 3}
             label="Who was on the visit"
             onChange={(next) => {
               setProblem(null);
