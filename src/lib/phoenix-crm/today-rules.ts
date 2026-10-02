@@ -106,8 +106,23 @@ export type TodayPharmacy = {
 export type TodayCounts = {
   plannedAm: number;
   plannedPm: number;
+  /**
+   * 🔴 PLANNED STOPS DONE — never every visit logged today, which is what this counted until
+   * 2026-10-02. The chip reads "AM 3 of 2": a denominator from the plan and a numerator from the
+   * whole day. One visit off the plan and the chip turns GREEN with a planned stop still undone, so
+   * the one figure on his landing page that says whether his day is finished said yes while it was
+   * not. `team-today.ts` has always kept the two apart for his managers ("a visit off the plan counts
+   * in logged and never inflates the plan's figure"); this is the same rule on his own screen.
+   */
   doneAm: number;
   donePm: number;
+  /**
+   * The visits today that were NOT on the plan — out of plan and out of list, approved or still
+   * waiting. Counted APART and never added into doneAm or donePm: it is real work he must see he
+   * did, and it is not progress through the day he planned.
+   */
+  extraAm: number;
+  extraPm: number;
   /** Distinct pharmacies he took feedback from today. Never added into doneAm or donePm. */
   donePharmacies: number;
 };
@@ -227,16 +242,39 @@ export function buildTodayStops(input: { planned: readonly PlannedStop[]; visits
 
   // AM · PM · PHARMACIES, three figures APART — the golden rule. Nothing here ever sums or averages
   // them, and a pharmacy is never counted inside AM or PM.
+  //
+  // 🔴 AND "DONE" IS THE PLAN'S OWN STOPS, never the day's visits: the planned figures are the
+  // denominator, so a numerator drawn from a wider set can pass it. See `TodayCounts.doneAm`.
   const pharmacies = todayPharmacies(input.visitsToday);
   const counts: TodayCounts = {
     plannedAm: stops.filter((stop) => stop.listType === "AM").length,
     plannedPm: stops.filter((stop) => stop.listType === "PM").length,
-    doneAm: input.visitsToday.filter((visit) => visit.listType === "AM").length,
-    donePm: input.visitsToday.filter((visit) => visit.listType === "PM").length,
+    doneAm: stops.filter((stop) => stop.done && stop.listType === "AM").length,
+    donePm: stops.filter((stop) => stop.done && stop.listType === "PM").length,
+    extraAm: alsoVisited.filter((visit) => visit.listType === "AM").length,
+    extraPm: alsoVisited.filter((visit) => visit.listType === "PM").length,
     donePharmacies: pharmacies.length,
   };
 
   return { stops, alsoVisited, pharmacies, counts };
+}
+
+/**
+ * The day's off-plan work, said BESIDE the plan's own chips: "AM 1", "PM 2".
+ *
+ * It exists because `doneAm` and `donePm` now count the plan's stops only, and the work he did off
+ * the plan must not vanish with that correction — it was the whole of what the old chip was adding
+ * in. AM and PM stay apart (the golden rule), each left out at zero, and nothing is summed; empty
+ * when he went nowhere off plan, and then the panel draws no line at all.
+ *
+ * Nothing here says whether a visit is approved. That is the Visits module's own line, and this is
+ * a count of HIS OWN WORK (Golden Rule #1) — never a verdict on it.
+ */
+export function alsoTodayParts(counts: Pick<TodayCounts, "extraAm" | "extraPm">): string[] {
+  const parts: string[] = [];
+  if (counts.extraAm > 0) parts.push(`AM ${counts.extraAm}`);
+  if (counts.extraPm > 0) parts.push(`PM ${counts.extraPm}`);
+  return parts;
 }
 
 /** His day in brick clusters, in the order he will drive them. */

@@ -5,9 +5,16 @@
  * what his sent plan holds and what he has visited so far. The I/O half is
  * `src/lib/phoenix-crm/server/week-progress.ts`; the line is drawn on his landing page's "Your day".
  *
- *   - PLANNED is his own sent plan for the week, every stop on it Saturday to Thursday. A plan he has
- *     sent (waiting or approved) plans the week; a draft, or one sent back to him, plans nothing yet —
- *     it is still his to change — so the line then says what he visited and nothing about a plan.
+ *   - PLANNED is his own sent plan for the week, every stop on a day of it that he has SENT. A day on
+ *     a plan he sent (waiting or approved) is planned; a draft, or a day sent back to him, plans
+ *     nothing yet — it is still his to change — and with no sent day at all the line says what he
+ *     visited and nothing about a plan.
+ *
+ * 🔴 DAY BY DAY, NEVER BY THE WEEK'S STATUS. This asked `isPlanSentForReview` of the WEEK until
+ * 2026-10-02, and the owner's "Only that day" ruling makes that wrong: a week returned for ONE day
+ * reads `returned`, so the whole line lost its planned figures — 49 stops he sent and nobody took
+ * back stopped being planned because one Tuesday came back to him. `planDayStatus` is the one rule
+ * for a DAY (plan-rules.ts), and the caller applies it per stop before counting.
  *   - VISITED is the week so far, Saturday through today, read from `phoenix_crm_countable_visits`:
  *     the view every figure in the module reads, so an off-plan visit nobody has approved yet is
  *     not counted here either, and one approved later is.
@@ -22,13 +29,10 @@
  * him with anybody, and nothing here judges him.
  */
 
-import { isPlanSentForReview } from "@/lib/phoenix-crm/plan-rules";
-import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
-
 export type WeekProgress = {
   /** The Saturday the field week starts on. */
   weekStart: string;
-  /** What his SENT plan holds for the week; null while the week's plan is a draft, sent back, or absent. */
+  /** What his SENT days hold; null while no day of the week is sent (a draft, a whole-week return, no plan). */
   planned: { am: number; pm: number } | null;
   /** The week so far, Saturday through today — AM, PM and pharmacies, apart. */
   visited: { am: number; pm: number; pharmacies: number };
@@ -43,12 +47,13 @@ function isAm(listType: string | null): boolean {
 
 export function weekProgressOf(input: {
   weekStart: string;
-  planStatus: PhoenixCrmPlanStatus | null;
-  /** The list type of every stop on the week's plan. */
+  /** True once ANY day of the week is on a sent plan — the caller asks `isPlanDaySent` per day. */
+  anyDaySent: boolean;
+  /** The list type of every stop on a SENT DAY of the week's plan; the other days' stops never reach here. */
   plannedListTypes: ReadonlyArray<string | null>;
   visits: ReadonlyArray<WeekVisit>;
 }): WeekProgress {
-  const planned = isPlanSentForReview(input.planStatus)
+  const planned = input.anyDaySent
     ? {
         am: input.plannedListTypes.filter((listType) => isAm(listType)).length,
         pm: input.plannedListTypes.filter((listType) => !isAm(listType)).length,

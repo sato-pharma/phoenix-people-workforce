@@ -2,9 +2,17 @@
  * Phoenix CRM — his own week, planned against done: the reads.
  *
  * The rules are `src/lib/phoenix-crm/week-progress.ts` (owner, 2026-10-02). This reads the field week
- * holding the visit day: the week's own plan row and, when it is sent, its stops' list types; and the
+ * holding the visit day: the week's own plan row and the stops on every day of it he has SENT; and the
  * week's countable visits so far. It joins `loadPhoenixCrmToday`'s one parallel wave, so the rep's day
  * waits for nothing extra (tests/portal-rep-navigation-speed.test.ts).
+ *
+ * 🔴 PER DAY, THROUGH `planDayStatus` — never `isPlanSentForReview` on the WEEK, which is what this
+ * asked until 2026-10-02. A week returned for ONE day reads `returned`, so that one test took the
+ * planned figures off the whole line: every stop he sent and nobody took back stopped being planned
+ * because one day came back to him, and his own "AM 10 planned · 6 visited" dropped to "AM 6 visited"
+ * overnight. The facts the day rule needs beyond the plan row are loaded by
+ * `server/plan-day-status.ts`, the same reader the Planned-visit list and Today go through, and only
+ * for a week returned for one day — every other plan costs nothing more than the row.
  *
  * 🔴 `phoenix_crm_countable_visits`, NEVER the raw visit table — the view every figure in the module
  * reads, so an off-plan visit waiting for approval counts here exactly when it counts everywhere else.
@@ -14,10 +22,10 @@
  * visited" under a day full of green ticks.
  */
 
-import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
+import { fieldWeekDays, fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
-import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
-import { isPlanSentForReview } from "@/lib/phoenix-crm/plan-rules";
+import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/plan-day-status";
+import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import { weekProgressOf, type WeekProgress } from "@/lib/phoenix-crm/week-progress";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -45,24 +53,34 @@ export async function loadWeekProgress(seatId: string, isTest: boolean, visitDay
 
   const { data: plan, error } = await supabase
     .from("phoenix_crm_plans")
-    .select("id, status")
+    .select(`id, ${PLAN_DAY_COLUMNS}`)
     .eq("seat_id", seatId)
     .eq("is_test", isTest)
     .eq("week_start", weekStart)
     .maybeSingle();
   throwIfError(error);
-  const planStatus = plan ? (String((plan as Row).status ?? "") as PhoenixCrmPlanStatus) : null;
+  const planRow = plan as Row | null;
   let plannedListTypes: Array<string | null> = [];
-  if (plan && isPlanSentForReview(planStatus)) {
-    const items = await supabase.from("phoenix_crm_plan_items").select("list_type").eq("plan_id", String((plan as Row).id));
-    throwIfError(items.error);
-    plannedListTypes = ((items.data ?? []) as Row[]).map((row) => (row.list_type === null || row.list_type === undefined ? null : String(row.list_type)));
+  let anyDaySent = false;
+  if (planRow) {
+    const facts = (await loadPlanDayFacts([planRow], isTest)).get(String(planRow.id)) ?? null;
+    // The week's own days, asked one at a time: a week returned for ONE day is still sent on the
+    // others, and a day he can change is never counted as planned.
+    const sentDays = new Set(facts ? fieldWeekDays(weekStart).filter((date) => isPlanDaySent({ ...facts, date })) : []);
+    anyDaySent = sentDays.size > 0;
+    if (anyDaySent) {
+      const items = await supabase.from("phoenix_crm_plan_items").select("plan_date, list_type").eq("plan_id", String(planRow.id));
+      throwIfError(items.error);
+      plannedListTypes = ((items.data ?? []) as Row[])
+        .filter((row) => sentDays.has(String(row.plan_date ?? "")))
+        .map((row) => (row.list_type === null || row.list_type === undefined ? null : String(row.list_type)));
+    }
   }
 
   const visits = await visitsRead;
   return weekProgressOf({
     weekStart,
-    planStatus,
+    anyDaySent,
     plannedListTypes,
     visits: visits.map((row) => ({
       visitDate: String(row.visit_date ?? ""),

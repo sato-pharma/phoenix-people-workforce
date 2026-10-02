@@ -66,10 +66,11 @@ import { SAMPLE_MATERIALS, SAMPLE_QUANTITY_MAX, type SamplesGiven } from "@/lib/
 import type { PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import { OUT_OF_LIST_REP_NOTE, UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
 import {
-  shouldWarnUnsavedVoiceNote,
+  RECORDING_IN_FLIGHT_NEXT,
   UNSAVED_VOICE_NOTE_LEAVE_LABEL,
   UNSAVED_VOICE_NOTE_STAY_LABEL,
-  UNSAVED_VOICE_NOTE_WARNING,
+  voiceNoteLeaveWarning,
+  type VoiceNoteLeaveWarning,
 } from "@/lib/phoenix-crm/unsaved-voice-note";
 import { isFollowUp, OBJECTION_NOTE_MAX, VISIT_NEXT_STEPS, VISIT_OBJECTIONS, type VisitNextStep, type VisitObjection } from "@/lib/phoenix-crm/visit-outcome";
 import type { SavedVisit, VisitCustomerOption, VisitFormView, VisitPerson, VisitProductManager } from "@/lib/phoenix-crm/view-types";
@@ -377,19 +378,27 @@ export function VisitLogForm({
   // He pressed Cancel or the back arrow once with a recording on the form and was told what it would
   // cost. It is reset the moment he goes back, so the warning is per ATTEMPT to leave rather than
   // once per form — a rep who returns, records a second note and leaves again is told again.
-  const [leaveWarned, setLeaveWarned] = useState(false);
+  const [leaveWarning, setLeaveWarning] = useState<VoiceNoteLeaveWarning | null>(null);
+  /**
+   * 🔴 THE MICROPHONE IS STILL OPEN (or the recording is still going up) — reported by `CrmSpeak`,
+   * because the form is the one that can lose it. Step 3 and step 4 are two trees, so Next UNMOUNTS
+   * the control and its cleanup CANCELS the recorder: what he had said was thrown away with nothing
+   * said to him. Next now stops and tells him to press Stop; Back warns once and then goes.
+   */
+  const [recording, setRecording] = useState(false);
 
   /**
    * Leaving the form.
    *
-   * The FIRST press with an unsaved recording stops and says what he is about to lose; the second
-   * leaves, with nothing asked again. Both exits — the back arrow at the top and Cancel at the
+   * The FIRST press with a recording running or unsaved stops and says what he is about to lose; the
+   * second leaves, with nothing asked again. Both exits — the back arrow at the top and Cancel at the
    * bottom — come through here, so there is one rule and not two that can drift apart.
    */
   function close() {
     if (saving) return;
-    if (shouldWarnUnsavedVoiceNote({ hasVoiceNote: voiceNote !== null, saving, warned: leaveWarned })) {
-      setLeaveWarned(true);
+    const warning = voiceNoteLeaveWarning({ hasVoiceNote: voiceNote !== null, recording, saving, warned: leaveWarning !== null });
+    if (warning) {
+      setLeaveWarning(warning);
       return;
     }
     onBack();
@@ -435,6 +444,16 @@ export function VisitLogForm({
   /** Step 3's Next: on to the read-back once nothing required is missing, else to the first thing that is. */
   function toLog() {
     if (saving) return;
+    // 🔴 THE MICROPHONE FIRST. Next swaps step 3 for the read-back, which unmounts `CrmSpeak` and
+    // cancels the recorder — so going on while he is still speaking throws the recording away. He is
+    // not leaving, and Stop is one tap away in the panel he is looking at, so the press is answered
+    // with what to do instead and nothing is lost.
+    if (recording) {
+      setTried(true);
+      setProblem(RECORDING_IN_FLIGHT_NEXT);
+      showStep(STEP_COMMENT);
+      return;
+    }
     if (openStep !== null) {
       setTried(true);
       showStep(openStep);
@@ -925,6 +944,7 @@ export function VisitLogForm({
         <CrmSpeak
           disabled={saving}
           onAppend={(spoken) => setComment((current) => appendDictated(current, spoken, VISIT_COMMENT_MAX))}
+          onBusy={setRecording}
           onChange={setVoiceNote}
           seatId={seatId}
           test={test}
@@ -1093,14 +1113,14 @@ export function VisitLogForm({
             either exit — the back arrow at the top or Cancel at the bottom. It states the mechanism and
             offers both doors: "Leave without it" always works, because a guard he cannot get out of is a
             trap. */}
-        {leaveWarned && voiceNote ? (
+        {leaveWarning ? (
           <div className="flex min-w-0 flex-wrap items-center gap-3">
             <div className="min-w-0 flex-1 basis-56">
-              <p className="break-words text-sm font-black text-slate-950">Your voice note</p>
-              <p className="break-words text-xs font-semibold leading-5 text-slate-500">{UNSAVED_VOICE_NOTE_WARNING}</p>
+              <p className="break-words text-sm font-black text-slate-950">{leaveWarning.title}</p>
+              <p className="break-words text-xs font-semibold leading-5 text-slate-500">{leaveWarning.message}</p>
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-              <CrmButton onClick={() => setLeaveWarned(false)} variant="primary">
+              <CrmButton onClick={() => setLeaveWarning(null)} variant="primary">
                 {UNSAVED_VOICE_NOTE_STAY_LABEL}
               </CrmButton>
               <CrmButton onClick={close}>{UNSAVED_VOICE_NOTE_LEAVE_LABEL}</CrmButton>
