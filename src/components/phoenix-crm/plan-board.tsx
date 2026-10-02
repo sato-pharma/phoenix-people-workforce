@@ -396,10 +396,13 @@ export function PlanBoard({
     setScrollNonce((current) => current + 1);
   }
 
-  // The week the board opens on: the rep's ONE week on his own plan (owner, 2026-10-01); for a
-  // reviewer, the first week still open and not sent.
+  // The week the board opens on: the rep's ONE week on his own plan (owner, 2026-10-01) — unless a week
+  // he may still send is OVERDUE, the week he is in and never sent (owner, 2026-10-02), which opens
+  // first because it is the one costing him today; for a reviewer, the first week still open and not sent.
   const firstToPlan = view
-    ? ((view.viewerIsRep ? view.weeks.find((week) => week.weekStart === view.repWeek) : undefined) ?? firstWeekToPlan(view.weeks))
+    ? ((view.viewerIsRep
+        ? (view.weeks.find((week) => week.repState === "plan" && week.overdue) ?? view.weeks.find((week) => week.weekStart === view.repWeek))
+        : undefined) ?? firstWeekToPlan(view.weeks))
     : null;
   const selected =
     states.find((state) => state.week.weekStart === weekStart) ??

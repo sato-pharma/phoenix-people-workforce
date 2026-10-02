@@ -449,10 +449,12 @@ export function PlanWeekPanel({
           </CrmNote>
         ) : null}
 
-        {/* The deadline, said once where he is working. Never a block: a late week is accepted and stamped. */}
+        {/* The deadline, said once where he is working. Never a block: a late week is accepted and stamped —
+            the week he is IN too (owner, 2026-10-02), whose visits count as planned only from the send. */}
         {viewerIsRep && week.overdue ? (
           <CrmNote className="mt-3" title={`This week was due ${week.dueOnLabel}`} tone="warn">
             Send it as soon as it is ready. It will still be accepted, and it will be marked as sent late.
+            {week.weekStart <= today ? " Your visits count as planned from the moment you send it." : null}
           </CrmNote>
         ) : null}
         {plan?.submittedLate ? (

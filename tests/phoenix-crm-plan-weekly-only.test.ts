@@ -32,7 +32,9 @@ import { repWeekState, type RepWeekState } from "../src/lib/phoenix-crm/plan-rul
  *      chooser, no month Send, no Copy last month on the rep's own plan;
  *   3. a sent week changes only through "Ask to edit this week" (tests/phoenix-crm-plan-edit-requests);
  *   4. the week of 3 October 2026 is due Friday 2 October — the Delta reps sent it again on Friday after
- *      the old screen's entries were wiped, and he ruled that on time.
+ *      the old screen's entries were wiped, and he ruled that on time;
+ *   5. (2026-10-02) a rep who missed the deadline still sends the week he is IN, while it has a day left —
+ *      late, and stamped late; his visits count as planned only from the moment he sends it.
  */
 
 function raw(path: string): string {
@@ -49,6 +51,7 @@ function stateOf(overrides: Partial<Parameters<typeof repWeekState>[0]>): RepWee
     open: true,
     status: null,
     repWeek: "2026-10-03",
+    runningWeek: "2026-09-26",
     editAsked: false,
     editReopened: false,
     ...overrides,
@@ -88,11 +91,17 @@ export function runPhoenixCrmPlanWeeklyOnlyTests(): void {
     assert.equal(stateOf({ ...next, status: "draft" }), "closed", "even one he once drafted under the old board");
     assert.equal(stateOf({ ...next, status: "submitted" }), "sent", "one sent under the old board can only be asked about");
 
-    const running = { weekStart: "2026-09-26", repWeek: "2026-10-03" };
-    assert.equal(stateOf({ ...running }), "closed", "the running week never sent is closed: a late week is no longer planned once it began");
-    assert.equal(stateOf({ ...running, status: "draft" }), "closed", "a running draft he never sent: closed");
+    // The week he is IN (owner, 2026-10-02 — still sent if he never sent it, late and stamped late).
+    const running = { weekStart: "2026-09-26", repWeek: "2026-10-03", runningWeek: "2026-09-26" };
+    assert.equal(stateOf({ ...running }), "plan", "the running week he never sent is still his to send — late, and stamped late");
+    assert.equal(stateOf({ ...running, status: "draft" }), "plan", "and so is a running draft he never sent");
+    assert.equal(stateOf({ ...running, open: false }), "closed", "until it has no day left: then it is closed like any passed week");
+    assert.equal(stateOf({ ...running, status: "submitted" }), "sent", "once sent, the running week is only asked about");
     assert.equal(stateOf({ ...running, status: "returned" }), "plan", "a running week his manager RETURNED is his to change");
     assert.equal(stateOf({ ...running, status: "draft", editReopened: true }), "plan", "a running week an edit request REOPENED is his to change");
+    // Only the week he is in: a week behind it stays closed, whatever it holds.
+    assert.equal(stateOf({ ...running, weekStart: "2026-09-19" }), "closed", "a week before the running one never reopens");
+    assert.equal(stateOf({ ...running, weekStart: "2026-09-19", status: "draft" }), "closed", "not even a draft of it");
   }
 
   // ── 3. The running week stays reachable from the board of his week's month ──────────────────────
@@ -172,6 +181,9 @@ export function runPhoenixCrmPlanWeeklyOnlyTests(): void {
     // that day alone — tests/phoenix-crm-plan-review.test.ts).
     assert.match(guard, /if \(state === "plan"\) \{[\s\S]*?return \{ editableDays: /, "only a week in the 'plan' state passes");
     assert.match(guard, /throw conflictError\(/, "anything else is refused");
+    // The server's answer knows the week he is in, so a late send of it passes the same guard (2026-10-02).
+    const stateOfRep = edits.slice(edits.indexOf("export function repStateOf("), edits.indexOf("export async function assertRepMayChangeWeek("));
+    assert.match(stateOfRep, /runningWeek: fieldWeekStart\(input\.cairoToday\),/, "repStateOf passes the running week from today");
 
     const monthly = raw("src/lib/phoenix-crm/server/monthly-plans.ts");
     assert.match(monthly, /const monthStart = resolveMonth\(raw\.month, months, monthStartOf\(repPlanWeek\(today\)\)\);/, "the board opens on the month of his week");
@@ -205,6 +217,11 @@ export function runPhoenixCrmPlanWeeklyOnlyTests(): void {
     );
     assert.doesNotMatch(board, /`due \$\{dayLabel\(state\.week\.dueOn\)\}`/, "the due date is not on the week's button");
     assert.match(board, /view\.weeks\.find\(\(week\) => week\.weekStart === view\.repWeek\)/, "it opens on his week");
+    assert.match(
+      board,
+      /view\.weeks\.find\(\(week\) => week\.repState === "plan" && week\.overdue\) \?\? view\.weeks\.find\(\(week\) => week\.weekStart === view\.repWeek\)/,
+      "unless a week he may still send is overdue — the week he is in, never sent — which opens first",
+    );
     assert.doesNotMatch(board, /crmPost<[^>]*>\(\s*"\/api\/phoenix-crm\/monthly-plans"/, "it never posts a month send");
     assert.doesNotMatch(board, /action: "reopen"/, "and never takes a week back");
     assert.match(board, /"\/api\/phoenix-crm\/plans\/edit-requests"/, "a sent week is asked about instead");
@@ -221,6 +238,11 @@ export function runPhoenixCrmPlanWeeklyOnlyTests(): void {
     assert.doesNotMatch(weekPanel, /Take this week back|Take it back/, "the rep's take-back is gone");
     assert.match(weekPanel, /Ask to edit this week/, "Ask to edit this week is in its place");
     assert.match(weekPanel, /changing it needs your manager, SFE and HR/, "and the Send confirmation says so before he sends");
+    assert.match(
+      weekPanel,
+      /\{week\.weekStart <= today \? " Your visits count as planned from the moment you send it\." : null\}/,
+      "a late week he is already in says when its visits start counting as planned",
+    );
   }
 
   console.log("phoenix-crm weekly-only plan: OK");
