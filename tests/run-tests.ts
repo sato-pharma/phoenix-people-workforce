@@ -1640,6 +1640,7 @@ import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
 import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
 import { runPhoenixCrmFieldReachTests } from "./phoenix-crm-field-reach.test.ts";
+import { runPhoenixCrmCardTableParityTests } from "./phoenix-crm-card-table-parity.test.ts";
 import { runPhoenixCrmApprovalNudgeTests } from "./phoenix-crm-approval-nudge.test.ts";
 import { runPhoenixCrmLastVisitProductsTests } from "./phoenix-crm-last-visit-products.test.ts";
 import { runPhoenixCrmVisitOutcomeTests } from "./phoenix-crm-visit-outcome.test.ts";
@@ -5857,6 +5858,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's field day and reach (owner, 2026-10-02): a Directions link to the customer's SAVED place — the destination only, Google Maps, no key, nothing about where the rep is, and no link with no usable point — on the visit flow's customer card (under it, never inside its button), the visit form's header and his planned day; one line for his own field week, his sent plan against his countable visits, AM · PM · Pharmacies apart and never totalled, read in the day's one parallel wave; and a 'Get Phoenix CRM messages on Telegram' card at the top of Phoenix CRM for the reps and managers until the server says they are connected, through the ONE existing connect flow, hidden for the Cairo day by Later with every storage touch wrapped",
   runPhoenixCrmFieldReachTests,
+);
+
+await runTest(
+  "Phoenix CRM UI gaps (audit, 2026-10-02): no raw brick code as a heading or label — an unnamed brick keeps its id as the key and reads as words; every desktop table and its phone card print the same facts (the Reports comparison line, the Locations accuracy and place point, the integrity Position, the Customer lists region, the off-plan note); the native audio player is square on the admin shell; every native date/time field carries appearance-none; and no class list puts shrink-0 beside flex-wrap",
+  runPhoenixCrmCardTableParityTests,
 );
 
 await runTest(

@@ -22,6 +22,7 @@ import { CrmButton, CrmField, CrmSearchField, CrmSelect, crmInputClassName } fro
 import { EMPTY_DOCTOR_FILTER, doctorFilterActive, type DoctorFilter, type DoctorSessionFilter } from "@/lib/phoenix-crm/plan-filters";
 import { PHOENIX_CRM_WEEKDAY_NAMES, PHOENIX_CRM_WEEKDAY_ORDER } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
+import { cn } from "@/lib/utils";
 
 /** "14:30" ↔ minutes after midnight; a blank field is the open end of the range. */
 function minutesToTime(minute: number | null): string {
@@ -204,7 +205,7 @@ export function PlanFilterBar({
         <div className="grid min-w-0 grid-cols-2 gap-3 sm:max-w-md">
           <CrmField hint="Optional" htmlFor={fromId} label="From">
             <input
-              className={crmInputClassName}
+              className={cn(crmInputClassName, "appearance-none")}
               disabled={locked}
               id={fromId}
               onChange={(event) => onChange({ ...filter, fromMinute: timeToMinutes(event.target.value) })}
@@ -214,7 +215,7 @@ export function PlanFilterBar({
           </CrmField>
           <CrmField hint="Optional" htmlFor={toId} label="To">
             <input
-              className={crmInputClassName}
+              className={cn(crmInputClassName, "appearance-none")}
               disabled={locked}
               id={toId}
               onChange={(event) => onChange({ ...filter, toMinute: timeToMinutes(event.target.value) })}

@@ -49,7 +49,7 @@ export function CrmVoiceNotePlayer({ path, seconds }: { path: string; seconds: n
       {url ? (
         // autoPlay because the reader has already pressed Play once — a second press to start the
         // audio they just asked for reads as a control that did not work.
-        <audio autoPlay className="mt-1 w-full" controls preload="metadata" src={url} />
+        <audio autoPlay className="mt-1 w-full rounded-none [&::-webkit-media-controls-enclosure]:rounded-none [&::-webkit-media-controls-panel]:rounded-none" controls preload="metadata" src={url} />
       ) : (
         <div className="mt-1">
           <CrmButton busy={loading} disabled={loading} onClick={open} size="sm">

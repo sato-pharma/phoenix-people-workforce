@@ -155,7 +155,7 @@ export function TelegramConnectCard({ cairoToday }: { cairoToday: string }) {
           {problem ? <p className="mt-1 break-words text-xs font-bold leading-5 text-rose-700">{problem}</p> : null}
         </div>
       </div>
-      <div className="flex min-w-0 shrink-0 flex-wrap gap-2">
+      <div className="flex min-w-0 flex-wrap gap-2">
         {finishing ? (
           <>
             {link ? (
