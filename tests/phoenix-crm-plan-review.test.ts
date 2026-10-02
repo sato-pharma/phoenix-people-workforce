@@ -32,7 +32,7 @@ import {
 } from "../src/lib/phoenix-crm/plan-rules.ts";
 import { assertCanReturnPlan, canReturnTerritoryPlan, canReviewTerritory, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { buildOrgIndex, heldManagerSeats, ownTerritories, territoriesInScope, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
-import { PHOENIX_CRM_DEFAULT_SETTINGS, type PhoenixCrmGrade, type PhoenixCrmListType, type PhoenixCrmPlanStatus } from "../src/lib/phoenix-crm/types.ts";
+import { PHOENIX_CRM_DEFAULT_SETTINGS, type PhoenixCrmGrade, type PhoenixCrmDoctorListType, type PhoenixCrmPlanStatus } from "../src/lib/phoenix-crm/types.ts";
 
 /**
  * Phoenix CRM — the manager's review of a sent week (owner, 2026-10-02).
@@ -152,7 +152,7 @@ function viewerFor(
 
 // ── Fixtures for the pure rules ─────────────────────────────────────────────────────────────────
 
-function customer(customerId: string, listType: PhoenixCrmListType, grade: PhoenixCrmGrade | null, pending = false): ReviewCustomer {
+function customer(customerId: string, listType: PhoenixCrmDoctorListType, grade: PhoenixCrmGrade | null, pending = false): ReviewCustomer {
   return { customerId, name: customerId, listType, grade, pending };
 }
 
@@ -167,7 +167,7 @@ function week(weekStart: string, status: PhoenixCrmPlanStatus | null, customerId
   };
 }
 
-function snapshot(items: Array<[string, string, PhoenixCrmListType, string]>, activities: Array<[string, string, boolean]> = []): unknown {
+function snapshot(items: Array<[string, string, PhoenixCrmDoctorListType, string]>, activities: Array<[string, string, boolean]> = []): unknown {
   return {
     items: items.map(([plan_date, customer_id, list_type, name]) => ({ plan_date, customer_id, list_type, name })),
     activities: activities.map(([plan_date, activity_type, half_day]) => ({ plan_date, activity_type, half_day })),
@@ -240,10 +240,10 @@ export function runPhoenixCrmPlanReviewTests(): void {
 
     // The days a reviewer is offered: working days that have not passed — never a holiday.
     const reviewDays = [
-      { date: "2026-10-03", listTypes: ["AM", "PM"] as PhoenixCrmListType[] },
-      { date: "2026-10-05", listTypes: ["AM", "PM"] as PhoenixCrmListType[] },
-      { date: "2026-10-06", listTypes: [] as PhoenixCrmListType[] },
-      { date: "2026-10-08", listTypes: ["AM"] as PhoenixCrmListType[] },
+      { date: "2026-10-03", listTypes: ["AM", "PM"] as PhoenixCrmDoctorListType[] },
+      { date: "2026-10-05", listTypes: ["AM", "PM"] as PhoenixCrmDoctorListType[] },
+      { date: "2026-10-06", listTypes: [] as PhoenixCrmDoctorListType[] },
+      { date: "2026-10-08", listTypes: ["AM"] as PhoenixCrmDoctorListType[] },
     ];
     assert.deepEqual(
       returnableDays(reviewDays, "2026-10-05").map((day) => day.date),
