@@ -77,9 +77,10 @@ export function plannableWeeks(cairoToday: string): string[] {
  * a week that passed or a week ahead; it opens on the week the plan should be entered in").
  *
  * The field week that begins on the COMING Saturday: on Thursday 1 and Friday 2 October that is the
- * week of Saturday 3 October, and on Saturday 3 October it is already the week of the 10th. Never this
- * week, never a week after the next one. `plannableWeeks` stays the REVIEWERS' window; a rep reads his
- * own through `repWeekState` (plan-rules.ts), which the server enforces on every save and send.
+ * week of Saturday 3 October, and on Saturday 3 October it is already the week of the 10th. Never a
+ * week after the next one, and never this week — unless he never sent it, when `repWeekState` still
+ * opens it, late and stamped late (owner, 2026-10-02). `plannableWeeks` stays the REVIEWERS' window; a
+ * rep reads his own through `repWeekState` (plan-rules.ts), which the server enforces on every save and send.
  */
 export function repPlanWeek(cairoToday: string): string {
   return addDaysIso(fieldWeekStart(cairoToday), 7);

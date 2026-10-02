@@ -3377,7 +3377,17 @@ of day buttons, the same square buttons as the Week and the Day pickers — beli
 - **One week, the coming Saturday's.** *"We are now Thursday, tomorrow will be Friday … when he is
   submitting the plan, he will submit the Saturday week plan."* `repPlanWeek(today)` is the week after
   the running one: Thursday 1 and Friday 2 October → Saturday 3 October; Saturday 3 October → the 10th.
-  A week that has begun is never planned any more; a week ahead is not open yet.
+  A week that has begun is never planned any more — unless he never sent it (next bullet); a week ahead
+  is not open yet.
+- **The week he is IN, never sent, is still his to send — late (owner, 2026-10-02).** The Phoenix CRM
+  audit that night found the gap: a rep who missed the deadline was locked out of the week he was
+  working, because `repWeekState` closed it the moment it began — so none of that week's visits could
+  ever count as planned, and nothing on his board told him why. Asked how it should behave, the owner
+  approved the recommended answer: he still sends it while it has a day left, the send is stamped late
+  from the server clock like any late week, and his visits count as planned only from the moment he
+  sends it (`phoenix_crm_save_visit` reads the send itself, so nothing visited before it is rewritten).
+  His board opens on that overdue week first, and its note says when the visits start counting. A week
+  before the running one never reopens.
 - **One path.** Plan opens on that week's month, that week active and every other week greyed; its
   days; a day's customers; tick. The rep's own board has no month chooser, no month header, no "Send the
   month" and no "Copy last month". A manager reviewing from Team keeps his month chooser.
@@ -3399,7 +3409,10 @@ of day buttons, the same square buttons as the Week and the Day pickers — beli
 **How it is held.**
 - The server, not the board, is the rule: `assertRepMayChangeWeek` (`server/plan-edits.ts`) runs before
   every save and every send, and `repWeekState` (`plan-rules.ts`) answers `plan` only for his one week,
-  a week his manager RETURNED, or a week an edit request REOPENED. A rep's `reopen` and his month send
+  a week his manager RETURNED, a week an edit request REOPENED, or — since 2026-10-02 — the week he is in
+  while he has never sent it (`runningWeek`, from `fieldWeekStart(today)`). No migration was needed for
+  that last one: `phoenix_crm_save_plan` already takes any day from today on inside the week, and
+  `phoenix_crm_plan_transition` refuses only a week whose Thursday has passed. A rep's `reopen` and his month send
   and take-back are refused with a sentence, so a screen one release behind is told what to press.
 - `plannableWeeks` is unchanged and is now the REVIEWERS' window — the manager's week list, the overview
   counts and the daily plan report all read it. Never shrink it to the rep's one week.
@@ -4311,6 +4324,30 @@ plan row is exactly what the owner ruled out, so its own `check (list_type in ('
 database's half of rule 2, under `PLANNABLE_LIST_TYPES` in TypeScript. `phoenix_crm_list_requests` stays
 narrow for the same reason: a pharmacy arrives as a reference and leaves as one, with no grade, drop,
 add or bring-back request to decide.
+
+## Add visit keeps every point, and its optional steps start folded — owner ruling, 2026-10-02 (night)
+
+**What he asked.** At night he sent Report It's form again: *"I WANT VISIT SUBMISSION TO FOLLOW THIS I
+WANT VISIT SUBMISSION SUPER EASY FOR THEM"*. Add visit had worn Report It's four-step frame since that
+morning (#5095: Visit type → Customer → Products and comment → Log the visit), but its step 3 was still
+one long page of seven boxes. Asked what step 3 should become, he answered: *"I need all the points in
+the current form of entering the visit … I don't need too many steps and too many clicks by the reps.
+So what do you recommend?"*
+
+**The recommendation he was given, and how it is built.**
+- **Every point stays.** All seven boxes keep their header and their number, so the form still shows
+  every point, and the read-back on step 4 lists whatever was entered.
+- **No step and no press are added.** It is still four steps. A visit that skips the extras (the usual
+  visit) costs exactly what it did.
+- **The three optional ones start folded:** the pharmacy check, what he left, and what the customer
+  said. Each is Report It's dashed "add" row under its own header, and one tap opens it in place
+  (`FoldedStep`, `openExtras` in `src/components/phoenix-crm/visit-log-form.tsx`). Once open it stays open
+  across Next and "Change something", so nothing typed is lost.
+- **A required step is never folded.** The bar under his thumb jumps to the first missing answer, and
+  that jump must always land on an open box.
+
+**Never "fix" it back:** do not remove a point to shorten the form, and do not split step 3 into more
+steps. Both are what he ruled out in the same answer. Pinned by `tests/phoenix-crm-visit-form-ease.test.ts`, section (e).
 
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 

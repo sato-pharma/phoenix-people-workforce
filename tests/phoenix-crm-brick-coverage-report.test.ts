@@ -5,6 +5,7 @@ import {
   BRICK_SALES_CAVEAT,
   buildBrickCoverageReport,
   NO_BRICK_LABEL,
+  UNNAMED_BRICK_LABEL,
   type BrickCrmRow,
 } from "../src/lib/phoenix-crm/brick-report.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
@@ -182,6 +183,24 @@ export function runPhoenixCrmBrickCoverageReportTests(): void {
     assert.equal(report.rows.length, 1);
     assert.equal(report.rows[0].brickName, NO_BRICK_LABEL, "the placeless row says so in words");
     assert.equal(report.rows[0].status, "list-no-sales");
+  }
+
+  // ── 3b. A brick nobody names is labelled in words, never by its raw code ────────────────────────
+  //
+  // Phoenix CRM audit, 2026-10-02: the fallback was the brick id itself, so a code reached the
+  // Reports bricks table. The id stays the row's key; the label is a sentence.
+  {
+    const report = buildBrickCoverageReport({
+      territories: [TERRITORY],
+      crmRows: [crmRow({ seatId: "SEAT-1", brickId: "B-77", brickName: "", customers: 1, pm: 1 })],
+      sales: [{ brickId: "B-78", areaCode: "GZ3", value: 100 }],
+      brickNames: [],
+      salesMonths: ["2026-08"],
+    });
+    assert.equal(report.rows.length, 2);
+    for (const row of report.rows) {
+      assert.equal(row.brickName, UNNAMED_BRICK_LABEL, `brick ${row.brickId} with no name reads as words, not its code`);
+    }
   }
 
   // ── 4. AM and PM stay apart, and nothing averages them ─────────────────────────────────────────

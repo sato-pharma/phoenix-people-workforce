@@ -15,6 +15,14 @@
  *   - OPTIONAL: what he left behind — a record, never a stock movement;
  *   - OPTIONAL: the customer's objection and his next step, both chips.
  *
+ * 🔴 THE THREE OPTIONAL STEPS START FOLDED (owner, 2026-10-02, asked how step 3 should follow Report
+ * It: "I need all the points in the current form of entering the visit … I don't need too many steps
+ * and too many clicks by the reps"). Every point stays and keeps its header, so the form still shows
+ * all seven; an optional one opens IN PLACE with one tap on its row, the way Report It adds a block.
+ * No step was added and no press was added to a visit that skips them — the usual visit — while the
+ * step shrinks to what the save needs. Never fold a REQUIRED step: the bar's jump would land on a
+ * closed box.
+ *
  * Log visit lives in a bar held at the bottom of the screen, under his thumb wherever he has scrolled
  * to, and the bar names the ONE thing still missing in the save's own words — so he never taps into a
  * refusal he could have seen coming, and never hunts for the step it means.
@@ -30,7 +38,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, Check, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, History } from "lucide-react";
+import { ArrowDown, Check, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, History, Plus } from "lucide-react";
 
 import { crmPost, errorCodeOf, messageOf, newClientId } from "@/components/phoenix-crm/api";
 import { dayLabel } from "@/components/phoenix-crm/format";
@@ -128,6 +136,31 @@ function stepMark(mark: StepMark) {
     );
   }
   return mark === "required" ? <CrmPill tone="orange">Required</CrmPill> : <CrmPill>Optional</CrmPill>;
+}
+
+/** The three optional steps, each folded until he opens it (owner, 2026-10-02). */
+type VisitExtra = "pharmacy" | "left" | "outcome";
+
+/**
+ * An optional step, folded: Report It's dashed "add" row, the whole row one tap. Its header stays above
+ * it, so every point of the form is still in view; nothing is asked, and the visit logs with all three
+ * folded.
+ */
+function FoldedStep({ disabled, label, note, onOpen }: { disabled: boolean; label: string; note: string; onOpen: () => void }) {
+  return (
+    <button
+      className="flex min-h-11 w-full min-w-0 items-center gap-3 rounded-none border border-dashed border-slate-300 bg-white px-3 py-2.5 text-left transition hover:border-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
+      disabled={disabled}
+      onClick={onOpen}
+      type="button"
+    >
+      <Plus aria-hidden className="h-4 w-4 shrink-0 text-orange-600" />
+      <span className="min-w-0">
+        <span className="block break-words text-sm font-black text-slate-800">{label}</span>
+        <span className="mt-0.5 block break-words text-xs font-semibold text-slate-500">{note}</span>
+      </span>
+    </button>
+  );
 }
 
 // ── Who was on the visit ────────────────────────────────────────────────────────────────────────
@@ -256,7 +289,7 @@ function AvailabilityRow({
   return (
     <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border border-slate-200 bg-white px-3 py-2">
       <span className="min-w-0 flex-1 break-words text-sm font-black text-slate-700">{product}</span>
-      <div className="flex shrink-0 flex-wrap gap-1.5">
+      <div className="flex min-w-0 flex-wrap gap-1.5">
         <button
           aria-pressed={answer === "has"}
           className={cn(
@@ -348,6 +381,9 @@ export function VisitLogForm({
   const [objectionNote, setObjectionNote] = useState("");
   // What he handed over. A RECORD, never a stock movement — nothing here subtracts from anything.
   const [samples, setSamples] = useState<SamplesGiven>({});
+  // The optional steps he has opened on THIS visit. Every visit starts with all three folded; one tap
+  // opens one in place, and it stays open across Next and "Change something", so nothing typed is lost.
+  const [openExtras, setOpenExtras] = useState<ReadonlySet<VisitExtra>>(() => new Set());
   // The spoken note, already uploaded by the control. Null is the normal case: it was never required.
   const [voiceNote, setVoiceNote] = useState<VoiceNoteValue | null>(null);
   const [saving, setSaving] = useState(false);
@@ -500,6 +536,10 @@ export function VisitLogForm({
       else next[product] = answer;
       return next;
     });
+  }
+
+  function openExtra(extra: VisitExtra) {
+    setOpenExtras((current) => new Set(current).add(extra));
   }
 
   function toggleFamily(family: string) {
@@ -940,6 +980,8 @@ export function VisitLogForm({
       </div>
 
       <CrmBlock actions={stepMark("optional")} title="5 · Pharmacy you took feedback from">
+        {openExtras.has("pharmacy") ? (
+          <>
         <CrmField
           hint="Ones you entered before appear as you type; a new one is saved for next time."
           htmlFor="phoenix-crm-visit-pharmacy"
@@ -1011,9 +1053,15 @@ export function VisitLogForm({
             })}
           </div>
         </div>
+          </>
+        ) : (
+          <FoldedStep disabled={saving} label="Add the pharmacy" note="Its name, and which of your products it has." onOpen={() => openExtra("pharmacy")} />
+        )}
       </CrmBlock>
 
       <CrmBlock actions={stepMark("optional")} className="border-t border-slate-100" title="6 · What you left">
+        {openExtras.has("left") ? (
+          <>
         {/* A RECORD of what he handed over, never a stock movement: nothing subtracts, nothing is
             allocated, and no balance exists anywhere. */}
         <p className="text-xs font-semibold text-slate-500">Tap once for each one you left.</p>
@@ -1038,9 +1086,15 @@ export function VisitLogForm({
             );
           })}
         </div>
+          </>
+        ) : (
+          <FoldedStep disabled={saving} label="Add what you left" note="Samples and materials, one tap for each." onOpen={() => openExtra("left")} />
+        )}
       </CrmBlock>
 
       <CrmBlock actions={stepMark("optional")} className="border-t border-slate-100" title="7 · What you took away">
+        {openExtras.has("outcome") ? (
+          <>
         {/* Both optional, both taps. The objection is the CUSTOMER's, never a mark against him, and the
             next step comes back to him at the door next time. */}
         <p className="text-sm font-black text-slate-800">Did the customer push back on anything?</p>
@@ -1080,6 +1134,15 @@ export function VisitLogForm({
           value={nextStep}
         />
         {isFollowUp(nextStep) ? <p className="mt-2 text-xs font-semibold text-slate-500">It comes back to you at this customer&apos;s door next time.</p> : null}
+          </>
+        ) : (
+          <FoldedStep
+            disabled={saving}
+            label="Add what the customer said"
+            note="What they pushed back on, and your next step."
+            onOpen={() => openExtra("outcome")}
+          />
+        )}
       </CrmBlock>
         </>
       )}

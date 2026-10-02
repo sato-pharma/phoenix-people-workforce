@@ -95,6 +95,9 @@ const ROLE_RECIPIENTS_MODULE: Record<NotificationRoleKey, string> = {
   // Telegram-only telegram_daily_hr_digest above is. Listing it is NOT a reason to
   // give it an email channel.
   activity_inactivity_digest: SYSTEM_HEALTH_MODULE,
+  // In-app + push + Telegram, never email (owner decision, 2026-10-02) — listed here because this
+  // map is exhaustive over every role-recipients key. Listing it is NOT a reason to email it.
+  accepted_offer_alert: "Recruitment",
 };
 
 const EMAIL_NOTIFICATIONS_MODULE: Record<EmailNotificationType, string> = {

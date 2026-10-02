@@ -533,6 +533,7 @@ import { runRecruitmentOfferLetterBridgeTests } from "./recruitment-offer-letter
 import { runOfferPayrollCostOfLivingAgreementTests } from "./offer-payroll-cost-of-living-agreement.test.ts";
 import { runOfferPrefillNoticeNetTests } from "./offer-prefill-notice-net.test.ts";
 import { runOfferOutOnSeatsTests } from "./offer-out-on-seats.test.ts";
+import { runAcceptedOfferAlertTests } from "./accepted-offer-alert.test.ts";
 import { runOfferHireBridgeTests } from "./offer-hire-bridge.test.ts";
 import { runOfferResendTests } from "./offer-resend.test.ts";
 import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-analytics-layout.test.ts";
@@ -919,6 +920,7 @@ import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts"
 import { runNewHireMailboxAdoptTests } from "./new-hire-mailbox-adopt.test.ts";
 import { runMailboxAppPasswordClearTests } from "./mailbox-app-password-clear.test.ts";
 import { runTurbifyControlReportTests } from "./turbify-control-report.test.ts";
+import { runTurbifyClickDeliveryTests } from "./turbify-click-delivery.test.ts";
 import { runMailboxRobotSweepHookTests } from "./mailbox-robot-sweep-hook.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
@@ -1639,6 +1641,7 @@ import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
 import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
 import { runPhoenixCrmFieldReachTests } from "./phoenix-crm-field-reach.test.ts";
+import { runPhoenixCrmCardTableParityTests } from "./phoenix-crm-card-table-parity.test.ts";
 import { runPhoenixCrmApprovalNudgeTests } from "./phoenix-crm-approval-nudge.test.ts";
 import { runPhoenixCrmLastVisitProductsTests } from "./phoenix-crm-last-visit-products.test.ts";
 import { runPhoenixCrmVisitOutcomeTests } from "./phoenix-crm-visit-outcome.test.ts";
@@ -1659,6 +1662,7 @@ import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.te
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photos.test.ts";
 import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
+import { runPhoenixCrmSweepPagingTests } from "./phoenix-crm-sweep-paging.test.ts";
 import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test.ts";
 import { runPhoenixCrmOfflineWireTests } from "./phoenix-crm-offline-wire.test.ts";
 import { runPhoenixCrmRefusalMessagesTests } from "./phoenix-crm-refusal-messages.test.ts";
@@ -3402,6 +3406,7 @@ await runTest("offer bridge (an approved ATS offer pre-fills the letter, and not
 await runTest("resend offer (the same frozen letter, a fresh key, Send's gate, on both surfaces)", runOfferResendTests);
 await runTest("the offer row: Withdraw, and an accepted letter carrying the hire to its vacant seat", runOfferHireBridgeTests);
 await runTest("the offer out on a vacant seat, and the package landing in the NET box", runOfferOutOnSeatsTests);
+await runTest("the accepted-offer alert — recipients, channels, and the accept hook", runAcceptedOfferAlertTests);
 await runTest("the offer prefill notice names the net salary it filled in", runOfferPrefillNoticeNetTests);
 await runTest("the offer and payroll cost-of-living figures mean the same money", runOfferPayrollCostOfLivingAgreementTests);
 await runTest("hiring analytics layout (desktop table, phone cards, square edges, no sideways scroll)", runRecruitmentHiringAnalyticsLayoutTests);
@@ -4053,6 +4058,17 @@ await runTest(
   + "input's value or the whole body and clicks nothing, and the whole thing is OFF unless the flag "
   + "is exactly \"true\")",
   runTurbifyControlReportTests,
+);
+await runTest(
+  "a Turbify click reaches the control and not the thing on top of it (measured 2026-10-02: the "
+  + "driver ran at puppeteer's default 800x600, Turbify's fixed cookie banner covered everything "
+  + "below y=412, the Email user button sat at y=430, and handle.click() clicked the BANNER and "
+  + "reported no error — so three mailboxes failed with an innocent selector named in the error. "
+  + "An obstruction is now detected and the click re-delivered on the node, which cannot land "
+  + "elsewhere because resolveOne matched exactly one element; the viewport is explicit and leaves "
+  + "real headroom; a hit test that cannot answer falls back rather than refusing; and the robot "
+  + "never accepts cookies on the owner's behalf)",
+  runTurbifyClickDeliveryTests,
 );
 await runTest(
   "mailbox revocation robot wired to the daily sweep (off by default; dry run is the default once "
@@ -5733,8 +5749,13 @@ await runTest(
 );
 
 await runTest(
-  "Phoenix CRM judges the SHAPE of a rep's month, silently (D4 — owner, 2026-09-25: the position checks judge one fix and the photo sweep one picture, and both are satisfied by a rep entering twelve real-looking visits from one pavement; six signals over a rep-month, only the three a person CANNOT do standing on their own; half of every fixture is deliberately innocent, so four visits in an hour in one hospital building, durations a second apart, a light day, a rep who never saw the outcome field and a month whose distributor files never landed are all clean; a month under the floor is NOT CHECKED rather than clean, because leave must not read as honest work; it reads the RAW visits table and not the countable view, since an off-plan visit awaiting approval is the one most worth judging; and it does NOT apply the El Qema mask, which would remove real money from a total and manufacture \"the area sold nothing\" for every territory that distributor serves)",
+  "Phoenix CRM judges the SHAPE of a rep's month, silently (D4 — owner, 2026-09-25: the position checks judge one fix and the photo sweep one picture, and both are satisfied by a rep entering twelve real-looking visits from one pavement; six signals over a rep-month, and since 2026-10-02 only ONE of them — the form's own stopwatch repeating exactly — stands on its own, because the other two strong ones read a capture time that stopped being the door time when the one-tap visit removed the photo: the owner, asked directly, kept them computing, never strong, and shown only BESIDE a strong flag, so a rep logging his morning from the car reaches no board at all while his numbers are still kept in signals.heldBack; half of every fixture is deliberately innocent, so four visits in an hour in one hospital building, durations a second apart, a light day, a rep who never saw the outcome field and a month whose distributor files never landed are all clean; a month under the floor is NOT CHECKED rather than clean, because leave must not read as honest work; it reads the RAW visits table and not the countable view, since an off-plan visit awaiting approval is the one most worth judging; and it does NOT apply the El Qema mask, which would remove real money from a total and manufacture \"the area sold nothing\" for every territory that distributor serves)",
   runPhoenixCrmBehaviourIntegrityTests,
+);
+
+await runTest(
+  "the Phoenix CRM nightly sweep reads every row it judges, never PostgREST's first thousand (audit 2026-10-02: `.limit()` above the server's 1,000-row ceiling does NOTHING and the short answer carries no error, so the behaviour pass judged the FIRST ~1,000 visits of a month company-wide — Delta (1) alone makes ~3,700 — and the photo corpus compared each new picture only with the newest 1,000 fingerprints, blind to exactly the re-use it exists to catch; both now page with .range() under a TOTAL order, a row met twice at the seam is kept once because a repeat would invent two captures in the same second, a failed page throws rather than judging a fragment, a judged read REFUSES past its ceiling while the newest-first corpus merely stops, the places read is paged too because a seat silently missing its areas makes flat_coverage_no_sales accuse a rep who covered his list and sold behind it, the fingerprint backlog now requires a photo or a one-tap visit occupies it for ever and the sweep reports success while hashing nothing, the evidence is filed on the visit day that ends at 02:00 rather than the calendar day, and a place is judged on its stored fixed point rather than on the pin)",
+  runPhoenixCrmSweepPagingTests,
 );
 
 await runTest(
@@ -5855,6 +5876,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's field day and reach (owner, 2026-10-02): a Directions link to the customer's SAVED place — the destination only, Google Maps, no key, nothing about where the rep is, and no link with no usable point — on the visit flow's customer card (under it, never inside its button), the visit form's header and his planned day; one line for his own field week, his sent plan against his countable visits, AM · PM · Pharmacies apart and never totalled, read in the day's one parallel wave; and a 'Get Phoenix CRM messages on Telegram' card at the top of Phoenix CRM for the reps and managers until the server says they are connected, through the ONE existing connect flow, hidden for the Cairo day by Later with every storage touch wrapped",
   runPhoenixCrmFieldReachTests,
+);
+
+await runTest(
+  "Phoenix CRM UI gaps (audit, 2026-10-02): no raw brick code as a heading or label — an unnamed brick keeps its id as the key and reads as words; every desktop table and its phone card print the same facts (the Reports comparison line, the Locations accuracy and place point, the integrity Position, the Customer lists region, the off-plan note); the native audio player is square on the admin shell; every native date/time field carries appearance-none; and no class list puts shrink-0 beside flex-wrap",
+  runPhoenixCrmCardTableParityTests,
 );
 
 await runTest(

@@ -231,7 +231,7 @@ export function runPhoenixCrmPlanReviewTests(): void {
 
     // The rep's state is unchanged by it: a returned week is his to change and send.
     assert.equal(
-      repWeekState({ weekStart: "2026-10-03", open: true, status: "returned", repWeek: "2026-10-10", editAsked: false, editReopened: false }),
+      repWeekState({ weekStart: "2026-10-03", open: true, status: "returned", repWeek: "2026-10-10", runningWeek: "2026-10-03", editAsked: false, editReopened: false }),
       "plan",
       "a week returned for one day is a returned week: his to change, and to send again",
     );
