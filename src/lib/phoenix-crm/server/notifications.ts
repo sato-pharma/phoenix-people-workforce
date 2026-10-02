@@ -38,6 +38,15 @@
  *                                          act on. The answer tells the rep, and the person told again.
  *                                          A cancelled ask is not announced: its notices are withdrawn.
  *
+ *   - a rep submits his FIRST visit ever   → his district manager, his national sales manager and the
+ *     (owner, 2026-10-03)                    SFE Manager, BY EMAIL (and in-app, Telegram and the phone),
+ *                                          with the owner on the BCC of every email the system sends.
+ *                                          It is an adoption notice, not a decision: ONE per rep, ever,
+ *                                          keyed on the REP so nothing can send it twice, and nobody who
+ *                                          gets it has anything to do. The rep himself is never told —
+ *                                          Golden Rule #1: his app does not tell him he is being watched
+ *                                          begin.
+ *
  * A PLANNED visit tells nobody: double and chain visits count straight away, and a far visit is
  * flagged on the manager's screens rather than pushed (about 600 visits a working day). An OFF-PLAN
  * visit is the one exception (owner, 2026-09-26) — it counts in nothing until it is approved, so the
@@ -49,7 +58,7 @@
  * Never throws: a notice that cannot be delivered must not undo a saved decision.
  */
 
-import { formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
+import { formatPhoenixDateTime, formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
 import { phoenixCrmChannels } from "@/lib/notifications/phoenix-crm-channel-guard";
 import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
 import { withdrawInAppNotificationsByEventKeyPrefix } from "@/lib/notifications/in-app";
@@ -59,7 +68,7 @@ import { logError } from "@/lib/observability/log";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
 import { PLAN_EDIT_ACKNOWLEDGER_HR_ID, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
-import { personKey, territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { managerChain, personKey, territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
 import type { VisitAskKind } from "@/lib/phoenix-crm/visit-ask-rules";
@@ -195,6 +204,23 @@ export type PhoenixCrmNotice =
        * have to open the row to learn what he is being asked about.
        */
       clarification: string | null;
+    }
+  | {
+      /**
+       * A rep's FIRST visit on Phoenix CRM, ever (owner, 2026-10-03). An adoption notice to his district
+       * manager, his national sales manager and the SFE Manager, by email; never to the rep.
+       */
+      kind: "first_visit";
+      org: OrgIndex;
+      seat: OrgSeat;
+      visitId: string;
+      repHrId: string;
+      customerName: string;
+      /**
+       * The SERVER's own stamp on the visit (`captured_at`), which is the time the email reports. Never
+       * the phone's clock — that is the whole reason the save returns it.
+       */
+      capturedAt: string;
     }
   | {
       kind: "visit_ask";
@@ -355,6 +381,74 @@ async function describePlanEdit(notice: Extract<PhoenixCrmNotice, { kind: "plan_
 }
 
 /**
+ * A rep's FIRST visit on Phoenix CRM (owner, 2026-10-03: "every rep submits a visit on Phoenix CRM —
+ * only the first visit for each medical rep — an email goes to his district manager, his national sales
+ * manager and the SFE, and Omar in the BCC").
+ *
+ * The SFE Manager is a ROLE with no seat in the organogram, so it is read from the accounts — the same
+ * list the plan edit's SFE step and the daily approval nudge use.
+ */
+async function describeFirstVisit(notice: Extract<PhoenixCrmNotice, { kind: "first_visit" }>): Promise<Delivery[]> {
+  const [sfe, names] = await Promise.all([sfeManagerHrIds(), loadPeopleNames([notice.repHrId])]);
+  return firstVisitDeliveries(notice, names, sfe);
+}
+
+/**
+ * Who is told of a rep's first visit, and in what words. Pure, so the owner's three recipients — the
+ * district manager, the national sales manager and the SFE Manager — and the once-ever key are pinned by
+ * a test rather than by reading the code (tests/phoenix-crm-first-visit.test.ts).
+ *
+ * 🔴 THE DISTRICT MANAGER IS THE TERRITORY'S REVIEWING MANAGER, not "the DM seat": a vacant district
+ * passes upward exactly as it does for a grade request and a weekly plan, so a rep whose district seat is
+ * empty still has somebody told rather than nobody. The national sales manager is the NSM seat of the
+ * chain above him — one per line, all three occupied (measured 2026-10-03) — and a line without one
+ * simply leaves that name out; it never silences the notice.
+ *
+ * 🔴 AND NEVER THE REP (Golden Rule #1). The notice says a person has started; the one person it is about
+ * is the one person who must not read it, and `personKey` comparison is what keeps him off it when he
+ * also sits on a manager seat (an acting district manager holds both).
+ */
+export function firstVisitDeliveries(
+  notice: Extract<PhoenixCrmNotice, { kind: "first_visit" }>,
+  names: PeopleNames,
+  sfeHrIds: readonly string[],
+): Delivery[] {
+  const chain = managerChain(notice.org, notice.seat.seatId);
+  const districtManager = chain[0] ?? null;
+  const national = chain.find((member) => member.seat.tier === "NSM") ?? null;
+  const repKey = personKey(notice.repHrId);
+  const recipients = [...new Set([...(districtManager ? [districtManager.hrId] : []), ...(national ? [national.hrId] : []), ...sfeHrIds])].filter(
+    (hrId) => {
+      const key = personKey(hrId);
+      return key !== null && key !== repKey;
+    },
+  );
+  if (recipients.length === 0) return [];
+
+  const rep = nameOf(names, notice.repHrId, "A rep");
+  const territory = territoryName(notice.seat);
+  return [
+    {
+      recipients,
+      eventType: "first_visit_submitted",
+      title: `First Phoenix CRM visit: ${rep}`,
+      message:
+        `${rep} submitted a first visit on Phoenix CRM: ${notice.customerName}, ${territory}, ` +
+        `at ${formatPhoenixDateTime(notice.capturedAt)} (Cairo). ` +
+        `It is the first visit this rep has submitted on the module — nothing waits on you.`,
+      tab: "team",
+      recordId: notice.visitId,
+      // 🔴 KEYED ON THE REP, NOT THE VISIT. "Only the first visit for each medical rep" is a promise about
+      // the PERSON, so the key is the person: a second reading of "this is his first" — a retried save, a
+      // repeat of the count, two visits landing in the same second — upserts the same event row instead of
+      // sending a second email. Nothing else in this file keys on a person alone, and that is the point.
+      idempotencyKey: `phoenix_crm:first_visit:${repKey ?? notice.repHrId}`,
+      subjectHrId: notice.repHrId,
+    },
+  ];
+}
+
+/**
  * A rep's ask for a visit with somebody (owner, 2026-10-02), raised or answered.
  *
  * Raised: the person asked, who answers it — on the Team tab for a manager, on Reports for a product
@@ -461,6 +555,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
   const territory = territoryName(notice.seat);
 
   if (notice.kind === "plan_edit") return describePlanEdit(notice);
+  if (notice.kind === "first_visit") return describeFirstVisit(notice);
   if (notice.kind === "visit_ask") return describeVisitAsk(notice);
 
   if (notice.kind === "request_created") {

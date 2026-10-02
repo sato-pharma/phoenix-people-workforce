@@ -1627,6 +1627,7 @@ import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
 import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
+import { runPhoenixCrmFirstVisitTests } from "./phoenix-crm-first-visit.test.ts";
 import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
 import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-customers.test.ts";
 import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list-board.test.ts";
@@ -5682,6 +5683,11 @@ await runTest(
 await runTest(
   "Phoenix CRM notices are in-app + Telegram only, never email, and a Super Admin test entry tells nobody",
   runPhoenixCrmEmailBlockTests,
+);
+
+await runTest(
+  "A rep's FIRST Phoenix CRM visit emails his district manager, his national sales manager and SFE — never the rep, once per rep ever, with the account and the Cairo time it was submitted",
+  runPhoenixCrmFirstVisitTests,
 );
 
 await runTest(
