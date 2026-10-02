@@ -728,6 +728,18 @@ export type MarketingValidationLegacyPharmacyInput = {
 };
 
 export type MarketingValidationReportRow = {
+  /**
+   * What else this venue is called, where the Super Admin has CONFIRMED two rows in two systems
+   * are one customer. Empty for every row nobody has been asked about.
+   *
+   * 🔴 IT INFORMS A VERDICT, IT NEVER IS ONE. A licence verdict here is PERMANENT with no
+   * correction path (§4.1), so the one thing this line must never do is read as evidence: it does
+   * not touch `validationStatus`, it sits outside `LINK_STATUS_PRECEDENCE`, and a venue the
+   * direct-order desk already sells to is still a venue a human validates on its own terms. It is
+   * here because somebody about to record something permanent should know the shop is known
+   * elsewhere — not so the screen can decide for him.
+   */
+  alsoKnownAs: string[];
   customer: MarketingCustomer;
   /**
    * True when this link was validated at a desk — an admin picked the location from a map search

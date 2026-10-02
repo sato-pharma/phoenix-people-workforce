@@ -421,6 +421,8 @@ type ValidatedCustomerGroup = {
 };
 
 type ValidatedPharmacyDetail = {
+  /** Confirmed cross-system names (owner, 2026-10-02). Never a suggestion, never a verdict. */
+  alsoKnownAs: string[];
   area: string;
   governorate: string;
   id: string;
@@ -749,6 +751,8 @@ function buildValidatedPharmacyDetails(rows: MarketingValidationReportRow[]) {
     }
 
     pharmacies.set(row.pharmacy.id, {
+      // Per PHARMACY, so like the wholesaler note it is the same for every link of this venue.
+      alsoKnownAs: row.alsoKnownAs,
       area: row.pharmacy.extractedAreaName ?? row.pharmacy.regionName ?? "",
       governorate: row.pharmacy.extractedGovernorateName ?? "",
       id: row.pharmacy.id,
@@ -1596,6 +1600,16 @@ function ValidatedPharmaciesModal({
               {pharmacies.map((pharmacy) => (
                 <div className="rounded-none border border-slate-200 bg-white p-3" key={pharmacy.id}>
                   <p className="text-phx-md font-bold text-slate-900">{pharmacy.name}</p>
+                  {/* 🔴 NEUTRAL INK ON PURPOSE. The warning below it is amber because it asks the
+                      human to doubt something; this asks him to doubt nothing. A verdict here is
+                      permanent and uncorrectable, so a line that LOOKED like evidence would be
+                      read as evidence — it says only that somebody already decided these two
+                      rows are one shop, in a colour that carries no instruction. */}
+                  {pharmacy.alsoKnownAs.length > 0 ? (
+                    <p dir="auto" className="mt-1 break-words text-phx-sm text-slate-500">
+                      also known as {pharmacy.alsoKnownAs.join(" · ")}
+                    </p>
+                  ) : null}
                   {pharmacy.suspectedWholesaler ? (
                     <p className="mt-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-phx-sm font-semibold text-amber-800">
                       {pharmacy.suspectedWholesalerNote ??
@@ -1650,6 +1664,13 @@ function ValidatedPharmaciesModal({
                     <tr className="border-t border-slate-100" key={pharmacy.id}>
                       <td className="break-words border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">
                         {pharmacy.name}
+                        {/* Neutral ink, for the reason the phone card gives: the amber note below
+                            asks the human to doubt something, this asks him to doubt nothing. */}
+                        {pharmacy.alsoKnownAs.length > 0 ? (
+                          <span dir="auto" className="mt-1 block break-words text-phx-xs font-medium text-slate-500">
+                            also known as {pharmacy.alsoKnownAs.join(" · ")}
+                          </span>
+                        ) : null}
                         {pharmacy.suspectedWholesaler ? (
                           <span className="mt-1 block border border-amber-200 bg-amber-50 px-2 py-1 text-phx-xs font-semibold text-amber-800">
                             {pharmacy.suspectedWholesalerNote ??

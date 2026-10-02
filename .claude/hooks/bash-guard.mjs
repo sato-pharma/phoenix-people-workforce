@@ -1268,11 +1268,38 @@ try {
               Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);
               state = readMergeState();
             }
-            // Still UNKNOWN after the retry is the measured common case, not an edge: ask the
-            // checks themselves rather than refusing a PR whose run is already paid. Only a
-            // definite `true` promotes it; `false` and `null` both keep the refusal, so an
-            // unreachable API cannot retire the clause.
-            if (state === 'OPEN/UNKNOWN' && requiredChecksGreen() === true) return true;
+            // 🔴 `BLOCKED` IS THE SAME STALE READING AS `UNKNOWN`, AND IT IS THE ONE THAT BIT.
+            // This asked the checks only when GitHub said UNKNOWN, on the theory that BLOCKED means
+            // "a required check has not passed". It does not always: BLOCKED is also the value
+            // GitHub is still HOLDING from before the checks finished, and it clears a beat later.
+            // Measured 2026-10-02 on #5125 — `validate` and `checks` both `completed/success` on
+            // head `737ed27ba`, read by hand seconds earlier, and C10 refused the merge anyway from
+            // a cwd where every one of these calls works. The owner had approved that merge, and
+            // the stand-down the refusal then points at is what the classifier refuses as a
+            // [Safety Bypass Flag] — the same deadlock the 2026-10-01 exemption was built to end.
+            //
+            // So the two STALE readings — `UNKNOWN` and `BLOCKED` — both ask the head commit's own
+            // required check-runs, which is what this clause is actually about and what a session
+            // reads by hand. Only a definite `true` promotes it; `false` and `null` both keep the
+            // refusal, so an unreachable API cannot retire the clause, and the PR must be OPEN,
+            // because "its run is already paid" is a statement about an open PR.
+            //
+            // 🔴 `UNSTABLE` IS DELIBERATELY NOT IN THAT SET, and widening this to "any OPEN state
+            // that is not CLEAN" would have overturned that silently. UNSTABLE means mergeable with
+            // the required checks green and a NON-required one red — `mobile` and `secret-scan`
+            // stopped gating here on 2026-09-29 — and it is refused on purpose: something is red and
+            // deserves a look. Its shim case only keeps passing today because the check-runs read
+            // `absent` there, so the policy lived in the clause's shape rather than in an assertion.
+            // It now lives in both.
+            //
+            // The one thing this does not see is a protection rule that is not a status check — a
+            // required review, say. `requiredChecksGreen` asks `required_status_checks` and nothing
+            // else, so such a PR would reach `gh pr merge` instead of being refused here. That is
+            // safe: GitHub itself refuses that merge. This clause exists to save CI minutes, not to
+            // re-implement branch protection.
+            if ((state === 'OPEN/UNKNOWN' || state === 'OPEN/BLOCKED') && requiredChecksGreen() === true) {
+              return true;
+            }
             return state === 'OPEN/CLEAN';
           } catch {
             // Unreadable: keep the refusal. The stand-down is the way past a blind spot here,

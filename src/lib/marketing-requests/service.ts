@@ -145,6 +145,7 @@ import {
   suspectedWholesalerNote,
 } from "@/lib/venues/wholesaler-venue-guard";
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
+import { loadAlsoKnownAsBatch } from "@/lib/customer-identity/server/profile";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
@@ -5465,7 +5466,31 @@ async function refreshLinksAfterPharmacyCompletion(input: {
   return promoted;
 }
 
+/**
+ * The confirmed names worth printing beside a venue: each one once, and never the venue's own.
+ *
+ * Pure and named, rather than inline, because both halves were found by reading a real screen
+ * rather than the code — and a rule learned that way is the kind that gets quietly dropped the
+ * next time this list is touched.
+ */
+export function uniqueAliasNames(names: readonly string[], ownName: string): string[] {
+  const own = (ownName ?? "").trim();
+  const seen = new Set<string>();
+  for (const raw of names) {
+    const name = (raw ?? "").trim();
+    if (!name || name === own) continue;
+    seen.add(name);
+  }
+  return [...seen];
+}
+
 function mapValidationReportRows(params: {
+  /**
+   * Confirmed cross-system names, keyed by marketing pharmacy id. Optional and defaulted, so the
+   * report builds identically when the identity read failed — the desk's own job does not depend
+   * on an annotation from another module.
+   */
+  aliasesByPharmacyId?: Map<string, string[]>;
   customers: MarketingCustomerDbRow[];
   distributorCodes: MarketingPharmacyDistributorCodeDbRow[];
   distributors: MarketingDistributorDbRow[];
@@ -5499,6 +5524,18 @@ function mapValidationReportRows(params: {
       distributorName: distributorCode
         ? distributorNames.get(distributorCode.distributorId) ?? "Unknown distributor"
         : null,
+      // Confirmed links only, and never a suggestion: the engine's maybes stay on the Super
+      // Admin's own review screen. A maybe printed beside a verdict that cannot be corrected is
+      // the worst place in the system to show one.
+      //
+      // 🔴 DEDUPED, AND THE VENUE'S OWN NAME DROPPED — both caught on production, not in review.
+      //    `othersOnMaster` removes the row ASKED ABOUT, by source and id; it cannot know that a
+      //    DIFFERENT row on the same master carries the identical spelling. Victoria hospital's
+      //    master holds four marketing rows and listed "صيدلية مستشفي فيكتوريا" twice, and
+      //    "السيد ابو الفتوح" read as an alias of itself. Neither is bad data — it is what a
+      //    human confirmed — but a venue "also known as" its own name reads as a defect and
+      //    teaches the desk to distrust the line.
+      alsoKnownAs: uniqueAliasNames(params.aliasesByPharmacyId?.get(pharmacy.id) ?? [], pharmacy.displayName),
       id: link.id,
       inferredFromHistory: isInferredFromHistory(link.validationNotes),
       pharmacy,
@@ -5995,7 +6032,17 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
   );
   const visibleCustomerIds = new Set(visibleCustomers.map((row) => row.id));
   const visibleLinks = links.filter((row) => visibleCustomerIds.has(row.customer_id));
+  // 🔴 READ AFTER THE VISIBILITY FILTER, and only for the pharmacies that survived it. A viewer
+  //    who may not see a customer must not learn one of its venues exists because an alias
+  //    mentions it — `access.ts`'s own rule, applied to the annotation as well as to the rows.
+  //    A failure costs the annotation and nothing else: the desk's job is the verdict.
+  const visiblePharmacyIds = [...new Set(visibleLinks.map((row) => row.pharmacy_id).filter(Boolean))];
+  const aliasesByPharmacyId = await loadAlsoKnownAsBatch("marketing", visiblePharmacyIds)
+    .then((found) => new Map([...found].map(([id, rows]) => [id, rows.map((row) => row.name).filter(Boolean)])))
+    .catch(() => new Map<string, string[]>());
+
   const report = mapValidationReportRows({
+    aliasesByPharmacyId,
     customers: visibleCustomers,
     distributorCodes: codeRows,
     distributors: distributorRows,
@@ -6978,6 +7025,10 @@ export async function createMarketingValidationRecord(
             : undefined;
 
           rows.push({
+            // A row the desk has just CREATED. Empty rather than looked up: this is a write path,
+            // the note is not part of what the desk decides, and the next workspace load fills it.
+            // Empty here can only ever understate — it never asserts a link that was not confirmed.
+            alsoKnownAs: [],
             customer,
             // A REUSED link can be a desk validation just as easily as a backfill one.
             deskValidated: isDeskValidated(reusedLink.validationNotes),
@@ -7193,6 +7244,10 @@ export async function createMarketingValidationRecord(
         const distributorRow = vendorCode ? distributorsById.get(vendorCode.distributorId) : undefined;
 
         rows.push({
+          // A row the desk has just CREATED. Empty rather than looked up: this is a write path,
+          // the note is not part of what the desk decides, and the next workspace load fills it.
+          // Empty here can only ever understate — it never asserts a link that was not confirmed.
+          alsoKnownAs: [],
           customer,
           // Read from the notes for the same reason as `inferredFromHistory` below: one rule, not
           // one rule and one assumption. An on-behalf submission writes the desk marker here.
