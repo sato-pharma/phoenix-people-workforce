@@ -172,6 +172,7 @@ export function PlanWeekPanel({
   query,
   reviewerSentence,
   seatId,
+  section,
   selectedDay,
   showProblems,
   showSpread,
@@ -222,6 +223,13 @@ export function PlanWeekPanel({
   /** "Ahmed Samir reviews it." */
   reviewerSentence: string;
   seatId: string;
+  /**
+   * The rep's step form (owner, 2026-10-02) shows the week a part at a time: "days" is step 2 (the
+   * week's days, and suggest or copy the week), "day" is step 3 (one day's customers), "send" is step
+   * 4 (where the week stands, Send this week, Ask to edit). Unset is the whole week at once — the
+   * manager reviewing from Team, whose board is unchanged.
+   */
+  section?: "days" | "day" | "send";
   selectedDay: PlanDayView;
   showProblems: boolean;
   showSpread: boolean;
@@ -271,6 +279,13 @@ export function PlanWeekPanel({
         )
       : weekClosedReason(week);
 
+  const whole = section === undefined;
+  const showHeader = whole || section === "send";
+  const showWeekSuggest = whole || section === "days";
+  const showDays = whole || section === "days" || section === "send";
+  const showDay = whole || section === "day";
+  const showClose = whole || section === "send";
+
   const facts: Array<{ label: string; value: string }> = [{ label: "Due", value: week.dueOnLabel }];
   if (plan?.submittedAt) {
     facts.push({
@@ -287,6 +302,24 @@ export function PlanWeekPanel({
 
   return (
     <div className="min-w-0">
+      {section === "days" ? (
+        // Step 2's line on the week it is about: its days, what is placed, and where it stands.
+        <CrmBlock>
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="break-words text-lg font-black leading-tight text-slate-950">{weekLabel(week.weekStart)}</p>
+              <p className="mt-1 break-words text-sm font-bold text-slate-700">
+                {countText(totals.AM)} AM · {countText(totals.PM)} PM placed this week
+              </p>
+            </div>
+            <span className="flex max-w-full flex-wrap gap-1">
+              <CrmPill tone={PLAN_STATUS_TONE[status ?? "none"]}>{week.statusLabel}</CrmPill>
+              {dirty ? <CrmPill tone="orange">Unsaved changes</CrmPill> : null}
+            </span>
+          </div>
+        </CrmBlock>
+      ) : null}
+      {showHeader ? (
       <CrmBlock
         actions={
           <span className="flex max-w-full flex-wrap gap-1">
@@ -419,6 +452,7 @@ export function PlanWeekPanel({
           )
         ) : null}
       </CrmBlock>
+      ) : null}
 
       {hold === "changed" ? (
         <CrmBlock className="border-t border-slate-100">
@@ -452,7 +486,7 @@ export function PlanWeekPanel({
         </CrmBlock>
       ) : null}
 
-      {editable || suggest ? (
+      {showWeekSuggest && (editable || suggest) ? (
         <CrmBlock className="border-t border-slate-100" title={editable ? "Suggest or copy the week" : "Suggest the week"}>
           <div className="grid min-w-0 gap-4 lg:grid-cols-2">
             {suggest ? (
@@ -481,6 +515,7 @@ export function PlanWeekPanel({
         </CrmBlock>
       ) : null}
 
+      {showDays ? (
       <CrmBlock className="border-t border-slate-100" title="Days">
         <CrmChoice
           columns={3}
@@ -507,7 +542,9 @@ export function PlanWeekPanel({
           value={selectedDay.date}
         />
       </CrmBlock>
+      ) : null}
 
+      {showDay ? (
       <PlanDayPanel
         activities={dayActivities}
         caps={caps}
@@ -558,8 +595,9 @@ export function PlanWeekPanel({
         tints={tints}
         today={today}
       />
+      ) : null}
 
-      {plan ? (
+      {showClose && plan ? (
         <PlanDecision
           approved={status === "approved"}
           busy={decisionBusy(busy)}
@@ -573,7 +611,7 @@ export function PlanWeekPanel({
         />
       ) : null}
 
-      {editable && placed > 0 ? (
+      {showClose && editable && placed > 0 ? (
         <CrmBlock className="border-t border-slate-100">
           <p className="break-words text-xs font-semibold leading-5 text-slate-500">
             {plural(week.days.filter((day) => dayCountsOf(day).AM + dayCountsOf(day).PM > 0).length, "day", "days")} of {countText(week.days.length)} planned.

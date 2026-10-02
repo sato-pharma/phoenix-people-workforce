@@ -34,6 +34,7 @@ import {
   crmInputClassName,
   crmTextareaClassName,
 } from "@/components/phoenix-crm/ui";
+import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
 import type { VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
@@ -285,6 +286,8 @@ export function OutOfPlanReason({
   const [reason, setReason] = useState(initialReason);
   const [problem, setProblem] = useState<string | null>(null);
   const length = reason.trim().length;
+  // Inside Add visit's step form the form's own foot carries Back: one Back, never two.
+  const framed = useInsideCrmStepForm();
 
   function next() {
     if (length < UNPLANNED_REASON_MIN) {
@@ -329,7 +332,7 @@ export function OutOfPlanReason({
           <CrmButton onClick={next} variant="primary">
             Continue
           </CrmButton>
-          <CrmButton onClick={onBack}>Back</CrmButton>
+          {framed ? null : <CrmButton onClick={onBack}>Back</CrmButton>}
         </div>
       </CrmBlock>
     </CrmPanel>

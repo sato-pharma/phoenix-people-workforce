@@ -16,6 +16,7 @@ import { ArrowLeft, ChevronDown, CircleDashed, LoaderCircle, Search } from "luci
 
 import { cn } from "@/lib/utils";
 import { countText, type Tone } from "@/components/phoenix-crm/format";
+import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
 
 export const crmPanelClassName = "rounded-none border border-slate-200/90 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.07)]";
 
@@ -43,8 +44,10 @@ export function CrmPanel({
   title?: ReactNode;
 }) {
   const hasHeader = Boolean(title || eyebrow || description || actions);
+  // Inside the step form the form IS the card: a screen keeps its content and loses only its frame.
+  const framed = useInsideCrmStepForm();
   return (
-    <section className={cn(crmPanelClassName, "min-w-0", className)}>
+    <section className={cn(framed ? undefined : crmPanelClassName, "min-w-0", className)}>
       {hasHeader ? (
         <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
           <div className="min-w-0">
@@ -453,6 +456,8 @@ export function CrmCheck({
 
 /** The bar above a screen opened from a list (Add Visit, one customer, one plan day). */
 export function CrmBackBar({ backLabel = "Back", onBack, title }: { backLabel?: string; onBack: () => void; title: ReactNode }) {
+  // Inside the step form, Back sits in the form's own foot and the step's heading names the screen.
+  if (useInsideCrmStepForm()) return null;
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
       <CrmButton onClick={onBack} size="sm" variant="ghost">

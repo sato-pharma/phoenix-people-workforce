@@ -17,7 +17,7 @@
  * straight on the new customer.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { UserPlus } from "lucide-react";
 
 import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
@@ -99,6 +99,10 @@ export function OutOfListEntry({
   const [sameName, setSameName] = useState(false);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+
+  // Every way out lets the photo's preview go — this screen's own Back, the step form's Back (which
+  // never passes through `close`), a saved validation — and so does a photo taken again.
+  useEffect(() => () => releaseCapturedPhoto(draft.photo), [draft.photo]);
 
   const waiting = customers.filter((customer) => customer.outside);
   const cleanName = normalizedName(name);
