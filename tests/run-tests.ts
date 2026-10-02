@@ -1800,7 +1800,10 @@ import { runMarketingRequestCustomerScopeGuardTests } from "./marketing-request-
 import { runMarketingSalesCodeSyncRerunTests } from "./marketing-sales-code-sync-rerun.test.ts";
 import { runTerritoryAreaIndexTests } from "./territory-area-index.test.ts";
 import { runTerritoryDirectValueTests } from "./territory-direct-value.test.ts";
-import { runTerritoryUnitsEffectiveTests } from "./territory-units-effective.test.ts";
+import {
+  runDirectoryRollupUnitColumnsAgreeTests,
+  runTerritoryUnitsClosingBasisTests,
+} from "./territory-units-closing-basis.test.ts";
 import { runTerritoryUnitBarsValueTests } from "./territory-unit-bars-value.test.ts";
 import { runTerritoryAsofAndLinePickerTests } from "./territory-asof-and-line-picker.test.ts";
 
@@ -6479,8 +6482,13 @@ await runTest(
 );
 
 await runTest(
-  "Territory Management area pharmacies count units on the credited effective-units basis, matching value — never raw total_qty (41 split El Qema/city-rule rows disagreed, gap 1,772.08 units)",
-  runTerritoryUnitsEffectiveTests,
+  "Territory Management area pharmacies count units on the MONTHLY CLOSING's basis — total_qty for the units AND for the non-direct value, so the two can never disagree and the page can never sit under the published closing again (effective_units carried El Qema's own 20%/22% trade discount in the pack count on 41 rows, 1,772.08 packs / 478,461.60 EGP; a direct order still takes its source value)",
+  runTerritoryUnitsClosingBasisTests,
+);
+
+await runTest(
+  "both writers of the customer directory rollup compute effective_units and total_qty from the SAME expression — the premise Territory Management's closing basis rests on, so making one a genuine credited-to-area basis re-opens that decision instead of silently inheriting it",
+  runDirectoryRollupUnitColumnsAgreeTests,
 );
 
 await runTest(

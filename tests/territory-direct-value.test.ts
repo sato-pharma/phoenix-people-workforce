@@ -46,15 +46,26 @@ export function runTerritoryDirectValueTests() {
   // the negative below rejects both.
   const PRICE = String.raw`coalesce\((?:p\.factory_price|public\.phx_factory_price\([^)]*\)), 0\)`;
 
+  // The UNIT column moved on 2026-10-02, for the same reason the price source moved before it. The
+  // function read `effective_units` on the belief that it is the credited-to-area basis produced by
+  // El Qema's warehouse bands and the city rule. It is not: both writers of the rollup compute
+  // `sum(coalesce(r.qty, 0))` for `effective_units` AND for `total_qty`, so the two are identical by
+  // construction, and the only 41 rows that ever differed carried a distributor's own trade discount
+  // in the PACK count — which left this page 20% under the published closing on El Qema's August.
+  // So the body may read either column. What this pins is still the SPLIT — a direct order takes
+  // `direct_value`, and only a non-direct row is priced at all — and the negative below rejects BOTH
+  // spellings, so a migration that prices every row at factory goes red whichever column it names.
+  const UNITS = String.raw`r\.(?:effective_units|total_qty)`;
+
   assert.ok(
     new RegExp(
-      String.raw`case when r\.is_direct then coalesce\(r\.direct_value, 0\) else r\.effective_units \* ${PRICE} end`,
+      String.raw`case when r\.is_direct then coalesce\(r\.direct_value, 0\) else ${UNITS} \* ${PRICE} end`,
     ).test(sql),
     `${newest}: a direct order must take its source value (direct_value), never units × factory price — ` +
       "the Territory Management pharmacies list overstated direct sales by 7-9% while it did",
   );
   assert.ok(
-    !new RegExp(String.raw`,\s*r\.effective_units \* ${PRICE} as row_value`).test(sql),
+    !new RegExp(String.raw`,\s*${UNITS} \* ${PRICE} as row_value`).test(sql),
     `${newest}: every row, direct ones included, is priced at factory again`,
   );
   assert.ok(
