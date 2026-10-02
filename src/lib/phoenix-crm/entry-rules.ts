@@ -318,6 +318,11 @@ export type VisitDraft = CapturedFix & {
   kind: PhoenixCrmVisitKind;
   managerHrId: string | null;
   seniorHrId: string | null;
+  /**
+   * The line's product manager who came along. Whether he IS one of the line's is not decided here —
+   * he holds no seat, so only the server's own list can say (scope.ts `resolveVisitParticipants`).
+   */
+  productManagerHrId: string | null;
   products: string[];
   /**
    * The pharmacy the rep took feedback from before the customer; he types it, so it is free text.
@@ -450,13 +455,19 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   if (!isUuid(body.customerId)) return { ok: false, error: "Choose the customer you visited." };
   const kind = String(body.kind ?? "single").trim();
-  if (kind !== "single" && kind !== "double" && kind !== "chain") return { ok: false, error: "Choose who was on the visit." };
+  if (kind !== "single" && kind !== "double" && kind !== "product_manager" && kind !== "chain") {
+    return { ok: false, error: "Choose who was on the visit." };
+  }
   const managerHrId = cleanText(body.managerHrId, 40);
   const seniorHrId = cleanText(body.seniorHrId, 40);
+  const productManagerHrId = cleanText(body.productManagerHrId, 40);
   if ((kind === "double" || kind === "chain") && !managerHrId) {
     return { ok: false, error: "Choose the district manager who was on the visit." };
   }
   if (kind === "chain" && !seniorHrId) return { ok: false, error: "Choose the senior manager who was on the visit." };
+  if (kind === "product_manager" && !productManagerHrId) {
+    return { ok: false, error: "Choose the product manager who was on the visit." };
+  }
 
   // Optional (owner, 2026-09-29): the box stays on the form, and a visit is never blocked on it.
   const pharmacyName = cleanText(body.pharmacyName, PHARMACY_NAME_MAX);
@@ -497,8 +508,11 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
       ...fix.value,
       customerId: String(body.customerId).toLowerCase(),
       kind,
-      managerHrId: kind === "single" ? null : managerHrId,
+      // Each slot is cleared by the kind, so a stale pick on the form can never ride along: a product
+      // manager is on a `product_manager` visit and on no other, and a manager on no PM visit.
+      managerHrId: kind === "single" || kind === "product_manager" ? null : managerHrId,
       seniorHrId: kind === "chain" ? seniorHrId : null,
+      productManagerHrId: kind === "product_manager" ? productManagerHrId : null,
       products,
       pharmacyName,
       productAvailability,

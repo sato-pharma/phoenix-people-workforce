@@ -59,9 +59,9 @@ import {
   isVisitObjection,
   type LastNextStep,
 } from "@/lib/phoenix-crm/visit-outcome";
-import { raisesVisitAsk } from "@/lib/phoenix-crm/visit-ask-rules";
+import { raisesVisitAsk, VISIT_ASK_KIND_LABELS } from "@/lib/phoenix-crm/visit-ask-rules";
 import { describeDayWindows, isPlanSentForReview, isUuid, planDayStatus } from "@/lib/phoenix-crm/plan-rules";
-import { managerChain, resolveVisitParticipants, territoryReviewer, type OrgIndex } from "@/lib/phoenix-crm/scope";
+import { managerChain, personKey, resolveVisitParticipants, territoryReviewer, type OrgIndex } from "@/lib/phoenix-crm/scope";
 import { canWriteAsRep, isLocationBlind, readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -74,7 +74,7 @@ import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/pla
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
-import { raiseVisitAskFromVisit, visitAskSavedNote } from "@/lib/phoenix-crm/server/visit-asks";
+import { loadLineProductManagers, raiseVisitAskFromVisit, visitAskSavedNote } from "@/lib/phoenix-crm/server/visit-asks";
 import { describeTerritory, personSeatTitle, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import {
@@ -102,6 +102,8 @@ export type VisitLocationFlag = "ok" | "far" | "weak_gps" | "no_place";
 const KIND_LABEL: Record<PhoenixCrmVisitKind, string> = {
   single: "Single visit",
   double: "Double visit",
+  // The ask's own wording, so the request a rep sent and the visit it became read alike.
+  product_manager: VISIT_ASK_KIND_LABELS.product_manager,
   chain: "Chain visit",
 };
 
@@ -143,6 +145,8 @@ export type VisitRow = {
   repName: string | null;
   managerName: string | null;
   seniorName: string | null;
+  /** The line's product manager who came along, on a `product_manager` visit. Null on every other. */
+  productManagerName: string | null;
   /**
    * Each one's REAL JOB TITLE, as the organogram states it — "Medical Representative", "District
    * Sales Manager", "National Sales Manager" (owner, 2026-10-01: *"put actual titles from the
@@ -157,6 +161,12 @@ export type VisitRow = {
   repTitle: string | null;
   managerTitle: string | null;
   seniorTitle: string | null;
+  /**
+   * A product manager holds NO SEAT in the organogram, so the tree has no title for him. His APP ROLE
+   * is the title — "Product Manager", "Group Product Manager", or the Marketing Manager on CNS — and
+   * it is read from the same list that offered him.
+   */
+  productManagerTitle: string | null;
   enteredByName: string;
   /**
    * Entered FOR the rep by the Super Admin, who was not on the visit — a visit the rep missed logging
@@ -216,7 +226,7 @@ export type VisitOutcomeView = {
 };
 
 const VISIT_COLUMNS =
-  "id, visit_date, captured_at, customer_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, entered_by_hr_id, products, " +
+  "id, visit_date, captured_at, customer_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, product_manager_hr_id, entered_by_hr_id, products, " +
   "comment, pharmacy_name, product_availability, photo_path, voice_note_path, voice_note_seconds, " +
   "accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, unplanned_kind, " +
   "next_step, next_step_on, objection, objection_note, samples_given, " +
@@ -224,7 +234,7 @@ const VISIT_COLUMNS =
   "unplanned:phoenix_crm_unplanned_visits!visit_id(status, clarification)";
 
 function visitKind(value: unknown): PhoenixCrmVisitKind {
-  return value === "double" || value === "chain" ? value : "single";
+  return value === "double" || value === "chain" || value === "product_manager" ? value : "single";
 }
 
 function locationFlag(value: unknown): VisitLocationFlag {
@@ -273,6 +283,7 @@ function visitPeople(rows: ReadonlyArray<Row>): Array<string | null> {
     textOrNull(row.rep_hr_id),
     textOrNull(row.manager_hr_id),
     textOrNull(row.senior_hr_id),
+    textOrNull(row.product_manager_hr_id),
     textOrNull(row.entered_by_hr_id),
   ]);
 }
@@ -282,7 +293,29 @@ function visitPeople(rows: ReadonlyArray<Row>): Array<string | null> {
  * (`isLocationBlind`): the location fields say nothing and the phone-clock mark is off — no distance,
  * no flag, no check (Golden Rule #1, owner 2026-09-29).
  */
-function mapVisitRow(row: Row, names: PeopleNames, options: { blind: boolean; org: OrgIndex }): VisitRow {
+/**
+ * Each product manager who could have been on this seat's visits, by his APP ROLE — the title the
+ * organogram cannot give, because he holds no seat in it at all. One cached read
+ * (`loadLineProductManagers`, the same list that offered him), and an EMPTY map where the line cannot
+ * be read, which prints no title rather than a wrong one.
+ */
+async function productManagerRolesFor(org: OrgIndex, seatId: string): Promise<ReadonlyMap<string, string>> {
+  const seat = org.seats.get(seatId);
+  if (!seat) return new Map();
+  const managers = await loadLineProductManagers(seat);
+  const out = new Map<string, string>();
+  for (const manager of managers) {
+    const hrId = personKey(manager.hrId);
+    if (hrId) out.set(hrId, manager.role);
+  }
+  return out;
+}
+
+function mapVisitRow(
+  row: Row,
+  names: PeopleNames,
+  options: { blind: boolean; org: OrgIndex; productManagerRoles?: ReadonlyMap<string, string> },
+): VisitRow {
   const kind = visitKind(row.kind);
   const flag = locationFlag(row.location_flag);
   const skew = numberOrNull(row.device_skew_minutes);
@@ -294,6 +327,10 @@ function mapVisitRow(row: Row, names: PeopleNames, options: { blind: boolean; or
   // this territory's manager chain on purpose: a manager who moved line since the visit, or who went
   // out with a rep outside his own district, still has a seat and still has a title.
   const title = (value: unknown) => personSeatTitle(options.org, textOrNull(value));
+  const appRole = (value: unknown) => {
+    const hrId = personKey(textOrNull(value));
+    return hrId ? options.productManagerRoles?.get(hrId) ?? null : null;
+  };
   const unplannedKind = row.is_unplanned === true ? (isUnplannedKind(row.unplanned_kind) ? row.unplanned_kind : "out_of_plan") : null;
   const enteredByAdmin = isEnteredForRep({ enteredBy: row.entered_by_hr_id, rep: row.rep_hr_id, manager: row.manager_hr_id, senior: row.senior_hr_id });
   return {
@@ -308,9 +345,12 @@ function mapVisitRow(row: Row, names: PeopleNames, options: { blind: boolean; or
     repName: person(row.rep_hr_id),
     managerName: person(row.manager_hr_id),
     seniorName: person(row.senior_hr_id),
+    productManagerName: person(row.product_manager_hr_id),
     repTitle: title(row.rep_hr_id),
     managerTitle: title(row.manager_hr_id),
     seniorTitle: title(row.senior_hr_id),
+    // His app role, because the organogram holds no seat for him to take a title from.
+    productManagerTitle: appRole(row.product_manager_hr_id),
     enteredByName: nameOf(names, textOrNull(row.entered_by_hr_id)),
     enteredByAdmin,
     products: Array.isArray(row.products) ? row.products.map(String) : [],
@@ -383,16 +423,17 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
   const today = viewer.visitDay;
   const date = isIsoDay(raw.date) && raw.date <= today ? raw.date : today;
   const rows = await loadVisitRows(seat.seatId, isTest, date);
-  const [names, activity] = await Promise.all([
+  const [names, activity, productManagerRoles] = await Promise.all([
     loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...visitPeople(rows)]),
     loadDayActivityOn(seat.seatId, isTest, date),
+    productManagerRolesFor(viewer.org, seat.seatId),
   ]);
   const blind = isLocationBlind(viewer, seat);
   return {
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     date,
-    visits: rows.map((row) => mapVisitRow(row, names, { blind, org: viewer.org })),
+    visits: rows.map((row) => mapVisitRow(row, names, { blind, org: viewer.org, productManagerRoles })),
     canAdd: date === today && canEnterVisits(viewer, seat.seatId, isTest),
     dayActivity: activity,
     canSetDayActivity: date === today && canWriteAsRep(viewer, seat, isTest),
@@ -483,6 +524,12 @@ export type VisitPerson = {
   position: number;
 };
 
+/**
+ * A product manager a rep may name on a visit. No `position`, deliberately: position is a rung on the
+ * territory's manager chain, and he is on no rung of it — he holds no seat in the organogram at all.
+ */
+export type VisitProductManager = { hrId: string; name: string; title: string };
+
 export type VisitFormView = {
   territory: TerritorySummary;
   isTest: boolean;
@@ -492,6 +539,12 @@ export type VisitFormView = {
   managers: VisitPerson[];
   /** Entering as a manager: the viewer's own position in `managers` (they are the visit's manager). */
   viewerPosition: number | null;
+  /**
+   * The product managers of the territory's LINE, for "A product manager" on "Who was on the visit"
+   * (owner, 2026-10-02) — the same list the rep's own ask offers (`loadLineProductManagers`). Empty
+   * where the line has none, and then the choice is not offered at all rather than offered greyed.
+   */
+  productManagers: VisitProductManager[];
   /** The line's discussed choices — the family names — for "Products discussed". */
   products: string[];
   /** The same products grouped by family, for the finer per-product pharmacy-stock check. */
@@ -620,8 +673,8 @@ async function loadLastVisits(
  */
 export async function loadVisitRowsForDay(seatId: string, isTest: boolean, date: string, options: { blind: boolean; org: OrgIndex }): Promise<VisitRow[]> {
   const rows = await loadVisitRows(seatId, isTest, date);
-  const names = await loadPeopleNames(visitPeople(rows));
-  return rows.map((row) => mapVisitRow(row, names, options));
+  const [names, productManagerRoles] = await Promise.all([loadPeopleNames(visitPeople(rows)), productManagerRolesFor(options.org, seatId)]);
+  return rows.map((row) => mapVisitRow(row, names, { ...options, productManagerRoles }));
 }
 
 /**
@@ -706,11 +759,16 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     // The other days of this week each customer stands on the SENT plan, for the reason Out of plan
     // fills in by itself (owner, 2026-10-02). One more read of the same wave, never awaited after it.
     loadPlannedOtherDays(seat.seatId, isTest, today),
+    // The line's product managers, for "A product manager" on "Who was on the visit" (owner,
+    // 2026-10-02). The same cached list the rep's ask offers, so the two can never disagree about who
+    // his product managers are; on the wave because it never blocks anything else.
+    loadLineProductManagers(seat),
   ]);
   // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
   wave.catch(() => undefined);
   await ensured;
-  const [{ customers, placesByCustomer }, visitCounts, planDay, visitRows, productFamilies, pharmacies, lastVisits, names, plannedOtherDays] = await wave;
+  const [{ customers, placesByCustomer }, visitCounts, planDay, visitRows, productFamilies, pharmacies, lastVisits, names, plannedOtherDays, lineProductManagers] =
+    await wave;
   // The SENT set, and only it, is what the picker offers and what the ordering follows — a draft is the
   // rep's own to edit today, so counting one would let him place the doctor at the door and never be off
   // plan (plan-rules.ts `isPlanSentForReview`). The count he has SAVED rides beside it, for the sentence.
@@ -768,6 +826,10 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   if (!seat.lineCode) blockedReason = "This territory has no line in the organogram, so visits cannot be saved.";
   else if (products.length === 0) blockedReason = `No products are on file for ${seat.lineName ?? "this line"} yet, so a visit cannot record the products discussed.`;
   const blind = isLocationBlind(viewer, seat);
+  // Their names are read apart from the wave's: the wave's list is built from the day's visits and the
+  // chain, and a product manager is in neither — he holds no seat at all.
+  const productManagerNames = await loadPeopleNames(lineProductManagers.map((manager) => manager.hrId));
+  const productManagerRoles = new Map(lineProductManagers.map((manager) => [personKey(manager.hrId) ?? manager.hrId, manager.role]));
 
   return {
     territory: describeTerritory(viewer.org, seat, names),
@@ -781,12 +843,19 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       position: member.position,
     })),
     viewerPosition: enteredAs === "manager" ? (chain.find((member) => member.hrId === viewer.hrId)?.position ?? null) : null,
+    productManagers: lineProductManagers.map((manager) => ({
+      hrId: manager.hrId,
+      name: nameOf(productManagerNames, manager.hrId),
+      // His APP ROLE is his title here: "Product Manager", "Group Product Manager", or the Marketing
+      // Manager on CNS. The organogram holds no seat for him, so it has no title to give.
+      title: manager.role,
+    })),
     products,
     productFamilies,
     pharmacies,
     rules: { visitFarMeters: settings.visitFarMeters, weakGpsMeters: settings.weakGpsMeters },
     customers: options,
-    todayVisits: visitRows.map((row) => mapVisitRow(row, names, { blind, org: viewer.org })),
+    todayVisits: visitRows.map((row) => mapVisitRow(row, names, { blind, org: viewer.org, productManagerRoles })),
     planToday: { status: planDay.status, saved: planDay.customerIds.length },
     blockedReason,
   };
@@ -833,6 +902,10 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
     kind: visit.kind,
     managerHrId: visit.managerHrId,
     seniorHrId: visit.seniorHrId,
+    productManagerHrId: visit.productManagerHrId,
+    // Read here rather than trusted from the form: a product manager holds no seat, so the organogram
+    // cannot check him, and this list is the only thing that can say he is one of HIS line's.
+    productManagers: visit.kind === "product_manager" ? await loadLineProductManagers(seat) : [],
   });
   if (!participants.ok) throw validationError(participants.error);
 
@@ -919,6 +992,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       rep_hr_id: participants.value.repHrId,
       manager_hr_id: participants.value.managerHrId,
       senior_hr_id: participants.value.seniorHrId,
+      product_manager_hr_id: participants.value.productManagerHrId,
       products: visit.products,
       pharmacy_name: visit.pharmacyName,
       product_availability: productAvailability,

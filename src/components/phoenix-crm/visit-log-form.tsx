@@ -72,7 +72,7 @@ import {
   UNSAVED_VOICE_NOTE_WARNING,
 } from "@/lib/phoenix-crm/unsaved-voice-note";
 import { isFollowUp, OBJECTION_NOTE_MAX, VISIT_NEXT_STEPS, VISIT_OBJECTIONS, type VisitNextStep, type VisitObjection } from "@/lib/phoenix-crm/visit-outcome";
-import type { SavedVisit, VisitCustomerOption, VisitFormView, VisitPerson } from "@/lib/phoenix-crm/view-types";
+import type { SavedVisit, VisitCustomerOption, VisitFormView, VisitPerson, VisitProductManager } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
 /** The kind of visit he chose on the first steps. The server re-decides it from the plan's own history. */
@@ -139,10 +139,13 @@ type Participants = {
   manager: VisitPerson | null;
   seniorOptions: VisitPerson[];
   senior: VisitPerson | null;
+  /** The line's product managers, and the one picked. Empty when entering as a manager (it is the rep's). */
+  productManagerOptions: VisitProductManager[];
+  productManager: VisitProductManager | null;
 };
 
 /** The chosen person, or the only one there is. */
-function pickPerson(options: ReadonlyArray<VisitPerson>, hrId: string | null): VisitPerson | null {
+function pickPerson<T extends { hrId: string }>(options: ReadonlyArray<T>, hrId: string | null): T | null {
   return options.find((person) => person.hrId === hrId) ?? (options.length === 1 ? options[0] : null);
 }
 
@@ -152,7 +155,13 @@ function pickPerson(options: ReadonlyArray<VisitPerson>, hrId: string | null): V
  * is the visit's manager, goes with the territory's rep, and for a chain picks a manager above
  * themself.
  */
-function participantsOf(form: VisitFormView, kind: PhoenixCrmVisitKind, managerHrId: string | null, seniorHrId: string | null): Participants {
+function participantsOf(
+  form: VisitFormView,
+  kind: PhoenixCrmVisitKind,
+  managerHrId: string | null,
+  seniorHrId: string | null,
+  productManagerHrId: string | null,
+): Participants {
   const people = form.managers;
   if (form.enteredAs === "manager") {
     const me = people.find((person) => person.position === form.viewerPosition) ?? null;
@@ -173,6 +182,9 @@ function participantsOf(form: VisitFormView, kind: PhoenixCrmVisitKind, managerH
       manager: me,
       seniorOptions,
       senior: pickPerson(seniorOptions, seniorHrId),
+      // A visit with a product manager is the REP's — he is the one the product manager went out with.
+      productManagerOptions: [],
+      productManager: null,
     };
   }
 
@@ -189,6 +201,12 @@ function participantsOf(form: VisitFormView, kind: PhoenixCrmVisitKind, managerH
         disabled: people.length === 0,
       },
       {
+        value: "product_manager",
+        label: "A product manager",
+        note: form.productManagers.length > 0 ? "With a product manager of my line" : "No product manager covers your line's products yet",
+        disabled: form.productManagers.length === 0,
+      },
+      {
         value: "chain",
         label: "Chain visit",
         note: people.length > 1 ? "With a manager and a senior manager" : "Needs a manager and a senior manager above this territory",
@@ -199,10 +217,12 @@ function participantsOf(form: VisitFormView, kind: PhoenixCrmVisitKind, managerH
     manager,
     seniorOptions,
     senior: pickPerson(seniorOptions, seniorHrId),
+    productManagerOptions: form.productManagers,
+    productManager: pickPerson(form.productManagers, productManagerHrId),
   };
 }
 
-function personOptions(people: ReadonlyArray<VisitPerson>): Array<CrmChoiceOption<string>> {
+function personOptions(people: ReadonlyArray<{ hrId: string; name: string; title: string }>): Array<CrmChoiceOption<string>> {
   return people.map((person) => ({ value: person.hrId, label: person.name, note: person.title }));
 }
 
@@ -313,6 +333,7 @@ export function VisitLogForm({
   const [kind, setKind] = useState<PhoenixCrmVisitKind>("single");
   const [managerHrId, setManagerHrId] = useState<string | null>(null);
   const [seniorHrId, setSeniorHrId] = useState<string | null>(null);
+  const [productManagerHrId, setProductManagerHrId] = useState<string | null>(null);
   const [products, setProducts] = useState<string[]>(() => carriedProducts(customer));
   const [pharmacyName, setPharmacyName] = useState("");
   const [availability, setAvailability] = useState<Record<string, ProductAvailability>>({});
@@ -374,13 +395,15 @@ export function VisitLogForm({
     onBack();
   }
 
-  const who = participantsOf(form, kind, managerHrId, seniorHrId);
+  const who = participantsOf(form, kind, managerHrId, seniorHrId, productManagerHrId);
   const commentLength = comment.trim().length;
 
   // Each required step, answered or not — the same tests `draft` applies, in the same order, so the
   // header marks and the bar's jump agree with what Log visit would refuse.
   const reasonDone = visitType !== "out_of_plan" || unplannedReason.trim().length >= UNPLANNED_REASON_MIN;
-  const whoDone = kind === "single" || (who.manager !== null && (kind !== "chain" || who.senior !== null));
+  const whoDone =
+    kind === "single" ||
+    (kind === "product_manager" ? who.productManager !== null : who.manager !== null && (kind !== "chain" || who.senior !== null));
   const productsDone = products.length > 0;
   const commentDone = commentLength > 0;
   // A customer already visited today is refused before any step, and there is no box that answers it.
@@ -493,7 +516,10 @@ export function VisitLogForm({
     if (visitType === "out_of_plan" && unplannedReason.trim().length < UNPLANNED_REASON_MIN) {
       return { ok: false, problem: "Write why you visited this customer off your plan." };
     }
-    if (kind !== "single" && !who.manager) {
+    if (kind === "product_manager" && !who.productManager) {
+      return { ok: false, problem: "Choose the product manager who was on the visit." };
+    }
+    if (kind !== "single" && kind !== "product_manager" && !who.manager) {
       return {
         ok: false,
         problem: form.enteredAs === "manager" ? "You are not a manager of this territory. Reload the page." : "Choose the manager who was on the visit.",
@@ -516,8 +542,9 @@ export function VisitLogForm({
         visitType,
         unplannedReason: visitType === "out_of_plan" ? unplannedReason.trim() : null,
         kind,
-        managerHrId: kind === "single" ? null : (who.manager?.hrId ?? null),
+        managerHrId: kind === "single" || kind === "product_manager" ? null : (who.manager?.hrId ?? null),
         seniorHrId: kind === "chain" ? (who.senior?.hrId ?? null) : null,
+        productManagerHrId: kind === "product_manager" ? (who.productManager?.hrId ?? null) : null,
         products,
         // Optional since 2026-09-29: the box stays, a visit is never blocked on it.
         pharmacyName: pharmacyName.trim() || null,
@@ -610,7 +637,14 @@ export function VisitLogForm({
   const check = draft("", null);
 
   const kindLabel = who.options.find((option) => option.value === kind)?.label ?? "Single visit";
-  const whoLine = [kindLabel, kind !== "single" ? who.manager?.name : null, kind === "chain" ? who.senior?.name : null].filter(Boolean).join(" · ");
+  const whoLine = [
+    kindLabel,
+    kind === "double" || kind === "chain" ? who.manager?.name : null,
+    kind === "chain" ? who.senior?.name : null,
+    kind === "product_manager" ? who.productManager?.name : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const objectionLabel = objection ? (VISIT_OBJECTIONS.find((entry) => entry.key === objection)?.label ?? null) : null;
   const nextStepLabel = nextStep ? (VISIT_NEXT_STEPS.find((entry) => entry.key === nextStep)?.label ?? null) : null;
   const leftLines = [...form.products.map((product) => ({ key: product, label: product })), ...SAMPLE_MATERIALS]
@@ -746,7 +780,7 @@ export function VisitLogForm({
       <CrmBlock actions={stepMark(whoDone ? "done" : "required")} className="border-t border-slate-100" title="2 · Who was on the visit">
         <div className="grid min-w-0 gap-3" id={STEP_WHO}>
           <CrmChoice
-            columns={3}
+            columns={4}
             label="Who was on the visit"
             onChange={(next) => {
               setProblem(null);
@@ -755,7 +789,22 @@ export function VisitLogForm({
             options={who.options.map((option) => ({ ...option, disabled: option.disabled || saving }))}
             value={kind}
           />
-          {kind !== "single" && form.enteredAs === "rep" ? (
+          {kind === "product_manager" && form.enteredAs === "rep" ? (
+            <CrmField label="The product manager">
+              {who.productManagerOptions.length > 0 ? (
+                <CrmChoice
+                  columns={2}
+                  label="The product manager"
+                  onChange={(value) => setProductManagerHrId(value)}
+                  options={personOptions(who.productManagerOptions).map((option) => ({ ...option, disabled: saving }))}
+                  value={who.productManager?.hrId ?? null}
+                />
+              ) : (
+                <p className="text-sm font-semibold text-slate-500">No product manager covers your line&apos;s products yet.</p>
+              )}
+            </CrmField>
+          ) : null}
+          {(kind === "double" || kind === "chain") && form.enteredAs === "rep" ? (
             <CrmField label="The manager">
               {who.managerOptions.length > 0 ? (
                 <CrmChoice

@@ -16,6 +16,7 @@ export type {
   VisitLocationFlag,
   VisitOutcomeView,
   VisitPerson,
+  VisitProductManager,
   VisitRow,
 } from "@/lib/phoenix-crm/server/visits";
 export type {
