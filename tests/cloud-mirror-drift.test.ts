@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { cloudMirrorDrift, cloudMirrorDriftReport } from "../scripts/cloud-mirror-drift.mjs";
+import { cloudMirrorDrift, cloudMirrorDriftReport, cloudMirrorSessionLines } from "../scripts/cloud-mirror-drift.mjs";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -39,6 +39,7 @@ import { stripComments } from "./support/comment-strip.ts";
  */
 
 const DOCTOR = "scripts/repo-doctor.mjs";
+const GUARD = ".claude/hooks/memory-index-guard.mjs";
 const flat = (path: string) => stripComments(readFileSync(path, "utf8")).replace(/\s+/g, " ");
 
 const m = (entries: Array<[string, string]>) => new Map(entries);
@@ -138,5 +139,52 @@ export function runCloudMirrorDriftTests() {
   assert.ok(
     /rev-parse", "--show-toplevel/.test(doctor),
     `${DOCTOR}: the mirror must come from the checkout being run in, not from primaryRoot`,
+  );
+
+  // ── 6. SessionStart: silent when current, loud when drifted ──────────────────────────────────
+  // repo-doctor speaks only when somebody runs it, and the moment that matters is the one where a
+  // session decides to send work to cloud — the start. An audit cannot stop a dispatch that has
+  // already happened, which is the same argument the memory-index budget makes in the same hook.
+  assert.deepEqual(
+    cloudMirrorSessionLines(clean),
+    [],
+    "🔴 SILENT when the mirror is current — a standing 'all good' line charges every request of the "
+      + "session to say nothing, and drift is the only actionable state",
+  );
+  assert.deepEqual(cloudMirrorSessionLines(null as never), [], "no reading at all is silence too, never a false alarm");
+
+  const session = cloudMirrorSessionLines(drift).join("\n");
+  assert.match(session, /CLOUD MIRROR IS STALE/);
+  assert.match(session, /3 of 3 mirrored memory files/);
+  // The WHY has to travel with it: this is not the session's own memory, it is what a CLOUD session
+  // reads instead of `~/.claude`, and that is the only reason a local session should care.
+  assert.match(session, /A CLOUD session reads the mirror, never ~\/\.claude/);
+  assert.match(session, /moved-on\.md/, "it names files, so a reader can judge urgency");
+  assert.match(session, /node scripts\/sync-cloud-context\.mjs/);
+
+  // Short on purpose — SessionStart context is charged to every request for the rest of the session,
+  // so the full list belongs to repo-doctor and this names at most three.
+  const manySession = cloudMirrorSessionLines(many);
+  assert.match(manySession.join("\n"), /and 11 more/, "a long list is summarised, never pasted into every request");
+  assert.ok(manySession.length <= 4, "the SessionStart form stays a handful of lines whatever the drift count");
+
+  // ── 7. The SessionStart hook's wiring ────────────────────────────────────────────────────────
+  const guard = flat(GUARD);
+  assert.ok(guard.includes("cloud-mirror-drift.mjs"), `${GUARD}: the SessionStart guard must load the shared decision`);
+  assert.ok(
+    /cloudMirrorSessionLines\(drift\)/.test(guard),
+    `${GUARD}: it must use the SessionStart form, not repo-doctor's long report`,
+  );
+  // A missing mirror is not drift and not "current" — the same under-claiming direction every other
+  // section of that hook takes.
+  assert.ok(
+    /fs\.existsSync\(mirrorDir\)/.test(guard),
+    `${GUARD}: a checkout with no mirror must be passed over, not reported either way`,
+  );
+  // The owner is told as well as the session: the cost of not knowing lands on him, as a cloud run
+  // that comes back having redone finished work.
+  assert.ok(
+    /mirrorDrifted > 0\)\s*\{\s*alarms\.push/.test(guard),
+    `${GUARD}: drift must reach the human through systemMessage, not only the session's context`,
   );
 }
