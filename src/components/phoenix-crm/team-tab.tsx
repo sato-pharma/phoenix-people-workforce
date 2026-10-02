@@ -1386,7 +1386,7 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
                 accent={row.readiness?.ready ? "border-l-emerald-500" : row.readiness ? "border-l-amber-500" : "border-l-slate-300"}
                 actions={openListButton(row.territory.seatId)}
                 key={row.territory.seatId}
-                meta={metaText(row.territory, team.viewerHrId, false)}
+                meta={[row.territory.regionName, metaText(row.territory, team.viewerHrId, false)].filter(Boolean).join(" · ")}
                 status={<ReadinessPill readiness={row.readiness} />}
                 title={row.territory.name}
               >

@@ -12,6 +12,7 @@ import {
   matchesQuery,
   NO_GRADE,
   specialityOf,
+  UNNAMED_BRICK,
   UNSPECIFIED,
 } from "../src/lib/phoenix-crm/customer-list-grouping.ts";
 import type { ListCustomer, ListPlace } from "../src/lib/phoenix-crm/server/list.ts";
@@ -93,6 +94,18 @@ export function runPhoenixCrmCustomerListBoardTests() {
   assert.equal(byRefBrick.heading, "Tanta 1", "the heading is the brick's NAME, never its code — the owner's naming rule");
   assert.equal(byRefBrick.areaName, "Gharbia");
   assert.equal(byRefBrick.mapped, true, "a known brick is a real brick: tinted, ordered with the mapped ones, never the amber 'not yet mapped'");
+
+  // A brick the master holds no name for keeps its id as the KEY and reads as words in the heading —
+  // the raw code reached the board heading, the Brick filter and the export (audit, 2026-10-02).
+  const unnamedPlaceBrick = groupOf(customer({ places: [place({ brickId: "BR-9", brickName: null })] }));
+  assert.equal(unnamedPlaceBrick.key, "BR-9", "the unnamed brick is still grouped by its id");
+  assert.equal(unnamedPlaceBrick.heading, UNNAMED_BRICK, "its heading is a name label, never the raw code");
+  assert.equal(unnamedPlaceBrick.mapped, true);
+  const unnamedRefBrick = groupOf(
+    customer({ places: [], reference: { address: null, city: null, zone: null, lastVisitedOn: null, brickId: "BR-10", brickName: " ", areaName: null } }),
+  );
+  assert.equal(unnamedRefBrick.key, "BR-10");
+  assert.equal(unnamedRefBrick.heading, UNNAMED_BRICK, "a blank reference brick name reads as the label too");
 
   // No brick anywhere, but a locality on the reference: fall back to that locality, NOT mapped, lowercased.
   const byRefCity = groupOf(customer({ places: [], reference: { address: null, city: "Tanta", zone: null, lastVisitedOn: null, brickId: null, brickName: null, areaName: null } }));

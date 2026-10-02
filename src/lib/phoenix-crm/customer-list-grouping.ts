@@ -11,6 +11,12 @@ import type { ListCustomer } from "@/lib/phoenix-crm/view-types";
 
 export const NO_GRADE = "No grade";
 export const UNSPECIFIED = "Unspecified";
+/**
+ * The heading of a brick the master holds no name for. The id stays the group KEY — never the
+ * heading: a raw brick code is not a name, and it reached the board heading, the Brick filter and
+ * the export (Phoenix CRM audit, 2026-10-02).
+ */
+export const UNNAMED_BRICK = "Brick name not recorded";
 
 /** One brick or one unmapped locality, with the customers that fall in it. */
 export type CustomerGroup = {
@@ -44,13 +50,13 @@ export const specialityOf = (customer: ListCustomer): string => customer.special
 export function groupOf(customer: ListCustomer): Omit<CustomerGroup, "customers"> {
   const place = customer.places[0] ?? null;
   if (place?.brickId) {
-    return { key: place.brickId, heading: place.brickName ?? place.brickId, areaName: place.areaName, mapped: true };
+    return { key: place.brickId, heading: place.brickName?.trim() || UNNAMED_BRICK, areaName: place.areaName, mapped: true };
   }
   const reference = customer.reference;
   if (reference?.brickId) {
     return {
       key: reference.brickId,
-      heading: reference.brickName ?? reference.brickId,
+      heading: reference.brickName?.trim() || UNNAMED_BRICK,
       areaName: reference.areaName,
       mapped: true,
     };

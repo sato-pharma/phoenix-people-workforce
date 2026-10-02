@@ -407,9 +407,13 @@ function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
                   <StandingPills visit={visit} />
                 </span>
                 {visit.unplanned ? (
-                  <span className="mt-1 block text-xs text-slate-500" dir="auto">
-                    {visit.unplanned.clarification}
-                  </span>
+                  <>
+                    <span className="mt-1 block text-xs text-slate-500" dir="auto">
+                      {visit.unplanned.clarification}
+                    </span>
+                    {/* What the approval waits on — the phone card prints it, so the table does too. */}
+                    {visit.unplanned.note ? <span className="mt-0.5 block text-xs text-slate-500">{visit.unplanned.note}</span> : null}
+                  </>
                 ) : null}
                 {visit.outOfList ? <span className="mt-1 block text-xs text-slate-500">{visit.outOfList.note}</span> : null}
               </td>

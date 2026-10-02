@@ -133,6 +133,9 @@ const up = (value: string | null | undefined) => String(value ?? "").trim().toUp
  */
 export const NO_BRICK_LABEL = "No place captured yet";
 
+/** A brick neither the CRM nor the master names. The id stays the row's key, never its label. */
+export const UNNAMED_BRICK_LABEL = "Brick name not recorded";
+
 const STATUS_ORDER: Record<BrickCoverageStatus, number> = {
   "sales-no-list": 0,
   "list-no-sales": 1,
@@ -180,7 +183,7 @@ export function buildBrickCoverageReport(input: {
         seatId: territory.seatId,
         territoryName: territory.territoryName,
         brickId,
-        brickName: brickId === null ? NO_BRICK_LABEL : (crm?.brickName || master?.brickName || brickId),
+        brickName: brickId === null ? NO_BRICK_LABEL : (crm?.brickName || master?.brickName || UNNAMED_BRICK_LABEL),
         areaName: crm?.areaName ?? null,
         status: statusOf(customers, sales),
         am: crm?.am ?? 0,

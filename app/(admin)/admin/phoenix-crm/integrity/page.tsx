@@ -59,6 +59,37 @@ function BehaviourReasons({ entry }: { entry: BehaviourCase }) {
   );
 }
 
+/**
+ * Where the capture was read, how sure the phone was, and how far it fell from the place it names.
+ * One component for the table cell AND the phone card, so the two can never print different facts
+ * (Phoenix CRM audit, 2026-10-02: the card dropped this whole column).
+ */
+function Position({ entry }: { entry: IntegrityCase }) {
+  return (
+    <>
+      {entry.lat !== null && entry.lon !== null ? (
+        <span className="tabular-nums">
+          {entry.lat.toFixed(5)}, {entry.lon.toFixed(5)}
+        </span>
+      ) : (
+        "—"
+      )}
+      {entry.accuracyMeters !== null ? <div className="text-xs text-slate-500">within {Math.round(entry.accuracyMeters)} m</div> : null}
+      {/* How far the visit was saved from the place it names. Read from the visit
+          row, so this board and the place-vs-actual report can never print two
+          different numbers for one visit. Null is UNKNOWN and is simply absent -
+          it must not render as 0 m, which is a rep standing exactly on the pin. */}
+      {entry.placeDistanceMeters !== null ? (
+        <div className="text-xs text-slate-500">
+          {entry.placeDistanceMeters < 1000
+            ? `${Math.round(entry.placeDistanceMeters)} m from the place`
+            : `${(entry.placeDistanceMeters / 1000).toFixed(1)} km from the place`}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function Reasons({ entry }: { entry: IntegrityCase }) {
   return (
     <ul className="space-y-1">
@@ -252,25 +283,7 @@ export default async function PhoenixCrmIntegrityPage() {
                       <Reasons entry={entry} />
                     </td>
                     <td className="px-5 py-4 text-sm text-slate-600">
-                      {entry.lat !== null && entry.lon !== null ? (
-                        <span className="tabular-nums">
-                          {entry.lat.toFixed(5)}, {entry.lon.toFixed(5)}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                      {entry.accuracyMeters !== null ? <div className="text-xs text-slate-500">within {Math.round(entry.accuracyMeters)} m</div> : null}
-                      {/* How far the visit was saved from the place it names. Read from the visit
-                          row, so this board and the place-vs-actual report can never print two
-                          different numbers for one visit. Null is UNKNOWN and is simply absent -
-                          it must not render as 0 m, which is a rep standing exactly on the pin. */}
-                      {entry.placeDistanceMeters !== null ? (
-                        <div className="text-xs text-slate-500">
-                          {entry.placeDistanceMeters < 1000
-                            ? `${Math.round(entry.placeDistanceMeters)} m from the place`
-                            : `${(entry.placeDistanceMeters / 1000).toFixed(1)} km from the place`}
-                        </div>
-                      ) : null}
+                      <Position entry={entry} />
                     </td>
                   </tr>
                 ))}
@@ -291,6 +304,12 @@ export default async function PhoenixCrmIntegrityPage() {
                 </p>
                 <div className="mt-3">
                   <Reasons entry={entry} />
+                </div>
+                <div className="mt-3 border-t border-slate-100 pt-3 text-sm text-slate-600">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Position</div>
+                  <div className="mt-1 break-words">
+                    <Position entry={entry} />
+                  </div>
                 </div>
               </div>
             ))}

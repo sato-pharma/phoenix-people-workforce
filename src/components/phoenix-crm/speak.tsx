@@ -452,7 +452,7 @@ export function CrmSpeak({
                   Remove
                 </CrmButton>
               </div>
-              {previewUrl ? <audio className="mt-2 w-full" controls preload="metadata" src={previewUrl} /> : null}
+              {previewUrl ? <audio className="mt-2 w-full rounded-none [&::-webkit-media-controls-enclosure]:rounded-none [&::-webkit-media-controls-panel]:rounded-none" controls preload="metadata" src={previewUrl} /> : null}
             </div>
           ) : null}
 

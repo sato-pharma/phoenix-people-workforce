@@ -386,8 +386,24 @@ function VisitsSection({
           <CrmCard meta={line.repName} title={line.territoryName}>
             <CrmFacts
               facts={[
-                { label: "PM", value: visitCountsText(line.row?.pm ?? null, report.includeTest, canSeeLocations) },
-                { label: "AM", value: visitCountsText(line.row?.am ?? null, report.includeTest, canSeeLocations) },
+                {
+                  label: "PM",
+                  value: (
+                    <>
+                      {visitCountsText(line.row?.pm ?? null, report.includeTest, canSeeLocations)}
+                      {deltaFact(changes.get(line.row?.seatId ?? "")?.pm)}
+                    </>
+                  ),
+                },
+                {
+                  label: "AM",
+                  value: (
+                    <>
+                      {visitCountsText(line.row?.am ?? null, report.includeTest, canSeeLocations)}
+                      {deltaFact(changes.get(line.row?.seatId ?? "")?.am)}
+                    </>
+                  ),
+                },
               ]}
             />
             {oneDay ? null : (
@@ -618,8 +634,24 @@ function PlanSection({
           <CrmCard meta={repText(line.repName)} title={line.territoryName}>
             <CrmFacts
               facts={[
-                { label: "PM", value: planFact(line.row?.pm ?? NO_PLAN) },
-                { label: "AM", value: planFact(line.row?.am ?? NO_PLAN) },
+                {
+                  label: "PM",
+                  value: (
+                    <>
+                      {planFact(line.row?.pm ?? NO_PLAN)}
+                      {deltaFact(changes.get(line.row?.seatId ?? "")?.pm)}
+                    </>
+                  ),
+                },
+                {
+                  label: "AM",
+                  value: (
+                    <>
+                      {planFact(line.row?.am ?? NO_PLAN)}
+                      {deltaFact(changes.get(line.row?.seatId ?? "")?.am)}
+                    </>
+                  ),
+                },
               ]}
             />
             {!oneDay && line.row ? (
@@ -729,8 +761,24 @@ function CoverageSection({
           <CrmCard meta={repText(row.repName)} title={row.territoryName}>
             <CrmFacts
               facts={[
-                { label: "PM coverage", value: coverageFact(row.pm.coveragePct, coverageNote(row.pm, "PM")) },
-                { label: "AM coverage", value: coverageFact(row.am.coveragePct, coverageNote(row.am, "AM")) },
+                {
+                  label: "PM coverage",
+                  value: (
+                    <>
+                      {coverageFact(row.pm.coveragePct, coverageNote(row.pm, "PM"))}
+                      {deltaFact(changes.get(row.seatId)?.pm)}
+                    </>
+                  ),
+                },
+                {
+                  label: "AM coverage",
+                  value: (
+                    <>
+                      {coverageFact(row.am.coveragePct, coverageNote(row.am, "AM"))}
+                      {deltaFact(changes.get(row.seatId)?.am)}
+                    </>
+                  ),
+                },
                 { label: "PM frequency", value: coverageFact(row.pm.frequencyPct, frequencyNote(row.pm, "PM")) },
                 { label: "AM frequency", value: coverageFact(row.am.frequencyPct, frequencyNote(row.am, "AM")) },
               ]}
@@ -1028,11 +1076,18 @@ function LocationsSection({
                 <p className="break-words font-black text-slate-950">{row.customerName}</p>
                 <p className="mt-0.5 break-words text-xs text-slate-500">
                   {row.visitLat.toFixed(5)}, {row.visitLon.toFixed(5)}
+                  {row.accuracyMeters === null ? "" : ` (accuracy ${countText(Math.round(row.accuracyMeters))} m)`}
                 </p>
               </td>
               <td className={crmTdClassName}>
                 <p className="break-words">{row.placeLabel ?? row.placeAddress ?? "No place saved yet"}</p>
                 {row.placeWhere ? <p className="mt-0.5 break-words text-xs text-slate-500">{row.placeWhere}</p> : null}
+                {/* The phone card prints where the place is; the table carries the same fact. */}
+                {row.placeLat !== null && row.placeLon !== null ? (
+                  <p className="mt-0.5 break-words text-xs text-slate-500">
+                    {row.placeLat.toFixed(5)}, {row.placeLon.toFixed(5)}
+                  </p>
+                ) : null}
               </td>
               <td className={crmTdClassName}>
                 <span className={cn("block break-words font-black", row.locationFlag === "far" ? "text-amber-800" : "text-slate-900")}>
