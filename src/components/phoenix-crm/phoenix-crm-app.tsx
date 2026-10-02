@@ -193,10 +193,16 @@ function openingTab(overview: PhoenixCrmOverview, requested: string | null): Tab
   if (isTabKey(requested) && allowed.includes(requested)) return requested;
   const { tabs, viewer, visitSeatIds, waitingForYou } = overview;
   // HR's acknowledgements are real entries even for the Super Admin, so they count in either world.
+  // The off-plan visits are one of the decisions since 2026-10-02 — a manager with one waiting and
+  // nothing else lands on Team now, instead of on the tab he happened to be given first.
   const decisions =
     (waitingForYou.isTest && !viewer.isTestPersona
       ? 0
-      : waitingForYou.plans + waitingForYou.requests + waitingForYou.planEdits + waitingForYou.visitAsks) + waitingForYou.hrAcknowledgements;
+      : waitingForYou.plans +
+        waitingForYou.requests +
+        waitingForYou.planEdits +
+        waitingForYou.offPlanVisits +
+        waitingForYou.visitAsks) + waitingForYou.hrAcknowledgements;
   if (tabs.team && !viewer.isRep && decisions > 0) return "team";
   if (tabs.team && !viewer.isSuperAdmin && visitSeatIds.length === 0) return "team";
   // A2 (owner, 2026-09-26): he opens the app onto his DAY, not onto a tab bar. A manager with a real
@@ -427,7 +433,9 @@ export function PhoenixCrmApp({
   // manager, and on Reports for a product manager, who has no Team tab.
   const visitAskCount = waitingForYou.isTest === test ? waitingForYou.visitAsks : 0;
   const waitingCount =
-    (waitingForYou.isTest === test ? waitingForYou.plans + waitingForYou.requests + waitingForYou.planEdits : 0) +
+    (waitingForYou.isTest === test
+      ? waitingForYou.plans + waitingForYou.requests + waitingForYou.planEdits + waitingForYou.offPlanVisits
+      : 0) +
     visitAskCount +
     (test ? 0 : waitingForYou.hrAcknowledgements);
   const tabId = (key: TabKey) => `${idPrefix}-tab-${key}`;

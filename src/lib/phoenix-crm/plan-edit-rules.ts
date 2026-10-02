@@ -26,6 +26,16 @@ export type PlanEditStage = "manager" | "sfe" | "hr";
 /** HR's step is Omar Gawish's own (owner, 2026-10-01). */
 export const PLAN_EDIT_ACKNOWLEDGER_HR_ID = "B-10";
 
+/**
+ * Who the daily expiry pass records as the actor: nobody. A request whose week has passed is closed
+ * because the week passed, not because a person decided it, and writing a real HR id there would
+ * read for ever as that person having refused a rep's request.
+ *
+ * It reaches only `phoenix_crm_plan_edit_request_events.actor_hr_id`, which no screen resolves to a
+ * name — the expiry branch writes no `*_decided_by_hr_id` column at all.
+ */
+export const PLAN_EDIT_EXPIRY_ACTOR_HR_ID = "SYSTEM";
+
 export const PLAN_EDIT_NOTE_MAX = 500;
 
 export const PLAN_EDIT_WAITING_STATUSES = ["manager_pending", "sfe_pending", "hr_pending"] as const;

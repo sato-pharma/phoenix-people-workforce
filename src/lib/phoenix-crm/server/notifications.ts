@@ -41,7 +41,10 @@
  * A PLANNED visit tells nobody: double and chain visits count straight away, and a far visit is
  * flagged on the manager's screens rather than pushed (about 600 visits a working day). An OFF-PLAN
  * visit is the one exception (owner, 2026-09-26) — it counts in nothing until it is approved, so the
- * manager who must approve it is told, and the rep is told each time it moves.
+ * manager who must approve it is told, and the rep is told each time it moves. 🔴 AND SINCE
+ * 2026-10-02 SO IS THE SFE MANAGER, WHEN THE VISIT REACHES HIS STEP — whether it started there
+ * because the territory's chain is vacant, or a manager passed it on. Both were silent before: the
+ * rep read "it counts once SFE approves it too" and SFE had never heard of the visit.
  *
  * Never throws: a notice that cannot be delivered must not undo a saved decision.
  */
@@ -186,6 +189,12 @@ export type PhoenixCrmNotice =
       status: UnplannedVisitStatus;
       deciderHrId: string;
       note: string | null;
+      /**
+       * The rep's written "why I went". It rides along so the copy the SFE step gets when a manager
+       * passes the visit on carries the reason, exactly as the manager's own copy did — he should not
+       * have to open the row to learn what he is being asked about.
+       */
+      clarification: string | null;
     }
   | {
       kind: "visit_ask";
@@ -252,10 +261,14 @@ const REQUEST_WAITING: Record<PhoenixCrmRequestKind, { eventType: string }> = {
 
 /**
  * The SFE Managers by hr id — a ROLE with no seat in the organogram, so read from the accounts. Shared
- * with the daily approval nudge (approval-nudge.ts), so the SFE step is the same people everywhere.
+ * with the daily approval nudge (approval-nudge.ts) and, since 2026-10-02, with the off-plan visit's
+ * own SFE step, so the SFE step is the same people everywhere.
+ *
+ * The resolver drops a departed holder (`resolveHrIdsForRole`) and logs an empty answer, because every
+ * step this feeds is addressed to an OFFICE: nobody holding the role means that step told no one.
  */
 export async function sfeManagerHrIds(): Promise<string[]> {
-  const { hrIds } = await resolveHrIdsForRole("SFE Manager", "Phoenix CRM plan edit — SFE Managers");
+  const { hrIds } = await resolveHrIdsForRole("SFE Manager", "Phoenix CRM — SFE Managers");
   // A test account holds the role it mirrors; its TEST- id is never a real person to tell.
   return hrIds.filter((hrId) => !hrId.startsWith("TEST-"));
 }
@@ -591,25 +604,36 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
   }
 
   if (notice.kind === "unplanned_visit_raised") {
-    // The reviewing manager, exactly as a grade request goes to him. A territory whose chain is vacant
-    // starts at the SFE stage, and the SFE Manager is a ROLE with no seat in the organogram — there is
-    // no hr id here to address, so it goes unpushed and the Team tab's counter carries it, the same
-    // silence plan_submitted already keeps for a vacant chain.
+    // The reviewing manager, exactly as a grade request goes to him — and when the territory's manager
+    // chain is VACANT the visit starts at the SFE stage instead (`unplannedFirstStatus`, read from the
+    // very same `reviewer !== null` test the save handed the database), so the SFE Managers are told.
+    //
+    // 🔴 UNTIL 2026-10-02 THAT SECOND CASE TOLD NOBODY AT ALL. The comment here said there was "no hr
+    // id to address", which had gone stale: `sfeManagerHrIds()` reads the role from the accounts and
+    // the five plan-edit notices had been using it since 2026-10-01. A vacant chain is precisely the
+    // territory nobody else is watching, so its off-plan visits waited in silence.
     const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
-    if (!reviewer) return null;
+    const recipients = reviewer ? [reviewer.hrId] : await sfeManagerHrIds();
+    // Nobody holds the role either: the Team tab's counter carries it, as it did before. The resolver
+    // has already logged the empty lookup.
+    if (recipients.length === 0) return null;
     const names = await loadPeopleNames([notice.repHrId]);
     const rep = nameOf(names, notice.repHrId, "A rep");
     const day = formatPhoenixLongDate(notice.visitDate);
+    // Whose approval it still needs, from where it starts. A vacant chain means SFE is the only step.
+    const steps = reviewer ? "you and then SFE" : "you — this territory has no district manager, so SFE is its only step";
     return {
-      recipients: [reviewer.hrId],
+      recipients,
       eventType: "unplanned_visit_waiting",
       title: `Off-plan visit to approve: ${notice.customerName}`,
       message: notice.enteredByAdmin
-        ? `The Super Admin entered a visit ${rep} missed logging: ${notice.customerName} on ${territory}, off the plan, on ${day}. The reason given: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until you and then SFE approve it.`
-        : `${rep} visited ${notice.customerName} on ${territory} off his plan on ${day}. He wrote: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until you and then SFE approve it.`,
+        ? `The Super Admin entered a visit ${rep} missed logging: ${notice.customerName} on ${territory}, off the plan, on ${day}. The reason given: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until ${steps} approve it.`
+        : `${rep} visited ${notice.customerName} on ${territory} off his plan on ${day}. He wrote: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until ${steps} approve it.`,
       tab: "team",
       recordId: notice.visitId,
-      idempotencyKey: `${phoenixCrmVisitNoticeKeyPrefix(notice.visitId)}raised`,
+      // Per visit per STEP: `raised` is the manager's, `sfe_pending` the SFE step's — the same key the
+      // decided branch uses when a manager passes one on, so a visit tells SFE once however it got there.
+      idempotencyKey: `${phoenixCrmVisitNoticeKeyPrefix(notice.visitId)}${reviewer ? "raised" : "sfe_pending"}`,
       subjectHrId: notice.repHrId,
       // What the bell asks about before clearing this notice: once the visit is no longer his to
       // decide, the "approve it" line has done its job and goes (owner, 2026-10-02).
@@ -618,29 +642,58 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
   }
 
   if (notice.kind === "unplanned_visit_decided") {
-    const names = await loadPeopleNames([notice.deciderHrId]);
+    const names = await loadPeopleNames([notice.deciderHrId, notice.repHrId]);
     const decider = nameOf(names, notice.deciderHrId, "Your manager");
     const day = formatPhoenixLongDate(notice.visitDate);
     const note = notice.note ? ` Note: ${notice.note}` : "";
     // Read as booleans first, so the eventType line below carries event NAMES and nothing else.
     const approved = notice.status === "approved";
     const refused = notice.status === "refused";
-    return {
-      recipients: [notice.repHrId],
-      eventType: approved ? "unplanned_visit_approved" : refused ? "unplanned_visit_refused" : "unplanned_visit_moved_on",
-      title: approved || refused
-        ? `${approved ? "Approved" : "Refused"}: off-plan visit to ${notice.customerName}`
-        : `Passed to SFE: off-plan visit to ${notice.customerName}`,
-      message: approved
-        ? `${decider} approved your off-plan visit to ${notice.customerName} on ${day}. It counts like a planned visit.${note}`
-        : refused
-          ? `${decider} refused your off-plan visit to ${notice.customerName} on ${day}, so it does not count.${note}`
-          : `${decider} approved your off-plan visit to ${notice.customerName} on ${day}. It counts once SFE approves it too.${note}`,
-      tab: "visits",
-      recordId: notice.visitId,
-      idempotencyKey: `${phoenixCrmVisitNoticeKeyPrefix(notice.visitId)}v${notice.version}:${notice.status}`,
-      subjectHrId: notice.repHrId,
-    };
+    const deliveries: Delivery[] = [
+      {
+        recipients: [notice.repHrId],
+        eventType: approved ? "unplanned_visit_approved" : refused ? "unplanned_visit_refused" : "unplanned_visit_moved_on",
+        title: approved || refused
+          ? `${approved ? "Approved" : "Refused"}: off-plan visit to ${notice.customerName}`
+          : `Passed to SFE: off-plan visit to ${notice.customerName}`,
+        message: approved
+          ? `${decider} approved your off-plan visit to ${notice.customerName} on ${day}. It counts like a planned visit.${note}`
+          : refused
+            ? `${decider} refused your off-plan visit to ${notice.customerName} on ${day}, so it does not count.${note}`
+            : `${decider} approved your off-plan visit to ${notice.customerName} on ${day}. It counts once SFE approves it too.${note}`,
+        tab: "visits",
+        recordId: notice.visitId,
+        idempotencyKey: `${phoenixCrmVisitNoticeKeyPrefix(notice.visitId)}v${notice.version}:${notice.status}`,
+        subjectHrId: notice.repHrId,
+      },
+    ];
+
+    // 🔴 THE STEP IT JUST MOVED TO TOLD NOBODY UNTIL 2026-10-02: the rep read "it counts once SFE
+    // approves it too" and the SFE Manager had never heard of the visit. The manager's own copy is
+    // withdrawn by the bell the moment the visit leaves his step, so nothing anywhere was asking SFE.
+    if (notice.status === "sfe_pending") {
+      const sfe = await sfeManagerHrIds();
+      const rep = nameOf(names, notice.repHrId, "A rep");
+      if (sfe.length > 0) {
+        deliveries.push({
+          recipients: sfe,
+          eventType: "unplanned_visit_waiting",
+          title: `Off-plan visit to approve: ${notice.customerName}`,
+          message: `${decider} approved ${rep}'s off-plan visit to ${notice.customerName} on ${territory}, on ${day}, and it now waits for SFE.${
+            notice.clarification ? ` He wrote: ${notice.clarification}` : ""
+          } Approve it or refuse it in Phoenix CRM — it counts in nothing until you do.${note}`,
+          tab: "team",
+          recordId: notice.visitId,
+          // Per visit per step, and version-free on purpose: the SFE step is reached once, whether the
+          // visit started there (the raised branch writes this same key) or a manager passed it on.
+          idempotencyKey: `${phoenixCrmVisitNoticeKeyPrefix(notice.visitId)}sfe_pending`,
+          subjectHrId: notice.repHrId,
+          // The bell clears it the same way the manager's copy is cleared: once the visit is decided.
+          metadata: { visitId: notice.visitId },
+        });
+      }
+    }
+    return deliveries;
   }
 
   const names = await loadPeopleNames([notice.deciderHrId]);

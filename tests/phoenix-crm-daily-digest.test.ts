@@ -234,16 +234,34 @@ export function runPhoenixCrmDailyDigestTests(): void {
       "the digest reads only the territories that have started — the open-line list alone is what flooded 24 managers",
     );
 
-    // 🔴 REAL ROWS ONLY. A Super Admin try-out, or a test login (whose rows carry the mirrored rep's
-    // own HR id — src/lib/auth/test-persona.ts), must never switch a real manager's message on.
+    // 🔴 THE QUESTION MOVED INTO THE DATABASE ON 2026-10-02, and the two guarantees moved with it.
+    // It used to SELECT seat_id out of all six tables and collect the distinct values — unbounded,
+    // and PostgREST stops at max_rows = 1000 with no error and no marker, so past the cap a
+    // territory would silently drop out of the digest AND the week reminder, which reads exactly
+    // like a quiet morning. `phoenix_crm_seats_with_activity` asks one `exists` per seat per table.
     assert.match(
       digest,
-      /\.select\("seat_id"\)\.eq\("is_test", false\)\.in\("seat_id", part\)/,
-      "every activity read filters is_test — a test row would start a territory nobody has touched",
+      /callPhoenixCrm<unknown>\("phoenix_crm_seats_with_activity", \{ p: \{ seat_ids: part \} \}\)/,
+      "the gate asks per seat, so the row volume cannot silence it",
     );
+    assert.match(digest, /chunk\(\[\.\.\.seatIds\], 200\)/, "and is still chunked, so its own ANSWER cannot approach the cap either");
+
+    const activitySql = stripComments(
+      readFileSync(new URL("../supabase/migrations/20261002220047_phoenix_crm_activity_and_plan_edit_expiry.sql", import.meta.url), "utf8"),
+    );
+    const activityFn = activitySql.slice(
+      activitySql.indexOf("create or replace function public.phoenix_crm_seats_with_activity("),
+      activitySql.indexOf("$$;"),
+    );
+    assert.ok(activityFn.length > 0, "the function is in the migration");
 
     // All six surfaces a rep can leave a mark on. A narrower list (visits only) keeps a rep who is
     // planning but not yet visiting out of his own manager's digest.
+    //
+    // 🔴 REAL ROWS ONLY. A Super Admin try-out, or a test login (whose rows carry the mirrored rep's
+    // own HR id — src/lib/auth/test-persona.ts), must never switch a real manager's message on — so
+    // each of the six is asserted WITH its is_test filter, in one regex, rather than the two facts
+    // being checked apart where five could filter and the sixth not.
     for (const table of [
       "phoenix_crm_visits",
       "phoenix_crm_places",
@@ -252,11 +270,16 @@ export function runPhoenixCrmDailyDigestTests(): void {
       "phoenix_crm_day_activities",
       "phoenix_crm_list_requests",
     ]) {
-      assert.ok(digest.includes(`"${table}"`), `${table} counts as having started — every surface a rep can touch does`);
+      assert.match(
+        activityFn,
+        new RegExp(`exists \\(select 1 from public\\.${table} t where t\\.seat_id = asked\\.seat_id and t\\.is_test = false\\)`),
+        `${table} counts as having started, and only its real rows do`,
+      );
     }
 
-    // A failed read must not read as a quiet morning.
-    assert.ok(digest.includes("throwIfError(read.error)"), "a failed activity read throws rather than silently emptying the digest");
+    // A failed read must not read as a quiet morning: callPhoenixCrm throws, and the digest does not
+    // catch it — the cron route reports the throw instead.
+    assert.equal(/try \{[\s\S]*?seatsWithRealActivity/.test(digest), false, "the gate's failure is never swallowed into an empty digest");
 
     // 🔴 THE BOARD IS NOT GATED. The screen a manager OPENS still shows every territory: he is
     // asking, and "nobody has started" is the answer he needs there. This narrows the PUSH only.

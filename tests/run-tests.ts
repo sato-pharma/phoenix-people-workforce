@@ -1703,6 +1703,7 @@ import { runPhoenixCrmPlanReminderTests } from "./phoenix-crm-plan-reminder.test
 import { runPhoenixCrmPlanScreenExtrasTests } from "./phoenix-crm-plan-screen-extras.test.ts";
 import { runPhoenixCrmStepFormTests } from "./phoenix-crm-step-form.test.ts";
 import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-requests.test.ts";
+import { runPhoenixCrmApprovalNoticeTests } from "./phoenix-crm-approval-notices.test.ts";
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
 import { runPhoenixCrmVisitAsksTests } from "./phoenix-crm-visit-asks.test.ts";
 import { runPhoenixCrmPlanReviewTests } from "./phoenix-crm-plan-review.test.ts";
@@ -6085,6 +6086,11 @@ await runTest(
 await runTest(
   "Phoenix CRM changes a sent week only through a request (owner, 2026-10-01): the district manager approves, then SFE, then HR — Omar Gawish alone, on a real request — acknowledges, and only that reopens the week, inside the same transaction and under the plan's own lock; a vacant chain starts at SFE, a refusal needs a note, no step is skipped or taken twice, a passed week's request is closed as expired rather than raised, the step is read from the row and never the body, and every step tells the next person, the rep, the district manager and SFE",
   runPhoenixCrmPlanEditRequestTests,
+);
+
+await runTest(
+  "Phoenix CRM tells the people an approval waits on (the 2026-10-02 audit, before Delta (1) went live): an off-plan visit waiting at a viewer's OWN step is counted in every sum of waitingForYou — the module chooser's card, the tab bar and the tab the page opens on — manager_pending on the territories he reviews and sfe_pending across the SFE Manager's scope, with no week filter because a waiting off-plan visit never expires; the SFE Manager is told when a visit reaches his step, whether it started there on a vacant manager chain or a district manager passed it on, under one key per visit per step and carrying the rep's own reason; the 06:55 digest cannot reach the phone by the Telegram-failure re-send, which is stripped of email AND push and skipped outright; the started-territory gate and the SFE queue are both bounded, by an exists-per-seat function and by keyset paging, where an unranged PostgREST read stops at 1,000 rows with no error; a request to edit a week that has passed is closed daily through the one function that writes 'expired', selected in SQL so no clock skew can approve a live request, and tells nobody until the owner's word because that notice emails; and a departed role-holder with a live login is no longer a recipient, with an office nobody holds logged",
+  runPhoenixCrmApprovalNoticeTests,
 );
 
 await runTest(

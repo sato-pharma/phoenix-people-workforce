@@ -573,6 +573,13 @@ const LATER_MIGRATIONS = [
   // phoenix_crm_save_plan with its live body and one changed expression — the 'saved' event's details —
   // so its two plan-event inserts stay two. No table, no new function, no save_visit.
   "supabase/migrations/20261002142625_phoenix_crm_saved_event_keeps_the_returned_day.sql",
+  // Two brand-new functions and nothing else (2026-10-02): the per-seat "has this territory ever
+  // carried real work" read that the 06:55 digest and the week reminder gate on — an `exists` per
+  // seat per table, where the old six-table SELECT stopped silently at PostgREST's 1,000 rows — and
+  // the daily pass that closes a request to edit a week that has passed, which calls
+  // phoenix_crm_decide_plan_edit_request and so leaves that function the only writer of `expired`.
+  // It replaces nothing, no save_visit, no table.
+  "supabase/migrations/20261002220047_phoenix_crm_activity_and_plan_edit_expiry.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

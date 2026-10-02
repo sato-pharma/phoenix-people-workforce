@@ -3429,9 +3429,22 @@ of day buttons, the same square buttons as the Week and the Day pickers — beli
   moving a place and entering a missed record), and it is **B-10's alone**, compared as a person
   (`isSamePerson`, so his console login counts). Another Super Admin does not take that step.
 - **The one Phoenix CRM notice that emails.** The module's email block stays; `phoenix-crm-channel-guard.ts`
-  lets exactly five event types keep email — `plan_edit_waiting`, `plan_edit_moved_on`,
-  `plan_edit_refused`, `plan_edit_reopened`, `plan_edit_expired` — and strips it from everything else,
-  the 06:55 digest included. `tests/phoenix-crm-email-block.test.ts` pins the list exactly.
+  lets exactly four event types keep email — `plan_edit_waiting`, `plan_edit_moved_on`,
+  `plan_edit_refused`, `plan_edit_reopened` — and strips it from everything else, the 06:55 digest
+  included. `tests/phoenix-crm-email-block.test.ts` pins the list exactly.
+
+  🔴 **IT WAS FIVE UNTIL 2026-10-02, AND THE FIFTH LEAVING IS A RULING OF HIS, NOT A TRIM.** The
+  2026-10-02 Phoenix CRM audit built the daily pass that finally closes a request whose week has
+  passed (`phoenix_crm_expire_plan_edit_requests` — until then `status = 'expired'` was reachable only
+  when somebody DECIDED a request, and nobody decides one whose week has gone, so it sat on
+  `manager_pending` for ever). He was asked, in chat and as a choice, whether that pass should email
+  as it closes one, and picked **"in-app and Telegram only, no email"**. So `plan_edit_expired` moved
+  off the email list and into `PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES`, where "only" is enforced on both
+  axes exactly as his 06:55 digest ruling is. **The line the exception is actually drawn on is
+  therefore a step a PERSON took:** the four that remain are a manager, SFE or HR pressing a button,
+  while an expiry is a week running out, closed in a batch — the unprompted bulk mail he has ruled out
+  standing. The policy row agrees with the guard (`policy.ts`), the pass names no channel of its own,
+  and the four are re-pinned beside the new list in `tests/phoenix-crm-approval-notices.test.ts`.
 - **While a week is reopened it is a draft**, so the day's visits count as off-plan until he sends it
   again — the same rule the planned-visit check has always kept (a plan that had reached review BEFORE
   the visit). The request form and the reopened note say so.

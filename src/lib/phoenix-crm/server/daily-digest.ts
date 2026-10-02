@@ -26,9 +26,16 @@
  * ## Channels
  *
  * In-app and Telegram. Email cannot escape: `enforcePhoenixCrmEmailBlock` filters on the MODULE key,
- * not on any call site, so this file could ask for email and still not get it. Nothing here is ever
- * run from a laptop — it is a production cron, and a hand-run would spend the idempotency key for
- * the day and silence the real one.
+ * not on any call site, so this file could ask for email and still not get it. 🔴 AND NEITHER CAN
+ * PUSH, SINCE 2026-10-02 — `enforcePhoenixCrmPushBlock` names `crm_daily_digest`, because asking for
+ * the right two channels here was not enough: when Telegram fails permanently, which for an unlinked
+ * manager is the expected case, `system.ts` re-sent this notice as `["email", "in_app", "push"]`, the
+ * email guard took the email, and the digest arrived on the phone by the back door. That re-send is
+ * skipped for it outright now (`phoenixCrmBlocksTelegramFallback`), since the only thing it could
+ * still deliver is a second copy of the in-app notice this send already made.
+ *
+ * Nothing here is ever run from a laptop — it is a production cron, and a hand-run would spend the
+ * idempotency key for the day and silence the real one.
  */
 
 import { currentCairoDateOnlyIso, formatPhoenixLongDate } from "@/lib/i18n/format";
@@ -41,13 +48,12 @@ import {
   PHOENIX_CRM_NOTIFICATION_MODULE,
   PHOENIX_CRM_PORTAL_PATH,
 } from "@/lib/phoenix-crm/server/notifications";
-import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { callPhoenixCrm, chunk } from "@/lib/phoenix-crm/server/db";
 import { gatherExceptions } from "@/lib/phoenix-crm/server/exceptions";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPhoenixCrmConfig, openLineCodes } from "@/lib/phoenix-crm/server/settings";
 import { isManagerTier, territoriesBelow, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** The digest reads the single previous field day — see the header. */
 const DIGEST_WINDOW_FIELD_DAYS = 1;
@@ -82,9 +88,19 @@ export function digestRecipientsFrom(org: OrgIndex, names: (hrId: string) => str
  * something on that territory, which is all this gate needs to know; a narrower test (say, a visit
  * only) would keep a rep who is planning but not yet visiting out of his manager's digest.
  *
- * 🔴 REAL ROWS ONLY. Every query filters `is_test`, or a Super Admin's try-out — or a test login's,
- * which carries the mirrored rep's own HR id (src/lib/auth/test-persona.ts) — would switch a real
- * manager's 06:55 message on for a territory nobody has really touched.
+ * 🔴 IT ASKS "DOES THIS SEAT HAVE ANY ROW", PER SEAT, AND NEVER READS THE ROWS. Until 2026-10-02 it
+ * SELECTed `seat_id` out of all six tables and collected the distinct values — an unbounded read,
+ * and PostgREST stops at `max_rows = 1000` (supabase/config.toml) with no error and no marker. Past
+ * that cap a territory would silently drop out of BOTH things this gate feeds, the 06:55 digest and
+ * the "your coming week is not sent" reminder: a failure that looks exactly like a quiet morning.
+ * Production held 13 plan rows and 0 visits the day this changed, so nothing had been dropped yet —
+ * at the ~600 visits a working day the module is sized for, `phoenix_crm_visits` crosses 1,000 rows
+ * inside two field days. `phoenix_crm_seats_with_activity` answers with one `exists` per seat per
+ * table, so the ANSWER is at most one entry per seat asked and the row volume is irrelevant to it.
+ *
+ * 🔴 REAL ROWS ONLY — the function filters `is_test` on all six, or a Super Admin's try-out, or a
+ * test login's (which carries the mirrored rep's own HR id, src/lib/auth/test-persona.ts), would
+ * switch a real manager's 06:55 message on for a territory nobody has really touched.
  *
  * Errors are not swallowed: a failed read here would silently empty the digest for everybody, which
  * looks exactly like a quiet morning. The cron route reports the throw instead.
@@ -92,25 +108,11 @@ export function digestRecipientsFrom(org: OrgIndex, names: (hrId: string) => str
 export async function seatsWithRealActivity(seatIds: ReadonlyArray<string>): Promise<Set<string>> {
   const started = new Set<string>();
   if (seatIds.length === 0) return started;
-  const supabase = getSupabaseAdmin();
-  const tables = [
-    "phoenix_crm_visits",
-    "phoenix_crm_places",
-    "phoenix_crm_plans",
-    "phoenix_crm_monthly_plans",
-    "phoenix_crm_day_activities",
-    "phoenix_crm_list_requests",
-  ] as const;
-
+  // Still chunked, so the function's own ANSWER can never approach the row cap either.
   for (const part of chunk([...seatIds], 200)) {
-    const reads = await Promise.all(
-      tables.map((table) => supabase.from(table).select("seat_id").eq("is_test", false).in("seat_id", part)),
-    );
-    for (const read of reads) {
-      throwIfError(read.error);
-      for (const row of (read.data ?? []) as Array<{ seat_id?: string | null }>) {
-        if (row.seat_id) started.add(String(row.seat_id));
-      }
+    const answer = await callPhoenixCrm<unknown>("phoenix_crm_seats_with_activity", { p: { seat_ids: part } });
+    for (const seatId of Array.isArray(answer) ? answer : []) {
+      if (seatId) started.add(String(seatId));
     }
   }
   return started;
