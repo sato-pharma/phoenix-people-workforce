@@ -71,16 +71,19 @@ function run(argv, { cwd, env, input } = {}) {
  * A merge commit answers false: `git show` gives it no single-parent diff, and a merge was never the
  * thing cherry flagged anyway.
  *
- * @param {{ dir?: string, sha: string }} input
+ * `upstream` exists because `countUnpushedCommits` takes one as a parameter: hardcoding `origin/main`
+ * there would have made this answer a different question from the one it was asked.
+ *
+ * @param {{ dir?: string, sha: string, upstream?: string }} input
  * @returns {boolean}
  */
-export function commitDeltaLandedOnMain({ dir, sha }) {
+export function commitDeltaLandedOnMain({ dir, sha, upstream = 'origin/main' }) {
   if (!sha) return false;
   const patch = run(['show', '--binary', '--format=', sha], { cwd: dir });
   if (!patch || !patch.trim()) return deltaLandedVerdict({ hasDelta: false });
   const indexFile = join(mkdtempSync(join(tmpdir(), 'phx-delta-')), 'index');
   try {
-    if (run(['read-tree', 'origin/main'], { cwd: dir, env: { GIT_INDEX_FILE: indexFile } }) === null) {
+    if (run(['read-tree', upstream], { cwd: dir, env: { GIT_INDEX_FILE: indexFile } }) === null) {
       return deltaLandedVerdict({ hasDelta: true, reverseApplies: false });
     }
     const applied = run(['apply', '--cached', '--check', '--reverse', '-'], {

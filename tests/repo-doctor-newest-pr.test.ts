@@ -256,6 +256,18 @@ export function runRepoDoctorNewestPrTests() {
       !code.includes("--state"),
       `${caller}: the gh PR query belongs in scripts/branch-pr-state.mjs only — a second copy is free to drift back to --state merged`,
     );
+    // 🔴 BOTH callers print the same `git branch -D`, so both must judge a moved tip by CONTENT
+    // (owner, 2026-10-02). With no probe at all `classifyBranchPr` compares SHAs and holds every
+    // amended worktree for ever; with cherry alone it holds a roll-up's carried member for ever. The
+    // hook had no probe until this change, which is why this is asserted per caller and not once.
+    assert.ok(
+      code.includes("cherry"),
+      `${caller}: a moved tip must be judged by content — cherry first, so an amend after the merge stops reading as new work`,
+    );
+    assert.ok(
+      code.includes("commitDeltaLandedOnMain"),
+      `${caller}: and each cherry '+' re-asked whether its delta is on main, or a roll-up's carried member is held for ever`,
+    );
   }
 }
 

@@ -52,6 +52,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { classifyBranchPr, listBranchPrs } from "../../scripts/branch-pr-state.mjs";
+import { commitDeltaLandedOnMain } from "../../scripts/delta-landed.mjs";
 
 // FAIL OPEN. The settings.json command lost its `2>/dev/null || true` wrapper on 2026-09-27 (the
 // shell operators had to go so the command parses under cmd.exe and PowerShell too), and this is a
@@ -324,9 +325,31 @@ if (INVOKED_DIRECTLY) {
   // and fully pushed to its OPEN pr got the unqualified `git branch -D` line, with nothing
   // downstream to catch it: commits pushed to an open PR are backed up, so the unpushed check has
   // no objection. See that file for the 2026-09-03 case.
+  //
+  // 🔴 AND IT GETS THE PROBE, so a tip that moved after the merge is judged by CONTENT here too
+  // (owner, 2026-10-02). With no probe, `classifyBranchPr` falls back to comparing SHAs, which holds
+  // every amended or rebased worktree for ever; and once a ROLL-UP carried the work, patch-id cannot
+  // see it either, because the carrier is a squash of several members (delta-landed.mjs carries the
+  // measurement). So `git cherry` answers first, cheaply, and each `+` is re-asked whether its own
+  // delta is already applied on `origin/main`. Identical to repo-doctor's probe on purpose: this hook
+  // and that script print the same `git branch -D`, so a second rule here is a second thing to drift.
+  //
+  // Returns null on ANY failure, which the classifier holds back. This runs at session end, where a
+  // wrong `retirable` is the one answer nobody can take back.
+  const cherryProbe = (atTip) => {
+    const out = gitAt(cwd, ["cherry", "-v", "origin/main", atTip], { timeout: 20000 });
+    if (out === null) return null;
+    const unmerged = [];
+    for (const line of out.split("\n")) {
+      const m = /^\+\s+([0-9a-f]{7,40})\s*(.*)$/.exec(line.trim());
+      if (m && !commitDeltaLandedOnMain({ dir: cwd, sha: m[1] })) unmerged.push({ sha: m[1], subject: m[2] });
+    }
+    return { unmerged };
+  };
   const verdict = classifyBranchPr(
     listBranchPrs(branch, { run: (args) => gh(args) }),
     gitAt(cwd, ["rev-parse", "HEAD"]),
+    cherryProbe,
   );
 
   if (verdict.verdict === "retirable") {

@@ -103,6 +103,50 @@ function makeSquashMergedRepo(commits = 1): { repo: string; root: string; cleanu
   return { repo, root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
+/**
+ * A repo whose `feature` branch was carried into main by a ROLL-UP — a squash of TWO members, so the
+ * carrier's diff is strictly larger than this branch's own and NO upstream patch-id equals it.
+ *
+ * This is the shape `git cherry` cannot see, and the one that matters: measured 2026-10-01 on roll-up
+ * #5098, which carried `f50c5c725` (the footprint-diff trap) together with another member's change in
+ * one squash. Counted as stranded, `--remove` refuses to retire a worktree whose work is serving in
+ * production, and the doctor reports that work as not backed up.
+ */
+function makeRollupCarriedRepo(): { repo: string; root: string; cleanup: () => void } {
+  const root = mkdtempSync(join(tmpdir(), "phx-doctor-rollup-"));
+  const repo = join(root, "repo");
+  const origin = join(root, "origin.git");
+  execFileSync("git", ["init", "--bare", "-b", "main", origin], { stdio: ["ignore", "ignore", "pipe"] });
+  execFileSync("git", ["init", "-b", "main", repo], { stdio: ["ignore", "ignore", "pipe"] });
+  git(repo, ["config", "user.email", "test@example.com"]);
+  git(repo, ["config", "user.name", "Doctor Test"]);
+  git(repo, ["config", "commit.gpgsign", "false"]);
+
+  write(repo, "seed.txt", "seed\n");
+  git(repo, ["add", "seed.txt"]);
+  git(repo, ["commit", "-m", "seed"]);
+  git(repo, ["remote", "add", "origin", origin]);
+  git(repo, ["push", "-u", "origin", "main"]);
+
+  // Our member's own commit: one file.
+  git(repo, ["checkout", "-b", "feature"]);
+  write(repo, "mine.txt", "my own change\n");
+  git(repo, ["add", "mine.txt"]);
+  git(repo, ["commit", "-m", "docs: my own change"]);
+
+  // The roll-up squashes OUR file together with somebody else's under one new sha. Our delta is fully
+  // applied upstream, and no single patch-id there equals ours.
+  git(repo, ["checkout", "main"]);
+  write(repo, "mine.txt", "my own change\n");
+  write(repo, "theirs.txt", "the other member's change\n");
+  git(repo, ["add", "mine.txt", "theirs.txt"]);
+  git(repo, ["commit", "-m", "chore: roll up 2 open PRs into one merge (#5098)"]);
+  git(repo, ["push", "origin", "main"]);
+
+  git(repo, ["checkout", "feature"]);
+  return { repo, root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+}
+
 export function runRepoDoctorUnpushedCommitsTests() {
   const { repo, root, cleanup } = makeSquashMergedRepo();
   try {
@@ -216,6 +260,27 @@ export function runRepoDoctorUnpushedCommitsTests() {
     doctorSource.includes("countUnpushedCommits(dir)"),
     "repo-doctor.mjs delegates to it rather than keeping a second copy of the rule",
   );
+  // ── A ROLL-UP's squashed member is backed up too, and patch-id cannot see it ────────────────
+  //
+  // The step `git cherry` cannot answer. Our delta is fully applied on main, but the carrier squashed
+  // it together with another member's, so no upstream patch-id equals ours. Before the delta test this
+  // counted as stranded: `--remove` refused to retire the worktree, and the doctor called work that
+  // was serving in production un-backed-up.
+  {
+    const { repo, cleanup } = makeRollupCarriedRepo();
+    try {
+      assert.equal(reachabilityOnlyCount(repo), 1, "reachability alone still sees one local-only commit");
+      assert.deepEqual(cherryMarks(repo), ["+"], "and cherry still marks it `+` — no patch-id upstream equals it");
+      assert.equal(
+        countUnpushedCommits(repo),
+        0,
+        "but its delta IS applied on main, so nothing is stranded — the roll-up case the delta test exists for",
+      );
+    } finally {
+      cleanup();
+    }
+  }
+
   assert.ok(
     !doctorSource.includes('"--not", "--remotes=origin"'),
     "no inline reachability-only check survives in the doctor",
