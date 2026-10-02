@@ -1920,6 +1920,7 @@ import { runSalesCommandBandFitsALaptopTests } from "./sales-command-band-fits-a
 import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.test.ts";
 
 import { runRepoDoctorWorktreeRestoreAdviceTests } from "./repo-doctor-worktree-restore-advice.test.ts";
+import { runCloudMirrorDriftTests } from "./cloud-mirror-drift.test.ts";
 import { runWorktreeRemoveHeadShaGateTests } from "./worktree-remove-head-sha-gate.test.ts";
 import { runWorktreeRemoveRemoteContainmentTests } from "./worktree-remove-remote-containment.test.ts";
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
@@ -6854,6 +6855,11 @@ await runTest(
 await runTest("recruitment folder row opens the CV in place (modal + download, never the ?candidate= redirect)", runRecruitmentFolderCvPopupTests);
 
 await runTest("repo-doctor never advises pnpm install in a worktree (restore is new-session --repair)", runRepoDoctorWorktreeRestoreAdviceTests);
+
+await runTest(
+  "repo-doctor measures cloud-mirror drift instead of assuming it current: stale, missing-from-the-mirror and present-with-no-live-memory are reported APART because they have different fixes, CRLF against LF is git normalisation and not drift (a raw byte compare fires on every file on a Windows checkout and a check that always fires gets switched off) while a real difference behind mixed endings is still caught, the report NAMES the files and the command that fixes them, a clean mirror does not advertise a fix it does not need, and an absent memory directory or missing mirror reads as CANNOT MEASURE rather than as zero drift — a cloud session running repo-doctor has no local memory at all",
+  runCloudMirrorDriftTests,
+);
 await runTest(
   "worktree removal frees a tip that is on origin under ANOTHER branch's name (confirmed against the remote, fails closed)",
   runWorktreeRemoveRemoteContainmentTests,
