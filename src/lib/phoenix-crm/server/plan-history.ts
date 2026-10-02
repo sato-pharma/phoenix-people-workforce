@@ -23,7 +23,7 @@ import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadReference } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
-import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 
 /** "2026-09-01" → the first day of the month before it. */
 function previousMonthStart(monthStart: string): string {
@@ -38,7 +38,7 @@ export type PlanHistoryEntry = {
   nativeCustomerId: string | null;
   onNativeList: boolean;
   name: string;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   grade: PhoenixCrmGrade | null;
   speciality: string | null;
   /** The weekdays (0 = Sunday … 6 = Saturday) he was planned on last month — what the copy replays. */
@@ -115,7 +115,7 @@ export async function loadPlanHistory(
     // planned last month who has since left the seat's list.
     // This is a history of what was PLANNED, and a pharmacy is never planned (owner, 2026-10-02),
     // so one on the seat's list has nothing to show here and is left out rather than filed as PM.
-    const listType: PhoenixCrmListType | null = referenceRow
+    const listType: PhoenixCrmDoctorListType | null = referenceRow
       ? doctorListType(referenceRow.list_type)
       : aggregate.ampm === "AM"
         ? "AM"

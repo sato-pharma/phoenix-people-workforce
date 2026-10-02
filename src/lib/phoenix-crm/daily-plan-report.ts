@@ -34,7 +34,7 @@ import type { PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { describeDayStarts, noDayStarts, type PlanDayStarts } from "@/lib/phoenix-crm/plan-day-starts";
 import { daysInPeriod, REPORT_MAX_DAYS, type ReportRuleResult } from "@/lib/phoenix-crm/report-rules";
 import { formatClockMinute } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 
 // ── The days it reads ───────────────────────────────────────────────────────────────────────────
 
@@ -313,7 +313,7 @@ export type DailyPlanDay = {
   startsText: string | null;
   activities: DailyPlanActivity[];
   /** What the day can hold: a Thursday is a morning, AM only. */
-  listTypes: PhoenixCrmListType[];
+  listTypes: PhoenixCrmDoctorListType[];
   am: DailyPlanCustomer[];
   pm: DailyPlanCustomer[];
   /** The visit day still running (until 02:00 the next morning). */
@@ -353,7 +353,7 @@ export type DailyPlanSourcePlan = {
 export type DailyPlanSourceItem = Omit<DailyPlanCustomer, "status" | "visitedMinute" | "offPlan"> & {
   planId: string;
   date: string;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
 };
 
 export type DailyPlanSourceActivity = DailyPlanActivity & { planId: string; date: string };

@@ -106,7 +106,7 @@ import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { PlannerCustomer, PlannerInsight } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -119,7 +119,7 @@ function record(raw: unknown): Row {
 // A pharmacy is NEVER planned (owner, 2026-10-02: "He don't plan it. We don't want extra"), so
 // nothing in this file — a plan row, a plan's own counts, the customers offered for planning —
 // may carry one. null is that refusal, and every caller drops the row.
-export function listTypeOf(value: unknown): PhoenixCrmListType | null {
+export function listTypeOf(value: unknown): PhoenixCrmDoctorListType | null {
   return doctorListType(value);
 }
 
@@ -247,7 +247,7 @@ export type PlanItemView = {
   /** Carried over from iReports360 and not validated yet. Plannable, visitable, counted in nothing. */
   pending: boolean;
   name: string;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   grade: PhoenixCrmGrade | null;
   speciality: string | null;
   placeLabel: string | null;
@@ -270,7 +270,7 @@ export type PlanItemView = {
 export type PlanDayView = {
   date: string;
   /** Empty on a day off (`dayOff`), as on a Friday: the day holds no customer. */
-  listTypes: PhoenixCrmListType[];
+  listTypes: PhoenixCrmDoctorListType[];
   /** The public holiday this day is, by name — "Armed Forces Day" — or null on a working day. */
   holiday: string | null;
   /**

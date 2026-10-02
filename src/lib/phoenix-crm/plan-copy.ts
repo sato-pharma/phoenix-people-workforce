@@ -33,29 +33,29 @@
 import { fieldWeekStart, weekdayOfIsoDay, weekNumberInMonth } from "@/lib/phoenix-crm/calendar";
 import type { PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmDoctorListType, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 
 /** The last-month reference this replays: a doctor who maps to a native customer and the weekdays he was on. */
 export type CopyEntry = {
   nativeCustomerId: string | null;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   weekdays: number[];
 };
 
 /** A field-week's days as the copy reads them — the subset of MonthlyWeekView it needs. */
 export type CopyDay = {
   date: string;
-  listTypes: PhoenixCrmListType[];
+  listTypes: PhoenixCrmDoctorListType[];
   editable: boolean;
   /** Who is already on the day, so the copy neither doubles them nor breaches the cap. */
-  items: ReadonlyArray<{ customerId: string; listType: PhoenixCrmListType }>;
+  items: ReadonlyArray<{ customerId: string; listType: PhoenixCrmDoctorListType }>;
 };
 
 export type CopyWeek = { weekStart: string; days: ReadonlyArray<CopyDay> };
 
 type Caps = { amDailyCap: number; pmDailyCap: number };
 
-function capFor(listType: PhoenixCrmListType, caps: Caps): number {
+function capFor(listType: PhoenixCrmDoctorListType, caps: Caps): number {
   return listType === "AM" ? caps.amDailyCap : caps.pmDailyCap;
 }
 

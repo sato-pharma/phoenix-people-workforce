@@ -53,7 +53,7 @@ import {
   type DraftWeek,
 } from "@/lib/phoenix-crm/plan-week-draft";
 import { normalizeArea, type PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 export type GradeTargets = PhoenixCrmSettings["gradeTargets"];
 
@@ -163,7 +163,7 @@ function roomOf(
 ): Record<PhoenixCrmDoctorListType, number> {
   const counts = dayCounts(resolveDayRows(day, items, byId));
   const share = (cap: number) => (activity?.halfDay ? Math.floor(cap / 2) : cap);
-  const capOf = (listType: PhoenixCrmListType) =>
+  const capOf = (listType: PhoenixCrmDoctorListType) =>
     day.listTypes.includes(listType) ? share(listType === "AM" ? caps.amDailyCap : caps.pmDailyCap) : 0;
   return { AM: Math.max(0, capOf("AM") - counts.AM), PM: Math.max(0, capOf("PM") - counts.PM) };
 }

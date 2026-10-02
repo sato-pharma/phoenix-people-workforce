@@ -64,7 +64,7 @@ import {
 } from "@/lib/phoenix-crm/daily-plan-report";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 import { REPORT_MAX_DAYS } from "@/lib/phoenix-crm/report-rules";
-import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 import { cn } from "@/lib/utils";
 
 // ── Its own days ────────────────────────────────────────────────────────────────────────────────
@@ -189,14 +189,14 @@ function VisitPill({ customer }: { customer: DailyPlanCustomer }) {
   return <CrmPill tone={VISIT_TONES[customer.status]}>{dailyPlanVisitText(customer.status, customer.visitedMinute)}</CrmPill>;
 }
 
-function listsOf(day: DailyPlanDay): Array<{ listType: PhoenixCrmListType; customers: DailyPlanCustomer[] }> {
+function listsOf(day: DailyPlanDay): Array<{ listType: PhoenixCrmDoctorListType; customers: DailyPlanCustomer[] }> {
   return (["AM", "PM"] as const)
     .map((listType) => ({ listType, customers: listType === "AM" ? day.am : day.pm }))
     .filter((list) => day.listTypes.includes(list.listType) || list.customers.length > 0);
 }
 
 /** "AM · 3 customers" — each list counted on its own, never beside a total. */
-function listHeading(listType: PhoenixCrmListType, count: number): string {
+function listHeading(listType: PhoenixCrmDoctorListType, count: number): string {
   return count === 0 ? `${listType} · nothing planned` : `${listType} · ${plural(count, "customer", "customers")}`;
 }
 
