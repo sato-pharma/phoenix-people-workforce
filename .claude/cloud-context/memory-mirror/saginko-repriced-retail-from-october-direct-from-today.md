@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: f9250d88-41f8-4421-b2aa-0c24ad73bb62
-  modified: 2026-09-28T16:53:21.300Z
+  modified: 2026-10-01T04:27:43.702Z
 ---
 
 Owner instruction, 2026-09-28: *"change saginkgo xfactory to 170.52 (distributors) and public price
@@ -71,6 +71,39 @@ are loaded, Saginko's October–December target value must be units × 170.52.**
 Deliberately NOT repointed: `import_marketing_request_atomic` and `phx_marketing_roi_fast` (read a
 stored snapshot), `phx_market_awareness_products` (shows today's price on purpose),
 `phx_record_factory_price_restatement` (audits a master-price edit, which is not period-scoped).
+
+🔴 **The TypeScript half of the closing was missed, and fixed 2026-10-01 (PR #5019, merged
+`b248a693a`).** The 31 repointed functions are all SQL. `loadMonthlyClosingDetails` (Details tab,
+export Data/Total sheets, premium Detail sheet, live store-split money) and Source Coverage
+(`aggregateCoverage`) still read the product master's flat price, so the first October file would have
+shown Saginko at 111.15 beside a Matrix at 170.52 — 177,100.71 short at August's 2,983 units. Both now
+price through `loadProductPeriodPrices()`: Details at the CLOSING month (the batch period, which is the
+Matrix's `f.period`), Source Coverage at each row's own month. Re-pricing every validated row Jan–Aug
+moved 0.00. **Any TypeScript that turns units into EGP for a period must use `priceFor(code, period)`
+— a direct read of `source_of_sales_products.factory_price` is this bug.** The persisted
+`au.monthly_store_split_net` stores units only, so it was never at risk.
+
+**Two more TS surfaces, 2026-10-01.** The importer's STORED `source_of_sales_import_rows.value`
+(parser + Normalizer engine) prices each row at its own month — #5030, which shipped inside roll-up
+#5033 (`57176b029`), not on its own. Weekly reports (dashboard + Combined Report) price each row at the
+dated price of its CYCLE month, else its week's month — owner asked 2026-10-01, PR #5045. 🔴 **OFFICE
+IS THE ONE EXCEPTION, ON PURPOSE:** `office-allocation.ts` (locked) values Office at units × the
+MASTER price in every month, so anything comparing Office across months (the re-dated duplicate-upload
+guard, `repriceableUploadRow`) must keep Office at face value — re-pricing it lets a re-dated Office
+file walk past the guard. Latent while Office stays CNS-only with no CNS dated price.
+
+**The last four surfaces, found by a full sweep 2026-10-01 (PR #5054):** `analytics.sos_fact` and
+`sos_fact_all` (the CEO command center's IMS panel) valued every month at the flat price — migration
+`analytics_sos_fact_dated_price` APPLIED to staging and production that day, Jan–Sep identical to the
+cent. 🔴 **A VIEW must INLINE the dated lookup, NEVER call `phx_factory_price`:** its EXECUTE is
+`service_role`/`postgres` only and a view runs functions with the READER's rights, so
+`analytics_readonly`/`analytics_privileged` would break (`au.f_monthly_attribution` and
+`phx_closing_customers` inline it too). 🔴 **The targets TEMPLATE priced a whole span at its FIRST
+month** — a semester Jul–Dec stored Oct–Dec Saginko targets at 111.15 (achievement +53%); it now
+prices each row at its own Period (a dated `Product|YYYY-MM` table on the Lists sheet). Weekly stock
+value and the ROI near-miss figures were fixed in the same PR. Everything else that reads the master
+price was classified: master-data screens, types, deliberate snapshots, Office (locked), or period-priced
+upstream. A target typed by hand into an uploaded sheet is stored exactly as typed.
 
 Related: [[sos-monthly-closing-is-the-only-sales-truth]] ·
 [[never-fix-a-published-and-announced-month]] ·

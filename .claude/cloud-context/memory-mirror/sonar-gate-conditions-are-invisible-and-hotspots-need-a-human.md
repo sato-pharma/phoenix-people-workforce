@@ -1,12 +1,14 @@
 ---
 name: sonar-gate-conditions-are-invisible-and-hotspots-need-a-human
-description: "The SonarCloud gate's failing condition is unreadable from CI or API; \"Security Hotspots Reviewed = 100%\" can NEVER be satisfied by code changes"
+description: "RETIRED 2026-10-01 — THE SONARCLOUD GATE NO LONGER EXISTS: no sonar workflow is on origin/main at all, so none of this is live. Kept only as the account of why it went; never hunt this gate, and never read a red Sonar check into a PR that cannot have one"
 metadata: 
   node_type: memory
   type: project
   originSessionId: 2d66b5e6-1a1a-44ee-8e95-86506c216715
   modified: 2026-10-01T00:00:00.000Z
 ---
+
+🔴 **RETIRED 2026-10-01 — THERE IS NO SONAR WORKFLOW IN THIS REPO ANY MORE.** `git ls-tree -r origin/main .github/workflows | grep -i sonar` returns nothing, so the gate described below cannot fail, cannot be read and cannot be satisfied. Everything after this line is the ACCOUNT of a gate that was removed, never guidance to act on. Its old citation `.github/workflows/sonarqube.yml:53` names a file that no longer exists. Found by the memory-citation sweep and confirmed against `origin/main`; the dated record [[branch-up-to-date-rule-disabled-2026-08-05]] also cites that file and is deliberately LEFT ALONE, because a dated record is never rewritten.
 
 When `sonarqube` fails on a PR, **do not infer which condition failed — you cannot see it, and
 guessing costs hours.**

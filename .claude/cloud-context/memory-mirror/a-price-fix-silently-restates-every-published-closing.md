@@ -2,13 +2,19 @@
 name: a-price-fix-silently-restates-every-published-closing
 description: "Changing a factory price in source_of_sales_products re-values EVERY period back to January, published ones included. The drift check now SEES value (fixed 2026-09-05) but the price is still outside the closing lock and publishing still takes no snapshot. Owner ruled 2026-09-04 that July 2026 Anti Infective stays as published - do not re-issue it."
 metadata:
+  node_type: memory
   type: project
+  originSessionId: 4c23fec3-0697-4a58-998b-4eb1e3c14a81
+  modified: 2026-10-01T01:43:03.254Z
 ---
 
 `phx_monthly_closing_matrix` recomputes `sales_value` live as `sum(effective_units × factory_price)`
 against the **current** product master. So a price correction restates every closed month at once.
 **That is INTENDED** — the owner rejected period-scoped prices outright
-([[closing-pre-july-revalue-and-backfill-targets-at-phoenix-price]]). The defect was never the
+([[closing-pre-july-revalue-and-backfill-targets-at-phoenix-price]]). 🔴 **One exception since
+2026-09-28: Saginko is period-priced** (111.15 through 2026-09, 170.52 from 2026-10) through
+`phx_factory_price(code, period)` — every product WITHOUT an override row still follows this file;
+see [[saginko-repriced-retail-from-october-direct-from-today]]. The defect was never the
 re-valuation; it was that it happened invisibly.
 
 Measured 2026-09-04 when Royafloxacin `RO001` went 60.75 → 60.70 (owner: the correct price is
