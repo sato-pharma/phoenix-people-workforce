@@ -4,6 +4,7 @@ import { NewHireMailboxPanel } from "@/components/new-hire-mailbox/new-hire-mail
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { canReadInitialPassword } from "@/lib/new-hire-mailbox/initial-password-store";
 import { getNewHireMailboxQueue, type NewHireMailboxQueue } from "@/lib/new-hire-mailbox/service";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,10 @@ export default async function NewHireMailboxesPage({
     redirect("/employee-portals");
   }
   const canConnect = await canAccess(access, "mailbox_offboarding", "update");
+  // Adoption RESETS a working employee's mailbox, so it is the System Administrator's alone — the
+  // same audience that can read the hand-over password afterwards, because whoever locks somebody
+  // out has to be able to let them back in. This only hides the card; the route decides.
+  const canAdopt = canReadInitialPassword(access.role);
   const params = await searchParams;
   const spotlight = Array.isArray(params.hrId) ? params.hrId[0] : params.hrId;
 
@@ -36,6 +41,7 @@ export default async function NewHireMailboxesPage({
 
   return (
     <NewHireMailboxPanel
+      canAdopt={canAdopt}
       canConnect={canConnect}
       loadError={loadError}
       pending={queue.pending}

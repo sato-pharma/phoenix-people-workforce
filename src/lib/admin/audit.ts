@@ -286,6 +286,15 @@ export type AuditEntityType =
   // Handing a new hire's app password to Phoenix from the New Hire Mailboxes page, or ruling that
   // they need no company mailbox. The row carries the address and the outcome, NEVER the password.
   | "new_hire_mailbox"
+  // 🔴 ADOPTING a mailbox that already exists — its OWN type, not a corner of `new_hire_mailbox`,
+  // because it answers a different question: not "who connected a new hire's mailbox" but "who
+  // RESET a working employee's, and when". That act locks the person out of webmail until a human
+  // hands them the password, so it has to be findable on its own without reading every connect row
+  // beside it. The dry run is audited too — asking which mailboxes WOULD be reset is itself worth a
+  // record of who asked. Carries the addresses, the verdicts and the counts, NEVER the password.
+  // `audit_logs.entity_type` is plain `text` with no CHECK (verified on production 2026-10-02), so
+  // this needs no migration of its own.
+  | "new_hire_mailbox_adoption"
   | "marketing_customer"
   // A venue merge is neither a customer nor a request change: it retires one physical place in
   // favour of another and moves every link between them. audit_logs has no CHECK on entity_type

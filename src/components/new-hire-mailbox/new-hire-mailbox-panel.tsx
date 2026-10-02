@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ExternalLink, Loader2, MailPlus, Search } from "lucide-react";
 
+import { AdoptMailboxCard } from "@/components/new-hire-mailbox/adopt-mailbox-card";
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import {
@@ -221,6 +222,7 @@ function PendingCard({
 }
 
 export function NewHireMailboxPanel({
+  canAdopt,
   canConnect,
   loadError,
   pending,
@@ -228,6 +230,8 @@ export function NewHireMailboxPanel({
   schemaMissing,
   spotlightHrId,
 }: {
+  /** Super Admin alone — the page decides it, and the route asserts it again. */
+  canAdopt: boolean;
   canConnect: boolean;
   loadError: string | null;
   pending: NewHireMailboxTask[];
@@ -317,6 +321,8 @@ export function NewHireMailboxPanel({
             </ol>
           </section>
         ) : null}
+
+        {canAdopt ? <AdoptMailboxCard pending={pending} /> : null}
 
         <div className="flex flex-wrap items-center justify-between gap-3 border border-slate-200 bg-white px-4 py-3">
           <p className="min-w-0 text-sm font-medium text-slate-600">

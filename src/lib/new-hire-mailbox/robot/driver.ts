@@ -48,6 +48,18 @@ export type JoinerConsoleDriver = {
    * of the console itself, which is the only place that knows the truth.
    */
   createMailbox: (input: { local: string; displayName: string }) => Promise<CreatedMailbox>;
+  /**
+   * Reset an EXISTING mailbox's password and return the one-time password Turbify shows.
+   *
+   * This is the adoption path (`adopt.ts`), for the five mailboxes made by hand before the robot
+   * existed: it reopens the window in which Phoenix may mint an app password. Everything after it is
+   * identical to the create path — set the company password, then mint.
+   *
+   * 🔴 Unlike `createMailbox`, this acts on a mailbox somebody USES. It locks them out of webmail
+   * until a human hands them the new password, so it must only ever be reached through
+   * `evaluateAdoption` with an explicitly named address.
+   */
+  resetAndCapture: (input: { address: string }) => Promise<CreatedMailbox>;
   /** Sign in as the mailbox and replace its password with the company pattern. */
   setMailboxPassword: (input: { address: string; oneTimePassword: string; newPassword: string }) => Promise<RobotStepResult>;
   /** Mint the "Phoenix email" app password inside the mailbox, and return it. */
@@ -71,6 +83,10 @@ export function createDryRunJoinerDriver(domain = "satopharma.com"): JoinerConso
       calls.push(`createMailbox:${local}`);
       void displayName;
       return { address: `${local}@${domain}`, oneTimePassword: "DRY-RUN-ONE-TIME" };
+    },
+    async resetAndCapture({ address }) {
+      calls.push(`resetAndCapture:${address}`);
+      return { address, oneTimePassword: "DRY-RUN-ONE-TIME" };
     },
     async setMailboxPassword({ address }) {
       calls.push(`setMailboxPassword:${address}`);

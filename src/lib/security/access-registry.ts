@@ -1487,6 +1487,15 @@ export const accessRegistry = [
   // carries a mailbox credential in its body (sealed by the personal-mailbox service, never stored,
   // logged or audited here), so it is update-gated, same-origin only, and rate-capped per hire.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/new-hire-mailboxes", permission: { resource: "mailbox_offboarding", action: "update" }, csrfRequired: true }),
+  // 🔴 ADOPTING a mailbox that already exists — the one route here that RESETS the password of a
+  // mailbox somebody is reading every day, which locks them out of webmail until a human hands them
+  // the new one. `guard: "domain-helper"` and `permission: null` because the gate is deliberately
+  // NOT the matrix: `canReadInitialPassword` is Super Admin alone, where `mailbox_offboarding:update`
+  // above is held by HR Advisory and HR Operations too. Whoever resets the mailbox is the only
+  // person who can then read the hand-over password, so a wider gate would produce a lock-out
+  // nobody could repair. The audit row is required and names who initiated it; a live run is also
+  // rate-capped, because a retry loop here locks out one employee after another.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/new-hire-mailboxes/adopt", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Company device register. The GET returns, per employee, the serial or IMEI of the machine he
   // carries and what the company values it at — a shopping list if it were readable company-wide,
   // which is why `company_devices` is its own resource rather than a corner of `sales` or `team`.

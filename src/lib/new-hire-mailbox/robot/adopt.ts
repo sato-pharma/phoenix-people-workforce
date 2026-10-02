@@ -52,6 +52,8 @@ export type AdoptionRefusal =
   | "not_an_active_employee"
   /** The address is not this employee's recorded work email. */
   | "address_not_theirs"
+  /** Nobody on the employee master carries this address at all — a typo, most likely. */
+  | "no_such_mailbox"
   /** Not a company address. */
   | "not_a_company_address";
 
@@ -60,6 +62,16 @@ export type AdoptionCandidate = {
   displayName: string;
   /** The mailbox to adopt. Must match the employee's recorded work email. */
   address: string;
+  /**
+   * Whether an employee record was found for this address at all.
+   *
+   * Required rather than optional, and required rather than inferred from the other fields: a
+   * typo'd address produces a candidate with nothing real on it, and every other gate would then
+   * refuse it for a reason that reads as a statement about a person who does not exist. An optional
+   * flag defaulting to `true` would be fail-open on the one question that says whether there is
+   * anybody here.
+   */
+  employeeFound: boolean;
   isActiveEmployee: boolean;
   /** The employee's recorded work email, which the address is checked against. */
   workEmail: string | null;
@@ -107,6 +119,15 @@ export function evaluateAdoption(
       refusal: "not_a_company_address",
     };
   }
+  // Before anything is said ABOUT a person, establish that there is one. Otherwise a typo'd address
+  // gets refused with a sentence that reads as a fact about an employee who does not exist.
+  if (!candidate.employeeFound) {
+    return {
+      allowed: false,
+      detail: `No employee on the master has ${address} as their work email, so there is nothing to adopt. Check the address.`,
+      refusal: "no_such_mailbox",
+    };
+  }
   if (!candidate.isActiveEmployee) {
     return {
       allowed: false,
@@ -136,6 +157,58 @@ export function evaluateAdoption(
     };
   }
   return { address, allowed: true };
+}
+
+/**
+ * The most mailboxes one request may name.
+ *
+ * Adoption locks each of these people out until a human reaches them, so a request that names a
+ * dozen is a mistake however it was meant. Five is the whole remediation list as measured on
+ * 2026-10-02; anything larger is refused rather than truncated, because silently dropping addresses
+ * from a destructive request is worse than refusing it.
+ */
+export const ADOPTION_MAX_PER_REQUEST = 5;
+
+export type ParsedAdoptionRequest =
+  | { ok: true; named: string[]; dryRun: boolean }
+  | { ok: false; message: string };
+
+/**
+ * Read an adoption request body.
+ *
+ * 🔴 `dryRun` DEFAULTS TO TRUE and only the exact boolean `false` arms a live run — the same
+ * asymmetry as the robot's environment flags. A missing field, a string "false", a null or a typo all
+ * stay a dry run, so the one value that resets a working employee's mailbox has to be sent
+ * deliberately and in the right type.
+ */
+export function parseAdoptionRequest(body: unknown): ParsedAdoptionRequest {
+  const raw = (body ?? {}) as { addresses?: unknown; dryRun?: unknown };
+
+  if (!Array.isArray(raw.addresses)) {
+    return { message: "Name the mailboxes to adopt, as a list of addresses.", ok: false };
+  }
+  const named = raw.addresses
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.length > 0);
+
+  if (named.length !== raw.addresses.length) {
+    return { message: "Every address must be a non-empty string.", ok: false };
+  }
+  if (named.length === 0) {
+    return { message: "Name at least one mailbox. Adoption never acts on a queue.", ok: false };
+  }
+  if (new Set(named).size !== named.length) {
+    return { message: "The same address was named twice.", ok: false };
+  }
+  if (named.length > ADOPTION_MAX_PER_REQUEST) {
+    return {
+      message: `At most ${ADOPTION_MAX_PER_REQUEST} mailboxes may be adopted in one request; this named ${named.length}.`,
+      ok: false,
+    };
+  }
+  // Only the real boolean false arms a live run.
+  return { dryRun: raw.dryRun !== false, named, ok: true };
 }
 
 /** The steps, in order. Pinned so a reordering cannot pass quietly. */
