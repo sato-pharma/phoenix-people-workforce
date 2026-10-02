@@ -237,7 +237,14 @@ export function checkListAdmissionScreens(): void {
   assert.match(decide[1], /\bpotentialGrade:/, "and the potential he set");
   assert.match(decide[1], /\bstage: request\.stage\b/, "and the step the card was showing, so two deciders cannot both decide it");
   assert.match(card, /const decides = pending && canDecide && request\.canDecide;/, "Approve and Refuse are offered only where the server says this viewer decides this step");
-  assert.match(card, /const admitting = decides && request\.kind === "add" && request\.stage === "manager";/, "the grade and potential are asked at the district manager's step of an add");
+  // The grading step of an add is the district manager's — and SFE's where the territory has no manager
+  // at all (owner's pick, 2026-10-02), which is the only reason this is a shared rule and not a literal
+  // `stage === "manager"` here. `setsAdmissionGrades` is pinned by tests/phoenix-crm-list-edges.test.ts.
+  assert.match(
+    card,
+    /setsAdmissionGrades\(\{ kind: request\.kind, stage: request\.stage, managerDecidedAt: request\.managerDecision\?\.at \?\? null \}\)/,
+    "the grade and potential are asked of whoever takes the grading step of an add",
+  );
   assert.match(card, /POTENTIAL_GRADES\.map/, "the potential is chosen from AA to BC");
   assert.match(
     card,

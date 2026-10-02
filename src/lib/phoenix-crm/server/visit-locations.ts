@@ -35,6 +35,36 @@ type Row = Record<string, unknown>;
  */
 export type RestampScope = "unplaced" | "all";
 
+/** A place as the measurement needs it: where it is, and when it was captured at the door. */
+type MeasurablePlace = { id: string; lat: number; lon: number; capturedAt: string };
+
+/**
+ * The places ONE visit is measured against: those already captured when it happened.
+ *
+ * 🔴 THE GUARANTEE ABOVE WAS TRUE OF "unplaced" AND FALSE OF "all". A move restamped every visit
+ * against every ACTIVE place, which includes clinics captured after the visit — so a second clinic
+ * added in October, followed by any move, retroactively made a September visit "ok" from a door that
+ * did not exist when the rep stood there. That is exactly the laundering the comment above says cannot
+ * happen, and a move is the one event that reaches a visit nobody has touched.
+ *
+ * The fallback is the other half of the owner's rule and must not be dropped: a customer can be visited
+ * BEFORE he is validated, and "his earlier visits then get their distance" from the place the validation
+ * captured (owner, 2026-09-29). Such a visit has no place captured before it at all, so it measures
+ * against the EARLIEST one — the place he was validated with — and never against a clinic added later.
+ */
+function placesFor(visit: { capturedAt: string | null }, places: readonly MeasurablePlace[]): MeasurablePlace[] {
+  // A visit with no stamp to compare is measured as it always was, rather than silently losing its
+  // distance: an absent answer must never read as "no place was there".
+  if (!visit.capturedAt) return [...places];
+  const captured = places.filter((place) => place.capturedAt <= visit.capturedAt!);
+  if (captured.length > 0) return captured;
+  const earliest = places.reduce<MeasurablePlace | null>(
+    (held, place) => (held === null || place.capturedAt < held.capturedAt ? place : held),
+    null,
+  );
+  return earliest ? [earliest] : [];
+}
+
 export type RestampInput = {
   seatId: string;
   isTest: boolean;
@@ -52,7 +82,7 @@ export async function restampVisitLocations(input: RestampInput): Promise<number
       () => {
         let query = supabase
           .from("phoenix_crm_visits")
-          .select("id, lat, lon, accuracy_meters, place_id, distance_meters, location_flag")
+          .select("id, lat, lon, accuracy_meters, captured_at, place_id, distance_meters, location_flag")
           .eq("seat_id", input.seatId)
           .eq("is_test", input.isTest)
           .eq("customer_id", input.customerId);
@@ -63,14 +93,19 @@ export async function restampVisitLocations(input: RestampInput): Promise<number
     ),
     supabase
       .from("phoenix_crm_places")
-      .select("id, lat, lon")
+      .select("id, lat, lon, captured_at")
       .eq("seat_id", input.seatId)
       .eq("is_test", input.isTest)
       .eq("customer_id", input.customerId)
       .eq("status", "active"),
   ]);
   throwIfError(placesResult.error);
-  const places = ((placesResult.data ?? []) as Row[]).map((row) => ({ id: String(row.id), lat: Number(row.lat), lon: Number(row.lon) }));
+  const places: MeasurablePlace[] = ((placesResult.data ?? []) as Row[]).map((row) => ({
+    id: String(row.id),
+    lat: Number(row.lat),
+    lon: Number(row.lon),
+    capturedAt: String(row.captured_at ?? ""),
+  }));
   if (places.length === 0 || visits.length === 0) return 0;
 
   const items = visits.flatMap((visit) => {
@@ -79,7 +114,7 @@ export async function restampVisitLocations(input: RestampInput): Promise<number
     if (lat === null || lon === null) return [];
     const check = checkVisitLocation({
       fix: { lat, lon, accuracyMeters: numberOrNull(visit.accuracy_meters) },
-      places,
+      places: placesFor({ capturedAt: typeof visit.captured_at === "string" ? visit.captured_at : null }, places),
       farMeters: input.settings.visitFarMeters,
       weakGpsMeters: input.settings.weakGpsMeters,
     });
@@ -102,14 +137,25 @@ export async function restampVisitLocations(input: RestampInput): Promise<number
   return restamped;
 }
 
-/** The same, never throwing: the save it follows has already happened. */
+/**
+ * The same, never throwing: the save it follows has already happened.
+ *
+ * It tries TWICE. The comment at the top of this file says a failure "the next restamp repairs", and
+ * for a validation that is true — the next one is the customer's next place. For a MOVE it is not: a
+ * place is moved once and fixed forever, so there may never be a next restamp, and a single lost call
+ * leaves every visit to that customer measured against the point the move proved was wrong. One retry
+ * costs nothing on the happy path and covers the statement timeout that is the realistic failure here.
+ */
 export async function restampVisitLocationsQuietly(input: RestampInput): Promise<void> {
-  try {
-    await restampVisitLocations(input);
-  } catch (error) {
-    logError("Phoenix CRM visit locations not restamped", {
-      labels: { event: "phoenix_crm_restamp_failed", scope: input.scope },
-      error,
-    });
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await restampVisitLocations(input);
+      return;
+    } catch (error) {
+      logError("Phoenix CRM visit locations not restamped", {
+        labels: { event: "phoenix_crm_restamp_failed", scope: input.scope, attempt: String(attempt) },
+        error,
+      });
+    }
   }
 }

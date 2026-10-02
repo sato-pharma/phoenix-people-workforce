@@ -63,6 +63,7 @@ import {
   listSectionOf,
   requestKindLabel,
   requestStageLabel,
+  setsAdmissionGrades,
   type ListSection,
 } from "@/lib/phoenix-crm/list-request-rules";
 import { planWeekdays, type PlanWeekday } from "@/lib/phoenix-crm/plan-pattern";
@@ -70,7 +71,6 @@ import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   assertListRequestApprover,
-  assertPlaceMover,
   canDecideListRequest,
   canMovePlaces,
   canReviewTerritory,
@@ -1206,15 +1206,21 @@ export type ValidateResult = {
 
 /**
  * Validate a customer at the door: a live signboard photo, the two location readings and his days and
- * hours, once and for good. Four modes:
+ * hours, once and for good. Three modes:
  *
  *   reference — a customer carried over from iReports360 goes on the list (refused for one in the Archive);
  *   new       — "Add new customer": he waits outside the list, and the add request (district manager
  *               with the A/B/C grade and the potential, then SFE) is filed at once;
  *   outside   — met on an out-of-list visit: he waits outside the list and the rep chooses later —
- *               "Request to add" or "Drop";
- *   restore   — kept for a caller that still sends a fresh place with "Bring back": the place is kept
- *               and the bring-back request is filed.
+ *               "Request to add" or "Drop".
+ *
+ * 🔴 THERE WAS A FOURTH, `restore`, AND IT IS RETIRED — IT WAS A HOLE THROUGH THE FROZEN ARCHIVE. It
+ * was "kept for a caller that still sends a fresh place with Bring back", and no caller sends it: the
+ * web, the out-of-list entry and the phone all send `reference`, `new` or `outside`, and bringing a
+ * customer back is a REQUEST (the district manager, then SFE) that goes nowhere near this function. What
+ * it did do, for anybody who posted the shape by hand, was insert an ACTIVE place onto a customer sitting
+ * in the Archive — no status check, and outside the five-clinic cap `addPlace` enforces. The Archive is
+ * frozen, so a mode that writes into it is refused here and in `phoenix_crm_validate_customer`.
  */
 export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): Promise<ValidateResult> {
   const body = record(raw);
@@ -1274,10 +1280,6 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
       speciality: draft.value.speciality,
       allow_same_name: body.allowSameName === true,
     });
-  } else if (mode === "restore") {
-    if (!isUuid(body.customerId)) throw validationError("Choose the customer to bring back to the list.");
-    payload.mode = "restore";
-    payload.customer_id = String(body.customerId).toLowerCase();
   } else {
     throw validationError("Reload the page and try again.");
   }
@@ -1451,41 +1453,42 @@ export async function addPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<
 }
 
 /**
- * Editing a place's timings and details (no new photo: the change is kept in the events), or removing it.
+ * Editing a place's timings and details (no new photo: the change is kept in the events).
  *
- * The rep edits his customer's days and hours and the place's name. REMOVING a place is a change of
- * where the customer is, so since 2026-09-29 it is the Super Admin's and the SFE Manager's alone,
- * exactly as moving one is ("the location never changes — only the system administrator").
+ * The rep edits his customer's days and hours and the place's name.
+ *
+ * 🔴 REMOVING A PLACE IS NOT HERE ANY MORE — it is `retirePlace` (server/place-move.ts), and this door
+ * refuses it. Both doors reached the same `phoenix_crm_update_place` and `assertPlaceMover` guarded both,
+ * so it was never a privilege hole; what it was is a SECOND implementation, and since 2026-10-02 a
+ * removal carries a written reason and re-measures every visit to the customer. A removal through this
+ * path would have done neither, silently, and nothing on screen would say so.
  */
 export async function updatePlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ placeId: string; customerId: string }> {
   const body = record(raw);
   if (!isUuid(body.placeId)) throw validationError("Choose the place to change.");
   const placeId = String(body.placeId).toLowerCase();
-  const action = body.action === "retire" ? "retire" : body.action === "edit" ? "edit" : null;
-  if (!action) throw validationError("Reload the page and try again.");
-  let access: { seat: OrgSeat; isTest: boolean };
-  if (action === "retire") {
-    access = territoryForRead(viewer, body.seatId, readTestFlag(body.test));
-    assertPlaceMover(viewer, access.seat, access.isTest);
-  } else {
-    access = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
+  if (body.action === "retire") {
+    throw validationError("Removing a clinic is done from the clinic itself, with the reason for removing it.");
   }
-  const { seat, isTest } = access;
+  if (body.action !== "edit") throw validationError("Reload the page and try again.");
+  const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
 
-  const payload: Row = { seat_id: seat.seatId, actor_hr_id: viewer.hrId, is_test: isTest, place_id: placeId, action };
-  if (action === "edit") {
-    const timings = parseTimings(body.timings);
-    if (!timings.ok) throw validationError(timings.error);
-    // An edit changes what the rep WROTE — the place's name and its days and hours. It never reaches
-    // the location: the clean address, the part of town, the brick, the area and the region were
-    // resolved from the captured coordinates and are the customer's record now (owner, 2026-09-23).
-    // They are not read from the body and not passed back through, so `phoenix_crm_update_place` has
-    // nothing to write them from even if an older phone still sends them.
-    Object.assign(payload, {
-      timings: timings.timings,
-      label: cleanText(body.label, PLACE_TEXT_MAX),
-    });
-  }
+  const timings = parseTimings(body.timings);
+  if (!timings.ok) throw validationError(timings.error);
+  // An edit changes what the rep WROTE — the place's name and its days and hours. It never reaches
+  // the location: the clean address, the part of town, the brick, the area and the region were
+  // resolved from the captured coordinates and are the customer's record now (owner, 2026-09-23).
+  // They are not read from the body and not passed back through, so `phoenix_crm_update_place` has
+  // nothing to write them from even if an older phone still sends them.
+  const payload: Row = {
+    seat_id: seat.seatId,
+    actor_hr_id: viewer.hrId,
+    is_test: isTest,
+    place_id: placeId,
+    action: "edit",
+    timings: timings.timings,
+    label: cleanText(body.label, PLACE_TEXT_MAX),
+  };
   const result = await callPhoenixCrm<Row>("phoenix_crm_update_place", { p: payload });
   return { placeId: String(result.place_id), customerId: String(result.customer_id) };
 }
@@ -1635,7 +1638,7 @@ export async function decideListRequest(
   const requestId = String(body.requestId).toLowerCase();
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_list_requests")
-    .select("id, seat_id, is_test, kind, status, stage")
+    .select("id, seat_id, is_test, kind, status, stage, manager_decided_at")
     .eq("id", requestId)
     .maybeSingle();
   throwIfError(error);
@@ -1650,7 +1653,11 @@ export async function decideListRequest(
   const kind = requestKindOf(request.kind);
   const approvedGrade = kind === "add" ? parseGrade(body.approvedGrade) : null;
   const potentialGrade = kind === "add" ? parsePotentialGrade(body.potentialGrade) : null;
-  if (decision === "approve" && kind === "add" && rowStage === "manager" && !potentialGrade) {
+  // Whoever takes the GRADING step of an add must set the potential — the district manager, or SFE on a
+  // territory with no manager at all (owner's pick, 2026-10-02). One rule, shared with the card, so a
+  // screen can never offer an approval this refuses or hide a field this demands.
+  const grading = setsAdmissionGrades({ kind, stage: rowStage, managerDecidedAt: text(request.manager_decided_at) || null });
+  if (decision === "approve" && grading && !potentialGrade) {
     throw validationError("Choose the customer's potential (AA to BC) before approving.");
   }
   // The step the phone saw, when it names one; otherwise the row's own — both guard the same race.

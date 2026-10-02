@@ -97,6 +97,30 @@ export function listSectionOf(customer: ListCustomerFacts): ListSection {
   return "archive";
 }
 
+/**
+ * Whether the person deciding THIS step of an add sets the customer's grade and his potential.
+ *
+ * It is the district manager's job (owner, 2026-09-29): he confirms or changes the rep's proposed A/B/C
+ * and MUST set a potential grade, and the rep never sets either.
+ *
+ * 🔴 ON A TERRITORY WITH NO MANAGER AT ALL IT IS SFE'S (owner's pick, 2026-10-02). Such an add is filed
+ * straight at the SFE step (`firstRequestStage`), and SFE's card offered a plain Approve — so the
+ * customer was admitted on the REP's own proposal, with no potential grade at all, and the rule that a
+ * rep never sets a grade quietly stopped holding on exactly the territories nobody is managing. The test
+ * is not "the stage is sfe" but "the stage is sfe AND the manager's step was never taken": a normal add
+ * that SFE sees second has already been graded by the district manager, and SFE must not re-grade it.
+ */
+export function setsAdmissionGrades(request: {
+  kind: PhoenixCrmRequestKind;
+  stage: PhoenixCrmRequestStage | null;
+  /** The district manager's step, once taken — null while it never happened. */
+  managerDecidedAt: string | null;
+}): boolean {
+  if (request.kind !== "add") return false;
+  if (request.stage === "manager") return true;
+  return request.stage === "sfe" && request.managerDecidedAt === null;
+}
+
 /** The one action a list row carries (owner, 2026-09-29: "Validate, or Open — nothing else"). */
 export type ListRowAction = "validate" | "open";
 

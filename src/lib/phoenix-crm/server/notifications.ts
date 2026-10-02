@@ -465,13 +465,24 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
 
   if (notice.kind === "request_created") {
     const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
-    if (!reviewer) return null;
+    // 🔴 A VACANT CHAIN IS TOLD SFE, NOT NOBODY. This returned null when the territory had no manager
+    //    seat above it — and that is exactly the territory where the request starts at SFE
+    //    (`firstRequestStage`), so the one person who could decide it was the one person never told. The
+    //    rep's ask then sat for ever with nothing on anybody's screen. Same shape as a plan edit, which
+    //    has always fallen through to `sfeManagerHrIds` for its SFE step.
+    const sfe = reviewer ? [] : await sfeManagerHrIds();
+    const recipients = reviewer ? [reviewer.hrId] : sfe;
+    if (recipients.length === 0) return null;
     const names = await loadPeopleNames([notice.requesterHrId]);
     const rep = nameOf(names, notice.requesterHrId, "A rep");
     const customer = `${notice.customerName} (${notice.listType})`;
     const kind = notice.requestKind;
+    // With no district manager there is no step after this one, for a grade change (his alone, and
+    // SFE's while the seat is empty) or for the two-step kinds that begin at SFE.
+    const after = reviewer ? " SFE decides after you." : "";
+    const why = reviewer ? "" : " This territory has no district manager, so it is yours to decide.";
     return {
-      recipients: [reviewer.hrId],
+      recipients,
       eventType: REQUEST_WAITING[kind].eventType,
       title:
         kind === "grade"
@@ -483,12 +494,12 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
               : `Bring back to approve for ${notice.customerName}`,
       message:
         kind === "grade"
-          ? `${rep} proposes grade ${notice.proposedGrade ?? "—"} for ${customer} on ${territory}. Approve or refuse it in Phoenix CRM.`
+          ? `${rep} proposes grade ${notice.proposedGrade ?? "—"} for ${customer} on ${territory}. Approve or refuse it in Phoenix CRM.${why}`
           : kind === "drop"
-            ? `${rep} asks to take ${customer} off the ${territory} list. Reason: ${dropReasonLabel(notice.dropReason) ?? "not given"}. Approve or refuse it in Phoenix CRM; SFE decides after you.`
+            ? `${rep} asks to take ${customer} off the ${territory} list. Reason: ${dropReasonLabel(notice.dropReason) ?? "not given"}. Approve or refuse it in Phoenix CRM.${after}${why}`
             : kind === "add"
-              ? `${rep} asks to add ${customer} to the ${territory} list, proposing grade ${notice.proposedGrade ?? "—"}. Confirm the grade, set the potential and approve or refuse it in Phoenix CRM; SFE decides after you.`
-              : `${rep} asks to bring ${customer} back to the ${territory} list from the Archive. Approve or refuse it in Phoenix CRM; SFE decides after you.`,
+              ? `${rep} asks to add ${customer} to the ${territory} list, proposing grade ${notice.proposedGrade ?? "—"}. Confirm the grade, set the potential and approve or refuse it in Phoenix CRM.${after}${why}`
+              : `${rep} asks to bring ${customer} back to the ${territory} list from the Archive. Approve or refuse it in Phoenix CRM.${after}${why}`,
       tab: "team",
       recordId: notice.requestId,
       idempotencyKey: `phoenix_crm:request:${notice.requestId}:created`,

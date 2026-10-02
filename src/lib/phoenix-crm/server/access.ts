@@ -34,6 +34,7 @@ import {
   personKey,
   TERRITORY_TIER,
   territoriesInScope,
+  territoryReviewer,
   type OrgIndex,
   type OrgSeat,
   type ScopeBasis,
@@ -622,6 +623,12 @@ export function readsTeamReportsOn(viewer: PhoenixCrmViewer, seat: OrgSeat): boo
  * own stage, never the phone's: null for a grade change (the territory's reviewer alone), "manager"
  * for the first step of a drop, an add or a bring-back, "sfe" for the second — the same two
  * authorities an off-plan visit's approval runs through (`canDecideUnplannedVisit`).
+ *
+ * 🔴 A GRADE CHANGE ON A TERRITORY WITH NO MANAGER AT ALL FALLS TO SFE (owner's pick, 2026-10-02), and
+ * ONLY then. A grade change is one step and the district manager's — but a rep under a vacant chain
+ * could not get one decided by anybody: nothing offered it, nobody was told, and his ask sat for ever.
+ * The authority is not a new one, it is the SFE STEP's own (`canDecideUnplannedVisit(…, "sfe")`), so
+ * there is no second copy of who SFE is. The moment somebody holds the seat it is his again.
  */
 export function canDecideListRequest(
   viewer: PhoenixCrmViewer,
@@ -629,7 +636,10 @@ export function canDecideListRequest(
   isTest: boolean,
   stage: PhoenixCrmRequestStage | null,
 ): boolean {
-  if (stage === null) return canReviewTerritory(viewer, seat, isTest);
+  if (stage === null) {
+    if (canReviewTerritory(viewer, seat, isTest)) return true;
+    return territoryReviewer(viewer.org, seat.seatId) === null && canDecideUnplannedVisit(viewer, seat, isTest, "sfe");
+  }
   return canDecideUnplannedVisit(viewer, seat, isTest, stage);
 }
 
@@ -640,6 +650,9 @@ export function assertListRequestApprover(
   stage: PhoenixCrmRequestStage | null,
 ): void {
   if (stage === null) {
+    // The reviewer's own step, unless the seat above is empty — then SFE's, by the same predicate the
+    // reads use, so a screen can never offer a decision this would refuse.
+    if (canDecideListRequest(viewer, seat, isTest, stage)) return;
     assertReviewer(viewer, seat, isTest);
     return;
   }
