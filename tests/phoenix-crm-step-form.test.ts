@@ -75,7 +75,11 @@ export function runPhoenixCrmStepFormTests(): void {
     );
     assert.ok(board.includes('weekPanel(planStep === 2 ? "days" : planStep === 3 ? "day" : "send")'), "steps 2 to 4 show the week a part at a time");
     assert.match(board, /function chooseWeek\(next: string\) \{[\s\S]*?if \(repBoard\) goStep\(2\);/, "a tap on his week moves him to its days");
-    assert.match(board, /function openDay\(date: string\) \{\s*setDay\(date\);\s*if \(repBoard\) goStep\(3\);/, "a tap on a day moves him to its customers");
+    assert.match(
+      board,
+      /function openDay\(date: string\) \{\s*setDay\(date\);\s*setDaySession\("AM"\);\s*if \(!repBoard\) return;\s*goStep\(3\);\s*fillDay\(date, false\);/,
+      "a tap on a day moves him to its customers — its AM list first, filled the first time",
+    );
     assert.ok(board.includes("onDay={openDay}"), "every day the panel offers goes through that tap");
     assert.ok(board.includes("Next day · {dayLabel(nextDay.date)}"), "step 3 walks the week a day at a time");
 
@@ -107,6 +111,25 @@ export function runPhoenixCrmStepFormTests(): void {
     assert.match(form, /function toLog\(\) \{[\s\S]*?if \(openStep !== null\) \{\s*setTried\(true\);\s*showStep\(openStep\);/, "step 3's Next first sends him to anything still missing");
     assert.equal((form.match(/void save\(Date\.now\(\)\)/g) ?? []).length, 1, "and the form still has exactly one way to save");
     assert.ok(form.includes('if (part === "log") onPart("details");'), "a missing answer found from step 4 takes him back to step 3, where the box is");
+  }
+
+  // ── (e) Plan step 3, all three ways (owner, 2026-10-02: "step 3 … too long, confusing") ──────────
+  {
+    const day = source("src/components/phoenix-crm/plan-day-panel.tsx");
+    // AM, then PM — two short screens; a Thursday (AM only) has no PM screen.
+    assert.ok(board.includes('planStep === 3 && daySession === "AM" && selectedDay?.listTypes.includes("PM")'), "step 3 is AM first, then PM where the day has one");
+    assert.match(board, /setDaySession\("PM"\);\s*goStep\(3\);\s*\}\}\s*>\s*Next: PM/, "AM's way on is Next: PM");
+    assert.ok(board.includes('dayFocus={repBoard && section === "day" ? daySession : undefined}'), "the day panel shows the one list the step is on");
+    // Suggestion first — once per day, only an empty one, through the same way in as Suggest this day.
+    assert.match(board, /function fillDay\(date: string, force: boolean\) \{[\s\S]*?if \(!force && filledDays\.has\(key\)\) return;[\s\S]*?if \(!force && selected\.items\.some\(\(item\) => item\.planDate === date\)\) return;[\s\S]*?suggestDay\([\s\S]*?addCopies\(/, "a day is filled with its suggestion once, only when empty, through addCopies");
+    assert.ok(day.includes("Fill the day for me"), "one tap fills it again");
+    assert.match(day, /Clear \{focus\}/, "and one tap clears the list");
+    // Customers first — the ones he can see that day lead; the rest are folded, never refused.
+    assert.ok(day.includes("const ofTheDay = rows.filter((row) => row.placed || row.receives);"), "only who receives that day (or whose hours are not known yet) leads");
+    assert.match(day, /Show \$\{countText\(others\)\} more who do not receive on \$\{weekdayName\}/, "the others are one button away");
+    assert.ok(day.includes('{moreOpen ? "Hide" : filtering ? "Start times, activities, copy a day" : "Start times, activities, copy a day, filters"}'), "start times, activities, copy and filters are folded");
+    assert.ok(day.includes("{filtering ? <CrmBlock className=\"border-t border-slate-100\">{filterBar}</CrmBlock> : null}"), "but a filter that is on is never folded away");
+    assert.ok(day.includes("Nothing is saved or sent until you do."), "and he is told the fill is not saved");
   }
 
   // ── (d) Inside the form, a screen loses only its frame ───────────────────────────────────────

@@ -147,6 +147,7 @@ export function PlanWeekPanel({
   busy,
   caps,
   customers,
+  dayFocus,
   dirty,
   editable,
   filter,
@@ -160,6 +161,7 @@ export function PlanWeekPanel({
   onCopied,
   onDay,
   onDecide,
+  onFillDay,
   onFilter,
   onKeepMine,
   onPlace,
@@ -189,6 +191,8 @@ export function PlanWeekPanel({
   busy: WeekBusy | null;
   caps: DailyCaps;
   customers: ReadonlyArray<PlannerCustomer>;
+  /** The rep's step form: the one list (AM or PM) step 3 is on. Unset shows the whole day. */
+  dayFocus?: PhoenixCrmListType;
   dirty: boolean;
   /** The rep may still change this week: it is his, open, and a draft or returned. */
   editable: boolean;
@@ -210,6 +214,8 @@ export function PlanWeekPanel({
   onCopied: (placements: CopiedPlacements) => void;
   onDay: (date: string) => void;
   onDecide: (action: PlanDecisionAction, note: string) => Promise<boolean>;
+  /** "Fill the day for me" on the step form: the day's suggestion, applied to the draft. */
+  onFillDay?: () => void;
   onFilter: (next: DoctorFilter) => void;
   onKeepMine: () => void;
   onPlace: (item: PlanItemDraft) => void;
@@ -567,11 +573,13 @@ export function PlanWeekPanel({
         editing={editingDay}
         filter={filter}
         filterOptions={filterOptions}
+        focus={dayFocus}
         idPrefix={`${idPrefix}-${week.weekStart}`}
         items={items}
-        key={selectedDay.date}
+        key={`${selectedDay.date}|${dayFocus ?? "day"}`}
         locked={locked}
         onActivity={(activityType, next) => onActivity(selectedDay.date, activityType, next)}
+        onFill={editingDay ? onFillDay : undefined}
         onFilter={onFilter}
         onPlace={onPlace}
         onQuery={onQuery}

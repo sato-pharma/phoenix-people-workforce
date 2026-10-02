@@ -70,7 +70,7 @@ import type { PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { setPlannedStart, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
 import { EMPTY_DOCTOR_FILTER, plannerBricks, plannerGrades, plannerSpecialities, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
 import { isPlanEditable, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
-import { monthPlacements } from "@/lib/phoenix-crm/plan-suggest";
+import { monthPlacements, suggestDay } from "@/lib/phoenix-crm/plan-suggest";
 import {
   addCopiedItems,
   buildWeekSavePayload,
@@ -235,6 +235,11 @@ export function PlanBoard({
   // The rep's step form (owner, 2026-10-02: Report It's form "used in visits entry and plans making"):
   // 1 the week, 2 its days, 3 one day's customers, 4 send. A board opened on one week starts on its days.
   const [planStep, setPlanStep] = useState(initialWeekStart ? 2 : 1);
+  // Step 3 is two short screens, AM then PM (owner, 2026-10-02: "step 3 … too long, confusing").
+  const [daySession, setDaySession] = useState<PhoenixCrmListType>("AM");
+  // The days the step form has already filled with their suggestion this visit: a day is filled ONCE,
+  // so a day he cleared on purpose stays clear when he comes back to it.
+  const [filledDays, setFilledDays] = useState<ReadonlySet<string>>(() => new Set());
   const stepRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const weekRef = useRef<HTMLDivElement>(null);
@@ -711,10 +716,42 @@ export function PlanBoard({
     });
   }
 
-  /** A day chosen on the rep's form is planned on the next step — the tap moves him on. */
+  /**
+   * A day chosen on the rep's form is planned on the next step — the tap moves him on — starting with
+   * its AM list, already filled with the day's suggestion the first time he opens it (owner,
+   * 2026-10-02). Nothing is saved: the ticks land in the draft, where one tap clears them.
+   */
   function openDay(date: string) {
     setDay(date);
-    if (repBoard) goStep(3);
+    setDaySession("AM");
+    if (!repBoard) return;
+    goStep(3);
+    fillDay(date, false);
+  }
+
+  /**
+   * The day's suggestion, into the draft: the same `suggestDay` and the same way in (`addCopies`) as
+   * "Suggest this day", so it carries no rule of its own. Unforced, it fills a day once, and only an
+   * empty one; "Fill the day for me" forces it, and still only tops up what the day has room for.
+   */
+  function fillDay(date: string, force: boolean) {
+    if (!selected || !selected.editable || !suggest) return;
+    const key = `${selected.scope}|${date}`;
+    if (!force && filledDays.has(key)) return;
+    setFilledDays((previous) => new Set(previous).add(key));
+    const target = selected.week.days.find((entry) => entry.date === date);
+    if (!target || !target.editable) return;
+    if (!force && selected.items.some((item) => item.planDate === date)) return;
+    const result = suggestDay({
+      week: selected.week,
+      items: selected.items,
+      activities: selected.activities,
+      customers,
+      caps,
+      ...suggest,
+      date,
+    });
+    if (result.placements.length > 0) addCopies(new Map([[selected.week.weekStart, result.placements]]));
   }
 
   function requestBack() {
@@ -960,6 +997,8 @@ export function PlanBoard({
         seatId={seatId}
         section={section}
         selectedDay={selectedDay}
+        dayFocus={repBoard && section === "day" ? daySession : undefined}
+        onFillDay={() => fillDay(selectedDay.date, true)}
         showProblems={showProblems}
         showSpread={showSpread}
         starts={selected.starts}
@@ -977,7 +1016,7 @@ export function PlanBoard({
   const planSteps: ReadonlyArray<CrmStep> = [
     { label: "Week", description: "Which week you plan", title: "Choose the week" },
     { label: "Day", description: "The days of the week", title: "Choose the day" },
-    { label: "Customers", description: "Who you will visit", title: selectedDay ? `Customers on ${dayLabel(selectedDay.date)}` : "Customers" },
+    { label: "Customers", description: "Who you will visit", title: selectedDay ? `${dayLabel(selectedDay.date)} · ${daySession} customers` : "Customers" },
     { label: "Send", description: "Send it for review", title: "Send the week" },
   ];
   const dayIndex = selected && selectedDay ? selected.week.days.findIndex((entry) => entry.date === selectedDay.date) : -1;
@@ -989,12 +1028,30 @@ export function PlanBoard({
       </CrmStepFooter>
     ) : planStep === 2 ? (
       <CrmStepFooter back={() => goStep(1)}>
-        <CrmStepNext onClick={() => goStep(3)} />
+        <CrmStepNext onClick={() => (selectedDay ? openDay(selectedDay.date) : goStep(3))} />
+      </CrmStepFooter>
+    ) : planStep === 3 && daySession === "AM" && selectedDay?.listTypes.includes("PM") ? (
+      <CrmStepFooter back={() => goStep(2)}>
+        <CrmStepNext
+          onClick={() => {
+            setDaySession("PM");
+            goStep(3);
+          }}
+        >
+          Next: PM
+        </CrmStepNext>
       </CrmStepFooter>
     ) : planStep === 3 ? (
-      <CrmStepFooter back={() => goStep(2)}>
+      <CrmStepFooter
+        back={() => {
+          if (daySession === "PM") {
+            setDaySession("AM");
+            goStep(3);
+          } else goStep(2);
+        }}
+      >
         {nextDay ? (
-          <button className={crmStepBackClassName} onClick={() => setDay(nextDay.date)} type="button">
+          <button className={crmStepBackClassName} onClick={() => openDay(nextDay.date)} type="button">
             Next day · {dayLabel(nextDay.date)}
             <ChevronRight aria-hidden className="h-4 w-4" />
           </button>
