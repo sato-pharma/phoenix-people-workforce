@@ -74,18 +74,28 @@ const EVENT_TYPES = [
 const PUSH_BLOCKED_EVENT_TYPES = ["plan_edit_expired"];
 
 /**
- * 🔴 THE ONE EXCEPTION, BY THE OWNER'S OWN ORDER (2026-10-01): a rep's request to edit a week he already
- * sent runs the district manager → SFE → HR, "with emails, in-app and Telegram for every step". These
- * four, and ONLY these four, keep their email — the list is pinned exactly, so widening it is a change
- * this test makes visible rather than one that slips through.
+ * 🔴 THE TWO EXCEPTIONS, EACH BY THE OWNER'S OWN ORDER. These five, and ONLY these five, keep their email
+ * — the list is pinned exactly, so widening it is a change this test makes visible rather than one that
+ * slips through.
  *
- * 🔴 IT WAS FIVE UNTIL 2026-10-02. `plan_edit_expired` left, by his own answer: see EVENT_TYPES above.
- * Every one left is a step a PERSON took, which is the line the exception is actually drawn on.
+ * (2026-10-01) A rep's request to edit a week he already sent runs the district manager → SFE → HR,
+ * "with emails, in-app and Telegram for every step". 🔴 IT WAS FIVE OF THOSE UNTIL 2026-10-02:
+ * `plan_edit_expired` left, by his own answer (see EVENT_TYPES above). Every one left is a step a PERSON
+ * took, which is the line that exception is actually drawn on.
+ *
+ * (2026-10-03) The FIRST visit a rep ever submits — to his district manager, his national sales manager
+ * and the SFE Manager, with the owner on the BCC every system email already carries. It is the first
+ * Phoenix CRM email that is NOT a step of anything: nothing waits on anybody who reads it. Who gets it
+ * and the once-ever key are pinned in tests/phoenix-crm-first-visit.test.ts.
  */
-const EMAIL_EVENT_TYPES = ["plan_edit_waiting", "plan_edit_moved_on", "plan_edit_refused", "plan_edit_reopened"];
+const EMAIL_EVENT_TYPES = ["plan_edit_waiting", "plan_edit_moved_on", "plan_edit_refused", "plan_edit_reopened", "first_visit_submitted"];
 
 export function runPhoenixCrmEmailBlockTests() {
-  assert.deepEqual([...PHOENIX_CRM_EMAIL_EVENT_TYPES].sort(), [...EMAIL_EVENT_TYPES].sort(), "exactly the four person-taken steps of a plan edit may email");
+  assert.deepEqual(
+    [...PHOENIX_CRM_EMAIL_EVENT_TYPES].sort(),
+    [...EMAIL_EVENT_TYPES].sort(),
+    "exactly the four person-taken steps of a plan edit, and a rep's first visit, may email",
+  );
   assert.deepEqual(
     [...PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES].sort(),
     ["crm_daily_digest", ...PUSH_BLOCKED_EVENT_TYPES].sort(),
@@ -94,7 +104,7 @@ export function runPhoenixCrmEmailBlockTests() {
   for (const eventType of EMAIL_EVENT_TYPES) {
     const policy = resolveNotificationPolicy({ module: "phoenix_crm", eventType });
     for (const channel of ["in_app", "email", "telegram"] as const) {
-      assert.equal(policy.channels.includes(channel), true, `the plan-edit step ${eventType} goes by ${channel} (owner, 2026-10-01)`);
+      assert.equal(policy.channels.includes(channel), true, `the emailed notice ${eventType} goes by ${channel} (owner, 2026-10-01 and 2026-10-03)`);
     }
     assert.deepEqual(phoenixCrmChannels(eventType), ["in_app", "email", "telegram", "push"], `${eventType} asks for email, in-app, Telegram and the phone`);
     assert.deepEqual(
