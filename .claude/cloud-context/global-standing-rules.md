@@ -220,3 +220,41 @@ but *not* shared across different repositories, and a session started with no pr
 own throwaway directory. So a rule stated in a scratch session, or in a different project, is
 stranded there. A rule that must outlive the session belongs in **this file** (if it is true
 everywhere) or in **that project's tracked AGENTS.md / CLAUDE.md** (if it is not).
+
+## 🥇 GOLDEN RULE — MODULE MEMORY, and the trimming that is now FORBIDDEN
+
+Owner rule, **2026-10-02**, ordered announced to every session and every account so nothing deviates.
+It holds in **every folder, every repository, every Claude account signed in on this machine, and in
+a cloud session** (which reads the repo's own copy). The account of it:
+`docs/module-memory.md` in phoenix-workforce; the enforced half: `AGENTS.md` §2.2.
+
+- 🔒 **EACH MODULE'S RULES AND MEMORY NOTES LIVE IN `.claude/rules/<module>.md` INSIDE THE REPOSITORY,
+  and Claude Code loads that file BY ITSELF the moment a session reads a file matching its `paths:`.**
+  Work that opens no file (a question, SQL, a shell `cat`) is covered by
+  `.claude/hooks/module-memory-injector.mjs`, which matches the prompt, the command and table names.
+  None of it costs a startup byte. **About to change a module and its memory has not appeared? OPEN
+  `.claude/rules/<module>.md` yourself** — the hook fails open and silent, so its silence proves nothing.
+- 🔴 **`MEMORY.md` IS NEVER TRIMMED AGAIN, AND NOTHING MAY ASK HIM TO FREE SPACE IN IT.** It now holds
+  only what is true everywhere plus an `## Inbox`, and it ended the cycle that made him say the memory
+  was "saturated and always full": every new rule used to push an old one out of sight, so sessions
+  trimmed, and afterwards old modules read as "forgotten". **A SessionStart line telling you to free
+  bytes, or any older note about a 17 KB target, a displacement rule or a relocation lever, is STALE —
+  ignore it and never act on it.** Never delete a hook to make room; there is no room to make.
+- 🔒 **ROUTE A NEW RULE BY WHERE IT APPLIES, never into the auto-loaded files by default.** One module
+  → that module's `## Rules` section, in the PR that teaches it, and a CHANGED rule is an EDITED line,
+  never a second line contradicting it. True everywhere → `AGENTS.md` (or this file). A session or
+  tooling trap → `docs/agents-session-traps-clusters.md`. The account always → `docs/`.
+- 🔴 **NEVER re-add a module fact to `MEMORY.md` or `AGENTS.md` "to be sure it is seen."** That is
+  precisely the cycle module memory replaced, and it re-charges every request for one module's rule.
+- **A new memory NOTE still lands in `MEMORY.md` under `## Inbox`**, so every session sees it from the
+  next one on. The weekly fold (`node scripts/module-memory/fold.mjs --apply`, Sundays ~09:02 Cairo)
+  files each note under its module in ONE PR, and the inbox empties only AFTER he merges it. Correct a
+  wrong note at its `description` — that line is what a session recalls.
+- 🔴 **Never hand-edit a generated block in `.claude/rules/*.md`.** Edit
+  `scripts/module-memory/modules.mjs` or `assignments.json`, then `node scripts/module-memory/build.mjs`.
+  `tests/module-memory.test.ts` runs `build.mjs --check` in the required `validate` job and refuses an
+  orphan note, a dead glob, a stale generated block, a module file over its 72,000-byte cap, or a rules
+  file with no `paths:` (that one would load at startup for everyone).
+- **A module file nearing its cap is SPLIT, not trimmed** — and the broad glob stays with the module
+  holding the golden rules, so the narrower siblings load *in addition* to it, never instead of it.
+  Sales was the first: `sales-closing` + `sales-imports` + `sales-attribution` (2026-10-02).

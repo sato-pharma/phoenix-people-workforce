@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 017d8079-a3de-457a-8fe5-0bd4b88a5373
-  modified: 2026-09-04T20:15:16.938Z
+  modified: 2026-10-02T20:06:48.472Z
 ---
 
 Writing TypeScript through the Bash tool with a **quoted heredoc** (`cat > file <<'EOF' ... EOF`)
@@ -108,3 +108,26 @@ pattern against one input that genuinely violates the rule; a real check fires o
 pattern and not the on-disk one. Do NOT build that comparison through `node -e` in a shell — the
 shell eats the escape a second time and reports the CORRECT pattern as also not firing, which reads
 as "the test was fine". Write the verifier to a file with the Write tool.
+
+## 2026-10-02 — it recurred, the CI sweep caught it, and the durable fix is to need no backslash
+
+First recorded instance of `tests/heredoc-backslash-damage.test.ts` catching a FRESH violation: it
+failed `validate` on PR #5181 within minutes of the push, naming
+`tests/phoenix-crm-name-beside-pills.test.ts:95` — shape 1, a real `0x08` in source from a `\b`
+written inside `cat > f <<'EOF'`. So the sweep works on new damage, not only on residue, and **a red
+`validate` naming a line number in a file you just wrote is this, not a logic bug.**
+
+Two things worth having from the recurrence:
+
+- **It was a NEGATIVE assertion again** (`assert.equal(/\btruncate\b/.test(src), false)`), exactly the
+  shape this file predicts accumulates. It passed locally and tested nothing. The prediction held.
+- **The durable fix is to write the check so no backslash exists to lose.** Match a class token
+  against an explicit delimiter character class held in a plain string — ``const DELIM =
+  "[\"'`\\s{}]"; new RegExp(`${DELIM}${token}${DELIM}`)`` — and **self-test the matcher** inside the
+  test (one input that must match, one that must not), so a mangled pattern cannot read as clean.
+  That converts a silent hole into an immediate red regardless of how the file was written.
+
+Knowing this rule is not enough to obey it: this session had the standing rule loaded and still
+reached for a heredoc because the file "had no backslashes yet" — the `\b` arrived in a later edit.
+**The trigger is the file's TYPE, not its current contents:** a `.ts` test file is written with the
+Write tool from the start.
