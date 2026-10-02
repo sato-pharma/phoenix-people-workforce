@@ -1116,6 +1116,12 @@ async function judgeCaptureForPlace(
 ): Promise<void> {
   const capturedAt = new Date(capturedAtText);
   if (Number.isNaN(capturedAt.getTime())) return;
+  // 🔴 THE FIXED POINT, not the pin (owner, 2026-09-29 — "the photo + the location of photo is the
+  // more trustable"). `placePayload` stores `placePoint` as the place's own lat/lon and every later
+  // visit is measured against it; until 2026-10-02 this judged `place.lat`/`place.lon` instead, so a
+  // place whose PHOTO reading was spoofed was judged on its honest pin, and a coordinate replayed
+  // into the stored point was never compared against because the detectors never saw that point.
+  const point = placePoint(place);
   await judgeCapture({
     subjectKind: "place",
     subjectId: placeId,
@@ -1123,7 +1129,7 @@ async function judgeCaptureForPlace(
     repHrId: viewer.hrId,
     customerId,
     isTest,
-    fix: { lat: place.lat, lon: place.lon, accuracyMeters: place.accuracyMeters, capturedAt },
+    fix: { lat: point.lat, lon: point.lon, accuracyMeters: point.accuracyMeters, capturedAt },
     deviceMocked: place.deviceMocked,
   });
 }

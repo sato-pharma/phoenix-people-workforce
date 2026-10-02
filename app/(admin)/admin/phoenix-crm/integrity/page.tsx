@@ -137,7 +137,7 @@ export default async function PhoenixCrmIntegrityPage() {
       {board.behaviour.length > 0 ? (
         <AdminTableShell
           title="Months that do not look like months"
-          description="A whole month of one rep's work, judged on its shape rather than on any single capture — durations that never vary, a metronome, a list covered with nothing sold behind it. The strong ones are things a person cannot do; the rest are only worth reading beside them."
+          description="A whole month of one rep's work, judged on its shape rather than on any single capture — a form that takes exactly the same time again and again, a list covered with nothing sold behind it. Only the repeated duration is a thing a person cannot do; everything else is worth reading beside it, never on its own. A pattern in WHEN he saved his visits appears only alongside one of those, because he may enter his day until 02:00 and entering it in one sitting is not a finding."
         >
           {/* Desktop: the full table. `table-fixed` with a colgroup, never a min-width in a scroller. */}
           <div className="hidden lg:block">

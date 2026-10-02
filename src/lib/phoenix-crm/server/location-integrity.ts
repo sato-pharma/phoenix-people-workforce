@@ -16,6 +16,7 @@
  *      the capture it would have described is still on file to be re-judged later.
  */
 
+import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { checkLocationIntegrity, REPLAY_DECIMALS, type PhoenixCrmPriorFix } from "@/lib/phoenix-crm/location-integrity";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -178,7 +179,11 @@ export async function judgeCapture(input: JudgeCaptureInput): Promise<void> {
         rep_hr_id: repHrId,
         customer_id: input.customerId,
         captured_at: input.fix.capturedAt.toISOString(),
-        visit_date: new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(input.fix.capturedAt),
+        // 🔴 THE VISIT DAY ENDS AT 02:00 CAIRO (owner, 2026-09-29) — the same arithmetic as
+        // `phoenix_crm_save_visit`'s own `visit_date`. This filed the CALENDAR day until 2026-10-02,
+        // so a visit logged at 01:30 carried a different day here from the one on the visit itself and
+        // on every other CRM screen: evidence about a day the rep did not work.
+        visit_date: cairoBusinessDay(input.fix.capturedAt),
         lat: input.fix.lat,
         lon: input.fix.lon,
         accuracy_meters: input.fix.accuracyMeters,

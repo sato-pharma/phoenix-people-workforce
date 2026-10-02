@@ -290,9 +290,19 @@ export function runTestAccountTests(): void {
   // ── The one test-row leak into a real verdict stays closed ───────────────────────────────────────
   {
     const behaviour = source("src/lib/phoenix-crm/server/behaviour.ts");
+    // 🔴 The read moved into `readSeatRows` on 2026-10-02, because PostgREST stops at 1,000 rows and
+    // an unpaged places read silently left a seat with no areas at all — which made
+    // `flat_coverage_no_sales` fire on a rep who covered his list and sold behind it. The invariant
+    // this block exists for is unchanged and is now read in two halves: the call site asks for real
+    // rows, and the reader applies that to the places table.
     assert.ok(
-      /from\("phoenix_crm_places"\)\.select\("seat_id, area_code"\)\.in\("seat_id", seatIds\)\.eq\("is_test", false\)/.test(behaviour),
-      "the nightly behaviour verdict reads REAL places only — test places sit on real seats",
+      /readSeatRows\(supabase, "phoenix_crm_places", "id, seat_id, area_code", seatIds, true\)/.test(behaviour),
+      "the nightly behaviour verdict asks readSeatRows for REAL places only — test places sit on real seats",
+    );
+    const seatReader = behaviour.slice(behaviour.indexOf("async function readSeatRows"), behaviour.indexOf("async function readStrongCaseReps"));
+    assert.ok(
+      /realOnly \? query\.eq\("is_test", false\)/.test(seatReader),
+      "and that argument is what applies .eq(is_test, false) — without this the flag would be decorative",
     );
     for (const path of ["src/lib/phoenix-crm/server/photos.ts", "src/lib/phoenix-crm/server/voice-notes.ts", "src/lib/phoenix-crm/server/time-anchor.ts"]) {
       assert.ok(/\.eq\("is_test", (input\.)?isTest\)\s*\.gte\("issued_at", since\)/.test(source(path)), `${path}: the hourly allowance is counted per world`);
