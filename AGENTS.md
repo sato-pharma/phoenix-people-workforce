@@ -518,10 +518,12 @@ prs"*). He does nothing: he never decides which to merge, which to close, or wha
 **Before asking him to merge anything, run `node scripts/rollup-prs.mjs`** — it groups every open PR
 whose file set is DISJOINT from the others into one branch, reports which are SUPERSEDED and which
 must stay SEPARATE (a migration, a protected file, a frozen path), and `--apply` opens ONE PR. It
-never merges; `--settle` closes only a PR already byte-identical on `main`. 🔴 **AND IF A ROLL-UP IS
-ALREADY OPEN, DO NOT MERGE ITS MEMBERS SEPARATELY** — it happened four minutes after one was built
-and commented on, because **a comment on a PR is not enforcement**. Check `gh pr list` for an open
-`codex/rollup-*` before merging anything small. Pinned by `tests/rollup-prs.test.ts`.
+never merges; `--settle` closes only a PR already byte-identical on `main`. 🔴 **A ROLL-UP'S MEMBERS
+ARE NOW REFUSED MECHANICALLY — `bash-guard.mjs` C13 denies `gh pr merge` of any PR an open roll-up's
+body lists**, because **a comment on a PR is not enforcement**: the ~3-minute window was lost at
+least four times with this rule loaded. It reads the roll-up's own body, so nothing extra is marked;
+the roll-up itself and an unreadable body both pass, and `PHX_MERGE_OK=1` stands it down. Pinned by
+`tests/rollup-member-guard.test.ts`.
 🔴 **`--apply` WAITS for the members' required checks and builds ONLY from the ones that finish GREEN** —
 up to 25 min (`--wait <minutes>` or `PHX_ROLLUP_WAIT_MINUTES`; `--no-wait` takes whatever is green now).
 **A quiet run is working, not hung.** A member that is red, unfinished at the deadline, pushed mid-wait,
