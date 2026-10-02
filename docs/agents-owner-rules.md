@@ -3409,7 +3409,9 @@ of day buttons, the same square buttons as the Week and the Day pickers — beli
   `reopened` event (with `edit_request_id`) in the same transaction, under the plan's own advisory lock.
   `phoenix_crm_plan_transition` was replaced with its live body: the due date comes from
   `phoenix_crm_week_due_on`, and a week sent again after an acknowledged edit KEEPS its first send's
-  late verdict — a change his managers agreed to must never stamp a rep late.
+  late verdict — a change his managers agreed to must never stamp a rep late. 🔴 **Lateness itself moved
+  the next day: it is now `now() > phoenix_crm_week_deadline_at(week_start)` — 23:55 Cairo on that same
+  due date, not the end of it. See "The deadline is 23:55 Cairo" below.**
 - **HR's acknowledgement is the Super Admin's third real-data act** (`canAcknowledgePlanEdits`, beside
   moving a place and entering a missed record), and it is **B-10's alone**, compared as a person
   (`isSamePerson`, so his console login counts). Another Super Admin does not take that step.
@@ -3427,6 +3429,54 @@ on the rep's board. A month SENT before 1 October still shows its status and its
 
 Pinned by `tests/phoenix-crm-plan-weekly-only.test.ts` and `tests/phoenix-crm-plan-edit-requests.test.ts`;
 the database half is `supabase/migrations/20261002002251_phoenix_crm_plan_edit_requests.sql`.
+
+## The deadline is 23:55 Cairo, and the rep is shown it — owner ruling, 2026-10-02
+
+*"the deadline to submit the plan is thuersday 11:5pm and show themn this"*, and, once it was on the
+rep's screens, *"show the 11:55 PM deadline on the Team tab's Due cell too"*.
+
+**What was wrong.** `submitted_late` compared a DATE to a DATE — `v_today > phoenix_crm_week_due_on(...)`
+— so the real cut-off was midnight and a week sent at 23:58 on its due Thursday was stamped on time. And
+no screen named an hour at all: the rep was told which DAY his week was due and left to guess the time of
+the one thing it is judged on. The second half of his instruction is the half that was missing.
+
+**The rule, in one place on each side.**
+- `phoenix_crm_week_deadline_at(week_start)` is the due date at 23:55 Cairo, built ON
+  `phoenix_crm_week_due_on` so the hand-set overrides carry (the week of 3 October is due Friday 2
+  October **at 23:55**). It is `STABLE`, never `IMMUTABLE`: `at time zone` with a zone NAME depends on the
+  server's timezone rules, which an upgrade can change, and an immutable marking would let a plan cache
+  an instant from before that change.
+- `planDeadlineAt` / `planDeadlinePassed` (`calendar.ts`) answer the same question in TypeScript, from
+  the zone table that ships with the code (`cairo-zone.ts`) and never from the reader's engine.
+- `PLAN_DEADLINE_LABEL` is the wording — "11:55 PM", as he wrote it, never "23:55" — and
+  `withPlanDeadline` is the one joiner. `planDueLabel` uses it with the long date for the rep's Plan and
+  week panel; the **Team tab keeps its own compact date** ("Thu 8 Oct 2026 at 11:55 PM") because it sits
+  in a row beside a dozen reps, and takes the deadline through that same joiner. Two date styles, one
+  deadline — a reviewer and his rep can never read two different ones.
+
+**The badge had to move with the stamp.** "Overdue" was `today > dueOn`, which in the five minutes
+between 23:55 and midnight would have shown a week as not-yet-overdue while the server stamped that very
+send late. It reads the instant now, from ONE `new Date()` per render so the month and every week on it
+agree.
+
+**The 23:55 that happens twice.** Egypt leaves DST at Cairo midnight on the last Thursday of October —
+2026-10-29, itself a plan due date — so that wall time occurs at both 20:55Z and 21:55Z. Both sides
+resolve it to the LATER pass, the forgiving one, so a rep whose own clock reads 23:55 is on time on
+either. Postgres' answer was read back from production BEFORE the TypeScript was written rather than
+assumed, and the two-pass offset solve in `planDeadlineAt` lands on the same instant by construction.
+
+**What this does NOT change.** A late plan is still ACCEPTED AND STAMPED, never refused (2026-09-29) — a
+rep who cannot plan cannot work, and the test asserts nothing in the submit branch raises over the
+deadline. No due DATE moved, no `due_on` row was rewritten and no verdict already stamped changed: the
+hour is a rule, not a stored value. The 12:57 and 17:57 reminders gained the hour ("It is due tonight at
+11:55 PM") and are otherwise untouched — they never fire inside that five-minute window, so their
+day-grained late flag stays accurate.
+
+Pinned by `tests/phoenix-crm-plan-deadline.test.ts` in the required `validate` job; the database half is
+`supabase/migrations/20261002122000_phoenix_crm_plan_deadline_2355.sql`. 🔴 **The two transition
+assertions in `phoenix-crm-plan-weekly-only.test.ts` were moved onto that newer migration** — with
+`create or replace`, only the newest file describes what runs, and left pointing at the older one they
+would have stayed green while pinning a rule the database no longer has.
 
 ## The Business Review reads live — owner ruling, 2026-09-28
 
