@@ -57,6 +57,7 @@ status, give it its own line.
 - **Cairo Pedia's DM and all five rep seats are vacant by the owner's ruling — never a finding, never filled** — `cairo-pedia-is-empty-on-purpose-a-hire-is-coming` **(inline — load-bearing)**
 - **`TZ=Africa/Cairo date` silently returns UTC in MSYS — 3h early, no error** — `tz-africa-cairo-silently-returns-utc-in-msys` **(inline — load-bearing)**
 - **`main` is usually NOT in the primary — a worktree holds it, so ahead/behind read from HEAD there is real but mislabelled** — `main-is-not-the-primary-checkout` **(inline — load-bearing)**
+- **`git merge --no-commit --no-ff` is NOT a dry run — it MERGES, so a "would this overwrite anything?" probe mutates the shared primary and leaves MERGE_HEAD; the read-only pre-flight is `git diff --name-only HEAD..origin/main` intersected with `git ls-files --other --exclude-standard`** — `a-no-commit-merge-probe-actually-merges-in-the-shared-primary` **(inline — load-bearing)**
 - **A scheduled task run by hand records no `lastRunAt` and creates no session — both absences are normal, not proof it failed** — `a-manual-scheduled-task-run-leaves-no-trace` **(inline — load-bearing)**
 - **A role probe cannot trust the HTTP status code** — `a-role-probe-cannot-trust-the-http-status-code` · `a-post-to-any-api-path-returns-403-even-if-it-does-not-exist`
 - **curl -d "@-" creates NOTHING on Windows** — `cron-job-org-is-managed-by-a-rest-api-not-just-the-web-ui`
