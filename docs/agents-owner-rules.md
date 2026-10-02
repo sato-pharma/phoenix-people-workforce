@@ -4325,6 +4325,30 @@ database's half of rule 2, under `PLANNABLE_LIST_TYPES` in TypeScript. `phoenix_
 narrow for the same reason: a pharmacy arrives as a reference and leaves as one, with no grade, drop,
 add or bring-back request to decide.
 
+## Add visit keeps every point, and its optional steps start folded — owner ruling, 2026-10-02 (night)
+
+**What he asked.** At night he sent Report It's form again: *"I WANT VISIT SUBMISSION TO FOLLOW THIS I
+WANT VISIT SUBMISSION SUPER EASY FOR THEM"*. Add visit had worn Report It's four-step frame since that
+morning (#5095: Visit type → Customer → Products and comment → Log the visit), but its step 3 was still
+one long page of seven boxes. Asked what step 3 should become, he answered: *"I need all the points in
+the current form of entering the visit … I don't need too many steps and too many clicks by the reps.
+So what do you recommend?"*
+
+**The recommendation he was given, and how it is built.**
+- **Every point stays.** All seven boxes keep their header and their number, so the form still shows
+  every point, and the read-back on step 4 lists whatever was entered.
+- **No step and no press are added.** It is still four steps. A visit that skips the extras (the usual
+  visit) costs exactly what it did.
+- **The three optional ones start folded:** the pharmacy check, what he left, and what the customer
+  said. Each is Report It's dashed "add" row under its own header, and one tap opens it in place
+  (`FoldedStep`, `openExtras` in `src/components/phoenix-crm/visit-log-form.tsx`). Once open it stays open
+  across Next and "Change something", so nothing typed is lost.
+- **A required step is never folded.** The bar under his thumb jumps to the first missing answer, and
+  that jump must always land on an open box.
+
+**Never "fix" it back:** do not remove a point to shorten the form, and do not split step 3 into more
+steps. Both are what he ruled out in the same answer. Pinned by `tests/phoenix-crm-visit-form-ease.test.ts`, section (e).
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
