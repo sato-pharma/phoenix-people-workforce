@@ -50,13 +50,15 @@
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 import { readProtectionContexts } from './required-check-names.mjs';
 import { rollupBranchName } from './rollup-branch-name.mjs';
 import { isRollupBranch, overlappingRollup, rollupMembers } from './rollup-duplicate-guard.mjs';
 import { rollupBuildVerdict, MIN_MEMBERS } from './rollup-build-verdict.mjs';
-import { registryAddedLinesLanded, SHARED_REGISTRY_PATH } from './rollup-carried.mjs';
+import { pathDeltaLanded, registryAddedLinesLanded, SHARED_REGISTRY_PATH } from './rollup-carried.mjs';
 import { membersReadyToBuild, requiredCheckState, requiredGateUsable, waitForRequiredChecks } from './rollup-check-state.mjs';
 
 const REPO = 'Gawish-1997/phoenix-people-workforce';
@@ -170,9 +172,18 @@ function gh(argv, { allowFail = false } = {}) {
   }
 }
 
-function git(argv, { cwd = process.cwd(), allowFail = false } = {}) {
+function git(argv, { cwd = process.cwd(), allowFail = false, env, input, raw = false } = {}) {
   try {
-    return execFileSync('git', argv, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 }).trim();
+    const out = execFileSync('git', argv, {
+      cwd,
+      encoding: 'utf8',
+      env: env ? { ...process.env, ...env } : process.env,
+      input,
+      stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+      timeout: 120000,
+    });
+    // A patch must keep its trailing newline or `git apply` refuses it, so `raw` skips the trim.
+    return raw ? out : out.trim();
   } catch (err) {
     if (allowFail) return null;
     throw err;
@@ -355,7 +366,8 @@ function subsumedBy(pr, others) {
 }
 
 /**
- * ALREADY CARRIED: every file this PR touches is byte-identical on `main`.
+ * ALREADY CARRIED: every file this PR touches is already on `main` — byte-identical, or its own
+ * delta for that path already applied there (rollup-carried.mjs `pathDeltaLanded`).
  *
  * A squash merge does NOT make the branch's commits ancestors of `main`, so ancestry answers "no" for
  * a PR whose work has fully landed — which is how a roll-up's members look the moment it merges. On
@@ -384,8 +396,48 @@ function alreadyCarried(pr) {
     if (p === SHARED_REGISTRY_PATH) return registryLandedOnMain(pr);
     const mine = git(['rev-parse', `${pr.headRefOid}:${p}`], { allowFail: true });
     const main = git(['rev-parse', `origin/main:${p}`], { allowFail: true });
-    return Boolean(mine) && Boolean(main) && mine === main;
+    const blobsEqual = Boolean(mine) && Boolean(main) && mine === main;
+    // 🔴 BYTE-IDENTITY IS A PROOF, NOT THE QUESTION (owner, 2026-10-02, after #5096). It holds only
+    // while nothing else has touched the file, which a roll-up of several members routinely breaks.
+    // When the bytes disagree, ask whether this PR's OWN delta for this path is already applied on
+    // `main` — rollup-carried.mjs carries the measurement and why a patch-id cannot answer it alone.
+    return pathDeltaLanded({ blobsEqual, ...pathDeltaReadings(pr, p, blobsEqual) });
   });
+}
+
+/**
+ * The two readings `pathDeltaLanded` needs when the bytes disagree: does this PR have a delta of its
+ * own for the path, and does that delta reverse-apply against `main`'s tree.
+ *
+ * `git apply --check --reverse` succeeds only when every line the delta ADDS is present on `main` and
+ * every line it REMOVES is gone — which is exactly "already applied", and is what patch-id is a means
+ * to. It is asked with `--cached` against a THROWAWAY INDEX loaded from `origin/main`, so no file and
+ * no real index is touched: this runs inside whatever worktree called the script.
+ *
+ * Every failure answers NOT landed. Unreadable base, empty delta, a patch that will not apply, a git
+ * error: the PR stays open. One avoidable CI run is the cost of being wrong this way; the other way
+ * closes somebody's unlanded work.
+ */
+function pathDeltaReadings(pr, p, blobsEqual) {
+  if (blobsEqual) return { hasDelta: false, reverseApplies: false };
+  const base = git(['merge-base', 'origin/main', pr.headRefOid], { allowFail: true });
+  if (!base) return { hasDelta: false, reverseApplies: false };
+  const patch = git(['diff', '--binary', base, pr.headRefOid, '--', p], { allowFail: true, raw: true });
+  if (!patch || !patch.trim()) return { hasDelta: false, reverseApplies: false };
+  const indexFile = join(mkdtempSync(join(tmpdir(), 'phx-settle-')), 'index');
+  try {
+    if (git(['read-tree', 'origin/main'], { allowFail: true, env: { GIT_INDEX_FILE: indexFile } }) === null) {
+      return { hasDelta: true, reverseApplies: false };
+    }
+    const applied = git(['apply', '--cached', '--check', '--reverse', '-'], {
+      allowFail: true,
+      env: { GIT_INDEX_FILE: indexFile },
+      input: patch,
+    });
+    return { hasDelta: true, reverseApplies: applied !== null };
+  } finally {
+    rmSync(dirname(indexFile), { force: true, recursive: true });
+  }
 }
 
 /**
@@ -438,7 +490,7 @@ if (!fixturePath) {
 for (const pr of open) {
   const sub = subsumedBy(pr, open);
   if (pr.isDraft) pr.verdict = { kind: 'skip', why: 'draft' };
-  else if (alreadyCarried(pr)) pr.verdict = { kind: 'carried', why: 'every file it touches is already byte-identical on main — close it, do not merge it' };
+  else if (alreadyCarried(pr)) pr.verdict = { kind: 'carried', why: 'every file it touches is already on main, by bytes or by its own delta — close it, do not merge it' };
   else if (sub) pr.verdict = { kind: 'superseded', why: `every file it touches is in #${sub.number}, which changes more`, by: sub.number };
   // 🔴 FIRST PASS, exactly where `isDraft` sits, and for the same reason: a PR that cannot merge today
   // must not reach the second pass at all. It is not enough to drop it from `rollable`, because `group`
@@ -543,7 +595,7 @@ if (apply && fixturePath) {
 // It runs before the roll-up logic and needs no `--apply`, because the moment a roll-up merges there is
 // usually nothing left to roll up — the members are exactly what is left.
 const SETTLE_COMMENT = [
-  'Superseded: every file this PR touches is already byte-identical on `main`, so there is nothing left',
+  'Superseded: every file this PR touches is already on `main` — byte-identical, or its own delta already applied there — so there is nothing left',
   'here to merge — its content landed inside a roll-up. A squash merge is why GitHub did not close this',
   'automatically: the commits never become ancestors of `main`.',
   '',
@@ -563,7 +615,7 @@ if (settle) {
   } else {
     for (const pr of carriedPrs) {
       gh(['pr', 'close', String(pr.number), '--repo', REPO, '--comment', SETTLE_COMMENT], { allowFail: true });
-      console.log(`[rollup] closed #${pr.number} — every file already byte-identical on main`);
+      console.log(`[rollup] closed #${pr.number} — every file it touches is already on main`);
     }
   }
 } else if (carriedPrs.length > 0 && !asJson) {
@@ -874,7 +926,7 @@ const body = [
   'Nothing carrying a migration, a protected file or a frozen path is in here; those keep their own '
     + 'visible approval.',
   '',
-  `Built by \`node scripts/rollup-prs.mjs --apply\`. Once this merges the originals are CARRIED, not live: \`node scripts/rollup-prs.mjs --settle\` closes them, after proving every file byte-identical on \`main\`.`,
+  `Built by \`node scripts/rollup-prs.mjs --apply\`. Once this merges the originals are CARRIED, not live: \`node scripts/rollup-prs.mjs --settle\` closes them, after proving every file it touches is already on \`main\`.`,
 ].join('\n');
 
 gh(['pr', 'create', '--repo', REPO, '--base', 'main', '--head', branch,

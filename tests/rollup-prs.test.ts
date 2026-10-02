@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { MIN_MEMBERS } from "../scripts/rollup-build-verdict.mjs";
-import { registryAddedLinesLanded } from "../scripts/rollup-carried.mjs";
+import { pathDeltaLanded, registryAddedLinesLanded } from "../scripts/rollup-carried.mjs";
 import { membersReadyToBuild, requiredCheckState, requiredGateUsable, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
 import { isRollupBranch, overlappingRollup, rollupMembers } from "../scripts/rollup-duplicate-guard.mjs";
 
@@ -859,6 +859,52 @@ export function runRollupPrsTests(): void {
       "and the delta must be taken against the MERGE BASE: a two-dot diff to main would read other "
         + "people's registrations as lines this PR had removed",
     );
+  }
+
+  // ── 4e-duodecies. Byte-identity is a PROOF, not the question (owner, 2026-10-02) ───────────
+  //
+  // Measured the night of 2026-10-01. Roll-up #5098 carried #5096's relocation verbatim — the account it
+  // moved out of AGENTS.md was gone from main and present in the destination doc, byte-identical — and
+  // `--settle` still refused to close it, because main's AGENTS.md had moved past the branch's copy
+  // (114,585 against the PR's 115,060): the roll-up carried a SECOND member touching the same file. Two
+  // of the three carried members that night needed a human decision for this, and one reached the owner.
+  //
+  // A patch-id cannot answer it alone, which is worth pinning so nobody "simplifies" it back: a roll-up
+  // is a SQUASH, so the carrier's diff is strictly larger than any one member's and their patch-ids never
+  // match. The question patch-id is a means to — IS THIS DELTA ALREADY APPLIED — is asked per path with
+  // `git apply --check --reverse` against main's tree.
+  {
+    const settleSource = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    assert.equal(pathDeltaLanded({ blobsEqual: true }), true, "identical bytes stay the fast proof");
+    assert.equal(
+      pathDeltaLanded({ blobsEqual: false, hasDelta: true, reverseApplies: true }),
+      true,
+      "#5096's case: the bytes differ because main moved on, but this PR's own delta is already applied",
+    );
+
+    // Every other shape is NOT landed. A false negative costs one avoidable CI run; a false positive
+    // closes somebody's unlanded work, so the direction never flips.
+    assert.equal(pathDeltaLanded({ blobsEqual: false, hasDelta: true, reverseApplies: false }), false, "a delta that does not apply is not landed");
+    assert.equal(pathDeltaLanded({ blobsEqual: false, hasDelta: false, reverseApplies: true }), false, "no delta of our own proves nothing");
+    assert.equal(pathDeltaLanded({}), false, "and an unreadable reading is never a yes");
+    assert.equal(pathDeltaLanded(undefined as never), false, "nor is a missing one");
+
+    assert.match(
+      settleSource,
+      /return pathDeltaLanded\(\{ blobsEqual, \.\.\.pathDeltaReadings\(pr, p, blobsEqual\) \}\)/,
+      "the per-path answer must go through the one pure decision, not a second copy of the rule",
+    );
+    assert.match(
+      settleSource,
+      /'apply', '--cached', '--check', '--reverse', '-'/,
+      "the delta is asked of main's TREE with --check, so no file and no real index is ever touched",
+    );
+    assert.match(
+      settleSource,
+      /env: \{ GIT_INDEX_FILE: indexFile \}/,
+      "and through a throwaway index, because this runs inside whatever worktree called the script",
+    );
+    assert.match(settleSource, /rmSync\(dirname\(indexFile\), \{ force: true, recursive: true \}\)/, "which is removed even when the read throws");
   }
 
   // ── 4e-decies. A check that ran BEFORE the head commit is the previous commit's result ───────
