@@ -154,6 +154,14 @@ export function runPhoenixCrmPlanDeadlineTests(): void {
 
     const manager = managerReminder({ hrId: "PD-0100", day, cairoToday: "2026-10-08", tick: "noon", repNames: ["Aya Ibrahim"] });
     assert.ok(manager, "the manager hears about his own reps");
-    assert.ok(manager.message.includes(`due tonight at ${PLAN_DEADLINE_LABEL}`), "with the same deadline");
+    // His heading leads with it too, and pinned by POSITION for the same reason: he is the one who can
+    // still chase a rep before 23:55, so the hour must survive a cut heading on his phone as well.
+    assert.ok(manager.title.startsWith(`Due tonight, ${PLAN_DEADLINE_LABEL}`), manager.title);
+    assert.ok(manager.title.indexOf(PLAN_DEADLINE_LABEL) < 24, "early enough to survive the cut");
+    assert.ok(manager.title.includes("Saturday 10 Oct"), "and his title still names the week");
+    assert.ok(manager.message.startsWith("Not sent yet: "), "the names carry his body on their own");
+    const lateManager = managerReminder({ hrId: "PD-0100", day: after, cairoToday: "2026-10-09", tick: "noon", repNames: ["Aya Ibrahim"] });
+    assert.ok(lateManager, "and about a week that is already late");
+    assert.ok(lateManager.title.startsWith(`Was due Thursday 8 Oct, ${PLAN_DEADLINE_LABEL}`), lateManager.title);
   }
 }
