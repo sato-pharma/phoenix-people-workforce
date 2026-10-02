@@ -1952,7 +1952,16 @@ export async function getAgentCrmIdentityRows(
 }
 
 /** How many visits iReports360 holds on a contact, and the last one's date. */
-export type CrmContactVisitHistory = { visits: number; lastVisitedOn: string | null };
+export type CrmContactVisitHistory = {
+  visits: number;
+  lastVisitedOn: string | null;
+  /**
+   * The days of its visits on or after `daysSince`, newest first — present only when the caller asked
+   * for them (Phoenix CRM's planner reads the weekdays a customer is usually seen on). Absent otherwise,
+   * so the List's answer, which goes to the phone whole, carries no more than it always did.
+   */
+  days?: string[];
+};
 
 /**
  * 🔴 WHAT A REP HAS ALREADY DONE WITH A DOCTOR, per contact (owner, 2026-09-30, reading Phoenix CRM's
@@ -1970,8 +1979,17 @@ export type CrmContactVisitHistory = { visits: number; lastVisitedOn: string | n
  *
  * 🔴 NOT the check-ins. A GPS check-in is a PARTIAL feed — some real visits carry none — so counting
  * those would understate a rep's work, and the standing rule is never to score a rep on them.
+ *
+ * `daysSince` (owner, 2026-10-02 — Phoenix CRM's planner): the SAME read also hands back each
+ * contact's visit days on or after that day, so the planner learns which weekdays a customer not
+ * validated yet is usually seen on without a second trip to the mirror. Nothing else changes: the
+ * count and the last day are the ones the List has always shown.
  */
-export async function readContactVisitHistory(contactCrmIds: readonly number[]): Promise<Map<number, CrmContactVisitHistory>> {
+export async function readContactVisitHistory(
+  contactCrmIds: readonly number[],
+  options: { daysSince?: string } = {},
+): Promise<Map<number, CrmContactVisitHistory>> {
+  const daysSince = options.daysSince ?? null;
   const byContact = new Map<number, CrmContactVisitHistory>();
   const ids = [...new Set(contactCrmIds)].filter((id) => Number.isFinite(id));
   if (ids.length === 0) return byContact;
@@ -2006,14 +2024,16 @@ export async function readContactVisitHistory(contactCrmIds: readonly number[]):
   for (const { error, rows } of answers) {
     for (const row of rows) {
       if (row.contact_crm_id == null) continue;
-      const found = byContact.get(row.contact_crm_id);
+      let found = byContact.get(row.contact_crm_id);
       // Ordered newest first, so the first date seen for a contact is the latest one.
       if (found) {
         found.visits += 1;
         found.lastVisitedOn ??= row.visit_date;
       } else {
-        byContact.set(row.contact_crm_id, { lastVisitedOn: row.visit_date, visits: 1 });
+        found = { lastVisitedOn: row.visit_date, visits: 1 };
+        byContact.set(row.contact_crm_id, found);
       }
+      if (daysSince !== null && row.visit_date && row.visit_date >= daysSince) (found.days ??= []).push(row.visit_date);
     }
     if (error) {
       // A missing mirror costs this one line. It must never fall back to the Phoenix count, which

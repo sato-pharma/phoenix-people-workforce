@@ -1,4 +1,5 @@
 import { isRamadanDay, planDayListTypes, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import { directionsUrl } from "@/lib/phoenix-crm/directions";
 import { parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { describeDayWindows } from "@/lib/phoenix-crm/plan-rules";
 import { canWriteAsRep, isLocationBlind, readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -10,6 +11,8 @@ import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { windowsForWeekday } from "@/lib/phoenix-crm/timings";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { canEnterVisits, loadVisitRowsForDay, plannedCustomersOn } from "@/lib/phoenix-crm/server/visits";
+import { loadWeekProgress } from "@/lib/phoenix-crm/server/week-progress";
+import type { WeekProgress } from "@/lib/phoenix-crm/week-progress";
 import {
   buildTodayStops,
   compareTodayStops,
@@ -59,6 +62,11 @@ export type TodayView = {
   /** What he recorded the day as, if anything. A record only: it moves no figure. */
   dayActivity: DayActivityRow | null;
   canSetDayActivity: boolean;
+  /**
+   * His own field week, planned against done (owner, 2026-10-02) — AM, PM and pharmacies apart, read
+   * by `src/lib/phoenix-crm/week-progress.ts`. His own work, beside his own day.
+   */
+  week: WeekProgress;
 } & TodayBuild;
 
 export async function loadPhoenixCrmToday(
@@ -80,6 +88,8 @@ export async function loadPhoenixCrmToday(
     const byId = new Map(customers.map((row) => [String(row.id), row]));
     // 🔴 THE APPROVED PLAN ONLY (owner, 2026-09-30). A plan still waiting on someone shows no stops at
     // all — `planNote` says which state it is in instead. Today is the day he has been cleared to work.
+    // The status is TODAY's (plan-rules.ts `planDayStatus`): an approved week a manager returned ONE
+    // other day of is still approved today (owner, 2026-10-02, "Still planned").
     const approvedIds = planned.status === "approved" ? planned.customerIds : [];
     // Where the ones not validated yet sit — they have no clinic, and a day he cannot read as a route
     // is not a day he can work. Only the planned ones are looked up.
@@ -90,7 +100,7 @@ export async function loadPhoenixCrmToday(
     );
     return { byId, approvedIds, references };
   });
-  const [{ placesByCustomer }, planned, visitRows, plannedActivities, dayActivity, { byId, approvedIds, references }, names] =
+  const [{ placesByCustomer }, planned, visitRows, plannedActivities, dayActivity, { byId, approvedIds, references }, names, week] =
     await Promise.all([
       customersRead,
       plannedRead,
@@ -99,6 +109,8 @@ export async function loadPhoenixCrmToday(
       loadDayActivityOn(seat.seatId, isTest, date),
       plannedStopsRead,
       loadPeopleNames(territoryPeople(viewer.org, [seat])),
+      // His own week, planned against done (owner, 2026-10-02) — in the same wave, never after it.
+      loadWeekProgress(seat.seatId, isTest, date),
     ]);
   const stops: PlannedStop[] = [];
   for (const customerId of approvedIds) {
@@ -126,6 +138,9 @@ export async function loadPhoenixCrmToday(
       hoursSaved: Boolean(place && place.timings.length > 0),
       hasPlace: Boolean(place),
       reference,
+      // The way to the place the row names (owner, 2026-10-02) — null with no saved place, and then
+      // the row carries no link.
+      directionsUrl: directionsUrl(place ?? null),
     });
   }
   // Sorted as a day is DRIVEN, then clustered by brick on the screen — so the clusters come out in
@@ -156,6 +171,7 @@ export async function loadPhoenixCrmToday(
     plannedActivity: plannedActivities[0] ?? null,
     dayActivity,
     canSetDayActivity: canWriteAsRep(viewer, seat, isTest),
+    week,
     emptyReason: todayEmptyReason({
       status: planned.status,
       isFieldDay: planDayListTypes(date).length > 0,

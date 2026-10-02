@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Fragment } from "react";
 import { Check, Plus } from "lucide-react";
 
+import { DirectionsLink } from "@/components/phoenix-crm/directions-link";
 import { gradeSpecialityParts } from "@/components/phoenix-crm/labels";
 import { PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import type { RepTodayPlan, RepTodayBrick, RepTodayStop } from "@/lib/phoenix-crm/server/rep-landing";
@@ -132,6 +133,9 @@ function StopRow({ canAdd, stop }: { canAdd: boolean; stop: RepTodayStop }) {
           parts={gradeSpecialityParts(stop)}
         />
         <PartsLine className="mt-0.5 block break-words text-phx-xs leading-snug text-slate-500" parts={stop.where} />
+        {/* The way to the place the line above names (owner, 2026-10-02) — one quiet line, in a new
+            tab, and none at all when no place is saved. */}
+        <DirectionsLink className="mt-1" customerName={stop.name} href={stop.directionsUrl} variant="text" />
       </span>
       {stop.done ? (
         <span
@@ -206,6 +210,19 @@ export function RepTodayPlanPanel({ plan }: { plan: RepTodayPlan | null }) {
           </li>
         ))}
       </ul>
+      {/* 🔴 HIS OWN WEEK, ONE LINE (owner, 2026-10-02): his sent plan for the field week against what he
+          has visited so far, AM · PM · Pharmacies APART like the chips above — each figure its own
+          part, never added together. It wraps rather than scrolls (the fits-the-screen rule). */}
+      {plan.weekParts.length > 0 ? (
+        <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-slate-200 bg-slate-50 px-3 py-2">
+          <span className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">This week</span>
+          {plan.weekParts.map((part) => (
+            <span className="break-words text-phx-xs font-semibold tabular-nums text-slate-600" key={part}>
+              {part}
+            </span>
+          ))}
+        </p>
+      ) : null}
     </section>
   );
 }

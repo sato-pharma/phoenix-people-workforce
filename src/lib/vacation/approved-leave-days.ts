@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { normalizeVacationDayPart, normalizeVacationType, vacationTypeLabel } from "@/lib/vacation/calculations";
 
 /**
  * Approved leave, spread over the calendar days it covers, for a named set of people.
@@ -25,7 +26,19 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 const vacationRequestsTable = "v2_vacation_requests";
 
 /** One person, away on one Cairo calendar day. The HR id is returned exactly as the row stores it. */
-export type ApprovedLeaveDay = { hrId: string; day: string };
+export type ApprovedLeaveDay = {
+  hrId: string;
+  day: string;
+  /** The leave's own name — "Annual Vacation", "Sick Vacation" — never the stored key. */
+  typeLabel: string;
+  /**
+   * The whole day. An "AM only" or "PM only" request leaves the other half of the day at work, which
+   * matters to a reader that plans the day (the Phoenix CRM plan, owner 2026-10-02) and to none that
+   * only asks whether the person was away. A row with no day part is a full day, the vacation
+   * module's own default (service.ts reads it the same way).
+   */
+  fullDay: boolean;
+};
 
 /** A PostgREST `.in()` over a long list fails three ways; ~50 is this repo's figure. */
 const CHUNK = 50;
@@ -53,6 +66,24 @@ export function leaveDaysCovered(from: string, to: string, within: { from: strin
   return out;
 }
 
+/**
+ * Approved request rows, spread over the days each covers inside the window — the shaping step, pure,
+ * so a test can drive it with rows rather than a database.
+ */
+export function spreadApprovedLeave(rows: ReadonlyArray<Record<string, unknown>>, range: { from: string; to: string }): ApprovedLeaveDay[] {
+  const out: ApprovedLeaveDay[] = [];
+  for (const row of rows) {
+    const from = cleanDay(row.start_date);
+    const to = cleanDay(row.end_date) ?? from;
+    const hrId = String(row.employee_hr_id ?? "").trim();
+    if (!from || !to || !hrId) continue;
+    const typeLabel = vacationTypeLabel(normalizeVacationType(row.vacation_type));
+    const fullDay = (normalizeVacationDayPart(row.day_part) ?? "full_day") === "full_day";
+    for (const day of leaveDaysCovered(from, to, range)) out.push({ day, hrId, typeLabel, fullDay });
+  }
+  return out;
+}
+
 export async function loadApprovedLeaveDays(
   hrIds: Iterable<string | null | undefined>,
   range: { from: string; to: string },
@@ -64,7 +95,9 @@ export async function loadApprovedLeaveDays(
   for (let at = 0; at < wanted.length; at += CHUNK) {
     const { data, error } = await getSupabaseAdmin()
       .from(vacationRequestsTable)
-      .select("employee_hr_id, start_date, end_date")
+      // Named columns, every one checked against the live table (2026-10-02): PostgREST answers a
+      // missing column by failing the WHOLE read, not by nulling that field.
+      .select("employee_hr_id, start_date, end_date, vacation_type, day_part")
       .eq("status", "approved")
       // Overlapping the window, not contained by it: a vacation that began last month and ends in
       // this one covers days here, and `start_date >= from` would miss every one of them.
@@ -72,14 +105,7 @@ export async function loadApprovedLeaveDays(
       .gte("end_date", range.from)
       .in("employee_hr_id", wanted.slice(at, at + CHUNK));
     if (error) throw new Error(`approved leave: ${error.message}`);
-
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-      const from = cleanDay(row.start_date);
-      const to = cleanDay(row.end_date) ?? from;
-      const hrId = String(row.employee_hr_id ?? "").trim();
-      if (!from || !to || !hrId) continue;
-      for (const day of leaveDaysCovered(from, to, range)) out.push({ day, hrId });
-    }
+    out.push(...spreadApprovedLeave((data ?? []) as Array<Record<string, unknown>>, range));
   }
   return out;
 }

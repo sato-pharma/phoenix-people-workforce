@@ -160,10 +160,23 @@ const JOBS = {
     path: "/api/cron/phoenix-crm-plan-reminder",
     // 12:57 and 17:57 Cairo, every day (owner, 2026-10-02). It speaks only from the day a week is due
     // until the day before it starts, to the rep and his district manager in the teams that have
-    // started; every other day it sends nothing. Two ticks so a deploy or a cut tick still leaves
-    // one — the keys are per person per day, so nobody hears twice. On :57, a minute no other job holds.
+    // started; every other day it sends nothing. The 17:57 tick tells whoever is STILL not sent
+    // (owner, 2026-10-02: "Yes, remind again"); the keys are per person per day per tick, so a retry of
+    // one tick tells nobody twice. On :57, a minute no other job holds.
     schedule: { hours: [12, 17], minutes: [57], mdays: [-1], months: [-1], wdays: [-1] },
     // One read of the week's plans, then at most a few dozen notifications.
+    requestTimeout: 300,
+  },
+  "phoenix-crm-approval-nudge": {
+    title: "Phoenix — CRM approval nudge",
+    path: "/api/cron/phoenix-crm-approval-nudge",
+    // 09:57 Cairo, every day (owner, 2026-10-02). Whoever has a list request, an off-plan visit or a
+    // request to edit a week waiting on him for more than a day at his step — the district manager or
+    // the SFE Manager — gets one message naming the counts. A morning with nothing overdue sends
+    // nothing. The key is per approver per day, so a second fire tells nobody twice. On :57 at 9, a
+    // minute no other job holds.
+    schedule: { hours: [9], minutes: [57], mdays: [-1], months: [-1], wdays: [-1] },
+    // Three small reads of what is waiting, then one notification per approver.
     requestTimeout: 300,
   },
   "job-heartbeat-sweep": {

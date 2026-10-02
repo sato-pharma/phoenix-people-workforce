@@ -73,7 +73,10 @@ export function runPhoenixCrmTeamTodayTests(): void {
     const team = source("src/lib/phoenix-crm/server/team.ts");
     assert.match(team, /loadTeamToday\(seatIds, isTest, viewer\.visitDay\)/, "the rep's VISIT day — until 02:00 the day that just ended");
     assert.match(team, /\.in\("seat_id", part\)/, "batched by seat, never one query per rep");
-    assert.match(team, /\.in\("status", \["submitted", "approved"\]\)/, "a sent plan is submitted or approved — the rep's own test");
+    // A sent plan is submitted or approved — the rep's own test — asked of THIS DAY (owner, 2026-10-02,
+    // "Still planned"): a week returned for one other day still stands as sent on this one.
+    assert.match(team, /\.in\("status", \[\.\.\.PLAN_STATUSES_WITH_SENT_DAYS\]\)/, "every plan that can hold a sent day is read");
+    assert.match(team, /if \(!plan \|\| !isPlanDaySent\(\{ \.\.\.plan, date \}\)\) continue;/, "and kept only when it is sent on the day — the rep's own test");
     assert.doesNotMatch(team, /for \(const seat of seats\)[\s\S]{0,200}await /, "no per-territory await loop");
   }
 

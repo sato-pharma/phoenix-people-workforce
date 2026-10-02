@@ -49,6 +49,8 @@ const EVENT_TYPES = [
   "forecast_sent",
   // "Your coming week is not sent" (owner, 2026-10-02): the rep and his district manager, never by email.
   "plan_reminder",
+  // The daily nudge to a slow approver (owner, 2026-10-02): the district manager or SFE, never by email.
+  "approval_nudge",
 ];
 
 /**
@@ -138,11 +140,14 @@ export function runPhoenixCrmEmailBlockTests() {
     assert.match(notify, /category: PHOENIX_CRM_NOTIFICATION_CATEGORY,/);
     assert.match(notify, /export const PHOENIX_CRM_NOTIFICATION_CATEGORY = "phoenix_crm";/);
 
-    // The notifier, and the one other sender of the module that names its event outright: the coming
-    // week's reminder (owner, 2026-10-02). The 06:55 digest is pinned in its own test.
+    // The notifier, and the two other senders of the module that name their event outright: the coming
+    // week's reminder and the daily nudge to a slow approver (owner, 2026-10-02). The 06:55 digest is
+    // pinned in its own test.
     const reminder = readFileSync("src/lib/phoenix-crm/server/plan-reminder.ts", "utf8");
+    const nudge = readFileSync("src/lib/phoenix-crm/server/approval-nudge.ts", "utf8");
+    assert.doesNotMatch(nudge, /"email"/, "the approval nudge never names email");
     const sent = new Set<string>();
-    for (const line of `${notify}\n${reminder}`.split("\n").filter((text) => /^\s*eventType: /.test(text))) {
+    for (const line of `${notify}\n${reminder}\n${nudge}`.split("\n").filter((text) => /^\s*eventType: /.test(text))) {
       for (const match of line.matchAll(/"([a-z_]+)"/g)) sent.add(match[1]);
     }
     assert.deepEqual([...sent].sort(), [...EVENT_TYPES, ...EMAIL_EVENT_TYPES].sort(), "the notices this test checks are exactly the notices the module sends");

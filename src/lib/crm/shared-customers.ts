@@ -92,12 +92,14 @@ export async function loadPlanDatesFor(contactCrmIds: readonly number[], fromIso
  *
  * 🔴 The QUERY lives in reads.ts, not here (owner's rule that work is not built twice, and the
  * single-source guard's rule that the visits mirror is read through one door). This is the thin
- * re-export Phoenix CRM's List calls, so the List never reaches the visits mirror itself.
+ * re-export Phoenix CRM's List calls, so the List never reaches the visits mirror itself — and its
+ * planner too, which asks the same read for the days of the last weeks (`daysSince`) to learn when a
+ * customer not validated yet is usually seen (owner, 2026-10-02).
  */
 export type VisitHistory = CrmContactVisitHistory;
 
-export async function loadVisitHistoryFor(contactCrmIds: readonly number[]): Promise<Map<number, VisitHistory>> {
-  return readContactVisitHistory(contactCrmIds);
+export async function loadVisitHistoryFor(contactCrmIds: readonly number[], options: { daysSince?: string } = {}): Promise<Map<number, VisitHistory>> {
+  return readContactVisitHistory(contactCrmIds, options);
 }
 
 export async function loadObservedPointsFor(contactCrmIds: readonly number[]): Promise<Map<number, ObservedPoint>> {

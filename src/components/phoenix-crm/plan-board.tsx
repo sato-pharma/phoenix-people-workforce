@@ -28,6 +28,12 @@
  * month chooser, no month send, no Copy last month. A week he has sent changes only through "Ask to
  * edit this week" (the district manager, then SFE, then HR). The server refuses any other week too.
  *
+ * 🔴 Owner, 2026-10-02 — THE MANAGER'S REVIEW AS STEPS: a reviewer who opens a week WAITING FOR REVIEW
+ * that he decides gets the step form too (plan-review-steps.tsx): the week with what changed since the
+ * last send and the month's coverage, its days, each day's AM then PM read only, and the decision —
+ * Approve, Return the week, or Return ONE day ("Only that day" reopens for the rep). The month chooser,
+ * the weeks and Back to Team stay around it. The rep's own form is untouched.
+ *
  * Owner, 2026-09-30 — "the best-appearing and easiest CRM, yet controlled":
  *   - "Suggest this day" and "Suggest the week" (plan-suggest.ts) fill the draft through `addCopies`,
  *     the one way a copy fills it, so a suggestion is reviewed, saved and sent exactly like a copy. The
@@ -36,18 +42,30 @@
  *   - On a phone the month's eight meters fold into one two-column strip, AM on the left and PM on the
  *     right, never added together; a tablet and a desktop keep the full cards.
  *   - The week and day on screen carry a tick in their chooser and an orange bar on their heading.
+ *
+ * 🔴 Owner, 2026-10-02 — THE REP'S OWN BOARD SAVES ITSELF ("save as he ticks"; on 1 October one rep
+ * pressed Save 16 times, several 9 or 10). About 1.5 seconds after his last change the week goes
+ * through the very save the Save button used — the same payload, the same version check, the same
+ * refusals — and his Save button and its "Unsaved changes" bar give way to ONE status line: "Saving…",
+ * "Saved", or "Not saved — <why>". A week the server would refuse, or one that changed underneath him,
+ * waits for his fix or his choice and says which. Send first sends whatever is still waiting; so does
+ * leaving the board, hiding the page or choosing another week, so the leave guard asks only about work
+ * that cannot save itself. His ticks stay open while it saves. A manager's board, and the Super Admin's
+ * opened from Team, keep the Save button exactly as it was. The days off (a public holiday, or a full
+ * day of his own approved leave) and the days he left empty are said at Send (plan-week-panel.tsx).
  */
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 
 import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
-import { ChevronRight } from "lucide-react";
+import { Check, ChevronRight, LoaderCircle } from "lucide-react";
 
 import { cairoStamp, countText, dayLabel, plural, weekLabel, type Tone } from "@/components/phoenix-crm/format";
 import { pendingListNote, territoryLine } from "@/components/phoenix-crm/labels";
 import type { CopiedPlacements, SuggestContext } from "@/components/phoenix-crm/plan-copy-menu";
 import { decisionBusy, PlanDecision, type PlanDecisionAction } from "@/components/phoenix-crm/plan-decision";
+import { PlanReviewSteps } from "@/components/phoenix-crm/plan-review-steps";
 import { ChoiceLabel, PLAN_STATUS_TONE, PlanWeekPanel, problemText, type WeekBusy, type WeekHold } from "@/components/phoenix-crm/plan-week-panel";
 import { CrmStepFooter, CrmStepForm, CrmStepNext, crmStepBackClassName, type CrmStep } from "@/components/phoenix-crm/step-form";
 import {
@@ -74,6 +92,7 @@ import { monthPlacements, suggestDay } from "@/lib/phoenix-crm/plan-suggest";
 import {
   addCopiedItems,
   buildWeekSavePayload,
+  canSaveItself,
   discardWeekDraft,
   draftFits,
   firstDayToPlan,
@@ -84,11 +103,15 @@ import {
   markWeekSaved,
   matchesSavedWeek,
   placeCustomer,
+  PLAN_AUTOSAVE_DELAY_MS,
   rebaseDraft,
   savedWeekActivities,
   savedWeekItems,
   savedWeekStarts,
+  saveStatusLine,
+  selfSaveKey,
   setPlannedActivity,
+  settleSavedDraft,
   startDraft,
   takeOffCustomer,
   weekFixes,
@@ -97,6 +120,7 @@ import {
   type DailyCaps,
   type DraftProblem,
   type PlannedActivity,
+  type SaveStatus,
   type WeekContent,
   type WeekDraft,
 } from "@/lib/phoenix-crm/plan-week-draft";
@@ -113,6 +137,7 @@ const PLAN_RELOAD_CODES = new Set([
   "phoenix_crm_conflict",
   "phoenix_crm_customer_not_on_list",
   "phoenix_crm_day_not_editable",
+  "phoenix_crm_day_not_returnable",
   "phoenix_crm_not_editable",
   "phoenix_crm_place_changed",
   "phoenix_crm_plan_edit_already_open",
@@ -137,6 +162,13 @@ type BoardBusy = { kind: "save" } | { kind: "month"; action: PlanDecisionAction 
 
 /** Unsaved ticks and a way out was pressed: another month, or back to the screen that opened the board. */
 type Leaving = { kind: "month"; monthKey: string } | { kind: "back" };
+
+/**
+ * A save of the rep's own board that did not go through, and exactly what it tried to save (`selfSaveKey`).
+ * It is not tried again for the same key — only once he changes something, the connection or the page
+ * comes back, or he presses Try again — so a refusal is never sent every 1.5 seconds.
+ */
+type SelfSaveFailure = { key: string; scope: string; reason: string };
 
 /** One week of the month, as the board holds it. */
 type WeekState = {
@@ -240,6 +272,14 @@ export function PlanBoard({
   // The days the step form has already filled with their suggestion this visit: a day is filled ONCE,
   // so a day he cleared on purpose stays clear when he comes back to it.
   const [filledDays, setFilledDays] = useState<ReadonlySet<string>>(() => new Set());
+  // The rep's own board saves itself (owner, 2026-10-02): a save on its way, the last one that failed,
+  // whether anything of his has saved since the board opened, and the quiet read that follows a save.
+  const [selfSaving, setSelfSaving] = useState(false);
+  const [selfSaveFailure, setSelfSaveFailure] = useState<SelfSaveFailure | null>(null);
+  const [selfSavedOnce, setSelfSavedOnce] = useState(false);
+  const [quietRead, setQuietRead] = useState(false);
+  // Set the moment a save of his board leaves, before any render can say so: two can never cross.
+  const selfSaveFlight = useRef(false);
   const stepRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const weekRef = useRef<HTMLDivElement>(null);
@@ -247,6 +287,8 @@ export function PlanBoard({
   const resource = useCrmGet<MonthlyPlannerView>(crmUrl("/api/phoenix-crm/monthly-plans", { seatId, test, month }), "planner");
   const view = resource.data;
   const locked = busy !== null || resource.loading;
+  // The read after a save of his board has come back (or failed): the next read locks as every read does.
+  if (quietRead && !resource.loading) setQuietRead(false);
 
   // "+ Make weekly plan" asked again: answered while rendering, from the value seen last time — state
   // derived from a prop, never an effect. It goes back to the rep's one week (owner, 2026-10-01): the
@@ -271,6 +313,12 @@ export function PlanBoard({
   // Keyed on WHERE the board was opened, not on the role: the Super Admin's test board is both rep and
   // reviewer, and from Team he reviews.
   const repBoard = Boolean(view?.viewerIsRep) && !onBack;
+  // 🔴 WHAT MAY LAND IN THE DRAFT. On the rep's own board his ticks stay open while the week saves
+  // itself and while the read after that save comes back — locking them there would grey every box for
+  // a moment after each pause and drop the tap he made in it. The draft stands over the version that save
+  // made and outlives the read (`draftFits`). A send, a request or a decision on its way still locks
+  // them, and so does every other read. Everywhere else the draft locks exactly as before.
+  const editLocked = repBoard ? busy !== null || (resource.loading && !quietRead) : locked;
 
   /** The rep ticks, saves and sends this week — the server's own answer (`repWeekState`), never a guess. */
   function weekEditable(week: MonthlyWeekView): boolean {
@@ -321,10 +369,24 @@ export function PlanBoard({
   if (settled.length > 0) {
     setDrafts((previous) => settled.reduce((record, scope) => withoutKey(record, scope), previous));
     setHolds((previous) => settled.reduce((record, scope) => withoutKey(record, scope), previous));
+    // It landed after all, so his status line says so.
+    if (repBoard && !selfSavedOnce) setSelfSavedOnce(true);
   }
 
   const anyDirty = states.some((state) => state.dirty);
   const needsSave = states.filter((state) => state.dirty || state.fixes > 0);
+
+  // ── The rep's board saves itself (owner, 2026-10-02) ──────────────────────────────────────────
+  // The weeks whose draft may save itself now, and exactly what that save would write. A week that
+  // cannot — a problem the server would refuse, or a week changed underneath him — waits for his fix or
+  // his choice, and its status line says which.
+  const selfSaveWeeks = repBoard ? states.filter(canSaveItself) : [];
+  const selfSaveAt = selfSaveKey(selfSaveWeeks);
+  const selfSaveFailed = selfSaveFailure !== null && selfSaveWeeks.length > 0 && selfSaveFailure.key === selfSaveAt;
+  const waitingWeek = repBoard ? states.find((state) => state.dirty && !canSaveItself(state)) : undefined;
+  // What would be lost on the way out. On his own board, only work that cannot save itself: a save still
+  // waiting goes as he leaves, so the guard never asks about something that is about to save.
+  const unsavedWork = repBoard ? waitingWeek !== undefined || selfSaveFailed : anyDirty;
 
   // "+ Make weekly plan" brings the rep's week into view once the board holding it is on screen.
   if (jumpToWeek && view && !resource.loading) {
@@ -345,20 +407,22 @@ export function PlanBoard({
   const selectedDay = selected ? (selected.week.days.find((entry) => entry.date === day) ?? firstDayToPlan(selected.week.days)) : null;
 
   useEffect(() => {
-    onDirtyChange?.(anyDirty);
-  }, [anyDirty, onDirtyChange]);
+    onDirtyChange?.(unsavedWork);
+  }, [unsavedWork, onDirtyChange]);
 
   // A full page unload is the one way out the draft cannot survive, so the browser asks first. Only
   // while something is unsaved: a listener left attached keeps the page out of the back/forward cache.
+  // On the rep's own board, only for work that cannot save itself — a save still waiting goes with the
+  // page (below), and asking about it would nag him over nothing.
   useEffect(() => {
-    if (!anyDirty) return;
+    if (!unsavedWork) return;
     function onBeforeUnload(event: BeforeUnloadEvent) {
       event.preventDefault();
       event.returnValue = "";
     }
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [anyDirty]);
+  }, [unsavedWork]);
 
   // The week "+ Make weekly plan" opened, brought into view.
   useEffect(() => {
@@ -385,7 +449,7 @@ export function PlanBoard({
    * out stays as it was.
    */
   function change(state: WeekState, update: (draft: WeekDraft) => Partial<WeekContent>) {
-    if (!state.editable || locked) return;
+    if (!state.editable || editLocked) return;
     setDrafts((previous) => {
       const current = previous[state.scope];
       const keep = current !== undefined && (draftFits(current, state.scope, state.week) || holds[state.scope] !== undefined);
@@ -546,12 +610,151 @@ export function PlanBoard({
     }
   }
 
+  // ── The rep's board saves itself (owner, 2026-10-02) ──────────────────────────────────────────
+
+  /**
+   * 🔴 THE REP'S OWN BOARD SAVES ITSELF. Every week whose draft may (`canSaveItself`) goes through the
+   * very save the Save button used — the same `buildWeekSavePayload`, the same POST, the same version
+   * check, and the same refusals, held the same way — one week at a time and never two saves at once.
+   * It only ever SAVES: sending stays the rep's own press of Send.
+   *
+   * What it leaves is `settleSavedDraft`, never `markWeekSaved`: he keeps ticking while it travels, and
+   * the answer must not wipe the tick he made meanwhile. No banner and no scroll — a pause in his ticking
+   * is not a moment to pull the page from under him; the status line says how it went.
+   */
+  async function saveItself(options: { keepalive?: boolean; retry?: boolean } = {}): Promise<void> {
+    if (!view || !repBoard || busy !== null || selfSaveFlight.current) return;
+    if (selfSaveWeeks.length === 0 || (selfSaveFailed && !options.retry)) return;
+    const key = selfSaveAt;
+    const customersNow = view.customers;
+    selfSaveFlight.current = true;
+    setSelfSaving(true);
+    let landed = false;
+    let refused = false;
+    try {
+      for (const state of selfSaveWeeks) {
+        const sentFrom = state.draft;
+        if (!sentFrom) continue;
+        const payload = buildWeekSavePayload({ seatId, test, week: state.week, draft: sentFrom, customers: customersNow });
+        let saved: SavedPlan;
+        try {
+          saved = await crmPost<SavedPlan>("/api/phoenix-crm/plans", payload, "plan", { keepalive: options.keepalive });
+        } catch (error) {
+          refusedSelfSave(state, error, key);
+          refused = true;
+          break;
+        }
+        landed = true;
+        setDrafts((previous) => ({
+          ...previous,
+          [state.scope]: settleSavedDraft({ current: previous[state.scope] ?? sentFrom, week: state.week, saved, sent: payload, customers: customersNow }),
+        }));
+        setHolds((previous) => withoutKey(previous, state.scope));
+      }
+      if (!refused) setSelfSaveFailure(null);
+    } finally {
+      selfSaveFlight.current = false;
+      setSelfSaving(false);
+    }
+    if (!landed) return;
+    setSelfSavedOnce(true);
+    // The meters and the week's own status read what is saved, so the board reads itself again — QUIETLY,
+    // his ticks open throughout. A refusal has already asked for its own read, which locks as reads do.
+    if (!refused) {
+      setQuietRead(true);
+      resource.reload();
+    }
+  }
+
+  // These four hooks call `saveItself`, so they sit BELOW it: the React compiler refuses a variable read
+  // before it is declared. Hooks run in the same order on every render either way.
+  // Each change starts the 1.5 seconds again, and the save waits for anything else on its way — a send,
+  // a read, its own last save — so two never cross and a read never lands under a newer save.
+  const selfSaveWaits = selfSaveWeeks.length > 0 && !selfSaveFailed;
+  const selfSaveIdle = busy === null && !resource.loading && !selfSaving;
+  const onSelfSaveTimer = useEffectEvent(() => {
+    void saveItself();
+  });
+  useEffect(() => {
+    if (!selfSaveWaits || !selfSaveIdle) return;
+    const timer = window.setTimeout(() => onSelfSaveTimer(), PLAN_AUTOSAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [selfSaveAt, selfSaveWaits, selfSaveIdle]);
+
+  // The page going out of sight — the phone's home button, the tab closed, a reload — sends a save still
+  // waiting out its 1.5 seconds, and lets it outlive the page. Back in sight or back online, a save that
+  // failed is tried again.
+  const onPageHidden = useEffectEvent(() => {
+    void saveItself({ keepalive: true });
+  });
+  useEffect(() => {
+    function onVisibility() {
+      if (document.visibilityState === "hidden") onPageHidden();
+      else setSelfSaveFailure(null);
+    }
+    function onPageHide() {
+      onPageHidden();
+    }
+    function onOnline() {
+      setSelfSaveFailure(null);
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("online", onOnline);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("online", onOnline);
+    };
+  }, []);
+
+  // Leaving the board — another module, another territory, test mode — sends what is still waiting.
+  const onBoardLeaves = useEffectEvent(() => {
+    void saveItself({ keepalive: true });
+  });
+  useEffect(() => {
+    return () => onBoardLeaves();
+  }, []);
+
+  // "+ Make weekly plan" moves him to his week, as choosing a week does: a save still waiting goes now.
+  const onWeekAsked = useEffectEvent(() => {
+    void saveItself();
+  });
+  useEffect(() => {
+    if (weekNonce === 0) return;
+    const timer = window.setTimeout(() => onWeekAsked(), 0);
+    return () => window.clearTimeout(timer);
+  }, [weekNonce]);
+
+  /** A save of his own board that did not go through: held exactly as a pressed Save is, said on the status line. */
+  function refusedSelfSave(state: WeekState, error: unknown, key: string) {
+    const code = errorCodeOf(error);
+    setSelfSaveFailure({ key, scope: state.scope, reason: (code !== null ? RELOADED_MESSAGES[code] : undefined) ?? messageOf(error) });
+    if (code !== null && MAY_HAVE_SAVED.has(code)) {
+      // The answer was lost, not necessarily the save: the read says whether it landed (`holdSettled`).
+      setHolds((previous) => ({ ...previous, [state.scope]: "unchecked" }));
+      resource.reload();
+    } else if (code !== null && PLAN_RELOAD_CODES.has(code)) {
+      setHolds((previous) => ({ ...previous, [state.scope]: "changed" }));
+      resource.reload();
+    }
+  }
+
+  /** "Try again" on his status line. */
+  function retrySelfSave() {
+    setSelfSaveFailure(null);
+    void saveItself({ retry: true });
+  }
+
   // ── A week's own buttons ──────────────────────────────────────────────────────────────────────
 
   async function sendWeek(state: WeekState) {
-    if (!view || locked || !state.editable) return;
+    if (!view || locked || selfSaveFlight.current || !state.editable) return;
     if (!readyToSave([state])) return;
-    const saveFirst = state.dirty || state.fixes > 0 || state.week.plan === null;
+    // 🔴 On the rep's own board a save still waiting out its 1.5 seconds goes WITH the send — the press
+    // flushes it (owner, 2026-10-02) — and a week his board already saved is not saved a second time
+    // just because the read after that save has not come back yet.
+    const saveFirst = state.dirty || state.fixes > 0 || (state.week.plan === null && !state.draft?.saved);
     const name = state.week.label;
     setBusy({ kind: "week", weekStart: state.week.weekStart, action: "send" });
     setNotice(null);
@@ -615,19 +818,26 @@ export function PlanBoard({
     }
   }
 
-  /** The reviewer's decision on one week — only ever called from its own Approve or Return button. */
-  async function decideWeek(state: WeekState, action: PlanDecisionAction, note: string): Promise<boolean> {
+  /**
+   * The reviewer's decision on one week — only ever called from its own Approve or Return button. `day`
+   * names the ONE day returned (owner, 2026-10-02: "Only that day" reopens), else null.
+   */
+  async function decideWeek(state: WeekState, action: PlanDecisionAction, note: string, day: string | null): Promise<boolean> {
     const plan = state.week.plan;
     if (!view || !plan || locked) return false;
     const name = state.week.label;
     setBusy({ kind: "week", weekStart: state.week.weekStart, action });
     setNotice(null);
     try {
-      await crmPost<unknown>("/api/phoenix-crm/plans/decide", { planId: plan.planId, action, expectedVersion: plan.version, note: note || null }, "plan");
+      await crmPost<unknown>("/api/phoenix-crm/plans/decide", { planId: plan.planId, action, expectedVersion: plan.version, note: note || null, day }, "plan");
       show({
         tone: "good",
-        title: action === "return" ? `${name} returned for changes` : `${name} approved`,
-        message: view.isTest ? "This is a test plan, so nobody is notified." : "The rep is notified.",
+        title: action === "return" ? (day ? `${dayLabel(day)} of ${name} returned for changes` : `${name} returned for changes`) : `${name} approved`,
+        message: view.isTest
+          ? "This is a test plan, so nobody is notified."
+          : day
+            ? "Only that day is open for the rep. The other days stay as he sent them. The rep is notified."
+            : "The rep is notified.",
       });
       onChanged?.();
       resource.reload();
@@ -701,6 +911,8 @@ export function PlanBoard({
   function chooseWeek(next: string) {
     // A greyed week is not a choice on the rep's own plan (owner, 2026-10-01): one week at a time.
     if (repBoard && view?.weeks.find((week) => week.weekStart === next)?.repState === "closed") return;
+    // Moving to another week sends a save still waiting on this one (owner, 2026-10-02).
+    if (repBoard) void saveItself();
     setWeekStart(next);
     setDay(null);
     // On the rep's form a tap on his week moves him on to its days.
@@ -719,7 +931,8 @@ export function PlanBoard({
   /**
    * A day chosen on the rep's form is planned on the next step — the tap moves him on — starting with
    * its AM list, already filled with the day's suggestion the first time he opens it (owner,
-   * 2026-10-02). Nothing is saved: the ticks land in the draft, where one tap clears them.
+   * 2026-10-02). Nothing is sent: the ticks land in the draft — which saves itself like any tick of his
+   * — where one tap clears them.
    */
   function openDay(date: string) {
     setDay(date);
@@ -812,6 +1025,24 @@ export function PlanBoard({
   };
   const monthBusy = busy?.kind === "month" ? busy.action : null;
   const weekBusy = busy?.kind === "week" && selected && busy.weekStart === selected.week.weekStart ? busy.action : null;
+  // His one status line (owner, 2026-10-02), in place of the Save button and its bar. A week that waits
+  // says on what — the server's would-be refusal in the board's own words, or the choice the week's
+  // panel offers — and saves itself the moment that is done.
+  const waitingReason = (state: WeekState): string | null => {
+    if (state.hold === "changed") {
+      const why = selfSaveFailure !== null && selfSaveFailure.scope === state.scope ? selfSaveFailure.reason : `${state.week.label} changed since you started.`;
+      return `${why} Choose what to keep.`;
+    }
+    return state.problems.length > 0 ? problemText(state.problems[0]) : null;
+  };
+  const saveStatus: SaveStatus | null = repBoard
+    ? saveStatusLine({
+        saving: selfSaving || selfSaveWaits,
+        blocked: waitingWeek ? waitingReason(waitingWeek) : null,
+        failed: selfSaveFailed && selfSaveFailure !== null ? selfSaveFailure.reason : null,
+        savedOnce: selfSavedOnce,
+      })
+    : null;
   // The two suggestions, on the rep's own plan only: the month so far with his unsaved ticks in it, the
   // month's weeks from the one on screen on, so a customer is spread over them rather than bunched, and
   // his daily call-rate target, which a suggestion fills a day to (never past the cap). The weeks are
@@ -887,7 +1118,11 @@ export function PlanBoard({
           {countText(view.amMeter.overNorm)} AM and {countText(view.pmMeter.overNorm)} PM planned over the grade — allowed, shown as a deviation.
         </p>
       ) : null}
-      {anyDirty ? <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">These count what is saved. Save to see your latest ticks in them.</p> : null}
+      {anyDirty ? (
+        <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
+          {repBoard ? "These count what is saved. Your latest ticks join them once they save." : "These count what is saved. Save to see your latest ticks in them."}
+        </p>
+      ) : null}
     </CrmBlock>
   );
 
@@ -935,7 +1170,8 @@ export function PlanBoard({
                   state.week.statusLabel,
                   state.week.plan?.submittedLate ? "sent late" : null,
                   state.week.overdue ? "overdue" : null,
-                  state.dirty ? "unsaved" : null,
+                  // His own board saves itself: its status line, not a word on the week, says where that stands.
+                  state.dirty && !repBoard ? "unsaved" : null,
                 ]
                   .filter(Boolean)
                   .join(" · ");
@@ -960,6 +1196,36 @@ export function PlanBoard({
     </CrmBlock>
   );
 
+  // The ONE place a week's decision is sent from: the whole board's decision block and the review steps
+  // both hand it on, so an approval or a return is still always the press of its own button.
+  const onDecideWeek = (action: PlanDecisionAction, note: string, day: string | null) => (selected ? decideWeek(selected, action, note, day) : Promise.resolve(false));
+
+  // 🔴 THE MANAGER'S REVIEW AS STEPS (owner, 2026-10-02): a week waiting for review that this viewer
+  // decides — approves, or returns as the SFE Manager does — opened from Team rather than the rep's own
+  // Plan. Keyed on WHERE the board was opened, like `repBoard`: the Super Admin's test board is both.
+  // It takes the week panel's place under the weeks; any other week, and a week he only reads, keeps
+  // the whole board.
+  const reviewing =
+    !repBoard && selected !== null && selected.week.status === "submitted" && (selected.week.canApprove || selected.week.canReturn);
+  const reviewElement =
+    reviewing && selected ? (
+      <PlanReviewSteps
+        busy={weekBusy}
+        caps={caps}
+        customers={view.customers}
+        filterOptions={filterOptions}
+        idPrefix={idPrefix}
+        key={`${selected.week.weekStart}|${selected.week.plan?.version ?? 0}`}
+        locked={locked}
+        onDecide={onDecideWeek}
+        onOpenMonth={chooseMonth}
+        seatId={seatId}
+        tints={tints}
+        view={view}
+        week={selected.week}
+      />
+    ) : null;
+
   // The week panel as an ELEMENT built once per render — never a function called during render, which
   // the React compiler reads as running every handler inside it then (react-hooks/refs).
   const panelSection: "days" | "day" | "send" | undefined = repBoard ? (planStep === 2 ? "days" : planStep === 3 ? "day" : "send") : undefined;
@@ -967,23 +1233,27 @@ export function PlanBoard({
     selected && selectedDay ? (
     <PlanWeekPanel
       activities={selected.activities}
+      autosave={repBoard}
       busy={weekBusy}
       caps={caps}
       customers={view.customers}
       dirty={selected.dirty}
       editable={selected.editable}
+      editLocked={editLocked}
       filter={filter}
       filterOptions={filterOptions}
+      gradeTargets={view.rules.gradeTargets}
       hold={selected.hold}
       idPrefix={idPrefix}
       items={selected.items}
       key={selected.week.weekStart}
-      locked={locked}
+      // Send and Ask wait for a save of his board on its way, so a send never crosses it.
+      locked={repBoard ? locked || selfSaving : locked}
       onActivity={(date, activityType, next) => planActivity(selected, date, activityType, next)}
       onAskToEdit={() => void askToEdit(selected)}
       onCopied={addCopies}
       onDay={openDay}
-      onDecide={(action, note) => decideWeek(selected, action, note)}
+      onDecide={onDecideWeek}
       onFilter={setFilter}
       onKeepMine={() => keepMine(selected)}
       onPlace={(item) => place(selected, item)}
@@ -1000,7 +1270,8 @@ export function PlanBoard({
       selectedDay={selectedDay}
       dayFocus={repBoard && panelSection === "day" ? daySession : undefined}
       onFillDay={() => fillDay(selectedDay.date, true)}
-      showProblems={showProblems}
+      // His board waits on a problem rather than refusing a press, so the problem is named while it waits.
+      showProblems={showProblems || (repBoard && selected.dirty && selected.problems.length > 0)}
       showSpread={showSpread}
       starts={selected.starts}
       suggest={suggest}
@@ -1020,8 +1291,14 @@ export function PlanBoard({
     { label: "Send", description: "Send it for review", title: "Send the week" },
   ];
   const dayIndex = selected && selectedDay ? selected.week.days.findIndex((entry) => entry.date === selectedDay.date) : -1;
-  // The next day that holds a list — a public holiday is skipped, the way a Friday is never in the week.
+  // The next day that holds a list — a day off is skipped, the way a Friday is never in the week.
   const nextDay = selected && dayIndex >= 0 ? (selected.week.days.slice(dayIndex + 1).find((entry) => entry.listTypes.length > 0) ?? null) : null;
+  // A day with a PM list has a PM screen after its AM one — and so does a day off (or a Thursday) that
+  // still holds a PM customer, whom he must be able to reach to take off.
+  const dayHoldsPm =
+    selectedDay !== null &&
+    (selectedDay.listTypes.includes("PM") ||
+      (selected?.items ?? []).some((item) => item.planDate === selectedDay.date && byId.get(item.customerId)?.listType === "PM"));
   const planFooter =
     planStep === 1 ? (
       <CrmStepFooter back={null}>
@@ -1031,7 +1308,7 @@ export function PlanBoard({
       <CrmStepFooter back={() => goStep(1)}>
         <CrmStepNext onClick={() => (selectedDay ? openDay(selectedDay.date) : goStep(3))} />
       </CrmStepFooter>
-    ) : planStep === 3 && daySession === "AM" && selectedDay?.listTypes.includes("PM") ? (
+    ) : planStep === 3 && daySession === "AM" && dayHoldsPm ? (
       <CrmStepFooter back={() => goStep(2)}>
         <CrmStepNext
           onClick={() => {
@@ -1182,7 +1459,7 @@ export function PlanBoard({
             {pendingBlock}
             {weeksBlock}
             <div className="min-w-0 scroll-mt-24" ref={weekRef}>
-              {weekPanelElement}
+              {reviewElement ?? weekPanelElement}
             </div>
           </>
         )}
@@ -1202,7 +1479,9 @@ export function PlanBoard({
         ) : null}
       </CrmPanel>
 
-      {needsSave.length > 0 ? (
+      {/* 🔴 The rep's own board has NO Save button (owner, 2026-10-02): it saves itself, and one line says
+          how that stands. A manager's board, and the Super Admin's opened from Team, keep the bar. */}
+      {!repBoard && needsSave.length > 0 ? (
         <SaveBar
           busy={busy?.kind === "save"}
           dirty={anyDirty}
@@ -1214,6 +1493,7 @@ export function PlanBoard({
           weeks={weeksText(needsSave.map((state) => state.week.label))}
         />
       ) : null}
+      {saveStatus ? <SaveStatusLine locked={locked || selfSaving} onRetry={retrySelfSave} status={saveStatus} /> : null}
     </div>
   );
 }
@@ -1268,6 +1548,46 @@ function MeterStrip({ view }: { view: MonthlyPlannerView }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── The rep's status line ───────────────────────────────────────────────────────────────────────
+
+/**
+ * The rep's own board, in place of the Save button and its "Unsaved changes" bar (owner, 2026-10-02):
+ * ONE small line — "Saving…", "Saved", or "Not saved — <why>" — held where the bar stood, above the
+ * portal's bottom bar on a phone. A save that failed offers Try again; a week waiting on his fix or his
+ * choice says what, and needs no button here — it saves itself the moment it is done.
+ */
+function SaveStatusLine({ locked, onRetry, status }: { locked: boolean; onRetry: () => void; status: SaveStatus }) {
+  const bad = status.kind === "not_saved";
+  return (
+    <div
+      aria-live="polite"
+      className={cn(
+        "sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 mt-3 border bg-white px-4 py-2 sm:px-5 lg:bottom-0",
+        bad ? "border-rose-200" : "border-slate-200",
+      )}
+      role="status"
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+        <p
+          className={cn(
+            "flex min-w-0 flex-1 basis-56 items-start gap-1.5 text-xs font-bold leading-5",
+            bad ? "text-rose-700" : status.kind === "saved" ? "text-emerald-700" : "text-slate-600",
+          )}
+        >
+          {status.kind === "saved" ? <Check aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : null}
+          {status.kind === "saving" ? <LoaderCircle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" /> : null}
+          <span className="min-w-0 break-words">{status.text}</span>
+        </p>
+        {status.canRetry ? (
+          <CrmButton disabled={locked} onClick={onRetry} size="sm">
+            Try again
+          </CrmButton>
+        ) : null}
+      </div>
     </div>
   );
 }

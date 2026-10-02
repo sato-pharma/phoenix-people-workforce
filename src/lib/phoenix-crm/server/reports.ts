@@ -60,6 +60,7 @@ import {
 import { dailyPlanActivityText } from "@/lib/phoenix-crm/daily-plan-report";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { isLeaveDay } from "@/lib/phoenix-crm/plan-leave";
+import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import type { PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
 import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -69,6 +70,7 @@ import { formatDistance } from "@/lib/phoenix-crm/geo";
 import { loadSeatDayActivities } from "@/lib/phoenix-crm/server/day-activities";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -1055,7 +1057,10 @@ async function visitDaysByCustomer(seatId: string, includeTest: boolean, month: 
  * 🔴 A DRAFT IS NOT A PLAN. The rep owns his own draft until he submits it, so counting draft rows
  * would let the denominator move under a manager's feet while he reads the page — and it is the
  * same reasoning that makes an off-plan visit count only against a plan that reached `submitted`
- * before the visit (`unplanned-rules.ts`). A returned plan is not counted either: it was sent back.
+ * before the visit (`unplanned-rules.ts`). A plan returned WHOLE is not counted either: it was sent
+ * back. A plan returned for ONE day still counts on its other days, which stand as sent (owner,
+ * 2026-10-02, "Still planned") — asked day by day through plan-rules.ts `isPlanDaySent`, the rule the
+ * visit's own save follows.
  */
 async function plannedDaysByCustomer(
   seatId: string,
@@ -1066,21 +1071,22 @@ async function plannedDaysByCustomer(
     () =>
       getSupabaseAdmin()
         .from("phoenix_crm_plans")
-        .select("id")
+        .select(`id, ${PLAN_DAY_COLUMNS}`)
         .eq("seat_id", seatId)
         .eq("is_test", includeTest)
-        .in("status", ["submitted", "approved"]),
+        .in("status", [...PLAN_STATUSES_WITH_SENT_DAYS]),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
   const out = new Map<string, string[]>();
   if (plans.length === 0) return out;
+  const facts = await loadPlanDayFacts(plans, includeTest);
 
   for (const part of chunk(plans.map((plan) => String(plan.id)), 150)) {
     const items = await fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_plan_items")
-          .select("id, customer_id, plan_date")
+          .select("id, plan_id, customer_id, plan_date")
           .in("plan_id", part)
           .gte("plan_date", month.monthStart)
           .lte("plan_date", month.monthEnd),
@@ -1089,7 +1095,8 @@ async function plannedDaysByCustomer(
     for (const item of items) {
       const id = textOrNull(item.customer_id);
       const day = textOrNull(item.plan_date)?.slice(0, 10);
-      if (id && day) out.set(id, [...(out.get(id) ?? []), day]);
+      const plan = facts.get(String(item.plan_id));
+      if (id && day && plan && isPlanDaySent({ ...plan, date: day })) out.set(id, [...(out.get(id) ?? []), day]);
     }
   }
   return out;

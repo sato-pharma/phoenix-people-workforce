@@ -17,8 +17,9 @@ export const maxDuration = 60;
  * the day the week is due until the day before it starts. On every other day it reads nothing and
  * sends nothing, which is the job working, not failing.
  *
- * Safe to fire twice: the keys are per person per week per Cairo day, so the second tick reaches only
- * someone the first one missed.
+ * The 17:57 tick tells whoever is STILL not sent, in its own words (owner, 2026-10-02). Safe to fire
+ * twice: the keys are per person per week per Cairo day per tick, so a retry of one tick tells nobody
+ * twice.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/phoenix-crm-plan-reminder");

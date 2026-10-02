@@ -38,7 +38,8 @@ import { customerMetaText, monthVisitsText, PENDING_COUNTS_NOTE, PENDING_PILL, p
 import { CrmSpeak, type VoiceNoteValue } from "@/components/phoenix-crm/speak";
 import { silentFixPayload, useSilentFix } from "@/components/phoenix-crm/use-silent-fix";
 import { crmStepBackClassName, crmStepNextClassName } from "@/components/phoenix-crm/step-form";
-import { PlaceWindows } from "@/components/phoenix-crm/visit-customer-picker";
+import { customerDirectionsUrl, PlaceWindows } from "@/components/phoenix-crm/visit-customer-picker";
+import { DirectionsLink } from "@/components/phoenix-crm/directions-link";
 import {
   CrmBackBar,
   CrmBlock,
@@ -668,6 +669,9 @@ export function VisitLogForm({
               {customer.pending ? pendingVisitsText(customer.visitsThisMonth) : monthVisitsText(customer.visitsThisMonth, customer.target)}
             </p>
           )}
+          {/* The way to his saved place, when one is saved (owner, 2026-10-02). A new tab, so this form
+              is exactly as he left it when he comes back. */}
+          <DirectionsLink className="mt-2" customerName={customer.name} href={customerDirectionsUrl(customer)} />
         </div>
         {/* The whole reason the next step is worth writing down: it comes back to him at the door, where
             he can still act on it — so it sits right under the customer's name, the first thing he

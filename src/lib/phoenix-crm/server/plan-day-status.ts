@@ -1,0 +1,97 @@
+/**
+ * Phoenix CRM — what a plan says about ONE day, for every reader that asks "is this day on a sent
+ * plan" (owner, 2026-10-02, "Still planned").
+ *
+ * The rule is pure and lives in plan-rules.ts (`planDayStatus`): a week returned for ONE day still
+ * stands on its other days as it stood when the day was returned, and only that day waits for the rep
+ * to send the week again. This reads the two facts the rule needs beyond the plan row — and only for a
+ * week returned for one day, so every other plan costs nothing more than the row its reader already
+ * has:
+ *
+ *   - whether an edit request was acknowledged AFTER the return, which opens the whole week to the rep
+ *     (plan-rules.ts `standingReturnedDay`), so no day of it is authority any more;
+ *   - what the week was when the day was returned — its return event's `from_status` — so a week
+ *     approved before the return is still approved on its other days (Today shows the approved plan
+ *     only).
+ *
+ * The readers: the rep's Planned visit list and Today (visits.ts `plannedCustomersOn`), the Super
+ * Admin's missed record, the Team tab's day line and the frequency report's planned days. The save
+ * itself asks the same question in the database (phoenix_crm_save_visit), so none of them can disagree
+ * with the stamp a visit gets.
+ */
+
+import { standingReturnedDay } from "@/lib/phoenix-crm/plan-rules";
+import { chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { editAcknowledgedAt, loadPlanEditState } from "@/lib/phoenix-crm/server/plan-edits";
+import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+type Row = Record<string, unknown>;
+
+/** The plan row's columns the rule reads, beside the reader's own `id`. */
+export const PLAN_DAY_COLUMNS = "status, returned_day, decided_at";
+
+/** Every status a plan holding a sent day can have: sent, approved, and returned for ONE day. */
+export const PLAN_STATUSES_WITH_SENT_DAYS: ReadonlyArray<PhoenixCrmPlanStatus> = ["submitted", "approved", "returned"];
+
+/** One plan, as `planDayStatus` reads it — add the day and ask. */
+export type PlanDayFacts = {
+  status: PhoenixCrmPlanStatus | null;
+  /** The STANDING one-day return, or null. */
+  returnedDay: string | null;
+  /** What the week was when its one day was returned; null when no day stands returned. */
+  returnedFrom: PhoenixCrmPlanStatus | null;
+};
+
+function planStatusOf(value: unknown): PhoenixCrmPlanStatus | null {
+  return value === "draft" || value === "submitted" || value === "approved" || value === "returned" ? value : null;
+}
+
+/** Per plan id: its facts. `rows` carry `id` and `PLAN_DAY_COLUMNS`. */
+export async function loadPlanDayFacts(rows: ReadonlyArray<Row>, isTest: boolean): Promise<Map<string, PlanDayFacts>> {
+  const facts = new Map<string, PlanDayFacts>();
+  const oneDay: Row[] = [];
+  for (const row of rows) {
+    const status = planStatusOf(row.status);
+    const storedDay = status === "returned" ? textOrNull(row.returned_day) : null;
+    facts.set(String(row.id), { status, returnedDay: storedDay, returnedFrom: null });
+    if (storedDay) oneDay.push(row);
+  }
+  if (oneDay.length === 0) return facts;
+
+  const ids = oneDay.map((row) => String(row.id));
+  const [edits, returnedFrom] = await Promise.all([loadPlanEditState(ids, isTest, { names: false }), loadReturnedFrom(ids)]);
+  for (const row of oneDay) {
+    const id = String(row.id);
+    const entry = facts.get(id);
+    if (!entry) continue;
+    const returnedDay = standingReturnedDay({
+      status: entry.status,
+      returnedDay: entry.returnedDay,
+      decidedAt: textOrNull(row.decided_at),
+      editAcknowledgedAt: editAcknowledgedAt(edits.get(id) ?? null),
+    });
+    facts.set(id, { status: entry.status, returnedDay, returnedFrom: returnedDay ? (returnedFrom.get(id) ?? null) : null });
+  }
+  return facts;
+}
+
+/** What each plan was when it was last returned — its latest return event's `from_status`. */
+async function loadReturnedFrom(planIds: ReadonlyArray<string>): Promise<Map<string, PhoenixCrmPlanStatus | null>> {
+  const out = new Map<string, PhoenixCrmPlanStatus | null>();
+  for (const batch of chunk([...planIds], 50)) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_plan_events")
+      .select("plan_id, from_status")
+      .in("plan_id", batch)
+      .eq("to_status", "returned")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
+    throwIfError(error);
+    for (const row of (data ?? []) as Row[]) {
+      const id = String(row.plan_id);
+      if (!out.has(id)) out.set(id, planStatusOf(row.from_status));
+    }
+  }
+  return out;
+}

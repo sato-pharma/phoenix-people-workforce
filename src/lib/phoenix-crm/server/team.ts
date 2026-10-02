@@ -23,11 +23,14 @@
  */
 
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
+import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import { canDecideListRequest, canReviewTerritory, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
+import { doubleVisitPlanReach, type DoubleVisitPlanReach } from "@/lib/phoenix-crm/server/double-visit-plans";
 import { loadReadiness, loadRequestRows, mapRequestRow, requestPeople, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
+import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { canDecidePlanEditRow, loadPlanEditRows, mapPlanEditRow, planEditPeople, type PlanEditRequestView } from "@/lib/phoenix-crm/server/plan-edits";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import {
@@ -85,7 +88,9 @@ function withClock(figures: TeamTodayFigures): TeamTodayFigures & { lastVisitClo
 /**
  * Every territory's visit day in THREE batched reads, never one per rep: the week's sent plans, their
  * items for the day, and the day's visits. "Sent" is submitted or approved — the same test the rep's
- * own Today and Planned visit use, so a manager and his rep never read two different plans.
+ * own Today and Planned visit use, so a manager and his rep never read two different plans — asked of
+ * THIS DAY (plan-rules.ts `isPlanDaySent`): a week returned for ONE other day still stands as sent on
+ * this one (owner, 2026-10-02, "Still planned"), and only the returned day reads as not sent.
  */
 async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, date: string): Promise<Map<string, TeamTodayFigures>> {
   const supabase = getSupabaseAdmin();
@@ -96,11 +101,11 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
     const [plans, dayVisits] = await Promise.all([
       supabase
         .from("phoenix_crm_plans")
-        .select("id, seat_id")
+        .select(`id, seat_id, ${PLAN_DAY_COLUMNS}`)
         .in("seat_id", part)
         .eq("is_test", isTest)
         .eq("week_start", fieldWeekStart(date))
-        .in("status", ["submitted", "approved"]),
+        .in("status", [...PLAN_STATUSES_WITH_SENT_DAYS]),
       supabase
         .from("phoenix_crm_visits")
         .select("seat_id, customer_id, list_type, captured_at")
@@ -110,8 +115,12 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
     ]);
     throwIfError(plans.error);
     throwIfError(dayVisits.error);
+    const planRows = (plans.data ?? []) as Row[];
+    const facts = await loadPlanDayFacts(planRows, isTest);
     const seatByPlan = new Map<string, string>();
-    for (const row of (plans.data ?? []) as Row[]) {
+    for (const row of planRows) {
+      const plan = facts.get(String(row.id));
+      if (!plan || !isPlanDaySent({ ...plan, date })) continue;
       seatByPlan.set(String(row.id), String(row.seat_id));
       seatsWithPlan.add(String(row.seat_id));
     }
@@ -158,6 +167,13 @@ export type TeamView = {
    * off-plan visits are — one decision refreshes the whole tab.
    */
   planEdits: TeamPlanEdit[];
+  /**
+   * The district manager's double-visit plan (owner, 2026-10-02): whose plans this viewer reads —
+   * his own as the district manager, or any district manager's as SFE or the Super Admin — and
+   * whether he writes them. Null for everyone the plan's route refuses (a regional or national
+   * manager, the CEO), so the section is never offered to them. The rep never sees it.
+   */
+  doubleVisits: DoubleVisitPlanReach | null;
   summary: {
     territories: number;
     vacant: number;
@@ -283,6 +299,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     requests,
     unplannedVisits,
     planEdits,
+    doubleVisits: doubleVisitPlanReach(viewer, isTest),
     summary: {
       territories: territories.length,
       vacant: territories.filter((row) => !row.territory.repHrId).length,

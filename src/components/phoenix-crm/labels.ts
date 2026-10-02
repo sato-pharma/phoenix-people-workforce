@@ -3,8 +3,11 @@
  * tab says the same thing the same way.
  */
 
-import { dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
+import { dayLabel, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
 import type { PillTone } from "@/components/phoenix-crm/ui";
+import { followUpInWeek, usualDaysOf } from "@/lib/phoenix-crm/plan-insight";
+import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
+import { PHOENIX_CRM_WEEKDAY_SHORT } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { TerritorySummary } from "@/lib/phoenix-crm/view-types";
 
@@ -104,4 +107,53 @@ export function monthStanding(visits: number, target: number | null): { label: s
   if (visits < target) return { label: "Behind its grade", tone: "warn" };
   if (visits === target) return { label: "On its grade", tone: "good" };
   return { label: "Over its grade", tone: "warn" };
+}
+
+// ── A row of the day's plan (owner, 2026-10-02; the rules are plan-insight.ts) ──────────────────
+
+/** "Tue 29 Sept" — the year added only when it is not this one, so last February never reads as this. */
+function seenDay(isoDay: string, today: string): string {
+  return isoDay.slice(0, 4) === today.slice(0, 4) ? dayLabel(isoDay) : dayLabelWithYear(isoDay);
+}
+
+/** "Last seen Tue 29 Sept", or "No visit recorded" when neither iReports360 nor Phoenix holds one. */
+export function lastSeenText(lastSeenOn: string | null, today: string): string {
+  return lastSeenOn ? `Last seen ${seenDay(lastSeenOn, today)}` : "No visit recorded";
+}
+
+/** "Usually seen Sun, Tue (iReports360)" — Saturday first, the field week's own order. */
+export function usualDaysText(weekdays: readonly number[]): string {
+  return `Usually seen ${weekdays.map((weekday) => PHOENIX_CRM_WEEKDAY_SHORT[weekday] ?? "?").join(", ")} (iReports360)`;
+}
+
+/** "Follow-up due Tue 6 Oct". */
+export function followUpText(dueOn: string): string {
+  return `Follow-up due ${dayLabel(dueOn)}`;
+}
+
+/** What a customer's row in the day's plan says beyond who he is. A null part is not drawn. */
+export type PlannerRowInsight = { lastSeen: string | null; usual: string | null; followUp: string | null };
+
+/**
+ * The three lines of a row in the day's plan:
+ *   - lastSeen: "Last seen Tue 29 Sept", and for a VALIDATED customer his month beside it, in the module's
+ *     one month sentence (`monthVisitsText`: "· 1 of 3 visits this month"). Coverage counts validated
+ *     customers only (owner, 2026-10-02), so a customer not validated yet shows the day alone. Null when
+ *     the reads behind it did not answer — "No visit recorded" is said only when it was read;
+ *   - usual: iReports360's usual days, while he has no days and hours of his own;
+ *   - followUp: his latest visit's next step, when it is due inside the week being planned.
+ */
+export function plannerRowInsight(
+  customer: Pick<PlannerCustomer, "insight" | "pending" | "places" | "visitsThisMonth">,
+  context: { target: number | null; today: string; weekStart: string },
+): PlannerRowInsight {
+  const insight = customer.insight ?? null;
+  const usual = usualDaysOf(customer);
+  const followUp = followUpInWeek(customer, context.weekStart);
+  const seen = insight ? lastSeenText(insight.lastSeenOn, context.today) : null;
+  return {
+    lastSeen: seen !== null && !customer.pending ? `${seen} · ${monthVisitsText(customer.visitsThisMonth, context.target)}` : seen,
+    usual: usual ? usualDaysText(usual) : null,
+    followUp: followUp ? followUpText(followUp) : null,
+  };
 }

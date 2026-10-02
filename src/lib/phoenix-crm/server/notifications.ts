@@ -102,6 +102,8 @@ export type PhoenixCrmNotice =
       decidedAs: "reviewer" | "sfe";
       repHrIds: string[];
       note: string | null;
+      /** The ONE day returned, when only that day went back (owner, 2026-10-02); the notice names it. */
+      returnedDay?: string | null;
     }
   | {
       kind: "monthly_plan_submitted";
@@ -220,8 +222,11 @@ const REQUEST_WAITING: Record<PhoenixCrmRequestKind, { eventType: string }> = {
   },
 };
 
-/** The SFE Managers by hr id — a ROLE with no seat in the organogram, so read from the accounts. */
-async function sfeManagerHrIds(): Promise<string[]> {
+/**
+ * The SFE Managers by hr id — a ROLE with no seat in the organogram, so read from the accounts. Shared
+ * with the daily approval nudge (approval-nudge.ts), so the SFE step is the same people everywhere.
+ */
+export async function sfeManagerHrIds(): Promise<string[]> {
   const { hrIds } = await resolveHrIdsForRole("SFE Manager", "Phoenix CRM plan edit — SFE Managers");
   // A test account holds the role it mirrors; its TEST- id is never a real person to tell.
   return hrIds.filter((hrId) => !hrId.startsWith("TEST-"));
@@ -515,13 +520,22 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
     if (reviewer) recipients.push(reviewer.hrId);
   }
   const approved = notice.status === "approved";
+  // One day returned (owner, 2026-10-02: "Only that day"): the same plan_returned notice, naming the day.
+  const oneDay = !approved && notice.returnedDay ? formatPhoenixLongDate(notice.returnedDay) : null;
+  const noteText = notice.note ? ` Note: ${notice.note}` : "";
   return {
     recipients,
     eventType: approved ? "plan_approved" : "plan_returned",
-    title: approved ? `Weekly plan approved: week starting ${week}` : `Weekly plan returned: week starting ${week}`,
+    title: approved
+      ? `Weekly plan approved: week starting ${week}`
+      : oneDay
+        ? `Weekly plan returned: ${oneDay} only`
+        : `Weekly plan returned: week starting ${week}`,
     message: approved
       ? `${decider} approved the ${territory} plan for the week starting ${week}.`
-      : `${decider} returned the ${territory} plan for the week starting ${week} for changes.${notice.note ? ` Note: ${notice.note}` : ""}`,
+      : oneDay
+        ? `${decider} returned ${oneDay} of the ${territory} plan for the week starting ${week}. Only that day is open to change; the other days stay as sent, and the week is sent again once it is changed.${noteText}`
+        : `${decider} returned the ${territory} plan for the week starting ${week} for changes.${noteText}`,
     tab: "plan",
     recordId: notice.planId,
     idempotencyKey: `phoenix_crm:plan:${notice.planId}:v${notice.version}:${notice.status}`,

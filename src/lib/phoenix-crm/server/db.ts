@@ -45,6 +45,11 @@ const REFUSALS: Record<string, Refusal> = {
   week_passed: { status: 409, message: "This week is over, so its plan can no longer change. Reload the page." },
   month_passed: { status: 409, message: "This month is over, so its plan can no longer change. Reload the page." },
   empty_plan: { status: 409, message: "Place at least one customer before sending the plan." },
+  // Returning ONE day of a sent week (owner, 2026-10-02): a working day of that week that has not passed.
+  day_not_returnable: {
+    status: 409,
+    message: "That day cannot be returned on its own: choose a day of this week that has not passed. Reload the page.",
+  },
   // Asking to edit a sent week (owner, 2026-10-01): the district manager, then SFE, then HR.
   plan_edit_not_sent: { status: 409, message: "This week is not sent, so there is nothing to ask for. Reload the plan." },
   plan_edit_already_open: { status: 409, message: "You already asked to edit this week. It is waiting for a decision." },
@@ -93,6 +98,14 @@ const REFUSALS: Record<string, Refusal> = {
   // ...and taken back by him when entered by mistake: his own entry only.
   visit_not_found: { status: 404, message: "This visit is no longer there. Reload the page." },
   not_entered_by_you: { status: 403, message: "Only a visit you entered for a rep can be removed. A rep's own visit stays his record." },
+  // The district manager's double-visit plan (owner, 2026-10-02): one half-day at a time.
+  double_visit_not_field_time: {
+    status: 400,
+    message: "A double visit is planned on a field day: Saturday to Wednesday AM or PM, Thursday AM only.",
+  },
+  double_visit_day_passed: { status: 409, message: "This day has passed, so its double visits stay as they were planned. Reload the page." },
+  double_visit_week_ahead: { status: 409, message: "Double visits are planned for this week and the coming week. Reload the page." },
+  double_visit_changed: { status: 409, message: "This half-day was changed on another screen. Reload the page and choose again." },
 };
 
 function messageOf(error: unknown): string {

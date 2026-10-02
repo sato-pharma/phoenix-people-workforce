@@ -6,6 +6,7 @@ import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmToday } from "@/lib/phoenix-crm/server/today";
 import { addressWithoutTheBrick, stopWhereParts, todayByBrick } from "@/lib/phoenix-crm/today-rules";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import { weekProgressParts } from "@/lib/phoenix-crm/week-progress";
 
 /**
  * Phoenix CRM — the rep's day, small enough to live on his LANDING page.
@@ -47,6 +48,11 @@ export type RepTodayStop = {
    * place scrambles the hours beside it (`stopWhereParts` says how).
    */
   where: string[];
+  /**
+   * The way to that place in Google Maps (owner, 2026-10-02), or null when no place with a usable
+   * point is saved — and then the row carries no link. The way to HIS OWN customer, nothing more.
+   */
+  directionsUrl: string | null;
   /** Green when he has already been (owner's own word for it). */
   done: boolean;
 };
@@ -91,6 +97,13 @@ export type RepTodayPlan = {
   pharmaciesDone: number;
   /** Where his Add-visit "+" sends him: the Visits module's own page. */
   canAdd: boolean;
+  /**
+   * 🔴 HIS OWN WEEK, IN ONE LINE (owner, 2026-10-02): what his sent plan holds for the field week and
+   * what he has visited so far — "AM 10 planned · 6 visited", "PM 50 planned · 28 visited",
+   * "Pharmacies 4". THREE FIGURES APART, as the header's chips: never a total, never a slash, never
+   * averaged (`weekProgressParts`). Empty when there is nothing to say, and then there is no line.
+   */
+  weekParts: string[];
 };
 
 /**
@@ -148,6 +161,7 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
           },
           null,
         ),
+        directionsUrl: stop.directionsUrl ?? null,
         done: stop.done,
       })),
     }));
@@ -166,6 +180,7 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
       pmPlanned: view.counts.plannedPm,
       pharmaciesDone: view.counts.donePharmacies,
       canAdd: view.canAdd,
+      weekParts: weekProgressParts(view.week),
     };
   } catch (error) {
     // A closed line and a missing permission are ordinary answers here, not failures to report.

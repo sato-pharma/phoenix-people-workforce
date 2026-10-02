@@ -20,6 +20,7 @@ import { useState } from "react";
 import { Search } from "lucide-react";
 
 import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
+import { DirectionsLink } from "@/components/phoenix-crm/directions-link";
 import { countText } from "@/components/phoenix-crm/format";
 import { customerMetaText, monthVisitsText, PENDING_PILL, pendingVisitsText } from "@/components/phoenix-crm/labels";
 import {
@@ -35,6 +36,7 @@ import {
   crmTextareaClassName,
 } from "@/components/phoenix-crm/ui";
 import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
+import { directionsPlace, directionsUrl } from "@/lib/phoenix-crm/directions";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
 import type { VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
@@ -75,6 +77,14 @@ export function customersFor(mode: PickerMode, customers: ReadonlyArray<VisitCus
   return [...offered].sort(
     (left, right) => Number(left.visitedToday) - Number(right.visitedToday) || receivingRank(left) - receivingRank(right),
   );
+}
+
+/**
+ * Where his "Directions" link goes (owner, 2026-10-02): the saved place he receives at today, else his
+ * first saved place — null when no place of his has a usable point, and then there is no link.
+ */
+export function customerDirectionsUrl(customer: Pick<VisitCustomerOption, "places">): string | null {
+  return directionsUrl(directionsPlace(customer.places, (place) => place.todayWindows !== NOT_RECEIVING));
 }
 
 /** Today's receiving hours at each of his places. */
@@ -219,33 +229,44 @@ export function VisitCustomerPicker({
                       {group.name} · {countText(group.customers.length)}
                     </p>
                     <ul className="grid gap-1.5">
-                      {group.customers.map((customer) => (
-                        <li key={customer.customerId}>
-                          <button
-                            className="block w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
-                            disabled={customer.visitedToday}
-                            onClick={() => onPick(customer.customerId)}
-                            type="button"
-                          >
-                            <span className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-                              <span className="min-w-0 flex-1">
-                                <span className="block break-words text-sm font-black text-slate-950">{customer.name}</span>
-                                <span className="mt-0.5 block break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</span>
+                      {group.customers.map((customer) => {
+                        const directions = customerDirectionsUrl(customer);
+                        return (
+                          <li className="min-w-0" key={customer.customerId}>
+                            <button
+                              className="block w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
+                              disabled={customer.visitedToday}
+                              onClick={() => onPick(customer.customerId)}
+                              type="button"
+                            >
+                              <span className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                                <span className="min-w-0 flex-1">
+                                  <span className="block break-words text-sm font-black text-slate-950">{customer.name}</span>
+                                  <span className="mt-0.5 block break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</span>
+                                </span>
+                                <span className="flex max-w-full flex-wrap gap-1">
+                                  {customer.pending ? <CrmPill tone="orange">{PENDING_PILL}</CrmPill> : null}
+                                  {customer.visitedToday ? <CrmPill tone="good">Visited today</CrmPill> : null}
+                                </span>
                               </span>
-                              <span className="flex max-w-full flex-wrap gap-1">
-                                {customer.pending ? <CrmPill tone="orange">{PENDING_PILL}</CrmPill> : null}
-                                {customer.visitedToday ? <CrmPill tone="good">Visited today</CrmPill> : null}
+                              <PlaceWindows customer={customer} />
+                              {/* A customer not validated yet has no month standing to report: "2 of 3 visits this
+                                  month" would read as progress on a figure his visits do not move. */}
+                              <span className="mt-1 block text-xs font-semibold text-slate-600">
+                                {customer.pending ? pendingVisitsText(customer.visitsThisMonth) : monthVisitsText(customer.visitsThisMonth, customer.target)}
                               </span>
-                            </span>
-                            <PlaceWindows customer={customer} />
-                            {/* A customer not validated yet has no month standing to report: "2 of 3 visits this
-                                month" would read as progress on a figure his visits do not move. */}
-                            <span className="mt-1 block text-xs font-semibold text-slate-600">
-                              {customer.pending ? pendingVisitsText(customer.visitsThisMonth) : monthVisitsText(customer.visitsThisMonth, customer.target)}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
+                            </button>
+                            {/* The way to his saved place (owner, 2026-10-02) hangs UNDER the card, joined by its
+                                border, never inside it: the card is one button, and a link inside a button is
+                                markup a phone resolves by firing the card. No saved place, no strip. */}
+                            {directions ? (
+                              <div className="flex min-w-0 flex-wrap justify-end border border-t-0 border-slate-200 bg-white px-3 py-1.5">
+                                <DirectionsLink customerName={customer.name} href={directions} />
+                              </div>
+                            ) : null}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 );

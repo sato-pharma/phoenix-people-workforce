@@ -132,7 +132,7 @@ export function runPhoenixCrmPlanDeadlineTests(): void {
     const day = planReminderDay("2026-10-08");
     assert.ok(day, "the due day is a reminder day");
     assert.equal(day.late, false);
-    const onTime = repReminder({ hrId: "PD-0001", day, cairoToday: "2026-10-08", draftStarted: true });
+    const onTime = repReminder({ hrId: "PD-0001", day, cairoToday: "2026-10-08", tick: "noon", draftStarted: true });
     // 🔴 ON THE PHONE IT IS THE TITLE THAT SURVIVES (owner, 2026-10-02). This notice goes out on `push`,
     // where OneSignal's `headings` is what a lock screen shows and then cuts — so the deadline is the
     // FIRST thing in the title, never the last, and these assert its POSITION, not just its presence.
@@ -144,7 +144,7 @@ export function runPhoenixCrmPlanDeadlineTests(): void {
     const after = planReminderDay("2026-10-09");
     assert.ok(after, "the day after is still a reminder day");
     assert.equal(after.late, true);
-    const lateNotice = repReminder({ hrId: "PD-0001", day: after, cairoToday: "2026-10-09", draftStarted: true });
+    const lateNotice = repReminder({ hrId: "PD-0001", day: after, cairoToday: "2026-10-09", tick: "noon", draftStarted: true });
     assert.ok(lateNotice.title.startsWith(`Was due Thursday 8 Oct, ${PLAN_DEADLINE_LABEL}`), lateNotice.title);
     assert.ok(lateNotice.message.includes("A late week is still accepted"), "while still telling him it is accepted");
     // The tone does not harden with the title: nothing here calls him late, warns him, or scores him.
@@ -152,7 +152,7 @@ export function runPhoenixCrmPlanDeadlineTests(): void {
       assert.ok(!/\b(overdue|violation|warning|failed|penalty)\b/i.test(text), `no scolding wording: ${text}`);
     }
 
-    const manager = managerReminder({ hrId: "PD-0100", day, cairoToday: "2026-10-08", repNames: ["Aya Ibrahim"] });
+    const manager = managerReminder({ hrId: "PD-0100", day, cairoToday: "2026-10-08", tick: "noon", repNames: ["Aya Ibrahim"] });
     assert.ok(manager, "the manager hears about his own reps");
     assert.ok(manager.message.includes(`due tonight at ${PLAN_DEADLINE_LABEL}`), "with the same deadline");
   }

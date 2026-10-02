@@ -295,12 +295,15 @@ export function runPhoenixCrmWave2ReportTests(): void {
     // disagree with the rest of his session.
     assert.match(service, /const settings = viewer\.config\.settings;/, "the frequency report scores against the viewer's own settings");
     // 🔴 A DRAFT IS NOT A PLAN. The rep owns his draft until he sends it, so counting draft rows
-    //    would move the denominator under a manager while he reads the page.
+    //    would move the denominator under a manager while he reads the page. A week returned for ONE
+    //    day still counts on its other days (owner, 2026-10-02, "Still planned"), so the plans that can
+    //    hold a sent day are read and each planning is kept only on a day it was sent.
     assert.match(
       service,
-      /from\("phoenix_crm_plans"\)[\s\S]{0,200}?\.in\("status", \["submitted", "approved"\]\)/,
+      /from\("phoenix_crm_plans"\)[\s\S]{0,200}?\.in\("status", \[\.\.\.PLAN_STATUSES_WITH_SENT_DAYS\]\)/,
       "planned counts read plans that were actually sent",
     );
+    assert.match(service, /isPlanDaySent\(\{ \.\.\.plan, date: day \}\)/, "on the days they were sent — never a draft day, never a returned one");
     assert.match(service, /from\("phoenix_crm_countable_visits"\)/, "and visits come from the countable view, never the raw table");
 
     const tab = stripComments(readFileSync("src/components/phoenix-crm/reports-tab.tsx", "utf8"));

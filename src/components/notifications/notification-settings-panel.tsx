@@ -6,7 +6,8 @@ import { AlertCircle, Bell, BellRing, CheckCircle2, Link2, Mail, Send, Smartphon
 import { useHydrated } from "@/hooks/use-hydrated";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { onesignalAppId, requestOneSignalPermission } from "@/lib/notifications/onesignal-client";
-
+// The one connect path — Phoenix CRM's "Get Phoenix CRM messages on Telegram" card goes through it too.
+import { requestTelegramConnectLink, telegramActionErrorMessage } from "@/components/notifications/telegram-connect";
 
 type NotificationSettings = {
   preferences: {
@@ -53,16 +54,9 @@ function statusLabel(settings: NotificationSettings) {
   return "Not connected";
 }
 
-// Turn a failed API response into an honest message. A 403 from these endpoints is a
-// permission denial (the API returns {error:"forbidden"} with no message), so surface
-// that plainly instead of the generic action-failed fallback — otherwise a blocked role
-// reads "Unable to create Telegram link." and chases the wrong problem.
-function errorMessageFor(response: Response, payload: { error?: string; message?: string } | null, fallback: string) {
-  if (response.status === 403 || payload?.error === "forbidden") {
-    return "You don't have permission to manage Telegram notifications. Please contact an administrator.";
-  }
-  return payload?.message ?? fallback;
-}
+// Turn a failed API response into an honest message — the shared rule in
+// telegram-connect.ts: a 403 says it is a permission, never the generic fallback.
+const errorMessageFor = telegramActionErrorMessage;
 
 export function NotificationSettingsPanel() {
   const hydrated = useHydrated();
@@ -136,12 +130,10 @@ export function NotificationSettingsPanel() {
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch("/api/integrations/telegram/connect", { method: "POST" });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(errorMessageFor(response, payload, "Unable to create Telegram link."));
-      setConnectLink(payload.data?.link ?? null);
-      setConnectExpiresAt(payload.data?.expiresAt ?? null);
-      if (payload.data?.link) window.open(payload.data.link, "_blank", "noopener,noreferrer");
+      const { expiresAt, link } = await requestTelegramConnectLink();
+      setConnectLink(link);
+      setConnectExpiresAt(expiresAt);
+      if (link) window.open(link, "_blank", "noopener,noreferrer");
       await loadSettings();
     } catch (connectError) {
       setError(connectError instanceof Error ? connectError.message : "Unable to create Telegram link.");

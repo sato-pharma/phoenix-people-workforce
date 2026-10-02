@@ -168,7 +168,9 @@ export function runPhoenixCrmPlanWeeklyOnlyTests(): void {
 
     const edits = raw("src/lib/phoenix-crm/server/plan-edits.ts");
     const guard = edits.slice(edits.indexOf("export async function assertRepMayChangeWeek("), edits.indexOf("// ── The rep asks"));
-    assert.match(guard, /if \(state === "plan"\) return;/, "only a week in the 'plan' state passes");
+    // ...answering with the days it may change (owner, 2026-10-02: a week returned for ONE day opens
+    // that day alone — tests/phoenix-crm-plan-review.test.ts).
+    assert.match(guard, /if \(state === "plan"\) \{[\s\S]*?return \{ editableDays: /, "only a week in the 'plan' state passes");
     assert.match(guard, /throw conflictError\(/, "anything else is refused");
 
     const monthly = raw("src/lib/phoenix-crm/server/monthly-plans.ts");
