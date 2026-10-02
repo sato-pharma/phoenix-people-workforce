@@ -15,7 +15,7 @@ import {
   employeeCvHref,
   resolveCvNoticeState,
 } from "@/lib/employees/employee-cv-limits";
-import { buildVacancyHireHref } from "@/lib/employees/vacancy-hire-link";
+import { buildSeatHireHref } from "@/lib/employees/vacancy-hire-link";
 import type {
   OrganogramDetailSection,
   OrganogramEmployeeDetail,
@@ -120,9 +120,15 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
   // Derived from where we already are rather than passed down as another prop — the chart
   // renders in both shells and each has its own Employees route (the same trick the
   // recruitment hub uses for its own way out to Add Employee).
-  const hireHref = buildVacancyHireHref(
+  //
+  // When this seat already has an ACCEPTED offer out against it (the "Offer accepted — …" label
+  // the vacancy body shows), the hire routes to that offer's prefill so the candidate's name,
+  // salary and Employee ID arrive filled — rather than the seat-only prefill, which left those
+  // blank and made the form refuse to save.
+  const hireHref = buildSeatHireHref(
     pathname?.startsWith("/employee-portals") ? "/employee-portals/employees" : "/employees",
     row,
+    row.pendingOffer,
   );
 
   const [detail, setDetail] = React.useState<OrganogramEmployeeDetail | null>(null);
