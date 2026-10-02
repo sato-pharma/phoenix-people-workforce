@@ -524,14 +524,8 @@ export async function resolveAccessContext(request: Request): Promise<AccessCont
   // THE TEST ACCOUNT WRITE GUARD — one choke point for every API route that resolves a caller, before
   // the route runs a line of its own. A test account reads as a real employee, so a save it sent
   // anywhere but Phoenix CRM would be written as her. Refused here, fail-closed; the routes' own
-  // try/catch turns it into a 403 with the sentence (src/lib/auth/test-persona.ts).
-  //
-  // That last clause was FALSE until 2026-10-02, for all 552 route files that discriminate with
-  // `isForbiddenError`: the refusal is an ApiError with status 403 whose message begins "This is a
-  // test account: …", and `isForbiddenError` tested only for the literal message prefix
-  // "forbidden:". Every one of those routes therefore answered 500. Measured in production on
-  // 02 Oct: POST /api/notifications/push/register, 19:12:11, a real browser. `isForbiddenError` now
-  // reads the status too — see its own comment.
+  // try/catch turns it into a 403 with the sentence (src/lib/auth/test-persona.ts) — which was FALSE
+  // in 552 route files until 2026-10-02, see isForbiddenError below.
   assertTestAccountMayRun(access, request);
   return access;
 }
