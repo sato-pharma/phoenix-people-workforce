@@ -141,7 +141,8 @@ function OffPlanVisitRow({
         ) : null}
         <div className="grid min-w-0 flex-1 gap-1.5 text-sm leading-6">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-            <p className="min-w-0 flex-1 break-words font-black text-slate-950">{visit.customerName}</p>
+            {/* A floor, not `min-w-0` — see visit-customer-picker.tsx for the measurement. */}
+            <p className="min-w-[9rem] flex-1 break-words font-black text-slate-950">{visit.customerName}</p>
             <span className="flex max-w-full flex-wrap gap-1">
               <CrmPill>{listText(visit.customerListType)}</CrmPill>
               {/* Waiting on somebody else: which step it is on, when the card's own pill does not say it.
