@@ -29,6 +29,10 @@
 --   alter table public.phoenix_crm_visits drop column product_manager_hr_id;  -- takes the two checks
 --   then re-run 20261002125244's function block.
 
+-- One transaction, a 5s lock ceiling, and PostgREST told to re-read the schema (the module contract).
+begin;
+set local lock_timeout = '5s';
+
 alter table public.phoenix_crm_visits
   add column if not exists product_manager_hr_id text;
 
@@ -453,3 +457,8 @@ comment on function public.phoenix_crm_save_visit(jsonb) is
   'The ONE writer of a Phoenix CRM visit. Since 2026-10-02 it also stores product_manager_hr_id, on '
   'kind = ''product_manager'' and no other kind; who counts as the line''s product manager is settled '
   'by the caller, because he holds no seat in the organogram for this database to check him against.';
+
+-- Without this PostgREST keeps its old schema cache, and the app reads the new shape as missing.
+notify pgrst, 'reload schema';
+
+commit;

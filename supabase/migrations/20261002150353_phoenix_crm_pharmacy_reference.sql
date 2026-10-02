@@ -50,6 +50,10 @@
 --     -- delete from public.phoenix_crm_customers
 --     --  where list_type = 'Pharmacy' and origin = 'reference' and status = 'pending';
 
+-- One transaction, a 5s lock ceiling, and PostgREST told to re-read the schema (the module contract).
+begin;
+set local lock_timeout = '5s';
+
 create or replace function public.phoenix_crm_seat_reference(p_seat_ids text[], p_is_test boolean default false)
 returns table(
   seat_id text,
@@ -178,3 +182,8 @@ comment on function public.phoenix_crm_seat_reference(text[], boolean) is
 
 revoke execute on function public.phoenix_crm_seat_reference(text[], boolean) from public, anon, authenticated;
 grant execute on function public.phoenix_crm_seat_reference(text[], boolean) to service_role;
+
+-- Without this PostgREST keeps its old schema cache, and the app reads the new shape as missing.
+notify pgrst, 'reload schema';
+
+commit;

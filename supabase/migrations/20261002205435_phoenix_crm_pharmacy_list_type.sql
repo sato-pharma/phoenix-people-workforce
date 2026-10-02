@@ -22,6 +22,10 @@
 --   delete from public.phoenix_crm_customers where list_type = 'Pharmacy';
 --   then the two alters below with ARRAY['AM', 'PM'].
 
+-- One transaction, a 5s lock ceiling, and PostgREST told to re-read the schema (the module contract).
+begin;
+set local lock_timeout = '5s';
+
 alter table public.phoenix_crm_customers
   drop constraint if exists phoenix_crm_customers_list_type;
 
@@ -47,3 +51,8 @@ comment on constraint phoenix_crm_visits_list_type on public.phoenix_crm_visits 
 comment on constraint phoenix_crm_plan_items_list_type on public.phoenix_crm_plan_items is
   'AM and PM ONLY, deliberately: the owner ruled on 2026-10-02 that a pharmacy is never planned. Do '
   'not widen this to Pharmacy — it is the database''s own half of that rule.';
+
+-- Without this PostgREST keeps its old schema cache, and the app reads the new shape as missing.
+notify pgrst, 'reload schema';
+
+commit;
