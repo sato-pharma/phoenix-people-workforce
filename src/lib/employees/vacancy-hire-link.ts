@@ -106,6 +106,34 @@ export function buildVacancyHireHref(basePath: string, source: VacancyHireSource
 }
 
 /**
+ * The hire link for a vacant seat that MAY already have a letter out against it.
+ *
+ * When an ACCEPTED offer names the seat, the one thing the person hiring wants is that
+ * candidate in that chair — so the link goes to the Add Employee form's OFFER prefill
+ * (`?fromOffer=<id>`), which fills the candidate's name, the agreed net salary and generates
+ * the Employee ID. The seat-only prefill (`?hireVacancy=1&…`) carries the line/area/manager but
+ * NOT the person, so hiring an accepted offer through it opened a form blank on name and id, and
+ * the form refused to save ("Employee ID / Full Name is required") before anything was ever sent.
+ * The offer draft already carries the same seat (it reads the offer's own vacancy), so nothing is
+ * lost by dropping the seat params here.
+ *
+ * Only `accepted` routes this way. A letter merely `sent` is not a hire yet, and a seat with no
+ * offer — the common case — keeps the plain seat prefill unchanged.
+ */
+export function buildSeatHireHref(
+  basePath: string,
+  source: VacancyHireSource,
+  pendingOffer?: { offerId?: string | null; status?: "accepted" | "sent" | null } | null,
+): string {
+  const offerId =
+    pendingOffer?.status === "accepted" ? String(pendingOffer.offerId ?? "").trim() : "";
+  if (offerId) {
+    return `${basePath}?fromOffer=${encodeURIComponent(offerId)}`;
+  }
+  return buildVacancyHireHref(basePath, source);
+}
+
+/**
  * Read the seat back out. Takes a getter rather than a URLSearchParams so it serves both a
  * plain URLSearchParams and Next's ReadonlyURLSearchParams without a cast.
  *

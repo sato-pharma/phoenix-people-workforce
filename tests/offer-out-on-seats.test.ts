@@ -104,16 +104,16 @@ export function runOfferOutOnSeatsTests() {
 
   // ── 4 · The seat's own line ─────────────────────────────────────────────────────────────────
   assert.equal(
-    formatSeatOfferOut({ candidateName: "Norhan Gamal", reference: "SP-HR-MR-2026-030", startDate: "01 October 2026", status: "sent" }),
+    formatSeatOfferOut({ candidateName: "Norhan Gamal", offerId: "offer-norhan", reference: "SP-HR-MR-2026-030", startDate: "01 October 2026", status: "sent" }),
     "Offer out — Norhan Gamal, starts 01 October 2026",
   );
   assert.equal(
-    formatSeatOfferOut({ candidateName: "Norhan Gamal", reference: null, startDate: "01 October 2026", status: "accepted" }),
+    formatSeatOfferOut({ candidateName: "Norhan Gamal", offerId: "offer-norhan", reference: null, startDate: "01 October 2026", status: "accepted" }),
     "Offer accepted — Norhan Gamal, starts 01 October 2026",
     "an accepted letter reads differently from one still waiting — planning a line, those are different facts",
   );
   assert.equal(
-    formatSeatOfferOut({ candidateName: "Norhan Gamal", reference: null, startDate: null, status: "sent" }),
+    formatSeatOfferOut({ candidateName: "Norhan Gamal", offerId: "offer-norhan", reference: null, startDate: null, status: "sent" }),
     "Offer out — Norhan Gamal",
     "no start date, no trailing comma",
   );
@@ -156,6 +156,10 @@ export function runOfferOutOnSeatsTests() {
   const seatOffers = readFileSync("src/lib/offers/seat-offers.ts", "utf8");
   assert.match(seatOffers, /\.in\("status", \["sent", "accepted"\]\)/, "only sent and accepted letters reach a seat");
   assert.match(seatOffers, /if \(row\.status !== "open"\) continue;/, "and only while the vacancy itself is still open");
+  // The offer id must be SELECTED and carried onto the label, or the chart's one-press hire of an
+  // accepted offer falls back to the seat-only prefill and opens the form blank on name and id.
+  assert.match(seatOffers, /\.select\("id, candidate_name,/, "the offer id is selected, not dropped");
+  assert.match(seatOffers, /offerId: String\(row\.id \?\? ""\)\.trim\(\)/, "and carried onto the seat's offer label");
   assert.ok(
     !/from "@\/lib\/recruitment/.test(seatOffers),
     "the offers module stays independent of recruitment, here as everywhere else in it",

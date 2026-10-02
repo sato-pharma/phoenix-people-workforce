@@ -10,6 +10,14 @@
 
 export type SeatOfferOut = {
   candidateName: string;
+  /**
+   * The offer row's own id. Carried so the chart's one-press hire can hand an ACCEPTED offer
+   * straight to the Add Employee form's offer prefill (`?fromOffer=<id>`), which fills the
+   * candidate's name, the agreed net salary and generates the Employee ID. Without it the hire
+   * link falls back to the seat-only prefill, which leaves name and id blank — and the form then
+   * refuses to save with "Employee ID / Full Name is required", before anything is ever sent.
+   */
+  offerId: string;
   reference: string | null;
   /** "sent" — awaiting an answer. "accepted" — agreed, not yet hired. */
   status: "accepted" | "sent";

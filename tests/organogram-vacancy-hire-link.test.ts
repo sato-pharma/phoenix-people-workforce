@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  buildSeatHireHref,
   buildVacancyHireHref,
   buildVacancyHireQuery,
   buildVacancyHireSeat,
@@ -142,6 +143,48 @@ export async function runOrganogramVacancyHireLinkTests() {
     "two seats that differ only by area must produce different keys",
   );
 
+  // ── A seat with an ACCEPTED offer hires through the offer prefill, not the seat-only one ──
+  //
+  // The seat-only link carries line/area/manager but NOT the candidate, the salary or an Employee
+  // ID — so hiring an accepted offer through it opened the Add Employee form blank on all three,
+  // and the form refused to save ("Employee ID / Full Name is required") before anything reached
+  // the server. buildSeatHireHref routes an accepted offer to the offer prefill, which fills them.
+  const acceptedHref = buildSeatHireHref("/employees", repSeat, {
+    offerId: "a78d792b-3de9-4922-bcc5-888a23e8d259",
+    status: "accepted",
+  });
+  assert.equal(
+    acceptedHref,
+    "/employees?fromOffer=a78d792b-3de9-4922-bcc5-888a23e8d259",
+    "an accepted offer hires through the offer prefill, which carries the name, salary and Employee ID",
+  );
+  assert.ok(
+    !acceptedHref.includes("hireVacancy"),
+    "and NOT the seat-only prefill, which left the candidate and the id blank — the whole bug",
+  );
+
+  // A letter merely SENT is not a hire yet — it keeps the plain seat prefill.
+  assert.equal(
+    buildSeatHireHref("/employees", repSeat, { offerId: "x", status: "sent" }),
+    buildVacancyHireHref("/employees", repSeat),
+    "a sent-but-unaccepted offer does not route to the offer prefill",
+  );
+
+  // No offer at all — the common case — is unchanged, on the portal route too.
+  assert.equal(
+    buildSeatHireHref("/employee-portals/employees", repSeat, null),
+    buildVacancyHireHref("/employee-portals/employees", repSeat),
+    "a seat with no offer keeps the seat prefill",
+  );
+
+  // Defensive: an accepted offer carrying no id cannot be hired through — fall back to the seat
+  // rather than link to ?fromOffer= with nothing after it.
+  assert.equal(
+    buildSeatHireHref("/employees", repSeat, { offerId: "", status: "accepted" }),
+    buildVacancyHireHref("/employees", repSeat),
+    "an accepted offer with no id falls back to the seat prefill",
+  );
+
   // The popup is the only door to this, and it must stay shut for a viewer who cannot hire —
   // POST /api/employees asserts employees:update, so offering it otherwise is a dead end.
   const modalSource = fs.readFileSync(
@@ -157,6 +200,10 @@ export async function runOrganogramVacancyHireLinkTests() {
   assert.ok(
     modalSource.includes("canAddEmployee ? ("),
     "the Add-employee button must stay behind the canAddEmployee gate",
+  );
+  assert.ok(
+    /buildSeatHireHref\([\s\S]*?row\.pendingOffer/.test(modalSource),
+    "the popup must build its hire link through buildSeatHireHref, passing the seat's pending offer — so an accepted offer prefills the candidate",
   );
 
   for (const page of [

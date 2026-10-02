@@ -31,6 +31,7 @@ export { formatSeatOfferOut, offerSeatKeyForVacancy, type SeatOfferOut } from "@
  */
 
 type OfferRow = {
+  id: string | null;
   candidate_name: string | null;
   reference: string | null;
   start_date: string | null;
@@ -58,7 +59,7 @@ export async function loadOfferOutBySeat(): Promise<Map<string, SeatOfferOut>> {
 
     const { data: offerRows, error: offerError } = await db
       .from("offers")
-      .select("candidate_name, reference, start_date, status, vacancy_id")
+      .select("id, candidate_name, reference, start_date, status, vacancy_id")
       .in("status", ["sent", "accepted"])
       .not("vacancy_id", "is", null);
 
@@ -98,6 +99,10 @@ export async function loadOfferOutBySeat(): Promise<Map<string, SeatOfferOut>> {
 
       const summary: SeatOfferOut = {
         candidateName: String(row.candidate_name ?? "").trim(),
+        // The id is what lets the chart's one-press hire open the offer prefill. It is always
+        // present (a primary key), but kept defensive: an empty one simply means the hire link
+        // falls back to the seat-only prefill rather than breaking the label.
+        offerId: String(row.id ?? "").trim(),
         reference: row.reference?.trim() || null,
         startDate: row.start_date?.trim() || null,
         status: row.status === "accepted" ? "accepted" : "sent",
