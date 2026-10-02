@@ -1,6 +1,6 @@
 ---
 name: renaming-a-nav-label-changes-its-persisted-moduleid
-description: "defaultModuleId() embeds the nav LABEL, so renaming a sidebar label changes its moduleId — and moduleIds are persisted in sidebar_module_assignments."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: RETIRED 2026-08-28 (#2505). Modules Control and sidebar_module_assignments are GONE - the replacement is a per-caller personal layout keyed by href (see `admin-shell-sidebar-per-user-curation`). Older text follows: defaultModuleId() embeds the nav LABEL, so renaming a sidebar label changes its moduleId — and moduleIds are persisted in sidebar_module_assignments."
 metadata: 
   node_type: memory
   type: project

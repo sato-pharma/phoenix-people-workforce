@@ -1,6 +1,6 @@
 ---
 name: weekly-sales-decumulation-plan
-description: "Agreed plan to fix cumulative weekly-sales data — week wizard, de-cumulation, week filter, premium export, completeness tracker."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: de-cumulation is right for six distributors and wrong for Direct, which is invoice-keyed - each Direct sheet carries only that week's own orders (see `direct-is-not-cumulative-but-is-de-cumulated-anyway`). Older text follows: Agreed plan to fix cumulative weekly-sales data — week wizard, de-cumulation, week filter, premium export, completeness tracker."
 metadata: 
   node_type: memory
   type: project

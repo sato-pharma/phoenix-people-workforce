@@ -1,6 +1,6 @@
 ---
 name: ez-warehouse-1011654-is-nasr-city-locked
-description: "EZ (مخزن شركة اى زد, customer 1011654) is NASR CITY by owner ruling — it is the single largest CNS customer, its placement error costs DOUBLE, and his own files keep saying Heliopolis"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: GOLDEN LOCK 2026-09-06 — EZ is credited EVENLY across the CNS reps active in Cairo+Giza that month ... Supersedes [[ez-warehouse-1011654-is-nasr-city-locked]] on the area question (see `ez-is-credited-evenly-across-cairo-giza-cns-reps`). Older text follows: EZ (مخزن شركة اى زد, customer 1011654) is NASR CITY by owner ruling — it is the single largest CNS customer, its placement error costs DOUBLE, and his own files keep saying Heliopolis"
 metadata: 
   node_type: memory
   type: project

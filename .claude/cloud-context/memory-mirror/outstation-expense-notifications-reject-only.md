@@ -1,6 +1,6 @@
 ---
 name: outstation-expense-notifications-reject-only
-description: "Outstation notification design: reject-only email to the employee PLUS (as of 2026-07-13) a new Super-Admin-only submit alert with full request details; high-risk digest REMOVED same day"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: a clean submission persists as submitted and waits ... The submission email fires from the submit paths: To employee, Cc manager + skip-level, Bcc active Super Admins (see `outstation-submit-used-to-auto-approve-into-payroll`). Older text follows: Outstation notification design: reject-only email to the employee PLUS (as of 2026-07-13) a new Super-Admin-only submit alert with full request details; high-risk digest REMOVED same day"
 metadata: 
   node_type: memory
   type: project

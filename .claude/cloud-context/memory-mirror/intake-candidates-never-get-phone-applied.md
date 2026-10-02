@@ -1,6 +1,6 @@
 ---
 name: intake-candidates-never-get-phone-applied
-description: "An email-intake candidate keeps the sender's name and a NULL phone by design — identity fields are excluded from BOTH auto-apply and the review queue"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: selectAutoApplyFields will happily write a 22-digit phone ... Gate 5 isSingleDiallablePhone is applied to phone/whatsapp and is LIVE on prod; AUTO_APPLY_NEVER_KEYS excludes only the name/email, not phone (see `candidate-name-fix-and-field-apply-prod-2026-08-16`). Older text follows: An email-intake candidate keeps the sender's name and a NULL phone by design — identity fields are excluded from BOTH auto-apply and the review queue"
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,6 @@
 ---
 name: laptop-m17r2-ram-soldered-16gb-ceiling
-description: "The laptop is an Alienware m17 R2 with SOLDERED 16GB RAM — no upgrade possible; ≤4 local sessions; guardrails installed 2026-08-01"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: 16GB non-soldered, 32GB-capable; pagefile fixed 64GB ~80GB commit ... authoritative in ~/.claude/CLAUDE.md + AGENTS.md 5 (see `commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`). Older text follows: The laptop is an Alienware m17 R2 with SOLDERED 16GB RAM — no upgrade possible; ≤4 local sessions; guardrails installed 2026-08-01"
 metadata: 
   node_type: memory
   type: project

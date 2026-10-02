@@ -1,11 +1,11 @@
 ---
 name: memory-index-floor-is-13kb-dont-gut-it-chasing-17
-description: "The MEMORY.md 'compact to under 17.1KB' nag is UNREACHABLE and must be ignored - it is built into Claude Code's memory tooling (no hook on this machine computes index size; do not hunt for it), and the real ceiling is the ~24,400-byte SILENT read cliff past which the tail is dropped on load. AGENTS.md 2.2 is the authoritative counter-rule. 17KB is unreachable because ~40-46% of the index is filenames inside ](...) syntax, irreducible except by DELETING memories, and label text already averages ~33-35 bytes. Do not delete memories, gut labels, or strip the owner's red-dot / lock / medal markers to hit a number. The levers, by yield: relocate REPO-OPERATING traps to AGENTS.md 2.1 (never Phoenix domain/owner/safety facts); demote topic groups to MEMORY-ARCHIVE.md; last resort is RETIRING a resolved memory, which is the owner's call, not mechanical."
+description: "SUPERSEDED 2026-10-02 by module memory (AGENTS.md 2.2, docs/module-memory.md): MEMORY.md now holds only global facts plus an inbox (~4 KB), every module fact lives in .claude/rules/<module>.md, and the weekly fold empties the inbox — so the index is small BY DESIGN, not gutted, and the relocate/demote levers below are retired. History: The MEMORY.md 'compact to under 17.1KB' nag is UNREACHABLE and must be ignored - it is built into Claude Code's memory tooling (no hook on this machine computes index size; do not hunt for it), and the real ceiling is the ~24,400-byte SILENT read cliff past which the tail is dropped on load. AGENTS.md 2.2 is the authoritative counter-rule. 17KB is unreachable because ~40-46% of the index is filenames inside ](...) syntax, irreducible except by DELETING memories, and label text already averages ~33-35 bytes. Do not delete memories, gut labels, or strip the owner's red-dot / lock / medal markers to hit a number. The levers, by yield: relocate REPO-OPERATING traps to AGENTS.md 2.1 (never Phoenix domain/owner/safety facts); demote topic groups to MEMORY-ARCHIVE.md; last resort is RETIRING a resolved memory, which is the owner's call, not mechanical."
 metadata: 
   node_type: memory
   type: feedback
   originSessionId: 26968de2-24de-4b16-a339-4065a48eba87
-  modified: 2026-09-25T22:50:55.679Z
+  modified: 2026-10-02T15:36:35.319Z
 ---
 
 **The `MEMORY.md` "compact to under 17.1KB" message is unreachable, and chasing it destroys the thing

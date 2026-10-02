@@ -1,6 +1,6 @@
 ---
 name: aif-upper-egypt-splits-into-ue1-ue2
-description: "Anti Infective runs Upper Egypt as TWO districts (UE-1/UE-2); the closing sheet now splits them — but GZ6 mixes Fayoum and Beni Suef and cannot be split yet"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: (1) Pedia's Upper Egypt splits into UE-1/UE-2 on 2026-09-01, and August NEVER contains the split (UE-1 Fayoum, Beni Suef, Minia 1-2, Assuit 1-2; UE-2 Sohag, Qena, Luxor) (see the module rule 'Rule: THE AUGUST / UPPER EGYPT GOLDEN RULE'); (2) That function has never existed ... Fixed by grouping Anti Infective's sheet on au_v_line_area_map.operational_region_code (applyOperationalRegions + CLOSING_ORGANOGRAM_REGION_LINES) (see `closing-sheet-groups-on-static-region-code`); (3) Split GZ6 'Fayoum-Beni Suef' into GZ8 Fayoum (6 bricks) + GZ9 Beni Suef (10) (2026-08-02); Beni Suef (UE9) split out of GZ6 on 2026-08-03 (see `sos-area-split-requires-block-split`, `fayoum-beni-suef-golden-rule-per-line`). Older text follows: Anti Infective runs Upper Egypt as TWO districts (UE-1/UE-2); the closing sheet now splits them — but GZ6 mixes Fayoum and Beni Suef and cannot be split yet"
 metadata: 
   node_type: memory
   type: project

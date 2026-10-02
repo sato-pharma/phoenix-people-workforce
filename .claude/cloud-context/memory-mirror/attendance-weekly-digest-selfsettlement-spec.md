@@ -1,6 +1,6 @@
 ---
 name: attendance-weekly-digest-selfsettlement-spec
-description: "The weekly attendance digest + self-settlement feature was REMOVED ENTIRELY 2026-07-22 (PR #1253) — gone from code AND both databases (6 tables dropped). Do NOT recommend re-enabling dry_run/required_minutes or any digest/settlement UI; if attendance deductions are ever wanted again they must be rebuilt from git history, not un-paused. Kept only for the code relics that SURVIVED the teardown and the one durable owner ruling."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: Releasing a flagged attendance week starts a real deduction path ... The attendance digest feature lives in src/lib/attendance/ (digest-service, digest-bridge); employees sit at awaiting_release (see `never-suggest-releasing-attendance-weeks-owner-releases-himself`). Older text follows: The weekly attendance digest + self-settlement feature was REMOVED ENTIRELY 2026-07-22 (PR #1253) — gone from code AND both databases (6 tables dropped). Do NOT recommend re-enabling dry_run/required_minutes or any digest/settlement UI; if attendance deductions are ever wanted again they must be rebuilt from git history, not un-paused. Kept only for the code relics that SURVIVED the teardown and the one durable owner ruling."
 metadata: 
   node_type: memory
   type: project

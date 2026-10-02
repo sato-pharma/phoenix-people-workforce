@@ -1,6 +1,6 @@
 ---
 name: direct-orders-phase-c-injection-design
-description: "Phase C (direct-order sales injection) — owner wants ENGINE-accurate direct attribution (not the is_direct=false workaround) + weekly push. Design + owner decisions."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: CEO approval NEVER injects sales. Injection happens ONLY when Finance selects the month (see `direct-order-sales-month-is-finance-owned`). Older text follows: Phase C (direct-order sales injection) — owner wants ENGINE-accurate direct attribution (not the is_direct=false workaround) + weekly push. Design + owner decisions."
 metadata: 
   node_type: memory
   type: project

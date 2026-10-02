@@ -1,6 +1,6 @@
 ---
 name: marketing-not-found-codes-have-three-root-causes
-description: "A not_found marketing pharmacy code is usually a WRONG DISTRIBUTOR or a PADDING mistake, not a bad code — chimipharm (and any thin-list distributor) can NEVER match, and a stale reference list is the third cause. Holds the diagnostic order and the reusable traps for placing a pharmacy: GPS>name>code but check for a reused coordinate, town≠markaz, a dead code is safe to retire, and moving a pharmacy's area does not hide it from the capturing rep."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: (1) owner_hr_id does NOT grant sight of a row ... never backfill owners; do NOT invent line_id or owner_hr_id; owner_hr_id stays only as the audit record (see `seeded-marketing-pharmacies-have-no-area-and-are-invisible`, `marketing-customers-belong-to-areas-not-people`); (2) The REGISTERED CODE beats live GPS ... when code and GPS disagree the CODE WINS, even over a live capture GPS (see `seeded-marketing-pharmacies-have-no-area-and-are-invisible`). Older text follows: A not_found marketing pharmacy code is usually a WRONG DISTRIBUTOR or a PADDING mistake, not a bad code — chimipharm (and any thin-list distributor) can NEVER match, and a stale reference list is the third cause. Holds the diagnostic order and the reusable traps for placing a pharmacy: GPS>name>code but check for a reused coordinate, town≠markaz, a dead code is safe to retire, and moving a pharmacy's area does not hide it from the capturing rep."
 metadata: 
   node_type: memory
   type: project

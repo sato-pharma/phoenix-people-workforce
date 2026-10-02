@@ -1,6 +1,6 @@
 ---
 name: outstation-expense-deep-audit-2026-07
-description: "How the Outstation & Expense module works end-to-end (post-redesign): 'expenses' IS outstation (src/lib/outstation/, no src/lib/expenses/); submit AUTO-DECIDES accept/reject and PERSISTS the rejection; payroll is an ADDITION to net pay, never a deduction; approve/override is Super Admin only though the permission matrix over-states DM/RM/NSM authority; the live eligibility logic is INLINE in service.ts (decision.ts is dead code); and two entry points skip the engine entirely. Holds the owner rulings and the open permission/UX findings."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: rejected_by_system is no longer reachable from the submit path; only a human rejects ... The submit-time rejection email is gone with it. (and outstation-submit-used-to-auto-approve: a clean submission persists as submitted and waits) (see `system-flags-expenses-never-rejects`). Older text follows: How the Outstation & Expense module works end-to-end (post-redesign): 'expenses' IS outstation (src/lib/outstation/, no src/lib/expenses/); submit AUTO-DECIDES accept/reject and PERSISTS the rejection; payroll is an ADDITION to net pay, never a deduction; approve/override is Super Admin only though the permission matrix over-states DM/RM/NSM authority; the live eligibility logic is INLINE in service.ts (decision.ts is dead code); and two entry points skip the engine entirely. Holds the owner rulings and the open permission/UX findings."
 metadata: 
   node_type: memory
   type: project

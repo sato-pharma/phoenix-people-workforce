@@ -1,6 +1,6 @@
 ---
 name: worktree-junction-breaks-turbopack
-description: "A node_modules junction into another tree lets tsc/eslint/test pass but FAILS `npm run build` (Turbopack); do a real npm ci per worktree."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: in a junctioned worktree, reach straight for `--webpack` ... the junction is the pattern AGENTS.md prescribes (safe only if you never `pnpm run` in it) (see `turbopack-cannot-resolve-a-junctioned-node-modules-here`, `bare-worktree-cannot-push-pre-push-gate-needs-node-modules`). Older text follows: A node_modules junction into another tree lets tsc/eslint/test pass but FAILS `npm run build` (Turbopack); do a real npm ci per worktree."
 metadata: 
   node_type: memory
   type: feedback

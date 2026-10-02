@@ -1,6 +1,6 @@
 ---
 name: employees-line-name-not-line
-description: "Production employees table has line_id + line_name; there is NO `line` column — selecting `line` throws and breaks the feature."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: employees.line_name is NULL for every production row — the product line must be resolved from line_id via the lines table, never read from the text column (see `employees-line-name-column-is-null-in-production`). Older text follows: Production employees table has line_id + line_name; there is NO `line` column — selecting `line` throws and breaks the feature."
 metadata: 
   node_type: memory
   type: project

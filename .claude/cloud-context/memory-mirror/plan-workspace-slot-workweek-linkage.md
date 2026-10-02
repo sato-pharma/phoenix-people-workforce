@@ -1,6 +1,6 @@
 ---
 name: plan-workspace-slot-workweek-linkage
-description: "Weekly/monthly plan editor — slot-bug fix, role-aware workweek, vacation/excuse + weekly→monthly linkage (PR 616, corrected in PR 617): an explicit AM/PM slot field stops the focus loss; the field workweek is Medical Rep/DSM/RM only (NSM is Head Office); plan SUBMISSION is PM/GPM/MM/TM/NSM only."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: District Manager added to WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES, fixed 2026-07-18 (PR #1120) (see `dsm-plan-eligibility-fix-and-rm-gap`). Older text follows: Weekly/monthly plan editor — slot-bug fix, role-aware workweek, vacation/excuse + weekly→monthly linkage (PR 616, corrected in PR 617): an explicit AM/PM slot field stops the focus loss; the field workweek is Medical Rep/DSM/RM only (NSM is Head Office); plan SUBMISSION is PM/GPM/MM/TM/NSM only."
 metadata: 
   node_type: memory
   type: project

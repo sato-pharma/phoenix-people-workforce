@@ -1,6 +1,6 @@
 ---
 name: anti-infective-canonical-line-name
-description: "Canonical line label is \"Anti infective\" everywhere (lines.name renamed); lines.code stays anti_inf; SMI ROI dashboard Line resolves from requester HR_ID"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: The anti-infective line DISPLAY spelling is 'Anti Infective' (both words capitalized) everywhere — owner's 2026-07-18 choice, applied to code + prod (see `anti-infective-canonicalization`). Older text follows: Canonical line label is \"Anti infective\" everywhere (lines.name renamed); lines.code stays anti_inf; SMI ROI dashboard Line resolves from requester HR_ID"
 metadata: 
   node_type: memory
   type: project

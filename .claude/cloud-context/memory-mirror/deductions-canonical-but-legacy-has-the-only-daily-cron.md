@@ -1,6 +1,6 @@
 ---
 name: deductions-canonical-but-legacy-has-the-only-daily-cron
-description: "deductions_* is the owner-ruled source of truth, but legacy deduction_* still backs a LIVE attendance day-report decision workflow — freezing it blind breaks that feature; a daily canonical cron is impossible by design"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: RESOLVED 2026-08-30 — legacy governance CODE removed and its 7 DB tables ARCHIVED off public ... Only the unified src/lib/deductions module is live (see `two-live-deduction-engines-p0`). Older text follows: deductions_* is the owner-ruled source of truth, but legacy deduction_* still backs a LIVE attendance day-report decision workflow — freezing it blind breaks that feature; a daily canonical cron is impossible by design"
 metadata: 
   node_type: memory
   type: project

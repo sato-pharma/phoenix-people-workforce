@@ -1,6 +1,6 @@
 ---
 name: weekly-sales-has-no-area-grain
-description: "Weekly Sales facts are at distributor-BRANCH (depot) grain with no area/brick/customer, so area scoping needs an owner-maintained branch→area mapping"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: OWNER SPLIT RULE: the depot NAME is the only geographic signal - a branch splits evenly across the governorates its name names, then across each governorate's areas (implemented in branch-name-scope.ts / branch-area-split.ts) (see `weekly-anti-infective-ue-is-95pct-of-all-unmapped-value`). Older text follows: Weekly Sales facts are at distributor-BRANCH (depot) grain with no area/brick/customer, so area scoping needs an owner-maintained branch→area mapping"
 metadata: 
   node_type: memory
   type: project

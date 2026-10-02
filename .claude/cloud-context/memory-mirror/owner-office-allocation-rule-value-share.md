@@ -1,6 +1,6 @@
 ---
 name: owner-office-allocation-rule-value-share
-description: "The owner's Office allocation rule — Office imported LAST, each area's share of the line's NON-Office value (units x master factory price), one blended share applied to every product; validated 99.78% against his own sheet and NOT what Phoenix does today"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: The Office allocation formula is pinned by CI (source + behaviour fingerprints + 4 clause checks) and can only change via office-rule:unlock; the value-share rule is the live rule (see `office-golden-rule-is-mechanically-locked`, `city-split-hides-same-city-customer-moves`). Older text follows: The owner's Office allocation rule — Office imported LAST, each area's share of the line's NON-Office value (units x master factory price), one blended share applied to every product; validated 99.78% against his own sheet and NOT what Phoenix does today"
 metadata: 
   node_type: memory
   type: project

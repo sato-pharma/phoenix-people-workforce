@@ -1,6 +1,6 @@
 ---
 name: agents-md-stale-staging-ref
-description: "Canonical staging-Supabase-ref memory — staging is cifwmndunmlxjhyjugxa, izhmxvgiktiafqusolot is DEAD; never trust a ref from prose, resolve with list_projects; both MCP servers see both projects"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: supabase-staging's empty project list was a WRONG-ACCOUNT token; it now runs pinned with ?project_ref=cifwmndunmlxjhyjugxa, takes no project_id at all, and is called directly (see `supabase-staging-mcp-server-sees-zero-projects`). Older text follows: Canonical staging-Supabase-ref memory — staging is cifwmndunmlxjhyjugxa, izhmxvgiktiafqusolot is DEAD; never trust a ref from prose, resolve with list_projects; both MCP servers see both projects"
 metadata: 
   node_type: memory
   type: reference

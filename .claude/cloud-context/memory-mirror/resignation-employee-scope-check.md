@@ -1,6 +1,6 @@
 ---
 name: resignation-employee-scope-check
-description: "PR #689 (2026-07-02): resignEmployeeAndOpenVacancy now scope-checks the target employee via canSeeEmployee, not just role; runResignationWorkflow/runContractRenewalWorkflow still don't"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: PR #692 (merged 2026-07-02) added PER-RECORD scope checks (canSeeEmployee / canSeeContractRow) to runResignationWorkflow and runContractRenewalWorkflow (see `resignation-contract-scope-check-audit-2026-07`). Older text follows: PR #689 (2026-07-02): resignEmployeeAndOpenVacancy now scope-checks the target employee via canSeeEmployee, not just role; runResignationWorkflow/runContractRenewalWorkflow still don't"
 metadata: 
   node_type: memory
   type: project

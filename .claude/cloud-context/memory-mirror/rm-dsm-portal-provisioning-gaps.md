@@ -1,6 +1,6 @@
 ---
 name: rm-dsm-portal-provisioning-gaps
-description: "Regional Manager is under-provisioned vs District Manager in the employee portal — empty landing (no getRoleSpecificExtras RM branch), plans paradox, missing team/vacancy/probation tabs — and RM sales region scope is resolved 4 inconsistent ways. Analysis 2026-07-30; no edits made."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: Owner ruling 2026-07-30: both Regional Manager and District Managers must be able to submit AND respond ... Fix = add Regional Manager to gate 3 + District Manager to gate 2 (see `weekly-plan-four-gates-rm-dsm`). Older text follows: Regional Manager is under-provisioned vs District Manager in the employee portal — empty landing (no getRoleSpecificExtras RM branch), plans paradox, missing team/vacancy/probation tabs — and RM sales region scope is resolved 4 inconsistent ways. Analysis 2026-07-30; no edits made."
 metadata: 
   node_type: memory
   type: project

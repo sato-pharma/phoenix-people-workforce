@@ -1,6 +1,6 @@
 ---
 name: prod-mcp-token-owns-staging-supabase
-description: "Prod Supabase MCP token owns BOTH prod and staging projects — drive staging DB via prod MCP with project_id=staging when the staging MCP token is wrong-account; hold code-coupled destructive migrations until merge"
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: RESOLVED 2026-09-12 by PR #3726 ... it now runs on SUPABASE_PROD_TOKEN pinned with ?project_ref=cifwmndunmlxjhyjugxa. Do NOT route staging through mcp__supabase-production__* any more (see `supabase-staging-named-server-broken-2026-08-10`, `supabase-staging-mcp-server-sees-zero-projects`). Older text follows: Prod Supabase MCP token owns BOTH prod and staging projects — drive staging DB via prod MCP with project_id=staging when the staging MCP token is wrong-account; hold code-coupled destructive migrations until merge"
 metadata: 
   node_type: memory
   type: reference

@@ -1,6 +1,6 @@
 ---
 name: planning-calendar-role-line-scope-2026-07-20
-description: "Shared Planning Calendar visibility is role/line-scoped (owner decision 2026-07-20, 2 rounds), superseding the unconditional 2026-07-19 decision. BOTH PRs are merged and live — #1211 (GPM/NSM/PM/B-155) and #1212 (CEO/SA/DSM/RM), both 2026-07-20. DURABLE: use hrIdsMatch() for any HR_ID comparison, and \"product manager\" is a substring of \"group product manager\"."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: on Reps List, KPIs, ... and the Planning Calendar ... never special-case him in the venue picker or the calendar (see the module rule 'AN NSM SEES ONLY HIS OWN LINE (owner rule 2026-09-20)'). Older text follows: Shared Planning Calendar visibility is role/line-scoped (owner decision 2026-07-20, 2 rounds), superseding the unconditional 2026-07-19 decision. BOTH PRs are merged and live — #1211 (GPM/NSM/PM/B-155) and #1212 (CEO/SA/DSM/RM), both 2026-07-20. DURABLE: use hrIdsMatch() for any HR_ID comparison, and \"product manager\" is a substring of \"group product manager\"."
 metadata: 
   node_type: memory
   type: project

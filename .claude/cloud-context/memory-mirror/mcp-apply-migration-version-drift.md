@@ -1,6 +1,6 @@
 ---
 name: mcp-apply-migration-version-drift
-description: "Applying migrations to prod/staging via the Supabase MCP records MCP-generated version strings, not the repo's — reconcile schema_migrations afterward."
+description: "OUTDATED IN PART (contradiction sweep 2026-10-02) — current: The mismatch is the norm, not drift. Do neither: a hand-inserted ledger row with the filename's version is a lie; reading it as drift led to advice that would have created real drift (see `migration-ledger-version-never-matches-the-filename`, `a-ledger-version-never-matches-the-file`). Older text follows: Applying migrations to prod/staging via the Supabase MCP records MCP-generated version strings, not the repo's — reconcile schema_migrations afterward."
 metadata: 
   node_type: memory
   type: reference
