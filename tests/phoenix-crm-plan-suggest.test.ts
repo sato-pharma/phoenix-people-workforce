@@ -443,8 +443,9 @@ export function runPhoenixCrmPlanSuggestTests(): void {
     assert.match(weekPanel, /scope=\{\{ kind: "day", date: selectedDay\.date \}\}/, "one for the day on screen");
     assert.equal(
       (weekPanel.match(/onPlace=\{onCopied\}/g) ?? []).length,
-      4,
-      "the two copies and the two suggestions all land through onCopied — one path into the draft",
+      // + last week's plan and the period plan on the rep's step 3 (owner, 2026-10-02).
+      6,
+      "the four copies and the two suggestions all land through onCopied — one path into the draft",
     );
     assert.match(board, /onCopied=\{addCopies\}/, "and onCopied is the board's addCopies");
     assert.match(
