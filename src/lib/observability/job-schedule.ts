@@ -124,6 +124,11 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
     watchingSince: "2026-09-27T21:42:07Z",
   },
   { slug: "phoenix-crm-integrity-sweep", kind: "cron", schedule: "35 3 * * *", graceSeconds: 3 * HOUR },
+  // 12:57 and 17:57 Cairo, every day (owner, 2026-10-02): the "your coming week is not sent" reminder.
+  // Daily rather than due-days-only, so the heartbeat stays a plain daily one — on a day with nothing
+  // due it reads nothing and sends nothing. On :57 so a red execution names one job. Must match
+  // scripts/cronjob-sync.mjs exactly, and lands in the SAME sitting as its cron job (see the digest's note above).
+  { slug: "phoenix-crm-plan-reminder", kind: "cron", schedule: "57 12,17 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
   // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,
   // so the 25th leaves several working days to check on someone before any money moves. The other

@@ -64,6 +64,8 @@ export type DraftDayItem = {
 export type DraftDay = {
   date: string;
   listTypes: ReadonlyArray<PhoenixCrmListType>;
+  /** The public holiday this day is, by name; its `listTypes` are then empty (server/plan-holidays.ts). */
+  holiday?: string | null;
   ramadan: boolean;
   /** Today or later: the rep may still change it. */
   editable: boolean;
@@ -473,6 +475,7 @@ export function dayFullness(
 
 export type DraftProblem =
   | { kind: "morning"; date: string; name: string }
+  | { kind: "holiday"; date: string; name: string; holiday: string }
   | { kind: "cap"; date: string; listType: PhoenixCrmListType; count: number; cap: number };
 
 /** Named before the save leaves the page, in the order the rep meets them. */
@@ -489,7 +492,8 @@ export function weekProblems(
     for (const row of rows) {
       if (row.gone) continue;
       // A day his saved hours do not cover is never a problem (owner, 2026-09-30): only a Thursday PM is.
-      if (!day.listTypes.includes(row.listType)) problems.push({ kind: "morning", date: day.date, name: row.name });
+      if (day.holiday) problems.push({ kind: "holiday", date: day.date, name: row.name, holiday: day.holiday });
+      else if (!day.listTypes.includes(row.listType)) problems.push({ kind: "morning", date: day.date, name: row.name });
     }
     const counts = dayCounts(rows);
     if (counts.PM > caps.pmDailyCap) problems.push({ kind: "cap", date: day.date, listType: "PM", count: counts.PM, cap: caps.pmDailyCap });
@@ -587,8 +591,9 @@ export function firstWeekToPlan<T extends { open: boolean; status: string | null
 }
 
 /** The first day the rep may still change, else the week's first day. */
-export function firstDayToPlan<T extends { editable: boolean }>(days: ReadonlyArray<T>): T | null {
-  return days.find((day) => day.editable) ?? days[0] ?? null;
+export function firstDayToPlan<T extends { editable: boolean; listTypes?: ReadonlyArray<PhoenixCrmListType> }>(days: ReadonlyArray<T>): T | null {
+  // A public holiday holds nothing, so it is never the day the board opens on.
+  return days.find((day) => day.editable && (day.listTypes?.length ?? 1) > 0) ?? days.find((day) => day.editable) ?? days[0] ?? null;
 }
 
 // ── Copies ──────────────────────────────────────────────────────────────────────────────────────

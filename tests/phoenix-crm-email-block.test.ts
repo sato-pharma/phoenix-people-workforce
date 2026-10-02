@@ -47,6 +47,8 @@ const EVENT_TYPES = [
   "unplanned_visit_moved_on",
   // The CNS daily forecast (owner, 2026-10-01): the district manager hears it is in — IN-APP ONLY.
   "forecast_sent",
+  // "Your coming week is not sent" (owner, 2026-10-02): the rep and his district manager, never by email.
+  "plan_reminder",
 ];
 
 /**
@@ -64,7 +66,7 @@ export function runPhoenixCrmEmailBlockTests() {
     for (const channel of ["in_app", "email", "telegram"] as const) {
       assert.equal(policy.channels.includes(channel), true, `the plan-edit step ${eventType} goes by ${channel} (owner, 2026-10-01)`);
     }
-    assert.deepEqual(phoenixCrmChannels(eventType), ["in_app", "email", "telegram"], `${eventType} asks for email, in-app and Telegram`);
+    assert.deepEqual(phoenixCrmChannels(eventType), ["in_app", "email", "telegram", "push"], `${eventType} asks for email, in-app, Telegram and the phone`);
     assert.deepEqual(
       enforcePhoenixCrmEmailBlock(["in_app", "email", "telegram"], "phoenix_crm", eventType),
       ["in_app", "email", "telegram"],
@@ -73,6 +75,9 @@ export function runPhoenixCrmEmailBlockTests() {
   }
   for (const eventType of EVENT_TYPES) {
     assert.deepEqual(phoenixCrmChannels(eventType).includes("email"), false, `${eventType} never asks for email`);
+    // The phone since 2026-10-02 (owner): 16 of 74 reps allowed Phoenix push, and Telegram reached none of them.
+    assert.deepEqual(phoenixCrmChannels(eventType), ["in_app", "telegram", "push"], `${eventType} goes in-app, by Telegram and to the phone`);
+    assert.deepEqual(phoenixCrmChannels(eventType, true), ["in_app"], `a test entry for ${eventType} stays in the app`);
     assert.deepEqual(
       enforcePhoenixCrmEmailBlock(["in_app", "email", "telegram"], "phoenix_crm", eventType),
       ["in_app", "telegram"],
@@ -84,6 +89,7 @@ export function runPhoenixCrmEmailBlockTests() {
     assert.equal(policy.channels.includes("email"), false, `the phoenix_crm policy for ${eventType} must not request email`);
     assert.equal(policy.channels.includes("telegram"), true, `Telegram is one of the two delivery channels for ${eventType}`);
     assert.equal(policy.channels.includes("in_app"), true, `in-app is the other for ${eventType}`);
+    assert.equal(policy.channels.includes("push"), true, `and the phone for ${eventType} (owner, 2026-10-02)`);
   }
 
   {
@@ -132,8 +138,11 @@ export function runPhoenixCrmEmailBlockTests() {
     assert.match(notify, /category: PHOENIX_CRM_NOTIFICATION_CATEGORY,/);
     assert.match(notify, /export const PHOENIX_CRM_NOTIFICATION_CATEGORY = "phoenix_crm";/);
 
+    // The notifier, and the one other sender of the module that names its event outright: the coming
+    // week's reminder (owner, 2026-10-02). The 06:55 digest is pinned in its own test.
+    const reminder = readFileSync("src/lib/phoenix-crm/server/plan-reminder.ts", "utf8");
     const sent = new Set<string>();
-    for (const line of notify.split("\n").filter((text) => /^\s*eventType: /.test(text))) {
+    for (const line of `${notify}\n${reminder}`.split("\n").filter((text) => /^\s*eventType: /.test(text))) {
       for (const match of line.matchAll(/"([a-z_]+)"/g)) sent.add(match[1]);
     }
     assert.deepEqual([...sent].sort(), [...EVENT_TYPES, ...EMAIL_EVENT_TYPES].sort(), "the notices this test checks are exactly the notices the module sends");

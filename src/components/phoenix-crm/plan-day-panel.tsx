@@ -370,7 +370,7 @@ export function PlanDayPanel({
         <div className="mt-3" />
         {!day.listTypes.includes(listType) ? (
           <CrmNote className="mb-3" tone="bad">
-            {dayName} is a morning for AM only. Take these off it.
+            {day.holiday ? `${dayName} is a public holiday (${day.holiday}). Take these off it.` : `${dayName} is a morning for AM only. Take these off it.`}
           </CrmNote>
         ) : null}
         {groups.length === 0 ? (

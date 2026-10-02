@@ -1679,6 +1679,7 @@ import { runPhoenixCrmPlanPatternTests } from "./phoenix-crm-plan-pattern.test.t
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
+import { runPhoenixCrmPlanReminderTests } from "./phoenix-crm-plan-reminder.test.ts";
 import { runPhoenixCrmStepFormTests } from "./phoenix-crm-step-form.test.ts";
 import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-requests.test.ts";
 import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.ts";
@@ -5886,6 +5887,11 @@ await runTest(
 await runTest(
   "Phoenix CRM plans one week at a time (owner, 2026-10-01, after the first Delta session): the rep's week is the one that begins on the coming Saturday on every day of 2026-2028, every other week is greyed and refused by the server on save and on send, his own board opens on that week's month with no month chooser, no month send and no Copy last month, a sent week is never taken back, the running week stays reachable in months that start on a Friday or a Saturday, and the week of 3 October 2026 is due Friday 2 October in TypeScript and SQL alike",
   runPhoenixCrmPlanWeeklyOnlyTests,
+);
+
+await runTest(
+  "Phoenix CRM tells a rep his coming week is not sent, and greys a public holiday (owner, 2026-10-02): the reminder speaks only from the day the week is due to the day before it starts, to the rep and his district manager in the teams that have started, once a person a Cairo day, in-app, by Telegram and to the phone and never by email, behind CRON_SECRET with its heartbeat and cron job declared together; and a public holiday from the company's confirmed calendar — Thursday 8 October, not the 6th — holds no customer, is greyed as a day off, is skipped by Next day and the opening day, and a save naming it is refused",
+  runPhoenixCrmPlanReminderTests,
 );
 
 await runTest(

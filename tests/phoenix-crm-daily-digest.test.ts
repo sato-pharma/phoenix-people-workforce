@@ -139,6 +139,9 @@ export function runPhoenixCrmDailyDigestTests(): void {
     const runner = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/daily-digest.ts", import.meta.url), "utf8"));
     assert.ok(runner.includes('channels: ["in_app", "telegram"]'), "and the runner asks for neither");
     assert.equal(/"email"/.test(runner), false);
+    // The phone came to every other Phoenix CRM notice on 2026-10-02; the digest stays as he ruled it on
+    // 2026-09-28, "in app or telegram only".
+    assert.equal(/"push"/.test(runner), false, "the 06:55 digest never goes to the phone");
     assert.ok(runner.includes("module: PHOENIX_CRM_NOTIFICATION_MODULE"), "under the module key the guard filters on");
   }
 

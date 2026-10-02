@@ -95,6 +95,7 @@ import {
 } from "@/lib/phoenix-crm/server/plan-activities";
 import { loadPlanDayStarts, savePlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
 import { assertRepMayChangeWeek, loadPlanEditState, repStateOf } from "@/lib/phoenix-crm/server/plan-edits";
+import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
@@ -250,7 +251,10 @@ export type PlanItemView = {
 
 export type PlanDayView = {
   date: string;
+  /** Empty on a public holiday (`holiday`), as on a Friday: the day holds no customer. */
   listTypes: PhoenixCrmListType[];
+  /** The public holiday this day is, by name — "Armed Forces Day" — or null on a working day. */
+  holiday: string | null;
   ramadan: boolean;
   /** Today or later: the rep may still change it. */
   editable: boolean;
@@ -300,6 +304,8 @@ export function buildDays(input: {
   isRamadan: (isoDay: string) => boolean;
   activities?: ReadonlyMap<string, PlannedActivityRow[]>;
   starts?: ReadonlyMap<string, PlanDayStarts>;
+  /** The public holidays of the week, `day → name` (plan-holidays.ts). A day named here holds no customer. */
+  holidays?: ReadonlyMap<string, string>;
 }): PlanDayView[] {
   const byDay = new Map<string, Row[]>();
   for (const row of input.itemRows) {
@@ -362,9 +368,11 @@ export function buildDays(input: {
     );
 
     const activities = input.activities?.get(date) ?? [];
+    const holiday = input.holidays?.get(date) ?? null;
     return {
       date,
-      listTypes: planDayListTypes(date),
+      listTypes: holiday ? [] : planDayListTypes(date),
+      holiday,
       ramadan,
       editable: date >= input.cairoToday,
       activities,
@@ -423,6 +431,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
     ensured.then(() => territoryReadiness(seat.seatId, isTest, false)),
     customersRead.then(({ customers }) => loadPlannerReferences(seat.seatId, isTest, customers)),
+    loadPlanHolidays(weekStart, addDaysIso(weekStart, 5)),
   ]);
   wave.catch(() => undefined);
   await ensured;
@@ -432,12 +441,13 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     visitCounts,
     readiness,
     references,
+    holidays,
   ] = await wave;
 
   const settings = viewer.config.settings;
   const isRamadan = (isoDay: string) => isRamadanDay(isoDay, viewer.config.ramadanOverrides);
   const plan = planRow ? mapPlan(planRow, names) : null;
-  const days = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts });
+  const days = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays });
 
   const plannerCustomers: PlannerCustomer[] = customers.map((row) => {
     const customerId = String(row.id);
@@ -555,7 +565,10 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
     throw conflictError("A day that has passed cannot be changed. Reload the planner.");
   }
 
-  const { customers, placesByCustomer } = await loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true });
+  const [{ customers, placesByCustomer }, holidays] = await Promise.all([
+    loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
+    loadPlanHolidays(weekStart, addDaysIso(weekStart, 5)),
+  ]);
   const ruleCustomers = new Map<string, PlanRuleCustomer>(
     customers.map((row) => {
       const customerId = String(row.id);
@@ -577,6 +590,7 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
     customers: ruleCustomers,
     settings: viewer.config.settings,
     isRamadan: (isoDay) => isRamadanDay(isoDay, viewer.config.ramadanOverrides),
+    holidays,
   });
   if (!resolved.ok) throw validationError(resolved.error);
 

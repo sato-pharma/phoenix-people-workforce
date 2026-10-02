@@ -37,10 +37,15 @@ function emailAllowed(eventType: string | null | undefined): boolean {
   return PHOENIX_CRM_EMAIL_EVENT_TYPES.includes(String(eventType ?? "").trim().toLowerCase());
 }
 
-/** The channels a Phoenix CRM notice asks for: in-app, Telegram, and email only for the five above. */
+/**
+ * The channels a Phoenix CRM notice asks for: in-app, Telegram and the phone, and email only for the
+ * five above. Push since 2026-10-02 (owner): 16 of 74 reps had allowed Phoenix on their phone, and
+ * Telegram reached none of them. The 06:55 digest does not come through here and stays in-app and
+ * Telegram, as he ruled on 2026-09-28.
+ */
 export function phoenixCrmChannels(eventType: string, inAppOnly = false): SystemNotificationChannel[] {
   if (inAppOnly) return ["in_app"];
-  return emailAllowed(eventType) ? ["in_app", "email", "telegram"] : ["in_app", "telegram"];
+  return emailAllowed(eventType) ? ["in_app", "email", "telegram", "push"] : ["in_app", "telegram", "push"];
 }
 
 export function enforcePhoenixCrmEmailBlock(

@@ -82,6 +82,7 @@ export type WeekHold = "changed" | "unchecked";
 /** "Sat 10 Oct has 16 PM. A day holds 15 PM at most." — a problem the server would refuse, said to the rep. */
 export function problemText(problem: DraftProblem): string {
   const day = dayLabel(problem.date);
+  if (problem.kind === "holiday") return `${day} is a public holiday (${problem.holiday}). Take ${problem.name} off it.`;
   if (problem.kind === "morning") return `${day} is a morning for AM only. Take ${problem.name} off it.`;
   return `${day} has ${problem.count} ${problem.listType}. A day holds ${problem.cap} ${problem.listType} at most.`;
 }
@@ -533,6 +534,16 @@ export function PlanWeekPanel({
             const activityTypes = (editable && day.editable ? activitiesOn(activities, day.date) : day.activities).map((entry) => entry.activityType);
             const counts = dayCountsOf(day);
             const full = dayFullness(counts, caps, day.listTypes);
+            // A public holiday is a day off (owner, 2026-10-02): greyed, named, and never opened —
+            // unless something is still on it, which he must be able to reach to take off.
+            if (day.holiday) {
+              return {
+                value: day.date,
+                label: <ChoiceLabel chosen={day.date === selectedDay.date}>{dayLabel(day.date)}</ChoiceLabel>,
+                note: `Day off · ${day.holiday}`,
+                disabled: counts.AM + counts.PM === 0,
+              };
+            }
             return {
               value: day.date,
               label: <ChoiceLabel chosen={day.date === selectedDay.date}>{dayLabel(day.date)}</ChoiceLabel>,
