@@ -107,21 +107,25 @@ export function runSessionStartMemoryIndexGuardTests() {
     assert.match(contextOf(over.out), /937 left before the loader/, "it must name the remaining room to the cliff");
     assert.match(
       contextOf(over.out),
-      /displacement-only/,
-      "it must tell the session what to do about it — displace, not merely that the file is big",
+      /files it under its module and empties the inbox/,
+      "it must tell the session what to do about it — the fold, not merely that the file is big",
     );
     assert.match(
       contextOf(over.out),
-      /Route by KIND of fact/,
-      "displacing is not enough — it must say WHERE, or the session picks a section by guesswork",
+      /Route by WHERE a fact applies/,
+      "filing is not enough — it must say WHERE, or the session picks a home by guesswork",
     );
-    // §4 is the one that gets left out. The first version of this hook named only 2.1/2.3, the two
-    // session-trap sections — so an OWNER PRODUCT RULE, which is what #2566 relocated seven of, had
-    // no home in the guidance and would have been filed among the tooling traps.
+    // Module memory (2026-10-02, docs/module-memory.md): a fact about ONE module goes to that module's
+    // memory. The pre-module advice — relocate a hook into AGENTS.md — is what kept both files full.
     assert.match(
       contextOf(over.out),
-      /an owner product rule to 4\./,
-      "an owner product rule belongs in §4, not among the session traps in §2.1",
+      /one module to its memory \(\.claude\/rules\/<module>\.md/,
+      "a module fact belongs in its module's memory, never back in the index or AGENTS.md",
+    );
+    assert.doesNotMatch(
+      contextOf(over.out),
+      /relocate it into AGENTS\.md/,
+      "the retired advice must not come back — it is the cycle module memory replaced",
     );
     assert.match(
       over.out?.systemMessage ?? "",

@@ -11,6 +11,16 @@
         ]
       },
       {
+        "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Grep|Glob|mcp__supabase.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/module-memory-injector.mjs\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Bash|PowerShell|Grep|Glob|Edit|Write",
         "hooks": [
           {
@@ -77,6 +87,11 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/autorun-guard.mjs\""
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/module-memory-injector.mjs\"",
+            "timeout": 10
           }
         ]
       }

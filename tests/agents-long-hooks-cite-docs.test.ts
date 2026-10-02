@@ -20,7 +20,7 @@
 // account out, keep the hook. It can never be satisfied by deleting a rule.
 
 import { strict as assert } from "node:assert";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 /** A hook longer than this is carrying an account, not a cue. */
 export const LONG_HOOK_BYTES = 1_200;
@@ -44,13 +44,32 @@ export function hookBullets(agentsText: string): Hook[] {
   return out;
 }
 
+/**
+ * The Rules sections of module memory (`.claude/rules/<id>.md`). The §2.3/§4/§4.1 hooks moved there
+ * on 2026-10-02 (docs/module-memory.md); they are the same hooks and keep the same standard.
+ */
+export function moduleRuleBullets(): Hook[] {
+  const out: Hook[] = [];
+  for (const f of readdirSync(".claude/rules").filter((n) => n.endsWith(".md"))) {
+    const text = readFileSync(`.claude/rules/${f}`, "utf8");
+    const a = text.indexOf("<!-- module-memory:rules:begin");
+    const b = text.indexOf("<!-- module-memory:rules:end");
+    if (a === -1 || b < a) continue;
+    text.slice(a, b).split("\n").forEach((line, i) => {
+      if (!/^- /.test(line)) return;
+      out.push({ line: i + 1, section: `rules:${f.slice(0, -3)}`, bytes: Buffer.byteLength(line, "utf8"), text: line });
+    });
+  }
+  return out;
+}
+
 export function runAgentsLongHooksCiteDocsTests() {
   const agents = readFileSync("AGENTS.md", "utf8");
-  const hooks = hookBullets(agents);
+  const hooks = [...hookBullets(agents), ...moduleRuleBullets()];
 
   // The gate must be measuring something. A parser that silently matches nothing passes forever —
   // the failure mode source-reading tests here keep repeating.
-  assert.ok(hooks.length > 100, `expected the §2/§4 hooks to be found; parsed only ${hooks.length}`);
+  assert.ok(hooks.length > 100, `expected the §2/§4 and module-memory hooks to be found; parsed only ${hooks.length}`);
   assert.ok(
     hooks.some((h) => /^2\./.test(h.section)) && hooks.some((h) => /^4/.test(h.section)),
     "both §2 and §4 must be represented, or the parser is reading one section and calling it all of them",
@@ -58,7 +77,9 @@ export function runAgentsLongHooksCiteDocsTests() {
 
   const offenders = hooks.filter((h) => h.bytes > LONG_HOOK_BYTES && !DOCS_POINTER.test(h.text));
   assert.deepEqual(
-    offenders.map((h) => `AGENTS.md:${h.line} (§${h.section}, ${h.bytes} bytes)`),
+    offenders.map((h) => (h.section.startsWith("rules:")
+      ? `.claude/rules/${h.section.slice(6)}.md rules line ${h.line} (${h.bytes} bytes)`
+      : `AGENTS.md:${h.line} (§${h.section}, ${h.bytes} bytes)`)),
     [],
     `These hooks are over ${LONG_HOOK_BYTES} bytes and name no docs/ file, so AGENTS.md is the only `
       + "record of whatever evidence they carry — and AGENTS.md is re-sent on EVERY request.\n"

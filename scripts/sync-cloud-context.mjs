@@ -125,3 +125,13 @@ console.log(
     `(${(bytes / 1024 / 1024).toFixed(2)} MB) + ` +
     `${rulesBytes ? 'global rules' : 'NO global rules'} -> ${path.relative(REPO_ROOT, OUT_DIR)}`,
 );
+
+// 4) Module memory moves WITH the mirror (docs/module-memory.md): file any note the refresh brought
+//    in, drop any that vanished, and rebuild the module files from the fresh descriptions. Without
+//    this, a refresh left `tests/module-memory.test.ts` red with an ORPHAN or a stale notes block.
+const moduleBuild = path.join(REPO_ROOT, 'scripts', 'module-memory', 'build.mjs');
+if (fs.existsSync(moduleBuild)) {
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(process.execPath, [moduleBuild, '--file-new'], { cwd: REPO_ROOT, stdio: 'inherit' });
+  if (r.status !== 0) fail('module memory rebuild failed — run node scripts/module-memory/build.mjs --file-new');
+}

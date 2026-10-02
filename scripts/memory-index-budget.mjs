@@ -93,9 +93,9 @@ export function memoryIndexBudgetLines(verdict) {
     return [
       "  " + scale,
       `  OVER BUDGET — free ${verdict.mustFree} bytes. Only ${verdict.headroomToCeiling} left before the loader`,
-      "  starts dropping the tail silently. Retire a resolved hook, or relocate one to AGENTS.md and",
-      "  its ACCOUNT to docs/ — AGENTS.md has no cliff of its own but is inside the footprint budget.",
-      "  Do not add a new line until this is back inside budget (AGENTS.md 2.2).",
+      "  starts dropping the tail silently. Run the fold (node scripts/module-memory/fold.mjs --apply):",
+      "  every inbox note it files leaves the index once its PR merges. A module fact belongs in its",
+      "  module's memory (.claude/rules/<module>.md), never here and never in AGENTS.md (AGENTS.md 2.2).",
     ];
   }
 

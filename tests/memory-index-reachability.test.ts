@@ -28,6 +28,7 @@ import {
   loaderVisiblePrefix,
   memoryReachabilityLines,
   namedInAgents,
+  readModuleMemoryText,
   splitOverMarkedByAutoLoadedIndex,
   strandedLines,
 } from "../scripts/memory-index-reachability.mjs";
@@ -255,12 +256,16 @@ export function runMemoryIndexReachabilityTests() {
       + "marker is the only record of which memories AGENTS.md is the ONLY pointer for, so losing it "
       + "makes the check below vacuous rather than false",
   );
+  // Module memory (2026-10-02, docs/module-memory.md) moved most §2.3/§4 hooks into
+  // `.claude/rules/<module>.md`, and each moved hook carried its slug with it. A slug named there is
+  // as recallable as one named in AGENTS.md: the module file loads with the module.
+  const moduleSlugs = slugsIn(readModuleMemoryText(process.cwd()));
   assert.deepEqual(
-    loadBearing.filter((slug) => !slugs.has(slug)),
+    loadBearing.filter((slug) => !slugs.has(slug) && !moduleSlugs.has(slug)),
     [],
-    "every memory the map marks load-bearing must still be named in AGENTS.md — each one listed here "
-      + "has had its last pointer removed and can no longer be recalled by anything (AGENTS.md 2.2, "
-      + "both halves or neither)",
+    "every memory the map marks load-bearing must still be named in AGENTS.md or a module memory file "
+      + "— each one listed here has had its last pointer removed and can no longer be recalled by "
+      + "anything (AGENTS.md 2.2)",
   );
   assert.ok(
     slugs.has("tailwind-merge-strips-custom-named-font-sizes"),

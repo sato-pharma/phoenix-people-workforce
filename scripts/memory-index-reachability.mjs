@@ -289,6 +289,23 @@ function readTextOr(file, fallback = "") {
 }
 
 /**
+ * Module memory (docs/module-memory.md, 2026-10-02): every `.claude/rules/<id>.md` plus the history
+ * list. A note named there in backticks is as reachable as one named in AGENTS.md — the module file
+ * loads the moment a session works in that module. Missing or unreadable reads as "" (under-claims).
+ */
+export function readModuleMemoryText(root) {
+  let text = readTextOr(join(root, "docs", "module-memory", "history.md"));
+  try {
+    for (const f of readdirSync(join(root, ".claude", "rules"))) {
+      if (f.endsWith(".md")) text += "\n" + readTextOr(join(root, ".claude", "rules", f));
+    }
+  } catch {
+    /* no module memory in this checkout */
+  }
+  return text;
+}
+
+/**
  * The PRIMARY checkout's root, never the worktree this happens to run in.
  *
  * Memory belongs to the project, and §2.2's both-halves rule keys on the merged file: a hook
@@ -471,7 +488,7 @@ function main() {
   // same classifier. Do not import that union here: it would tell someone mid-trim that a slug is
   // still safe to delete because origin/main has it, which says nothing about whether their own
   // edit is about to remove the only copy that matters once it merges.
-  const agentsText = readTextOr(join(root, "AGENTS.md"));
+  const agentsText = readTextOr(join(root, "AGENTS.md")) + "\n" + readModuleMemoryText(root);
   const { linked, relocated, orphans } = classifyMemoryReachability({ files, indexText, agentsText });
 
   // The map is §2.2's authority on which memories AGENTS.md is the ONLY pointer for. Compare it
