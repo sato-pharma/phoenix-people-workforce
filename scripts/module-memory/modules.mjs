@@ -313,6 +313,31 @@ export const MODULES = [
     keywords: ["email", "emails", "notification", "notifications", "telegram", "outbox", "mailbox", "distribution list", "resend", "turbify"],
     tables: ["notification", "email", "outbox", "mailbox"],
   },
+  // ── The Turbify console is ONE console driven by TWO robots, so it gets its own module ──
+  //
+  // Found 2026-10-02: `src/lib/turbify/**` was claimed by NO module, so the four files holding the
+  // console's confirmed wordings and its row-resolution refusal loaded nothing. Worse, the robots
+  // that drive it sat in different modules — the joiner (`new-hire-mailbox`) under `employees`, the
+  // leaver (`mailbox-offboarding`) under `notifications` — so a session working one side could not
+  // see a console rule learned on the other, and the rules had been filed on the joiner's side.
+  //
+  // 🔴 This module ADDS to those two rather than taking the directories from them: a session on
+  // either robot loads its own module AND this one. The shared danger is the CONSOLE (288 rows share
+  // one `aria-label="Reset password"`, so a first-match click resets the WRONG employee's mailbox),
+  // and that danger is identical whoever is driving.
+  {
+    id: "turbify",
+    title: "Turbify mailbox console — the shared browser driver",
+    scope: "The Turbify admin console both mailbox robots drive: its confirmed on-screen wordings, row resolution and refusals, click delivery, and the two robots themselves (new-hire adoption and leaver offboarding). Email delivery and templates stay in `notifications`; the HR lifecycle around a joiner or leaver stays in `employees`.",
+    globs: [
+      "src/lib/turbify/**",
+      "src/lib/{new-hire-mailbox,mailbox-offboarding}/**",
+      "tests/*{turbify,mailbox}*",
+      "app/**/mailbox-offboarding/**",
+    ],
+    keywords: ["turbify", "mailbox console", "app password", "app passwords", "new hire mailbox", "mailbox offboarding", "two-step"],
+    tables: ["mailbox_offboarding", "new_hire_mailbox", "personal_mailbox"],
+  },
   {
     id: "coaching",
     title: "Coaching, training and visual aids",
