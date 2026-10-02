@@ -63,7 +63,7 @@ import {
   type PlannedActivity,
 } from "@/lib/phoenix-crm/plan-week-draft";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 import type { MonthlyWeekView, PlanDayView } from "@/lib/phoenix-crm/view-types";
 
 export const PLAN_STATUS_TONE: Record<PhoenixCrmPlanStatus | "none", PillTone> = {

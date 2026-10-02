@@ -34,7 +34,7 @@ import { hasDayStarts, startsForDay, type PlanDayStarts, type PlannedDayStart } 
 import { PLAN_EXCEPTION_TYPES, planDayLabel, type PlanDayOff, type PlanExceptionType, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import type { PlannerCustomer, PlannerPlace } from "@/lib/phoenix-crm/suggestions";
 import { windowsForWeekday } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmDoctorListType, PhoenixCrmDoctorListType, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
 /** The longest note a planned activity keeps — the table's own limit (server/plan-activities.ts PLAN_ACTIVITY_NOTE_MAX). */
 export const PLANNED_ACTIVITY_NOTE_MAX = 300;

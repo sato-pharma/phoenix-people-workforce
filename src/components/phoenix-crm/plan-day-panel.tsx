@@ -91,7 +91,7 @@ import {
 } from "@/lib/phoenix-crm/plan-week-draft";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import { PHOENIX_CRM_WEEKDAY_NAMES, weekTimingsText } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
 import type { PlanDayView, PlanItemView } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 

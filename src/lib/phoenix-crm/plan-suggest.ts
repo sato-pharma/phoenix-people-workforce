@@ -53,7 +53,7 @@ import {
   type DraftWeek,
 } from "@/lib/phoenix-crm/plan-week-draft";
 import { normalizeArea, type PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 export type GradeTargets = PhoenixCrmSettings["gradeTargets"];
 

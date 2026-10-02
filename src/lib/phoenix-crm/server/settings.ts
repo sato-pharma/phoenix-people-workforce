@@ -22,7 +22,8 @@ export type PhoenixCrmConfig = {
 };
 
 const GRADES: PhoenixCrmGrade[] = ["A", "B", "C"];
-const LIST_TYPES: PhoenixCrmListType[] = ["PM", "AM"];
+// A grade target is a DOCTOR thing: a pharmacy carries no grade and no target (owner, 2026-10-02).
+const LIST_TYPES: PhoenixCrmDoctorListType[] = ["PM", "AM"];
 
 function readTargets(raw: unknown): PhoenixCrmSettings["gradeTargets"] {
   const source = (raw && typeof raw === "object" ? raw : {}) as Record<string, Record<string, unknown> | undefined>;

@@ -42,7 +42,7 @@
 import { planDayListTypes } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget, sharePercent } from "@/lib/phoenix-crm/coverage";
 import { monthDays } from "@/lib/phoenix-crm/team-calendar";
-import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 export type CapacitySettings = Pick<PhoenixCrmSettings, "gradeTargets" | "pmDailyCap" | "amDailyCap" | "callRatePmTarget" | "callRateAmTarget">;
 

@@ -787,7 +787,7 @@ export type VisitLocationRow = {
   territoryName: string;
   repName: string;
   customerName: string;
-  listType: "AM" | "PM";
+  listType: PhoenixCrmListType;
   /** Where the place is saved: its name, its address, and the geography resolved when it was captured. */
   placeLabel: string | null;
   placeAddress: string | null;

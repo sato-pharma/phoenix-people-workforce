@@ -49,7 +49,7 @@ import { checkVisitLocation, formatDistance } from "@/lib/phoenix-crm/geo";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
 import { isEnteredForRep } from "@/lib/phoenix-crm/missed-records";
 import { deriveOfflineCaptureTime, parseOfflineCaptureClaim } from "@/lib/phoenix-crm/offline-clock";
-import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { doctorListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { describeSamples, narrowSamplesToLine, parseSamplesGiven } from "@/lib/phoenix-crm/samples";
 import {
   pickLastNextStep,
@@ -754,7 +754,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       plannedOtherDays: plannedOtherDays.get(customerId) ?? [],
       visitedToday: visitedToday.has(customerId),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
-      target: gradeTarget(settings, listType, grade),
+      target: doctorListType(row.list_type) === null ? null : gradeTarget(settings, listType as "AM" | "PM", grade),
       pending: row.status === "pending",
       outside: row.status === "outside",
       referenceContactCrmId: numberOrNull(row.reference_contact_crm_id),

@@ -28,7 +28,7 @@ import { dayActivityRank, isDayActivity, type PhoenixCrmDayActivity } from "@/li
 import { tallyDoctorMonth } from "@/lib/phoenix-crm/monthly-plan-rules";
 import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
-import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 // ── 1. Coverage on the review ───────────────────────────────────────────────────────────────────
 

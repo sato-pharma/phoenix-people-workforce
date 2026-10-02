@@ -33,7 +33,7 @@
 import { fieldWeekStart, weekdayOfIsoDay, weekNumberInMonth } from "@/lib/phoenix-crm/calendar";
 import type { PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmDoctorListType, PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 
 /** The last-month reference this replays: a doctor who maps to a native customer and the weekdays he was on. */
 export type CopyEntry = {

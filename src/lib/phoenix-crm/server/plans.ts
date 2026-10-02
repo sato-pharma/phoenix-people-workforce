@@ -106,7 +106,7 @@ import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { PlannerCustomer, PlannerInsight } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 

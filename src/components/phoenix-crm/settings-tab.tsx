@@ -39,7 +39,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
-import { PHOENIX_CRM_DEFAULT_SETTINGS, type PhoenixCrmDoctorListType, type PhoenixCrmGrade, type PhoenixCrmDoctorListType, type PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import { PHOENIX_CRM_DEFAULT_SETTINGS, type PhoenixCrmDoctorListType, type PhoenixCrmGrade, type PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import type { PhoenixCrmSettingsView, SettingsLine, SettingsRamadan } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 

@@ -88,7 +88,7 @@ import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
-import { isPharmacyListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { doctorListType, isPharmacyListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { parseTimings, sortTimings } from "@/lib/phoenix-crm/timings";
 import { isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 import type {
@@ -910,7 +910,9 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     const listType: PhoenixCrmListType = parseListType(row.list_type);
     const grade = parseGrade(row.grade);
     const visits = visitCounts.get(customerId) ?? 0;
-    const target = gradeTarget(viewer.config.settings, listType, grade);
+    // A pharmacy carries no grade target, so there is nothing to ask for and nothing to show.
+    const doctorType = doctorListType(row.list_type);
+    const target = doctorType === null ? null : gradeTarget(viewer.config.settings, doctorType, grade);
     const pending = pendingByCustomer.get(customerId);
     const droppedReason = text(row.dropped_reason);
     const validatedBy = text(row.validated_by_hr_id);

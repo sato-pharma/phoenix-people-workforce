@@ -64,7 +64,7 @@ import { buildMissingStock, type MissingStockResult, type StockAnswer, type Stoc
 import { resolveReportMonth, type ReportMonth, type ReportPeriod } from "@/lib/phoenix-crm/report-rules";
 import { buildSamplesReport, type SamplesReportResult } from "@/lib/phoenix-crm/samples-report";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { readsFieldHeardByProduct, readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { groupCustomerPharmacies, normalizePharmacyName, type PharmacyFeedback } from "@/lib/phoenix-crm/server/list";
@@ -168,7 +168,7 @@ async function countableVisits(
 // CAPACITY is a KPI, and a pharmacy is in none of them (owner, 2026-10-02): a pharmacy on the
 // rep's list is not part of what his day has room for, and is not graded against a target.
 // null says so; the two callers below drop the row rather than file it among the doctors.
-function listTypeOf(value: unknown): PhoenixCrmListType | null {
+function listTypeOf(value: unknown): PhoenixCrmDoctorListType | null {
   return doctorListType(value);
 }
 

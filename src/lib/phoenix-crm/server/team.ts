@@ -60,7 +60,7 @@ import {
   type TeamTodayPlanned,
   type TeamTodayVisit,
 } from "@/lib/phoenix-crm/team-today";
-import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type TeamTerritoryRow = {
@@ -91,7 +91,7 @@ function chunks<T>(items: ReadonlyArray<T>, size: number): T[][] {
 
 // Today's plan-against-actual for a manager. A pharmacy is never planned and is in no KPI, so a
 // pharmacy row is not one of these counts at all.
-function listTypeOf(value: unknown): PhoenixCrmListType | null {
+function listTypeOf(value: unknown): PhoenixCrmDoctorListType | null {
   return doctorListType(value);
 }
 
