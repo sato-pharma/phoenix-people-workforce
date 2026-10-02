@@ -107,9 +107,13 @@ export async function runPhoenixCrmUnsavedVoiceNoteTests(): Promise<void> {
       ["phone", "mobile/src/features/crm/visits-screen.tsx"],
     ] as const) {
       const code = read(path);
+      // Either name of the one guard: the web asks `voiceNoteLeaveWarning`, which answers WHICH
+      // sentence (a microphone still running, or a note recorded and not saved), and the phone asks
+      // the yes-or-no `shouldWarnUnsavedVoiceNote` built on it. What is pinned is that BOTH exits ask
+      // it before leaving — never that they ask it by one spelling.
       assert.match(
         code,
-        /shouldWarnUnsavedVoiceNote\(\{\s*hasVoiceNote: voiceNote !== null/,
+        /(?:shouldWarnUnsavedVoiceNote|voiceNoteLeaveWarning)\(\{\s*hasVoiceNote: voiceNote !== null/,
         `${label}: the screen no longer asks the guard before leaving`,
       );
       assert.match(code, /onBack=\{close\}/, `${label}: the back arrow no longer goes through the guard`);

@@ -92,7 +92,11 @@ export function runPhoenixCrmTodayTests(): void {
       planned: [stop({ customerId: "a", listType: "AM" }), stop({ customerId: "b", listType: "PM" }), stop({ customerId: "c", listType: "PM" })],
       visitsToday: [visit({ customerId: "a", listType: "AM" }), visit({ customerId: "b", listType: "PM" })],
     });
-    assert.deepEqual(built.counts, { plannedAm: 1, plannedPm: 2, doneAm: 1, donePm: 1, donePharmacies: 0 }, "five figures, never a total — and the pharmacies apart from both lists");
+    assert.deepEqual(
+      built.counts,
+      { plannedAm: 1, plannedPm: 2, doneAm: 1, donePm: 1, extraAm: 0, extraPm: 0, donePharmacies: 0 },
+      "seven figures, never a total — the pharmacies apart from both lists, and the off-plan work apart from the plan's own",
+    );
 
     const rules = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/today-rules.ts", import.meta.url), "utf8"));
     assert.equal(/doneAm \+ donePm|plannedAm \+ plannedPm/.test(rules), false, "AM and PM are never summed — the call-rate golden rule");
@@ -544,9 +548,13 @@ export function runPhoenixCrmTodayTests(): void {
       "one pharmacy however it is spelled, the latest spelling wins, every customer it came from, and the first clock",
     );
     assert.equal(built.counts.donePharmacies, 2, "two pharmacies");
-    assert.equal(built.counts.doneAm, 1, "AM counts visits, never pharmacies");
-    assert.equal(built.counts.donePm, 3, "and neither does PM");
-    assert.equal(built.counts.doneAm + built.counts.donePm, 4, "the four visits stay four — a pharmacy is never added in");
+    // Nobody was planned here, so all four visits are off the plan: `doneAm`/`donePm` are the PLAN's
+    // own stops done (2026-10-02) and the four are counted beside them, still AM and PM apart.
+    assert.equal(built.counts.doneAm, 0, "no planned stop was done, because none was planned");
+    assert.equal(built.counts.donePm, 0, "and the same on PM");
+    assert.equal(built.counts.extraAm, 1, "AM counts visits, never pharmacies");
+    assert.equal(built.counts.extraPm, 3, "and neither does PM");
+    assert.equal(built.counts.extraAm + built.counts.extraPm, 4, "the four visits stay four — a pharmacy is never added in");
 
     // Called directly as well: it is exported, and the panel's figure is only as good as this.
     assert.deepEqual(todayPharmacies([]), [], "a day with no visits has no pharmacies");

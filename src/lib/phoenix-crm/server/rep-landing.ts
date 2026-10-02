@@ -4,7 +4,7 @@ import { canAccess } from "@/lib/auth/permissions";
 import { logError } from "@/lib/observability/log";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmToday } from "@/lib/phoenix-crm/server/today";
-import { addressWithoutTheBrick, stopWhereParts, todayByBrick } from "@/lib/phoenix-crm/today-rules";
+import { addressWithoutTheBrick, alsoTodayParts, stopWhereParts, todayByBrick } from "@/lib/phoenix-crm/today-rules";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { weekProgressParts } from "@/lib/phoenix-crm/week-progress";
 
@@ -80,7 +80,14 @@ export type RepTodayPlan = {
   soleBrick: string | null;
   territory: string;
   bricks: RepTodayBrick[];
-  /** 🔴 AM and PM APART, never a total — the call-rate golden rule reaches every count. */
+  /**
+   * 🔴 AM and PM APART, never a total — the call-rate golden rule reaches every count.
+   *
+   * `amDone` and `pmDone` are the PLANNED stops he has done, never every visit he logged today: the
+   * planned figure is the denominator the chip divides by, so a numerator from a wider set turned
+   * "AM 3 of 2" green with a planned stop still undone (`TodayCounts.doneAm`). What he did off the
+   * plan is `alsoParts`, beside them.
+   */
   amDone: number;
   amPlanned: number;
   pmDone: number;
@@ -95,6 +102,13 @@ export type RepTodayPlan = {
    * one made off the plan, and is NEVER added into `amDone` or `pmDone`.
    */
   pharmaciesDone: number;
+  /**
+   * What he did TODAY off the plan, beside it — "AM 1", "PM 2" (`alsoTodayParts`). It is the work the
+   * chips used to swallow: before 2026-10-02 an off-plan visit was added into `amDone`/`pmDone`, so
+   * the plan's own figure passed its denominator. Apart, both figures are true. Empty on a day he
+   * went nowhere off plan, and then the panel draws no line.
+   */
+  alsoParts: string[];
   /** Where his Add-visit "+" sends him: the Visits module's own page. */
   canAdd: boolean;
   /**
@@ -179,6 +193,7 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
       pmDone: view.counts.donePm,
       pmPlanned: view.counts.plannedPm,
       pharmaciesDone: view.counts.donePharmacies,
+      alsoParts: alsoTodayParts(view.counts),
       canAdd: view.canAdd,
       weekParts: weekProgressParts(view.week),
     };

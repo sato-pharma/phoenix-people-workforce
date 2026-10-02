@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { shouldWarnUnsavedVoiceNote } from "../src/lib/phoenix-crm/unsaved-voice-note.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -246,13 +247,16 @@ export function runPhoenixCrmMobileMirrorsTests(): void {
 
     // IT WARNS, IT NEVER REFUSES — the one-shot guard, on both sides. A mirror that dropped the
     // `warned` check would show the same message on every press and trap the rep in the form.
-    for (const [label, code] of [
-      ["web", web],
-      ["phone", phone],
-    ] as const) {
-      assert.match(code, /if \(state\.warned\) return false;/, `the ${label} guard is no longer one-shot — a rep could not leave`);
-      assert.match(code, /if \(state\.saving\) return false;/, `the ${label} guard would interrupt a save in flight`);
-    }
+    //
+    // The web half is asked by RUNNING it, which is stronger than reading its text and is what let
+    // the web guard grow a second case (a microphone still open, 2026-10-02) without this test
+    // having to be loosened. The phone cannot be imported from here — it is its own TypeScript
+    // project — so its copy is still read, in the shape it is written in.
+    assert.equal(shouldWarnUnsavedVoiceNote({ hasVoiceNote: true, recording: true, saving: false, warned: true }), false, "the web guard is no longer one-shot — a rep could not leave");
+    assert.equal(shouldWarnUnsavedVoiceNote({ hasVoiceNote: true, recording: true, saving: true, warned: false }), false, "the web guard would interrupt a save in flight");
+    assert.match(phone, /if \(state\.warned\) return false;/, "the phone guard is no longer one-shot — a rep could not leave");
+    assert.match(phone, /if \(state\.saving\) return false;/, "the phone guard would interrupt a save in flight");
+    assert.ok(web.length > 0, "the web module is still there to compare the phone's sentences against");
   }
 
   console.log("phoenix-crm mobile mirrors: OK");

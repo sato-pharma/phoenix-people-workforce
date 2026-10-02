@@ -33,6 +33,35 @@
 export const UNSAVED_VOICE_NOTE_WARNING =
   "Your voice note is kept when you save the visit. Leave now and it is not kept.";
 
+/** The heading over that sentence: what it is about, never what he did. */
+export const UNSAVED_VOICE_NOTE_TITLE = "Your voice note";
+
+/**
+ * 🔴 THE MICROPHONE IS STILL OPEN — the case the warning above could not see, because there is no
+ * stored note yet to ask about.
+ *
+ * Found by the Phoenix CRM audit of 2026-10-02. The visit form's step 3 holds every box, including
+ * the microphone; pressing Next swaps the whole of it for the read-back, so `CrmSpeak` UNMOUNTS, and
+ * its cleanup CANCELS the recorder rather than stopping it — cancelled, so what was caught so far is
+ * thrown away and nothing is uploaded. The rep was mid-sentence, he pressed the button the form was
+ * telling him to press, and the recording was gone with no word said. Pressing Back did the same, and
+ * the one-shot warning above never fired because `voiceNote` was still null — the note only exists
+ * after Stop.
+ *
+ * So the two presses are answered with what is actually happening. Next STOPS and says why: he is not
+ * leaving, he is carrying on, and Stop is one tap away — blocking it loses him nothing and keeps the
+ * recording. Back still WARNS ONCE and then goes, exactly as it does for a stored note: a guard he
+ * cannot get out of is the trap Golden Rule #1 forbids.
+ */
+export const RECORDING_IN_FLIGHT_TITLE = "Your recording";
+
+export const RECORDING_IN_FLIGHT_WARNING =
+  "Your recording is still running. Press Stop and it is kept with the visit. Leave now and it is not kept.";
+
+/** The same fact where he is NOT leaving: he pressed Next, and Next is where it used to vanish. */
+export const RECORDING_IN_FLIGHT_NEXT =
+  "Press Stop first — your recording is still running, and going on now would lose it.";
+
 /** The button that goes back to the form. */
 export const UNSAVED_VOICE_NOTE_STAY_LABEL = "Go back and save";
 
@@ -42,21 +71,35 @@ export const UNSAVED_VOICE_NOTE_LEAVE_LABEL = "Leave without it";
 export interface UnsavedVoiceNoteState {
   /** A recording exists on the form and has not been through a save. */
   hasVoiceNote: boolean;
+  /** The microphone is open, or the recording is still going up. Nothing is stored yet. */
+  recording?: boolean;
   /** A save is in flight — the form is already closing itself, and must not be interrupted. */
   saving: boolean;
   /** He has already been shown the warning once for this attempt to leave. */
   warned: boolean;
 }
 
+/** What the bar says when an attempt to leave is stopped: the heading, and the one sentence under it. */
+export type VoiceNoteLeaveWarning = { title: string; message: string };
+
 /**
- * Whether this attempt to leave should stop and show the warning.
+ * The warning this attempt to leave should show, or null to go.
+ *
+ * The microphone comes first: a running recording is the one that is lost the moment he goes, and it
+ * is also the only one with a way to keep it (Stop). A stored note falls through to the sentence
+ * above it.
  *
  * The `warned` flag is what makes it ONE-SHOT. Without it the second press would show the same
  * warning again and the rep could not get out at all — which is the trap this must not become, and
  * the single most likely way for a well-meant guard to turn into the opposite of Golden Rule #1.
  */
+export function voiceNoteLeaveWarning(state: UnsavedVoiceNoteState): VoiceNoteLeaveWarning | null {
+  if (state.saving || state.warned) return null;
+  if (state.recording) return { title: RECORDING_IN_FLIGHT_TITLE, message: RECORDING_IN_FLIGHT_WARNING };
+  return state.hasVoiceNote ? { title: UNSAVED_VOICE_NOTE_TITLE, message: UNSAVED_VOICE_NOTE_WARNING } : null;
+}
+
+/** The same question as a yes or no, for a caller that only has to decide whether to stop. */
 export function shouldWarnUnsavedVoiceNote(state: UnsavedVoiceNoteState): boolean {
-  if (state.saving) return false;
-  if (state.warned) return false;
-  return state.hasVoiceNote;
+  return voiceNoteLeaveWarning(state) !== null;
 }

@@ -237,11 +237,19 @@ export function runPhoenixCrmPlanScreenExtrasTests(): void {
 
     // The wiring: HR's one reader, full days only, never a thrown read.
     const reader = source("src/lib/phoenix-crm/server/leave-days.ts");
-    const daysOff = bodyOf(reader, "export async function loadSeatDaysOff(");
+    // The rule lives in the MANY-territory reader since 2026-10-02 — the plan reminder asks it of every
+    // rep whose week is not sent, and one query each was one query per seat twice a day. One seat is
+    // the same question, so `loadSeatDaysOff` delegates rather than keeping a second copy.
+    const daysOff = bodyOf(reader, "export async function loadSeatsDaysOff(");
     assert.match(daysOff, /await loadApprovedLeaveDays\(seatsByHrId\.keys\(\), range\)/, "the same reader as the reports' on-leave — never a second copy of the leave rule");
-    assert.match(daysOff, /if \(!row\.fullDay \|\| /, "a half day is not a day off");
+    assert.match(daysOff, /if \(!row\.fullDay\) continue;/, "a half day is not a day off");
     assert.match(daysOff, /\} catch \(error\) \{\s*logError\(/, "a leave read that fails is logged…");
-    assert.match(daysOff, /return daysOff;\s*\}$/, "…and still answers, so the day stays plannable and the board never breaks");
+    assert.match(daysOff, /return out;\s*\}$/, "…and still answers, so the day stays plannable and the board never breaks");
+    assert.match(
+      bodyOf(reader, "export async function loadSeatDaysOff("),
+      /return \(await loadSeatsDaysOff\(\[seat\], range\)\)\.get\(seat\.seatId\)/,
+      "and one territory asks the same reader, never its own copy of the rule",
+    );
     assert.doesNotMatch(reader, /\.from\(/, "the CRM reads no HR table itself");
     const vacation = source("src/lib/vacation/approved-leave-days.ts");
     assert.match(vacation, /\.select\("employee_hr_id, start_date, end_date, vacation_type, day_part"\)/, "the type and the day part are read with the days");

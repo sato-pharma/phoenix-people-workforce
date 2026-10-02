@@ -129,7 +129,7 @@ export function runPhoenixCrmFieldReachTests() {
     ];
     const week = weekProgressOf({
       weekStart: "2026-10-03",
-      planStatus: "approved",
+      anyDaySent: true,
       plannedListTypes: ["AM", "AM", "PM", "PM", "PM", "PM", "PM", "PM"],
       visits,
     });
@@ -149,21 +149,19 @@ export function runPhoenixCrmFieldReachTests() {
     assert.ok(!weekProgressParts(week).some((part) => part.includes(String(week.visited.am + week.visited.pm))), "no part prints the AM and PM visits added together");
     assert.ok(!weekProgressParts(week).some((part) => part.includes(String(week.visited.pm + week.visited.pharmacies))), "and a pharmacy is never counted inside PM");
 
-    // A sent plan plans the week; a draft, one sent back, or none plans nothing yet.
-    assert.deepEqual(weekProgressOf({ weekStart: "2026-10-03", planStatus: "submitted", plannedListTypes: ["AM"], visits: [] }).planned, { am: 1, pm: 0 }, "a plan waiting for approval is sent");
-    for (const status of ["draft", "returned", null] as const) {
-      const unsent = weekProgressOf({ weekStart: "2026-10-03", planStatus: status, plannedListTypes: ["AM", "PM"], visits });
-      assert.equal(unsent.planned, null, `a ${String(status)} plan is still his to change, so it plans nothing yet`);
-      assert.deepEqual(weekProgressParts(unsent), ["AM 1 visited", "PM 4 visited", "Pharmacies 3"], "and the line says only what he visited");
-    }
+    // A sent DAY plans the week (2026-10-02 — the week's own status is no longer asked); with no
+    // sent day at all — a draft, a week returned whole, no plan — it plans nothing yet.
+    const unsent = weekProgressOf({ weekStart: "2026-10-03", anyDaySent: false, plannedListTypes: ["AM", "PM"], visits });
+    assert.equal(unsent.planned, null, "no day of it is sent, so the week is still his to change and plans nothing yet");
+    assert.deepEqual(weekProgressParts(unsent), ["AM 1 visited", "PM 4 visited", "Pharmacies 3"], "and the line says only what he visited");
 
     // Nothing to say is no line: a list he has nothing on, and no pharmacy yet.
     assert.deepEqual(
-      weekProgressParts(weekProgressOf({ weekStart: "2026-10-03", planStatus: "approved", plannedListTypes: ["PM", "PM"], visits: [] })),
+      weekProgressParts(weekProgressOf({ weekStart: "2026-10-03", anyDaySent: true, plannedListTypes: ["PM", "PM"], visits: [] })),
       ["PM 2 planned · 0 visited"],
       "a rep with no AM customers is not told AM 0 every day, and Pharmacies 0 is never printed",
     );
-    assert.deepEqual(weekProgressParts(weekProgressOf({ weekStart: "2026-10-03", planStatus: null, plannedListTypes: [], visits: [] })), [], "nothing at all, no line at all");
+    assert.deepEqual(weekProgressParts(weekProgressOf({ weekStart: "2026-10-03", anyDaySent: false, plannedListTypes: [], visits: [] })), [], "nothing at all, no line at all");
 
     // The reads: the countable visits, in the day's one parallel wave.
     const reads = source("src/lib/phoenix-crm/server/week-progress.ts");
@@ -171,7 +169,12 @@ export function runPhoenixCrmFieldReachTests() {
     assert.doesNotMatch(reads, /\.from\("phoenix_crm_visits"\)/, "never the raw visit table");
     assert.ok(reads.includes('.eq("seat_id", seatId)') && reads.includes('.eq("is_test", isTest)'), "his own territory, in his own world");
     assert.ok(reads.includes('.gte("visit_date", weekStart)') && reads.includes('.lte("visit_date", visitDay)'), "Saturday through today");
-    assert.ok(reads.includes("isPlanSentForReview(planStatus)"), "the stops are read only from a sent plan");
+    // 🔴 DAY BY DAY (2026-10-02), never the WEEK's own status: a week returned for ONE day reads
+    // `returned`, and asking `isPlanSentForReview` of it took the planned figures off the whole line.
+    assert.ok(reads.includes("isPlanDaySent({ ...facts, date })"), "each day of the week is asked on its own");
+    assert.ok(reads.includes("loadPlanDayFacts([planRow], isTest)"), "through the one reader every other day-level question goes through");
+    assert.equal(/isPlanSentForReview/.test(reads), false, "and never the week's own status again");
+    assert.ok(reads.includes("sentDays.has(String(row.plan_date ?? \"\"))"), "only the stops on a day he sent are counted as planned");
     assertBefore(reads, "visitsRead.catch(() => undefined);", "await supabase", "the visits' read starts beside the plan's, handled the moment it starts");
 
     const today = source("src/lib/phoenix-crm/server/today.ts");
@@ -183,9 +186,9 @@ export function runPhoenixCrmFieldReachTests() {
     const landing = source("src/lib/phoenix-crm/server/rep-landing.ts");
     assert.ok(landing.includes("weekParts: weekProgressParts(view.week),"), "the landing panel is handed the line's parts, never a figure to add up");
     const panel = source("src/components/employee-portal/rep-today-plan-panel.tsx");
-    assert.ok(panel.includes("{plan.weekParts.length > 0 ? ("), "no parts, no line — never an empty square");
-    assert.ok(panel.includes(">This week</span>"), "the line opens This week");
-    assert.ok(panel.includes("{plan.weekParts.map((part) => ("), "each figure its own part");
+    assert.ok(panel.includes("if (parts.length === 0) return null;"), "no parts, no line — never an empty square");
+    assert.ok(panel.includes('<FootLine label="This week" parts={plan.weekParts} />'), "the line opens This week");
+    assert.ok(panel.includes("{parts.map((part) => ("), "each figure its own part");
     assert.equal(/weekParts\.join\(/.test(panel), false, "never joined into one string a reader could take for one figure");
 
     // His own work, and nothing that judges him.

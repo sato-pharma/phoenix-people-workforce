@@ -69,14 +69,34 @@ export async function loadSeatLeaveDays(seats: readonly OrgSeat[], range: { from
  * a missed day off leaves a day open that should be greyed, and blocks nothing he wants to do.
  */
 export async function loadSeatDaysOff(seat: OrgSeat, range: { from: string; to: string }): Promise<Map<string, string>> {
-  const daysOff = new Map<string, string>();
-  const seatsByHrId = seatsByOccupant([seat]);
-  // A vacant territory has nobody to be on leave.
-  if (seatsByHrId.size === 0) return daysOff;
+  return (await loadSeatsDaysOff([seat], range)).get(seat.seatId) ?? new Map<string, string>();
+}
+
+/**
+ * The same answer for MANY territories at once, `seatId → (day → the leave's own name)` — ONE read of
+ * HR's approved requests, not one per seat.
+ *
+ * The plan reminder is why it exists (2026-10-02): it asks this of every rep whose week is not sent,
+ * to leave out the ones whose whole week is days off and who therefore cannot send it at all
+ * (`weekIsAllDaysOff`). Per seat that was a query each, twice a day, for a figure most of them answer
+ * empty. A territory with nobody on it, and one with no approved leave in the range, are both absent
+ * from the map rather than carrying an empty entry — the caller reads a missing seat as no days off,
+ * which is what a failed read gives too.
+ */
+export async function loadSeatsDaysOff(seats: readonly OrgSeat[], range: { from: string; to: string }): Promise<Map<string, Map<string, string>>> {
+  const out = new Map<string, Map<string, string>>();
+  const seatsByHrId = seatsByOccupant(seats);
+  // Vacant territories only: nobody to be on leave.
+  if (seatsByHrId.size === 0) return out;
   try {
     for (const row of await loadApprovedLeaveDays(seatsByHrId.keys(), range)) {
-      if (!row.fullDay || !seatsByHrId.has(personKey(row.hrId) ?? "")) continue;
-      if (!daysOff.has(row.day)) daysOff.set(row.day, row.typeLabel);
+      // A HALF day is not a day off — the other half is still his to plan (and to send).
+      if (!row.fullDay) continue;
+      for (const seatId of seatsByHrId.get(personKey(row.hrId) ?? "") ?? []) {
+        const days = out.get(seatId) ?? new Map<string, string>();
+        if (!days.has(row.day)) days.set(row.day, row.typeLabel);
+        out.set(seatId, days);
+      }
     }
   } catch (error) {
     logError("Phoenix CRM plan could not read approved leave", {
@@ -84,5 +104,5 @@ export async function loadSeatDaysOff(seat: OrgSeat, range: { from: string; to: 
       labels: { event: "phoenix_crm_plan_leave_failed" },
     });
   }
-  return daysOff;
+  return out;
 }

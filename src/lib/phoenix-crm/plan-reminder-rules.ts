@@ -33,7 +33,7 @@
 
 import { CAIRO_MONTHS } from "@/lib/format/cairo-datetime";
 import { addDaysIso } from "@/lib/crm/dates";
-import { PLAN_DEADLINE_LABEL, repPlanWeek, weekdayOfIsoDay, weeklyPlanDueOn } from "@/lib/phoenix-crm/calendar";
+import { fieldWeekDays, PLAN_DEADLINE_LABEL, repPlanWeek, weekdayOfIsoDay, weeklyPlanDueOn } from "@/lib/phoenix-crm/calendar";
 import { territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { PHOENIX_CRM_WEEKDAY_NAMES } from "@/lib/phoenix-crm/timings";
 
@@ -78,6 +78,24 @@ export function planReminderDay(cairoToday: string): PlanReminderDay | null {
 /** A plan status that means the week has NOT gone for review: no plan, a draft, or one sent back. */
 export function isUnsentStatus(status: string | null | undefined): boolean {
   return status !== "submitted" && status !== "approved";
+}
+
+/**
+ * 🔴 A WEEK HE CANNOT SEND IS NEVER CHASED — GOLDEN RULE #1 ("never tell a rep to do what he cannot
+ * do"). Every working day of the week is a public holiday or a full day of his own approved leave, so
+ * the plan holds no customer (`planDayOff` empties the day's list types and `resolvePlanItems`
+ * refuses a save that still names one) — and a plan with nothing on it is refused on send,
+ * `phoenix_crm:empty_plan`. The reminder told him "Due tonight, 11:55 PM — open Plan and press Send"
+ * twice a day for a week he had no way to send, and his district manager was told he had not sent it.
+ *
+ * It is the ONLY thing that takes a rep off the list: a week with ONE working day left is still his
+ * to send, and he is reminded about it exactly as before. A read of his leave that fails gives no
+ * days off, so he is reminded — the safe direction, since an unnecessary reminder costs a tap and a
+ * missing one costs his week.
+ */
+export function weekIsAllDaysOff(weekStart: string, daysOff: ReadonlySet<string>): boolean {
+  const days = fieldWeekDays(weekStart);
+  return days.length > 0 && days.every((day) => daysOff.has(day));
 }
 
 export type PlanReminderNotice = {

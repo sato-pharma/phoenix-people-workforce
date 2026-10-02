@@ -42,6 +42,11 @@ import {
   type HouseLetterheadInput,
 } from "@/lib/hiring-pack/house-identity";
 import { systemLegalEntity } from "@/config/system-settings";
+// 🔴 THE DEADLINE IS INTERPOLATED, NEVER TYPED (owner, 2026-10-02 — the hour goes on every due date a
+// rep reads). Both halves of this guide said "the Thursday before it" with no hour, and the guide is
+// the one page a new rep is handed: it taught him the cut-off was midnight. One constant, so the hour
+// here can never drift from the deadline the server stamps him late against.
+import { PLAN_DEADLINE_LABEL } from "@/lib/phoenix-crm/calendar";
 
 export type StartGuideLanguage = "en" | "ar";
 
@@ -155,7 +160,7 @@ const CONTENT: Record<StartGuideLanguage, GuideContent> = {
       ],
       [
         "Your plan",
-        `You plan one week at a time: the coming week, due on the Thursday before it. Open ${ui("Plan")}, pick a day, tick your customers and press ${ui("Send this week")}. A late week is still accepted. To change a week you already sent, press ${ui("Ask to edit this week")}: your district manager, then SFE, then HR approve it.`,
+        `You plan one week at a time: the coming week, due on the Thursday before it at ${PLAN_DEADLINE_LABEL}. Open ${ui("Plan")}, pick a day, tick your customers and press ${ui("Send this week")}. A late week is still accepted. To change a week you already sent, press ${ui("Ask to edit this week")}: your district manager, then SFE, then HR approve it.`,
       ],
     ],
     footer: "Sato Pharma · Phoenix CRM",
@@ -203,7 +208,7 @@ const CONTENT: Record<StartGuideLanguage, GuideContent> = {
       ],
       [
         "خطتك",
-        `تخطط أسبوعاً واحداً في كل مرة: الأسبوع القادم، وموعده الخميس الذي يسبقه. افتح ${ui("Plan")}، واختر اليوم، وعلّم على عملائك، ثم اضغط ${ui("Send this week")}. الأسبوع المتأخر مقبول أيضاً. لتعديل أسبوع أرسلته اضغط ${ui("Ask to edit this week")}: يوافق مدير المنطقة، ثم SFE، ثم الموارد البشرية.`,
+        `تخطط أسبوعاً واحداً في كل مرة: الأسبوع القادم، وموعده الخميس الذي يسبقه الساعة <bdi>${PLAN_DEADLINE_LABEL}</bdi>. افتح ${ui("Plan")}، واختر اليوم، وعلّم على عملائك، ثم اضغط ${ui("Send this week")}. الأسبوع المتأخر مقبول أيضاً. لتعديل أسبوع أرسلته اضغط ${ui("Ask to edit this week")}: يوافق مدير المنطقة، ثم SFE، ثم الموارد البشرية.`,
       ],
     ],
     footer: "ساتو فارما · Phoenix CRM",
