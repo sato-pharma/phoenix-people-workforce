@@ -43,16 +43,51 @@ process.on("uncaughtException", () => process.exit(0));
 let assessAutoloadFootprint;
 let assessMemoryIndexSize;
 let autoloadFootprintLines;
+let checkoutPositionLines;
 let memoryIndexBudgetLines;
 try {
   ({
     assessAutoloadFootprint,
     assessMemoryIndexSize,
     autoloadFootprintLines,
+    checkoutPositionLines,
     memoryIndexBudgetLines,
   } = await import("../../scripts/memory-index-budget.mjs"));
 } catch {
   process.exit(0);
+}
+
+/**
+ * Where the checkout these numbers come from sits relative to `origin/main`.
+ *
+ * 🔴 LOCAL REFS ONLY — NO FETCH. This runs at every SessionStart, and seconds of network per session
+ * start is a worse trade than a count that is a lower bound. `checkoutPositionLines` says so in the
+ * line it prints.
+ *
+ * Every failure is a NOTE rather than silence, because the checkout is plainly present: a detached
+ * HEAD, a clone with no `origin/main`, a shallow CI checkout. Silence is reserved for the one case
+ * where there is nothing to measure — not a git repository at all — which returns null.
+ */
+function checkoutPosition(dir) {
+  const run = (args) =>
+    execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000 }).trim();
+  try {
+    run(["rev-parse", "--git-dir"]);
+  } catch {
+    return null; // not a checkout — nothing to measure, so say nothing
+  }
+  let sha;
+  try {
+    sha = run(["rev-parse", "--short", "HEAD"]);
+  } catch (err) {
+    return { note: "could not read HEAD (" + String(err?.message ?? err).split("\n")[0] + ")" };
+  }
+  try {
+    const behind = Number(run(["rev-list", "--count", "HEAD..origin/main"]));
+    return { behind, sha };
+  } catch {
+    return { note: "no comparable origin/main ref in this clone", sha };
+  }
 }
 
 const projectDir = process.argv[2] || process.env.CLAUDE_PROJECT_DIR || process.cwd();
@@ -177,7 +212,14 @@ if (verdict !== null) {
   );
 }
 
-const footprintDetail = flatten(autoloadFootprintLines(footprint));
+// The position rides INSIDE the footprint section rather than in one of its own, because it is not a
+// separate fact — it says which tree every byte above was counted in. A session that reads the
+// numbers and not the caveat is the failure both exist to prevent, and two sections are two things
+// to read past instead of one.
+const footprintDetail = flatten([
+  ...autoloadFootprintLines(footprint),
+  ...checkoutPositionLines(checkoutPosition(projectDir)),
+]);
 if (footprintDetail) {
   sections.push(["AUTO-LOADED CONTEXT FOOTPRINT (AGENTS.md 2.2)", footprintDetail].join("\n"));
 }
