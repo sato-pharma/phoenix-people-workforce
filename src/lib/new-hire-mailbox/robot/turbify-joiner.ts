@@ -29,7 +29,14 @@
  * A refusal naming the wording it wanted is recoverable in one edit; a silent success is not.
  */
 
+import { logInfo } from "@/lib/observability/log";
 import { loadPuppeteer, resolveChromiumPath } from "@/lib/pdf/chromium";
+import {
+  buildControlReport,
+  CONTROL_READ_EXPRESSION,
+  controlReportEnabled,
+  type ObservedControl,
+} from "@/lib/turbify/control-report";
 
 import type { CreatedMailbox, JoinerConsoleDriver } from "./driver";
 import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
@@ -300,7 +307,7 @@ export async function createTurbifyJoinerDriver(credentials: {
       return "done";
     },
 
-    async generateAppPassword({ address }) {
+    async generateAppPassword({ address, password }) {
       await clickOne(page, APP_PASSWORD_PAGE.manageAccount).catch(() => {});
       await settle(2_000);
       await clickOne(page, APP_PASSWORD_PAGE.manageAppPasswords);
@@ -323,6 +330,34 @@ export async function createTurbifyJoinerDriver(credentials: {
           + "The mailbox is usable but Phoenix has no access to it, so this run is reported, not recorded as connected.",
         );
       }
+
+      // 🔴 CALIBRATION, off unless PHOENIX_TURBIFY_REPORT_CONTROLS is exactly "true". This is the one
+      // moment anything in Phoenix is standing on this page, signed in as a mailbox — which is the
+      // only way to see how an EXISTING app password is listed and removed
+      // (`APP_PASSWORD_REVOKE_CONTROLS`, still uncalibrated). Reading it here costs no extra sign-in
+      // and touches no other mailbox. It CLICKS NOTHING.
+      //
+      // The page is displaying the password we just minted, so every secret in hand is passed to the
+      // redactor and anything secret-shaped is dropped whatever it is. A failure to read is
+      // swallowed: a diagnostic must never fail a provisioning run that has otherwise succeeded.
+      if (controlReportEnabled()) {
+        try {
+          const observed = await page.evaluate<ObservedControl[]>(CONTROL_READ_EXPRESSION);
+          const report = buildControlReport("app-passwords", observed ?? [], [appPassword, password]);
+          logInfo("Turbify control report", {
+            labels: {
+              controls: report.controls.join(" || "),
+              event: "turbify_control_report",
+              observed: report.observed,
+              page: report.page,
+              redacted: report.redacted,
+            },
+          });
+        } catch {
+          // Deliberately silent: the mailbox is provisioned and that is what matters.
+        }
+      }
+
       return { appPassword };
     },
 

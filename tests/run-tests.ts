@@ -918,6 +918,7 @@ import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-i
 import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts";
 import { runNewHireMailboxAdoptTests } from "./new-hire-mailbox-adopt.test.ts";
 import { runMailboxAppPasswordClearTests } from "./mailbox-app-password-clear.test.ts";
+import { runTurbifyControlReportTests } from "./turbify-control-report.test.ts";
 import { runMailboxRobotSweepHookTests } from "./mailbox-robot-sweep-hook.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
@@ -4043,6 +4044,15 @@ await runTest(
   + "leaver whose last day has not arrived are both refused, since this disconnects the phone in "
   + "somebody's pocket; and a mailbox reset but not cleared is never recorded as cleared)",
   runMailboxAppPasswordClearTests,
+);
+await runTest(
+  "the Turbify control report, which calibrates a flow without guessing (it reads the App Passwords "
+  + "page at the exact moment that page is DISPLAYING the app password just minted, so a live "
+  + "mailbox credential must not reach the logs: every secret in hand is removed by exact match, "
+  + "anything secret-shaped is dropped even when nobody passed it, the reader never touches an "
+  + "input's value or the whole body and clicks nothing, and the whole thing is OFF unless the flag "
+  + "is exactly \"true\")",
+  runTurbifyControlReportTests,
 );
 await runTest(
   "mailbox revocation robot wired to the daily sweep (off by default; dry run is the default once "
