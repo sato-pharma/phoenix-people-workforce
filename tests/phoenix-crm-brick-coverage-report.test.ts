@@ -193,7 +193,8 @@ export function runPhoenixCrmBrickCoverageReportTests(): void {
     const report = buildBrickCoverageReport({
       territories: [TERRITORY],
       crmRows: [crmRow({ seatId: "SEAT-1", brickId: "B-77", brickName: "", customers: 1, pm: 1 })],
-      sales: [{ brickId: "B-78", areaCode: "GZ3", value: 100 }],
+      // On the TERRITORY'S OWN LINE, or the sales-only brick is not its row at all (case 2b).
+      sales: [sale("B-78", "GZ3", 100)],
       brickNames: [],
       salesMonths: ["2026-08"],
     });
