@@ -17,6 +17,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Clock,
+  CopyCheck,
   Download,
   Columns3,
   Database,
@@ -4268,6 +4269,22 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
+    // One doctor, two rows — the SFE's housekeeping list (the owner, 2026-10-02: "show the
+    // same-rep duplicate customers to the SFE").
+    //
+    // 🔴 THE SAME TWO READERS AS THE BOARD ABOVE, AND DELIBERATELY NOT THE SAME CARD. A duplicate
+    // is a typing mistake, not a suspicion, and a rep filed under "Location Integrity" for
+    // entering a name twice would be accused of something he did not do. The wording here is
+    // housekeeping throughout; the gate is `canReadIntegrityBoard` inside the page, and this card
+    // only draws the link.
+    href: "/admin/phoenix-crm/duplicates",
+    icon: CopyCheck,
+    label: "Duplicate Customers",
+    description: "Where one rep's own list holds the same doctor twice. Housekeeping rather than a flag — nobody is accused, and the rep is never shown it.",
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin", "SFE Manager"],
+  },
+  {
     // Customer Links — Wave 2's review screen, and the door to the 360 view behind it (the owner,
     // 2026-09-30: the system suggests links and the Super Admin confirms each one).
     //
@@ -4866,6 +4883,9 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/field-workforce-compliance",
           "/admin/field-activity",
           "/admin/phoenix-crm/integrity",
+          // Beside the board rather than inside it, and in this band because a duplicate on a
+          // rep's list IS a CRM data-quality question — the same kind the two rows above ask.
+          "/admin/phoenix-crm/duplicates",
           // Data quality rather than a board: it answers whether two rows in two modules are one
           // person, which is the same kind of question as the two integrity rows above it. A card
           // left out of every band here is not dropped — it is appended to the FIRST band and filed
