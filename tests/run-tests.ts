@@ -914,6 +914,7 @@ import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runMailboxOffboardingRobotTests } from "./mailbox-offboarding-robot.test.ts";
 import { runNewHireMailboxRobotTests } from "./new-hire-mailbox-robot.test.ts";
+import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
 import { runMailboxRobotSweepHookTests } from "./mailbox-robot-sweep-hook.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
@@ -3997,6 +3998,14 @@ await runTest(
   + "malformed local part and a hire more than 14 days out are each refused; and every console "
   + "locator stays semantic — an aria-label, a form name or visible text, never a captured CSS path)",
   runNewHireMailboxRobotTests,
+);
+await runTest(
+  "new hire mailbox initial password store (the one recoverable password in the system — so NO role "
+  + "but Super Admin ever receives it, not HR Advisory, HR Operations, the CEO or the Employee an "
+  + "unauthenticated caller presents as; the role is checked BEFORE the seal is opened, a password "
+  + "Turbify would reject is refused at seal time, and an unrecorded one says so rather than "
+  + "returning a blank somebody would pass on as a password)",
+  runNewHireMailboxInitialPasswordStoreTests,
 );
 await runTest(
   "mailbox revocation robot wired to the daily sweep (off by default; dry run is the default once "
