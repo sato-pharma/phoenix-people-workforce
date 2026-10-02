@@ -76,6 +76,7 @@ function kpiRow(over: Partial<KpiRepRow> & Pick<KpiRepRow, "agentHrId" | "repNam
     meetsCoverageFloor: false,
     missedDoctors: 15,
     noGpsFeed: false,
+    awaitingValidation: 0,
     offPlanDoctors: 0,
     onPlanDoctors: 40,
     overDoctors: 5,

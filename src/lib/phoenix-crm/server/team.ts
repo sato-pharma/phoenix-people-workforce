@@ -22,6 +22,7 @@
  * in three batched queries (loadTeamToday), never one per rep.
  */
 
+import { loadVendorLeftoversBySeat } from "@/lib/crm/phoenix-vendor-leftovers";
 import { logError } from "@/lib/observability/log";
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
@@ -51,6 +52,7 @@ import {
   type UnplannedVisitView,
 } from "@/lib/phoenix-crm/server/unplanned";
 import { loadVisitAskSummary, type VisitAskSummary } from "@/lib/phoenix-crm/server/visit-asks";
+import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import {
   emptyTeamToday,
   summarizeTeamToday,
@@ -59,7 +61,8 @@ import {
   type TeamTodayPlanned,
   type TeamTodayVisit,
 } from "@/lib/phoenix-crm/team-today";
-import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import { sortVendorLeftovers, type VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
+import type { PhoenixCrmDoctorListType, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type TeamTerritoryRow = {
@@ -71,6 +74,12 @@ export type TeamTerritoryRow = {
   canReview: boolean;
   /** The rep's visit day so far — his plan's progress AM and PM apart, and what he logged. */
   today: TeamTodayFigures & { lastVisitClock: string | null };
+  /**
+   * Who on this territory is still recording his day in iReports360 since the team moved — work that
+   * now lands in no figure at all. Empty on the rep's OWN row: it is his managers' to read, never his
+   * (Golden Rule #1), and the server clears it rather than trusting a screen to leave it off.
+   */
+  stillOnVendor: VendorLeftoverRep[];
 };
 
 type Row = Record<string, unknown>;
@@ -88,8 +97,10 @@ function chunks<T>(items: ReadonlyArray<T>, size: number): T[][] {
   return out;
 }
 
-function listTypeOf(value: unknown): PhoenixCrmListType {
-  return value === "AM" ? "AM" : "PM";
+// Today's plan-against-actual for a manager. A pharmacy is never planned and is in no KPI, so a
+// pharmacy row is not one of these counts at all.
+function listTypeOf(value: unknown): PhoenixCrmDoctorListType | null {
+  return doctorListType(value);
 }
 
 function withClock(figures: TeamTodayFigures): TeamTodayFigures & { lastVisitClock: string | null } {
@@ -144,11 +155,14 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
       throwIfError(items.error);
       for (const row of (items.data ?? []) as Row[]) {
         const seatId = seatByPlan.get(String(row.plan_id));
-        if (seatId) planned.push({ seatId, customerId: String(row.customer_id), listType: listTypeOf(row.list_type) });
+        const plannedListType = listTypeOf(row.list_type);
+        if (seatId && plannedListType !== null) planned.push({ seatId, customerId: String(row.customer_id), listType: plannedListType });
       }
     }
     for (const row of (dayVisits.data ?? []) as Row[]) {
-      visits.push({ seatId: String(row.seat_id), customerId: String(row.customer_id), listType: listTypeOf(row.list_type), capturedAt: String(row.captured_at) });
+      const visitListType = listTypeOf(row.list_type);
+      if (visitListType === null) continue;
+      visits.push({ seatId: String(row.seat_id), customerId: String(row.customer_id), listType: visitListType, capturedAt: String(row.captured_at) });
     }
   }
   return summarizeTeamToday({ seatIds, seatsWithPlan, planned, visits });
@@ -249,7 +263,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   const seats: OrgSeat[] = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const seatIds = seats.map((seat) => seat.seatId);
 
-  const [readiness, requestRows, unplannedRows, planEditRows, todayBySeat, visitAsks] = await Promise.all([
+  const [readiness, requestRows, unplannedRows, planEditRows, todayBySeat, visitAsks, vendorLeftovers] = await Promise.all([
     isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
     seatIds.length === 0 ? Promise.resolve([]) : loadRequestRows(seatIds, isTest, { pendingOnly: true }),
     loadUnplannedRows(seatIds, isTest),
@@ -257,6 +271,8 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     // The VISIT day (until 02:00 the day that just ended), the same day the rep's own Today shows.
     seatIds.length === 0 ? Promise.resolve(new Map<string, TeamTodayFigures>()) : loadTeamToday(seatIds, isTest, viewer.visitDay),
     visitAskSummaryOrNull(viewer, isTest),
+    // The vendor mirror knows nothing of test entries, so test mode asks it nothing.
+    isTest ? Promise.resolve(new Map<string, VendorLeftoverRep[]>()) : loadVendorLeftoversBySeat(),
   ]);
 
   const pendingBySeat = new Map<string, number>();
@@ -295,6 +311,9 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       pendingRequests: pendingBySeat.get(seat.seatId) ?? 0,
       canReview: canReviewTerritory(viewer, seat, isTest),
       today: withClock(todayBySeat.get(seat.seatId) ?? emptyTeamToday()),
+      // 🔴 Golden Rule #1, the same clearing the off-plan location flag gets below: a rep's scope
+      // holds his own territory, so this answer would otherwise carry his own row to him.
+      stillOnVendor: isLocationBlind(viewer, seat) ? [] : sortVendorLeftovers(vendorLeftovers.get(seat.seatId) ?? []),
     }),
   );
   territories.sort(

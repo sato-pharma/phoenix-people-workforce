@@ -18,7 +18,7 @@
 import { coverageTier, gradeTarget, type CoverageTier } from "@/lib/phoenix-crm/coverage";
 import { distanceMeters } from "@/lib/phoenix-crm/geo";
 import { windowsForWeekday } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmSettings, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
 export type PlannerPlace = {
   placeId: string;
@@ -67,7 +67,7 @@ export type PlannerInsight = {
 export type PlannerCustomer = {
   customerId: string;
   name: string;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   grade: PhoenixCrmGrade | null;
   speciality: string | null;
   visitsThisMonth: number;
@@ -98,7 +98,7 @@ export type DaySuggestion = {
   /** The place's clean street address, so the rep sees exactly where the visit lands. */
   address: string | null;
   name: string;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   grade: PhoenixCrmGrade | null;
   speciality: string | null;
   brick: string | null;

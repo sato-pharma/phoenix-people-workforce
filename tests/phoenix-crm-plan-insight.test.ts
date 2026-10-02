@@ -21,7 +21,7 @@ import { suggestDay, suggestWeek, type SuggestInput, type SuggestResult } from "
 import type { PlanItemDraft } from "../src/lib/phoenix-crm/plan-rules.ts";
 import type { DraftDay, DraftWeek } from "../src/lib/phoenix-crm/plan-week-draft.ts";
 import type { PlannerCustomer, PlannerInsight } from "../src/lib/phoenix-crm/suggestions.ts";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmTiming } from "../src/lib/phoenix-crm/types.ts";
+import type { PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmTiming } from "../src/lib/phoenix-crm/types.ts";
 import type { LastNextStepRow } from "../src/lib/phoenix-crm/visit-outcome.ts";
 
 /**
@@ -69,7 +69,7 @@ function insightOf(partial: Partial<PlannerInsight>): PlannerInsight {
 
 function customer(
   customerId: string,
-  listType: PhoenixCrmListType,
+  listType: PhoenixCrmDoctorListType,
   options: {
     grade?: PhoenixCrmGrade | null;
     brick?: string | null;

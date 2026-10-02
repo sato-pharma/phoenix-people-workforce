@@ -1705,6 +1705,11 @@ import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.
 import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
+import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
+import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
+import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
+import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
+import { runPhoenixCrmManagerValidatesTests } from "./phoenix-crm-manager-validates.test.ts";
 import { runPhoenixCrmBrickTintsTests } from "./phoenix-crm-brick-tints.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
@@ -5889,6 +5894,31 @@ await runTest(
 await runTest(
   "Phoenix CRM copy last month (owner, 2026-09-25: pre-fill the new month from the rep's iReports360 plan, editable, never auto-submitted; only a doctor still on the list is placed, on his old weekdays' editable days, on the list types the day allows, at his first place; the day's cap is honoured, a doctor already on a day is not doubled, and the order is deterministic)",
   runPhoenixCrmPlanCopyTests,
+);
+
+await runTest(
+  "Phoenix CRM visits awaiting validation (a manager must be able to read a zero the rep did not earn: a Phoenix visit to a customer who is not validated yet is SAVED and scores nothing, and on a team that has just started that is EVERY visit — 0 of Delta (1)'s 1,551 customers were validated the day before it began, so a flat 0 on the board had nothing to explain it. The count is a count of work DONE and never a score: it moves no slice, no rate and no target, validating the customer still moves the visit into its own day, only the validation gate feeds it (never a weekend, a holiday, the catch-all contact or a vendor row), the sentence is a statement about the LIST and never a complaint about the rep, \"No calls\" is replaced because it would be untrue of a rep whose every call is waiting, and the rep's own screens never read it at all)",
+  runPhoenixCrmAwaitingValidationTests,
+);
+
+await runTest(
+  "Phoenix CRM pharmacy calls (owner, 2026-10-02, four rulings of which three REMOVE something a reader would add back by analogy with a doctor: a pharmacy is a THIRD list_type and never a row inside AM or PM, so the binary `=== \"AM\" ? \"AM\" : \"PM\"` that every existing reader uses would file it among the doctors with nothing going red; it is NEVER planned — \"He don't plan it. We don't want extra\" reverses his own earlier \"planned like doctors\", and the 10-a-day cap he set that morning capped PLANNING, so nothing is left for it to limit and a cap on VISITS would be the extra he refused; it is NEVER approved — \"no approval for an unplanned pharmacy visit\", because the off-plan approval protects a figure and a pharmacy has none; and NO KPI reads one — no coverage, frequency, monthly target, call rate or capacity, so the Pharmacies figure stays a plain count and never a rate)",
+  runPhoenixCrmPharmacyCallTests,
+);
+
+await runTest(
+  "Phoenix CRM reps still recording in iReports360 (from a team's start its reps' iReports360 visits are IGNORED everywhere, owner 2026-10-02 — so a rep who carries on logging there is doing real work that reaches NO figure at all, and the volume is not small: 1,629 vendor visits in the fourteen days before Delta (1) began, 135.8 a day. The question cannot be asked of crm_visits_unified, which anti-joins exactly these rows out and would answer a confident zero for a rep logging every day, so ONE loader reads the raw mirror, inside each rep's own counted_from/counted_until window; the sentence names the people and states the cost and carries no verdict on anyone, because a rep still on the old app is following the habit he was trained in; and it never reaches him — the SERVER empties it with isLocationBlind rather than a screen choosing not to render it, and every file that reads the flag at all is named here)",
+  runPhoenixCrmVendorLeftoverTests,
+);
+
+await runTest(
+  "Phoenix CRM a product manager on a visit (owner's pick, 2026-10-02 — the recording half of the ask he already has, in the same four words. What this exists to stop is him being filed as a DOUBLE visit: he holds no seat in the organogram at all, so he is in no territory's manager chain and nothing in the database can check him, and double_visits is counted as kind = 'double' on every board, a figure district managers are judged on. So the rep names one of HIS OWN LINE's product managers from the same cached list his ask offers — an empty list, a missing list, the territory's own DM or himself are each refused — the visit is the rep's and a manager entering it is refused, every other kind answers null so a stale pick cannot ride along, the draft parser clears each slot by the kind, the label IS the ask's wording, his title is his APP ROLE because the tree has no seat to take one from, and the table's own CHECK allows the column on its own kind and nowhere else)",
+  runPhoenixCrmVisitProductManagerTests,
+);
+
+await runTest(
+  "Phoenix CRM a district manager validates (owner's pick, 2026-10-02 — the rep stays primary and his managers join him, including on a VACANT seat, whose reference list nobody else could work through: 0 of Delta (1)'s 1,551 carried-over customers were validated the day before it started, and a visit to one counts in nothing until it is. The two obvious-looking implementations are both refused — territoryForRepWrite is NOT widened, so the plan, the day activities, the forecast and every list change stay the rep's, and a manager may validate only a CARRIED-OVER customer, because \"Add new customer\" and an out-of-list validation file a request whose first step is his own. Scope runs downward only, the screen offers him the Validate button and none of the rep's others, and the place photo slot takes the same gate so the camera cannot refuse the button)",
+  runPhoenixCrmManagerValidatesTests,
 );
 
 await runTest(

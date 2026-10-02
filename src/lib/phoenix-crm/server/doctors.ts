@@ -32,6 +32,7 @@ import { describeTerritory, territoryPeople } from "@/lib/phoenix-crm/server/ter
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 
 type Row = Record<string, unknown>;
 
@@ -155,10 +156,14 @@ export async function loadDoctorDirectory(viewer: PhoenixCrmViewer, isTest: bool
     const territory = territoryById.get(String(row.seat_id));
     if (!territory) continue;
     const validatedBy = typeof row.validated_by_hr_id === "string" ? row.validated_by_hr_id : null;
+    // The doctor list is doctors and accounts. A pharmacy sits on the rep's list too, but it is
+    // not a doctor and carries no grade or target, so it is left out of this one entirely.
+    const listType = doctorListType(row.list_type);
+    if (listType === null) continue;
     rows.push({
       customerId: String(row.id),
       name: String(row.name),
-      listType: row.list_type === "AM" ? "AM" : "PM",
+      listType,
       speciality: typeof row.speciality === "string" ? row.speciality : null,
       grade: typeof row.grade === "string" ? (row.grade as PhoenixCrmGrade) : null,
       validatedAt: String(row.validated_at),

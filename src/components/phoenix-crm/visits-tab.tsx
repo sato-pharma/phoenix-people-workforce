@@ -111,6 +111,9 @@ function visitPeople(visit: VisitRow): Array<{ name: string; role: string }> {
   if (visit.repName) people.push({ name: visit.repName, role: visit.repTitle ?? "Rep" });
   if (visit.managerName) people.push({ name: visit.managerName, role: visit.managerTitle ?? "Manager" });
   if (visit.seniorName) people.push({ name: visit.seniorName, role: visit.seniorTitle ?? "Senior manager" });
+  // A product manager holds no seat in the sales-only tree, so his APP ROLE is his title and the slot
+  // word is the fallback — the same shape as the three above, for the one person the tree cannot name.
+  if (visit.productManagerName) people.push({ name: visit.productManagerName, role: visit.productManagerTitle ?? "Product manager" });
   return people;
 }
 

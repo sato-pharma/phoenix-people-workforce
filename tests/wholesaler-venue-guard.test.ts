@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { stripComments } from "./support/comment-strip.ts";
 
 import {
   WHOLESALER_VENUE_REFUSED_MESSAGE,
@@ -6,6 +9,8 @@ import {
   suspectedWholesalerFlag,
   suspectedWholesalerNote,
 } from "../src/lib/venues/wholesaler-venue-guard.ts";
+
+const ROOT = new URL("../", import.meta.url);
 
 /**
  * Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never shown as a matchable
@@ -51,6 +56,32 @@ export function runWholesalerVenueGuardTests() {
       `"${name}" is hard-blocked, so there is no advisory note to render`,
     );
   }
+
+  // ── موزع — the distributor word, FLAG tier, venue-only (added 2026-10-02) ──
+  // Found when each rep's iReports360 pharmacies were imported into Phoenix CRM: four Ibn Sina
+  // branches sat in reps' PHARMACY lists carrying this word and nothing marked them, because they
+  // do not also say فارما. Measured over all 1,930 of those pharmacies, adding it moves the flagged
+  // set from 6 to 10 and nothing else: still 0 blocked, and all ten are distributor branches.
+  for (const name of [
+    "موزع ابن سينا أشمون",
+    "موزع ابن سينا بركة السبع",
+    "موزع ابن سينا شبين",
+    "موزع ابن سينا طنطا",
+  ]) {
+    assert.equal(suspectedWholesalerFlag(name), true, `"${name}" is a distributor branch and must be flagged for a human`);
+    // FLAG, never block: the owner's standing rule is that a false positive must never silently
+    // refuse a real shop, and a pharmacy could legitimately carry the word.
+    assert.equal(isCertainWholesalerVenue(name), false, `"${name}" is flagged for a human, never hard-blocked`);
+    assert.ok(suspectedWholesalerNote(name), `"${name}" carries the advisory sentence the desk renders`);
+  }
+
+  // 🔴 And it stays VENUE-ONLY. The closing's own keyword list prices the monthly closing, so the
+  // word must never be moved into it — that would re-classify customers in published months.
+  assert.doesNotMatch(
+    stripComments(readFileSync(new URL("src/lib/sales/customer-channel.ts", ROOT), "utf8")),
+    /موزع/,
+    "موزع must never reach customer-channel.ts — that module prices the monthly closing",
+  );
 
   // El Qema (QM) is a wholesale-only distributor — every non-protected customer of it is a warehouse.
   assert.equal(

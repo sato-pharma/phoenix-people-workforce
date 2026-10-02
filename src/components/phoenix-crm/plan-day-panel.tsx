@@ -91,7 +91,7 @@ import {
 } from "@/lib/phoenix-crm/plan-week-draft";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import { PHOENIX_CRM_WEEKDAY_NAMES, weekTimingsText } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
 import type { PlanDayView, PlanItemView } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -101,7 +101,7 @@ const NEUTRAL_TINT: BrickTint = { bar: "border-l-slate-300", fill: "bg-slate-50"
 type TickRow = {
   customerId: string;
   name: string;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   grade: PhoenixCrmGrade | null;
   speciality: string | null;
   pending: boolean;
@@ -195,7 +195,7 @@ export function PlanDayPanel({
    * yet) until he asks for the rest; and the start times, activities, copy and filters folded under "More
    * for this day". Unset is the whole day at once — a manager reviewing from Team.
    */
-  focus?: PhoenixCrmListType;
+  focus?: PhoenixCrmDoctorListType;
   /** The grade numbers: a validated customer's row reads his month against his grade's. */
   gradeTargets: GradeTargets;
   idPrefix: string;
@@ -218,7 +218,7 @@ export function PlanDayPanel({
    * A reviewer's steps (owner, 2026-10-02): the day he is reading, ONE list at a time — its AM, then its
    * PM — read only. Unset shows the whole day. Never set on the rep's own plan.
    */
-  reviewList?: PhoenixCrmListType;
+  reviewList?: PhoenixCrmDoctorListType;
   /** A reviewer's reading: the day's spread may show. Never true for a rep on his own plan. */
   showSpread: boolean;
   /** The day's Start AM / Start PM: the draft's while he is changing the day, else what was saved. */
@@ -315,7 +315,7 @@ export function PlanDayPanel({
   const placedById = new Map(onTheDay.map((row) => [row.customerId, row]));
   // 1 AM, 1 PM, 2 PM… — each list counted on its own, in the order he ticked (owner, 2026-09-30).
   const order = new Map<string, number>();
-  const seen: Record<PhoenixCrmListType, number> = { AM: 0, PM: 0 };
+  const seen: Record<PhoenixCrmDoctorListType, number> = { AM: 0, PM: 0 };
   for (const row of onTheDay) {
     seen[row.listType] += 1;
     order.set(row.customerId, seen[row.listType]);
@@ -382,7 +382,7 @@ export function PlanDayPanel({
   // A whole brick at once: exactly the ticks he would make one by one, through the same `toggle`, so a
   // brick carries no rule of its own (`brickTickPress` decides which). The board applies each over the
   // draft the one before it made, so none of them is lost.
-  function pressBrick(rows: ReadonlyArray<TickRow>, listType: PhoenixCrmListType) {
+  function pressBrick(rows: ReadonlyArray<TickRow>, listType: PhoenixCrmDoctorListType) {
     if (locked) return;
     const press = brickTickPress(rows, room[listType]);
     for (const row of press.takeOff) toggle(row, false);
@@ -392,7 +392,7 @@ export function PlanDayPanel({
   const tickRowProps = { dayName, idPrefix, locked, onToggle: toggle, room };
 
   /** One list of the day — AM or PM — grouped by brick under its fill bar. `top` sits under the bar. */
-  function listBlock(listType: PhoenixCrmListType, rows: ReadonlyArray<TickRow>, emptyText: string, top?: ReactNode) {
+  function listBlock(listType: PhoenixCrmDoctorListType, rows: ReadonlyArray<TickRow>, emptyText: string, top?: ReactNode) {
     const cap = listType === "AM" ? caps.amDailyCap : caps.pmDailyCap;
     const groups = clusterByBrick(rows, (row) => row.brick, "alphabetical");
     return (
@@ -801,11 +801,11 @@ type TickRowProps = {
   idPrefix: string;
   locked: boolean;
   onToggle: (row: TickRow, next: boolean) => void;
-  room: Record<PhoenixCrmListType, number>;
+  room: Record<PhoenixCrmDoctorListType, number>;
   row: TickRow;
 };
 
-function tickDisabled(row: TickRow, room: Record<PhoenixCrmListType, number>, locked: boolean): boolean {
+function tickDisabled(row: TickRow, room: Record<PhoenixCrmDoctorListType, number>, locked: boolean): boolean {
   return locked || (!row.placed && room[row.listType] <= 0);
 }
 
@@ -814,7 +814,7 @@ function tickDisabled(row: TickRow, room: Record<PhoenixCrmListType, number>, lo
  * appears the moment the box is checked and renumbers as he unticks (owner, 2026-09-30). AM and PM are
  * counted apart, as every figure in the module is.
  */
-function OrderChip({ listType, position }: { listType: PhoenixCrmListType; position: number | null }) {
+function OrderChip({ listType, position }: { listType: PhoenixCrmDoctorListType; position: number | null }) {
   if (position === null) return null;
   return (
     <span className="mr-1.5 inline-flex shrink-0 items-center border border-orange-300 bg-orange-100 px-1.5 py-px align-[0.1em] text-phx-2xs font-black uppercase tracking-[0.08em] text-orange-800">
@@ -953,7 +953,7 @@ function PlannedDayView({
   day: PlanDayView;
   idPrefix: string;
   /** One list alone — a reviewer's step reads AM, then PM (owner, 2026-10-02). Unset: both. */
-  only?: PhoenixCrmListType;
+  only?: PhoenixCrmDoctorListType;
   showSpread: boolean;
   tints: ReadonlyMap<string, BrickTint>;
   weekdayName: string;

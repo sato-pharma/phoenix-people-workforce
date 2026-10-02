@@ -89,7 +89,7 @@ import {
   PHOENIX_CRM_WEEKDAY_SHORT,
   windowsForWeekday,
 } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmListType, PhoenixCrmSeason, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmListType, PhoenixCrmSeason, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 import type { ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -110,7 +110,9 @@ function homeSectionFor(view: TerritoryListView, section: HomeSection | null): H
   // The board is where the list opens (owner, 2026-09-24: "I don't need the My List separated, I need
   // it in Phoenix CRM"), unless something is actually waiting on the viewer — a validation to finish or
   // a request to decide outranks a reading view, as it did before the board arrived.
-  const defaultSection: HomeSection = view.canEdit && pendingCount > 0 ? "to_validate" : decidableCount > 0 ? "requests" : "board";
+  // A manager who may validate here lands on the same section his rep does (owner, 2026-10-02) — on a
+  // vacant territory he is the only one who can work through it.
+  const defaultSection: HomeSection = view.canValidateReference && pendingCount > 0 ? "to_validate" : decidableCount > 0 ? "requests" : "board";
   return section === "to_validate" && !hasReference ? "board" : (section ?? defaultSection);
 }
 
@@ -128,7 +130,7 @@ function matchesQuery(query: string, parts: ReadonlyArray<string | null>): boole
   return parts.some((part) => part !== null && part.toLowerCase().includes(query));
 }
 
-function countByType<T extends { listType: PhoenixCrmListType }>(rows: ReadonlyArray<T>): Record<PhoenixCrmListType, number> {
+function countByType<T extends { listType: PhoenixCrmListType }>(rows: ReadonlyArray<T>): Record<PhoenixCrmDoctorListType, number> {
   return {
     AM: rows.filter((row) => row.listType === "AM").length,
     PM: rows.filter((row) => row.listType === "PM").length,
@@ -136,7 +138,7 @@ function countByType<T extends { listType: PhoenixCrmListType }>(rows: ReadonlyA
 }
 
 /** "3 AM · 41 PM" — AM and PM side by side, never added together. */
-function pairText(counts: Record<PhoenixCrmListType, number>): string {
+function pairText(counts: Record<PhoenixCrmDoctorListType, number>): string {
   return `${countText(counts.AM)} AM · ${countText(counts.PM)} PM`;
 }
 

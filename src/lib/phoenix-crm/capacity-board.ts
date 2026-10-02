@@ -42,7 +42,7 @@
 import { planDayListTypes } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget, sharePercent } from "@/lib/phoenix-crm/coverage";
 import { monthDays } from "@/lib/phoenix-crm/team-calendar";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 export type CapacitySettings = Pick<PhoenixCrmSettings, "gradeTargets" | "pmDailyCap" | "amDailyCap" | "callRatePmTarget" | "callRateAmTarget">;
 
@@ -109,7 +109,7 @@ export function monthFieldDays(month: string, holidays: ReadonlyMap<string, stri
 }
 
 /** The per-day figures a list type is read against: the call rate, and the plan's own cap. */
-export function perDayFigures(settings: CapacitySettings, listType: PhoenixCrmListType): { target: number; cap: number } {
+export function perDayFigures(settings: CapacitySettings, listType: PhoenixCrmDoctorListType): { target: number; cap: number } {
   return listType === "PM"
     ? { target: settings.callRatePmTarget, cap: settings.pmDailyCap }
     : { target: settings.callRateAmTarget, cap: settings.amDailyCap };
@@ -118,7 +118,7 @@ export function perDayFigures(settings: CapacitySettings, listType: PhoenixCrmLi
 // ── What the list asks for ──────────────────────────────────────────────────────────────────────
 
 export type CapacityCustomer = {
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   /** The grade on the list — for a customer not validated yet, the grade iReports360 carried over. */
   grade: PhoenixCrmGrade | null;
   validated: boolean;
@@ -141,7 +141,7 @@ export type ListNeed = {
   gradeAShare: number | null;
 };
 
-export function listNeed(customers: ReadonlyArray<CapacityCustomer>, listType: PhoenixCrmListType, settings: CapacitySettings): ListNeed {
+export function listNeed(customers: ReadonlyArray<CapacityCustomer>, listType: PhoenixCrmDoctorListType, settings: CapacitySettings): ListNeed {
   const grades: Record<PhoenixCrmGrade, number> = { A: 0, B: 0, C: 0 };
   let count = 0;
   let validated = 0;
@@ -223,7 +223,7 @@ export function listCapacity(need: ListNeed, days: number, perDay: { target: num
  * wording the screen's pill and the workbook's column both print. It is about the LIST's size against
  * the month, never about the rep: he does not choose who is on his list.
  */
-export function capacityVerdictText(capacity: Pick<ListCapacity, "verdict" | "perDayTarget" | "perDayCap">, listType: PhoenixCrmListType): string {
+export function capacityVerdictText(capacity: Pick<ListCapacity, "verdict" | "perDayTarget" | "perDayCap">, listType: PhoenixCrmDoctorListType): string {
   if (capacity.verdict === "no_list") return `No ${listType} list`;
   if (capacity.verdict === "no_days") return `No ${listType} day`;
   if (capacity.verdict === "over_cap") return `${listType} over ${capacity.perDayCap} a day`;
@@ -232,7 +232,7 @@ export function capacityVerdictText(capacity: Pick<ListCapacity, "verdict" | "pe
 }
 
 /** "PM A 3 · B 2 · C 1" — the grade numbers Settings holds, as the board used them. */
-export function gradeTargetsText(targets: CapacitySettings["gradeTargets"], listType: PhoenixCrmListType): string {
+export function gradeTargetsText(targets: CapacitySettings["gradeTargets"], listType: PhoenixCrmDoctorListType): string {
   const parts = GRADES.map((grade) => {
     const value = targets[listType][grade];
     return `${grade} ${value === null ? "no number" : value}`;

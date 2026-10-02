@@ -12,7 +12,7 @@ import {
   tallyDoctorMonth,
   type DoctorMonthInput,
 } from "../src/lib/phoenix-crm/monthly-plan-rules.ts";
-import { PHOENIX_CRM_DEFAULT_SETTINGS, type PhoenixCrmGrade, type PhoenixCrmListType } from "../src/lib/phoenix-crm/types.ts";
+import { PHOENIX_CRM_DEFAULT_SETTINGS, type PhoenixCrmGrade, type PhoenixCrmDoctorListType } from "../src/lib/phoenix-crm/types.ts";
 
 /**
  * Phoenix CRM — the monthly plan (owner, 2026-09-25).
@@ -29,7 +29,7 @@ import { PHOENIX_CRM_DEFAULT_SETTINGS, type PhoenixCrmGrade, type PhoenixCrmList
 
 const SETTINGS = PHOENIX_CRM_DEFAULT_SETTINGS;
 
-function tally(customerId: string, listType: PhoenixCrmListType, grade: PhoenixCrmGrade | null, placed: number) {
+function tally(customerId: string, listType: PhoenixCrmDoctorListType, grade: PhoenixCrmGrade | null, placed: number) {
   const input: DoctorMonthInput = { customerId, listType, grade, placed };
   return tallyDoctorMonth(input, SETTINGS);
 }

@@ -54,6 +54,7 @@ import { fieldWeekStart, plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { splitOffPlanDays, type OffPlanDay } from "@/lib/phoenix-crm/offplan-day";
 import { withPlanDeadline } from "@/lib/phoenix-crm/plan-rules";
 import { teamTodayLine, teamTodayTone } from "@/lib/phoenix-crm/team-today";
+import { vendorLeftoverNote, VENDOR_LEFTOVER_TITLE } from "@/lib/phoenix-crm/vendor-leftovers";
 import { teamWaitingLine, teamWeeksToShow } from "@/lib/phoenix-crm/team-waiting";
 import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 import type {
@@ -252,6 +253,24 @@ function TodayLine({ row }: { row: TeamTerritoryRow }) {
     <p className="flex min-w-0 items-start gap-2 text-xs font-semibold leading-5 text-slate-700">
       <span aria-hidden className={cn("mt-1.5 h-2 w-2 shrink-0", TODAY_TONE_SQUARE[teamTodayTone(row.today)])} />
       <span className="min-w-0 break-words">{teamTodayLine(row.today, row.today.lastVisitClock)}</span>
+    </p>
+  );
+}
+
+/**
+ * Where the work is being RECORDED, never a word about the rep: one still logging in iReports360 is
+ * following the habit he was trained in, and since his team moved those visits land in no figure at
+ * all. It sits on a vacant row too — the work still happened and still counts nowhere.
+ *
+ * The server leaves it empty on the rep's OWN row (Golden Rule #1, `isLocationBlind` in
+ * server/team.ts); this screen decides nothing of its own and must never start.
+ */
+function VendorLeftoverLine({ row }: { row: TeamTerritoryRow }) {
+  const note = vendorLeftoverNote(row.stillOnVendor);
+  if (!note) return null;
+  return (
+    <p className="break-words text-xs font-semibold leading-5 text-amber-700">
+      {VENDOR_LEFTOVER_TITLE}: {note}
     </p>
   );
 }
@@ -1376,6 +1395,7 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
                   <p className="break-words text-xs font-semibold leading-5 text-slate-500">{readySince(row.readiness)}</p>
                 ) : null}
                 <TodayLine row={row} />
+                <VendorLeftoverLine row={row} />
                 <p className="break-words text-xs font-semibold leading-5 text-slate-500">{requestsText(row)}</p>
               </CrmCard>
             ))}
@@ -1423,6 +1443,7 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
                         than squeezing a fifth into the table. */}
                     <div className="mt-2">
                       <TodayLine row={row} />
+                      <VendorLeftoverLine row={row} />
                     </div>
                   </td>
                   <td className={crmTdClassName}>{requestsText(row)}</td>

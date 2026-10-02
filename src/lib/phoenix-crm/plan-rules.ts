@@ -22,7 +22,7 @@ import { isUuid as isUuidText } from "@/lib/http/uuid";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { editablePlanDays, fieldWeekDays, planDayListTypes, PLAN_DEADLINE_LABEL, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import { formatTimingWindow, PHOENIX_CRM_WEEKDAY_NAMES, windowsForWeekday } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmPlanStatus, PhoenixCrmSettings, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
 export const PLAN_EXCEPTION_TYPES = [
   { key: "another_place", label: "At another place" },
@@ -284,14 +284,14 @@ export function parsePlanItems(raw: unknown): PlanRuleResult<PlanItemDraft[]> {
 export type PlanRuleCustomer = {
   customerId: string;
   name: string;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   /** Carried over from iReports360 and not validated yet: no place, no timings, and it counts in nothing. */
   pending: boolean;
   places: ReadonlyArray<{ placeId: string; timings: PhoenixCrmTiming[] }>;
 };
 
 export type ResolvedPlanItem = PlanItemDraft & {
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   receives: boolean;
   /** The first window's start that day, for ordering the day. Null when the customer does not receive that day. */
   startMinute: number | null;

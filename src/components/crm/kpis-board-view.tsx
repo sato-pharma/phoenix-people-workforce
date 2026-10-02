@@ -33,6 +33,7 @@ import {
   OffListNote,
   PharmacyKpiReportTables,
 } from "@/components/crm/kpi-reports-tables";
+import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import { kpiCallRateRepKey, kpiCallRateRepPath } from "@/lib/crm/kpis-call-rate-route";
 import { KPI_TABS, KPI_TAB_HINT, KPI_TAB_HINT_PHOENIX, KPI_TAB_LABEL, type KpiTab } from "@/lib/crm/kpis-tabs";
 import {
@@ -127,13 +128,23 @@ function rate(value: number | null): string {
 const NO_GPS_FEED = "No GPS feed";
 
 /**
+ * A rep whose calls are all saved and all waiting on their customers' validation. Not "No calls",
+ * which would be untrue of him, and not a red 0%, which would score him for his list's progress.
+ */
+const NOT_SCORED_YET = "Not scored yet";
+
+/**
  * The line under an AM or PM figure. For a rep with no GPS feed it says what he REPORTED, because the
  * proved rate it would otherwise quote is blank for want of a feed, not zero.
  */
 function sessionCaption(row: KpiRepRow, session: "am" | "pm", target: number, none: string): string {
   if (row.noGpsFeed) return `${session === "am" ? row.amReported : row.pmReported} reported · none provable`;
-  if (!row.hasCallRate) return none;
-  return `${rate(session === "am" ? row.amRate : row.pmRate)} of ${target} a day`;
+  // A started team's first weeks: the visits are saved and score nothing until the customer is
+  // validated, so a bare 0 here reads as a rep who did nothing. Say what is actually true instead.
+  const waiting = awaitingValidationNote(row);
+  if (!row.hasCallRate) return waiting ?? none;
+  const figure = `${rate(session === "am" ? row.amRate : row.pmRate)} of ${target} a day`;
+  return waiting ? `${figure} · ${row.awaitingValidation} more waiting to be validated` : figure;
 }
 
 /** A percentage, or a marker when the rep has no plan to be a percentage OF. */
@@ -151,12 +162,15 @@ function planPct(row: KpiRepRow, value: number): string {
  */
 function amPct(row: KpiRepRow): string {
   if (row.noGpsFeed) return NO_GPS_FEED;
-  return row.hasCallRate && row.amAttainmentPct != null ? `${row.amAttainmentPct}%` : "No calls";
+  if (row.hasCallRate && row.amAttainmentPct != null) return `${row.amAttainmentPct}%`;
+  // "No calls" would be untrue of a rep whose every call is waiting on its customer.
+  return row.awaitingValidation > 0 ? NOT_SCORED_YET : "No calls";
 }
 
 function pmPct(row: KpiRepRow): string {
   if (row.noGpsFeed) return NO_GPS_FEED;
-  return row.hasCallRate && row.pmAttainmentPct != null ? `${row.pmAttainmentPct}%` : "No calls";
+  if (row.hasCallRate && row.pmAttainmentPct != null) return `${row.pmAttainmentPct}%`;
+  return row.awaitingValidation > 0 ? NOT_SCORED_YET : "No calls";
 }
 
 /**

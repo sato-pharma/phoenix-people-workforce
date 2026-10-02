@@ -12,7 +12,7 @@
 
 import { addDaysIso } from "@/lib/crm/dates";
 import { cairoOffsetMinutes } from "@/lib/format/cairo-zone";
-import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 const ISO_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -43,7 +43,7 @@ export function fieldWeekDays(weekStart: string): string[] {
 }
 
 /** What a plan day can hold: Thursday is a morning (accounts only); Friday holds nothing. */
-export function planDayListTypes(isoDay: string): PhoenixCrmListType[] {
+export function planDayListTypes(isoDay: string): PhoenixCrmDoctorListType[] {
   const weekday = weekdayOfIsoDay(isoDay);
   if (weekday === 5) return [];
   if (weekday === 4) return ["AM"];

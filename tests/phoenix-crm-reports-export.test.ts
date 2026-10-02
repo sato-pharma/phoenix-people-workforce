@@ -531,7 +531,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
         // `missedRecords` since 2026-10-01: null for everyone but the Super Admin, and the workbook
         // never reads it — it only says which calendar cells open for him to enter a missed record.
         calendar: { days: ["2026-09-01"], isTest: false, missedRecords: null, month: "2026-09", rows: [], scope: "team", totals: { am: 0, pharmacies: 0, pm: 0 } },
-        frequency: { includeTest: false, leaveUnread: false, month: { inProgress: false, month: "2026-09", monthEnd: "2026-09-30", monthStart: "2026-09-01" }, needsOneTerritory: false, rows: [], seat: null, totals: { customers: 0, noTarget: 0, onTarget: 0, over: 0, under: 0 } },
+        frequency: { awaitingValidation: 0, includeTest: false, leaveUnread: false, month: { inProgress: false, month: "2026-09", monthEnd: "2026-09-30", monthStart: "2026-09-01" }, needsOneTerritory: false, rows: [], seat: null, totals: { customers: 0, noTarget: 0, onTarget: 0, over: 0, under: 0 } },
         tracking: { days: ["2026-09-01"], includeTest: false, month: { inProgress: false, month: "2026-09", monthEnd: "2026-09-30", monthStart: "2026-09-01" }, needsOneTerritory: false, rows: [], seat: null, showsSpacing: true },
     } as Partial<ReportsPackInput>;
 

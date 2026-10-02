@@ -86,7 +86,8 @@ async function readSource(source: IdentitySource, ids: readonly string[]): Promi
       const kind = text(row.list_type).toUpperCase();
       out.set(String(row.id), {
         contactCrmId: num(row.reference_contact_crm_id),
-        kind: (kind === "AM" ? "AM" : "PM") as IdentityKind,
+        // IdentityKind has carried "pharmacy" all along; a Phoenix pharmacy customer is one.
+        kind: (kind === "AM" ? "AM" : kind === "PHARMACY" ? "pharmacy" : "PM") as IdentityKind,
         name: text(row.name),
         source,
         sourceId: String(row.id),
