@@ -31,7 +31,7 @@
 
 import { CAIRO_MONTHS } from "@/lib/format/cairo-datetime";
 import { addDaysIso } from "@/lib/crm/dates";
-import { repPlanWeek, weekdayOfIsoDay, weeklyPlanDueOn } from "@/lib/phoenix-crm/calendar";
+import { PLAN_DEADLINE_LABEL, repPlanWeek, weekdayOfIsoDay, weeklyPlanDueOn } from "@/lib/phoenix-crm/calendar";
 import { territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { PHOENIX_CRM_WEEKDAY_NAMES } from "@/lib/phoenix-crm/timings";
 
@@ -81,9 +81,11 @@ export function repReminder(input: { hrId: string; day: PlanReminderDay; cairoTo
   const week = reminderDayLabel(input.day.weekStart);
   const title = `Your week of ${week} is not sent yet`;
   const how = input.draftStarted ? "Open Plan, check your days and press Send." : "Open Plan, tick your customers day by day and press Send.";
+  // The reminder is where the deadline reaches his phone, so it names the HOUR as well as the day
+  // (owner, 2026-10-02). "Tonight" alone left him to guess it, and the week is judged on it.
   const when = input.day.late
-    ? `It was due on ${reminderDayLabel(input.day.dueOn)}. Send it before ${week}. A late week is still accepted.`
-    : "It is due tonight.";
+    ? `It was due on ${reminderDayLabel(input.day.dueOn)} at ${PLAN_DEADLINE_LABEL}. Send it before ${week}. A late week is still accepted.`
+    : `It is due tonight at ${PLAN_DEADLINE_LABEL}.`;
   return {
     hrId: input.hrId,
     title,
@@ -99,7 +101,9 @@ export function managerReminder(input: { hrId: string; day: PlanReminderDay; cai
   const shown = names.slice(0, PLAN_REMINDER_MAX_NAMES);
   const more = names.length - shown.length;
   const count = names.length === 1 ? "1 of your reps has" : `${names.length} of your reps have`;
-  const when = input.day.late ? `It was due on ${reminderDayLabel(input.day.dueOn)}.` : "It is due tonight.";
+  const when = input.day.late
+    ? `It was due on ${reminderDayLabel(input.day.dueOn)} at ${PLAN_DEADLINE_LABEL}.`
+    : `It is due tonight at ${PLAN_DEADLINE_LABEL}.`;
   return {
     hrId: input.hrId,
     title: `${count} not sent the week of ${week}`,

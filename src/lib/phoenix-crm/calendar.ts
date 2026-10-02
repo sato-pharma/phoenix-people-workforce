@@ -11,6 +11,7 @@
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
+import { cairoOffsetMinutes } from "@/lib/format/cairo-zone";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 const ISO_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -102,6 +103,52 @@ export const PLAN_WEEK_DUE_OVERRIDES: Readonly<Record<string, string>> = { "2026
  */
 export function weeklyPlanDueOn(weekStart: string): string {
   return PLAN_WEEK_DUE_OVERRIDES[weekStart] ?? addDaysIso(weekStart, -2);
+}
+
+/**
+ * The hour on the due date at which a plan is late: 23:55 Cairo (owner, 2026-10-02 — "the deadline to
+ * submit the plan is thuersday 11:5pm and show themn this").
+ *
+ * It is a TIME, not the end of a day. Before this the test was `today > dueOn`, so the cut-off was
+ * midnight and no screen ever named it — the rep was told WHICH DAY his plan was due and left to assume
+ * the hour. The second half of his instruction is the half that matters: the deadline is written
+ * wherever he reads the due date, so he is never guessing at it.
+ *
+ * A late plan is still ACCEPTED AND STAMPED, never refused (owner, 2026-09-29) — a rep who cannot plan
+ * cannot work. The deadline decides the stamp and the "Overdue" badge, and nothing else.
+ */
+export const PLAN_DEADLINE_CAIRO_HOUR = 23;
+export const PLAN_DEADLINE_CAIRO_MINUTE = 55;
+
+/** How the deadline is written wherever anyone reads it — one wording, never a second copy. */
+export const PLAN_DEADLINE_LABEL = "11:55 PM";
+
+/**
+ * The real instant 23:55 Cairo falls at on `dueOn`, from the zone table that ships with the code
+ * (`cairo-zone.ts`) and never from the reader's engine — a browser built between 2014 and 2023 puts
+ * Egypt an hour out for half of each year, and this value decides whether a rep is stamped late.
+ *
+ * Two passes, because the offset depends on the instant being solved for. The one wall time that
+ * exists TWICE is 23:55 on the Thursday Egypt leaves DST (2026-10-29, which turns over at Cairo
+ * midnight), and the second pass lands on the LATER of the two — the forgiving one, so a rep whose own
+ * clock reads 23:55 is on time on either pass of it. `phoenix_crm_week_deadline_at` resolves that same
+ * ambiguity the same way; both were measured against production rather than assumed.
+ */
+export function planDeadlineAt(dueOn: string): Date {
+  const [year, month, day] = dueOn.split("-").map(Number);
+  const wall = Date.UTC(year, month - 1, day, PLAN_DEADLINE_CAIRO_HOUR, PLAN_DEADLINE_CAIRO_MINUTE);
+  const first = wall - cairoOffsetMinutes(new Date(wall)) * 60000;
+  return new Date(wall - cairoOffsetMinutes(new Date(first)) * 60000);
+}
+
+/**
+ * Whether the deadline for `dueOn` has passed — the ONE predicate behind every "Overdue" a rep sees.
+ *
+ * It has to be an instant and not a date: with a date, the five minutes between 23:55 and midnight
+ * would show him a week that is not yet overdue while the server stamps that very send late.
+ */
+export function planDeadlinePassed(dueOn: string, now: Date = new Date()): boolean {
+  return now.getTime() > planDeadlineAt(dueOn).getTime();
 }
 
 /** "Week 1", "Week 2"… — a field-week's place in the month its Saturday falls in. */

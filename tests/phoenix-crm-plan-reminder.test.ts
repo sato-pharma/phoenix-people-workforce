@@ -80,7 +80,8 @@ export function runPhoenixCrmPlanReminderTests() {
     const due = { weekStart: "2026-10-03", dueOn: "2026-10-02", late: false };
     const rep = repReminder({ hrId: "PD-0013", day: due, cairoToday: "2026-10-02", draftStarted: false });
     assert.equal(rep.title, "Your week of Saturday 3 Oct is not sent yet");
-    assert.ok(rep.message.startsWith("It is due tonight."), rep.message);
+    // The hour, not only "tonight" (owner, 2026-10-02 — the deadline is 23:55 Cairo and he is shown it).
+    assert.ok(rep.message.startsWith("It is due tonight at 11:55 PM."), rep.message);
     assert.equal(rep.idempotencyKey, "phoenix_crm:plan_reminder:rep:PD-0013:2026-10-03:2026-10-02", "one per rep per week per Cairo day");
     const late = repReminder({ hrId: "PD-0013", day: { ...due, late: true }, cairoToday: "2026-10-03", draftStarted: true });
     assert.ok(late.message.includes("A late week is still accepted."), "late is accepted and says so — never refused");

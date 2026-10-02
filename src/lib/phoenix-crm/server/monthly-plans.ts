@@ -50,6 +50,7 @@ import {
   monthlyPlanDueOn,
   monthStartOf,
   plannableMonths,
+  planDeadlinePassed,
   repPlanWeek,
   weeklyPlanDueOn,
   weekNumberInMonth,
@@ -65,7 +66,14 @@ import {
   type MonthlyCallRate,
   type MonthlyListMeter,
 } from "@/lib/phoenix-crm/monthly-plan-rules";
-import { isPlanEditable, isUuid, PLAN_DECISION_NOTE_MAX, planStatusLabel, type RepWeekState } from "@/lib/phoenix-crm/plan-rules";
+import {
+  isPlanEditable,
+  isUuid,
+  PLAN_DECISION_NOTE_MAX,
+  planDueLabel,
+  planStatusLabel,
+  type RepWeekState,
+} from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   assertCanReturnPlan,
@@ -295,6 +303,9 @@ export async function loadMonthlyPlanner(
 ): Promise<MonthlyPlannerView> {
   const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
   const today = viewer.cairoToday;
+  // ONE instant for the whole render, so the month and every week on it agree about the deadline. Read
+  // twice, a request that crosses 23:55 would show one week overdue and the next not.
+  const now = new Date();
   const months = plannableMonths(today);
   const monthStart = resolveMonth(raw.month, months, monthStartOf(repPlanWeek(today)));
   const weeks = fieldWeeksOfMonth(monthStart);
@@ -484,9 +495,14 @@ export async function loadMonthlyPlanner(
       days,
       plan: weekPlan,
       dueOn,
-      dueOnLabel: formatPhoenixLongDate(dueOn),
+      dueOnLabel: planDueLabel(dueOn),
       // A rep is told only about the week he can still send; a manager reads it on every open week.
-      overdue: (repForWeeks ? canEdit : open) && today > dueOn && (weekStatus === null || weekStatus === "draft" || weekStatus === "returned"),
+      // Judged on the DEADLINE INSTANT, not on the date: between 23:55 and midnight a date test would
+      // call the week not-yet-overdue while the server stamps that same send late.
+      overdue:
+        (repForWeeks ? canEdit : open)
+        && planDeadlinePassed(dueOn, now)
+        && (weekStatus === null || weekStatus === "draft" || weekStatus === "returned"),
       open,
       repState,
       canEdit,
@@ -533,8 +549,8 @@ export async function loadMonthlyPlanner(
     monthStart,
     monthLabel: formatPhoenixMonth(monthStart),
     dueOn,
-    dueOnLabel: formatPhoenixLongDate(dueOn),
-    overdue: today > dueOn && (status === null || status === "draft" || status === "returned"),
+    dueOnLabel: planDueLabel(dueOn),
+    overdue: planDeadlinePassed(dueOn, now) && (status === null || status === "draft" || status === "returned"),
     months: months.map((month) => {
       const monthStatus = monthStatusByStart.get(month) ?? null;
       return { monthStart: month, label: formatPhoenixMonth(month), status: monthStatus, statusLabel: monthlyPlanStatusLabel(monthStatus) };

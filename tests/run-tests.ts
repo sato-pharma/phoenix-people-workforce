@@ -1679,6 +1679,7 @@ import { runPhoenixCrmListRowFactsTests } from "./phoenix-crm-list-row-facts.tes
 import { runPhoenixCrmPlanPatternTests } from "./phoenix-crm-plan-pattern.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
+import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
 import { runPhoenixCrmPlanReminderTests } from "./phoenix-crm-plan-reminder.test.ts";
 import { runPhoenixCrmStepFormTests } from "./phoenix-crm-step-form.test.ts";
@@ -5896,6 +5897,11 @@ await runTest(
 await runTest(
   "Phoenix CRM plans one week at a time (owner, 2026-10-01, after the first Delta session): the rep's week is the one that begins on the coming Saturday on every day of 2026-2028, every other week is greyed and refused by the server on save and on send, his own board opens on that week's month with no month chooser, no month send and no Copy last month, a sent week is never taken back, the running week stays reachable in months that start on a Friday or a Saturday, and the week of 3 October 2026 is due Friday 2 October in TypeScript and SQL alike",
   runPhoenixCrmPlanWeeklyOnlyTests,
+);
+
+await runTest(
+  "Phoenix CRM's plan deadline is 23:55 Cairo and every screen says so (owner, 2026-10-02): the hour and its wording live in one place each, the due date a rep reads carries the time with it, the reminder on his phone names the hour instead of saying tonight, the Overdue badge flips at 23:55 and not at midnight so it can never disagree with the stamp the server writes, SQL and TypeScript resolve the same instant including the 23:55 that happens twice on the Thursday Egypt leaves DST, and nothing anywhere refuses a late plan",
+  runPhoenixCrmPlanDeadlineTests,
 );
 
 await runTest(
