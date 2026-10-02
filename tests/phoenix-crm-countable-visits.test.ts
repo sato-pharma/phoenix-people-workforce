@@ -247,20 +247,26 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
   {
     const problems: string[] = [];
 
-    // A tally or a rate — something a person is measured by. Every one of these filters, or two
-    // screens disagree about one rep's day with nothing to say which is lying.
-    const filters: Array<{ path: string; from: string; reads: number }> = [
-      // AM · PM · Pharmacies per rep per day, and the probe that chooses the month it opens on:
-      // what counts as work must be what colours a cell.
-      { from: "async function loadVisitDays", path: "src/lib/phoenix-crm/server/team-calendar.ts", reads: 1 },
-      { from: "async function latestWorkedMonth", path: "src/lib/phoenix-crm/server/team-calendar.ts", reads: 1 },
+    // A tally or a rate — something a person is measured by. Every one of these holds the line, or
+    // two screens disagree about one rep's day with nothing to say which is lying.
+    //
+    // TWO WAYS TO HOLD IT, since 2026-10-02. `query` keeps the `.eq` and never sees the held-back
+    // rows. `code` READS them and partitions in TypeScript, because the screen has to SAY how many
+    // are waiting — a manager cannot read a zero he is given no reason for, and on a team that has
+    // just started every visit is in that state. `code` is the stricter of the two to assert: the
+    // body must NAME the column in its select (PostgREST fails the whole read for a column it was
+    // not given) AND exclude it explicitly, so an omission cannot pass as a partition.
+    const filters: Array<{ path: string; from: string; reads: number; mode: "query" | "code" }> = [
+      // AM · PM · Pharmacies per rep per day: what counts as work must be what colours a cell, and
+      // the cell now also says how many of that day's visits are waiting on their customers.
+      { from: "async function loadVisitDays", mode: "code", path: "src/lib/phoenix-crm/server/team-calendar.ts", reads: 1 },
       // The exceptions board, where an inflated tally REMOVES the row rather than showing a wrong
       // number: the board exists to raise the territory whose count is low.
-      { from: "async function loadVisitTallies", path: "src/lib/phoenix-crm/server/exceptions.ts", reads: 1 },
+      { from: "async function loadVisitTallies", mode: "query", path: "src/lib/phoenix-crm/server/exceptions.ts", reads: 1 },
       // Frequency and the tracking sheet.
-      { from: "async function visitDaysByCustomer", path: "src/lib/phoenix-crm/server/reports.ts", reads: 1 },
+      { from: "async function visitDaysByCustomer", mode: "code", path: "src/lib/phoenix-crm/server/reports.ts", reads: 1 },
     ];
-    for (const { path, from, reads } of filters) {
+    for (const { path, from, reads, mode } of filters) {
       const text = source(path);
       const start = text.indexOf(from);
       if (start === -1) {
@@ -273,7 +279,20 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
       const found = [...body.matchAll(/\.from\("phoenix_crm_countable_visits"\)/g)].length;
       const filtered = [...body.matchAll(/\.eq\("customer_validated", true\)/g)].length;
       if (found !== reads) problems.push(`${path}: ${from} reads the countable view ${found} time(s), expected ${reads}`);
-      if (filtered !== reads) problems.push(`${path}: ${from} asks for customer_validated ${filtered} time(s), expected ${reads}`);
+      if (mode === "query") {
+        if (filtered !== reads) problems.push(`${path}: ${from} asks for customer_validated ${filtered} time(s), expected ${reads}`);
+        continue;
+      }
+      // `code`: it must READ the column and EXCLUDE on it. Either half alone is an unfiltered tally.
+      if (filtered > 0) {
+        problems.push(`${path}: ${from} partitions in code, so the query must not also filter — the held-back rows would never arrive`);
+      }
+      if (!/\.select\("[^"]*customer_validated/.test(body)) {
+        problems.push(`${path}: ${from} must NAME customer_validated in its select, or PostgREST fails the whole read`);
+      }
+      if (!/customer_validated !== true/.test(body)) {
+        problems.push(`${path}: ${from} reads customer_validated but never excludes on it — the tally is counting unvalidated visits`);
+      }
     }
 
     // 🔴 THE TWO THAT MUST NOT FILTER, pinned by the REASON they give. The `.eq` is one line; the
@@ -287,6 +306,14 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
     //     "never touched it" list for doing the work, and would look truest in the first weeks, when
     //     almost nobody is validated yet.
     const exempt: Array<{ path: string; from: string; says: RegExp }> = [
+      {
+        // It asks WHEN he last worked, so the grid reaches that far. A started team whose customers
+        // are all unvalidated would otherwise read as never having worked, and the calendar would
+        // stop before its own visits — the worst case is exactly the first weeks it is needed for.
+        from: "async function latestWorkedMonth",
+        path: "src/lib/phoenix-crm/server/team-calendar.ts",
+        says: /Not filtered: this asks WHEN he last worked/,
+      },
       {
         from: "export async function loadMonthVisitCounts",
         path: "src/lib/phoenix-crm/server/list.ts",

@@ -122,6 +122,19 @@ export function runPhoenixCrmAwaitingValidationTests(): void {
 
     const repsList = source("src/lib/crm/reps-plans.ts");
     assert.match(repsList, /awaitingValidation: rep\.awaitingValidation,/, "the Reps List row carries it too");
+
+    // The Phoenix CRM calendar and the frequency report print the SAME sentence — four screens, one
+    // wording, so they cannot drift apart on what a held-back visit is called.
+    const calendar = source("src/components/phoenix-crm/calendar-tab.tsx");
+    assert.match(calendar, /awaitingValidationNote\(\{ awaitingValidation: waitingThisMonth \}\)/, "the calendar prints the one sentence");
+    const reports = source("src/components/phoenix-crm/reports-tab.tsx");
+    assert.match(reports, /awaitingValidationNote\(report\)/, "and so does the frequency report");
+
+    // And both reads now PARTITION rather than filter at the database, which is the only way they
+    // can say how many were held back. `phoenix-crm-countable-visits` pins that contract in full.
+    for (const path of ["src/lib/phoenix-crm/server/team-calendar.ts", "src/lib/phoenix-crm/server/reports.ts"]) {
+      assert.match(source(path), /customer_validated !== true/, `${path} excludes in code, so it can count what it held back`);
+    }
   }
 
   // ── 5. The rep never sees it (Phoenix CRM golden rule #1) ────────────────────────────────────

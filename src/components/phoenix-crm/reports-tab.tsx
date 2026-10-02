@@ -54,6 +54,7 @@ import { capacityMonthsOffered } from "@/lib/phoenix-crm/capacity-board";
 import { dailyPlanPeriodProblem, type DailyPlanReportView } from "@/lib/phoenix-crm/daily-plan-report";
 import type { AdoptionStage } from "@/lib/phoenix-crm/adoption-rules";
 import type { BrickCoverageStatus } from "@/lib/phoenix-crm/brick-report";
+import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import type { CustomerFrequencyRow } from "@/lib/phoenix-crm/customer-frequency";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 import type { TrackingSheetRow } from "@/lib/phoenix-crm/tracking-sheet";
@@ -1448,6 +1449,16 @@ function FrequencySection({ idPrefix, resource }: { idPrefix: string; resource: 
         <div className="px-4 pt-4 sm:px-5">
           <CrmNote title={`${monthLabel(report.month.month)} is still running`} tone="info">
             A customer under his grade can still be caught up before the month ends.
+          </CrmNote>
+        </div>
+      ) : null}
+      {/* A frequency of 0 that the rep did not earn: his visits are saved and wait on their
+          customers' validation. Said in the one shared sentence, so this page, the calendar and
+          both call-rate boards cannot drift apart on the wording. */}
+      {awaitingValidationNote(report) ? (
+        <div className="px-4 pt-4 sm:px-5">
+          <CrmNote title="Some visits are not counted here yet" tone="info">
+            {awaitingValidationNote(report)}
           </CrmNote>
         </div>
       ) : null}
