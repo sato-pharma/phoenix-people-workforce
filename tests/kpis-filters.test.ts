@@ -73,6 +73,7 @@ function row(overrides: Partial<KpiRepRow> = {}): KpiRepRow {
     campaignOnlyDays: 0,
     hasCallRate: true,
     noGpsFeed: false,
+    awaitingValidation: 0,
     amAttainmentPct: 100,
     pmAttainmentPct: 100,
     // Separate from AM/PM entirely (owner, 2026-09-05) — no target yet, so no attainment percentage
@@ -463,6 +464,7 @@ function callRateFixture(overrides: Partial<RepCallRate> = {}): RepCallRate {
     // Separate from AM/PM entirely (owner, 2026-09-05) — target null, no target set yet.
     pharmacy: { verified: 0, unverified: 0, campaign: 0, total: 0, verifiedRate: null, totalRate: null, target: null, attainmentPct: null },
     unspecified: 0,
+    awaitingValidation: 0,
     campaignShare: 0,
     campaignOverLimitDays: [],
     campaignOnlyDays: 0,

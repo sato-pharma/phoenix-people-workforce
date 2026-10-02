@@ -351,7 +351,9 @@ function RequestNoteField({ disabled, id, onChange, value }: { disabled: boolean
 export type ValidateSubject = { mode: "reference"; contactCrmId: number } | { mode: "new" };
 
 function validateGone(view: TerritoryListView, subject: ValidateSubject, reference: ListReferenceEntry | null): string | null {
-  if (!view.canEdit) return EDIT_ONLY;
+  // A manager of the territory validates a CARRIED-OVER customer beside its rep (owner, 2026-10-02);
+  // "Add new customer" stays the rep's, because the request it files is the manager's to decide.
+  if (subject.mode === "reference" ? !view.canValidateReference : !view.canEdit) return EDIT_ONLY;
   if (subject.mode === "reference") {
     if (!reference) return "This customer is no longer on the territory's reference list.";
     if (reference.state === "validated") return "This customer is already validated. Find it under Your list.";

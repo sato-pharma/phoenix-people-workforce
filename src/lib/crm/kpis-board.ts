@@ -220,6 +220,14 @@ export type KpiRepRow = {
    */
   noGpsFeed: boolean;
   /**
+   * Phoenix CRM visits this rep saved that score nothing yet, because the customer is not validated
+   * (`awaitingValidation` in crm/call-rate.ts). A manager reading a flat 0 is otherwise given no
+   * reason for it, and on a team that has just started there is no other reason to find: 0 of
+   * Delta (1)'s 1,551 customers were validated the day before it began. Never a score, never a flag
+   * on the rep — the sentence is `awaitingValidationNote`, and the rep's own screens never show it.
+   */
+  awaitingValidation: number;
+  /**
    * AM against ITS target, PM against ITS target — two numbers, never one.
    *
    * THE OWNER'S RULE, 2026-09-04: "this two and this ten. Don't never get average." Until that day
@@ -767,6 +775,7 @@ export function joinKpiRows(input: {
     campaignOnlyDays: 0,
     hasCallRate: false,
     noGpsFeed: false,
+    awaitingValidation: 0,
     amAttainmentPct: null,
     pmAttainmentPct: null,
     pharmacyVerified: 0,
@@ -837,6 +846,7 @@ export function joinKpiRows(input: {
     // Ruling A1: nothing could prove his visits, so the proved rates are ABSENT, not zero — and
     // `attainmentPct` below returns null for him on the same flag. The reported rates stay: they
     // are what he logged, and the gap between the two is still worth seeing.
+    row.awaitingValidation = rate.awaitingValidation;
     row.noGpsFeed = hasNoGpsFeed(rate, basis);
     if (row.noGpsFeed) {
       row.amRate = null;

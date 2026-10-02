@@ -12,10 +12,10 @@
  * "logged" and never inflates the plan's figure.
  */
 
-import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 
-export type TeamTodayPlanned = { seatId: string; customerId: string; listType: PhoenixCrmListType };
-export type TeamTodayVisit = { seatId: string; customerId: string; listType: PhoenixCrmListType; capturedAt: string };
+export type TeamTodayPlanned = { seatId: string; customerId: string; listType: PhoenixCrmDoctorListType };
+export type TeamTodayVisit = { seatId: string; customerId: string; listType: PhoenixCrmDoctorListType; capturedAt: string };
 
 export type TeamTodayFigures = {
   /** A plan for this week was sent (submitted or approved) — else there is nothing planned to finish. */

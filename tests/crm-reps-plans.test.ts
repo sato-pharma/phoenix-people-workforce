@@ -98,6 +98,7 @@ function rep(
     am: slice(AM_CALL_RATE_TARGET, am, workingDays),
     pm: slice(PM_CALL_RATE_TARGET, pm, workingDays),
     pharmacy: pharmacySlice(pharmacy, workingDays),
+    awaitingValidation: extra.awaitingValidation ?? 0,
     unspecified: extra.unspecified ?? 0,
     campaignShare: extra.campaignShare ?? 0,
     campaignOverLimitDays: extra.campaignOverLimitDays ?? [],

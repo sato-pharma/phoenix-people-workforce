@@ -436,16 +436,21 @@ export async function loadMonthlyPlanner(
   for (const item of itemRows) {
     const customerId = String(item.customer_id);
     placementsByCustomer.set(customerId, (placementsByCustomer.get(customerId) ?? 0) + 1);
-    if (listTypeOf(item.list_type) === "AM") amPlacements += 1;
+    const itemListType = listTypeOf(item.list_type);
+    if (itemListType === null) continue;
+    if (itemListType === "AM") amPlacements += 1;
     else pmPlacements += 1;
   }
 
-  const plannerCustomers: PlannerCustomer[] = customers.map((row) => {
+  const plannerCustomers: PlannerCustomer[] = customers.flatMap((row) => {
     const customerId = String(row.id);
+    // A pharmacy is never planned, so it is not offered to the monthly planner either.
+    const listType = listTypeOf(row.list_type);
+    if (listType === null) return [];
     return {
       customerId,
       name: String(row.name),
-      listType: listTypeOf(row.list_type),
+      listType,
       grade: parseGrade(row.grade),
       speciality: textOrNull(row.speciality),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,

@@ -34,7 +34,7 @@ import { hasDayStarts, startsForDay, type PlanDayStarts, type PlannedDayStart } 
 import { PLAN_EXCEPTION_TYPES, planDayLabel, type PlanDayOff, type PlanExceptionType, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import type { PlannerCustomer, PlannerPlace } from "@/lib/phoenix-crm/suggestions";
 import { windowsForWeekday } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmListType, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
 /** The longest note a planned activity keeps — the table's own limit (server/plan-activities.ts PLAN_ACTIVITY_NOTE_MAX). */
 export const PLANNED_ACTIVITY_NOTE_MAX = 300;
@@ -54,7 +54,7 @@ export type DraftDayActivity = { activityType: PhoenixCrmDayActivity; halfDay: b
 export type DraftDayItem = {
   customerId: string;
   placeId: string | null;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   name: string;
   exceptionType: string | null;
   exceptionNote: string | null;
@@ -63,7 +63,7 @@ export type DraftDayItem = {
 /** A day of the week view — the part of PlanDayView a draft needs. */
 export type DraftDay = {
   date: string;
-  listTypes: ReadonlyArray<PhoenixCrmListType>;
+  listTypes: ReadonlyArray<PhoenixCrmDoctorListType>;
   /** The public holiday this day is, by name; its `listTypes` are then empty (server/plan-holidays.ts). */
   holiday?: string | null;
   /** The day off it is — a public holiday, or a full day of his approved leave; its `listTypes` are then empty. */
@@ -410,7 +410,7 @@ export function receivesOnDay(customer: PlannerCustomer, day: Pick<DraftDay, "da
 export type DraftRow = {
   customerId: string;
   name: string;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   customer: PlannerCustomer | null;
   /** The place the save sends. */
   placeId: string | null;
@@ -466,14 +466,14 @@ export function resolveDayRows(day: DraftDay, items: ReadonlyArray<PlanItemDraft
 }
 
 /** AM and PM on a day, apart — a customer who left the list is not counted. */
-export function dayCounts(rows: ReadonlyArray<DraftRow>): Record<PhoenixCrmListType, number> {
-  const counts: Record<PhoenixCrmListType, number> = { AM: 0, PM: 0 };
+export function dayCounts(rows: ReadonlyArray<DraftRow>): Record<PhoenixCrmDoctorListType, number> {
+  const counts: Record<PhoenixCrmDoctorListType, number> = { AM: 0, PM: 0 };
   for (const row of rows) if (!row.gone) counts[row.listType] += 1;
   return counts;
 }
 
 /** What each list's cap still has room for on a day. */
-export function roomOnDay(rows: ReadonlyArray<DraftRow>, caps: DailyCaps): Record<PhoenixCrmListType, number> {
+export function roomOnDay(rows: ReadonlyArray<DraftRow>, caps: DailyCaps): Record<PhoenixCrmDoctorListType, number> {
   const counts = dayCounts(rows);
   return { AM: Math.max(0, caps.amDailyCap - counts.AM), PM: Math.max(0, caps.pmDailyCap - counts.PM) };
 }
@@ -517,9 +517,9 @@ export type DayFullness = { AM: boolean; PM: boolean; day: boolean };
  * a full list simply has no room left to tick.
  */
 export function dayFullness(
-  counts: Record<PhoenixCrmListType, number>,
+  counts: Record<PhoenixCrmDoctorListType, number>,
   caps: DailyCaps,
-  listTypes: ReadonlyArray<PhoenixCrmListType>,
+  listTypes: ReadonlyArray<PhoenixCrmDoctorListType>,
 ): DayFullness {
   const AM = listTypes.includes("AM") && caps.amDailyCap > 0 && counts.AM >= caps.amDailyCap;
   const PM = listTypes.includes("PM") && caps.pmDailyCap > 0 && counts.PM >= caps.pmDailyCap;
@@ -532,7 +532,7 @@ export type DraftProblem =
   | { kind: "morning"; date: string; name: string }
   | { kind: "holiday"; date: string; name: string; holiday: string }
   | { kind: "leave"; date: string; name: string; leave: string }
-  | { kind: "cap"; date: string; listType: PhoenixCrmListType; count: number; cap: number };
+  | { kind: "cap"; date: string; listType: PhoenixCrmDoctorListType; count: number; cap: number };
 
 /** Named before the save leaves the page, in the order the rep meets them. */
 export function weekProblems(
@@ -732,7 +732,7 @@ export function firstWeekToPlan<T extends { open: boolean; status: string | null
 }
 
 /** The first day the rep may still change, else the week's first day. */
-export function firstDayToPlan<T extends { editable: boolean; listTypes?: ReadonlyArray<PhoenixCrmListType> }>(days: ReadonlyArray<T>): T | null {
+export function firstDayToPlan<T extends { editable: boolean; listTypes?: ReadonlyArray<PhoenixCrmDoctorListType> }>(days: ReadonlyArray<T>): T | null {
   // A public holiday holds nothing, so it is never the day the board opens on.
   return days.find((day) => day.editable && (day.listTypes?.length ?? 1) > 0) ?? days.find((day) => day.editable) ?? days[0] ?? null;
 }

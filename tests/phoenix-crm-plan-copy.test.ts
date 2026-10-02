@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import { buildCopyPlacements, type CopyEntry, type CopyWeek } from "../src/lib/phoenix-crm/plan-copy.ts";
 import type { PlannerCustomer } from "../src/lib/phoenix-crm/suggestions.ts";
-import type { PhoenixCrmListType } from "../src/lib/phoenix-crm/types.ts";
+import type { PhoenixCrmDoctorListType } from "../src/lib/phoenix-crm/types.ts";
 
 /**
  * Phoenix CRM — "Copy last month" (owner, 2026-09-25: offer to pre-fill the new month from the rep's
@@ -25,10 +25,10 @@ const SATURDAY = "2026-10-03";
 const SUNDAY = "2026-10-04";
 const THURSDAY = "2026-10-08";
 const WEEK = "2026-10-03";
-const BOTH: PhoenixCrmListType[] = ["AM", "PM"];
+const BOTH: PhoenixCrmDoctorListType[] = ["AM", "PM"];
 const CAPS = { amDailyCap: 5, pmDailyCap: 15 };
 
-function customer(customerId: string, listType: PhoenixCrmListType, placeId: string | null): PlannerCustomer {
+function customer(customerId: string, listType: PhoenixCrmDoctorListType, placeId: string | null): PlannerCustomer {
   return {
     customerId,
     name: customerId,
@@ -43,9 +43,9 @@ function customer(customerId: string, listType: PhoenixCrmListType, placeId: str
 
 function day(
   date: string,
-  listTypes: PhoenixCrmListType[],
+  listTypes: PhoenixCrmDoctorListType[],
   editable: boolean,
-  items: Array<{ customerId: string; listType: PhoenixCrmListType }> = [],
+  items: Array<{ customerId: string; listType: PhoenixCrmDoctorListType }> = [],
 ): CopyWeek["days"][number] {
   return { date, listTypes, editable, items };
 }
@@ -94,7 +94,7 @@ export function runPhoenixCrmPlanCopyTests() {
 
   // ── The day's cap is honoured — a full list gets nothing more ───────────────────────────────────
   {
-    const full = Array.from({ length: 5 }, (_, index) => ({ customerId: `am-${index}`, listType: "AM" as PhoenixCrmListType }));
+    const full = Array.from({ length: 5 }, (_, index) => ({ customerId: `am-${index}`, listType: "AM" as PhoenixCrmDoctorListType }));
     const entries: CopyEntry[] = [{ nativeCustomerId: "cust-am", listType: "AM", weekdays: [6] }];
     const customers = [customer("cust-am", "AM", "place-am")];
     const week: CopyWeek = { weekStart: WEEK, days: [day(SATURDAY, BOTH, true, full)] };

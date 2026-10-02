@@ -96,6 +96,7 @@ function rep(hrId: string, crmId: number, am: number, pm: number, workingDays = 
     // pharmacies, so zero calls, no target.
     pharmacy: { verified: 0, unverified: 0, campaign: 0, total: 0, verifiedRate: workingDays > 0 ? 0 : null, totalRate: workingDays > 0 ? 0 : null, target: null, attainmentPct: null },
     unspecified: 0,
+    awaitingValidation: 0,
     campaignShare: 0,
     campaignOverLimitDays: [],
     campaignOnlyDays: 0,

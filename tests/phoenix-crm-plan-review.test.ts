@@ -32,7 +32,7 @@ import {
 } from "../src/lib/phoenix-crm/plan-rules.ts";
 import { assertCanReturnPlan, canReturnTerritoryPlan, canReviewTerritory, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { buildOrgIndex, heldManagerSeats, ownTerritories, territoriesInScope, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
-import { PHOENIX_CRM_DEFAULT_SETTINGS, type PhoenixCrmGrade, type PhoenixCrmListType, type PhoenixCrmPlanStatus } from "../src/lib/phoenix-crm/types.ts";
+import { PHOENIX_CRM_DEFAULT_SETTINGS, type PhoenixCrmGrade, type PhoenixCrmDoctorListType, type PhoenixCrmPlanStatus } from "../src/lib/phoenix-crm/types.ts";
 
 /**
  * Phoenix CRM — the manager's review of a sent week (owner, 2026-10-02).
@@ -152,7 +152,7 @@ function viewerFor(
 
 // ── Fixtures for the pure rules ─────────────────────────────────────────────────────────────────
 
-function customer(customerId: string, listType: PhoenixCrmListType, grade: PhoenixCrmGrade | null, pending = false): ReviewCustomer {
+function customer(customerId: string, listType: PhoenixCrmDoctorListType, grade: PhoenixCrmGrade | null, pending = false): ReviewCustomer {
   return { customerId, name: customerId, listType, grade, pending };
 }
 
@@ -167,7 +167,7 @@ function week(weekStart: string, status: PhoenixCrmPlanStatus | null, customerId
   };
 }
 
-function snapshot(items: Array<[string, string, PhoenixCrmListType, string]>, activities: Array<[string, string, boolean]> = []): unknown {
+function snapshot(items: Array<[string, string, PhoenixCrmDoctorListType, string]>, activities: Array<[string, string, boolean]> = []): unknown {
   return {
     items: items.map(([plan_date, customer_id, list_type, name]) => ({ plan_date, customer_id, list_type, name })),
     activities: activities.map(([plan_date, activity_type, half_day]) => ({ plan_date, activity_type, half_day })),
@@ -240,10 +240,10 @@ export function runPhoenixCrmPlanReviewTests(): void {
 
     // The days a reviewer is offered: working days that have not passed — never a holiday.
     const reviewDays = [
-      { date: "2026-10-03", listTypes: ["AM", "PM"] as PhoenixCrmListType[] },
-      { date: "2026-10-05", listTypes: ["AM", "PM"] as PhoenixCrmListType[] },
-      { date: "2026-10-06", listTypes: [] as PhoenixCrmListType[] },
-      { date: "2026-10-08", listTypes: ["AM"] as PhoenixCrmListType[] },
+      { date: "2026-10-03", listTypes: ["AM", "PM"] as PhoenixCrmDoctorListType[] },
+      { date: "2026-10-05", listTypes: ["AM", "PM"] as PhoenixCrmDoctorListType[] },
+      { date: "2026-10-06", listTypes: [] as PhoenixCrmDoctorListType[] },
+      { date: "2026-10-08", listTypes: ["AM"] as PhoenixCrmDoctorListType[] },
     ];
     assert.deepEqual(
       returnableDays(reviewDays, "2026-10-05").map((day) => day.date),
@@ -630,6 +630,16 @@ export function runPhoenixCrmPlanReviewTests(): void {
 // `planDayStatus` on the screens and reports, `v_on_sent_plan` in phoenix_crm_save_visit.
 
 const STILL_PLANNED = "supabase/migrations/20261002125244_phoenix_crm_still_planned_after_one_day_return.sql";
+/**
+ * The migration that defines `phoenix_crm_save_visit` LAST — the body the database actually runs.
+ *
+ * It is not {@link STILL_PLANNED} any more: 20261002205436 added `product_manager_hr_id` by PATCHING
+ * that body in place (five surgical edits, nothing else), so the "Still planned" branch above is
+ * byte-identical in both files and the rule is unchanged. **Move this constant with every later
+ * migration that recreates the function** — that is the whole point of the assertion it feeds, which
+ * is what tells the next session where the live definition lives.
+ */
+const SAVE_VISIT_DEFINER = "supabase/migrations/20261002205436_phoenix_crm_visit_product_manager.sql";
 const ONE_TAP_VISIT = "supabase/migrations/20260929235553_phoenix_crm_one_tap_visit.sql";
 const EDIT_REQUESTS = "supabase/migrations/20261002002251_phoenix_crm_plan_edit_requests.sql";
 const DEADLINE = "supabase/migrations/20261002122000_phoenix_crm_plan_deadline_2355.sql";
@@ -744,7 +754,10 @@ function runStillPlannedTests(): void {
     assert.equal(/exists \(\s*select 1\s*from public\.phoenix_crm_plan_events/.test(branch), false, "never an exists() over the events, which a later reopen or send cannot defeat");
 
     const saveDefiners = definersOf("phoenix_crm_save_visit");
-    assert.equal(saveDefiners[saveDefiners.length - 1], STILL_PLANNED.split("/").pop(), "this is the save_visit the database runs: the last migration to define it");
+    assert.equal(saveDefiners[saveDefiners.length - 1], SAVE_VISIT_DEFINER.split("/").pop(), "this is the save_visit the database runs: the last migration to define it");
+    // And the rule this block tests survives into it unchanged — the patch touched five lines, none of
+    // them this branch, so the LIVE body still carries it rather than only the file above.
+    assert.ok(sqlOf(SAVE_VISIT_DEFINER).includes(branch), "the one-day-return branch is byte-identical in the live definer");
   }
 
   // ── 5d. phoenix_crm_plan_transition: the one-day return AND the 23:55 deadline, from one base ─────

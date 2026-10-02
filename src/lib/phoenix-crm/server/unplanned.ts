@@ -12,6 +12,8 @@
  */
 
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import { assertUnplannedVisitApprover, canDecideUnplannedVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -51,7 +53,8 @@ export type UnplannedVisitView = {
   repHrId: string | null;
   repName: string;
   customerName: string;
-  customerListType: "AM" | "PM";
+  /** Whatever list the customer is on. A pharmacy call is never off-plan, so one never appears here. */
+  customerListType: PhoenixCrmListType;
   speciality: string | null;
   visitDate: string;
   raisedAt: string;
@@ -125,7 +128,7 @@ export function mapUnplannedRow(row: Row, names: PeopleNames): UnplannedVisitVie
     repHrId: textOrNull(row.rep_hr_id),
     repName: nameOf(names, textOrNull(row.rep_hr_id)),
     customerName: textOrNull(customer.name) ?? "Customer",
-    customerListType: customer.list_type === "AM" ? "AM" : "PM",
+    customerListType: parseListType(customer.list_type),
     speciality: textOrNull(customer.speciality),
     visitDate: String(row.visit_date),
     raisedAt: String(row.created_at),

@@ -59,6 +59,27 @@ const MAKHZAN_STEM = normalizeCustomerName("مخزن");
 const WHOLESALE_STEM = normalizeCustomerName("جملة");
 
 /**
+ * موزع — "distributor". FLAG tier only, and venue-only.
+ *
+ * Found 2026-10-02, when each rep's iReports360 pharmacies were imported into Phoenix CRM: of the
+ * 1,930 pharmacies in those lists, NINE carry this word and every one is a distributor branch —
+ * five Pharma Overseas and four Ibn Sina (Ashmoun, Berket El Sabaa, Shebin, Tanta). Five were
+ * already flagged, but only because they happen to say فارما as well; the four Ibn Sina ones said
+ * nothing the guard knew and reached the reps' pharmacy lists unmarked.
+ *
+ * FLAG, never block, for the reason the second tier exists at all: a shop could legitimately carry
+ * the word, and the owner's standing rule is that a false positive must never silently refuse a
+ * real pharmacy. Measured over all 1,930 before and after: the flagged set goes from 6 to 10 and
+ * nothing else moves — 0 blocked either way, 1,924 clean becoming 1,920 — and every one of the ten
+ * is a distributor branch.
+ *
+ * 🔴 VENUE-ONLY, like {@link WHOLESALE_STEM} above, and this one matters more: the closing's own
+ * keyword list lives in `customer-channel.ts` and PRICES THE MONTHLY CLOSING. Adding a word there
+ * would re-classify customers in months that are already published. It must never be moved.
+ */
+const DISTRIBUTOR_STEM = normalizeCustomerName("موزع");
+
+/**
  * One message, so every capture point and desk refuses a wholesaler in the same words. Points to the
  * override path because the certain tier is intentionally narrow: if a genuine pharmacy is ever named
  * like a warehouse, the way through is an owner pharmacy-override (as مخزن الطرشوبى already has), not
@@ -132,7 +153,9 @@ export function suspectedWholesalerFlag(
   if (isPharmacyProtectedVenue(name, clientCode)) return false;
   // Any of the six store keywords present. مخزن-only names are already certain (blocked above), so
   // what reaches here is one of the ambiguous words on its own.
-  return matchedStoreKeywords(name).length > 0;
+  if (matchedStoreKeywords(name).length > 0) return true;
+  // And the venue-only distributor word, which the closing's list deliberately does not carry.
+  return normalizeCustomerName(name).includes(DISTRIBUTOR_STEM);
 }
 
 /** One sentence for the desk when a venue is only SUSPECTED, or null when there is nothing to flag. */

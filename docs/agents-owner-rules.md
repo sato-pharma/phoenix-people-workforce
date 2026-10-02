@@ -4216,6 +4216,102 @@ holds the why.
   "Accepted, Tue 6 Oct". This is HIS request, so it is his to see. The district manager's own
   double-visit PLAN stays invisible to him, as ruled in the morning.
 
+## A pharmacy call in Phoenix CRM — owner rulings, 2026-10-02 (late afternoon)
+
+The hook is in `AGENTS.md` §4. This is the account, and it matters mostly because **three of the four
+rulings REMOVE something**, and a removal is what a later reader restores by analogy with a doctor.
+
+### What the feature is for
+
+Phoenix CRM had no pharmacy a rep could visit. A pharmacy was a NAME he typed as stock feedback ON a
+doctor's visit, which is why `day-detail.ts` says "a PHARMACY IS A DISTINCT NAME AND NOT A ROW".
+Measured on production for September 2026, Delta (1) made **444 pharmacy calls — 15% of everything
+they did** — and Phoenix carried none of them. That gap is the reason the second batch had to word a
+started team's Pharmacies figure "not recorded in Phoenix" instead of printing `0`
+(`src/lib/crm/visit-count-buckets.ts`). It is also what this feature closes, so when it lands that
+wording must change for days from its start — the figure stops being absent and becomes a count.
+
+### 1. A third list, and the binary that would swallow it
+
+The customer's own `list_type` carries `Pharmacy`, the vendor's own spelling in `LIST_TYPES`
+(`src/lib/crm/contacts-web-client.ts`), which is also where each rep's pharmacies are imported from.
+
+🔴 **Every reader of `list_type` in the module today is a binary** — `row.list_type === "AM" ? "AM" :
+"PM"`, in `server/doctors.ts`, `server/customer-timeline.ts`, `plan-review-rules.ts` and
+`report-rules.ts`. Each one files a pharmacy under PM, silently, which is exactly what the AM · PM ·
+Pharmacies golden rule exists to prevent, and nothing anywhere goes red. `parseListType` is the
+single replacement; it still answers `PM` for anything it does not recognise, so a row written by an
+older build reads exactly as it always did.
+
+### 2. It is NEVER planned — and this reverses his own answer from the same morning
+
+Owner, 2026-10-02: *"the pharmacy is not added to the weekly plan. He can add any pharmacy, any time.
+It's not added to the weekly weekly weekly plan. He don't plan it. We don't want extra."*
+
+Earlier that day he had answered the opposite — *"YES PLANNED LIKE DOCTORS BUT NEVER COUNTED MIXED
+WITH DRS"* — and had set a cap to go with it, *"plan up to 10 pharmacies a day"*. **A hand-off note
+written between the two holds the superseded half**, so a session reading one is reading a rule that
+no longer stands.
+
+The cap goes with the plan, and the reasoning is worth keeping because it is the thing a later reader
+will get wrong: **that cap capped PLANNING**. With no plan row there is nothing left for it to limit,
+and re-expressing it as a cap on VISITS would be new — it would refuse a rep a call he actually made,
+for the sake of a number that does not exist (rule 4), and it is precisely the "extra" he refused.
+
+### 3. It is NEVER approved
+
+Owner, 2026-10-02: *"no approval for an unplanned pharmacy visit."*
+
+An off-plan DOCTOR visit waits on his direct manager and then the SFE, and counts in nothing until
+both agree (`unplanned-rules.ts`). That approval exists to stop an unapproved visit inflating a figure
+somebody is judged on. **A pharmacy call has no such figure**, so the approval would protect nothing
+and cost the rep a step — against Phoenix CRM golden rule #1, that the rep's app is easy and that any
+new step in his day needs the owner's word first.
+
+🔴 This is the ruling most likely to be "fixed" back, because the off-plan machinery sits one file
+away and a pharmacy call is, literally, a visit that is not on a plan. `visitApprovalKind` answers it
+in `pharmacy-call-rules.ts` for that reason: the short-circuit is stated once, where a reader looking
+at pharmacies will find it, rather than inferred where a reader looking at approvals will not.
+
+### 4. No KPI reads a pharmacy
+
+Owner, 2026-10-02: *"we are not stuck to coverage of pharmacies … grab the reps' pharmacies from
+iReports360 only as a database or as a reference, but no KPIs is counted on it."*
+
+So there is no pharmacy coverage, frequency, monthly target, call rate or capacity anywhere. The
+Pharmacies figure of AM · PM · Pharmacies stays a **plain count of calls made** — never a rate, never
+a share of a target, never a denominator. `KPIS_A_PHARMACY_IS_NEVER_IN` names the five rather than
+counting them, so adding a sixth measure to the system is a decision about that list and not an
+oversight.
+
+### 5. The two halves of it that were still missing after the first sweep
+
+Both found on 2026-10-02, after the reference import was already written, and both would have shipped
+a feature that did not work.
+
+**A SECOND spelling of the binary.** The sweep converted 26 readers of the shape
+`row.list_type === "AM" ? "AM" : "PM"`. There was another: `listType === "AM" ? am : pm`, which chooses
+a COUNTER rather than a label and so reads nothing like the first. Two places still filed pharmacy calls
+among the doctors through it — `src/lib/phoenix-crm/day-detail.ts` and the team calendar's own buckets —
+and the ratchet, which matches the first shape, could not see either. Both now go through
+`visitCountBucketForListType`, which is the only function that may decide which of the three figures a
+call lands in.
+
+**The database refused the whole thing.** `phoenix_crm_customers` and `phoenix_crm_visits` each carried
+`check (list_type in ('AM', 'PM'))`. So `phoenix_crm_ensure_reference_customers` would have raised 23514
+on the first pharmacy row it tried to mint, and a visit to a pharmacy could never have been saved at
+all — the feature's two writes, both refused, after a migration that reported success. It was found by
+reading `pg_constraint` on production rather than the migration files, which is the §1 rule in one
+sentence. `20261002205435` widens the two; a staging probe then minted **63 pharmacy customers beside 9
+AM and 110 PM** on one seat, and saved a `Pharmacy` visit that the same insert had refused minutes
+before.
+
+🔴 **`phoenix_crm_plan_items` IS LEFT NARROW, AND THAT IS THE RULE, NOT AN OVERSIGHT.** A pharmacy on a
+plan row is exactly what the owner ruled out, so its own `check (list_type in ('AM', 'PM'))` is now the
+database's half of rule 2, under `PLANNABLE_LIST_TYPES` in TypeScript. `phoenix_crm_list_requests` stays
+narrow for the same reason: a pharmacy arrives as a reference and leaves as one, with no grade, drop,
+add or bring-back request to decide.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.

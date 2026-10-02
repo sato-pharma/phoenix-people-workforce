@@ -222,6 +222,7 @@
 import { addDaysIso } from "@/lib/crm/dates";
 import { utcDate } from "@/lib/format/cairo-datetime";
 import type { OrgIndex, OrgSeat } from "@/lib/phoenix-crm/scope";
+import { sortVendorLeftovers, type VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
 
 /** The table the first migration creates. The app reads it; only `phoenix_crm_set_team_start` writes it. */
 export const PHOENIX_CRM_TEAM_STARTS_TABLE = "phoenix_crm_team_starts";
@@ -459,6 +460,13 @@ export type PhoenixTeamRow = {
   stopOptions: string[];
   /** "Ahmed Ali sent a weekly plan for the week of Sat 10 Oct 2026" — on a team with no start. */
   firstPlanLine: string | null;
+  /**
+   * Reps of this team still recording their day in iReports360 since it started counting from
+   * Phoenix, with what they recorded there. Empty when nobody is — and empty on a team with no
+   * start, where iReports360 IS where the work belongs.
+   * See `src/lib/phoenix-crm/vendor-leftovers.ts` for the sentence and why it exists.
+   */
+  stillOnVendor: VendorLeftoverRep[];
 };
 
 export type PhoenixTeamStartsPanelData = {
@@ -491,6 +499,8 @@ export function buildPhoenixTeamRows(input: {
   org: OrgIndex;
   starts: readonly PhoenixTeamStart[];
   firstPlans: ReadonlyMap<string, PhoenixTeamFirstPlan>;
+  /** Per team seat: who is still recording in iReports360 since its start. Absent means none read. */
+  stillOnVendor?: ReadonlyMap<string, VendorLeftoverRep[]>;
   names: (hrId: string) => string | null;
   cairoToday: string;
 }): PhoenixTeamRow[] {
@@ -553,6 +563,9 @@ export function buildPhoenixTeamRows(input: {
       firstPlanLine: firstPlan
         ? `${firstPlan.repName ?? "A rep"} sent a weekly plan for the week of ${saturdayLabel(firstPlan.weekStart)}`
         : null,
+      // Only on a team that HAS a running start: before one, iReports360 is where the work belongs
+      // and there is nothing to flag.
+      stillOnVendor: running ? sortVendorLeftovers(input.stillOnVendor?.get(teamSeatId) ?? []) : [],
     });
   }
 

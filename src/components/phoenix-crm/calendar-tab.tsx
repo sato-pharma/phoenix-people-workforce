@@ -3,16 +3,8 @@
 import { useMemo, useState } from "react";
 
 import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
-import {
-  CrmBlock,
-  CrmEmpty,
-  CrmLoadError,
-  CrmLoading,
-  CrmPanel,
-  CrmStat,
-  CrmStatGrid,
-  CrmTable,
-} from "@/components/phoenix-crm/ui";
+import { CrmBlock, CrmEmpty, CrmLoadError, CrmLoading, CrmNote, CrmPanel, CrmStat, CrmStatGrid, CrmTable } from "@/components/phoenix-crm/ui";
+import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import { dayActivityLabel } from "@/lib/phoenix-crm/day-activities";
 import { opensForMissedRecords } from "@/lib/phoenix-crm/missed-records";
 import { PHOENIX_CRM_PORTAL_BASE } from "@/lib/phoenix-crm/modules";
@@ -203,6 +195,12 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
   const month = picked ?? view.data?.month ?? cairoToday.slice(0, 7);
 
   const rows = useMemo(() => view.data?.rows ?? [], [view.data]);
+  // Visits saved this month that count in nothing yet, because the customer is not validated.
+  // Summed here rather than carried on the view: the grid already holds every day it draws.
+  const waitingThisMonth = useMemo(
+    () => rows.reduce((sum, row) => sum + row.days.reduce((inDay, day) => inDay + day.awaitingValidation, 0), 0),
+    [rows],
+  );
   const days = useMemo(() => view.data?.days ?? [], [view.data]);
   // The Super Admin's: which territories open on any day that has begun, to enter a missed record.
   const entryThrough = view.data?.missedRecords?.through ?? null;
@@ -275,6 +273,15 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
               <CrmStat label="Pharmacies" note="Counted apart, never inside AM or PM" value={view.data.totals.pharmacies} />
               <CrmStat label="People" note={`${days.length} days each`} value={rows.length} />
             </CrmStatGrid>
+            {/* A cell that looks empty because the customer is not validated yet, not because the
+                rep stayed home. The same sentence the reports and both call-rate boards print. */}
+            {awaitingValidationNote({ awaitingValidation: waitingThisMonth }) ? (
+              <div className="mt-3">
+                <CrmNote title="Some days look emptier than they were" tone="info">
+                  {awaitingValidationNote({ awaitingValidation: waitingThisMonth })}
+                </CrmNote>
+              </div>
+            ) : null}
             <div className="mt-3 flex min-w-0 flex-wrap gap-1.5">
               {LEGEND.map((shape) => (
                 <span

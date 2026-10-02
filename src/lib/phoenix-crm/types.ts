@@ -17,15 +17,39 @@
  * This file is types only, shared by the server and the phone.
  */
 
-export type PhoenixCrmListType = "AM" | "PM";
+/**
+ * Which list a customer sits on. `Pharmacy` joined AM and PM on 2026-10-02, when each rep's
+ * iReports360 pharmacies were imported (`src/lib/phoenix-crm/pharmacy-call-rules.ts`).
+ *
+ * 🔴 A SURFACE THAT MEASURES DOCTORS MUST NARROW THIS, NOT ACCEPT IT. A plan, a capacity, a coverage
+ * or frequency figure and a grade target are all AM-and-PM things; a pharmacy is never planned and
+ * is in no KPI. `doctorListType` is the narrowing — it answers null for a pharmacy so the caller has
+ * to decide what to do with the row, which is exactly what the old `=== "AM" ? "AM" : "PM"` hid by
+ * answering "PM".
+ */
+export type PhoenixCrmListType = "AM" | "PM" | "Pharmacy";
+
+/** The two halves of a rep's day: what a plan, a target, a capacity and a coverage figure are about. */
+export type PhoenixCrmDoctorListType = "AM" | "PM";
 
 export type PhoenixCrmGrade = "A" | "B" | "C";
 
 /** Normal timings, or the "special visit time" that is read only in Ramadan. */
 export type PhoenixCrmSeason = "normal" | "ramadan";
 
-/** Single: the rep alone. Double: rep + district manager. Chain: rep + district manager + a senior manager. */
-export type PhoenixCrmVisitKind = "single" | "double" | "chain";
+/**
+ * Who was on the visit. Single: the rep alone. Double: rep + district manager. Chain: rep + district
+ * manager + a senior manager. Product manager: the rep with one of HIS LINE's product managers
+ * (owner, 2026-10-02) — the same four words a visit ASK uses, so the request and the visit it became
+ * read alike (`VisitAskKind` in visit-ask-rules.ts).
+ *
+ * 🔴 A PRODUCT MANAGER IS NOT A DOUBLE VISIT AND MUST NEVER BE FILED AS ONE. He holds no seat in the
+ * organogram at all (`au.v_org_tree` is sales-only), so he is not in the territory's manager chain and
+ * cannot be checked against it; and a double visit means the rep with his DISTRICT MANAGER, which
+ * `double_visits` is counted from on every board. He rides in his own column,
+ * `phoenix_crm_visits.product_manager_hr_id`, and in no other.
+ */
+export type PhoenixCrmVisitKind = "single" | "double" | "product_manager" | "chain";
 
 export type PhoenixCrmPlanStatus = "draft" | "submitted" | "approved" | "returned";
 
@@ -80,7 +104,7 @@ export type PhoenixCrmSettings = {
    * Visits a month each grade expects, per list. Null = no number for that grade, so its customers
    * count for coverage but never for frequency.
    */
-  gradeTargets: Record<PhoenixCrmListType, Record<PhoenixCrmGrade, number | null>>;
+  gradeTargets: Record<PhoenixCrmDoctorListType, Record<PhoenixCrmGrade, number | null>>;
   /**
    * The call rate the monthly plan is measured against: AM accounts a working day (owner: 2) and PM
    * doctors a working day (owner: 10), reported APART and NEVER averaged (the call-rate golden rule).

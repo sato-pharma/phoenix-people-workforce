@@ -175,7 +175,13 @@ export function managersInScope(index: OrgIndex, hrId: string | null | undefined
   return members;
 }
 
-export type VisitParticipants = { repHrId: string | null; managerHrId: string | null; seniorHrId: string | null };
+export type VisitParticipants = {
+  repHrId: string | null;
+  managerHrId: string | null;
+  seniorHrId: string | null;
+  /** The line's product manager who came along, on a `product_manager` visit and on no other kind. */
+  productManagerHrId: string | null;
+};
 
 export type ParticipantResult = { ok: true; value: VisitParticipants } | { ok: false; error: string };
 
@@ -194,6 +200,16 @@ export function resolveVisitParticipants(input: {
   kind: PhoenixCrmVisitKind;
   managerHrId: string | null;
   seniorHrId: string | null;
+  productManagerHrId?: string | null;
+  /**
+   * The product managers of the territory's LINE, resolved by the caller
+   * (visit-ask-rules.ts `productManagersOfLine`, the same list the rep's ask offers).
+   *
+   * 🔴 IT HAS TO BE PASSED IN: a product manager holds NO SEAT in the organogram, so `index` — which is
+   * the organogram — cannot answer who he is, and there is no chain to check him against. An empty
+   * list therefore refuses the kind rather than letting any hr id through.
+   */
+  productManagers?: ReadonlyArray<{ hrId: string }>;
 }): ParticipantResult {
   const territory = input.index.seats.get(input.territorySeatId);
   if (!territory) return { ok: false, error: "This territory is no longer in the organogram. Reload the page." };
@@ -209,7 +225,15 @@ export function resolveVisitParticipants(input: {
   let manager: ChainMember | null;
   if (input.enteredAs === "rep") {
     rep = actor;
-    if (input.kind === "single") return { ok: true, value: { repHrId: rep, managerHrId: null, seniorHrId: null } };
+    if (input.kind === "single") return { ok: true, value: { repHrId: rep, managerHrId: null, seniorHrId: null, productManagerHrId: null } };
+    if (input.kind === "product_manager") {
+      const picked = personKey(input.productManagerHrId ?? null);
+      const offered = (input.productManagers ?? []).some((entry) => personKey(entry.hrId) === picked);
+      if (!picked || !offered || picked === rep) {
+        return { ok: false, error: "Choose the product manager who was on the visit from your line's product managers." };
+      }
+      return { ok: true, value: { repHrId: rep, managerHrId: null, seniorHrId: null, productManagerHrId: picked } };
+    }
     manager = member(input.managerHrId);
     if (!manager || manager.hrId === rep) {
       return { ok: false, error: "Choose the manager who was on the visit from your territory's managers." };
@@ -217,20 +241,25 @@ export function resolveVisitParticipants(input: {
   } else {
     manager = chain.find((entry) => entry.hrId === actor) ?? null;
     if (!manager) return { ok: false, error: "You are not a manager of this territory." };
-    if (input.kind === "single") return { ok: true, value: { repHrId: null, managerHrId: actor, seniorHrId: null } };
+    if (input.kind === "single") return { ok: true, value: { repHrId: null, managerHrId: actor, seniorHrId: null, productManagerHrId: null } };
+    // A visit with a product manager is the REP's — he is the one the product manager went out with,
+    // and a manager entering it would record a visit nobody present entered.
+    if (input.kind === "product_manager") {
+      return { ok: false, error: "A visit with a product manager is entered by the territory's rep." };
+    }
     rep = territory.occupantHrId;
     if (!rep || rep === actor) {
       return { ok: false, error: "This territory has no rep, so the visit can only be entered as your own single visit." };
     }
   }
 
-  if (input.kind === "double") return { ok: true, value: { repHrId: rep, managerHrId: manager.hrId, seniorHrId: null } };
+  if (input.kind === "double") return { ok: true, value: { repHrId: rep, managerHrId: manager.hrId, seniorHrId: null, productManagerHrId: null } };
 
   const senior = member(input.seniorHrId);
   if (!senior || senior.position <= manager.position || senior.hrId === rep) {
     return { ok: false, error: "Choose the senior manager who was on the visit: a manager above the one you chose." };
   }
-  return { ok: true, value: { repHrId: rep, managerHrId: manager.hrId, seniorHrId: senior.hrId } };
+  return { ok: true, value: { repHrId: rep, managerHrId: manager.hrId, seniorHrId: senior.hrId, productManagerHrId: null } };
 }
 
 /** "Alex East · Anti Infective" — how a territory is named on screen (never its seat code). */

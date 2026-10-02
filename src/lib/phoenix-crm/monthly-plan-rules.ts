@@ -19,7 +19,7 @@
 import { monthEndOf, monthStartOf, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import { addDaysIso } from "@/lib/crm/dates";
 import { gradeTarget, sharePercent } from "@/lib/phoenix-crm/coverage";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 /**
  * The days a call rate is scored over: Saturday to Wednesday (src/lib/crm/call-rate.ts
@@ -46,7 +46,7 @@ export function isMonthlyPlanEditable(status: PhoenixCrmPlanStatus | null): bool
 
 export type DoctorMonthInput = {
   customerId: string;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   grade: PhoenixCrmGrade | null;
   /** Dated placements of this customer across the month's field-weeks. */
   placed: number;
@@ -71,7 +71,7 @@ export function tallyDoctorMonth(input: DoctorMonthInput, settings: Pick<Phoenix
 // ── The month's meters, per list ──────────────────────────────────────────────────────────────────
 
 export type MonthlyListMeter = {
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   /** Customers of this list on the panel (a customer not validated yet is left out — he has no norm). */
   panel: number;
   /** Placed on at least one day this month. */
@@ -91,7 +91,7 @@ export type MonthlyListMeter = {
 };
 
 /** One list at a time — AM and PM are never added together (the call-rate golden rule: never averaged). */
-export function summarizeMonthlyList(tallies: ReadonlyArray<DoctorMonthTally>, listType: PhoenixCrmListType): MonthlyListMeter {
+export function summarizeMonthlyList(tallies: ReadonlyArray<DoctorMonthTally>, listType: PhoenixCrmDoctorListType): MonthlyListMeter {
   let panel = 0;
   let covered = 0;
   let withNorm = 0;

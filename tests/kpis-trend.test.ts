@@ -68,6 +68,7 @@ function row(overrides: Partial<KpiRepRow> = {}): KpiRepRow {
     campaignOnlyDays: 0,
     hasCallRate: true,
     noGpsFeed: false,
+    awaitingValidation: 0,
     amAttainmentPct: 80,
     pmAttainmentPct: 90,
     pharmacyVerified: 3,

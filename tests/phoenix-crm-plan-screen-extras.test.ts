@@ -32,7 +32,7 @@ import {
   type WeekDraft,
 } from "../src/lib/phoenix-crm/plan-week-draft.ts";
 import type { PlannerCustomer } from "../src/lib/phoenix-crm/suggestions.ts";
-import type { PhoenixCrmListType, PhoenixCrmTiming } from "../src/lib/phoenix-crm/types.ts";
+import type { PhoenixCrmDoctorListType, PhoenixCrmTiming } from "../src/lib/phoenix-crm/types.ts";
 import { spreadApprovedLeave } from "../src/lib/vacation/approved-leave-days.ts";
 
 /**
@@ -89,7 +89,7 @@ function timing(weekday: number, startMinute = 1080): PhoenixCrmTiming {
 }
 
 /** A validated customer who receives on every field day. */
-function customer(customerId: string, listType: PhoenixCrmListType): PlannerCustomer {
+function customer(customerId: string, listType: PhoenixCrmDoctorListType): PlannerCustomer {
   return {
     customerId,
     name: customerId,
@@ -135,7 +135,7 @@ function placed(planDate: string, customerId: string): PlanItemDraft {
   return { planDate, customerId, placeId: `${customerId}-place`, exceptionType: null, exceptionNote: null };
 }
 
-function savedItem(customerId: string, listType: PhoenixCrmListType) {
+function savedItem(customerId: string, listType: PhoenixCrmDoctorListType) {
   return { customerId, placeId: `${customerId}-place`, listType, name: customerId, exceptionType: null, exceptionNote: null };
 }
 

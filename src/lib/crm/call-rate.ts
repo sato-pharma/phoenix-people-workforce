@@ -390,6 +390,22 @@ export type RepCallRate = {
   pharmacy: PharmacyCallRateSlice;
   /** Rows the CRM left with no AM/PM flag AND are not a pharmacy call; counted here and in no slice. */
   unspecified: number;
+  /**
+   * Phoenix CRM visits this rep SAVED that score nothing yet, because the customer he called on is
+   * not validated (`not-validated` in {@link callRateExclusionOf}; "not counted in KPIs till
+   * validated", owner 2026-10-01).
+   *
+   * It exists because the gate is invisible and the first month of a started team is the worst case
+   * for it: measured on production on 2026-10-02, the day before Delta (1) began, **0 of its 1,551
+   * customers were validated**. Every visit those reps make scores nothing until their lists are
+   * worked through, so a manager reading the board sees a flat 0 and no reason for it — the same
+   * shape of unreadable zero that `hasNoGpsFeed` was written to explain. {@link awaitingValidationNote}
+   * is the sentence that replaces it.
+   *
+   * It is a COUNT OF WHAT WAS DONE, never a score: nothing here enters a slice, a rate or a target,
+   * and validating the customer moves the visit into its own day exactly as before.
+   */
+  awaitingValidation: number;
   /** Share of this rep's calls that took the campaign route, 0–1. */
   campaignShare: number;
   /** Days over the campaign limit, worst first. */
@@ -426,6 +442,22 @@ export type RepCallRate = {
  *    or with campaign calls only did no work a GPS feed could have proved, and his zero stays a zero.
  *  • `gpsCheckins` measured. Absent means the caller never counted the feed, never that it was empty.
  */
+/**
+ * The one sentence a manager reads instead of an unexplained zero, or null when nothing is waiting.
+ *
+ * Deliberately a plain statement of fact about the LIST, not about the rep: his visits are saved and
+ * they will count the moment the customer is validated. Nothing here is a warning, a flag or a
+ * figure anyone is scored on, and the rep never sees it — the boards it appears on are the manager's
+ * (Phoenix CRM golden rule #1).
+ */
+export function awaitingValidationNote(rep: Pick<RepCallRate, "awaitingValidation">): string | null {
+  const count = rep.awaitingValidation;
+  if (count <= 0) return null;
+  return count === 1
+    ? "1 visit saved, waiting for its customer to be validated"
+    : `${count} visits saved, waiting for their customers to be validated`;
+}
+
 export function hasNoGpsFeed(rep: RepCallRate, basis: CallRateBasis = "verified"): boolean {
   if (basis !== "verified") return false;
   if (rep.gpsCheckins !== 0) return false;
@@ -552,6 +584,7 @@ export function zeroRepCallRate(
     pm: finalizeSlice(emptySlice(PM_CALL_RATE_TARGET), workingDays),
     pharmacy: finalizeSlice(emptySlice(PHARMACY_CALL_RATE_TARGET), workingDays),
     unspecified: 0,
+    awaitingValidation: 0,
     campaignShare: 0,
     campaignOverLimitDays: [],
     campaignOnlyDays: 0,
@@ -650,6 +683,7 @@ export function computeCallRate<C extends CheckinForMatch>(
     pm: CallRateSlice;
     pharmacy: PharmacyCallRateSlice;
     unspecified: number;
+    awaitingValidation: number;
     fieldCalls: number;
     campaignCalls: number;
     perDay: Map<string, { campaign: number; verified: number }>;
@@ -676,6 +710,7 @@ export function computeCallRate<C extends CheckinForMatch>(
         pm: emptySlice(PM_CALL_RATE_TARGET),
         pharmacy: emptySlice(PHARMACY_CALL_RATE_TARGET),
         unspecified: 0,
+        awaitingValidation: 0,
         fieldCalls: 0,
         campaignCalls: 0,
         perDay: new Map(),
@@ -706,7 +741,13 @@ export function computeCallRate<C extends CheckinForMatch>(
     // Everything above this line (fieldCalls, campaignCalls, perDay) is deliberately unaffected,
     // because campaignShare and the daily-limit flag are a different feature. The drill-down reads
     // the SAME gate — callRateExclusionOf — so its "not scored" rows are exactly these.
-    if (callRateExclusionOf(day, visit.contact_crm_id, options.holidays, visit)) continue;
+    // The reason is kept rather than discarded: a visit held back only because its customer is not
+    // validated yet is work the rep DID, and a manager has to be able to read why his board says 0.
+    const exclusion = callRateExclusionOf(day, visit.contact_crm_id, options.holidays, visit);
+    if (exclusion) {
+      if (exclusion === "not-validated") rep.awaitingValidation += 1;
+      continue;
+    }
 
     // Pharmacy is ORTHOGONAL to AM/PM, not a third value of it: a pharmacy call is pulled out
     // regardless of which AM/PM flag it carries (owner, 2026-09-05 — see the header).
@@ -744,6 +785,7 @@ export function computeCallRate<C extends CheckinForMatch>(
       pm: finalizeSlice(rep.pm, workingDays, basis),
       pharmacy: finalizeSlice(rep.pharmacy, workingDays, basis),
       unspecified: rep.unspecified,
+      awaitingValidation: rep.awaitingValidation,
       campaignShare: rep.fieldCalls > 0 ? rep.campaignCalls / rep.fieldCalls : 0,
       campaignOverLimitDays: overLimit,
       campaignOnlyDays,

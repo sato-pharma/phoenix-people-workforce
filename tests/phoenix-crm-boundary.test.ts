@@ -556,6 +556,15 @@ const LATER_MIGRATIONS = [
   // wins — and it restates phoenix_crm_plan_transition with both the one-day return above and the 23:55
   // deadline (20261002122000) made from one base, still ONE plan-event insert. No table, no new function.
   "supabase/migrations/20261002125244_phoenix_crm_still_planned_after_one_day_return.sql",
+  // The rep's pharmacies come across with his AM and PM contacts — replaces phoenix_crm_seat_reference.
+  "supabase/migrations/20261002150353_phoenix_crm_pharmacy_reference.sql",
+  // A product manager on a visit — replaces phoenix_crm_save_visit, so it belongs AFTER every earlier
+  // replacer of it (see the voice-note note above): liveMigrationSql applies these in order and the last
+  // one wins, and this is now the body the database runs.
+  "supabase/migrations/20261002205436_phoenix_crm_visit_product_manager.sql",
+  // 🔴 20261002205435_phoenix_crm_pharmacy_list_type.sql is DELIBERATELY ABSENT and must stay absent.
+  // It only widens two CHECK constraints — it defines no function and creates no table — so the guard
+  // below ("adds no function and no table") would refuse it, and it has nothing for this scan to review.
   // A rep's ask for a visit with somebody (owner, 2026-10-02): one new table and three brand-new
   // functions (raise, answer, cancel). It replaces nothing — no save_visit — so it appends safely at the
   // end, and it never touches the district manager's own double-visit plan.

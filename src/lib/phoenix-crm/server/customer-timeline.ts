@@ -21,6 +21,7 @@ import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 
 type Row = Record<string, unknown>;
 
@@ -81,7 +82,7 @@ export async function loadCustomerTimeline(
       visitId: String(row.id),
       visitDate: String(row.visit_date ?? "").slice(0, 10),
       capturedAt: String(row.captured_at ?? ""),
-      listType: row.list_type === "AM" ? "AM" : "PM",
+      listType: parseListType(row.list_type),
       products: Array.isArray(row.products) ? row.products.map((entry) => String(entry)) : [],
       objection: textOrNull(row.objection),
       objectionNote: textOrNull(row.objection_note),

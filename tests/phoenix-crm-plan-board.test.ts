@@ -72,7 +72,7 @@ import {
 } from "../src/lib/phoenix-crm/plan-day-starts.ts";
 import { activityOn } from "../src/lib/phoenix-crm/plan-suggest.ts";
 import type { PlannerCustomer } from "../src/lib/phoenix-crm/suggestions.ts";
-import type { PhoenixCrmListType, PhoenixCrmTiming } from "../src/lib/phoenix-crm/types.ts";
+import type { PhoenixCrmDoctorListType, PhoenixCrmTiming } from "../src/lib/phoenix-crm/types.ts";
 
 /**
  * Phoenix CRM — the plan board (owner, 2026-09-29): the month on top as Week 1..N, a week's days, a
@@ -106,7 +106,7 @@ function timing(weekday: number, startMinute: number, endMinute: number | null =
 
 function customer(
   customerId: string,
-  listType: PhoenixCrmListType,
+  listType: PhoenixCrmDoctorListType,
   places: Array<{ placeId: string; timings: PhoenixCrmTiming[]; brick?: string | null }>,
   pending = false,
 ): PlannerCustomer {
@@ -134,11 +134,11 @@ function customer(
 const EVERY_FIELD_DAY = [6, 0, 1, 2, 3, 4];
 
 /** A customer who receives on every field day, in the morning. */
-function everyDay(customerId: string, listType: PhoenixCrmListType): PlannerCustomer {
+function everyDay(customerId: string, listType: PhoenixCrmDoctorListType): PlannerCustomer {
   return customer(customerId, listType, [{ placeId: `${customerId}-place`, timings: EVERY_FIELD_DAY.map((weekday) => timing(weekday, 600, 720)) }]);
 }
 
-function copyDay(date: string, listTypes: PhoenixCrmListType[], editable: boolean, items: Array<{ customerId: string; listType: PhoenixCrmListType }> = []) {
+function copyDay(date: string, listTypes: PhoenixCrmDoctorListType[], editable: boolean, items: Array<{ customerId: string; listType: PhoenixCrmDoctorListType }> = []) {
   return { date, listTypes, editable, items };
 }
 
@@ -267,7 +267,7 @@ export function runPhoenixCrmPlanBoardTests(): void {
     );
 
     // Copy a day: the cap, the editable day, the customers already on it, and the day's list types.
-    const fourAm = ["am-1", "am-2", "am-3", "am-4"].map((customerId) => ({ customerId, listType: "AM" as PhoenixCrmListType }));
+    const fourAm = ["am-1", "am-2", "am-3", "am-4"].map((customerId) => ({ customerId, listType: "AM" as PhoenixCrmDoctorListType }));
     const withAm = [...customers, everyDay("am-5", "AM"), everyDay("am-6", "AM")];
     assert.deepEqual(
       buildDayCopyPlacements(["am-5", "am-6", "pm-a"], withAm, copyDay("2026-10-10", ["AM", "PM"], true, fourAm), CAPS).map((item) => item.customerId),
@@ -303,7 +303,7 @@ export function runPhoenixCrmPlanBoardTests(): void {
     const customers = [pmSat, pmOff, twoPlaces, pending, ...ams];
     const byId = indexCustomers(customers);
 
-    const item = (customerId: string, placeId: string | null, listType: PhoenixCrmListType = "PM") => ({
+    const item = (customerId: string, placeId: string | null, listType: PhoenixCrmDoctorListType = "PM") => ({
       customerId,
       placeId,
       listType,
@@ -631,7 +631,7 @@ export function runPhoenixCrmPlanBoardTests(): void {
     // ── The tick numbers: "1 am 1 pm 2 pm 3 pm" (his own words) ──
     // Each list counted on its own, in the order he ticked, so the day reads as a sequence. AM and PM
     // are counted APART here as everywhere — the chip says which list the number belongs to.
-    assert.match(day, /const seen: Record<PhoenixCrmListType, number> = \{ AM: 0, PM: 0 \};/, "one counter per list, never one shared");
+    assert.match(day, /const seen: Record<PhoenixCrmDoctorListType, number> = \{ AM: 0, PM: 0 \};/, "one counter per list, never one shared");
     assert.match(day, /seen\[row\.listType\] \+= 1;/);
     assert.match(day, /order\.set\(row\.customerId, seen\[row\.listType\]\);/);
     assert.match(day, /const onTheDay = drafted\.filter\(\(row\) => !row\.gone\);/, "a row taken off the day is not numbered, so the rest renumber with no gap");
@@ -663,7 +663,7 @@ export function runPhoenixCrmPlanBoardTests(): void {
     // halves are asserted together on each one.
     const customers = [everyDay("am-1", "AM"), everyDay("am-2", "AM"), everyDay("pm-1", "PM")];
     const byId = indexCustomers(customers);
-    const saved = (customerId: string, listType: PhoenixCrmListType) => ({
+    const saved = (customerId: string, listType: PhoenixCrmDoctorListType) => ({
       customerId,
       placeId: `${customerId}-place`,
       listType,

@@ -12,7 +12,7 @@ import {
 } from "../src/lib/phoenix-crm/plan-filters.ts";
 import type { PlannerCustomer } from "../src/lib/phoenix-crm/suggestions.ts";
 import { receivesInRange, windowOverlapsRange } from "../src/lib/phoenix-crm/timings.ts";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSeason, PhoenixCrmTiming } from "../src/lib/phoenix-crm/types.ts";
+import type { PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmSeason, PhoenixCrmTiming } from "../src/lib/phoenix-crm/types.ts";
 
 /**
  * Phoenix CRM — the doctor-list filter while planning (owner, 2026-09-25: narrow the list by brick, by
@@ -27,7 +27,7 @@ function timing(weekday: number, startMinute: number, endMinute: number | null, 
 
 function customer(
   customerId: string,
-  listType: PhoenixCrmListType,
+  listType: PhoenixCrmDoctorListType,
   brick: string | null,
   timings: PhoenixCrmTiming[],
   extra: { grade?: PhoenixCrmGrade | null; speciality?: string | null } = {},

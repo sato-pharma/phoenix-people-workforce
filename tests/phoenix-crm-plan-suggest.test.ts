@@ -16,7 +16,7 @@ import {
 import type { DraftDay, DraftWeek } from "../src/lib/phoenix-crm/plan-week-draft.ts";
 import type { PlanItemDraft } from "../src/lib/phoenix-crm/plan-rules.ts";
 import type { PlannerCustomer } from "../src/lib/phoenix-crm/suggestions.ts";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmTiming } from "../src/lib/phoenix-crm/types.ts";
+import type { PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmTiming } from "../src/lib/phoenix-crm/types.ts";
 
 /**
  * Phoenix CRM — "Suggest this day" and "Suggest the week" on the plan board (owner, 2026-09-30:
@@ -56,7 +56,7 @@ function timing(weekday: number, startMinute = 1080, season: "normal" | "ramadan
 
 function customer(
   customerId: string,
-  listType: PhoenixCrmListType,
+  listType: PhoenixCrmDoctorListType,
   options: {
     grade?: PhoenixCrmGrade | null;
     brick?: string | null;
@@ -469,7 +469,7 @@ export function runPhoenixCrmPlanSuggestTests(): void {
 
     // The phone's month strip: AM and PM apart, the full cards kept from md up.
     assert.match(board, /<div className="grid grid-cols-2 gap-2 md:hidden">/, "a phone reads the month as one two-column strip");
-    assert.match(board, /const lists: ReadonlyArray<PhoenixCrmListType> = \["AM", "PM"\];/, "one column for AM and one for PM — never one added figure");
+    assert.match(board, /const lists: ReadonlyArray<PhoenixCrmDoctorListType> = \["AM", "PM"\];/, "one column for AM and one for PM — never one added figure");
     assert.match(board, /<div className="hidden md:block">\s*<CrmStatGrid>/, "and the eight full cards stay on a tablet and a desktop");
 
     // The week and day on screen are marked in their choosers.

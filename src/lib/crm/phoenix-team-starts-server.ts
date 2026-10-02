@@ -19,8 +19,10 @@ import {
   type PhoenixTeamStart,
   type PhoenixTeamStartsPanelData,
 } from "@/lib/crm/phoenix-team-starts";
+import { loadVendorLeftoversBySeat } from "@/lib/crm/phoenix-vendor-leftovers";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import type { VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** A missing relation, not a broken read: the migration has not been applied to this database yet. */
@@ -88,7 +90,20 @@ export async function loadPhoenixTeamStartsPanel(): Promise<PhoenixTeamStartsPan
     firstPlans.set(teamSeatId, { repName: repHrId ? nameFor(repHrId) : null, weekStart });
   }
 
-  return { provisioned: true, cairoToday, teams: buildPhoenixTeamRows({ org, starts, firstPlans, names: nameFor, cairoToday }) };
+  // One read of the vendor mirror, keyed by TERRITORY seat; this panel is a row per TEAM, so it is
+  // folded through the same organogram the rows were built from rather than by guessing at the id.
+  const leftoversBySeat = await loadVendorLeftoversBySeat();
+  const stillOnVendor = new Map<string, VendorLeftoverRep[]>();
+  for (const [territorySeatId, reps] of leftoversBySeat) {
+    const teamSeatId = org.seats.get(territorySeatId)?.parentSeatId;
+    if (!teamSeatId) continue;
+    stillOnVendor.set(teamSeatId, [...(stillOnVendor.get(teamSeatId) ?? []), ...reps]);
+  }
+  return {
+    provisioned: true,
+    cairoToday,
+    teams: buildPhoenixTeamRows({ org, starts, firstPlans, names: nameFor, cairoToday, stillOnVendor }),
+  };
 }
 
 /** A refusal the Super Admin can act on (409), in words. */

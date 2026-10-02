@@ -39,24 +39,19 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
-import {
-  PHOENIX_CRM_DEFAULT_SETTINGS,
-  type PhoenixCrmGrade,
-  type PhoenixCrmListType,
-  type PhoenixCrmSettings,
-} from "@/lib/phoenix-crm/types";
+import { PHOENIX_CRM_DEFAULT_SETTINGS, type PhoenixCrmDoctorListType, type PhoenixCrmGrade, type PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import type { PhoenixCrmSettingsView, SettingsLine, SettingsRamadan } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
 const SETTINGS_PATH = "/api/phoenix-crm/settings";
 
 /** PM before AM, as on every other tab. */
-const LIST_TYPES: PhoenixCrmListType[] = ["PM", "AM"];
+const LIST_TYPES: PhoenixCrmDoctorListType[] = ["PM", "AM"];
 const GRADES: PhoenixCrmGrade[] = ["A", "B", "C"];
 
 // ── The numbers ─────────────────────────────────────────────────────────────────────────────────
 
-type TargetKey = `${PhoenixCrmListType}${PhoenixCrmGrade}`;
+type TargetKey = `${PhoenixCrmDoctorListType}${PhoenixCrmGrade}`;
 type FieldKey = "pmDailyCap" | "amDailyCap" | "farApartKm" | "visitFarMeters" | "weakGpsMeters" | TargetKey;
 
 /** What is typed, field by field. Kept as text, so a box can be emptied while a new number goes in. */
@@ -119,11 +114,11 @@ const DISTANCE_FIELDS: FieldSpec[] = [
   },
 ];
 
-function targetKey(listType: PhoenixCrmListType, grade: PhoenixCrmGrade): TargetKey {
+function targetKey(listType: PhoenixCrmDoctorListType, grade: PhoenixCrmGrade): TargetKey {
   return `${listType}${grade}`;
 }
 
-function targetSpec(listType: PhoenixCrmListType, grade: PhoenixCrmGrade): FieldSpec {
+function targetSpec(listType: PhoenixCrmDoctorListType, grade: PhoenixCrmGrade): FieldSpec {
   return {
     key: targetKey(listType, grade),
     label: `Grade ${grade}`,
@@ -137,7 +132,7 @@ function targetSpec(listType: PhoenixCrmListType, grade: PhoenixCrmGrade): Field
   };
 }
 
-const TARGET_FIELDS: Record<PhoenixCrmListType, FieldSpec[]> = {
+const TARGET_FIELDS: Record<PhoenixCrmDoctorListType, FieldSpec[]> = {
   PM: GRADES.map((grade) => targetSpec("PM", grade)),
   AM: GRADES.map((grade) => targetSpec("AM", grade)),
 };

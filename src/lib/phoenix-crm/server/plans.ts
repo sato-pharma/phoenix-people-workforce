@@ -104,8 +104,9 @@ import { assertRepMayChangeWeek, editAcknowledgedAt, loadPlanEditState, repState
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
+import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { PlannerCustomer, PlannerInsight } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -115,8 +116,11 @@ function record(raw: unknown): Row {
   return (raw && typeof raw === "object" ? raw : {}) as Row;
 }
 
-export function listTypeOf(value: unknown): PhoenixCrmListType {
-  return value === "AM" ? "AM" : "PM";
+// A pharmacy is NEVER planned (owner, 2026-10-02: "He don't plan it. We don't want extra"), so
+// nothing in this file — a plan row, a plan's own counts, the customers offered for planning —
+// may carry one. null is that refusal, and every caller drops the row.
+export function listTypeOf(value: unknown): PhoenixCrmDoctorListType | null {
+  return doctorListType(value);
 }
 
 export function statusOf(value: unknown): PhoenixCrmPlanStatus {
@@ -243,7 +247,7 @@ export type PlanItemView = {
   /** Carried over from iReports360 and not validated yet. Plannable, visitable, counted in nothing. */
   pending: boolean;
   name: string;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   grade: PhoenixCrmGrade | null;
   speciality: string | null;
   placeLabel: string | null;
@@ -266,7 +270,7 @@ export type PlanItemView = {
 export type PlanDayView = {
   date: string;
   /** Empty on a day off (`dayOff`), as on a Friday: the day holds no customer. */
-  listTypes: PhoenixCrmListType[];
+  listTypes: PhoenixCrmDoctorListType[];
   /** The public holiday this day is, by name — "Armed Forces Day" — or null on a working day. */
   holiday: string | null;
   /**
@@ -285,7 +289,7 @@ export type PlanDayView = {
   /** When the rep means to start his AM and his PM rounds that day — his own statement, never a rule. */
   starts: PlanDayStarts;
   items: PlanItemView[];
-  counts: Record<PhoenixCrmListType, number>;
+  counts: Record<PhoenixCrmDoctorListType, number>;
   spanKm: number;
   /** The day's customers span more than the far-apart distance (highlighted to the reviewer). */
   farApart: boolean;
@@ -350,18 +354,21 @@ export function buildDays(input: {
     });
     const spread = checkDaySpread(points, input.farApartKm);
     const isolated = new Set(spread.isolatedIds);
-    const counts: Record<PhoenixCrmListType, number> = { AM: 0, PM: 0 };
+    const counts: Record<PhoenixCrmDoctorListType, number> = { AM: 0, PM: 0 };
 
-    const items = rows.map((row): PlanItemView => {
+    const items = rows.flatMap((row): PlanItemView[] => {
       const customer = record(row.customer);
       const place = record(row.place);
       const customerId = String(row.customer_id);
+      // A plan row naming a pharmacy cannot exist (one is never planned), and if one ever did
+      // it would not be a plan item — it is dropped rather than counted among the doctors.
       const listType = listTypeOf(row.list_type);
+      if (listType === null) return [];
       counts[listType] += 1;
       const exceptionType = textOrNull(row.exception_type);
       const nearest = spread.nearestKmById[customerId];
       const pending = customer.status === "pending";
-      return {
+      return [{
         customerId,
         placeId: textOrNull(row.place_id),
         pending,
@@ -382,7 +389,7 @@ export function buildDays(input: {
         stale: isStaleItem(row),
         isolated: isolated.has(customerId),
         nearestKm: nearest === undefined || !Number.isFinite(nearest) ? null : Math.round(nearest * 10) / 10,
-      };
+      }];
     });
     items.sort(
       (left, right) =>
@@ -483,12 +490,15 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   const plan = planRow ? mapPlan(planRow, names) : null;
   const weekDays = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave });
 
-  const plannerCustomers: PlannerCustomer[] = customers.map((row) => {
+  const plannerCustomers: PlannerCustomer[] = customers.flatMap((row) => {
     const customerId = String(row.id);
+    // A pharmacy is never planned, so it is not offered to the planner at all.
+    const listType = listTypeOf(row.list_type);
+    if (listType === null) return [];
     return {
       customerId,
       name: String(row.name),
-      listType: listTypeOf(row.list_type),
+      listType,
       grade: parseGrade(row.grade),
       speciality: textOrNull(row.speciality),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
@@ -625,17 +635,22 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
     loadSeatDaysOff(seat, { from: weekStart, to: addDaysIso(weekStart, 5) }),
   ]);
   const ruleCustomers = new Map<string, PlanRuleCustomer>(
-    customers.map((row) => {
+    customers.flatMap((row): Array<[string, PlanRuleCustomer]> => {
       const customerId = String(row.id);
+      // Same reason: a pharmacy never reaches the plan rules, so it is not one of their customers.
+      const listType = listTypeOf(row.list_type);
+      if (listType === null) return [];
       return [
+        [
         customerId,
         {
           customerId,
           name: String(row.name),
-          listType: listTypeOf(row.list_type),
+          listType,
           pending: row.status === "pending",
           places: (placesByCustomer.get(customerId) ?? []).map((place) => ({ placeId: place.placeId, timings: place.timings })),
         },
+        ],
       ];
     }),
   );
@@ -936,7 +951,9 @@ export async function loadPlanReviews(viewer: PhoenixCrmViewer, raw: { test: unk
     let exceptions = 0;
     let staleItems = 0;
     for (const item of items) {
-      if (listTypeOf(item.list_type) === "AM") accounts += 1;
+      const itemListType = listTypeOf(item.list_type);
+      if (itemListType === null) continue;
+      if (itemListType === "AM") accounts += 1;
       else doctors += 1;
       if (item.receives !== true) exceptions += 1;
       if (isStaleItem(item)) staleItems += 1;

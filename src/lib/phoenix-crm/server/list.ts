@@ -32,7 +32,7 @@ import type { SharedWith } from "@/lib/crm/location-confidence";
 import { loadObservedPointsFor, loadPlanDatesFor, loadSharedCustomersFor, loadVisitHistoryFor, type VisitHistory } from "@/lib/crm/shared-customers";
 import { logError } from "@/lib/observability/log";
 import { resolveEvidenceLocation } from "@/lib/evidence/location-service";
-import { notFoundError, validationError } from "@/lib/http/api-errors";
+import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { monthStartOf, nextRamadan } from "@/lib/phoenix-crm/calendar";
 import { coverageTier, gradeTarget, summarizeReadiness, type CoverageTier, type ReadinessSummary, type ReferenceState } from "@/lib/phoenix-crm/coverage";
 import {
@@ -77,7 +77,9 @@ import {
   canWriteAsRep,
   readTestFlag,
   territoryForRead,
+  canValidateReference,
   territoryForRepWrite,
+  territoryForValidation,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -88,7 +90,9 @@ import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
+import { doctorListType, isPharmacyListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { parseTimings, sortTimings } from "@/lib/phoenix-crm/timings";
+import { isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 import type {
   PhoenixCrmCustomerStatus,
   PhoenixCrmGrade,
@@ -340,6 +344,12 @@ export type TerritoryListView = {
   isTest: boolean;
   /** The viewer is the territory's rep (or the Super Admin in test mode): the list can be changed. */
   canEdit: boolean;
+  /**
+   * The viewer may VALIDATE a carried-over customer here: the rep, and since 2026-10-02 a MANAGER of
+   * the territory too (the owner's pick). It is deliberately narrower than `canEdit` — a manager
+   * validates, and does not drop, grade, add or change the hours, which are the rep's own work.
+   */
+  canValidateReference: boolean;
   /** The viewer decides this territory's requests. */
   canReview: boolean;
   /** The viewer may move a validated place: the Super Admin and the SFE Manager, nobody else. */
@@ -637,11 +647,30 @@ type ReferenceRow = {
   state: ReferenceState;
 };
 
+/**
+ * The seat's live iReports360 list — AM, PM and, since 2026-10-02, the rep's PHARMACIES
+ * (`supabase/migrations/20261002150353_phoenix_crm_pharmacy_reference.sql`).
+ *
+ * 🔴 A WHOLESALER IS FILTERED HERE, AND IT HAS TO BE HERE RATHER THAN IN THE SQL. A makhzan is never
+ * shown as a candidate nor validated as a venue (`AGENTS.md` §4.1, owner 2026-09-22, "never never
+ * never"), and the test for one is `wholesaler-venue-guard`, which reuses the monthly closing's own
+ * name primitives so the two can never disagree and every owner pharmacy-override applies
+ * automatically. Re-stating those rules in SQL would be a second answer that drifts, so the
+ * reference function deliberately does not try, and this read is the one door they all come through.
+ *
+ * Only PHARMACY rows are tested. The rule is about a warehouse posing as a shop; running a
+ * warehouse-name test over doctors would drop a clinic whose name merely reads like one, and no
+ * owner ruling asks for that. Measured on production the day it shipped: of 1,930 vendor pharmacies,
+ * **0 are hard-blocked** and 6 carry the ambiguous فارما word — the guard FLAGS those for a human
+ * rather than refusing them, which is why only the certain half is filtered and the suspected half
+ * travels on.
+ */
 export async function loadReference(seatId: string, isTest: boolean): Promise<ReferenceRow[]> {
-  return rpcAll<ReferenceRow>(getSupabaseAdmin(), "phoenix_crm_seat_reference", { p_seat_ids: [seatId], p_is_test: isTest }, [
+  const rows = await rpcAll<ReferenceRow>(getSupabaseAdmin(), "phoenix_crm_seat_reference", { p_seat_ids: [seatId], p_is_test: isTest }, [
     "list_type",
     "contact_crm_id",
   ]);
+  return rows.filter((row) => !(isPharmacyListType(row.list_type) && isCertainWholesalerVenue(row.name)));
 }
 
 /**
@@ -732,7 +761,7 @@ export function mapRequestRow(row: Row, names: ReadonlyMap<string, string>): Lis
     customerId: text(row.customer_id),
     referenceContactCrmId: numberOrNull(row.reference_contact_crm_id),
     customerName: String(row.customer_name),
-    listType: row.list_type === "AM" ? "AM" : "PM",
+    listType: parseListType(row.list_type),
     currentGrade: parseGrade(row.current_grade),
     proposedGrade: parseGrade(row.proposed_grade),
     dropReason,
@@ -886,10 +915,12 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
 
   const listCustomers: ListCustomer[] = customers.map((row) => {
     const customerId = String(row.id);
-    const listType: PhoenixCrmListType = row.list_type === "AM" ? "AM" : "PM";
+    const listType: PhoenixCrmListType = parseListType(row.list_type);
     const grade = parseGrade(row.grade);
     const visits = visitCounts.get(customerId) ?? 0;
-    const target = gradeTarget(viewer.config.settings, listType, grade);
+    // A pharmacy carries no grade target, so there is nothing to ask for and nothing to show.
+    const doctorType = doctorListType(row.list_type);
+    const target = doctorType === null ? null : gradeTarget(viewer.config.settings, doctorType, grade);
     const pending = pendingByCustomer.get(customerId);
     const droppedReason = text(row.dropped_reason);
     const validatedBy = text(row.validated_by_hr_id);
@@ -1000,6 +1031,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     canEdit: canWriteAsRep(viewer, seat, isTest),
+    canValidateReference: canValidateReference(viewer, seat, isTest),
     canReview: canReviewTerritory(viewer, seat, isTest),
     canMovePlaces: canMovePlaces(viewer, seat, isTest),
     canBringBack: canDecideListRequest(viewer, seat, isTest, "sfe"),
@@ -1158,7 +1190,10 @@ export type ValidateResult = {
  */
 export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): Promise<ValidateResult> {
   const body = record(raw);
-  const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
+  // A manager of the territory validates a CARRIED-OVER customer beside its rep (owner, 2026-10-02),
+  // and nothing else here: the three other modes file a request whose first step is the territory's
+  // reviewer, and that is him (`territoryForValidation`).
+  const { seat, isTest, validatedAs } = territoryForValidation(viewer, body.seatId, readTestFlag(body.test));
   const lineCode = lineCodeOf(seat);
   const place = parsePlaceDraft(body.place);
   if (!place.ok) throw validationError(place.error);
@@ -1179,6 +1214,11 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   };
   let proposedGrade: PhoenixCrmGrade | null = null;
   const mode = String(body.mode ?? "");
+  if (validatedAs === "manager" && mode !== "reference") {
+    throw forbiddenError(
+      "A manager validates a customer carried over from iReports360. Adding a customer, or one met outside the list, is the rep's — the request it files is yours to decide.",
+    );
+  }
   if (mode === "reference") {
     const contact = Number(body.referenceContactCrmId);
     if (!Number.isSafeInteger(contact) || contact <= 0) throw validationError("Choose the customer from your reference list.");
@@ -1220,7 +1260,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   const validated: ValidateResult = {
     customerId: String(result.customer_id),
     customerName: String(result.customer_name),
-    listType: result.list_type === "AM" ? "AM" : "PM",
+    listType: parseListType(result.list_type),
     placeId: String(result.place_id),
     capturedAt: String(result.captured_at),
     restored: result.restored === true,
@@ -1475,7 +1515,7 @@ export async function createListRequest(
     requestKind: kind,
     stage,
     customerName: String(result.customer_name),
-    listType: result.list_type === "AM" ? "AM" : "PM",
+    listType: parseListType(result.list_type),
     proposedGrade,
     dropReason,
   });

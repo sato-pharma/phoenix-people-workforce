@@ -157,6 +157,7 @@ function callRate(agentCrmId: number | null, agentHrId: string | null, agentName
     // percentage either. See PHARMACY_CALL_RATE_TARGET.
     pharmacy: { attainmentPct: null, campaign: 0, target: null, total: 0, totalRate: 0, unverified: 0, verified: 0, verifiedRate: 0 },
     unspecified: 0,
+    awaitingValidation: 0,
     workingDays: 5,
   };
 }

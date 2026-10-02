@@ -134,10 +134,10 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                       <span className="font-black text-slate-800">Where: </span>
                       {visit.locationLabel}
                     </p>
-                    {visit.repName || visit.managerName || visit.seniorName ? (
+                    {visit.repName || visit.managerName || visit.seniorName || visit.productManagerName ? (
                       <p className="break-words">
                         <span className="font-black text-slate-800">On the visit: </span>
-                        {[visit.repName, visit.managerName, visit.seniorName].filter(Boolean).join(", ")}
+                        {[visit.repName, visit.managerName, visit.seniorName, visit.productManagerName].filter(Boolean).join(", ")}
                       </p>
                     ) : null}
                     <p className="break-words">

@@ -1,5 +1,5 @@
 import { gradeTarget } from "@/lib/phoenix-crm/coverage";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 /**
  * Phoenix CRM Wave 2 — how often each customer was actually seen, against the two things that could
@@ -41,7 +41,7 @@ export type CustomerFrequencyInput = {
    * Never a speciality: the company sets how often an AM customer and a PM customer are seen, and
    * those two tables hold different numbers.
    */
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   grade: PhoenixCrmGrade | null;
   /** Visits that COUNT — the caller reads `phoenix_crm_countable_visits`, never a raw visit table. */
   visits: number;
@@ -72,7 +72,7 @@ export type CustomerFrequencyRow = CustomerFrequencyInput & {
 
 export function frequencyGradeTarget(
   settings: Pick<PhoenixCrmSettings, "gradeTargets">,
-  listType: PhoenixCrmListType,
+  listType: PhoenixCrmDoctorListType,
   grade: PhoenixCrmGrade | null,
 ): number | null {
   return gradeTarget(settings, listType, grade);

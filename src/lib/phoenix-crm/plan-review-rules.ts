@@ -26,13 +26,14 @@
 import { sharePercent } from "@/lib/phoenix-crm/coverage";
 import { dayActivityRank, isDayActivity, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { tallyDoctorMonth } from "@/lib/phoenix-crm/monthly-plan-rules";
+import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 // ── 1. Coverage on the review ───────────────────────────────────────────────────────────────────
 
 export const REVIEW_GRADES: readonly PhoenixCrmGrade[] = ["A", "B", "C"];
-const REVIEW_LISTS: readonly PhoenixCrmListType[] = ["AM", "PM"];
+const REVIEW_LISTS: readonly PhoenixCrmDoctorListType[] = ["AM", "PM"];
 
 /** A week of the month as the board holds it — the part a review counts. */
 export type ReviewWeek = {
@@ -49,7 +50,7 @@ export type ReviewWeek = {
 export type ReviewCustomer = {
   customerId: string;
   name: string;
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   grade: PhoenixCrmGrade | null;
   /** Carried over from iReports360 and not validated yet: outside the review's coverage. */
   pending: boolean;
@@ -74,7 +75,7 @@ export type ReviewGradeRow = {
 export type ReviewLeftOut = { customerId: string; name: string; grade: PhoenixCrmGrade | null };
 
 export type ReviewListCoverage = {
-  listType: PhoenixCrmListType;
+  listType: PhoenixCrmDoctorListType;
   /** Validated customers on this list. */
   validated: number;
   /** A, B and C, always all three, in that order. */
@@ -88,7 +89,7 @@ export type ReviewListCoverage = {
 export type ReviewCoverage = {
   /** Validated customers on both lists — zero while nobody on the list has been validated at the door. */
   validated: number;
-  lists: Record<PhoenixCrmListType, ReviewListCoverage>;
+  lists: Record<PhoenixCrmDoctorListType, ReviewListCoverage>;
 };
 
 /**
@@ -120,7 +121,7 @@ export function summarizeReviewCoverage(input: {
   placements: ReadonlyMap<string, number>;
   settings: Pick<PhoenixCrmSettings, "gradeTargets">;
 }): ReviewCoverage {
-  const lists = {} as Record<PhoenixCrmListType, ReviewListCoverage>;
+  const lists = {} as Record<PhoenixCrmDoctorListType, ReviewListCoverage>;
   let validated = 0;
   for (const listType of REVIEW_LISTS) {
     const rows = new Map<PhoenixCrmGrade, ReviewGradeRow & { hasTarget: boolean }>(
@@ -195,7 +196,7 @@ export function planReviewCoverage(input: {
 // ── 2. What changed since the last send ─────────────────────────────────────────────────────────
 
 /** One customer as a send kept him: the day, the list, and his name as it stood. */
-export type SentItem = { planDate: string; customerId: string; listType: PhoenixCrmListType; name: string | null };
+export type SentItem = { planDate: string; customerId: string; listType: PhoenixCrmDoctorListType; name: string | null };
 
 export type SentActivity = { planDate: string; activityType: PhoenixCrmDayActivity; halfDay: boolean };
 
@@ -221,7 +222,10 @@ export function parseSentSnapshot(details: unknown): SentSnapshot | null {
     const customerId = typeof entry.customer_id === "string" ? entry.customer_id.toLowerCase() : null;
     if (!planDate || !customerId) continue;
     const name = typeof entry.name === "string" ? entry.name.trim() : "";
-    items.push({ planDate, customerId, listType: entry.list_type === "AM" ? "AM" : "PM", name: name || null });
+    // A pharmacy is never planned (owner, 2026-10-02), so a row naming one is not a plan item.
+    const listType = doctorListType(entry.list_type);
+    if (listType === null) continue;
+    items.push({ planDate, customerId, listType, name: name || null });
   }
   const activities: SentActivity[] = [];
   for (const raw of body.activities) {
@@ -322,6 +326,6 @@ export function changedDaysOf(changes: PlanSentChanges | null): Set<string> {
  * A working day of the week that has not passed (owner, 2026-10-02: "Only that day" reopens — so the
  * rep must still be able to change it). A public holiday holds nothing, so it is never offered.
  */
-export function returnableDays<T extends { date: string; listTypes: ReadonlyArray<PhoenixCrmListType> }>(days: ReadonlyArray<T>, cairoToday: string): T[] {
+export function returnableDays<T extends { date: string; listTypes: ReadonlyArray<PhoenixCrmDoctorListType> }>(days: ReadonlyArray<T>, cairoToday: string): T[] {
   return days.filter((day) => day.date >= cairoToday && day.listTypes.length > 0);
 }

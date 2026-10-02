@@ -18,7 +18,7 @@
 import crypto from "node:crypto";
 
 import { ApiError, validationError } from "@/lib/http/api-errors";
-import { readTestFlag, territoryForRepWrite, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readTestFlag, territoryForValidation, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -79,15 +79,20 @@ export async function issuePhotoSlot(input: {
 }
 
 /**
- * An upload slot for the person about to take the photo: a place photo for the territory's rep (who
- * validates the list), a visit photo for whoever may enter the territory's visits.
+ * An upload slot for the person about to take the photo: a place photo for whoever may validate the
+ * list — the territory's rep, and since 2026-10-02 a manager of it (owner's pick) — and a visit photo
+ * for whoever may enter the territory's visits.
+ *
+ * 🔴 The place slot must match `validateCustomer`'s own gate (`territoryForValidation`). With the
+ * narrower one it refused the camera, which is the FIRST step of validating, so a manager would have
+ * been offered a Validate button that could not take a photo.
  */
 export async function requestPhotoSlot(viewer: PhoenixCrmViewer, raw: unknown): Promise<PhotoSlot> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const purpose: PhotoPurpose | null = body.purpose === "place" ? "place" : body.purpose === "visit" ? "visit" : null;
   if (!purpose) throw validationError("Reload the page and open the camera again.");
   const test = readTestFlag(body.test);
-  const { seat, isTest } = purpose === "place" ? territoryForRepWrite(viewer, body.seatId, test) : territoryForVisit(viewer, body.seatId, test);
+  const { seat, isTest } = purpose === "place" ? territoryForValidation(viewer, body.seatId, test) : territoryForVisit(viewer, body.seatId, test);
   return issuePhotoSlot({ hrId: viewer.hrId, seat, isTest, purpose, cairoToday: viewer.cairoToday });
 }
 

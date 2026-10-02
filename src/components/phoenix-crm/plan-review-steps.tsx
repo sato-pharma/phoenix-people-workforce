@@ -47,7 +47,7 @@ import {
 } from "@/lib/phoenix-crm/plan-review-rules";
 import type { DailyCaps } from "@/lib/phoenix-crm/plan-week-draft";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 import type { MonthlyPlannerView, MonthlyWeekView, PlanDayView } from "@/lib/phoenix-crm/view-types";
 
 /** How many left-out names show before "Show all". */
@@ -112,7 +112,7 @@ export function PlanReviewSteps({
 }) {
   const [step, setStep] = useState(1);
   const [day, setDay] = useState<string | null>(null);
-  const [session, setSession] = useState<PhoenixCrmListType>("AM");
+  const [session, setSession] = useState<PhoenixCrmDoctorListType>("AM");
   const topRef = useRef<HTMLDivElement>(null);
 
   const coverage = planReviewCoverage({
@@ -509,7 +509,7 @@ function ReviewCoverageBlock({ coverage, month, onOpenMonth }: { coverage: Revie
   );
 }
 
-function LeftOutNames({ entries, listType, month }: { entries: ReadonlyArray<ReviewLeftOut>; listType: PhoenixCrmListType; month: string }) {
+function LeftOutNames({ entries, listType, month }: { entries: ReadonlyArray<ReviewLeftOut>; listType: PhoenixCrmDoctorListType; month: string }) {
   const [all, setAll] = useState(false);
   if (entries.length === 0) {
     return <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">Every validated {listType} customer is on a sent day of {month}.</p>;

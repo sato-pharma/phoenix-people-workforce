@@ -11,6 +11,7 @@ import {
   type PhoenixTeamRow,
   type PhoenixTeamStartsPanelData,
 } from "@/lib/crm/phoenix-team-starts";
+import { vendorLeftoverNote, VENDOR_LEFTOVER_TITLE } from "@/lib/phoenix-crm/vendor-leftovers";
 
 /**
  * Which teams every screen outside Phoenix CRM counts from Phoenix CRM — and the ONE place a team is
@@ -221,6 +222,14 @@ export function CrmPhoenixTeamStartsPanel({ data }: { data: PhoenixTeamStartsPan
                     {" · "}
                     {team.reps === 1 ? "1 rep" : `${team.reps} reps`}
                   </p>
+                  {/* Where the work is being recorded, never a word about the rep — one still on
+                      the old app is following the habit he was trained in, and his visits there
+                      now land in no figure at all. */}
+                  {vendorLeftoverNote(team.stillOnVendor) ? (
+                    <p className="mt-0.5 break-words text-phx-xs font-semibold text-amber-700">
+                      {VENDOR_LEFTOVER_TITLE}: {vendorLeftoverNote(team.stillOnVendor)}
+                    </p>
+                  ) : null}
                   {team.firstPlanLine ? (
                     <p className="mt-0.5 break-words text-phx-xs font-semibold text-amber-700">{team.firstPlanLine}</p>
                   ) : null}
