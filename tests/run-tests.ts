@@ -1699,6 +1699,7 @@ import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.
 import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
+import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmBrickTintsTests } from "./phoenix-crm-brick-tints.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
@@ -5838,6 +5839,11 @@ await runTest(
 await runTest(
   "Phoenix CRM copy last month (owner, 2026-09-25: pre-fill the new month from the rep's iReports360 plan, editable, never auto-submitted; only a doctor still on the list is placed, on his old weekdays' editable days, on the list types the day allows, at his first place; the day's cap is honoured, a doctor already on a day is not doubled, and the order is deterministic)",
   runPhoenixCrmPlanCopyTests,
+);
+
+await runTest(
+  "Phoenix CRM pharmacy calls (owner, 2026-10-02, four rulings of which three REMOVE something a reader would add back by analogy with a doctor: a pharmacy is a THIRD list_type and never a row inside AM or PM, so the binary `=== \"AM\" ? \"AM\" : \"PM\"` that every existing reader uses would file it among the doctors with nothing going red; it is NEVER planned — \"He don't plan it. We don't want extra\" reverses his own earlier \"planned like doctors\", and the 10-a-day cap he set that morning capped PLANNING, so nothing is left for it to limit and a cap on VISITS would be the extra he refused; it is NEVER approved — \"no approval for an unplanned pharmacy visit\", because the off-plan approval protects a figure and a pharmacy has none; and NO KPI reads one — no coverage, frequency, monthly target, call rate or capacity, so the Pharmacies figure stays a plain count and never a rate)",
+  runPhoenixCrmPharmacyCallTests,
 );
 
 await runTest(
