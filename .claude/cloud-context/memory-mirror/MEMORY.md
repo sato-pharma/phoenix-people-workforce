@@ -31,3 +31,5 @@
 ## Inbox — new notes land here
 Put each new memory note's pointer here, one line. The weekly fold (`node scripts/module-memory/fold.mjs --apply`) files it under its module in ONE PR; once that merges, the next fold removes the line.
 - [port 3000/3001 may be the PREVIEW TUNNEL, not a dev server](a-listener-on-port-3000-may-be-the-preview-tunnel.md) - read the listener's command line before recommending a stop.
+- ["suggestions not appearing" has FIVE layers](prompt-suggestions-have-five-layers-and-four-are-not-it.md) - the four you reach first are usually already correct; the APP's own `prompt_suggestions` applies only from a session's next start, and the status bar is a different feature.
+- [no suggestion after a RESUME = the session was unloaded](a-missing-suggestion-after-a-resume-is-the-session-being-unloaded.md) - check for `SessionStart:resume` before blaming the 10k size gate.
