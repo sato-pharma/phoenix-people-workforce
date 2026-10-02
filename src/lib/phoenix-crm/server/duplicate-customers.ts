@@ -3,7 +3,6 @@ import { isLinkableName, specialityConflicts } from "@/lib/customer-identity/sug
 import type { IdentityCandidate } from "@/lib/customer-identity/types";
 import { territoryName } from "@/lib/phoenix-crm/scope";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { canReadIntegrityBoard } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -118,15 +117,26 @@ export function groupSameRepDuplicates(
 }
 
 /**
+ * Who reads this list: the Super Admin and the SFE Manager.
+ *
+ * 🔴 ITS OWN PREDICATE SINCE 2026-10-02, NOT THE INTEGRITY BOARD'S. It shared the board's two readers
+ * through `canReadIntegrityBoard` until the owner split the board that day — the position cases are
+ * now the Super Admin's alone — and a clerical double-entry must never inherit a rule written for
+ * evidence of dishonesty, in either direction.
+ */
+export function canReadDuplicateCustomers(viewer: PhoenixCrmViewer): boolean {
+  return viewer.isSuperAdmin || viewer.isSfeManager;
+}
+
+/**
  * Every rep's own duplicates, across the whole company.
  *
  * The scope is deliberately not the viewer's territory: both readers are company-scope roles, and a
  * housekeeping list that showed one region's duplicates would hide the rest without saying so.
  */
 export async function loadDuplicateCustomers(viewer: PhoenixCrmViewer): Promise<DuplicateCustomerView> {
-  // The same two readers as the integrity board, through the board's own predicate rather than a
-  // second copy of the role list — a second copy is how one of them drifts open.
-  if (!canReadIntegrityBoard(viewer)) return { groups: [], rows: 0 };
+  // The page asks the same predicate, so the screen can never be more generous than the service.
+  if (!canReadDuplicateCustomers(viewer)) return { groups: [], rows: 0 };
 
   const admin = getSupabaseAdmin();
   const customers: Row[] = [];

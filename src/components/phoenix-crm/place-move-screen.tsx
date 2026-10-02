@@ -55,7 +55,9 @@ function accuracyText(meters: number | null): string {
 }
 
 /** "30.04441, 31.23571 · within 12 m". toFixed, never toLocaleString: the server renders the same string. */
-function readingText(reading: PlaceReading | null): string {
+// Undefined as well as null: the measurements are optional on `ListPlace` because its own rep never
+// receives them (server/blind-payloads.ts). This screen is the movers' and always gets them.
+function readingText(reading: PlaceReading | null | undefined): string {
   if (!reading) return "Not measured";
   return `${reading.lat.toFixed(5)}, ${reading.lon.toFixed(5)} · ${accuracyText(reading.accuracyMeters)}`;
 }
@@ -193,7 +195,7 @@ function PlaceMoveForm({
       <CrmBlock className="border-t border-slate-100" title="The readings">
         <CrmFacts
           facts={[
-            { label: "Fixed point now", value: readingText({ lat: place.lat, lon: place.lon, accuracyMeters: place.accuracyMeters }) },
+            { label: "Fixed point now", value: readingText({ lat: place.lat, lon: place.lon, accuracyMeters: place.accuracyMeters ?? null }) },
             { label: "Validated", value: cairoStamp(place.capturedAt) },
             { label: "Photo reading", value: readingText(place.photoReading) },
             { label: "Capture-location pin", value: readingText(place.pinReading) },

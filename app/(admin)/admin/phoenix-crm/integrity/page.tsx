@@ -2,9 +2,17 @@ import { redirect } from "next/navigation";
 import { Eye, ShieldAlert, Users } from "lucide-react";
 
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
+import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { canReadIntegrityBoard, integritySourceLabel, loadIntegrityBoard, type BehaviourCase, type IntegrityCase } from "@/lib/phoenix-crm/server/integrity-board";
+import {
+  canReadIntegrityBoard,
+  integritySourceLabel,
+  loadIntegrityBoard,
+  readsPositionCases,
+  type BehaviourCase,
+  type IntegrityCase,
+} from "@/lib/phoenix-crm/server/integrity-board";
 
 export const dynamic = "force-dynamic";
 
@@ -105,18 +113,28 @@ function Reasons({ entry }: { entry: IntegrityCase }) {
 
 export default async function PhoenixCrmIntegrityPage() {
   const access = await resolveAccessContextFromPage();
+  // Gate one before the organogram (audit, 2026-10-02): a per-account module lock on Phoenix CRM
+  // closes this page as well, which `canReadIntegrityBoard` alone — a role test — never did.
+  if (!(await canAccess(access, "phoenix_crm", "read"))) redirect("/admin");
   const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
   if (!viewer || !canReadIntegrityBoard(viewer)) redirect("/admin");
 
   const board = await loadIntegrityBoard(viewer);
   const weakCount = board.cases.length - board.strongCount;
+  // The position cases are the Super Admin's alone (owner, 2026-10-02); the service never queries them
+  // for the SFE Manager, so his page must not describe a detector whose cases it will never show him.
+  const positions = readsPositionCases(viewer);
 
   return (
     <div className="space-y-5">
       <AdminPageHero
         eyebrow="CRM"
         title="Location integrity"
-        description="Captures Phoenix could not account for — a mock location app the phone admitted to, a coordinate used before, a trip nobody could have made, a photograph that had already been sent, or a month whose shape no honest month has. Nothing here is a verdict and no rep is told: it is where to look, and what to look at."
+        description={
+          positions
+            ? "Captures Phoenix could not account for — a mock location app the phone admitted to, a coordinate used before, a trip nobody could have made, a photograph that had already been sent, or a month whose shape no honest month has. Nothing here is a verdict and no rep is told: it is where to look, and what to look at."
+            : "Captures Phoenix could not account for — a photograph that had already been sent, or a month whose shape no honest month has. Nothing here is a verdict and no rep is told: it is where to look, and what to look at."
+        }
         icon={<ShieldAlert className="h-3.5 w-3.5" />}
       />
 
@@ -150,8 +168,9 @@ export default async function PhoenixCrmIntegrityPage() {
       {board.cases.length === 0 ? (
         <AdminCallout tone="success">
           <span>
-            Nothing flagged. Every position and every photograph captured in Phoenix CRM so far has been one the server could account for — and the
-            checks run on every visit and every validated place, whether or not the phone reports anything.
+            {positions
+              ? "Nothing flagged. Every position and every photograph captured in Phoenix CRM so far has been one the server could account for — and the checks run on every visit and every validated place, whether or not the phone reports anything."
+              : "Nothing flagged. Every photograph captured in Phoenix CRM so far has been one the server could account for — and the check runs on every visit and every validated place."}
           </span>
         </AdminCallout>
       ) : null}

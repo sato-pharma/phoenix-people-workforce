@@ -237,7 +237,9 @@ export function runPhoenixCrmExceptionsTests(): void {
     const access = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/access.ts", import.meta.url), "utf8"));
     assert.ok(access.includes("export function readsTeamReports("), "one predicate, in access.ts");
     const reports = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/reports.ts", import.meta.url), "utf8"));
-    assert.ok(reports.includes("const canReadLocationReport = readsTeamReports;"), "and the place-vs-actual report uses that same one");
+    // NOT that one since 2026-10-02: the owner took the CEO and the regional managers off the
+    // place-vs-actual report and left this board as it was, so the report has its own predicate.
+    assert.ok(reports.includes("const canReadLocationReport = readsPlaceVsActual;"), "the place-vs-actual report has its own predicate");
     assert.equal(
       /function canReadLocationReport\(viewer/.test(reports),
       false,

@@ -219,12 +219,15 @@ function visitLines(report: VisitsReportView, territories: ReadonlyArray<ReportT
  * territory. A tally of his own distances is a count of flags — exactly what Golden Rule #1 keeps off
  * his screen (owner, 2026-09-26) — while the same figure is the manager's whole point. The same
  * predicate already decides who may open the place-vs-actual section, so the two can never disagree.
+ *
+ * Since 2026-10-02 the SERVER also leaves `farVisits` out on any seat the viewer is blind on
+ * (`blindVisitsReport`), so this gate is the second lock, not the only one.
  */
 function visitKindsText(counts: VisitCounts, canSeeLocations: boolean): string | null {
   const parts = [
     counts.doubleVisits > 0 ? `${countText(counts.doubleVisits)} double` : null,
     counts.chainVisits > 0 ? `${countText(counts.chainVisits)} chain` : null,
-    canSeeLocations && counts.farVisits > 0 ? `${countText(counts.farVisits)} far from the place` : null,
+    canSeeLocations && (counts.farVisits ?? 0) > 0 ? `${countText(counts.farVisits ?? 0)} far from the place` : null,
   ].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
@@ -996,12 +999,16 @@ function LocationsSection({
             tone={summary.far > 0 ? "warn" : "good"}
             value={countText(summary.far)}
           />
-          <CrmStat
-            label="Weak signal"
-            note="The phone was not sure where it was"
-            tone={summary.weakGps > 0 ? "warn" : "neutral"}
-            value={countText(summary.weakGps)}
-          />
+          {/* The Super Admin's and the SFE Manager's alone (owner, 2026-10-02): the server sends the
+              district manager and the NSM no weak-signal count at all, so there is nothing to draw. */}
+          {summary.weakGps === undefined ? null : (
+            <CrmStat
+              label="Weak signal"
+              note="The phone was not sure where it was"
+              tone={summary.weakGps > 0 ? "warn" : "neutral"}
+              value={countText(summary.weakGps)}
+            />
+          )}
           <CrmStat
             label="Nothing to compare"
             note="The customer has no validated place yet"
@@ -1051,7 +1058,7 @@ function LocationsSection({
                 <p className="break-words">
                   <span className="font-black text-slate-800">He stood at: </span>
                   {row.visitLat.toFixed(5)}, {row.visitLon.toFixed(5)}
-                  {row.accuracyMeters === null ? "" : ` (accuracy ${countText(Math.round(row.accuracyMeters))} m)`}
+                  {typeof row.accuracyMeters === "number" ? ` (accuracy ${countText(Math.round(row.accuracyMeters))} m)` : ""}
                 </p>
                 {row.placeLat !== null && row.placeLon !== null ? (
                   <p className="break-words">
@@ -1076,7 +1083,7 @@ function LocationsSection({
                 <p className="break-words font-black text-slate-950">{row.customerName}</p>
                 <p className="mt-0.5 break-words text-xs text-slate-500">
                   {row.visitLat.toFixed(5)}, {row.visitLon.toFixed(5)}
-                  {row.accuracyMeters === null ? "" : ` (accuracy ${countText(Math.round(row.accuracyMeters))} m)`}
+                  {typeof row.accuracyMeters === "number" ? ` (accuracy ${countText(Math.round(row.accuracyMeters))} m)` : ""}
                 </p>
               </td>
               <td className={crmTdClassName}>

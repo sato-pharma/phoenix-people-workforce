@@ -163,7 +163,13 @@ export function runPhoenixCrmReportComparisonTests(): void {
      */
     const nowBlocks = [...service.matchAll(/now: \{[\s\S]*?\n            \},/g)].map((match) => match[0]);
     assert.equal(nowBlocks.length, 2, `plan and coverage hand buildComparison an inline now block — found ${nowBlocks.length}`);
-    const visitsNow = service.slice(service.indexOf("const nowFigures: ComparisonFigures"), service.indexOf("return {\n    period,\n    includeTest: chosen.includeTest,\n    rows,\n    totals,"));
+    // The visits report has returned through its blind shaper since 2026-10-02 (Golden Rule #1), so
+    // its return opens with `blindVisitsReport(viewer, {`. Asserted, because a missing anchor makes
+    // `slice` run to the END of the file, which is how this check read the wrong text that day.
+    const visitsStart = service.indexOf("const nowFigures: ComparisonFigures");
+    const visitsEnd = service.indexOf("return blindVisitsReport(viewer, {\n    period,\n    includeTest: chosen.includeTest,\n    rows,\n    totals,");
+    assert.ok(visitsStart !== -1 && visitsEnd > visitsStart, "the visits report's comparison block is found between its figures and its return");
+    const visitsNow = service.slice(visitsStart, visitsEnd);
     assert.ok(visitsNow.includes("totals: { AM: totals.AM.visits, PM: totals.PM.visits }"), "visits compares the visit COUNT");
     assert.ok(
       nowBlocks.some((block) => block.includes("totals: { AM: totals.AM.visitedPlanned, PM: totals.PM.visitedPlanned }")),

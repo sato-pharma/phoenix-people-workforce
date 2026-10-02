@@ -24,7 +24,8 @@
  *     the manager and SFE approve the visit) and OUT OF LIST (validated on the spot — the district
  *     manager and SFE approve the CUSTOMER, and the visit counts once he is admitted);
  *   - the rep NEVER sees a distance, a flag or a check on his own visit. The polite "Take care" line is
- *     gone (`isLocationBlind`); his managers, the SFE Manager and the Super Admin keep every measure.
+ *     gone (`isLocationBlind`). His managers read the DISTANCE only (owner, 2026-10-02); the SFE Manager
+ *     and the Super Admin keep every measure (`locationSight`, `visitLocationFor`).
  *
  * A visit may also carry a spoken note (owner, 2026-09-25), and the emphasis above is why it is worth
  * saying here: the note is audio the rep recorded, kept as audio and never transcribed, and it dates
@@ -62,7 +63,16 @@ import {
 import { raisesVisitAsk, VISIT_ASK_KIND_LABELS } from "@/lib/phoenix-crm/visit-ask-rules";
 import { describeDayWindows, isPlanSentForReview, isUuid, planDayStatus } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, personKey, resolveVisitParticipants, territoryReviewer, type OrgIndex } from "@/lib/phoenix-crm/scope";
-import { canWriteAsRep, isLocationBlind, readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import {
+  canWriteAsRep,
+  locationSight,
+  readTestFlag,
+  territoryForRead,
+  territoryForVisit,
+  type LocationSight,
+  type PhoenixCrmViewer,
+} from "@/lib/phoenix-crm/server/access";
+import { blindVisitForm } from "@/lib/phoenix-crm/server/blind-payloads";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
@@ -130,6 +140,33 @@ export const BLIND_LOCATION: { locationFlag: VisitLocationFlag; locationLabel: s
 
 /** What a manager reads where a location would be, on a visit the Super Admin entered for the rep. */
 export const MISSED_VISIT_LOCATION_LABEL = "No location: entered later by the Super Admin";
+
+/**
+ * A visit's location, as this reader may read it (`locationSight`):
+ *   - `none` — the rep's own visit: `BLIND_LOCATION`, nothing measured (Golden Rule #1);
+ *   - `distance` — every manager below the Super Admin and SFE (owner, 2026-10-02): the distance and the
+ *     far / at-the-place wording. A weak reading is never far (far beats weak, geo.ts), so it is read
+ *     as the plain distance — the accuracy and the weak-signal sentence are not his;
+ *   - `full` — the Super Admin and the SFE Manager: every sentence, the accuracy included.
+ */
+export function visitLocationFor(
+  sight: LocationSight,
+  flag: VisitLocationFlag,
+  distanceMeters: number | null,
+  accuracyMeters: number | null,
+  enteredByAdmin = false,
+): { locationFlag: VisitLocationFlag; locationLabel: string } {
+  if (sight === "none") return BLIND_LOCATION;
+  const shown: VisitLocationFlag = sight === "distance" && flag === "weak_gps" ? "ok" : flag;
+  return {
+    locationFlag: shown,
+    // Entered later by the Super Admin, from wherever he was: there is no reading to describe, and "no
+    // place saved for this customer" would be a sentence about the wrong thing.
+    locationLabel: enteredByAdmin
+      ? MISSED_VISIT_LOCATION_LABEL
+      : visitLocationLabel(shown, distanceMeters, sight === "full" ? accuracyMeters : null),
+  };
+}
 
 // ── A territory's visits ────────────────────────────────────────────────────────────────────────
 
@@ -289,9 +326,10 @@ function visitPeople(rows: ReadonlyArray<Row>): Array<string | null> {
 }
 
 /**
- * One visit row, as a screen reads it. `blind` is the rep's own view of his own territory
- * (`isLocationBlind`): the location fields say nothing and the phone-clock mark is off — no distance,
- * no flag, no check (Golden Rule #1, owner 2026-09-29).
+ * One visit row, as a screen reads it. `sight` is how much of its location this reader may read
+ * (`locationSight`): on the rep's own territory nothing — no distance, no flag, no check (Golden Rule #1,
+ * owner 2026-09-29); for a manager the distance only, with no phone-clock mark (owner, 2026-10-02); for
+ * the Super Admin and the SFE Manager everything.
  */
 /**
  * Each product manager who could have been on this seat's visits, by his APP ROLE — the title the
@@ -314,7 +352,7 @@ async function productManagerRolesFor(org: OrgIndex, seatId: string): Promise<Re
 function mapVisitRow(
   row: Row,
   names: PeopleNames,
-  options: { blind: boolean; org: OrgIndex; productManagerRoles?: ReadonlyMap<string, string> },
+  options: { sight: LocationSight; org: OrgIndex; productManagerRoles?: ReadonlyMap<string, string> },
 ): VisitRow {
   const kind = visitKind(row.kind);
   const flag = locationFlag(row.location_flag);
@@ -360,17 +398,9 @@ function mapVisitRow(
     photoPath: textOrNull(row.photo_path),
     voiceNotePath: textOrNull(row.voice_note_path),
     voiceNoteSeconds: numberOrNull(row.voice_note_seconds),
-    ...(options.blind
-      ? BLIND_LOCATION
-      : {
-          locationFlag: flag,
-          // Entered later by the Super Admin, from wherever he was: there is no reading to describe, and
-          // "no place saved for this customer" would be a sentence about the wrong thing.
-          locationLabel: enteredByAdmin
-            ? MISSED_VISIT_LOCATION_LABEL
-            : visitLocationLabel(flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters)),
-        }),
-    clockOff: !options.blind && skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
+    ...visitLocationFor(options.sight, flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters), enteredByAdmin),
+    // The phone's clock is a reading, not a distance: the Super Admin's and the SFE Manager's alone.
+    clockOff: options.sight === "full" && skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
     unplanned: unplannedKind === "out_of_plan" ? visitUnplanned(row) : null,
     unplannedKind,
     outOfList: unplannedKind === "out_of_list" ? outOfListVisitNote(textOrNull(record(row.customer).status)) : null,
@@ -428,12 +458,12 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     loadDayActivityOn(seat.seatId, isTest, date),
     productManagerRolesFor(viewer.org, seat.seatId),
   ]);
-  const blind = isLocationBlind(viewer, seat);
+  const sight = locationSight(viewer, seat);
   return {
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     date,
-    visits: rows.map((row) => mapVisitRow(row, names, { blind, org: viewer.org, productManagerRoles })),
+    visits: rows.map((row) => mapVisitRow(row, names, { sight, org: viewer.org, productManagerRoles })),
     canAdd: date === today && canEnterVisits(viewer, seat.seatId, isTest),
     dayActivity: activity,
     canSetDayActivity: date === today && canWriteAsRep(viewer, seat, isTest),
@@ -553,7 +583,12 @@ export type VisitFormView = {
   productFamilies: LineProductFamily[];
   /** Pharmacies this seat has typed on earlier visits, most recent first, for the name suggestions. */
   pharmacies: string[];
-  rules: { visitFarMeters: number; weakGpsMeters: number };
+  /**
+   * How far is far, and how rough a reading may be — the thresholds a visit is JUDGED by, so the
+   * territory's own rep never receives them (`blindVisitForm`, audit 2026-10-02). Nothing on the form
+   * draws either; a manager entering his own visit still gets them.
+   */
+  rules?: { visitFarMeters: number; weakGpsMeters?: number };
   customers: VisitCustomerOption[];
   todayVisits: VisitRow[];
   /**
@@ -673,7 +708,7 @@ async function loadLastVisits(
  * The Today screen reads this rather than the raw rows, so one visit reads the same on both screens
  * and a change to `mapVisitRow` cannot leave the two disagreeing about a name.
  */
-export async function loadVisitRowsForDay(seatId: string, isTest: boolean, date: string, options: { blind: boolean; org: OrgIndex }): Promise<VisitRow[]> {
+export async function loadVisitRowsForDay(seatId: string, isTest: boolean, date: string, options: { sight: LocationSight; org: OrgIndex }): Promise<VisitRow[]> {
   const rows = await loadVisitRows(seatId, isTest, date);
   const [names, productManagerRoles] = await Promise.all([loadPeopleNames(visitPeople(rows)), productManagerRolesFor(options.org, seatId)]);
   return rows.map((row) => mapVisitRow(row, names, { ...options, productManagerRoles }));
@@ -827,13 +862,14 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   let blockedReason: string | null = null;
   if (!seat.lineCode) blockedReason = "This territory has no line in the organogram, so visits cannot be saved.";
   else if (products.length === 0) blockedReason = `No products are on file for ${seat.lineName ?? "this line"} yet, so a visit cannot record the products discussed.`;
-  const blind = isLocationBlind(viewer, seat);
+  const sight = locationSight(viewer, seat);
   // Their names are read apart from the wave's: the wave's list is built from the day's visits and the
   // chain, and a product manager is in neither — he holds no seat at all.
   const productManagerNames = await loadPeopleNames(lineProductManagers.map((manager) => manager.hrId));
   const productManagerRoles = new Map(lineProductManagers.map((manager) => [personKey(manager.hrId) ?? manager.hrId, manager.role]));
 
-  return {
+  // 🔴 THROUGH THE BLIND SHAPER, LAST (Golden Rule #1): a field his browser receives counts as shown.
+  return blindVisitForm(viewer, seat, {
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     cairoToday: today,
@@ -857,10 +893,10 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     pharmacies,
     rules: { visitFarMeters: settings.visitFarMeters, weakGpsMeters: settings.weakGpsMeters },
     customers: options,
-    todayVisits: visitRows.map((row) => mapVisitRow(row, names, { blind, org: viewer.org, productManagerRoles })),
+    todayVisits: visitRows.map((row) => mapVisitRow(row, names, { sight, org: viewer.org, productManagerRoles })),
     planToday: { status: planDay.status, saved: planDay.customerIds.length },
     blockedReason,
-  };
+  });
 }
 
 // ── Saving a visit ──────────────────────────────────────────────────────────────────────────────
@@ -1109,10 +1145,9 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
           wishedOn: visit.outcome.nextStepOn,
         })
       : null;
-  // The rep is told his visit is saved and nothing about where he was (Golden Rule #1).
-  const location = isLocationBlind(viewer, seat)
-    ? BLIND_LOCATION
-    : { locationFlag: flag, locationLabel: visitLocationLabel(flag, distance, visit.accuracyMeters) };
+  // The rep is told his visit is saved and nothing about where he was (Golden Rule #1); a manager who
+  // entered it reads the distance only (owner, 2026-10-02).
+  const location = visitLocationFor(locationSight(viewer, seat), flag, distance, visit.accuracyMeters);
   return {
     visitId: String(result.id),
     visitDate: String(result.visit_date),
