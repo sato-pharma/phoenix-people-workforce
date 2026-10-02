@@ -1801,6 +1801,7 @@ import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-r
 import { runPnpmWorktreeGuardTests } from "./pnpm-worktree-guard.test.ts";
 import { runMemoryIndexBudgetTests } from "./memory-index-budget.test.ts";
 import { runMemoryIndexReachabilityTests } from "./memory-index-reachability.test.ts";
+import { runSessionStartCheckoutBehindMainTests } from "./session-start-checkout-behind-main.test.ts";
 import { runSessionStartMemoryIndexGuardTests } from "./session-start-memory-index-guard.test.ts";
 import { runAutoloadFootprintBudgetTests } from "./autoload-footprint-budget.test.ts";
 import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
@@ -6507,6 +6508,11 @@ await runTest(
   + "own, a healthy index reports its headroom without interrupting the human, and a file it cannot "
   + "measure reports unknown rather than healthy)",
   runSessionStartMemoryIndexGuardTests,
+);
+await runTest(
+  "the SessionStart banner says how far behind origin/main the checkout it measured is (numbered, a floor, no fetch; "
+    + "unreadable is loud and a non-repository is silent) — proven by driving the real hook against a repo 2 behind",
+  runSessionStartCheckoutBehindMainTests,
 );
 
 await runTest(
