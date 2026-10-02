@@ -34,7 +34,7 @@ import { loadPuppeteer, resolveChromiumPath } from "@/lib/pdf/chromium";
 import type { CreatedMailbox, JoinerConsoleDriver } from "./driver";
 import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
 import { APP_PASSWORD_PAGE, ECP_LOCATORS, ONE_TIME_PASSWORD_DIALOG, type Locator } from "@/lib/turbify/locators";
-import { cssQueryFor, resolveOne, type CandidateReader, type ElementCandidate } from "@/lib/turbify/resolve";
+import { cssQueryFor, resolveOne, rowCountRefusal, type CandidateReader, type ElementCandidate } from "@/lib/turbify/resolve";
 import { COMPANY_MAIL_DOMAIN } from "./safety";
 
 const LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fecp.turbify.com%2F";
@@ -246,6 +246,33 @@ export async function createTurbifyJoinerDriver(credentials: {
       await clickOneOf(page, CREATE_SUBMIT_WORDINGS, "submit button for the new-mailbox form");
       await settle(5_000);
 
+      const oneTimePassword = await readOneTimePassword(page, address);
+      await clickOne(page, ONE_TIME_PASSWORD_DIALOG.close).catch(() => {});
+      return { address, oneTimePassword };
+    },
+
+    async resetAndCapture({ address }): Promise<CreatedMailbox> {
+      // Adoption, for a mailbox that already exists. The reset is what reopens the window in which
+      // Phoenix may mint an app password; everything after it is the same as the create path.
+      await searchFor(page, address);
+
+      // 🔴 EXACTLY ONE ROW, OR NOTHING. Every row in the list carries its own
+      // `aria-label="Reset password"`, so a click takes whichever is first in the document — which
+      // is this mailbox only if the search actually narrowed the list. Resetting the wrong row here
+      // locks a working employee out of their mail. Same rule, same statement of it, as the
+      // revocation driver.
+      const rows = await page
+        .$$eval(cssQueryFor(ECP_LOCATORS.resetPassword), (elements) => elements.length)
+        .catch(() => -1);
+      const ambiguous = rowCountRefusal(rows, address, "Adopt");
+      if (ambiguous) throw new TurbifyJoinerStepError(ambiguous);
+
+      await clickOne(page, ECP_LOCATORS.resetPassword);
+      await settle(4_000);
+
+      // The dialog must NAME this mailbox — `readOneTimePassword` confirms the heading, and a reset
+      // that opened a dialog for a different address would otherwise hand back a password that does
+      // not open this one.
       const oneTimePassword = await readOneTimePassword(page, address);
       await clickOne(page, ONE_TIME_PASSWORD_DIALOG.close).catch(() => {});
       return { address, oneTimePassword };

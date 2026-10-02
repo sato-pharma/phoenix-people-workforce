@@ -73,6 +73,12 @@ function spyDriver(failAt?: "createMailbox" | "setMailboxPassword" | "generateAp
       if (failAt === "createMailbox") throw new Error("the create form had no submit button");
       return { address: `${local}@satopharma.com`, oneTimePassword: "OTP-TEST" };
     },
+    // The adoption path's step. The joiner runner must NEVER call it — a new hire's mailbox does
+    // not exist yet, so there is nothing to reset — and the call list below proves that.
+    async resetAndCapture({ address }) {
+      calls.push(`resetAndCapture:${address}`);
+      return { address, oneTimePassword: "OTP-RESET" };
+    },
     async setMailboxPassword() {
       calls.push("setMailboxPassword");
       if (failAt === "setMailboxPassword") throw new Error("no password field was found");

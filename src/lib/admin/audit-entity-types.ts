@@ -117,6 +117,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   marketing_pharmacy: true,
   marketing_request: true,
   new_hire_mailbox: true,
+  new_hire_mailbox_adoption: true,
   notification: true,
   organogram_contact_export: true,
   outstation_expense_access: true,

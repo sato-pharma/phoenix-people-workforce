@@ -164,20 +164,29 @@ export function defaultJoinerRunnerDeps(): JoinerRunnerDeps {
   };
 }
 
+/**
+ * A real console driver from the environment's admin credentials.
+ *
+ * Shared by the sweep and the adoption route so there is ONE place that decides what counts as
+ * usable Turbify credentials — a second copy would eventually disagree with this one about the
+ * missing-credential message, and that message is what a Super Admin reads when nothing happens.
+ */
+export async function createJoinerDriverFromEnv() {
+  const username = String(process.env.PHOENIX_TURBIFY_ADMIN_USER ?? "").trim();
+  const password = String(process.env.PHOENIX_TURBIFY_ADMIN_PASSWORD ?? "");
+  if (!username || !password) {
+    throw new Error(
+      "PHOENIX_TURBIFY_ADMIN_USER and PHOENIX_TURBIFY_ADMIN_PASSWORD are not both set, so the "
+      + "new-hire mailbox robot cannot sign in to the Turbify console.",
+    );
+  }
+  return createTurbifyJoinerDriver({ password, username });
+}
+
 /** What the sweep passes to `runJoinerSweepPass`. */
 export function defaultJoinerSweepDeps(): JoinerSweepDeps {
   return {
-    createDriver: async () => {
-      const username = String(process.env.PHOENIX_TURBIFY_ADMIN_USER ?? "").trim();
-      const password = String(process.env.PHOENIX_TURBIFY_ADMIN_PASSWORD ?? "");
-      if (!username || !password) {
-        throw new Error(
-          "PHOENIX_TURBIFY_ADMIN_USER and PHOENIX_TURBIFY_ADMIN_PASSWORD are not both set, so the "
-          + "new-hire mailbox robot cannot sign in to the Turbify console.",
-        );
-      }
-      return createTurbifyJoinerDriver({ password, username });
-    },
+    createDriver: createJoinerDriverFromEnv,
     resolveConfig: () => resolveJoinerSweepConfig(),
     runnerDeps: defaultJoinerRunnerDeps,
     runRobot: runTurbifyJoinerRobot,
