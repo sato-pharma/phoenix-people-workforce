@@ -20,6 +20,7 @@
 import { useId, useRef, useState } from "react";
 
 import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
+import { DoubleVisitPlanSection } from "@/components/phoenix-crm/double-visit-plan-section";
 import { cairoDayOf, cairoStamp, countText, dayLabel, dayLabelWithYear, plural, weekLabel } from "@/components/phoenix-crm/format";
 import { matchesWords, PENDING_PILL } from "@/components/phoenix-crm/labels";
 import { PlanBoard } from "@/components/phoenix-crm/plan-board";
@@ -51,6 +52,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { fieldWeekStart, plannableWeeks } from "@/lib/phoenix-crm/calendar";
+import { withPlanDeadline } from "@/lib/phoenix-crm/plan-rules";
 import { teamTodayLine, teamTodayTone } from "@/lib/phoenix-crm/team-today";
 import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 import type {
@@ -68,7 +70,7 @@ import type {
 } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
-type TeamSection = "plans" | "edits" | "months" | "unplanned" | "requests" | "lists";
+type TeamSection = "plans" | "edits" | "months" | "unplanned" | "requests" | "lists" | "double";
 type ReviewFilter = "waiting" | "not_sent" | "approved" | "all";
 type ListFilter = "not_ready" | "ready" | "vacant" | "all";
 type TeamNotice = { tone: NoteTone; title: string; message?: string | null };
@@ -391,6 +393,16 @@ export function TeamTab({
       note: summary ? `${countText(summary.ready)} of ${countText(summary.ready + summary.notReady)} ready` : undefined,
     });
   }
+  // The district manager's double-visit plan (owner, 2026-10-02) — offered only to the people its
+  // route serves: the district manager himself, SFE and the Super Admin. Never the rep.
+  const doubleVisits = team.data?.doubleVisits ?? null;
+  if (doubleVisits) {
+    sectionOptions.push({
+      value: "double",
+      label: "Double visits",
+      note: doubleVisits.mode === "own" ? "Which rep you join, and when" : "The district managers' plans",
+    });
+  }
 
   return (
     <div className="min-w-0 scroll-mt-24" ref={topRef}>
@@ -543,6 +555,8 @@ export function TeamTab({
           {current === "requests" && team.data ? <RequestsSection idPrefix={idPrefix} onChanged={requestDecided} team={team.data} test={test} /> : null}
 
           {current === "lists" && team.data ? <ListsSection idPrefix={idPrefix} onOpenList={onOpenList} team={team.data} /> : null}
+
+          {current === "double" && doubleVisits ? <DoubleVisitPlanSection cairoToday={cairoToday} test={test} /> : null}
         </CrmPanel>
       )}
     </div>
@@ -819,7 +833,9 @@ function MonthsSection({
           </p>
           {row.plan?.dueOn ? (
             <p className="break-words text-xs font-semibold text-slate-500">
-              Due {dayLabelWithYear(row.plan.dueOn)}
+              {/* The hour as well as the day (owner, 2026-10-02): a reviewer judging "Sent late" has to
+                  be able to see the line that decided it. Its own compact date, the shared deadline. */}
+              Due {withPlanDeadline(dayLabelWithYear(row.plan.dueOn))}
               {row.plan.submittedAt ? ` · sent ${cairoStamp(row.plan.submittedAt)}` : ""}
             </p>
           ) : null}

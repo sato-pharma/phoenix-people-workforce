@@ -13,6 +13,7 @@ import {
   PLAN_REMINDER_JOB_SLUG,
   PLAN_REMINDER_MAX_NAMES,
   planReminderDay,
+  reminderTickOf,
   repReminder,
   territoriesOfStartedTeams,
 } from "../src/lib/phoenix-crm/plan-reminder-rules.ts";
@@ -78,27 +79,42 @@ export function runPhoenixCrmPlanReminderTests() {
   // ── The words, and the keys that stop a second send ─────────────────────────────────────────────
   {
     const due = { weekStart: "2026-10-03", dueOn: "2026-10-02", late: false };
-    const rep = repReminder({ hrId: "PD-0013", day: due, cairoToday: "2026-10-02", draftStarted: false });
-    assert.equal(rep.title, "Your week of Saturday 3 Oct is not sent yet");
-    // The hour, not only "tonight" (owner, 2026-10-02 — the deadline is 23:55 Cairo and he is shown it).
-    assert.ok(rep.message.startsWith("It is due tonight at 11:55 PM."), rep.message);
-    assert.equal(rep.idempotencyKey, "phoenix_crm:plan_reminder:rep:PD-0013:2026-10-03:2026-10-02", "one per rep per week per Cairo day");
-    const late = repReminder({ hrId: "PD-0013", day: { ...due, late: true }, cairoToday: "2026-10-03", draftStarted: true });
+    const rep = repReminder({ hrId: "PD-0013", day: due, cairoToday: "2026-10-02", tick: "noon", draftStarted: false });
+    // 🔴 The deadline LEADS the title, because a phone shows the heading and cuts it (owner, 2026-10-02).
+    assert.equal(rep.title, "Due tonight, 11:55 PM — your week of Saturday 3 Oct");
+    assert.ok(rep.message.startsWith("Your plan is not sent yet."), rep.message);
+    assert.ok(!rep.message.startsWith("It "), "the body carries its own subject now the title is the deadline");
+    assert.equal(rep.idempotencyKey, "phoenix_crm:plan_reminder:rep:PD-0013:2026-10-03:2026-10-02:noon", "one per rep per week per Cairo day per tick");
+    // 🔴 "Yes, remind again" (owner, 2026-10-02): the 17:57 tick tells whoever is STILL not sent, in its own words.
+    const evening = repReminder({ hrId: "PD-0013", day: due, cairoToday: "2026-10-02", tick: "evening", draftStarted: false });
+    assert.equal(evening.title, rep.title, "the deadline still leads the heading at 17:57");
+    assert.ok(evening.message.startsWith("Your plan is still not sent."), evening.message);
+    assert.notEqual(evening.idempotencyKey, rep.idempotencyKey, "the evening tick is its own send, so a rep still not sent hears it");
+    assert.equal(reminderTickOf(12), "noon");
+    assert.equal(reminderTickOf(17), "evening");
+    const late = repReminder({ hrId: "PD-0013", day: { ...due, late: true }, cairoToday: "2026-10-03", tick: "noon", draftStarted: true });
+    assert.equal(late.title, "Was due Friday 2 Oct, 11:55 PM — your week of Saturday 3 Oct", "the day it was due, with its hour");
     assert.ok(late.message.includes("A late week is still accepted."), "late is accepted and says so — never refused");
     assert.ok(late.message.includes("press Send"), late.message);
     assert.notEqual(late.idempotencyKey, rep.idempotencyKey, "a new day is a new key");
 
-    assert.equal(managerReminder({ hrId: "D-1", day: due, cairoToday: "2026-10-02", repNames: [] }), null, "a manager whose team has all sent hears nothing");
-    const one = managerReminder({ hrId: "D-1", day: due, cairoToday: "2026-10-02", repNames: ["Ebtissam Alaa ElDin Anwar"] });
-    assert.equal(one?.title, "1 of your reps has not sent the week of Saturday 3 Oct");
+    assert.equal(managerReminder({ hrId: "D-1", day: due, cairoToday: "2026-10-02", tick: "noon", repNames: [] }), null, "a manager whose team has all sent hears nothing");
+    const one = managerReminder({ hrId: "D-1", day: due, cairoToday: "2026-10-02", tick: "noon", repNames: ["Ebtissam Alaa ElDin Anwar"] });
+    // 🔴 His title leads with the deadline as well (owner, 2026-10-02) — same phone, same cut heading —
+    // and the evening tick's "still" rides INSIDE it rather than replacing it.
+    assert.equal(one?.title, "Due tonight, 11:55 PM — 1 of your reps has not sent the week of Saturday 3 Oct");
+    assert.equal(one?.message, "Not sent yet: Ebtissam Alaa ElDin Anwar.", "the names carry the body on their own");
+    const stillOne = managerReminder({ hrId: "D-1", day: due, cairoToday: "2026-10-02", tick: "evening", repNames: ["Ebtissam Alaa ElDin Anwar"] });
+    assert.equal(stillOne?.title, "Due tonight, 11:55 PM — 1 of your reps still has not sent the week of Saturday 3 Oct");
     const many = managerReminder({
       hrId: "D-1",
       day: due,
       cairoToday: "2026-10-02",
+      tick: "noon",
       repNames: Array.from({ length: PLAN_REMINDER_MAX_NAMES + 3 }, (_, index) => `Rep ${String(index).padStart(2, "0")}`),
     });
     assert.ok(many?.message.endsWith(", and 3 more."), "past the limit it counts the rest");
-    assert.equal(many?.idempotencyKey, "phoenix_crm:plan_reminder:dm:D-1:2026-10-03:2026-10-02");
+    assert.equal(many?.idempotencyKey, "phoenix_crm:plan_reminder:dm:D-1:2026-10-03:2026-10-02:noon");
   }
 
   // ── 🔴 Teams that started, and only those (owner, 2026-10-02) ─────────────────────────────────────
@@ -193,17 +209,19 @@ export function runPhoenixCrmPlanReminderTests() {
     assert.deepEqual(problems.map((problem) => problem.kind), ["holiday"], "a customer left on a holiday is named as a holiday, not as a Thursday morning");
 
     const plans = source("src/lib/phoenix-crm/server/plans.ts");
-    assert.ok(plans.includes("listTypes: holiday ? [] : planDayListTypes(date),"), "a holiday holds no list, as a Friday — so Suggest and every copy skip it");
+    // One day-off path since the same day: a holiday, or the rep's own approved leave (phoenix-crm-plan-screen-extras).
+    assert.ok(plans.includes("const dayOff = planDayOff(date, input.holidays, input.leave);"), "a holiday is a day off");
+    assert.ok(plans.includes("listTypes: dayOff ? [] : planDayListTypes(date),"), "a holiday holds no list, as a Friday — so Suggest and every copy skip it");
     assert.ok(plans.includes("loadPlanHolidays(weekStart, addDaysIso(weekStart, 5)),"), "the week planner and the save both read the week's holidays");
     assert.equal((plans.match(/\bholidays,\n/g) ?? []).length >= 2, true, "and hand them to the day builder and the save check");
     const month = source("src/lib/phoenix-crm/server/monthly-plans.ts");
     assert.ok(month.includes("loadPlanHolidays(addDaysIso(monthStart, -14), addDaysIso(monthEndOf(monthStart), 14)),"), "the month board reads them in its first wave");
-    assert.ok(month.includes("isRamadan, activities, starts, holidays });"), "and every week of it is built with them");
+    assert.ok(month.includes("isRamadan, activities, starts, holidays, leave });"), "and every week of it is built with them");
     const holidaysReader = source("src/lib/phoenix-crm/server/plan-holidays.ts");
     assert.ok(holidaysReader.includes("getConfirmedNationalHolidays(period)"), "the company's confirmed calendar — the 6 → 8 October move included");
     assert.ok(holidaysReader.includes(".catch("), "and a calendar that cannot be read leaves the day plannable, never breaks the board");
     const panel = source("src/components/phoenix-crm/plan-week-panel.tsx");
-    assert.ok(panel.includes("note: `Day off · ${day.holiday}`,"), "the day picker names the holiday");
+    assert.ok(panel.includes("const off = dayOffOf(day);") && panel.includes("note: `Day off · ${off.name}`,"), "the day picker names the holiday");
     assert.ok(panel.includes("disabled: counts.AM + counts.PM === 0,"), "and greys it, unless something is still on it to take off");
     const board = source("src/components/phoenix-crm/plan-board.tsx");
     assert.ok(board.includes(".find((entry) => entry.listTypes.length > 0)"), "\"Next day\" steps over a holiday");

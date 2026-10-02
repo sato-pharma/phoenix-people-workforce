@@ -161,6 +161,12 @@ const ROUTE_GATES: RouteGate[] = [
   get("missed-records", "update"),
   post("missed-records", "update"),
   get("team"),
+  // The district manager's double-visit plan (owner, 2026-10-02): which of his reps he joins on which
+  // day, AM or PM. The rep never sees it. `read`, narrowed in the service to that district manager, the
+  // SFE Manager and the Super Admin; `create` for a half-day, narrowed to the district manager's OWN plan
+  // (and the Super Admin's test mode). SFE holds no `create`, so it reads and never writes.
+  get("double-visit-plans"),
+  post("double-visit-plans", "create"),
   // The Doctors directory: validated customers across territories, scoped downward on the server.
   get("doctors"),
   // There is no "integrity" gate here because there is no integrity ROUTE (2026-09-26). It had no
@@ -512,6 +518,19 @@ const LATER_MIGRATIONS = [
   // plan's fifth event insert), and phoenix_crm_plan_transition replaced with its live body, its due
   // date read from phoenix_crm_week_due_on. It replaces no save_visit, so it appends safely at the end.
   "supabase/migrations/20261002002251_phoenix_crm_plan_edit_requests.sql",
+  // The district manager's double-visit plan (owner, 2026-10-02): one new table and one brand-new
+  // function (one half-day set, changed or cleared). It replaces nothing, so it appends safely at the end.
+  "supabase/migrations/20261002120003_phoenix_crm_double_visit_plans.sql",
+  // The manager's review (owner, 2026-10-02): one nullable column on the plan with its CHECK (the ONE day
+  // a reviewer returned), and phoenix_crm_plan_transition replaced with its live body plus the one-day
+  // return and the snapshot each send keeps on its own event — still ONE plan-event insert. No table, no
+  // new function, no save_visit, so it appends safely at the end.
+  "supabase/migrations/20261002120049_phoenix_crm_plan_review.sql",
+  // Still planned after a one-day return (owner, 2026-10-02). It REPLACES phoenix_crm_save_visit, so it
+  // is now the LAST entry that does — liveMigrationSql applies each replacement in order and the last
+  // wins — and it restates phoenix_crm_plan_transition with both the one-day return above and the 23:55
+  // deadline (20261002122000) made from one base, still ONE plan-event insert. No table, no new function.
+  "supabase/migrations/20261002125244_phoenix_crm_still_planned_after_one_day_return.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

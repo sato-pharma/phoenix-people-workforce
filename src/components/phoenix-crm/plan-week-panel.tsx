@@ -15,6 +15,13 @@
  *
  * Its six days sit under it as tabs; the day on screen is PlanDayPanel.
  *
+ * 🔴 Owner, 2026-10-02 — "Only that day" reopens: a reviewer may return ONE day of a sent week
+ * (PlanDecision's "Return one day"). On the rep's own week that day is the only one he can open — the
+ * others are greyed, "As sent" — and the week says "Your manager returned Tuesday 6 Oct: <note>". The
+ * server holds the same line (`assertRepMayChangeWeek` → `savePlan`), so greying is never the guard.
+ * The days left as sent still count as PLANNED ("Still planned", owner, 2026-10-02 — plan-rules.ts
+ * `planDayStatus`); only the returned day's visits wait for the week to be sent again.
+ *
  * Beside each copy sits its suggestion (owner, 2026-09-30): "Suggest the week" beside "Copy last week",
  * "Suggest this day" beside "Copy a day". Both go through `onCopied`, the board's one way into the
  * draft, so a suggestion is reviewed and saved exactly like a copy. The rep sees them on his own plan
@@ -38,12 +45,16 @@ import { dayActivityLabel, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/
 import { planEditRepNote, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { startsOn, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
 import type { DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
-import type { PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
-import { activityOn, daySuggestBlock, weekSuggestBlock, type SuggestBlock, type SuggestInput } from "@/lib/phoenix-crm/plan-suggest";
+import { returnableDays } from "@/lib/phoenix-crm/plan-review-rules";
+import { dayOffPhrase, planDayLabel, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
+import { activityOn, daySuggestBlock, weekSuggestBlock, type GradeTargets, type SuggestBlock, type SuggestInput } from "@/lib/phoenix-crm/plan-suggest";
 import {
   activitiesOn,
   dayCounts,
   dayFullness,
+  dayOffOf,
+  emptyDayText,
+  emptyPlanDays,
   indexCustomers,
   resolveDayRows,
   type DailyCaps,
@@ -82,9 +93,51 @@ export type WeekHold = "changed" | "unchecked";
 /** "Sat 10 Oct has 16 PM. A day holds 15 PM at most." — a problem the server would refuse, said to the rep. */
 export function problemText(problem: DraftProblem): string {
   const day = dayLabel(problem.date);
-  if (problem.kind === "holiday") return `${day} is a public holiday (${problem.holiday}). Take ${problem.name} off it.`;
+  if (problem.kind === "holiday") return `${day} is ${dayOffPhrase({ kind: "holiday", name: problem.holiday })}. Take ${problem.name} off it.`;
+  if (problem.kind === "leave") return `${day} is ${dayOffPhrase({ kind: "leave", name: problem.leave })}. Take ${problem.name} off it.`;
   if (problem.kind === "morning") return `${day} is a morning for AM only. Take ${problem.name} off it.`;
   return `${day} has ${problem.count} ${problem.listType}. A day holds ${problem.cap} ${problem.listType} at most.`;
+}
+
+/**
+ * A week returned for ONE day (owner, 2026-10-02): the rep reads "Your manager returned Tuesday 6 Oct:
+ * <note>" and what to do; a reviewer reads the same day as the one left open to the rep.
+ */
+export function ReturnedDayNote({
+  className,
+  day,
+  decidedBySfe,
+  note,
+  today,
+  viewerIsRep,
+}: {
+  className?: string;
+  day: string;
+  decidedBySfe: boolean;
+  note: string | null;
+  today: string;
+  viewerIsRep: boolean;
+}) {
+  const name = planDayLabel(day);
+  return (
+    <CrmNote className={className} tone="warn">
+      <span className="block font-black">
+        {viewerIsRep ? `${decidedBySfe ? "SFE" : "Your manager"} returned ${name}` : `Returned ${name} only`}
+        {note ? (
+          <>
+            : <span className="whitespace-pre-line font-medium">{note}</span>
+          </>
+        ) : null}
+      </span>
+      <span className="mt-1 block">
+        {viewerIsRep
+          ? day < today
+            ? `${name} has passed, so it can no longer change. Send the week again as it is.`
+            : `Change that day, then send the week again. The other days stay as you sent them, and your visits on them still count as planned. Until you send the week again, your visits on ${name} count as off-plan.`
+          : "Only that day is open for the rep. Every other day stays as he sent it, and his visits on those days still count as planned."}
+      </span>
+    </CrmNote>
+  );
 }
 
 /** A week or day option: the one on screen carries a tick, so it reads without the colour too. */
@@ -146,14 +199,18 @@ function DayPair({ counts, full, listTypes }: { counts: Record<PhoenixCrmListTyp
 
 export function PlanWeekPanel({
   activities,
+  autosave = false,
   busy,
   caps,
+  changedDays,
   customers,
   dayFocus,
   dirty,
   editable,
+  editLocked,
   filter,
   filterOptions,
+  gradeTargets,
   hold,
   idPrefix,
   items,
@@ -174,6 +231,7 @@ export function PlanWeekPanel({
   onStarts,
   problems,
   query,
+  reviewList,
   reviewerSentence,
   seatId,
   section,
@@ -190,20 +248,36 @@ export function PlanWeekPanel({
 }: {
   /** The week's drafted activities, one of each kind a day (editable weeks only). */
   activities: ReadonlyArray<PlannedActivity>;
+  /**
+   * The rep's own board, which saves itself as he ticks (owner, 2026-10-02): no "Unsaved changes" pill —
+   * the board's one status line says where the save stands — and no word asking him to press a Save
+   * that is not there.
+   */
+  autosave?: boolean;
   busy: WeekBusy | null;
   caps: DailyCaps;
+  /** A reviewer's steps (owner, 2026-10-02): the days a re-sent week changed since the send before. */
+  changedDays?: ReadonlySet<string>;
   customers: ReadonlyArray<PlannerCustomer>;
   /** The rep's step form: the one list (AM or PM) step 3 is on. Unset shows the whole day. */
   dayFocus?: PhoenixCrmListType;
   dirty: boolean;
   /** The rep may still change this week: it is his, open, and a draft or returned. */
   editable: boolean;
+  /**
+   * Nothing may land in the draft: the ticks, the copies and the suggestions. `locked` when unset. The
+   * rep's own board keeps them open while it saves itself and reads itself back, which locks the
+   * week's buttons (Send, Ask to edit) but never his ticks.
+   */
+  editLocked?: boolean;
   filter: DoctorFilter;
   filterOptions: {
     bricks: ReadonlyArray<{ value: string; label: string }>;
     grades: ReadonlyArray<PhoenixCrmGrade>;
     specialities: ReadonlyArray<string>;
   };
+  /** The grade numbers (Settings): a validated customer's row reads his month against them. */
+  gradeTargets: GradeTargets;
   /** The week's draft is held on the page through a save that failed or crossed another. */
   hold: WeekHold | null;
   idPrefix: string;
@@ -215,7 +289,8 @@ export function PlanWeekPanel({
   onAskToEdit: () => void;
   onCopied: (placements: CopiedPlacements) => void;
   onDay: (date: string) => void;
-  onDecide: (action: PlanDecisionAction, note: string) => Promise<boolean>;
+  /** A decision on the week; `day` names the ONE day returned (owner, 2026-10-02), else null. */
+  onDecide: (action: PlanDecisionAction, note: string, day: string | null) => Promise<boolean>;
   /** "Fill the day for me" on the step form: the day's suggestion, applied to the draft. */
   onFillDay?: () => void;
   onFilter: (next: DoctorFilter) => void;
@@ -228,6 +303,8 @@ export function PlanWeekPanel({
   onStarts: (date: string, next: PlanDayStarts) => void;
   problems: ReadonlyArray<DraftProblem>;
   query: string;
+  /** A reviewer's steps (owner, 2026-10-02): the one list (AM or PM) his day step reads. Unset shows the whole day. */
+  reviewList?: PhoenixCrmListType;
   /** "Ahmed Samir reviews it." */
   reviewerSentence: string;
   seatId: string;
@@ -252,6 +329,7 @@ export function PlanWeekPanel({
   week: MonthlyWeekView;
 }) {
   const [confirm, setConfirm] = useState<"send" | "ask" | null>(null);
+  const draftLocked = editLocked ?? locked;
 
   const byId = indexCustomers(customers);
   const { plan } = week;
@@ -266,6 +344,8 @@ export function PlanWeekPanel({
     { AM: 0, PM: 0 },
   );
   const placed = totals.AM + totals.PM;
+  // The days he left empty, named where he sends (owner, 2026-10-02) — read from the draft on screen.
+  const emptyDays = editable ? emptyPlanDays(week, items, activities, byId) : [];
   const editingDay = editable && selectedDay.editable;
   const target = { week, items };
 
@@ -322,9 +402,20 @@ export function PlanWeekPanel({
             </div>
             <span className="flex max-w-full flex-wrap gap-1">
               <CrmPill tone={PLAN_STATUS_TONE[status ?? "none"]}>{week.statusLabel}</CrmPill>
-              {dirty ? <CrmPill tone="orange">Unsaved changes</CrmPill> : null}
+              {dirty && !autosave ? <CrmPill tone="orange">Unsaved changes</CrmPill> : null}
             </span>
           </div>
+          {/* The day his manager returned, said where he chooses the day (owner, 2026-10-02). */}
+          {viewerIsRep && week.returnedDay ? (
+            <ReturnedDayNote
+              className="mt-3"
+              day={week.returnedDay}
+              decidedBySfe={plan?.decidedBySfe ?? false}
+              note={plan?.decisionNote ?? null}
+              today={today}
+              viewerIsRep
+            />
+          ) : null}
         </CrmBlock>
       ) : null}
       {showHeader ? (
@@ -335,7 +426,7 @@ export function PlanWeekPanel({
             {plan?.submittedLate ? <CrmPill tone="warn">Sent late</CrmPill> : null}
             {week.overdue ? <CrmPill tone="bad">Overdue</CrmPill> : null}
             {!week.open ? <CrmPill>Passed</CrmPill> : null}
-            {dirty ? <CrmPill tone="orange">Unsaved changes</CrmPill> : null}
+            {dirty && !autosave ? <CrmPill tone="orange">Unsaved changes</CrmPill> : null}
           </span>
         }
         className="border-l-4 border-t border-slate-100 border-l-orange-500"
@@ -369,7 +460,16 @@ export function PlanWeekPanel({
             This week was due {week.dueOnLabel} and was sent {plan.submittedAt ? cairoStamp(plan.submittedAt) : "after it"}.
           </CrmNote>
         ) : null}
-        {plan?.decisionNote && (status === "returned" || status === "approved") ? (
+        {week.returnedDay ? (
+          <ReturnedDayNote
+            className="mt-3"
+            day={week.returnedDay}
+            decidedBySfe={plan?.decidedBySfe ?? false}
+            note={plan?.decisionNote ?? null}
+            today={today}
+            viewerIsRep={viewerIsRep}
+          />
+        ) : plan?.decisionNote && (status === "returned" || status === "approved") ? (
           <CrmNote className="mt-3" title={status === "returned" ? "What to change" : "Manager's note"} tone={status === "returned" ? "warn" : "good"}>
             <span className="block whitespace-pre-line">{plan.decisionNote}</span>
           </CrmNote>
@@ -383,6 +483,7 @@ export function PlanWeekPanel({
                 {countText(totals.AM)} AM · {countText(totals.PM)} PM across the week.{dirty ? " Your changes are saved first." : ""} {reviewerSentence} Once
                 it is sent, changing it needs your manager, SFE and HR.
               </p>
+              <EmptyDaysNote dates={emptyDays} />
               {problems.length > 0 ? (
                 <CrmNote title="Fix these first" tone="bad">
                   <ProblemList onDay={onDay} problems={problems} />
@@ -406,12 +507,15 @@ export function PlanWeekPanel({
               </div>
             </div>
           ) : (
-            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
-              <CrmButton busy={busy === "send"} disabled={locked || placed === 0} onClick={() => setConfirm("send")} variant="primary">
-                {status === "returned" ? "Send this week again" : "Send this week"}
-              </CrmButton>
-              {placed === 0 ? <span className="text-xs font-semibold leading-5 text-slate-500">Place at least one customer before sending the week.</span> : null}
-            </div>
+            <>
+              <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
+                <CrmButton busy={busy === "send"} disabled={locked || placed === 0} onClick={() => setConfirm("send")} variant="primary">
+                  {status === "returned" ? "Send this week again" : "Send this week"}
+                </CrmButton>
+                {placed === 0 ? <span className="text-xs font-semibold leading-5 text-slate-500">Place at least one customer before sending the week.</span> : null}
+              </div>
+              {placed > 0 ? <EmptyDaysNote className="mt-3" dates={emptyDays} /> : null}
+            </>
           )
         ) : null}
 
@@ -482,7 +586,9 @@ export function PlanWeekPanel({
       {hold === "unchecked" ? (
         <CrmBlock className="border-t border-slate-100">
           <CrmNote title="Phoenix could not confirm the save" tone="warn">
-            Your ticks are kept on this page. Check the connection, then save again.
+            {autosave
+              ? "Your ticks are kept on this page. Check the connection: they save again once it is back, or press Try again."
+              : "Your ticks are kept on this page. Check the connection, then save again."}
           </CrmNote>
         </CrmBlock>
       ) : null}
@@ -499,8 +605,9 @@ export function PlanWeekPanel({
           <div className="grid min-w-0 gap-4 lg:grid-cols-2">
             {suggest ? (
               <PlanSuggestMenu
+                autosave={autosave}
                 blockedReason={weekReason}
-                disabled={locked}
+                disabled={draftLocked}
                 input={suggestInput}
                 key={`suggest-${week.weekStart}`}
                 onPlace={onCopied}
@@ -509,9 +616,10 @@ export function PlanWeekPanel({
             ) : null}
             {editable ? (
               <PlanCopyMenu
+                autosave={autosave}
                 caps={caps}
                 customers={customers}
-                disabled={locked}
+                disabled={draftLocked}
                 key={week.weekStart}
                 onPlace={onCopied}
                 scope={{ kind: "week", target }}
@@ -534,13 +642,17 @@ export function PlanWeekPanel({
             const activityTypes = (editable && day.editable ? activitiesOn(activities, day.date) : day.activities).map((entry) => entry.activityType);
             const counts = dayCountsOf(day);
             const full = dayFullness(counts, caps, day.listTypes);
-            // A public holiday is a day off (owner, 2026-10-02): greyed, named, and never opened —
-            // unless something is still on it, which he must be able to reach to take off.
-            if (day.holiday) {
+            // One day returned (owner, 2026-10-02): on his own week every other day is greyed, as sent.
+            const asSent = viewerIsRep && editable && week.returnedDay !== null && day.date !== week.returnedDay;
+            // A day off (owner, 2026-10-02) — a public holiday, or a full day of his own approved leave —
+            // is greyed, named, and never opened, unless something is still on it, which he must be able
+            // to reach to take off.
+            const off = dayOffOf(day);
+            if (off) {
               return {
                 value: day.date,
                 label: <ChoiceLabel chosen={day.date === selectedDay.date}>{dayLabel(day.date)}</ChoiceLabel>,
-                note: `Day off · ${day.holiday}`,
+                note: `Day off · ${off.name}`,
                 disabled: counts.AM + counts.PM === 0,
               };
             }
@@ -552,8 +664,11 @@ export function PlanWeekPanel({
                   {day.date === today ? "Today · " : null}
                   <DayPair counts={counts} full={full} listTypes={day.listTypes} />
                   {activityTypes.length > 0 ? ` · ${activityTypes.map(dayActivityLabel).join(", ")}` : null}
+                  {asSent ? " · As sent" : null}
+                  {changedDays?.has(day.date) ? " · Changed since the last send" : null}
                 </>
               ),
+              disabled: asSent || undefined,
               tone: full.day ? ("good" as const) : undefined,
             };
           })}
@@ -569,10 +684,11 @@ export function PlanWeekPanel({
         copyMenu={
           editingDay ? (
             <PlanCopyMenu
+              autosave={autosave}
               caps={caps}
               compact={dayFocus !== undefined}
               customers={customers}
-              disabled={locked}
+              disabled={draftLocked}
               key={selectedDay.date}
               onPlace={onCopied}
               scope={{ kind: "day", target, date: selectedDay.date }}
@@ -587,10 +703,11 @@ export function PlanWeekPanel({
         filter={filter}
         filterOptions={filterOptions}
         focus={dayFocus}
+        gradeTargets={gradeTargets}
         idPrefix={`${idPrefix}-${week.weekStart}`}
         items={items}
         key={`${selectedDay.date}|${dayFocus ?? "day"}`}
-        locked={locked}
+        locked={draftLocked}
         onActivity={(activityType, next) => onActivity(selectedDay.date, activityType, next)}
         onFill={editingDay ? onFillDay : undefined}
         planCopyMenu={
@@ -600,10 +717,11 @@ export function PlanWeekPanel({
           dayFocus !== undefined && editable ? (
             <>
               <PlanCopyMenu
+                autosave={autosave}
                 caps={caps}
                 compact
                 customers={customers}
-                disabled={locked}
+                disabled={draftLocked}
                 key={`week-${week.weekStart}`}
                 onPlace={onCopied}
                 scope={{ kind: "week", target }}
@@ -611,10 +729,11 @@ export function PlanWeekPanel({
                 test={test}
               />
               <PlanCopyMenu
+                autosave={autosave}
                 caps={caps}
                 compact
                 customers={customers}
-                disabled={locked}
+                disabled={draftLocked}
                 key={`period-${week.weekStart}`}
                 onPlace={onCopied}
                 scope={{ kind: "month", monthStart: monthStartOf(week.weekStart), weeks: [target] }}
@@ -630,13 +749,15 @@ export function PlanWeekPanel({
         onRemove={(customerId) => onRemove(selectedDay.date, customerId)}
         onStarts={(next) => onStarts(selectedDay.date, next)}
         query={query}
+        reviewList={reviewList}
         showSpread={showSpread}
         starts={editingDay ? startsOn(starts, selectedDay.date) : selectedDay.starts}
         suggestMenu={
           suggest ? (
             <PlanSuggestMenu
+              autosave={autosave}
               blockedReason={dayReason}
-              disabled={locked}
+              disabled={draftLocked}
               input={suggestInput}
               key={`suggest-${selectedDay.date}`}
               onPlace={onCopied}
@@ -659,6 +780,7 @@ export function PlanWeekPanel({
           key={`${plan.planId}|${plan.version}`}
           locked={locked}
           onDecide={onDecide}
+          returnDays={week.canReturn ? returnableDays(week.days, today).map((day) => day.date) : undefined}
           subject="week"
         />
       ) : null}
@@ -672,6 +794,25 @@ export function PlanWeekPanel({
         </CrmBlock>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The days still his to change that he left empty — no customer and no other activity — named where he
+ * sends (owner, 2026-10-02: on 1 October 15 working days went out empty across 14 sent weeks). One note
+ * he reads and can still press Send past: it never refuses the week and never greys the button.
+ */
+function EmptyDaysNote({ className, dates }: { className?: string; dates: ReadonlyArray<string> }) {
+  if (dates.length === 0) return null;
+  return (
+    <CrmNote className={className} title={dates.length === 1 ? "1 day is empty" : `${countText(dates.length)} days are empty`} tone="warn">
+      {dates.map((date) => (
+        <span className="block" key={date}>
+          {emptyDayText(date)}
+        </span>
+      ))}
+      <span className="mt-1 block">Plan them, or send the week as it is.</span>
+    </CrmNote>
   );
 }
 

@@ -169,6 +169,7 @@ import { runCrmContactCodeTests } from "./crm-contact-code.test.ts";
 import { runCustomerGeographySpineTests } from "./customer-geography-spine.test.ts";
 import { runCustomer360Tests, runCustomer360AlsoKnownAsTests } from "./customer-360.test.ts";
 import { runMarketingValidationDeskAliasTests } from "./marketing-validation-desk-confirmed-aliases.test.ts";
+import { runMarketingRoiSalesDataAsOfTests } from "./marketing-roi-sales-data-asof.test.ts";
 import { runDirectOrderPickerAliasTests } from "./direct-order-picker-confirmed-aliases.test.ts";
 import { runPhoenixCrmDuplicateCustomerTests } from "./phoenix-crm-duplicate-customers.test.ts";
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
@@ -1630,6 +1631,8 @@ import { runPhoenixCrmFitsTheScreenTests } from "./phoenix-crm-fits-the-screen.t
 import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.ts";
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
 import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
+import { runPhoenixCrmFieldReachTests } from "./phoenix-crm-field-reach.test.ts";
+import { runPhoenixCrmApprovalNudgeTests } from "./phoenix-crm-approval-nudge.test.ts";
 import { runPhoenixCrmLastVisitProductsTests } from "./phoenix-crm-last-visit-products.test.ts";
 import { runPhoenixCrmVisitOutcomeTests } from "./phoenix-crm-visit-outcome.test.ts";
 import { runPhoenixCrmSamplesTests } from "./phoenix-crm-samples.test.ts";
@@ -1673,6 +1676,7 @@ import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.t
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
 import { runPhoenixCrmListCustomerFixtureTests } from "./phoenix-crm-list-customer-fixture.test.ts";
 import { runPhoenixCrmPlanSuggestTests } from "./phoenix-crm-plan-suggest.test.ts";
+import { runPhoenixCrmPlanInsightTests } from "./phoenix-crm-plan-insight.test.ts";
 import { runCustomerIdentitySuggestionTests } from "./customer-identity-suggestions.test.ts";
 import { runPhoenixCrmWave2ReportTests } from "./phoenix-crm-wave2-reports.test.ts";
 import { runPhoenixCrmListAdmissionTests } from "./phoenix-crm-list-admission.test.ts";
@@ -1683,8 +1687,11 @@ import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
 import { runPhoenixCrmPlanReminderTests } from "./phoenix-crm-plan-reminder.test.ts";
+import { runPhoenixCrmPlanScreenExtrasTests } from "./phoenix-crm-plan-screen-extras.test.ts";
 import { runPhoenixCrmStepFormTests } from "./phoenix-crm-step-form.test.ts";
 import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-requests.test.ts";
+import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
+import { runPhoenixCrmPlanReviewTests } from "./phoenix-crm-plan-review.test.ts";
 import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.ts";
 import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
@@ -3498,6 +3505,10 @@ await runTest("Customer 360 hides confidential money and never offers a picker w
 await runTest(
   "the marketing validation desk's \"also known as\" is a note and never a verdict: confirmed links only, read from the VISIBLE links, never deciding validationStatus, and in neutral ink on a screen that records permanent verdicts",
   runMarketingValidationDeskAliasTests,
+);
+await runTest(
+  "'sales loaded through' means every-month-set LOADED, not the newest period any batch mentions, and the ROI duration warns at entry without ever being capped",
+  runMarketingRoiSalesDataAsOfTests,
 );
 await runTest(
   "the direct-order pharmacy picker says what else a shop is called: confirmed links only, attached after the wholesaler guard and the area scope, and a failure costs the footnote not the list",
@@ -5771,6 +5782,16 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM's field day and reach (owner, 2026-10-02): a Directions link to the customer's SAVED place — the destination only, Google Maps, no key, nothing about where the rep is, and no link with no usable point — on the visit flow's customer card (under it, never inside its button), the visit form's header and his planned day; one line for his own field week, his sent plan against his countable visits, AM · PM · Pharmacies apart and never totalled, read in the day's one parallel wave; and a 'Get Phoenix CRM messages on Telegram' card at the top of Phoenix CRM for the reps and managers until the server says they are connected, through the ONE existing connect flow, hidden for the Cairo day by Later with every storage touch wrapped",
+  runPhoenixCrmFieldReachTests,
+);
+
+await runTest(
+  "Phoenix CRM nudges a slow approver (owner, 2026-10-02): once a day at 09:57 Cairo, whoever has a list request, an off-plan visit or a request to edit a week waiting on him for more than 24 hours at his step — the territory's reviewer by the decide rule, or the SFE Managers by the plan-edit notices' own resolver — gets ONE message naming the counts by kind, real entries in open lines only, an item with nobody at its step told to nobody, in-app, by Telegram and to the phone and never by email, one key per approver per Cairo day, behind CRON_SECRET with its heartbeat, cron job, registry entry and doc row declared together on a minute no other job holds",
+  runPhoenixCrmApprovalNudgeTests,
+);
+
+await runTest(
   "Phoenix CRM has a door in the portal sidebar (owner, 2026-09-23: \"put it in the sidebar\" — until then the module's only door was a button inside My Visits, and 71 of the 73 rep seats with a reference list waiting had never opened it; the row is driven by the module's own gate, never by a role list, it is destructured by the rail builder, every page that builds its own portal chrome asks the same gate, and it points at the portal address under its own name)",
   runPhoenixCrmPortalSidebarTests,
 );
@@ -5855,6 +5876,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM plan insight (owner, 2026-10-02): every row of the day's plan says when the customer was last seen - the latest of iReports360 and Phoenix - with his month beside it only once he is validated; a customer not validated yet carries iReports360's usual days - only a weekday he was seen on at least twice in 13 weeks, so one visit or scattered visits give no hint and no preference - as a quiet hint and Suggest offers him on those weekdays first, an order and never a filter, until his own days and hours win; and a follow-up his latest visit left due this week goes first within the caps, his list, a day he receives and his grade - all read inside the planners' existing wave",
+  runPhoenixCrmPlanInsightTests,
+);
+
+await runTest(
   "Phoenix CRM Team today (owner, 2026-09-30: easiest, yet controlled): each rep's visit day on his managers' Team tab - the sent plan's progress AM and PM apart and what he logged - read in batches, never per rep, and carrying no integrity signal",
   runPhoenixCrmTeamTodayTests,
 );
@@ -5915,6 +5941,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM's weekly plan screen (owner, 2026-10-02): a full day of the rep's own approved leave is a day off exactly like a public holiday — named \"Day off · Annual Vacation\", empty so Suggest and every copy skip it, never the opening day, refused by a save in a sentence, while a half day is not one and a leave read that fails leaves the day plannable; Send and its confirmation name each working day still his that holds nothing (\"Tuesday 6 Oct has no customers and no activity.\") and never refuse the send; and his own board saves itself 1.5 seconds after his last change through the very save the Save button used — a tick made while it travels survives its answer, what was just saved never saves again in a loop, a read that lands late never sets his draft aside, Send flushes what waits, leaving or hiding the page sends it, the guard asks only about work that cannot save itself, nothing but that save runs from an effect, and a manager's board keeps its Save button",
+  runPhoenixCrmPlanScreenExtrasTests,
+);
+
+await runTest(
   "Phoenix CRM plan making and Add visit wear Report It's step form (owner, 2026-10-02): the same strip, numbered rail, step heading and Back / Next as Report It, square and never cut short; the rep's plan is Week, Day, Customers, Send, where a tap on his week or a day moves him on and a manager in Team keeps his whole board; Add visit is Visit type, Customer, Products and comment, Log the visit, where a tap on a type or a customer moves him on, the visit form stays mounted across its last two steps and its one Log visit is on the last; and inside the form a screen loses only its own frame",
   runPhoenixCrmStepFormTests,
 );
@@ -5922,6 +5953,16 @@ await runTest(
 await runTest(
   "Phoenix CRM changes a sent week only through a request (owner, 2026-10-01): the district manager approves, then SFE, then HR — Omar Gawish alone, on a real request — acknowledges, and only that reopens the week, inside the same transaction and under the plan's own lock; a vacant chain starts at SFE, a refusal needs a note, no step is skipped or taken twice, a passed week's request is closed as expired rather than raised, the step is read from the row and never the body, and every step tells the next person, the rep, the district manager and SFE",
   runPhoenixCrmPlanEditRequestTests,
+);
+
+await runTest(
+  "Phoenix CRM's double-visit plan is the district manager's own and the rep never sees it (owner, 2026-10-02): he plans which of his reps he joins on which day, AM or PM — this week from today on and the coming week, one rep a half-day, Thursday a morning, never a Friday or a public holiday, never a vacant seat, another district's rep or himself — and a day that has passed stays read-only; a planned half-day is done by the manager report's own rule, judged only once the day's visits have closed, and the week reads Planned 3 · done 2; the rep, another district manager, a national manager and the CEO are refused, SFE reads every plan and writes none, the Super Admin writes only in the test world, a test account only as its district manager; the table is RLS-locked to the service role with is_test in its key and the Cairo day stated, a half-day changed on another screen is refused, nothing the rep touches reads it, and nothing about it notifies anyone",
+  runPhoenixCrmDoubleVisitPlanTests,
+);
+
+await runTest(
+  "Phoenix CRM reviews a sent week as steps (owner, 2026-10-02 — managers approved 13 weeks of 51-94 customers in a median two minutes): a reviewer opening a week waiting for his decision walks Week, Day, Customers and Decide, the day read AM then PM and nothing sent but by a press, while the rep's own form and a week he only reads stay as they were; coverage counts VALIDATED customers only, per list and grade against tallyDoctorMonth's one target rule, over the month's sent and approved weeks plus this one, names who is left out, and says in words when nobody is validated yet; each send keeps what was sent, so a re-sent week shows only the customers and activities added and removed; and a reviewer may return ONE day, which alone reopens for the rep — the server hands the database that day and nothing else, sending again clears it, and an acknowledged edit after it opens the whole week; and the rep's visits on the OTHER days still count as planned (\"Still planned\", owner, 2026-10-02) — one day rule for Planned visit, Today, the missed record, the Team tab, the frequency report and the review's coverage, the same one phoenix_crm_save_visit stamps a visit with, beside a transition that carries both the one-day return and the 23:55 deadline",
+  runPhoenixCrmPlanReviewTests,
 );
 
 await runTest(

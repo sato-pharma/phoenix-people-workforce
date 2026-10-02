@@ -55,10 +55,15 @@ import {
   exceptionLabel,
   isPlanEditable,
   isUuid,
+  onlyReturnedDayEditable,
   parsePlanItems,
   PLAN_DECISION_NOTE_MAX,
+  planDayLabel,
+  planDayOff,
   planStatusLabel,
   resolvePlanItems,
+  standingReturnedDay,
+  type PlanDayOff,
   type PlanRuleCustomer,
 } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -94,10 +99,12 @@ import {
   type PlannedActivityRow,
 } from "@/lib/phoenix-crm/server/plan-activities";
 import { loadPlanDayStarts, savePlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
-import { assertRepMayChangeWeek, loadPlanEditState, repStateOf } from "@/lib/phoenix-crm/server/plan-edits";
+import { loadSeatDaysOff } from "@/lib/phoenix-crm/server/leave-days";
+import { assertRepMayChangeWeek, editAcknowledgedAt, loadPlanEditState, repStateOf } from "@/lib/phoenix-crm/server/plan-edits";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
+import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
-import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
+import type { PlannerCustomer, PlannerInsight } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -121,7 +128,7 @@ export function statusOf(value: unknown): PhoenixCrmPlanStatus {
 // ONE string literal, never joined with `+`: the Supabase client reads the select list at the TYPE level,
 // and a joined string is a plain `string`, which types every row as an error (TS2352 in CI, 2026-09-30).
 export const PLAN_COLUMNS =
-  "id, seat_id, week_start, status, version, submitted_at, submitted_by_hr_id, decided_at, decided_by_hr_id, decided_by_role, decision_note, created_by_hr_id, updated_at, is_test, due_on, submitted_late, submitted_via";
+  "id, seat_id, week_start, status, version, submitted_at, submitted_by_hr_id, decided_at, decided_by_hr_id, decided_by_role, decision_note, created_by_hr_id, updated_at, is_test, due_on, submitted_late, submitted_via, returned_day";
 
 /** Each item with its customer and place as they are now, so a customer who left the list shows. */
 export const ITEM_COLUMNS =
@@ -153,6 +160,12 @@ export type PlanSummary = {
   submittedLate: boolean;
   /** Sent on its own, or as part of the month. Null until sent. */
   submittedVia: "week" | "month" | null;
+  /**
+   * The ONE day a reviewer returned, as stored (owner, 2026-10-02: "Only that day" reopens) — null for a
+   * week returned whole and every week that is not returned. Whether it still stands, or was lifted by
+   * an acknowledged edit, is `standingReturnedDay` (plan-rules.ts).
+   */
+  returnedDay: string | null;
 };
 
 export function planPeople(rows: ReadonlyArray<Row>): Array<string | null> {
@@ -179,6 +192,7 @@ export function mapPlan(row: Row, names: PeopleNames): PlanSummary {
     dueOn: textOrNull(row.due_on) ?? weeklyPlanDueOn(String(row.week_start)),
     submittedLate: row.submitted_late === true,
     submittedVia: row.submitted_via === "week" || row.submitted_via === "month" ? row.submitted_via : null,
+    returnedDay: status === "returned" ? textOrNull(row.returned_day) : null,
   };
 }
 
@@ -251,10 +265,16 @@ export type PlanItemView = {
 
 export type PlanDayView = {
   date: string;
-  /** Empty on a public holiday (`holiday`), as on a Friday: the day holds no customer. */
+  /** Empty on a day off (`dayOff`), as on a Friday: the day holds no customer. */
   listTypes: PhoenixCrmListType[];
   /** The public holiday this day is, by name — "Armed Forces Day" — or null on a working day. */
   holiday: string | null;
+  /**
+   * The day off this day is — the public holiday, or a full day of the rep's own approved leave
+   * ("Annual Vacation", owner 2026-10-02) — or null on a working day. One path for both: greyed in the
+   * day picker, skipped by Suggest, every copy and "Next day", and refused by a save.
+   */
+  dayOff: PlanDayOff | null;
   ramadan: boolean;
   /** Today or later: the rep may still change it. */
   editable: boolean;
@@ -294,6 +314,8 @@ export type PlannerView = {
   canReturn: boolean;
   /** Why the rep cannot plan this week, in one sentence; null when nothing stops it. */
   blockedReason: string | null;
+  /** The ONE day a reviewer returned while it stands (owner, 2026-10-02) — every other day is fixed. */
+  returnedDay: string | null;
 };
 
 export function buildDays(input: {
@@ -306,6 +328,8 @@ export function buildDays(input: {
   starts?: ReadonlyMap<string, PlanDayStarts>;
   /** The public holidays of the week, `day → name` (plan-holidays.ts). A day named here holds no customer. */
   holidays?: ReadonlyMap<string, string>;
+  /** The rep's own full days of approved leave, `day → name` (leave-days.ts `loadSeatDaysOff`). Days off too. */
+  leave?: ReadonlyMap<string, string>;
 }): PlanDayView[] {
   const byDay = new Map<string, Row[]>();
   for (const row of input.itemRows) {
@@ -369,10 +393,12 @@ export function buildDays(input: {
 
     const activities = input.activities?.get(date) ?? [];
     const holiday = input.holidays?.get(date) ?? null;
+    const dayOff = planDayOff(date, input.holidays, input.leave);
     return {
       date,
-      listTypes: holiday ? [] : planDayListTypes(date),
+      listTypes: dayOff ? [] : planDayListTypes(date),
       holiday,
+      dayOff,
       ramadan,
       editable: date >= input.cairoToday,
       activities,
@@ -432,6 +458,12 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     ensured.then(() => territoryReadiness(seat.seatId, isTest, false)),
     customersRead.then(({ customers }) => loadPlannerReferences(seat.seatId, isTest, customers)),
     loadPlanHolidays(weekStart, addDaysIso(weekStart, 5)),
+    // Last seen, the usual days and a follow-up due (owner, 2026-10-02): its Phoenix visits start now,
+    // and only its iReports360 half follows the customer list — never a wave of its own. Only the rep
+    // plans from them, so a reviewer's board reads none.
+    canWriteAsRep(viewer, seat, isTest) ? loadPlannerInsights(seat.seatId, isTest, today, customersRead) : Promise.resolve(new Map<string, PlannerInsight>()),
+    // The rep's own full days of approved leave are days off too (owner, 2026-10-02).
+    loadSeatDaysOff(seat, { from: weekStart, to: addDaysIso(weekStart, 5) }),
   ]);
   wave.catch(() => undefined);
   await ensured;
@@ -442,12 +474,14 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     readiness,
     references,
     holidays,
+    insights,
+    leave,
   ] = await wave;
 
   const settings = viewer.config.settings;
   const isRamadan = (isoDay: string) => isRamadanDay(isoDay, viewer.config.ramadanOverrides);
   const plan = planRow ? mapPlan(planRow, names) : null;
-  const days = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays });
+  const weekDays = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave });
 
   const plannerCustomers: PlannerCustomer[] = customers.map((row) => {
     const customerId = String(row.id);
@@ -460,6 +494,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       pending: row.status === "pending",
       reference: references.get(customerId) ?? null,
+      insight: insights.get(customerId) ?? null,
       places: (placesByCustomer.get(customerId) ?? []).map((place) => ({
         placeId: place.placeId,
         label: place.label,
@@ -478,9 +513,19 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   const viewerIsReviewer = canReviewTerritory(viewer, seat, isTest);
   const weekOpen = weeks.includes(weekStart) && editablePlanDays(weekStart, today).length > 0;
   const status = plan?.status ?? null;
-  // One week at a time (owner, 2026-10-01): the same answer the server gives a save or a send.
-  const edit = viewerIsRep && planRow && status === "draft" ? ((await loadPlanEditState([String(planRow.id)], isTest, { names: false })).get(String(planRow.id)) ?? null) : null;
+  // One week at a time (owner, 2026-10-01): the same answer the server gives a save or a send. A week
+  // returned for ONE day reads its requests too: an acknowledged edit after the return opens all of it.
+  const readsEdit = planRow !== null && ((viewerIsRep && status === "draft") || (status === "returned" && Boolean(plan?.returnedDay)));
+  const edit = readsEdit && planRow ? ((await loadPlanEditState([String(planRow.id)], isTest, { names: false })).get(String(planRow.id)) ?? null) : null;
   const repState = viewerIsRep ? repStateOf({ weekStart, cairoToday: today, status, edit }) : "closed";
+  // Only that day is the rep's to change (owner, 2026-10-02) — the same days `savePlan` accepts.
+  const returnedDay = standingReturnedDay({
+    status,
+    returnedDay: plan?.returnedDay ?? null,
+    decidedAt: plan?.decidedAt ?? null,
+    editAcknowledgedAt: editAcknowledgedAt(edit),
+  });
+  const days = onlyReturnedDayEditable(weekDays, returnedDay);
   let blockedReason: string | null = null;
   if (viewerIsRep) {
     // Owner, 2026-09-22: nothing about the list ever stops a rep planning. Only the week itself and a
@@ -522,6 +567,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     canApprove: viewerIsReviewer && status === "submitted",
     canReturn: weekOpen && canReturnTerritoryPlan(viewer, seat, isTest) && (status === "submitted" || status === "approved"),
     blockedReason,
+    returnedDay,
   };
 }
 
@@ -547,12 +593,16 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
     throw validationError("Choose a week to plan from the list. Reload the planner.");
   }
   const weekStart = body.weekStart;
-  const editableDays = editablePlanDays(weekStart, today);
-  if (editableDays.length === 0) throw conflictError("This week has passed. Reload the planner.");
+  if (editablePlanDays(weekStart, today).length === 0) throw conflictError("This week has passed. Reload the planner.");
   // 🔴 One week at a time (owner, 2026-10-01): the week he plans now, or one his manager returned or
   // an edit request reopened. A week ahead, a passed one, or a sent one is refused here as well as
-  // greyed on the board.
-  await assertRepMayChangeWeek(viewer, seat, isTest, weekStart);
+  // greyed on the board. Its answer is the ONLY list of days this save may touch: every day from today
+  // on — or, when his manager returned ONE day (owner, 2026-10-02: "Only that day"), that day alone.
+  const access = await assertRepMayChangeWeek(viewer, seat, isTest, weekStart);
+  const editableDays = access.editableDays;
+  if (access.returnedDay && editableDays.length === 0) {
+    throw conflictError(`${planDayLabel(access.returnedDay)}, the day your manager returned, has passed. Send the week again as it is.`);
+  }
 
   // Stamps the territory ready the first time its list is complete; it then stays ready. It is a
   // progress mark for the manager's Team tab, and it has never refused a plan since 2026-09-22.
@@ -562,12 +612,17 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
   if (!drafts.ok) throw validationError(drafts.error);
   const open = new Set(editableDays);
   if (drafts.value.some((item) => !open.has(item.planDate))) {
-    throw conflictError("A day that has passed cannot be changed. Reload the planner.");
+    throw conflictError(
+      access.returnedDay
+        ? `Only ${planDayLabel(access.returnedDay)} was returned to you. The other days stay as you sent them. Reload the planner.`
+        : "A day that has passed cannot be changed. Reload the planner.",
+    );
   }
 
-  const [{ customers, placesByCustomer }, holidays] = await Promise.all([
+  const [{ customers, placesByCustomer }, holidays, leave] = await Promise.all([
     loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
     loadPlanHolidays(weekStart, addDaysIso(weekStart, 5)),
+    loadSeatDaysOff(seat, { from: weekStart, to: addDaysIso(weekStart, 5) }),
   ]);
   const ruleCustomers = new Map<string, PlanRuleCustomer>(
     customers.map((row) => {
@@ -591,6 +646,7 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
     settings: viewer.config.settings,
     isRamadan: (isoDay) => isRamadanDay(isoDay, viewer.config.ramadanOverrides),
     holidays,
+    leave,
   });
   if (!resolved.ok) throw validationError(resolved.error);
 
@@ -672,6 +728,11 @@ export async function transitionPlan(
   if (!Number.isInteger(expectedVersion) || expectedVersion < 1) throw validationError("Reload the plan and try again.");
   const note = cleanText(body.note, PLAN_DECISION_NOTE_MAX);
   const planId = String(body.planId).toLowerCase();
+  // ONE day of the week (owner, 2026-10-02: "Only that day" reopens): a return may name it, nothing else.
+  const dayRaw = body.day === null || body.day === undefined || body.day === "" ? null : body.day;
+  if (dayRaw !== null && !isIsoDay(dayRaw)) throw validationError("Choose the day to return. Reload the page.");
+  const day: string | null = dayRaw === null ? null : String(dayRaw);
+  if (day !== null && action !== "return") throw validationError("Only a return names a day. Reload the page.");
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.from("phoenix_crm_plans").select("id, seat_id, week_start, status, is_test").eq("id", planId).maybeSingle();
@@ -702,9 +763,12 @@ export async function transitionPlan(
     if (editablePlanDays(String(planRow.week_start), today).length === 0) {
       throw conflictError("This week has passed. Reload the planner.");
     }
-    await assertRepMayChangeWeek(viewer, seat, isTest, String(planRow.week_start));
+    const access = await assertRepMayChangeWeek(viewer, seat, isTest, String(planRow.week_start));
     if (action === "submit") {
-      const openRows = (await loadPlanItemRows([planId], ITEM_COLUMNS)).filter((row) => String(row.plan_date) >= today);
+      // Only the days he could change answer to this check: a day his manager returned alone is his to
+      // fix, and the days left exactly as he sent them are not (owner, 2026-10-02).
+      const changeable = new Set(access.editableDays);
+      const openRows = (await loadPlanItemRows([planId], ITEM_COLUMNS)).filter((row) => changeable.has(String(row.plan_date)));
       if (openRows.some(isStaleItem)) {
         throw conflictError("A planned customer left your list or changed place. Take it off the plan, save, then send.");
       }
@@ -720,6 +784,13 @@ export async function transitionPlan(
       throw conflictError("This week is over, so its plan can no longer be returned. Reload the page.");
     }
     if (!note) throw validationError("Write a note for the rep on what to change.");
+    // One day alone: a working day of this week he can still change (the database refuses any other).
+    if (day !== null) {
+      if (!fieldWeekDays(String(planRow.week_start)).includes(day)) throw validationError("Choose a day of this week to return.");
+      if (day < today) {
+        throw conflictError(`${planDayLabel(day)} has passed, so it can no longer be returned on its own. Return the week, or reload the page.`);
+      }
+    }
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_plan_transition", {
@@ -731,6 +802,7 @@ export async function transitionPlan(
       is_test: isTest,
       expected_version: expectedVersion,
       note: action === "approve" || action === "return" ? note : null,
+      day: action === "return" ? day : null,
     },
   });
   const status = statusOf(result.status);
@@ -755,6 +827,9 @@ export async function transitionPlan(
         decidedAs,
         repHrIds,
         note,
+        // The returned notice names the day when only one went back (owner, 2026-10-02) — the day the
+        // DATABASE recorded, so the rep is never told "only Tuesday" of a week that went back whole.
+        returnedDay: action === "return" ? textOrNull(result.returned_day) : null,
       },
       isTest,
     );

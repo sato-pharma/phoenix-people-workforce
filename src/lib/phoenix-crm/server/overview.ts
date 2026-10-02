@@ -13,10 +13,13 @@
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
+import { isTelegramConnected } from "@/lib/notifications/settings";
+import { logError } from "@/lib/observability/log";
 import { plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { forecastIsOffered } from "@/lib/phoenix-crm/daily-forecast";
 import { PLAN_EDIT_WAITING_STATUSES, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { managerChain, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { telegramCardOffered } from "@/lib/phoenix-crm/telegram-card";
 import { canAcknowledgePlanEdits, canReviewTerritory, lineOpeningText, readsCalendar, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { isDirectoryCompanyRole } from "@/lib/phoenix-crm/server/doctors";
@@ -93,6 +96,13 @@ export type PhoenixCrmOverview = {
   };
   /** Why the viewer has nothing to open yet, in one sentence; null when the module is open for them. */
   closedMessage: string | null;
+  /**
+   * Whether the viewer's Telegram is connected (owner, 2026-10-02 — 0 of 74 reps were, so every
+   * Telegram leg of the module reached nobody). Null when the "Get Phoenix CRM messages on Telegram"
+   * card is not for this viewer (`telegramCardOffered`: the reps and managers the notices go to) or
+   * the status could not be read — and then no card is drawn, never one asking a connected person.
+   */
+  telegram: { connected: boolean } | null;
 };
 
 /** Seats, once each, in the order first seen. */
@@ -179,6 +189,22 @@ async function countPlanEdits(statuses: PlanEditStatus[], isTest: boolean, seatI
   return total;
 }
 
+/**
+ * The viewer's Telegram, connected or not — the same row the Notification Settings panel reads. Null
+ * when it cannot be read: a page never fails, and nobody is asked to connect, over a status nobody knows.
+ */
+async function telegramConnectedOrNull(viewer: PhoenixCrmViewer): Promise<boolean | null> {
+  try {
+    return await isTelegramConnected(viewer.access);
+  } catch (error) {
+    logError("Phoenix CRM could not read the viewer's Telegram status", {
+      error,
+      labels: { event: "phoenix_crm_telegram_status_failed" },
+    });
+    return null;
+  }
+}
+
 export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<PhoenixCrmOverview> {
   const scope = viewer.scopeTerritories;
   const ownSeatIds = viewer.isSuperAdmin ? [] : viewer.ownTerritories.map((seat) => seat.seatId);
@@ -202,7 +228,16 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
   const sfeSeatIds =
     !viewer.isSuperAdmin && !viewer.isTestPersona && viewer.isSfeManager && viewer.canApprove ? scope.map((seat) => seat.seatId) : [];
 
-  const [names, reviewerRequests, sfeRequests, plans, managerEdits, sfeEdits, hrAcknowledgements] = await Promise.all([
+  // The Telegram card (owner, 2026-10-02) is for the reps and managers the module's notices go to.
+  const telegramOffered = telegramCardOffered({
+    isSuperAdmin: viewer.isSuperAdmin,
+    isTestPersona: viewer.isTestPersona,
+    isRep: ownSeatIds.length > 0,
+    isManager: viewer.managerSeats.length > 0,
+    isSfeManager: viewer.isSfeManager,
+  });
+
+  const [names, reviewerRequests, sfeRequests, plans, managerEdits, sfeEdits, hrAcknowledgements, telegramConnected] = await Promise.all([
     loadPeopleNames([viewer.hrId, ...territoryPeople(viewer.org, [...scope, ...viewer.waitingTerritories])]),
     reviewSeatIds !== null && reviewSeatIds.length === 0
       ? 0
@@ -218,6 +253,8 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       : countPlanEdits(reviewSeatIds === null ? [...PLAN_EDIT_WAITING_STATUSES] : ["manager_pending"], waitingIsTest, reviewSeatIds, viewer.cairoToday),
     sfeSeatIds.length === 0 ? 0 : countPlanEdits(["sfe_pending"], false, sfeSeatIds, viewer.cairoToday),
     canAcknowledgePlanEdits(viewer) ? countPlanEdits(["hr_pending"], false, null, viewer.cairoToday) : 0,
+    // In the same wave, and never able to fail the page: an unreadable status draws no card.
+    telegramOffered ? telegramConnectedOrNull(viewer) : null,
   ]);
 
   const territories = scope
@@ -279,5 +316,6 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       hrAcknowledgements,
     },
     closedMessage: closedMessage(viewer),
+    telegram: telegramConnected === null ? null : { connected: telegramConnected },
   };
 }

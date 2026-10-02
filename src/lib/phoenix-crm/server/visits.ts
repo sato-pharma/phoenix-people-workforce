@@ -58,7 +58,7 @@ import {
   isVisitObjection,
   type LastNextStep,
 } from "@/lib/phoenix-crm/visit-outcome";
-import { describeDayWindows, isPlanSentForReview, isUuid } from "@/lib/phoenix-crm/plan-rules";
+import { describeDayWindows, isPlanSentForReview, isUuid, planDayStatus } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, resolveVisitParticipants, territoryReviewer, type OrgIndex } from "@/lib/phoenix-crm/scope";
 import { canWriteAsRep, isLocationBlind, readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
@@ -67,6 +67,7 @@ import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { ensureReferenceCustomers, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
+import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
@@ -618,6 +619,12 @@ export async function loadVisitRowsForDay(seatId: string, isTest: boolean, date:
  * `plannedCustomerIds` answers only the first half, and the Today screen needs the second: "no plan
  * sent yet" and "a sent plan with nobody on today" are different sentences to a rep, and showing the
  * wrong one sends him to the wrong screen.
+ *
+ * 🔴 `status` is what the plan says about THIS DAY (plan-rules.ts `planDayStatus`), never the week's
+ * own status: a week returned for ONE day still stands on its other days as it stood when the day was
+ * returned — sent, or approved — and only the returned day reads `returned` (owner, 2026-10-02,
+ * "Still planned"). Planned visit, Today and the Super Admin's missed record all read it from here, so
+ * they ask one rule — the one phoenix_crm_save_visit stamps the visit with.
  */
 export async function plannedCustomersOn(
   seatId: string,
@@ -627,21 +634,24 @@ export async function plannedCustomersOn(
   const supabase = getSupabaseAdmin();
   const { data: plan, error } = await supabase
     .from("phoenix_crm_plans")
-    .select("id, status")
+    .select(`id, ${PLAN_DAY_COLUMNS}`)
     .eq("seat_id", seatId)
     .eq("is_test", isTest)
     .eq("week_start", fieldWeekStart(date))
     .maybeSingle();
   throwIfError(error);
   if (!plan) return { status: null, customerIds: [] };
-  const status = String((plan as Row).status ?? "") as PhoenixCrmPlanStatus;
-  const items = await supabase
-    .from("phoenix_crm_plan_items")
-    .select("customer_id")
-    .eq("plan_id", String((plan as Row).id))
-    .eq("plan_date", date);
+  const planId = String((plan as Row).id);
+  const [facts, items] = await Promise.all([
+    loadPlanDayFacts([plan as Row], isTest),
+    supabase.from("phoenix_crm_plan_items").select("customer_id").eq("plan_id", planId).eq("plan_date", date),
+  ]);
   throwIfError(items.error);
-  return { status, customerIds: ((items.data ?? []) as Row[]).map((row) => String(row.customer_id)) };
+  const day = facts.get(planId);
+  return {
+    status: day ? planDayStatus({ ...day, date }) : null,
+    customerIds: ((items.data ?? []) as Row[]).map((row) => String(row.customer_id)),
+  };
 }
 
 export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown }): Promise<VisitFormView> {
@@ -690,6 +700,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   // The SENT set, and only it, is what the picker offers and what the ordering follows — a draft is the
   // rep's own to edit today, so counting one would let him place the doctor at the door and never be off
   // plan (plan-rules.ts `isPlanSentForReview`). The count he has SAVED rides beside it, for the sentence.
+  // `planDay.status` is TODAY's status, so a week returned for one other day still offers today's plan.
   const planned = new Set(isPlanSentForReview(planDay.status) ? planDay.customerIds : []);
   const products = productFamilies.map((entry) => entry.family);
   const visitedToday = new Set(visitRows.map((row) => String(row.customer_id)));

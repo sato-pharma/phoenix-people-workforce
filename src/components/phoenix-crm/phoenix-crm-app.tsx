@@ -35,6 +35,7 @@ import { countText, plural } from "@/components/phoenix-crm/format";
 // The leaf module, never the camera: see captured-photo.ts for why the shell must not import the camera.
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { preloadPhoenixCrmTab } from "@/components/phoenix-crm/tab-preload";
+import { TelegramConnectCard } from "@/components/phoenix-crm/telegram-connect-card";
 import {
   CrmBlock,
   CrmButton,
@@ -51,6 +52,7 @@ import {
 import type { PendingValidate, PendingVisit } from "@/components/phoenix-crm/visits-tab";
 import { isForecastLine } from "@/lib/phoenix-crm/daily-forecast";
 import { PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
+import { showsTelegramCard } from "@/lib/phoenix-crm/telegram-card";
 import type { PhoenixCrmOverview, PhoenixCrmTabs, TerritorySummary } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -932,6 +934,9 @@ export function PhoenixCrmApp({
 
   return (
     <div className="min-w-0 scroll-mt-24 space-y-4" ref={topRef} style={stickyOffset}>
+      {/* "Get Phoenix CRM messages on Telegram" (owner, 2026-10-02): at the top, for the reps and
+          managers the notices go to, until the server says he is connected. */}
+      {showsTelegramCard(overview.telegram) ? <TelegramConnectCard cairoToday={overview.cairoToday} /> : null}
       {testModePanel()}
       {refreshNote()}
       {notice ? <CrmNote tone="warn">{notice}</CrmNote> : null}

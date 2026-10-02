@@ -180,6 +180,31 @@ export async function getNotificationSettings(access: Pick<AccessContext, "hrId"
   }
 }
 
+/**
+ * Whether this person's Telegram is connected — the very row `getNotificationSettings` reads for the
+ * Notification Settings panel, so a card that asks him to connect and the panel that says "Connected"
+ * can never disagree. One narrow read for a page that only needs the yes or no (Phoenix CRM's
+ * "Get Phoenix CRM messages on Telegram" card, owner 2026-10-02).
+ */
+export async function isTelegramConnected(access: Pick<AccessContext, "hrId" | "loginId">): Promise<boolean> {
+  const userId = userIdFromAccess(access);
+  if (!userId) return false;
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("telegram_connections")
+      .select("status")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return mapTelegram(data as Record<string, unknown> | null).status === "connected";
+  } catch (error) {
+    if (tableMissing(error)) return false;
+    throw error;
+  }
+}
+
 export async function saveNotificationPreferences(
   access: Pick<AccessContext, "hrId" | "loginId">,
   input: Partial<Pick<NotificationPreferences, "emailEnabled" | "inAppEnabled" | "preferredChannel" | "pushEnabled" | "quietHoursEnd" | "quietHoursStart" | "telegramEnabled">>,

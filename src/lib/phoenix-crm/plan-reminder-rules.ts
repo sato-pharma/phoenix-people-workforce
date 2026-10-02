@@ -20,8 +20,10 @@
  *   line at what judges his honesty, never at his own plan).
  * - **His district manager**, once, naming every rep of his whose week is not sent.
  *
- * Nobody hears twice in a day: the keys are per person, per week, per Cairo day. So the second tick
- * of a day reaches only someone the first tick missed, never someone it already told.
+ * Twice a day, once a tick (owner, 2026-10-02: "Yes, remind again"). The 12:57 tick tells everyone
+ * whose week is not sent; the 17:57 tick tells whoever is STILL not sent, in its own words. The keys are
+ * per person, per week, per Cairo day, per tick, so a retry or a double fire of one tick reaches nobody
+ * twice, and a rep who sent between the two ticks hears nothing more.
  *
  * ## Never email
  *
@@ -39,6 +41,14 @@ export const PLAN_REMINDER_JOB_SLUG = "phoenix-crm-plan-reminder";
 
 /** 12:57 and 17:57 Cairo. Two ticks a day so a deploy or a cut tick still leaves one. The keys stop a double send. */
 export const PLAN_REMINDER_CRON = "57 12,17 * * *";
+
+/** Which of the day's two ticks this is: the 12:57 one, or the 17:57 one that says "still". */
+export type PlanReminderTick = "noon" | "evening";
+
+/** The tick a run belongs to, from the Cairo hour it runs at. Anything from 15:00 on is the evening one. */
+export function reminderTickOf(cairoHour: number): PlanReminderTick {
+  return cairoHour < 15 ? "noon" : "evening";
+}
 
 /** The most names one manager's message lists; beyond it, it counts the rest. */
 export const PLAN_REMINDER_MAX_NAMES = 12;
@@ -77,38 +87,62 @@ export type PlanReminderNotice = {
   idempotencyKey: string;
 };
 
-export function repReminder(input: { hrId: string; day: PlanReminderDay; cairoToday: string; draftStarted: boolean }): PlanReminderNotice {
+export function repReminder(input: {
+  hrId: string;
+  day: PlanReminderDay;
+  cairoToday: string;
+  tick: PlanReminderTick;
+  draftStarted: boolean;
+}): PlanReminderNotice {
   const week = reminderDayLabel(input.day.weekStart);
-  const title = `Your week of ${week} is not sent yet`;
+  // 🔴 THE DEADLINE LEADS THE TITLE (owner, 2026-10-02: "show the deadline in the rep's plan reminder on
+  // the phone"). This notice goes out on `push` as well as in-app and Telegram, and a phone shows the
+  // HEADING and cuts it — OneSignal's `headings`, a lock screen, one line. Put the deadline at the end,
+  // the way it reads on a desk, and it is the first thing truncation takes; put it first and he reads it
+  // without opening anything. The week still follows it, named, never a date code.
+  const when = input.day.late ? `Was due ${reminderDayLabel(input.day.dueOn)}, ${PLAN_DEADLINE_LABEL}` : `Due tonight, ${PLAN_DEADLINE_LABEL}`;
+  const title = `${when} — your week of ${week}`;
   const how = input.draftStarted ? "Open Plan, check your days and press Send." : "Open Plan, tick your customers day by day and press Send.";
-  // The reminder is where the deadline reaches his phone, so it names the HOUR as well as the day
-  // (owner, 2026-10-02). "Tonight" alone left him to guess it, and the week is judged on it.
-  const when = input.day.late
-    ? `It was due on ${reminderDayLabel(input.day.dueOn)} at ${PLAN_DEADLINE_LABEL}. Send it before ${week}. A late week is still accepted.`
-    : `It is due tonight at ${PLAN_DEADLINE_LABEL}.`;
+  // The body no longer opens with "It", which pointed at a title that said "is not sent yet" — the title
+  // now leads with the deadline, so the sentence has to carry its own subject.
+  // At 17:57 the same sentence says "still" (owner, 2026-10-02: "Yes, remind again").
+  const notSent = input.tick === "evening" ? "Your plan is still not sent." : "Your plan is not sent yet.";
+  const what = input.day.late ? `${notSent} Send it before ${week}. A late week is still accepted.` : notSent;
   return {
     hrId: input.hrId,
     title,
-    message: `${when} ${how}`,
-    idempotencyKey: `phoenix_crm:plan_reminder:rep:${input.hrId}:${input.day.weekStart}:${input.cairoToday}`,
+    message: `${what} ${how}`,
+    idempotencyKey: `phoenix_crm:plan_reminder:rep:${input.hrId}:${input.day.weekStart}:${input.cairoToday}:${input.tick}`,
   };
 }
 
-export function managerReminder(input: { hrId: string; day: PlanReminderDay; cairoToday: string; repNames: ReadonlyArray<string> }): PlanReminderNotice | null {
+export function managerReminder(input: {
+  hrId: string;
+  day: PlanReminderDay;
+  cairoToday: string;
+  tick: PlanReminderTick;
+  repNames: ReadonlyArray<string>;
+}): PlanReminderNotice | null {
   const names = [...input.repNames].sort((left, right) => left.localeCompare(right));
   if (names.length === 0) return null;
   const week = reminderDayLabel(input.day.weekStart);
   const shown = names.slice(0, PLAN_REMINDER_MAX_NAMES);
   const more = names.length - shown.length;
-  const count = names.length === 1 ? "1 of your reps has" : `${names.length} of your reps have`;
-  const when = input.day.late
-    ? `It was due on ${reminderDayLabel(input.day.dueOn)} at ${PLAN_DEADLINE_LABEL}.`
-    : `It is due tonight at ${PLAN_DEADLINE_LABEL}.`;
+  // At 17:57 his count says "still" too (owner, 2026-10-02: "Yes, remind again").
+  const still = input.tick === "evening" ? " still" : "";
+  const count = names.length === 1 ? `1 of your reps${still} has` : `${names.length} of your reps${still} have`;
+  // The deadline leads his title as well (owner, 2026-10-02), for the same reason it leads the rep's:
+  // this notice goes out on `push`, and a phone shows the heading and cuts it. He is the one who can
+  // still chase a rep before 23:55, so the hour is the part he must not have to open the app to read.
+  const when = input.day.late ? `Was due ${reminderDayLabel(input.day.dueOn)}, ${PLAN_DEADLINE_LABEL}` : `Due tonight, ${PLAN_DEADLINE_LABEL}`;
   return {
     hrId: input.hrId,
-    title: `${count} not sent the week of ${week}`,
-    message: `${when} Not sent yet: ${shown.join(", ")}${more > 0 ? `, and ${more} more` : ""}.`,
-    idempotencyKey: `phoenix_crm:plan_reminder:dm:${input.hrId}:${input.day.weekStart}:${input.cairoToday}`,
+    title: `${when} — ${count} not sent the week of ${week}`,
+    // The names carry the body on their own now the deadline has moved into the title; it used to open
+    // with "It", which pointed at a title that no longer says what "it" is.
+    message: `Not sent yet: ${shown.join(", ")}${more > 0 ? `, and ${more} more` : ""}.`,
+    // The tick is part of the key, so the 12:57 and 17:57 notices are two, not one repeated.
+    idempotencyKey: `phoenix_crm:plan_reminder:dm:${input.hrId}:${input.day.weekStart}:${input.cairoToday}:${input.tick}`,
   };
 }
 

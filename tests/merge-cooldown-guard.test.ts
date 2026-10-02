@@ -323,8 +323,9 @@ export function runMergeCooldownGuardTests(): void {
     }
 
     {
-      // BLOCKED is the state of a PR whose required checks have not passed. That is exactly when
-      // "fold it into a wider branch" is still possible, because the branch has not shipped.
+      // BLOCKED with the check-runs UNREADABLE: nothing here can tell whether the checks passed, so
+      // the size refusal stands exactly as it did. That is the case this started as — see the pair
+      // below for what BLOCKED means once the checks CAN be read, which is the ordinary world.
       const gh = ghShim(dir, 2, "OPEN/BLOCKED");
       const blocked = runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh });
       assert.equal(blocked.decision, "deny", "a small PR whose checks have not passed is still refused");
@@ -342,6 +343,37 @@ export function runMergeCooldownGuardTests(): void {
     }
 
     {
+      // 🔴 BLOCKED WITH BOTH REQUIRED CHECKS GREEN MUST MERGE — THE MEASURED DEFECT, 2026-10-02.
+      // The comment this pair replaces read "BLOCKED is the state of a PR whose required checks have
+      // not passed", and the exemption was gated on UNKNOWN alone because of it. BLOCKED is also the
+      // value GitHub is still HOLDING from before the checks finished: #5125 had `validate` and
+      // `checks` both `completed/success` on head `737ed27ba`, read by hand seconds earlier, and C10
+      // refused the owner's approved merge anyway — then pointed at the stand-down the classifier
+      // refuses as a [Safety Bypass Flag], which is the deadlock the exemption exists to end.
+      const gh = ghShim(dir, 2, "OPEN/BLOCKED", "green");
+      const blockedGreen = runGuard(dir, "gh pr merge 5125 --squash", { ghDir: gh });
+      assert.equal(
+        blockedGreen.decision,
+        "allow",
+        "mergeability reading BLOCKED must not refuse a PR whose required checks have all passed — " +
+          "BLOCKED is as stale as UNKNOWN, and the PR's run is already paid",
+      );
+      assert.equal(blockedGreen.reason, "", "and it passes silently, like every other already-green merge");
+    }
+
+    {
+      // And BLOCKED must not become a way past a RED check. Only the second required context fails,
+      // so a fallback that stopped at the first would read green and this would pass against a guard
+      // broken open.
+      const gh = ghShim(dir, 2, "OPEN/BLOCKED", "red");
+      assert.equal(
+        runGuard(dir, "gh pr merge 5125 --squash", { ghDir: gh }).decision,
+        "deny",
+        "a failing required check must still refuse the merge, BLOCKED or not",
+      );
+    }
+
+    {
       // UNSTABLE means mergeable, required checks green, but a NON-required check red — `mobile` and
       // `secret-scan` stopped gating here on 2026-09-29. Deliberately NOT waved through: something is
       // red and deserves a look, and the stand-down still covers it.
@@ -350,6 +382,22 @@ export function runMergeCooldownGuardTests(): void {
         runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh }).decision,
         "deny",
         "UNSTABLE is not green: a red non-required check is a thing to read, not to merge past silently",
+      );
+    }
+
+    {
+      // 🔴 AND IT STAYS REFUSED WHEN THE CHECK-RUNS ARE READABLE AND GREEN — the case the BLOCKED fix
+      // above could have swallowed. Widening the exemption to "any OPEN state that is not CLEAN"
+      // passes every assertion in this file, because the UNSTABLE case above reads its check-runs as
+      // `absent`: the policy lived in the clause's shape, not in an assertion. UNSTABLE's required
+      // checks ARE green by definition — that is what distinguishes it from BLOCKED — so this is the
+      // one state where green required checks are deliberately not enough.
+      const gh = ghShim(dir, 2, "OPEN/UNSTABLE", "green");
+      assert.equal(
+        runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh }).decision,
+        "deny",
+        "UNSTABLE must be refused even with both required contexts green — the red check is non-required, " +
+          "which is exactly why nothing else will show it to anyone",
       );
     }
 
@@ -436,6 +484,18 @@ export function runMergeCooldownGuardTests(): void {
         runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh }).decision,
         "deny",
         "CLEAN alone is not the test — the PR must be OPEN, or a closed PR's stale state waves a merge through",
+      );
+    }
+
+    {
+      // The same requirement on the check-runs path: a PR that is no longer OPEN cannot have a run
+      // that is "already paid", so green checks on a MERGED one must not promote it either. #5125
+      // read MERGED/UNKNOWN minutes after it landed, with both contexts green on its old head.
+      const gh = ghShim(dir, 2, "MERGED/BLOCKED", "green");
+      assert.equal(
+        runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh }).decision,
+        "deny",
+        "green required checks must not promote a PR that is not OPEN — the exemption is about an open PR's paid run",
       );
     }
 

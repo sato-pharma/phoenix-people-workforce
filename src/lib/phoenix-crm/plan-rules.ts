@@ -20,7 +20,7 @@
 import { CAIRO_MONTHS } from "@/lib/format/cairo-datetime";
 import { isUuid as isUuidText } from "@/lib/http/uuid";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
-import { fieldWeekDays, planDayListTypes, PLAN_DEADLINE_LABEL, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import { editablePlanDays, fieldWeekDays, planDayListTypes, PLAN_DEADLINE_LABEL, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import { formatTimingWindow, PHOENIX_CRM_WEEKDAY_NAMES, windowsForWeekday } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
@@ -66,9 +66,22 @@ export function planStatusLabel(status: PhoenixCrmPlanStatus | null): string {
  */
 export function planDueLabel(dueOn: string | null | undefined): string {
   if (!dueOn) return "—";
-  // "at", not a comma: the long date already carries one after the weekday, and "Thursday, 8 October
-  // 2026, 11:55 PM" reads as a list rather than as a time.
-  return `${formatPhoenixLongDate(dueOn)} at ${PLAN_DEADLINE_LABEL}`;
+  return withPlanDeadline(formatPhoenixLongDate(dueOn));
+}
+
+/**
+ * The deadline joined onto a due date someone has ALREADY formatted — for a screen with its own date
+ * style, so it can carry the hour without being dragged onto the long format.
+ *
+ * The Team tab is why this exists (owner, 2026-10-02): a reviewer reads "Thu 8 Oct 2026" there, in a
+ * compact row beside a dozen reps, and a long date would not fit it. The join and the wording still live
+ * in ONE place, so the two screens can never drift to two different deadlines.
+ *
+ * "at", not a comma: the long date already carries one after the weekday, and "Thursday, 8 October 2026,
+ * 11:55 PM" reads as a list rather than as a time.
+ */
+export function withPlanDeadline(dateText: string): string {
+  return `${dateText} at ${PLAN_DEADLINE_LABEL}`;
 }
 
 /** A rep edits a draft or a returned plan. Submitted and approved plans are reopened first. */
@@ -84,6 +97,8 @@ export function isPlanEditable(status: PhoenixCrmPlanStatus): boolean {
  * would let him place the doctor at the door, save seconds later and never be off plan — the approval
  * would never happen and the rule would be theatre. A RETURNED plan is his to edit too, so it is not
  * authority either. The exact complement of `isPlanEditable`, named for what it means at the door.
+ * This answers for a WEEK; a reader asking about one DAY asks `planDayStatus` first, because a week
+ * returned for one day still stands as sent on its other days (owner, 2026-10-02).
  *
  * `phoenix_crm_save_visit` is stricter still: it asks whether the plan had reached review BEFORE this
  * visit's server-issued `captured_at`, which a form being drawn cannot know yet. The two disagree only
@@ -127,6 +142,95 @@ export function repWeekState(input: {
   if (input.status === "returned") return "plan";
   if (input.status === "draft" && input.editReopened) return "plan";
   return "closed";
+}
+
+/**
+ * 🔴 ONE DAY RETURNED (owner, 2026-10-02: "Only that day" reopens). A reviewer may send back ONE day of
+ * a sent week with a note. The week is `returned`, exactly as a whole-week return makes it — so
+ * `repWeekState` answers "plan" for it unchanged — and `phoenix_crm_plans.returned_day` names the day.
+ * That day is the only one the rep may change while it stands; every other day stays exactly as he
+ * sent it, and the server refuses a change to it (`repChangeableDays` is the ONLY list of days a save
+ * may touch). Sending the week again clears it in the database.
+ *
+ * One later act lifts it before then: HR acknowledging a request to edit this week AFTER the day was
+ * returned. He asked to edit the WEEK and his district manager, SFE and HR agreed, so the whole week
+ * opens. The acknowledgement leaves a returned plan's status as it stands (it reopens only a sent
+ * week), so which act came last is read from their own times — never assumed.
+ *
+ * Null: the week is not returned for one day (a draft, a whole-week return, a sent week), or the
+ * one-day return was lifted.
+ */
+export function standingReturnedDay(input: {
+  status: PhoenixCrmPlanStatus | null;
+  /** `phoenix_crm_plans.returned_day` as stored. */
+  returnedDay: string | null;
+  /** When the plan was returned (`phoenix_crm_plans.decided_at`). */
+  decidedAt: string | null;
+  /** When HR acknowledged the week's latest request to edit it, when that request was acknowledged. */
+  editAcknowledgedAt: string | null;
+}): string | null {
+  if (input.status !== "returned" || !input.returnedDay) return null;
+  const returnedAt = input.decidedAt ? Date.parse(input.decidedAt) : Number.NaN;
+  const acknowledgedAt = input.editAcknowledgedAt ? Date.parse(input.editAcknowledgedAt) : Number.NaN;
+  if (Number.isFinite(returnedAt) && Number.isFinite(acknowledgedAt) && acknowledgedAt > returnedAt) return null;
+  return input.returnedDay;
+}
+
+/**
+ * The days of a week the rep may change: every day from today on — or, while one day is returned
+ * (`standingReturnedDay`), that day alone, and nothing once it has passed (he sends the week again as
+ * it is). The one list `savePlan` hands the database as the days it may touch.
+ */
+export function repChangeableDays(input: { weekStart: string; cairoToday: string; returnedDay: string | null }): string[] {
+  const open = editablePlanDays(input.weekStart, input.cairoToday);
+  return input.returnedDay ? open.filter((day) => day === input.returnedDay) : open;
+}
+
+/**
+ * A week's days as the rep may change them: while one day is returned, every other day reads as fixed
+ * (`editable: false`) — which is what greys it on his board and keeps it out of every draft, copy,
+ * suggestion and save the board builds, since all of them read `editable`.
+ */
+export function onlyReturnedDayEditable<T extends { date: string; editable: boolean }>(days: ReadonlyArray<T>, returnedDay: string | null): T[] {
+  if (!returnedDay) return [...days];
+  return days.map((day) => (day.editable && day.date !== returnedDay ? { ...day, editable: false } : day));
+}
+
+/**
+ * 🔴 WHAT A PLAN SAYS ABOUT ONE DAY — THE ONE RULE FOR "IS THIS DAY ON A SENT PLAN" (owner, 2026-10-02,
+ * "Still planned"). A week returned for ONE day still stands on every OTHER day exactly as it stood when
+ * that day was returned — sent, or approved — so the rep's visits there still count as planned. Only
+ * the returned day is back with him, and it waits until he sends the week again. Every other week's
+ * days share the week's own status.
+ *
+ * `returnedDay` is the STANDING one (`standingReturnedDay`): once an acknowledged edit opens the whole
+ * week after the return, it is null, the week reads `returned` on every day, and no day of it is
+ * authority — a day the rep can change never is. A week returned whole has no day, and reads
+ * `returned` throughout.
+ *
+ * `returnedFrom` is what the week was when the day was returned. Only Today needs it (it shows the
+ * APPROVED plan only); anything that asks whether a day was SENT gets the same answer either way, and
+ * an unknown one reads as `submitted` — sent, never approved.
+ *
+ * The database asks the same question when a visit is saved (phoenix_crm_save_visit `v_on_sent_plan`,
+ * migration 20261002125244): the latest plan event reaching `submitted` or `approved`, or the latest
+ * being a one-day return of another day that no acknowledged edit has since opened.
+ */
+export function planDayStatus(input: {
+  status: PhoenixCrmPlanStatus | null;
+  /** The STANDING one-day return (`standingReturnedDay`), never the raw column. */
+  returnedDay: string | null;
+  /** What the week was when its one day was returned: `submitted` or `approved`. */
+  returnedFrom?: PhoenixCrmPlanStatus | null;
+  date: string;
+}): PhoenixCrmPlanStatus | null {
+  if (input.status !== "returned" || !input.returnedDay || input.date === input.returnedDay) return input.status;
+  return input.returnedFrom === "approved" ? "approved" : "submitted";
+}
+
+/** Is this day on a sent plan? `planDayStatus`, then `isPlanSentForReview` — never a second copy of either. */
+export function isPlanDaySent(input: Parameters<typeof planDayStatus>[0]): boolean {
+  return isPlanSentForReview(planDayStatus(input));
 }
 
 export type PlanItemDraft = {
@@ -193,10 +297,38 @@ export type ResolvedPlanItem = PlanItemDraft & {
   startMinute: number | null;
 };
 
-/** "Saturday 19 Sept" — the month from Phoenix's own table, so every engine prints the same name. */
-function dayLabel(isoDay: string): string {
+/**
+ * "Saturday 19 Sept", "Tuesday 6 Oct" — the month from Phoenix's own table, so every engine prints the
+ * same name. The returned day reads this way wherever it is named (owner, 2026-10-02: "Your manager
+ * returned Tuesday 6 Oct").
+ */
+export function planDayLabel(isoDay: string): string {
   const [, month, day] = isoDay.split("-").map(Number);
   return `${PHOENIX_CRM_WEEKDAY_NAMES[weekdayOfIsoDay(isoDay)]} ${day} ${CAIRO_MONTHS[month - 1] ?? ""}`;
+}
+
+/**
+ * A DAY OFF on the plan (owner, 2026-10-02): a public holiday, or a full day of the rep's own approved
+ * leave. Either way the day holds no customer — its `listTypes` are empty, as on a Friday — and a
+ * save that still names it is refused. `name` is what the day picker says: "Armed Forces Day",
+ * "Annual Vacation".
+ */
+export type PlanDayOff = { kind: "holiday" | "leave"; name: string };
+
+/**
+ * The day off a plan day is, or null. A public holiday comes first: it is everybody's day off, so a
+ * rep on leave across one reads the holiday's name on it.
+ */
+export function planDayOff(date: string, holidays?: ReadonlyMap<string, string>, leave?: ReadonlyMap<string, string>): PlanDayOff | null {
+  const holiday = holidays?.get(date);
+  if (holiday) return { kind: "holiday", name: holiday };
+  const away = leave?.get(date);
+  return away ? { kind: "leave", name: away } : null;
+}
+
+/** "a public holiday (Armed Forces Day)" · "a day off on approved leave (Annual Vacation)" — one wording for the refusal and the board. */
+export function dayOffPhrase(off: PlanDayOff): string {
+  return off.kind === "holiday" ? `a public holiday (${off.name})` : `a day off on approved leave (${off.name})`;
 }
 
 /**
@@ -211,6 +343,8 @@ export function resolvePlanItems(input: {
   isRamadan: (isoDay: string) => boolean;
   /** The week's public holidays, `day → name`: a day named here holds no customer (owner, 2026-10-02). */
   holidays?: ReadonlyMap<string, string>;
+  /** The rep's own full days of approved leave, `day → its name` (server/leave-days.ts): days off too. */
+  leave?: ReadonlyMap<string, string>;
 }): PlanRuleResult<ResolvedPlanItem[]> {
   const weekDays = new Set(fieldWeekDays(input.weekStart));
   const resolved: ResolvedPlanItem[] = [];
@@ -229,9 +363,9 @@ export function resolvePlanItems(input: {
     if (!customer.pending && !place) {
       return { ok: false, error: `${customer.name}'s place was changed. Reload the planner and place this customer again.` };
     }
-    const holiday = input.holidays?.get(item.planDate);
-    if (holiday) {
-      return { ok: false, error: `${dayLabel(item.planDate)} is a public holiday (${holiday}). Take ${customer.name} off it.` };
+    const off = planDayOff(item.planDate, input.holidays, input.leave);
+    if (off) {
+      return { ok: false, error: `${planDayLabel(item.planDate)} is ${dayOffPhrase(off)}. Take ${customer.name} off it.` };
     }
     const allowed = planDayListTypes(item.planDate);
     if (!allowed.includes(customer.listType)) {
@@ -239,8 +373,8 @@ export function resolvePlanItems(input: {
         ok: false,
         error:
           allowed.length === 0
-            ? `${dayLabel(item.planDate)} is not a working day.`
-            : `${dayLabel(item.planDate)} is a morning: it holds AM only, so ${customer.name} cannot go there.`,
+            ? `${planDayLabel(item.planDate)} is not a working day.`
+            : `${planDayLabel(item.planDate)} is a morning: it holds AM only, so ${customer.name} cannot go there.`,
       };
     }
 
@@ -284,13 +418,13 @@ export function resolvePlanItems(input: {
     if (counts.PM > input.settings.pmDailyCap) {
       return {
         ok: false,
-        error: `${dayLabel(day)} has ${counts.PM} PM. A day holds ${input.settings.pmDailyCap} PM at most.`,
+        error: `${planDayLabel(day)} has ${counts.PM} PM. A day holds ${input.settings.pmDailyCap} PM at most.`,
       };
     }
     if (counts.AM > input.settings.amDailyCap) {
       return {
         ok: false,
-        error: `${dayLabel(day)} has ${counts.AM} AM. A day holds ${input.settings.amDailyCap} AM at most.`,
+        error: `${planDayLabel(day)} has ${counts.AM} AM. A day holds ${input.settings.amDailyCap} AM at most.`,
       };
     }
   }

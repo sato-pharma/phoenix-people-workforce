@@ -9,7 +9,7 @@ import {
   planDeadlinePassed,
   weeklyPlanDueOn,
 } from "../src/lib/phoenix-crm/calendar.ts";
-import { planDueLabel } from "../src/lib/phoenix-crm/plan-rules.ts";
+import { planDueLabel, withPlanDeadline } from "../src/lib/phoenix-crm/plan-rules.ts";
 import { planReminderDay, repReminder, managerReminder } from "../src/lib/phoenix-crm/plan-reminder-rules.ts";
 
 /**
@@ -49,6 +49,19 @@ export function runPhoenixCrmPlanDeadlineTests(): void {
     assert.equal(planDueLabel("2026-10-08"), "Thursday, 8 October 2026 at 11:55 PM");
     assert.equal(planDueLabel(null), "—", "and nothing invents a deadline where there is no due date");
     assert.ok(planDueLabel("2026-10-08").includes(PLAN_DEADLINE_LABEL), "the composer uses the one wording");
+
+    // 🔴 THE JOIN IS SHARED, THE DATE STYLE IS NOT. The Team tab reads a compact date in a row beside a
+    // dozen reps, so it keeps "Thu 8 Oct 2026" and takes the deadline through the same joiner — one
+    // wording for both screens, which is what stops a reviewer and his rep reading two deadlines.
+    assert.equal(withPlanDeadline("Thu 8 Oct 2026"), "Thu 8 Oct 2026 at 11:55 PM");
+    assert.ok(planDueLabel("2026-10-08").endsWith(`at ${PLAN_DEADLINE_LABEL}`), "the rep's label is built from that joiner");
+    const teamTab = readFileSync(new URL("../src/components/phoenix-crm/team-tab.tsx", import.meta.url), "utf8");
+    assert.match(
+      teamTab,
+      /Due \{withPlanDeadline\(dayLabelWithYear\(row\.plan\.dueOn\)\)\}/,
+      "the Team tab's Due cell shows the hour that decided the reviewer's own 'Sent late' pill",
+    );
+    assert.ok(!/Due \{dayLabelWithYear\(/.test(teamTab), "and nothing there prints a bare due date beside it");
   }
 
   // ── 2. The instant, and the once-a-year fold ─────────────────────────────────────────────────────
@@ -119,18 +132,36 @@ export function runPhoenixCrmPlanDeadlineTests(): void {
     const day = planReminderDay("2026-10-08");
     assert.ok(day, "the due day is a reminder day");
     assert.equal(day.late, false);
-    const onTime = repReminder({ hrId: "PD-0001", day, cairoToday: "2026-10-08", draftStarted: true });
-    assert.ok(onTime.message.includes(`due tonight at ${PLAN_DEADLINE_LABEL}`), "it says the hour, not just tonight");
+    const onTime = repReminder({ hrId: "PD-0001", day, cairoToday: "2026-10-08", tick: "noon", draftStarted: true });
+    // 🔴 ON THE PHONE IT IS THE TITLE THAT SURVIVES (owner, 2026-10-02). This notice goes out on `push`,
+    // where OneSignal's `headings` is what a lock screen shows and then cuts — so the deadline is the
+    // FIRST thing in the title, never the last, and these assert its POSITION, not just its presence.
+    assert.ok(onTime.title.startsWith(`Due tonight, ${PLAN_DEADLINE_LABEL}`), onTime.title);
+    assert.ok(onTime.title.includes("Saturday 10 Oct"), "and the week is still named in it, never a date code");
+    assert.ok(onTime.title.indexOf(PLAN_DEADLINE_LABEL) < 24, "early enough to survive a cut heading — the whole reason it moved");
+    assert.ok(onTime.message.startsWith("Your plan is not sent yet."), "the body carries its own subject");
 
     const after = planReminderDay("2026-10-09");
     assert.ok(after, "the day after is still a reminder day");
     assert.equal(after.late, true);
-    const lateNotice = repReminder({ hrId: "PD-0001", day: after, cairoToday: "2026-10-09", draftStarted: true });
-    assert.ok(lateNotice.message.includes(`at ${PLAN_DEADLINE_LABEL}`), "and the late wording carries it too");
+    const lateNotice = repReminder({ hrId: "PD-0001", day: after, cairoToday: "2026-10-09", tick: "noon", draftStarted: true });
+    assert.ok(lateNotice.title.startsWith(`Was due Thursday 8 Oct, ${PLAN_DEADLINE_LABEL}`), lateNotice.title);
     assert.ok(lateNotice.message.includes("A late week is still accepted"), "while still telling him it is accepted");
+    // The tone does not harden with the title: nothing here calls him late, warns him, or scores him.
+    for (const text of [onTime.title, onTime.message, lateNotice.title, lateNotice.message]) {
+      assert.ok(!/\b(overdue|violation|warning|failed|penalty)\b/i.test(text), `no scolding wording: ${text}`);
+    }
 
-    const manager = managerReminder({ hrId: "PD-0100", day, cairoToday: "2026-10-08", repNames: ["Aya Ibrahim"] });
+    const manager = managerReminder({ hrId: "PD-0100", day, cairoToday: "2026-10-08", tick: "noon", repNames: ["Aya Ibrahim"] });
     assert.ok(manager, "the manager hears about his own reps");
-    assert.ok(manager.message.includes(`due tonight at ${PLAN_DEADLINE_LABEL}`), "with the same deadline");
+    // His heading leads with it too, and pinned by POSITION for the same reason: he is the one who can
+    // still chase a rep before 23:55, so the hour must survive a cut heading on his phone as well.
+    assert.ok(manager.title.startsWith(`Due tonight, ${PLAN_DEADLINE_LABEL}`), manager.title);
+    assert.ok(manager.title.indexOf(PLAN_DEADLINE_LABEL) < 24, "early enough to survive the cut");
+    assert.ok(manager.title.includes("Saturday 10 Oct"), "and his title still names the week");
+    assert.ok(manager.message.startsWith("Not sent yet: "), "the names carry his body on their own");
+    const lateManager = managerReminder({ hrId: "PD-0100", day: after, cairoToday: "2026-10-09", tick: "noon", repNames: ["Aya Ibrahim"] });
+    assert.ok(lateManager, "and about a week that is already late");
+    assert.ok(lateManager.title.startsWith(`Was due Thursday 8 Oct, ${PLAN_DEADLINE_LABEL}`), lateManager.title);
   }
 }

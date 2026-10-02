@@ -129,6 +129,11 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // due it reads nothing and sends nothing. On :57 so a red execution names one job. Must match
   // scripts/cronjob-sync.mjs exactly, and lands in the SAME sitting as its cron job (see the digest's note above).
   { slug: "phoenix-crm-plan-reminder", kind: "cron", schedule: "57 12,17 * * *", graceSeconds: 2 * HOUR },
+  // 09:57 Cairo, every day (owner, 2026-10-02): the nudge to a district manager or the SFE Manager with
+  // a list request, an off-plan visit or a request to edit a week waiting on him for more than a day.
+  // A morning with nothing overdue sends nothing and still reports. On :57 at 9, a minute no other job
+  // holds. Must match scripts/cronjob-sync.mjs exactly, and lands in the SAME sitting as its cron job.
+  { slug: "phoenix-crm-approval-nudge", kind: "cron", schedule: "57 9 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
   // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,
   // so the 25th leaves several working days to check on someone before any money moves. The other

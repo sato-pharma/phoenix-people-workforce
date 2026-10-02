@@ -66,12 +66,15 @@ import {
   type MonthlyCallRate,
   type MonthlyListMeter,
 } from "@/lib/phoenix-crm/monthly-plan-rules";
+import { sentChangesOf, type PlanSentChanges } from "@/lib/phoenix-crm/plan-review-rules";
 import {
   isPlanEditable,
   isUuid,
+  onlyReturnedDayEditable,
   PLAN_DECISION_NOTE_MAX,
   planDueLabel,
   planStatusLabel,
+  standingReturnedDay,
   type RepWeekState,
 } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -94,8 +97,11 @@ import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanActivities } from "@/lib/phoenix-crm/server/plan-activities";
 import { loadPlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
-import { loadPlanEditState, repStateOf, type PlanEditRequestView, type PlanEditState } from "@/lib/phoenix-crm/server/plan-edits";
+import { loadSeatDaysOff } from "@/lib/phoenix-crm/server/leave-days";
+import { editAcknowledgedAt, loadPlanEditState, repStateOf, type PlanEditRequestView, type PlanEditState } from "@/lib/phoenix-crm/server/plan-edits";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
+import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
+import { loadPlanSends } from "@/lib/phoenix-crm/server/plan-review";
 import {
   buildDays,
   ITEM_COLUMNS,
@@ -113,7 +119,7 @@ import {
   type TerritoryReadiness,
 } from "@/lib/phoenix-crm/server/plans";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
-import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
+import type { PlannerCustomer, PlannerInsight } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -251,6 +257,19 @@ export type MonthlyWeekView = {
   editRequest: PlanEditRequestView | null;
   canApprove: boolean;
   canReturn: boolean;
+  /**
+   * The ONE day a reviewer returned, while it stands (owner, 2026-10-02: "Only that day" reopens). Every
+   * other day of the week reads `editable: false` — greyed on the rep's board and refused by `savePlan`.
+   * Null for a week returned whole, every week that is not returned, and one opened whole since by an
+   * acknowledged edit.
+   */
+  returnedDay: string | null;
+  /**
+   * For the people who decide a SENT week (owner, 2026-10-02): what changed against the version sent
+   * before it — the days, the customers added and removed, the activities. Null for anyone else, and on
+   * any week that is not waiting for review.
+   */
+  sentChanges: PlanSentChanges | null;
 };
 
 export type MonthlyPlannerView = {
@@ -323,6 +342,9 @@ export async function loadMonthlyPlanner(
   // items, activities, starts and names follow the plan rows alone. The three plan reads still fail in
   // the order they always did, and the mint's own failure is still the one that surfaces first.
   const supabase = getSupabaseAdmin();
+  // Who decides this territory's weeks — known before the plan rows are read, because a week waiting on
+  // their decision brings what its sends kept (what changed since the last send, owner 2026-10-02).
+  const decidesWeeks = canReviewTerritory(viewer, seat, isTest) || canReturnTerritoryPlan(viewer, seat, isTest);
   const ensured = ensureReferenceCustomers(seat, isTest);
   const planPartsRead = (async () => {
     const [headerResult, monthsResult, planRowsResult, leadingResult] = await Promise.all([
@@ -354,7 +376,12 @@ export async function loadMonthlyPlanner(
     const planIds = planRows.map((row) => String(row.id));
     const leadingId = leadingRow ? String(leadingRow.id) : null;
     const allIds = leadingId ? [...planIds, leadingId] : planIds;
-    const [allItemRows, names, activities, starts, editState] = await Promise.all([
+    // The weeks waiting on this viewer's decision bring their sends (owner, 2026-10-02) — and nobody
+    // else's board reads them, the rep's own included.
+    const reviewIds = decidesWeeks
+      ? [...planRows, ...(leadingRow ? [leadingRow] : [])].filter((row) => row.status === "submitted").map((row) => String(row.id))
+      : [];
+    const [allItemRows, names, activities, starts, editState, sends] = await Promise.all([
       loadPlanItemRows(allIds, ITEM_COLUMNS),
       loadPeopleNames([
         ...territoryPeople(viewer.org, [seat]),
@@ -364,10 +391,11 @@ export async function loadMonthlyPlanner(
       loadPlanDayStarts(allIds),
       // Each week's request to edit it (owner, 2026-10-01), beside the rest — never a wave of its own.
       loadPlanEditState(allIds, isTest),
+      loadPlanSends(reviewIds),
     ]);
     const itemRows = leadingId ? allItemRows.filter((row) => String(row.plan_id) !== leadingId) : allItemRows;
     const leadingItems = leadingId ? allItemRows.filter((row) => String(row.plan_id) === leadingId) : [];
-    return { monthsResult, headerRow, planRows, itemRows, leadingRow, leadingItems, names, activities, starts, editState };
+    return { monthsResult, headerRow, planRows, itemRows, leadingRow, leadingItems, names, activities, starts, editState, sends };
   })();
   const customersRead = ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }));
   const wave = Promise.all([
@@ -378,16 +406,24 @@ export async function loadMonthlyPlanner(
     customersRead.then(({ customers }) => loadPlannerReferences(seat.seatId, isTest, customers)),
     // Two weeks either side of the month reach every week the board can show, the leading one included.
     loadPlanHolidays(addDaysIso(monthStart, -14), addDaysIso(monthEndOf(monthStart), 14)),
+    // Last seen, the usual days and a follow-up due (owner, 2026-10-02): its Phoenix visits start now,
+    // and only its iReports360 half follows the customer list — never a wave of its own. Only the rep
+    // plans from them, so a reviewer's board reads none.
+    canWriteAsRep(viewer, seat, isTest) ? loadPlannerInsights(seat.seatId, isTest, today, customersRead) : Promise.resolve(new Map<string, PlannerInsight>()),
+    // The rep's own full days of approved leave are days off too (owner, 2026-10-02), over the same days.
+    loadSeatDaysOff(seat, { from: addDaysIso(monthStart, -14), to: addDaysIso(monthEndOf(monthStart), 14) }),
   ]);
   wave.catch(() => undefined);
   await ensured;
   const [
-    { monthsResult, headerRow, planRows, itemRows, leadingRow, leadingItems, names, activities, starts, editState },
+    { monthsResult, headerRow, planRows, itemRows, leadingRow, leadingItems, names, activities, starts, editState, sends },
     { customers, placesByCustomer },
     visitCounts,
     readiness,
     references,
     holidays,
+    insights,
+    leave,
   ] = await wave;
 
   const settings = viewer.config.settings;
@@ -415,6 +451,7 @@ export async function loadMonthlyPlanner(
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       pending: row.status === "pending",
       reference: references.get(customerId) ?? null,
+      insight: insights.get(customerId) ?? null,
       places: (placesByCustomer.get(customerId) ?? []).map((place) => ({
         placeId: place.placeId,
         label: place.label,
@@ -463,13 +500,22 @@ export async function loadMonthlyPlanner(
   // its own plan row, its own editable window, its own Send. Only its name and its note differ.
   const toWeekView = (weekStart: string, planRow: Row | null, weekItems: Row[], leading: boolean): MonthlyWeekView => {
     const weekStatus = planRow ? statusOf(planRow.status) : null;
-    const days = buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays });
     const weekPlan = planRow ? mapPlan(planRow, names) : null;
+    // One week at a time (owner, 2026-10-01): the same answer the server gives a save or a send.
+    const edit: PlanEditState | null = planRow ? (editState.get(String(planRow.id)) ?? null) : null;
+    // A week returned for ONE day (owner, 2026-10-02: "Only that day"): that day alone is the rep's to
+    // change — the same days `savePlan` accepts — and every other day reads as fixed, which greys it.
+    const returnedDay = standingReturnedDay({
+      status: weekStatus,
+      returnedDay: weekPlan?.returnedDay ?? null,
+      decidedAt: weekPlan?.decidedAt ?? null,
+      editAcknowledgedAt: editAcknowledgedAt(edit),
+    });
+    const builtDays = buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave });
+    const days = onlyReturnedDayEditable(builtDays, returnedDay);
     const dueOn = weekPlan?.dueOn ?? weeklyPlanDueOn(weekStart);
     const open = editablePlanDays(weekStart, today).length > 0;
     const staleOpen = days.some((day) => day.editable && day.items.some((item) => item.stale));
-    // One week at a time (owner, 2026-10-01): the same answer the server gives a save or a send.
-    const edit: PlanEditState | null = planRow ? (editState.get(String(planRow.id)) ?? null) : null;
     const repState: RepWeekState = repForWeeks ? repStateOf({ weekStart, cairoToday: today, status: weekStatus, edit }) : "closed";
     const canEdit = repState === "plan";
     const latest = edit?.latest ?? null;
@@ -511,6 +557,8 @@ export async function loadMonthlyPlanner(
       editRequest,
       canApprove: reviewerForWeeks && weekStatus === "submitted",
       canReturn: open && returnerForWeeks && (weekStatus === "submitted" || weekStatus === "approved"),
+      returnedDay,
+      sentChanges: decidesWeeks && weekStatus === "submitted" && planRow ? sentChangesOf(sends.get(String(planRow.id)) ?? []) : null,
     };
   };
   const weekViews: MonthlyWeekView[] = weeks.map((weekStart) => {

@@ -47,6 +47,23 @@ export type PlannerPlace = {
  */
 export type PlannerReference = { brick: string | null; area: string | null; address: string | null };
 
+/**
+ * What the plan board tells the rep about a customer beyond his list row (owner, 2026-10-02) — read and
+ * used by plan-insight.ts: his last visit on every row, iReports360's usual days while he has no days
+ * of his own, and a follow-up his latest visit left due.
+ */
+export type PlannerInsight = {
+  /** The latest of his iReports360 history and his own Phoenix visits. Null when neither holds one. */
+  lastSeenOn: string | null;
+  /**
+   * The weekdays his iReports360 visits usually fell on (0 = Sunday … 6 = Saturday, Saturday first),
+   * read only while he has no saved days and hours. Null once he has them, or when nothing is known.
+   */
+  usualWeekdays: number[] | null;
+  /** The day his LATEST visit's next step is due, when it left something to do with a date. */
+  followUpOn: string | null;
+};
+
 export type PlannerCustomer = {
   customerId: string;
   name: string;
@@ -59,6 +76,11 @@ export type PlannerCustomer = {
   places: PlannerPlace[];
   /** iReports360's brick and address while he is not validated yet; null once he has a place. */
   reference?: PlannerReference | null;
+  /**
+   * His last visit, his usual days and a follow-up due (plan-insight.ts). Absent or null when the reads
+   * behind it did not answer: the row then says nothing about it rather than something untrue.
+   */
+  insight?: PlannerInsight | null;
 };
 
 export type PlacedOnDay = {
