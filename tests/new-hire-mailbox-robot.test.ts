@@ -23,7 +23,7 @@ import {
   describeLocator,
   missingControl,
   type Locator,
-} from "../src/lib/new-hire-mailbox/robot/locators.ts";
+} from "../src/lib/turbify/locators.ts";
 import {
   JOINER_STEP_ORDER,
   createDryRunJoinerDriver,
@@ -35,9 +35,10 @@ import {
   isPresent,
   matchesLocator,
   resolveOne,
+  rowCountRefusal,
   type CandidateReader,
   type ElementCandidate,
-} from "../src/lib/new-hire-mailbox/robot/resolve.ts";
+} from "../src/lib/turbify/resolve.ts";
 import {
   COMPANY_PASSWORD_ENV,
   INITIAL_PASSWORD_AUDIENCE,
@@ -278,6 +279,27 @@ export async function runNewHireMailboxRobotTests(): Promise<void> {
   assert.equal(cssQueryFor(ECP_LOCATORS.emailLocal), 'input[name="emailLocal"],select[name="emailLocal"],textarea[name="emailLocal"]');
   assert.equal(cssQueryFor(ECP_LOCATORS.deleteUser), "button");
   assert.equal(cssQueryFor(ECP_LOCATORS.searchBox), 'input[placeholder="Search users..."]');
+
+  // ── the same rule, for a driver that counts matches itself ───────────────────────────────────
+  // 🔴 The revocation driver drives puppeteer directly and counts with $$eval, so it uses this pure
+  // form. It is the gate that stops a reset landing on a WORKING employee when the search box did
+  // not narrow the list: the driver's own dialog check catches a wrong row only AFTER the reset has
+  // already happened, and detection is not prevention.
+  assert.equal(rowCountRefusal(1, "leaver@satopharma.com"), null, "exactly one row is safe to act on");
+  for (const count of [0, 2, 3, 288]) {
+    const refusal = rowCountRefusal(count, "leaver@satopharma.com");
+    assert.ok(refusal, `${count} rows must be refused`);
+    assert.match(refusal ?? "", /Nothing was clicked/);
+    assert.match(refusal ?? "", new RegExp(`showed ${count} matching rows`));
+  }
+  // An unreadable count is a refusal too — an unreadable list is not an empty one, and treating it
+  // as empty is how a robot proceeds against a page it never saw.
+  for (const unreadable of [-1, Number.NaN]) {
+    const refusal = rowCountRefusal(unreadable, "leaver@satopharma.com");
+    assert.match(refusal ?? "", /an unreadable number of/);
+  }
+  // The action is named, so a delete refusal cannot read as a reset refusal in a log.
+  assert.match(rowCountRefusal(2, "x@satopharma.com", "Delete") ?? "", /^Delete x@satopharma\.com/);
 
   // findMatches filters rather than throwing, for checking a page is the expected one.
   assert.equal((await findMatches(pageOf([resetButton, { aria: "Edit", tag: "button" }]), ECP_LOCATORS.resetPassword)).length, 1);

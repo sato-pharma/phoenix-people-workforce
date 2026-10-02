@@ -33,8 +33,8 @@ import { loadPuppeteer, resolveChromiumPath } from "@/lib/pdf/chromium";
 
 import type { CreatedMailbox, JoinerConsoleDriver } from "./driver";
 import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
-import { APP_PASSWORD_PAGE, ECP_LOCATORS, ONE_TIME_PASSWORD_DIALOG, type Locator } from "./locators";
-import { cssQueryFor, resolveOne, type CandidateReader, type ElementCandidate } from "./resolve";
+import { APP_PASSWORD_PAGE, ECP_LOCATORS, ONE_TIME_PASSWORD_DIALOG, type Locator } from "@/lib/turbify/locators";
+import { cssQueryFor, resolveOne, type CandidateReader, type ElementCandidate } from "@/lib/turbify/resolve";
 import { COMPANY_MAIL_DOMAIN } from "./safety";
 
 const LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fecp.turbify.com%2F";
