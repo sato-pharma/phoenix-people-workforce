@@ -40,6 +40,7 @@ export const notificationRoleKeys = [
   "new_hire_mailbox_alert",
   "service_milestone_notice",
   "activity_inactivity_digest",
+  "accepted_offer_alert",
 ] as const;
 
 export type NotificationRoleKey = (typeof notificationRoleKeys)[number];
@@ -248,6 +249,14 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     description:
       "Who is told, once a day in-app and on Telegram, which colleagues have not signed in to Phoenix for a week or more. Deliberately never email (the owner's standing rule for this kind of internal notice). Defaults to Super Admin alone, which is who asked for it (2026-09-26).",
     roles: ["Super Admin"],
+    enabled: true,
+  },
+  accepted_offer_alert: {
+    key: "accepted_offer_alert",
+    label: "Offer accepted — ready to hire",
+    description:
+      "Who is told, in-app, by push and on Telegram, the moment a job offer is marked accepted, so the new hire can be seated. The notice carries the candidate's name, the agreed start date and the seat the offer named, and links to the organogram where an accepted offer is now one press to hire. Defaults to Super Admin and HR Operations — the owner's choice, 2026-10-02.",
+    roles: ["Super Admin", "HR Operations"],
     enabled: true,
   },
 };
