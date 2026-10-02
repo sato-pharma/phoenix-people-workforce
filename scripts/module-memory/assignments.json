@@ -1,5 +1,6 @@
 {
   "a-403-on-a-phoenix-crm-route-proves-nothing": "platform",
+  "a-background-poller-dies-with-the-worktree-it-runs-in": "sessions",
   "a-broken-rsc-page-still-returns-http-200": "platform",
   "a-case-duplicate-line-map-row-doubled-a-whole-line": "sales-attribution",
   "a-conflicted-pr-runs-no-ci-at-all": "engineering",

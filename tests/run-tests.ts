@@ -920,6 +920,7 @@ import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts"
 import { runNewHireMailboxAdoptTests } from "./new-hire-mailbox-adopt.test.ts";
 import { runMailboxAppPasswordClearTests } from "./mailbox-app-password-clear.test.ts";
 import { runTurbifyControlReportTests } from "./turbify-control-report.test.ts";
+import { runTurbifyClickDeliveryTests } from "./turbify-click-delivery.test.ts";
 import { runMailboxRobotSweepHookTests } from "./mailbox-robot-sweep-hook.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
@@ -4057,6 +4058,17 @@ await runTest(
   + "input's value or the whole body and clicks nothing, and the whole thing is OFF unless the flag "
   + "is exactly \"true\")",
   runTurbifyControlReportTests,
+);
+await runTest(
+  "a Turbify click reaches the control and not the thing on top of it (measured 2026-10-02: the "
+  + "driver ran at puppeteer's default 800x600, Turbify's fixed cookie banner covered everything "
+  + "below y=412, the Email user button sat at y=430, and handle.click() clicked the BANNER and "
+  + "reported no error — so three mailboxes failed with an innocent selector named in the error. "
+  + "An obstruction is now detected and the click re-delivered on the node, which cannot land "
+  + "elsewhere because resolveOne matched exactly one element; the viewport is explicit and leaves "
+  + "real headroom; a hit test that cannot answer falls back rather than refusing; and the robot "
+  + "never accepts cookies on the owner's behalf)",
+  runTurbifyClickDeliveryTests,
 );
 await runTest(
   "mailbox revocation robot wired to the daily sweep (off by default; dry run is the default once "

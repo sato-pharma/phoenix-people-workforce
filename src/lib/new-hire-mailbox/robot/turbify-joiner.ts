@@ -42,6 +42,13 @@ import type { CreatedMailbox, JoinerConsoleDriver } from "./driver";
 import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
 import { APP_PASSWORD_PAGE, ECP_LOCATORS, ONE_TIME_PASSWORD_DIALOG, type Locator } from "@/lib/turbify/locators";
 import { cssQueryFor, resolveOne, rowCountRefusal, type CandidateReader, type ElementCandidate } from "@/lib/turbify/resolve";
+import {
+  CONSOLE_VIEWPORT,
+  decideClickDelivery,
+  HIT_TEST_EXPRESSION,
+  NODE_CLICK_EXPRESSION,
+  type HitTest,
+} from "@/lib/turbify/click-delivery";
 import { COMPANY_MAIL_DOMAIN } from "./safety";
 
 const LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fecp.turbify.com%2F";
@@ -58,7 +65,10 @@ type ConsolePage = {
   $$: (selector: string) => Promise<Handle[]>;
   $$eval: <T>(selector: string, fn: (elements: Element[]) => T) => Promise<T>;
   click: (selector: string) => Promise<void>;
-  evaluate: <T>(fn: string | (() => T)) => Promise<T>;
+  // The second form takes an element handle as the expression's argument, which is how the hit test
+  // and the node click reach the ONE element `resolveOne` already matched.
+  evaluate: <T>(fn: string | (() => T), arg?: Handle) => Promise<T>;
+  setViewport: (viewport: { width: number; height: number }) => Promise<void>;
   goto: (url: string, options?: Record<string, unknown>) => Promise<unknown>;
   type: (selector: string, text: string, options?: Record<string, unknown>) => Promise<void>;
   url: () => string;
@@ -107,7 +117,35 @@ async function act(page: ConsolePage, locator: Locator, action: (handle: Handle)
   await action(handle);
 }
 
-const clickOne = (page: ConsolePage, locator: Locator) => act(page, locator, (handle) => handle.click());
+/**
+ * Click a control, having first checked that the control is what sits at its own centre.
+ *
+ * 🔴 A COORDINATE CLICK THAT REPORTS SUCCESS IS NOT EVIDENCE THE CONTROL WAS CLICKED — see
+ * `@/lib/turbify/click-delivery`. On 2026-10-02 three mailboxes failed to be created because
+ * `handle.click()` silently hit a cookie banner lying over the button, and the step then blamed the
+ * selector it was waiting for afterwards.
+ *
+ * By this point `resolveOne` has matched exactly one element, so dispatching on the node cannot
+ * reach anything else — which is why an obstruction is handled rather than refused.
+ */
+async function clickResolved(page: ConsolePage, locator: Locator): Promise<void> {
+  await act(page, locator, async (handle) => {
+    const hit = await page
+      .evaluate<HitTest>(HIT_TEST_EXPRESSION, handle)
+      .catch(() => ({ isTopmost: true, obstruction: null }) as HitTest);
+    const delivery = decideClickDelivery(hit, locator.purpose);
+    if (delivery.via === "coordinates") {
+      await handle.click();
+      return;
+    }
+    logInfo("Turbify click delivered on the node because something was covering the control", {
+      labels: { event: "turbify_click_obstructed", purpose: locator.purpose, reason: delivery.reason },
+    });
+    await page.evaluate<void>(NODE_CLICK_EXPRESSION, handle);
+  });
+}
+
+const clickOne = (page: ConsolePage, locator: Locator) => clickResolved(page, locator);
 const fillOne = (page: ConsolePage, locator: Locator, value: string) =>
   act(page, locator, (handle) => handle.type(value, { delay: 15 }));
 
@@ -195,6 +233,10 @@ export async function createTurbifyJoinerDriver(credentials: {
     ...(executablePath ? { executablePath } : { channel: "chrome" }),
   });
   const page = (await browser.newPage()) as unknown as ConsolePage;
+  // 🔴 EXPLICIT, because puppeteer's default is 800x600 and at that height Turbify's fixed cookie
+  // banner covers the console's own buttons — which is exactly how three mailboxes silently failed
+  // to be created on 2026-10-02. `click-delivery.ts` carries the measurement.
+  await page.setViewport({ ...CONSOLE_VIEWPORT }).catch(() => {});
 
   async function signInAs(url: string, username: string, password: string, proof: () => Promise<boolean>, who: string) {
     await page.goto(url, { waitUntil: "networkidle2", timeout: 60_000 });
