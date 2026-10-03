@@ -13,7 +13,7 @@
  * `phoenix_crm_decide_validation_review` (the decision) — migration 20261003130536.
  */
 
-import { forbiddenError, validationError } from "@/lib/http/api-errors";
+import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { withdrawInAppNotificationsByEventKeyPrefix } from "@/lib/notifications/in-app";
 import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
@@ -155,7 +155,7 @@ export type ValidationReviewRow = {
   /** The signboard photo, signed on the page by the CRM's own photo link (the Super Admin reads all). */
   photoPath: string | null;
   /** Why the system held it, and every listing Google returned for the name. */
-  reason: "no_confident_listing" | "lookup_failed" | "listing_far" | null;
+  reason: "no_confident_listing" | "lookup_failed" | "listing_far" | "refused_by_admin" | null;
   query: string | null;
   listings: Array<GoogleListing & { distanceMeters: number }>;
   decidedByName: string | null;
@@ -225,7 +225,10 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
     const seat = viewer.org.seats.get(String(row.seat_id));
     const photoPath = text(place.photo_path);
     const status = row.status === "approved" || row.status === "rejected" ? row.status : "pending";
-    const reason = google.reason === "no_confident_listing" || google.reason === "lookup_failed" || google.reason === "listing_far" ? google.reason : null;
+    const reason =
+      google.reason === "no_confident_listing" || google.reason === "lookup_failed" || google.reason === "listing_far" || google.reason === "refused_by_admin"
+        ? google.reason
+        : null;
     return {
       reviewId: String(row.id),
       status,
@@ -289,4 +292,180 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
   // The "waiting for you" notice is answered.
   await withdrawInAppNotificationsByEventKeyPrefix(reviewNoticeKey(reviewId)).catch(() => undefined);
   return { reviewId, status: decision === "approve" ? "approved" : "rejected" };
+}
+
+// ── Refusing a validation the system never held ─────────────────────────────────────────────────
+
+/**
+ * Only AM customers are checked against Google (`googleCheckApplies`), so a DOCTOR's validation — and
+ * any AM one that matched its listing — is never held and never reaches the queue above. There was no
+ * way to undo one: on 2026-10-03 a rep's validation had to be refused by hand in SQL.
+ *
+ * This is that, as a button. It writes the SAME review row the automatic check would have written —
+ * `refused_by_admin`, in the rep's name, decided by the Super Admin — and then runs the SAME
+ * `phoenix_crm_decide_validation_review` reject. So there is one reject path, one audit shape, and the
+ * rep's own list reads `not_confirmed` in the system's automated wording either way (golden rule #1:
+ * "do not show the rep that a person is accepting or rejecting").
+ */
+
+/** How far back the page offers validations to refuse. */
+const VALIDATED_SHOWN_DAYS = 30;
+
+export type ValidatedPlaceRow = {
+  placeId: string;
+  customerId: string;
+  customerName: string;
+  listType: string;
+  speciality: string | null;
+  isTest: boolean;
+  repName: string;
+  territory: string;
+  validatedAt: string;
+  validatedAtText: string;
+  placeLabel: string | null;
+  address: string | null;
+  brickName: string | null;
+  areaName: string | null;
+  point: { lat: number; lon: number };
+  mapsLink: string;
+  pin: ValidationReviewReading | null;
+  photo: ValidationReviewReading | null;
+  photoPath: string | null;
+  /** Visits already measured against this place — refusing it un-places every one of them. */
+  visits: number;
+  /** Other active places this customer has: when there are none, refusing sends him back to To validate. */
+  otherPlaces: number;
+};
+
+/**
+ * Every place validated in the last VALIDATED_SHOWN_DAYS that is still active and is not already
+ * waiting in the queue above — newest first, so "he just validated this, take it back" is the top row.
+ */
+export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<ValidatedPlaceRow[]> {
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  const since = new Date(Date.now() - VALIDATED_SHOWN_DAYS * 86_400_000).toISOString();
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_places")
+    .select(
+      "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at",
+    )
+    .eq("status", "active")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(400);
+  throwIfError(error);
+  const places = (data ?? []) as Row[];
+  if (places.length === 0) return [];
+
+  const customerIds = [...new Set(places.map((row) => String(row.customer_id)))];
+  const [customers, pending, visits, activePlaces] = await Promise.all([
+    getSupabaseAdmin().from("phoenix_crm_customers").select("id, name, list_type, speciality").in("id", customerIds),
+    getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("place_id").eq("status", "pending").in("customer_id", customerIds),
+    getSupabaseAdmin().from("phoenix_crm_visits").select("place_id").in("place_id", places.map((row) => String(row.id))),
+    getSupabaseAdmin().from("phoenix_crm_places").select("id, customer_id").eq("status", "active").in("customer_id", customerIds),
+  ]);
+  throwIfError(customers.error);
+  throwIfError(pending.error);
+  throwIfError(visits.error);
+  throwIfError(activePlaces.error);
+  const customerById = new Map(((customers.data ?? []) as Row[]).map((row) => [String(row.id), row]));
+  const held = new Set(((pending.data ?? []) as Row[]).map((row) => String(row.place_id)));
+  const visitsByPlace = new Map<string, number>();
+  for (const row of (visits.data ?? []) as Row[]) {
+    const placeId = String(row.place_id ?? "");
+    if (placeId) visitsByPlace.set(placeId, (visitsByPlace.get(placeId) ?? 0) + 1);
+  }
+  const placesByCustomer = new Map<string, number>();
+  for (const row of (activePlaces.data ?? []) as Row[]) {
+    const customerId = String(row.customer_id);
+    placesByCustomer.set(customerId, (placesByCustomer.get(customerId) ?? 0) + 1);
+  }
+  const names = await loadPeopleNames(places.map((row) => text(row.created_by_hr_id)));
+
+  return places
+    .filter((row) => !held.has(String(row.id)))
+    .map((row) => {
+      const customer = customerById.get(String(row.customer_id)) ?? {};
+      const point = { lat: numberOrNull(row.lat) ?? 0, lon: numberOrNull(row.lon) ?? 0 };
+      const seat = viewer.org.seats.get(String(row.seat_id));
+      return {
+        placeId: String(row.id),
+        customerId: String(row.customer_id),
+        customerName: String(customer.name ?? "Unknown customer"),
+        listType: String(customer.list_type ?? ""),
+        speciality: text(customer.speciality),
+        isTest: row.is_test === true,
+        repName: nameOf(names, text(row.created_by_hr_id), "A rep"),
+        territory: seat ? territoryName(seat) : "Territory no longer in the organogram",
+        validatedAt: String(row.created_at),
+        validatedAtText: formatPhoenixDateTime(String(row.created_at)),
+        placeLabel: text(row.label),
+        address: text(row.address),
+        brickName: text(row.brick_name),
+        areaName: text(row.area_name),
+        point,
+        mapsLink: `https://www.google.com/maps/search/?api=1&query=${point.lat},${point.lon}`,
+        pin: reading(row.pin_lat, row.pin_lon, row.pin_accuracy_meters),
+        photo: reading(row.photo_lat, row.photo_lon, row.photo_accuracy_meters),
+        photoPath: text(row.photo_path),
+        visits: visitsByPlace.get(String(row.id)) ?? 0,
+        otherPlaces: Math.max((placesByCustomer.get(String(row.customer_id)) ?? 1) - 1, 0),
+      };
+    });
+}
+
+/**
+ * Refuse one validation the system never questioned. A note is REQUIRED — the automatic holds carry
+ * Google's own evidence, and a hand refusal carries nothing unless the person who pressed it says why,
+ * which is what the record is read back for months later.
+ */
+export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ placeId: string; reopened: boolean }> {
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  const body = (raw && typeof raw === "object" ? raw : {}) as Row;
+  if (!isUuid(body.placeId)) throw validationError("Choose the place to refuse.");
+  const note = cleanText(body.note, 500);
+  if (!note) throw validationError("Write why this validation is refused — it stays on the record.");
+  const placeId = String(body.placeId).toLowerCase();
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_places")
+    .select("id, seat_id, customer_id, is_test, status, created_by_hr_id")
+    .eq("id", placeId)
+    .maybeSingle();
+  throwIfError(error);
+  const place = data as Row | null;
+  if (!place) throw notFoundError("This place is no longer there. Reload the page.");
+  if (place.status !== "active") throw validationError("This place is already retired. Reload the page.");
+
+  // The review the automatic check would have written, had this customer been in its scope.
+  const inserted = await getSupabaseAdmin()
+    .from("phoenix_crm_validation_reviews")
+    .insert({
+      seat_id: String(place.seat_id),
+      customer_id: String(place.customer_id),
+      place_id: placeId,
+      is_test: place.is_test === true,
+      kind: "validation",
+      status: "pending",
+      google: { reason: "refused_by_admin", refused_by_hr_id: viewer.hrId },
+      created_by_hr_id: String(place.created_by_hr_id),
+    })
+    .select("id")
+    .single();
+  throwIfError(inserted.error);
+  const reviewId = String((inserted.data as Row).id);
+
+  const result = await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
+    p: { review_id: reviewId, actor_hr_id: viewer.hrId, decision: "reject", note },
+  });
+  // A retired place changes what every visit to the customer is measured against.
+  await restampVisitLocationsQuietly({
+    seatId: String(result.seat_id),
+    isTest: result.is_test === true,
+    customerId: String(result.customer_id),
+    actorHrId: viewer.hrId,
+    settings: viewer.config.settings,
+    scope: "all",
+  });
+  return { placeId, reopened: result.reopened === true };
 }
