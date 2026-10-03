@@ -5340,6 +5340,47 @@ the bird alone, the bird's floor is 40px so the two sides weigh the same.
 Pinned by `tests/rep-rank-badges.test.ts` — the corner anchoring, the one centre-aligned row, the fluid
 mark widths, the fluid clearance paddings, and the `@container`. Each was broken and watched to fire.
 
+**The strip's own long-label defect, and the truncation he refused (2026-10-03).** The ranking panel is a
+FIXED block of whole grid squares — 180 × 108 on a phone, 252 × 108 from `@md` — so its two labels get
+about 78px each on a phone. `ANTI INFECTIVE LINE` needs three lines there, and in the six-square height
+those three filled the panel edge to edge and pushed the orange tick out of the top; from 544px it was
+still two lines. It was missed because the long line name was stress-tested on the CARD, whose panel
+widens for it, and not on the strip, whose panel does not.
+
+**The first fix shipped the word away, and he overruled it in three words: _"no truncation ever."_** Cutting
+`line` off the label to make it fit IS truncation, and his standing rule is that where text collides with
+the space it has, WRAPPING wins — the text is never the thing that gives. So the label is written out in
+full and the PANEL grows instead: eight squares below `@md` (`h-[144px] @md:h-[108px]`), the same
+even-square cut one size larger, with the step driven by the label's own length rather than a hard-coded
+line name, so a line renamed or added later gets it automatically.
+
+Measured on the REAL component — its own markup rendered with the app's compiled CSS, at seven band widths
+under the portal's 88% zoom — with the full label restored:
+
+| band | panel | label | content inside the panel |
+| --- | --- | --- | --- |
+| 351–448 (phone) | 180 × **144** | 3 lines, all words | 99.1px of 144 — tick back inside |
+| 500 and up | 252 × 108 | 2 lines | 92.9px of 108 |
+| CNS, Pedia, every band | **unchanged** | 1 line | unchanged |
+
+**Verified in a real browser, signed in as real Anti Infective reps** (dev-auth preview, 2026-10-03). Two cases, because they
+differ: **B-7** holds BOTH boards (9th of 111 company, 1st of 38 line) — phone panel 180×144, the full label on three lines,
+content 111.5px inside it, the orange tick back in, panel edges 0.00px off the grid, no horizontal overflow; at laptop width
+252×108 on two lines. **AI-0020** holds the LINE board only — one cell takes the whole panel, so the same label sits on a single
+line and the panel stays at 108 (content 90.5px). The first cut gave him the taller panel for a label that never wrapped, 36px of
+empty space for nothing, so the step now requires two boards. 🔴 **At laptop width the two-line label leaves only ~2px inside the
+108px panel** — it fits, measured twice, but that is a thin margin: re-measure before touching this label's size or tracking.
+
+🔴 **A dev-auth preview must be opened on the SAME host the app redirects to.** The cookie is set on the host that answers
+`/api/dev-auth`, and the redirect lands on `localhost`: opening it on `127.0.0.1` set the cookie on a different origin, so the
+page kept the PREVIOUS rep's session and showed his line instead — which reads exactly like the hrId being rejected.
+
+🔴 **Widening the panel could never have fixed a phone, which is why the height is what moves.** At a 351px
+band the two marks leave the panel 22px a side, and fitting `ANTI INFECTIVE` on one line needs ~84px more;
+shrinking the type is banned by the fits-the-screen rule (merge, never shrink). Vertical space on a phone is
+the one dimension that is actually free. The share card is untouched — its own panel widens in whole squares
+for the same label, so it never had the defect.
+
 ## The rep's performance card — his banner, his proof, his footer (2026-10-03)
 
 The card a Medical Rep saves or shares from his rank strip. The rule is in `.claude/rules/portal.md`;

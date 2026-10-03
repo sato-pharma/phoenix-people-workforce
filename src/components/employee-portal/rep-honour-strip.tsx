@@ -189,10 +189,37 @@ export function RepHonourStrip({ standing }: { standing: RepRankStanding | null 
     company
       ? { key: "company", label: "Company", ink: "text-[#f47b20]", rank: company.rank, outOf: company.outOf }
       : null,
+    // 🔒 THE LABEL IS WRITTEN OUT IN FULL — "<name> line", never shortened to the name (owner,
+    // 2026-10-03: "no truncation ever"). Dropping the word was tried as a way to stop the longest
+    // line name stacking three deep on a phone and was REFUSED: cutting a word to make it fit IS
+    // truncation, and his standing rule is that where text collides with the space, WRAPPING wins.
+    // So the words stay and the PANEL grows instead — see the panel's own note below.
     line
       ? { key: "line", label: `${line.lineName} line`, ink: "text-[#0879b8]", rank: line.rank, outOf: line.outOf }
       : null,
   ].filter((cell): cell is NonNullable<typeof cell> => cell !== null);
+
+  // 🔒 THE PANEL GROWS FOR A LONG LABEL — IT NEVER SHORTENS ONE (owner, 2026-10-03: "no truncation
+  // ever"). On a phone the panel is 10 grid squares wide, so each label has about 78px — roughly nine
+  // of these letter-spaced capitals a line. "ANTI INFECTIVE LINE" needs three of them, and in a
+  // six-square panel those three filled it edge to edge and pushed the orange tick out of the top.
+  // The panel steps up to EIGHT squares instead, which is the same even-square cut one size larger,
+  // and the whole label is readable with the tick back inside. Short labels (`Company`, `CNS line`)
+  // are untouched at six, so nothing moves for a CNS or Pedia rep.
+  // 🔴 The step is driven by the LABEL ITSELF, not by a hard-coded line name, so a line renamed or
+  // added later gets the taller panel automatically. The threshold is in characters because that is
+  // what the wrap depends on: past ~18 the label cannot fit two lines of about nine.
+  // 🔴 AND ONLY WHEN THE TWO BOARDS SHARE THE WIDTH. A rep inside his line's top seven but outside
+  // the company's top fifteen has ONE cell, which takes the whole panel — "Anti Infective line" then
+  // sits on a single line in the six-square height (measured live, 2026-10-03: content 90.5px of
+  // 108). Without this he was handed the taller panel for a label that never wrapped, which is 36px
+  // of empty white space on a phone for nothing.
+  const PHONE_LABEL_CHARS_PER_LINE = 9;
+  const needsTallPanel =
+    cells.length > 1 && cells.some((cell) => cell.label.length > 2 * PHONE_LABEL_CHARS_PER_LINE);
+  // From @md the panel is 14 squares wide, where even the longest label settles on two lines inside
+  // the six-square height — so the step back down is unconditional there.
+  const panelHeight = needsTallPanel ? "h-[144px] @md:h-[108px]" : "h-[108px]";
 
   return (
     // 🔒 THE OWNER'S OWN LAYOUT, 2026-10-03: "you will make it white, striped horizontal and vertical;
@@ -253,7 +280,7 @@ export function RepHonourStrip({ standing }: { standing: RepRankStanding | null 
         </div>
 
         {/* The ranking where his footer has the date — under the same orange tick, in the same navy. */}
-        <div className="flex h-[108px] w-[180px] shrink-0 flex-col items-center justify-center bg-white @md:w-[252px]">
+        <div className={`flex ${panelHeight} w-[180px] shrink-0 flex-col items-center justify-center bg-white @md:w-[252px]`}>
           <span aria-hidden="true" className="h-[3px] w-8 bg-[#f47b20]" />
           <div className="mt-3 flex items-end gap-6 @md:gap-10">
             {cells.map((cell) => (
