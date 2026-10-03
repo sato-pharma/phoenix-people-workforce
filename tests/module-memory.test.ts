@@ -135,6 +135,28 @@ export function runModuleMemoryTests() {
   assert.doesNotMatch(settled.text, /## Old topic/);
   assert.match(settled.text, /## Inbox/);
 
+  // 5c. 🔴 THE FOLD RUNS THREE TIMES A DAY (owner, 2026-10-03), so its branch name must carry the
+  // CLOCK and not only the day. `git worktree add -b` fails outright on an existing branch, and the
+  // local branch outlives both the temporary worktree it made and the PR's merge (GitHub deletes
+  // only the remote one) — so a day-only name breaks every second run of a day that files a note
+  // twice, with nothing to show for it but a git error buried in a scheduled run's output.
+  const foldSrc = readFileSync("scripts/module-memory/fold.mjs", "utf8");
+  assert.match(foldSrc, /const stamp = `\$\{day\}-\$\{clock[^`]*`/, "the fold must build a day+clock stamp");
+  assert.match(foldSrc, /hourCycle: "h23"/, "the clock must be 24-hour, or midnight reads as hour 24");
+  assert.match(foldSrc, /const branch = `codex\/memory-fold-\$\{stamp\}`/, "the branch must use the day+clock stamp");
+  assert.doesNotMatch(foldSrc, /memory-fold-\$\{day\}/, "a day-only branch name cannot survive three runs a day");
+
+  // 5d. 🔴 THE "A FOLD PR IS ALREADY OPEN" THROTTLE KEYS ON THE BRANCH, NOT THE TITLE. A title test
+  // matched any open PR with "memory fold" in its name — a PR *about* the fold then stopped every
+  // run until it merged, which is exactly what #5215 did to itself on 2026-10-03. Only this script
+  // creates `codex/memory-fold-<digits>`, so the branch is the signal a human cannot collide with.
+  assert.match(foldSrc, /\/\^codex\\\/memory-fold-\\d\//, "the open-fold throttle must match the fold's own branch");
+  assert.doesNotMatch(foldSrc, /test\(p\.title\)/, "the open-fold throttle must not key on a PR title");
+  assert.ok(
+    !/^codex\/memory-fold-\d/.test("codex/memory-fold-cadence"),
+    "the branch pattern must require digits, so a human branch named after the fold is not mistaken for one",
+  );
+
   // 6. A rule that belongs to ONE business module must not grow back into AGENTS.md.
   const agents = readFileSync("AGENTS.md", "utf8");
   const offenders: string[] = [];

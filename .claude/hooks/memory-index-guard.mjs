@@ -205,8 +205,9 @@ if (verdict !== null) {
       // exactly the same terms. The clause after the dash is the correction.
       // 2026-10-02: module memory replaced the trim-and-relocate cycle (docs/module-memory.md). The
       // old advice — relocate a hook into AGENTS.md — is exactly what kept both files at their ceilings.
-      "Module memory (AGENTS.md 2.2): a new note's pointer goes under ## Inbox, and the weekly fold "
-        + "(node scripts/module-memory/fold.mjs --apply) files it under its module and empties the "
+      "Module memory (AGENTS.md 2.2): a new note's pointer goes under ## Inbox, and the fold — three "
+        + "times a day, 09:00/15:00/21:00 Cairo "
+        + "(node scripts/module-memory/fold.mjs --apply) — files it under its module and empties the "
         + "inbox once that PR merges — so nothing is trimmed to make room. Route by WHERE a fact "
         + "applies: one module to its memory (.claude/rules/<module>.md, ## Rules, in the PR that "
         + "teaches it), a session or tooling trap to docs/agents-session-traps-clusters.md, a rule "
