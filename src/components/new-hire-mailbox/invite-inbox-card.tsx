@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Inbox, Loader2, ShieldAlert } from "lucide-react";
 
 /**
@@ -35,7 +34,6 @@ type RunResult = {
 };
 
 export function InviteInboxCard({ inviteInbox }: { inviteInbox: string }) {
-  const router = useRouter();
   const [busy, setBusy] = useState<"plan" | "run" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RunResult | null>(null);
@@ -58,7 +56,21 @@ export function InviteInboxCard({ inviteInbox }: { inviteInbox: string }) {
         return;
       }
       setResult(payload.result ?? null);
-      if (!dryRun) router.refresh();
+      // 🔴 NO router.refresh() HERE, AND THAT IS THE FIX, NOT AN OMISSION.
+      //
+      // Measured on production 2026-10-03 at 23:02:13 Cairo. A live run failed, this line fired,
+      // the card came back remounted with `result` at its initial null, and the sentence naming
+      // what had stopped the run was gone from the screen before anyone could read it — leaving a
+      // card that looked like nothing had ever been clicked. The server state this refreshed is a
+      // pending-queue list; what it destroyed is the only account of a run that cannot be repeated
+      // (three live runs an hour), so the trade was always the wrong way round.
+      //
+      // It is worse on SUCCESS. `handover` is the sentence that has to be passed to the person,
+      // and for a new hire the company password becomes their real password — so a refresh on the
+      // happy path can erase a credential that is not recoverable from this screen.
+      //
+      // The list going one click stale is cosmetic and the next navigation fixes it. Pinned by
+      // `tests/new-hire-mailbox-result-survives.test.ts`.
     } catch {
       setError("The invite inbox adoption could not be reached.");
     } finally {

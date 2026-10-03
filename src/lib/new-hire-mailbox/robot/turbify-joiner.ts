@@ -561,7 +561,20 @@ export type FieldState = {
    * `<label>`, `title`, then the parent's text, in that order of trustworthiness.
    */
   label: string;
+  /**
+   * The control's own tag with its attributes, `value` stripped, and **only for a checkbox or
+   * radio**. Where every link in the label chain is empty, `id`, `class` and `name` are what say
+   * whether this is the form's own box or the cookie banner's. Never emitted for a value-bearing
+   * input: `outerHTML` on a password field would carry the password.
+   */
+  markup: string;
   name: string;
+  /**
+   * The nearest ancestor with any text, up to six hops — filled in only for an unlabelled box.
+   * Measured 2026-10-03: the setup form's checkbox had an empty label chain *including* its
+   * parent's text, so the wording, if there is one, is further up than the parent.
+   */
+  near: string;
   required: boolean;
   type: string;
   /**
@@ -687,6 +700,14 @@ export function describeField(field: FieldState, clean: (value: string) => strin
   // The label matters most for the control nobody has identified, so it is quoted rather than
   // folded into the notes — and capped, because a parent's text can be the whole page.
   if (field.label.length > 0) notes.push(`"${clean(field.label).slice(0, 160)}"`);
+  // 🔴 ONLY WHEN THE LABEL CHAIN CAME BACK EMPTY, so a labelled control stays one short line. For
+  // the one box nothing may tick, these two are what identify it when there is no label anywhere:
+  // the attributes say whether it belongs to the form or to the cookie banner, and the nearest
+  // ancestor with text says what it is asking. Both capped; `markup` never carries a value.
+  if (field.label.length === 0) {
+    if (field.near.length > 0) notes.push(`near:"${clean(field.near).slice(0, 160)}"`);
+    if (field.markup.length > 0) notes.push(`markup:${clean(field.markup).slice(0, 160)}`);
+  }
   if (field.why.length > 0) notes.push(`INVALID(${clean(field.why).slice(0, 120)})`);
   if (notes.length === 0) return "";
   return `${name} ${notes.join(" ")}`;
@@ -814,12 +835,35 @@ export async function describePage(page: ConsolePage, secrets: readonly string[]
             ];
             const failed = v && !v.valid ? (flags.find((flag) => Boolean((v as unknown as Record<string, boolean>)[flag])) ?? "invalid") : "";
             const message = v && !v.valid ? (field.validationMessage || "").replace(/\s+/g, " ").trim() : "";
+            // 🔴 FOR A BOX WITH NO LABEL AT ALL, AND ONLY FOR A BOX. Measured 2026-10-03 at
+            // 23:10:35 on production: the setup form's checkbox came back `checkbox:- UNTICKED`
+            // with every link in the label chain empty — INCLUDING the parent's text — so the one
+            // control the run turns on could not be identified even with the chain in place. Two
+            // things identify it where a label cannot: its own attributes, and the nearest ancestor
+            // that has any text.
+            //
+            // 🔴 NEITHER IS EMITTED FOR A VALUE-BEARING INPUT, and `value` is stripped regardless.
+            // `outerHTML` on a password field would carry the password itself, which is the one
+            // thing that may never appear in a refusal, a log or an audit row.
+            const markup = box
+              ? field.outerHTML.replace(/\svalue\s*=\s*("[^"]*"|'[^']*'|\S+)/gi, "").slice(0, 200)
+              : "";
+            let near = "";
+            if (box && (label || "").trim() === "") {
+              let hop: HTMLElement | null = field.parentElement;
+              for (let up = 0; up < 6 && hop !== null && near === ""; up += 1) {
+                near = words(hop).slice(0, 200);
+                hop = hop.parentElement;
+              }
+            }
             return {
               checked: box ? field.checked : null,
               disabled: Boolean(field.disabled),
               filled: typeof field.value === "string" ? field.value.length : 0,
               label: (label || "").replace(/\s+/g, " ").trim(),
+              markup: markup.replace(/\s+/g, " ").trim(),
               name: field.name || field.id || "",
+              near: near.replace(/\s+/g, " ").trim(),
               required: Boolean(field.required),
               type: field.type || field.tagName.toLowerCase(),
               why: failed === "" ? "" : message === "" ? failed : `${failed}: ${message}`,

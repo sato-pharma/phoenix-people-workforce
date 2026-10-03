@@ -921,6 +921,7 @@ import { runMailboxOffboardingRobotTests } from "./mailbox-offboarding-robot.tes
 import { runNewHireMailboxRobotTests } from "./new-hire-mailbox-robot.test.ts";
 import { runNewHireMailboxInvitationTests } from "./new-hire-mailbox-invitation.test.ts";
 import { runNewHireMailboxInviteInboxTests } from "./new-hire-mailbox-invite-inbox.test.ts";
+import { runNewHireMailboxResultSurvivesTests } from "./new-hire-mailbox-result-survives.test.ts";
 import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
 import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts";
 import { runNewHireMailboxAdoptTests } from "./new-hire-mailbox-adopt.test.ts";
@@ -4078,6 +4079,14 @@ await runTest(
   + "the app password is minted only inside the window the reset opens; the monitor's own IMAP test "
   + "is what counts as adopted; nothing scheduled may call it; and no outcome carries a credential)",
   runNewHireMailboxInviteInboxTests,
+);
+await runTest(
+  "a mailbox run's own account survives the run (neither adoption card refreshes the route "
+  + "afterwards — on production 2026-10-03 that remounted the card and erased a failed run's only "
+  + "explanation before anyone read it, while the audit row held nothing but adopted:false; on the "
+  + "happy path the same line would erase the hand-over sentence, which for a new hire carries the "
+  + "password that becomes their real one; and the reason and the hand-over are both still rendered)",
+  runNewHireMailboxResultSurvivesTests,
 );
 await runTest(
   "new hire mailbox initial password store (the one recoverable password in the system — so NO role "

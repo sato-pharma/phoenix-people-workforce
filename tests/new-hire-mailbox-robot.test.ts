@@ -404,7 +404,8 @@ async function runPageDescriptionCases(): Promise<void> {
   // from that: a required consent box, an unfilled confirm field, and a submit that never landed.
   // These cases pin that each one now reads differently.
   const field = (over: Partial<Parameters<typeof describeField>[0]>) => ({
-    checked: null, disabled: false, filled: 0, label: "", name: "", required: false, type: "text", why: "",
+    checked: null, disabled: false, filled: 0, label: "", markup: "", name: "", near: "",
+    required: false, type: "text", why: "",
     ...over,
   });
   const plain = (value: string) => value;
@@ -468,6 +469,72 @@ async function runPageDescriptionCases(): Promise<void> {
   assert.ok(
     describeField(field({ label: "x".repeat(400), type: "checkbox", checked: false }), plain).length < 260,
     "a label read off a parent element must be capped, or the refusal becomes unreadable",
+  );
+
+  // ── 🔴 THE BOX WITH NO LABEL ANYWHERE ────────────────────────────────────────────────────────
+  // Measured on production 2026-10-03 at 23:10:35. The setup form's checkbox read
+  // `checkbox:- UNTICKED` with EVERY link of the label chain empty, the parent's text included —
+  // and the form reported itself VALID, which rules out the required-consent reading the driver had
+  // assumed. So the refusal named a control it still could not identify. Two readings do identify
+  // it: its own attributes (whose `id`/`class`/`name` say whether it is the form's box or the
+  // cookie banner's) and the nearest ancestor that has any text at all.
+  const unlabelled = describeField(
+    field({
+      checked: false,
+      markup: '<input type="checkbox" id="cc-necessary" class="consent-toggle">',
+      near: "Cookie Settings Accept All",
+      type: "checkbox",
+    }),
+    plain,
+  );
+  assert.match(
+    unlabelled, /near:"Cookie Settings Accept All"/,
+    "an unlabelled box must report the nearest ancestor that has text — on 2026-10-03 the label "
+    + "chain including the parent came back empty, so this is the only place the wording can live",
+  );
+  assert.match(
+    unlabelled, /markup:<input type="checkbox" id="cc-necessary"/,
+    "an unlabelled box must report its own attributes — with no label anywhere, id/class/name are "
+    + "what say whether it belongs to the form or to the cookie banner",
+  );
+
+  // 🔴 AND A LABELLED CONTROL MUST NOT CARRY EITHER, or every refusal grows two lines of markup per
+  // field and the one actionable control is lost again — which is the defect this whole reader
+  // exists to undo.
+  const labelled = describeField(
+    field({
+      checked: false,
+      label: "I agree to the Terms of Service",
+      markup: '<input type="checkbox" id="tos">',
+      near: "some ancestor text",
+      type: "checkbox",
+    }),
+    plain,
+  );
+  assert.equal(
+    /near:|markup:/.test(labelled), false,
+    "a control that HAS a label must not also print its markup or its ancestor text — the extra "
+    + "readings are a last resort for the unidentifiable box, not a default",
+  );
+
+  // 🔴 A CONTROL'S MARKUP MUST NEVER REACH A PASSWORD FIELD. `outerHTML` on an input carries its
+  // `value`, and on the setup form two of the three controls are the password and its confirmation.
+  // Asserted on the comment-stripped driver, because the comment explaining this names `outerHTML`.
+  const reader = stripComments(
+    readFileSync(
+      new URL("../src/lib/new-hire-mailbox/robot/turbify-joiner.ts", import.meta.url),
+      "utf8",
+    ),
+  ).replace(/\s+/g, " ");
+  assert.match(
+    reader, /const markup = box \? field\.outerHTML/,
+    "the markup read must be gated on the control being a checkbox or radio — outerHTML on a "
+    + "password field carries the password itself",
+  );
+  assert.match(
+    reader, /field\.outerHTML\.replace\(\/\\svalue\\s\*=/,
+    "the markup read must strip `value` regardless of the gate — two guards, because the one thing "
+    + "that may never appear in a refusal, a log or an audit row is a credential",
   );
 
   // 🔴 THE IN-PAGE READER MUST BE A REAL FUNCTION. `page.evaluate(string)` evaluates the string as an
