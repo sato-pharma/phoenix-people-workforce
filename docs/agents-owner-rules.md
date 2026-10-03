@@ -5171,3 +5171,71 @@ anything: nobody who reads it has to act, and the message says so. It raises no 
 queue, and changes no figure. Rule: `.claude/rules/phoenix-crm.md`. Pinned by
 `tests/phoenix-crm-first-visit.test.ts` (who is told, the once-ever key, the words, the save-side gate)
 and by `tests/phoenix-crm-email-block.test.ts`, which holds the whole emailed list to exactly five.
+
+## Sick leave evidence is an append-only dated history — owner ruling, 2026-10-03
+
+**His words**, on `/employee-portals/vacation-request`: *"here in sick leaves, make the employee able
+to upload multiple photos or multiple PDFs, and also make him able after he upload and submit to
+re-upload — but that does not replace the one he uploaded before, no, it is an add-on on them. And I
+get the admin get that till the day — for example 3 October he uploaded this, by 10 October he
+uploaded those."*
+
+**Three separate requirements, and the third is the one a careless implementation loses.** Several
+files at submit; more files afterwards; and the admin reading **when each file arrived**. The shape
+before this ruling was six columns on `v2_vacation_requests` —
+`sick_attachment_bucket / content_type / object_path / original_name / size_bytes / uploaded_at` —
+which hold exactly ONE file and ONE date. So a second upload could only overwrite the first, and the
+arrival date of anything but the last file did not exist anywhere.
+
+**What was built.** `v2_vacation_request_attachments`: one row per FILE, with `kind`, `bucket`,
+`object_path`, `original_name`, `content_type`, `size_bytes`, its own `uploaded_at`,
+`uploaded_by_hr_id` and `uploaded_by_login_id`, cascading on the request. Migration
+`20261003125818_vacation_request_attachments_multi.sql`, applied to staging
+(`cifwmndunmlxjhyjugxa`) and production (`ozucdzovmcqvepbozvqf`) on 2026-10-03; it backfilled the
+3 compensatory files production already held, and production carried **no** sick attachment at all
+at that moment, so nothing was at risk in the copy.
+
+**The legacy columns are KEPT, deliberately, and keep naming the FIRST file.** That is what makes
+the change small: the evidence-review gate (`hasAcceptedRequiredEvidence`), the approver emails, the
+report and audit exports, `createVacationAttachmentReviewUrl` and the `/attachments/<kind>` download
+all read those columns and none of them changed. **Never "tidy" them away as duplicates, and never
+let the add path write them** — the first document would vanish from every one of those surfaces at
+once, silently, while the new list still looked complete.
+
+**Why the storage path carries a per-file unique id.** Append-only in the database buys nothing if
+the object store overwrites. Two phone photos are routinely both `IMG_0001.jpg`, and the same
+certificate gets re-sent a week later; the path is
+`<kind>/<HR id>/<request id>/<8 hex>-<file name>` and the upload stays `upsert: false`, so a repeat
+lands beside the earlier file or fails, never on top of it.
+
+**Who may add, and when.** The employee who filed the request, and HR/Super Admin — at **any**
+status, because a rejected sick request is exactly when a stamped governmental document is asked for
+a second time. Adding a file decides nothing: it raises no approval, re-opens nothing, and does not
+touch an evidence review. A manager who is the assigned approver may OPEN the files (he has to read
+the note before approving) and may not add to them; the route refuses him either way.
+
+**Transport.** Every added file is streamed straight to the `leave-attachments` bucket through a
+short-lived signed upload URL (`/api/vacations/attachments/upload-url`) and named to
+`POST /api/vacations/requests/<id>/attachments` by its pending path — never as bytes in the request
+body, because five 3MB phone photos meet the same ~4.5MB serverless cap a single 9MB one does. At
+submit the form picks ONE transport for the whole set by the TOTAL size, so the order the employee
+picked survives and the first file is always the first file. A path may only ever name the caller's
+own pending slot: the service-role client copies that object and then deletes it, so an unchecked
+path let a signed-in employee lift, and then erase, another employee's medical document.
+
+**Where the dates are read.** The second and later documents open through
+`/attachments/file/<attachmentId>`, never `/attachments/<kind>` (which signs the first file only).
+The dated list renders in the vacation report's request drawer, in the report's desktop and card
+rows for HR, and on the approvals-hub request page — each line being one file, its name, its Cairo
+upload time and its size. The employee sees it for his own request, through the
+"Documents & timeline" button, and adds more from there.
+
+**Deletion and retention follow the files, not the columns.** `deleteVacationRequestAsAdmin`, the
+system-cleanup snapshot and the evidence retention purge all enumerate the attachment rows as well
+as the two legacy paths — otherwise every file after the first stayed in the bucket for ever, past
+the retention date the purge exists to enforce, with nothing left pointing at it.
+
+Rule: `.claude/rules/time-off.md`. Pinned by `tests/vacation-sick-attachments.test.ts` (append-only
+writer, no legacy-column write from the add path, a repeated file name cannot collide, `upsert:
+false`, the per-file date in the migration and on screen, `getAll("sickDocument")`, the picker
+appending, the ownership gate).

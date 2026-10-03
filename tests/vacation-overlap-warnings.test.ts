@@ -59,6 +59,7 @@ function baseRequest(overrides: Partial<VacationRequestRecord> & Pick<VacationRe
     status: "pending_manager",
     submittedByHrId: null,
     vacationType: "annual",
+    attachments: [],
     evidenceReviews: [],
     overlapWarnings: [],
     slaStatus: {

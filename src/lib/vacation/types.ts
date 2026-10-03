@@ -163,6 +163,27 @@ export type VacationEvidenceReview = {
   updatedAt: string;
 };
 
+/**
+ * One uploaded evidence FILE on a leave request, with the date THAT file arrived.
+ *
+ * A sick request accepts several files at submit and accepts more afterwards — a later upload adds
+ * to the earlier ones and never replaces them (owner, 2026-10-03) — so "when was the evidence
+ * uploaded" has one answer per FILE, not one per request. The legacy `sickAttachment*` /
+ * `compensatoryAttachment*` fields on the record still name the FIRST file.
+ */
+export type VacationRequestAttachment = {
+  bucket: string;
+  contentType: string | null;
+  id: string;
+  kind: VacationEvidenceType;
+  objectPath: string;
+  originalName: string | null;
+  requestId: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  uploadedByHrId: string | null;
+};
+
 export type VacationOverlapWarning = {
   code:
     | "employee_overlap"
@@ -286,6 +307,9 @@ export type VacationRequestRecord = VacationBalanceSnapshot & {
   status: VacationRequestStatus;
   submittedByHrId: string | null;
   vacationType: VacationType;
+  // EVERY uploaded evidence file, oldest first, each with its own upload date. Hydrated beside
+  // evidenceReviews; `[]` on a record read without that hydration.
+  attachments: VacationRequestAttachment[];
   evidenceReviews: VacationEvidenceReview[];
   overlapWarnings: VacationOverlapWarning[];
   slaStatus: VacationSlaStatus;

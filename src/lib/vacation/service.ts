@@ -100,6 +100,7 @@ import type {
   VacationOverlapWarning,
   VacationReportData,
   VacationReportFilters,
+  VacationRequestAttachment,
   VacationRequestInput,
   VacationRequestRecord,
   VacationRequestStatus,
@@ -117,6 +118,11 @@ import { resolveVacationInformedHrId } from "@/lib/vacation/informed-recipients"
 const vacationRequestsTable = "v2_vacation_requests";
 const vacationEventsTable = "v2_vacation_request_events";
 const vacationEvidenceReviewsTable = "v2_vacation_evidence_reviews";
+// One row per uploaded evidence FILE, append-only, each carrying its own upload date. A sick request
+// takes several files at submit and accepts more afterwards; a later upload ADDS to the earlier ones
+// and never replaces them (owner, 2026-10-03). The legacy sick_attachment_* / compensatory_attachment_*
+// columns on v2_vacation_requests still name the FIRST file, so every older read path is untouched.
+const vacationAttachmentsTable = "v2_vacation_request_attachments";
 const vacationApprovalStepsTable = "v2_vacation_approval_steps";
 const vacationSlaRunsTable = "v2_vacation_sla_runs";
 const vacationSlaSettingsTable = "v2_vacation_sla_settings";
@@ -321,6 +327,19 @@ export type VacationAttachmentUpload = {
   size: number;
 };
 
+type VacationAttachmentDbRow = {
+  bucket?: string | null;
+  content_type?: string | null;
+  id: string;
+  kind?: string | null;
+  object_path?: string | null;
+  original_name?: string | null;
+  request_id?: string | null;
+  size_bytes?: number | string | null;
+  uploaded_at?: string | null;
+  uploaded_by_hr_id?: string | null;
+};
+
 type CreateVacationRequestInput = Omit<VacationRequestInput, "dayPart" | "endDate" | "startDate" | "vacationType"> & {
   compensatoryAttachment?: VacationAttachmentUpload | null;
   compensatoryEventDate?: unknown;
@@ -333,6 +352,10 @@ type CreateVacationRequestInput = Omit<VacationRequestInput, "dayPart" | "endDat
   endDate: unknown;
   otherReason?: unknown;
   sickAttachment?: VacationAttachmentUpload | null;
+  // Every sick document AFTER the first one, in the order the employee picked them. The first file
+  // stays in `sickAttachment` so the legacy columns, the evidence gate and the approver emails are
+  // unchanged; these ride alongside it into the attachments table.
+  sickAttachmentsExtra?: VacationAttachmentUpload[] | null;
   startDate: unknown;
   vacationType: unknown;
 };
@@ -1252,6 +1275,7 @@ function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationR
       : numberValue(row.unpaid_duration_days),
     usedPaidDays: numberValue(row.used_paid_days),
     vacationType: normalizeVacationType(row.vacation_type) ?? "annual",
+    attachments: [],
     evidenceReviews: [],
     overlapWarnings: [],
     slaStatus: buildVacationSlaStatus({ request: row, now: new Date(), settings: defaultVacationSlaSettings() }),
@@ -1415,6 +1439,59 @@ function mapEvidenceReview(row: VacationEvidenceReviewDbRow): VacationEvidenceRe
     status: normalizeEvidenceReviewStatus(row.status) ?? "pending",
     updatedAt: row.updated_at ?? "",
   };
+}
+
+function mapVacationAttachment(row: VacationAttachmentDbRow): VacationRequestAttachment {
+  return {
+    bucket: row.bucket ?? vacationAttachmentBucket,
+    contentType: row.content_type ?? null,
+    id: row.id,
+    kind: row.kind === "compensatory" ? "compensatory" : "sick",
+    objectPath: text(row.object_path),
+    originalName: row.original_name ?? null,
+    requestId: text(row.request_id),
+    sizeBytes: numberValue(row.size_bytes),
+    uploadedAt: row.uploaded_at ?? "",
+    uploadedByHrId: row.uploaded_by_hr_id ?? null,
+  };
+}
+
+/**
+ * Every uploaded evidence file of each request, OLDEST FIRST — the order the admin reads them in
+ * ("3 October he uploaded this, by 10 October he uploaded those").
+ *
+ * Tolerant of the table being absent, exactly like fetchEvidenceReviewsForRequests: a deploy that
+ * reaches an environment before the migration does must still render the request, with the legacy
+ * single-attachment link, rather than failing the whole page.
+ */
+async function fetchVacationAttachmentsForRequests(requestIds: string[]) {
+  const uniqueIds = Array.from(new Set(requestIds.filter(Boolean)));
+  const byRequestId = new Map<string, VacationRequestAttachment[]>();
+  if (uniqueIds.length === 0) return byRequestId;
+
+  try {
+    for (const batch of chunk(uniqueIds)) {
+      const { data, error } = await getSupabaseAdmin()
+        .from(vacationAttachmentsTable)
+        .select("*")
+        .in("request_id", batch)
+        .order("uploaded_at", { ascending: true });
+
+      if (error) throwVacationDatabaseError(error);
+
+      for (const row of (data ?? []) as VacationAttachmentDbRow[]) {
+        const attachment = mapVacationAttachment(row);
+        if (!attachment.objectPath) continue;
+        const current = byRequestId.get(attachment.requestId) ?? [];
+        current.push(attachment);
+        byRequestId.set(attachment.requestId, current);
+      }
+    }
+  } catch (error) {
+    if (!isVacationSchemaMissingError(error)) throw error;
+  }
+
+  return byRequestId;
 }
 
 async function fetchEvidenceReviewsForRequests(requestIds: string[]) {
@@ -3035,6 +3112,123 @@ async function deleteSickAttachment(objectPath: string | null | undefined) {
   await getSupabaseAdmin().storage.from(vacationAttachmentBucket).remove([objectPath]);
 }
 
+/**
+ * The storage path of an evidence file that is NOT the request's first.
+ *
+ * `uniqueId` is what makes a repeated FILE NAME safe: two phone photos both called `IMG_0001.jpg`,
+ * or the same certificate sent again a week later, must land BESIDE the earlier file, never on top
+ * of it — the append-only rule is worth nothing if the object store silently overwrites.
+ */
+export function buildAdditionalVacationEvidenceObjectPath(input: {
+  employeeHrId: string;
+  fileName: string;
+  kind: VacationEvidenceType;
+  requestId: string;
+  uniqueId: string;
+}) {
+  const employeeHrId = sanitizeStorageSegment(input.employeeHrId, "unknown-employee");
+  const requestId = sanitizeStorageSegment(input.requestId, "unknown-request");
+  const fallbackName = input.kind === "compensatory" ? "compensatory-event-photo" : "sick-document";
+  const fileName = sanitizeStorageSegment(input.fileName, fallbackName);
+  const uniqueId = sanitizeStorageSegment(input.uniqueId, "file") || "file";
+  return `${input.kind}/${employeeHrId}/${requestId}/${uniqueId}-${fileName}`;
+}
+
+/**
+ * Store one evidence file that is NOT the request's first — a second document picked at submit, or
+ * one uploaded days later. Upsert stays false: an append must never overwrite a stored object.
+ */
+async function uploadAdditionalVacationEvidenceFile(input: {
+  attachment: VacationAttachmentUpload;
+  employeeHrId: string;
+  kind: VacationEvidenceType;
+  requestId: string;
+}) {
+  if (input.kind === "compensatory") validateCompensatoryAttachment(input.attachment);
+  else validateSickAttachment(input.attachment);
+
+  const objectPath = buildAdditionalVacationEvidenceObjectPath({
+    employeeHrId: input.employeeHrId,
+    fileName: input.attachment.fileName,
+    kind: input.kind,
+    requestId: input.requestId,
+    uniqueId: randomUUID().slice(0, 8),
+  });
+
+  const { error } = await getSupabaseAdmin().storage
+    .from(vacationAttachmentBucket)
+    .upload(objectPath, input.attachment.bytes, {
+      cacheControl: "31536000",
+      contentType: input.attachment.contentType,
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`Unable to store the uploaded document: ${error.message}`);
+  }
+
+  return {
+    bucket: vacationAttachmentBucket,
+    contentType: input.attachment.contentType,
+    objectPath,
+    originalName: input.attachment.fileName,
+    sizeBytes: input.attachment.size,
+    uploadedAt: new Date().toISOString(),
+  };
+}
+
+type StoredVacationEvidenceFile = {
+  bucket: string;
+  contentType: string | null;
+  objectPath: string;
+  originalName: string | null;
+  sizeBytes: number | null;
+  uploadedAt: string;
+};
+
+/**
+ * Append stored files to a request's attachment history. APPEND ONLY — nothing here updates or
+ * deletes an existing row, which is the owner's ruling of 2026-10-03 expressed in the one place the
+ * rule can actually be broken.
+ *
+ * Tolerant of the table being absent so a deploy that lands before the migration still files the
+ * request through the legacy columns; the rows are back-fillable from them.
+ */
+async function insertVacationAttachmentRows(input: {
+  actorHrId: string | null;
+  actorLoginId?: string | null;
+  files: { file: StoredVacationEvidenceFile; kind: VacationEvidenceType }[];
+  requestId: string;
+}) {
+  const rows = input.files
+    .filter((entry) => Boolean(entry.file?.objectPath))
+    .map((entry) => ({
+      bucket: entry.file.bucket ?? vacationAttachmentBucket,
+      content_type: entry.file.contentType ?? null,
+      kind: entry.kind,
+      object_path: entry.file.objectPath,
+      original_name: entry.file.originalName ?? null,
+      request_id: input.requestId,
+      size_bytes: entry.file.sizeBytes ?? null,
+      uploaded_at: entry.file.uploadedAt,
+      uploaded_by_hr_id: input.actorHrId,
+      uploaded_by_login_id: input.actorLoginId ?? null,
+    }));
+  if (rows.length === 0) return [] as VacationRequestAttachment[];
+
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from(vacationAttachmentsTable)
+      .insert(rows)
+      .select("*");
+    if (error) throwVacationDatabaseError(error);
+    return ((data ?? []) as VacationAttachmentDbRow[]).map(mapVacationAttachment);
+  } catch (error) {
+    if (!isVacationSchemaMissingError(error)) throw error;
+    return [] as VacationRequestAttachment[];
+  }
+}
+
 export async function getVacationRequestPageData(access: AccessContext) {
   await assertPermission(access, "leave", "create");
   const { directory, employee } = await getCurrentEmployee(access);
@@ -3209,6 +3403,29 @@ export async function createVacationRequest(access: AccessContext, input: Create
   const compensatoryAttachment = resolvedVacationType === "compensatory" && input.compensatoryAttachment
     ? await uploadCompensatoryAttachment({ attachment: input.compensatoryAttachment, employeeHrId: employee.hrId, requestId })
     : null;
+  // Sick documents beyond the first. The first one stays in the legacy columns above, so every
+  // existing read path keeps working; these exist only in the attachments table. Uploaded one at a
+  // time so a failure on the third file reports which file, and so the earlier ones are in the
+  // cleanup list below.
+  const extraSickAttachments: StoredVacationEvidenceFile[] = [];
+  if (resolvedVacationType === "sick") {
+    for (const extra of input.sickAttachmentsExtra ?? []) {
+      if (!extra) continue;
+      extraSickAttachments.push(
+        await uploadAdditionalVacationEvidenceFile({
+          attachment: extra,
+          employeeHrId: employee.hrId,
+          kind: "sick",
+          requestId,
+        }),
+      );
+    }
+  }
+  const uploadedObjectPaths = [
+    sickAttachment?.objectPath,
+    compensatoryAttachment?.objectPath,
+    ...extraSickAttachments.map((file) => file.objectPath),
+  ];
 
   const now = new Date().toISOString();
   const { data, error } = await getSupabaseAdmin()
@@ -3269,8 +3486,9 @@ export async function createVacationRequest(access: AccessContext, input: Create
     .single();
 
   if (error) {
-    await deleteSickAttachment(sickAttachment?.objectPath).catch(() => undefined);
-    await deleteSickAttachment(compensatoryAttachment?.objectPath).catch(() => undefined);
+    for (const objectPath of uploadedObjectPaths) {
+      await deleteSickAttachment(objectPath).catch(() => undefined);
+    }
     throwVacationDatabaseError(error);
   }
 
@@ -3283,16 +3501,32 @@ export async function createVacationRequest(access: AccessContext, input: Create
     } catch {
       // Best-effort cleanup; the original approval-step error is more useful to the caller.
     }
-    await deleteSickAttachment(sickAttachment?.objectPath).catch(() => undefined);
-    await deleteSickAttachment(compensatoryAttachment?.objectPath).catch(() => undefined);
+    for (const objectPath of uploadedObjectPaths) {
+      await deleteSickAttachment(objectPath).catch(() => undefined);
+    }
     throw error;
   }
+  // The attachment history, first file included, so the admin reads every document and its own
+  // upload date from one place. Deleting the request cascades these rows, so there is nothing extra
+  // to unwind above.
+  const createdAttachments = await insertVacationAttachmentRows({
+    actorHrId: employee.hrId,
+    actorLoginId: access.loginId,
+    files: [
+      ...(sickAttachment ? [{ file: sickAttachment, kind: "sick" as const }] : []),
+      ...(compensatoryAttachment ? [{ file: compensatoryAttachment, kind: "compensatory" as const }] : []),
+      ...extraSickAttachments.map((file) => ({ file, kind: "sick" as const })),
+    ],
+    requestId: request.id,
+  });
+  request.attachments = createdAttachments;
   await insertVacationEvent({
     actorHrId: employee.hrId,
     actorLoginId: access.loginId,
     eventType: "submitted",
     message: "Vacation request submitted.",
     metadata: {
+      attachmentCount: createdAttachments.length,
       hasSickAttachment: Boolean(request.sickAttachmentObjectPath),
       hasCompensatoryAttachment: Boolean(request.compensatoryAttachmentObjectPath),
       compensatoryEventName: request.compensatoryEventName,
@@ -3522,9 +3756,14 @@ export async function deleteVacationRequestAsAdmin(access: AccessContext, reques
     .eq("id", existing.id);
 
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  // Every stored object, not only the two the legacy columns name: a sick request may carry several
+  // documents, and the attachment rows cascade away with the request, so anything missed here is an
+  // orphan in Storage with nothing left pointing at it. `existing` was read before the delete, so
+  // its attachment history is still the full list.
   await Promise.all([
     deleteSickAttachment(existing.sickAttachmentObjectPath),
     deleteSickAttachment(existing.compensatoryAttachmentObjectPath),
+    ...existing.attachments.map((attachment) => deleteSickAttachment(attachment.objectPath)),
   ]).catch(() => undefined);
 
   await writeRequiredAuditLog({
@@ -3550,9 +3789,13 @@ async function fetchVacationRequestById(id: string) {
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
   if (!data) return null;
   const request = mapVacationRow(data as VacationRequestDbRow);
-  const reviews = await fetchEvidenceReviewsForRequests([request.id]);
+  const [reviews, attachments] = await Promise.all([
+    fetchEvidenceReviewsForRequests([request.id]),
+    fetchVacationAttachmentsForRequests([request.id]),
+  ]);
   return {
     ...request,
+    attachments: attachments.get(request.id) ?? [],
     evidenceReviews: reviews.get(request.id) ?? [],
   };
 }
@@ -4962,10 +5205,11 @@ async function fetchLatestVacationSlaRun() {
 
 async function enrichVacationRows(rows: VacationRequestRecord[]) {
   const requestIds = rows.map((row) => row.id);
-  const [reviewsByRequest, eventsByRequest, settings] = await Promise.all([
+  const [reviewsByRequest, eventsByRequest, settings, attachmentsByRequest] = await Promise.all([
     fetchEvidenceReviewsForRequests(requestIds),
     fetchVacationEventsForRequests(requestIds),
     fetchVacationSlaSettings(),
+    fetchVacationAttachmentsForRequests(requestIds),
   ]);
   const now = new Date();
   return rows.map((row) => {
@@ -4973,6 +5217,7 @@ async function enrichVacationRows(rows: VacationRequestRecord[]) {
     const reviews = reviewsByRequest.get(row.id) ?? [];
     return {
       ...row,
+      attachments: attachmentsByRequest.get(row.id) ?? [],
       evidenceReviews: reviews,
       slaStatus: buildVacationSlaStatus({
         events,
@@ -5251,6 +5496,140 @@ export async function createVacationAttachmentReviewUrl(access: AccessContext, i
     contentType: attachment.contentType,
     fileName: attachment.fileName,
     signedUrl: data.signedUrl,
+  };
+}
+
+/**
+ * A short-lived signed URL for ONE file of a request's attachment history, named by its row id.
+ *
+ * The `/attachments/<kind>` route signs the FIRST file only — it reads the legacy columns — so a
+ * request carrying several documents needs this one to open the second and the third.
+ *
+ * Who may open it: HR/Super Admin, the currently assigned approver (the same gate as
+ * createVacationAttachmentReviewUrl), and the EMPLOYEE WHOSE REQUEST IT IS. The employee is here
+ * because he has to see which documents the company already holds before deciding what else to
+ * send; it is his own medical document and no one else's.
+ */
+export async function createVacationAttachmentFileReviewUrl(access: AccessContext, input: {
+  attachmentId: string;
+  requestId: string;
+}) {
+  await assertPermission(access, "leave", "read");
+
+  const request = await fetchVacationRequestById(input.requestId);
+  if (!request) throw new Error("Vacation request was not found.");
+
+  const isOwnRequest = hrIdsMatch(request.employeeHrId, access.hrId);
+  if (!isOwnRequest && !isAllVacationVisibility(access)) {
+    const { step } = await getPendingVacationApprovalStepForActor({ access, request });
+    if (!step) {
+      throw new Error("Forbidden: only the assigned approver, HR/Super Admin, or the employee who filed the request can open its evidence files.");
+    }
+  }
+
+  const attachment = request.attachments.find((row) => row.id === input.attachmentId);
+  if (!attachment) throw new Error("Vacation evidence attachment was not found for this request.");
+
+  const { data, error } = await getSupabaseAdmin().storage
+    .from(attachment.bucket || vacationAttachmentBucket)
+    .createSignedUrl(attachment.objectPath, 5 * 60);
+
+  if (error || !data?.signedUrl) {
+    throw new Error(`Unable to open vacation evidence attachment: ${error?.message ?? "signed URL was not created"}`);
+  }
+
+  return {
+    contentType: attachment.contentType,
+    fileName: attachment.originalName,
+    signedUrl: data.signedUrl,
+  };
+}
+
+/**
+ * Add one or more evidence files to a request that is ALREADY SUBMITTED.
+ *
+ * Owner, 2026-10-03: *"after he upload and submit to re-upload, but that does not replace the one he
+ * uploaded before — no, it is an add-on on them"*. So this only ever INSERTS: it never touches the
+ * legacy `sick_attachment_*` columns (which keep naming the first file), never deletes a stored
+ * object, and never alters an earlier row's `uploaded_at`. The admin therefore reads the request as
+ * a dated history rather than as one slot that the last upload won.
+ *
+ * Allowed for the employee who filed the request and for HR/Super Admin, at any status — a rejected
+ * sick request is exactly when a stamped document is asked for a second time. The decision itself is
+ * untouched: adding a file approves nothing and re-opens nothing.
+ */
+export async function addVacationRequestAttachments(access: AccessContext, input: {
+  attachments: VacationAttachmentUpload[];
+  requestId: string;
+}) {
+  await assertPermission(access, "leave", "create");
+
+  const files = (input.attachments ?? []).filter(Boolean);
+  if (files.length === 0) throw new Error("Choose at least one file to upload.");
+
+  const request = await fetchVacationRequestById(input.requestId);
+  if (!request) throw new Error("Vacation request was not found.");
+
+  const isOwnRequest = hrIdsMatch(request.employeeHrId, access.hrId);
+  if (!isOwnRequest && !isAllVacationVisibility(access)) {
+    throw new Error("Forbidden: only the employee who filed this request, or HR/Super Admin, can add documents to it.");
+  }
+
+  const kind: VacationEvidenceType = request.vacationType === "compensatory" ? "compensatory" : "sick";
+
+  const stored: StoredVacationEvidenceFile[] = [];
+  try {
+    for (const attachment of files) {
+      stored.push(
+        await uploadAdditionalVacationEvidenceFile({
+          attachment,
+          employeeHrId: request.employeeHrId,
+          kind,
+          requestId: request.id,
+        }),
+      );
+    }
+  } catch (error) {
+    // A partial upload leaves orphan objects with no row pointing at them, so clear the ones that
+    // did land before reporting the file that failed.
+    for (const file of stored) {
+      await deleteSickAttachment(file.objectPath).catch(() => undefined);
+    }
+    throw error;
+  }
+
+  // `resolveEmployeeIdentityId` alone, exactly as every other actor write in this file does.
+  // `access.hrId` is the LOWERCASE comparison key: correct for matching (hrIdsMatch above) and wrong
+  // for persisting — writing it is what left ~37,000 lowercase actor ids across 52 columns, and a
+  // naive `.eq` on one then returns nothing at all rather than something visibly wrong.
+  // Pinned by `tests/hr-id-storage-casing.test.ts`.
+  const actorHrId = resolveEmployeeIdentityId(access);
+  const inserted = await insertVacationAttachmentRows({
+    actorHrId,
+    actorLoginId: access.loginId,
+    files: stored.map((file) => ({ file, kind })),
+    requestId: request.id,
+  });
+
+  await insertVacationEvent({
+    actorHrId,
+    actorLoginId: access.loginId,
+    eventType: "evidence_uploaded",
+    message: inserted.length === 1
+      ? `Additional document uploaded: ${inserted[0]?.originalName ?? "document"}.`
+      : `${inserted.length} additional documents uploaded.`,
+    metadata: {
+      addedAfterSubmit: true,
+      fileNames: inserted.map((row) => row.originalName).filter(Boolean),
+      kind,
+      totalAttachments: request.attachments.length + inserted.length,
+    },
+    requestId: request.id,
+  });
+
+  return {
+    attachments: [...request.attachments, ...inserted],
+    added: inserted,
   };
 }
 
@@ -5710,14 +6089,39 @@ export async function runVacationRetentionPurge(access: AccessContext, input: { 
       // the manifest describes the pre-purge state rather than whatever survived a partial failure.
       purgeManifest = await fetchRequestHistoryPurgeManifest(cutoffs.request_history);
 
-      const evidenceObjectPaths = evidenceCandidates.flatMap((row) => [
-        row.sick_attachment_object_path,
-        row.compensatory_attachment_object_path,
-      ]).filter((value): value is string => Boolean(value));
+      // A sick request may carry several documents, and only the FIRST is in the legacy columns, so
+      // the attachment history has to be purged with them. Missing it left every later file in the
+      // bucket for ever, past the retention date the purge exists to enforce.
+      const evidenceCandidateIds = evidenceCandidates.map((row) => row.id);
+      const evidenceAttachmentRows = await fetchVacationAttachmentsForRequests(evidenceCandidateIds);
+      const evidenceObjectPaths = Array.from(
+        new Set(
+          [
+            ...evidenceCandidates.flatMap((row) => [
+              row.sick_attachment_object_path,
+              row.compensatory_attachment_object_path,
+            ]),
+            ...Array.from(evidenceAttachmentRows.values()).flat().map((attachment) => attachment.objectPath),
+          ].filter((value): value is string => Boolean(value)),
+        ),
+      );
       if (evidenceObjectPaths.length > 0) {
         const { error } = await getSupabaseAdmin().storage.from(vacationAttachmentBucket).remove(evidenceObjectPaths);
         if (error) throw error;
         deletedCounts.evidenceAttachments = evidenceObjectPaths.length;
+      }
+      if (evidenceCandidateIds.length > 0) {
+        try {
+          for (const batch of chunk(evidenceCandidateIds)) {
+            const { error } = await getSupabaseAdmin()
+              .from(vacationAttachmentsTable)
+              .delete()
+              .in("request_id", batch);
+            if (error) throwVacationDatabaseError(error);
+          }
+        } catch (error) {
+          if (!isVacationSchemaMissingError(error)) throw error;
+        }
       }
 
       for (const row of evidenceCandidates) {

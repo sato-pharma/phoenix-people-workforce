@@ -143,10 +143,20 @@ export function runVacationPendingAttachmentPathTests() {
     /status: 400/,
     "a path that is not the caller's own pending upload answers 400",
   );
+  // A sick request may reference SEVERAL pending uploads since 2026-10-03, so the check runs over
+  // the whole list rather than over one field. `.some(` is asserted separately and is the
+  // load-bearing half: a `[0]`, a `.find(` on the first match or a check of only one element would
+  // satisfy the call shape below while leaving every later path unmatched to the caller — and those
+  // are the ones the finally block then deletes with the service-role client.
   assert.match(
     submitRouteSource,
-    /isOwnPendingVacationAttachmentPath\(\{\s*hrId: access\.hrId,\s*kind: "sick",\s*storagePath: sickAttachmentStoragePath,?\s*\}\)/,
-    "the sick field is checked as a sick upload owned by the caller",
+    /sickAttachmentStoragePaths\.some\(/,
+    "EVERY referenced sick path is matched to the caller, not just the first — the unchecked ones are exactly the objects the finally block deletes",
+  );
+  assert.match(
+    submitRouteSource,
+    /isOwnPendingVacationAttachmentPath\(\{\s*hrId: access\.hrId,\s*kind: "sick",\s*storagePath: path,?\s*\}\)/,
+    "each sick path is checked as a sick upload owned by the caller",
   );
   assert.match(
     submitRouteSource,
