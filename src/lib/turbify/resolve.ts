@@ -198,6 +198,174 @@ export function dialogNamesAddress(text: string | null | undefined, address: str
   return tokens.has(wanted) || (local.length > 0 && tokens.has(local));
 }
 
+/** What a one-time password read either found, or why it refused to hand one back. */
+export type OneTimePasswordReading = { password: string } | { refusal: string };
+
+/**
+ * The labels the one-time-password dialog prints around the credential. Matched whole and lowercased,
+ * so a label can never be mistaken for the password itself.
+ */
+const DIALOG_LABELS: ReadonlySet<string> = new Set([
+  "cancel", "close", "close modal", "copy", "done", "email account", "hide", "hide password", "ok",
+  "one time password", "one-time password", "password", "print", "send invite", "show",
+  "show password", "temp password", "temporary password",
+]);
+
+/**
+ * Read the one-time password out of the dialog's text.
+ *
+ * 🔴 THIS REPLACED "THE LONGEST NON-WHITESPACE LINE IN `document.body`", WHICH RETURNED THE MAILBOX
+ * ADDRESS EVERY SINGLE TIME — and that, not any of the three sign-in faults fixed before it, is why
+ * the owner's adoption clicks failed. The old reader scored candidates by LENGTH, and the dialog is
+ * REQUIRED to name the mailbox (`dialogNamesAddress` above refuses one that does not), so
+ * `hr.mailbox@satopharma.com` — 25 characters, no whitespace, plenty of non-letters — outscored a
+ * ~10-character generated credential. The robot then typed the ADDRESS into the password box, Turbify
+ * refused it, and the step reported "the expected page never appeared" while sitting on a login form
+ * that was telling the truth. Reading `document.body` rather than the dialog made it worse: the
+ * account list behind the modal supplies a whole column of longer addresses.
+ *
+ * So length is no longer a signal at all. The address is excluded by construction — nothing holding
+ * `@`, and nothing equal to the address, its local part or its domain, can be returned — and the
+ * surrounding labels are excluded by name. What is left is required to be UNIQUE: two plausible
+ * candidates refuse and report how many and how long, never what they said, because the one thing
+ * worse than stopping here is handing back a credential that is actually somebody's address.
+ */
+export function pickOneTimePassword(
+  text: string | null | undefined,
+  address: string,
+): OneTimePasswordReading {
+  return pickCredential(text, address, {
+    labels: DIALOG_LABELS,
+    minLength: 8,
+    // A reset password from this console carries digits or capitals; plain lowercase prose does not
+    // qualify. An APP password does — see `pickAppPassword`, which must not inherit this.
+    requireNonLowercase: true,
+    what: "one-time password",
+    where: "the dialog",
+  });
+}
+
+/**
+ * The labels around the minted app password, inside the mailbox's own account pages.
+ *
+ * These are not measured — nothing in Phoenix has ever stood on that page (`APP_PASSWORD_WORDINGS`
+ * in `locators.ts` says the same of the three clicks that get there). They are listed so that the
+ * obvious furniture cannot be mistaken for the credential, and the read fails CLOSED when something
+ * unlisted survives, rather than returning the first long thing it sees.
+ */
+const APP_PASSWORD_LABELS: ReadonlySet<string> = new Set([
+  "account info", "account information", "account security", "account settings", "app password",
+  "app passwords", "apppasswords", "cancel", "close", "continue", "copy", "done", "generate",
+  "manage app passwords", "notifications", "preferences", "privacy", "security", "sign out",
+  "subscriptions",
+]);
+
+/**
+ * Read the app password Turbify has just minted inside the mailbox.
+ *
+ * 🔴 THE SAME LENGTH-SCORED READ WAS HERE TOO, and it would have been the NEXT thing to fail: this
+ * page is signed in AS the mailbox, so it prints the address, and "the longest space-free line of 12
+ * characters or more" is `hr.mailbox@satopharma.com` at 25 against an app password at about 16. The
+ * step would have reported "no app password could be read" at best and recorded the ADDRESS as
+ * Phoenix's stored credential at worst. Found by grepping for the pattern after fixing the one-time
+ * password read, which is the rule this module keeps having to relearn: when you fix something here,
+ * search for the shape before you commit.
+ *
+ * 🔴 UNLIKE A ONE-TIME PASSWORD, AN APP PASSWORD MAY BE ALL LOWERCASE — Yahoo-platform app passwords
+ * are commonly 16 plain lowercase letters, so the "must contain a non-lowercase character" test that
+ * protects the dialog read would reject every real one here.
+ */
+export function pickAppPassword(
+  text: string | null | undefined,
+  address: string,
+): OneTimePasswordReading {
+  return pickCredential(text, address, {
+    labels: APP_PASSWORD_LABELS,
+    minLength: 12,
+    requireNonLowercase: false,
+    what: "app password",
+    where: "the page",
+  });
+}
+
+type CredentialShape = {
+  labels: ReadonlySet<string>;
+  minLength: number;
+  requireNonLowercase: boolean;
+  what: string;
+  where: string;
+};
+
+/**
+ * The shared rule behind both reads. **Length is never a signal**; the address can never be returned.
+ *
+ * `innerText` is what the callers pass, so a line break still separates a label from its value. The
+ * value after the last colon is considered as well as the whole line, because the console prints
+ * `One-time password: Xk9mPq2w` on one line in some renderings and on two in others.
+ */
+function pickCredential(
+  text: string | null | undefined,
+  address: string,
+  shape: CredentialShape,
+): OneTimePasswordReading {
+  const wanted = String(address ?? "").trim().toLowerCase();
+  const local = wanted.split("@")[0] ?? "";
+  const domain = wanted.includes("@") ? (wanted.split("@")[1] ?? "") : "";
+  const forbidden = new Set([wanted, local, domain].filter((value) => value.length > 0));
+
+  const seen = new Set<string>();
+  const candidates: string[] = [];
+  for (const line of String(text ?? "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    const afterColon = trimmed.includes(":") ? trimmed.slice(trimmed.lastIndexOf(":") + 1).trim() : "";
+    for (const value of [afterColon, trimmed]) {
+      if (value.length < shape.minLength || value.length > 64) continue;
+      if (/\s/.test(value)) continue;
+      // 🔴 The address is the thing these reads kept returning. It cannot survive either of these.
+      if (value.includes("@")) continue;
+      if (forbidden.has(value.toLowerCase())) continue;
+      if (shape.labels.has(value.toLowerCase())) continue;
+      if (value.endsWith(":")) continue;
+      // 🔴 THE DIALOG CONTAINS THE LOGIN URL — Turbify documents it: "you will see the user's email
+      // address, the one-time password, AND THE LOGIN URL" (help article SLN29262). A URL survives
+      // every test above — no spaces, no `@`, the right length — and `https://mail.turbify.com`
+      // even yields a second candidate through the after-the-colon split (`//mail.turbify.com`). It
+      // only lost to the password by luck, because the password happens to carry a digit and the URL
+      // does not. Excluded explicitly instead.
+      if (/^https?:/i.test(value) || value.includes("://") || value.startsWith("//")) continue;
+      if (/\.(com|net|org|co|io)$/i.test(value)) continue;
+      if (shape.requireNonLowercase && !/[^a-z]/.test(value)) continue;
+      if (seen.has(value)) continue;
+      seen.add(value);
+      candidates.push(value);
+    }
+  }
+
+  if (candidates.length === 1) return { password: candidates[0]! };
+  if (candidates.length === 0) {
+    return {
+      refusal:
+        `nothing in ${shape.where} looked like ${article(shape.what)} ${shape.what}. Every line was `
+        + "either the mailbox address, one of the page's own labels, or too short to be a credential.",
+    };
+  }
+
+  // More than one survived. A generated credential mixes letters and digits; prefer that class.
+  const mixed = candidates.filter((value) => /[a-z]/i.test(value) && /[0-9]/.test(value));
+  if (mixed.length === 1) return { password: mixed[0]! };
+
+  const lengths = (mixed.length > 0 ? mixed : candidates).map((value) => value.length).join(", ");
+  return {
+    refusal:
+      `${candidates.length} different values in ${shape.where} could each have been the ${shape.what} `
+      + `(lengths ${lengths}), so the robot refused to guess which one is the credential.`,
+  };
+}
+
+function article(word: string): string {
+  return /^[aeiou]/i.test(word) ? "an" : "a";
+}
+
 /** Whether the locator resolves at all, without throwing. For verifying a page is the expected one. */
 export async function isPresent(page: CandidateReader, locator: Locator): Promise<boolean> {
   return (await findMatches(page, locator)).length > 0;

@@ -120,15 +120,24 @@ export const ONE_TIME_PASSWORD_DIALOG = {
  * Turbify cannot issue an app password centrally — only the mailbox's own account pages can, which
  * is why the robot signs in AS the new mailbox while it still holds the one-time password.
  *
- * 🔴 THESE WERE DESCRIBED AS "TURBIFY'S OWN WORDINGS" AND THEY WERE NOT. They came from the
- * checklist HR followed by hand (`NEW_HIRE_MAILBOX_STEPS`), and the first one — "Manage your
- * account" — does not exist: Turbify's documented path starts at **Account info**. They are matched
- * as visible text, are the one group never read from a live page, and a miss is a hard failure that
- * reports the wording it wanted AND the page it was on. The driver presses `APP_PASSWORD_WORDINGS`
- * below rather than these single values, so a wrong first guess is survivable.
+ * 🔴 CORRECTED 2026-10-03 AGAINST TURBIFY'S OWN HELP (article SLN29264, "Manage app passwords",
+ * updated 2026-07-24). An earlier note here said "Manage your account" **does not exist** and that
+ * the path "starts at Account info". That was wrong, and wrong in the way that matters: it demoted
+ * the correct wording on the strength of a URL. Turbify's documented steps are
+ *
+ *   profile icon (top-right) → **"Manage your account"** → under Security & Privacy,
+ *   **"Manage App Passwords"** → pick the app from a **dropdown** → **"Generate"**
+ *
+ * and "Account info" is real but is the MOBILE DEEP LINK, `https://mail.turbify.com/accountinfo`,
+ * not a link's text. Both appear below, in the documented order.
+ *
+ * 🔴 THE DRIVER NO LONGER DEPENDS ON PRESSING THE FIRST TWO. The profile icon is revealed by a
+ * HOVER — the one shape `clickOneOf` cannot produce — so `turbify-joiner.ts` navigates straight to
+ * `ACCOUNT_INFO_URL` and keeps these as the fallback for a page that lands somewhere else. A miss is
+ * still a hard failure that reports the wording it wanted AND the page it was on.
  */
 export const APP_PASSWORD_PAGE = {
-  manageAccount: text("Account info", "the link to the mailbox's own account pages", ["a", "button"]),
+  manageAccount: text("Manage your account", "the link to the mailbox's own account pages", ["a", "button"]),
   manageAppPasswords: text("Manage App Passwords", "the App Passwords section", ["a", "button"]),
   generate: text("Generate", "the button that mints a new app password"),
   /** The name the password is given, so offboarding can find and delete it later. */
@@ -138,24 +147,36 @@ export const APP_PASSWORD_PAGE = {
 /**
  * The same three steps as ORDERED CANDIDATE LISTS, which is how the driver presses them.
  *
- * 🔴 `manageAccount` READ "Manage your account" UNTIL 2026-10-03, AND THAT IS NOT TURBIFY'S WORDING.
- * Turbify's documented path is **Account info → Manage App Passwords**, corroborated by two
- * independent write-ups of Business Mail read the same day. So the FIRST step would have missed while
- * the second was right all along — the worst shape there is: one wrong wording in the middle of a
- * correct chain, failing with a message about the wrong thing.
+ * 🔴 THE ORDER WAS WRONG TWICE, IN OPPOSITE DIRECTIONS, AND TURBIFY'S OWN ARTICLE SETTLED IT.
+ * `manageAccount` read "Manage your account" until 2026-10-03, when a session replaced it with
+ * "Account info" and recorded that the first wording "does not exist". Reading SLN29264 the same day
+ * showed the original was right all along: the link reads **"Manage your account"**, and "Account
+ * info" is the mobile deep-link path. Corroboration by "two independent write-ups" is what produced
+ * the wrong answer — neither was Turbify, and both were describing the URL.
  *
- * 🔴 THESE ARE STILL NOT MEASURED, and a wording off a web page is NOT a measurement — it is a
- * better-ordered guess. That is only safe because every one fails CLOSED: a list matching nothing
- * refuses and prints the page it was looking at (`describePage` in the joiner), so the first click
- * that reaches here settles all three at once rather than pressing something unknown inside a live
- * mailbox's security settings. Documented wording first, the old guesses kept behind it.
+ * 🔴 THE FIRST STEP IS NO LONGER PRESSED AT ALL, which is the real fix: it is a HOVER-revealed
+ * profile menu, and `clickOneOf` presses, so it could never have been reached by any wording. The
+ * driver navigates to `ACCOUNT_INFO_URL` instead and these remain the fallback.
+ *
+ * 🔴 STILL NOT MEASURED ON A LIVE PAGE — a documented wording is a well-sourced guess, not a
+ * measurement. That stays safe because every one fails CLOSED: a list matching nothing refuses and
+ * prints the page it was looking at, errors included (`describePage` in the joiner), so the first
+ * click that reaches here settles them rather than pressing something unknown inside a live
+ * mailbox's security settings.
  */
 export const APP_PASSWORD_WORDINGS = {
   accountInfo: [
-    "Account info", "Account Info", "Account information", "Manage your account", "Account settings", "Account Security",
+    "Manage your account", "Account info", "Account Info", "Account information", "Account settings", "Account Security",
   ],
   appPasswords: ["Manage App Passwords", "Manage app passwords", "App Passwords", "App passwords"],
   generate: ["Generate", "Generate app password", "Generate password", "Create app password"],
+  /**
+   * 🔴 THE STEP THE ROBOT DID NOT KNOW EXISTED. Turbify: "From the dropdown menu, select the
+   * appropriate app… If you do not see your application, select Other, then enter the application's
+   * name." Phoenix will never be in that list, so the answer is always Other plus a name. Pressing
+   * Generate with nothing selected is how this step would have failed even with the rest correct.
+   */
+  otherApp: ["Other", "Others", "Other app", "Other application"],
 } as const;
 
 /** A human-readable description of a locator, for an error a person has to act on. */

@@ -13,6 +13,14 @@
  * succeeded — not that a password was typed somewhere and assumed to work. That distinction is the
  * whole point: three flows in this module have already shipped reporting success over a step that
  * did nothing.
+ *
+ * 🔴 AND BECAUSE THE MONITOR IS THE PROOF, THE APP PASSWORD IS OPTIONAL **HERE AND ONLY HERE**. It
+ * used to sit on the critical path, so the one step nothing had ever reached could fail an adoption
+ * whose real work — reset, then set the company password — had already succeeded. Phoenix owns this
+ * inbox and nobody rotates its password, so the app password's one advantage (surviving a password
+ * change) buys nothing; for an EMPLOYEE's mailbox it is decisive and `runner.ts` /
+ * `adopt-runner.ts` still require it. The fallback cannot fake a success, because the monitor still
+ * has to log in with whatever credential it is handed.
  */
 
 import { logError, logInfo } from "@/lib/observability/log";
@@ -117,19 +125,61 @@ export async function runInviteInboxAdoption(options: {
       newPassword: companyPassword,
       oneTimePassword: captured.oneTimePassword,
     });
-    const { appPassword } = await options.driver.generateAppPassword({ address, password: companyPassword });
+    // 🔴 THE APP PASSWORD IS NOT WHAT MAKES **THIS** MAILBOX READABLE, SO IT MUST NOT BE ABLE TO
+    // FAIL THE ADOPTION. It sat on the critical path and it is the one step nothing in Phoenix has
+    // ever reached, so every failure of it reported "MAY ALREADY HAVE BEEN RESET" and sent the owner
+    // back to click again — on a mailbox that was by then reset and already holding the company
+    // password Phoenix had set correctly one step earlier.
+    //
+    // The ONE thing an app password buys over the mailbox password is that it SURVIVES a later
+    // password change. For an EMPLOYEE's mailbox that is decisive — they change the password at
+    // handover and Phoenix loses access — which is why `runner.ts` and `adopt-runner.ts` still
+    // REQUIRE it. For THIS mailbox it buys nothing: Phoenix owns `TURBIFY_INVITE_RECIPIENT`, no
+    // employee ever signs into it, and nobody is going to rotate its password out from under us.
+    //
+    // 🔴 And the fallback cannot INVENT a success, which is what makes it safe rather than merely
+    // convenient: `addMonitor` runs `testMailboxConnection` and refuses a credential it cannot log
+    // in with (422, nothing stored). So whichever credential is passed below, `adopted: true` still
+    // means a real IMAP login against this mailbox succeeded. If the company password is refused
+    // too, the monitor throws and the catch reports it — the same honest failure as before.
+    let appPassword: string | null = null;
+    let appPasswordRefusal: string | null = null;
+    try {
+      appPassword = (await options.driver.generateAppPassword({ address, password: companyPassword })).appPassword;
+    } catch (error) {
+      appPasswordRefusal = error instanceof Error ? error.message : String(error);
+      logError("Invite inbox app password not minted — falling back to the company password", {
+        error: error instanceof Error ? error : new Error(appPasswordRefusal),
+        labels: { actor: ROBOT_ACTOR, address, event: "invite_inbox_app_password_failed" },
+      });
+    }
 
     // The monitor refuses a credential it cannot connect with, so reaching the next line means an
     // IMAP login against this mailbox really succeeded.
-    await deps.monitor({ appPassword, displayLabel: INVITE_INBOX_LABEL, emailAddress: address });
+    await deps.monitor({
+      appPassword: appPassword ?? companyPassword,
+      displayLabel: INVITE_INBOX_LABEL,
+      emailAddress: address,
+    });
 
     logInfo("Invite inbox adopted", {
-      labels: { actor: ROBOT_ACTOR, address, event: "invite_inbox_adopted" },
+      labels: {
+        actor: ROBOT_ACTOR,
+        address,
+        credential: appPassword ? "app_password" : "company_password",
+        event: "invite_inbox_adopted",
+      },
     });
     return {
       address,
       adopted: true,
-      detail: null,
+      // Says WHICH credential is stored. Silence would hide that the app-password step failed, and
+      // that step still matters for every EMPLOYEE mailbox even though it does not for this one.
+      detail: appPasswordRefusal === null
+        ? null
+        : "Adopted on the company password, proven by a real IMAP login. No app password could be "
+          + "minted inside the mailbox, which does not affect this inbox — Phoenix owns it and nobody "
+          + `changes its password. The app-password step reported: ${appPasswordRefusal}`,
       dryRun: false,
       handover: inviteInboxHandoverNote(address),
       refusal: null,
