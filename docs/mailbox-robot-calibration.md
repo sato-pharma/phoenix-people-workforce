@@ -1005,3 +1005,68 @@ close that one.
 **16 of 16 breaks fired on their own named assertion**, including the two that had to be corrected
 first: the `0`-for-`-Infinity` break that proved nothing, and a break whose red came from an earlier
 helper's message rather than the assertion below it.
+
+
+## The setup page is Yahoo's Terms of Service, so step 2 is a boundary and not a bug
+
+2026-10-04, 00:20 Cairo. This is the answer to the six dead clicks, and it is not a defect anywhere
+in Phoenix.
+
+The control reader shipped in #5275 was built for exactly one job: name the unlabelled checkbox on
+`Set up your mailbox password`, because every link of its label chain came back empty. On the next
+live run it returned this, verbatim:
+
+```
+checkbox:- UNTICKED
+  near:"By continuing, you agree that Turbify will create a profile, and for use of Business Mail
+        service. You agree to Yahoo's Terms of Service and Privacy Policies."
+  markup:<input aria-hidden="true" tabindex="-1" type="checkbox"
+          style="position: absolute; pointer-events: none; opacity: 0; margin: 0px;
+          transform: translateX(-100%);">
+```
+
+Three readings, and together they close the question:
+
+**It is a consent to a third party's terms.** That had been the standing assumption and the reason
+nothing ticked it. It is now a measurement rather than a precaution.
+
+**The box cannot be ticked by anything — including the owner.** `pointer-events: none`, `opacity: 0`,
+`aria-hidden="true"`, `tabindex="-1"`, pushed off-screen by `translateX(-100%)`: a visually-hidden
+native input acting as a value carrier behind a custom control. So every refusal that told him to
+tick it was giving advice nobody could follow, and had been since the page was first reached.
+
+🔴 **The consent is "By CONTINUING", not by ticking — so the SUBMIT ITSELF is the acceptance.** This
+is the part that settles it. There is no sequence of clicks an automation can perform here that is
+not the act of agreeing to Yahoo's Terms of Service on the company's behalf. The step is not
+uncalibrated; it is **not automatable, by its nature**, and no further measurement will change that.
+
+It also means the checkbox was never what held the submit back: it carries no `required` flag and the
+form reports itself valid, which was already measured on 2026-10-03 at 23:10:35. Why Turbify's own JS
+does not advance is now moot — whatever the reason, the robot may not be the thing that advances it.
+
+### What changed in the code
+
+- `createMailbox`'s sibling step, `setMailboxPassword`, keeps submitting the form (Phoenix may
+  legitimately try), but its refusal now states that the mailbox's password was **NOT** changed, that
+  re-running cannot get past a terms page, and what the four manual clicks are.
+- The comment above the submit no longer describes the label as unread. It carries the measured text.
+- `invite-inbox-runner.ts` stopped claiming **"Phoenix cannot read the mailbox until an adoption
+  completes"**, which was measured FALSE the same night. A reset rotates the MAILBOX's password; an
+  app password already stored with the monitor survives it. `hr.mailbox@satopharma.com` passed a real
+  IMAP login at **00:19:54 Cairo**, minutes after a failed run had told the owner access was gone. He
+  was sent to rescue something that had never been lost, which is the costliest kind of wrong refusal
+  — it spends his time on a problem that does not exist while the real one goes unmentioned.
+
+### The shape the flow actually has
+
+The robot takes a new mailbox as far as a credential and no further:
+
+1. create the mailbox — **automated**;
+2. read its invitation out of the invite inbox and take the temp password — **automated** (#5280);
+3. first sign-in and set the company password — **one human sign-in per mailbox**, because continuing
+   accepts Yahoo's terms;
+4. mint the app password inside the mailbox and connect it — **manual**, inside the window step 3
+   opens.
+
+That is the honest deliverable: not hands-off provisioning, but every mailbox brought to the point
+where one sign-in and one password entry finish it.

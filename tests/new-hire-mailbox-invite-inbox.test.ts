@@ -211,7 +211,26 @@ async function runRunnerCases(): Promise<void> {
   });
   assert.equal(rejected.adopted, false, "a credential the monitor could not connect with is not an adoption");
   assert.match(rejected.detail ?? "", /MAY ALREADY HAVE BEEN RESET/);
-  assert.match(rejected.detail ?? "", /Phoenix cannot read the mailbox/);
+  // 🔴 THIS ASSERTION USED TO DEMAND THE OPPOSITE — `/Phoenix cannot read the mailbox/` — and that
+  // claim was measured FALSE on 2026-10-04: `hr.mailbox@satopharma.com` passed a real IMAP login at
+  // 00:19:54 Cairo, minutes after a failed run printed it to the owner. A reset rotates the
+  // MAILBOX's own password; an app password already stored with the monitor survives it. So the
+  // refusal must now state the narrower truth, and this suite pins that rather than the old one.
+  assert.equal(
+    /cannot read the mailbox/.test(rejected.detail ?? ""), false,
+    "this refusal must not say Phoenix cannot read the mailbox — a monitor already holding an app "
+    + "password keeps working through a reset, and saying otherwise sent the owner to rescue access "
+    + "that had never been lost",
+  );
+  assert.match(
+    rejected.detail ?? "", /an app password survives a password change/,
+    "it must say an app password survives a password change, which is what makes reading the mailbox "
+    + "a separate question from the mailbox's own password",
+  );
+  assert.match(
+    rejected.detail ?? "", /read the Mailbox Monitor page before assuming access was lost/,
+    "and it must point at the page that answers whether access was actually lost",
+  );
 
   // ── 🔴 A FAILURE INSIDE `resetAndCapture` MUST NOT CLAIM THE MAILBOX WAS UNTOUCHED ─────────────
   // The reset is CLICKED inside that step, before the dialog is read, so anything it throws leaves

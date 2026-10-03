@@ -196,10 +196,21 @@ export async function runInviteInboxAdoption(options: {
       // Never claims the mailbox was untouched. The reset is clicked before the dialog is read, so a
       // failure anywhere in that step may already have rotated the password to a one-time one that
       // nothing captured — and saying "was not reset" sent the owner looking for the wrong problem.
+      //
+      // 🔴 AND IT NO LONGER CLAIMS PHOENIX HAS LOST THE MAILBOX, because that was measured FALSE on
+      // 2026-10-04. A reset rotates the MAILBOX's own password; an app password already stored with
+      // the monitor SURVIVES it — this module's standing rule — and `hr.mailbox@satopharma.com`
+      // proved it by passing a real IMAP login at 00:19:54 Cairo, minutes after a failed run had
+      // told the owner Phoenix "cannot read the mailbox until an adoption completes". He was sent to
+      // rescue access that had never been lost. The honest statement is narrower, and this is it.
       detail: mayBeReset
         ? `${address} MAY ALREADY HAVE BEEN RESET — the reset is clicked before the robot can read `
-          + "the dialog, so a one-time password may be outstanding and Phoenix cannot read the "
-          + `mailbox until an adoption completes. Run it again once this is fixed: ${detail}`
+          + "the dialog, so a one-time password may be outstanding and the mailbox's OWN password "
+          + "now needs setting by a human sign-in. Reading the mailbox is a separate question: an "
+          + "app password survives a password change, so wherever Phoenix already holds one the "
+          + "monitor keeps working — read the Mailbox Monitor page before assuming access was lost. "
+          + "Re-running does not help if the run stopped on Turbify's terms-of-service page, which "
+          + `no automation may accept: ${detail}`
         : `${address} was not reset: ${detail}`,
       dryRun: false,
       handover: null,
