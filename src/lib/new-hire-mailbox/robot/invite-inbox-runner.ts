@@ -100,13 +100,18 @@ export async function runInviteInboxAdoption(options: {
 
   await options.driver.signIn();
 
-  // The reset is what opens the window in which an app password can be minted at all, so from here
-  // on a failure leaves the mailbox reset. It belongs to Phoenix, so nobody is locked out of their
-  // mail — but the detail says plainly where it stopped, because the next run has to know.
-  let reset = false;
+  // 🔴 THE RESET CLICK HAPPENS INSIDE `resetAndCapture`, BEFORE IT RETURNS — so anything it throws
+  // leaves the mailbox POSSIBLY reset, and this flag is armed BEFORE the call rather than after it.
+  //
+  // Armed after, it reported "was not reset" for a failure that happened while reading the dialog
+  // that only exists BECAUSE Turbify had reset the mailbox. The owner was told the opposite of what
+  // had happened to a live mailbox (2026-10-03). A flag that can only overstate the damage is the
+  // right way round: the mailbox belongs to Phoenix, so nobody is locked out either way, and the
+  // next run has to know a one-time password may be outstanding.
+  let mayBeReset = false;
   try {
+    mayBeReset = true;
     const captured = await options.driver.resetAndCapture({ address });
-    reset = true;
     await options.driver.setMailboxPassword({
       address,
       newPassword: companyPassword,
@@ -133,14 +138,18 @@ export async function runInviteInboxAdoption(options: {
     const detail = error instanceof Error ? error.message : String(error);
     logError("Invite inbox adoption did not finish", {
       error: error instanceof Error ? error : new Error(detail),
-      labels: { address, event: "invite_inbox_adopt_failed", reset: String(reset) },
+      labels: { address, event: "invite_inbox_adopt_failed", mayBeReset: String(mayBeReset) },
     });
     return {
       address,
       adopted: false,
-      detail: reset
-        ? `${address} was reset and now holds the company password, but the run did not finish, so `
-          + `Phoenix still cannot read it: ${detail}`
+      // Never claims the mailbox was untouched. The reset is clicked before the dialog is read, so a
+      // failure anywhere in that step may already have rotated the password to a one-time one that
+      // nothing captured — and saying "was not reset" sent the owner looking for the wrong problem.
+      detail: mayBeReset
+        ? `${address} MAY ALREADY HAVE BEEN RESET — the reset is clicked before the robot can read `
+          + "the dialog, so a one-time password may be outstanding and Phoenix cannot read the "
+          + `mailbox until an adoption completes. Run it again once this is fixed: ${detail}`
         : `${address} was not reset: ${detail}`,
       dryRun: false,
       handover: null,

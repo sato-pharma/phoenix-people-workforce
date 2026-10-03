@@ -266,6 +266,40 @@ function runRowIdentityCases(): void {
   assert.equal(dialogNamesAddress("Account: adel.sayed", "el.sayed@satopharma.com"), false);
   assert.equal(dialogNamesAddress("", "el.sayed@satopharma.com"), false);
   assert.equal(dialogNamesAddress("anything", ""), false);
+
+  // 🔴 THE REAL DIALOG, read off production 2026-10-03 with the credential masked. `textContent`
+  // runs the address straight into the NEXT LABEL, so the token was
+  // `hr.mailbox@satopharma.comone-time` and this check refused a dialog that DOES name the mailbox —
+  // which stopped the invite-inbox adoption on a live mailbox after it had already been reset.
+  const realDialog =
+    "One-time passwordWe've created a one-time password for this email account. Please sign in to "
+    + "the account with this password and set a new, permanent password. Note that if this account "
+    + "had another one-time password set previously, that one-time password is no longer valid."
+    + "Email account:hr.mailbox@satopharma.comOne-time password: XXXXXXXXXXXXXXX "
+    + "Login at:https://mail.turbify.com/loginHow do you want to inform the user?";
+  assert.equal(
+    dialogNamesAddress(realDialog, "hr.mailbox@satopharma.com"), true,
+    "the real dialog names the mailbox — the glue to the next label must not hide it",
+  );
+
+  // 🔴 AND THE GLUE MUST NOT CREATE A FALSE MATCH. Splitting at a lowercase→uppercase boundary can
+  // only ever break a token apart, so the near-miss pair stays refused even when glued.
+  assert.equal(
+    dialogNamesAddress(
+      "Email account:adel.sayed@satopharma.comOne-time password: XXXX",
+      "el.sayed@satopharma.com",
+    ),
+    false,
+    "a glued dialog for adel.sayed must still NOT confirm a reset of el.sayed",
+  );
+  // The same dialog, read for the mailbox it really belongs to, does match.
+  assert.equal(
+    dialogNamesAddress(
+      "Email account:adel.sayed@satopharma.comOne-time password: XXXX",
+      "adel.sayed@satopharma.com",
+    ),
+    true,
+  );
 }
 
 /** The row reader takes each address from its OWN cell, never from the row's concatenated text. */

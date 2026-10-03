@@ -311,3 +311,82 @@ The first version of the no-escape-hatch check searched the whole module for the
 `override` — and the module's own comment explaining that there are none made it fail. It now strips
 comment lines and matches `force\s*[?:=]` against code only. Worth remembering as the mirror of the
 usual failure: an assertion can be fooled by a comment in either direction.
+
+## `textContent` glued the address to the next label, and the owner was told it was somebody else's
+
+The adoption's first real run stopped with a sentence that was wrong twice over:
+
+> `hr.mailbox@satopharma.com` **was not reset**: The "One-time password" dialog is open but does not
+> name `hr.mailbox@satopharma.com`, so it belongs to a different mailbox.
+
+The dialog named it. The mailbox had been reset. Both halves were defects in the reporting, not in
+Turbify.
+
+### Half one — the glue
+
+Read off the live dialog in the production container on 2026-10-03, with every credential-shaped
+token masked:
+
+```
+headings                : ["One-time password","How do you want to inform the user?"]
+tokens containing '@'   : ["hr.mailbox@satopharma.comone-time"]
+FULL ADDRESS as a token : false
+LOCAL PART as a token   : false
+
+…Email account:hr.mailbox@satopharma.comOne-time password: ••••••••••••••• Login at:https://mail.turbify.com/login…
+```
+
+`textContent` runs the address straight into the *following label* with no separator. The only
+`@`-bearing token was `hr.mailbox@satopharma.comone-time`, so neither the address nor its local part
+survived tokenisation, and `dialogNamesAddress` refused — correctly, on mush.
+
+**This is the same concatenation that made a console row parse as
+`Abd-Elnaimahmed.mohamed@satopharma.com`,** met a second time in a different element after being
+fixed for rows. The lesson that did not generalise the first time: in this console, an element's
+concatenated text is never a list of fields. Read from the element's **own** text, or put the
+boundary back.
+
+The fix puts it back, at a lowercase→uppercase transition. That is where the glue always falls here,
+because what follows an address is the next label's capitalised first word. The property that makes
+it safe is that **inserting a boundary can only ever SPLIT a token** — it can never join two, so it
+cannot turn a near miss into a match, and the substring trap above stays shut:
+`adel.sayed@satopharma.comOne-time` yields `adel.sayed@satopharma.com`, which still does not equal
+`el.sayed@satopharma.com`. Both directions are pinned in
+`tests/new-hire-mailbox-robot.test.ts`, with the real dialog as the fixture.
+
+### Half two — "was not reset" was the opposite of the truth
+
+`invite-inbox-runner.ts` armed its `reset` flag *after* `resetAndCapture` returned. But the reset is
+**clicked inside** that step, before the dialog is read. So a failure while reading the dialog — a
+failure that only exists *because* Turbify had already reset the mailbox — reported the mailbox as
+untouched.
+
+That is the worse of the two bugs. The owner read "was not reset", went looking for the wrong
+problem, and was not told that a one-time password was outstanding on a mailbox Phoenix needs to
+read. The flag is armed before the call now and named `mayBeReset`: it can only ever **overstate**
+the damage, which is the right way round for a mailbox Phoenix owns — nobody is locked out either
+way, and the next run has to know a password may be hanging. A test asserts that a failure in the
+reset step can never report the mailbox as untouched.
+
+### What this left behind
+
+`hr.mailbox@satopharma.com` holds an **uncaptured one-time password** — three resets, the owner's
+click and two measurements, each invalidating the last. Nothing has to be unwound: the adoption
+resets *and* captures in one pass, so whatever is outstanding stops mattering the moment it runs
+successfully.
+
+### The same copy, on the path nobody had run
+
+`src/lib/mailbox-offboarding/robot/turbify-console.ts` carried its **own** copy of the tokenisation,
+written for the same reason and with the same shape — and therefore with the same defect: it
+lowercased the dialog's text before splitting, so the glue was unbreakable there too. The leaver
+reset would have clicked Reset, then refused its own confirmation with "the dialog naming
+`<address>` never appeared", on the first live leaver. Nobody had run one yet, so nothing had
+revealed it.
+
+It calls `dialogNamesAddress` now — the in-page function only waits for the heading, and WHICH
+mailbox the dialog names is decided in node, where the shared resolver can be reached — and
+`tests/mailbox-offboarding-robot.test.ts` refuses a re-implementation outright. The in-page reader
+is a real function rather than a string, and `ConsolePage.evaluate` is typed to accept nothing else.
+
+Two copies of one judgement is how a fix lands on one path and silently leaves the other broken.

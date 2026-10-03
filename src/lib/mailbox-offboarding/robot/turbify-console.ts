@@ -35,6 +35,7 @@ import { loadPuppeteer, resolveChromiumPath, type ChromiumPage } from "@/lib/pdf
 // so the revocation driver and the provisioning driver cannot drift into two different ideas of
 // when it is safe to click a row action.
 import {
+  dialogNamesAddress,
   MAILBOX_ROW_QUERY,
   readMailboxRowCells,
   rowIdentityRefusal,
@@ -206,6 +207,12 @@ type ConsolePage = ChromiumPage & {
   ) => Promise<unknown>;
   /** Counts matches in the page, for the exactly-one-row guard before a reset click. */
   $$eval: <T>(selector: string, fn: (elements: Element[]) => T) => Promise<T>;
+  /**
+   * Reads a value out of the page. Typed to take a REAL FUNCTION and nothing else: a string crosses
+   * the template-literal layers and arrives changed — one lost backslash turned `/\s+/g` into
+   * `/s+/g` and made the console's "Email user" button read "Email u er" for an hour.
+   */
+  evaluate: <T>(fn: () => T) => Promise<T>;
   url: () => string;
 };
 
@@ -302,7 +309,6 @@ export async function createTurbifyConsoleDriver(): Promise<TurbifyConsoleDriver
 
     async resetPassword(address: string): Promise<RobotStepResult> {
       const email = address.trim().toLowerCase();
-      const localPart = email.split("@")[0] ?? email;
 
       // 1. Filter the list to exactly this mailbox. Triple-click selects any address left from a
       //    previous mailbox in the same run so the type() below replaces it rather than appends.
@@ -349,25 +355,36 @@ export async function createTurbifyConsoleDriver(): Promise<TurbifyConsoleDriver
       //    names a different mailbox (wrong row) or never appears, THROW — never record a reset that
       //    was not positively observed on the exact address asked for. Matching the local-part binds
       //    it to this mailbox without depending on how the dialog renders the full address.
+      // 🔴 THE IDENTITY TEST IS `dialogNamesAddress` AND IS NOT RE-WRITTEN HERE. This block used to
+      // carry its own copy of the tokenisation, and it carried the same defect: it lowercased the
+      // dialog's text BEFORE splitting, so the glue `textContent` leaves between the address and the
+      // next label (`…satopharma.comOne-time password:`) was unbreakable and no token ever equalled
+      // the address. On the joiner that refused a reset Turbify had already performed and told the
+      // owner the dialog "belongs to a different mailbox" about his own mailbox (2026-10-03). The
+      // leaver path would have failed identically on its first live reset. One vocabulary, one fix.
       const confirmed = await page
         .waitForFunction(
           (args: unknown) => {
-            const { heading, addr, local } = args as { heading: string; addr: string; local: string };
+            const { heading } = args as { heading: string };
             const dialog = document.querySelector(".modal-container");
             if (!dialog) return false;
-            const text = (dialog.textContent ?? "").toLowerCase();
-            if (!text.includes(heading.toLowerCase())) return false;
-            // 🔴 WHOLE TOKENS, NEVER `includes`. A dialog opened for adel.sayed@satopharma.com
-            // CONTAINS el.sayed@satopharma.com, so an includes() check confirmed the wrong reset as
-            // the right one — the same substring relation that defeats the row filter.
-            const tokens = new Set(text.split(/[^a-z0-9._%+@-]+/).filter((token) => token.length > 0));
-            return tokens.has(addr) || tokens.has(local);
+            // The heading only proves A dialog is open; WHICH mailbox it names is decided in node,
+            // because the in-page function cannot call the shared resolver.
+            return (dialog.textContent ?? "").toLowerCase().includes(heading.toLowerCase());
           },
           { timeout: 20_000 },
-          { heading: MAILBOX_SELECTORS.resetConfirmation.label, addr: email, local: localPart },
+          { heading: MAILBOX_SELECTORS.resetConfirmation.label },
         )
         .catch(() => null);
-      if (!confirmed) {
+      const dialogText = confirmed
+        ? await page
+          .evaluate<string>(() => {
+            const dialog = document.querySelector(".modal-container");
+            return dialog ? (dialog.textContent ?? "") : "";
+          })
+          .catch(() => "")
+        : "";
+      if (!confirmed || !dialogNamesAddress(dialogText, email)) {
         throw new Error(
           `Reset ${email}: clicked "Reset password" but the "One-time password" dialog naming `
           + `${email} never appeared. Not recording a reset that was not confirmed on this exact `

@@ -24,7 +24,9 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
 import {
   capForRun,
   decideRobotAction,
@@ -449,5 +451,36 @@ export async function runMailboxOffboardingRobotTests() {
       /did not confirm/,
     );
     assert.deepEqual(recorded, [], "a failed console action records no attestation");
+  }
+
+  // ONE VOCABULARY FOR "DOES THIS DIALOG NAME THIS MAILBOX?"
+  //
+  // The leaver driver carried its own copy of the tokenisation, and the copy carried the same defect
+  // as the original: it lowercased the dialog's text before splitting, so the glue `textContent`
+  // leaves between an address and the next label (`…satopharma.comOne-time password:`) could never be
+  // broken and no token ever equalled the address. On the joiner that refused a reset Turbify had
+  // already performed, and told the owner the dialog belonged to a different mailbox. The leaver path
+  // would have failed identically on its first live reset, which nobody had run yet. Two copies is
+  // how one fix lands on one path and silently leaves the other broken.
+  {
+    const source = stripComments(
+      readFileSync(
+        new URL(
+          "src/lib/mailbox-offboarding/robot/turbify-console.ts",
+          new URL("../", import.meta.url),
+        ),
+        "utf8",
+      ),
+    );
+    assert.ok(
+      source.includes("dialogNamesAddress("),
+      "the leaver driver must decide which mailbox the one-time-password dialog names with the "
+      + "shared dialogNamesAddress, never its own comparison",
+    );
+    assert.equal(
+      /tokens\s*=\s*new Set\(/.test(source),
+      false,
+      "the leaver driver must not re-implement the dialog tokenisation",
+    );
   }
 }
