@@ -469,7 +469,10 @@ actually is" and "A feature arriving in instalments is still ONE feature".
 
 `check:harden` and the `ask-before-validation` hook are retired at the owner's instruction. Do not
 reintroduce them or invent a replacement — no "quick subset" of lint + typecheck before pushing, no
-`pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's checks answer.** The two
+`pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's checks answer.** The one pre-push
+step is `.claude/hooks/push-typecheck-guard.mjs` (owner, 2026-10-04): it runs the typecheck on the CI box,
+never here, and refuses a push only when that typecheck FAILED — commit and push in separate commands
+(`docs/ci-self-hosted-runner.md`, "The remote typecheck before every push"). The two
 **required** checks — `validate` (the `check:*` contracts, **the unit suite**, and on non-PR events
 the build and login smoke) and `checks` (lint, `next typegen`, typecheck) — run on the PR head commit
 and block the merge if either is red. 🔴 **THE UNIT SUITE MOVED BACK INTO `validate` ON 2026-09-30, FOR

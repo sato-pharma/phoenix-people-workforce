@@ -2158,6 +2158,7 @@ import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
+import { runPushTypecheckGuardTests } from "./push-typecheck-guard.test.ts";
 import { runScriptsAliasLoaderTests } from "./scripts-alias-loader.test.ts";
 import { runMobileFreezeTests } from "./mobile-freeze.test.ts";
 import { runProtectedFileGuardTests } from "./protected-file-guard.test.ts";
@@ -8114,6 +8115,11 @@ await runTest(
 await runTest(
   "bash-guard C8 refuses a local typecheck in every spelling the watchdog log records it being killed in (node with a raised heap, typescript/bin/tsc, lib/tsc.js, a backslash path, a quoted path with spaces, pnpm/npm/yarn run typecheck, npx, pnpm exec, .bin/tsc, bare tsc) and hands back a stand-down in the dialect that asked, while pnpm run ci, a real emit, and commands, commit messages, heredocs and here-strings that only mention it stay allowed",
   runLocalTypecheckGuardTests,
+);
+
+await runTest(
+  "push-typecheck-guard runs the typecheck on the CI box before a `git push` of the checked-out commit and refuses it only on a FAILED verdict (carrying every tsc error and a stand-down in the dialect that asked): every push spelling runs it including cd and -C from another folder, a chained commit-then-push is refused because HEAD is stale, and a delete, dry run, tag, --all, another ref, a refs/backups push, an up-to-date branch, a docs- or migration-only push, a remembered PASS and a box that could not give a verdict are never held up; it is wired in settings.json with a timeout past its own wait",
+  runPushTypecheckGuardTests,
 );
 
 await runTest(
