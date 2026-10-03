@@ -136,14 +136,19 @@ export function runWhatsAppTextOnlyApplicantTests() {
 
   // ── What the applicant is actually told ────────────────────────────────────
   const reply = textOnlyReplyText();
-  assert.ok(/[؀-ۿ]/.test(reply), "the reply speaks Arabic — that is what applicants write in");
+  assert.ok(
+    !/[؀-ۿ]/.test(reply),
+    "the reply is ENGLISH ONLY — the owner’s rule of 2026-10-04. The bot still READS Arabic; it does not write it",
+  );
   assert.ok(reply.includes("PDF"), "it names the formats that work");
   assert.ok(
     /photo/i.test(reply),
     "and rules out the photographed CV — 20 events from 5 people were unsupported image attachments",
   );
-  const arabicIndex = reply.search(/[؀-ۿ]/);
-  assert.ok(arabicIndex < reply.indexOf("Thanks"), "Arabic comes first, not buried under English");
+  assert.ok(
+    reply.startsWith("Thanks"),
+    "and it opens with the thank-you, which used to sit underneath an Arabic block",
+  );
 
   // ── The notification has to be readable on a phone ─────────────────────────
   assert.equal(previewInboundText(null), "(no text)", "an empty body is stated, never rendered blank");

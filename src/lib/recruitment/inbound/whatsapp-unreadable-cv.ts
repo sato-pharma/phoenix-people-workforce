@@ -125,7 +125,9 @@ export function isUnreadableCvReplyEnabled(): boolean {
  * It never says the CV was rejected, because nothing here knows that. The picture may have been a
  * certificate; it may have been a CV the model misread. Both readers get a sentence that is true.
  *
- * Arabic first — the adverts run in Arabic and the applicants write in Arabic.
+ * English only, like every automatic reply on this line — the owner's rule of 2026-10-04. Many
+ * applicants write in Arabic and the bot still READS that (the enquiry markers in
+ * whatsapp-text-only-applicant.ts are Arabic on purpose); what it SENDS BACK is English.
  */
 export function unreadableCvReplyText(
   cause: UnreadableCvCause,
@@ -157,24 +159,18 @@ export const DEFAULT_MAX_CV_BYTES = 15 * 1024 * 1024;
 export function unreadableCvReplyDefault(cause: UnreadableCvCause): string {
   if (cause === "too_large") {
     return [
-      "‏شكراً لإرسالك السيرة الذاتية 🌟",
-      "‏لكن حجم الملف كبير جداً ولم نستطع فتحه.",
-      "‏من فضلك أرسله مرة أخرى بحجم أصغر (أقل من {maxMb} ميجابايت) كملف PDF أو Word.",
-      "",
-      "Thanks for sending your CV.",
-      "The file was too large for us to open — please send it again under {maxMb} MB, as a PDF or Word file.",
+      "Thanks for sending your CV 🌟",
+      "The file is too large for us to open.",
+      "Please send it again under {maxMb} MB, as a PDF or Word file.",
     ].join("\n");
   }
   return [
-    "‏شكراً لتواصلك مع ساتو فارما 🌟",
-    "‏وصلتنا صورة 📷 ولم نتمكن من قراءة السيرة الذاتية منها.",
-    "‏من فضلك أرسلها *كملف* PDF أو Word بهذه الطريقة:",
-    "‏١ اضغط على علامة المشبك 📎 داخل المحادثة",
-    "‏٢ اختر (ملف / Document) وليس (صورة / Gallery)",
-    "‏٣ اختر ملف السيرة الذاتية وأرسله",
-    "",
-    "Thanks for contacting Sato Pharma.",
-    "We received a picture and could not read a CV from it. Please send it as a *file*: tap 📎 in the chat, choose *Document* (not Gallery), and pick your CV.",
+    "Thanks for contacting Sato Pharma 🌟",
+    "We received a picture 📷 and could not read a CV from it.",
+    "Please send it as a *file* — PDF or Word — like this:",
+    "1 Tap the paperclip 📎 inside the chat",
+    "2 Choose (File / Document), not (Photo / Gallery)",
+    "3 Pick your CV file and send it",
   ].join("\n");
 }
 
