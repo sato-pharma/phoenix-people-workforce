@@ -921,6 +921,7 @@ import { runMailboxOffboardingRobotTests } from "./mailbox-offboarding-robot.tes
 import { runNewHireMailboxRobotTests } from "./new-hire-mailbox-robot.test.ts";
 import { runNewHireMailboxInvitationTests } from "./new-hire-mailbox-invitation.test.ts";
 import { runNewHireMailboxInviteInboxTests } from "./new-hire-mailbox-invite-inbox.test.ts";
+import { runNewHireMailboxInviteInboxReaderTests } from "./new-hire-mailbox-invite-inbox-reader.test.ts";
 import { runNewHireMailboxResultSurvivesTests } from "./new-hire-mailbox-result-survives.test.ts";
 import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
 import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts";
@@ -4080,6 +4081,18 @@ await runTest(
   + "the app password is minted only inside the window the reset opens; the monitor's own IMAP test "
   + "is what counts as adopted; nothing scheduled may call it; and no outcome carries a credential)",
   runNewHireMailboxInviteInboxTests,
+);
+await runTest(
+  "the invitation reader is wired into the CREATE path (Turbify's create raises no one-time-password "
+  + "dialog — it makes the mailbox PENDING and emails the credential — so the driver reads the "
+  + "invitation out of the invite inbox and hands its temp password back as the one-time password, "
+  + "with the dialog still winning wherever it exists; the inbox is re-sorted newest-first rather "
+  + "than trusted, an undated message sorts LAST so a spent password cannot be chosen, only a "
+  + "plausible invitation is ever OPENED because every body fetch is an audited mailbox read "
+  + "attributed to the robot, a near-miss address refuses instead of handing over somebody else's "
+  + "credential, an unreadable inbox is never read as an empty one, and the poll stops dead on a "
+  + "refusal that waiting cannot change)",
+  runNewHireMailboxInviteInboxReaderTests,
 );
 await runTest(
   "a mailbox run's own account survives the run (neither adoption card refreshes the route "

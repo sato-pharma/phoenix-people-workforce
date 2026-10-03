@@ -25,13 +25,16 @@
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
+import { listMonitors, listMonitorMessages, openMonitorMessage } from "@/lib/mailbox-monitor/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { logError } from "@/lib/observability/log";
 
 import { connectNewHireMailboxTask, getNewHireMailboxQueue, NEW_HIRE_MAILBOX_TABLE } from "../service";
 import { initialPasswordRecord } from "../initial-password-store";
 import { createTurbifyJoinerDriver } from "./turbify-joiner";
+import { pollForInvitation, type InviteInboxReaderDeps } from "./invite-inbox-reader";
 import { readCompanyInitialPassword } from "./initial-password";
+import { ROBOT_ACTOR } from "./safety";
 import { runTurbifyJoinerRobot, type JoinerCandidate, type JoinerRunnerDeps } from "./runner";
 import { resolveJoinerSweepConfig, type JoinerSweepDeps } from "./sweep-hook";
 
@@ -173,11 +176,43 @@ export function defaultJoinerRunnerDeps(): JoinerRunnerDeps {
 }
 
 /**
+ * The invite inbox, filled with the real mailbox monitor.
+ *
+ * 🔴 EVERY READ HERE IS AUDITED AND ATTRIBUTED TO THE ROBOT, not to whoever triggered the sweep.
+ * `withMonitorRead` writes a `mailbox_access` row per call with the actor it is handed, so passing
+ * `ROBOT_ACTOR` is what makes "Phoenix opened this mailbox and read a message out of it" answerable
+ * afterwards — a `null` actor records the same reads as nobody's.
+ *
+ * The monitor is resolved by ADDRESS rather than from a stored id because the invite inbox is
+ * connected by hand on the Mailbox Monitor page (it needs an app password only a human can mint
+ * inside the mailbox), so Phoenix never chooses its id. `listMonitors` never returns a password,
+ * sealed or otherwise.
+ */
+export function defaultInviteInboxReaderDeps(): InviteInboxReaderDeps {
+  return {
+    findMonitorId: async (address) => {
+      const wanted = lower(address);
+      const monitors = await listMonitors();
+      // Identity, not `includes`: this chooses which mailbox Phoenix is about to READ.
+      return monitors.find((monitor) => lower(monitor.emailAddress) === wanted)?.id ?? null;
+    },
+    listMessages: (monitorId, folder, limit) => listMonitorMessages(monitorId, folder, ROBOT_ACTOR, limit),
+    openMessage: (monitorId, folder, uid) => openMonitorMessage(monitorId, folder, uid, ROBOT_ACTOR),
+  };
+}
+
+/**
  * A real console driver from the environment's admin credentials.
  *
  * Shared by the sweep and the adoption route so there is ONE place that decides what counts as
  * usable Turbify credentials — a second copy would eventually disagree with this one about the
  * missing-credential message, and that message is what a Super Admin reads when nothing happens.
+ *
+ * 🔴 IT IS ALSO THE ONE PLACE THE INVITATION READER IS ATTACHED. Turbify's create hands its password
+ * over by email rather than through the dialog a RESET raises, so a driver built WITHOUT the reader
+ * cannot finish a create at all — it can only report the PENDING mailbox it left behind. Attaching
+ * it here means every real caller has it and no caller has to remember to, while the tests still
+ * drive the driver with no inbox at all and see that honest refusal.
  */
 export async function createJoinerDriverFromEnv() {
   const username = String(process.env.PHOENIX_TURBIFY_ADMIN_USER ?? "").trim();
@@ -188,7 +223,10 @@ export async function createJoinerDriverFromEnv() {
       + "new-hire mailbox robot cannot sign in to the Turbify console.",
     );
   }
-  return createTurbifyJoinerDriver({ password, username });
+  return createTurbifyJoinerDriver(
+    { password, username },
+    { readInvitation: (address) => pollForInvitation({ address, deps: defaultInviteInboxReaderDeps() }) },
+  );
 }
 
 /** What the sweep passes to `runJoinerSweepPass`. */

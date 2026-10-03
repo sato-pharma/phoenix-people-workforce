@@ -358,6 +358,31 @@ export const MODULES = [
     keywords: ["turbify", "mailbox console", "app password", "app passwords", "new hire mailbox", "mailbox offboarding", "two-step"],
     tables: ["mailbox_offboarding", "new_hire_mailbox", "personal_mailbox"],
   },
+  // ── Split out of `turbify` on 2026-10-04, which had reached 4,142 of the 4,000-byte margin ──
+  //
+  // 🔴 THE BROAD GLOBS STAY ON `turbify`, so this is an ADDITION and never a replacement: a session
+  // in `src/lib/new-hire-mailbox/**` loads the console's golden rules AND these. Splitting the other
+  // way round — narrowing `turbify` to `src/lib/turbify/**` — would have taken the substring-identity
+  // rule and the click-delivery rule away from the robot that needs them most, which is precisely
+  // the forgetting this module system exists to end.
+  //
+  // The seam is CONSOLE versus PROVISIONING FLOW. `turbify` keeps what is true whoever is driving:
+  // on-screen wordings, row resolution, click delivery, the two login pages, the redaction rules.
+  // This holds the new-hire half's own sequence — a create lands PENDING, the invitation carries the
+  // credential, the app password has one window, and what a run may report or record.
+  {
+    id: "turbify-provisioning",
+    title: "Turbify provisioning — creating a mailbox, its invitation and its app password",
+    scope: "The new-hire half of the Turbify robot: what a CREATE actually leaves behind, the invitation that carries the credential, adopting an existing mailbox by reset, the one window in which an app password can be minted, and what a run may report or record. The console's own wordings, row resolution and click delivery stay in `turbify`, which loads beside this.",
+    globs: [
+      "src/lib/new-hire-mailbox/**",
+      "src/components/new-hire-mailbox/**",
+      "app/api/new-hire-mailboxes/**",
+      "tests/new-hire-mailbox-*",
+    ],
+    keywords: ["new hire mailbox", "invite inbox", "invitation", "temp password", "one-time password", "pending mailbox", "provisioning"],
+    tables: ["new_hire_mailbox"],
+  },
   {
     id: "coaching",
     title: "Coaching, training and visual aids",

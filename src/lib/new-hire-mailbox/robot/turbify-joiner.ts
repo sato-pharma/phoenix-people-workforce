@@ -55,6 +55,7 @@ import {
 
 import type { CreatedMailbox, JoinerConsoleDriver } from "./driver";
 import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
+import type { InvitationReading } from "./invitation";
 import {
   APP_PASSWORD_PAGE,
   APP_PASSWORD_WORDINGS,
@@ -419,6 +420,16 @@ async function describeCreateWithoutPassword(
   page: ConsolePage,
   address: string,
   consoleUrl: string,
+  /**
+   * Why the invitation could not be read, when a reader was attached and tried.
+   *
+   * 🔴 THE TWO CASES MUST NOT SHARE A SENTENCE. "this half of the flow is not calibrated yet" was
+   * true while nothing read the invitation and is a lie once something does — and the owner acts on
+   * this sentence. With a refusal in hand the message says the invitation WAS looked for and what
+   * stopped it, which is a different job for a different person: a mailbox to connect, or a wording
+   * of Turbify's to re-read.
+   */
+  invitationRefusal?: string | null,
 ): Promise<string> {
   // Read the post-save view BEFORE navigating away from it.
   const observed = await page
@@ -439,13 +450,17 @@ async function describeCreateWithoutPassword(
     landed = "could not be re-read, so whether it exists is unknown";
   }
 
-  return (
+  // The mailbox's state comes FIRST in both wordings. It is the one fact that decides what anybody
+  // does next, and burying it behind an explanation is how "was created" got read as "failed".
+  const head =
     `Turbify did not show the "${ONE_TIME_PASSWORD_DIALOG.heading}" dialog after saving the form for `
-    + `${address}, so the robot holds no password for it. The mailbox ${landed}. Turbify's create path `
-    + "hands the password over through its invitation rather than through that dialog, so this half of "
-    + "the flow is not calibrated yet"
-    + (controls.length > 0 ? `. The view it left behind offered: ${controls}` : ".")
-  );
+    + `${address}, so the robot holds no password for it. The mailbox ${landed}. `;
+  const why = invitationRefusal
+    ? "Turbify's create path hands the password over through its invitation, and that invitation "
+      + `could not be read: ${invitationRefusal}`
+    : "Turbify's create path hands the password over through its invitation rather than through that "
+      + "dialog, and this driver was built with no way to read the invite inbox";
+  return head + why + (controls.length > 0 ? `. The view it left behind offered: ${controls}` : ".");
 }
 
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -892,10 +907,27 @@ export async function describePage(page: ConsolePage, secrets: readonly string[]
   return describeShape(shape, secrets);
 }
 
-export async function createTurbifyJoinerDriver(credentials: {
-  username: string;
-  password: string;
-}): Promise<JoinerConsoleDriver> {
+/**
+ * What the driver needs from outside the browser.
+ *
+ * 🔴 `readInvitation` IS WHAT MAKES A CREATE FINISHABLE AT ALL, and it is optional only so the
+ * driver stays constructible without a mailbox. Turbify's create does not raise the "One-time
+ * password" dialog a reset does — it emails the credential — so without this the create path can
+ * only report the PENDING mailbox it left behind. `sweep-deps.ts` attaches the real one;
+ * `invite-inbox-reader.ts` is what it polls.
+ */
+export type JoinerDriverPorts = {
+  /** The invitation for one address, or a refusal that says why it could not be read. */
+  readInvitation?: (address: string) => Promise<InvitationReading>;
+};
+
+export async function createTurbifyJoinerDriver(
+  credentials: {
+    username: string;
+    password: string;
+  },
+  ports: JoinerDriverPorts = {},
+): Promise<JoinerConsoleDriver> {
   const puppeteer = await loadPuppeteer();
   const executablePath = resolveChromiumPath();
   const browser = await puppeteer.launch({
@@ -1055,14 +1087,37 @@ export async function createTurbifyJoinerDriver(credentials: {
       await submitOpenForm(page, CREATE_SUBMIT_WORDINGS, "submit button for the new-mailbox form");
       await settle(5_000);
 
-      // 🔴 THE SUBMIT USUALLY WORKED EVEN WHEN THE NEXT LINE FAILS. Turbify's create does NOT raise
-      // the "One-time password" dialog a RESET does: it creates the mailbox as PENDING and relies on
-      // an invitation. So the robot must say what it actually left behind on the live domain rather
-      // than imply nothing happened — two real mailboxes were created and then reported as never
-      // created at all, because `Active mailboxes` excludes Pending and a Pending row carries no
-      // `Reset password` button for a count to find.
+      // 🔴 THE SUBMIT USUALLY WORKED EVEN WHEN THERE IS NO DIALOG. Turbify's create does NOT raise
+      // the "One-time password" dialog a RESET does: it creates the mailbox as PENDING and emails
+      // the credential to the invite recipient filled in above. So the absence of the dialog is the
+      // NORMAL create, not a failure — and the robot must say what it actually left behind on the
+      // live domain rather than imply nothing happened. Two real mailboxes were created and then
+      // reported as never created at all, because `Active mailboxes` excludes Pending and a Pending
+      // row carries no `Reset password` button for a count to find.
+      //
+      // 🔴 THE DIALOG STILL WINS WHERE IT EXISTS. It is immediate and needs no mailbox read, so the
+      // invitation is the fallback and not the first choice — if Turbify ever shows the dialog on a
+      // create, that password is used and nothing is read from any inbox.
       if (!(await hasHeading(page, ONE_TIME_PASSWORD_DIALOG.heading))) {
-        throw new TurbifyJoinerStepError(await describeCreateWithoutPassword(page, address, consoleUrl));
+        if (!ports.readInvitation) {
+          throw new TurbifyJoinerStepError(await describeCreateWithoutPassword(page, address, consoleUrl));
+        }
+        // Reading the inbox does not navigate this page, so the post-save view — and the control
+        // report `describeCreateWithoutPassword` takes off it — survives the wait intact.
+        const invitation = await ports.readInvitation(address);
+        if ("credentials" in invitation) {
+          // 🔴 THE INVITATION IS ITSELF THE PROOF THE MAILBOX EXISTS. Turbify sends one only for a
+          // mailbox it created, and `readInvitation` matched this address by identity, so there is
+          // nothing left to confirm by re-reading the row — and re-reading it would cost a
+          // navigation that throws away the only view that could explain a later failure.
+          //
+          // The temp password takes the one-time password's place exactly: both are one-use, both
+          // are spent by signing in as the mailbox and setting the company password in step 2.
+          return { address, oneTimePassword: invitation.credentials.tempPassword };
+        }
+        throw new TurbifyJoinerStepError(
+          await describeCreateWithoutPassword(page, address, consoleUrl, invitation.refusal),
+        );
       }
 
       const oneTimePassword = await readOneTimePassword(page, address);
