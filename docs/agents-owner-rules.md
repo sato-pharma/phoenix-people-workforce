@@ -4641,6 +4641,62 @@ with Reps List or the KPIs board about which days a rep owed work on:
 Pinned by `tests/phoenix-crm-exceptions.test.ts` (which names the 8.3 figure both ways, so the fix
 cannot be reverted quietly) and `tests/phoenix-crm-daily-digest.test.ts`.
 
+## Approved leave is not an exception — owner's ruling, 2026-10-03
+
+Found on **Delta (1)'s go-live morning**, and found by him, not by a test. Walking the board for the
+region that went live that Saturday turned up one rep with no plan for the live week —
+**Ragaa Mosaad Mahmoud Ahmed Shabaan**, Anti Infective D16 — and the board listed her for it. His
+answer was one line: *"RAGAA IS SICK LEAVE"*.
+
+**Two separate things were wrong, and only one of them was code.**
+
+**One — the board could not see leave at all.** Neither `src/lib/phoenix-crm/exceptions.ts` nor its
+server half contained the word *leave* anywhere; the only match was the English word "leaves" in a
+comment. Meanwhile the plan-vs-actual report already honoured it — *"A customer planned on a day HR
+approved the rep's leave, and not seen, is on leave: never missed"* — so **two reports in the same
+module disagreed about the same rep on the same day**. A manager reading the board was being told to
+chase someone signed off sick.
+
+His ruling, chosen over hiding the row: **"Show 'On leave', not an exception."** So leave now does
+two separate jobs:
+
+- **A week signed off in FULL leaves the exception ladder entirely.** It is not "no plan this week" —
+  there was no week to plan. It is listed in `board.onLeave` and counted in `summary.onLeave`,
+  **never in `needingAttention`**, which is the figure the 06:55 digest sends and the one a manager
+  acts on. It stays visible because an uncovered territory is worth seeing; hiding it would trade one
+  blind spot for another.
+- **Approved leave comes out of the call-rate denominator, exactly as a national holiday does.** Six
+  working days with two full days of leave is a four-day week for that rep. Dividing his real calls
+  by six reports a rep who worked every day he owed as "below the rate" — the same defect the
+  Thursday fix removed, arriving through leave instead of the calendar.
+
+**Part-week leave excuses nothing but its own days:** two days off does not excuse the plan for the
+other three, and a half day still answers "anything?" because the rep worked the other half.
+
+🔴 **Full days only, and that is deliberate.** `ApprovedLeaveDay` reduces the stored `day_part`
+(`full_day` / `am_only` / `pm_only`) to a bare `fullDay` boolean, so by the time leave reaches any
+reader it no longer says *which* half was taken — and that type has **fourteen consumers** across
+attendance, the CEO command centre and compliance, so widening it was not this fix's business. A half
+day therefore changes nothing here. Guessing the half would either excuse work that was owed or
+accuse work that was not; the conservative direction is the one that never silently forgives.
+
+🔴 **`leaveUnread` is the half that matters most.** `loadApprovedLeaveDays` throws, so a failed read
+is caught and said out loud on the board and in the workbook. "Nobody is on leave" is the one wrong
+answer that *invents* a chase, so it is never the silent default.
+
+**Two — the data was not there either, and no code could have fixed that.** Her sick leave was
+recorded nowhere: no row in the vacation requests for those dates, no excuse row. And a correction
+worth keeping — I first reported that the system had **no `sick` type at all**, having grouped the
+rows that exist and found only `annual`, `compensatory`, `emergency` and `other`. He pushed back
+(*"NO THEIR IS SICK TYPE CHECK"*) and he was right: the CHECK constraint reads
+`vacation_type = ANY (ARRAY['annual','emergency','sick','other','compensatory'])`. **`sick` has
+always been allowed; it simply has zero rows system-wide**, so grouping the data could never see it.
+No migration was needed. That is the same shape as Head Office being absent from
+`phx_monthly_achievement` — **no rows is not the same as not supported** — and it is why a schema
+question is asked of the schema, never of the rows.
+
+Pinned by `tests/phoenix-crm-exceptions.test.ts`.
+
 ## The SFE's list template — owner's ask, 2026-10-02 (evening)
 
 **What he asked for.** Put the question of who grades an add on a territory with no district manager, he

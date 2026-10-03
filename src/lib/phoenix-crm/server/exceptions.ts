@@ -40,6 +40,8 @@
 
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { forbiddenError } from "@/lib/http/api-errors";
+import { logError } from "@/lib/observability/log";
+import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
 import { addDaysIso } from "@/lib/crm/dates";
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import {
@@ -79,6 +81,13 @@ export type ExceptionsView = ExceptionsBoard & {
    * failed data source must never read as a real answer.
    */
   holidaysUnread: boolean;
+  /**
+   * 🔴 The approved-leave calendar could not be read, so a rep who is signed off may still be
+   * sitting in the exception rows — the very accusation this board stopped making on 2026-10-03.
+   * Said out loud for the same reason as `holidaysUnread`: a failed data source must never read as a
+   * real answer, and "nobody is on leave" is the one wrong answer that invents work for a manager.
+   */
+  leaveUnread: boolean;
 };
 
 /**
@@ -237,6 +246,43 @@ export async function gatherExceptions(input: {
   const lastDay = lastFinishedWorkingDay(input.cairoToday, holidays.dates);
   const window = lastDay ? windowDays(lastDay, input.windowWorkingDays, holidays.dates) : [];
 
+  // 🔴 THE FIELD WEEK'S OWN WORKING DAYS — Saturday to Wednesday minus holidays, the same rule as
+  // the window, never a bare seven days. This is what "signed off all week" has to be measured
+  // against: a week with a holiday Thursday in it was never a seven-day obligation.
+  const weekWorkingDays = Array.from({ length: 7 }, (_, offset) => addDaysIso(weekStart, offset)).filter((day) =>
+    isWorkingDay(day, holidays.dates),
+  );
+
+  // 🔴 A FAILED LEAVE READ MUST NEVER READ AS "nobody is on leave" — that is the one direction that
+  // invents an accusation. `loadApprovedLeaveDays` throws, so it is caught and the failure travels
+  // as `leaveUnread` for the board to say out loud, exactly as `holidaysUnread` does.
+  const leaveSpan = [...window, ...weekWorkingDays, input.cairoToday].sort();
+  let leaveRows: Array<{ hrId: string; day: string; fullDay: boolean }> = [];
+  let leaveUnread = false;
+  try {
+    leaveRows = await loadApprovedLeaveDays(
+      seats.map((seat) => seat.occupantHrId),
+      { from: leaveSpan[0] as string, to: leaveSpan[leaveSpan.length - 1] as string },
+    );
+  } catch (error) {
+    leaveUnread = true;
+    logError("Phoenix CRM exceptions board could not read approved leave", {
+      error,
+      labels: { event: "phoenix_crm_exceptions_leave_unread" },
+    });
+  }
+
+  // HR ids are MIXED CASE in this database, so both sides are lowered — a plain match silently
+  // under-returns, and here that would read as "not on leave".
+  const fullLeave = new Map<string, Set<string>>();
+  for (const row of leaveRows) {
+    if (!row.fullDay) continue;
+    const key = String(row.hrId ?? "").trim().toLowerCase();
+    if (!key) continue;
+    if (!fullLeave.has(key)) fullLeave.set(key, new Set<string>());
+    (fullLeave.get(key) as Set<string>).add(row.day);
+  }
+
   const [readiness, plans, visits, names] = await Promise.all([
     // Readiness is measured on real entries; in test mode nothing is claimed about a list.
     isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
@@ -252,6 +298,7 @@ export async function gatherExceptions(input: {
     const list = readiness.get(seat.seatId) ?? null;
     const plan = plans.get(seat.seatId) ?? null;
     const tally = visits.get(seat.seatId) ?? { am: 0, pm: 0, lastDay: 0 };
+    const away = fullLeave.get(String(seat.occupantHrId ?? "").trim().toLowerCase()) ?? new Set<string>();
     return {
       seatId: seat.seatId,
       territoryName: territoryName(seat),
@@ -269,6 +316,12 @@ export async function gatherExceptions(input: {
       windowAmVisits: tally.am,
       windowPmVisits: tally.pm,
       lastWorkingDayVisits: lastDay ? tally.lastDay : null,
+      leaveFullDaysInWindow: window.filter((day) => away.has(day)).length,
+      leaveOnLastWorkingDay: Boolean(lastDay && away.has(lastDay)),
+      // "All week" means every working day the week actually had. An empty week (every day a
+      // holiday) is NOT "on leave" — `weekWorkingDays.length > 0` keeps a holiday run from reading
+      // as everyone being signed off.
+      leaveCoversWholeWeek: weekWorkingDays.length > 0 && weekWorkingDays.every((day) => away.has(day)),
     };
   });
 
@@ -281,6 +334,7 @@ export async function gatherExceptions(input: {
   return {
     ...board,
     holidaysUnread: !holidays.complete,
+    leaveUnread,
     isTest,
     lastWorkingDay: lastDay,
     weekStart,

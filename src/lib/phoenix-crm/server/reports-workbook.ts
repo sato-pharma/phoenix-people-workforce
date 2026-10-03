@@ -630,10 +630,19 @@ function writeExceptions(workbook: ExcelJS.Workbook, view: ExceptionsView): void
         ? "The national holiday calendar could not be read when this was built, so a public holiday may still be counted as a"
           + " working day and a call rate may read low."
         : null,
+      // A rep signed off all week is listed at the BOTTOM as "On leave", never as a failure — the
+      // territory is uncovered, which is worth seeing, but nobody owes a chase for it.
+      view.onLeave.length > 0
+        ? "Territories whose rep has approved leave all week are listed last as \"On leave\": uncovered, but nothing to chase."
+        : null,
+      view.leaveUnread ? LEAVE_UNREAD_NOTE : null,
     ]
       .filter((part): part is string => part !== null)
       .join(" "),
-    rows: view.rows.map((row) => [row.territoryName, row.repName ?? "No rep", row.lineName ?? "—", row.label, row.detail ?? "—"]),
+    rows: [
+      ...view.rows.map((row) => [row.territoryName, row.repName ?? "No rep", row.lineName ?? "—", row.label, row.detail ?? "—"]),
+      ...view.onLeave.map((row) => [row.territoryName, row.repName ?? "No rep", row.lineName ?? "—", row.label, row.detail]),
+    ],
     title: "Needs you today",
   });
 }

@@ -1169,6 +1169,20 @@ function ExceptionsSection({ idPrefix, resource }: { idPrefix: string; resource:
             call rate may read low. Reload in a minute.
           </CrmNote>
         ) : null}
+        {/* 🔴 The same rule, on the source that matters more: without the approved leave a rep who is
+            signed off reappears in the rows below as a chase nobody owes. */}
+        {report.leaveUnread ? (
+          <CrmNote className="mt-3" tone="warn">
+            The approved leave could not be read just now, so a rep who is on leave may still be listed below as needing you. Reload in
+            a minute.
+          </CrmNote>
+        ) : null}
+        {report.onLeave.length > 0 ? (
+          <CrmNote className="mt-3" tone="info" title="Nobody is covering these this week">
+            {report.onLeave.map((row) => `${row.territoryName} (${row.repName ?? "No rep"})`).join(", ")} — approved leave all week, so
+            there is no plan to send and no visit to expect. Listed because the territory is uncovered, not because anyone is behind.
+          </CrmNote>
+        ) : null}
       </CrmBlock>
       {report.rows.length === 0 ? (
         <div className="border-t border-slate-100">
