@@ -13,10 +13,14 @@
  * names and the families are the module's own facts and they are asserted by
  * `tests/phoenix-crm-admin-surface.test.ts`, which refuses a section with no family, no question or no
  * note — and a section the Reports tab never offers, which would be a report with no way to open it.
- * 🔴 `server/reports-workbook.ts` STILL SPELLS ITS SHEET NAMES OUT BY HAND — fifteen string
- * literals that happen to match `SECTION_TITLES` today — so renaming a report here renames it on the
- * screen and NOT in the workbook. Pointing those literals at this map is worth doing; until somebody
- * does, a rename is two edits.
+ * 🔴 `SECTION_TITLES` IS THE ONE PLACE A REPORT IS NAMED, SO A RENAME HERE IS ONE EDIT. The
+ * workbook reads it for all three things it used to spell out by hand — the worksheet tab, the
+ * heading inside the sheet, and `packSections`, which is what the COVER promises — and that drift
+ * was real, not theoretical: `exceptions` read "Needs you today" here and on its own heading
+ * against a tab called "Needs you". The ONE exception is the visits sheet's heading, which says
+ * "per rep" because its rows are reps; it carries a comment saying so.
+ * `tests/phoenix-crm-reports-export.test.ts` section 9 refuses any other name written by hand, and
+ * refuses a report listed here with no sheet in the download.
  *
  * 🔴 NOTHING HERE IS A PERMISSION. Which reports a viewer may open is the server's answer
  * (`canSeeLocations`, `hasManagers`, the products audience) and every section is refused again inside

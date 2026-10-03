@@ -34,6 +34,7 @@ import {
   type HeardVisit,
 } from "../src/lib/phoenix-crm/field-heard.ts";
 import { buildMissingStock } from "../src/lib/phoenix-crm/missing-stock.ts";
+import { SECTION_TITLES } from "../src/lib/phoenix-crm/report-guide.ts";
 import { buildSamplesReport, type SamplesTerritory, type SamplesVisit } from "../src/lib/phoenix-crm/samples-report.ts";
 import { buildOrgIndex, heldManagerSeats, ownTerritories, territoriesInScope, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import { PHOENIX_CRM_DEFAULT_SETTINGS } from "../src/lib/phoenix-crm/types.ts";
@@ -1202,7 +1203,7 @@ async function runWorkbookTests(): Promise<void> {
     month: { month: "2026-10", monthStart: "2026-10-01", monthEnd: "2026-10-31", inProgress: true },
     includeTest: false,
   };
-  const insight = ["Grade against capacity", "What the field heard", "Missing stock", "Samples by month"];
+  const insight = [SECTION_TITLES.capacity, SECTION_TITLES.heard, SECTION_TITLES.stock, SECTION_TITLES.samples];
 
   // A manager's pack holds the four, after the sections already there, exactly as the cover promises.
   const managerPack = insightPack({ capacity, heard: heardTeam, samples, stock });
@@ -1224,29 +1225,29 @@ async function runWorkbookTests(): Promise<void> {
 
   const text = (name: string) => (managerSheets.get(name) ?? []).flat().join(" | ");
   // Grade against capacity: the screen's verdict words, and its caveat travelling with the figures.
-  assert.ok(text("Grade against capacity").includes("PM over 15 a day"), "the capacity sheet carries the screen's verdict");
-  assert.ok(text("Grade against capacity").includes("The size of each list, not its coverage"), "and its caveat");
-  assert.ok(text("Grade against capacity").includes("iReports360"), "and says which list was read from iReports360");
+  assert.ok(text(SECTION_TITLES.capacity).includes("PM over 15 a day"), "the capacity sheet carries the screen's verdict");
+  assert.ok(text(SECTION_TITLES.capacity).includes("The size of each list, not its coverage"), "and its caveat");
+  assert.ok(text(SECTION_TITLES.capacity).includes("iReports360"), "and says which list was read from iReports360");
   // What the field heard: counts only, no rate, and never a "no objection" figure.
-  assert.ok(text("What the field heard").includes("Counts only: no rate"), "the heard sheet carries its footnote");
-  assert.doesNotMatch(text("What the field heard"), /No objection|never read/, "and never prints a no-objection answer or an unanswered visit's note");
-  assert.ok(text("What the field heard").includes("By area"), "the team's sheet reads by area too");
+  assert.ok(text(SECTION_TITLES.heard).includes("Counts only: no rate"), "the heard sheet carries its footnote");
+  assert.doesNotMatch(text(SECTION_TITLES.heard), /No objection|never read/, "and never prints a no-objection answer or an unanswered visit's note");
+  assert.ok(text(SECTION_TITLES.heard).includes("By area"), "the team's sheet reads by area too");
   // Missing stock: a shelf, never a sales figure or a stock balance — and the instant in CAIRO time.
-  assert.ok(text("Missing stock").includes("never a sales figure and never a stock balance"), "the stock sheet carries its footnote");
-  assert.ok(text("Missing stock").includes("2026-10-06 12:00"), "the last answer is printed in Cairo time (09:00 UTC is 12:00 in Cairo)");
-  assert.equal(text("Missing stock").includes("2026-10-06 09:00"), false, "never in UTC");
+  assert.ok(text(SECTION_TITLES.stock).includes("never a sales figure and never a stock balance"), "the stock sheet carries its footnote");
+  assert.ok(text(SECTION_TITLES.stock).includes("2026-10-06 12:00"), "the last answer is printed in Cairo time (09:00 UTC is 12:00 in Cairo)");
+  assert.equal(text(SECTION_TITLES.stock).includes("2026-10-06 09:00"), false, "never in UTC");
   // Samples: no total row — units of different products are never added — and no stock balance.
-  const samplesRows = managerSheets.get("Samples by month") ?? [];
+  const samplesRows = managerSheets.get(SECTION_TITLES.samples) ?? [];
   assert.equal(samplesRows.some((cells) => /^(All|Total)\b/i.test(cells[0] ?? "")), false, "the samples sheet carries no total row");
-  assert.ok(text("Samples by month").includes("Units of different products are never added together"), "and says why");
-  assert.ok(text("Samples by month").includes("never a stock: no balance"), "and that it is no stock");
-  assert.ok(text("Samples by month").includes("AM visits that left samples"), "territories are read in VISITS that left samples");
+  assert.ok(text(SECTION_TITLES.samples).includes("Units of different products are never added together"), "and says why");
+  assert.ok(text(SECTION_TITLES.samples).includes("never a stock: no balance"), "and that it is no stock");
+  assert.ok(text(SECTION_TITLES.samples).includes("AM visits that left samples"), "territories are read in VISITS that left samples");
 
   // A product or marketing manager: his own products, company-wide, and nothing else — no area grain,
   // no area column, and no other sheet at all.
   const ownSheets = await cellsOf(insightPack({ heard: heardOwn }));
-  assert.deepEqual([...ownSheets.keys()], ["Cover", "What the field heard"], "his pack is the one report");
-  const own = (ownSheets.get("What the field heard") ?? []).flat();
+  assert.deepEqual([...ownSheets.keys()], ["Cover", SECTION_TITLES.heard], "his pack is the one report");
+  const own = (ownSheets.get(SECTION_TITLES.heard) ?? []).flat();
   assert.ok(own.join(" | ").includes("Your products, company-wide: Saginko — from your own product list."), "it names his products and where they came from");
   assert.equal(own.includes("By area"), false, "no area grain for him");
   assert.equal(own.includes("Area"), false, "and no area column on what was said");
