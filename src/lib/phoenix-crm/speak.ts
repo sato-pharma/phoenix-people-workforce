@@ -44,6 +44,7 @@
  * pinned by tests rather than by reading.
  */
 
+import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { isDictationSupported } from "@/lib/phoenix-crm/dictation";
 import { formatSeconds, isRecordingSupported, MAX_SECONDS } from "@/lib/phoenix-crm/voice-recorder";
 
@@ -170,7 +171,7 @@ export function speakAgainLine(halves: SpeakHalves): string | null {
  * and it names typing as the way out, because the comment was never required to be spoken.
  */
 export function speakBlockedMessage(): string {
-  return "The microphone is blocked for Phoenix. Allow it for this site in the phone's settings, or type the comment instead.";
+  return `The microphone is blocked for ${BROWSER_PLACEHOLDER}. Allow it for this site in its settings, or type the comment instead.`;
 }
 
 /**

@@ -16,6 +16,7 @@
  */
 
 import { useState } from "react";
+import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { LocateFixed, RotateCcw } from "lucide-react";
 
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
@@ -61,7 +62,7 @@ export function CaptureLocation({
         setBusy(false);
         setError(
           positionError.code === positionError.PERMISSION_DENIED
-            ? "Location is blocked for Phoenix. Allow location for this site in the phone's settings, then press Capture location again."
+            ? `Location is blocked for ${BROWSER_PLACEHOLDER}. Allow location for this site in its settings, then press Capture location again.`
             : "The location did not come. Stand outside or near a window, then press Capture location again.",
         );
       },

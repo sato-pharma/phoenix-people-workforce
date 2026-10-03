@@ -19,6 +19,7 @@
  */
 
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
+import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isUsableFix } from "@/lib/phoenix-crm/geo";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
@@ -135,14 +136,14 @@ export type CapturedFix = {
   photoCapturedAt: string | null;
 };
 
-const NO_FIX_AT_THE_PLACE = "Your location was not captured. Allow location on your phone and capture it again at the clinic.";
+const NO_FIX_AT_THE_PLACE = `Your location was not captured. Allow location for ${BROWSER_PLACEHOLDER} and capture it again at the clinic.`;
 
 /**
  * The one-tap visit takes its location silently. When there is none — location switched off or
  * refused — the save is refused in plain words about HIS OWN work (Golden Rule #1 hides checks, never
  * a save that did not happen): what to switch on, and nothing about any check.
  */
-export const NO_FIX_FOR_A_VISIT = "Turn on location for Phoenix, then tap Log visit again.";
+export const NO_FIX_FOR_A_VISIT = `Turn on location for ${BROWSER_PLACEHOLDER}, then tap Log visit again.`;
 
 /**
  * 🔴 THE WIDEST READING THE SERVER TAKES — 100 m to validate a place, 500 m for a visit (owner,
@@ -159,6 +160,21 @@ export const NO_FIX_FOR_A_VISIT = "Turn on location for Phoenix, then tap Log vi
  * in validation", "in validation the system can block inaccurate validation"). A sharp pin never
  * rescues a rough photo, nor a sharp photo a rough pin.
  *
+ * 🔴 AND THE SETTING IS NAMED BY THE REP'S OWN BROWSER, NEVER "Phoenix" (2026-10-03). These sentences
+ * said "Turn on precise location for Phoenix" — a setting no phone has, because the rep is in a
+ * browser and the permission belongs to Chrome, Firefox or Safari. The rep above hunted it for seven
+ * hours and tried a second browser before giving up on eighteen planned visits. They now carry
+ * `BROWSER_PLACEHOLDER` (browser-name.ts), which the screen replaces with the name on his own settings
+ * screen; the sentence is already true unsubstituted, so the server still guesses at nothing.
+ *
+ * 🔴 AND IT NO LONGER DEAD-ENDS A REP WHO HAS ALREADY SWITCHED IT ON (2026-10-03, same rep, same
+ * evening). She turned precise location on — her coordinate came off the 2 km privacy grid and
+ * resolved to a street in Banha 2 — and the refusal still told her to switch on the thing she had
+ * just switched on, eighteen more times between 16:12 and 18:47. A real coordinate with a wide
+ * radius is what a phone reports INDOORS, where no satellite is in view: the second clause is the
+ * only way out of that, and without it the sentence is a loop. It still never states his reading
+ * (owner, 2026-09-29) — "step outside and wait" is advice about his own work, not a number.
+ *
  * A reading wider than its line is treated exactly as NO reading, refused in plain words about his own
  * phone — what to switch on. 🔴 THE PLACE'S LINE IS TOLD TO THE REP, BY THE OWNER'S WORD: the
  * validation screen states it before he starts (`PLACE_PRECISION_NOTE`) and the refusal repeats it.
@@ -172,10 +188,10 @@ export const PLACE_MAX_ACCURACY_METERS = 100;
 export const VISIT_MAX_ACCURACY_METERS = 500;
 
 /** Shown on the validation screen before the photo — the rule, never his reading. */
-export const PLACE_PRECISION_NOTE = `Validation needs an accurate location, within ${PLACE_MAX_ACCURACY_METERS} m. Turn on precise location for Phoenix before you start, and take the photo and capture the location standing at the clinic.`;
+export const PLACE_PRECISION_NOTE = `Validation needs an accurate location, within ${PLACE_MAX_ACCURACY_METERS} m. Turn on precise location for ${BROWSER_PLACEHOLDER} before you start, and take the photo and capture the location standing at the clinic.`;
 
-export const ROUGH_FIX_AT_THE_PLACE = `Validation needs an accurate location, within ${PLACE_MAX_ACCURACY_METERS} m, and your phone gave only a rough one. Turn on precise location for Phoenix, then take the photo and press Capture location again at the clinic.`;
-export const ROUGH_FIX_FOR_A_VISIT = "Your phone gave only a rough location. Turn on precise location for Phoenix, then tap Log visit again.";
+export const ROUGH_FIX_AT_THE_PLACE = `Validation needs an accurate location, within ${PLACE_MAX_ACCURACY_METERS} m, and your phone gave only a rough one. Turn on precise location for ${BROWSER_PLACEHOLDER}; if it is already on, step outside the building and wait a few seconds, then take the photo and press Capture location again at the clinic.`;
+export const ROUGH_FIX_FOR_A_VISIT = `Your phone gave only a rough location. Turn on precise location for ${BROWSER_PLACEHOLDER}; if it is already on, step outside the building and wait a few seconds, then tap Log visit again.`;
 
 /** Whether a reading is inside a line. Unknown is inside: it is never refused, as before. */
 export function withinAccuracy(accuracyMeters: number | null, maxMeters: number): boolean {

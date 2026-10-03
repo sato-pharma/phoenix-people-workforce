@@ -22,6 +22,8 @@
  * shows no start time for that day. The rep's app does not stop him at a customer's door.
  */
 
+import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
+
 /** The button, in the owner's own words. */
 export const DAY_START_BUTTON_LABEL = "Show your manager you started working";
 
@@ -44,7 +46,7 @@ export const DAY_START_DONE_NOTE = "You started your day at this time. Log your 
 
 /** The server's sentence when the phone will not give a position — his own work failing, nothing else. */
 export const NO_FIX_FOR_A_DAY_START =
-  "Your location is switched off, so this cannot be sent. Switch location on for Phoenix and press it again.";
+  `Your location is switched off, so this cannot be sent. Switch location on for ${BROWSER_PLACEHOLDER} and press it again.`;
 
 export type DayStartView = {
   /** The server's stamp, ISO. */

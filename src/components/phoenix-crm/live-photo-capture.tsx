@@ -28,6 +28,7 @@
  */
 
 import type { ReactNode } from "react";
+import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { readShutterFix, type ShutterFix } from "@/lib/evidence/read-shutter-fix";
 import { useEffect, useRef, useState } from "react";
 import { Camera, LoaderCircle, LocateFixed, RotateCcw, UploadCloud, X } from "lucide-react";
@@ -260,7 +261,7 @@ export function LivePhotoCapture({
           stopCamera();
           setStage("idle");
           setLocationNote(null);
-          setError("Location is blocked for Phoenix. Allow location for this site in the phone's settings, then press Open the camera again.");
+          setError(`Location is blocked for ${BROWSER_PLACEHOLDER}. Allow location for this site in its settings, then press Open the camera again.`);
           return;
         }
         setLocationNote("Still finding your location. Stand outside or near a window");
@@ -294,7 +295,7 @@ export function LivePhotoCapture({
       const name = cameraError instanceof DOMException ? cameraError.name : "";
       setError(
         name === "NotAllowedError" || name === "PermissionDeniedError"
-          ? "The camera is blocked for Phoenix. Allow the camera for this site in the phone's settings, then press Open the camera again."
+          ? `The camera is blocked for ${BROWSER_PLACEHOLDER}. Allow the camera for this site in its settings, then press Open the camera again.`
           : name === "NotFoundError" || name === "OverconstrainedError"
             ? "No camera was found on this phone."
             : name === "NotSupportedError"

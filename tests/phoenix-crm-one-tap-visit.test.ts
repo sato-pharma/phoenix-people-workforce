@@ -121,7 +121,7 @@ export function runPhoenixCrmOneTapVisitTests(): void {
       assert.equal(outOfList.value.unplannedReason, null);
     }
 
-    assert.equal(NO_FIX_FOR_A_VISIT, "Turn on location for Phoenix, then tap Log visit again.", "the sentence is about his own work, never a check");
+    assert.equal(NO_FIX_FOR_A_VISIT, "Turn on location for your browser, then tap Log visit again.", "about his own work, never a check — and the browser he is in, never \"Phoenix\"");
     const noFix = parseVisitDraft(visitBody({ lat: undefined, lon: undefined }));
     assert.equal(noFix.ok, false, "a visit with no location is not saved");
     if (!noFix.ok) assert.equal(noFix.error, NO_FIX_FOR_A_VISIT);

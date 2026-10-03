@@ -44,6 +44,7 @@ import { crmPost, errorCodeOf, messageOf, newClientId } from "@/components/phoen
 import { dayLabel } from "@/components/phoenix-crm/format";
 import { customerMetaText, monthVisitsText, PENDING_COUNTS_NOTE, PENDING_PILL, pendingVisitsText } from "@/components/phoenix-crm/labels";
 import { CrmSpeak, type VoiceNoteValue } from "@/components/phoenix-crm/speak";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { silentFixPayload, useSilentFix } from "@/components/phoenix-crm/use-silent-fix";
 import { crmStepBackClassName, crmStepNextClassName } from "@/components/phoenix-crm/step-form";
 import { customerDirectionsUrl, PlaceWindows } from "@/components/phoenix-crm/visit-customer-picker";
@@ -408,6 +409,9 @@ export function VisitLogForm({
   // form is not kept here: the bar reads that live from `draft`, so it moves on by itself as he fills
   // each thing in and can never go stale the way a copied sentence would.
   const [problem, setProblem] = useState<string | null>(null);
+  // A location refusal names HIS browser, never "Phoenix" — the setting it sends him to belongs to the
+  // browser (use-browser-name.ts). Every other refusal passes through untouched.
+  const browserNamed = useBrowserNamed();
   // He pressed Log visit with something still missing. From then on the bar's "Next" line reads as the
   // refusal it is — rose, and announced — instead of a quiet prompt.
   const [tried, setTried] = useState(false);
@@ -1217,7 +1221,7 @@ export function VisitLogForm({
               {problem ? (
                 <p className="flex min-w-0 items-start gap-2 text-sm font-black text-rose-700">
                   <CircleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span className="min-w-0 break-words">{problem}</span>
+                  <span className="min-w-0 break-words">{browserNamed(problem)}</span>
                 </p>
               ) : check.ok ? (
                 <p className="flex min-w-0 items-start gap-2">
