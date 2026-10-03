@@ -915,12 +915,15 @@ html:has(.admin-shell) {
    before the sides. `::before` lays a copy of the badge's own fill over the glow, because a
    box-shadow never paints under its own box and the glow must not either.
 
-   ONE BADGE KEEPS THE OLD GLOW: the see-through pending pill on the dark admin rail
-   (`nav-badge-alarm-glass`, bg-orange-400/20). A copy of a see-through fill doubles it, and a glow
-   that grows by a scale cannot also be kept off the badge's own area, so no compositor version of
-   it can look the same. It keeps the box-shadow, and its cost — and while it is on screen the page
-   repaints every frame anyway, so an admin page showing one saves little (all twelve badge kinds
-   at once, that pill among them: 167-179% -> 137-147%).
+   THE SEE-THROUGH PILL IS PAINTED SOLID (owner, 2026-10-03, "use option C for the see-through
+   pill", chosen from a live side-by-side of three versions). The pending pill on the dark admin
+   rail and top nav is `bg-orange-400/20`, and a see-through fill cannot sit over this glow: a copy
+   of it doubles to ~36%, and without one the glow shows through it. So `nav-badge-alarm-glass`
+   paints the colour that 20% fill already shows on black, and the pill takes the cheap glow like
+   every other badge. On the plain black rail and bar it is the same colour; on a hovered row or
+   the top nav's active item, which are a little lighter than black, it is a shade darker than the
+   see-through pill was. Until this, that one pill kept the box-shadow glow and kept every admin
+   page showing it repainting (all twelve badge kinds at once: 167-179% -> 137-147%).
 
    `box-shadow: none` while motion is on is NOT a look change: the animated box-shadow overrode the
    Tailwind `ring-*` these badges carry on every frame, so those rings were never visible with
@@ -986,17 +989,37 @@ html:has(.admin-shell) {
   .nav-badge-alarm-overdue {
     box-shadow: none;
   }
-
-  /* The exception above: the see-through pill keeps the box-shadow glow it always had. Inside this
-     media query because its two-class selector would otherwise outrank the reduced-motion guard. */
-  .nav-badge-alarm.nav-badge-alarm-glass {
-    animation: nav-badge-alarm-pump 1s ease-in-out infinite, ep-breathe-orange 1s ease-in-out infinite;
-  }
 }
 
-.nav-badge-alarm-glass::before,
-.nav-badge-alarm-glass::after {
-  content: none;
+/* The see-through pill's 20% orange-400, as the solid colour it shows on the ground behind it (see
+   above). Unlayered, so it outranks the `bg-orange-400/20` utility it stands in for. The ground is
+   black on the admin sidebar; on the top nav bars it is the bar's own `--phx-navrow-ground` (the
+   gradient midpoint the bars' scroll mask already stands in with); a hovered sidebar row is 5% white
+   on black (#0d0d0d), a hovered top-nav tab is #151311, and the active tab's gradient passes #1a1209
+   at the pill's height. Each value must move with the row colour it copies. */
+.nav-badge-alarm-glass {
+  background-color: color-mix(in srgb, var(--color-orange-400) 20%, #000);
+}
+
+:is(.phx-navrow-upper, .phx-navrow-lower) .nav-badge-alarm-glass {
+  background-color: color-mix(in srgb, var(--color-orange-400) 20%, var(--phx-navrow-ground, #000));
+}
+
+a:hover .nav-badge-alarm-glass {
+  background-color: color-mix(in srgb, var(--color-orange-400) 20%, #0d0d0d);
+}
+
+/* The active sidebar row has no hover state; its orange wash has faded to ~1% by the pill. */
+a[aria-current="page"] .nav-badge-alarm-glass {
+  background-color: color-mix(in srgb, var(--color-orange-400) 20%, #000);
+}
+
+:is(.phx-navrow-upper, .phx-navrow-lower) a:hover .nav-badge-alarm-glass {
+  background-color: color-mix(in srgb, var(--color-orange-400) 20%, #151311);
+}
+
+:is(.phx-navrow-upper, .phx-navrow-lower) a[aria-current="page"] .nav-badge-alarm-glass {
+  background-color: color-mix(in srgb, var(--color-orange-400) 20%, #1a1209);
 }
 
 .phoenix-route-transition-indicator {

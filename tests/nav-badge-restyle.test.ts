@@ -93,10 +93,25 @@ export function runNavBadgeRestyleTests() {
     const measured = readSource(file).match(/ref=\{alarmGlowRef\}/g)?.length ?? 0;
     assert.equal(measured, expected, `${file} should hand ${expected} pulsing badge(s) to alarmGlowRef; found ${measured}`);
   }
+  // The see-through dark pill (owner's option C, 2026-10-03): it takes the cheap glow too, painted as
+  // the colour its 20% orange-400 shows on black, because a see-through fill cannot sit over the glow.
+  // Pinned on BOTH sides so the stand-in cannot drift from the utility it stands in for.
   assert.ok(
-    badge.includes('!overdue && dark && "nav-badge-alarm-glass"') &&
-      /prefers-reduced-motion: no-preference[\s\S]*\.nav-badge-alarm\.nav-badge-alarm-glass \{\s*animation: nav-badge-alarm-pump 1s ease-in-out infinite, ep-breathe-orange 1s ease-in-out infinite;/.test(globalCss),
-    "the see-through dark-rail pill keeps its box-shadow glow — a copy of a 20% fill would double it",
+    badge.includes('!overdue && dark && "nav-badge-alarm-glass"') && badge.includes('"bg-orange-400/20 text-orange-200'),
+    "the dark pending pill must still be tagged as the see-through one, over its own 20% orange-400 utility",
+  );
+  assert.ok(
+    /\.nav-badge-alarm-glass \{\s*background-color: color-mix\(in srgb, var\(--color-orange-400\) 20%, #000\);\s*\}/.test(globalCss),
+    "the see-through pill must be painted as its own 20% orange-400 on black — no other colour stands in for it",
+  );
+  const glassFills = [...globalCss.matchAll(/\.nav-badge-alarm-glass \{\s*background-color: ([^;]+);/g)].map((m) => m[1]);
+  assert.ok(
+    glassFills.length >= 6 && glassFills.every((fill) => fill.startsWith("color-mix(in srgb, var(--color-orange-400) 20%, ")),
+    "every ground's stand-in (sidebar, hovered row, active row, top-nav bar, hovered tab, active tab) must be the same 20% orange-400 over that ground",
+  );
+  assert.ok(
+    !/ep-breathe/.test(globalCss.slice(globalCss.indexOf(".nav-badge-alarm {"), globalCss.indexOf(".phoenix-route-transition-indicator"))),
+    "no alarm badge may animate the box-shadow breathe any more — the see-through pill was the last one",
   );
 
   // ── The restyle: escalation is fill weight, not hue alone ───────────────────
