@@ -5774,3 +5774,85 @@ Rule: `.claude/rules/phoenix-crm.md`. Pinned by `tests/phoenix-crm-touch-trail.t
 drop and the kept comment, the descriptor that never carries a class list, the total parse, the
 blindness of the collector and the route, the session-resolved actor and test flag, both layouts,
 the registry declaration, and the unkeyed locked table).
+
+## A refused capture keeps its photo — owner ruling, 2026-10-03
+
+His words, in two messages: *"save the photo when a validation is refused"*, then — while the first
+was still being built — *"i mean keep it in the datbase donot loose any thing"*.
+
+**This reversed the session's own standing proposal.** The recommendation that had been put to him
+twice was the opposite: CLEAR the photo on a refusal, so a retry could not resend the frozen reading
+that trapped Hassan in the loop above. He chose to keep it. **His design is final — do not re-propose
+clearing, expiring or replacing a refused photo**, and do not read "force a retake" (already declined,
+same evening) back into this.
+
+### What was actually lost, and what was not
+
+**The bytes were never lost.** The browser uploads the live photo to its own storage slot *before* the
+save is even attempted, so by the time the gate refuses him the JPEG is already in
+`phoenix-crm-photos`. What was lost was the **pointer**: a refused place or visit row is never
+created, and `phoenix_crm_photo_uploads` records only that a slot was *asked for* — not which refusal
+it belonged to. So the one piece of evidence a person can simply *look at*, rather than infer from a
+radius, was reachable only by hand-joining unused slots to `storage.objects` against a time window.
+That is exactly how both of 3 October's incidents had to be reconstructed, hours late — B-130's
+eighteen refused captures between 16:12 and 18:47, and Hassan's nine at 21:30.
+
+**And it is not a deletion risk either.** No code path in this repo removes a Phoenix CRM photo or its
+slot row: eleven other buckets call `storage.from(...).remove(...)` and `phoenix-crm-photos` is called
+by none, and no migration deletes from `phoenix_crm_photo_uploads`. "Don't lose anything" was already
+true of the object store; it was the *row* that forgot.
+
+### What shipped
+
+One nullable column — `phoenix_crm_refused_readings.photo_path` (migration `20261003224941`, applied
+to staging and production on 2026-10-03, verified live from `pg_attribute`) — plus a partial index on
+`refused_at desc where photo_path is not null`, which is the read it exists for: *every refusal that
+has a picture, newest first*. `refusedReadingOf` fills it on both branches (`no_fix` and `rough`) with
+the same 200-character bound `parseVisitDraft` uses, and `recordRefusedReading` writes it onto the row.
+
+It uploads nothing, copies nothing and deletes nothing — **a pointer kept, not a second copy.** 🔴 If
+a purge of unused upload slots is ever added, it must exempt a path named in this column; otherwise
+this starts pointing at objects that are gone, which is worse than not having it.
+
+**Golden rule #1 is untouched.** The rep's refusal is byte-for-byte the one he read before the column
+existed, nothing is drawn on his screen, nothing is added to his day, and the table stays
+`service_role`-only (anon ✗, authenticated ✗) — readable above him alone.
+
+### Why this is worth more than the two coordinates it sits beside
+
+The row already carried `photo_lat` / `photo_lon` / `photo_accuracy_meters`. Those three numbers are
+what *refused* him; the photograph is what shows **where he actually was**. Hassan's nine rows carried
+one identical frozen photo reading — so with the path on the row, nine refusals resolve at a glance to
+*one picture, taken once, resent nine times*, which is the finding itself rather than a conclusion
+drawn from three columns agreeing to thirteen decimals.
+
+Rule: `.claude/rules/phoenix-crm-approvals.md`. Pinned by
+`tests/phoenix-crm-refused-readings.test.ts` — section 10 (the path on both branches, the null cases,
+the 200-character bound, the writer, and the migration's additive shape) and section 11, which scans
+`src`, `app` and `scripts` for any `.remove(` or `.delete(` against the CRM photo bucket or its slot
+table and fails if one appears, so "nothing is ever lost" is enforced rather than observed.
+
+### The recorder's own three rules — why the table looks the way it does
+
+These predate the photo column (PR #5262, owner: *"record the refused readings so the next refusal is
+traceable"*) and govern every change to `src/lib/phoenix-crm/server/refused-readings.ts`:
+
+1. **The rep learns nothing new.** No message, no screen and no figure changes. The refusal he reads
+   is byte-for-byte the one he read before the table existed; only its number now outlives it.
+2. **It must never cost a rep his work.** Every path returns void and swallows its own errors. A rep
+   already being refused must not then be refused *differently*, or meet a 500, because an evidence
+   insert failed.
+3. 🔴 **It is AWAITED, unlike the integrity judgement, and that is deliberate.** `judgeCapture` runs
+   after a save has already returned; this runs while the request is still open, so a
+   fire-and-forget promise can be killed with the serverless invocation and record nothing — which is
+   precisely the hole being closed. One bounded insert is paid before an error message the rep is
+   waiting for anyway. If that trade ever becomes wrong, the fix is a queue, **never** an unawaited
+   promise.
+
+Two further properties are load-bearing. **`refusedReadingOf` restates no threshold** — it asks the
+doors' own `placeReadingsPrecise` / `withinAccuracy`, so a capture they accept records nothing and the
+record can never disagree with the refusal; a refusal about the comment, the products or a missing
+photo files nothing at all, because a table that also held every mistyped form would be a table
+nobody reads. And **the table is deliberately UNKEYED**: eighteen refusals are eighteen rows, and the
+repetition is the evidence — B-130's eighteen between 16:12 and 18:47, and Hassan's nine in 67
+seconds, are both findings only because nothing collapsed them.

@@ -1,6 +1,7 @@
 {
   "a-403-on-a-phoenix-crm-route-proves-nothing": "platform",
   "a-background-poller-dies-with-the-worktree-it-runs-in": "git-worktrees",
+  "a-break-that-passes-may-be-rescued-not-correct": "notifications",
   "a-broken-rsc-page-still-returns-http-200": "platform",
   "a-case-duplicate-line-map-row-doubled-a-whole-line": "sales-attribution",
   "a-closed-pr-may-already-have-shipped-via-a-rollup": "engineering",
@@ -44,6 +45,7 @@
   "a-phoenix-crm-validation-is-checked-against-google-maps-never-ireports360": "phoenix-crm",
   "a-pm-validation-can-never-be-held-so-rejecting-one-is-by-hand": "phoenix-crm",
   "a-post-to-any-api-path-returns-403-even-if-it-does-not-exist": "platform",
+  "a-pr-check-grades-the-merge-so-it-can-fail-on-a-commit-you-never-wrote": "engineering",
   "a-pre-gps-backfilled-venue-link-is-not-a-defect": "marketing",
   "a-price-fix-silently-restates-every-published-closing": "sales-closing",
   "a-red-main-ci-makes-railway-skip-the-deploy-for-good": "engineering",
@@ -55,6 +57,7 @@
   "a-rollup-ships-a-members-stale-head-not-its-latest": "engineering",
   "a-saved-plan-file-is-a-snapshot-not-a-backlog": "sessions",
   "a-server-component-cannot-pass-a-function-to-a-client-one": "platform",
+  "a-source-assertion-is-satisfied-by-the-comment-explaining-the-call": "notifications",
   "a-squash-merge-makes-a-stacked-branch-rebuild-not-merge": "git-worktrees",
   "a-superseded-deploy-reached-success-a-withheld-one-never-did": "engineering",
   "a-test-can-never-hand-a-function-a-process-env-literal": "engineering",

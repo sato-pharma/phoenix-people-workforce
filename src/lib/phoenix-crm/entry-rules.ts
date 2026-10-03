@@ -373,11 +373,33 @@ export type RefusedReading = {
   photoLat: number | null;
   photoLon: number | null;
   photoAccuracyMeters: number | null;
+  /**
+   * 🔴 THE PHOTO ITSELF — the storage path of the live photo the refused capture was carrying
+   * (owner, 2026-10-03: "save the photo when a validation is refused").
+   *
+   * Until this field the refusal kept the photo's two COORDINATES and threw away the picture: the
+   * JPEG was already in the bucket, because the browser PUTs it to its slot before the save is even
+   * attempted, but nothing pointed at it — `phoenix_crm_photo_uploads` holds only that a slot was
+   * asked for, and a refused place or visit row is never created. So the one piece of evidence that
+   * shows WHERE the rep was actually standing, readable by a person rather than inferred from a
+   * radius, was reachable only by hand-joining unused slots to `storage.objects`.
+   *
+   * Null for a visit refused with no photo, and for a capture whose body carried no path at all.
+   * Nothing is uploaded or deleted here: the bytes exist already and no sweep removes an unused
+   * slot, so this is a pointer being kept rather than a file being saved a second time.
+   */
+  photoPath: string | null;
   deviceCapturedAt: string | null;
   deviceMocked: boolean | null;
   /** The line it had to be inside, stored with the reading so a later rule change cannot rewrite it. */
   maxAccuracyMeters: number;
 };
+
+/** The photo's own storage path, read with the same 200-character bound `parseVisitDraft` uses. */
+function photoPathOf(body: Record<string, unknown>): string | null {
+  const path = String(body.photoPath ?? "").trim();
+  return path ? path.slice(0, 200) : null;
+}
 
 /** The shutter's own pair, read through the same guards as the pin and never defaulted to it. */
 function photoReadingOf(body: Record<string, unknown>): Pick<RefusedReading, "photoLat" | "photoLon" | "photoAccuracyMeters"> {
@@ -409,6 +431,7 @@ export function refusedReadingOf(raw: unknown, subjectKind: "place" | "visit"): 
       lon: null,
       accuracyMeters: accuracy !== null && accuracy >= 0 ? Math.round(accuracy * 10) / 10 : null,
       ...photoReadingOf(body),
+      photoPath: photoPathOf(body),
       deviceCapturedAt: typeof body.deviceCapturedAt === "string" && !Number.isNaN(Date.parse(body.deviceCapturedAt)) ? body.deviceCapturedAt : null,
       deviceMocked: typeof body.deviceMocked === "boolean" ? body.deviceMocked : null,
       maxAccuracyMeters,
@@ -425,6 +448,7 @@ export function refusedReadingOf(raw: unknown, subjectKind: "place" | "visit"): 
     photoLat: fix.value.photoLat,
     photoLon: fix.value.photoLon,
     photoAccuracyMeters: fix.value.photoAccuracyMeters,
+    photoPath: photoPathOf(body),
     deviceCapturedAt: fix.value.deviceCapturedAt,
     deviceMocked: fix.value.deviceMocked,
     maxAccuracyMeters,

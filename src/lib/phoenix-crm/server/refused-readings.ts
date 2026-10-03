@@ -66,6 +66,13 @@ export async function recordRefusedReading(input: RecordRefusedReadingInput): Pr
         photo_lat: reading.photoLat,
         photo_lon: reading.photoLon,
         photo_accuracy_meters: reading.photoAccuracyMeters,
+        // 🔴 THE PHOTO ITSELF (owner, 2026-10-03: "save the photo when a validation is refused").
+        // The object is already in the bucket — the browser PUTs it to its slot before the save is
+        // even attempted — so this keeps the POINTER that was being thrown away and uploads nothing.
+        // Before 20261003224941 a refusal kept the photo's two COORDINATES and lost the picture,
+        // which left the only human-readable evidence of where the rep stood reachable just by
+        // hand-joining unused slots to storage.objects.
+        photo_path: reading.photoPath,
         max_accuracy_meters: reading.maxAccuracyMeters,
         device_captured_at: reading.deviceCapturedAt,
         device_mocked: reading.deviceMocked,
