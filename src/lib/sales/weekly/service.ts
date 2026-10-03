@@ -5,6 +5,7 @@ import { normalizeRole } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
+import { recordTiming } from "@/lib/observability/timings";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import {
   applyWeeklyAccessScope,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/sales/weekly/distributors";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
 import { narrowBatchesToCycleMonths } from "@/lib/sales/weekly/batch-scope";
+import { bumpWeeklyRowsGeneration, getOrLoadWeeklyRows, weeklyRowCacheKey } from "@/lib/sales/weekly/row-cache";
 import {
   decumulateProductNet,
   decumulateRows,
@@ -480,9 +482,13 @@ async function persistWeeklyUpload(
     if (insert.error) {
       // Roll back the header so a partial batch never lingers.
       await supabase.from("weekly_sales_batches").delete().eq("id", batchId);
+      bumpWeeklyRowsGeneration("upload_rolled_back");
       throw new SalesWorkflowError("persist_failed", insert.error.message, 500);
     }
   }
+  // The batch was visible as validated while its rows were still landing, so a dashboard read in
+  // between may have cached a part of it — drop every cached read now that the whole batch is in.
+  bumpWeeklyRowsGeneration("upload");
 
   return { batchId, createdAt: String(batchInsert.data.created_at) };
 }
@@ -588,6 +594,7 @@ export async function deleteWeeklyBatch(
 
   const { error } = await supabase.from("weekly_sales_batches").delete().eq("id", batchId);
   if (error) throw new SalesWorkflowError("delete_failed", error.message, 500);
+  bumpWeeklyRowsGeneration("delete");
 
   await writeAudit({
     actorLoginId: input.actorLoginId,
@@ -647,6 +654,7 @@ export async function retagWeeklyBatch(
     .from("weekly_sales_rows")
     .update({ cycle_month: input.cycleMonth, week_number: input.weekNumber })
     .eq("batch_id", batchId);
+  bumpWeeklyRowsGeneration("retag");
 
   // The header has moved by now whether or not its rows followed, so the audit row is written either
   // way and says which: a header on one week with its rows still on another is otherwise invisible.
@@ -1041,6 +1049,7 @@ export async function loadWeeklyDashboard(filters: {
   // First statement, before any read: a caller with no scope gets an error, never "everything".
   const accessScope = requireWeeklyAccessScope(filters?.accessScope);
   const supabase = getSupabaseAdmin();
+  const loadStartedAt = Date.now();
 
   // STARTED HERE, READ BELOW (2026-10-01, "slow to transfer between page and page"): the Product
   // Master behind the live price sync depends on nothing this function reads, so it runs beside the
@@ -1305,64 +1314,78 @@ export async function loadWeeklyDashboard(filters: {
   // rows are joined back in CHUNK order — asyncPool keeps input order — so `allRows` holds the
   // identical rows in the identical order the one-by-one walk produced, which is what de-cumulation
   // and every figure below read. Serial in development, by asyncPool's own clamp.
-  let totalPagesFetched = 0;
-  const batchIdChunks: string[][] = [];
-  for (let bi = 0; bi < batchIdsForRows.length; bi += 100) batchIdChunks.push(batchIdsForRows.slice(bi, bi + 100));
-  const chunkResults = await asyncPool(WEEKLY_ROW_CHUNK_CONCURRENCY, batchIdChunks, async (batchIdBatch) => {
-    const chunkRows: FactRow[] = [];
-    let chunkPages = 0;
-    let cursor: number | null = null;
-    for (;;) {
-      let q = supabase
-        .from("weekly_sales_rows")
-        .select(rowColumns)
-        .order("id", { ascending: true })
-        .limit(pageSize)
-        .in("batch_id", batchIdBatch);
-      if (cursor !== null) q = q.gt("id", cursor);
-      if (distributorCodesForQuery && distributorCodesForQuery.length > 0)
-        q = q.in("distributor_code", distributorCodesForQuery);
-      const page = await q;
-      if (page.error) throw new SalesWorkflowError("load_failed", page.error.message, 500);
-      const rows = page.data ?? [];
-      chunkPages += 1;
-      for (const row of rows) {
-        if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
-        chunkRows.push({
-          batchId: String(row.batch_id ?? ""),
-          weekStart: String(row.week_start ?? ""),
-          cycleMonth: String(row.cycle_month ?? ""),
-          weekNumber: row.week_number != null ? Number(row.week_number) : null,
-          distributorCode: String(row.distributor_code ?? ""),
-          distributorName: String(row.distributor_name ?? ""),
-          regionCode: String(row.region_code ?? ""),
-          regionName: String(row.region_name ?? ""),
-          areaCode: row.area_code == null || String(row.area_code).trim() === "" ? null : String(row.area_code).trim().toUpperCase(),
-          branchCode: String(row.branch_code ?? ""),
-          branchName: String(row.branch_name ?? ""),
-          productCode: String(row.product_code ?? ""),
-          productName: String(row.product_name ?? ""),
-          officialLine: String(row.official_line ?? ""),
-          salesValue: Number(row.sales_value ?? 0),
-          salesQty: Number(row.sales_qty ?? 0),
-          netQty: Number(row.net_qty ?? row.sales_qty ?? 0),
-          stockQty: Number(row.stock_qty ?? 0),
-        });
+  // CACHED SINCE 2026-10-04 (row-cache.ts): the same rows for the same batches are served from memory
+  // for up to 60 s, until any weekly write bumps the generation. Only the RAW rows are kept — the live
+  // re-pricing and de-cumulation below still run on every call, on copies.
+  const loadRawRows = async (): Promise<{ rows: FactRow[]; pages: number }> => {
+    const fetchedRows: FactRow[] = [];
+    let fetchedPages = 0;
+    const batchIdChunks: string[][] = [];
+    for (let bi = 0; bi < batchIdsForRows.length; bi += 100) batchIdChunks.push(batchIdsForRows.slice(bi, bi + 100));
+    const chunkResults = await asyncPool(WEEKLY_ROW_CHUNK_CONCURRENCY, batchIdChunks, async (batchIdBatch) => {
+      const chunkRows: FactRow[] = [];
+      let chunkPages = 0;
+      let cursor: number | null = null;
+      for (;;) {
+        let q = supabase
+          .from("weekly_sales_rows")
+          .select(rowColumns)
+          .order("id", { ascending: true })
+          .limit(pageSize)
+          .in("batch_id", batchIdBatch);
+        if (cursor !== null) q = q.gt("id", cursor);
+        if (distributorCodesForQuery && distributorCodesForQuery.length > 0)
+          q = q.in("distributor_code", distributorCodesForQuery);
+        const page = await q;
+        if (page.error) throw new SalesWorkflowError("load_failed", page.error.message, 500);
+        const rows = page.data ?? [];
+        chunkPages += 1;
+        for (const row of rows) {
+          if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
+          chunkRows.push({
+            batchId: String(row.batch_id ?? ""),
+            weekStart: String(row.week_start ?? ""),
+            cycleMonth: String(row.cycle_month ?? ""),
+            weekNumber: row.week_number != null ? Number(row.week_number) : null,
+            distributorCode: String(row.distributor_code ?? ""),
+            distributorName: String(row.distributor_name ?? ""),
+            regionCode: String(row.region_code ?? ""),
+            regionName: String(row.region_name ?? ""),
+            areaCode: row.area_code == null || String(row.area_code).trim() === "" ? null : String(row.area_code).trim().toUpperCase(),
+            branchCode: String(row.branch_code ?? ""),
+            branchName: String(row.branch_name ?? ""),
+            productCode: String(row.product_code ?? ""),
+            productName: String(row.product_name ?? ""),
+            officialLine: String(row.official_line ?? ""),
+            salesValue: Number(row.sales_value ?? 0),
+            salesQty: Number(row.sales_qty ?? 0),
+            netQty: Number(row.net_qty ?? row.sales_qty ?? 0),
+            stockQty: Number(row.stock_qty ?? 0),
+          });
+        }
+        if (rows.length < pageSize) break; // short page ⇒ chunk exhausted
+        cursor = Number(rows[rows.length - 1].id); // advance by last FETCHED id (before validIds filter)
       }
-      if (rows.length < pageSize) break; // short page ⇒ chunk exhausted
-      cursor = Number(rows[rows.length - 1].id); // advance by last FETCHED id (before validIds filter)
+      return { rows: chunkRows, pages: chunkPages };
+    });
+    for (const chunk of chunkResults) {
+      for (const row of chunk.rows) fetchedRows.push(row);
+      fetchedPages += chunk.pages;
     }
-    return { rows: chunkRows, pages: chunkPages };
-  });
-  for (const chunk of chunkResults) {
-    for (const row of chunk.rows) allRows.push(row);
-    totalPagesFetched += chunk.pages;
-  }
+    return { rows: fetchedRows, pages: fetchedPages };
+  };
+  const rawRows = await getOrLoadWeeklyRows(
+    weeklyRowCacheKey({ batches, batchIds: batchIdsForRows, distributorCodes: distributorCodesForQuery }),
+    loadRawRows,
+  );
+  for (const row of rawRows.rows) allRows.push(row);
+  const totalPagesFetched = rawRows.pages;
   console.info(JSON.stringify({
     event: "weekly_sales_rows_fetch",
     totalRows: allRows.length,
     totalPages: totalPagesFetched,
     pagination: "keyset",
+    cache: rawRows.cache,
     fetchMs: Date.now() - fetchStart,
     batchCount: batchIdsForRows.length,
   }));
@@ -1744,6 +1767,8 @@ export async function loadWeeklyDashboard(filters: {
     };
   }
 
+  // Whole-load time into the per-minute process_health line (PERF-011), beside the fetch's own log.
+  recordTiming("weekly_dashboard_load", Date.now() - loadStartedAt);
   return {
     weekStart: selectedWeekAnchor,
     priorWeekStart: priorCanonical,

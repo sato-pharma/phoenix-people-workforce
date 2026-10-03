@@ -90,7 +90,8 @@ async function latestExtractionByCandidate(
  * review had happened when it had not.
  */
 export async function listContactReviewQueue(): Promise<ContactReviewRow[]> {
-  const candidates = await listCandidates();
+  // The slim read: this queue reads only the contact columns, never the repeating CV blocks.
+  const candidates = await listCandidates({ withRepeatingCvBlocks: false });
   const missing = candidates.filter(
     (candidate) =>
       !String(candidate.email ?? "").trim() || !String(candidate.phone ?? "").trim(),

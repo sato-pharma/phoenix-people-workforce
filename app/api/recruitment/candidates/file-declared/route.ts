@@ -39,7 +39,11 @@ export async function POST(request: Request) {
       ? new Set(rawIds.map((value) => String(value ?? "").trim()).filter((value) => value.length > 0))
       : null;
 
-    const [candidates, canonicalAreas] = await Promise.all([listCandidates(), listCanonicalMedicalRepAreaNames()]);
+    // The slim read: the folder suggestions come from WhatsApp answers, never the repeating CV blocks.
+    const [candidates, canonicalAreas] = await Promise.all([
+      listCandidates({ withRepeatingCvBlocks: false }),
+      listCanonicalMedicalRepAreaNames(),
+    ]);
     const { filings, skipped } = collectSuggestedFilings(candidates, canonicalAreas);
     const targets = wanted ? filings.filter((filing) => wanted.has(filing.candidateId)) : filings;
 

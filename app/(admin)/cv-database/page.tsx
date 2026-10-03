@@ -33,7 +33,8 @@ export default async function CvDatabasePage() {
     redirect("/employee-portals");
   }
 
-  const [candidates, screeningQuestions] = await Promise.all([listCandidates(), listScreeningQuestions()]);
+  // The slim read: no CV Database row reads the repeating CV blocks, which are 59% of the pool's bytes.
+  const [candidates, screeningQuestions] = await Promise.all([listCandidates({ withRepeatingCvBlocks: false }), listScreeningQuestions()]);
   // Active AND retired — a retired question's already-recorded answers must still show a real label.
   const questionLabels = new Map(screeningQuestions.map((question) => [question.questionKey, question.bodyText]));
   const rows = cvLibraryRowsFromCandidates(candidates, questionLabels);

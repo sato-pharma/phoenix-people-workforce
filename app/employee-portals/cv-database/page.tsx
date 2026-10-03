@@ -31,7 +31,8 @@ export default async function EmployeePortalCvDatabasePage() {
     );
   }
 
-  const [candidates, screeningQuestions] = await Promise.all([listCandidates(), listScreeningQuestions()]);
+  // The slim read: no CV Database row reads the repeating CV blocks, which are 59% of the pool's bytes.
+  const [candidates, screeningQuestions] = await Promise.all([listCandidates({ withRepeatingCvBlocks: false }), listScreeningQuestions()]);
   const questionLabels = new Map(screeningQuestions.map((question) => [question.questionKey, question.bodyText]));
   const rows = cvLibraryRowsFromCandidates(candidates, questionLabels);
 

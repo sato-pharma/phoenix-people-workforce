@@ -9,6 +9,7 @@ import { fetchAllApprovalRows } from "@/lib/approvals-hub/page-rows";
 import { isMarketingDoubleVisit } from "@/lib/weekly-planning/marketing-double-visit";
 import {
   getVacationActionCenterData,
+  getVacationAwaitingBadgeSource,
   getVacationReportData,
   isAllVacationVisibility,
 } from "@/lib/vacation/service";
@@ -239,8 +240,6 @@ export type VacationApprovalsBuckets = {
  * turn = pending_hr & HR/Super-Admin actor).
  */
 export async function getVacationApprovalsForResponder(access: AccessContext): Promise<VacationApprovalsBuckets> {
-  const hrId = access.hrId?.trim() ?? "";
-
   // Defensive: a system-authority actor (Super Admin / scope=system, e.g. a shared HR login with
   // no personal HR_ID) must always see the true company-wide bucket. Every source below is already
   // scoped role/scope-first (isAllVacationVisibility), not hrId-first, so a blank hrId is safe here
@@ -263,10 +262,23 @@ export async function getVacationApprovalsForResponder(access: AccessContext): P
     }),
   ]);
 
+  return partitionVacationApprovals(access, center?.rows ?? [], report?.rows ?? []);
+}
+
+/**
+ * The one place the vacation awaiting/upcoming split is decided — the hub pages and the sidebar badge
+ * both come through here, so a badge can never count a request the page would not list.
+ */
+function partitionVacationApprovals(
+  access: AccessContext,
+  centerRows: VacationActionCenterRow[],
+  reportRows: VacationRequestRecord[],
+): VacationApprovalsBuckets {
+  const hrId = access.hrId?.trim() ?? "";
   const awaiting: VacationActionCenterRow[] = [];
   const upcoming: VacationActionCenterRow[] = [];
 
-  for (const row of center?.rows ?? []) {
+  for (const row of centerRows) {
     // Own submissions are surfaced separately (read-only) — never as an approvable item.
     if (isViewer(row.employeeHrId, hrId)) continue;
     if (anyActionEnabled(row.actionAvailability)) awaiting.push(row);
@@ -276,7 +288,7 @@ export async function getVacationApprovalsForResponder(access: AccessContext): P
   // Legacy sick-leave pending items (not covered by the Action Center source).
   const hrActor = isHrActor(access);
   const seen = new Set(awaiting.concat(upcoming).map((r) => r.id));
-  for (const record of report?.rows ?? []) {
+  for (const record of reportRows) {
     if (record.vacationType !== "sick") continue;
     if (seen.has(record.id)) continue;
     if (isViewer(record.employeeHrId, hrId)) continue;
@@ -292,6 +304,24 @@ export async function getVacationApprovalsForResponder(access: AccessContext): P
   upcoming.sort(byOldest);
 
   return { awaiting, upcoming };
+}
+
+/**
+ * The awaiting vacation rows for the sidebar badge (and the per-domain pending-count route) — the
+ * same split as {@link getVacationApprovalsForResponder}, built from getVacationAwaitingBadgeSource
+ * instead of the full Action Center plus a second full Vacation Report. See that function for why.
+ *
+ * A failed read degrades exactly as the full path's does: logged, then counted as nothing.
+ */
+async function getVacationAwaitingForBadge(access: AccessContext): Promise<VacationActionCenterRow[]> {
+  const source = await getVacationAwaitingBadgeSource(access).catch((error) => {
+    logLoadFailure("Approvals hub vacation badge data load failed", {
+      labels: { event: "approvals_hub_vacation_badge_source_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
+    return null;
+  });
+  return partitionVacationApprovals(access, source?.centerRows ?? [], source?.scopedRows ?? []).awaiting;
 }
 
 /** Shape a legacy sick-leave record into the Action-Center row form (single-step, best-effort). */
@@ -333,7 +363,7 @@ function sickRecordAsActionRow(record: VacationRequestRecord, actionable: boolea
 
 export async function countVacationAwaiting(access: AccessContext): Promise<number> {
   try {
-    const { awaiting } = await getVacationApprovalsForResponder(access);
+    const awaiting = await getVacationAwaitingForBadge(access);
     return awaiting.length;
   } catch (error) {
     logLoadFailure("Approvals hub count vacation awaiting failed", {
@@ -348,7 +378,7 @@ export async function countVacationAwaiting(access: AccessContext): Promise<numb
 // alarm badge's graduated urgency (see NavBadge in components/layout/nav-badge.tsx).
 export async function isVacationAwaitingOverdue(access: AccessContext): Promise<boolean> {
   try {
-    const { awaiting } = await getVacationApprovalsForResponder(access);
+    const awaiting = await getVacationAwaitingForBadge(access);
     return awaiting.some((row) => slaTone(row.slaAgeDays, APPROVALS_SLA_THRESHOLDS.leave) === "overdue");
   } catch (error) {
     logLoadFailure("Approvals hub vacation awaiting-overdue check failed", {
@@ -379,7 +409,7 @@ export async function getVacationAwaitingBadge(
   access: AccessContext,
 ): Promise<{ count: number; overdue: boolean; available: boolean }> {
   try {
-    const { awaiting } = await getVacationApprovalsForResponder(access);
+    const awaiting = await getVacationAwaitingForBadge(access);
     return {
       count: awaiting.length,
       overdue: awaiting.some((row) => slaTone(row.slaAgeDays, APPROVALS_SLA_THRESHOLDS.leave) === "overdue"),

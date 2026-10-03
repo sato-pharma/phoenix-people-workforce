@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { canonicalWeeklyDistributorCode, weeklyDistributorOptions } from "@/lib/sales/weekly/distributors";
 import { normalizeAlias, normalizeCode } from "@/lib/sales/weekly/mapping-normalize";
+import { bumpWeeklyRowsGeneration } from "@/lib/sales/weekly/row-cache";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -250,6 +251,8 @@ export async function healUnresolvedWeeklyRows(input: {
     accumulateBatchHeaderDelta(deltas, String(row.batch_id ?? ""), Number(row.sales_value ?? 0), salesValue, newState);
   }
   await applyBatchHeaderDeltas(deltas);
+  // A heal rewrites rows inside the SAME batches, so the weekly row cache's key cannot see it.
+  if (healed > 0) bumpWeeklyRowsGeneration("alias_heal");
   return healed;
 }
 

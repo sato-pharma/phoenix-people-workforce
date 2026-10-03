@@ -4792,6 +4792,8 @@ async function fetchActorPendingApprovalStepRequestIds(access: AccessContext): P
   return Array.from(requestIds);
 }
 
+const VACATION_ACTIONABLE_STATUSES: ReadonlySet<string> = new Set(["needs_assignment", "pending_manager", "pending_hr"]);
+
 export async function getVacationActionCenterData(access: AccessContext): Promise<VacationActionCenterData> {
   await assertPermission(access, "leave", "read");
   const isHrActor = isAllVacationVisibility(access);
@@ -4800,7 +4802,7 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
     getEmployeeDirectory(),
   ]);
 
-  const actionableStatuses = new Set(["needs_assignment", "pending_manager", "pending_hr"]);
+  const actionableStatuses = VACATION_ACTIONABLE_STATUSES;
   const candidateRows: typeof report.rows = report.rows.filter((row) => actionableStatuses.has(row.status));
 
   // Supplemental: surface requests where the actor is an explicit pending approver
@@ -4831,13 +4833,33 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
   }
 
   const stepsByRequest = await fetchVacationApprovalStepsForRequests(candidateRows.map((row) => row.id));
+  const rows = buildVacationActionCenterRows({ access, candidateRows, directory, stepsByRequest });
+
+  return { canAssign: isHrActor, generatedAt: new Date().toISOString(), rows };
+}
+
+/**
+ * The per-row half of the Action Center — which step is the viewer's, what each button may do, the
+ * override window — shared by the full Action Center and the sidebar badge so the two can never
+ * disagree about what is awaiting someone. `directory` only supplies display names and titles; the
+ * badge passes `null` and gets the same rows with those fields empty.
+ */
+function buildVacationActionCenterRows(input: {
+  access: AccessContext;
+  candidateRows: VacationRequestRecord[];
+  directory: Awaited<ReturnType<typeof getEmployeeDirectory>> | null;
+  stepsByRequest: Awaited<ReturnType<typeof fetchVacationApprovalStepsForRequests>>;
+}): VacationActionCenterRow[] {
+  const { access, candidateRows, directory, stepsByRequest } = input;
+  const isHrActor = isAllVacationVisibility(access);
   // One clock for the whole page. Reading new Date() per row would let two rows a millisecond
   // apart disagree about whether the threshold has passed.
   const overrideNow = new Date();
   const viewerHrId = resolveEmployeeIdentityId(access);
+  const employeeOf = (hrId: string | null) => (directory ? findEmployeeByHrId(directory, hrId) : null);
 
   const titleOf = (hrId: string | null) => {
-    const employee = findEmployeeByHrId(directory, hrId);
+    const employee = employeeOf(hrId);
     return employee ? employeeVacationPolicyTitle(employee) : null;
   };
 
@@ -4891,7 +4913,7 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
       ? {
           approverHrId: overrideApproverHrId,
           approverName: overrideApproverHrId
-            ? findEmployeeByHrId(directory, overrideApproverHrId)?.displayName ?? overrideApproverHrId
+            ? employeeOf(overrideApproverHrId)?.displayName ?? overrideApproverHrId
             : null,
           available: overrideEvaluation.available,
           availableAt: overrideEvaluation.availableAt,
@@ -4918,14 +4940,14 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
         status: step.status,
         stepKey: step.stepKey,
         approverHrId: step.approverHrId,
-        approverName: findEmployeeByHrId(directory, step.approverHrId)?.displayName ?? null,
+        approverName: employeeOf(step.approverHrId)?.displayName ?? null,
         approverTitle: titleOf(step.approverHrId),
         decidedAt: step.decidedAt,
         decisionComment: step.decisionComment,
         genericStep: genericStepName(step.stepKey),
       })),
       assignedActorName: activeRawStep
-        ? findEmployeeByHrId(directory, activeRawStep.approverHrId)?.displayName ?? activeRawStep.approverHrId
+        ? employeeOf(activeRawStep.approverHrId)?.displayName ?? activeRawStep.approverHrId
         : null,
       assignedActorTitle: activeRawStep ? titleOf(activeRawStep.approverHrId) : null,
       actionAvailability,
@@ -4940,8 +4962,61 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
           : "none",
     });
   }
+  return rows;
+}
 
-  return { canAssign: isHrActor, generatedAt: new Date().toISOString(), rows };
+/**
+ * What the sidebar's leave badge needs, and nothing it does not: the Action Center rows for this
+ * viewer, plus the scoped request rows the legacy sick-leave pass reads.
+ *
+ * WHY (2026-10-04 performance review, PERF-001): the badge polls every 30 s from every open tab, and
+ * it used to build the full Vacation Report TWICE per poll — once inside getVacationActionCenterData
+ * and once more for the sick rows — enriching every request ever filed (events, evidence reviews,
+ * attachments, holidays, overlap warnings, the entitlement table) to produce a count and an overdue
+ * flag. Neither reads any of that. The rows here are the report's own: the same directory scope,
+ * the same 60 s-cached request read, the same `mapVacationRow` and `canSeeVacation`, the same
+ * actionable statuses and the same extra pending-step rows; `slaAgeDays` is `businessDaysPending`,
+ * which `mapVacationRow` computes exactly as the enrichment recomputes it (it reads only the stage
+ * start and the clock, never the SLA settings or events).
+ */
+export async function getVacationAwaitingBadgeSource(
+  access: AccessContext,
+): Promise<{ centerRows: VacationActionCenterRow[]; scopedRows: VacationRequestRecord[] }> {
+  await assertPermission(access, "leave", "read");
+  const isHrActor = isAllVacationVisibility(access);
+  const activeEmployees = await getEmployeeDirectoryRows();
+  const visibleEmployees = await filterVacationEmployeesForAccess(access, activeEmployees);
+  const visibleEmployeeHrIds = buildVisibleHrIdSet(visibleEmployees);
+  const data = await fetchVacationReportRowsFromDatabase({
+    access,
+    filters: cleanFilters({ status: "all" }),
+    visibleEmployeeHrIds,
+  });
+  const scopedRows = (data ?? [])
+    .map((row) => mapVacationRow(row as VacationRequestDbRow))
+    .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds));
+
+  const candidateRows = scopedRows.filter((row) => VACATION_ACTIONABLE_STATUSES.has(row.status));
+  // The same out-of-scope pending approver rows getVacationActionCenterData adds, unenriched.
+  if (!isHrActor) {
+    const actorPendingIds = await fetchActorPendingApprovalStepRequestIds(access);
+    const existingIds = new Set(candidateRows.map((row) => row.id));
+    const extraIds = actorPendingIds.filter((id) => !existingIds.has(id));
+    if (extraIds.length > 0) {
+      const { data: extraData } = await getSupabaseAdmin()
+        .from(vacationRequestsTable)
+        .select("*")
+        .in("id", extraIds)
+        .in("status", Array.from(VACATION_ACTIONABLE_STATUSES));
+      for (const row of (extraData ?? []) as VacationRequestDbRow[]) candidateRows.push(mapVacationRow(row));
+    }
+  }
+
+  const stepsByRequest = await fetchVacationApprovalStepsForRequests(candidateRows.map((row) => row.id));
+  return {
+    centerRows: buildVacationActionCenterRows({ access, candidateRows, directory: null, stepsByRequest }),
+    scopedRows,
+  };
 }
 
 function assertVacationControlAuthority(access: AccessContext) {
