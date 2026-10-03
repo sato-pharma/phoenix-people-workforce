@@ -119,24 +119,67 @@ export async function resolveOne(
 }
 
 /**
- * The exactly-one-row rule as a PURE decision, for a driver that counts matches itself.
+ * The one-row rule as a PURE decision, for a driver that reads the rows itself.
  *
- * `resolveOne` is the version for a reader this module can query. The revocation driver works
- * directly against puppeteer and counts with `$$eval`, so it needs the same rule without a reader.
- * Keeping the decision here means there is ONE statement of "exactly one, or stop" for the whole
- * Turbify console, and that it can be proven without a browser.
+ * 🔴 IT IS AN IDENTITY RULE, NOT A COUNT. This replaced a count-based guard on 2026-10-03, because
+ * the console's search is a SUBSTRING match and a count cannot see "exactly one row, and it is
+ * somebody else's mailbox". `adel.sayed@satopharma.com` matches a search for
+ * `el.sayed@satopharma.com`, is Active, and carries its own `Reset password` button — so the count
+ * guard returned "safe to act" and the next click would have reset a working employee out of their
+ * mail. The old comment here even named "an address that is a prefix of another" as the danger; the
+ * count simply could not detect it.
  *
- * Returns null when it is safe to act, or the refusal to throw. A NEGATIVE or non-finite count means
- * the page could not be read, which is also a refusal — an unreadable list is not an empty one, and
- * treating it as empty is how a robot proceeds against a page it never saw.
+ * `resolveOne` is the version for a reader this module can query. The revocation and provisioning
+ * drivers work directly against puppeteer, so they need the same rule without a reader — keeping the
+ * decision here means there is ONE statement of it for the whole Turbify console, provable without a
+ * browser.
+ *
+ * Returns null when it is safe to act, or the refusal to throw. Rows that could not be read are a
+ * refusal too: an unreadable list is not an empty one, and treating it as empty is how a robot
+ * proceeds against a page it never saw.
  */
-export function rowCountRefusal(count: number, address: string, action = "Reset"): string | null {
-  if (count === 1) return null;
-  const seen = !Number.isFinite(count) || count < 0 ? "an unreadable number of" : String(count);
-  return (
-    `${action} ${address}: after filtering to this address the list showed ${seen} matching rows, `
-    + `so the robot cannot tell which mailbox it would act on. Nothing was clicked.`
+export function rowIdentityRefusal(
+  rows: readonly ConsoleMailboxRow[] | null | undefined,
+  address: string,
+  action = "Reset",
+): string | null {
+  const reading = readExistenceFromRows(rows, address);
+  if ("refusal" in reading) return `${action} ${address}: ${reading.refusal}`;
+  if (!reading.exists) {
+    const seen = Array.isArray(rows) ? rows.length : 0;
+    return (
+      `${action} ${address}: after filtering to this address, no row CARRIES that address — `
+      + `${seen} row(s) matched the search, which is a substring match. Nothing was clicked.`
+    );
+  }
+  if (reading.status === "pending") {
+    return (
+      `${action} ${address}: the row exists but is PENDING, so it has no password to act on. `
+      + "Nothing was clicked."
+    );
+  }
+  return null;
+}
+
+/**
+ * Does this dialog's text NAME this mailbox? Compared as whole tokens, never with `includes`.
+ *
+ * 🔴 WHY `includes` IS NOT SAFE HERE, measured 2026-10-03. `adel.sayed@satopharma.com` CONTAINS
+ * `el.sayed@satopharma.com`, so a reset that opened the dialog for the wrong employee satisfied an
+ * `includes` check and would have been recorded as the right one. The substring relation defeats the
+ * row filter and the confirmation together, which is why both now compare identity.
+ */
+export function dialogNamesAddress(text: string | null | undefined, address: string): boolean {
+  const wanted = String(address ?? "").trim().toLowerCase();
+  if (wanted.length === 0) return false;
+  const local = wanted.split("@")[0];
+  const tokens = new Set(
+    String(text ?? "")
+      .toLowerCase()
+      .split(/[^a-z0-9._%+@-]+/)
+      .filter((token) => token.length > 0),
   );
+  return tokens.has(wanted) || (local.length > 0 && tokens.has(local));
 }
 
 /** Whether the locator resolves at all, without throwing. For verifying a page is the expected one. */
@@ -144,43 +187,111 @@ export async function isPresent(page: CandidateReader, locator: Locator): Promis
   return (await findMatches(page, locator)).length > 0;
 }
 
+/** One row of the console's mailbox table, as the ROW itself reports it. */
+export type ConsoleMailboxRow = {
+  /** The address read from the row's OWN cell, not from the row's concatenated text. */
+  address: string;
+  /** What the Status column says. A `pending` mailbox exists but has no password yet. */
+  status: MailboxRowStatus;
+};
+
+export type MailboxRowStatus = "active" | "pending" | "unknown";
+
 export type ExistenceReading =
-  | { exists: boolean }
+  | { exists: false }
+  | { exists: true; status: MailboxRowStatus }
   | { refusal: string };
 
 /**
- * Read "does this address exist?" from the number of matching ROWS, never from the page's text.
+ * Read "does this address exist?" from the ROWS' OWN ADDRESSES — never from a row COUNT, and never
+ * from the page's text.
  *
- * 🔴 WHY THIS EXISTS, measured on production 2026-10-03. `createMailbox` asked the question with
- * `document.body.innerText.includes(address)` — and the console leaves the searched address on the
- * page after an attempt, so the check was reading the residue of the robot's OWN previous run. The
- * measurement that pinned it: of four addresses, the two the robot had attempted carried their local
- * part in the page text while showing ZERO rows, and the two it had never reached carried neither.
- * Ahmed Mohamed was absent from a console holding 288 mailboxes and refused as "already exists"
- * anyway — permanently, because every failed attempt re-poisons the page for the next run.
+ * 🔴 WHY A COUNT IS NOT ENOUGH, measured on production 2026-10-03. The console's search is a
+ * SUBSTRING match, so searching the full address `el.sayed@satopharma.com` returns the row for
+ * `adel.sayed@satopharma.com` — a different employee, whose address literally contains the one
+ * asked about ("ad" + "el.sayed@satopharma.com"). That is ONE row, so a count-based reader called it
+ * EXISTS and the robot refused to create El Sayed Rady's mailbox for ever, blaming Phoenix's record
+ * while Phoenix was right. The same shape in reverse is worse: a real new hire whose address is a
+ * substring of somebody else's would be silently skipped.
  *
- * It matters more than a stuck queue: this is the only check standing between a second mailbox and
- * an address that already has one, and a text scan is wrong in BOTH directions.
+ * So the question is answered by comparing each row's own address cell, exactly. A count can only
+ * ever say "something matched", which is not the question.
  *
- * 🔴 AND IT FAILS CLOSED. An unreadable count refuses rather than answering "absent", because
- * "absent" is the answer that goes on to create a mailbox. More than one row refuses too: the search
- * is for one address, so two rows mean the filter is not doing what the caller believes.
+ * 🔴 AND THE STATUS IS PART OF THE ANSWER. A mailbox Turbify has created but that has not completed
+ * its invitation sits at `Pending`: it EXISTS, it carries no password, and it is absent from the
+ * console's "Active mailboxes" figure and carries no `Reset password` button. A reader that looked
+ * at either of those called a created mailbox absent — which is how two real ones (`ahmed.mohamed`,
+ * `asmaa.zaghloul`) were created and then reported as never created at all.
+ *
+ * The earlier count-based reader took `(rows: number)`. It is deliberately gone rather than kept
+ * beside this one: a caller reaching for it would be reintroducing the measured defect above.
  */
-export function readExistence(rows: number, address: string): ExistenceReading {
-  if (!Number.isFinite(rows) || rows < 0) {
+export function readExistenceFromRows(
+  rows: readonly ConsoleMailboxRow[] | null | undefined,
+  address: string,
+): ExistenceReading {
+  if (!Array.isArray(rows)) {
     return {
       refusal:
-        `Could not count the rows for ${address} in the Turbify console, so the robot cannot tell `
-        + "whether the mailbox already exists. It stopped rather than risk creating a second one.",
+        `Could not read the Turbify console's rows for ${address}, so the robot cannot tell whether `
+        + "the mailbox already exists. It stopped rather than risk creating a second one.",
     };
   }
-  if (rows > 1) {
+  const wanted = address.trim().toLowerCase();
+  if (wanted.length === 0) {
+    return { refusal: "No address was given to look for in the Turbify console, so nothing was read." };
+  }
+  const exact = rows.filter(
+    (row) => typeof row?.address === "string" && row.address.trim().toLowerCase() === wanted,
+  );
+  if (exact.length > 1) {
     return {
       refusal:
-        `Searching the Turbify console for ${address} showed ${rows} rows, so the list is not filtered `
-        + "to the one address the robot asked about. It stopped rather than read an answer about "
-        + "somebody else's mailbox.",
+        `${exact.length} rows in the Turbify console carry the address ${address} itself, which should `
+        + "be impossible. The robot stopped rather than act on one of them.",
     };
   }
-  return { exists: rows === 1 };
+  if (exact.length === 1) return { exists: true, status: readRowStatus(exact[0].status) };
+  return { exists: false };
+}
+
+/** Narrow whatever the row reported to the three states the robot distinguishes. */
+export function readRowStatus(value: unknown): MailboxRowStatus {
+  if (typeof value !== "string") return "unknown";
+  const text = value.trim().toLowerCase();
+  if (text === "pending") return "pending";
+  if (text === "active") return "active";
+  return "unknown";
+}
+
+/**
+ * The selector that reaches the console's mailbox rows. The table is a real `<table>`, but the
+ * console also marks rows with ARIA roles, so both are asked for.
+ */
+export const MAILBOX_ROW_QUERY = "tr, [role=row]" as const;
+
+/**
+ * Read one row per mailbox out of the DOM, taking each address from ITS OWN CELL.
+ *
+ * 🔴 NOT FROM THE ROW'S TEXT. The row renders the display name immediately before the address with
+ * no separator, so `(row.textContent)` reads "Ahmed Mohamed Abd-Elnaimahmed.mohamed@satopharma.com"
+ * and an email pattern over that string matches `Abd-Elnaimahmed.mohamed@satopharma.com` — an
+ * address that belongs to nobody. Every row then fails to match the address asked about, and a
+ * mailbox that plainly exists reads as absent. Measured on production 2026-10-03.
+ *
+ * A real function, never a string: a string handed to `page.evaluate` passes through the template
+ * and escaping layers that have already turned one of this robot's regexes into a different regex.
+ */
+export function readMailboxRowCells(elements: Element[]): ConsoleMailboxRow[] {
+  const rows: ConsoleMailboxRow[] = [];
+  for (const element of elements) {
+    const cells = Array.from(element.querySelectorAll("td, th, [role=cell], [role=gridcell]"))
+      .map((cell) => (cell.textContent ?? "").trim());
+    const address = cells.find((value) => /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(value));
+    if (!address) continue;
+    const text = (element.textContent ?? "").toLowerCase();
+    const status = text.includes("pending") ? "pending" : (text.includes("active") ? "active" : "unknown");
+    rows.push({ address: address.toLowerCase(), status });
+  }
+  return rows;
 }

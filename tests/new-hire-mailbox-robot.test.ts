@@ -35,9 +35,12 @@ import {
   findMatches,
   isPresent,
   matchesLocator,
-  readExistence,
+  dialogNamesAddress,
+  readExistenceFromRows,
+  readMailboxRowCells,
+  readRowStatus,
   resolveOne,
-  rowCountRefusal,
+  rowIdentityRefusal,
   type CandidateReader,
   type ElementCandidate,
 } from "../src/lib/turbify/resolve.ts";
@@ -104,30 +107,71 @@ function verdict(overrides: Partial<ProvisionSafetyInput> = {}) {
  * scan being wrong in BOTH directions is the dangerous part — not the stuck queue.
  */
 function runExistenceReadingCases(): void {
-  // The two honest answers.
-  assert.deepEqual(readExistence(0, "new.hire@satopharma.com"), { exists: false });
-  assert.deepEqual(readExistence(1, "taken@satopharma.com"), { exists: true });
+  const row = (address: string, status: "active" | "pending" | "unknown" = "active") => ({ address, status });
 
-  // 🔴 FAILS CLOSED. An unreadable count must NOT answer "absent" — absent is the answer that goes
-  // on to create a mailbox.
-  for (const unreadable of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
-    const reading = readExistence(unreadable, "new.hire@satopharma.com");
-    assert.ok("refusal" in reading, `${String(unreadable)} must refuse, never answer absent`);
-    assert.match("refusal" in reading ? reading.refusal : "", /cannot tell whether the mailbox already exists/);
+  // The two honest answers, read from the rows' own addresses.
+  assert.deepEqual(readExistenceFromRows([], "new.hire@satopharma.com"), { exists: false });
+  assert.deepEqual(
+    readExistenceFromRows([row("taken@satopharma.com")], "taken@satopharma.com"),
+    { exists: true, status: "active" },
+  );
+
+  // 🔴 THE SUBSTRING HIT. The console's search matches substrings, so searching
+  // el.sayed@satopharma.com returns adel.sayed@satopharma.com — ONE row, a different employee. The
+  // old count-based reader called that EXISTS and refused a real new hire for ever.
+  assert.deepEqual(
+    readExistenceFromRows([row("adel.sayed@satopharma.com")], "el.sayed@satopharma.com"),
+    { exists: false },
+    "a row that merely CONTAINS the address is not that address",
+  );
+  // And the same relation in reverse must not hide a mailbox that really is there.
+  assert.deepEqual(
+    readExistenceFromRows(
+      [row("adel.sayed@satopharma.com"), row("el.sayed@satopharma.com")],
+      "el.sayed@satopharma.com",
+    ),
+    { exists: true, status: "active" },
+    "the exact row still answers when a substring neighbour is beside it",
+  );
+
+  // 🔴 PENDING IS EXISTING. A mailbox Turbify created but whose invitation never completed carries
+  // no password, is absent from the "Active mailboxes" figure and has no Reset password button —
+  // which is how two real mailboxes were created and then reported as never created at all.
+  assert.deepEqual(
+    readExistenceFromRows([row("ahmed.mohamed@satopharma.com", "pending")], "ahmed.mohamed@satopharma.com"),
+    { exists: true, status: "pending" },
+  );
+
+  // 🔴 FAILS CLOSED. Rows that could not be read must NOT answer "absent" — absent is the answer
+  // that goes on to create a mailbox.
+  for (const unreadable of [null, undefined]) {
+    const reading = readExistenceFromRows(unreadable, "new.hire@satopharma.com");
+    assert.ok("refusal" in reading, "unreadable rows must refuse, never answer absent");
+    assert.match("refusal" in reading ? reading.refusal : "", /cannot tell whether/);
     assert.match("refusal" in reading ? reading.refusal : "", /second one/);
   }
 
-  // More than one row means the list is not filtered to the address asked about.
-  const many = readExistence(3, "new.hire@satopharma.com");
-  assert.ok("refusal" in many);
-  assert.match("refusal" in many ? many.refusal : "", /showed 3 rows/);
-  assert.match("refusal" in many ? many.refusal : "", /somebody else's mailbox/);
+  // Two rows carrying the SAME address should be impossible; refuse rather than pick one.
+  const duplicated = readExistenceFromRows(
+    [row("dupe@satopharma.com"), row("dupe@satopharma.com")],
+    "dupe@satopharma.com",
+  );
+  assert.ok("refusal" in duplicated);
+  assert.match("refusal" in duplicated ? duplicated.refusal : "", /2 rows/);
+
+  // Case and padding are not identity differences.
+  assert.deepEqual(
+    readExistenceFromRows([row("taken@satopharma.com")], "  TAKEN@satopharma.com  "),
+    { exists: true, status: "active" },
+  );
 
   // Every refusal names the address, so a log line is actionable on its own.
-  for (const rows of [-1, 2]) {
-    const reading = readExistence(rows, "named.person@satopharma.com");
-    assert.match("refusal" in reading ? reading.refusal : "", /named\.person@satopharma\.com/);
-  }
+  const named = readExistenceFromRows(null, "named.person@satopharma.com");
+  assert.match("refusal" in named ? named.refusal : "", /named\.person@satopharma\.com/);
+
+  assert.equal(readRowStatus("Pending"), "pending");
+  assert.equal(readRowStatus("Active"), "active");
+  assert.equal(readRowStatus(undefined), "unknown");
 }
 
 /** The driver must ask the DOM for rows, and reload first — only the first search filters. */
@@ -138,8 +182,20 @@ function runExistenceWiringCases(): void {
   );
   const flat = driver.replace(/\s+/g, " ");
 
-  assert.match(flat, /readExistence\(rows, address\)/, "the driver must read existence from the row count");
-  assert.match(flat, /\$\$eval<number>\(cssQueryFor\(ECP_LOCATORS\.resetPassword\)/, "rows are counted from the row control");
+  assert.match(
+    flat, /readExistenceFromRows\(rows, address\)/,
+    "the driver must read existence from the rows themselves",
+  );
+  assert.match(
+    flat, /\$\$eval<ConsoleMailboxRow\[\]>\(MAILBOX_ROW_QUERY, readMailboxRowCells\)/,
+    "rows come from the row reader, not from counting a row control",
+  );
+  // 🔴 THE ROW COUNT MUST BE GONE FROM THE EXISTENCE PATH. Counting Reset-password buttons cannot
+  // see a PENDING mailbox (it has none) and cannot tell a substring hit from the address itself.
+  assert.equal(
+    flat.includes("$$eval<number>(cssQueryFor(ECP_LOCATORS.resetPassword)"), false,
+    "existence must not be read by counting Reset-password buttons",
+  );
   // 🔴 THE TEXT SCAN MUST BE GONE FROM THE CREATE STEP. Scoped to that method, because the driver
   // reads page text legitimately elsewhere (the one-time-password dialog, the app password). An
   // earlier version of this assertion used a regex that could not cross a ")" and let a reinstated
@@ -152,9 +208,91 @@ function runExistenceWiringCases(): void {
     createBody.includes("innerText"), false,
     "the create step must not read page text at all — it carries the last attempt's residue",
   );
-  assert.match(createBody, /readExistence/, "and it must read existence from the row count");
+  assert.match(createBody, /readExistingRow/, "and it must read existence from the row reader");
+  // 🔴 A CREATE THAT SHOWED NO PASSWORD MUST STILL SAY WHAT IT LEFT BEHIND. Turbify's create makes
+  // the mailbox PENDING and hands the password over by invitation, so "no dialog" is not "nothing
+  // happened" — two real mailboxes were created while the run reported none provisioned.
+  assert.match(
+    createBody, /describeCreateWithoutPassword/,
+    "the create step must report what it actually left behind",
+  );
   // And the fresh load before the search.
   assert.match(flat, /page\.goto\(consoleUrl/, "each existence check must start from a fresh page load");
+}
+
+/**
+ * 🔴 THE SUBSTRING RELATION DEFEATS A COUNT AND AN `includes` TOGETHER, which is why both the row
+ * guard and the dialog confirmation compare identity. Measured 2026-10-03: searching
+ * el.sayed@satopharma.com returns the single ACTIVE row for adel.sayed@satopharma.com, carrying its
+ * own Reset password button — so a count said "safe to act", and the dialog that then opened named
+ * adel.sayed, whose text CONTAINS el.sayed@satopharma.com, so an includes() check confirmed the
+ * wrong reset as the right one. On a leaver run that resets a working employee out of their mail.
+ */
+function runRowIdentityCases(): void {
+  const row = (address: string, status: "active" | "pending" | "unknown" = "active") => ({ address, status });
+
+  assert.equal(
+    rowIdentityRefusal([row("leaver@satopharma.com")], "leaver@satopharma.com"), null,
+    "one row carrying the address is safe to act on",
+  );
+
+  const substring = rowIdentityRefusal([row("adel.sayed@satopharma.com")], "el.sayed@satopharma.com");
+  assert.ok(substring, "a substring hit must refuse — it is somebody else's mailbox");
+  assert.match(substring ?? "", /no row CARRIES that address/);
+  assert.match(substring ?? "", /Nothing was clicked/);
+
+  const pending = rowIdentityRefusal([row("new.hire@satopharma.com", "pending")], "new.hire@satopharma.com");
+  assert.ok(pending, "a PENDING row has no password to reset");
+  assert.match(pending ?? "", /PENDING/);
+
+  for (const unreadable of [null, undefined]) {
+    assert.ok(rowIdentityRefusal(unreadable, "leaver@satopharma.com"), "unreadable rows must refuse");
+  }
+
+  assert.match(rowIdentityRefusal([], "x@satopharma.com", "Delete") ?? "", /^Delete x@satopharma\.com/);
+
+  // The dialog confirmation, on the same relation.
+  assert.equal(
+    dialogNamesAddress("One-time password for el.sayed@satopharma.com", "el.sayed@satopharma.com"), true,
+  );
+  assert.equal(
+    dialogNamesAddress("One-time password for adel.sayed@satopharma.com", "el.sayed@satopharma.com"), false,
+    "a dialog naming adel.sayed must NOT confirm a reset of el.sayed",
+  );
+  assert.equal(
+    dialogNamesAddress("Account: el.sayed", "el.sayed@satopharma.com"), true,
+    "the local part on its own still names the mailbox",
+  );
+  assert.equal(dialogNamesAddress("Account: adel.sayed", "el.sayed@satopharma.com"), false);
+  assert.equal(dialogNamesAddress("", "el.sayed@satopharma.com"), false);
+  assert.equal(dialogNamesAddress("anything", ""), false);
+}
+
+/** The row reader takes each address from its OWN cell, never from the row's concatenated text. */
+function runRowReaderCases(): void {
+  const makeRow = (cells: string[], all: string) => ({
+    querySelectorAll: () => cells.map((text) => ({ textContent: text })),
+    textContent: all,
+  }) as unknown as Element;
+
+  // The real shape: the display name runs straight into the address in the row's text, so reading
+  // from that text yields "Abd-Elnaimahmed.mohamed@satopharma.com" — an address belonging to nobody.
+  const rows = readMailboxRowCells([
+    makeRow(
+      ["Ahmed Mohamed Abd-Elnaim", "ahmed.mohamed@satopharma.com", "-", "Pending"],
+      "Ahmed Mohamed Abd-Elnaimahmed.mohamed@satopharma.com- Pending",
+    ),
+    makeRow(
+      ["Adel.Srour", "adel.srour@satopharma.com", "Add", "Active"],
+      "Adel.Srouradel.srour@satopharma.comAdd Active",
+    ),
+    makeRow(["no address here", "neither"], "no address here neither"),
+  ]);
+
+  assert.deepEqual(rows, [
+    { address: "ahmed.mohamed@satopharma.com", status: "pending" },
+    { address: "adel.srour@satopharma.com", status: "active" },
+  ], "one row per address cell, with its status, and rows carrying no address dropped");
 }
 
 export async function runNewHireMailboxRobotTests(): Promise<void> {
@@ -352,26 +490,14 @@ export async function runNewHireMailboxRobotTests(): Promise<void> {
   assert.equal(cssQueryFor(ECP_LOCATORS.deleteUser), "button");
   assert.equal(cssQueryFor(ECP_LOCATORS.searchBox), 'input[placeholder="Search users..."]');
 
-  // ── the same rule, for a driver that counts matches itself ───────────────────────────────────
-  // 🔴 The revocation driver drives puppeteer directly and counts with $$eval, so it uses this pure
-  // form. It is the gate that stops a reset landing on a WORKING employee when the search box did
-  // not narrow the list: the driver's own dialog check catches a wrong row only AFTER the reset has
-  // already happened, and detection is not prevention.
-  assert.equal(rowCountRefusal(1, "leaver@satopharma.com"), null, "exactly one row is safe to act on");
-  for (const count of [0, 2, 3, 288]) {
-    const refusal = rowCountRefusal(count, "leaver@satopharma.com");
-    assert.ok(refusal, `${count} rows must be refused`);
-    assert.match(refusal ?? "", /Nothing was clicked/);
-    assert.match(refusal ?? "", new RegExp(`showed ${count} matching rows`));
-  }
-  // An unreadable count is a refusal too — an unreadable list is not an empty one, and treating it
-  // as empty is how a robot proceeds against a page it never saw.
-  for (const unreadable of [-1, Number.NaN]) {
-    const refusal = rowCountRefusal(unreadable, "leaver@satopharma.com");
-    assert.match(refusal ?? "", /an unreadable number of/);
-  }
-  // The action is named, so a delete refusal cannot read as a reset refusal in a log.
-  assert.match(rowCountRefusal(2, "x@satopharma.com", "Delete") ?? "", /^Delete x@satopharma\.com/);
+  // ── the same rule, for a driver that reads the rows itself ───────────────────────────────────
+  // 🔴 The revocation driver drives puppeteer directly, so it uses this pure form. It is the gate
+  // that stops a reset landing on a WORKING employee when the search box did not narrow to the one
+  // mailbox: the driver's own dialog check catches a wrong row only AFTER the reset has happened,
+  // and detection is not prevention. It is an IDENTITY rule, because the console's search matches
+  // substrings and a count cannot see "one row, and it belongs to somebody else".
+  runRowIdentityCases();
+  runRowReaderCases();
 
   // findMatches filters rather than throwing, for checking a page is the expected one.
   assert.equal((await findMatches(pageOf([resetButton, { aria: "Edit", tag: "button" }]), ECP_LOCATORS.resetPassword)).length, 1);
