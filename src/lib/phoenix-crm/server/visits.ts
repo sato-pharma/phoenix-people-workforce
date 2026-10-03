@@ -62,7 +62,6 @@ import {
   pharmacyNameKey,
   splitNamedPharmacies,
   type ListedPharmacy,
-  type NamedPharmacyLink,
 } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { describeSamples, narrowSamplesToLine, parseSamplesGiven } from "@/lib/phoenix-crm/samples";
 import {
@@ -685,9 +684,12 @@ async function loadSeatPharmacies(seatId: string, isTest: boolean): Promise<stri
     seen.add(key);
     names.push(name);
   };
-  for (const row of (typed.data ?? []) as Row[]) {
-    if (names.length >= 50) break;
-    for (const name of splitNamedPharmacies(textOrNull(row.pharmacy_name))) offer(name);
+  // A box can name several pharmacies, so the 50 is checked per NAME, never per row.
+  rows: for (const row of (typed.data ?? []) as Row[]) {
+    for (const name of splitNamedPharmacies(textOrNull(row.pharmacy_name))) {
+      if (names.length >= 50) break rows;
+      offer(name);
+    }
   }
   for (const pharmacy of listed) {
     if (pharmacy.status !== "dropped") offer(pharmacy.name);
@@ -1136,10 +1138,6 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   // CAN NAME TWO PHARMACIES ("صيدليه التهامي، صيدليه الرحمه", owner 2026-10-03): each name is matched
   // on its own and sent in `linked_pharmacies`.
   const pharmacyLinks = linkNamedPharmacies(visit.pharmacyName, listedPharmacies);
-  // The one match a database still on 20261003175653 reads, and names with the WHOLE box. Only a box
-  // naming ONE pharmacy may send it: "new" for a two-name box would add a pharmacy called by both names.
-  const pharmacyLink: NamedPharmacyLink =
-    pharmacyLinks.length === 1 && splitNamedPharmacies(visit.pharmacyName).length === 1 ? pharmacyLinks[0]!.link : { kind: "none" };
   throwIfError(placesResult.error);
   const places = ((placesResult.data ?? []) as Row[]).map((row) => ({ id: String(row.id), lat: Number(row.lat), lon: Number(row.lon) }));
   const settings = viewer.config.settings;
@@ -1176,8 +1174,6 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
         id: link.kind === "existing" ? link.customerId : null,
         new: link.kind === "new",
       })),
-      linked_pharmacy_id: pharmacyLink.kind === "existing" ? pharmacyLink.customerId : null,
-      linked_pharmacy_new: pharmacyLink.kind === "new",
       product_availability: productAvailability,
       comment: visit.comment,
       photo_path: visit.photoPath,
@@ -1343,8 +1339,8 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
  */
 function savedPharmacyNote(result: Row): string | null {
   if (isPharmacyListType(result.list_type)) return PHARMACY_CALL_REP_NOTE;
-  // Every pharmacy the box named; a database still on 20261003175653 answers only `linked_pharmacy`.
-  const answered: unknown[] = Array.isArray(result.linked_pharmacies) ? result.linked_pharmacies : [result.linked_pharmacy];
+  // Every pharmacy the box named that got a visit.
+  const answered: unknown[] = Array.isArray(result.linked_pharmacies) ? result.linked_pharmacies : [];
   const filed = answered
     .filter((linked): linked is Row => Boolean(linked) && typeof linked === "object" && textOrNull((linked as Row).visit_id) !== null)
     .map((linked) => ({ name: textOrNull(linked.name) ?? "The pharmacy", created: linked.created === true }));

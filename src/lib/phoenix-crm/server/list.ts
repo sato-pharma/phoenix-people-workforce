@@ -98,6 +98,7 @@ import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-loc
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
 import {
   addedPharmacyNameProblem,
+  collapsePharmacyName,
   doctorListType,
   isPharmacyListType,
   matchAddedPharmacy,
@@ -572,7 +573,7 @@ export async function loadMonthVisitCounts(seatId: string, isTest: boolean, mont
 
 /** The key a free-typed pharmacy name is grouped by — the same normalization the visit form suggests with. */
 export function normalizePharmacyName(name: string): string {
-  return name.trim().replace(/\s+/g, " ").toLowerCase();
+  return collapsePharmacyName(name).toLowerCase();
 }
 
 /**
@@ -1590,7 +1591,7 @@ export async function addPharmacy(
   const lineCode = lineCodeOf(seat);
   const problem = addedPharmacyNameProblem(typeof body.name === "string" ? body.name : null);
   if (problem) throw validationError(problem);
-  const name = String(body.name).trim().replace(/\s+/g, " ");
+  const name = collapsePharmacyName(String(body.name));
   const match = matchAddedPharmacy(name, await loadListedPharmacies(seat.seatId, isTest));
   if (match.kind === "existing") return { customerId: match.customerId, customerName: match.name, created: false };
   if (match.kind === "archived") {

@@ -248,15 +248,29 @@ export type NamedPharmacyLink = { kind: "existing"; customerId: string } | { kin
 /** Below this many letters a name is too short to be found INSIDE another one ("ال" is in everything). */
 export const PHARMACY_NAME_KEY_MIN_FOR_PARTIAL = 4;
 
+/** His list with each pharmacy's key beside it; a name with no key cannot match anything. */
+function keyedPharmacies(listed: readonly ListedPharmacy[]): Array<ListedPharmacy & { key: string }> {
+  return listed.map((pharmacy) => ({ ...pharmacy, key: pharmacyNameKey(pharmacy.name) })).filter((pharmacy) => pharmacy.key);
+}
+
+const byCustomerId = (left: ListedPharmacy, right: ListedPharmacy) => left.customerId.localeCompare(right.customerId);
+
+/**
+ * Which of several list rows with one name is THE pharmacy: two rows with one name are one pharmacy
+ * imported twice, so the one he still has wins, active first, and the order is fixed so the same name
+ * always lands on the same row. The doctor's box and Add a pharmacy both choose through this.
+ */
+function chooseListedPharmacy<T extends ListedPharmacy>(found: readonly T[]): T | undefined {
+  const live = found.filter((pharmacy) => pharmacy.status !== "dropped").sort(byCustomerId);
+  return live.find((pharmacy) => pharmacy.status === "active") ?? live[0];
+}
+
 export function linkNamedPharmacy(typed: string | null | undefined, listed: readonly ListedPharmacy[]): NamedPharmacyLink {
   const key = pharmacyNameKey(typed ?? "");
   if (!key) return { kind: "none" };
-  const keyed = listed.map((pharmacy) => ({ ...pharmacy, key: pharmacyNameKey(pharmacy.name) })).filter((pharmacy) => pharmacy.key);
-  const pick = (found: ReadonlyArray<(typeof keyed)[number]>): NamedPharmacyLink => {
-    // Two list rows with one name are one pharmacy imported twice: the one he still has wins, and the
-    // order is fixed, so the same name always lands on the same row.
-    const live = found.filter((pharmacy) => pharmacy.status !== "dropped").sort((left, right) => left.customerId.localeCompare(right.customerId));
-    const chosen = live.find((pharmacy) => pharmacy.status === "active") ?? live[0];
+  const keyed = keyedPharmacies(listed);
+  const pick = (found: readonly ListedPharmacy[]): NamedPharmacyLink => {
+    const chosen = chooseListedPharmacy(found);
     return chosen ? { kind: "existing", customerId: chosen.customerId } : { kind: "none" };
   };
 
@@ -277,18 +291,21 @@ export function linkNamedPharmacy(typed: string | null | undefined, listed: read
 export const MAX_NAMED_PHARMACIES = 5;
 
 /**
- * What separates two pharmacies in the box: the Arabic and Latin comma and semicolon, a new line, "+"
- * and "&", and a "و" ("and") standing before the word pharmacy — "صيدلية التهامي وصيدلية الرحمه".
- * 🔴 NEVER "/" — the reps' "ص/ناصر" IS the word pharmacy — and never "-", which names a branch
- * ("صيدلية العطار - الفرع التاني").
+ * What separates two pharmacies in the box: the Arabic and Latin comma and semicolon, a new line, and
+ * a "و" ("and") standing between TWO mentions of the word pharmacy — "صيدلية التهامي وصيدلية الرحمه".
+ * 🔴 NEVER "/" — the reps' "ص/ناصر" IS the word pharmacy — never "-", which names a branch
+ * ("صيدلية العطار - الفرع التاني"), and never "+" or "&", which sit inside one pharmacy's own name. A "و"
+ * with no pharmacy word before it is part of the name: "مخزن وصيدلية الشفاء" is one place, never a
+ * pharmacy called "مخزن" added to his list.
  */
-const NAMED_PHARMACY_SEPARATOR = /[،,؛;\r\n+&]+|\s+و\s*(?=صيدلي|ص[./\s])/u;
+const NAMED_PHARMACY_SEPARATOR = /[،,؛;\r\n]+|(?<=(?:صيدلي|(?:^|\s)ص[./\s])[^،,؛;\r\n]*?)\s+و\s*(?=صيدلي|ص[./\s])/u;
 
 /**
  * Each pharmacy the box names (rule 3c), in the order he typed them. All three two-name boxes measured
  * on 2026-10-03 used the Arabic comma: "صيدليه التهامي، صيدليه الرحمه", "صيدليه الوكيل ،صيدليه
  * الكوانيني", "كوانيني ،الوكيل". A part that is only the word pharmacy names none, and a second spelling
- * of a pharmacy already named is the same pharmacy. Five at most.
+ * of a pharmacy already named is the same pharmacy. Every name is returned — the day counts each one;
+ * only the filing stops at {@link MAX_NAMED_PHARMACIES}, after the names that match nothing are left out.
  */
 export function splitNamedPharmacies(text: string | null | undefined): string[] {
   const names: string[] = [];
@@ -299,7 +316,6 @@ export function splitNamedPharmacies(text: string | null | undefined): string[] 
     if (!key || PHARMACY_WORDS.has(key) || seen.has(key)) continue;
     seen.add(key);
     names.push(name);
-    if (names.length === MAX_NAMED_PHARMACIES) break;
   }
   return names;
 }
@@ -323,11 +339,14 @@ export type NamedPharmacyMatch = { name: string; link: NamedPharmacyLink };
 /**
  * Every pharmacy the box names, matched on its own by {@link linkNamedPharmacy}. A name that matches
  * nothing he may visit is left out, and two names that land on ONE pharmacy on his list file it once.
+ * The first {@link MAX_NAMED_PHARMACIES} that DO match are filed — counted after the left-out ones, so a
+ * name that matches nothing never takes a later name's place.
  */
 export function linkNamedPharmacies(text: string | null | undefined, listed: readonly ListedPharmacy[]): NamedPharmacyMatch[] {
   const matches: NamedPharmacyMatch[] = [];
   const linked = new Set<string>();
   for (const name of splitNamedPharmacies(text)) {
+    if (matches.length === MAX_NAMED_PHARMACIES) break;
     const link = linkNamedPharmacy(name, listed);
     if (link.kind === "none") continue;
     if (link.kind === "existing") {
@@ -371,9 +390,18 @@ export function linkedPharmaciesNote(filed: ReadonlyArray<{ name: string; create
  */
 export const ADDED_PHARMACY_NAME_MAX = 120;
 
+/**
+ * A typed pharmacy name with its spacing tidied: trimmed, every run of spaces one space. The ONE copy
+ * the length check, the stored name and the List's grouping key (`normalizePharmacyName`) all read —
+ * `phoenix_crm_add_pharmacy` repeats it in SQL, so a name this passes the database takes.
+ */
+export function collapsePharmacyName(name: string | null | undefined): string {
+  return String(name ?? "").trim().replace(/\s+/g, " ");
+}
+
 /** Why a name typed on Add a pharmacy cannot be saved, or null when it can (rule 3d). */
 export function addedPharmacyNameProblem(name: string | null | undefined): string | null {
-  const text = String(name ?? "").trim().replace(/\s+/g, " ");
+  const text = collapsePharmacyName(name);
   if (!text) return "Write the pharmacy's name.";
   if (text.length > ADDED_PHARMACY_NAME_MAX) return `Keep the name to ${ADDED_PHARMACY_NAME_MAX} characters.`;
   const key = pharmacyNameKey(text);
@@ -402,12 +430,11 @@ export type AddedPharmacyMatch =
 export function matchAddedPharmacy(typed: string | null | undefined, listed: readonly ListedPharmacy[]): AddedPharmacyMatch {
   const key = pharmacyNameKey(typed ?? "");
   if (!key) return { kind: "new" };
-  // The order is fixed, so the same name always lands on the same row — as `linkNamedPharmacy` does.
-  const same = listed.filter((pharmacy) => pharmacyNameKey(pharmacy.name) === key).sort((left, right) => left.customerId.localeCompare(right.customerId));
-  const live = same.filter((pharmacy) => pharmacy.status !== "dropped");
-  const chosen = live.find((pharmacy) => pharmacy.status === "active") ?? live[0];
+  // The same row `linkNamedPharmacy` would choose, so a pharmacy is opened where its visits are filed.
+  const same = keyedPharmacies(listed).filter((pharmacy) => pharmacy.key === key);
+  const chosen = chooseListedPharmacy(same);
   if (chosen) return { kind: "existing", customerId: chosen.customerId, name: chosen.name };
-  const archived = same[0];
+  const archived = [...same].sort(byCustomerId)[0];
   return archived ? { kind: "archived", customerId: archived.customerId, name: archived.name } : { kind: "new" };
 }
 
