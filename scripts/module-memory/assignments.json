@@ -55,6 +55,7 @@
   "a-reused-branch-name-finds-the-old-merged-pr": "git-worktrees",
   "a-role-probe-cannot-trust-the-http-status-code": "engineering",
   "a-rollup-ships-a-members-stale-head-not-its-latest": "engineering",
+  "a-router-refresh-after-a-one-shot-action-erases-its-only-account": "notifications",
   "a-saved-plan-file-is-a-snapshot-not-a-backlog": "sessions",
   "a-server-component-cannot-pass-a-function-to-a-client-one": "platform",
   "a-source-assertion-is-satisfied-by-the-comment-explaining-the-call": "notifications",
