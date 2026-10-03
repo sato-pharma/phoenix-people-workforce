@@ -77,3 +77,25 @@ export function minuteClock(minute: number): string {
   const minutes = minute % 60;
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
+
+/** What the managers' own screens call it (owner, 2026-10-03: "show the day start time on the team day screen"). */
+export const DAY_START_READ_LABEL = "Started working";
+
+/**
+ * The line a MANAGER reads — on the day in full, and on the Team tab: when the rep said he started,
+ * beside what his own sent plan had said about the morning.
+ *
+ * 🔴 THERE IS NO SENTENCE FOR A DAY WITH NO START, and that is the rule rather than an omission. The
+ * press never blocks a visit and was never required (`day-start-rules` above), so "not confirmed"
+ * would read as an accusation on every day a rep simply logged his first visit first — and on every
+ * day that passed before this feature existed. A day with no start shows no line at all, which is
+ * exactly what the feature's own rule says his manager sees.
+ *
+ * The clock is passed in rather than formatted here: the SERVER owns the timezone, the same shape
+ * `teamTodayLine` already uses for the last visit.
+ */
+export function dayStartReadLine(dayStart: DayStartView, clock: string): string {
+  return dayStart.plannedAmMinute === null
+    ? `${clock} · he had no sent plan for this day`
+    : `${clock} · his plan said ${minuteClock(dayStart.plannedAmMinute)}`;
+}

@@ -15,6 +15,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { awaitingValidationNote } from "@/lib/crm/call-rate";
+import { DAY_START_READ_LABEL, dayStartReadLine } from "@/lib/phoenix-crm/day-start-rules";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 // Through `view-types`, never `server/day-detail`: a component may not import server code, and an
@@ -45,7 +46,7 @@ function timeOf(visit: { capturedAt: string }): string {
 }
 
 export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
-  const { awaitingApproval, awaitingValidation, counts, dayActivity, onLeave, pharmacies, territory, visits } = view;
+  const { awaitingApproval, awaitingValidation, counts, dayActivity, dayStart, onLeave, pharmacies, territory, visits } = view;
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -66,6 +67,17 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
             <CrmStat label="Pharmacies" note="Counted apart, never inside AM or PM" value={counts.pharmacies} />
             <CrmStat label="Territory" value={territory.name} />
           </CrmStatGrid>
+          {/* 🔴 WHEN HE SAID HE STARTED — and nothing at all when he did not press it (owner,
+              2026-10-03: "show the day start time on the manager's team day screen too"). The press
+              never blocks a visit and was never required, so a missing one is a missing line rather
+              than "not confirmed" written against him; `dayStartReadLine` holds that rule, and every
+              day before the feature existed has none. */}
+          {dayStart ? (
+            <p className="mt-2 break-words text-sm font-semibold leading-6 text-slate-700">
+              <span className="font-black text-slate-900">{DAY_START_READ_LABEL}: </span>
+              {dayStartReadLine(dayStart, cairoClock(dayStart.startedAt))}
+            </p>
+          ) : null}
           {/* 🔴 Saved, real, and in no figure yet — so a 0 above a list of visits says WHY. The same
               sentence both call-rate boards and the calendar print, and the two reasons stay apart. */}
           {awaitingValidationNote({ awaitingValidation }) ? (
