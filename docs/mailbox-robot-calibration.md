@@ -179,3 +179,37 @@ Two instrumentation bugs in one session, both of which produced confident wrong 
 A real function has neither layer. `readMailboxRowCells`, `readHitTest`, `clickNode` and `clearField`
 are therefore real exported functions, unit-tested against fake elements, and passed to
 `$$eval`/`evaluate` directly.
+
+## The address is typed, never derived
+
+Owner's instruction, 2026-10-03: *"I will enter the email of the hired in the employee master in his
+record, you take what I enter and make his email with it"*, and then *"make the @satopharma.com in the
+emp master data entry greyed out by default and I only enter ex elsayed.ramdan"*.
+
+What it replaced: `src/lib/new-hire-mailbox/address.ts` generated the address from the name —
+`first.second`, then `first.third`, then `first.last`, nickname before full name, measured against the
+house shape (of 173 company mailboxes on 2026-09-18, 107 were `first.second`). It was a reasonable
+shape and it is the wrong mechanism, because the robot creates what it is handed on a **live mail
+domain**:
+
+- `"El Sayed Rady"` → `el.sayed@satopharma.com`. His first name is **Elsayed**, one word. The
+  generator split it and the register carried the wrong address from the moment the hire was saved.
+- The robot then created that mailbox for real, and the only way back was a deletion in the console.
+- The register row said `source: manual_add`, which reads as "a human typed this". Nobody had.
+
+What it is now, in three places that have to agree:
+
+| Place | Behaviour |
+| --- | --- |
+| Employee Master form | the local part is typed against a fixed, greyed `@satopharma.com`; a pasted full address has its domain dropped rather than doubled |
+| `openNewHireMailboxTasks` | stores the typed company address, or **null** — `isCompanyAddress(typed) && !taken.has(typed) ? typed : null` |
+| `loadJoinerCandidates` | a task with no address is **skipped**, so the robot waits one sweep instead of inventing one |
+
+`mailboxAddressCandidates` and `proposeMailboxAddress` are deleted, not deprecated, and
+`tests/new-hire-mailbox.test.ts` asserts both names are absent from the module — a generator
+reintroduced "as a suggestion the person can edit" is exactly the shape the old one had.
+
+🔴 **The guard assertion is scoped to the candidate loop on purpose.** An unrelated
+`if (!address) continue;` already guards the holder map higher in `sweep-deps.ts`, so an unscoped
+source match passed with the real guard deleted. Break-and-watch caught it; that is the only reason
+the assertion slices the loop out by hand.

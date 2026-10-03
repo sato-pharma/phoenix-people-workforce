@@ -81,6 +81,14 @@ export async function loadJoinerCandidates(): Promise<JoinerCandidate[]> {
     // next run, by which time the login exists.
     if (!task.hasLogin) continue;
 
+    // 🔴 NO ADDRESS, NO CANDIDATE (owner, 2026-10-03). The address the robot creates in Turbify is
+    // the one typed into the Employee Master, verbatim — nothing derives it any more, because a
+    // derivation created a mailbox at `el.sayed@satopharma.com` for a hire whose first name is
+    // "Elsayed", one word. A task opened before that field was filled therefore has no address, and
+    // the right behaviour is to WAIT: it costs one more sweep, where inventing one costs a real
+    // mailbox at the wrong address on the live domain and a deletion to undo it.
+    if (!address) continue;
+
     // Held by another EMPLOYEE, or claimed by another open TASK. `key` excludes this person.
     const holder = address ? holderByAddress.get(address) : undefined;
     const otherTask = address

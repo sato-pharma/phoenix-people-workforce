@@ -28,54 +28,50 @@ export async function runNewHireMailboxTests() {
   const address = await import("../src/lib/new-hire-mailbox/address.ts");
   const messages = await import("../src/lib/new-hire-mailbox/messages.ts");
 
-  // 1. THE ADDRESS HR TYPED ALWAYS WINS — every hire added in September arrived with one, and some
-  //    are spelt the company's way rather than the obvious one.
-  assert.deepEqual(
-    address.mailboxAddressCandidates({ fullName: "Mohamed Alaa Eleiwa", workEmail: " Mohamad.Hamed@SatoPharma.com " }),
-    ["mohamad.hamed@satopharma.com"],
-    "a typed company address must be the only candidate, lower-cased",
-  );
+  // 1. 🔴 NOTHING DERIVES AN ADDRESS FROM A NAME ANY MORE (owner, 2026-10-03). The robot creates
+  //    what it is given on a LIVE mail domain, and the generator that used to fill this in turned
+  //    "El Sayed Rady" into `el.sayed@satopharma.com` — his first name is "Elsayed", one word — so a
+  //    real mailbox existed at the wrong address before anyone read the register.
   assert.equal(
-    address.proposeMailboxAddress(
-      { fullName: "Mohamed Alaa Eleiwa", workEmail: "mohamad.hamed@satopharma.com" },
-      new Set(["mohamad.hamed@satopharma.com"]),
-    ),
-    "mohamad.hamed@satopharma.com",
-    "the hire's own typed address shows up in the taken set BECAUSE it is theirs — it must still be proposed",
+    "mailboxAddressCandidates" in address, false,
+    "the name-to-address generator must not come back, not even as a suggestion",
   );
-  assert.deepEqual(
-    address.mailboxAddressCandidates({ fullName: "Mona Ali", workEmail: "mona.ali@gmail.com" }),
-    ["mona.ali@satopharma.com"],
-    "a personal address on the record is not a company mailbox and must not be proposed as one",
-  );
+  assert.equal("proposeMailboxAddress" in address, false, "nor the function that picked one of its guesses");
 
-  // 2. THE HOUSE SHAPE for a hire saved without one: first.second, then first.third, then first.last,
-  //    nickname before full name, Latin letters only.
-  assert.deepEqual(
-    address.mailboxAddressCandidates({ fullName: "Mohamed Alaa El-Said Eleiwa", nickname: "Mohamed Eleiwa" }),
-    [
-      "mohamed.eleiwa@satopharma.com",
-      "mohamed.alaa@satopharma.com",
-      "mohamed.elsaid@satopharma.com",
-    ],
-  );
-  assert.equal(
-    address.proposeMailboxAddress(
-      { fullName: "Mohamed Alaa El-Said Eleiwa", nickname: "Mohamed Eleiwa" },
-      new Set(["mohamed.eleiwa@satopharma.com"]),
-    ),
-    "mohamed.alaa@satopharma.com",
-    "a taken address must fall through to the next candidate — two hires are never handed one mailbox",
-  );
-  assert.deepEqual(address.latinNameParts("محمد علي"), [], "Arabic script yields no Latin part");
-  assert.equal(
-    address.proposeMailboxAddress({ fullName: "محمد علي" }, new Set()),
-    null,
-    "a name with no Latin letters proposes nothing (the person types one) rather than an invented address",
-  );
+  //    What survives is the VALIDATOR, which answers "is this on the company domain?" and nothing
+  //    about what the address should be.
   assert.equal(address.isCompanyAddress("a.b@satopharma.com"), true);
   assert.equal(address.isCompanyAddress("a.b@satopharma.com.eg"), false);
   assert.equal(address.isCompanyAddress("a b@satopharma.com"), false);
+  assert.equal(address.isCompanyAddress("mona.ali@gmail.com"), false, "a personal address is not a company mailbox");
+  assert.equal(address.isCompanyAddress(null), false);
+  assert.equal(address.COMPANY_MAIL_DOMAIN, "satopharma.com");
+
+  // 2. 🔴 AND THE TWO PLACES THAT USED IT NOW TAKE THE TYPED VALUE OR WAIT. Source-pinned, because
+  //    the whole defect was an address appearing that no human typed.
+  const openSource = readFileSync(
+    new URL("src/lib/new-hire-mailbox/service.ts", new URL("../", import.meta.url)),
+    "utf8",
+  ).replace(/\s+/g, " ");
+  assert.match(
+    openSource, /const proposed = isCompanyAddress\(typed\) && !taken\.has\(typed\) \? typed : null;/,
+    "the register must store the typed company address or nothing",
+  );
+  const sweepSource = readFileSync(
+    new URL("src/lib/new-hire-mailbox/robot/sweep-deps.ts", new URL("../", import.meta.url)),
+    "utf8",
+  );
+  // 🔴 SCOPED TO THE CANDIDATE LOOP. An unrelated `if (!address) continue;` already guards the holder
+  // map higher up the same file, so an unscoped match passes with THIS guard deleted — proven by
+  // break-and-watch, which is the only reason this is written the long way.
+  const loopStart = sweepSource.indexOf("const candidates: JoinerCandidate[] = []");
+  const loopEnd = sweepSource.indexOf("return candidates", loopStart);
+  assert.ok(loopStart > 0 && loopEnd > loopStart, "could not locate the candidate loop");
+  const candidateLoop = sweepSource.slice(loopStart, loopEnd).replace(/\s+/g, " ");
+  assert.match(
+    candidateLoop, /if \(!address\) continue;/,
+    "a task with no typed address must be skipped in the candidate loop, never invented",
+  );
 
   // 3. WHAT THE NOTICE SAYS. Names, not codes: no HR id and no mobile number in the detail rows; a
   //    hiring date stays on its own calendar day.
