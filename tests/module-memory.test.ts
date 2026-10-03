@@ -97,6 +97,20 @@ export function runModuleMemoryTests() {
   // 5. The fold files a note by its own words when its session left no record.
   const filed = classify("a-held-payroll-row-test", "---\nname: x\n---\nThe salary batch drops a held payroll row at publish.", lib);
   assert.equal(filed.module, "payroll");
+  assert.equal(filed.how, "its own words", "a clear winner must still report as a clear winner, not as a tie");
+
+  // 5a. 🔴 A TIE IS NOT A MATCH, and it must not be reported as a confident one. Measured
+  // 2026-10-03: `a-not-loaded-assertion-is-satisfied-by-a-refusal` scored 2 across five modules and
+  // was filed under `crm` — the one module its session had touched — as a "best match". It is a note
+  // about module memory. A shared top score now prefers the fallback when it is among the tied, and
+  // the `how` says it was a guess either way, so the fold's own PR shows which rows to check.
+  const tie = classify(
+    "a-tie-must-not-read-as-a-match",
+    "---\nname: x\n---\nOne mentions payroll and the other mentions source of sales, nothing else.",
+    lib,
+  );
+  assert.match(tie.how, /^tied at \d+ with .+ — a guess, move it if wrong$/, `a tie must say so: ${tie.how}`);
+  assert.ok(!/best match|its own words|the only module/.test(tie.how), "a tie must not borrow a confident wording");
 
   // 5b. Settling the index removes ONLY pointers whose notes all load with a module on main: the
   // owner's RULE #1 block stays whole, global notes stay, the inbox heading stays, and an emptied
