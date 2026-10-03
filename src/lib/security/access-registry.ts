@@ -1516,6 +1516,10 @@ export const accessRegistry = [
   // nobody could repair. The audit row is required and names who initiated it; a live run is also
   // rate-capped, because a retry loop here locks out one employee after another.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/new-hire-mailboxes/adopt", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // The invite inbox: the one mailbox Phoenix READS rather than hands to a person. Same audience
+  // as adoption and for the same reason — it resets that mailbox's password — and the address is
+  // never taken from the request, only compared against TURBIFY_INVITE_RECIPIENT.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/new-hire-mailboxes/invite-inbox", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Company device register. The GET returns, per employee, the serial or IMEI of the machine he
   // carries and what the company values it at — a shopping list if it were readable company-wide,
   // which is why `company_devices` is its own resource rather than a corner of `sales` or `team`.

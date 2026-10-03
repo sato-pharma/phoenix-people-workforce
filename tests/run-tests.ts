@@ -918,6 +918,7 @@ import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runMailboxOffboardingRobotTests } from "./mailbox-offboarding-robot.test.ts";
 import { runNewHireMailboxRobotTests } from "./new-hire-mailbox-robot.test.ts";
 import { runNewHireMailboxInvitationTests } from "./new-hire-mailbox-invitation.test.ts";
+import { runNewHireMailboxInviteInboxTests } from "./new-hire-mailbox-invite-inbox.test.ts";
 import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
 import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts";
 import { runNewHireMailboxAdoptTests } from "./new-hire-mailbox-adopt.test.ts";
@@ -4049,6 +4050,14 @@ await runTest(
   + "adel.sayed@ contains el.sayed@; a changed label REFUSES rather than guessing; an unreadable "
   + "inbox is never read as an empty one; and no refusal may ever quote the credential)",
   runNewHireMailboxInvitationTests,
+);
+await runTest(
+  "invite inbox adoption (it runs a password RESET, so it is bound to the ONE mailbox Phoenix owns "
+  + "and refuses every other address before the driver is even signed in — an employee's mailbox "
+  + "would lock them out with nobody told; a missing company password is refused BEFORE the reset; "
+  + "the app password is minted only inside the window the reset opens; the monitor's own IMAP test "
+  + "is what counts as adopted; nothing scheduled may call it; and no outcome carries a credential)",
+  runNewHireMailboxInviteInboxTests,
 );
 await runTest(
   "new hire mailbox initial password store (the one recoverable password in the system — so NO role "
