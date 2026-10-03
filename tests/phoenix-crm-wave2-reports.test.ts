@@ -354,8 +354,11 @@ export function runPhoenixCrmWave2ReportTests(): void {
     assert.match(tab, /offer\("frequency"\)/, "the section is offered");
     assert.match(
       stripComments(readFileSync("src/lib/phoenix-crm/report-guide.ts", "utf8")),
-      /frequency: "Frequency per customer"/,
-      "and it is named",
+      // A NAME, never THAT name: the subject here is that the name lives in the guide and not in the
+      // tab, and a rename of a report is ONE edit, in the guide (tests/phoenix-crm-reports-export.test.ts
+      // section 9). Pinning the wording here would make it two.
+      /frequency: "[^"]+"/,
+      "and it is named there, not in the tab",
     );
     // Membership, not the exact list: the point is that this section asks for a MONTH like
     // coverage does, and a later month-shaped report joining the constant is not a regression.

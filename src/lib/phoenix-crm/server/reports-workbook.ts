@@ -13,6 +13,14 @@
  * payroll exports and the offer letter, and neither is this — do not "bring it into line" with the
  * Phoenix black-and-orange the screen uses.
  *
+ * ## 🔴 A report is NAMED once, in `report-guide.ts`
+ *
+ * `SECTION_TITLES` is read for all three places a report's name appears here — the worksheet tab,
+ * the heading inside the sheet, and `packSections`, which is what the COVER promises. Spelling one
+ * out by hand is how a rename reaches the screen and not the download, and how a cover comes to
+ * promise a tab the workbook does not contain; `exceptions` had already drifted that way. The one
+ * deliberate exception is the visits sheet's heading, marked where it sits.
+ *
  * ## 🔴 ONE workbook, and the viewer's scope decides which SHEETS exist
  *
  * A `null` section writes NO SHEET. That is the whole access design of this file: a medical rep
@@ -57,6 +65,7 @@ import {
 import { brickStatusLabel } from "@/lib/phoenix-crm/brick-report";
 import { HEARD_BASIS_TEXT, heardTallyText, type HeardRow } from "@/lib/phoenix-crm/field-heard";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
+import { SECTION_TITLES } from "@/lib/phoenix-crm/report-guide";
 import { PHOENIX_CRM_WEEKDAY_NAMES } from "@/lib/phoenix-crm/timings";
 import type { AdoptionView } from "@/lib/phoenix-crm/server/adoption";
 import type { BrickCoverageView } from "@/lib/phoenix-crm/server/brick-report";
@@ -132,7 +141,7 @@ function percentColumn(label: string, width = 11): TableColumn {
 // ── The sheets ──────────────────────────────────────────────────────────────────────────────────
 
 function writeVisits(workbook: ExcelJS.Workbook, view: VisitsReportView): void {
-  const sheet = workbook.addWorksheet("Visits per day");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.visits);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(sheet, 1, {
     // AM and PM are eight columns, never four: a combined column is the thing the call-rate golden
@@ -170,6 +179,11 @@ function writeVisits(workbook: ExcelJS.Workbook, view: VisitsReportView): void {
       row.pm.chainVisits,
       row.pm.unplannedWaiting,
     ]),
+    // 🔴 THE ONE HEADING THAT IS NOT `SECTION_TITLES`, AND MUST NOT BECOME IT. The report is called
+    // "Visits per day" because that is what a reader chooses it for; the SHEET is a row per REP over
+    // the days chosen, so "per rep" is what its heading says. Both are right, and pointing this at
+    // the title would relabel the rows. `tests/phoenix-crm-reports-export.test.ts` allows exactly
+    // this one and refuses any other raw name.
     title: `Visits per rep · ${view.period.from} to ${view.period.to}`,
     totals: [
       "All",
@@ -189,7 +203,7 @@ function writeVisits(workbook: ExcelJS.Workbook, view: VisitsReportView): void {
 }
 
 function writePlan(workbook: ExcelJS.Workbook, view: PlanReportView): void {
-  const sheet = workbook.addWorksheet("Plan against actual");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.plan);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(sheet, 1, {
     columns: [
@@ -236,7 +250,7 @@ function writePlan(workbook: ExcelJS.Workbook, view: PlanReportView): void {
       pct(row.pm.keptPct),
       row.pm.unplanned,
     ]),
-    title: `Plan against actual · ${view.period.from} to ${view.period.to}`,
+    title: `${SECTION_TITLES.plan} · ${view.period.from} to ${view.period.to}`,
     totals: [
       "All",
       "",
@@ -265,7 +279,7 @@ function writePlan(workbook: ExcelJS.Workbook, view: PlanReportView): void {
 function writeDailyPlan(workbook: ExcelJS.Workbook, view: DailyPlanReportView): void {
   const territory = view.territory;
   if (!territory) return;
-  const sheet = workbook.addWorksheet("Daily plan");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.daily);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   const rows: CellValue[][] = [];
   for (const day of view.days) {
@@ -347,12 +361,12 @@ function writeDailyPlan(workbook: ExcelJS.Workbook, view: DailyPlanReportView): 
       .filter((part): part is string => part !== null)
       .join(" "),
     rows,
-    title: `Daily plan · ${territory.name} · ${territory.repName ?? "No rep"} · ${view.period.from} to ${view.period.to}`,
+    title: `${SECTION_TITLES.daily} · ${territory.name} · ${territory.repName ?? "No rep"} · ${view.period.from} to ${view.period.to}`,
   });
 }
 
 function writeCoverage(workbook: ExcelJS.Workbook, view: CoverageReportView): void {
-  const sheet = workbook.addWorksheet("Coverage and frequency");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.coverage);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(sheet, 1, {
     columns: [
@@ -380,7 +394,7 @@ function writeCoverage(workbook: ExcelJS.Workbook, view: CoverageReportView): vo
       pct(row.pm.coveragePct),
       pct(row.pm.frequencyPct),
     ]),
-    title: `Coverage and frequency · ${view.month.month}`,
+    title: `${SECTION_TITLES.coverage} · ${view.month.month}`,
     totals: [
       "All",
       "",
@@ -404,7 +418,7 @@ function writeCoverage(workbook: ExcelJS.Workbook, view: CoverageReportView): vo
  * that outlives the screen and gets forwarded.
  */
 function writeFrequency(workbook: ExcelJS.Workbook, view: CustomerFrequencyReportView): void {
-  const sheet = workbook.addWorksheet("Frequency per customer");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.frequency);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(sheet, 1, {
     columns: [
@@ -438,7 +452,7 @@ function writeFrequency(workbook: ExcelJS.Workbook, view: CustomerFrequencyRepor
       row.plannedOnLeave,
       row.againstPlan,
     ]),
-    title: `Frequency per customer · ${view.seat?.territoryName ?? "one territory"} · ${view.month.month}`,
+    title: `${SECTION_TITLES.frequency} · ${view.seat?.territoryName ?? "one territory"} · ${view.month.month}`,
     totals: ["All", "", "", "", "", `${view.totals.under} under · ${view.totals.onTarget} on · ${view.totals.over} over`, "", "", ""],
   });
 }
@@ -452,7 +466,7 @@ function writeFrequency(workbook: ExcelJS.Workbook, view: CustomerFrequencyRepor
  * is not being shown it, which is the disclosure Golden rule #1 forbids.
  */
 function writeTracking(workbook: ExcelJS.Workbook, view: TrackingSheetReportView): void {
-  const sheet = workbook.addWorksheet("Tracking sheet");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.tracking);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   const dayColumns = view.days.map((day) => column(String(Number(day.slice(8, 10))).padStart(2, "0"), { width: 4 }));
   writeHouseTable(sheet, 1, {
@@ -472,7 +486,7 @@ function writeTracking(workbook: ExcelJS.Workbook, view: TrackingSheetReportView
         ...(view.showsSpacing ? [row.spacing ?? ""] : []),
       ];
     }),
-    title: `Tracking sheet · ${view.seat?.territoryName ?? "one territory"} · ${view.month.month}`,
+    title: `${SECTION_TITLES.tracking} · ${view.seat?.territoryName ?? "one territory"} · ${view.month.month}`,
   });
 }
 
@@ -541,7 +555,7 @@ function writeCalendar(workbook: ExcelJS.Workbook, view: TeamCalendarView): void
 }
 
 function writeManagers(workbook: ExcelJS.Workbook, view: ManagerReportView): void {
-  const sheet = workbook.addWorksheet("Double and chain visits");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.managers);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(sheet, 1, {
     columns: [
@@ -569,12 +583,12 @@ function writeManagers(workbook: ExcelJS.Workbook, view: ManagerReportView): voi
       row.amVisits,
       row.pmVisits,
     ]),
-    title: `Double and chain visits per manager · ${view.period.from} to ${view.period.to}`,
+    title: `${SECTION_TITLES.managers} per manager · ${view.period.from} to ${view.period.to}`,
   });
 }
 
 function writeLocations(workbook: ExcelJS.Workbook, view: VisitLocationReportView): void {
-  const sheet = workbook.addWorksheet("Where the visit was saved");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.locations);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(sheet, 1, {
     columns: [
@@ -601,12 +615,12 @@ function writeLocations(workbook: ExcelJS.Workbook, view: VisitLocationReportVie
       row.distanceText,
       row.isUnplanned ? "Yes" : "",
     ]),
-    title: `Where the visit was saved · ${view.period.from} to ${view.period.to}`,
+    title: `${SECTION_TITLES.locations} · ${view.period.from} to ${view.period.to}`,
   });
 }
 
 function writeExceptions(workbook: ExcelJS.Workbook, view: ExceptionsView): void {
-  const sheet = workbook.addWorksheet("Needs you");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.exceptions);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(sheet, 1, {
     columns: [
@@ -643,12 +657,12 @@ function writeExceptions(workbook: ExcelJS.Workbook, view: ExceptionsView): void
       ...view.rows.map((row) => [row.territoryName, row.repName ?? "No rep", row.lineName ?? "—", row.label, row.detail ?? "—"]),
       ...view.onLeave.map((row) => [row.territoryName, row.repName ?? "No rep", row.lineName ?? "—", row.label, row.detail]),
     ],
-    title: "Needs you today",
+    title: SECTION_TITLES.exceptions,
   });
 }
 
 function writeBricks(workbook: ExcelJS.Workbook, view: BrickCoverageView): void {
-  const sheet = workbook.addWorksheet("Coverage against sales");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.bricks);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(sheet, 1, {
     columns: [
@@ -681,13 +695,13 @@ function writeBricks(workbook: ExcelJS.Workbook, view: BrickCoverageView): void 
       row.visits,
       row.sales,
     ]),
-    title: `Coverage against sales, per brick · ${view.period.from} to ${view.period.to}`,
+    title: `${SECTION_TITLES.bricks}, per brick · ${view.period.from} to ${view.period.to}`,
     totals: ["All bricks", "", "", "", "", "", "", "", "", view.summary.brickSales],
   });
 }
 
 function writeAdoption(workbook: ExcelJS.Workbook, view: AdoptionView): void {
-  const sheet = workbook.addWorksheet("Who has started");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.adoption);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(sheet, 1, {
     columns: [
@@ -713,7 +727,7 @@ function writeAdoption(workbook: ExcelJS.Workbook, view: AdoptionView): void {
       row.firstVisitOn ?? "None yet",
       row.overdue ? "Yes" : "",
     ]),
-    title: `Who has started · as at ${view.cairoToday}`,
+    title: `${SECTION_TITLES.adoption} · as at ${view.cairoToday}`,
   });
 }
 
@@ -751,7 +765,7 @@ function capacityColumns(listType: "AM" | "PM"): TableColumn[] {
  * customer not validated yet counts with the grade iReports360 carried over.
  */
 function writeCapacity(workbook: ExcelJS.Workbook, view: CapacityBoardView): void {
-  const sheet = workbook.addWorksheet("Grade against capacity");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.capacity);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   const { fieldDays, perDay, summary } = view;
   writeHouseTable(sheet, 1, {
@@ -782,7 +796,7 @@ function writeCapacity(workbook: ExcelJS.Workbook, view: CapacityBoardView): voi
       ...capacityCells(row.pm, "PM"),
       ...capacityCells(row.am, "AM"),
     ]),
-    title: `Grade against capacity · ${view.month.month}`,
+    title: `${SECTION_TITLES.capacity} · ${view.month.month}`,
   });
 }
 
@@ -821,7 +835,7 @@ function heardGrainTable(title: string, label: string, rows: ReadonlyArray<Heard
  * A product or marketing manager's sheet is his own products, company-wide, with no area.
  */
 function writeHeard(workbook: ExcelJS.Workbook, view: FieldHeardView): void {
-  const sheet = workbook.addWorksheet("What the field heard");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.heard);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   const period = `${view.period.from} to ${view.period.to}`;
   const own = view.products;
@@ -849,7 +863,7 @@ function writeHeard(workbook: ExcelJS.Workbook, view: FieldHeardView): void {
       .filter((part): part is string => part !== null)
       .join(" "),
     rows: view.byProduct.map((row) => [row.label, row.visits.am, row.visits.pm, row.objections.am, row.objections.pm, objectionsText(row)]),
-    title: `What the field heard, by product · ${period}`,
+    title: `${SECTION_TITLES.heard}, by product · ${period}`,
   });
   next = writeHouseTable(sheet, next + 1, heardGrainTable(`By speciality · ${period}`, "Speciality", view.bySpeciality));
   // The area grain is the team's only — a place, never the rep who works it — and a product or
@@ -890,7 +904,7 @@ function writeHeard(workbook: ExcelJS.Workbook, view: FieldHeardView): void {
  * counted as a pharmacy.
  */
 function writeStock(workbook: ExcelJS.Workbook, view: MissingStockView): void {
-  const sheet = workbook.addWorksheet("Missing stock");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.stock);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   const { summary } = view;
   const next = writeHouseTable(sheet, 1, {
@@ -917,7 +931,7 @@ function writeStock(workbook: ExcelJS.Workbook, view: MissingStockView): void {
         entry.chasePromised ? "Yes" : "",
       ]),
     ),
-    title: `Missing stock · ${view.period.from} to ${view.period.to}`,
+    title: `${SECTION_TITLES.stock} · ${view.period.from} to ${view.period.to}`,
   });
   if (view.chases.length > 0) {
     writeHouseTable(sheet, next + 1, {
@@ -948,7 +962,7 @@ function writeStock(workbook: ExcelJS.Workbook, view: MissingStockView): void {
  * ROW: units of different products are never added, so what is counted across items is VISITS.
  */
 function writeSamples(workbook: ExcelJS.Workbook, view: SamplesReportView): void {
-  const sheet = workbook.addWorksheet("Samples by month");
+  const sheet = workbook.addWorksheet(SECTION_TITLES.samples);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   const next = writeHouseTable(sheet, 1, {
     columns: [{ ...NAME, label: "Item" }, column("Kind", { width: 13 }), counted("AM left"), counted("PM left")],
@@ -957,7 +971,7 @@ function writeSamples(workbook: ExcelJS.Workbook, view: SamplesReportView): void
       + "so there is no total row. A record of what was handed over, as each visit saved it — never a stock: no balance, "
       + "nothing subtracted, and nothing set against what was issued.",
     rows: view.items.map((item) => [item.label, item.kind === "sample" ? "Free sample" : "Material", item.am, item.pm]),
-    title: `Samples by month · ${view.month.month}`,
+    title: `${SECTION_TITLES.samples} · ${view.month.month}`,
   });
   writeHouseTable(sheet, next + 1, {
     columns: [
@@ -981,7 +995,7 @@ function writeSamples(workbook: ExcelJS.Workbook, view: SamplesReportView): void
       row.visitsWithMaterials.pm,
       row.items.map((item) => `${item.label} — ${heardTallyText(item)}`).join(" · ") || "Nothing this month",
     ]),
-    title: `Samples by month, by territory · ${view.month.month}`,
+    title: `${SECTION_TITLES.samples}, by territory · ${view.month.month}`,
   });
 }
 
@@ -990,25 +1004,25 @@ function writeSamples(workbook: ExcelJS.Workbook, view: SamplesReportView): void
 /** The sheets this pack would hold, in order — used by the cover and by the test. */
 export function packSections(input: ReportsPackInput): string[] {
   return [
-    input.exceptions ? "Needs you" : null,
-    input.visits ? "Visits per day" : null,
-    input.plan ? "Plan against actual" : null,
-    input.dailyPlan?.territory ? "Daily plan" : null,
-    input.coverage ? "Coverage and frequency" : null,
-    input.frequency ? "Frequency per customer" : null,
-    input.tracking ? "Tracking sheet" : null,
+    input.exceptions ? SECTION_TITLES.exceptions : null,
+    input.visits ? SECTION_TITLES.visits : null,
+    input.plan ? SECTION_TITLES.plan : null,
+    input.dailyPlan?.territory ? SECTION_TITLES.daily : null,
+    input.coverage ? SECTION_TITLES.coverage : null,
+    input.frequency ? SECTION_TITLES.frequency : null,
+    input.tracking ? SECTION_TITLES.tracking : null,
     // Through the same function the sheet itself uses, or the cover promises a tab that the
     // workbook does not contain the moment the two names diverge.
     input.calendar ? calendarSheetName(input.calendar) : null,
-    input.bricks ? "Coverage against sales" : null,
-    input.managers ? "Double and chain visits" : null,
-    input.locations ? "Where the visit was saved" : null,
-    input.adoption ? "Who has started" : null,
+    input.bricks ? SECTION_TITLES.bricks : null,
+    input.managers ? SECTION_TITLES.managers : null,
+    input.locations ? SECTION_TITLES.locations : null,
+    input.adoption ? SECTION_TITLES.adoption : null,
     // The four insight boards of 2026-10-02, in the screen's order.
-    input.capacity ? "Grade against capacity" : null,
-    input.heard ? "What the field heard" : null,
-    input.stock ? "Missing stock" : null,
-    input.samples ? "Samples by month" : null,
+    input.capacity ? SECTION_TITLES.capacity : null,
+    input.heard ? SECTION_TITLES.heard : null,
+    input.stock ? SECTION_TITLES.stock : null,
+    input.samples ? SECTION_TITLES.samples : null,
   ].filter((name): name is string => name !== null);
 }
 

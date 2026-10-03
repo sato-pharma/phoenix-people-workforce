@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 
 import { BRICK_STATUS_LABELS } from "../src/lib/phoenix-crm/brick-report.ts";
+import { SECTION_TITLES } from "../src/lib/phoenix-crm/report-guide.ts";
 import {
   buildPhoenixCrmReportsWorkbook,
   calendarSheetName,
@@ -272,6 +273,26 @@ async function sheetsOf(input: ReportsPackInput): Promise<string[]> {
 }
 
 export async function runPhoenixCrmReportsExportTests(): Promise<void> {
+  // ── 0. The guide's names are legal WORKSHEET TAB NAMES ────────────────────────────────────────
+  //
+  // 🔴 FIRST, BEFORE ANYTHING IS BUILT, because ExcelJS reaches an illegal name before any
+  //    assertion does: an over-long title made this suite report "… is really in the built
+  //    workbook", which names the symptom and not the cause, and a forbidden character threw with
+  //    no message at all. Both were measured. A report's title became a tab name when the workbook
+  //    started reading SECTION_TITLES (section 9), so the screen can now hand Excel a name it
+  //    refuses, and that failure would otherwise land on somebody's download.
+  {
+    // 🔴 THE TITLE IS NOW A WORKSHEET TAB NAME, AND EXCEL REFUSES SOME OF THOSE. Before the
+    //    rewiring the tab was a literal here and a long screen title could not reach it; now it
+    //    can, and the failure would land on somebody's download rather than on this suite. Excel
+    //    allows 31 characters, forbids : \ / ? * [ ], and has no such thing as a blank tab.
+    for (const [section, title] of Object.entries(SECTION_TITLES)) {
+      assert.ok(title.trim().length > 0, `SECTION_TITLES.${section} is blank — a worksheet tab cannot be`);
+      assert.ok(title.length <= 31, `SECTION_TITLES.${section} is ${title.length} characters — Excel refuses a worksheet tab over 31`);
+      assert.doesNotMatch(title, /[:\\/?*\[\]]/, `SECTION_TITLES.${section} holds a character Excel forbids in a worksheet tab`);
+    }
+  }
+
   // ── 1. A section the viewer may not read writes NO SHEET ───────────────────────────────────────
   //
   // Read back out of the real workbook, not asserted against the input: a builder that quietly wrote
@@ -280,17 +301,17 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     const repSheets = await sheetsOf(pack());
     assert.deepEqual(
       repSheets,
-      ["Cover", "Visits per day", "Coverage and frequency"],
+      ["Cover", SECTION_TITLES.visits, SECTION_TITLES.coverage],
       "a rep's pack holds only the sections he may read — no empty tab announcing the ones he may not",
     );
-    for (const withheld of ["Where the visit was saved", "Needs you", "Coverage against sales", "Who has started"]) {
+    for (const withheld of [SECTION_TITLES.locations, SECTION_TITLES.exceptions, SECTION_TITLES.bricks, SECTION_TITLES.adoption]) {
       assert.equal(repSheets.includes(withheld), false, `${withheld} must be ABSENT, not present and empty`);
     }
 
     const managerSheets = await sheetsOf(pack({ adoption: adoptionView(), bricks: bricksView(), locations: locationsView() }));
-    assert.ok(managerSheets.includes("Where the visit was saved"), "a manager's pack holds the locations sheet");
-    assert.ok(managerSheets.includes("Coverage against sales"), "and the bricks sheet");
-    assert.ok(managerSheets.includes("Who has started"), "and the adoption sheet (F3)");
+    assert.ok(managerSheets.includes(SECTION_TITLES.locations), "a manager's pack holds the locations sheet");
+    assert.ok(managerSheets.includes(SECTION_TITLES.bricks), "and the bricks sheet");
+    assert.ok(managerSheets.includes(SECTION_TITLES.adoption), "and the adoption sheet (F3)");
     assert.ok(managerSheets.length > repSheets.length, "a manager's pack is strictly larger than a rep's");
   }
 
@@ -316,7 +337,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     });
     assert.deepEqual(await sheetsOf(full), ["Cover", ...packSections(full)], "the sheets are exactly what the cover promised, in that order");
     const order = packSections(full);
-    assert.equal(order.indexOf("Daily plan"), order.indexOf("Plan against actual") + 1, "the daily plan follows plan against actual, as on the screen");
+    assert.equal(order.indexOf(SECTION_TITLES.daily), order.indexOf(SECTION_TITLES.plan) + 1, "the daily plan follows plan against actual, as on the screen");
   }
 
   // ── 3b. The daily plan: ONE territory's sheet, a row a planned customer, and never a total ──────
@@ -324,13 +345,13 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     // Read with several territories in reach and none chosen, it names no territory — and writes no sheet.
     const unchosenPack = pack({ dailyPlan: dailyPlanView({ territory: null, days: [] }) });
     const unchosen = await sheetsOf(unchosenPack);
-    assert.equal(unchosen.includes("Daily plan"), false, "no territory, no sheet — never an empty tab");
-    assert.equal(packSections(unchosenPack).includes("Daily plan"), false, "and the cover does not promise one");
+    assert.equal(unchosen.includes(SECTION_TITLES.daily), false, "no territory, no sheet — never an empty tab");
+    assert.equal(packSections(unchosenPack).includes(SECTION_TITLES.daily), false, "and the cover does not promise one");
 
     const buffer = await buildPhoenixCrmReportsWorkbook(pack({ dailyPlan: dailyPlanView() }));
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
-    const sheet = workbook.getWorksheet("Daily plan");
+    const sheet = workbook.getWorksheet(SECTION_TITLES.daily);
     assert.ok(sheet, "a rep's own territory gets its daily plan sheet");
     const rows: string[][] = [];
     sheet.eachRow((row) => {
@@ -392,7 +413,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     );
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
-    const sheet = workbook.getWorksheet("Daily plan");
+    const sheet = workbook.getWorksheet(SECTION_TITLES.daily);
     assert.ok(sheet, "the daily plan sheet is written");
     const rows: string[][] = [];
     sheet.eachRow((row) => {
@@ -465,8 +486,8 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     const withPlan = new ExcelJS.Workbook();
     await withPlan.xlsx.load((await buildPhoenixCrmReportsWorkbook(pack({ plan: planView() }))) as unknown as ArrayBuffer);
     for (const [sheetName, amHeader, pmHeader, combined] of [
-      ["Visits per day", "AM off-plan waiting", "PM off-plan waiting", "Off-plan waiting"],
-      ["Plan against actual", "AM off-plan", "PM off-plan", "Off-plan"],
+      [SECTION_TITLES.visits, "AM off-plan waiting", "PM off-plan waiting", "Off-plan waiting"],
+      [SECTION_TITLES.plan, "AM off-plan", "PM off-plan", "Off-plan"],
     ] as const) {
       const sheet = withPlan.getWorksheet(sheetName);
       assert.ok(sheet, `${sheetName} is in the pack`);
@@ -487,7 +508,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     const buffer = await buildPhoenixCrmReportsWorkbook(pack({ bricks: bricksView() }));
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
-    const sheet = workbook.getWorksheet("Coverage against sales");
+    const sheet = workbook.getWorksheet(SECTION_TITLES.bricks);
     assert.ok(sheet, "the bricks sheet is there");
     const cells: string[] = [];
     sheet.eachRow((row) => row.eachCell((cell) => cells.push(String(cell.value ?? ""))));
@@ -504,7 +525,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     const buffer = await buildPhoenixCrmReportsWorkbook(pack({ bricks: view }));
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
-    const sheet = workbook.getWorksheet("Coverage against sales");
+    const sheet = workbook.getWorksheet(SECTION_TITLES.bricks);
     assert.ok(sheet, "the bricks sheet is there");
     let found = false;
     sheet.eachRow((row) => {
@@ -585,7 +606,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     // Absent by default, exactly like every other section: null writes NO sheet and the cover
     // promises none. A tab headed with a report that is not in it is worse than a tab that is absent.
     const bare = packSections(pack({}));
-    for (const name of ["Frequency per customer", "Tracking sheet", "Team calendar"]) {
+    for (const name of [SECTION_TITLES.frequency, SECTION_TITLES.tracking, calendarSheetName({ scope: "team" })]) {
       assert.equal(bare.includes(name), false, `${name} is not promised when it was not loaded`);
     }
 
@@ -604,7 +625,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
 
     // In the cover's own order, straight after coverage.
     const promised = packSections(pack(threeViews));
-    const wanted = ["Coverage and frequency", "Frequency per customer", "Tracking sheet", "Team calendar"];
+    const wanted = [SECTION_TITLES.coverage, SECTION_TITLES.frequency, SECTION_TITLES.tracking, calendarSheetName({ scope: "team" })];
     assert.deepEqual(
       promised.filter((name) => wanted.includes(name)),
       wanted,
@@ -660,6 +681,83 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     // 🔴 THE SPACING COLUMN IS ABSENT, NOT EMPTY, WHEN THE SERVICE WITHHELD IT. A blank column
     //    headed "The shape of the month" tells a rep a judgement exists and is being kept from him.
     assert.match(workbook, /view\.showsSpacing \? \[column\("The shape of the month"/, "the note's column is only there when there are notes");
+  }
+
+  // ── 9. A report's NAME is written ONCE, in the guide ───────────────────────────────────────────
+  //
+  // 🔴 IT USED TO BE WRITTEN THREE TIMES PER REPORT — the worksheet tab, the heading inside it, and
+  //    `packSections`, which is what the COVER promises — so renaming a report on the screen renamed
+  //    it in none of them. That was not a theoretical drift: `exceptions` had ALREADY come apart,
+  //    reading "Needs you today" on the screen and in its own heading against a tab called "Needs
+  //    you". `calendarSheetName` has carried the one-name rule for the calendar since it was
+  //    written, for exactly this reason; this is the same rule for the other fifteen.
+  {
+    const names = source("src/lib/phoenix-crm/server/reports-workbook.ts");
+    assert.doesNotMatch(names, /addWorksheet\("/, "every tab is named from SECTION_TITLES or calendarSheetName, never a literal");
+    const cover = names.slice(names.indexOf("export function packSections"), names.indexOf("export async function buildPhoenixCrmReportsWorkbook"));
+    assert.ok(cover.length > 200, "the packSections body was found");
+    assert.doesNotMatch(cover, /\? "/, "and the cover's list names no report by hand — a cover and a tab that disagree is a file that reads as broken");
+    for (const [section, title] of Object.entries(SECTION_TITLES)) {
+      assert.equal(
+        names.includes(title),
+        false,
+        `"${title}" is still written out in reports-workbook.ts — read it from SECTION_TITLES.${section}, or a rename reaches the screen and not the workbook. A backtick heading counts: this is a bare substring check, because a quoted-only one missed exactly that`,
+      );
+    }
+
+    // The ONE heading that is deliberately not the report's name, kept here so a sweep like the one
+    // above cannot quietly take it: the sheet is a row per REP, and relabelling it would relabel the
+    // rows. See the comment on it in reports-workbook.ts.
+    assert.match(names, /title: `Visits per rep · /, "the visits sheet still heads its rows per rep");
+
+    // Every report the guide names has a sheet, the cover promises exactly those, and the calendar
+    // sits where it always has — it is a month view, not a report, so it is not in the guide.
+    const everything = {
+      adoption: {},
+      bricks: {},
+      calendar: { scope: "team" },
+      capacity: {},
+      coverage: {},
+      dailyPlan: { territory: {} },
+      exceptions: {},
+      frequency: {},
+      heard: {},
+      locations: {},
+      managers: {},
+      plan: {},
+      samples: {},
+      stock: {},
+      tracking: {},
+      visits: {},
+    } as unknown as ReportsPackInput;
+    const promised = packSections(everything);
+    assert.deepEqual(
+      promised,
+      [
+        SECTION_TITLES.exceptions,
+        SECTION_TITLES.visits,
+        SECTION_TITLES.plan,
+        SECTION_TITLES.daily,
+        SECTION_TITLES.coverage,
+        SECTION_TITLES.frequency,
+        SECTION_TITLES.tracking,
+        calendarSheetName({ scope: "team" }),
+        SECTION_TITLES.bricks,
+        SECTION_TITLES.managers,
+        SECTION_TITLES.locations,
+        SECTION_TITLES.adoption,
+        SECTION_TITLES.capacity,
+        SECTION_TITLES.heard,
+        SECTION_TITLES.stock,
+        SECTION_TITLES.samples,
+      ],
+      "the cover promises every report in the guide, in the screen's order, plus the calendar",
+    );
+    assert.deepEqual(
+      [...promised].filter((name) => name !== calendarSheetName({ scope: "team" })).sort(),
+      [...Object.values(SECTION_TITLES)].sort(),
+      "a report in the guide with no sheet would be offered on the screen and missing from the download",
+    );
   }
 
   console.log("phoenix-crm reports export: OK");
