@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 1bbd035a-c8cc-4430-9c07-798a09c9000e
-  modified: 2026-10-03T17:41:51.958Z
+  modified: 2026-10-03T22:28:59.672Z
 ---
 
 🔴 **FIXED FOR ANYTHING AFTER 2026-10-03, at the owner's instruction ("record the refused readings so
@@ -15,6 +15,12 @@ Cairo visit day, written by `src/lib/phoenix-crm/server/refused-readings.ts` fro
 doors. **Read that table FIRST.** Everything below is how to answer the same question about a refusal
 from BEFORE that date, which is where this note was earned — and it is still the only way, because
 nothing backfills.
+
+🔴 **AND IT HAS A SCREEN SINCE 2026-10-04 — `/admin/phoenix-crm/refused-readings`, the Super Admin's and
+the SFE Manager's** (owner: "build the refused readings view for the SFE"). It lists the last 14 days
+per rep and whether each customer he was refused on was later SAVED; the phone's mock-location answer
+shows for the Super Admin only. Read it before opening SQL. Logic is
+`src/lib/phoenix-crm/refused-readings-rules.ts`, reader `server/refused-readings-board.ts`.
 
 `phoenix_crm_location_integrity` is written **only when a place or visit actually SAVES**, so a
 refused attempt before 2026-10-03 leaves no reading, no accuracy and no coordinate anywhere. Saying
