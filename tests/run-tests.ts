@@ -765,6 +765,7 @@ import { runMarketingRequestContactLinkTests } from "./marketing-request-contact
 import { runDirectOrderCampaignLinkTests } from "./direct-order-campaign-link.test.ts";
 import { runMarketingRequestServiceTests } from "./marketing-request-service.test.ts";
 import { runMarketingValidationDraftTests } from "./marketing-validation-draft.test.ts";
+import { runMarketingValidationSaveGateTests } from "./marketing-validation-save-gate.test.ts";
 import { runMarketingVenueTerritoryTests } from "./marketing-venue-territory.test.ts";
 import { runReportRpcGuardrailTests } from "./report-rpc-guardrails.test.ts";
 import { runMarketingReviewRoutingTests } from "./marketing-review-routing.test.ts";
@@ -3808,6 +3809,10 @@ await runTest(
 );
 await runTest("marketing request overlap detection (double-count guard)", runMarketingRequestOverlapTests);
 await runTest("marketing validation draft recovery (stale evidence must never be restored)", runMarketingValidationDraftTests);
+await runTest(
+  "marketing validation save gate (a greyed Save always has a sentence — a nursery carries no distributor code and must still save)",
+  runMarketingValidationSaveGateTests,
+);
 await runTest("marketing ROI live lifecycle stages (rejected never counts as committed)", runMarketingRoiLiveStagesTests);
 await runTest("marketing ROI confidence score (measurement trust, not performance)", runMarketingRoiConfidenceTests);
 await runTest("marketing ROI explain (diagnostic classifier + read-only guards)", runMarketingRoiExplainTests);

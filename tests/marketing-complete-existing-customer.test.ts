@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 
 import { normalizeMarketingValidationInput } from "@/lib/marketing-requests/service";
 import {
+  canSaveMarketingValidation,
+  describeMissingSaveRequirement,
+} from "@/lib/marketing-requests/validation-save-gate";
+import {
   MARKETING_CUSTOMER_TYPES,
   MARKETING_GOVERNORATE_HOLD_PREFIX,
   MARKETING_MANUAL_HOLD_MARKER,
@@ -447,15 +451,50 @@ export function runMarketingCompleteExistingCustomerTests() {
     /existingPharmacyId: pharmacyId, source: "existing" \}\);/,
     "the blocked venue must be attached from the shop on file, never re-typed as a new one",
   );
+  // The gate no longer lives in the component: Save and the sentence naming what is missing are
+  // both derived from `describeMissingSaveRequirement`, so they cannot drift — they did, and the
+  // cost is in marketing-validation-save-gate.test.ts. Asserted for real now rather than by
+  // pattern, because where it lives today IS executable.
   assert.match(
-    workspace,
+    source("src/lib/marketing-requests/validation-save-gate.ts"),
     /function customerIsVenueOnlyWithoutCapture[\s\S]{0,260}hasCompleteCapture\(pharmacy\.capture\)/,
     "a venue-only save must carry a complete venue capture",
   );
+  const emptyCapture = {
+    capturedAt: null,
+    latitude: null,
+    longitude: null,
+    photoCapturedAt: null,
+    photoDataUrl: null,
+    photoName: "",
+  };
+  const venueOnlyNoCapture = {
+    capture: emptyCapture,
+    customerComplete: true,
+    name: "د. احمد محارب",
+    pharmacies: [{
+      capture: emptyCapture,
+      existingPharmacyId: "ph-1",
+      name: "صيدلية النيل",
+      source: "existing" as const,
+      vendorCodes: [],
+      venueType: "pharmacy" as const,
+    }],
+  };
+  assert.equal(
+    canSaveMarketingValidation([venueOnlyNoCapture], false),
+    false,
+    "Save must refuse a venue-only save with no capture — it would touch nothing and report success",
+  );
+  assert.match(
+    describeMissingSaveRequirement([venueOnlyNoCapture], false) ?? "",
+    /Capture the venue's live photo and location/,
+    "and it must say so, in step with the disabled button",
+  );
   assert.match(
     workspace,
-    /!customerIsVenueOnlyWithoutCapture\(customer\) &&/,
-    "canSave must refuse a venue-only save with no capture, in step with describeMissingRequirement",
+    /const canSave = !isSaving && canSaveMarketingValidation\(customers, isDeskMode\)/,
+    "the workspace's Save must read that one gate, never a second boolean that could drift from it",
   );
   // The owner's standing UI rule: never truncate with an ellipsis, never let text wrap.
   assert.match(

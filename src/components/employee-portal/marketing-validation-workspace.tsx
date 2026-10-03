@@ -79,6 +79,12 @@ import {
   fieldEvidenceGapInput,
 } from "@/lib/marketing-requests/validation-report";
 import {
+  canSaveMarketingValidation,
+  customerIsVenueOnlyWithoutCapture,
+  describeMissingSaveRequirement,
+  hasCompleteCapture,
+} from "@/lib/marketing-requests/validation-save-gate";
+import {
   choiceRequiresDistributorCode,
   VENUE_TYPE_UNANSWERED_MESSAGE,
   VENUE_TYPES,
@@ -620,91 +626,6 @@ function untrackedVendorCodes(rows: MarketingValidationReportRow[]) {
     });
   }
   return Array.from(seen.values());
-}
-
-/**
- * The exact reason Save is blocked, in the same order `canSave` checks them.
- *
- * The Save button is natively `disabled` while the form is incomplete, so a tap never reaches
- * `submitValidation` and its messages never show — a field rep got no feedback at all about which
- * customer, pharmacy, or code line still needed something, only a button that did nothing. This
- * walks the same checks `canSave` runs, in the same order, and names the first one that fails, so
- * the reason is visible without ever having to tap a dead button.
- */
-function describeMissingRequirement(customers: CustomerLine[], isDeskMode: boolean): string | null {
-  const hasPin = (capture: CaptureState) => capture.latitude !== null && capture.longitude !== null;
-
-  for (const [customerIndex, customer] of customers.entries()) {
-    const customerLabel = customer.name.trim() ? `"${customer.name.trim()}"` : `Customer ${customerIndex + 1}`;
-    if (!customer.name.trim()) return `Enter a name for Customer ${customerIndex + 1}.`;
-    if (isDeskMode && !hasPin(customer.capture)) return `Pin ${customerLabel}'s location on the map.`;
-    if (customer.pharmacies.length === 0) return `${customerLabel} needs at least one pharmacy.`;
-    // A customer that is already complete has only its venue left to capture, so saving without one
-    // would change nothing and still report success. Must stay in step with `canSave`.
-    if (customerIsVenueOnlyWithoutCapture(customer)) {
-      return `Capture the venue's live photo and location for ${customerLabel} before saving.`;
-    }
-
-    for (const [pharmacyIndex, pharmacy] of customer.pharmacies.entries()) {
-      const pharmacyLabel = pharmacy.name.trim() ? `"${pharmacy.name.trim()}"` : `Pharmacy ${pharmacyIndex + 1}`;
-      // On the My Pharmacies tab there is exactly one thing to get right: which shop. Name, GPS,
-      // live photo and distributor codes all come from the record already stored for it.
-      if (pharmacy.source === "existing") {
-        if (!pharmacy.existingPharmacyId) {
-          return `Choose which pharmacy to attach for Pharmacy ${pharmacyIndex + 1} under ${customerLabel}.`;
-        }
-        continue;
-      }
-      if (!pharmacy.name.trim()) return `Enter a name for Pharmacy ${pharmacyIndex + 1} under ${customerLabel}.`;
-      if (isDeskMode && !hasPin(pharmacy.capture)) return `Pin ${pharmacyLabel}'s location on the map.`;
-      // Asked before anything below it, because everything below it depends on the answer. An
-      // unanswered type used to read as "pharmacy" and sail straight through this loop.
-      if (!venueTypeIsAnswered(pharmacy.venueType)) {
-        return `${pharmacyLabel}: ${VENUE_TYPE_UNANSWERED_MESSAGE}`;
-      }
-      // A venue with no distributor account has nothing to check here, and the codes block is not
-      // even rendered for it. Asking for a code would be asking the rep to make one up again.
-      if (!venueRequiresDistributorCode(pharmacy.venueType)) continue;
-      if (pharmacy.vendorCodes.length === 0) return `${pharmacyLabel} needs at least one distributor code.`;
-
-      for (const [codeIndex, line] of pharmacy.vendorCodes.entries()) {
-        const codeSuffix = pharmacy.vendorCodes.length > 1 ? ` (row ${codeIndex + 1})` : "";
-        if (!line.distributorId) return `Pick a distributor for ${pharmacyLabel}${codeSuffix}.`;
-        if (!line.distributorCode.trim()) return `Enter the distributor code for ${pharmacyLabel}${codeSuffix}.`;
-      }
-    }
-  }
-  return null;
-}
-
-/**
- * A capture good enough to stand as a venue's proof: a pin, a time, and the stamped photo itself.
- *
- * Mirrors `evidenceStatusFromInput` on the server, which is what actually decides. Kept here so the
- * form only sends a capture for an attached shop when that capture could change anything — an
- * ordinary attach still sends the id and nothing else.
- */
-function hasCompleteCapture(capture: CaptureState) {
-  return (
-    capture.latitude !== null &&
-    capture.longitude !== null &&
-    Boolean(capture.capturedAt) &&
-    Boolean(capture.photoName) &&
-    Boolean(capture.photoCapturedAt) &&
-    Boolean(capture.photoDataUrl)
-  );
-}
-
-/**
- * A customer that is complete and is being saved only to complete its venue, with no venue capture
- * in hand yet. Saving that would write nothing — the customer is never touched and the venue's
- * proof is what was missing — so the form refuses it rather than report a success that did nothing.
- */
-function customerIsVenueOnlyWithoutCapture(customer: CustomerLine) {
-  return (
-    customer.customerComplete &&
-    !customer.pharmacies.some((pharmacy) => pharmacy.source === "existing" && hasCompleteCapture(pharmacy.capture))
-  );
 }
 
 /**
@@ -2321,30 +2242,15 @@ export function MarketingValidationWorkspace() {
     [selectedValidatedGroup],
   );
 
-  // Desk mode saves straight to validated, so a missing pin would mint a "validated" customer with
-  // no coordinates at all — worse than the field path, where incomplete evidence simply parks the
-  // row on pending. Require the pin here instead.
-  const hasPin = (capture: CaptureState) => capture.latitude !== null && capture.longitude !== null;
-  const canSave = Boolean(
-    !isSaving &&
-    customers.length > 0 &&
-    customers.every((customer) =>
-      customer.name.trim() &&
-      (!isDeskMode || hasPin(customer.capture)) &&
-      customer.pharmacies.length > 0 &&
-      !customerIsVenueOnlyWithoutCapture(customer) &&
-      customer.pharmacies.every((pharmacy) =>
-        pharmacy.source === "existing"
-          // Everything else about an attached pharmacy is read from its stored record, so the pick
-          // itself is the only requirement. Must stay in step with describeMissingRequirement.
-          ? Boolean(pharmacy.existingPharmacyId)
-          : pharmacy.name.trim() &&
-            (!isDeskMode || hasPin(pharmacy.capture)) &&
-            pharmacy.vendorCodes.length > 0 &&
-            pharmacy.vendorCodes.every((line) => line.distributorId && line.distributorCode.trim()),
-      ),
-    ),
-  );
+  // Save is a native `disabled` submit button, so once the form is incomplete a tap fires no click
+  // event and `submitValidation` never runs to explain why — the rep just sees a button that does
+  // nothing. So the button and the sentence come from ONE gate: `canSaveMarketingValidation` is
+  // `describeMissingSaveRequirement` returning nothing. They were two parallel lists of checks
+  // "kept in step" by comment, and they drifted — a nursery carries no distributor code, which the
+  // sentence knew and the button did not, so answering "Nursery" greyed Save for good and printed
+  // no reason at all.
+  const missingRequirement = !isSaving ? describeMissingSaveRequirement(customers, isDeskMode) : null;
+  const canSave = !isSaving && canSaveMarketingValidation(customers, isDeskMode);
   const totalPharmacyCount = customers.reduce((sum, customer) => sum + customer.pharmacies.length, 0);
   // Caught only once there are several customers: the same person entered twice would mint two
   // separate records that both show up in the request dropdown. The server refuses it too — this
@@ -2359,10 +2265,6 @@ export function MarketingValidationWorkspace() {
     }
     return null;
   })();
-  // Save is a native `disabled` submit button, so once the form is incomplete a tap fires no click
-  // event and `submitValidation` never runs to explain why — the rep just sees a button that does
-  // nothing. Compute the same reason here so it can be shown without requiring a tap at all.
-  const missingRequirement = !isSaving ? describeMissingRequirement(customers, isDeskMode) : null;
 
   /**
    * The location block for a pin, resolved through the shared evidence stamp so this screen, the
@@ -2817,11 +2719,11 @@ export function MarketingValidationWorkspace() {
       return;
     }
     if (!canSave) {
+      // The gate always has a sentence unless there is no customer at all (or a save is already in
+      // flight), which is the only thing the fallback can still be about.
       setMessage(
-        describeMissingRequirement(customers, isDeskMode)
-          ?? (isDeskMode
-            ? "Complete every customer, pharmacy, vendor, and code field, and pin a location on the map for each one, before saving."
-            : "Complete every customer, pharmacy, vendor, and code field before saving."),
+        describeMissingSaveRequirement(customers, isDeskMode)
+          ?? "Add a customer before saving.",
       );
       return;
     }
