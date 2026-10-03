@@ -5340,6 +5340,30 @@ the bird alone, the bird's floor is 40px so the two sides weigh the same.
 Pinned by `tests/rep-rank-badges.test.ts` — the corner anchoring, the one centre-aligned row, the fluid
 mark widths, the fluid clearance paddings, and the `@container`. Each was broken and watched to fire.
 
+**The strip's own long-label defect, found after the merge (2026-10-03).** The ranking panel is a FIXED
+block of whole grid squares — 180px on a phone, 252px from `@md` — so its two labels get about 78px each
+on a phone. `Anti Infective` plus the word `line` stacked THREE deep (`ANTI` / `INFECTIVE` / `LINE`)
+beside a one-line `COMPANY`, filling the panel edge to edge and pushing the orange tick out of it; from
+544px it was still two lines. It was missed because the long line name was stress-tested on the CARD,
+whose panel widens for it, and not on the strip, whose panel cannot.
+
+Measured on the REAL component (its own markup rendered with the app's compiled CSS, at nine band widths
+from 351px to 1100px, under the portal's 88% zoom) rather than on a hand-rebuild:
+
+| candidate | worst label | tightest gap to a mark |
+| --- | --- | --- |
+| as-is | 3 lines | 19.7px |
+| **the line's name alone** | **2 lines (phone), 1 from 500px** | **16.8px** |
+| name alone + panel 288 at `@md` | 2 lines | 7.8px |
+| keep the word + panel 378 at `@md` | **3 lines on every phone** | 3.0px |
+
+🔴 **Widening the panel CANNOT fix a phone, which is why the word went instead.** At a 351px band the two
+marks leave the panel 22px a side, and fitting `ANTI INFECTIVE` on one line needs ~84px more; every
+widening that did fit at `@md` left LESS clearance than simply dropping the word, and shrinking the type
+is banned by the fits-the-screen rule (merge, never shrink). `Company` and `CNS` read as the two boards
+without it. The share card still says `CNS line` — its panel grows in whole squares, so it has no defect
+to fix, and changing it would be unrequested.
+
 ## The rep's performance card — his banner, his proof, his footer (2026-10-03)
 
 The card a Medical Rep saves or shares from his rank strip. The rule is in `.claude/rules/portal.md`;

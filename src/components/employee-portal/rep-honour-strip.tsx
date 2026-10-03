@@ -189,8 +189,18 @@ export function RepHonourStrip({ standing }: { standing: RepRankStanding | null 
     company
       ? { key: "company", label: "Company", ink: "text-[#f47b20]", rank: company.rank, outOf: company.outOf }
       : null,
+    // 🔴 THE LINE'S NAME ALONE, NEVER "<name> line" — the extra word is what broke this cell for the
+    // longest line name. The ranking panel is a fixed block of whole grid squares (180px on a phone,
+    // 252px from @md), so each label gets about 78px there, and "ANTI INFECTIVE LINE" stacked THREE
+    // deep ("ANTI" / "INFECTIVE" / "LINE") beside a one-line "COMPANY", filling the panel edge to
+    // edge. Measured on the real strip, 2026-10-03: without the word, every label is one line from a
+    // 500px band up and at most two on a phone, with 16.8px still clear between the panel and the
+    // marks at the tightest width. Widening the panel instead cannot fix a phone — at a 351px band
+    // the marks leave it only 22px a side, where two lines would need 84px more — and every widening
+    // that did fit left LESS clearance than this. Shrinking the type is banned (the fits-the-screen
+    // rule: merge, never shrink). `Company` and `CNS` read as the two boards without it.
     line
-      ? { key: "line", label: `${line.lineName} line`, ink: "text-[#0879b8]", rank: line.rank, outOf: line.outOf }
+      ? { key: "line", label: line.lineName, ink: "text-[#0879b8]", rank: line.rank, outOf: line.outOf }
       : null,
   ].filter((cell): cell is NonNullable<typeof cell> => cell !== null);
 
