@@ -244,6 +244,53 @@ function checkRepCanValidate(): void {
 }
 
 /**
+ * 🔴 THE LOADER'S GRADE GUARD NEVER FIRED, AND ONLY A LIVE RUN COULD SHOW IT.
+ *
+ * `if v_list_type <> 'Pharmacy' and (v_grade not in ('A','B','C') or v_potential not in (...))`
+ *
+ * An empty sheet cell leaves `v_grade` NULL, and in SQL `NULL not in (...)` is NULL, not TRUE. `NULL or
+ * NULL` is NULL, `if NULL then` does not fire — so an UNGRADED doctor was INSERTED onto a rep's list as
+ * `pending` with `grade = NULL`, breaking the owner's locked rule that every doctor on a list carries
+ * A/B/C and a potential set by his district manager or by SFE.
+ *
+ * Measured on PRODUCTION on 2026-10-03 by loading a test-world sheet: the row came back `loaded`, while
+ * the three verdicts either side of it were right, which is why nothing looked wrong. `parseTemplateRow`
+ * refuses the same row before the RPC is called, so the upload path was safe and the whole suite stayed
+ * green — and this function, whose own comment calls itself the authority, was not one. Fixed by
+ * migration 20261003075335 with `coalesce(..., '')`, which is a real value and compares as one.
+ *
+ * Pinned on BOTH halves, because either alone would have passed while the defect shipped:
+ * the SQL must use `coalesce`, and `parseTemplateRow` must refuse every shape the SQL refuses.
+ */
+function checkGradeGuard(): void {
+  const fix = readFileSync("supabase/migrations/20261003075335_phoenix_crm_load_list_grade_guard.sql", "utf8");
+  assert.match(
+    fix,
+    /coalesce\(v_grade, ''\) not in \('A', 'B', 'C'\)\s*\n?\s*or coalesce\(v_potential, ''\) not in/,
+    "the SQL guard compares a real value, never a bare NULL column",
+  );
+  assert.doesNotMatch(fix, /\(\s*v_grade not in \('A', 'B', 'C'\)/, "and the NULL-swallowing form is gone");
+
+  // The caller refuses every shape the database refuses — the four the live probe sent after the fix.
+  const base = { listType: "PM", name: "Dr Mahmoud Fathy", speciality: "Pediatrics" } as const;
+  const shapes: ReadonlyArray<readonly [string, Partial<Record<TemplateColumnKey, unknown>>]> = [
+    ["no grade and no potential", { ...base }],
+    ["a grade but no potential", { ...base, grade: "B" }],
+    ["a potential but no grade", { ...base, potentialGrade: "BB" }],
+    ["a grade that is not one", { ...base, grade: "X", potentialGrade: "AA" }],
+  ];
+  for (const [what, cells] of shapes) {
+    const verdict = parseTemplateRow(30, cells);
+    assert.equal(verdict.kind, "refused", `a doctor with ${what} is refused by the caller too`);
+  }
+  // And the one good shape still loads, so the guard is not simply refusing everything.
+  assert.equal(parseTemplateRow(31, { ...base, grade: "A", potentialGrade: "AC" }).kind, "row", "a fully graded doctor still loads");
+  // A pharmacy takes none of it, which is the other side of the same branch.
+  assert.equal(parseTemplateRow(32, { listType: "Pharmacy", name: "El Ezaby Pharmacy" }).kind, "row", "a pharmacy needs no grade");
+  assert.equal(parseTemplateRow(33, { listType: "Pharmacy", name: "El Ezaby Pharmacy", grade: "A" }).kind, "refused", "and may not carry one");
+}
+
+/**
  * The layer no source assertion can stand in for: BUILD the workbook, check the bytes, then read it
  * back through the parser's own contract.
  *
@@ -369,5 +416,6 @@ export async function runPhoenixCrmListTemplateTests() {
   checkGateAndWrite();
   checkRepCanValidate();
   checkReviewEdges();
+  checkGradeGuard();
   await checkBuildsAndReadsBack();
 }
