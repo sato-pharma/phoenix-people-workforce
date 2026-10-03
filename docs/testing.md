@@ -142,8 +142,10 @@ sha — about 133 s, nothing on the laptop, no Actions minutes — and a push fo
 change adds a route, a file or a member of a closed union, because the suite runs with
 `--experimental-strip-types` and cannot see a type error. A docs-only push is not exempt: the module
 memory check and the AGENTS.md/CLAUDE.md size budgets run in the suite, and a docs-only PR has broken
-`main`. A backgrounded run's notification reports the shell's exit status, so read the output file's
-last line.
+`main` — and the first run of this very step, on the PR that introduced it, failed
+`AGENTS.md long hooks cite their account in docs/` on an over-long rule line, which CI would have
+spent a full round finding. A backgrounded run's notification reports the shell's exit status, so
+read the output file's last line.
 
 **Why.** The friction notes of the 2026-09-17..10-03 sessions (49 on disk, 42 with a written note) show
 where red CI came from on Claude's own code: 8 sessions a pinned or source-guard test that went stale

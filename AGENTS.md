@@ -471,7 +471,7 @@ actually is" and "A feature arriving in instalments is still ONE feature".
 reintroduce them or invent a replacement — no "quick subset" of lint + typecheck before pushing, no
 `pnpm run ci` as a pre-push ritual. 🔴 **The one standing step is NOT local: `node scripts/remote-check.mjs
 test` on the committed sha before EVERY push that opens or updates a PR** (owner, 2026-10-04; `all` when
-the change adds a route, a file or a closed-union member) — `.claude/rules/engineering.md`, Validation.
+the change adds a route, a file or a closed-union member) — `docs/testing.md`, "Before every push".
 **Then push the branch and let the PR's checks answer.** The two
 **required** checks — `validate` (the `check:*` contracts, **the unit suite**, and on non-PR events
 the build and login smoke) and `checks` (lint, `next typegen`, typecheck) — run on the PR head commit
