@@ -97,7 +97,10 @@ function entry(index) {
   };
 }
 
-const overall = Array.from({ length: 12 }, (_, index) => entry(index));
+// 120 — a real company board, and with the three lines interleaved each per-line panel carries 40
+// rows, which is what a line actually holds. The panels show the WHOLE line (owner, 2026-10-03), so
+// a 4-row fixture would measure a shape the page no longer renders.
+const overall = Array.from({ length: 120 }, (_, index) => entry(index));
 
 const DATA = {
   mode: "quarter",

@@ -439,6 +439,26 @@ export function runSalesRankingsTests() {
     !ui.includes("overflow-x-auto") && !/min-w-\[/.test(ui),
     "a sideways scroll over a min-width IS the bug the fits-the-screen rule names — the phone gets cards instead",
   );
+  // 🔒 EVERY REP ON THE LINE, never a top slice (owner, 2026-10-03: "Don't show me the top five
+  // only. I want to see the whole line."). The per-line panels shipped as `Top 5` boards cut with
+  // `.slice(0, 5)`, which hid the bottom of each line — the half a line manager acts on. A `slice`
+  // anywhere in this component is the defect returning, so the test refuses the call itself rather
+  // than the words "Top 5", which a rename would slip past.
+  assert.ok(
+    !/\.slice\(/.test(ui),
+    "a board shows the WHOLE line — no slice in this component, however the panel is titled",
+  );
+  assert.ok(
+    !/Top\s*5/i.test(ui),
+    "no panel calls itself a top five any more; the per-line panel is that line's full ranking",
+  );
+  // The consequence of showing the whole line: forty rows scroll, and a heading that scrolls away
+  // leaves "109%" as a number with no name on it. The sticky head is part of the ruling, not polish.
+  assert.ok(
+    ui.includes("sticky top-0"),
+    "a forty-row board keeps its column headings — the table head sticks",
+  );
+
   // 🔒 The switch is the BOARD'S own width, never the viewport's. A board renders full-width in the
   // bottom section and at half of `xl:grid-cols-2` in the panels, and those are not the same number
   // of pixels: with a viewport-keyed `lg:block` the two-up panel is 452px at a 1280px viewport, and

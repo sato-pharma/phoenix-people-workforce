@@ -78,36 +78,85 @@ function Avatar({ entry, size = "sm" }: { entry: Pick<RankingEntry, "hrId" | "na
   );
 }
 
-/** ▲ +5 / ▼ -1 / – against the window before this one. */
-function Trend({ value, className }: { value: number | null; className?: string }) {
+/**
+ * ▲ +5 / ▼ -1 / — against the window before this one.
+ *
+ * A tinted square chip rather than bare coloured text: the move is one of the three things a
+ * manager reads off a row, and as plain text it was the quietest thing in the cell. `tone="dark"`
+ * drops the tint for the navy standing cards, where a light chip would punch a hole in the panel.
+ */
+function Trend({ value, className, tone = "light" }: { value: number | null; className?: string; tone?: "light" | "dark" }) {
+  const dark = tone === "dark";
   if (value == null || value === 0) {
-    return <span className={cn("whitespace-nowrap font-bold text-slate-400", className)}>{value === 0 ? "—" : "New"}</span>;
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center whitespace-nowrap border px-1.5 py-0.5 font-bold",
+          dark ? "border-white/20 text-white/70" : "border-slate-200 bg-slate-50 text-slate-500",
+          className,
+        )}
+      >
+        {value === 0 ? "— Held" : "New"}
+      </span>
+    );
   }
   const up = value > 0;
   return (
-    <span className={cn("whitespace-nowrap font-black tabular-nums", up ? "text-emerald-600" : "text-rose-600", className)}>
+    <span
+      className={cn(
+        "inline-flex items-center whitespace-nowrap border px-1.5 py-0.5 font-black tabular-nums",
+        dark
+          ? up
+            ? "border-emerald-400/40 text-emerald-300"
+            : "border-rose-400/40 text-rose-300"
+          : up
+            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+            : "border-rose-200 bg-rose-50 text-rose-700",
+        className,
+      )}
+    >
       {up ? "▲" : "▼"} {up ? "+" : ""}
       {value}
     </span>
   );
 }
 
-/** The rank tile: gold, silver and bronze for the first three, quiet slate below them. */
+/**
+ * The rank tile: gold, silver and bronze for the first three, quiet slate below them.
+ *
+ * A square seal, not a badge — the house square-edge rule, and the podium three carry an inner
+ * keyline (`inset 0 0 0 1px`) so the first places read as struck tiles rather than coloured boxes.
+ */
 function RankTile({ rank }: { rank: number }) {
+  const podium = rank <= 3;
   const tone =
     rank === 1
-      ? "border-amber-300 bg-amber-400 text-white"
+      ? "border-amber-500 bg-amber-400 text-amber-950"
       : rank === 2
-        ? "border-slate-300 bg-slate-300 text-slate-800"
+        ? "border-slate-400 bg-slate-300 text-slate-800"
         : rank === 3
-          ? "border-orange-300 bg-orange-300 text-orange-950"
+          ? "border-orange-400 bg-orange-300 text-orange-950"
           : "border-slate-200 bg-slate-100 text-slate-600";
   return (
-    <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center border text-xs font-black tabular-nums", tone)}>
+    <span
+      className={cn(
+        "flex h-7 w-7 shrink-0 items-center justify-center border font-black tabular-nums",
+        podium ? "text-[0.8125rem]" : "text-xs",
+        tone,
+      )}
+      style={podium ? { boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.55)" } : undefined}
+    >
       {rank}
     </span>
   );
 }
+
+/** The podium's own accents, used by both the table row and the phone card. */
+const PODIUM_EDGE: Record<number, string> = {
+  1: "border-l-[3px] border-l-amber-400 bg-amber-50/40",
+  2: "border-l-[3px] border-l-slate-400 bg-slate-50/60",
+  3: "border-l-[3px] border-l-orange-400 bg-orange-50/30",
+};
 
 /**
  * One standing, as the owner's concept draws it: a dark panel closed by a 3px rule, the placing
@@ -134,7 +183,30 @@ function StandingCard({
 }) {
   const accentColor = accent === "orange" ? "#f97316" : "#1482c2";
   return (
-    <section className="border border-[#152a46] bg-[#0b1f3a] text-white" style={{ borderTopColor: accentColor, borderTopWidth: 3 }}>
+    <section
+      className="relative isolate overflow-hidden border border-[#152a46] bg-[#0b1f3a] text-white shadow-[0_1px_2px_rgba(15,23,42,0.18),0_10px_30px_rgba(11,31,58,0.28)]"
+      style={{ borderTopColor: accentColor, borderTopWidth: 3 }}
+    >
+      {/* Depth, never decoration: a 3% white hairline grid on 56px, the same way the house dark
+          bands carry theirs. It is drawn, not rounded — the square-edge rule is untouched, and the
+          grid is what stops a large navy panel reading as flat ink. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{
+          backgroundImage:
+            "linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px)",
+          backgroundSize: "56px 56px",
+        }}
+      />
+      {/* The placing again, enormous and almost invisible, bled off the trailing edge. It carries
+          the eye to the figure that matters without adding a second thing to read. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -right-2 -top-6 -z-10 select-none text-[8.5rem] font-black leading-none tabular-nums text-white/[0.045]"
+      >
+        {rank}
+      </span>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-4 py-4 sm:px-6">
         <Icon aria-hidden className="h-8 w-8 shrink-0" style={{ color: accentColor }} />
         <div className="min-w-0">
@@ -149,8 +221,8 @@ function StandingCard({
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-2">
           <div className="border-l border-white/15 pl-4">
-            <Trend className="text-base" value={trend} />
-            <p className="mt-0.5 text-phx-2xs font-bold uppercase tracking-[0.14em] text-white/50">vs previous</p>
+            <Trend className="text-sm" tone="dark" value={trend} />
+            <p className="mt-1 text-phx-2xs font-bold uppercase tracking-[0.14em] text-white/50">vs previous</p>
           </div>
           <p className="border-l border-white/15 pl-4 text-phx-2xs font-black uppercase tracking-[0.18em] text-white/70">
             {periodLabel}
@@ -235,7 +307,9 @@ function BoardTable({ entries, showLine }: { entries: readonly RankingEntry[]; s
             <col style={{ width: "17%" }} />
             <col style={{ width: "11%" }} />
           </colgroup>
-          <thead className={TABLE_HEAD_CLASS}>
+          {/* The head STICKS. A board is now the whole line — forty rows — and a column heading
+              that scrolls away turns "109%" into a number with no name on it. */}
+          <thead className={cn(TABLE_HEAD_CLASS, "sticky top-0 z-10")}>
             <tr>
               <th className="px-3 py-2">#</th>
               <th className="px-3 py-2">Name</th>
@@ -246,7 +320,9 @@ function BoardTable({ entries, showLine }: { entries: readonly RankingEntry[]; s
           </thead>
           <tbody>
             {entries.map((entry) => (
-              <tr className={TABLE_ROW_CLASS} key={entry.key}>
+              // Zebra + the podium's left edge, both the house idiom (see deductions-workspace).
+              // Over forty rows the eye loses the row it is reading; the zebra is what holds it.
+              <tr className={cn(TABLE_ROW_CLASS, "odd:bg-slate-50/60", PODIUM_EDGE[entry.rank])} key={entry.key}>
                 <td className="px-3 py-2 align-middle">
                   <RankTile rank={entry.rank} />
                 </td>
@@ -277,7 +353,10 @@ function BoardTable({ entries, showLine }: { entries: readonly RankingEntry[]; s
       {/* Anything narrower: one card each, never a table — the columns merge instead of scrolling. */}
       <ul className="divide-y divide-slate-100 @min-[660px]:hidden">
         {entries.map((entry) => (
-          <li className="flex items-start gap-3 py-3" key={entry.key}>
+          <li
+            className={cn("flex items-start gap-3 py-3", PODIUM_EDGE[entry.rank] && `${PODIUM_EDGE[entry.rank]} pl-3`)}
+            key={entry.key}
+          >
             <RankTile rank={entry.rank} />
             <Avatar entry={entry} />
             <div className="min-w-0 flex-1">
@@ -380,20 +459,48 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
 
   return (
     <div className="space-y-4">
-      {/* ── Page header ── */}
+      {/* ── Page header, with the window's own figures beside it ──
+          The strip is the house figures block: a micro label over a large tabular numeral, columns
+          divided by a hairline. It adds information rather than ornament — how many the window
+          could score, how many seats stand behind the board, and how many of those are empty, which
+          is the number that explains a short board. The seat pair disappears when a title, region
+          or name filter is on, because the seat model then answers a question the board is no
+          longer asking. */}
       <section className={cn(SURFACE_CLASS, "relative border-t-[3px] border-t-orange-500")}>
-        <div className="px-5 py-5 sm:px-7 sm:py-6">
-          <p className="text-phx-xs font-black uppercase tracking-[0.24em] text-orange-600">Commercial Performance</p>
-          <h1 className="mt-1 text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-[2.2rem]">Rankings</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            {data.window.label} · {data.window.rangeLabel} · {scopeLabel} · Monthly Closing, published months only
-          </p>
+        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5 px-5 py-5 sm:px-7 sm:py-6">
+          <div className="min-w-0">
+            <p className="text-phx-xs font-black uppercase tracking-[0.24em] text-orange-600">Commercial Performance</p>
+            <h1 className="mt-1 text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-[2.2rem]">Rankings</h1>
+            <p className="mt-2 text-sm text-slate-600">
+              {data.window.label} · {data.window.rangeLabel} · {scopeLabel} · Monthly Closing, published months only
+            </p>
+          </div>
+          <dl className="flex flex-wrap items-end gap-x-6 gap-y-3">
+            {[
+              { label: "Ranked", value: data.boards.ranked, tone: "text-slate-900" },
+              ...(data.boards.seats != null
+                ? [
+                    { label: "Rep seats", value: data.boards.seats, tone: "text-slate-900" },
+                    { label: "Vacant", value: data.boards.vacant ?? 0, tone: "text-orange-600" },
+                  ]
+                : []),
+            ].map((figure, index) => (
+              <div className={cn(index > 0 && "border-l border-slate-200 pl-6")} key={figure.label}>
+                <dt className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">{figure.label}</dt>
+                <dd className={cn("mt-0.5 text-2xl font-black leading-none tabular-nums", figure.tone)}>{figure.value}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </section>
 
       {/* ── Filters ── */}
-      <section className={cn(SURFACE_CLASS, "px-4 py-4 sm:px-5")}>
-        <div className="space-y-3">
+      {/* Hairline-divided rows rather than a loose stack of chips: six filter rows with nothing
+          between them read as one heap, and a rule per row is the house's own way of saying these
+          are separate questions. The rules are drawn on the rows themselves, so a row that hides
+          (no titles to offer) takes its rule with it. */}
+      <section className={cn(SURFACE_CLASS, "px-4 py-1 sm:px-5")}>
+        <div className="divide-y divide-slate-100 [&>*]:py-2.5">
           <div className="flex flex-wrap items-center gap-2">
             <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Period</span>
             {MODES.map((mode) => (
@@ -516,7 +623,12 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
           </div>
         ) : null}
 
-        {/* ── Per-line boards, when more than one line is in scope ── */}
+        {/* ── Per-line boards, when more than one line is in scope ──
+            🔒 EVERY REP ON THE LINE, never a top slice (owner, 2026-10-03: "Don't show me the top
+            five only. I want to see the whole line."). A cut-off board answers a different question
+            from the one this page exists for — where everybody stands — and it hid the bottom of
+            each line, which is the half a line manager acts on. Do not reintroduce a `slice` here.
+            Pinned by tests/sales-rankings.test.ts. */}
         {data.boards.byLine.length > 1 ? (
           <div className="grid gap-3 xl:grid-cols-2">
             {data.boards.byLine.map((board) => (
@@ -525,12 +637,19 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
                 key={board.lineCode}
                 subtitle={
                   board.seats != null
-                    ? `${board.entries.length} ranked of ${board.seats} rep seats · ${board.vacant ?? 0} vacant`
-                    : `${board.entries.length} ranked`
+                    ? `all ${board.entries.length} ranked of ${board.seats} rep seats · ${board.vacant ?? 0} vacant`
+                    : `all ${board.entries.length} ranked`
                 }
-                title={`Top 5 — ${board.lineLabel} line`}
+                title={`${board.lineLabel} line — full ranking`}
               >
-                <BoardTable entries={board.entries.slice(0, 5)} showLine={false} />
+                {board.entries.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-slate-600">
+                    Nobody on this line can be ranked in this window — a rep with no target is not ranked, because his
+                    achievement would be arithmetic, not performance.
+                  </p>
+                ) : (
+                  <BoardTable entries={board.entries} showLine={false} />
+                )}
               </SectionCard>
             ))}
           </div>
