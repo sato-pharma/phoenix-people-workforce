@@ -146,9 +146,22 @@ const NO_FIX_AT_THE_PLACE = `Your location was not captured. Allow location for 
 export const NO_FIX_FOR_A_VISIT = `Turn on location for ${BROWSER_PLACEHOLDER}, then tap Log visit again.`;
 
 /**
- * 🔴 THE WIDEST READING THE SERVER TAKES — 100 m to validate a place, 500 m for a visit (owner,
+ * 🔴 THE WIDEST READING THE SERVER TAKES — 250 m to validate a place, 500 m for a visit (owner,
  * 2026-10-03: "accept up to max 500 m in visits and 200 m in validation", then the same hour "inform
- * the rep that validation must be accurate minimum accepted 100m accuracy").
+ * the rep that validation must be accurate minimum accepted 100m accuracy" — and that evening, shown
+ * the first night's refusals, "make the 100m 250m").
+ *
+ * 🔴 THE 100 m LINE DEAD-ENDED A REP WHOSE PHONE WAS FINE, WHICH IS WHY IT MOVED. Half an hour after
+ * the refused-readings table went live it caught nine refusals in 67 seconds from one rep whose PIN
+ * read 47 → 58 → 30 → 29 → 27 m — every one inside even the old line — while the photo he took at
+ * 21:29:58 read 220 m and never changed: `device_captured_at` was that one instant on all nine rows
+ * and `photo_lat`/`photo_lon` were identical to 13 decimals. A retry resends the SAME photo, so each
+ * attempt failed on a reading that could not improve, and his coordinate sat 890–911 m from a 2 km
+ * privacy-grid corner — no blurring, just a first fix taken before the GPS had settled. The owner was
+ * offered the alternative (make a refused photo force a retake, keep 100 m) and chose the wider line.
+ *
+ * 250 m still refuses what this gate exists to catch: an APPROXIMATE-location phone reports a flat
+ * 2,000 m, eight times the line — and the visit's own 500 m stays the wider of the two.
  *
  * On Phoenix CRM's first real day a phone left on APPROXIMATE location validated four different Benha
  * hospitals at one identical point, every reading "within 2,000 m". A place is fixed for good, so each
@@ -187,7 +200,7 @@ export const NO_FIX_FOR_A_VISIT = `Turn on location for ${BROWSER_PLACEHOLDER}, 
  * weak-signal flag in Settings (`weak_gps_meters`) is separate and unchanged: a visit between that
  * line and the visit's line saves, flagged for the manager.
  */
-export const PLACE_MAX_ACCURACY_METERS = 100;
+export const PLACE_MAX_ACCURACY_METERS = 250;
 export const VISIT_MAX_ACCURACY_METERS = 500;
 
 /** Shown on the validation screen before the photo — the rule, never his reading. */

@@ -5638,3 +5638,63 @@ Rule: `.claude/rules/time-off.md`. Pinned by `tests/vacation-sick-attachments.te
 writer, no legacy-column write from the add path, a repeated file name cannot collide, `upsert:
 false`, the per-file date in the migration and on screen, `getAll("sickDocument")`, the picker
 appending, the ownership gate).
+
+## The place's accuracy line — 100 m for one day, then 250 m, 2026-10-03
+
+**The rule:** a place is validated only when BOTH its readings — the live photo's own location and the
+separate Capture-location pin — are within **250 m**; a visit is taken within 500 m. Rule:
+`.claude/rules/phoenix-crm-approvals.md`. Pinned by `tests/phoenix-crm-accuracy-gate.test.ts`.
+
+### How the number moved, in his own words, inside one day
+
+| When | His words | The line |
+| --- | --- | --- |
+| 3 Oct, morning | "accept up to max 500 m in visits and 200 m in validation" | 200 m |
+| 3 Oct, the same hour | "inform the rep that validation must be accurate minimum accepted 100m accuracy" | **100 m** |
+| 3 Oct, evening | "make the 100m 250m" | **250 m** |
+
+The morning's tightening answered a real incident: on Delta (1)'s first field day a phone left on
+Android's APPROXIMATE location validated four different Benha hospitals at one identical point,
+30.4684684684685 / 31.1899555209043, every reading "within 2,000 m". A place is fixed for good, so
+every later visit there read "0 m apart" — a 2 km blur compared with itself, proving nothing. Every
+other rep that morning read between 3.6 and 19.8 m.
+
+### Why 100 m could not stay — the nine refusals of 21:30
+
+The evening's widening answered the opposite failure, and it was measured, not argued.
+`phoenix_crm_refused_readings` (shipped the same evening, PR #5262) was live for **half an hour**
+when it recorded **nine refusals in 67 seconds** — 21:30:29 to 21:31:36 Cairo — from one rep,
+Hassan Elsherbiny, all `place`, all `rough`:
+
+| Time (Cairo) | Pin | Photo | Line then |
+| --- | --- | --- | --- |
+| 21:30:29 | **47 m** | 220 m | 100 |
+| 21:30:40 | **47 m** | 220 m | 100 |
+| 21:30:52 | **58 m** | 220 m | 100 |
+| 21:31:05 → 21:31:17 | **30 m** | 220 m | 100 |
+| 21:31:24 | **29 m** | 220 m | 100 |
+| 21:31:36 | **27 m** | 220 m | 100 |
+
+His phone was **fine**, and three measurements say so rather than one:
+
+- his **pin** improved on its own — 47 → 58 → 30 → 29 → 27 m — every reading already inside the old
+  line;
+- his coordinate carried real GPS jitter (30.9649311938527 → 30.9647848165291);
+- it sat **890–911 m** from the corner of a 2 km privacy-grid square. Android's blurring lands **on**
+  a corner (0.0 m); a hand-placed fake pin lands ~500 m away. Neither describes this.
+
+What refused him was the **photo's** reading, and it was **frozen**: `photo_accuracy_meters` was 220 on
+all nine rows, `photo_lat`/`photo_lon` were identical to 13 decimals, and `device_captured_at` was the
+single instant **21:29:58** every time. He took one photo before his GPS had settled, and **a retry
+resends that same photo**. So the gate refused him on a number that could not improve however long he
+stood there: a loop whose only exit — retaking the photo — nothing on his screen named. The photo had
+been taken in the right place; it sat 9–34 m from his pin.
+
+### The alternative he was offered, and declined
+
+The session recommended keeping 100 m and making a refused photo **force a retake**, on the grounds
+that the photo's reading is what proves he was standing there when the shutter fired. He chose the
+wider line instead. His design is final: **do not move it back, and do not re-propose the retake fix.**
+
+250 m still catches what the gate exists for — an approximate-location phone reports a flat 2,000 m,
+eight times the line — and the visit's own 500 m stays the wider of the two.
