@@ -37,6 +37,12 @@ export type OrgSeat = {
   areaName: string | null;
   regionName: string | null;
   seatLabel: string | null;
+  /**
+   * The per-line sales-only "Others" bucket (`au.seats.is_other_pseudo_dm`) — it holds no reps and
+   * is NOT a team, so anything counting teams or rep seats must drop it. OPTIONAL so every seat a
+   * test builds by hand keeps compiling; the organogram read in server/org.ts always fills it.
+   */
+  isOtherPseudoDm?: boolean | null;
 };
 
 export type OrgIndex = {

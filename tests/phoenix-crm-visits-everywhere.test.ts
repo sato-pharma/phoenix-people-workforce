@@ -519,7 +519,14 @@ function runPanelTests(): void {
   const server = stripComments(read("src/lib/crm/phoenix-team-starts-server.ts"));
   assert.match(server, /\.from\(PHOENIX_CRM_TEAM_STARTS_TABLE\)\s*\.select\("id, team_seat_id, starts_on, stops_on, started_by, started_by_hr_id, note"\)/);
   assert.match(server, /\.from\(PHOENIX_CRM_TEAM_START_NOTICES_TABLE\)\.select\("team_seat_id, rep_hr_id, week_start"\)/);
-  assert.match(server, /if \(isTableMissing\(startsRead\.error\)\) return \{ provisioned: false, cairoToday, teams: \[\] \};/, "before the migration, the panel says it is not set up");
+  // Before the migration the panel says it is not set up — and the readiness board beside it
+  // (src/lib/crm/phoenix-team-readiness.ts, 2026-10-03) says it cannot answer rather than printing
+  // zeros, which would read as "nobody has a list".
+  assert.match(
+    server,
+    /if \(isTableMissing\(startsRead\.error\)\) \{\s*return \{ provisioned: false, cairoToday, teams: \[\], readiness: unreadableTeamReadiness\(cairoToday\) \};\s*\}/,
+    "before the migration, the panel says it is not set up",
+  );
   assert.match(server, /\.rpc\(PHOENIX_CRM_SET_TEAM_START_RPC, \{\s*p: \{ action: input\.action, team_seat_id: input\.teamSeatId, day: input\.day, actor_hr_id: input\.actorHrId, actor_login_id: input\.actorLoginId \},\s*\}\)/);
   assert.match(server, /return access\.role === "Super Admin" \|\| access\.scope === "system";/, "the Super Admin alone");
   for (const file of sourceFiles("src").concat(sourceFiles("app"))) {

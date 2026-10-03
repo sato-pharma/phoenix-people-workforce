@@ -19,7 +19,10 @@ import {
   type PhoenixTeamStart,
   type PhoenixTeamStartsPanelData,
 } from "@/lib/crm/phoenix-team-starts";
+import { unreadableTeamReadiness } from "@/lib/crm/phoenix-team-readiness";
+import { loadPhoenixTeamReadiness } from "@/lib/crm/phoenix-team-readiness-server";
 import { loadVendorLeftoversBySeat } from "@/lib/crm/phoenix-vendor-leftovers";
+import { logError } from "@/lib/observability/log";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import type { VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
@@ -60,7 +63,9 @@ export async function loadPhoenixTeamStartsPanel(): Promise<PhoenixTeamStartsPan
     supabase.from(PHOENIX_CRM_TEAM_START_NOTICES_TABLE).select("team_seat_id, rep_hr_id, week_start"),
   ]);
   if (startsRead.error) {
-    if (isTableMissing(startsRead.error)) return { provisioned: false, cairoToday, teams: [] };
+    if (isTableMissing(startsRead.error)) {
+      return { provisioned: false, cairoToday, teams: [], readiness: unreadableTeamReadiness(cairoToday) };
+    }
     throw new Error(`The Phoenix CRM team starts could not be read: ${startsRead.error.message}`);
   }
   if (noticesRead.error && !isTableMissing(noticesRead.error)) {
@@ -99,11 +104,20 @@ export async function loadPhoenixTeamStartsPanel(): Promise<PhoenixTeamStartsPan
     if (!teamSeatId) continue;
     stillOnVendor.set(teamSeatId, [...(stillOnVendor.get(teamSeatId) ?? []), ...reps]);
   }
-  return {
-    provisioned: true,
-    cairoToday,
-    teams: buildPhoenixTeamRows({ org, starts, firstPlans, names: nameFor, cairoToday, stillOnVendor }),
-  };
+  const teams = buildPhoenixTeamRows({ org, starts, firstPlans, names: nameFor, cairoToday, stillOnVendor });
+  // Readiness is read from the SAME rows, so the board beside the Start button can never disagree
+  // with it about which teams exist or what each is called. A failed read is reported as unreadable
+  // rather than thrown: the Start button must keep working, and zeros would read as "nobody has a
+  // list", which is the one wrong answer that looks like data.
+  const readiness = await loadPhoenixTeamReadiness({ org, teams, names: nameFor, cairoToday }).catch((error: unknown) => {
+    logError("Phoenix CRM team readiness unreadable on the CRM hub", {
+      error,
+      labels: { event: "phoenix_crm_team_readiness_unreadable" },
+    });
+    return unreadableTeamReadiness(cairoToday);
+  });
+
+  return { provisioned: true, cairoToday, teams, readiness };
 }
 
 /** A refusal the Super Admin can act on (409), in words. */

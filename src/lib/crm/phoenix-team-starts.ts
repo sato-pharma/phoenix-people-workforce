@@ -220,6 +220,7 @@
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
+import type { PhoenixTeamReadinessPanelData } from "@/lib/crm/phoenix-team-readiness";
 import { utcDate } from "@/lib/format/cairo-datetime";
 import type { OrgIndex, OrgSeat } from "@/lib/phoenix-crm/scope";
 import { sortVendorLeftovers, type VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
@@ -474,6 +475,13 @@ export type PhoenixTeamStartsPanelData = {
   provisioned: boolean;
   cairoToday: string;
   teams: PhoenixTeamRow[];
+  /**
+   * Which of those teams is READY to be started, read beside the Start button rather than on a page
+   * of its own — the same teams, the same titles, the same start state.
+   * `src/lib/crm/phoenix-team-readiness.ts` holds the rules, and why "seats filled" is never the
+   * headline there.
+   */
+  readiness: PhoenixTeamReadinessPanelData;
 };
 
 function teamTitle(seat: OrgSeat | null, names: (hrId: string) => string | null): string {
