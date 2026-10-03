@@ -69,16 +69,33 @@ export function scoreNote(text, lib) {
   return scores;
 }
 
-/** Decide one note's module. Returns { module, how }. */
+/**
+ * Decide one note's module. Returns { module, how }.
+ *
+ * 🔴 A TIE IS NOT A MATCH. Measured 2026-10-03 on `a-not-loaded-assertion-is-satisfied-by-a-refusal`:
+ * five modules scored 2 each — crm, database, engineering, git-worktrees, sessions — and the note
+ * went to `crm` purely because that was the one module its session had touched, reported as a
+ * confident "best match". It is a note about module memory itself. So when the top score is shared,
+ * prefer the fallback (`sessions`, the catch-all for how a session works) if it is among the tied,
+ * and either way SAY it was a tie, so the fold's own PR shows which notes are guesses.
+ */
 export function classify(slug, text, lib) {
   const sid = /originSessionId:\s*([0-9a-f-]{36})/i.exec(text)?.[1];
   const scores = scoreNote(`${slug.replace(/-/g, " ")}\n${text}`, lib);
   const touched = sid ? touchedBy(sid).filter((id) => id in scores) : [];
-  if (touched.length === 1) return { module: touched[0], how: "the only module its session touched" };
   const pool = touched.length ? touched : Object.keys(scores);
-  const best = pool.sort((a, b) => scores[b] - scores[a])[0];
-  if (scores[best] > 0) return { module: best, how: touched.length ? "best match among the modules its session touched" : "its own words" };
-  return { module: FALLBACK, how: "no module matched — filed under the fallback, move it if wrong" };
+  const ranked = [...pool].sort((a, b) => scores[b] - scores[a]);
+  const best = ranked[0];
+  if (!(scores[best] > 0)) return { module: FALLBACK, how: "no module matched — filed under the fallback, move it if wrong" };
+  // Every module sharing the top score, across the WHOLE map — a tie inside the touched pool is
+  // still a tie when a module the session never opened scores the same.
+  const tied = Object.keys(scores).filter((id) => scores[id] === scores[best]);
+  if (tied.length > 1) {
+    const pick = tied.includes(FALLBACK) ? FALLBACK : best;
+    return { module: pick, how: `tied at ${scores[best]} with ${tied.filter((t) => t !== pick).join(", ")} — a guess, move it if wrong` };
+  }
+  if (touched.length === 1) return { module: touched[0], how: "the only module its session touched" };
+  return { module: best, how: touched.length ? "best match among the modules its session touched" : "its own words" };
 }
 
 /** The owner's "never trim, never forget" block keeps every line, whatever module its note is in. */
