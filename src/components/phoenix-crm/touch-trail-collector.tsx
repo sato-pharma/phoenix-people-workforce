@@ -37,6 +37,7 @@ import {
   MAX_EVENTS_PER_BATCH,
   MAX_QUEUED_EVENTS,
   SCROLL_SAMPLE_MS,
+  containerLabelOf,
   describeElement,
   labelOf,
   valueForTrail,
@@ -102,19 +103,30 @@ function elementOf(target: EventTarget | null): HTMLElement | null {
 /**
  * The words a human would have read on the control.
  *
- * `innerText` is asked LAST and capped by `labelOf`, because a tap landing on a card rather than on a
- * button would otherwise record the whole card's text as its label.
+ * 🔴 A CONTROL LABELS ITSELF; A CONTAINER DOES NOT. Owner, 2026-10-03: "trim the touch trail label to
+ * the control, not the whole card." `elementOf` returns the interactive OWNER when there is one, and
+ * falls back to the bare element under the finger when there is not — and that fallback's `innerText`
+ * is every descendant's text joined. Asking `labelOf` last and capping at 160 was not enough: it
+ * recorded 139- and 159-character labels in the first hour of real data, which is a whole card.
+ *
+ * So the subtree text is read through `containerLabelOf` — its first LINE — unless the element is
+ * itself interactive, where `innerText` IS its own words and the 160-char cap is the right one. An
+ * authored `aria-label`, `title` or `placeholder` is taken as-is either way: an author who wrote one
+ * wrote the label, however long.
  */
 function labelFor(element: HTMLElement | null): string | null {
   if (!element) return null;
   const input = element as HTMLInputElement;
-  return (
+  const authored =
     labelOf(element.getAttribute("aria-label")) ??
     labelOf(element.getAttribute("title")) ??
-    labelOf(input.placeholder) ??
-    labelOf(element.innerText) ??
-    labelOf(element.getAttribute("name"))
-  );
+    labelOf(input.placeholder);
+  if (authored) return authored;
+  // `matches` is guarded because this runs against whatever the page hands it, and a target that is
+  // an Element without it would otherwise throw inside a listener that must never throw (rule 2).
+  const itself = typeof element.matches === "function" && element.matches(INTERACTIVE);
+  const fromText = itself ? labelOf(element.innerText) : containerLabelOf(element.innerText);
+  return fromText ?? labelOf(element.getAttribute("name"));
 }
 
 function descriptorFor(element: HTMLElement | null): string | null {

@@ -3,12 +3,14 @@ import { readFileSync } from "node:fs";
 
 import {
   FLUSH_AT_EVENTS,
+  MAX_CONTAINER_LABEL_CHARS,
   MAX_EVENTS_PER_BATCH,
   MAX_LABEL_CHARS,
   MAX_QUEUED_EVENTS,
   MAX_VALUE_CHARS,
   SCROLL_SAMPLE_MS,
   TOUCH_TRAIL_KINDS,
+  containerLabelOf,
   describeElement,
   isSecretField,
   labelOf,
@@ -279,10 +281,146 @@ function runMigrationTests() {
   assert.match(migration, /index if not exists phoenix_crm_touch_trail_session_idx/, "and the index that replays one page load in order");
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. THE LABEL IS THE CONTROL'S, NEVER THE WHOLE CARD
+//
+// Owner, 2026-10-03, after reading the first hour of real data: "trim the touch trail label to the
+// control, not the whole card."
+//
+// `elementOf` returns the interactive OWNER of a press when there is one and the bare element under
+// the finger when there is not. A touch screen produces that second case constantly — a finger down
+// to scroll a list fires a press on a container with no control above it (36 presses against 3 taps
+// in the first hour) — and a container's `innerText` is every descendant's text joined. The 160-char
+// cap was never a trim: it recorded 139 and 159 characters for single taps.
+//
+// WHY THE FIRST LINE RATHER THAN A SMALLER CAP. Cutting the joined text at 48 keeps the start of the
+// first line plus whatever of the second fits, which reads as a sentence nobody saw. `innerText`
+// already breaks per rendered block, so its first line is the heading a person names the thing by —
+// which keeps WHICH card was pressed, the only thing a container label is for.
+//
+// Every fixture below is a REAL label this table recorded between 23:27 and 23:29 on 3 October.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Tonight's rows, as the browser's own `innerText` would have broken them per block. */
+const TELEGRAM_BANNER = [
+  "Get Phoenix CRM messages on Telegram",
+  "Plans, requests and reminders reach your phone the moment they happen.",
+  "Connect Telegram",
+  "Later",
+  "New here? The one-page guide",
+].join("\n");
+
+const MENOUFIA_CARD = [
+  "Menoufia 1 · CNS",
+  "Nada Saied",
+  "APPROVED",
+  "17 AM · 71 PM",
+  "Approved Fri 2 Oct, 10:34 PM by Mahmoud ElHassanin",
+  "Nothing flagged",
+  "Open the plan",
+].join("\n");
+
+const TEAM_CARD = [
+  "TEAM",
+  "Your team",
+  "The territories beneath you: the plans, the list requests, and how far each customer list has come.",
+].join("\n");
+
+function runLabelTrimTests() {
+  // ── The rule, on the two labels that actually bloated ──────────────────────
+  assert.equal(
+    containerLabelOf(TELEGRAM_BANNER),
+    "Get Phoenix CRM messages on Telegram",
+    "🔴 the banner records its HEADING — this is the 159-character label the owner read and told us to trim",
+  );
+  assert.equal(
+    containerLabelOf(MENOUFIA_CARD),
+    "Menoufia 1 · CNS",
+    "🔴 and a territory card keeps WHICH card was pressed, which is the whole point of a container label",
+  );
+  assert.equal(
+    containerLabelOf(TEAM_CARD),
+    "TEAM",
+    "a card whose first block is its eyebrow labels as that eyebrow, not as its description",
+  );
+
+  // ── Every real label from the first hour, measured ─────────────────────────
+  // The regression this section exists for: not one of them may exceed the container cap.
+  const tonight = [
+    TELEGRAM_BANNER,
+    MENOUFIA_CARD,
+    TEAM_CARD,
+    "Gharbia 2 (Mahalla) · CNS\nNo rep in this territory\nNOT STARTED\nOpen the plan",
+    "5 territories, 1 without a rep · 0 of 5 lists ready",
+    "TEAM",
+    "Week",
+    "Open the plan",
+  ];
+  for (const raw of tonight) {
+    const label = containerLabelOf(raw);
+    assert.ok(label, `every real label still records something — ${JSON.stringify(raw.slice(0, 40))} went null`);
+    assert.ok(
+      label.length <= MAX_CONTAINER_LABEL_CHARS,
+      `a container label may never exceed ${MAX_CONTAINER_LABEL_CHARS} characters — got ${label.length} for ${JSON.stringify(label)}`,
+    );
+    assert.ok(!label.includes("\n"), `and never spans a line break — got ${JSON.stringify(label)}`);
+  }
+
+  // ── The cap, and the cut that is never an ellipsis ─────────────────────────
+  assert.ok(
+    MAX_CONTAINER_LABEL_CHARS < MAX_LABEL_CHARS,
+    `a container's cap must be TIGHTER than a control's, or this is not a trim at all (${MAX_CONTAINER_LABEL_CHARS} vs ${MAX_LABEL_CHARS})`,
+  );
+  const long = "x".repeat(MAX_CONTAINER_LABEL_CHARS + 25);
+  const cut = containerLabelOf(long + "\nsecond block");
+  assert.equal(cut?.length, MAX_CONTAINER_LABEL_CHARS, "a first line past the cap is cut to exactly the cap");
+  assert.doesNotMatch(cut ?? "", /…|\.\.\./, "🔴 cut, NEVER ellipsed — an added ellipsis is indistinguishable from one a rep typed");
+  assert.equal(
+    containerLabelOf("short\n" + long),
+    "short",
+    "and a long SECOND block never reaches the label at all — this is the case a smaller cap would have mangled",
+  );
+
+  // ── The shapes a live page really produces ─────────────────────────────────
+  assert.equal(containerLabelOf("\n\n  \nMenoufia 1 · CNS\nNada Saied"), "Menoufia 1 · CNS", "leading blank blocks are skipped, not labelled as null");
+  assert.equal(containerLabelOf("  Open   the    plan  "), "Open the plan", "inner whitespace collapses, as labelOf does");
+  assert.equal(containerLabelOf("\r\nWeek\r\nMonth"), "Week", "a CRLF page breaks lines too");
+  assert.equal(containerLabelOf("   \n \n "), null, "a container with no words of its own labels as null");
+  assert.equal(containerLabelOf(""), null, "empty is null");
+  assert.equal(containerLabelOf(null), null, "and a non-string is null, like every other reader here");
+  assert.equal(containerLabelOf(undefined), null, "including undefined");
+  assert.equal(containerLabelOf(42), null, "including a number");
+
+  // ── The collector asks the right one of the two ────────────────────────────
+  const code = stripComments(source(COLLECTOR));
+  assert.match(code, /containerLabelOf\(element\.innerText\)/, "the collector reads a CONTAINER's text through containerLabelOf");
+  assert.match(
+    code,
+    /element\.matches\(INTERACTIVE\)/,
+    "and decides which rule applies by asking whether the element is itself interactive — the owner's own innerText is its own words",
+  );
+  assert.match(
+    code,
+    /itself \? labelOf\(element\.innerText\) : containerLabelOf\(element\.innerText\)/,
+    "🔴 an interactive element keeps the full 160-char label; only a container is trimmed",
+  );
+  assert.match(
+    code,
+    /labelOf\(element\.getAttribute\("aria-label"\)\)/,
+    "an authored aria-label is still asked FIRST, for a control and a container alike",
+  );
+  assert.doesNotMatch(
+    code,
+    /labelOf\(element\.getAttribute\("title"\)\) \?\?\s*labelOf\(input\.placeholder\) \?\?\s*labelOf\(element\.innerText\)/,
+    "🔴 the old chain — which fell straight through to the whole subtree's text — must not come back",
+  );
+}
+
 export function runPhoenixCrmTouchTrailTests() {
   runSecretTests();
   runDescriptorTests();
   runParseTests();
   runBlindTests();
   runMigrationTests();
+  runLabelTrimTests();
 }
