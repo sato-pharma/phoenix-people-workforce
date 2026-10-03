@@ -690,8 +690,15 @@ export async function runPhoenixCrmVisitAsksTests(): Promise<void> {
 
     // The notice carries no address and no position — there is nothing of the kind to write into one.
     const notify = source("src/lib/phoenix-crm/server/notifications.ts");
-    const member = notify.slice(notify.indexOf('kind: "visit_ask";'), notify.indexOf("type Delivery = {"));
+    // 🔴 THE VISIT ASK'S OWN MEMBER, and nothing after it. This used to run to `type Delivery`, which
+    // was the end of the union only while visit_ask happened to be last — so the day-start notice
+    // (owner, 2026-10-03), which carries a position DELIBERATELY because he ruled the rep's location
+    // goes to his managers, landed inside a check written about a different notice. The rule being
+    // held here is about THIS notice: a rep asking for a double visit tells nobody where anyone is.
+    const memberStart = notify.indexOf('kind: "visit_ask";');
+    const member = notify.slice(memberStart, notify.indexOf("\n    }", memberStart));
     assert.ok(member.includes("customerName: string;"), "the visit ask notice is where it was");
+    assert.equal(member.includes("day_start"), false, "and the slice stops at its own member");
     assert.doesNotMatch(member, /\b(address|lat|lon|latitude|longitude|place|distance)\b/i, "and it names no address, no place and no position");
     // Answering withdraws the "accept or decline" line; cancelling withdraws them all, announcing nothing.
     const service = source("src/lib/phoenix-crm/server/visit-asks.ts");

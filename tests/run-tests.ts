@@ -1629,6 +1629,7 @@ import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
 import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
+import { runPhoenixCrmDayStartTests } from "./phoenix-crm-day-start.test.ts";
 import { runPhoenixCrmFirstVisitTests } from "./phoenix-crm-first-visit.test.ts";
 import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
 import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-customers.test.ts";
@@ -5697,6 +5698,11 @@ await runTest(
 await runTest(
   "A rep's FIRST Phoenix CRM visit emails his district manager, his national sales manager and SFE — never the rep, once per rep ever, with the account and the Cairo time it was submitted",
   runPhoenixCrmFirstVisitTests,
+);
+
+await runTest(
+  "\"Show your manager you started working\": the button exists only before the rep's first AM visit, the press tells his district manager (by email too) and the SFE Manager (in-app and Telegram only, so a daily notice cannot bury him), it says the location travels before he presses, and the server takes neither the day nor the time from the phone",
+  runPhoenixCrmDayStartTests,
 );
 
 await runTest(

@@ -23,6 +23,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import { crmUrl, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
+import { DayStartBlock } from "@/components/phoenix-crm/day-start-button";
+import { canStartDay } from "@/lib/phoenix-crm/day-start-rules";
 import { cairoClock, dayLabel, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
 import { listText, territoryLine } from "@/components/phoenix-crm/labels";
 import type { CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
@@ -1026,6 +1028,22 @@ export function VisitsTab({
       {view ? (
         <>
           {day.error ? <CrmLoadError message={day.error} onRetry={day.reload} /> : null}
+          {/* 🔴 FIRST ON THE DAY, AND ONLY BEFORE THE FIRST AM VISIT (owner, 2026-10-03). It sits above
+              the day's record and the counters because it is the one thing he is asked to do BEFORE he
+              works — "press here before doing only the first AM visit … before not after". `canStartDay`
+              is the same rule the server applies, so the button is never offered where the save refuses. */}
+          <DayStartBlock
+            dayStart={view.dayStart}
+            onStarted={day.reload}
+            seatId={view.territory.seatId}
+            show={canStartDay({
+              viewerIsRep: view.canSetDayActivity,
+              isToday,
+              amVisits: figures.am,
+              alreadyStarted: view.dayStart !== null,
+            })}
+            test={view.isTest}
+          />
           <DayActivityBlock onChanged={day.reload} view={view} />
           <CrmBlock>
             {/* AM first, as every sentence and the Day screen say it. Two figures, never a total. */}

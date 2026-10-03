@@ -65,13 +65,24 @@ const EVENT_TYPES = [
   // ran out — and the pass closes them in a batch, which is the unprompted-bulk mail he has ruled
   // out standing. His "only" is enforced on both axes, so it is in PUSH_BLOCKED_EVENT_TYPES below.
   "plan_edit_expired",
+  // The SFE Manager's copy of a rep's day start (owner, 2026-10-03). The district manager's copy is
+  // `day_start_confirmed` and emails; this one is the same news to the person who reads every line, so
+  // it is in-app and Telegram only — about 74 a morning at full rollout is a burial, not a notice.
+  "day_start_seen",
 ];
 
 /**
  * The notices he has called "in-app and Telegram ONLY": barred from email AND from the phone. The
  * 06:55 digest is the other one and is pinned in its own test — it never comes through the notifier.
  */
-const PUSH_BLOCKED_EVENT_TYPES = ["plan_edit_expired"];
+const PUSH_BLOCKED_EVENT_TYPES = [
+  "plan_edit_expired",
+  // The SFE Manager's copy of a rep's day start (2026-10-03). On this list rather than merely off the
+  // email list because the Telegram-failure fallback re-sends as email, and an unlinked Telegram is
+  // the expected case — so "off the email list" alone would mail him once per rep on exactly the days
+  // Telegram fails. Here both axes are shut and `phoenixCrmChannels` answers in-app + Telegram.
+  "day_start_seen",
+];
 
 /**
  * 🔴 THE TWO EXCEPTIONS, EACH BY THE OWNER'S OWN ORDER. These five, and ONLY these five, keep their email
@@ -87,14 +98,28 @@ const PUSH_BLOCKED_EVENT_TYPES = ["plan_edit_expired"];
  * and the SFE Manager, with the owner on the BCC every system email already carries. It is the first
  * Phoenix CRM email that is NOT a step of anything: nothing waits on anybody who reads it. Who gets it
  * and the once-ever key are pinned in tests/phoenix-crm-first-visit.test.ts.
+ *
+ * (2026-10-03) A rep's "Show your manager you started working", pressed before his first AM visit — to
+ * his DISTRICT MANAGER only. It is the first REPEATING email this module has ever had, and that is
+ * exactly why its email is narrower than the notice: the SFE Manager gets the same news on a SECOND
+ * event type (`day_start_seen`, push-blocked), because channels are decided per event type and never
+ * per recipient, and one shared type would mail him once per rep — about 74 every morning once the
+ * module is company-wide. Who is told, and that split, are pinned in tests/phoenix-crm-day-start.test.ts.
  */
-const EMAIL_EVENT_TYPES = ["plan_edit_waiting", "plan_edit_moved_on", "plan_edit_refused", "plan_edit_reopened", "first_visit_submitted"];
+const EMAIL_EVENT_TYPES = [
+  "plan_edit_waiting",
+  "plan_edit_moved_on",
+  "plan_edit_refused",
+  "plan_edit_reopened",
+  "first_visit_submitted",
+  "day_start_confirmed",
+];
 
 export function runPhoenixCrmEmailBlockTests() {
   assert.deepEqual(
     [...PHOENIX_CRM_EMAIL_EVENT_TYPES].sort(),
     [...EMAIL_EVENT_TYPES].sort(),
-    "exactly the four person-taken steps of a plan edit, and a rep's first visit, may email",
+    "exactly the four person-taken steps of a plan edit, a rep's first visit, and his daily start to his district manager, may email",
   );
   assert.deepEqual(
     [...PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES].sort(),

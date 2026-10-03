@@ -747,6 +747,11 @@ export const accessRegistry = [
   // it — and the rep's own to write, exactly like his list and his plan.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/day-activities", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/day-activities", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // "Show your manager you started working" (owner, 2026-10-03): the rep's own press, before his first
+  // AM visit. The service narrows the POST to the territory's own rep (`territoryForRepWrite`), the
+  // same boundary the day activity keeps — a manager enters a rep's visit, never his start of day.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/day-start", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/day-start", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // The daily forecast (owner, 2026-10-01), CNS only: the rep's own form and send, and the managers'
   // board. The service narrows each again — the form to the territory's own rep, the board to a reader
   // of team reports — so `read` here is gate one of two, as everywhere in the module.

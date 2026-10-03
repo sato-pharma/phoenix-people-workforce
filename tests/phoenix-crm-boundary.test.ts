@@ -208,6 +208,11 @@ const ROUTE_GATES: RouteGate[] = [
   get("today"),
   get("day-activities"),
   post("day-activities", "create"),
+  // "Show your manager you started working" (owner, 2026-10-03): the read is any reader of the
+  // territory — a manager looking at whether his rep started, and on which day — while the press is
+  // narrowed in the service to the territory's OWN rep, the same boundary the day activity keeps.
+  get("day-start"),
+  post("day-start", "create"),
   // The CNS daily forecast (owner, 2026-10-01). The form and its send are the territory's own rep's
   // (narrowed again in the service); the board is a read, narrowed there to readers of team reports.
   get("forecast"),
@@ -610,6 +615,10 @@ const LATER_MIGRATIONS = [
   // like one. Its functions are all REPLACEMENTS already in `callable`, so nothing it adds is missed here —
   // and `liveMigrationSql` reads the bodies this entry replaces anyway.
   "supabase/migrations/20261003000753_phoenix_crm_list_template_bulk_add.sql",
+  // "Show your manager you started working" (owner, 2026-10-03). ONE brand-new table and ONE
+  // brand-new function; it replaces no save_visit and alters nothing that exists, so it appends
+  // safely at the end and cannot disturb the replacement ordering above.
+  "supabase/migrations/20261003075803_phoenix_crm_day_starts.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
