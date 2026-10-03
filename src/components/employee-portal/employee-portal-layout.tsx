@@ -143,6 +143,10 @@ import { PORTAL_QUICK_ACTION_ICONS } from "@/components/employee-portal/portal-b
 import { portalQuickActions } from "@/lib/employee-portal/portal-quick-actions";
 import { useBottomNavPreference } from "@/components/employee-portal/use-bottom-nav-preference";
 
+/** The default fold set: EMPTY — every section opens expanded (owner, 2026-10-03). Module-level so
+ *  its identity is stable across renders, exactly as the useMemo it replaced was. */
+const NO_SECTIONS_FOLDED: readonly string[] = [];
+
 const EMPLOYEE_SIDEBAR_COLLAPSED_KEY = "phoenix-employee-sidebar-collapsed";
 const EMPLOYEE_SIDEBAR_COLLAPSED_EVENT = "phoenix-employee-sidebar-collapsed-change";
 const EMPLOYEE_ROUTE_PENDING_EVENT = "phoenix-employee-route-pending";
@@ -1028,14 +1032,17 @@ function EmployeePortalMenu({
   const lockedModuleKeys = useLockedModuleKeys();
   const storedCollapsedSections = useCollapsedSections();
   const collapsePreferenceSet = useCollapsePreferenceSet();
-  // The default fold state (owner, 2026-09-29): every real section folded EXCEPT My Workspace — and
-  // Pinned/Recent stay open, since hiding a person's own shortcuts behind a fold defeats them. Once
-  // this device folds or opens anything by hand, its explicit choice (storedCollapsedSections) takes
-  // over. The active section is force-opened below regardless, so you always see where you are.
-  const defaultCollapsedSections = useMemo(
-    () => baseSections.filter((section) => section.title !== "My Workspace").map((section) => section.title),
-    [baseSections],
-  );
+  // 🔴 THE DEFAULT FOLD STATE IS NOW *NOTHING FOLDED* (owner, 2026-10-03: "make the sidebar titles in
+  // emp portal expanded not collapsed by default"). This REVERSES his 2026-09-29 default, which folded
+  // every real section except My Workspace and left a rep reading a column of section names with a
+  // count beside each one — he had to open a fold before he could see where anything was. Edit THIS
+  // line if it changes again; never add a second rule beside it.
+  //
+  // Unchanged either side of it: the RAIL still opens collapsed to icons (his 2026-09-29 rule, a
+  // separate preference — see getEmployeeSidebarCollapsedServerSnapshot); once this device folds or
+  // opens anything by hand its explicit choice (storedCollapsedSections) takes over from this
+  // default; and the active section is force-opened below regardless, so you always see where you are.
+  const defaultCollapsedSections = NO_SECTIONS_FOLDED;
   const collapsedSections = collapsePreferenceSet ? storedCollapsedSections : defaultCollapsedSections;
   const filtering = filterQuery.trim().length > 0;
   const shownSections = filtering ? filterSections(baseSections, filterQuery) : sections;

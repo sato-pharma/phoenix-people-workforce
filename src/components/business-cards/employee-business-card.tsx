@@ -133,7 +133,10 @@ export function EmployeeBusinessCard({
       const canvas = document.createElement("canvas");
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      canvas.className = "block h-auto w-full max-w-[520px] bg-white shadow-sm";
+      // A printed card on a mat: a real drop shadow and a hairline, so the two pages read as the
+      // physical cards they are rather than as two flat grey panels.
+      canvas.className =
+        "block h-auto w-full max-w-[520px] border border-slate-200 bg-white shadow-[0_10px_28px_rgba(15,23,42,0.14)]";
       container.appendChild(canvas);
       await page.render({ canvas, viewport }).promise;
     }
@@ -280,7 +283,7 @@ export function EmployeeBusinessCard({
         <div className="relative border border-slate-300 bg-slate-100">
           {/* The card is drawn here as canvases — always visible, never a forced download. */}
           <div
-            className="flex min-h-[420px] w-full flex-col items-center justify-center gap-3 p-3"
+            className="flex min-h-[260px] w-full flex-col items-center justify-center gap-4 p-4"
             ref={pdfContainerRef}
           />
           {!hasPreview ? (

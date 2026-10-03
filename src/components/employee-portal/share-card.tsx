@@ -209,7 +209,11 @@ export function ShareCardBar({ getFile, caption, getPageUrl, disabled, heading =
         <Share2 aria-hidden className="size-3.5 text-orange-500" />
         {heading}
       </div>
-      <div className="flex flex-wrap gap-2">
+      {/* A 2x2 GRID, not a wrap. There are exactly four targets, and `flex-wrap` sized each button to
+          its own label — so on a narrow card they broke 3 + 1 and left Facebook alone on the last
+          line with a ragged edge above it. Four equal cells read as one block at every width, and
+          collapse to a single column only on the very narrowest phones. */}
+      <div className="grid grid-cols-2 gap-2">
         {SHARE_TARGETS.map((target) => (
           <button
             key={target.id}
@@ -218,7 +222,7 @@ export function ShareCardBar({ getFile, caption, getPageUrl, disabled, heading =
             onClick={() => share(target.id)}
             aria-label={`Share to ${target.label}`}
             title={`Share to ${target.label}`}
-            className="group inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_16px_rgba(15,23,42,0.10)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="group inline-flex w-full items-center justify-center gap-1.5 whitespace-nowrap border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_16px_rgba(15,23,42,0.10)] disabled:cursor-not-allowed disabled:opacity-50"
             style={{ ["--brand" as string]: target.brand }}
           >
             {busy === target.id ? (

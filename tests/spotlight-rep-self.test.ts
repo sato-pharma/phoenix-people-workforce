@@ -5,6 +5,7 @@ import type { SpotlightOrgIndex } from "../src/lib/spotlight/org.ts";
 import type { OrgPerson, OrgSeat } from "../src/lib/spotlight/rank.ts";
 import { hrKey } from "../src/lib/spotlight/rank.ts";
 import { repSpotlightDocumentHtml } from "../src/lib/spotlight/pdf.ts";
+import { repSpotlightPresets } from "../src/lib/spotlight/rep-period-presets.ts";
 import {
   RepSpotlightError,
   loadRepSpotlight,
@@ -284,5 +285,61 @@ export async function runSpotlightRepSelfTests(): Promise<void> {
     );
     assert.equal(spotlight.eligible, false);
     assert.match(spotlight.reason ?? "", /90%/);
+  }
+
+  // ── 12. THE QUICK PICKS LAND ON MONTHS THAT HAVE FIGURES ─────────────────────────────────────
+  // A closing is never released during the month it covers, so the newest measurable month is always
+  // behind the calendar. The picks used to be anchored on the newest SELECTABLE month, which made the
+  // first and most prominent one a guaranteed dead end. Production on 2026-10-03: the picker offered
+  // 2026-01 … 2026-10 while only 2026-07 and 2026-08 were published — "This month" asked for October
+  // and "Last 2 months" for September–October, and both came back "none of these months has a
+  // published closing yet". Reproduced exactly here.
+  {
+    const offered = [
+      "2026-01", "2026-02", "2026-03", "2026-04", "2026-05",
+      "2026-06", "2026-07", "2026-08", "2026-09", "2026-10",
+    ];
+    const published = new Set(["2026-07", "2026-08"]);
+    const presets = repSpotlightPresets(offered, "2026-08");
+
+    assert.deepEqual(
+      presets.find((preset) => preset.label === "This month")?.range,
+      ["2026-08", "2026-08"],
+      "\"This month\" is the newest month that HAS a published closing, not the calendar month",
+    );
+    assert.deepEqual(
+      presets.find((preset) => preset.label === "Last 2 months")?.range,
+      ["2026-07", "2026-08"],
+      "\"Last 2 months\" ends at the published month too",
+    );
+    // THE HEADLINE: no shortcut may hand the engine a window with nothing in it to measure.
+    for (const preset of presets) {
+      const [from, to] = preset.range;
+      const covered = offered.filter((period) => period >= from && period <= to).some((period) => published.has(period));
+      assert.equal(covered, true, `the "${preset.label}" quick pick covers at least one published month`);
+      assert.ok(to <= "2026-08", `the "${preset.label}" quick pick never reaches past the latest published month`);
+    }
+    // The longer picks still span the unpublished months BEHIND the anchor — the owner's free-form
+    // range is untouched, and `pendingPeriods` names what was left out.
+    assert.deepEqual(
+      presets.find((preset) => preset.label === "Last semester")?.range,
+      ["2026-03", "2026-08"],
+      "a six-month pick still reaches back over unpublished months, which are reported as pending",
+    );
+
+    // With nothing published the picks fall back to the newest month offered, which is the only
+    // honest answer — and the engine then explains that no month is measurable.
+    assert.deepEqual(
+      repSpotlightPresets(offered, null).find((preset) => preset.label === "This month")?.range,
+      ["2026-10", "2026-10"],
+      "with no published month the picks fall back to the newest month offered",
+    );
+    assert.deepEqual(repSpotlightPresets([], "2026-08"), [], "no months offered means no quick picks");
+    // A one-month picker offers only the single pick, never a two-month range it cannot fill.
+    assert.deepEqual(
+      repSpotlightPresets(["2026-08"], "2026-08").map((preset) => preset.label),
+      ["This month"],
+      "a single available month yields exactly one quick pick",
+    );
   }
 }

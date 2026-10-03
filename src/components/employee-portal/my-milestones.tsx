@@ -72,15 +72,24 @@ function whenLabel(daysAway: number): string {
   return "Reached";
 }
 
-/** A square, no-rounded-corner action button in the portal's ink. */
+/**
+ * A square, no-rounded-corner action button in the portal's ink.
+ *
+ * `w-full` because every one of these now sits in a two-column grid rather than a `flex-wrap` row:
+ * wrapping sized each button to its own label, so the panel shipped with ragged right edges and a
+ * lone button stranded on the last line. Equal cells read as one deliberate block. The hover lift is
+ * the portal's own (`EmployeePortalActionLink`), so these feel like the rest of the shell.
+ */
 const BTN =
-  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap border border-slate-900 " +
-  "bg-slate-900 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-slate-700 " +
-  "disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex w-full items-center justify-center gap-1.5 whitespace-nowrap border border-slate-900 " +
+  "bg-slate-900 px-3 py-2 text-xs font-bold text-white shadow-[0_1px_2px_rgba(15,23,42,0.18)] " +
+  "transition duration-200 hover:-translate-y-px hover:bg-slate-700 hover:shadow-[0_8px_20px_rgba(15,23,42,0.18)] " +
+  "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0";
 const BTN_LIGHT =
-  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap border border-slate-300 " +
-  "bg-white px-3 py-1.5 text-xs font-bold text-slate-800 transition-colors hover:bg-slate-50 " +
-  "disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex w-full items-center justify-center gap-1.5 whitespace-nowrap border border-slate-300 " +
+  "bg-white px-3 py-2 text-xs font-bold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.05)] " +
+  "transition duration-200 hover:-translate-y-px hover:border-slate-400 hover:shadow-[0_6px_16px_rgba(15,23,42,0.10)] " +
+  "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0";
 
 /**
  * My Milestones — the rep's own keepsake cards on a tailored timeline (owner, 2026-09-30).
@@ -227,12 +236,20 @@ export function MyMilestones({ entries, photoUrl }: Props) {
     dragFrom.current = null;
   }, []);
 
-  const setZoom = useCallback((zoom: number) => {
-    setFocusEdit((current) => {
-      const base = current ?? CENTRE;
-      return { x: base.x, y: base.y, zoom: Math.min(MAX_ZOOM, Math.max(1, zoom)) };
-    });
-  }, []);
+  // Zoom keeps whatever framing is already on screen. `focusDefault` is the crop the SERVER resolved
+  // for this photo (the face-aware one the card actually prints), so it must be the base when the rep
+  // has not dragged yet — falling straight through to CENTRE snapped the picture back to the middle on
+  // the first touch of the slider and silently discarded that crop. Identical to the admin editor
+  // (milestones-workspace.tsx, `current ?? focusDefault ?? CENTRE`), which never had the bug.
+  const setZoom = useCallback(
+    (zoom: number) => {
+      setFocusEdit((current) => {
+        const base = current ?? focusDefault ?? CENTRE;
+        return { x: base.x, y: base.y, zoom: Math.min(MAX_ZOOM, Math.max(1, zoom)) };
+      });
+    },
+    [focusDefault],
+  );
 
   // `onLoad` alone misses a cached image (already `complete` before React attaches), so the ref reads
   // the natural size on every commit too, returning the same object when unchanged so it cannot loop.
@@ -455,10 +472,18 @@ export function MyMilestones({ entries, photoUrl }: Props) {
             <div className="space-y-3">
               {showFraming ? (
                 <>
-                  {/* The fixed 4:5 frame; the picture is dragged inside it. */}
-                  <div className="flex justify-center">
+                  {/* The fixed 4:5 frame; the picture is dragged inside it.
+
+                      THE MAT IS THE POLISH. The frame alone, capped at 220px, sat adrift in the
+                      middle of a white card with wide blank gutters either side — it read as a
+                      thumbnail that had failed to load rather than as the keepsake it is. Setting it
+                      on a slate plinth with a hairline, and letting it grow to 260px, makes the
+                      portrait the subject of the panel. The GEOMETRY is untouched: still a fixed 4:5
+                      box, still `object-cover` at the same `object-position`, so what is under the
+                      cursor is still exactly what the printer cuts. */}
+                  <div className="flex justify-center border border-slate-200 bg-slate-50 p-3">
                     <div
-                      className="relative w-full max-w-[220px] cursor-grab touch-none select-none overflow-hidden border border-slate-300 bg-slate-100 active:cursor-grabbing"
+                      className="relative w-full max-w-[260px] cursor-grab touch-none select-none overflow-hidden border border-slate-300 bg-slate-100 shadow-[0_10px_28px_rgba(15,23,42,0.12)] active:cursor-grabbing"
                       onPointerCancel={endDrag}
                       onPointerDown={startDrag}
                       onPointerMove={moveDrag}
@@ -485,9 +510,16 @@ export function MyMilestones({ entries, photoUrl }: Props) {
                       />
                     </div>
                   </div>
-                  <p className="text-center text-phx-xs text-slate-500">Drag the photo to frame it.</p>
-                  <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                    Zoom
+                  <p className="text-center text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
+                    Drag the photo to frame it
+                  </p>
+                  {/* The zoom slider ran edge to edge as a raw browser control with a round blue
+                      thumb — the one unstyled thing on the panel. Boxed, micro-labelled and given a
+                      readout, it reads as part of the card. The thumb and track are squared and put
+                      into the portal's orange by globals.css RULE 1d (the browser draws them from its
+                      own shadow tree, so no class on this element can reach them). */}
+                  <label className="flex items-center gap-3 border border-slate-200 bg-white px-3 py-2">
+                    <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Zoom</span>
                     <input
                       type="range"
                       min={1}
@@ -497,20 +529,23 @@ export function MyMilestones({ entries, photoUrl }: Props) {
                       onChange={(event) => setZoom(Number(event.target.value))}
                       className="flex-1"
                     />
+                    <span className="w-9 text-right text-phx-xs font-black tabular-nums text-slate-700">
+                      {focusValue.zoom.toFixed(1)}×
+                    </span>
                   </label>
                 </>
               ) : (
-                <div className="mx-auto flex aspect-[4/5] w-full max-w-[220px] items-center justify-center border border-dashed border-slate-300 bg-slate-50 text-center text-phx-xs text-slate-500">
+                <div className="mx-auto flex aspect-[4/5] w-full max-w-[260px] items-center justify-center border border-dashed border-slate-300 bg-slate-50 px-4 text-center text-phx-xs text-slate-500">
                   {withoutPhoto ? "The card will print your initials." : "No photo on file — the card prints your initials, or upload one below."}
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button type="button" className={BTN_LIGHT} onClick={() => uploadInput.current?.click()}>
                   <ImageUp aria-hidden className="size-3.5" /> Upload photo
                 </button>
                 {upload ? (
-                  <button type="button" className={BTN_LIGHT} onClick={dropUpload}>
+                  <button type="button" className={`${BTN_LIGHT} col-span-2 order-last`} onClick={dropUpload}>
                     <RotateCcw aria-hidden className="size-3.5" /> Use my photo
                   </button>
                 ) : null}
@@ -528,7 +563,7 @@ export function MyMilestones({ entries, photoUrl }: Props) {
                 <input ref={uploadInput} type="file" accept="image/*" className="hidden" onChange={(event) => takeUpload(event.target.files?.[0])} />
               </div>
 
-              <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+              <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
                 <button type="button" className={BTN} disabled={busy !== null} onClick={() => download("pdf")}>
                   {busy === "pdf" ? <Loader2 aria-hidden className="size-3.5 animate-spin" /> : <Download aria-hidden className="size-3.5" />}
                   {busy === "pdf" ? "Preparing" : "Download PDF"}

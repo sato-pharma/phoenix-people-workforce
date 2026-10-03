@@ -102,6 +102,42 @@ export async function runRepMilestonesPortalTests() {
   assert.doesNotMatch(registryLine, /permission:/, "the registry entry carries no permission (the page gates by role predicate)");
   assert.match(catalog, /href: "\/employee-portals\/milestones"/, "the command-palette catalog can find the page");
 
+  // ── THE FRAMING IS THE ADMIN EDITOR'S, INCLUDING WHAT ZOOM KEEPS ──────────────────────────────
+  // The portal card editor is a deliberate COPY of the admin one (milestones-workspace.tsx), and the
+  // component header claims the two are "pinned equal by tests/rep-milestones-portal.test.ts" —
+  // which, until 2026-10-03, pinned nothing about the geometry at all. The copy had drifted in one
+  // token: `setZoom` fell through to CENTRE instead of to `focusDefault`, so the first touch of the
+  // Zoom slider snapped the picture back to the middle and discarded the SERVER's resolved crop —
+  // the face-aware framing the printed card actually uses. Nothing failed and nothing logged; the
+  // rep simply got a differently-cropped card from the one he had been looking at.
+  const portalEditor = readFileSync(
+    new URL("../src/components/employee-portal/my-milestones.tsx", import.meta.url),
+    "utf8",
+  );
+  const adminEditor = readFileSync(
+    new URL("../src/components/milestones/milestones-workspace.tsx", import.meta.url),
+    "utf8",
+  );
+  const editors = [
+    ["the portal card editor", portalEditor],
+    ["the admin card editor", adminEditor],
+  ] as const;
+  for (const [label, source] of editors) {
+    assert.match(
+      source,
+      /const base = current \?\? focusDefault \?\? CENTRE;/,
+      `${label} keeps the server-resolved framing when only the zoom changes`,
+    );
+    assert.doesNotMatch(
+      source,
+      /const base = current \?\? CENTRE;/,
+      `${label} never falls straight through to centre — that discards the resolved crop`,
+    );
+    // The frame itself is the same fixed 4:5 rectangle in both, which is what makes a crop portable.
+    assert.match(source, /const FRAME_RATIO = "4 \/ 5";/, `${label} draws the fixed 4:5 frame`);
+    assert.match(source, /const MAX_ZOOM = 4;/, `${label} caps the zoom at the same multiple`);
+  }
+
   // ── DB-free contract of the service helper ───────────────────────────────────────────────────
   // An empty id short-circuits before any directory read, so this is safe with no database.
   assert.deepEqual(await listEmployeeMilestones(""), [], "an empty id yields no milestones, without touching the directory");
