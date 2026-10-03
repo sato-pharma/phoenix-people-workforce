@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { KeyRound, Loader2, ShieldAlert } from "lucide-react";
 
 import type { NewHireMailboxTask } from "@/lib/new-hire-mailbox/service";
@@ -58,7 +57,6 @@ const STATUS_LABEL: Record<Outcome["status"], string> = {
 };
 
 export function AdoptMailboxCard({ pending }: { pending: NewHireMailboxTask[] }) {
-  const router = useRouter();
   const choices = pending.filter((task) => Boolean(task.subject.emailAddress));
   const [address, setAddress] = useState("");
   const [busy, setBusy] = useState<"plan" | "run" | null>(null);
@@ -89,7 +87,12 @@ export function AdoptMailboxCard({ pending }: { pending: NewHireMailboxTask[] })
         return;
       }
       setResult(payload.result ?? null);
-      if (!dryRun) router.refresh();
+      // 🔴 NO router.refresh() HERE — see the invite-inbox card for the measurement. The same line
+      // there wiped a failed run's only account off the screen on 2026-10-03. On THIS card the
+      // stake is higher: a successful run's `handover` is what the employee has to be told, and a
+      // `locked_out` outcome means their password is already reset and the hand-over is the only
+      // thing standing between them and a mailbox they cannot open. Refreshing a queue list is not
+      // worth erasing either one. Pinned by `tests/new-hire-mailbox-result-survives.test.ts`.
     } catch {
       setError("The adoption could not be reached. Nothing was changed.");
     } finally {
