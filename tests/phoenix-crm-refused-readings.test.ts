@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
 
 import {
   PLACE_MAX_ACCURACY_METERS,
@@ -47,6 +48,22 @@ function placeBody(pin: number | null, photo: number | null | "none", at = CLINI
     timings: TIMINGS,
     ...(photo === "none" ? {} : { shutterLat: at.lat, shutterLon: at.lon, shutterAccuracyMeters: photo }),
   };
+}
+
+/**
+ * Every source file under one directory.
+ *
+ * `node_modules`, dot-directories and sibling worktrees are skipped — a recursive walk that does not
+ * skip them pays this repo's ~346k path entries and takes tens of seconds.
+ */
+function walkSource(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    if (entry === "node_modules" || entry.startsWith(".") || entry.startsWith("_wt-")) continue;
+    const full = path.join(dir, entry);
+    if (statSync(full).isDirectory()) walkSource(full, out);
+    else if (full.endsWith(".ts") || full.endsWith(".tsx")) out.push(full);
+  }
+  return out;
 }
 
 function visitBody(accuracyMeters: number | null, extra: Record<string, unknown> = {}) {
@@ -231,4 +248,120 @@ export function runPhoenixCrmRefusedReadingsTests() {
     /\bunique\b/i,
     "and it is deliberately unkeyed — a constraint on any column here would collapse the retry history that IS the evidence",
   );
+
+  // ── 10. A REFUSED CAPTURE KEEPS ITS PHOTO ─────────────────────────────────────
+  // Owner, 2026-10-03: "save the photo when a validation is refused."
+  //
+  // Until 20261003224941 the refusal kept the photo's two COORDINATES and threw away the picture.
+  // The JPEG was already in the bucket — the browser PUTs it to its slot before the save is even
+  // attempted — but nothing pointed at it, so the one piece of evidence a PERSON can look at was
+  // reachable only by hand-joining unused slots to storage.objects. That is precisely how both of
+  // 3 October's incidents had to be reconstructed, hours after the reps were blocked.
+  //
+  // 🔴 NOTHING IS UPLOADED OR COPIED. This is a pointer being kept, not a file saved twice.
+  assert.equal(recorded.photoPath, "seat/place.jpg", "her refused capture now carries the path of the photo she actually took");
+
+  const noPhotoPath = refusedReadingOf({ ...placeBody(2000, 2000, BLURRED), photoPath: undefined }, "place");
+  assert.ok(noPhotoPath, "a body with no path is still recorded — the reading matters with or without the picture");
+  assert.equal(noPhotoPath.photoPath, null, "and the path is null rather than an empty string, so a query can ask `is not null`");
+  assert.equal(
+    refusedReadingOf({ ...placeBody(2000, 2000, BLURRED), photoPath: "   " }, "place")?.photoPath,
+    null,
+    "whitespace is no path either",
+  );
+
+  // The no-fix branch is a SEPARATE return in the classifier, and it is the one a rep with location
+  // switched off actually hits — a photo taken and no coordinate at all is exactly the case where the
+  // picture is the only evidence there is.
+  const noFix = refusedReadingOf({ ...placeBody(null, "none"), lat: null, lon: null }, "place");
+  assert.ok(noFix, "a capture with no usable coordinate is recorded");
+  assert.equal(noFix.reason, "no_fix");
+  assert.equal(noFix.photoPath, "seat/place.jpg", "🔴 and it keeps its photo too — both branches, or the branch that needs it most is the one that loses it");
+
+  // A visit refused with no photo at all. Null here is correct and is not a lost path.
+  const visitNoPhoto = refusedReadingOf(visitBody(900), "visit");
+  assert.ok(visitNoPhoto, "a rough visit is recorded");
+  assert.equal(visitNoPhoto.photoPath, null, "a visit with no photo has no path, which is not a gap");
+  assert.equal(
+    refusedReadingOf(visitBody(900, { photoPath: "seat/visit.jpg" }), "visit")?.photoPath,
+    "seat/visit.jpg",
+    "and a visit that DID carry one keeps it — the place door is not the only one that refuses",
+  );
+
+  // The bound, so a broken or hostile body cannot widen the column.
+  assert.equal(
+    refusedReadingOf({ ...placeBody(2000, 2000, BLURRED), photoPath: "x".repeat(400) }, "place")?.photoPath?.length,
+    200,
+    "a path is bounded at 200 characters, the same bound parseVisitDraft uses",
+  );
+
+  // The writer must actually SEND it. A classifier that resolves the path while the insert drops it
+  // is the exact shape that makes a green suite prove nothing.
+  assert.ok(recorderCode.includes("photo_path: reading.photoPath"), "the recorder writes the path onto the row");
+
+  const photoColumn = readFileSync("supabase/migrations/20261003224941_phoenix_crm_refused_reading_photo.sql", "utf8");
+  const photoSql = stripSqlComments(photoColumn);
+  assert.match(photoSql.trim(), /^begin;/, "the column migration runs in one transaction");
+  assert.match(photoSql.trim(), /commit;$/, "and commits at the very end");
+  assert.match(photoSql, /add column if not exists photo_path text;/, "one nullable text column");
+  // Scoped to the ALTER itself. The whole file legitimately contains "is not null" — the partial
+  // index's predicate — and a file-wide check would read that as the column being NOT NULL.
+  const alterStatement = /alter table public\.phoenix_crm_refused_readings[\s\S]*?;/.exec(photoSql);
+  assert.ok(alterStatement, "the ALTER statement is still there to measure");
+  assert.doesNotMatch(alterStatement[0], /\bnot null\b/i, "never NOT NULL — the rows already filed have no photo to backfill, and it would rewrite the table");
+  assert.doesNotMatch(alterStatement[0], /\bdefault\b/i, "and no default, so this stays a metadata-only change that cannot block the writer mid-field-day");
+  assert.equal((photoSql.match(/\balter table\b/gi) ?? []).length, 1, "and it alters one table, once");
+  assert.doesNotMatch(photoSql, /create (?:or replace )?(?:function|view)|create table/i, "it adds no function, no view and no table");
+  assert.match(photoColumn, /alter table public\.phoenix_crm_refused_readings drop column if exists photo_path;/, "with its rollback stated");
+  // Deliberately NOT in tests/phoenix-crm-boundary.test.ts's LATER_MIGRATIONS: that list refuses an
+  // entry that adds no function and no table, and this adds a column only — the same reason
+  // 20261003174346 and 20261002205435 are absent from it.
+  assert.doesNotMatch(
+    readFileSync("tests/phoenix-crm-boundary.test.ts", "utf8"),
+    /20261003224941/,
+    "and it stays out of the boundary scan, which refuses a column-only migration by design",
+  );
+
+  // ── 11. 🔴 NOTHING IS EVER LOST — THE BYTES THE PATH POINTS AT ARE NEVER DELETED ──
+  // Owner, 2026-10-03: "keep it in the database, do not lose anything."
+  //
+  // A path on a row is worth nothing if something can remove what it points at, and the reason it is
+  // safe today is only that NO deleter exists: eleven other buckets in this app call
+  // `storage.from(...).remove(...)`, and the Phoenix CRM photo bucket is called by none of them.
+  // That is a fact nobody wrote down, so a future cleanup job could take the objects and leave this
+  // column pointing at nothing — a silent loss, and exactly the failure the owner ruled against.
+  //
+  // So it is pinned here. If this assertion ever goes red, the fix is NOT to delete it: it is to make
+  // the new sweep exempt every path named in `phoenix_crm_refused_readings.photo_path` and every slot
+  // whose row it belongs to, and only then to narrow this check to that sweep by name.
+  const BUCKET_NAMES = ["PHOENIX_CRM_PHOTO_BUCKET", '"phoenix-crm-photos"', "phoenix_crm_photo_uploads"];
+  const deleters: string[] = [];
+  for (const dir of ["src", "app", "scripts"]) {
+    for (const file of walkSource(dir)) {
+      const body = stripComments(readFileSync(file, "utf8"));
+      if (!BUCKET_NAMES.some((name) => body.includes(name))) continue;
+      for (const match of body.matchAll(/\.(remove|delete)\(|delete\s+from\s+public\.phoenix_crm_photo_uploads/gi)) {
+        deleters.push(`${file.split(path.sep).join("/")}: ${match[0]}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    deleters,
+    [],
+    "🔴 something now deletes a Phoenix CRM photo or its upload slot, so a refusal's photo_path can start " +
+      `pointing at nothing:\n  ${deleters.join("\n  ")}\n\n` +
+      "The owner's rule is that a refused capture loses nothing. Exempt the paths named in " +
+      "phoenix_crm_refused_readings.photo_path (and their slot rows) from that sweep before narrowing this check.",
+  );
+
+  // And the one statement a migration must never carry for the same reason.
+  for (const file of readdirSync("supabase/migrations")) {
+    if (!file.endsWith(".sql")) continue;
+    const body = stripSqlComments(readFileSync(path.join("supabase", "migrations", file), "utf8"));
+    assert.doesNotMatch(
+      body,
+      /delete\s+from\s+public\.phoenix_crm_photo_uploads|drop\s+table\s+(?:if\s+exists\s+)?public\.phoenix_crm_photo_uploads/i,
+      `${file} removes photo upload slots — the refused captures' pictures are reached through them`,
+    );
+  }
 }
