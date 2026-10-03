@@ -11,6 +11,7 @@ import { CrmAccountSetupPanel } from "@/components/crm/crm-account-setup-panel";
 import { CrmRecoveredChainsPanel } from "@/components/crm/crm-recovered-chains-panel";
 import { CrmRegionMappingPanel } from "@/components/crm/crm-region-mapping-panel";
 import { CrmCustomerMappingPanel } from "@/components/crm/crm-customer-mapping-panel";
+import { CrmPhoenixTeamReadinessPanel } from "@/components/crm/crm-phoenix-team-readiness-panel";
 import { CrmPhoenixTeamStartsPanel } from "@/components/crm/crm-phoenix-team-starts-panel";
 import { getCrmMasterData, type CrmMasterAmpm, type CrmMasterDataset, type CrmMasterMappingStatus } from "@/lib/crm/master";
 import { CRM_SCOPE_ALL } from "@/lib/crm/viewer-scope";
@@ -240,6 +241,10 @@ export default async function CrmHubPage({
       />
 
       <CrmPhoenixTeamStartsPanel data={phoenixTeamStarts} />
+
+      {/* Which of those teams is READY to start, immediately beside the Start button — the decision
+          and its evidence in one glance. Read in the same call as the panel above it. */}
+      <CrmPhoenixTeamReadinessPanel data={phoenixTeamStarts?.readiness ?? null} />
 
       <CrmTabBar active={activeTab} />
 
