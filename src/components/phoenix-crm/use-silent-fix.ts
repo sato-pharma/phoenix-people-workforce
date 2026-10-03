@@ -18,14 +18,29 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
+import { VISIT_MAX_ACCURACY_METERS, withinAccuracy } from "@/lib/phoenix-crm/entry-rules";
+
 /** One reading of the phone's position. `at` is when the phone took it, on the phone's clock. */
 export type SilentFix = { lat: number; lon: number; accuracyMeters: number | null; at: number };
 
-/** Answers with the kept reading, waiting up to `waitMs` for a first one; null when there is none. */
+/**
+ * Answers with the kept reading, waiting up to `waitMs` for one the visit save will take; null when
+ * there is none at all.
+ */
 export type SilentFixReader = (waitMs?: number) => Promise<SilentFix | null>;
 
-/** How long Log visit waits for a first reading when none has come in yet. */
+/** How long Log visit waits for a first reading, or a sharper one, before it sends what it has. */
 export const SILENT_FIX_WAIT_MS = 8_000;
+
+/**
+ * Whether the kept reading is one the visit save takes (`VISIT_MAX_ACCURACY_METERS`, entry-rules.ts).
+ * A phone's first reading is often a rough one from the network before its GPS settles, so a tap that
+ * comes too soon waits for a sharper one rather than meeting the server's refusal for a phone that was
+ * about to be fine. Only a phone that stays rough — approximate location — reaches that refusal.
+ */
+function goodEnough(fix: SilentFix | null): fix is SilentFix {
+  return fix !== null && withinAccuracy(fix.accuracyMeters, VISIT_MAX_ACCURACY_METERS);
+}
 
 /** A newer reading replaces a sharper one once the sharper one is this old: he may have walked on. */
 const STALE_MS = 15_000;
@@ -92,17 +107,23 @@ export function useSilentFix(): SilentFixReader {
 
   return useCallback(
     (waitMs: number = SILENT_FIX_WAIT_MS) => {
-      if (bestRef.current) return Promise.resolve(bestRef.current);
-      if (!start()) return Promise.resolve(null);
+      if (goodEnough(bestRef.current)) return Promise.resolve(bestRef.current);
+      if (!start()) return Promise.resolve(bestRef.current);
       return new Promise<SilentFix | null>((resolve) => {
         const waiters = waitersRef.current;
         const finish = () => {
           window.clearTimeout(timer);
-          waiters.delete(finish);
+          waiters.delete(check);
           resolve(bestRef.current);
         };
+        // Woken by every reading and by a refusal: answers once the kept reading is one the save
+        // takes, or the watch has stopped and nothing more will come. Otherwise the clock answers it
+        // with whatever is kept, and the server's own sentence says what to switch on.
+        const check = () => {
+          if (goodEnough(bestRef.current) || watchRef.current === null) finish();
+        };
         const timer = window.setTimeout(finish, waitMs);
-        waiters.add(finish);
+        waiters.add(check);
       });
     },
     [start],
