@@ -5,6 +5,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { capacityMonthsOffered } from "@/lib/phoenix-crm/capacity-board";
+import { reportFileSlug } from "@/lib/phoenix-crm/report-guide";
 import {
   readsCalendar,
   readsFieldHeardByProduct,
@@ -136,7 +137,7 @@ export async function GET(request: Request) {
         entityType: "phoenix_crm_reports_export",
         summary: `Exported what the field heard about their own products (${ownHeard.period.from} to ${ownHeard.period.to})`,
       });
-      return xlsxResponse(heardBuffer, `phoenix-crm-what-the-field-heard-${ownHeard.period.from}-to-${ownHeard.period.to}.xlsx`);
+      return xlsxResponse(heardBuffer, `phoenix-crm-${reportFileSlug("heard")}-${ownHeard.period.from}-to-${ownHeard.period.to}.xlsx`);
     }
 
     // Grade against capacity reads this month or the next — its own month, sent as `capacityMonth`. A

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 
 import { BRICK_STATUS_LABELS } from "../src/lib/phoenix-crm/brick-report.ts";
-import { SECTION_TITLES } from "../src/lib/phoenix-crm/report-guide.ts";
+import { SECTION_TITLES, reportFileSlug } from "../src/lib/phoenix-crm/report-guide.ts";
 import {
   buildPhoenixCrmReportsWorkbook,
   calendarSheetName,
@@ -290,6 +290,21 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
       assert.ok(title.trim().length > 0, `SECTION_TITLES.${section} is blank — a worksheet tab cannot be`);
       assert.ok(title.length <= 31, `SECTION_TITLES.${section} is ${title.length} characters — Excel refuses a worksheet tab over 31`);
       assert.doesNotMatch(title, /[:\\/?*\[\]]/, `SECTION_TITLES.${section} holds a character Excel forbids in a worksheet tab`);
+
+      // 🔴 AND THE TITLE IS A FILENAME TOO, for a download holding ONE report. Only [a-z0-9-]
+      //    survives reportFileSlug, so none of the characters a filename cannot hold can reach
+      //    somebody's disk whatever a report is renamed to — asserted, not trusted, because the
+      //    slug is the only thing standing between a screen title and a saved file.
+      const slug = reportFileSlug(section as keyof typeof SECTION_TITLES);
+      assert.ok(slug.length > 0, `reportFileSlug("${section}") is empty — the download would have no name`);
+      //    One regex, both halves: the character set, and the leading/trailing dash the trim in
+      //    reportFileSlug exists to remove. A separate "holds no forbidden character" assertion
+      //    was dropped rather than shipped — this one implies it, so that one could never fail.
+      assert.match(
+        slug,
+        /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
+        `reportFileSlug("${section}") is "${slug}" — a filename slug is lower-case letters, digits and dashes, and never opens or closes with a dash`,
+      );
     }
   }
 
@@ -758,6 +773,21 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
       [...Object.values(SECTION_TITLES)].sort(),
       "a report in the guide with no sheet would be offered on the screen and missing from the download",
     );
+
+    // 🔴 THE FOURTH PLACE, AND THE ONE A RENAME COULD STILL MISS: the FILENAME of a download
+    //    that holds ONE report. The route spelled `phoenix-crm-what-the-field-heard-…` out by
+    //    hand, so renaming that report reached the screen, the tab, the heading and the cover —
+    //    and the file a product manager actually saves kept the old name. It IS the saved name:
+    //    saveXlsxResponse prefers the server's Content-Disposition over the caller's fallback.
+    const route = source("app/api/phoenix-crm/reports/export/route.ts");
+    assert.match(route, /reportFileSlug\("heard"\)/, "the single-report download names its report from the guide");
+    for (const [section, title] of Object.entries(SECTION_TITLES)) {
+      assert.equal(
+        route.includes(`phoenix-crm-${reportFileSlug(section as keyof typeof SECTION_TITLES)}`),
+        false,
+        `the export route spells "${title}" into a filename by hand — read it from reportFileSlug("${section}")`,
+      );
+    }
   }
 
   console.log("phoenix-crm reports export: OK");
