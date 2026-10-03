@@ -25,7 +25,7 @@
 import { conflictError, validationError } from "@/lib/http/api-errors";
 import { parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { isMissedRecordDay, parseMissedActivity, parseMissedVisit, parseRemoveMissedVisit } from "@/lib/phoenix-crm/missed-records";
-import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { isPharmacyListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isPlanSentForReview } from "@/lib/phoenix-crm/plan-rules";
 import { territoryReviewer } from "@/lib/phoenix-crm/scope";
 import {
@@ -124,7 +124,8 @@ export async function loadMissedRecordForm(
       speciality: textOrNull(row.speciality),
       onSentPlan: onPlan.has(customerId),
       visited: visited.has(customerId),
-      pending: row.status === "pending",
+      // A pharmacy needs no validation (owner, 2026-10-03): never "not validated yet".
+      pending: row.status === "pending" && !isPharmacyListType(row.list_type),
     };
   });
   // Who was planned that day first, then everybody else by name.

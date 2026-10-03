@@ -73,7 +73,7 @@ import {
 import type { ReferenceState } from "@/lib/phoenix-crm/coverage";
 import { CUSTOMER_NAME_MAX, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE } from "@/lib/phoenix-crm/google-place-rules";
-import { listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
+import { awaitsValidation, listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
 import { receivingDaysLabel } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { ListCustomer, ListPlace, TerritoryListView, ValidateResult } from "@/lib/phoenix-crm/view-types";
@@ -1454,7 +1454,8 @@ export function DropScreen({
   // status — carried over from iReports360 and not validated at the door yet. A rep may ask to drop
   // such a customer, so this screen has to read him the way every other screen does.
   const pending = customer ? customer.pendingDropRequestId !== null : reference?.state === "drop_pending";
-  const notValidated = customer !== null && customer.status === "pending";
+  // A pharmacy is never "not validated" — it needs no validation (owner, 2026-10-03).
+  const notValidated = customer !== null && awaitsValidation(customer);
   const waitingStage = customer?.waiting.find((entry) => entry.kind === "drop")?.stageLabel ?? null;
   const noteLength = note.trim().length;
   const until = customer ? "Until then the customer stays on your list." : "Until then the customer stays under To validate.";

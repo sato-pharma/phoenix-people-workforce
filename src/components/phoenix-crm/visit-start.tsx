@@ -11,6 +11,9 @@
  *   - Unplanned replaces the old CRM's "Campaign" and splits in two: out of plan (his list, not today's
  *     plan — a reason, then his manager and SFE approve it) and out of list (someone not on his list at
  *     all — validated on the spot, and it counts once the customer is added).
+ *   - Pharmacy (owner, 2026-10-03: "It is visit is logged normally") offers the pharmacies on his list
+ *     and goes straight to the form: no plan, no reason, no approval and no validation, and it counts
+ *     the moment he logs it.
  *   - The seven others are the day's ACTIVITY, a record only: it moves no call rate, no coverage and no
  *     plan-against-actual (owner, 2026-09-26). They go through the ONE day-activity save below, which the
  *     day screen's own block uses too — there is no second way to write a day.
@@ -24,6 +27,7 @@ import {
   GraduationCap,
   HeartPulse,
   ListX,
+  Pill,
   Presentation,
   Route,
   ShoppingBag,
@@ -181,8 +185,10 @@ export function VisitStart({
   dayActivity,
   onActivitySaved,
   onBack,
+  onPharmacy,
   onPlanned,
   onUnplanned,
+  pharmacyCount,
   planToday,
   plannedCount,
   seatId,
@@ -199,8 +205,11 @@ export function VisitStart({
   dayActivity: DayActivityRow | null;
   onActivitySaved: (activity: DayActivityRow | null, label: string) => void;
   onBack: () => void;
+  onPharmacy: () => void;
   onPlanned: () => void;
   onUnplanned: () => void;
+  /** How many pharmacies are on his list; null while the form is still loading. */
+  pharmacyCount: number | null;
   /**
    * Today's plan as it stands — its status and the stops he has SAVED for today, sent or not. Null
    * while the form is still loading. It is what lets the empty note say WHY (owner, 2026-10-01).
@@ -247,6 +256,12 @@ export function VisitStart({
                 primary
               />
               <StartTarget icon={Route} label="Unplanned visit" note="Out of plan, or out of list" onClick={onUnplanned} />
+              <StartTarget
+                icon={Pill}
+                label="Pharmacy visit"
+                note={pharmacyCount === null || pharmacyCount === 0 ? "No plan and no approval" : `No plan and no approval · ${countText(pharmacyCount)} on your list`}
+                onClick={onPharmacy}
+              />
             </div>
           </CrmBlock>
           <CrmBlock className="border-t border-slate-100" title="Or record the day as">

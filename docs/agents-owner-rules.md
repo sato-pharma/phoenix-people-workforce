@@ -4404,6 +4404,74 @@ database's half of rule 2, under `PLANNABLE_LIST_TYPES` in TypeScript. `phoenix_
 narrow for the same reason: a pharmacy arrives as a reference and leaves as one, with no grade, drop,
 add or bring-back request to decide.
 
+## A pharmacy visit is logged normally — owner rulings, 2026-10-03
+
+The hook is in `.claude/rules/phoenix-crm.md`. This is the account.
+
+### What happened
+
+Hassan Elsherbiny (Pedia, El Mahalla) reported that he "visited pharmacies and submitted them but
+they appear as not visited at all". Measured on production the same afternoon: **no rep had EVER
+saved a `list_type = 'Pharmacy'` visit.** The 2026-10-02 rules above lived in
+`pharmacy-call-rules.ts` and were wired to no screen, and 568 of the 570 imported pharmacies were
+still `pending`, so the only road to one was Out of plan, a reason and an approval. What the reps
+actually did was type the pharmacy's name as "pharmacy you took feedback from" on their DOCTOR
+visits, and the pharmacy's own page went on reading "Not visited this month".
+
+### His three rulings, in order
+
+1. *"Since he locked him, consider this as a pharmacy visit and make it count everywhere … make it
+   appear for him and for anyone who have his same situation. Then let's build the real fix later."*
+2. *"Pharmacies doesn't need a validation. Pharmacy don't need a validation. It is visit is logged
+   normally."*
+3. *"Make all their … pharmacies … appear in their accounts and the manager account. Then start
+   fixing."*
+
+The data half was done first: 11 pharmacy visits filed through `phoenix_crm_admin_enter_visit` for
+Hassan, Khaled Saeid, Radwa and Sara (four of the pharmacies were new and joined their lists), and
+`20261003174346` made `phoenix_crm_countable_visits.customer_validated` true for every pharmacy.
+
+### The fix
+
+- **No validation.** A `pending` pharmacy is on his list (`awaitsValidation` and `onTheList` in
+  `list-request-rules.ts`), and the countable view counts its visits.
+- **Logged normally.** Add visit → **Pharmacy visit** goes straight to the form; `phoenix_crm_save_visit`
+  (`20261003175653`) files a pharmacy as on-plan, with no unplanned kind and no approval, and names
+  the visit after the pharmacy.
+- **The pharmacy a doctor's visit names is a visit to it.** The name is matched to his list by
+  `linkNamedPharmacy` — an exact `pharmacyNameKey`, else ONE unique partial match; never a dropped
+  pharmacy, never a guess between two — or ADDED as `pending`, and filed as its own visit with
+  `linked_from_visit_id` pointing at the doctor's, `on conflict do nothing` (one a day).
+- **One pharmacy counts once in the day however it is spelled** — `pharmacyNameKey` in
+  `todayPharmacies`, `day-detail.ts` and `team-calendar.ts`. It folds letters with the repo's own
+  `normalizeArabicPharmacyName` and drops only the word pharmacy, never the Pharmacy Master's wider
+  stop words: there a person confirms each match, here nobody does.
+
+### The linked visit is part of the doctor's submission, never a second piece of work
+
+Everything it carries was checked against every reader that could count it twice:
+
+| It is… | Because otherwise… |
+| --- | --- |
+| a `single` visit by the rep (or by the manager, on a visit of his own) | `phoenix_crm_report_manager_visits` counts every `double` and `chain` row, so the manager would get two double visits for one stop |
+| carrying NO stock answers (`product_availability = '{}'`) | the Missing stock report would count each missing product twice; the answers stay on the doctor's visit, where every stock reader finds them by the pharmacy's name |
+| left out of the first-visit email gate, the behaviour sweep and the location report (`linked_from_visit_id is null`) | it is written in the same second as the doctor's, with no place reading of its own |
+| left out of "What the field heard" (with every pharmacy visit) | that report has an AM side and a PM side only, so it filed a pharmacy as PM and would hear the doctor's products twice |
+
+It keeps the doctor's products because `phoenix_crm_visits_products` requires one to twelve.
+
+### What must NOT be "fixed"
+
+- 🔴 **The five SQL report functions keep `c.validated_at is not null`** (Visits by day, Coverage,
+  Brick coverage, Manager visits, Plan against actual). They look like the gate the owner removed, but
+  every one of them is drawn as AM and PM only, so a pharmacy row never reached a screen through them;
+  a pharmacy is in no KPI denominator (2026-10-02). Opening them changes no number anyone reads.
+  Measured 2026-10-03: 9 of the 11 backfilled pharmacy visits sit on pending pharmacies, and all 11
+  read `customer_validated = true` in the countable view, which is what the rep's and his managers'
+  screens read.
+- Never give the linked visit the doctor's people or stock answers back "for completeness".
+- Never widen `pharmacyNameKey` to the Pharmacy Master's stop words.
+
 ## Add visit keeps every point, and its optional steps start folded — owner ruling, 2026-10-02 (night)
 
 **What he asked.** At night he sent Report It's form again: *"I WANT VISIT SUBMISSION TO FOLLOW THIS I

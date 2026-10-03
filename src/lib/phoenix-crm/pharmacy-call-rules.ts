@@ -1,4 +1,5 @@
 import type { VisitCountBucket } from "@/lib/crm/visit-count-buckets";
+import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matching";
 
 /**
  * Phoenix CRM — a PHARMACY CALL, with no I/O.
@@ -54,6 +55,29 @@ import type { VisitCountBucket } from "@/lib/crm/visit-count-buckets";
  * door and a pharmacy call is, literally, a visit that is not on a plan. {@link visitApprovalKind}
  * exists so that the answer is given here rather than inferred there.
  *
+ * 🔴 IT WAS WRITTEN HERE ON 2026-10-02 AND WIRED NOWHERE UNTIL 2026-10-03. The only way to a pharmacy
+ * was Unplanned → Out of plan, which asked for a reason and raised an approval, and
+ * `phoenix_crm_save_visit` filed every pharmacy visit `out_of_plan` — so not one rep ever saved one,
+ * and a rep who checked a pharmacy in and named it on his doctor visits read "Not visited this month"
+ * on it (Hassan, Pedia, El Mahalla). It is wired now: Add visit → Pharmacy visit goes straight to the
+ * form, and the database files a pharmacy as planned whatever the plan says
+ * (supabase/migrations/20261003175653_phoenix_crm_pharmacy_visit_logged_normally.sql).
+ *
+ * ── 3b. A PHARMACY NEEDS NO VALIDATION ────────────────────────────────────────────────────────────
+ * Owner, 2026-10-03: *"Pharmacy don't need a validation. It is visit is logged normally."* A pending
+ * pharmacy sits on Your list, never under To validate (`awaitsValidation` in list-request-rules.ts),
+ * and its visits count at once — `phoenix_crm_countable_visits` answers `customer_validated` true for
+ * every pharmacy. A doctor still counts only once he is validated.
+ *
+ * ── 3c. A PHARMACY NAMED ON A DOCTOR'S VISIT IS A VISIT TO THAT PHARMACY ──────────────────────────
+ * Owner, 2026-10-03: *"consider this as a pharmacy visit and make it count everywhere"*. The pharmacy
+ * he took feedback from is matched to his list by {@link linkNamedPharmacy}, and the database files a
+ * pharmacy visit beside the doctor's (`linked_from_visit_id`), adding the pharmacy to his list when
+ * none matches. One a day, like every customer: a pharmacy already visited that day gets no second.
+ * Every pharmacy visit carries its pharmacy's name in `pharmacy_name`, so the day's Pharmacies figure
+ * — distinct names, keyed by {@link pharmacyNameKey} — counts the doctor's mention and the pharmacy's
+ * own visit once.
+ *
  * ── 4. NO KPI READS A PHARMACY ────────────────────────────────────────────────────────────────────
  * Owner, 2026-10-02: *"we are not stuck to coverage of pharmacies … grab the reps' pharmacies from
  * iReports360 only as a database or as a reference, but no KPIs is counted on it."* So there is no
@@ -61,8 +85,8 @@ import type { VisitCountBucket } from "@/lib/crm/visit-count-buckets";
  * figure of AM · PM · Pharmacies stays a PLAIN COUNT of calls made — never a rate, never a share of
  * a target, never a denominator.
  *
- * Pure: it imports one type and nothing else, so a client component may ask it as freely as a server
- * read.
+ * Pure: it imports one type and the Pharmacy Master's own name normalizer (no I/O, no permissions), so
+ * a client component may ask it as freely as a server read.
  */
 
 /** The three lists a Phoenix CRM customer can sit on. `Pharmacy` is the vendor's own spelling. */
@@ -164,3 +188,73 @@ export function pharmacyCountsInKpi(_kpi: PharmacyExcludedKpi): false {
  * is neither — and it says the one thing he might otherwise wonder about, which is whether it landed.
  */
 export const PHARMACY_CALL_REP_NOTE = "Recorded. Pharmacy calls need no plan and no approval.";
+
+/**
+ * The key two spellings of ONE pharmacy share (rule 3c). The rep types the pharmacy he took feedback
+ * from as free text — "ص.الفيومي", "صيدلية الفيومي", "صيدليه الفيومى" — and the list carries the
+ * vendor's spelling, so a plain lower-case compare reads one pharmacy as three.
+ *
+ * The letters are folded by the Pharmacy Master's own normalizer (`normalizeArabicPharmacyName`:
+ * diacritics, tatweel, the alef and ya forms, case, punctuation), never a second copy of it. On top of
+ * that, only what this match needs: Arabic-Indic digits read as digits (that normalizer drops them),
+ * ة read as ه and ؤ ئ as و ي, and the word "pharmacy" dropped wherever it stands — صيدلية, صيدليه, the
+ * reps' "ص." and "ص", "pharmacy". Its wider stop words ("الجديدة", "د") are deliberately NOT dropped:
+ * there they rank suggestions for a person to confirm, here a match files a visit with nobody looking,
+ * and "النور" and "النور الجديدة" can be two pharmacies. What is left is compared, never shown.
+ */
+const PHARMACY_WORDS = new Set(["صيدليه", "ص", "pharmacy"]);
+
+export function pharmacyNameKey(name: string): string {
+  const digits = name.replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660));
+  const tokens = normalizeArabicPharmacyName(digits)
+    .replace(/ة/g, "ه")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .split(" ")
+    .filter(Boolean);
+  const words = tokens.filter((token) => !PHARMACY_WORDS.has(token));
+  // A name that is ONLY the word "pharmacy" keeps it, so it still has something to compare.
+  return (words.length > 0 ? words : tokens).join("");
+}
+
+/** A pharmacy on the rep's list, as the match below needs it. */
+export type ListedPharmacy = { customerId: string; name: string; status: string };
+
+/**
+ * What to do with the pharmacy a doctor's visit named (rule 3c):
+ *
+ *   existing — it is this pharmacy on his list: file a visit to it;
+ *   new      — nothing on his list is it: add it to his list, then file the visit;
+ *   none     — leave it as the doctor's feedback only. Said for a name that matches a pharmacy he
+ *              DROPPED (the SFE archived it — adding it back by typing would undo that), and for a
+ *              name that half-matches two or more pharmacies, where guessing would credit the wrong one.
+ */
+export type NamedPharmacyLink = { kind: "existing"; customerId: string } | { kind: "new" } | { kind: "none" };
+
+/** Below this many letters a name is too short to be found INSIDE another one ("ال" is in everything). */
+export const PHARMACY_NAME_KEY_MIN_FOR_PARTIAL = 4;
+
+export function linkNamedPharmacy(typed: string | null | undefined, listed: readonly ListedPharmacy[]): NamedPharmacyLink {
+  const key = pharmacyNameKey(typed ?? "");
+  if (!key) return { kind: "none" };
+  const keyed = listed.map((pharmacy) => ({ ...pharmacy, key: pharmacyNameKey(pharmacy.name) })).filter((pharmacy) => pharmacy.key);
+  const pick = (found: ReadonlyArray<(typeof keyed)[number]>): NamedPharmacyLink => {
+    // Two list rows with one name are one pharmacy imported twice: the one he still has wins, and the
+    // order is fixed, so the same name always lands on the same row.
+    const live = found.filter((pharmacy) => pharmacy.status !== "dropped").sort((left, right) => left.customerId.localeCompare(right.customerId));
+    const chosen = live.find((pharmacy) => pharmacy.status === "active") ?? live[0];
+    return chosen ? { kind: "existing", customerId: chosen.customerId } : { kind: "none" };
+  };
+
+  const exact = keyed.filter((pharmacy) => pharmacy.key === key);
+  if (exact.length > 0) return pick(exact);
+
+  if (key.length >= PHARMACY_NAME_KEY_MIN_FOR_PARTIAL) {
+    const near = keyed.filter(
+      (pharmacy) => pharmacy.key.length >= PHARMACY_NAME_KEY_MIN_FOR_PARTIAL && (pharmacy.key.includes(key) || key.includes(pharmacy.key)),
+    );
+    if (near.length === 1) return pick(near);
+    if (near.length > 1) return { kind: "none" };
+  }
+  return { kind: "new" };
+}

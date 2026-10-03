@@ -260,7 +260,8 @@ function runScreenTests() {
 
   // He is never shown as having left the list: that is the one wrong word on the whole screen.
   const customer = source("src/components/phoenix-crm/list-customer.tsx");
-  const pendingBranch = customer.indexOf('customer.status === "pending"');
+  // Through the one rule that knows a PHARMACY never waits on a validation (owner, 2026-10-03).
+  const pendingBranch = customer.indexOf("const pending = awaitsValidation(customer);");
   assert.ok(pendingBranch > 0, "the customer's page knows a pending customer");
   // Since 2026-09-29 a customer can also wait OUTSIDE the list (met on an out-of-list visit), so "not
   // active and not pending" is no longer "left": the Archive pill keys on the one status that means it.
@@ -287,7 +288,7 @@ function runScreenTests() {
   const drop = screens.slice(dropStart);
   assert.match(
     drop,
-    /const notValidated = customer !== null && customer\.status === "pending";/,
+    /const notValidated = customer !== null && awaitsValidation\(customer\);/,
     "the drop screen tells a customer's OWN pending status apart from a drop request already waiting — the two meanings of the word collide on this one screen, and reusing the name is how it would break again",
   );
   const heading = /customer && notValidated \? \(([\s\S]*?)\) : customer \? \(([\s\S]*?)\) : reference/.exec(drop);

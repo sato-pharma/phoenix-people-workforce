@@ -149,6 +149,9 @@ export async function readMonthVisits(client: Pick<SupabaseClient, "from">, boun
         .lte("visit_date", bounds.to)
         .eq("is_test", false)
         .neq("capture_source", "admin")
+        // Nor the pharmacy visit a doctor's visit filed beside itself (owner, 2026-10-03): it carries the
+        // doctor visit's own time and reading, so it would read as a second visit in the same second.
+        .is("linked_from_visit_id", null)
         // A TOTAL order, or paging drops and repeats rows: two visits can share a capture instant.
         .order("captured_at", { ascending: true })
         .order("id", { ascending: true }),

@@ -1,7 +1,7 @@
 import { forbiddenError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { isDayActivity, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
-import { visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { pharmacyNameKey, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey, territoryName, territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   buildTeamCalendar,
@@ -232,10 +232,12 @@ async function loadVisitDays(
       if (bucket === "AM") found.am += 1;
       else if (bucket === "PM") found.pm += 1;
       amPm.set(at, found);
-      const pharmacy = String(row.pharmacy_name ?? "").trim();
+      // Keyed as the day screen keys it (`todayPharmacies`), so the cell and the day it opens agree:
+      // a doctor's "ص.الفيومي" and the visit to "صيدلية الفيومي" itself are one pharmacy.
+      const pharmacy = pharmacyNameKey(String(row.pharmacy_name ?? ""));
       if (pharmacy) {
         const seen = pharmacies.get(at) ?? new Set<string>();
-        seen.add(pharmacy.toLowerCase());
+        seen.add(pharmacy);
         pharmacies.set(at, seen);
       }
     }

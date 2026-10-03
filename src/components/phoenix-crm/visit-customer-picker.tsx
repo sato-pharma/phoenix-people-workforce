@@ -10,6 +10,9 @@
  *   - OUT OF PLAN is his list minus today's plan — pending customers included, customers waiting
  *     outside the list excluded (a visit to one of them is an out-of-list visit). It needs a written
  *     reason, and counts once his manager and then SFE approve it.
+ *   - PHARMACY (owner, 2026-10-03) is the pharmacies on his list, and only them. A pharmacy is never
+ *     planned, never approved and never validated (pharmacy-call-rules.ts), so it is no longer offered
+ *     under Out of plan, where it was asked for a reason and an approval it never needed.
  *
  * Grouped by brick with the module's one palette (brick-tints.ts), not-yet-visited first and the
  * customers who receive today ahead of the ones who do not, so his day reads geographically — and in
@@ -37,6 +40,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
 import { directionsPlace, directionsUrl } from "@/lib/phoenix-crm/directions";
+import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { movedDayReason } from "@/lib/phoenix-crm/offplan-day";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
@@ -44,7 +48,7 @@ import type { VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
 /** Which customers a picker offers. */
-export type PickerMode = "planned" | "out_of_plan";
+export type PickerMode = "planned" | "out_of_plan" | "pharmacy";
 
 /** The sentence describeDayWindows gives a place that does not receive on the day. */
 const NOT_RECEIVING = "Does not receive this day";
@@ -74,7 +78,12 @@ export function receivingRank(customer: Pick<VisitCustomerOption, "places">): 0 
  * customer in the same band, so its order is left exactly as the server sent it.
  */
 export function customersFor(mode: PickerMode, customers: ReadonlyArray<VisitCustomerOption>): VisitCustomerOption[] {
-  const offered = customers.filter((customer) => !customer.outside && (mode === "planned" ? customer.plannedToday : !customer.plannedToday));
+  const offered = customers.filter((customer) => {
+    if (customer.outside) return false;
+    if (isPharmacyListType(customer.listType)) return mode === "pharmacy";
+    if (mode === "pharmacy") return false;
+    return mode === "planned" ? customer.plannedToday : !customer.plannedToday;
+  });
   return [...offered].sort(
     (left, right) => Number(left.visitedToday) - Number(right.visitedToday) || receivingRank(left) - receivingRank(right),
   );
@@ -152,18 +161,22 @@ export function VisitCustomerPicker({
     group.customers.push(customer);
   }
 
-  const title = mode === "planned" ? "Planned visit" : "Out of plan";
+  const title = mode === "planned" ? "Planned visit" : mode === "pharmacy" ? "Pharmacy visit" : "Out of plan";
   // Said only when there are hours to order by: a list with none keeps the server's order, and saying
   // "receiving today first" over it would describe an order that is not there.
   const byHours = offered.some((customer) => customer.places.length > 0);
 
   return (
     <CrmPanel>
-      <CrmBackBar backLabel={mode === "planned" ? "Add visit" : "Unplanned visit"} onBack={onBack} title={title} />
+      <CrmBackBar backLabel={mode === "out_of_plan" ? "Unplanned visit" : "Add visit"} onBack={onBack} title={title} />
       <CrmBlock>
         <div className="grid min-w-0 gap-3">
           <p className="break-words text-sm font-semibold text-slate-600">
-            {mode === "planned" ? "Today’s plan, grouped by brick." : "Your list, without today’s plan, grouped by brick."}
+            {mode === "planned"
+              ? "Today’s plan, grouped by brick."
+              : mode === "pharmacy"
+                ? "The pharmacies on your list. No plan and no approval: it counts when you log it."
+                : "Your list, without today’s plan, grouped by brick."}
             {byHours ? " Customers who receive today come first." : ""} Tap the customer you are with.
           </p>
           {offered.length > PICKER_PAGE ? (
@@ -182,20 +195,22 @@ export function VisitCustomerPicker({
               />
             </div>
           ) : null}
-          <CrmChoice
-            columns={3}
-            label="Which customers"
-            onChange={(next) => {
-              setListType(next);
-              setLimit(PICKER_PAGE);
-            }}
-            options={[
-              { value: "all", label: "All" },
-              { value: "AM", label: "AM" },
-              { value: "PM", label: "PM" },
-            ]}
-            value={listType}
-          />
+          {mode === "pharmacy" ? null : (
+            <CrmChoice
+              columns={3}
+              label="Which customers"
+              onChange={(next) => {
+                setListType(next);
+                setLimit(PICKER_PAGE);
+              }}
+              options={[
+                { value: "all", label: "All" },
+                { value: "AM", label: "AM" },
+                { value: "PM", label: "PM" },
+              ]}
+              value={listType}
+            />
+          )}
           {shown.length === 0 ? (
             <div className="grid gap-2 border border-dashed border-slate-200 px-3 py-4 text-center">
               <p className="text-sm font-semibold text-slate-500">
@@ -203,7 +218,9 @@ export function VisitCustomerPicker({
                   ? "No customer matches."
                   : mode === "planned"
                     ? "Nobody is on a plan you have sent for today."
-                    : "Everyone on your list is on today’s plan."}
+                    : mode === "pharmacy"
+                      ? "No pharmacy is on your list yet. Name one on a customer’s visit and it is added."
+                      : "Everyone on your list is on today’s plan."}
               </p>
               {offered.length === 0 && mode === "planned" && onChooseUnplanned ? (
                 <div>

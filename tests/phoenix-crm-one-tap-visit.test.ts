@@ -189,10 +189,12 @@ export function runPhoenixCrmOneTapVisitTests(): void {
     assert.ok(outside.includes('listText("AM")') && outside.includes('listText("PM")'), "AM or PM is chosen BY HAND for someone new");
 
     // Planned offers only today's sent plan; out of plan is the rest of his list, without the
-    // customers waiting outside it.
+    // customers waiting outside it — and without his pharmacies, which have a door of their own
+    // (Pharmacy visit, owner 2026-10-03) and are never out of plan.
     const picker = source("src/components/phoenix-crm/visit-customer-picker.tsx");
+    assert.ok(picker.includes("if (customer.outside) return false;"), "a customer waiting outside the list is offered by neither");
     assert.ok(
-      picker.includes('!customer.outside && (mode === "planned" ? customer.plannedToday : !customer.plannedToday)'),
+      picker.includes('return mode === "planned" ? customer.plannedToday : !customer.plannedToday;'),
       "planned = today's sent plan; out of plan = the list minus today's plan",
     );
 

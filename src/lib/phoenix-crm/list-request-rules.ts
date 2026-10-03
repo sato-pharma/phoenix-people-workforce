@@ -23,6 +23,7 @@
  * offers, so a screen can never offer a step the database would refuse.
  */
 
+import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type {
   PhoenixCrmCustomerStatus,
   PhoenixCrmRequestKind,
@@ -77,7 +78,27 @@ export type ListCustomerFacts = {
    * captured, so there is nothing to validate — the row offers Open, never a second Validate.
    */
   locationCheck?: "checking" | "not_confirmed" | null;
+  /** AM, PM or Pharmacy, as stored. Only a pharmacy changes anything here (`awaitsValidation`). */
+  listType?: unknown;
 };
+
+/**
+ * Whether the customer is waiting to be validated at the door.
+ *
+ * 🔴 NEVER A PHARMACY (owner, 2026-10-03: "Pharmacy don't need a validation. It is visit is logged
+ * normally."). The pharmacies came in from iReports360 as `pending` like the doctors — 568 of 570 were
+ * still pending the day he ruled — and a pending row offered Validate and sat under To validate, so
+ * the rep was asked for a signboard photo, a location and the hours of every pharmacy before its
+ * visits counted. A pending pharmacy is simply on his list: Open, never Validate, under Your list.
+ */
+export function awaitsValidation(customer: Pick<ListCustomerFacts, "status" | "listType">): boolean {
+  return customer.status === "pending" && !isPharmacyListType(customer.listType);
+}
+
+/** On the list and counting: validated, or a pharmacy, which needs no validation. */
+export function onTheList(customer: Pick<ListCustomerFacts, "status" | "listType">): boolean {
+  return customer.status === "active" || (customer.status === "pending" && !awaitsValidation(customer));
+}
 
 /** Never admitted: met outside the list, and not (yet) approved onto it. */
 export function neverAdmitted(customer: ListCustomerFacts): boolean {
@@ -88,7 +109,7 @@ export function neverAdmitted(customer: ListCustomerFacts): boolean {
  * The section of the List a customer sits in.
  *
  *   to_validate — carried over, waiting for the rep to validate him at the clinic;
- *   your_list   — validated, on the list;
+ *   your_list   — validated, on the list — and every pharmacy he has not dropped, validated or not;
  *   outside     — met and validated at the door, waiting for the rep to ask to add him (or for the
  *                 district manager and SFE, once he has);
  *   archive     — dropped, frozen; the SFE manages it.
@@ -96,8 +117,8 @@ export function neverAdmitted(customer: ListCustomerFacts): boolean {
 export type ListSection = "to_validate" | "your_list" | "outside" | "archive";
 
 export function listSectionOf(customer: ListCustomerFacts): ListSection {
-  if (customer.status === "pending") return "to_validate";
-  if (customer.status === "active") return "your_list";
+  if (awaitsValidation(customer)) return "to_validate";
+  if (onTheList(customer)) return "your_list";
   if (customer.status === "outside") return "outside";
   return "archive";
 }
@@ -130,8 +151,8 @@ export function setsAdmissionGrades(request: {
 export type ListRowAction = "validate" | "open";
 
 export function listRowAction(customer: ListCustomerFacts): ListRowAction | null {
-  if (customer.status === "pending") return customer.locationCheck === "checking" ? "open" : "validate";
-  if (customer.status === "active" || customer.status === "outside" || customer.status === "dropped") return "open";
+  if (awaitsValidation(customer)) return customer.locationCheck === "checking" ? "open" : "validate";
+  if (onTheList(customer) || customer.status === "outside" || customer.status === "dropped") return "open";
   return null;
 }
 

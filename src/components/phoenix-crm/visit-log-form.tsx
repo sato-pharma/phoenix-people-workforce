@@ -84,8 +84,20 @@ import { isFollowUp, OBJECTION_NOTE_MAX, VISIT_NEXT_STEPS, VISIT_OBJECTIONS, typ
 import type { SavedVisit, VisitCustomerOption, VisitFormView, VisitPerson, VisitProductManager } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
-/** The kind of visit he chose on the first steps. The server re-decides it from the plan's own history. */
-export type LogVisitType = "planned" | "out_of_plan" | "out_of_list";
+/**
+ * The kind of visit he chose on the first steps. The server re-decides it from the plan's own history
+ * — and files a pharmacy as planned whatever the plan says, because a pharmacy is never planned, never
+ * off plan and never approved (owner, 2026-10-02/03, pharmacy-call-rules.ts).
+ */
+export type LogVisitType = "planned" | "out_of_plan" | "out_of_list" | "pharmacy";
+
+/** The visit type as he reads it. */
+export function logVisitTypeLabel(visitType: LogVisitType): string {
+  if (visitType === "planned") return "Planned visit";
+  if (visitType === "out_of_plan") return "Out of plan";
+  if (visitType === "pharmacy") return "Pharmacy visit";
+  return "Out of list";
+}
 
 /** Who approves an off-plan visit, as one sentence: his manager first, then SFE. */
 export function decidersText(form: Pick<VisitFormView, "managers">): string {
@@ -370,6 +382,10 @@ export function VisitLogForm({
   const [productManagerHrId, setProductManagerHrId] = useState<string | null>(null);
   const [products, setProducts] = useState<string[]>(() => carriedProducts(customer));
   const [pharmacyName, setPharmacyName] = useState("");
+  // At the pharmacy itself (owner, 2026-10-03): the pharmacy is the customer, so there is no other
+  // pharmacy to name — only its stock. Every road to a pharmacy opens this form as a pharmacy visit
+  // (`routeFor` sends one there first), so the visit type is the one answer, read once.
+  const atPharmacy = initialVisitType === "pharmacy";
   const [availability, setAvailability] = useState<Record<string, ProductAvailability>>({});
   // Which families in the pharmacy-stock check are expanded to show their concentrations. A family
   // with a single product is never a group, so it is never in here; the rest start collapsed.
@@ -598,15 +614,16 @@ export function VisitLogForm({
         customerId: customer.customerId,
         // What he chose. The server re-decides it from the plan's own history and the customer's own
         // status, so this only settles whether the reason travels with the visit.
-        visitType,
+        visitType: visitType === "pharmacy" ? "planned" : visitType,
         unplannedReason: visitType === "out_of_plan" ? unplannedReason.trim() : null,
         kind,
         managerHrId: kind === "single" || kind === "product_manager" ? null : (who.manager?.hrId ?? null),
         seniorHrId: kind === "chain" ? (who.senior?.hrId ?? null) : null,
         productManagerHrId: kind === "product_manager" ? (who.productManager?.hrId ?? null) : null,
         products,
-        // Optional since 2026-09-29: the box stays, a visit is never blocked on it.
-        pharmacyName: pharmacyName.trim() || null,
+        // Optional since 2026-09-29: the box stays, a visit is never blocked on it. A pharmacy's own
+        // visit has no box — the database names it after the pharmacy itself.
+        pharmacyName: atPharmacy ? null : pharmacyName.trim() || null,
         productAvailability: availability,
         samplesGiven: samples,
         // 🔴 SILENT: what the phone counted, read in the event handler and passed in — never taken
@@ -720,7 +737,7 @@ export function VisitLogForm({
         // Nothing here is a box — a change goes back to step 3, where every box is.
         <CrmBlock title="Check the visit, then log it">
           <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
-            <SummaryLine label="Customer" value={`${customer.name} · ${visitType === "planned" ? "Planned" : visitType === "out_of_plan" ? "Out of plan" : "Out of list"}`} />
+            <SummaryLine label="Customer" value={`${customer.name} · ${logVisitTypeLabel(visitType)}`} />
             {visitType === "out_of_plan" ? <SummaryLine label="Why you went" value={unplannedReason.trim() || "Not written yet"} /> : null}
             <SummaryLine label="Who was on the visit" value={whoLine} />
             <SummaryLine label="Products discussed" value={products.length > 0 ? products.join(", ") : "None chosen yet"} />
@@ -751,9 +768,7 @@ export function VisitLogForm({
         <div className="min-w-0 border border-l-[3px] border-orange-200 border-l-orange-500 bg-orange-50/50 px-3 py-2.5">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
             <p className="min-w-0 flex-1 break-words text-base font-black text-slate-950">{customer.name}</p>
-            <CrmPill tone={visitType === "planned" ? "good" : "orange"}>
-              {visitType === "planned" ? "Planned" : visitType === "out_of_plan" ? "Out of plan" : "Out of list"}
-            </CrmPill>
+            <CrmPill tone={visitType === "planned" || visitType === "pharmacy" ? "good" : "orange"}>{logVisitTypeLabel(visitType)}</CrmPill>
           </div>
           <p className="mt-0.5 break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</p>
           <PlaceWindows customer={customer} />
@@ -1002,33 +1017,35 @@ export function VisitLogForm({
       <CrmBlock actions={stepMark("optional")} title="5 · Pharmacy you took feedback from">
         {openExtras.has("pharmacy") ? (
           <>
-        <CrmField
-          hint="Ones you entered before appear as you type; a new one is saved for next time."
-          htmlFor="phoenix-crm-visit-pharmacy"
-          label="Pharmacy name"
-        >
-          <input
-            autoComplete="off"
-            className={crmInputClassName}
-            disabled={saving}
-            id="phoenix-crm-visit-pharmacy"
-            list="phoenix-crm-pharmacies"
-            maxLength={PHARMACY_NAME_MAX}
-            onChange={(event) => {
-              setProblem(null);
-              setPharmacyName(event.target.value);
-            }}
-            placeholder="e.g. El Ezaby — Nasr City"
-            value={pharmacyName}
-          />
-          {form.pharmacies.length > 0 ? (
-            <datalist id="phoenix-crm-pharmacies">
-              {form.pharmacies.map((name) => (
-                <option key={name} value={name} />
-              ))}
-            </datalist>
-          ) : null}
-        </CrmField>
+        {atPharmacy ? null : (
+          <CrmField
+            hint="Your pharmacies and the ones you named before appear as you type. It is logged as a visit to that pharmacy too."
+            htmlFor="phoenix-crm-visit-pharmacy"
+            label="Pharmacy name"
+          >
+            <input
+              autoComplete="off"
+              className={crmInputClassName}
+              disabled={saving}
+              id="phoenix-crm-visit-pharmacy"
+              list="phoenix-crm-pharmacies"
+              maxLength={PHARMACY_NAME_MAX}
+              onChange={(event) => {
+                setProblem(null);
+                setPharmacyName(event.target.value);
+              }}
+              placeholder="e.g. El Ezaby — Nasr City"
+              value={pharmacyName}
+            />
+            {form.pharmacies.length > 0 ? (
+              <datalist id="phoenix-crm-pharmacies">
+                {form.pharmacies.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            ) : null}
+          </CrmField>
+        )}
 
         <div className="mt-3 min-w-0">
           <p className="text-sm font-black text-slate-800">Does this pharmacy have these products?</p>
@@ -1075,7 +1092,12 @@ export function VisitLogForm({
         </div>
           </>
         ) : (
-          <FoldedStep disabled={saving} label="Add the pharmacy" note="Its name, and which of your products it has." onOpen={() => openExtra("pharmacy")} />
+          <FoldedStep
+            disabled={saving}
+            label={atPharmacy ? "Add the stock" : "Add the pharmacy"}
+            note={atPharmacy ? "Which of your products it has." : "Its name, and which of your products it has."}
+            onOpen={() => openExtra("pharmacy")}
+          />
         )}
       </CrmBlock>
 

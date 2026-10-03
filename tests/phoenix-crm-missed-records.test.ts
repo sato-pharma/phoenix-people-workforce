@@ -344,8 +344,8 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
     const locationReport = reports.slice(reports.indexOf("export async function loadVisitLocationReport("));
     assert.match(
       locationReport.slice(0, locationReport.indexOf("\n}\n")),
-      /\.lte\("visit_date", period\.to\)\s*\.neq\("capture_source", "admin"\);/,
-      "place against actual has no actual for an entered visit",
+      /\.lte\("visit_date", period\.to\)\s*\.neq\("capture_source", "admin"\)\s*\.is\("linked_from_visit_id", null\);/,
+      "place against actual has no actual for an entered visit — nor for the pharmacy visit a doctor's visit filed beside itself",
     );
   }
 
