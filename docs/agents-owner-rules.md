@@ -4428,6 +4428,53 @@ So what do you recommend?"*
 **Never "fix" it back:** do not remove a point to shorten the form, and do not split step 3 into more
 steps. Both are what he ruled out in the same answer. Pinned by `tests/phoenix-crm-visit-form-ease.test.ts`, section (e).
 
+## "I started working" — the rep confirms his start, before his first AM visit — owner ruling, 2026-10-03
+
+**What he asked for, and why.** *"I want to make a feature for medical reps to confirm they started
+their work, because as you know the visit is entered after it is done, so I want to know when actually
+did they start working. Only before the first AM visit show them an obvious clean button called 'Show
+your manager you started working', and under this button write 'press here before doing only the first
+AM visit', and confirm before, not after. After the rep presses this, the managers are informed by
+in-app, Telegram and email."* The gap is real and nothing in the module could close it: a visit's
+`captured_at` is stamped when the rep SAVES it, which is the end of a call. The first visit of a
+morning therefore says when his first call finished, never when he began.
+
+Asked the same day where the reading goes, he added: *"when they press the button their location and
+their time send to managers and saved in system."*
+
+**The four answers he gave when asked.**
+- **Who is told:** his **district manager and the SFE Manager** — not the national sales manager. (The
+  first-visit email goes to the whole chain, but that one fires once per rep ever; this one is daily.)
+- **Channels:** all three, with **email to the district manager only**. He was shown the arithmetic: at
+  about 5 reps a district the DM takes ~5 emails a morning, while the SFE, who reads every line, would
+  take one per rep — about 74 every morning once the module is company-wide.
+- **If the rep forgets and logs his first AM visit anyway:** the visit goes through, the button
+  disappears, nothing is blocked. The manager's screen simply shows no start for that day.
+- **Location:** recorded — and then he overrode the "silent" half: it is SENT to the managers.
+
+**How it is held.**
+- `phoenix_crm_day_starts`, one row per seat per visit day per world, with a unique index that makes
+  the press idempotent: a second tap returns the first row and tells nobody again. The time is the
+  database's own `now()` and the day is the module's 02:00 rule — a feature whose whole purpose is
+  "when did he really start" cannot take either figure from the phone being asked about.
+- The row snapshots `planned_am_minute` from his SENT plan (`phoenix_crm_plan_day_starts.start_am_minute`),
+  so the manager reads planned against actual and a plan edited later cannot change how punctual the
+  morning looks. A rep with no sent plan is reported as exactly that.
+- 🔴 **TWO EVENT TYPES, and that is the only thing holding "email to the DM only".** Channels are
+  decided per event type and never per recipient, so `day_start_confirmed` sits on the email
+  allow-list (the DM) and `day_start_seen` sits on the push-blocked list (the SFE: in-app and Telegram,
+  with email unreachable even through the Telegram-failure fallback — the back door that put the daily
+  digest on the phone once already). Collapsing them into one type silently mails the SFE ~74 times a
+  morning.
+- 🔴 **It is NOT one of the module's silent checks, and the button says so.** Every other reading in
+  Phoenix CRM is invisible to the rep because it is a check ON him; this one is a report he MAKES, and
+  that distinction only holds while he can read it before pressing. The third line under the button —
+  "Your district manager and the SFE Manager see the time and where you are" — is part of the ruling,
+  not decoration. Golden Rule #1 forbids a check he cannot see; it does not forbid this.
+
+Pinned by `tests/phoenix-crm-day-start.test.ts`; the database half is
+`supabase/migrations/20261003075803_phoenix_crm_day_starts.sql`.
+
 ## A visit is never dated onto an earlier visit day than its arrival — the 2026-10-02 audit
 
 The owner's rule is **the visit day ends at 02:00 Cairo, and it is never a past or a future day**

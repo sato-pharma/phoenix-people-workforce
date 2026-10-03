@@ -37,6 +37,8 @@
 import { validationError } from "@/lib/http/api-errors";
 import { fieldWeekStart, isIsoDay, isRamadanDay, monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget } from "@/lib/phoenix-crm/coverage";
+import type { DayStartView } from "@/lib/phoenix-crm/day-start-rules";
+import { loadDayStartOn } from "@/lib/phoenix-crm/server/day-start";
 import {
   DEVICE_CLOCK_TOLERANCE_MINUTES,
   deviceClockSkewMinutes,
@@ -472,6 +474,11 @@ export type VisitDayView = {
   dayActivity: DayActivityRow | null;
   /** The rep's own day to describe; a manager enters his visits but never how he spent his day. */
   canSetDayActivity: boolean;
+  /**
+   * When he confirmed he started working, if he has (owner, 2026-10-03). Null before the press, and
+   * on every day he never pressed it — which is itself the answer his manager reads.
+   */
+  dayStart: DayStartView | null;
 };
 
 export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown; date: unknown }): Promise<VisitDayView> {
@@ -481,10 +488,11 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
   const today = viewer.visitDay;
   const date = isIsoDay(raw.date) && raw.date <= today ? raw.date : today;
   const rows = await loadVisitRows(seat.seatId, isTest, date);
-  const [names, activity, productManagerRoles] = await Promise.all([
+  const [names, activity, productManagerRoles, dayStart] = await Promise.all([
     loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...visitPeople(rows)]),
     loadDayActivityOn(seat.seatId, isTest, date),
     productManagerRolesFor(viewer.org, seat.seatId),
+    loadDayStartOn(seat.seatId, isTest, date),
   ]);
   const sight = locationSight(viewer, seat);
   return {
@@ -495,6 +503,7 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     canAdd: date === today && canEnterVisits(viewer, seat.seatId, isTest),
     dayActivity: activity,
     canSetDayActivity: date === today && canWriteAsRep(viewer, seat, isTest),
+    dayStart,
   };
 }
 

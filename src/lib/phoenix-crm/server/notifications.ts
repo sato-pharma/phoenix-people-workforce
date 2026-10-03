@@ -69,6 +69,7 @@ import { withdrawInAppNotificationsByEventKeyPrefix } from "@/lib/notifications/
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { testAccountsMirroring } from "@/lib/auth/test-persona-directory";
 import { logError } from "@/lib/observability/log";
+import { minuteClock } from "@/lib/phoenix-crm/day-start-rules";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
 import { PLAN_EDIT_ACKNOWLEDGER_HR_ID, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -242,6 +243,24 @@ export type PhoenixCrmNotice =
       wishedOn: string | null;
       /** The day the person asked picked, once accepted. */
       visitOn: string | null;
+    }
+  | {
+      /**
+       * A rep pressed "Show your manager you started working" (owner, 2026-10-03). His district
+       * manager and the SFE Manager are told the time AND where he was — the one Phoenix CRM notice
+       * that reports a rep's position to his managers, which the owner ruled explicitly ("their
+       * location and their time send to managers") and which the button tells him before he presses.
+       */
+      kind: "day_start";
+      org: OrgIndex;
+      seat: OrgSeat;
+      repHrId: string;
+      /** The SERVER's stamp — the only start time anybody is judged by. */
+      startedAt: string;
+      lat: number;
+      lon: number;
+      /** What his sent plan said he would start the morning at, when he had one. */
+      plannedAmMinute: number | null;
     };
 
 type Delivery = {
@@ -474,6 +493,92 @@ export function firstVisitDeliveries(
   ];
 }
 
+async function describeDayStart(notice: Extract<PhoenixCrmNotice, { kind: "day_start" }>): Promise<Delivery[]> {
+  const [sfe, names] = await Promise.all([sfeManagerHrIds(), loadPeopleNames([notice.repHrId])]);
+  return dayStartDeliveries(notice, names, sfe);
+}
+
+/**
+ * Who is told that a rep has started his day, and in what words (owner, 2026-10-03).
+ *
+ * 🔒 HIS DISTRICT MANAGER AND THE SFE MANAGER — the owner's own pick when asked, out of three
+ * options. The DM is the territory's REVIEWING manager, so a vacant district passes upward exactly as
+ * a grade request and a weekly plan do, and a rep whose district seat is empty still has somebody told
+ * rather than nobody.
+ *
+ * 🔴 TWO EVENT TYPES, AND THAT IS THE WHOLE POINT OF THE SPLIT. He chose "all three channels, email to
+ * the DM only", because this notice repeats EVERY WORKING DAY: at ~5 reps a district the DM's inbox
+ * takes ~5 a morning, while the SFE, who reads every line, would take one per rep — about 74 once the
+ * module is company-wide. Channels are decided per EVENT TYPE
+ * (`phoenixCrmChannels`), never per recipient, so the only way to hold that line is a second type:
+ *   · `day_start_confirmed` is on the email allow-list  → the DM gets in-app, Telegram, email, push;
+ *   · `day_start_seen` is on the push-blocked list      → the SFE gets in-app and Telegram, and email
+ *     can never reach him even through the Telegram-failure fallback, which is the back door that put
+ *     the daily digest on the phone once already.
+ * Collapsing these two into one type silently gives the SFE 74 emails a morning.
+ *
+ * 🔴 AND NEVER THE REP. He pressed it; telling him his own press is noise, and `personKey` keeps him
+ * off both lists when he also holds a manager seat (an acting district manager holds both).
+ */
+export function dayStartDeliveries(
+  notice: Extract<PhoenixCrmNotice, { kind: "day_start" }>,
+  names: PeopleNames,
+  sfeHrIds: readonly string[],
+): Delivery[] {
+  const repKey = personKey(notice.repHrId);
+  const notRep = (hrId: string) => {
+    const key = personKey(hrId);
+    return key !== null && key !== repKey;
+  };
+  const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
+  const managers = reviewer && notRep(reviewer.hrId) ? [reviewer.hrId] : [];
+  const sfe = [...new Set(sfeHrIds)].filter((hrId) => notRep(hrId) && !managers.includes(hrId));
+
+  const rep = nameOf(names, notice.repHrId, "A rep");
+  const territory = territoryName(notice.seat);
+  const clock = formatPhoenixDateTime(notice.startedAt);
+  // The place, as a link anybody can open. The rep was told this travels before he pressed.
+  const where = `https://www.google.com/maps/search/?api=1&query=${notice.lat},${notice.lon}`;
+  const planned =
+    notice.plannedAmMinute === null
+      ? "He had no sent plan for today."
+      : `His plan said he would start the morning at ${minuteClock(notice.plannedAmMinute)}.`;
+  const message =
+    `${rep} confirmed he started working at ${clock} (Cairo), ${territory}. ${planned} ` +
+    `Where he was when he pressed it: ${where}`;
+  const title = `Started working: ${rep}`;
+  // Keyed on the rep and the DAY, not on the row: one start per rep per day, so a retried save or two
+  // presses landing together upsert the same event instead of telling anybody twice.
+  const key = `phoenix_crm:day_start:${repKey ?? notice.repHrId}:${notice.startedAt.slice(0, 10)}`;
+
+  const deliveries: Delivery[] = [];
+  if (managers.length > 0) {
+    deliveries.push({
+      recipients: managers,
+      eventType: "day_start_confirmed",
+      title,
+      message,
+      tab: "team",
+      recordId: notice.seat.seatId,
+      idempotencyKey: `${key}:dm`,
+      subjectHrId: notice.repHrId,
+    });
+  }
+  if (sfe.length > 0) {
+    deliveries.push({
+      recipients: sfe,
+      eventType: "day_start_seen",
+      title,
+      message,
+      tab: "team",
+      recordId: notice.seat.seatId,
+      idempotencyKey: `${key}:sfe`,
+      subjectHrId: notice.repHrId,
+    });
+  }
+  return deliveries;
+}
+
 /**
  * A rep's ask for a visit with somebody (owner, 2026-10-02), raised or answered.
  *
@@ -582,6 +687,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
 
   if (notice.kind === "plan_edit") return describePlanEdit(notice);
   if (notice.kind === "first_visit") return describeFirstVisit(notice);
+  if (notice.kind === "day_start") return describeDayStart(notice);
   if (notice.kind === "visit_ask") return describeVisitAsk(notice);
 
   if (notice.kind === "request_created") {

@@ -45,6 +45,15 @@ export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = [
   "plan_edit_refused",
   "plan_edit_reopened",
   "first_visit_submitted",
+  // (3) 2026-10-03: a rep presses "Show your manager you started working" before his first AM visit.
+  // 🔴 THE ONLY REPEATING NOTICE ON THIS LIST, AND THE ONLY ONE WHOSE EMAIL REACHES FEWER PEOPLE THAN
+  // THE NOTICE ITSELF. It fires every working day, so the owner — shown that the SFE Manager would take
+  // one per rep, about 74 a morning once the module is company-wide, against ~5 for a district
+  // manager — chose "all three channels, email to the district manager only". Channels are decided per
+  // EVENT TYPE and never per recipient, so the SFE's copy is a SECOND type (`day_start_seen`,
+  // push-blocked below) rather than a second recipient here. Adding the SFE to this type is the one
+  // change that silently buries him.
+  "day_start_confirmed",
 ];
 
 /**
@@ -61,7 +70,16 @@ export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = [
  * `["email", "in_app", "push"]`. Email was filtered out by the block below; push was not, so the
  * digest arrived on the phone by the back door. Same shape as the email ban, one axis over.
  */
-export const PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES: readonly string[] = ["crm_daily_digest", "plan_edit_expired"];
+export const PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES: readonly string[] = [
+  "crm_daily_digest",
+  "plan_edit_expired",
+  // The SFE Manager's copy of a rep's day start (owner, 2026-10-03): in-app and Telegram, nothing
+  // else. It is on THIS list rather than merely absent from the email list because the
+  // Telegram-failure fallback re-sends as `["email", "in_app"]` and an unlinked Telegram is the
+  // EXPECTED case — so "off the email list" alone would mail him once per rep on exactly the days
+  // Telegram fails. Here `phoenixCrmChannels` answers `["in_app", "telegram"]` and neither axis widens.
+  "day_start_seen",
+];
 
 export function isPhoenixCrmModule(module: string | null | undefined): boolean {
   return String(module ?? "").trim().toLowerCase() === PHOENIX_CRM_MODULE;

@@ -160,8 +160,12 @@ export function runPhoenixCrmApprovalNoticeTests() {
   {
     assert.deepEqual(
       [...PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES].sort(),
-      ["crm_daily_digest", "plan_edit_expired"],
-      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, and the plan-edit expiry he ruled on the same day",
+      // `day_start_seen` joined them on 2026-10-03: the SFE Manager's copy of a rep's "I started
+      // working". The district manager's copy (`day_start_confirmed`) emails; the SFE's cannot, because
+      // this notice repeats EVERY WORKING DAY and he reads every line — about 74 a morning at full
+      // rollout. Both axes are shut here, so the Telegram-failure fallback cannot mail him either.
+      ["crm_daily_digest", "day_start_seen", "plan_edit_expired"],
+      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, and the SFE's copy of a rep's day start",
     );
     // Behaviour, not source: the re-send's own channel list, filtered.
     assert.deepEqual(

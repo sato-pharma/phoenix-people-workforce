@@ -227,6 +227,13 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // national sales manager and the SFE Manager, by email — with the owner on the BCC, which
   // `sendPhoenixEmail` adds to every email the system sends. One per rep, ever; nothing to decide.
   "phoenix_crm.first_visit_submitted": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  // "Show your manager you started working" (owner, 2026-10-03), pressed before the rep's first AM
+  // visit. TWO rows for ONE piece of news, because channels are decided per event type and never per
+  // recipient: the DISTRICT MANAGER's copy emails (~5 a morning), and the SFE Manager's copy does not
+  // (~74 a morning at full rollout — he reads every line). `day_start_seen` is on the module's
+  // push-blocked list too, so the Telegram-failure fallback cannot mail him by the back door.
+  "phoenix_crm.day_start_confirmed": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.day_start_seen": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // Phoenix CRM (owner rule 2026-09-16): a grade or drop request and a weekly plan waiting for the
   // reviewing manager, and the decision back to the rep — in-app, Telegram and (since 2026-10-02) the
   // phone, never email.
