@@ -193,7 +193,46 @@ function runWiringCases(): void {
   assert.equal(/Accept All|acceptAll/i.test(driver), false);
 }
 
+/**
+ * The create form is submitted by TYPE, never by guessing a wording.
+ *
+ * 🔴 Measured on production 2026-10-03. `clickOneOf` tried the submit by text in the order
+ * Create / Create user / Add user / **Add** / Save / Continue, and the console carries a button whose
+ * text is exactly "Add" — the row's `aria-label="Add alias"` control. With the create form open the
+ * page answered `["Add", "Save"]`, so the robot pressed ADD ALIAS, never submitted, found no
+ * "One-time password" dialog, and reported "the mailbox may exist" for a mailbox that was never
+ * created. The console's count stayed at 288 throughout.
+ *
+ * A longer or reordered wording list does not fix this: "Add" matched exactly ONE element, so the
+ * ambiguity guard was satisfied. It was unique and wrong. That is why the control is now identified
+ * by `type="submit"`, with the wordings kept only as a sanity check.
+ */
+function runSubmitByTypeCases(): void {
+  const driver = readFileSync(
+    new URL("src/lib/new-hire-mailbox/robot/turbify-joiner.ts", new URL("../", import.meta.url)),
+    "utf8",
+  );
+  const flat = driver.replace(/\s+/g, " ");
+
+  // The create flow submits through the type-resolved helper.
+  assert.match(flat, /await submitOpenForm\(page, CREATE_SUBMIT_WORDINGS, "submit button for the new-mailbox form"\)/);
+  // 🔴 And NOT through the wording-guessing one, which is what pressed Add alias.
+  assert.equal(
+    /clickOneOf\(page, CREATE_SUBMIT_WORDINGS/.test(flat), false,
+    "the create form must not pick its submit by trying wordings in order",
+  );
+  // The helper resolves by type.
+  assert.match(flat, /const query = 'button\[type="submit"\]'/);
+  // It refuses rather than guessing in all three bad shapes: none, several, or an unrecognised one.
+  assert.match(flat, /carries no button\[type="submit"\]/);
+  assert.match(flat, /submit buttons are present while looking for the/);
+  assert.match(flat, /which is not one of the wordings this/);
+  // The refusal names the real incident so the next reader is not left guessing.
+  assert.match(driver, /Add alias/, "the refusal must name what it once pressed by mistake");
+}
+
 export function runTurbifyClickDeliveryTests(): void {
+  runSubmitByTypeCases();
   runHitTestCases();
   runDecisionCases();
   runClickAndClearCases();
