@@ -363,13 +363,19 @@ function NearbyLine({ neighbourhood }: { neighbourhood: Neighbourhood | null }) 
  *
  * A placeholder is never a link: there is nothing to drive to, and a link that searches the words
  * "Set when you validate" would send him to the middle of nowhere.
+ *
+ * 🔴 IT NEVER RETURNS A <p>. The phone card wraps it in a <p> to carry the ink, and a <p> inside a
+ * <p> is invalid HTML: the browser closes the outer one early, the server's markup no longer matches
+ * React's tree, and every pending customer's card raised a hydration error (seen live 2026-10-03).
+ * A BLOCK span looks exactly as the <p> did — preflight already zeroes a <p>'s margins, and `dir`
+ * still aligns the line — and it is legal inside the phone's <p> and the table's <td> alike.
  */
 function AddressText({ href, text }: { href: string | null; text: string }) {
   if (!href) {
     return (
-      <p className="break-words" dir="auto">
+      <span className="block break-words" dir="auto">
         {text}
-      </p>
+      </span>
     );
   }
   return (

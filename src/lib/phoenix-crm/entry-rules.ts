@@ -178,8 +178,11 @@ export const NO_FIX_FOR_A_VISIT = `Turn on location for ${BROWSER_PLACEHOLDER}, 
  * A reading wider than its line is treated exactly as NO reading, refused in plain words about his own
  * phone — what to switch on. 🔴 THE PLACE'S LINE IS TOLD TO THE REP, BY THE OWNER'S WORD: the
  * validation screen states it before he starts (`PLACE_PRECISION_NOTE`) and the refusal repeats it.
- * That is a stated requirement of HIS OWN work, like "take a live photo" — it never shows his reading,
- * and the visit's line is still never put into words (Golden Rule #1). An UNKNOWN accuracy is still
+ * That is a stated requirement of HIS OWN work, like "take a live photo". 🔴 AND SINCE 2026-10-03 THE
+ * REFUSAL ALSO NAMES HIS OWN READING ("your phone gave 2,000 m") — the owner's amendment to his
+ * 2026-09-29 rule, scoped to this one sentence; see `roughFixAtThePlace` below for what it cost not to
+ * have it. The visit's LINE is still never put into words (Golden Rule #1): his reading is about his
+ * phone, the line is about the check on him. An UNKNOWN accuracy is still
  * taken, as it always was, and so is a photo whose shutter could not read a position at all. The
  * weak-signal flag in Settings (`weak_gps_meters`) is separate and unchanged: a visit between that
  * line and the visit's line saves, flagged for the manager.
@@ -192,6 +195,50 @@ export const PLACE_PRECISION_NOTE = `Validation needs an accurate location, with
 
 export const ROUGH_FIX_AT_THE_PLACE = `Validation needs an accurate location, within ${PLACE_MAX_ACCURACY_METERS} m, and your phone gave only a rough one. Turn on precise location for ${BROWSER_PLACEHOLDER}; if it is already on, step outside the building and wait a few seconds, then take the photo and press Capture location again at the clinic.`;
 export const ROUGH_FIX_FOR_A_VISIT = `Your phone gave only a rough location. Turn on precise location for ${BROWSER_PLACEHOLDER}; if it is already on, step outside the building and wait a few seconds, then tap Log visit again.`;
+
+/**
+ * 🔴 THE REFUSAL NOW NAMES THE REP'S OWN READING (owner, 2026-10-03, asked directly and answered
+ * "show the rep her own accuracy number on the refusal"). It AMENDS his 2026-09-29 rule — which said
+ * the rep reads WHERE, never HOW WELL — for this one sentence and no other: the read-only location
+ * block on the validation screen still shows no coordinate and no accuracy, and the raw readings stay
+ * the Super Admin's and the SFE Manager's on the place-move screen.
+ *
+ * What it cost not to have it: a rep met "your phone gave only a rough one" eighteen times between
+ * 16:12 and 18:47 and could not tell 2,000 m from 110 m, so she could not tell whether anything she
+ * tried was helping. Nor could the office — a refused reading is never stored, so the number existed
+ * for one instant on her screen and nowhere else.
+ *
+ * 🔴 HIS OWN READING IS NOT THE LINE. The visit's line (`VISIT_MAX_ACCURACY_METERS`) is still never
+ * put into words anywhere a rep can read it (Golden Rule #1) — telling him the check sits at 500 m
+ * tells him exactly how far he may stand from the clinic. "Your phone gave 2,000 m" tells him about
+ * his phone and nothing about the check, which is why one is now said and the other still is not.
+ */
+function metresSaid(accuracyMeters: number): string {
+  return `${Math.round(accuracyMeters).toLocaleString("en-US")} m`;
+}
+
+/** The widest reading that put a place outside its line, or null when neither number is to blame. */
+export function roughestPlaceReading(fix: CapturedFix): number | null {
+  const over: number[] = [];
+  if (fix.accuracyMeters !== null && fix.accuracyMeters > PLACE_MAX_ACCURACY_METERS) over.push(fix.accuracyMeters);
+  const photoRead = fix.photoLat !== null && fix.photoLon !== null;
+  if (photoRead && fix.photoAccuracyMeters !== null && fix.photoAccuracyMeters > PLACE_MAX_ACCURACY_METERS) {
+    over.push(fix.photoAccuracyMeters);
+  }
+  return over.length === 0 ? null : Math.max(...over);
+}
+
+export function roughFixAtThePlace(fix: CapturedFix): string {
+  const reading = roughestPlaceReading(fix);
+  if (reading === null) return ROUGH_FIX_AT_THE_PLACE;
+  return `Validation needs an accurate location, within ${PLACE_MAX_ACCURACY_METERS} m, and your phone gave ${metresSaid(reading)}. Turn on precise location for ${BROWSER_PLACEHOLDER}; if it is already on, step outside the building and wait a few seconds, then take the photo and press Capture location again at the clinic.`;
+}
+
+export function roughFixForAVisit(fix: CapturedFix): string {
+  if (fix.accuracyMeters === null) return ROUGH_FIX_FOR_A_VISIT;
+  // His reading, never the line he is being measured against.
+  return `Your phone gave ${metresSaid(fix.accuracyMeters)}, which is too rough to log a visit. Turn on precise location for ${BROWSER_PLACEHOLDER}; if it is already on, step outside the building and wait a few seconds, then tap Log visit again.`;
+}
 
 /** Whether a reading is inside a line. Unknown is inside: it is never refused, as before. */
 export function withinAccuracy(accuracyMeters: number | null, maxMeters: number): boolean {
@@ -289,7 +336,7 @@ export function parsePlaceDraft(raw: unknown): EntryRuleResult<PlaceDraft> {
   const fix = parseCapturedFix(body);
   if (!fix.ok) return fix;
   // A place is fixed for good: a rough photo OR a rough pin is no reading (owner, 2026-10-03).
-  if (!placeReadingsPrecise(fix.value)) return { ok: false, error: ROUGH_FIX_AT_THE_PLACE };
+  if (!placeReadingsPrecise(fix.value)) return { ok: false, error: roughFixAtThePlace(fix.value) };
   const timings = parseTimings(body.timings);
   if (!timings.ok) return { ok: false, error: timings.error };
   return {
@@ -556,7 +603,7 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   const photoPath = cleanText(body.photoPath, 200);
   const fix = parseCapturedFix(body, NO_FIX_FOR_A_VISIT);
   if (!fix.ok) return fix;
-  if (!withinAccuracy(fix.value.accuracyMeters, VISIT_MAX_ACCURACY_METERS)) return { ok: false, error: ROUGH_FIX_FOR_A_VISIT };
+  if (!withinAccuracy(fix.value.accuracyMeters, VISIT_MAX_ACCURACY_METERS)) return { ok: false, error: roughFixForAVisit(fix.value) };
 
   // The kind he chose. The reason is asked for here, before the save, so an off-plan visit never gets
   // as far as the server without one — the server still decides which kind it really was.

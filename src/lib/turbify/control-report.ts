@@ -81,7 +81,10 @@ export function redactLabel(raw: string | null | undefined, secrets: readonly st
     let index = value.toLowerCase().indexOf(needle.toLowerCase());
     while (index !== -1) {
       value = `${value.slice(0, index)}[redacted]${value.slice(index + needle.length)}`;
-      index = value.toLowerCase().indexOf(needle.toLowerCase());
+      // 🔴 THE SECOND COPY OF THE SAME LOOP, fixed the same day (2026-10-03): resume AFTER the
+      // marker. Searching from 0 again never terminates for a secret that is a substring of
+      // "[redacted]" — and this one runs inside a diagnostic that must never fail a run.
+      index = value.toLowerCase().indexOf(needle.toLowerCase(), index + "[redacted]".length);
     }
   }
 

@@ -20,10 +20,16 @@ import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 import {
   CHANGE_PASSWORD_WORDINGS,
+  describePage,
+  describeShape,
+  LOGIN_SUBMIT_WORDINGS,
   MAILBOX_EMAIL_FIELD,
+  MAILBOX_LOGIN_URL,
+  withoutSecrets,
 } from "../src/lib/new-hire-mailbox/robot/turbify-joiner.ts";
 import {
   APP_PASSWORD_PAGE,
+  APP_PASSWORD_WORDINGS,
   ECP_LOCATORS,
   ONE_TIME_PASSWORD_DIALOG,
   describeLocator,
@@ -230,10 +236,60 @@ function runMailboxLoginCases(): void {
     /LOGIN_PAGE_URL/.test(driver), false,
     "a sign-in proof must not test the url path either — the setup page is served at /login too",
   );
-  assert.match(
-    driver, /\$\$\(MAILBOX_EMAIL_FIELD\)\)\.length === 0/,
-    "the mailbox sign-in is proven by the address field being GONE, which is what actually differs",
+  // 🔴 AND NOT AN ABSENCE EITHER — the third wrong answer. `$$` finds HIDDEN inputs, so a leftover
+  // `name="email"` in the DOM reads as a login form, and so does a form that never submitted because
+  // something covered the button. The proof is now POSITIVE: the setup form's own confirm field, or
+  // no VISIBLE address box.
+  assert.equal(
+    /\$\$\(MAILBOX_EMAIL_FIELD\)\)\.length === 0/.test(driver), false,
+    "the sign-in proof must not be the bare absence of the address field — a hidden input defeats it",
   );
+  assert.match(
+    driver, /await onSetupPage\(\)\) \|\| \(await pastTheLoginForm\(\)\)/,
+    "the mailbox sign-in must be proven positively: the setup form, or being past the login form",
+  );
+  assert.match(
+    driver, /getClientRects\(\)\.length > 0/,
+    "being past the login form must count only VISIBLE address boxes",
+  );
+
+  // 🔴 THE MAILBOX SIGN-IN GOES THROUGH THE BIZMAIL PAGE DIRECTLY. The `.done=` round-trip could not
+  // be calibrated: by then the browser holds the admin session, and a Turbify login url with a live
+  // session renders no form at all — it forwards.
+  assert.equal(
+    MAILBOX_LOGIN_URL, "https://mail.turbify.com/login",
+    "the mailbox signs in on the Bizmail page itself, not through a login.turbify.com redirect",
+  );
+  assert.equal(
+    MAILBOX_LOGIN_URL.includes(".done="), false,
+    "a .done= round-trip makes the page depend on whoever is already signed in",
+  );
+  // ...and in its OWN browser context, so no admin cookie can forward it anywhere.
+  assert.match(
+    driver, /openMailboxPage\(\)/,
+    "the mailbox must sign in on its own page, not on the administrator's",
+  );
+  assert.match(
+    driver, /createBrowserContext/,
+    "the mailbox page needs its own cookie jar",
+  );
+
+  // 🔴 NO BLIND SUBMIT ANYWHERE. A bare page.click on the submit was the last control in this driver
+  // delivered without a hit test, and a cookie banner eating a blind click is incident one.
+  assert.equal(
+    /page\.click\('button\[type="submit"\]'\)/.test(driver), false,
+    "the sign-in submit must go through the hit-tested path, like every other click here",
+  );
+  assert.match(
+    driver, /submitOpenForm\(target, LOGIN_SUBMIT_WORDINGS/,
+    "the sign-in submit is resolved by type and sanity-checked against the measured wordings",
+  );
+  for (const wording of ["Login to Business Mail", "Log in to My Account"]) {
+    assert.ok(
+      (LOGIN_SUBMIT_WORDINGS as readonly string[]).includes(wording),
+      `${wording} was read off a live Turbify login page and must stay in the sanity check`,
+    );
+  }
 
   // The setup screen's submit control, as read off the live page. None of the four wordings that
   // preceded it matched, so this step would have failed the moment the sign-in started working.
@@ -241,6 +297,101 @@ function runMailboxLoginCases(): void {
     CHANGE_PASSWORD_WORDINGS[0], "Generate mailbox password",
     "the measured wording must be tried first, ahead of the guesses",
   );
+
+  // 🔴 NOTHING TICKS THE SETUP PAGE'S CHECKBOX. On the login form that shape is "Keep me logged in.";
+  // on the setup form nobody has read its label, and a consent or terms box is the owner's click.
+  assert.equal(
+    /checkbox"\]'\)[\s.]*(click|check)/.test(driver), false,
+    "the robot must not tick a checkbox whose label has never been read",
+  );
+}
+
+/**
+ * The page description that turns the next refusal into a measurement.
+ *
+ * 🔴 THESE CALL IT. Asserting on the SOURCE TEXT of in-page code proves nothing about whether it
+ * runs — the 2026-10-02 lesson, where a fix shipped green while its code was never executed.
+ */
+async function runPageDescriptionCases(): Promise<void> {
+  const secret = "Zq7-TempPass-4417";
+  // The known secret is removed by exact match, case-insensitively.
+  assert.equal(
+    withoutSecrets(`heading says ${secret} here`, [secret]),
+    "heading says [redacted] here",
+    "a secret the run is holding must never survive into a refusal message",
+  );
+  assert.equal(
+    withoutSecrets(`HEADING SAYS ${secret.toUpperCase()}`, [secret]),
+    "HEADING SAYS [redacted]",
+    "the match must not depend on case",
+  );
+  // 🔴 AND THE THINGS THE DESCRIPTION EXISTS TO SHOW MUST SURVIVE. `redactLabel` would have dropped
+  // all three of these as secret-shaped, which is why this has its own redactor.
+  for (const keep of [
+    "https://mail.turbify.com/login",
+    "password:confirmPassword",
+    "hr.mailbox@satopharma.com",
+  ]) {
+    assert.equal(
+      withoutSecrets(keep, [secret]), keep,
+      `${keep} is what the description is for and must not be redacted away`,
+    );
+  }
+  // Too short to match safely: replacing it would corrupt the description and protect nothing.
+  assert.equal(withoutSecrets("inputs [text:email]", ["ail"]), "inputs [text:email]");
+  // 🔴 AND IT MUST TERMINATE. A secret that is a substring of the marker it is replaced with —
+  // "redact" becomes "[redacted]", which contains "redact" — loops for ever if the search restarts
+  // from 0. The passwords here would not trigger it, but a redactor that hangs hangs the whole
+  // provisioning run with NO output, which is the exact failure shape that cost four clicks today.
+  // This test is the thing that would hang, so it failing is a timeout, not an assertion.
+  assert.equal(withoutSecrets("value redact here", ["redact"]), "value [redacted] here");
+  assert.equal(withoutSecrets("redacted", ["redacted"]), "[redacted]");
+  assert.equal(withoutSecrets("aa redact bb redact cc", ["redact"]), "aa [redacted] bb [redacted] cc");
+
+  const shape = {
+    buttons: ["Generate mailbox password", "Cancel"],
+    headings: ["Set up your mailbox password"],
+    inputs: ["password:password", "password:confirmPassword", "checkbox:-", "hidden:email (hidden)"],
+    title: "Bizmail Login",
+    url: "https://mail.turbify.com/login",
+  };
+  const described = describeShape(shape, [secret]);
+  for (const fragment of [
+    "https://mail.turbify.com/login",
+    'title "Bizmail Login"',
+    "Set up your mailbox password",
+    "password:confirmPassword",
+    "hidden:email (hidden)",
+    "Generate mailbox password",
+  ]) {
+    assert.ok(described.includes(fragment), `the description must carry ${fragment}`);
+  }
+  assert.equal(
+    describeShape(null, []), "the page could not be read at all.",
+    "an unreadable page must say so rather than describing an empty one",
+  );
+
+  // 🔴 THE IN-PAGE READER MUST BE A REAL FUNCTION. `page.evaluate(string)` evaluates the string as an
+  // EXPRESSION, so an arrow-function string is never called — it made every click in this driver a
+  // no-op on 2026-10-02 and shipped green.
+  const handed: string[] = [];
+  const fakePage = {
+    evaluate: async (fn: unknown) => {
+      handed.push(typeof fn);
+      return shape;
+    },
+  } as unknown as Parameters<typeof describePage>[0];
+  const line = await describePage(fakePage, [secret]);
+  assert.deepEqual(handed, ["function"], "the page reader must be handed over as a function, never a string");
+  // The negative control: the same recorder must be able to SEE a string, or the assertion above
+  // would pass for a reason that has nothing to do with the driver.
+  await (fakePage as unknown as { evaluate: (fn: unknown) => Promise<unknown> }).evaluate("(() => ({}))()");
+  assert.deepEqual(
+    handed, ["function", "string"],
+    "the recorder must distinguish the two, otherwise it proves nothing about the driver",
+  );
+  assert.ok(line.includes("Bizmail Login"), "describePage must render what the page handed back");
+  assert.ok(line.includes("password:confirmPassword"), "describePage must render the inputs it read");
 }
 
 /** The driver must ask the DOM for rows, and reload first — only the first search filters. */
@@ -402,6 +553,7 @@ export async function runNewHireMailboxRobotTests(): Promise<void> {
   runExistenceReadingCases();
   runExistenceWiringCases();
   runMailboxLoginCases();
+  await runPageDescriptionCases();
   // ── the happy path, so every refusal below is attributable to the one thing it changed ───────
   const ok = verdict();
   assert.equal(ok.allowed, true);
@@ -496,6 +648,35 @@ export async function runNewHireMailboxRobotTests(): Promise<void> {
   assert.deepEqual([...ONE_TIME_PASSWORD_DIALOG.neverPress], ["Send invite", "Print"]);
   // The app password keeps the name offboarding later looks for.
   assert.equal(APP_PASSWORD_PAGE.passwordName, "Phoenix email");
+  // 🔴 "Manage your account" IS NOT TURBIFY'S WORDING — its documented path starts at "Account info",
+  // corroborated by two independent write-ups of Business Mail (2026-10-03). The first step would
+  // have missed while the second was already right, which fails with a message about the wrong
+  // thing. The driver presses the LISTS, documented wording first, and each still fails closed.
+  assert.equal(APP_PASSWORD_PAGE.manageAccount.value, "Account info");
+  assert.equal(APP_PASSWORD_WORDINGS.accountInfo[0], "Account info");
+  assert.equal(APP_PASSWORD_WORDINGS.appPasswords[0], "Manage App Passwords");
+  assert.ok(
+    (APP_PASSWORD_WORDINGS.accountInfo as readonly string[]).includes("Manage your account"),
+    "the old guess stays behind the documented wording rather than being deleted",
+  );
+  for (const [step, wordings] of Object.entries(APP_PASSWORD_WORDINGS)) {
+    assert.ok(wordings.length > 1, `${step} must offer more than one candidate, since none is measured`);
+    for (const wording of wordings) {
+      assert.doesNotMatch(wording, /[>#[\]]|__UNCALIBRATED__/, `${wording} must not be a CSS path`);
+    }
+  }
+  // 🔴 AND THEY ARE PRESSED AS LINKS OR BUTTONS. `Account info` is an `<a>`; a list restricted to
+  // `button` would have missed every candidate and blamed the wording.
+  assert.match(
+    stripComments(
+      readFileSync(
+        new URL("src/lib/new-hire-mailbox/robot/turbify-joiner.ts", new URL("../", import.meta.url)),
+        "utf8",
+      ),
+    ).replace(/\s+/g, " "),
+    /APP_PASSWORD_WORDINGS\.appPasswords, "the App Passwords section", LINK_OR_BUTTON/,
+    "the app-password steps must accept a link, not only a button",
+  );
 
   // A missing control fails CLOSED, with a message naming what to go and look at.
   const error = missingControl(ECP_LOCATORS.resetPassword);

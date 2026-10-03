@@ -279,6 +279,18 @@ export function runPhoenixCrmListRowFactsTests() {
     assert.ok(board.includes('rel="noreferrer"') && board.includes('target="_blank"'), "and it opens away from his day");
     assert.ok(board.includes("if (!href) {"), "a placeholder is never a link");
 
+    // 🔴 AND IT NEVER RETURNS A <p> (seen live 2026-10-03, a pending pharmacy on a rep's List). The
+    //    phone card wraps AddressText in a <p> to carry the ink, so a <p> here is a <p> inside a <p>:
+    //    invalid HTML, the browser closes the outer one early, and React logs a hydration error on
+    //    every customer with no captured place. A BLOCK span looks exactly as the <p> did.
+    const addressText = /function AddressText\([\s\S]*?\r?\n\}\r?\n/.exec(board)?.[0] ?? "";
+    assert.ok(addressText.includes("if (!href) {"), "the test is reading AddressText itself");
+    assert.doesNotMatch(addressText, /<\/?p[\s>]/, "AddressText never returns a <p> — the phone card already wraps it in one");
+    assert.ok(
+      addressText.includes('<span className="block break-words" dir="auto">'),
+      "the placeholder is a BLOCK span with dir=auto, so it lines up exactly as the <p> did",
+    );
+
     // 🔴 A SHARED CUSTOMER IS HIGHLIGHTED, and the row says who and why (owner, 2026-09-30). Pinned
     //    here because it cannot be shown on demand: sharing is rare by construction — 214 real pairs
     //    company-wide — and the rep whose List this was measured on has none, which is the honest

@@ -16,8 +16,10 @@
  * only `deleteMailbox` could close the door.
  *
  * 🔴 WHAT CHANGED IS THAT THE ROBOT NO LONGER HAS TO BE AN ADMIN — IT CAN BECOME THE USER. The joiner
- * robot already signs in AS a mailbox and reaches `Manage App Passwords` to mint one
- * (`APP_PASSWORD_PAGE`, proven in production). The same page lists the existing ones. And the admin
+ * robot already signs in AS a mailbox and is built to reach `Manage App Passwords` and mint one
+ * (`APP_PASSWORD_PAGE` — 🔴 NOT proven: as of 2026-10-03 no run has ever got past the mailbox
+ * sign-in, so nothing in Phoenix has stood on that page). The same page lists the existing ones.
+ * And the admin
  * console's own Reset password hands back a one-time password for ANY mailbox, whatever the employee
  * had changed theirs to — so Phoenix does not need a stored secret and does not need the mailbox to
  * be one it provisioned. Reset, sign in, delete them all.
@@ -43,9 +45,12 @@
 /**
  * 🔴 FALSE until the list-and-delete controls have been READ OFF THE LIVE PAGE.
  *
- * `APP_PASSWORD_PAGE` proves the page is reachable and that `Generate` works, because the joiner
- * presses it in production. Nothing has ever observed how an EXISTING app password is listed or
- * removed, so those wordings below are placeholders. Flipping this without replacing them would have
+ * 🔴 AND THE SENTENCE THAT USED TO SIT HERE WAS FALSE: it said `APP_PASSWORD_PAGE` proves the page
+ * is reachable and that `Generate` works “because the joiner presses it in production”. The joiner has
+ * NEVER reached that page — every run so far died at the mailbox sign-in — and its own first wording
+ * (“Manage your account”) turned out not to be Turbify’s. So nothing downstream may be read as
+ * proven, and nothing has ever observed how an EXISTING app password is listed or removed: those
+ * wordings below are placeholders. Flipping this without replacing them would have
  * the robot clicking a guess inside a live mailbox's security settings.
  */
 export const APP_PASSWORD_CLEAR_CALIBRATED = false;

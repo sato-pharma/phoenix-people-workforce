@@ -31,6 +31,7 @@
  */
 
 import { loadPuppeteer, resolveChromiumPath, type ChromiumPage } from "@/lib/pdf/chromium";
+import { CONSOLE_VIEWPORT } from "@/lib/turbify/click-delivery";
 // The exactly-one-row rule is stated ONCE for the whole Turbify console, in the shared resolver,
 // so the revocation driver and the provisioning driver cannot drift into two different ideas of
 // when it is safe to click a row action.
@@ -276,6 +277,16 @@ export async function createTurbifyConsoleDriver(): Promise<TurbifyConsoleDriver
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
   });
   const page = (await browser.newPage()) as ConsolePage;
+  // 🔴 EXPLICIT, AND THE SECOND COPY OF A BUG THAT ALREADY COST THREE MAILBOXES. This driver launched
+  // with no viewport, so puppeteer's default 800x600 applied — and at 600px tall Turbify's cookie
+  // banner (fixed, z-index 99999, 188px) covers everything below y=412, which is where the console's
+  // row actions sit. On 2026-10-02 that made the JOINER's clicks land on the banner and report
+  // success; the identical defect was still sitting here on 2026-10-03, on the leaver path nobody has
+  // run yet, where the click it would have swallowed is **Reset password** on a real employee's
+  // mailbox. `click-delivery.ts` carries the measurement.
+  await (page as unknown as { setViewport?: (v: { height: number; width: number }) => Promise<void> })
+    .setViewport?.({ ...CONSOLE_VIEWPORT })
+    .catch(() => {});
 
   return {
     async signIn() {

@@ -482,5 +482,15 @@ export async function runMailboxOffboardingRobotTests() {
       false,
       "the leaver driver must not re-implement the dialog tokenisation",
     );
+    // 🔴 AND THE SAME PATTERN AGAIN, FOUND 2026-10-03: this driver launched with NO viewport, so
+    // puppeteer's default 800x600 applied — the exact condition under which Turbify's fixed cookie
+    // banner covered the console's row actions and the JOINER's clicks landed on the banner and
+    // reported success (`click-delivery.ts`, incident one). Here the click it would swallow is
+    // **Reset password**, on a real employee's live mailbox, on a path nobody has run yet.
+    assert.ok(
+      source.includes("CONSOLE_VIEWPORT"),
+      "the leaver driver must set an explicit viewport — at puppeteer's default 800x600 the cookie "
+      + "banner covers the console's row actions and a blind click reports success",
+    );
   }
 }
