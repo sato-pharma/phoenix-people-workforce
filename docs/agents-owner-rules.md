@@ -4714,6 +4714,99 @@ Unchanged by this: `territoryForRepWrite` is not widened, so the plan, the day a
 forecast, the drop, the grade, the add and the hours are still the rep's alone; scope still runs
 downward only; and the place photo slot still takes the validation gate rather than the narrower one.
 
+## The SFE list template run end to end on production — 2026-10-03, and the defect it found
+
+PR #5202 shipped at 07:44 Cairo. The owner then asked for a **test-world list load for SEAT-PED-REP-AB1
+end to end on production**, because the one layer no test could reach is the database — and the review
+had already found the feature dead at exactly that seam.
+
+### The defect: a guard that never fired
+
+`phoenix_crm_load_list_customers` refused an ungraded doctor like this:
+
+```sql
+if v_list_type <> 'Pharmacy' and (v_grade not in ('A','B','C') or v_potential not in (...)) then
+```
+
+An empty sheet cell leaves `v_grade` NULL. In SQL **`NULL not in (...)` is NULL, not TRUE**; `NULL or
+NULL` is NULL; and `if NULL then` does not fire. So a PM doctor with no grade and no potential was
+**INSERTED** onto the list as `pending` with `grade = NULL`, against the owner's locked rule that every
+doctor on a rep's list carries A/B/C and a potential set by his district manager or by SFE.
+
+It was invisible for a precise reason: `parseTemplateRow` in TypeScript refuses the same row before the
+RPC is ever called, so the upload path was safe and the whole suite stayed green — while the function
+whose own comment says *"Checked again here because this function is the authority"* was not an
+authority at all. **A guard that only holds when its caller already held it is decoration.** Fixed by
+migration `20261003075335` with `coalesce(..., '')`, applied to staging and production, and pinned on
+both halves by `tests/phoenix-crm-list-template.test.ts` (`checkGradeGuard`).
+
+The verdicts either side of it were all correct — `pharmacy_has_no_grade`, `already_on_the_list`, and
+both well-formed rows — which is why nothing looked wrong.
+
+### What the run proved, after the fix
+
+| Step | Result |
+| --- | --- |
+| 4 bad grade shapes (none, grade only, potential only, `X`) | all `grade_required` |
+| A fully graded doctor | loaded |
+| `listed` with an id nobody has | `phoenix_crm:customer_not_found` |
+| An unknown mode `listedd` | `phoenix_crm:bad_input` — the branch list is closed |
+| `listed` on a real pending customer | validated: `active`, `validated_at` set, a place captured, no request filed |
+| The same one twice | `phoenix_crm:already_validated` |
+| One moved to the Archive | `phoenix_crm:archived` |
+| Reached through another seat | `phoenix_crm:customer_not_found` |
+
+Two guards were satisfied by hand and only two — the photo slot the app's own issue endpoint writes, and
+a `storage.objects` row standing in for an uploaded file. Neither is the link under test.
+
+### What the probe left behind, and why
+
+The Supabase tool **declined every destructive statement** of the cleanup: the batched `DELETE`s, a
+single narrow `DELETE`, and the `DROP FUNCTION`. That is its guardrail, and it was not routed around.
+
+What landed instead was a `REVOKE`, which is not destructive — and it mattered, because the two probe
+functions had been created in `public` and so inherited the schema default: their ACL read `=X/postgres`,
+the bare `=X/` being **PUBLIC**, which `anon` and `authenticated` inherit. After the revoke both read
+`postgres=X/postgres | service_role=X/postgres`, the same shape as every real Phoenix CRM function. The
+exposure is closed; the objects are inert debris, dropped by `20261003075838` whenever a door will run it.
+
+**The durable lesson:** a throwaway probe gets the same treatment as shipped SQL, or it is not
+throwaway — it is an undocumented object carrying the schema's default grants. A probe that must return
+rows belongs inside a transaction that drops it, or nowhere.
+
+### The contradiction a reviewer caught, which is the sharpest lesson here
+
+`20261003075335`'s first header said the probe's ungraded row *"is deleted in the same session"*. **It
+was not.** That sentence was written while planning the cleanup, the tool then declined every
+destructive statement, and the header was never revisited — so for one commit the migration told an
+operator the invalid row was gone while this very document, in the same commit, said the test rows
+remained. The two halves of one change disagreed, and the half somebody cleaning up would read was the
+wrong one.
+
+That is `AGENTS.md` §1's "confidently wrong" in its most expensive form: not a claim nobody checks, but
+a claim that **replaces** the check. The rule it earns is narrow and worth keeping — **a note about what
+you did to a database is written after the last statement lands, never beside the plan**, and a header
+that describes an outcome has to be re-read when the outcome changes.
+
+The row itself: `ZZ Test Doctor No Grade` (PM, no grade, no potential) could not be deleted, so it was
+**UPDATEd** to carry `B`/`BB`. An UPDATE is not destructive and the tool allows it, so the invalid shape
+is gone and the row is now ordinary test data. Measured after: **0** ungraded doctors anywhere on that
+seat.
+
+### What is still on production
+
+All `is_test = true` on `SEAT-PED-REP-AB1` — 5 customers named `ZZ …`, 1 place, 8 list events, 1 photo
+slot, 1 storage row. Real rows on that seat: **0 before, 0 after.** They are invisible to every real
+figure, because every KPI reads `is_test = false`. To clear them:
+
+```sql
+delete from public.phoenix_crm_list_events  where seat_id = 'SEAT-PED-REP-AB1' and is_test = true;
+delete from public.phoenix_crm_places       where seat_id = 'SEAT-PED-REP-AB1' and is_test = true;
+delete from public.phoenix_crm_customers    where seat_id = 'SEAT-PED-REP-AB1' and is_test = true;
+delete from public.phoenix_crm_photo_uploads where path like 'zz-probe/%';
+delete from storage.objects                 where name like 'zz-probe/%';
+```
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
