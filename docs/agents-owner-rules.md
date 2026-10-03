@@ -5897,3 +5897,56 @@ photo files nothing at all, because a table that also held every mistyped form w
 nobody reads. And **the table is deliberately UNKEYED**: eighteen refusals are eighteen rows, and the
 repetition is the evidence — B-130's eighteen between 16:12 and 18:47, and Hassan's nine in 67
 seconds, are both findings only because nothing collapsed them.
+## The Rankings tab — owner's rulings, 2026-10-03
+
+His ask, verbatim: *"i want to you to build a page the same concept I can filter by line, I can
+filter by multiple lines, I can filter by all company, I can filter by period, uh, I have multiple
+months, quarter, semester. Um, I can filter like anything by, uh, I can filter on one employee, on
+one title, on anything I want. But of course, you will not build it in the overview. You will only
+take the concept and build it as a, a, a new tab."* Shipped as `/sales/rankings` in #5266 — the
+concept he sent as its own tab, with the overview untouched.
+
+**The whole line, never a top slice.** It shipped with each per-line panel titled `Top 5` and cut
+with `.slice(0, 5)`. He answered within the hour: *"Don't show me the top five only. I want to see
+the whole line. I want to see the whole line."* The panels now render every ranked rep on the line
+and the title says `<Line> line — full ranking`. The reason the slice was wrong is not length: a
+cut-off board answers "who is winning", and the page exists to answer "where does everybody
+stand" — the bottom of a line is the half a line manager acts on, and it was the half being
+hidden. `tests/sales-rankings.test.ts` refuses a `.slice(` anywhere in
+`src/components/sales/rankings/rankings-explorer.tsx`, and refuses the words "Top 5" too, so a
+rename cannot slip the old shape back in.
+
+**A rank is only meaningful with its filter.** The filter decides the population, so filtered to
+CNS a rep is ranked on CNS money alone. A board is never quoted without saying what it was
+filtered to.
+
+**The window is summed, then divided once.** Over a quarter or semester the covered actual and the
+target are each summed across the window and divided a single time. Averaging the monthly ratios
+instead made 1200/1100 read 205% where the truth is 109%.
+
+**It owns no arithmetic.** Every figure comes from `loadAchievementRange` + `loadPublishedPeriodKeys`,
+gated per `lineCode|period`, so an unpublished month cannot put anybody first and the Monthly
+Closing stays the one source of truth (§4's golden rule). The test refuses the loader if it ever
+reads a table directly.
+
+**"Out of N" is organogram seats**, vacancies included, and it goes blank the moment a title,
+region or name filter narrows the population — the seat model counts REP seats, so it would answer
+a question the filtered board is no longer asking.
+
+**Who sees it.** The sidebar row is Super Admin, SFE Manager and CEO, each also needing
+`sales:read`. Portal-shell roles are redirected to `/employee-portals/sales-vs-target` rather than
+denied. Finance Manager holds `sales:read` on the admin shell and so can reach the page by URL with
+no sidebar row — the same reach it has always had on `/sales/vs-target`, deliberately not narrowed
+here; put to him 2026-10-03 and not yet answered.
+
+**The fits-the-screen rule needed a container query.** A board sits full-width in one place and at
+half of `xl:grid-cols-2` in another: a 1280px viewport holds a 452px board and a 918px one at once,
+and a viewport-keyed `lg:block` table clipped 18 cells there. `@container` + `@min-[660px]` asks the
+band itself, 660px being the width the colgroup is proven at. The clause is in `AGENTS.md` §4's
+fits-the-screen rule, since it is true of any table that can land in a grid cell.
+
+Rule: `.claude/rules/sales-closing.md`. Pinned by `tests/sales-rankings.test.ts` (every window mode
+and its prior window, sum-then-divide, the per-line published gate, leavers and the fail-open
+directory read, each filter's effect on the seat count, the trend, the loader reading only the
+closing engine, the page's `assertPermission` and portal redirect, no slice, no `Top 5`, the
+container switch and the colgroup arithmetic). Real pixels: `scripts/measure-rankings-fit.mjs`.
