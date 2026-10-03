@@ -59,6 +59,7 @@ import { clusterRows, describeSharing, findNeighbours, type NearbyContact } from
 import { factInk, gradeInk, listRowFacts, rowPoint } from "@/lib/phoenix-crm/list-row-facts";
 import { visitsWaitingFirst } from "@/lib/phoenix-crm/validate-next";
 import { planPatternRows } from "@/lib/phoenix-crm/plan-pattern";
+import { LOCATION_CHECKING_PILL, LOCATION_NOT_CONFIRMED_PILL } from "@/lib/phoenix-crm/google-place-rules";
 import { listRowAction, requestKindLabel, type ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
 import type { ListCustomer } from "@/lib/phoenix-crm/view-types";
 import { brickTintMap, type BrickTint } from "@/components/phoenix-crm/brick-tints";
@@ -217,9 +218,13 @@ function rowPills(customer: ListCustomer, variant: CustomerListVariant, marked =
     // amber. It says what validating BUYS him — visits he has already made start counting — in plain
     // words about his own work, never a count of what he has not done (Golden rule #1). It reads the
     // brick's `marked` set rather than the customer, so it can never spread to every row again.
+    // The Google check (2026-10-03), in the SYSTEM's words: while his place is being checked the row
+    // offers Open rather than Validate, so this pill is the only thing saying why.
     return (
       <>
-        {marked ? <CrmPill tone="orange">Validate first</CrmPill> : null}
+        {customer.locationCheck === "checking" ? <CrmPill tone="info">{LOCATION_CHECKING_PILL}</CrmPill> : null}
+        {customer.locationCheck === "not_confirmed" ? <CrmPill tone="orange">{LOCATION_NOT_CONFIRMED_PILL}</CrmPill> : null}
+        {marked && customer.locationCheck !== "checking" ? <CrmPill tone="orange">Validate first</CrmPill> : null}
         {waitingPills(customer)}
       </>
     );
@@ -229,6 +234,7 @@ function rowPills(customer: ListCustomer, variant: CustomerListVariant, marked =
     return (
       <>
         <CrmPill tone="orange">Outside the list</CrmPill>
+        {customer.locationCheck === "checking" ? <CrmPill tone="info">{LOCATION_CHECKING_PILL}</CrmPill> : null}
         {customer.waiting.some((entry) => entry.kind === "add") ? waitingPills(customer) : <CrmPill>Not asked to add yet</CrmPill>}
       </>
     );

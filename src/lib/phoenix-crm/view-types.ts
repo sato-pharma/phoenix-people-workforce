@@ -114,3 +114,4 @@ export type {
 export type { PhotoSlot } from "@/lib/phoenix-crm/server/photos";
 export type { TimeAnchorView } from "@/lib/phoenix-crm/server/time-anchor";
 export type { PhoenixCrmSettingsView, SettingsLine, SettingsRamadan } from "@/lib/phoenix-crm/server/admin-settings";
+export type { ValidationReviewRow } from "@/lib/phoenix-crm/server/validation-reviews";

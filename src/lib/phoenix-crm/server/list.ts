@@ -85,7 +85,10 @@ import {
 } from "@/lib/phoenix-crm/server/access";
 import { blindTerritoryList } from "@/lib/phoenix-crm/server/blind-payloads";
 import { callPhoenixCrm, chunk, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { googleMismatchMessage, type LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
+import { checkPlaceOnGoogle, googleCheckRecord, type GooglePlaceCheck } from "@/lib/phoenix-crm/server/google-place-check";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
+import { loadLocationChecks, notifyValidationReviewWaiting, pendingLocationReview } from "@/lib/phoenix-crm/server/validation-reviews";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
@@ -298,6 +301,12 @@ export type ListCustomer = {
   pendingDropRequestId: string | null;
   /** Every request waiting on him, whatever its kind, with the step it is on. */
   waiting: Array<{ requestId: string; kind: PhoenixCrmRequestKind; stage: PhoenixCrmRequestStage | null; stageLabel: string | null }>;
+  /**
+   * The Google Maps check on his place (owner, 2026-10-03): `checking` while a held validation waits,
+   * `not_confirmed` when the last one was turned down and he is back under To validate. Read by the rep
+   * as the SYSTEM's doing — the screens name no person (google-place-rules.ts).
+   */
+  locationCheck: LocationCheckState;
   /** The pharmacy pinned as this doctor's primary, or null. */
   primaryPharmacyName: string | null;
   /**
@@ -854,13 +863,14 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   const { seat, isTest } = territoryForRead(viewer, seatId, readTestFlag(test));
   const monthStart = monthStartOf(viewer.cairoToday);
   await ensureReferenceCustomers(seat, isTest);
-  const [reference, { customers, placesByCustomer }, requestRows, visitCounts, pharmaciesByCustomer, readinessMap] = await Promise.all([
+  const [reference, { customers, placesByCustomer }, requestRows, visitCounts, pharmaciesByCustomer, readinessMap, locationChecks] = await Promise.all([
     loadReference(seat.seatId, isTest),
     loadTerritoryCustomers(seat.seatId, isTest),
     loadRequestRows([seat.seatId], isTest),
     loadMonthVisitCounts(seat.seatId, isTest, monthStart, viewer.cairoToday),
     loadCustomerPharmacies(seat.seatId, isTest),
     isTest ? Promise.resolve(null) : loadReadiness([seat.seatId]),
+    loadLocationChecks(seat.seatId, isTest),
   ]);
 
   // 🔴 WHO ELSE CARRIES THESE CUSTOMERS (owner, 2026-09-30: "if a doctor is shared between this rep
@@ -1004,6 +1014,8 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
         stage: request.stage,
         stageLabel: request.stageLabel,
       })),
+      // A turned-down check matters only while he still waits to be validated; once validated it is history.
+      locationCheck: ((state) => (state === "not_confirmed" && status !== "pending" ? null : state))(locationChecks.get(customerId) ?? null),
       primaryPharmacyName,
       phone: text(row.phone),
       pharmacies,
@@ -1214,7 +1226,51 @@ export type ValidateResult = {
   /** The request this validation raised — an add for "Add new customer", a bring-back — if any. */
   requestId: string | null;
   requestKind: PhoenixCrmRequestKind | null;
+  /**
+   * Saved but NOT validated: Google has no listing the system is sure is this account, so the place
+   * waits for the Super Admin (owner, 2026-10-03). The rep reads it as the system checking.
+   */
+  held: boolean;
 };
+
+/**
+ * The customer a validation names, as the Google check needs him: the name ON THE LIST (never the
+ * place label the rep typed — google-place-rules.ts) and AM, PM or pharmacy.
+ */
+async function validationSubject(seatId: string, isTest: boolean, mode: string, body: Row): Promise<{ name: string; listType: PhoenixCrmListType } | null> {
+  if (mode === "reference") {
+    const contact = Number(body.referenceContactCrmId);
+    const entry = (await loadReference(seatId, isTest)).find((row) => Number(row.contact_crm_id) === contact);
+    return entry ? { name: String(entry.name), listType: parseListType(entry.list_type) } : null;
+  }
+  if (mode === "listed") {
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_customers")
+      .select("name, list_type")
+      .eq("id", String(body.customerId))
+      .eq("seat_id", seatId)
+      .eq("is_test", isTest)
+      .maybeSingle();
+    throwIfError(error);
+    const row = data as Row | null;
+    return row ? { name: String(row.name), listType: parseListType(row.list_type) } : null;
+  }
+  return null;
+}
+
+/**
+ * The Google Maps check, before anything is written (owner, 2026-10-03). A mismatch is REFUSED here, at
+ * the door; a match or a hold is handed to the database with its evidence. Null for a customer the check
+ * does not cover (a doctor's clinic, a pharmacy) or one this read could not name.
+ */
+async function googleCheckForSave(subject: { name: string; listType: PhoenixCrmListType } | null, place: PlaceDraft): Promise<{ check: GooglePlaceCheck; record: Row } | null> {
+  if (!subject) return null;
+  const point = placePoint(place);
+  const check = await checkPlaceOnGoogle({ customerName: subject.name, listType: subject.listType, point });
+  if (!check) return null;
+  if (check.verdict.kind === "mismatch") throw validationError(googleMismatchMessage(subject.name));
+  return { check, record: googleCheckRecord(check, point) };
+}
 
 /**
  * Validate a customer at the door: a live signboard photo, the two location readings and his days and
@@ -1315,6 +1371,15 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   } else {
     throw validationError("Reload the page and try again.");
   }
+  // The owner's two steps (2026-10-03), before anything is written: is the Google listing this account,
+  // and did he stand at it. A mismatch throws here; a hold is saved but not validated.
+  const subject =
+    mode === "new" || mode === "outside"
+      ? { name: String(payload.name), listType: parseListType(payload.list_type) }
+      : await validationSubject(seat.seatId, isTest, mode, body);
+  const google = await googleCheckForSave(subject, place.value);
+  if (google?.check.verdict.kind === "match") payload.google = google.record;
+  else if (google) payload.hold_review = google.record;
   payload.place = await placePayload(place.value);
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_validate_customer", { p: payload });
@@ -1330,7 +1395,11 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     status: customerStatusOf(result.status),
     requestId: text(result.request_id),
     requestKind: requestKind ? requestKindOf(requestKind) : null,
+    held: result.held === true,
   };
+  if (validated.held && !isTest) {
+    await notifyValidationReviewWaiting({ customerName: validated.customerName, seat, repHrId: viewer.hrId, reviewId: text(result.review_id) });
+  }
   // A validated place is the reference point every later visit to this customer is measured against,
   // so a spoof here is worth more to a cheat than a spoofed visit — one fake pin makes a year of
   // visits read "ok". Judged after the save, silently, exactly as a visit is.
@@ -1462,12 +1531,19 @@ export async function setPrimaryPharmacy(
   return { customerId: String(result.customer_id), primaryPharmacyName: text(result.primary_pharmacy_name) };
 }
 
-export async function addPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ placeId: string; customerId: string; customerName: string }> {
+export async function addPlace(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ placeId: string; customerId: string; customerName: string; held: boolean }> {
   const body = record(raw);
   const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
   if (!isUuid(body.customerId)) throw validationError("Choose the customer this place belongs to.");
   const place = parsePlaceDraft(body.place);
   if (!place.ok) throw validationError(place.error);
+  // Another clinic is checked against Google exactly as the first one is (owner, 2026-10-03). Held, it
+  // is saved and waits for the Super Admin; the customer, already validated, is not touched.
+  const subject = await validationSubject(seat.seatId, isTest, "listed", { customerId: String(body.customerId).toLowerCase() });
+  const google = await googleCheckForSave(subject, place.value);
   const result = await callPhoenixCrm<Row>("phoenix_crm_add_place", {
     p: {
       seat_id: seat.seatId,
@@ -1475,9 +1551,18 @@ export async function addPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<
       is_test: isTest,
       customer_id: String(body.customerId).toLowerCase(),
       place: await placePayload(place.value),
+      ...(google?.check.verdict.kind === "match" ? { google: google.record } : google ? { hold_review: google.record } : {}),
     },
   });
-  const added = { placeId: String(result.place_id), customerId: String(result.customer_id), customerName: String(result.customer_name) };
+  const added = {
+    placeId: String(result.place_id),
+    customerId: String(result.customer_id),
+    customerName: String(result.customer_name),
+    held: result.held === true,
+  };
+  if (added.held && !isTest) {
+    await notifyValidationReviewWaiting({ customerName: added.customerName, seat, repHrId: viewer.hrId, reviewId: text(result.review_id) });
+  }
   // A second place is a second reference point, judged exactly as the first one is.
   const issuedAt = await photoSlotIssuedAt(place.value.photoPath).catch(() => null);
   if (issuedAt) await judgeCaptureForPlace(viewer, seat.seatId, isTest, added.placeId, added.customerId, issuedAt, place.value);
@@ -1670,7 +1755,7 @@ export async function decideListRequest(
   const requestId = String(body.requestId).toLowerCase();
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_list_requests")
-    .select("id, seat_id, is_test, kind, status, stage, manager_decided_at")
+    .select("id, seat_id, is_test, kind, status, stage, manager_decided_at, customer_id")
     .eq("id", requestId)
     .maybeSingle();
   throwIfError(error);
@@ -1694,6 +1779,12 @@ export async function decideListRequest(
   }
   // The step the phone saw, when it names one; otherwise the row's own — both guard the same race.
   const stage = isRequestStage(body.stage) ? body.stage : rowStage;
+  // SFE's step admits him to the list. While his place is still with the Super Admin it waits: only the
+  // Super Admin approves or rejects a place the Google check could not confirm (owner, 2026-10-03).
+  const customerId = text(request.customer_id);
+  if (decision === "approve" && rowStage === "sfe" && (kind === "add" || kind === "restore") && customerId && (await pendingLocationReview(customerId))) {
+    throw validationError("This customer's location is still being checked against Google Maps. He can be added once the check is finished.");
+  }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_request", {
     p: {

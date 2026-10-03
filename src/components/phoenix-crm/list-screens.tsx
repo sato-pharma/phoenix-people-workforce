@@ -72,6 +72,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import type { ReferenceState } from "@/lib/phoenix-crm/coverage";
 import { CUSTOMER_NAME_MAX, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
+import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
 import { receivingDaysLabel } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
@@ -124,7 +125,8 @@ export type ListNotice = { tone: NoteTone; title: string; message?: string | nul
  * outside it for the district manager and SFE, or another clinic added to a customer.
  */
 export type SavedPlace = {
-  kind: "validated" | "waiting" | "added";
+  /** `checking`: saved, and the system is checking the place against Google Maps (2026-10-03). */
+  kind: "validated" | "waiting" | "added" | "checking";
   customerId: string;
   customerName: string;
   listType: PhoenixCrmListType;
@@ -405,7 +407,7 @@ function validateGone(view: TerritoryListView, subject: ValidateSubject, state: 
 /** What a validation answered, as the saved screen reads it. */
 function savedFromResult(result: ValidateResult): SavedPlace {
   return {
-    kind: result.status === "outside" ? "waiting" : "validated",
+    kind: result.status === "outside" ? "waiting" : result.held ? "checking" : "validated",
     customerId: result.customerId,
     customerName: result.customerName,
     listType: result.listType,
@@ -834,7 +836,11 @@ export function SavedScreen({
   view: TerritoryListView;
 }) {
   const heading =
-    saved.kind === "added" ? `Clinic added: ${saved.customerName}` : saved.kind === "waiting" ? `Saved: ${saved.customerName}` : `Validated: ${saved.customerName}`;
+    saved.kind === "added"
+      ? `Clinic added: ${saved.customerName}`
+      : saved.kind === "waiting" || saved.kind === "checking"
+        ? `Saved: ${saved.customerName}`
+        : `Validated: ${saved.customerName}`;
   return (
     <CrmPanel>
       <CrmBackBar backLabel="List" onBack={onBack} title={saved.kind === "added" ? "Clinic added" : "Customer saved"} />
@@ -851,6 +857,12 @@ export function SavedScreen({
           <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
             The customer is on your list, and the visits already saved here count from now on.
           </p>
+        ) : null}
+        {/* The Google check could not confirm the place: saved, not validated yet — the system's doing. */}
+        {saved.kind === "checking" ? (
+          <CrmNote className="mt-3" title={LOCATION_CHECKING_TITLE} tone="info">
+            {LOCATION_CHECKING_TEXT}
+          </CrmNote>
         ) : null}
       </CrmBlock>
       <CrmBlock className="border-t border-slate-100">
@@ -929,8 +941,13 @@ export function AddPlaceScreen({
     setSaving(true);
     setProblem(null);
     try {
-      await crmPost<unknown>("/api/phoenix-crm/list/places", { seatId, test, customerId: customer.customerId, place: placePayload(photo, draft) }, "place");
-      onSaved(saved, photo);
+      const added = await crmPost<{ held?: boolean } | null>(
+        "/api/phoenix-crm/list/places",
+        { seatId, test, customerId: customer.customerId, place: placePayload(photo, draft) },
+        "place",
+      );
+      // A clinic the Google check could not confirm is saved and waits — said as the system's doing.
+      onSaved(added?.held === true ? { ...saved, kind: "checking" } : saved, photo);
     } catch (error) {
       const code = errorCodeOf(error);
       const lookup = code && MAY_HAVE_SAVED.has(code) ? await lookUpPhoto(seatId, test, photo.path) : null;

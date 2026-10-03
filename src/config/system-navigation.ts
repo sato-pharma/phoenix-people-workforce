@@ -49,6 +49,7 @@ import {
   MailPlus,
   MailX,
   MousePointerClick,
+  MapPinCheck,
   MapPinned,
   PauseCircle,
   Megaphone,
@@ -4287,6 +4288,18 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
+    // Places the Google Maps check could not confirm (owner, 2026-10-03: "held for review and only
+    // system admin can approve or reject"). The Super Admin's ALONE — not the SFE Manager — and the
+    // enforcing gate is `canDecideValidationReviews` inside the page and the route; this card only draws
+    // the link. The rep reads the outcome as the system's, never a person's.
+    href: "/admin/field-crm/validation-reviews",
+    icon: MapPinCheck,
+    label: "Place Checks",
+    description: "Validations Google Maps had no listing for. Each waits for you to approve or reject; the rep is told only that the system is checking.",
+    permissions: [{ resource: "phoenix_crm", action: "update" }],
+    roles: ["Super Admin"],
+  },
+  {
     // Load a territory's customer list from a sheet — the SFE's third route onto a list (the owner's
     // ask, 2026-10-02): he sends the rep a sheet, the rep fills it in, he uploads it.
     //
@@ -4909,6 +4922,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           // Beside the board rather than inside it, and in this band because a duplicate on a
           // rep's list IS a CRM data-quality question — the same kind the two rows above ask.
           "/admin/phoenix-crm/duplicates",
+          // A place Google Maps could not confirm: the same band, the Super Admin's alone.
+          "/admin/field-crm/validation-reviews",
           // Beside the duplicates row: both are the SFE's work ON a rep's list rather than a board
           // that measures him, and a card left out of every band is appended to the FIRST one under a
           // heading nobody chose (tests/nav-hub-promotion catches that, and caught the row below).

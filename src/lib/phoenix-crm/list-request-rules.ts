@@ -72,6 +72,11 @@ export type ListCustomerFacts = {
   origin: "reference" | "new";
   /** Set when the customer was validated AND admitted to the list; null otherwise. */
   validatedAt: string | null;
+  /**
+   * The Google Maps check on his place (2026-10-03). While it is `checking` the place is already
+   * captured, so there is nothing to validate — the row offers Open, never a second Validate.
+   */
+  locationCheck?: "checking" | "not_confirmed" | null;
 };
 
 /** Never admitted: met outside the list, and not (yet) approved onto it. */
@@ -125,7 +130,7 @@ export function setsAdmissionGrades(request: {
 export type ListRowAction = "validate" | "open";
 
 export function listRowAction(customer: ListCustomerFacts): ListRowAction | null {
-  if (customer.status === "pending") return "validate";
+  if (customer.status === "pending") return customer.locationCheck === "checking" ? "open" : "validate";
   if (customer.status === "active" || customer.status === "outside" || customer.status === "dropped") return "open";
   return null;
 }
