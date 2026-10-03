@@ -414,21 +414,31 @@ async function loadVacationCleanupRecord(recordId: string): Promise<LoadedCleanu
     return missingRecord("vacation_requests", recordId);
   }
 
-  const [events, emailTokens, evidenceReviews] = await Promise.all([
+  const [events, emailTokens, evidenceReviews, attachmentRows] = await Promise.all([
     selectChildren("v2_vacation_request_events", "request_id", recordId),
     // Always empty: nothing has ever issued a vacation email token, and the GET that consumed
     // them was removed in #3274. Kept so cleanup stays exhaustive over the schema as it IS, not as
     // it is used — see the note on vacationTokensTable in src/lib/vacation/service.ts.
     selectChildren("v2_vacation_email_tokens", "request_id", recordId),
     selectChildren("v2_vacation_evidence_reviews", "request_id", recordId),
+    // A sick request may carry SEVERAL documents and only the FIRST is in the legacy columns below.
+    // These rows cascade away with the request, so they are snapshotted and every object path they
+    // name is listed — otherwise deleting one request silently orphaned the rest of its files in
+    // Storage with nothing left pointing at them.
+    selectChildren("v2_vacation_request_attachments", "request_id", recordId),
   ]);
   const record = vacationRecord(request);
-  const snapshot = { emailTokens, events, evidenceReviews, request };
+  const snapshot = { attachmentRows, emailTokens, events, evidenceReviews, request };
   const impactSummary = {
-    attachments: [
-      nullableText(request.sick_attachment_object_path),
-      nullableText(request.compensatory_attachment_object_path),
-    ].filter(Boolean),
+    attachments: Array.from(
+      new Set(
+        [
+          nullableText(request.sick_attachment_object_path),
+          nullableText(request.compensatory_attachment_object_path),
+          ...attachmentRows.map((row) => nullableText(row.object_path)),
+        ].filter(Boolean),
+      ),
+    ),
     emailTokens: emailTokens.length,
     events: events.length,
     evidenceReviews: evidenceReviews.length,

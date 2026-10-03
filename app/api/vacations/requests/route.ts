@@ -66,14 +66,20 @@ export async function POST(request: Request) {
     const body = contentType.includes("multipart/form-data")
       ? await request.formData()
       : await request.json();
-    const sickDocument = body instanceof FormData ? body.get("sickDocument") : null;
+    // A sick request may carry SEVERAL documents (owner, 2026-10-03). They arrive as repeated
+    // `sickDocument` parts, in the order the employee picked them; the FIRST stays in the legacy
+    // single-attachment columns and the rest ride beside it into the attachments table.
+    const sickDocuments = body instanceof FormData ? body.getAll("sickDocument").filter(isFormFile) : [];
+    const sickDocument = sickDocuments[0] ?? null;
     const compensatoryPhoto = body instanceof FormData ? body.get("compensatoryPhoto") : null;
-    const oversizedSick = isFormFile(sickDocument) ? rejectOversizedVacationFile(sickDocument) : null;
-    if (oversizedSick) return oversizedSick;
+    for (const file of sickDocuments) {
+      const oversized = rejectOversizedVacationFile(file);
+      if (oversized) return oversized;
+    }
     const oversizedCompensatory = isFormFile(compensatoryPhoto) ? rejectOversizedVacationFile(compensatoryPhoto) : null;
     if (oversizedCompensatory) return oversizedCompensatory;
 
-    let sickAttachment: VacationAttachmentUpload | null = isFormFile(sickDocument)
+    let sickAttachment: VacationAttachmentUpload | null = sickDocument
       ? {
           bytes: Buffer.from(await sickDocument.arrayBuffer()),
           contentType: sickDocument.type || "application/octet-stream",
@@ -81,6 +87,15 @@ export async function POST(request: Request) {
           size: sickDocument.size,
         }
       : null;
+    const sickAttachmentsExtra: VacationAttachmentUpload[] = [];
+    for (const file of sickDocuments.slice(1)) {
+      sickAttachmentsExtra.push({
+        bytes: Buffer.from(await file.arrayBuffer()),
+        contentType: file.type || "application/octet-stream",
+        fileName: file.name || "sick-document",
+        size: file.size,
+      });
+    }
     let compensatoryAttachment: VacationAttachmentUpload | null = isFormFile(compensatoryPhoto)
       ? {
           bytes: Buffer.from(await compensatoryPhoto.arrayBuffer()),
@@ -94,13 +109,22 @@ export async function POST(request: Request) {
       // /api/vacations/attachments/upload-url minted it. Both are checked before any is collected or
       // downloaded: the service-role client copies the object into this request and the finally block
       // deletes it, so an unchecked path let anyone lift, then erase, another employee's filed document.
-      const sickAttachmentStoragePath = sickAttachment ? "" : formText(body, "sickAttachmentStoragePath");
+      // Repeated for a multi-document sick request, with `sickAttachmentContentType` and
+      // `sickAttachmentFileName` repeated index-for-index beside it. The browser uses ONE transport
+      // for the whole set — direct parts, or paths — so the order the employee picked is preserved
+      // either way and the first file is always the first file.
+      const sickAttachmentStoragePaths: string[] = sickAttachment
+        ? []
+        : body.getAll("sickAttachmentStoragePath").map((value) => String(value ?? "").trim()).filter(Boolean);
+      const sickAttachmentContentTypes = body.getAll("sickAttachmentContentType").map((value) => String(value ?? "").trim());
+      const sickAttachmentFileNames = body.getAll("sickAttachmentFileName").map((value) => String(value ?? "").trim());
       const compensatoryAttachmentStoragePath = compensatoryAttachment
         ? ""
         : formText(body, "compensatoryAttachmentStoragePath");
       if (
-        (sickAttachmentStoragePath &&
-          !isOwnPendingVacationAttachmentPath({ hrId: access.hrId, kind: "sick", storagePath: sickAttachmentStoragePath })) ||
+        sickAttachmentStoragePaths.some(
+          (path) => !isOwnPendingVacationAttachmentPath({ hrId: access.hrId, kind: "sick", storagePath: path }),
+        ) ||
         (compensatoryAttachmentStoragePath &&
           !isOwnPendingVacationAttachmentPath({
             hrId: access.hrId,
@@ -117,12 +141,14 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
-      if (sickAttachmentStoragePath) {
-        pendingAttachmentPaths.push(sickAttachmentStoragePath);
-        sickAttachment = await resolvePendingVacationAttachment(sickAttachmentStoragePath, {
-          contentType: formText(body, "sickAttachmentContentType"),
-          fileName: formText(body, "sickAttachmentFileName"),
+      for (const [index, path] of sickAttachmentStoragePaths.entries()) {
+        pendingAttachmentPaths.push(path);
+        const resolved = await resolvePendingVacationAttachment(path, {
+          contentType: sickAttachmentContentTypes[index] ?? "",
+          fileName: sickAttachmentFileNames[index] ?? "",
         });
+        if (index === 0) sickAttachment = resolved;
+        else sickAttachmentsExtra.push(resolved);
       }
       if (compensatoryAttachmentStoragePath) {
         pendingAttachmentPaths.push(compensatoryAttachmentStoragePath);
@@ -148,6 +174,7 @@ export async function POST(request: Request) {
             endDate: formText(body, "endDate"),
             otherReason: formText(body, "otherReason"),
             sickAttachment,
+            sickAttachmentsExtra,
             startDate: formText(body, "startDate"),
             vacationType: formText(body, "vacationType"),
           }

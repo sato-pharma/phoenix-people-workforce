@@ -13,8 +13,10 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  FileText,
   SendHorizonal,
   WifiOff,
+  X,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -1181,6 +1183,10 @@ const LARGE_ATTACHMENT_THRESHOLD = 4 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_ATTACHMENT_LABEL = "20MB";
 
+// A sick request may carry several documents (owner, 2026-10-03). Ten at a time matches the add-more
+// route's own per-call cap; more can be added after submitting, which is the point of the feature.
+const MAX_SICK_DOCUMENTS = 10;
+
 async function uploadVacationAttachmentToStorage(file: File, kind: "sick" | "compensatory"): Promise<string> {
   const urlRes = await fetch("/api/vacations/attachments/upload-url", {
     body: JSON.stringify({ fileName: file.name, kind }),
@@ -1227,7 +1233,9 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
   const [dayPart, setDayPart] = useState<VacationDayPart>("full_day");
   const [startDate, setStartDate] = useState(annualMinimumDateOnly());
   const [endDate, setEndDate] = useState(annualMinimumDateOnly());
-  const [sickDocument, setSickDocument] = useState<File | null>(null);
+  // Every medical document picked for this request, in the order picked. Picking again ADDS to the
+  // list — it never replaces it — which is the same rule the post-submit upload follows.
+  const [sickDocuments, setSickDocuments] = useState<File[]>([]);
   const [otherReason, setOtherReason] = useState("");
   const [compensatoryEventName, setCompensatoryEventName] = useState("");
   const [compensatoryEventDate, setCompensatoryEventDate] = useState("");
@@ -1268,6 +1276,37 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     setter(file);
   }
 
+  // Picking medical documents ADDS to what is already listed, so a second trip to the file picker
+  // (one scan at a time, which is how a phone gallery hands them over) does not throw away the first.
+  // A file already listed under the same name and size is not added twice.
+  function addSickDocuments(files: File[]) {
+    if (files.length === 0) return;
+    const oversized = files.find((file) => file.size > MAX_ATTACHMENT_BYTES);
+    if (oversized) {
+      const sizeMb = (oversized.size / (1024 * 1024)).toFixed(1);
+      setError(`${oversized.name} is too large (${sizeMb}MB). Maximum size is ${MAX_ATTACHMENT_LABEL} per file.`);
+      return;
+    }
+    setSickDocuments((current) => {
+      const next = [...current];
+      for (const file of files) {
+        if (next.length >= MAX_SICK_DOCUMENTS) break;
+        if (next.some((existing) => existing.name === file.name && existing.size === file.size)) continue;
+        next.push(file);
+      }
+      return next;
+    });
+    setError(
+      files.length + sickDocuments.length > MAX_SICK_DOCUMENTS
+        ? `Up to ${MAX_SICK_DOCUMENTS} documents can be attached here. You can upload more after submitting.`
+        : null,
+    );
+  }
+
+  function removeSickDocument(index: number) {
+    setSickDocuments((current) => current.filter((_, position) => position !== index));
+  }
+
   const durationPreview = useMemo(() => {
     try {
       return {
@@ -1292,7 +1331,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     [dayPart, endDate, startDate, vacationType],
   );
 
-  function buildFormData(storagePaths: { sick?: string | null; compensatory?: string | null } = {}) {
+  function buildFormData(storagePaths: { sick?: string[] | null; compensatory?: string | null } = {}) {
     const formData = new FormData();
     formData.append("dayPart", dayPart);
     formData.append("endDate", endDate);
@@ -1302,15 +1341,22 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     if (vacationType === "other") {
       formData.append("otherReason", otherReason);
     }
-    if (sickDocument) {
-      if (storagePaths.sick) {
-        formData.append("sickAttachmentStoragePath", storagePaths.sick);
-        // Carry the original type/name so server-side validation uses the same source as the direct
-        // path (browser File.type/name), independent of what Storage reports on download.
-        formData.append("sickAttachmentContentType", sickDocument.type);
-        formData.append("sickAttachmentFileName", sickDocument.name);
+    // One transport for the whole set, so the order the employee picked survives: either every file
+    // rides in this body, or every file was streamed to Storage and is named by its path here.
+    if (sickDocuments.length > 0) {
+      const sickPaths = storagePaths.sick ?? [];
+      if (sickPaths.length > 0) {
+        sickDocuments.forEach((file, index) => {
+          const path = sickPaths[index];
+          if (!path) return;
+          formData.append("sickAttachmentStoragePath", path);
+          // Carry the original type/name so server-side validation uses the same source as the direct
+          // path (browser File.type/name), independent of what Storage reports on download.
+          formData.append("sickAttachmentContentType", file.type);
+          formData.append("sickAttachmentFileName", file.name);
+        });
       } else {
-        formData.append("sickDocument", sickDocument);
+        for (const file of sickDocuments) formData.append("sickDocument", file);
       }
     }
     if (vacationType === "compensatory") {
@@ -1368,9 +1414,16 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     }
 
     try {
-      const storagePaths: { sick?: string | null; compensatory?: string | null } = {};
-      if (sickDocument && sickDocument.size > LARGE_ATTACHMENT_THRESHOLD) {
-        storagePaths.sick = await uploadVacationAttachmentToStorage(sickDocument, "sick");
+      const storagePaths: { sick?: string[] | null; compensatory?: string | null } = {};
+      // The TOTAL matters, not each file: five 3MB photos ride in one body and would meet the same
+      // ~4.5MB cap a single large file does. Over the threshold, every file goes to Storage first.
+      const sickTotalBytes = sickDocuments.reduce((sum, file) => sum + file.size, 0);
+      if (sickDocuments.length > 0 && sickTotalBytes > LARGE_ATTACHMENT_THRESHOLD) {
+        const paths: string[] = [];
+        for (const file of sickDocuments) {
+          paths.push(await uploadVacationAttachmentToStorage(file, "sick"));
+        }
+        storagePaths.sick = paths;
       }
       if (vacationType === "compensatory" && compensatoryPhoto && compensatoryPhoto.size > LARGE_ATTACHMENT_THRESHOLD) {
         storagePaths.compensatory = await uploadVacationAttachmentToStorage(compensatoryPhoto, "compensatory");
@@ -1428,7 +1481,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     !initialData.balance ||
     submitting ||
     Boolean(durationPreview.error) ||
-    (isSick && !sickDocument) ||
+    (isSick && sickDocuments.length === 0) ||
     (isOther && !otherReason.trim()) ||
     (isCompensatory && (
       !compensatoryEventName.trim() ||
@@ -1441,7 +1494,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
 
   function updateVacationType(value: VacationType) {
     setVacationType(value);
-    setSickDocument(null);
+    setSickDocuments([]);
     setOtherReason("");
     setCompensatoryEventName("");
     setCompensatoryEventDate("");
@@ -1687,27 +1740,59 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                   ) : null}
                 </div>
 
-                {/* Sick document upload */}
+                {/* Sick document upload — several files, and picking again ADDS to the list */}
                 {isSick ? (
                   <div className="space-y-1.5 sm:col-span-2">
-                    <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Medical document</span>
+                    <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Medical documents</span>
                     <label className="flex cursor-pointer flex-col items-center justify-center rounded-sm border-2 border-dashed border-sky-200 bg-sky-50/50 px-4 py-4 text-center transition hover:border-sky-300 hover:bg-sky-50">
                       <input
                         accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp"
                         className="sr-only"
-                        required
+                        multiple
                         type="file"
-                        onChange={(event) => selectAttachment(event.target.files?.[0] ?? null, "Medical document", setSickDocument)}
+                        // Cleared after every pick so choosing the SAME file again, or coming back
+                        // for a second scan, still fires a change event and adds to the list.
+                        onChange={(event) => {
+                          addSickDocuments(Array.from(event.target.files ?? []));
+                          event.target.value = "";
+                        }}
                       />
                       <span className="rounded-sm bg-sky-600 px-3 py-1.5 text-phx-md font-bold text-white shadow-sm">
-                        Browse medical document
+                        {sickDocuments.length > 0 ? "Add more documents" : "Browse medical documents"}
                       </span>
                       <span className="mt-1.5 text-phx-xs font-medium leading-4 text-slate-600">
-                        Upload a stamped governmental hospital document. PDF, Word, JPG, PNG, or WEBP accepted. Up to {MAX_ATTACHMENT_LABEL}.
+                        Upload a stamped governmental hospital document. Several photos or PDFs can be attached — picking again adds to the list. PDF, Word, JPG, PNG, or WEBP accepted. Up to {MAX_ATTACHMENT_LABEL} per file.
                       </span>
                     </label>
+                    {sickDocuments.length > 0 ? (
+                      <ul className="space-y-1">
+                        {sickDocuments.map((file, index) => (
+                          <li
+                            className="flex items-start justify-between gap-2 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5"
+                            key={`${file.name}-${file.size}`}
+                          >
+                            <span className="flex min-w-0 items-start gap-1.5 text-phx-xs font-semibold leading-4 text-slate-700">
+                              <FileText className="mt-0.5 h-3 w-3 shrink-0 text-sky-600" />
+                              <span className="break-words">
+                                {file.name} <span className="font-medium text-slate-500">({(file.size / (1024 * 1024)).toFixed(1)}MB)</span>
+                              </span>
+                            </span>
+                            <button
+                              aria-label={`Remove ${file.name}`}
+                              className="shrink-0 rounded-sm border border-slate-200 p-1 text-slate-500 transition hover:border-rose-200 hover:text-rose-600"
+                              onClick={() => removeSickDocument(index)}
+                              type="button"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                     <p className="text-phx-xs font-medium text-slate-500">
-                      {sickDocument ? sickDocument.name : "Required for sick vacation requests."}
+                      {sickDocuments.length > 0
+                        ? `${sickDocuments.length} document${sickDocuments.length === 1 ? "" : "s"} attached. You can upload more after submitting, and they are added to these — nothing is replaced.`
+                        : "At least one document is required for sick vacation requests."}
                     </p>
                   </div>
                 ) : null}

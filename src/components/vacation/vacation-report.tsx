@@ -37,6 +37,7 @@ import { Input } from "@/components/ui/input";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { PageContainer } from "@/components/layout/page-container";
+import { VacationAttachmentHistory } from "@/components/vacation/vacation-attachment-history";
 import {
   vacationDayPartLabel,
   vacationTypeLabel,
@@ -265,9 +266,43 @@ function VacationAttachmentLinks({
           title={attachment.label}
         >
           <FileText className="h-3 w-3" />
-          Evidence
+          {/* The count, so a request carrying several documents says so in the list rather than
+              looking identical to one carrying a single file. The dated history is in the drawer. */}
+          {row.attachments.length > 1 ? `Evidence (${row.attachments.length})` : "Evidence"}
         </a>
       ))}
+    </div>
+  );
+}
+
+/**
+ * The desktop table's evidence cell: EVERY document with the date it arrived, which is what the
+ * admin asked to read off this screen ("3 October he uploaded this, by 10 October he uploaded
+ * those"). One file renders one line, so a single-document request is no taller than the chip it
+ * replaces. Read-only here — adding files is the drawer and the request page.
+ *
+ * Falls back to the single legacy chip when the history is empty: an older request, or an
+ * environment the attachments migration has not reached yet.
+ */
+function RowEvidence({
+  canReviewAttachments,
+  row,
+}: {
+  canReviewAttachments: boolean;
+  row: VacationRequestRecord;
+}) {
+  if (!canReviewAttachments) return null;
+  if (row.attachments.length === 0) {
+    return <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} />;
+  }
+  return (
+    <div className="mt-1.5">
+      <VacationAttachmentHistory
+        attachments={row.attachments}
+        canUpload={false}
+        kind={row.vacationType === "compensatory" ? "compensatory" : "sick"}
+        requestId={row.id}
+      />
     </div>
   );
 }
@@ -1129,10 +1164,10 @@ function RequestCard({
         <div className="mt-2 rounded-sm border border-orange-100 bg-orange-50/70 px-2.5 py-2 text-phx-xs font-semibold leading-4 text-orange-900">
           <p>{row.compensatoryEventName ?? "Compensatory event"}</p>
           <p className="text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
-          <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} />
+          <RowEvidence canReviewAttachments={canReviewAttachments} row={row} />
         </div>
       ) : null}
-      {row.vacationType === "sick" ? <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} /> : null}
+      {row.vacationType === "sick" ? <RowEvidence canReviewAttachments={canReviewAttachments} row={row} /> : null}
       {row.vacationType === "other" && row.notes ? (
         <p className="mt-2 rounded-sm border border-amber-100 bg-amber-50/70 px-2.5 py-2 text-phx-xs font-semibold leading-4 text-amber-900">
           {row.notes}
@@ -1155,7 +1190,10 @@ function RequestCard({
           onClick={() => onReview(row)}
           type="button"
         >
-          <FileText className="h-3 w-3" /> Timeline
+          {/* For a sick or compensatory request the drawer also holds the dated documents and the
+              button that adds more to them, so the label has to say so or the employee never finds it. */}
+          <FileText className="h-3 w-3" />{" "}
+          {row.vacationType === "sick" || row.vacationType === "compensatory" ? "Documents & timeline" : "Timeline"}
         </button>
       ) : null}
 
@@ -1217,7 +1255,8 @@ function RequestCard({
             onClick={() => onReview(row)}
             type="button"
           >
-            <FileText className="h-3 w-3" /> Timeline
+            <FileText className="h-3 w-3" />{" "}
+            {row.vacationType === "sick" || row.vacationType === "compensatory" ? "Documents & timeline" : "Timeline"}
           </button>
           <button
             className="flex items-center gap-1 text-phx-xs font-bold text-slate-500 transition hover:text-slate-700"
@@ -1330,6 +1369,11 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   const canExport = Boolean(initialData?.canExport);
   const canReviewAttachments = Boolean(initialData?.canReviewAttachments);
   const viewerHrId = initialData?.viewerHrId ?? null;
+  // The employee reading HIS OWN request in the drawer: he may see every document he sent and add
+  // more to them. The route checks the same thing server-side.
+  const isOwnSelectedRequest = Boolean(
+    selectedRequest && viewerHrId && selectedRequest.employeeHrId.toUpperCase() === viewerHrId.toUpperCase(),
+  );
   // A viewer whose visible scope holds nobody but themselves — every Medical Rep, and any employee
   // without a team — is reading their OWN leave, not reviewing a population. `options.employees` is
   // built from the viewer's access scope, never from the active filters, so a manager who filters
@@ -2389,10 +2433,10 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                             <div className="mt-1.5 rounded-sm border border-orange-100 bg-orange-50/70 px-2 py-1.5 text-phx-2xs font-semibold leading-4 text-orange-900">
                               <p className="break-words">{row.compensatoryEventName ?? "Event"}</p>
                               <p className="break-words text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
-                              <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} />
+                              <RowEvidence canReviewAttachments={canReviewAttachments} row={row} />
                             </div>
                           ) : null}
-                          {row.vacationType === "sick" ? <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} /> : null}
+                          {row.vacationType === "sick" ? <RowEvidence canReviewAttachments={canReviewAttachments} row={row} /> : null}
                           {row.vacationType === "other" && row.notes ? (
                             <p className="mt-1.5 break-words rounded-sm border border-amber-100 bg-amber-50/70 px-2 py-1.5 text-phx-2xs font-semibold leading-4 text-amber-900">{row.notes}</p>
                           ) : null}
@@ -2568,6 +2612,29 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 </div>
               ) : null}
 
+              {/* THE DATED DOCUMENT HISTORY. Every file with the date it arrived — the owner's
+                  2026-10-03 ruling that a later upload adds a line instead of replacing the first
+                  one, and the screen where he reads "3 October this, 10 October those".
+                  The employee sees it for HIS OWN request and can add to it here; HR sees it for
+                  everyone. A manager approver is not given it — the report's canReviewAttachments
+                  is HR/Super Admin only. */}
+              {(selectedRequest.vacationType === "sick" || selectedRequest.vacationType === "compensatory") &&
+              (canReviewAttachments || isOwnSelectedRequest) ? (
+                <div className="rounded-sm border border-slate-200 p-3">
+                  <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                    Documents{selectedRequest.attachments.length > 0 ? ` (${selectedRequest.attachments.length})` : ""}
+                  </p>
+                  <div className="mt-2">
+                    <VacationAttachmentHistory
+                      attachments={selectedRequest.attachments}
+                      canUpload={canReviewAttachments || isOwnSelectedRequest}
+                      kind={selectedRequest.vacationType === "compensatory" ? "compensatory" : "sick"}
+                      requestId={selectedRequest.id}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
               {(selectedRequest.vacationType === "sick" || selectedRequest.vacationType === "compensatory") && canReviewAttachments ? (
                 <div className="rounded-sm border border-slate-200 p-3">
                   <div className="flex items-center justify-between gap-2">
@@ -2577,7 +2644,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                         Current: {selectedRequest.evidenceReviews[0]?.status ?? "pending"}
                       </p>
                     </div>
-                    <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={selectedRequest} />
+                    {/* The files themselves are the dated Documents block directly above — repeating
+                        the chip here only duplicated the first one. */}
                   </div>
                   <textarea
                     className="mt-3 min-h-20 w-full rounded-sm border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-300"

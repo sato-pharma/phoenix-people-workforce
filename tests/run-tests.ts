@@ -2271,6 +2271,7 @@ import { runPhoenixCrmVisitsEverywhereTests } from "./phoenix-crm-visits-everywh
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 import { runPhoenixCrmTeamReadinessTests } from "./phoenix-crm-team-readiness.test.ts";
 import { runShareLinkDeadTokenPollingTests } from "./share-link-dead-token-polling.test.ts";
+import { runVacationSickAttachmentsTests } from "./vacation-sick-attachments.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -8635,6 +8636,10 @@ await runTest(
 await runTest(
   "a DEAD sheet link that is still being polled is counted and reported (the 2026-08-05 ghost copy: a revoked token read once a minute for 59 days with nothing anywhere saying so) — a live link never is however much traffic it carries, a person's stale bookmark is under the floor, a trigger somebody stopped falls out of the 24h window, revocation beats a lapsed date, an unjudgeable row is skipped, the order is stable so the one-a-day key holds, the message carries no token, and all three token guards still COUNT the refusal on both dead branches without changing the answer the caller gets",
   runShareLinkDeadTokenPollingTests,
+);
+await runTest(
+  "sick leave takes several documents and a later upload ADDS to them, each with its own date",
+  runVacationSickAttachmentsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

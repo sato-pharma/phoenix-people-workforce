@@ -5,6 +5,7 @@ import type { VacationApprovalDetail } from "@/lib/approvals-hub/service";
 import { RequestTracker } from "@/components/approvals-hub/request-tracker";
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
 import { VacationAttachmentLinks } from "@/components/approvals-hub/vacation-attachment-links";
+import { VacationAttachmentHistory } from "@/components/vacation/vacation-attachment-history";
 import { VacationEvidenceReviewActions } from "@/components/approvals-hub/vacation-evidence-review";
 
 type Props = {
@@ -81,8 +82,25 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
           </dl>
           {detail.canReviewAttachments && (r.sickAttachmentObjectPath || r.compensatoryAttachmentObjectPath) ? (
             <div className="border-t border-slate-100 px-4 py-3">
-              <p className="mb-1.5 text-phx-xs font-bold uppercase tracking-wide text-slate-500">Evidence</p>
-              <VacationAttachmentLinks canReviewAttachments={detail.canReviewAttachments} row={r} />
+              <p className="mb-1.5 text-phx-xs font-bold uppercase tracking-wide text-slate-500">
+                Evidence{r.attachments.length > 1 ? ` — ${r.attachments.length} documents` : ""}
+              </p>
+              {/* Every uploaded file with the date IT arrived, so a document sent days after the
+                  request reads as its own dated line instead of replacing the first one. Falls back
+                  to the single legacy link when the history is empty — an older request, or an
+                  environment the migration has not reached yet. */}
+              {r.attachments.length > 0 ? (
+                <VacationAttachmentHistory
+                  attachments={r.attachments}
+                  // HR/Super Admin may add a document on the employee's behalf; an assigned manager
+                  // reviewing the note may not, and the route refuses it either way.
+                  canUpload={detail.canReviewEvidence}
+                  kind={r.vacationType === "compensatory" ? "compensatory" : "sick"}
+                  requestId={r.id}
+                />
+              ) : (
+                <VacationAttachmentLinks canReviewAttachments={detail.canReviewAttachments} row={r} />
+              )}
               {detail.canReviewEvidence ? (
                 <VacationEvidenceReviewActions
                   evidenceType={r.vacationType === "compensatory" ? "compensatory" : "sick"}
