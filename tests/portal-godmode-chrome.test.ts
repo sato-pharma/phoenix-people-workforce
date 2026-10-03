@@ -259,15 +259,33 @@ export function runPortalGodmodeChromeTests() {
   );
   assert.doesNotMatch(layout, /toggleInList\(pinnedHrefs/, "no surface may toggle a pin without the phone bar's rule");
 
-  // Fold defaults (owner, 2026-09-29): the rail opens collapsed, and the expanded menu opens with
-  // every section folded except My Workspace — until this device sets its own preference by hand.
+  // Fold defaults. TWO SEPARATE PREFERENCES, and only one of them changed:
+  //
+  //   THE RAIL still opens COLLAPSED to icons — owner, 2026-09-29, untouched.
+  //   THE SECTION TITLES now open EXPANDED — owner, 2026-10-03: "make the sidebar titles in emp
+  //   portal expanded not collapsed by default". That REVERSES the 2026-09-29 half which folded every
+  //   section except My Workspace, leaving a rep reading a column of names with a count beside each
+  //   and nothing visible until he opened a fold.
+  //
+  // Both are pinned: each is a one-line default a later edit could flip in passing, and neither
+  // failure shows up in a test that only renders the markup.
   assert.match(layout, /function getEmployeeSidebarCollapsedServerSnapshot\(\) \{\s*return true;/, "the rail is collapsed by default");
   assert.match(layout, /return stored === null \? true : stored === "true";/, "a device with no stored fold opens the rail collapsed");
   assert.match(menu, /const collapsedSections = collapsePreferenceSet \? storedCollapsedSections : defaultCollapsedSections;/, "the default fold set applies only until this device chooses");
   assert.match(
+    layout,
+    /const NO_SECTIONS_FOLDED: readonly string\[\] = \[\];/,
+    "the default fold set is an empty, stable module-level constant",
+  );
+  assert.match(
     menu,
-    /baseSections\.filter\(\(section\) => section\.title !== "My Workspace"\)\.map\(\(section\) => section\.title\)/,
-    "by default every section is folded except My Workspace",
+    /const defaultCollapsedSections = NO_SECTIONS_FOLDED;/,
+    "by default NOTHING is folded — every section title opens expanded (owner, 2026-10-03)",
+  );
+  assert.doesNotMatch(
+    menu,
+    /baseSections\.filter\(\(section\) => section\.title !== "My Workspace"\)/,
+    "the retired 2026-09-29 default (everything folded but My Workspace) must not come back",
   );
 
   // The collapsed rail wears the transparent phoenix mark (the expanded panel keeps the bird-icon

@@ -19,6 +19,7 @@
 import { assertPermission, hrIdsMatch, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { cardFieldsFor, CARD_FIELD_MAX_LENGTH } from "@/lib/business-cards/card-content";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -117,19 +118,24 @@ export async function getOwnBusinessCard(access: AccessContext): Promise<OwnBusi
  * List the requests opened by the calling employee (most-recent first). No permission
  * assertion — it is scoped to the caller's own hr_id, exactly like the support-request
  * viewer list. Returns [] if the table isn't provisioned yet.
+ *
+ * MATCHED ON EVERY SPELLING, never a bare `.eq` on one. `access.hrId` is the lowercase COMPARISON
+ * key (`canonicalHrIdKey`), while `hr_id` is now PERSISTED uppercase like every other actor column
+ * (see `hrIdForStorage` in src/lib/hr-id.ts) — so a single `.eq` would read nothing at all rather
+ * than something wrong, and would also strand any row written before that fix.
  */
 export async function listBusinessCardRequestsForViewer(
   access: AccessContext,
   limit = 25,
 ): Promise<BusinessCardRequestRow[]> {
-  const hrId = normalizeHrId(access.hrId);
-  if (!hrId) return [];
+  const keys = hrIdLookupKeys(access.hrId);
+  if (keys.length === 0) return [];
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from(tableName)
     .select("*")
-    .eq("hr_id", hrId)
+    .in("hr_id", keys)
     .order("created_at", { ascending: false })
     .limit(Math.max(1, Math.min(100, limit)));
 
@@ -277,6 +283,12 @@ export async function createBusinessCardRequest(
   if (!hrId) {
     throw new Error("HR ID is required to request a business card.");
   }
+  // THE FORM THE ID IS STORED IN — uppercase, never the lowercase comparison key. `access.hrId` is
+  // `canonicalHrIdKey`, which is right for matching and wrong for persisting: writing it is what left
+  // ~37,000 lowercase actor ids across 52 columns (src/lib/hr-id.ts). This table was written with the
+  // comparison key, so the first request ever sent would have stored `ph-0123` where `employees.hr_id`
+  // holds `PH-0123`, and any exact-match join to the register would have found nothing at all.
+  const storedHrId = hrIdForStorage(access.hrId);
 
   // Resolve the register-owned lines server-side; the employee never sets these.
   const own = await getOwnBusinessCard(access);
@@ -290,7 +302,7 @@ export async function createBusinessCardRequest(
   }
   const cardMobile = cleanLine(input.cardMobile);
   const note = input.note ? clean(input.note).slice(0, 500) : null;
-  const employeeName = own.name || hrId;
+  const employeeName = own.name || storedHrId || hrId;
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -302,7 +314,7 @@ export async function createBusinessCardRequest(
       card_name: cardName,
       card_title: own.title || null,
       employee_name: employeeName,
-      hr_id: hrId,
+      hr_id: storedHrId,
       note,
     })
     .select("*")

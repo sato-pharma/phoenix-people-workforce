@@ -98,11 +98,14 @@ export function runBusinessCardRequestsTests() {
     /updateBusinessCardRequestStatus[\s\S]*?assertPermission\(access, "business_card_requests", "update"\)/,
     "status update must enforce business_card_requests:update",
   );
-  // The viewer's own list is scoped by hr_id, not gated by a read grant they do not hold.
+  // The viewer's own list is scoped by hr_id, not gated by a read grant they do not hold. Matched on
+  // EVERY spelling of his id since 2026-10-03 (`hrIdLookupKeys`), because the column is now persisted
+  // in the stored uppercase form while `access.hrId` is the lowercase comparison key — a single `.eq`
+  // on one of them returns nothing at all. The self-scope is unchanged: still his own id and no other.
   assert.match(
     service,
-    /listBusinessCardRequestsForViewer[\s\S]*?\.eq\("hr_id", hrId\)/,
-    "the employee's own request list is scoped to their hr_id",
+    /listBusinessCardRequestsForViewer[\s\S]*?const keys = hrIdLookupKeys\(access\.hrId\);[\s\S]*?\.in\("hr_id", keys\)/,
+    "the employee's own request list is scoped to their hr_id, in every spelling of it",
   );
 
   // ── Notification: to B-10 AND HR-009, in-app + email + telegram, requester deduped ─
@@ -204,4 +207,25 @@ export function runBusinessCardRequestsTests() {
     /pattern: "\/api\/business-card-requests", permission: \{ resource: "business_card_requests", action: "create" \}/,
     "the employee API route is registered in the access registry",
   );
+
+  // ── hr_id IS PERSISTED IN THE STORED FORM, NEVER THE COMPARISON KEY ────────────────
+  // `AccessContext.hrId` is `canonicalHrIdKey` — LOWERCASE — which is right for matching and wrong
+  // for persisting; writing it is what left ~37,000 lowercase actor ids across 52 columns
+  // (src/lib/hr-id.ts). This service wrote that key straight into `business_card_requests.hr_id`,
+  // and the table had no row until 2026-10-03, so the defect was latent: the FIRST request ever sent
+  // would have stored `ph-0123` where `employees.hr_id` holds `PH-0123` (measured on production: 204
+  // of 205 employee rows uppercase), and any exact-match join to the register would have returned
+  // nothing at all rather than something wrong. Both halves are pinned — the write goes through
+  // `hrIdForStorage`, and the viewer's own list matches EVERY spelling so a row written before the
+  // fix is still his.
+  assert.match(service, /import \{ hrIdForStorage, hrIdLookupKeys \} from "@\/lib\/hr-id"/, "the service uses the hr-id storage helpers");
+  assert.match(service, /hr_id: storedHrId,/, "the insert persists the stored (uppercase) form of the id");
+  assert.match(service, /const storedHrId = hrIdForStorage\(access\.hrId\);/, "the stored form comes from hrIdForStorage, not the access key");
+  assert.doesNotMatch(service, /hr_id: hrId,/, "the lowercase comparison key is never written to the table");
+  assert.match(
+    service,
+    /\.in\("hr_id", keys\)/,
+    "the viewer's own list matches every spelling of his id, not one bare .eq",
+  );
+  assert.doesNotMatch(service, /\.eq\("hr_id", hrId\)/, "a single-spelling .eq would silently return nothing");
 }

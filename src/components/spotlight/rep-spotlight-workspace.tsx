@@ -6,20 +6,20 @@ import { Check, ChevronLeft, Download, FileText, ShieldCheck } from "lucide-reac
 import { ShareCardBar } from "@/components/employee-portal/share-card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { spotlightShareCaption } from "@/lib/share/social-share";
+import { repSpotlightPresets } from "@/lib/spotlight/rep-period-presets";
 
 /**
  * Spotlight — one person's own sheet.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * 🔒 THIS PAGE WEARS REPORT IT'S DESIGN, DELIBERATELY. Owner, 2026-09-30: "mimic the style of the
- * report it tab … the same /employee-portals/report-it as design." Every device here is lifted from
- * `src/components/report-it/report-it-form.tsx` and must stay in step with it: the step progress
- * strip, the 244px vertical stepper rail on desktop with its ShieldCheck footnote, the compact
- * mobile stepper, the step heading with its ghost numeral, and the field / label / button primitives
- * below. The ENTRIES are ours — a period and a sheet, not a patient and a medicine — but nothing
- * about the LOOK is invented here.
- *
- * If Report It's look changes, this changes with it rather than drifting into a second house style.
+ * 🔒 THIS PAGE WEARS THE EMPLOYEE PORTAL'S LOOK. Owner, 2026-09-30: "premium polish the page to
+ * follow the portal style." 🔴 THAT SUPERSEDED HIS EARLIER "mimic the style of the report it tab",
+ * and `tests/spotlight-portal-look.test.ts` is pinned to the NEW instruction — so the devices here
+ * are the portal's own (`enterprise-shell.tsx`): its card (`rounded border border-slate-200 bg-white`
+ * plus the portal shadow), its hover lift, its orange micro-label. The step rail, the compact mobile
+ * stepper and the ghost numeral stay because they suit a two-step form, not because Report It has
+ * them. If the PORTAL's vocabulary moves, this moves with it — re-pin from `enterprise-shell.tsx`,
+ * never from the Report It form.
  *
  * 🔴 WITH ONE DEPARTURE, AND IT IS THE POINT: REPORT IT'S DARK SLATE HERO IS NOT COPIED HERE.
  * Owner, 2026-09-30, looking at the live page: "the header is duplicated." Report It draws that hero
@@ -168,6 +168,11 @@ type Props = {
   defaultFrom: string;
   defaultTo: string;
   threshold: number;
+  /**
+   * The newest month whose closing is PUBLISHED, or null when none is. The quick picks END here
+   * rather than at today, because only a published month carries figures — see `presetsFor`.
+   */
+  latestPublished?: string | null;
 };
 
 function monthLabel(period: string): string {
@@ -176,24 +181,13 @@ function monthLabel(period: string): string {
     .toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
-/** Presets over the months actually available, newest-anchored. Each returns [from, to]. */
-function presetsFor(months: string[]): { label: string; range: [string, string] }[] {
-  if (months.length === 0) return [];
-  const last = months[months.length - 1]!;
-  const take = (n: number): [string, string] => {
-    const slice = months.slice(Math.max(0, months.length - n));
-    return [slice[0]!, slice[slice.length - 1]!];
-  };
-  const out: { label: string; range: [string, string] }[] = [
-    { label: "This month", range: [last, last] },
-  ];
-  if (months.length >= 2) out.push({ label: "Last 2 months", range: take(2) });
-  if (months.length >= 3) out.push({ label: "Last quarter", range: take(3) });
-  if (months.length >= 6) out.push({ label: "Last semester", range: take(6) });
-  return out;
-}
+// The quick picks are `repSpotlightPresets` (src/lib/spotlight/rep-period-presets.ts) — pure, so a
+// test can assert on the ranges themselves. 🔴 They END at the latest PUBLISHED month, never at
+// today: a closing is never released during the month it covers, so an anchor on the newest
+// SELECTABLE month made "This month" and "Last 2 months" guaranteed dead ends. That file holds the
+// measurement and the reason.
 
-export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshold }: Props) {
+export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshold, latestPublished }: Props) {
   const [step, setStep] = useState(1);
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(defaultTo);
@@ -216,7 +210,7 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
   }, []);
   useEffect(() => () => { if (sheet) URL.revokeObjectURL(sheet.url); }, [sheet]);
 
-  const presets = useMemo(() => presetsFor(months), [months]);
+  const presets = useMemo(() => repSpotlightPresets(months, latestPublished), [months, latestPublished]);
   const rangeValid = from <= to;
   const pct = Math.round((step / STEPS.length) * 100);
 

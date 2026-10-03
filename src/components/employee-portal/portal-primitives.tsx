@@ -169,7 +169,7 @@ export function PortalSegmentedTabs({
 }
 
 export function PortalSkeleton({ className }: { className?: string }) {
-  return <div className={cn("animate-pulse rounded bg-slate-100", className)} />;
+  return <div className={cn("animate-pulse rounded-none bg-slate-100", className)} />;
 }
 
 export function PortalEmptyState({

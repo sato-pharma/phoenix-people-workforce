@@ -62,6 +62,9 @@ export default async function PortalSpotlightPage() {
         months={months}
         defaultFrom={defaultMonth}
         defaultTo={defaultMonth}
+        // The quick picks end here, not at today — a closing is never released during the month it
+        // covers, so an unpublished anchor made "This month" a dead end (see `presetsFor`).
+        latestPublished={latest}
         threshold={REP_SPOTLIGHT_MIN_ACHIEVEMENT}
       />
     </EmployeePortalPageShell>

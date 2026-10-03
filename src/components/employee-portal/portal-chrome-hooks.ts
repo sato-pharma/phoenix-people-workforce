@@ -82,9 +82,10 @@ export function useCollapsedSections(): readonly string[] {
 
 /**
  * Whether this device has ever set its own section-fold preference. Until it has, the sidebar opens
- * with every section folded except My Workspace (owner, 2026-09-29); the first fold toggle writes the
- * explicit list and this turns true, so the person's own choice is honoured from then on. The server
- * snapshot is `false`, so the server's HTML and the client's first pass agree on the default.
+ * with EVERY SECTION EXPANDED (owner, 2026-10-03 — this reversed his 2026-09-29 "folded except My
+ * Workspace"); the first fold toggle writes the explicit list and this turns true, so the person's own
+ * choice is honoured from then on. The server snapshot is `false`, so the server's HTML and the
+ * client's first pass agree on the default.
  */
 export function useCollapsePreferenceSet(): boolean {
   return useSyncExternalStore(

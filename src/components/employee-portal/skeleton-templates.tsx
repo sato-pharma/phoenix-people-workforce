@@ -36,7 +36,7 @@ export function Pulse({ className }: { className?: string }) {
   return (
     <div
       aria-hidden
-      className={`animate-pulse rounded bg-slate-200/60 ${className ?? ""}`}
+      className={`animate-pulse rounded-none bg-slate-200/60 ${className ?? ""}`}
     />
   );
 }
