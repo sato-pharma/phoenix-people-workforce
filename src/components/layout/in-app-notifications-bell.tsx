@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, CheckCheck, ChevronRight, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import Link from "next/link";
 
+import { alarmGlowRef } from "@/components/layout/alarm-glow";
 import { systemUiText } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
 import { HEADER_PANEL_MAX_HEIGHT, placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
@@ -473,6 +474,7 @@ export function InAppNotificationsBell({
           <span
             aria-label={`${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`}
             className="nav-badge-alarm absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded bg-phx-accent px-1 text-phx-3xs font-black text-white"
+            ref={alarmGlowRef}
             role="status"
           >
             {unreadCount > 99 ? "99+" : unreadCount}

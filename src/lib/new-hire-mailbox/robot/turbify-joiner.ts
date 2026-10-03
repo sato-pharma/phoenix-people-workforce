@@ -83,19 +83,47 @@ const MAILBOX_LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fm
  */
 export const MAILBOX_EMAIL_FIELD = 'input[type="email"], input[name="email"]';
 /**
- * A URL that is still ON a login page, whichever of the two it is.
+ * 🔴 NO URL CAN TELL A GOOD MAILBOX SIGN-IN FROM A REFUSED ONE. Measured in the production
+ * container 2026-10-03, signing in with a one-time password captured in the same run:
  *
- * The question a sign-in proof must ask is "did we leave the form?", never "which host is this?".
- * Both login pages end in `/login`; every page past one does not.
+ *   url      : https://mail.turbify.com/login      ← IDENTICAL to the form it came from
+ *   title    : Bizmail Login                       ← identical too
+ *   heading  : "Set up your mailbox password"
+ *   inputs   : ["password:password","password:confirmPassword","checkbox:-"]
+ *   buttons  : ["Generate mailbox password", …]
+ *
+ * Turbify serves the forced password-setup page at the SAME URL and under the same title. So the
+ * first proof here (`!url.includes("login.turbify.com")`) accepted a refusal, and its replacement
+ * (`url` no longer matching `/login`) rejected a SUCCESS — two wrong answers from the same mistake
+ * of asking the address bar. What actually differs is the FORM: the setup page has no address field
+ * at all, and a refused login still asks for one.
  */
-export const LOGIN_PAGE_URL = /\/login(?:[/?#]|$)/;
+const CONFIRM_PASSWORD_FIELD = 'input[name="confirmPassword"]';
 /** The account list. Reloaded before each existence check, because only the first search filters. */
 const consoleUrl = `https://ecp.turbify.com/${COMPANY_MAIL_DOMAIN}`;
 
 /** Candidate wordings for the create form's submit control. Tried in order; a miss is a refusal. */
 const CREATE_SUBMIT_WORDINGS = ["Create", "Create user", "Add user", "Add", "Save", "Continue"] as const;
 /** Candidate wordings for the change-password screen inside a mailbox. */
-const CHANGE_PASSWORD_WORDINGS = ["Change password", "Update password", "Save password", "Save"] as const;
+/**
+ * The submit control on the mailbox's password-setup screen.
+ *
+ * 🔴 `"Generate mailbox password"` is FIRST because it is the one wording actually read off the live
+ * page (production container, 2026-10-03) — and not one of the four guesses that preceded it matched
+ * it, so this step would have failed the moment the sign-in above started working. The others are
+ * kept behind it as fallbacks for the change-password screen inside an established mailbox, which
+ * is a different page and has not been read yet.
+ *
+ * Despite the wording, this button SUBMITS the two fields the robot has already filled; it does not
+ * mint a password of its own.
+ */
+export const CHANGE_PASSWORD_WORDINGS = [
+  "Generate mailbox password",
+  "Change password",
+  "Update password",
+  "Save password",
+  "Save",
+] as const;
 
 type Handle = {
   click: () => Promise<void>;
@@ -562,16 +590,19 @@ export async function createTurbifyJoinerDriver(credentials: {
     },
 
     async setMailboxPassword({ address, newPassword, oneTimePassword }) {
-      // 🔴 THE PROOF ASKS WHETHER WE LEFT THE LOGIN PAGE, NOT WHICH HOST WE ARE ON. It used to read
-      // `!url.includes("login.turbify.com")` — and the page this sign-in actually lands on is
-      // `https://mail.turbify.com/login`, which does NOT contain that string. So a REFUSED login,
-      // still sitting on the form, satisfied the proof and the robot carried on as though signed in
-      // (measured 2026-10-03, the same run that found the selector). A wrong one-time password would
-      // have been reported as a successful sign-in and failed later somewhere innocent-looking.
-      await signInAs(MAILBOX_LOGIN_URL, address, oneTimePassword, async () => !LOGIN_PAGE_URL.test(page.url()), address);
-      // Turbify forces a change on first sign-in; where it does not, the account pages carry it.
+      // 🔴 THE PROOF READS THE FORM, NEVER THE ADDRESS BAR — see `CONFIRM_PASSWORD_FIELD` for the
+      // measurement. A good one-time password lands on "Set up your mailbox password", served at the
+      // SAME url and title as the form it came from, so both URL-shaped proofs this step has carried
+      // were wrong: one accepted a refusal, the next rejected a success. The address field is the
+      // discriminator — the setup page has none, a refused login still asks for one.
+      const signedIn = async () => (await page.$$(MAILBOX_EMAIL_FIELD)).length === 0;
+      await signInAs(MAILBOX_LOGIN_URL, address, oneTimePassword, signedIn, address);
+      // Turbify forces a setup screen on a one-time password — measured as two password fields,
+      // `password` and `confirmPassword`. Where that screen is absent the account pages carry the
+      // change instead, so the confirm field is a positive signal and not a requirement.
+      const onTheSetupScreen = (await page.$$(CONFIRM_PASSWORD_FIELD)).length > 0;
       const changeField = await page.$$('input[type="password"]');
-      if (changeField.length === 0) {
+      if (!onTheSetupScreen && changeField.length === 0) {
         await clickOne(page, APP_PASSWORD_PAGE.manageAccount);
         await settle(3_000);
       }

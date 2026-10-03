@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 import {
-  LOGIN_PAGE_URL,
+  CHANGE_PASSWORD_WORDINGS,
   MAILBOX_EMAIL_FIELD,
 } from "../src/lib/new-hire-mailbox/robot/turbify-joiner.ts";
 import {
@@ -199,28 +199,6 @@ function runExistenceReadingCases(): void {
  *      would have been reported as a successful sign-in.
  */
 function runMailboxLoginCases(): void {
-  // The proof must ask "did we leave the form?", which is the defect that could pass silently.
-  for (const stillOnTheForm of [
-    "https://mail.turbify.com/login",
-    "https://mail.turbify.com/login?err=1",
-    "https://login.turbify.com/login?.done=https%3A%2F%2Fmail.turbify.com%2F",
-  ]) {
-    assert.equal(
-      LOGIN_PAGE_URL.test(stillOnTheForm), true,
-      `${stillOnTheForm} is still the login form — a sign-in proof must not accept it`,
-    );
-  }
-  for (const pastTheForm of [
-    "https://mail.turbify.com/",
-    "https://mail.turbify.com/d/folders/1",
-    "https://ecp.turbify.com/satopharma.com",
-  ]) {
-    assert.equal(
-      LOGIN_PAGE_URL.test(pastTheForm), false,
-      `${pastTheForm} is past the login form, so the proof must accept it`,
-    );
-  }
-
   // The email field must be looked for in BOTH shapes. Neither page carries the other's field, so
   // the union cannot select the wrong input on either one.
   assert.match(MAILBOX_EMAIL_FIELD, /input\[type="email"\]/, "the admin login's field must be covered");
@@ -238,9 +216,30 @@ function runMailboxLoginCases(): void {
     /waitForSelector\('input\[type="email"\]'/.test(driver), false,
     "the sign-in must wait on MAILBOX_EMAIL_FIELD, never on the admin page's field alone",
   );
+  // 🔴 NO URL-SHAPED PROOF, IN EITHER DIRECTION. Measured in the production container 2026-10-03:
+  // a GOOD one-time password lands on "Set up your mailbox password" at
+  // `https://mail.turbify.com/login` — the SAME url and the SAME title as the form it came from.
+  // So the host check accepted a refusal, and the `/login` path check that replaced it rejected a
+  // success and stopped the owner's third click. Both were the same mistake: asking the address bar
+  // a question only the FORM can answer. The setup page has no address field; a refused login does.
   assert.equal(
     /includes\("login\.turbify\.com"\)/.test(driver), false,
     "a sign-in proof must not be a host check — mail.turbify.com/login passes one while refused",
+  );
+  assert.equal(
+    /LOGIN_PAGE_URL/.test(driver), false,
+    "a sign-in proof must not test the url path either — the setup page is served at /login too",
+  );
+  assert.match(
+    driver, /\$\$\(MAILBOX_EMAIL_FIELD\)\)\.length === 0/,
+    "the mailbox sign-in is proven by the address field being GONE, which is what actually differs",
+  );
+
+  // The setup screen's submit control, as read off the live page. None of the four wordings that
+  // preceded it matched, so this step would have failed the moment the sign-in started working.
+  assert.equal(
+    CHANGE_PASSWORD_WORDINGS[0], "Generate mailbox password",
+    "the measured wording must be tried first, ahead of the guesses",
   );
 }
 

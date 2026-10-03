@@ -20,6 +20,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
+import { alarmGlowRef } from "@/components/layout/alarm-glow";
 import { type NavigationSectionItem } from "@/config/system-navigation";
 import { subscribeNavBadge } from "@/lib/nav-badge-store";
 import { cn } from "@/lib/utils";
@@ -98,6 +99,7 @@ export function NavBadge({
             overdue ? "bg-red-600" : "bg-orange-500",
             alarmClass,
           )}
+          ref={alarmGlowRef}
           role="status"
         />
       );
@@ -114,6 +116,7 @@ export function NavBadge({
           overdue ? "bg-red-600" : "bg-orange-500",
           alarmClass,
         )}
+        ref={alarmGlowRef}
         role="status"
       >
         {count > 99 ? "99+" : count}
@@ -136,7 +139,12 @@ export function NavBadge({
             ? "bg-orange-400/20 text-orange-200 ring-1 ring-orange-400/45"
             : "bg-orange-100 text-orange-700 ring-1 ring-orange-300/80",
         alarmClass,
+        // The one see-through fill: it keeps the box-shadow glow, because the cheap one draws a copy
+        // of the fill over itself and a copy of a 20% fill reads as 36%. See `.nav-badge-alarm` in
+        // app/globals.css.
+        !overdue && dark && "nav-badge-alarm-glass",
       )}
+      ref={alarmGlowRef}
       role="status"
     >
       {count > 99 ? "99+" : count}

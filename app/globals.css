@@ -759,9 +759,32 @@ html:has(.admin-shell) {
   50%       { transform: scale(1.32); }
 }
 
-@keyframes ep-breathe-red {
-  0%, 100% { box-shadow: 0 0 0 0   rgba(220, 38, 38, 0.65); }
-  60%       { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+/* The alarm GLOW, drawn on the compositor — see the note above `.nav-badge-alarm` below. Each is the
+   ep-breathe ring it replaced, re-expressed as a scale + fade of a block 7px (8px overdue) larger
+   than the badge: at 0% each axis is scaled back to the badge's own size (a 0px ring), at 60% the
+   block is full size and transparent — the box-shadow's spread and alpha at every instant. The
+   start scale is badge / block per axis, from the badge's measured size (`--glow-w` / `--glow-h`,
+   written by src/components/layout/alarm-glow.ts); 16 is the common badge, for the first frame. */
+@keyframes nav-badge-glow {
+  0%, 100% {
+    opacity: 0.55;
+    transform: scale(calc(var(--glow-w, 16) / (var(--glow-w, 16) + 14)), calc(var(--glow-h, 16) / (var(--glow-h, 16) + 14)));
+  }
+  60% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@keyframes nav-badge-glow-urgent {
+  0%, 100% {
+    opacity: 0.65;
+    transform: scale(calc(var(--glow-w, 16) / (var(--glow-w, 16) + 16)), calc(var(--glow-h, 16) / (var(--glow-h, 16) + 16)));
+  }
+  60% {
+    opacity: 0;
+    transform: scale(1);
+  }
 }
 
 @keyframes ep-count-reveal {
@@ -851,9 +874,8 @@ html:has(.admin-shell) {
   animation: ep-shimmer 1.7s ease-in-out infinite;
 }
 
-.employee-portal-nav-pending-dot {
-  animation: ep-breathe-orange 1.2s ease-in-out infinite;
-}
+/* The portal rail's pending dot breathes like the alarm badges below, and is drawn the same way:
+   the glow is its `::after`, not an animated box-shadow (see the note above `.nav-badge-alarm`). */
 
 /* Approvals Hub sidebar badge (both shells) — and the notifications bell's own unread
    count, which shares this class so the two surfaces alarm identically.
@@ -873,14 +895,108 @@ html:has(.admin-shell) {
    states stay distinguishable at a glance even where motion is suppressed.
 
    The prefers-reduced-motion block further down still disables both — that is an
-   accessibility guard, not the owner's preference, and it stays. */
+   accessibility guard, not the owner's preference, and it stays.
+
+   THE GLOW IS DRAWN ON THE COMPOSITOR (owner, 2026-10-03: "make the pulsing badges cheap to
+   draw, same look"). It used to be an animated `box-shadow` (ep-breathe-orange / -red), and a
+   box-shadow cannot animate off the main thread: the browser re-ran style, paint and composite on
+   every frame — 144 times a second on a 144 Hz panel — for as long as any count was waiting. An
+   idle portal tab held ~0.9 of a CPU core in Firefox. Measured 2026-10-03 on these exact rules, the
+   portal's three pulsing things (inbox badge, waiting badge, pending dot) over a 1,500-row table,
+   headless Edge, 12s per version, two runs: box-shadow glow 112-136% of one core, this one 17-30%
+   (98-119% against 37-47% with the graphics card switched on).
+
+   SAME MOTION, SAME LOOK. The pump is untouched. The glow is now `::after` — a block of the glow
+   colour 7px (8px overdue) larger than the badge on every side, scaled out from inside the badge
+   while it fades, on the same duration and easing — so it grows 0 -> 7px and fades 0.55 -> 0
+   exactly as the box-shadow did, and it rides the pump the same way. Each axis starts from the
+   badge's own measured size (src/components/layout/alarm-glow.ts, the badge's `ref`), because a
+   "27" or "99+" badge is wider than it is tall and one shared scale shows the glow above and below
+   before the sides. `::before` lays a copy of the badge's own fill over the glow, because a
+   box-shadow never paints under its own box and the glow must not either.
+
+   ONE BADGE KEEPS THE OLD GLOW: the see-through pending pill on the dark admin rail
+   (`nav-badge-alarm-glass`, bg-orange-400/20). A copy of a see-through fill doubles it, and a glow
+   that grows by a scale cannot also be kept off the badge's own area, so no compositor version of
+   it can look the same. It keeps the box-shadow, and its cost — and while it is on screen the page
+   repaints every frame anyway, so an admin page showing one saves little (all twelve badge kinds
+   at once, that pill among them: 167-179% -> 137-147%).
+
+   `box-shadow: none` while motion is on is NOT a look change: the animated box-shadow overrode the
+   Tailwind `ring-*` these badges carry on every frame, so those rings were never visible with
+   motion on. Under prefers-reduced-motion nothing animates and the rings show, as before. */
 .nav-badge-alarm {
-  animation: nav-badge-alarm-pump 1s ease-in-out infinite, ep-breathe-orange 1s ease-in-out infinite;
+  animation: nav-badge-alarm-pump 1s ease-in-out infinite;
 }
 
 /* Same badge once at least one awaiting item is SLA-overdue — faster, bigger, red. */
 .nav-badge-alarm-overdue {
-  animation: nav-badge-alarm-pump-urgent 0.7s ease-in-out infinite, ep-breathe-red 0.7s ease-in-out infinite;
+  animation: nav-badge-alarm-pump-urgent 0.7s ease-in-out infinite;
+}
+
+/* In `components`, not unlayered, so a badge's own `absolute` utility still wins; `isolation` keeps
+   the two layers below inside the badge even when it is not pumping (the pending dot never does). */
+@layer components {
+  .nav-badge-alarm,
+  .nav-badge-alarm-overdue,
+  .employee-portal-nav-pending-dot {
+    position: relative;
+    isolation: isolate;
+  }
+}
+
+/* The badge's fill again, over the glow, so the glow only ever shows OUTSIDE the badge. */
+.nav-badge-alarm::before,
+.nav-badge-alarm-overdue::before,
+.employee-portal-nav-pending-dot::before {
+  background: inherit;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: -1;
+}
+
+.nav-badge-alarm::after,
+.nav-badge-alarm-overdue::after,
+.employee-portal-nav-pending-dot::after {
+  animation: nav-badge-glow 1s ease-in-out infinite;
+  background: rgb(249 115 22);
+  content: "";
+  inset: -7px;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  will-change: transform, opacity;
+  z-index: -2;
+}
+
+.nav-badge-alarm-overdue::after {
+  animation: nav-badge-glow-urgent 0.7s ease-in-out infinite;
+  background: rgb(220 38 38);
+  inset: -8px;
+}
+
+.employee-portal-nav-pending-dot::after {
+  animation-duration: 1.2s;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .nav-badge-alarm,
+  .nav-badge-alarm-overdue {
+    box-shadow: none;
+  }
+
+  /* The exception above: the see-through pill keeps the box-shadow glow it always had. Inside this
+     media query because its two-class selector would otherwise outrank the reduced-motion guard. */
+  .nav-badge-alarm.nav-badge-alarm-glass {
+    animation: nav-badge-alarm-pump 1s ease-in-out infinite, ep-breathe-orange 1s ease-in-out infinite;
+  }
+}
+
+.nav-badge-alarm-glass::before,
+.nav-badge-alarm-glass::after {
+  content: none;
 }
 
 .phoenix-route-transition-indicator {
@@ -1254,9 +1370,12 @@ html:has(.admin-shell) {
   .employee-portal-route-loading,
   .employee-portal-skeleton,
   .employee-portal-nav-pending-dot,
+  .employee-portal-nav-pending-dot::after,
   .fcc-nameplate,
   .nav-badge-alarm,
+  .nav-badge-alarm::after,
   .nav-badge-alarm-overdue,
+  .nav-badge-alarm-overdue::after,
   .phoenix-route-transition-bar {
     animation: none;
   }

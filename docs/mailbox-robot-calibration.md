@@ -455,3 +455,50 @@ measurements, and one per spun click. None of it is damage: the mailbox belongs 
 reads it, and the adoption resets *and* captures in one pass, so a run that gets through makes every
 earlier password irrelevant. The real cost was the owner's time, twice, on a card that gave him no
 error until the request finally returned.
+
+### And no URL could answer the question either — the correction to the correction
+
+The selector fix got the sign-in working, and the owner's third click then stopped on:
+
+> Signed in as hr.mailbox@satopharma.com but the expected page never appeared, so the robot stopped
+> rather than act on an unknown page.
+
+That is the proof I had just rewritten, failing on a success. Measured with a one-time password
+captured in the same run:
+
+```
+4) LANDING PAGE after a GOOD one-time password
+   url        : https://mail.turbify.com/login
+   title      : Bizmail Login
+   headings   : ["Set up your mailbox password"]
+   inputs     : ["password:password","password:confirmPassword","checkbox:-"]
+   buttons    : ["Generate mailbox password","Cookie Settings","Accept All"]
+   body       : … Set up your mailbox password You'll use this password to access your Business Mail
+                account Create password Confirm Password By continuing, you agree that Turbify will
+                create a profile …
+```
+
+**Turbify serves the forced password-setup page at the same URL and under the same title as the login
+form it came from.** So:
+
+- the original proof, `!url.includes("login.turbify.com")`, **accepted a refusal**;
+- its replacement, `url` no longer matching `/login`, **rejected a success**.
+
+Two opposite wrong answers from one mistake: asking the address bar a question only the form can
+answer. The discriminator is right there in the measurement — **the setup page has no address field,
+and a refused login still asks for one.** The proof is now `(await page.$$(MAILBOX_EMAIL_FIELD)).length === 0`.
+
+The same reading caught the step after it before it could cost a fourth click:
+`CHANGE_PASSWORD_WORDINGS` held `["Change password", "Update password", "Save password", "Save"]` —
+four guesses, and the live button reads **"Generate mailbox password"**. None of them matched, so
+that step would have failed the instant the sign-in began working. The measured wording goes first;
+the guesses stay behind it for the change-password screen inside an established mailbox, which is a
+different page and still unread. Despite its wording, that button submits the two fields the robot
+has already filled.
+
+**Still unmeasured, and the honest edge of this calibration:** the checkbox on that page (its label,
+and whether the submit requires it), and where App Passwords live once the password is set —
+`APP_PASSWORD_PAGE`'s three wordings are still guesses, and only `"Generate"` appears anywhere on
+the setup page. The probe that would have walked those two steps was refused by the permission
+classifier as a remote shell write, so they stay unknown rather than guessed. Nothing ticks that
+checkbox: a consent control is never clicked on the owner's behalf.
