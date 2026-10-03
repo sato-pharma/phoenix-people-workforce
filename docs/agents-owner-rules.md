@@ -5340,6 +5340,36 @@ the bird alone, the bird's floor is 40px so the two sides weigh the same.
 Pinned by `tests/rep-rank-badges.test.ts` — the corner anchoring, the one centre-aligned row, the fluid
 mark widths, the fluid clearance paddings, and the `@container`. Each was broken and watched to fire.
 
+**The strip's long-label defect, and the three fixes he refused before the fourth (2026-10-03).** The ranking
+panel is a FIXED block of whole grid squares — 180 × 108 on a phone, 252 × 108 from `@md` — so with both boards
+showing, each label gets about 95px on a phone. `ANTI INFECTIVE LINE` did not fit, and the first three answers
+were all wrong in the same way: they gave way on the TEXT or on his LAYOUT rather than on the type.
+
+1. **Drop the word `line`.** He answered *"no truncation ever."* Cutting a word to make it fit is truncation.
+2. **Keep the words and let them wrap.** It came out stacked three deep, `ANTI / INFECTIVE / LINE`, beside a
+   one-line `COMPANY`. He answered *"they are still truncated"* — a name broken into a stack reads as mutilated
+   even with every letter present.
+3. **Stack the two boards so each gets the full width.** It did put every label on one line, and he stopped it
+   mid-build: *"no — small the size of the font."*
+
+🔴 **So the TYPE gives way, and that is his explicit override of the fits-the-screen rule's "merge, never
+shrink" — for this label only.** Past ~18 characters both labels drop to `text-[8px] tracking-[0.08em]
+@md:text-[10px] @md:tracking-[0.1em]`. Both, never just the long one: two sizes side by side read as a mistake.
+The rank figures are untouched — they are what the strip is for.
+
+**Two things the smaller type does not fix by itself, and both were found by measuring the running page:**
+
+- **The cells size to their CONTENT.** Shrinking the type shrank the cell with it, and the label wrapped again at
+  its new width — 82px into 81.7px. It is held `whitespace-nowrap`.
+- **Held on one line, the long cell is 92px.** With the original 24px gap the two cells came to **190.4px inside a
+  180px panel**, so the ranking spilled out of the white onto the grid. The gap closes to 12px on a phone; the row
+  is then 178.4px. From `@md` the panel is 14 squares wide and the original gap has room (row 239.2 of 252).
+
+Verified live, signed in as real reps: **B-7** (both boards, Anti Infective) reads `ANTI INFECTIVE LINE` on ONE
+line at 375px and at laptop width, with the row inside the panel and no horizontal overflow; **B-135** (CNS) is
+untouched at 10.5px with the 24px gap. 🔴 **Widening the panel was never available on a phone** — at a 351px band
+the two marks leave it 22px a side.
+
 ## The rep's performance card — his banner, his proof, his footer (2026-10-03)
 
 The card a Medical Rep saves or shares from his rank strip. The rule is in `.claude/rules/portal.md`;

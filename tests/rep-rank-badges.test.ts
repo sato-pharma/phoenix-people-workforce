@@ -452,8 +452,39 @@ export function runRepRankBadgesTests() {
     `${STRIP}: a grid line runs through the strip's centre — the half-tile offset the panel's cut depends on`,
   );
   assert.ok(
-    /h-\[108px\] w-\[180px\]/.test(strip) && /@md:w-\[252px\]/.test(strip),
+    /h-\[108px\]/.test(strip) && /w-\[180px\]/.test(strip) && /@md:w-\[252px\]/.test(strip),
     `${STRIP}: the blank panel is an even number of WHOLE grid cells — 10 × 6, and 14 × 6 from @md`,
+  );
+  // 🔒 A LONG LABEL IS SET SMALLER AND HELD ON ONE LINE — the words are never cut and never broken
+  // across lines (owner, 2026-10-03: "no truncation ever", then "they are still truncated" of the
+  // broken-up wrap, then "no — small the size of the font"). 🔴 THIS IS THE ONE PLACE THE
+  // FITS-THE-SCREEN RULE'S "merge, never shrink" IS OVERRIDDEN, BY HIM, FOR THIS LABEL. Three earlier
+  // attempts are recorded in the component so none returns: dropping the word, letting it wrap three
+  // deep, and stacking the two boards.
+  // Measured live against the cell each label gets — 95.7px on a phone, 131.6px from @md, both fixed
+  // because the panel is: nineteen letter-spaced capitals need 8px/0.08em and 10px/0.1em to fit.
+  // 🔴 PINNED AS THE WHOLE EXPRESSION, NOT THE CLASS STRINGS. Asserting that "text-[8px]" merely
+  // appears in the file passes while the smaller type is never CHOSEN — the hole a source-text test
+  // falls into, proven once already on this strip by disarming a condition and watching it stay green.
+  assert.ok(
+    /hasLongLabel\s*\?\s*"text-\[8px\] tracking-\[0\.08em\] @md:text-\[10px\] @md:tracking-\[0\.1em\]"\s*:\s*"text-\[10\.5px\] tracking-\[0\.2em\]"/.test(
+      strip,
+    ) && /cells\.some\(\(cell\) => cell\.label\.length > 2 \* PHONE_LABEL_CHARS_PER_LINE\)/.test(strip),
+    `${STRIP}: a long label — measured from the label itself — is SET SMALLER so it stays on one line, rather than the words being cut or broken`,
+  );
+  // 🔴 AND IT IS HELD ON ONE LINE, which is the half that does nothing without the other: the cells are
+  // flex items that size to their CONTENT, so shrinking the type shrank the cell with it and the label
+  // wrapped again at its new width (measured: 82px into 81.7px of cell).
+  assert.ok(
+    /whitespace-nowrap font-bold uppercase leading-none text-\[#0b1f3a\] \$\{labelType\}/.test(strip),
+    `${STRIP}: the label is held on ONE line — without it the cell shrinks with the type and the label wraps again`,
+  );
+  // 🔴 AND THE GAP CLOSES WITH THE TYPE on a phone. Held on one line the long label makes its own cell
+  // 92px wide, and with the full 24px gap the two cells came to 190.4px — WIDER than the 180px panel,
+  // so the ranking spilled out of the white onto the grid. At 12px the row is 178.4 and sits inside.
+  assert.ok(
+    /hasLongLabel \? "gap-3 @md:gap-10" : "gap-6 @md:gap-10"/.test(strip),
+    `${STRIP}: the gap between the two boards closes with the type, or the row spills out of the panel`,
   );
   // 🔒 PHOENIX IS NAMED ON A PHONE — kept by the owner, same day. Below @md the lockup gives way to the
   // bird, and the strip read "SATO PHARMA" on one side and an unlabelled bird on the other.
@@ -568,6 +599,15 @@ export function runRepRankBadgesTests() {
   assert.ok(
     /text-\[#f47b20\]/.test(strip) && /text-\[#0879b8\]/.test(strip),
     `${STRIP}: Phoenix orange reads the company, Sato's one brand blue reads the line`,
+  );
+  // 🔒 THE LINE CELL IS WRITTEN OUT IN FULL — "<name> line", NEVER shortened to the name alone
+  // (owner, 2026-10-03: "no truncation ever"). Dropping the word was tried as a way to stop the
+  // longest line name stacking three deep on a phone and he refused it: cutting a word to make it fit
+  // IS truncation, and his standing rule is that where text collides with the space, WRAPPING wins.
+  // The words stay and the PANEL grows instead — see the eight-square assertion above.
+  assert.ok(
+    /label: `\$\{line\.lineName\} line`/.test(strip),
+    `${STRIP}: the line cell names the line IN FULL — "<name> line", never cut back to the name to make it fit`,
   );
   assert.ok(
     /text-\[10\.5px\] font-bold uppercase[^"]*tracking-\[0\.2em\]/.test(strip),
