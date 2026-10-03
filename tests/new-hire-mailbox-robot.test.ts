@@ -21,6 +21,7 @@ import { stripComments } from "./support/comment-strip.ts";
 import {
   ACCOUNT_INFO_URL,
   CHANGE_PASSWORD_WORDINGS,
+  describeField,
   describePage,
   describeShape,
   LOGIN_SUBMIT_WORDINGS,
@@ -353,7 +354,9 @@ async function runPageDescriptionCases(): Promise<void> {
 
   const shape = {
     buttons: ["Generate mailbox password", "Cancel"],
+    controls: [],
     errors: [],
+    formValid: null,
     headings: ["Set up your mailbox password"],
     inputs: ["password:password", "password:confirmPassword", "checkbox:-", "hidden:email (hidden)"],
     title: "Bizmail Login",
@@ -392,6 +395,79 @@ async function runPageDescriptionCases(): Promise<void> {
   assert.equal(
     describeShape(null, []), "the page could not be read at all.",
     "an unreadable page must say so rather than describing an empty one",
+  );
+
+  // ── the form's own state, which is where a "still on screen" failure actually lives ──────────
+  //
+  // 🔴 THE MEASURED 2026-10-03 FAILURE. The owner's refusal said the form was "filled and submitted
+  // but is still on screen" and listed `checkbox:-`. Three unrelated causes were indistinguishable
+  // from that: a required consent box, an unfilled confirm field, and a submit that never landed.
+  // These cases pin that each one now reads differently.
+  const field = (over: Partial<Parameters<typeof describeField>[0]>) => ({
+    checked: null, disabled: false, filled: 0, label: "", name: "", required: false, type: "text", why: "",
+    ...over,
+  });
+  const plain = (value: string) => value;
+
+  const consentBlocked = describeShape(
+    {
+      ...shape,
+      controls: [
+        field({ filled: 14, name: "password", required: true, type: "password" }),
+        field({ filled: 14, name: "confirmPassword", required: true, type: "password" }),
+        field({ checked: false, required: true, type: "checkbox", label: "I agree to the Terms of Service", why: "valueMissing: Please tick this box if you want to proceed." }),
+      ],
+      errors: ["Very Strong"],
+      formValid: false,
+    },
+    [secret],
+  );
+  for (const fragment of [
+    "password:password REQUIRED filled=14",
+    "password:confirmPassword REQUIRED filled=14",
+    "I agree to the Terms of Service",
+    "UNTICKED",
+    "INVALID(valueMissing",
+    "the form reports itself INVALID",
+  ]) {
+    assert.ok(
+      consentBlocked.includes(fragment),
+      `a blocked consent box must be actionable from the refusal alone — missing ${fragment}`,
+    );
+  }
+
+  // An unfilled confirm box reads differently from a filled one, which is the whole point of
+  // reporting a LENGTH. `filled=0` would be ambiguous with "not reported", so it says EMPTY.
+  assert.match(
+    describeShape({ ...shape, controls: [field({ name: "confirmPassword", type: "password", required: true })] }, []),
+    /password:confirmPassword REQUIRED EMPTY/,
+  );
+
+  // A form that validates fine says so explicitly: that is what tells a reader to stop looking at
+  // the password and start looking at the click delivery.
+  assert.match(
+    describeShape({ ...shape, controls: [], formValid: true }, []),
+    /the form reports itself valid, so the submit is not being refused by validation/,
+  );
+
+  // 🔴 A CONTROL LINE CAN NEVER CARRY A VALUE — `filled` is a number by construction. The one text
+  // a control contributes is its LABEL, so that goes through the redactor like everything else.
+  assert.ok(
+    !describeShape({ ...shape, controls: [field({ label: `type ${secret} again`, type: "password" })] }, [secret]).includes(secret),
+    "a control's label goes through the redactor",
+  );
+
+  // A hidden field with nothing interesting about it contributes no line at all, so the one line a
+  // tired reader has to scan stays scannable.
+  assert.equal(
+    describeField(field({ name: "csrf", type: "hidden" }), plain), "",
+    "a hidden field with nothing of note must contribute NO line — the refusal is one line a tired "
+    + "reader has to scan, and padding it with csrf tokens is how the actionable control gets lost",
+  );
+  // And a parent's text can be the whole page, so the label is capped.
+  assert.ok(
+    describeField(field({ label: "x".repeat(400), type: "checkbox", checked: false }), plain).length < 260,
+    "a label read off a parent element must be capped, or the refusal becomes unreadable",
   );
 
   // 🔴 THE IN-PAGE READER MUST BE A REAL FUNCTION. `page.evaluate(string)` evaluates the string as an
@@ -716,6 +792,13 @@ function runCredentialReadCases(): void {
     new URL("src/lib/new-hire-mailbox/robot/turbify-joiner.ts", new URL("../", import.meta.url)),
     "utf8",
   );
+  // 🔴 THE SAME SOURCE WITH THE COMMENTS TAKEN OUT, AND A SOURCE ASSERTION ABOUT A CALL MUST USE IT.
+  // Proved by breaking it on 2026-10-03: `form.checkValidity()` was replaced with `return null` and
+  // the suite stayed GREEN, because this file's own comment explaining the call still contained the
+  // string. A heavily commented module makes `includes()` assertions self-satisfying — the prose
+  // that documents a call keeps passing the test for the call. `driver` stays as it is for the
+  // assertions that are genuinely about wording; anything asserting that code RUNS reads this.
+  const driverCode = stripComments(driver);
 
   // 🔴 TURBIFY'S DOCUMENTED APP-PASSWORD PATH (SLN29264), which replaced three guesses.
   assert.equal(
@@ -723,34 +806,72 @@ function runCredentialReadCases(): void {
     "the account pages are reached by the URL Turbify publishes, not by hovering a profile menu",
   );
   assert.ok(
-    driver.includes("ACCOUNT_INFO_URL"),
+    driverCode.includes("ACCOUNT_INFO_URL"),
     "the app-password step must navigate to the documented deep link — the profile menu needs a HOVER, "
     + "which clickOneOf cannot do",
   );
   assert.ok(
-    driver.includes("selectAppForPassword(mailbox, APP_PASSWORD_PAGE.passwordName)"),
+    driverCode.includes("selectAppForPassword(mailbox, APP_PASSWORD_PAGE.passwordName)"),
     "Turbify requires an app chosen from a dropdown BEFORE Generate — pressing Generate with nothing "
     + "selected is how this step would have failed even with the right wordings",
   );
   assert.ok(
-    driver.includes("errors:"),
+    driverCode.includes("errors:"),
     "a refusal must carry the page's own error text — it is the only authority on the rule Turbify "
     + "did not publish unambiguously",
+  );
+  // 🔴 EVERY ONE OF THESE READS `driverCode`, NOT `driver` — see the note where it is built. They
+  // assert that code RUNS, and the comments in this module describe the very calls they name.
+  assert.ok(
+    driverCode.includes('document.querySelectorAll("input,select,textarea")'),
+    "a refusal must read the form's own controls — asserting the word `controls:` alone is not enough, "
+    + "because a gutted selector keeps the key and reports an empty form",
+  );
+  assert.ok(
+    driverCode.includes("controls:") && driverCode.includes("formValid:"),
+    "a refusal must carry the form's own view of its controls — the owner was directed at `checkbox:-` "
+    + "with no label, required flag or ticked state, and three different causes read identically",
+  );
+  assert.ok(
+    driverCode.includes("checkValidity()"),
+    "the form's own validity is what separates a password Turbify refused from a submit that never "
+    + "landed; without it both look like 'the form is still on screen'",
+  );
+  assert.ok(
+    driverCode.includes('field.getAttribute("aria-label")') && driverCode.includes('label[for="${field.id}"]'),
+    "the unnamed checkbox's label has never been read by anyone — the reader must actually try the "
+    + "places a label lives, or the refusal keeps printing a dash",
+  );
+  // 🔴 THE VALUE MUST NEVER LEAVE THE CONTAINER. The control reader exists to report that a box is
+  // empty or full, and a length does that; `.value.length` is allowed and a bare `.value` read into
+  // the report is not. This is the assertion that keeps a convenience edit from leaking a password.
+  assert.ok(
+    driverCode.includes("value ?? \"\").length") || driverCode.includes("field.value === \"string\" ? field.value.length"),
+    "the control reader must report value LENGTHS, never values",
+  );
+  assert.ok(
+    !/filled:\s*(?:field\.)?value\s*[,}]/.test(driverCode),
+    "a control's reported `filled` must be a length, never the value itself",
+  );
+  assert.ok(
+    driverCode.includes("did not take the value as typed"),
+    "typing must be PROVEN to have landed before anything is submitted — `type()` appends and "
+    + "clearField fails silently, so an empty or doubled box is invisible from the outside",
   );
   assert.ok(
     !driver.includes("b.length - a.length"),
     "the length-scored credential read must not come back — it returned the mailbox address",
   );
   assert.ok(
-    driver.includes("pickOneTimePassword(revealed, address)"),
+    driverCode.includes("pickOneTimePassword(revealed, address)"),
     "the dialog read must go through pickOneTimePassword",
   );
   assert.ok(
-    driver.includes("pickAppPassword(shown, address)"),
+    driverCode.includes("pickAppPassword(shown, address)"),
     "the app-password read must go through pickAppPassword",
   );
   assert.ok(
-    driver.includes(".modal-container"),
+    driverCode.includes(".modal-container"),
     "the revealed credential is read from the dialog, not from the whole page",
   );
 }
