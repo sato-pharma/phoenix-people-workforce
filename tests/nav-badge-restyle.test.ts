@@ -28,16 +28,75 @@ export function runNavBadgeRestyleTests() {
     badge.includes('overdue ? "nav-badge-alarm-overdue" : "nav-badge-alarm"'),
     "the badge must still carry a pump class in BOTH states — the owner restyled the fill and kept the motion",
   );
-  for (const keyframe of ["nav-badge-alarm-pump", "nav-badge-alarm-pump-urgent", "ep-breathe-orange", "ep-breathe-red"]) {
+  const glows = ["nav-badge-glow", "nav-badge-glow-urgent"];
+  for (const keyframe of ["nav-badge-alarm-pump", "nav-badge-alarm-pump-urgent", "ep-breathe-orange", ...glows]) {
     assert.ok(globalCss.includes(`@keyframes ${keyframe}`), `${keyframe} must still exist — the badge classes animate with it`);
   }
   assert.ok(
-    globalCss.includes("animation: nav-badge-alarm-pump 1s ease-in-out infinite, ep-breathe-orange 1s ease-in-out infinite"),
+    /\.nav-badge-alarm \{\s*animation: nav-badge-alarm-pump 1s ease-in-out infinite;/.test(globalCss),
     "the ordinary pump must stay at 1s",
   );
   assert.ok(
-    globalCss.includes("animation: nav-badge-alarm-pump-urgent 0.7s ease-in-out infinite, ep-breathe-red 0.7s ease-in-out infinite"),
-    "the overdue pump must stay faster and red — that escalation is the whole SLA signal",
+    /\.nav-badge-alarm-overdue \{\s*animation: nav-badge-alarm-pump-urgent 0\.7s ease-in-out infinite;/.test(globalCss),
+    "the overdue pump must stay faster — that escalation is the whole SLA signal",
+  );
+  assert.ok(
+    globalCss.includes("animation: nav-badge-glow 1s ease-in-out infinite;") &&
+      globalCss.includes("animation: nav-badge-glow-urgent 0.7s ease-in-out infinite;") &&
+      globalCss.includes("background: rgb(220 38 38);"),
+    "the glow keeps the pump's own timing, and the overdue glow stays faster and red",
+  );
+
+  // ── The glow is drawn on the compositor (owner, 2026-10-03: "cheap to draw, same look") ───────
+  // An animated box-shadow repaints every frame for as long as a count waits: measured 112-136% of
+  // a CPU core for the portal's three pulsing badges, against 17-30% for this glow. So the
+  // glow keyframes may move ONLY transform and opacity, and the badge rules must not bring the
+  // box-shadow breathe back. The one see-through pill is the documented exception.
+  for (const glow of glows) {
+    const block = new RegExp(`@keyframes ${glow} \\{([\\s\\S]*?)\\n\\}`).exec(globalCss)?.[1] ?? "";
+    assert.ok(block.includes("transform") && block.includes("opacity"), `${glow} must animate transform and opacity`);
+    assert.ok(!/box-shadow|background|width|height|inset/.test(block), `${glow} must not animate a property that repaints`);
+  }
+  for (const rule of [/\.nav-badge-alarm \{([^}]*)\}/, /\.nav-badge-alarm-overdue \{([^}]*)\}/]) {
+    const body = rule.exec(globalCss)?.[1] ?? "";
+    assert.ok(body.includes("animation:") && !body.includes("ep-breathe"), "the alarm badge must not animate the box-shadow breathe again");
+  }
+  assert.ok(
+    /\.nav-badge-alarm::before,[\s\S]*?\{[^}]*background: inherit;[^}]*z-index: -1;/.test(globalCss),
+    "a copy of the badge's own fill must sit over the glow, or the glow tints the inside of the badge",
+  );
+
+  // Same look: the glow must grow the same number of pixels on every side, as the box-shadow did.
+  // One shared scale cannot — a "27" badge is wider than tall, so its glow showed above and below
+  // before the sides (seen frame by frame, 2026-10-03). So each axis starts from the badge's own
+  // measured size, and every pulsing badge must hand that size over.
+  for (const [glow, spread] of [["nav-badge-glow", 14], ["nav-badge-glow-urgent", 16]] as const) {
+    const block = new RegExp(`@keyframes ${glow} \\{([\\s\\S]*?)\\n\\}`).exec(globalCss)?.[1] ?? "";
+    assert.ok(
+      block.includes(`scale(calc(var(--glow-w, 16) / (var(--glow-w, 16) + ${spread})), calc(var(--glow-h, 16) / (var(--glow-h, 16) + ${spread})))`),
+      `${glow} must start each axis from the badge's own width and height, or a wide badge's glow is lopsided`,
+    );
+  }
+  const sizer = readSource("src/components/layout/alarm-glow.ts");
+  assert.ok(
+    sizer.includes('setProperty("--glow-w", String(badge.offsetWidth))') && sizer.includes('setProperty("--glow-h", String(badge.offsetHeight))'),
+    "the glow's start size is the badge's LAYOUT size, which the pump's transform does not change",
+  );
+  assert.ok(sizer.includes("new ResizeObserver"), "a count that changes width (9 -> 10) must re-measure, or the glow is sized for the old width");
+  const pulsingBadges: Record<string, number> = {
+    "src/components/layout/nav-badge.tsx": 3,
+    "src/components/layout/in-app-notifications-bell.tsx": 1,
+    "src/components/employee-portal/employee-portal-layout.tsx": 2,
+    "src/components/employee-portal/portal-chrome-widgets.tsx": 1,
+  };
+  for (const [file, expected] of Object.entries(pulsingBadges)) {
+    const measured = readSource(file).match(/ref=\{alarmGlowRef\}/g)?.length ?? 0;
+    assert.equal(measured, expected, `${file} should hand ${expected} pulsing badge(s) to alarmGlowRef; found ${measured}`);
+  }
+  assert.ok(
+    badge.includes('!overdue && dark && "nav-badge-alarm-glass"') &&
+      /prefers-reduced-motion: no-preference[\s\S]*\.nav-badge-alarm\.nav-badge-alarm-glass \{\s*animation: nav-badge-alarm-pump 1s ease-in-out infinite, ep-breathe-orange 1s ease-in-out infinite;/.test(globalCss),
+    "the see-through dark-rail pill keeps its box-shadow glow — a copy of a 20% fill would double it",
   );
 
   // ── The restyle: escalation is fill weight, not hue alone ───────────────────
