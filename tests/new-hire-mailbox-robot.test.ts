@@ -15,6 +15,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   APP_PASSWORD_PAGE,
@@ -34,6 +35,7 @@ import {
   findMatches,
   isPresent,
   matchesLocator,
+  readExistence,
   resolveOne,
   rowCountRefusal,
   type CandidateReader,
@@ -87,7 +89,77 @@ function verdict(overrides: Partial<ProvisionSafetyInput> = {}) {
   });
 }
 
+/**
+ * "Does this address already exist?" is read from ROWS, never from the page's text.
+ *
+ * 🔴 Measured on production 2026-10-03. The check was
+ * `document.body.innerText.includes(address)`, and the console leaves the searched address on the
+ * page after an attempt — so it was reading the residue of the robot's OWN previous run. Of four
+ * addresses, the two the robot had attempted carried their local part in the page text while showing
+ * ZERO rows; the two it never reached carried neither. Ahmed Mohamed was absent from a console of 288
+ * mailboxes and refused as "already exists" anyway, and every failed attempt re-poisoned the page for
+ * the next run.
+ *
+ * This is the only check between a second mailbox and an address that already has one, so a text
+ * scan being wrong in BOTH directions is the dangerous part — not the stuck queue.
+ */
+function runExistenceReadingCases(): void {
+  // The two honest answers.
+  assert.deepEqual(readExistence(0, "new.hire@satopharma.com"), { exists: false });
+  assert.deepEqual(readExistence(1, "taken@satopharma.com"), { exists: true });
+
+  // 🔴 FAILS CLOSED. An unreadable count must NOT answer "absent" — absent is the answer that goes
+  // on to create a mailbox.
+  for (const unreadable of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const reading = readExistence(unreadable, "new.hire@satopharma.com");
+    assert.ok("refusal" in reading, `${String(unreadable)} must refuse, never answer absent`);
+    assert.match("refusal" in reading ? reading.refusal : "", /cannot tell whether the mailbox already exists/);
+    assert.match("refusal" in reading ? reading.refusal : "", /second one/);
+  }
+
+  // More than one row means the list is not filtered to the address asked about.
+  const many = readExistence(3, "new.hire@satopharma.com");
+  assert.ok("refusal" in many);
+  assert.match("refusal" in many ? many.refusal : "", /showed 3 rows/);
+  assert.match("refusal" in many ? many.refusal : "", /somebody else's mailbox/);
+
+  // Every refusal names the address, so a log line is actionable on its own.
+  for (const rows of [-1, 2]) {
+    const reading = readExistence(rows, "named.person@satopharma.com");
+    assert.match("refusal" in reading ? reading.refusal : "", /named\.person@satopharma\.com/);
+  }
+}
+
+/** The driver must ask the DOM for rows, and reload first — only the first search filters. */
+function runExistenceWiringCases(): void {
+  const driver = readFileSync(
+    new URL("src/lib/new-hire-mailbox/robot/turbify-joiner.ts", new URL("../", import.meta.url)),
+    "utf8",
+  );
+  const flat = driver.replace(/\s+/g, " ");
+
+  assert.match(flat, /readExistence\(rows, address\)/, "the driver must read existence from the row count");
+  assert.match(flat, /\$\$eval<number>\(cssQueryFor\(ECP_LOCATORS\.resetPassword\)/, "rows are counted from the row control");
+  // 🔴 THE TEXT SCAN MUST BE GONE FROM THE CREATE STEP. Scoped to that method, because the driver
+  // reads page text legitimately elsewhere (the one-time-password dialog, the app password). An
+  // earlier version of this assertion used a regex that could not cross a ")" and let a reinstated
+  // scan through — caught by break-and-watch, which is the only reason it is written this way.
+  const createStart = driver.indexOf("async createMailbox(");
+  const createEnd = driver.indexOf("async setMailboxPassword(", createStart);
+  assert.ok(createStart > 0 && createEnd > createStart, "could not locate the createMailbox method");
+  const createBody = driver.slice(createStart, createEnd);
+  assert.equal(
+    createBody.includes("innerText"), false,
+    "the create step must not read page text at all — it carries the last attempt's residue",
+  );
+  assert.match(createBody, /readExistence/, "and it must read existence from the row count");
+  // And the fresh load before the search.
+  assert.match(flat, /page\.goto\(consoleUrl/, "each existence check must start from a fresh page load");
+}
+
 export async function runNewHireMailboxRobotTests(): Promise<void> {
+  runExistenceReadingCases();
+  runExistenceWiringCases();
   // ── the happy path, so every refusal below is attributable to the one thing it changed ───────
   const ok = verdict();
   assert.equal(ok.allowed, true);

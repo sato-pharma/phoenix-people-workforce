@@ -143,3 +143,44 @@ export function rowCountRefusal(count: number, address: string, action = "Reset"
 export async function isPresent(page: CandidateReader, locator: Locator): Promise<boolean> {
   return (await findMatches(page, locator)).length > 0;
 }
+
+export type ExistenceReading =
+  | { exists: boolean }
+  | { refusal: string };
+
+/**
+ * Read "does this address exist?" from the number of matching ROWS, never from the page's text.
+ *
+ * 🔴 WHY THIS EXISTS, measured on production 2026-10-03. `createMailbox` asked the question with
+ * `document.body.innerText.includes(address)` — and the console leaves the searched address on the
+ * page after an attempt, so the check was reading the residue of the robot's OWN previous run. The
+ * measurement that pinned it: of four addresses, the two the robot had attempted carried their local
+ * part in the page text while showing ZERO rows, and the two it had never reached carried neither.
+ * Ahmed Mohamed was absent from a console holding 288 mailboxes and refused as "already exists"
+ * anyway — permanently, because every failed attempt re-poisons the page for the next run.
+ *
+ * It matters more than a stuck queue: this is the only check standing between a second mailbox and
+ * an address that already has one, and a text scan is wrong in BOTH directions.
+ *
+ * 🔴 AND IT FAILS CLOSED. An unreadable count refuses rather than answering "absent", because
+ * "absent" is the answer that goes on to create a mailbox. More than one row refuses too: the search
+ * is for one address, so two rows mean the filter is not doing what the caller believes.
+ */
+export function readExistence(rows: number, address: string): ExistenceReading {
+  if (!Number.isFinite(rows) || rows < 0) {
+    return {
+      refusal:
+        `Could not count the rows for ${address} in the Turbify console, so the robot cannot tell `
+        + "whether the mailbox already exists. It stopped rather than risk creating a second one.",
+    };
+  }
+  if (rows > 1) {
+    return {
+      refusal:
+        `Searching the Turbify console for ${address} showed ${rows} rows, so the list is not filtered `
+        + "to the one address the robot asked about. It stopped rather than read an answer about "
+        + "somebody else's mailbox.",
+    };
+  }
+  return { exists: rows === 1 };
+}
