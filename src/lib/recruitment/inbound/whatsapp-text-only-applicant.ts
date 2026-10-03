@@ -271,29 +271,22 @@ export function textOnlyReplyText(
 export function textOnlyReplyDefault(enquiry: TextOnlyEnquiry = "plain"): string {
   // The ⚠️ line is identical in both variants on purpose: it is the one instruction that recovers a
   // photographed CV, and it must not vary with how the question was phrased.
-  const cannotBeProcessed = "‏⚠️ الصورة الفوتوغرافية أو الرسالة المكتوبة لا يمكن معالجتها.";
+  const cannotBeProcessed = "⚠️ A photo of a CV, or a typed message, cannot be processed.";
 
   if (enquiry === "asked_about_the_job") {
     return [
-      "‏شكراً لتواصلك مع ساتو فارما 🌟",
-      "‏إحنا بندوّر على *مندوبين دعاية طبية (Medical Representative)* في أكتر من منطقة.",
-      "‏تفاصيل المنطقة كاملة بيبعتهالك فريق التوظيف لو سيرتك الذاتية مناسبة لمكان متاح.",
-      "‏عشان نبدأ، من فضلك أرسل السيرة الذاتية هنا *كملف* (PDF أو Word).",
+      "Thanks for contacting Sato Pharma 🌟",
+      "We are hiring *Medical Representatives* in several areas.",
+      "Our recruitment team will send you the full details for your area if your CV matches an open position.",
+      "To start, please send your CV here as a *file* (PDF or Word).",
       cannotBeProcessed,
-      "",
-      "Thanks for contacting Sato Pharma.",
-      "We are hiring *Medical Representatives* in several areas. Our recruitment team will send you the full details for your area if your CV matches an open position.",
-      "To start, please send your CV here as a *file* (PDF or Word). A photo or a typed message cannot be processed.",
     ].join("\n");
   }
 
   return [
-    "‏شكراً لتواصلك مع ساتو فارما 🌟",
-    "‏للتقديم على الوظيفة، من فضلك أرسل السيرة الذاتية هنا *كملف* (PDF أو Word).",
+    "Thanks for contacting Sato Pharma 🌟",
+    "To apply, please send your CV here as a *file* (PDF or Word).",
     cannotBeProcessed,
-    "",
-    "Thanks for contacting Sato Pharma.",
-    "To apply, please send your CV here as a *file* (PDF or Word). A photo or a typed message cannot be processed.",
   ].join("\n");
 }
 

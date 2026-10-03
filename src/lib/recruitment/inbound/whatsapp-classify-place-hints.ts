@@ -17,9 +17,13 @@
 // Everything is attributed to TODAY's geography — the brick's current area, never the area code
 // frozen on the import row — because that is the standing rule for all SoS reporting.
 //
-//   AREA hints  — the 3 highest-value BRICKS in that area, exactly as the owner asked. Arabic,
-//                 because that is how bricks are named in this database and how an applicant
-//                 recognises their own town. He anticipated this himself: "even if in Arabic".
+//   AREA hints  — the 3 highest-value BRICKS in that area, exactly as the owner asked, written
+//                 in ENGLISH. The bricks are named in Arabic in the sales database, so these
+//                 are transliterations of those names, not a second set of places: nothing
+//                 reads a hint back, so the database keeps its own spelling. He accepted
+//                 Arabic here in 2026-08-28 ("even if in Arabic") and then ruled on
+//                 2026-10-04 that EVERY word a WhatsApp applicant reads is English — which
+//                 is the later instruction and the one this file follows.
 //
 //   REGION hints — the 3 highest-value AREAS, written as the GOVERNORATE a person would say.
 //                 NOT the top 3 bricks, and the difference matters: ranked purely by brick, AB's
@@ -47,8 +51,8 @@
 // longer exposes the difference. See docs/recruitment-inbound-intake.md.
 //
 // ONE KNOWN DISAGREEMENT IS LEFT STANDING: Matrouh. The recruitment map files it under Others, but
-// its sales bricks (مرسى مطروح) sit inside AREA "Alex West", so Alex-BHR is the only row whose area
-// list can reach the job. AB therefore keeps مطروح. Matrouh is not in the top three of Others by
+// its sales bricks (Marsa Matrouh) sit inside AREA "Alex West", so Alex-BHR is the only row whose
+// area list can reach the job. AB therefore keeps Matrouh. Matrouh is not in the top three of Others by
 // any measure, so nothing is lost there either way.
 //
 // The regenerating queries are in docs/recruitment-inbound-intake.md so this can be refreshed
@@ -69,16 +73,16 @@ import type { CandidateRegionCode } from "@/lib/recruitment/candidate-region";
  * wrong row, which is the failure this file exists to prevent. `D3` is the four-of-four case.
  */
 export const regionPlaceHints: Partial<Record<CandidateRegionCode, string>> = {
-  AB: "الإسكندرية · البحيرة · مطروح",
-  CA: "شرق القاهرة · مدينة نصر · مصر الجديدة",
-  D1: "الغربية · المنوفية · كفر الشيخ",
-  D2: "الدقهلية · دمياط · بورسعيد",
+  AB: "Alexandria · Beheira · Matrouh",
+  CA: "East Cairo · Nasr City · Heliopolis",
+  D1: "Gharbia · Menoufia · Kafr El-Sheikh",
+  D2: "Dakahlia · Damietta · Port Said",
   // Delta (3), opened 2026-08-28 — all four governorates, because four is everything it has and
   // they fit in one line. This is the row the owner is recruiting into, and the one he singled out.
-  D3: "القليوبية · الشرقية · الإسماعيلية · السويس",
-  GZ: "الجيزة · الفيوم · بني سويف",
-  OT: "الأقصر · أسوان · البحر الأحمر",
-  UE: "أسيوط · سوهاج · قنا",
+  D3: "Qalyubia · Sharqia · Ismailia · Suez",
+  GZ: "Giza · Fayoum · Beni Suef",
+  OT: "Luxor · Aswan · Red Sea",
+  UE: "Assiut · Sohag · Qena",
 };
 
 /**
@@ -96,74 +100,74 @@ export const regionPlaceHints: Partial<Record<CandidateRegionCode, string>> = {
  */
 export const areaPlaceHints: Record<string, string> = {
   // ── AB · Alex-BHR ──────────────────────────────────────────────────────────────────────────
-  "Alex Center": "سموحه · سبورتنج · الحضره",
-  "Alex East": "خورشيد · سيدى بشر · فليمنج",
-  "Alex West": "مرسى مطروح · العامرية · العجمى",
-  "Behira 1": "دمنهور شبراخيت · كوم حماده · إيتاى البارود",
-  "Behira 2": "كفر الدوار · أبو حمص · المحموديه",
+  "Alex Center": "Smouha · Sporting · El Hadra",
+  "Alex East": "Khorshid · Sidi Bishr · Fleming",
+  "Alex West": "Marsa Matrouh · El Amreya · El Agamy",
+  "Behira 1": "Damanhour Shubrakhit · Kom Hamada · Itay El Baroud",
+  "Behira 2": "Kafr El-Dawwar · Abu Homs · El Mahmoudia",
 
   // ── CA · Cairo ─────────────────────────────────────────────────────────────────────────────
-  "Cairo East 1": "ش رمسيس · عين شمس الشرقيه · المطريه",
-  "Cairo East 2": "مدينة السلام · المرج · مدينة العبور",
-  "Cairo West": "شبرا الخيمه · بهتيم · روض الفرج",
-  "Down town": "الأزبكيه · السيده زينب · ش القصر العينى",
-  Heliopolis: "ميدان هليوبوليس · روكسى · النزهه الجديدة",
-  "Nasr City": "مدينة نصر · الحي السابع · المقطم",
+  "Cairo East 1": "Ramses St · Ain Shams East · El Matareya",
+  "Cairo East 2": "Salam City · El Marg · Obour City",
+  "Cairo West": "Shubra El Kheima · Bahteem · Rod El Farag",
+  "Down town": "El Azbakeya · Sayeda Zeinab · Qasr El Eini St",
+  Heliopolis: "Heliopolis Square · Roxy · New Nozha",
+  "Nasr City": "Nasr City · Seventh District · El Mokattam",
 
   // ── D1 · Delta (1) ─────────────────────────────────────────────────────────────────────────
-  "Gharbia 1 (Tanta)": "طنطا · كفر الزيات · السنطة",
-  "Gharbia 2 (Mahalla)": "زفته · المحله الكبرى · سمنود",
-  "Kafr El-Sheikh 1": "كفر الشيخ · دسوق · بلطيم",
-  "Kafr El-Sheikh 2": "فوه · سيدى سالم · الحامول",
-  "Menoufia 1": "شبين الكوم · قويسنا · بركة السبع",
-  "Menoufia 2": "أشمون · منوف · باجور",
+  "Gharbia 1 (Tanta)": "Tanta · Kafr El-Zayat · El Santa",
+  "Gharbia 2 (Mahalla)": "Zefta · El Mahalla El Kubra · Samannoud",
+  "Kafr El-Sheikh 1": "Kafr El-Sheikh · Desouk · Baltim",
+  "Kafr El-Sheikh 2": "Fuwwah · Sidi Salem · El Hamoul",
+  "Menoufia 1": "Shebin El Kom · Quweisna · Berket El Sabaa",
+  "Menoufia 2": "Ashmoun · Menouf · Bagour",
   // Sales map: Delta (1). → Delta (3): the apply flow files it under Delta (3), matching the region map.
-  Qalubeya: "بنها · شبين القناطر · قليوب",
+  Qalubeya: "Benha · Shebin El Qanater · Qalyub",
 
   // ── D2 · Delta (2) ─────────────────────────────────────────────────────────────────────────
-  "Dakahlia 1": "المنصورة · طلخا · المعصره شربين",
-  "Dakahlia 2": "ميت غمر · السنبلاوين · أجا",
-  "Dakahlia 3": "دكرنس · المنزلة · منيا النصر",
-  "Port said - Domiat": "دمياط · بور سعيد · كفر سعد",
+  "Dakahlia 1": "Mansoura · Talkha · El Maasara Sherbin",
+  "Dakahlia 2": "Mit Ghamr · El Senbellawein · Aga",
+  "Dakahlia 3": "Dekernes · El Manzala · Minyat El Nasr",
+  "Port said - Domiat": "Damietta · Port Said · Kafr Saad",
   // Sales map: Delta (2). → Delta (3): the apply flow files both under Delta (3), matching the region map.
-  "Sharkia 1": "الزقازيق · أبو حماد · منيا القمح",
-  "Sharkia 2": "فاقوس · الحسينيه · أبو كبير",
+  "Sharkia 1": "Zagazig · Abu Hammad · Minya El Qamh",
+  "Sharkia 2": "Faqous · El Husseiniya · Abu Kebir",
 
   // ── GZ · Giza ──────────────────────────────────────────────────────────────────────────────
   // Beni Suef and Fayoum sit under GZ in `au_v_canonical_areas`; which line owns them differs, and
   // that is a separate golden rule. The menu follows the view, so the hint does too.
-  "Beni Suef": "مدينة بنى سويف · إهناسيا · الوسطى",
-  "Dokki - Mohandseen - Bolak": "بولاق الدكرور · ناهيا · أرض اللواء",
-  Fayoum: "مدينة الفيوم · إبشواى · إطسا",
-  "Giza - Giza Centers": "الحوامديه · العياط · المنيب",
-  "Haram - Faisal": "الهرم · كرداسه · فيصل",
-  "Helwan-Maadi": "حلوان · المعادى · الصف",
-  "Imbaba - Imbaba Centers": "إمبابه · الكيت كات · اوسيم",
-  "October -Zayed": "مدينة 6 أكتوبر · الشيخ زايد · ابو رواش",
+  "Beni Suef": "Beni Suef City · Ehnasia · El Wasta",
+  "Dokki - Mohandseen - Bolak": "Bolak El Dakrour · Nahia · Ard El Lewa",
+  Fayoum: "Fayoum City · Ibshaway · Etsa",
+  "Giza - Giza Centers": "El Hawamdeya · El Ayyat · El Monib",
+  "Haram - Faisal": "El Haram · Kerdasa · Faisal",
+  "Helwan-Maadi": "Helwan · Maadi · El Saff",
+  "Imbaba - Imbaba Centers": "Imbaba · El Kit Kat · Oseem",
+  "October -Zayed": "6th of October City · Sheikh Zayed · Abu Rawash",
 
   // ── OT · Others ────────────────────────────────────────────────────────────────────────────
   // Several of these genuinely have fewer than three bricks. Two names, or one, is the whole truth
   // for that area — it is not a truncation, and nothing is missing.
-  Aswan: "اسوان · كوم امبو · ادفو",
-  Hurgada: "الغردقة",
-  Luxor: "الاقصر · اسنا",
-  "New Valley": "الوادى الجديد · الخارجة",
-  "North Sinai": "العريش",
-  "Red Sea": "سفاجا · ش6 اكتوبر-البحرالاحمر · القصير",
-  "South Sinai": "شرم الشيخ · طور سيناء",
+  Aswan: "Aswan · Kom Ombo · Edfu",
+  Hurgada: "Hurghada",
+  Luxor: "Luxor · Esna",
+  "New Valley": "New Valley · El Kharga",
+  "North Sinai": "El Arish",
+  "Red Sea": "Safaga · 6th October St (Red Sea) · El Quseir",
+  "South Sinai": "Sharm El Sheikh · Tor Sinai",
   // Sales map: Others. → Delta (3): the apply flow files both under Delta (3), matching the region map.
-  Ismailia: "الاسماعيليه · القنطرةغرب",
-  Suez: "السويس",
+  Ismailia: "Ismailia · El Qantara West",
+  Suez: "Suez",
 
   // ── UE · Upper Egypt ───────────────────────────────────────────────────────────────────────
-  "Assuit 1": "منفلوط · ديروط · القوصيه",
-  "Assuit 2": "مدينة أسيوط · أبنوب · أبو تيج",
-  "Minia 1": "سمالوط · مطاى · مغاغه",
-  "Minia 2": "مدينة المنيا · ملاوى · دير مواس",
-  "Qena 1": "مدينة قنا · قوص · دشنا",
-  "Qena 2": "نقادة · مدينة قنا - قنا 2 · قفط",
-  Sohag1: "مدينة سوهاج · طهطا · طما",
-  Sohag2: "دار السلام -سوهاج · جرجا · البلينا",
+  "Assuit 1": "Manfalout · Dairout · El Qusiya",
+  "Assuit 2": "Assiut City · Abnoub · Abu Tig",
+  "Minia 1": "Samalout · Matay · Maghagha",
+  "Minia 2": "Minya City · Mallawi · Deir Mawas",
+  "Qena 1": "Qena City · Qus · Deshna",
+  "Qena 2": "Naqada · Qena City (Qena 2) · Qeft",
+  Sohag1: "Sohag City · Tahta · Tima",
+  Sohag2: "Dar El Salam (Sohag) · Girga · El Balyana",
 };
 
 /** The hint for a region, or null when there is none to give. Never throws. */

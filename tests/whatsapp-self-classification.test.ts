@@ -179,7 +179,7 @@ export function runWhatsAppSelfClassificationTests() {
   );
   assert.equal(
     dokki.description,
-    "Dokki - Mohandseen - Bolak (بولاق الدكرور · ناهيا · أرض اللواء)",
+    "Dokki - Mohandseen - Bolak (Bolak El Dakrour · Nahia · Ard El Lewa)",
     "the shortened row must carry the full name and its hint together",
   );
 
@@ -189,10 +189,28 @@ export function runWhatsAppSelfClassificationTests() {
   assert.ok(fayoum, "Fayoum must be offered");
   assert.equal(
     fayoum.description,
-    "(مدينة الفيوم · إبشواى · إطسا)",
+    "(Fayoum City · Ibshaway · Etsa)",
     "a title that already fits gives its whole description line to the bracketed place hint",
   );
-  assert.ok(!fayoum.description?.includes("Fayoum"), "a fitting title must never repeat itself as a description");
+  // A hint must EARN its line: it has to name at least one place the row’s own title does not
+  // already say. Two of the 49 are genuinely one-brick areas whose single brick IS the city the
+  // area is named after, so for those the measured truth is a line that repeats the name; they are
+  // listed by name below so the next reader can see that is a measurement and not an oversight.
+  //
+  // This replaced a narrower pin, `!fayoum.description.includes("Fayoum")`, which held only while
+  // the hints were ARABIC and therefore could never echo a Latin title. With the hints in English
+  // (owner, 2026-10-04) Fayoum’s biggest brick really is "Fayoum City", and the old assertion
+  // fired on correct data. The exact-string check above still pins Fayoum’s whole line.
+  const ONE_BRICK_AREAS = new Set(["Suez", "Hurgada"]);
+  for (const [name, hint] of Object.entries(areaPlaceHints)) {
+    const places = hint.split("·").map((place) => place.trim()).filter(Boolean);
+    assert.ok(places.length > 0, `area "${name}" has an empty place hint`);
+    if (ONE_BRICK_AREAS.has(name)) continue;
+    assert.ok(
+      places.some((place) => !place.toLowerCase().includes(name.toLowerCase())),
+      `area "${name}" must name at least one place its own title does not — its hint is "${hint}"`,
+    );
+  }
 
   // ── The region menu must not offer a dead end ─────────────────────────────────────────────────
   // au.regions also holds UE-1 and UE-2, which have ZERO active areas. Offering either would walk
@@ -258,14 +276,14 @@ export function runWhatsAppSelfClassificationTests() {
   // named them under their old region, an applicant from Qalyubia would tap Delta (1) and be filed
   // where the Delta (3) recruiter is not looking — which is the precise failure #2509 set out to
   // fix. This is the pin that catches the next such move being made in only one of the two files.
-  assert.ok(regionPlaceHints.D3?.includes("القليوبية"), "Delta (3) must name Qalyubia — it is its biggest governorate");
-  assert.ok(regionPlaceHints.D3?.includes("الشرقية"), "Delta (3) must name Sharqia");
-  assert.ok(regionPlaceHints.D3?.includes("الإسماعيلية"), "Delta (3) must name Ismailia");
-  assert.ok(regionPlaceHints.D3?.includes("السويس"), "Delta (3) must name Suez — all four fit, so none is dropped");
-  assert.ok(!regionPlaceHints.D1?.includes("القليوبية"), "Qalyubia left Delta (1) in #2509 — its hint must not still claim it");
-  assert.ok(!regionPlaceHints.D2?.includes("الشرقية"), "Sharqia left Delta (2) in #2509 — its hint must not still claim it");
-  assert.ok(!regionPlaceHints.OT?.includes("الإسماعيلية"), "Ismailia left Others in #2509");
-  assert.ok(!regionPlaceHints.OT?.includes("السويس"), "Suez left Others in #2509");
+  assert.ok(regionPlaceHints.D3?.includes("Qalyubia"), "Delta (3) must name Qalyubia — it is its biggest governorate");
+  assert.ok(regionPlaceHints.D3?.includes("Sharqia"), "Delta (3) must name Sharqia");
+  assert.ok(regionPlaceHints.D3?.includes("Ismailia"), "Delta (3) must name Ismailia");
+  assert.ok(regionPlaceHints.D3?.includes("Suez"), "Delta (3) must name Suez — all four fit, so none is dropped");
+  assert.ok(!regionPlaceHints.D1?.includes("Qalyubia"), "Qalyubia left Delta (1) in #2509 — its hint must not still claim it");
+  assert.ok(!regionPlaceHints.D2?.includes("Sharqia"), "Sharqia left Delta (2) in #2509 — its hint must not still claim it");
+  assert.ok(!regionPlaceHints.OT?.includes("Ismailia"), "Ismailia left Others in #2509");
+  assert.ok(!regionPlaceHints.OT?.includes("Suez"), "Suez left Others in #2509");
 
   // Every active area explains itself too, and the hint reaches the row.
   for (const [regionCode, areas] of Object.entries(PRODUCTION_AREAS)) {

@@ -15,10 +15,17 @@ import {
 } from "../src/lib/recruitment/inbound/whatsapp-auto-replies.ts";
 import { autoReplyDefault } from "../src/lib/recruitment/inbound/whatsapp-auto-replies-catalogue.ts";
 import {
+  areaMenu,
   classifyThankYouText,
   CLOSING_INTRO_DEFAULT,
   CLOSING_OUTRO_DEFAULT,
+  regionMenu,
 } from "../src/lib/recruitment/inbound/whatsapp-classify-menus.ts";
+import {
+  areaPlaceHints,
+  regionPlaceHints,
+} from "../src/lib/recruitment/inbound/whatsapp-classify-place-hints.ts";
+import { builtInPrompts } from "../src/lib/recruitment/inbound/whatsapp-question-prompts.ts";
 import {
   textOnlyReplyDefault,
   textOnlyReplyText,
@@ -373,4 +380,77 @@ export async function runWhatsAppAutoRepliesTests(): Promise<void> {
   assert.ok(entry, "the editor's route is declared in the access registry");
   assert.ok(entry.includes('resource: "recruitment"'), "under recruitment, like the question editors");
   assert.ok(entry.includes("csrfRequired: true"), "and it requires a same-origin mutation");
+  // -- EVERY WORD AN APPLICANT READS IS ENGLISH (owner, 2026-10-04) -----------------------------
+  //
+  // "i want whatsapp replies all to be in english". Before that ruling four of these six replies
+  // opened with an Arabic block and the region and area lists carried Arabic second lines, and the
+  // tests of the day pinned exactly that ("Arabic comes FIRST"). Those assertions are now inverted
+  // rather than removed, and this sweep is what makes the rule hold across the SET: the replies,
+  // the questions, the region list and the area lists are built by four different modules, so a
+  // per-file check leaves three doors open.
+  //
+  // It pins the DEFAULTS in code. It deliberately says nothing about a saved override — the owner
+  // can word a reply in any language he likes on the Screening Questions screen, which is the
+  // feature this file exists for.
+  //
+  // What the bot READS is untouched: the Arabic enquiry markers in whatsapp-text-only-applicant.ts
+  // are how an Arabic question is recognised at all, and they are asserted elsewhere.
+  const arabic = /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/;
+  const outbound: Array<[string, string | null]> = [];
+
+  for (const key of AUTO_REPLY_KEYS) outbound.push([`reply ${key}`, autoReplyDefault(key)]);
+
+  for (const prompt of builtInPrompts()) {
+    outbound.push([`question ${prompt.key} body`, prompt.defaultBody]);
+    outbound.push([`question ${prompt.key} list button`, prompt.defaultButtonLabel ?? null]);
+    outbound.push([`question ${prompt.key} answer heading`, prompt.defaultSectionTitle ?? null]);
+    for (const option of prompt.options) {
+      outbound.push([`question ${prompt.key} answer ${option.value} title`, option.defaultTitle]);
+      outbound.push([`question ${prompt.key} answer ${option.value} second line`, option.defaultDescription ?? null]);
+    }
+  }
+
+  for (const [code, hint] of Object.entries(regionPlaceHints)) {
+    outbound.push([`region ${code} second line`, hint]);
+  }
+  for (const [name, hint] of Object.entries(areaPlaceHints)) {
+    outbound.push([`area ${name} second line`, hint]);
+  }
+
+  // The menus as actually BUILT, not only their ingredients: the second lines are wrapped and the
+  // titles substituted on the way out, so this is the shape WhatsApp is handed.
+  const builtMenus = [regionMenu(), areaMenu("CA", Object.keys(areaPlaceHints))];
+  for (const menu of builtMenus) {
+    outbound.push(["menu body", menu.body]);
+    outbound.push(["menu button", menu.buttonLabel]);
+    outbound.push(["menu heading", menu.sectionTitle]);
+    for (const row of menu.rows) {
+      outbound.push([`menu row ${row.id} title`, row.title]);
+      outbound.push([`menu row ${row.id} second line`, row.description ?? null]);
+    }
+  }
+
+  const inArabic = outbound.filter(([, text]) => typeof text === "string" && arabic.test(text));
+  assert.deepEqual(
+    inArabic.map(([where]) => where),
+    [],
+    `every word a WhatsApp applicant reads must be ENGLISH (owner, 2026-10-04) — these are not: ${
+      inArabic.map(([where, text]) => `${where} = ${JSON.stringify(text)}`).join(" | ")
+    }`,
+  );
+
+  // The sweep must actually be LOOKING at something. Without this, deleting a surface above would
+  // make the rule pass by covering nothing — the failure mode a "no bad rows" assertion always has.
+  assert.ok(
+    outbound.length >= 150,
+    `the sweep must cover every outbound surface, not an empty list — it read ${outbound.length} strings`,
+  );
+  assert.ok(
+    outbound.some(([where]) => where.startsWith("reply ")) &&
+      outbound.some(([where]) => where.startsWith("question ")) &&
+      outbound.some(([where]) => where.startsWith("region ")) &&
+      outbound.some(([where]) => where.startsWith("area ")) &&
+      outbound.some(([where]) => where.startsWith("menu ")),
+    "and all five kinds of outbound string are in it: the replies, the questions, the region hints, the area hints, and the built menus",
+  );
 }

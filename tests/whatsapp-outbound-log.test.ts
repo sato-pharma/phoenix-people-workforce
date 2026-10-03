@@ -48,7 +48,7 @@ const MIGRATION_SOURCE = readFileSync(
 const TEXT_PAYLOAD = {
   messaging_product: "whatsapp",
   recipient_type: "individual",
-  text: { body: "‏شكراً لتواصلك مع ساتو فارما 🌟", preview_url: false },
+  text: { body: "Thanks for contacting Sato Pharma 🌟", preview_url: false },
   to: "201010896990",
   type: "text",
 };
@@ -66,7 +66,7 @@ export async function runWhatsAppOutboundLogTests(): Promise<void> {
 
   assert.equal(
     sent.body,
-    "‏شكراً لتواصلك مع ساتو فارما 🌟",
+    "Thanks for contacting Sato Pharma 🌟",
     "THE POINT OF THE TABLE: the exact words sent are recorded, not a summary of them",
   );
   assert.equal(sent.to_wa_id, "201010896990", "and who they went to");

@@ -101,10 +101,13 @@ export async function runWhatsAppUnreadableCvTests(): Promise<void> {
   // --- what the applicant reads -----------------------------------------------------------------
 
   const photoReply = unreadableCvReplyText("not_recognised");
-  assert.ok(/[؀-ۿ]/.test(photoReply), "Arabic is present — the applicants write in Arabic");
   assert.ok(
-    photoReply.search(/[؀-ۿ]/) < photoReply.indexOf("Thanks for contacting"),
-    "and Arabic comes FIRST, not buried under an English paragraph",
+    !/[؀-ۿ]/.test(photoReply),
+    "the reply is ENGLISH ONLY — the owner’s rule of 2026-10-04",
+  );
+  assert.ok(
+    photoReply.startsWith("Thanks for contacting"),
+    "and it opens with the thank-you, which used to sit underneath an Arabic block",
   );
   assert.ok(photoReply.includes("Document"), "it names the Document option, which is the actionable part");
   assert.ok(
@@ -112,7 +115,7 @@ export async function runWhatsAppUnreadableCvTests(): Promise<void> {
     "and the two formats that actually work",
   );
   assert.ok(
-    !/rejected|not a CV|ليست سيرة/i.test(photoReply),
+    !/rejected|not a CV/i.test(photoReply),
     "it never tells anyone their CV was rejected — the content check is not accurate enough to say so",
   );
 
