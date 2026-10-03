@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 49c63508-cfb2-4e16-af62-0961f3808359
-  modified: 2026-10-03T18:47:33.698Z
+  modified: 2026-10-03T21:12:13.625Z
 ---
 
 A `pull_request` check does not grade your branch. GitHub builds `refs/pull/<n>/merge` and grades
@@ -40,6 +40,17 @@ both before and after**; a local green proves nothing here, and this is the same
 🔴 **`git show origin/main:<path>` is mangled by MSYS on this machine** — the `rev:path` colon
 becomes `;` and git reports `ambiguous argument 'origin\main;.claude\rules\crm.md'`. Prefix the
 command with `MSYS_NO_PATHCONV=1` (or export it) before any loop that builds such a ref.
+
+🔴 **AND IT BITES `git cat-file -e` AS A SILENT FALSE NEGATIVE, WHICH IS FAR WORSE THAN AN
+`ambiguous argument`.** Measured 2026-10-04 right after #5280 merged: a presence check over three
+files reported `src/...` and `tests/...` present and `.claude/rules/turbify-provisioning.md`
+**MISSING** from `origin/main` — a brand-new file, so it read exactly like a change that failed to
+land. It was there, 12,613 bytes. `cat-file -e` communicates only through its exit code, so the
+mangled ref returns non-zero and a `&& echo present || echo MISSING` prints MISSING with no error
+text to give it away. 🔴 **Use `git ls-tree <rev> <path>`, which has no colon to mangle**, and treat
+any per-file presence check written as `rev:path` as unproven. The giveaway here was a second
+reading that contradicted it — `git diff --stat <head> origin/main -- <files>` had already shown that
+file identical, and a file missing on main cannot be identical to one that exists.
 
 **Do not report this class of failure to the owner as a blocker.** When the red is memory plumbing —
 a hook over its margin, a module file near its cap, an orphan note, a stale generated block — it is

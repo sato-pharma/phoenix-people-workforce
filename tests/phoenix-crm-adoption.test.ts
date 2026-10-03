@@ -221,7 +221,7 @@ export function runPhoenixCrmAdoptionTests(): void {
 
     const workbook = source("src/lib/phoenix-crm/server/reports-workbook.ts");
     assert.ok(workbook.includes("function writeAdoption("), "the pack has an adoption sheet");
-    assert.ok(workbook.includes('input.adoption ? "Who has started" : null'), "which the cover names only when it is there");
+    assert.ok(workbook.includes("input.adoption ? SECTION_TITLES.adoption : null"), "which the cover names only when it is there");
     assert.ok(
       workbook.includes('row.daysOpen === null ? "—" : row.daysOpen'),
       "and the sheet prints an em dash for an unknown age too — a 0 in a saved file outlives the screen that explained it",

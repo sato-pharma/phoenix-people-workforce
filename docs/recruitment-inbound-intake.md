@@ -156,9 +156,15 @@ the ATS will not find them. Surfacing them is a separate change.
 "Delta (1)" is an **internal sales name**. Nobody outside the company knows which governorates it
 covers, and an applicant who guesses wrong is filed against a district that will never call them.
 The owner asked for a bracket under each row naming the places inside: *"just add a bracket ... so
-the one who is applying, he knows, and don't choose something wrong."* Arabic is expected — *"even
-if in Arabic"* — because that is how bricks are named in this database and how an applicant
-recognises their own town.
+the one who is applying, he knows, and don't choose something wrong."*
+
+🔴 **THE HINTS ARE IN ENGLISH, like every other word the bot sends** (owner, 2026-10-04:
+*"i want whatsapp replies all to be in english"*). They were Arabic from 2026-08-28, when he
+accepted it in advance — *"even if in Arabic"* — because that is how bricks are named in this
+database. The later ruling supersedes that. What is stored is unchanged: the bricks keep their
+Arabic names in Source of Sales, and the hints are **transliterations** of those names, because
+nothing reads a hint back. `tests/whatsapp-auto-replies.test.ts` sweeps every outbound surface and
+fails on a single Arabic character.
 
 **The bracket is a hint, never a choice.** The row the applicant taps is still the region or the
 area, and `preferred_region_code` / `preferred_area_name` still store exactly what they tapped. The
@@ -167,8 +173,8 @@ this: *"you will not change the menu ... you will just add a bracket ... but you
 area, not the brick."*
 
 ```
-Delta (3)      (القليوبية · الشرقية · الإسماعيلية · السويس)
-Behira 2       (كفر الدوار · أبو حمص · المحموديه)
+Delta (3)      (Qalyubia · Sharqia · Ismailia · Suez)
+Behira 2       (Kafr El-Dawwar · Abu Homs · El Mahmoudia)
 ```
 
 Data lives in `src/lib/recruitment/inbound/whatsapp-classify-place-hints.ts`; the parentheses are
@@ -197,7 +203,7 @@ nothing in the database — sales, the closing and every other reader of `au.can
 untouched — and it becomes a no-op the day the sales side finally repoints those areas to Delta (3).
 A registered assertion pins the five names. One disagreement is left standing deliberately:
 **Matrouh** is Others in the recruitment map, but its bricks sit inside AREA *Alex West*, so Alex-BHR
-is the only row whose area list can reach that job — AB therefore keeps مطروح.
+is the only row whose area list can reach that job — AB therefore keeps Matrouh.
 
 **Regenerating both sets.** Measured against production 2026-08-28: Source of Sales carries a brick
 on 316,406 of 317,801 rows (99.6%, 615 distinct bricks). Everything attributes to **today's**

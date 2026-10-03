@@ -109,13 +109,18 @@ export async function runWhatsAppReplyAnswersTheQuestionTests(): Promise<void> {
     ["plain", plain],
     ["asked_about_the_job", answered],
   ] as const) {
-    assert.ok(/[؀-ۿ]/.test(reply), `${name}: the reply speaks Arabic — that is what applicants write in`);
+    assert.ok(
+      !/[؀-ۿ]/.test(reply),
+      `${name}: the reply is ENGLISH ONLY (owner, 2026-10-04). The markers above stay Arabic on purpose — the bot READS Arabic and answers in English`,
+    );
     assert.ok(reply.includes("PDF"), `${name}: it names the formats that work`);
     assert.ok(reply.includes("Word"), `${name}: both formats, not just PDF`);
     assert.ok(/photo/i.test(reply), `${name}: it rules out the photographed CV`);
-    assert.ok(reply.includes("‏⚠️ الصورة الفوتوغرافية"), `${name}: the Arabic warning is present verbatim`);
-    const arabicIndex = reply.search(/[؀-ۿ]/);
-    assert.ok(arabicIndex < reply.indexOf("Thanks"), `${name}: Arabic comes first, not buried under English`);
+    assert.ok(
+      reply.includes("⚠️ A photo of a CV, or a typed message, cannot be processed."),
+      `${name}: the one instruction that recovers a photographed CV is present verbatim, in both variants`,
+    );
+    assert.ok(reply.startsWith("Thanks"), `${name}: it opens with the thank-you`);
   }
 
   // The default is the SHORT one. `textOnlyReplyText()` is called with no argument in older code
@@ -129,8 +134,8 @@ export async function runWhatsAppReplyAnswersTheQuestionTests(): Promise<void> {
     "a question about the job is answered with the role we are actually hiring",
   );
   assert.ok(
-    answered.includes("مندوبين دعاية طبية"),
-    "and answered in Arabic too — the question was asked in Arabic",
+    /\*Medical Representatives\*/.test(answered),
+    "and the role is the bolded part of the answer — it used to be said twice, once in Arabic, until the owner’s 2026-10-04 English-only rule",
   );
   assert.ok(
     /recruitment team will send you the full details/i.test(answered),

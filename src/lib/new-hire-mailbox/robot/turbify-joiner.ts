@@ -1223,11 +1223,32 @@ export async function createTurbifyJoinerDriver(
           + `is \`type()\` appending onto text that was already there. The page it was on — ${await describePage(mailbox, secrets)}`,
         );
       }
-      // 🔴 NOTHING HERE TICKS THE SETUP PAGE'S CHECKBOX, and that is deliberate. The page carries one
-      // unnamed checkbox; on the login form the same shape turned out to be "Keep me logged in.", but
-      // on the setup form its label has not been read by anyone. A box that proves to be a consent or
-      // terms box is the owner's to tick and never the robot's — so the form is submitted as it
-      // stands, and if it does not move the refusal below prints that checkbox for him to act on.
+      // 🔴 NOTHING HERE TICKS THE SETUP PAGE'S CHECKBOX, and as of 2026-10-04 that is no longer a
+      // precaution about an unread label — THE LABEL HAS BEEN READ, AND IT IS YAHOO'S TERMS OF
+      // SERVICE. The control reader returned it verbatim from the live page:
+      //
+      //     near: "By continuing, you agree that Turbify will create a profile, and for use of
+      //            Business Mail service. You agree to Yahoo's Terms of Service and Privacy Policies."
+      //     markup: <input aria-hidden="true" tabindex="-1" type="checkbox"
+      //             style="position: absolute; pointer-events: none; opacity: 0; margin: 0px;
+      //             transform: translateX(-100%);">
+      //
+      // Three things follow, and they settle this step permanently rather than calibrating it:
+      //
+      // 1. **It is a consent to a third party's terms**, so it is the owner's to give. That was the
+      //    standing assumption; it is now a measurement.
+      // 2. **The box cannot be ticked by anything, including him.** `pointer-events: none`,
+      //    `opacity: 0`, `aria-hidden`, `tabindex="-1"` — it is a visually-hidden value carrier
+      //    behind a custom control, not a target. So "tick the box" was never advice that could be
+      //    followed, and the old refusal below gave it anyway.
+      // 3. **The consent is "By CONTINUING", not by ticking** — which means the SUBMIT ITSELF is the
+      //    acceptance. There is therefore no version of this step that an automation may complete:
+      //    the thing being automated is the agreement. It is also NOT `required`, and the form
+      //    reports itself valid, so the box was never what held the submit back either.
+      //
+      // The form is still submitted as it stands, because Phoenix may legitimately try, and the
+      // refusal below now says the mailbox's password was NOT changed, that re-running cannot help,
+      // and what the four manual clicks are. Account: `docs/mailbox-robot-calibration.md`.
       //
       // 🔴 THAT LAST CLAUSE WAS NOT TRUE UNTIL 2026-10-03, AND IT COST A CLICK. The refusal printed
       // `checkbox:-` and nothing else: no label, no required flag, no ticked state. The owner was
@@ -1244,11 +1265,20 @@ export async function createTurbifyJoinerDriver(
       await settle(4_000);
       if (await onSetupPage()) {
         throw new TurbifyJoinerStepError(
-          `The password form for ${address} was filled and submitted but is still on screen, so the new `
-          + `password was not accepted. Both password boxes held ${expected} characters, so the typing `
-          + "landed — read the controls below: a REQUIRED UNTICKED checkbox is a consent box only the "
-          + "owner may tick, and a form reporting itself valid means the submit is not being refused by "
-          + `validation at all. The page it was on — ${await describePage(mailbox, secrets)}`,
+          `The password form for ${address} was filled and submitted but is still on screen, so its `
+          + `password was NOT changed and the one-time password is still outstanding. Both password `
+          + `boxes held ${expected} characters, so the typing landed, and the form reports itself `
+          + "valid — nothing is being refused by validation.\n\n"
+          + "🔴 THIS PAGE IS WHERE THE ROBOT STOPS BY DESIGN, AND NOT BECAUSE ANYTHING IS BROKEN. Its "
+          + "own words are \"By continuing, you agree that Turbify will create a profile, and for use "
+          + "of Business Mail service. You agree to Yahoo's Terms of Service and Privacy Policies\" — so "
+          + "pressing the button IS the act of accepting Yahoo's terms for this mailbox, and that is "
+          + "the owner's to give, never an automation's. Re-running this will not get past it.\n\n"
+          + "Finish it by hand, once per mailbox, in about four clicks: open "
+          + "https://mail.turbify.com/login, sign in as this mailbox with the password Phoenix holds "
+          + "for it, enter the company password twice on the \"Set up your mailbox password\" screen, "
+          + "and press \"Generate mailbox password\". Then take the app password inside the mailbox and "
+          + `connect it on the Mailbox Monitor page. The page it was on — ${await describePage(mailbox, secrets)}`,
         );
       }
       return "done";
