@@ -27,6 +27,14 @@
 //   node scripts/check-dependabot-alerts.mjs          # exit 1 on an open HIGH+ alert, or a blind zero
 //   node scripts/check-dependabot-alerts.mjs --json   # the whole reading
 //
+// 🔴 AND IT EXITS 1 ONLY FOR AN ALERT THE AUDIT CAN ACTUALLY REACH. `pnpm audit --prod` runs at the
+// repository root, so an alert in `development` scope, or in a manifest that audit never reads,
+// CANNOT turn `validate` red — those are printed with the reason and do not fail this check. Before
+// 2026-10-04 they were graded `WILL FAIL CI`: three of them were, with no patched version to bump
+// to, while the gate command itself exited 0 on "No known vulnerabilities found". The grading fails
+// CLOSED — only a positively-read reason downgrades an alert, so a wrong reading can only be noisy.
+// The decision and the fail-closed rule: `docs/security/open-dependency-alerts.md`.
+//
 // Also reported by `node scripts/repo-doctor.mjs` (which already pages a live API), so it turns up
 // without being remembered. EVERY branch below is `judgeAlerts()`, which is pure and pinned by
 // `tests/dependabot-alerts.test.ts` — this file only reads and prints, so there is no verdict here
