@@ -138,7 +138,8 @@ cost, the deploy path or the region.
 | `platform` — Platform — auth, security, cron, data access and shared UI | `src/lib/{auth,security,platform,cron-control,background-jobs,observability,error-monitor,share-links,share,http,imports,uploads,ai,validation,qr,operations,synthetic-journeys,admin,format,i18n,ui,utils}/**` and 8 more |
 | `database` — Database, migrations and Supabase | `supabase/**` and 2 more |
 | `engineering` — Engineering — CI, tests, scripts and deploys | `.github/**` and 7 more |
-| `sessions` — Sessions — git, worktrees, parallel work, this laptop and memory | `.claude/hooks/**` and 4 more |
+| `git-worktrees` — Git, worktrees and the shared primary checkout | `scripts/{new-session,sync-worktree-env,repo-doctor}*` and 1 more |
+| `sessions` — Sessions — the Claude Code harness, this laptop and the memory system | `.claude/hooks/**` and 4 more |
 <!-- module-memory:directory:end -->
 
 ### 2.3 Production and approval hooks
