@@ -160,6 +160,8 @@ const ROUTE_GATES: RouteGate[] = [
   // Refusing a validation the check never held — every PM customer, and the AM ones that matched
   // (2026-10-03). The same gate, the same decider, and the same reject underneath it.
   post("validation-reviews/refuse", "update"),
+  // Approving a place AFTER it was rejected (owner, 2026-10-03): the same gate and the same decider.
+  post("validation-reviews/restore", "update"),
   // The rep drops a customer met outside his list; the SFE Manager brings one back from the Archive.
   post("list/outside/drop", "create"),
   post("list/archive/bring-back", "approve"),
@@ -642,6 +644,10 @@ const LATER_MIGRATIONS = [
   // and phoenix_crm_add_place with their live bodies plus the hold, and touches no save_visit — so it
   // must stay after 20261003000753, the last entry that replaced validate_customer.
   "supabase/migrations/20261003130536_phoenix_crm_google_place_check.sql",
+  // Approving a place AFTER it was rejected (owner, 2026-10-03: "add the option to approve after
+  // reject"). ONE brand-new function and nothing else — no table, no column, and it replaces nothing,
+  // so it appends safely at the end and cannot disturb the replacement ordering above.
+  "supabase/migrations/20261003184147_phoenix_crm_restore_validation.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

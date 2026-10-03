@@ -20,6 +20,9 @@ const REFUSALS: Record<string, Refusal> = {
   location_in_review: { status: 409, message: "The system is still checking this customer's location. It confirms it automatically." },
   review_not_found: { status: 404, message: "This place is no longer waiting. Reload the page." },
   review_decided: { status: 409, message: "This place was already decided. Reload the page." },
+  // Approving after a rejection (owner, 2026-10-03: "add the option to approve after reject").
+  review_not_rejected: { status: 409, message: "This place was not rejected, so there is nothing to bring back. Reload the page." },
+  place_not_retired: { status: 409, message: "This place is not retired any more. Reload the page." },
   same_name: {
     status: 409,
     message: "A customer with this name is already on the list. If this is a different person, confirm it and save again.",
