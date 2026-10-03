@@ -440,10 +440,34 @@ export const MODULES = [
     keywords: ["ci", "github actions", "workflow run", "required check", "required checks", "railway", "deploy", "deployed", "test runner", "roll-up", "rollup"],
     tables: [],
   },
+  // ── `sessions` split in two on 2026-10-03, at 69% of the cap and growing fastest ──
+  //
+  // 135 notes in one file, and they are NOT one subject: half are git and worktree MECHANICS (what a
+  // squash merge leaves behind, which worktree a command is really in, how a branch or a husk
+  // misleads you), the other half are the HARNESS, the laptop and the memory system. The first half
+  // is what a session needs while running git; the second is what it needs while editing a hook,
+  // reading the index, or judging free RAM.
+  //
+  // 🔴 `sessions` KEEPS EVERY GLOB IT HAD, and `git-worktrees` adds its own — the same lopsided
+  // shape as the sales split. `scripts/new-session*`, `repo-doctor*` and `sync-worktree-env*` are in
+  // BOTH on purpose, and the risky keywords (worktree, branch, merge, primary checkout) are in both
+  // keyword lists, so git work loads the pair and nothing that used to arrive stops arriving. Only
+  // the reverse narrows: editing a hook or the memory tooling no longer drags in 70 git notes.
+  {
+    id: "git-worktrees",
+    title: "Git, worktrees and the shared primary checkout",
+    scope: "Git mechanics in this repo and the worktrees sessions run in: branches and what a squash merge leaves behind, merging and `gh pr merge`, pushes and refs, which checkout a command is really acting on, husks and retirement, and the ways a parallel session collides with yours. The harness, the laptop and the memory system are `sessions`.",
+    globs: [
+      "scripts/{new-session,sync-worktree-env,repo-doctor}*",
+      "docs/agents-worktree-and-machine-limits.md",
+    ],
+    keywords: ["worktree", "worktrees", "primary checkout", "squash merge", "squash-merged", "branch", "husk", "parallel session", "parallel sessions", "session lock", "git worktree", "rerere"],
+    tables: [],
+  },
   {
     id: "sessions",
-    title: "Sessions — git, worktrees, parallel work, this laptop and memory",
-    scope: "How sessions work on this repo: git and branches, worktrees and the primary checkout, parallel sessions and locks, Claude Code hooks and the app, the laptop's RAM and dev servers, browser checks, the memory index and module memory itself.",
+    title: "Sessions — the Claude Code harness, this laptop and the memory system",
+    scope: "The harness and the machine: Claude Code hooks and settings, permissions and the classifier, prompt suggestions, effort and models, compaction, subagents and MCP, the browser pane and dev-auth, the laptop's RAM and dev servers, shell and tooling traps, and the memory index and module memory itself. Git and worktree mechanics are `git-worktrees`.",
     globs: [
       ".claude/hooks/**",
       ".claude/settings.json",
