@@ -145,24 +145,36 @@ const NO_FIX_AT_THE_PLACE = "Your location was not captured. Allow location on y
 export const NO_FIX_FOR_A_VISIT = "Turn on location for Phoenix, then tap Log visit again.";
 
 /**
- * 🔴 THE WIDEST READING THE SERVER TAKES — 200 m to validate a place, 500 m for a visit (owner,
- * 2026-10-03: "accept up to max 500 m in visits and 200 m in validation").
+ * 🔴 THE WIDEST READING THE SERVER TAKES — 100 m to validate a place, 500 m for a visit (owner,
+ * 2026-10-03: "accept up to max 500 m in visits and 200 m in validation", then the same hour "inform
+ * the rep that validation must be accurate minimum accepted 100m accuracy").
  *
  * On Phoenix CRM's first real day a phone left on APPROXIMATE location validated four different Benha
  * hospitals at one identical point, every reading "within 2,000 m". A place is fixed for good, so each
  * later visit there would have read "0 m apart" — a blur compared with itself — and proved nothing.
  * The place gets the tighter line because it is the point every visit is measured against.
  *
- * A reading wider than its line is treated exactly as NO reading: refused in plain words about his own
- * phone — what to switch on — and nothing about any check (Golden Rule #1). An UNKNOWN accuracy is
- * still taken, as it always was. The weak-signal flag in Settings (`weak_gps_meters`) is separate and
- * unchanged: a visit between that line and this one saves, flagged for the manager.
+ * 🔴 VALIDATION IS STRICT: BOTH readings must be inside the place's line — the photo's own AND the
+ * Capture-location pin (owner, the same day: "the system should never accept a photo or location …
+ * in validation", "in validation the system can block inaccurate validation"). A sharp pin never
+ * rescues a rough photo, nor a sharp photo a rough pin.
+ *
+ * A reading wider than its line is treated exactly as NO reading, refused in plain words about his own
+ * phone — what to switch on. 🔴 THE PLACE'S LINE IS TOLD TO THE REP, BY THE OWNER'S WORD: the
+ * validation screen states it before he starts (`PLACE_PRECISION_NOTE`) and the refusal repeats it.
+ * That is a stated requirement of HIS OWN work, like "take a live photo" — it never shows his reading,
+ * and the visit's line is still never put into words (Golden Rule #1). An UNKNOWN accuracy is still
+ * taken, as it always was, and so is a photo whose shutter could not read a position at all. The
+ * weak-signal flag in Settings (`weak_gps_meters`) is separate and unchanged: a visit between that
+ * line and the visit's line saves, flagged for the manager.
  */
-export const PLACE_MAX_ACCURACY_METERS = 200;
+export const PLACE_MAX_ACCURACY_METERS = 100;
 export const VISIT_MAX_ACCURACY_METERS = 500;
 
-export const ROUGH_FIX_AT_THE_PLACE =
-  "Your phone gave only a rough location. Turn on precise location for Phoenix and press Capture location again at the clinic.";
+/** Shown on the validation screen before the photo — the rule, never his reading. */
+export const PLACE_PRECISION_NOTE = `Validation needs an accurate location, within ${PLACE_MAX_ACCURACY_METERS} m. Turn on precise location for Phoenix before you start, and take the photo and capture the location standing at the clinic.`;
+
+export const ROUGH_FIX_AT_THE_PLACE = `Validation needs an accurate location, within ${PLACE_MAX_ACCURACY_METERS} m, and your phone gave only a rough one. Turn on precise location for Phoenix, then take the photo and press Capture location again at the clinic.`;
 export const ROUGH_FIX_FOR_A_VISIT = "Your phone gave only a rough location. Turn on precise location for Phoenix, then tap Log visit again.";
 
 /** Whether a reading is inside a line. Unknown is inside: it is never refused, as before. */
@@ -232,21 +244,26 @@ export type PlaceDraft = CapturedFix & {
  * Both raw readings are stored beside it; this only chooses which one the address, brick, area and
  * region are resolved from, and which one every later visit is measured against.
  *
- * The photo still comes first — UNLESS its reading is wider than `PLACE_MAX_ACCURACY_METERS` and the
- * pin's is inside it (owner, 2026-10-03). Then the pin is the point, so a rep whose photo was taken on a
- * rough reading fixes it by pressing Capture location again, without a second photo. With both rough
- * this returns the photo, as before — `parsePlaceDraft` has refused that place before it gets here.
+ * Which reading is chosen never rescues a rough one: `parsePlaceDraft` has refused a place whose photo
+ * OR pin is wider than `PLACE_MAX_ACCURACY_METERS` before it gets here (owner, 2026-10-03).
  */
 export type PlacePoint = { lat: number; lon: number; accuracyMeters: number | null; source: "photo" | "pin" };
 
 export function placePoint(fix: CapturedFix): PlacePoint {
-  const pin: PlacePoint = { lat: fix.lat, lon: fix.lon, accuracyMeters: fix.accuracyMeters, source: "pin" };
-  if (fix.photoLat === null || fix.photoLon === null) return pin;
-  const photo: PlacePoint = { lat: fix.photoLat, lon: fix.photoLon, accuracyMeters: fix.photoAccuracyMeters, source: "photo" };
-  if (!withinAccuracy(photo.accuracyMeters, PLACE_MAX_ACCURACY_METERS) && withinAccuracy(pin.accuracyMeters, PLACE_MAX_ACCURACY_METERS)) {
-    return pin;
+  if (fix.photoLat !== null && fix.photoLon !== null) {
+    return { lat: fix.photoLat, lon: fix.photoLon, accuracyMeters: fix.photoAccuracyMeters, source: "photo" };
   }
-  return photo;
+  return { lat: fix.lat, lon: fix.lon, accuracyMeters: fix.accuracyMeters, source: "pin" };
+}
+
+/**
+ * Whether BOTH of a place's readings are inside its line — the pin, and the photo's own when the
+ * shutter read one. Either one rough refuses the validation (owner, 2026-10-03).
+ */
+export function placeReadingsPrecise(fix: CapturedFix): boolean {
+  if (!withinAccuracy(fix.accuracyMeters, PLACE_MAX_ACCURACY_METERS)) return false;
+  const photoRead = fix.photoLat !== null && fix.photoLon !== null;
+  return !photoRead || withinAccuracy(fix.photoAccuracyMeters, PLACE_MAX_ACCURACY_METERS);
 }
 
 export function parsePlaceDraft(raw: unknown): EntryRuleResult<PlaceDraft> {
@@ -255,10 +272,8 @@ export function parsePlaceDraft(raw: unknown): EntryRuleResult<PlaceDraft> {
   if (!photoPath) return { ok: false, error: "Take a live photo of the clinic sign or door." };
   const fix = parseCapturedFix(body);
   if (!fix.ok) return fix;
-  // A place is fixed for good: a rough reading is no reading (owner, 2026-10-03).
-  if (!withinAccuracy(placePoint(fix.value).accuracyMeters, PLACE_MAX_ACCURACY_METERS)) {
-    return { ok: false, error: ROUGH_FIX_AT_THE_PLACE };
-  }
+  // A place is fixed for good: a rough photo OR a rough pin is no reading (owner, 2026-10-03).
+  if (!placeReadingsPrecise(fix.value)) return { ok: false, error: ROUGH_FIX_AT_THE_PLACE };
   const timings = parseTimings(body.timings);
   if (!timings.ok) return { ok: false, error: timings.error };
   return {

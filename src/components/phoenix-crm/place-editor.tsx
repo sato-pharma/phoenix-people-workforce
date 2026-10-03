@@ -14,8 +14,8 @@ import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capt
 import { dayLabelWithYear } from "@/components/phoenix-crm/format";
 import { LivePhotoCapture, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { TimingsEditor, timingsToDrafts } from "@/components/phoenix-crm/timings-editor";
-import { CrmBlock, CrmField, crmInputClassName } from "@/components/phoenix-crm/ui";
-import { PLACE_TEXT_MAX } from "@/lib/phoenix-crm/entry-rules";
+import { CrmBlock, CrmField, CrmNote, crmInputClassName } from "@/components/phoenix-crm/ui";
+import { PLACE_PRECISION_NOTE, PLACE_TEXT_MAX } from "@/lib/phoenix-crm/entry-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
@@ -73,8 +73,8 @@ export function placeDraftProblem(draft: PlaceDraftState, options: { needsPhoto:
  * They travel under the names the server's `parseCapturedFix` reads (it stores them as
  * photoLat/photoLon/photoAccuracyMeters/photoCapturedAt) and again under those place names — the same
  * body the out-of-list entry sends — and the server fixes the place on the photo's reading, falling
- * back to the pin when the photo has none, or when only the pin is inside the 200 m line (`placePoint`,
- * 2026-10-03); with both wider it refuses the save. Each is sent as it was measured: neither is ever a
+ * back to the pin only when the photo has none. Either reading wider than the place's line refuses
+ * the save (2026-10-03, `placeReadingsPrecise`). Each is sent as it was measured: neither is ever a
  * copy of the other. With no pin, `lat`/`lon` go as null and the server refuses the save.
  */
 export function placePayload(photo: CapturedPhoto, draft: PlaceDraftState) {
@@ -204,6 +204,10 @@ export function PlaceEditor({
     <>
       {capture ? (
         <CrmBlock className="border-t border-slate-100" title={`${firstStep} · Signboard photo`}>
+          {/* The owner's rule, told before he starts (2026-10-03) — the rule only, never his reading. */}
+          <CrmNote className="mb-3" tone="info">
+            {PLACE_PRECISION_NOTE}
+          </CrmNote>
           {photoBlockedReason && !value.photo ? (
             <p className="text-sm font-semibold text-slate-500">{photoBlockedReason}</p>
           ) : (
