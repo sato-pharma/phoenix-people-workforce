@@ -230,6 +230,49 @@ tool names one and put it to the owner in the same turn; `--apply`'s own 25-minu
 wait, added the same day, already covers the risk of building over an unfinished member, so there is
 nothing left to wait for.
 
+### 🔴 The other end of that gap: a roll-up ships the sha it was BUILT from — measured 2026-10-02
+
+The section above is about a member merging before the roll-up. This is the mirror image: the member
+stays open, but **pushes a new commit**, and the roll-up merges the one it snapshotted.
+
+`--apply` is not careless about shas. Its build loop takes a last look at each member's head
+immediately before merging it into the branch and **skips** one that moved, precisely so the branch
+is only ever made of commits whose required checks and file sets were measured. What it cannot do is
+keep looking after the branch is pushed — and that is where the approval lives.
+
+**The arc, 2026-10-02 (UTC):**
+
+| | |
+| --- | --- |
+| 20:54:51 | `--apply` builds roll-up #5191 from #5188's head `4df18d572` |
+| 20:58:41 | #5188's own session pushes `f93c220e8` — *"my own fix made every click a no-op — pass functions, not strings"* |
+| 21:02:38 | and `d8226fbf1`, restoring four import blocks a regex edit had swallowed |
+| 21:12:41 | **#5191 merges, carrying `4df18d572`** — the commit its author had replaced 14 minutes earlier |
+| 21:1x | #5188 reads `DIRTY / CONFLICTING`: `main` now holds the squash of its own first commit |
+
+Two things made this worse than a stale merge. First, **what shipped was a fix that does nothing** —
+the carried commit passed its in-page function to `page.evaluate` as a *string*, which puppeteer
+evaluates as an expression, so the body never runs; it was wrapped in `.catch(() => {})`, so it
+failed silently. Second, **a conflicted PR gets no CI run at all**, so #5188 could not go green again
+on its own: the required checks sat on "Expected" and the branch had to be rebuilt by hand.
+
+`--settle` was the only thing that noticed, and only indirectly: it declined to call #5188 `carried`
+because its files genuinely differed from `main`. **That disagreement — the roll-up's body listing a
+member that `--settle` will not call carried — is the tell.**
+
+**The fix, live 2026-10-03.** The carried sha is now written into the body beside each member
+(`- #5188 — title (3 files) @ 4df18d572…`), which keeps it in the one place that cannot drift from
+the branch, and two readers compare it against the live head:
+
+- `node scripts/rollup-prs.mjs --verify-heads` — read-only, exit **3** when a member has moved.
+- `bash-guard.mjs` **C13**, second clause — refuses `gh pr merge` of a roll-up whose member has been
+  pushed since, because *a comment on a PR is not enforcement* applies here exactly as it did above.
+
+Both fail open: a body with no recorded sha (built before this shipped) and a head that could not be
+read are **UNKNOWN, never stale**, so neither can block a merge on the guard's own blind spot. A
+stale roll-up is **rebuilt, not merged** — `gh pr close <n>` then `--apply`, with its members still
+open and nothing lost. Pinned by `tests/rollup-member-guard.test.ts`.
+
 🔴 **And if the members land first, close the roll-up — never merge it.** It then replaces no merges,
 and its files are byte-identical on `main`, which is the `carried` verdict: merging is an empty
 squash paying a full `main` run to ship nothing. `--settle` is the right ending, and

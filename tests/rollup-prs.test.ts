@@ -806,9 +806,28 @@ export function runRollupPrsTests(): void {
 
     // Every real flag still parses, including the two that take a value — a refusal that also refused
     // `--wait 5` would be worse than the bug.
-    for (const argv of [["--wait", "5"], ["--no-wait"], ["--max-files", "3"]]) {
+    for (const argv of [["--wait", "5"], ["--no-wait"], ["--max-files", "3"], ["--verify-heads"]]) {
       const ok = runRollup([pr(1, ["docs/a.md"]), pr(2, ["src/b.ts"])], argv);
       assert.doesNotMatch(ok.out, /unknown argument/, `${argv.join(" ")} must still be accepted`);
+    }
+
+    // 🔴 A READ-ONLY FLAG COMBINED WITH A WRITE FLAG MUST BE REFUSED, NOT ORDERED. `--verify-heads`
+    // reports; `--settle` closes, `--apply` pushes and opens, `--close-superseded` closes bot PRs —
+    // and every one of those blocks runs BEFORE the verification would print, so the combination
+    // mutates GitHub during a run asked for as a look. Raised in review on #5201. The refusal has to
+    // happen at PARSE time: putting the verification block above `--settle` would still leave
+    // `--apply`'s push below it.
+    for (const writeFlag of ["--settle", "--apply", "--close-superseded"]) {
+      const clash = runRollup([pr(1, ["docs/a.md"]), pr(2, ["src/b.ts"])], ["--verify-heads", writeFlag]);
+      assert.notEqual(clash.code, 0, `--verify-heads ${writeFlag} must fail rather than run both`);
+      // 🔴 THE MESSAGE IS THE ASSERTION THAT DISCRIMINATES, NOT THE EXIT CODE. Measured by removing
+      // the guard: the run still exited non-zero (the fixture refusal inside the verification block
+      // does that too), so `notEqual(code, 0)` passed while the defect was fully present. Only this
+      // match fired. An exit-code-only test here would have been green on broken code.
+      assert.match(clash.out, /--verify-heads is READ-ONLY and cannot be combined with/);
+      assert.ok(clash.out.includes(writeFlag), `the refusal must name ${writeFlag} so the operator knows which half to drop`);
+      // The whole point: nothing may have been closed, pushed or opened on the way to that message.
+      assert.doesNotMatch(clash.out, /closed #/, "a refused combination must not have closed anything first");
     }
   }
 

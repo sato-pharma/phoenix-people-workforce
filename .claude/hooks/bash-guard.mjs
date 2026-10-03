@@ -23,7 +23,10 @@
 //       for a 23s job. Not installed = warn and ALLOW; the daily scan over main is the backstop.
 //       PHX_SECRETS_OK=1 stands it down for a finding you have read and judged a fixture.
 //   C13 a MERGE of a PR that is a MEMBER of an open roll-up — the one merge that destroys the
-//       roll-up built to replace it. AGENTS.md has said to check for an open `codex/rollup-*`
+//       roll-up built to replace it — and, on the roll-up ITSELF, a merge carrying a member that
+//       has been pushed since it was built, which would ship the superseded commit and strand
+//       that member in a conflict no CI run can clear.
+//       AGENTS.md has said to check for an open `codex/rollup-*`
 //       first since 2026-09-30 and the three-minute window has been lost at least four times
 //       anyway, because a comment on a PR is not enforcement. It reads the roll-up's own body,
 //       which is the only place members are recorded, so nothing extra has to be marked and
@@ -1132,7 +1135,7 @@ try {
         try {
           const ghJson = execFileSync(
             'gh',
-            ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,headRefName,body'],
+            ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,headRefName,headRefOid,body'],
             {
               cwd: input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd(),
               encoding: 'utf8',
@@ -1146,15 +1149,39 @@ try {
           // keeps the failure local to C13.
           const dupUrl = new URL('../../scripts/rollup-duplicate-guard.mjs', import.meta.url).href;
           const guardUrl = new URL('../../scripts/rollup-member-guard.mjs', import.meta.url).href;
-          const { isRollupBranch, rollupMembers } = await import(dupUrl);
-          const { rollupHolding, rollupMemberDenial, unreadableRollups } = await import(guardUrl);
+          const { isRollupBranch, rollupMemberHeads, rollupMembers } = await import(dupUrl);
+          const { rollupHolding, rollupMemberDenial, rollupStaleDenial, staleRollupMembers, unreadableRollups } =
+            await import(guardUrl);
 
-          const rollups = JSON.parse(String(ghJson))
+          const openPrs = JSON.parse(String(ghJson));
+          const rollups = openPrs
             .filter((p) => isRollupBranch(p.headRefName))
-            .map((p) => ({ number: p.number, headRefName: p.headRefName, members: rollupMembers(p.body) }));
+            .map((p) => ({ number: p.number, headRefName: p.headRefName, body: p.body, members: rollupMembers(p.body) }));
 
           const holding = rollupHolding({ merging: Number(prNumber), rollups });
           if (holding) deny(rollupMemberDenial({ merging: prNumber, rollup: holding }));
+
+          // 🔴 MERGING THE ROLL-UP ITSELF IS CORRECT — UNLESS IT NOW CARRIES A COMMIT ITS AUTHOR HAS
+          // REPLACED. `--apply` re-reads every member's head right before merging it into the branch
+          // and skips one that moved, then stops looking; the owner's approval arrives minutes later.
+          // On 2026-10-02 that gap was eighteen minutes: #5191 was built from #5188's `4df18d572`,
+          // its session pushed the real fix four minutes later, and the roll-up shipped the broken
+          // commit — leaving #5188 CONFLICTING against the squash of its own first commit, which
+          // earns NO CI run at all. The carried sha now travels in the body, so this is a comparison
+          // rather than a guess, against the same snapshot the member list came from.
+          //
+          // FAILS OPEN like the rest of C13: a member missing from the open list (merged, closed, or
+          // past the 50-PR limit) and a body with no recorded sha both read UNKNOWN and allow.
+          const target = rollups.find((r) => Number(r.number) === Number(prNumber));
+          if (target) {
+            const recorded = rollupMemberHeads(target.body);
+            if (recorded.length > 0) {
+              const heads = new Map(openPrs.map((p) => [Number(p.number), p.headRefOid ?? null]));
+              const live = recorded.map((m) => ({ number: m.number, headRefOid: heads.get(Number(m.number)) ?? null }));
+              const { moved } = staleRollupMembers({ recorded, live });
+              if (moved.length > 0) deny(rollupStaleDenial({ rollup: target, moved }));
+            }
+          }
 
           for (const r of unreadableRollups(rollups)) {
             process.stderr.write(

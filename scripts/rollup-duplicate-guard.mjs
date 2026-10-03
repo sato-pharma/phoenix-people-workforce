@@ -70,6 +70,36 @@ export function rollupMembers(body) {
 }
 
 /**
+ * The head commit each member was CARRIED AT, as the roll-up's body records it.
+ *
+ * 🔴 THE BUILD'S OWN SHA CHECK CANNOT SEE PAST THE BUILD, AND THE MERGE IS MINUTES LATER. `--apply`
+ * re-reads every member's head immediately before merging it into the branch and SKIPS one that
+ * moved — but once the branch is pushed it stops looking, and the roll-up then sits waiting for the
+ * owner's approval. Measured 2026-10-02: #5191 was built at 20:54:51Z from #5188's head
+ * `4df18d572`, #5188's own session pushed `f93c220e8` at 20:58:41Z — *"my own fix made every click
+ * a no-op"* — and the roll-up merged at 21:12:41Z carrying the commit its author had already
+ * superseded. Eighteen minutes, and the member was left CONFLICTING against the squash of its own
+ * first commit, which earns it no CI run at all.
+ *
+ * So the carried sha is written into the body, beside the member it belongs to, and
+ * {@link staleRollupMembers} compares it against the live head before the merge. The body is the
+ * right home for the same reason it holds the member list: it is written by `--apply` and by
+ * nothing else, so it cannot drift out of step with the branch the way a label or a registry file
+ * could.
+ *
+ * @returns `[{ number, sha }]`, `sha` being `null` for a member line that records none — a roll-up
+ *          built before this was written. That is UNKNOWN, never stale: treating it as moved would
+ *          block every roll-up already open when this shipped.
+ */
+export function rollupMemberHeads(body) {
+  if (typeof body !== 'string' || body.length === 0) return [];
+  return [...body.matchAll(/^[-*] #(\d+) —(.*)$/gm)].map((m) => {
+    const sha = /\s@ ([0-9a-f]{40})\s*$/.exec(m[2]);
+    return { number: Number(m[1]), sha: sha ? sha[1] : null };
+  });
+}
+
+/**
  * The open roll-up that already carries some of `wanted`, or `null` when none does.
  *
  * @param wanted   PR numbers this build is about to roll up.

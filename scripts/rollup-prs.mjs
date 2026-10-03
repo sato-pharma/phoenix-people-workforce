@@ -47,6 +47,8 @@
 //   node scripts/rollup-prs.mjs --apply --wait 40    # how long to wait for the members' required checks
 //                                                    # (minutes; default PHX_ROLLUP_WAIT_MINUTES, else 25)
 //   node scripts/rollup-prs.mjs --apply --no-wait     # do not wait: build only from members already green
+//   node scripts/rollup-prs.mjs --verify-heads        # read-only: has an open roll-up's member been pushed
+//                                                     # since it was carried? exit 3 when one has
 'use strict';
 
 import { execFileSync } from 'node:child_process';
@@ -56,7 +58,8 @@ import { dirname, join } from 'node:path';
 
 import { readProtectionContexts } from './required-check-names.mjs';
 import { rollupBranchName } from './rollup-branch-name.mjs';
-import { isRollupBranch, overlappingRollup, rollupMembers } from './rollup-duplicate-guard.mjs';
+import { isRollupBranch, overlappingRollup, rollupMemberHeads, rollupMembers } from './rollup-duplicate-guard.mjs';
+import { staleRollupMembers } from './rollup-member-guard.mjs';
 import { rollupBuildVerdict, MIN_MEMBERS } from './rollup-build-verdict.mjs';
 import { pathDeltaLanded, registryAddedLinesLanded, SHARED_REGISTRY_PATH } from './rollup-carried.mjs';
 import { membersReadyToBuild, requiredCheckState, requiredGateUsable, waitForRequiredChecks } from './rollup-check-state.mjs';
@@ -115,6 +118,7 @@ const args = process.argv.slice(2);
  */
 const KNOWN_FLAGS = new Set([
   '--json', '--apply', '--close-superseded', '--settle', '--max-files', '--wait', '--no-wait',
+  '--verify-heads',
 ]);
 {
   const unknown = args.filter((a, i) => {
@@ -134,6 +138,26 @@ const asJson = args.includes('--json');
 const apply = args.includes('--apply');
 const closeSuperseded = args.includes('--close-superseded');
 const settle = args.includes('--settle');
+const verifyHeads = args.includes('--verify-heads');
+
+// 🔴 `--verify-heads` PROMISES READ-ONLY, AND BLOCK ORDER CANNOT KEEP THAT PROMISE. Its block sits
+// after `--settle`'s, so `--verify-heads --settle` would close every carried PR and only THEN report
+// — a mutation performed by the very run you asked to look without touching anything. Raised in
+// review on #5201 before it could bite.
+//
+// Refused at PARSE time, which is the only place no side effect can precede it. Moving the
+// verification block above `--settle` would not be enough: `--apply` pushes a branch and opens a PR
+// further down, and `--close-superseded` closes bot PRs, so each would still mutate after a
+// "read-only" run had been asked for. A combination whose meaning is contradictory is refused
+// rather than silently ordered, for the same reason an unknown flag is.
+if (verifyHeads && (settle || apply || closeSuperseded)) {
+  const offenders = [settle && '--settle', apply && '--apply', closeSuperseded && '--close-superseded'].filter(Boolean);
+  console.error(`[rollup] --verify-heads is READ-ONLY and cannot be combined with ${offenders.join(', ')}.`);
+  console.error('[rollup] Those flags close, push or open things, and they run BEFORE the verification would '
+    + 'report — so the combination mutates GitHub during a run asked for as a look. Run --verify-heads on '
+    + 'its own, read the answer, then re-run with the write flag.');
+  process.exit(2);
+}
 const maxFilesArg = (() => {
   const i = args.indexOf('--max-files');
   return i >= 0 ? Number(args[i + 1]) : NaN;
@@ -623,6 +647,75 @@ if (settle) {
     + `--settle to close ${carriedPrs.map((p) => `#${p.number}`).join(', ')}.`);
 }
 
+// ------------------------------------- --verify-heads: is a carried commit already superseded?
+//
+// 🔴 `--apply` RE-READS EVERY MEMBER'S HEAD AND THEN STOPS LOOKING, AND THE APPROVAL ARRIVES
+// MINUTES LATER. The build loop below takes a last look at each sha and SKIPS a member that moved,
+// so the branch is always made of commits whose checks and file sets were measured. Nothing looks
+// again after the push — and that gap is where #5191 went wrong on 2026-10-02: built 20:54:51Z from
+// #5188's head `4df18d572`, its author pushed the real fix at 20:58:41Z, merged 21:12:41Z carrying
+// the commit already superseded. The member was then left CONFLICTING against the squash of its own
+// first commit, which earns NO CI run at all, so it could not recover without a hand-built merge.
+//
+// This is the read that closes it, and `bash-guard` clause C13 runs the same comparison before any
+// roll-up is merged. Read-only: it closes nothing, builds nothing and merges nothing — and it does
+// not name the merge command either, because `tests/rollup-prs.test.ts` refuses that literal
+// anywhere in this file, comments included, so the one word the owner gives cannot migrate in here.
+if (verifyHeads) {
+  if (fixturePath) {
+    console.error('[rollup] --verify-heads is refused with PHX_ROLLUP_FIXTURE: it compares a snapshot\'s '
+      + 'bodies against LIVE heads, so every answer would be about two different repositories.');
+    process.exit(1);
+  }
+  const rollups = open.filter((pr) => isRollupBranch(pr.headRefName));
+  if (rollups.length === 0) {
+    console.log('[rollup] --verify-heads: no open roll-up to check.');
+    process.exit(0);
+  }
+  let anyMoved = false;
+  for (const pr of rollups) {
+    const raw = gh(['pr', 'view', String(pr.number), '--repo', REPO, '--json', 'body'], { allowFail: true });
+    let body = null;
+    if (raw) {
+      try { body = JSON.parse(raw).body ?? ''; } catch { body = null; }
+    }
+    if (body === null) {
+      console.log(`[rollup] #${pr.number} (${pr.headRefName}): body unreadable — UNKNOWN, check it by hand.`);
+      continue;
+    }
+    const recorded = rollupMemberHeads(body);
+    if (recorded.length === 0) {
+      console.log(`[rollup] #${pr.number} (${pr.headRefName}): lists no members this can parse — UNKNOWN.`);
+      continue;
+    }
+    const live = recorded.map((m) => {
+      const row = gh(['pr', 'view', String(m.number), '--repo', REPO, '--json', 'number,headRefOid'], { allowFail: true });
+      if (!row) return { number: m.number, headRefOid: null };
+      try { return { number: m.number, headRefOid: JSON.parse(row).headRefOid ?? null }; } catch { return { number: m.number, headRefOid: null }; }
+    });
+    const { moved, unrecorded, unread } = staleRollupMembers({ recorded, live });
+    if (moved.length === 0) {
+      console.log(`[rollup] #${pr.number}: ${recorded.length - unrecorded.length - unread.length} member head(s) `
+        + 'unchanged since it was built — merging it ships what was measured.');
+    } else {
+      anyMoved = true;
+      console.log(`[rollup] #${pr.number} IS STALE — ${moved.length} member(s) moved since it was built:`);
+      for (const m of moved) {
+        console.log(`             #${m.number}: carried ${m.carried.slice(0, 9)}, now ${m.now.slice(0, 9)} `
+          + '— merging would ship the SUPERSEDED commit and leave that PR conflicting');
+      }
+      console.log(`[rollup] Rebuild rather than merge: gh pr close ${pr.number} && node scripts/rollup-prs.mjs --apply`);
+    }
+    for (const n of unrecorded) {
+      console.log(`[rollup] #${pr.number}: member #${n} records no carried sha (built before this shipped) — UNKNOWN, not stale.`);
+    }
+    for (const n of unread) {
+      console.log(`[rollup] #${pr.number}: member #${n} could not be read — UNKNOWN, not stale.`);
+    }
+  }
+  process.exit(anyMoved ? 3 : 0);
+}
+
 if (!apply || group.length < 2) process.exit(0);
 
 // 🔴 A GATE THAT NAMES NOTHING CANNOT CLEAR ANYTHING, so the run stops here rather than discovering it
@@ -918,7 +1011,10 @@ const body = [
   '',
   'Each is carried by merging its own head commit, so authorship and history are preserved:',
   '',
-  ...carried.map((p) => `- #${p.number} — ${p.title} (${p.changedFiles} files)`),
+  // The carried SHA is part of the record, not decoration: `--verify-heads` and `bash-guard`'s C13
+  // compare it against the live head before the merge, which is the only thing standing between an
+  // approval minutes old and a commit its author has since replaced (#5191/#5188, 2026-10-02).
+  ...carried.map((p) => `- #${p.number} — ${p.title} (${p.changedFiles} files) @ ${p.headRefOid}`),
   '',
   'Their file sets are disjoint, which is the condition this was built on — two PRs touching one file '
     + 'can merge cleanly and still be wrong together, `tests/run-tests.ts` being the standing example.',
