@@ -27,6 +27,8 @@
  * robot is mid-way through reading, and rotate a credential the monitor had just proved.
  */
 
+import { turbifyPasswordRefusal } from "@/lib/turbify/password-policy";
+
 import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
 
 /** The mailbox this flow may act on, and the only one. Stated once, from the invite recipient. */
@@ -38,6 +40,7 @@ export const INVITE_INBOX_LABEL = "Invite inbox — new hire mailbox robot" as c
 export type InviteInboxRefusal =
   | "not_the_invite_inbox"
   | "no_company_password"
+  | "company_password_rejected_by_turbify"
   | "no_invite_inbox_configured";
 
 export type InviteInboxVerdict =
@@ -86,6 +89,16 @@ export function evaluateInviteInboxAdoption(
         + "mailbox unreachable.",
       refusal: "no_company_password",
     };
+  }
+
+  // 🔴 A PASSWORD TURBIFY WILL REJECT IS THE SAME FAILURE AS A MISSING ONE, so it is caught in the
+  // same place — BEFORE the reset. Turbify requires 8–20 characters with an uppercase, a lowercase,
+  // a number, a special character and NO REPEATED CHARACTERS (their own help, SLN29262). Set a
+  // password their form refuses and the mailbox is left reachable only through a one-time password
+  // nothing captured. Only the broken RULES are named; the value is still never read out here.
+  const policyRefusal = turbifyPasswordRefusal(companyPassword);
+  if (policyRefusal !== null) {
+    return { allowed: false, detail: policyRefusal, refusal: "company_password_rejected_by_turbify" };
   }
 
   return { address: configured, allowed: true };

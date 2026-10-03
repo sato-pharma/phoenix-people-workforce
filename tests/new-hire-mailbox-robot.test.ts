@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 import {
+  ACCOUNT_INFO_URL,
   CHANGE_PASSWORD_WORDINGS,
   describePage,
   describeShape,
@@ -47,6 +48,8 @@ import {
   isPresent,
   matchesLocator,
   dialogNamesAddress,
+  pickAppPassword,
+  pickOneTimePassword,
   readExistenceFromRows,
   readMailboxRowCells,
   readRowStatus,
@@ -350,12 +353,32 @@ async function runPageDescriptionCases(): Promise<void> {
 
   const shape = {
     buttons: ["Generate mailbox password", "Cancel"],
+    errors: [],
     headings: ["Set up your mailbox password"],
     inputs: ["password:password", "password:confirmPassword", "checkbox:-", "hidden:email (hidden)"],
     title: "Bizmail Login",
     url: "https://mail.turbify.com/login",
   };
   const described = describeShape(shape, [secret]);
+  assert.equal(
+    described.includes("the page says"), false,
+    "with no error on the page the description must not invent an empty one",
+  );
+
+  // 🔴 THE PAGE'S OWN WORDS ARE THE ONLY AUTHORITY ON THE RULE TURBIFY DID NOT PUBLISH CLEARLY.
+  // Their help requires "no repeated characters" without saying whether that means consecutively or
+  // anywhere, so the robot refuses to rule on it and reports what the FORM said instead.
+  const rejected = describeShape(
+    { ...shape, errors: ["Password must not contain repeated characters."] },
+    [secret],
+  );
+  assert.match(rejected, /the page says \[Password must not contain repeated characters\.\]/);
+
+  // And an error that happens to quote the credential is still redacted.
+  assert.ok(
+    !describeShape({ ...shape, errors: [`The password ${secret} was rejected`] }, [secret]).includes(secret),
+    "the page's error text goes through the redactor like everything else",
+  );
   for (const fragment of [
     "https://mail.turbify.com/login",
     'title "Bizmail Login"',
@@ -549,10 +572,194 @@ function runRowReaderCases(): void {
   ], "one row per address cell, with its status, and rows carrying no address dropped");
 }
 
+/**
+ * The credential reads — the thing that actually stopped the owner's adoption, five clicks running.
+ *
+ * 🔴 THE DEFECT IN ONE LINE: both reads scored candidates BY LENGTH, and the dialog is REQUIRED to
+ * name the mailbox, so `hr.mailbox@satopharma.com` (25 characters) beat a ~10-character credential
+ * every time. The robot typed the ADDRESS into the password box, Turbify refused it, and the failure
+ * surfaced three steps later as "the expected page never appeared" — a message about the wrong thing
+ * entirely. These are pure functions so the rule is settled here instead of one of his clicks at a
+ * time.
+ */
+function runCredentialReadCases(): void {
+  const address = "hr.mailbox@satopharma.com";
+  const secret = "Xk9mPq2wTz";
+
+  // 🔴 THE PREMISE OF THE BUG, asserted so it cannot quietly stop being true.
+  assert.ok(
+    address.length > secret.length,
+    "the premise: the mailbox address outscores the real credential on length",
+  );
+
+  // The dialog as `innerText` renders it — label, the account it must name, then the credential.
+  const dialog = [
+    "One-time password", "Email account:", address, "One-time password:", secret,
+    "Send invite", "Print", "Close modal",
+  ].join("\n");
+
+  const read = pickOneTimePassword(dialog, address);
+  assert.ok("password" in read, "the measured dialog shape must yield a password");
+  assert.equal("password" in read ? read.password : "", secret);
+
+  // The same dialog printed on one line, which is the other rendering seen for this console.
+  const inline = pickOneTimePassword(
+    ["One-time password", `Email account: ${address}`, `One-time password: ${secret}`].join("\n"),
+    address,
+  );
+  assert.equal("password" in inline ? inline.password : "", secret, "the value after the last colon counts");
+
+  // 🔴 THE HEADLINE ASSERTION. Reading the whole BODY put the account list behind the modal into
+  // play — a column of addresses, several LONGER than the one being reset. None may ever win.
+  const withList = pickOneTimePassword(
+    [dialog, "asmaa.zaghloul@satopharma.com", "ahmed.mohamed@satopharma.com", "merna.magdy@satopharma.com"].join("\n"),
+    address,
+  );
+  assert.ok("password" in withList, "the account list behind the modal must not defeat the read");
+  assert.equal("password" in withList ? withList.password : "", secret);
+
+  // Nothing holding an @ can ever be returned, whatever else is on the page.
+  for (const text of [dialog, `${dialog}\nsomebody.else@satopharma.com`]) {
+    const any = pickOneTimePassword(text, address);
+    assert.ok(
+      !("password" in any) || !any.password.includes("@"),
+      "a credential read must never return anything holding @ — that is an address, not a password",
+    );
+  }
+
+  // Nothing but the address and the furniture → refuse, and say so in those terms.
+  const empty = pickOneTimePassword(
+    ["One-time password", "Email account:", address, "Send invite", "Print"].join("\n"),
+    address,
+  );
+  assert.ok("refusal" in empty, "a dialog holding only the address and its labels must refuse");
+  assert.match("refusal" in empty ? empty.refusal : "", /mailbox address/);
+
+  // Two equally plausible values → refuse rather than guess, and never print either one.
+  const twoWays = pickOneTimePassword(
+    ["One-time password", "Email account:", address, secret, "Ab3cDe4fGh"].join("\n"),
+    address,
+  );
+  assert.ok("refusal" in twoWays, "two plausible credentials must refuse, not pick one");
+  const refusal = "refusal" in twoWays ? twoWays.refusal : "";
+  assert.match(refusal, /lengths 10, 10/, "the refusal reports how long they were");
+  assert.ok(!refusal.includes(secret), "a refusal must never quote a credential");
+  assert.ok(!refusal.includes("Ab3cDe4fGh"), "a refusal must never quote a credential");
+
+  // ── the app password, where the SAME defect sat and would have failed next ──────────────────────
+  // 🔴 An app password on this platform is commonly 16 PLAIN LOWERCASE letters, so the shape test
+  // that protects the dialog read would reject every real one. The two reads are genuinely
+  // different, and this pair proves it rather than asserting it.
+  const appText = ["Your app password", address, "abcdqrstwxyzmnop"].join("\n");
+  const app = pickAppPassword(appText, address);
+  assert.ok("password" in app, "an all-lowercase app password must be readable");
+  assert.equal("password" in app ? app.password : "", "abcdqrstwxyzmnop");
+  assert.ok(
+    "refusal" in pickOneTimePassword(appText, address),
+    "the one-time read must NOT accept the all-lowercase shape — the two reads differ on purpose",
+  );
+
+  // The address is longer than the app password too, and still must never be returned.
+  assert.ok(address.length > "abcdqrstwxyzmnop".length);
+  const appWithLonger = pickAppPassword(
+    ["Account info", address, "App Passwords", "Generate", "abcdqrstwxyzmnop", "Done"].join("\n"),
+    address,
+  );
+  assert.equal(
+    "password" in appWithLonger ? appWithLonger.password : "",
+    "abcdqrstwxyzmnop",
+    "the app-password page prints the address — it must lose",
+  );
+
+  // 🔴 TURBIFY'S DIALOG CARRIES THE LOGIN URL, which their own help states outright: the dialog shows
+  // "the user's email address, the one-time password, and the login URL" (SLN29262). A URL passes
+  // every other test here — no spaces, no @, the right length — and the colon split yields a SECOND
+  // candidate from it. It beat the password only by luck, because the password carries a digit.
+  const withUrl = pickOneTimePassword(
+    [
+      "One-time password", "Email account:", address,
+      "Login URL:", "https://mail.turbify.com",
+      "One-time password:", secret,
+    ].join("\n"),
+    address,
+  );
+  assert.ok("password" in withUrl, "the login URL in the dialog must not defeat the read");
+  assert.equal("password" in withUrl ? withUrl.password : "", secret);
+
+  // A bare domain, with no scheme to recognise it by, is excluded on its suffix.
+  const bareDomain = pickOneTimePassword(
+    ["One-time password", "Email account:", address, "mail.turbify.com", secret].join("\n"),
+    address,
+  );
+  assert.equal("password" in bareDomain ? bareDomain.password : "", secret);
+
+  // 🔴 AND A URL WITH A PATH, which is the shape the login URL actually takes. This is the case the
+  // domain-suffix rule does NOT cover — `https://mail.turbify.com/login` ends in `/login`, so only
+  // the scheme test excludes it. Without this case the two guards look interchangeable and removing
+  // the scheme one breaks nothing visible.
+  // 🔴 AND THE CREDENTIAL HERE CARRIES NO DIGIT ON PURPOSE. With a digit, the letters-and-digits
+  // preference picks the password over a URL by luck even with the scheme rule deleted — which is
+  // precisely the accident this fix replaces, and a case that cannot fail is not a pin. With no
+  // digit the preference cannot separate them, so the scheme exclusion is the only thing working.
+  const noDigit = "XkMpQwTz";
+  for (const url of ["https://mail.turbify.com/login", "http://mail.turbify.com/login?.done=x"]) {
+    const withPath = pickOneTimePassword(
+      ["One-time password", "Email account:", address, "Login URL:", url, noDigit].join("\n"),
+      address,
+    );
+    assert.ok("password" in withPath, `a login URL (${url}) must not be read as the credential`);
+    assert.equal("password" in withPath ? withPath.password : "", noDigit);
+  }
+
+  // ── and the driver must actually use them ──────────────────────────────────────────────────────
+  const driver = readFileSync(
+    new URL("src/lib/new-hire-mailbox/robot/turbify-joiner.ts", new URL("../", import.meta.url)),
+    "utf8",
+  );
+
+  // 🔴 TURBIFY'S DOCUMENTED APP-PASSWORD PATH (SLN29264), which replaced three guesses.
+  assert.equal(
+    ACCOUNT_INFO_URL, "https://mail.turbify.com/accountinfo",
+    "the account pages are reached by the URL Turbify publishes, not by hovering a profile menu",
+  );
+  assert.ok(
+    driver.includes("ACCOUNT_INFO_URL"),
+    "the app-password step must navigate to the documented deep link — the profile menu needs a HOVER, "
+    + "which clickOneOf cannot do",
+  );
+  assert.ok(
+    driver.includes("selectAppForPassword(mailbox, APP_PASSWORD_PAGE.passwordName)"),
+    "Turbify requires an app chosen from a dropdown BEFORE Generate — pressing Generate with nothing "
+    + "selected is how this step would have failed even with the right wordings",
+  );
+  assert.ok(
+    driver.includes("errors:"),
+    "a refusal must carry the page's own error text — it is the only authority on the rule Turbify "
+    + "did not publish unambiguously",
+  );
+  assert.ok(
+    !driver.includes("b.length - a.length"),
+    "the length-scored credential read must not come back — it returned the mailbox address",
+  );
+  assert.ok(
+    driver.includes("pickOneTimePassword(revealed, address)"),
+    "the dialog read must go through pickOneTimePassword",
+  );
+  assert.ok(
+    driver.includes("pickAppPassword(shown, address)"),
+    "the app-password read must go through pickAppPassword",
+  );
+  assert.ok(
+    driver.includes(".modal-container"),
+    "the revealed credential is read from the dialog, not from the whole page",
+  );
+}
+
 export async function runNewHireMailboxRobotTests(): Promise<void> {
   runExistenceReadingCases();
   runExistenceWiringCases();
   runMailboxLoginCases();
+  runCredentialReadCases();
   await runPageDescriptionCases();
   // ── the happy path, so every refusal below is attributable to the one thing it changed ───────
   const ok = verdict();
@@ -648,17 +855,21 @@ export async function runNewHireMailboxRobotTests(): Promise<void> {
   assert.deepEqual([...ONE_TIME_PASSWORD_DIALOG.neverPress], ["Send invite", "Print"]);
   // The app password keeps the name offboarding later looks for.
   assert.equal(APP_PASSWORD_PAGE.passwordName, "Phoenix email");
-  // 🔴 "Manage your account" IS NOT TURBIFY'S WORDING — its documented path starts at "Account info",
-  // corroborated by two independent write-ups of Business Mail (2026-10-03). The first step would
-  // have missed while the second was already right, which fails with a message about the wrong
-  // thing. The driver presses the LISTS, documented wording first, and each still fails closed.
-  assert.equal(APP_PASSWORD_PAGE.manageAccount.value, "Account info");
-  assert.equal(APP_PASSWORD_WORDINGS.accountInfo[0], "Account info");
+  // 🔴 "Manage your account" IS TURBIFY'S WORDING AFTER ALL, and this pin had it backwards for part
+  // of 2026-10-03. Their own article SLN29264 gives the path as profile icon → "Manage your account"
+  // → "Manage App Passwords" → a dropdown → "Generate"; "Account info" is the MOBILE DEEP-LINK path
+  // (`/accountinfo`), not a link's text. The earlier correction trusted two third-party write-ups
+  // that were both describing that URL, and demoted the right answer on the strength of it.
+  assert.equal(APP_PASSWORD_PAGE.manageAccount.value, "Manage your account");
+  assert.equal(APP_PASSWORD_WORDINGS.accountInfo[0], "Manage your account");
   assert.equal(APP_PASSWORD_WORDINGS.appPasswords[0], "Manage App Passwords");
   assert.ok(
-    (APP_PASSWORD_WORDINGS.accountInfo as readonly string[]).includes("Manage your account"),
-    "the old guess stays behind the documented wording rather than being deleted",
+    (APP_PASSWORD_WORDINGS.accountInfo as readonly string[]).includes("Account info"),
+    "the deep-link wording stays behind it rather than being deleted — a page may well show both",
   );
+  // 🔴 AND THE DROPDOWN TURBIFY REQUIRES BEFORE GENERATE. Phoenix is never in their app list, so the
+  // answer is always "Other" plus a name.
+  assert.equal(APP_PASSWORD_WORDINGS.otherApp[0], "Other");
   for (const [step, wordings] of Object.entries(APP_PASSWORD_WORDINGS)) {
     assert.ok(wordings.length > 1, `${step} must offer more than one candidate, since none is measured`);
     for (const wording of wordings) {

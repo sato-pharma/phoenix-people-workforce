@@ -632,3 +632,194 @@ loop restored to searching from 0 the suite is killed by its timeout.
 **That is the third second-copy in a single day** — the dialog tokenisation, the missing viewport,
 and this loop. The rule it earns: in this module, when you fix something, grep for the pattern before
 you commit. The other copy is always on the path nobody has run.
+
+## The fifth click, and the thing that was wrong the whole time
+
+The fifth adoption click was the first to come back with a page reading instead of a bare refusal,
+and the reading settled it in one line:
+
+```
+Signed in as hr.mailbox@satopharma.com but the expected page never appeared.
+The page it was on — url [redacted]; title "Bizmail Login";
+headings [World-class Web hosting, built for speed. | Business Mail Login];
+inputs [text:email, password:password, checkbox:-];
+buttons [Get Started for $0.99/mo | Hide password | Keep me logged in.
+         | Login to Business Mail | Cookie Settings | Accept All]
+```
+
+Still on the login form, with both fields present and visible. So the proof was honest, the submit
+had been pressed, and **the credential itself was being refused.** Not the URL, not the click, not
+the proof — all three of those fixes were real, and none of them was the thing stopping the run.
+
+### The one-time password read returned the mailbox address
+
+`readOneTimePassword` revealed the password and then took its value from the page like this:
+
+```js
+const text = document.body ? document.body.innerText : "";
+const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+const candidates = lines.filter((l) => l.length >= 8 && l.length <= 64 && !/\s/.test(l) && /[^a-z]/.test(l));
+candidates.sort((a, b) => b.length - a.length);
+return candidates[0] || "";
+```
+
+Two faults, compounding:
+
+| | What it did | Why it is fatal here |
+| --- | --- | --- |
+| scored by **length** | `candidates.sort((a, b) => b.length - a.length)` | `hr.mailbox@satopharma.com` is **25** characters; the generated password is about **10**. The address wins, always. |
+| read **`document.body`** | not the `.modal-container` it already knew about | the account list behind the modal supplies a whole column of addresses, several of them longer still |
+
+And the address is not incidental to the dialog — it is **mandatory**. `dialogNamesAddress` refuses a
+dialog that does not name the mailbox, precisely so a reset cannot be read off somebody else's row.
+The identity guard that makes the dialog safe is what guarantees the length heuristic picks the
+wrong thing.
+
+So the robot typed `hr.mailbox@satopharma.com` into the password box, Turbify refused it, and the
+step reported *"the expected page never appeared"* — **a complaint about a page that was telling the
+truth.** That is why three correct fixes in a row changed nothing: every one of them was downstream
+of a credential that was never going to work.
+
+**Proved, not inferred.** Restoring the length sort and the body read makes the new test fail with
+the actual old return value:
+
+```
+AssertionError [ERR_ASSERTION]
++ 'hr.mailbox@satopharma.com'
+- 'Xk9mPq2wTz'
+```
+
+### The same read sat in `generateAppPassword`, and would have failed next
+
+Grepping `b.length - a.length` after the first fix found the second copy immediately — the step this
+doc had been describing as "uncalibrated, and the first click that reaches it settles it". It took
+the longest space-free line of 12 characters or more, **on a page signed in as the mailbox**, so the
+address (25) beats an app password (about 16). It would have reported "no app password could be read",
+or stored the address as Phoenix's stored credential.
+
+🔴 **An app password must NOT inherit the dialog read's shape test.** Turbify's are commonly 16 plain
+lowercase letters, and `/[^a-z]/.test(value)` — which correctly rejects lowercase prose in the
+dialog — rejects every real app password. The two reads differ on purpose, and a paired test asserts
+each one refuses what the other accepts, so neither can be "simplified" into the other.
+
+### What replaced both
+
+`pickOneTimePassword` and `pickAppPassword` in `src/lib/turbify/resolve.ts`, sharing one rule:
+
+- **length is not a signal at all** — it is a filter (8 or 12 minimum, 64 maximum) and nothing more
+- **the address cannot be returned by construction** — nothing containing `@`, and nothing equal to
+  the address, its local part or its domain, survives
+- the dialog's and the page's own labels are excluded by name
+- the value after the last colon is considered as well as the whole line, because the console prints
+  `One-time password: Xk9mPq2w` on one line in some renderings and two in others
+- **two plausible candidates REFUSE**, reporting how many and how long they were and never what they
+  said, because the only thing worse than stopping is returning a credential that is an address
+
+They are **pure functions**, which is the point: the whole rule is pinned in the unit suite, so it is
+settled once here instead of one of the owner's clicks at a time. Both breaks were watched firing.
+
+### The lesson that outranks the fix
+
+Four clicks bought four guesses because a refusal carried no measurement. The fifth carried one and
+answered immediately. **A robot step that can fail must report the page it failed on** — and when
+three fixes in a row fail to change an outcome, the fault is upstream of all three, not a fourth
+variant of the same one.
+
+## Reading Turbify's own help, which no amount of clicking would have produced
+
+After the fifth click the owner's instruction was to go into Chrome and finish it. His Chrome had no
+live Turbify admin session, and typing the admin password is not something a session does — so the
+console could not be read. What *could* be read, with no credential at all, was **Turbify's own
+documentation**, and two articles produced more than five clicks had.
+
+- **SLN29262** — "Reset your business email password", updated 2026-07-29
+- **SLN29264** — "Manage app passwords", updated 2026-07-24
+
+### 1. The password rules, and the one that must NOT be enforced
+
+Quoted five times in SLN29262:
+
+> Your new password must be between 8 and 20 characters and include an uppercase letter, a lowercase
+> letter, a number, a special character, and no repeated characters.
+
+The first four are unambiguous and are now checked **before the reset**, in
+`src/lib/turbify/password-policy.ts`, because setting a password Turbify rejects leaves the mailbox
+reachable only through a one-time password nothing captured — the identical disaster to resetting
+with no password at all, which `evaluateInviteInboxAdoption` has always refused up front.
+
+🔴 **"No repeated characters" is deliberately NOT enforced, and that was a close call I got wrong
+first.** My initial implementation read it as "no character twice anywhere" and refused on it. But
+the sentence does not say which it means, and the two readings disagree about ordinary passwords:
+`Company-Pass-1!` fails the global reading on its `a`, and the consecutive reading on its `ss`.
+Enforcing either would **refuse an adoption Turbify would have accepted** — inventing a new blocker
+out of an ambiguity, on the one flow whose entire problem has been getting blocked.
+
+So the rule is answered by the only authority that actually knows: **the form.** `describePage` now
+reads the page's own error text (`[role=alert]`, `[aria-live]`, error-ish class names) and reports it
+verbatim, so whatever the rule really is, it arrives in Turbify's words. A rejected password is
+recoverable — `mayBeReset` says a one-time password is outstanding, and the next run resets again —
+whereas a false refusal stops the work dead on a coin flip.
+
+**How it is pinned, which is subtler than an assertion.** The suite's own company password contains a
+repeated character, so the moment anything starts enforcing that rule the happy path goes red at its
+call-order check. The dedicated assertion can therefore never be the first to fire; what protects the
+behaviour is an explicit check that `COMPANY` *keeps* a repeat, so nobody tidies it into a
+repeat-free value and silently deletes the pin.
+
+### 2. The dialog contains the login URL
+
+> In the One-time password dialog, you will see the user's email address, the one-time password, and
+> the login URL.
+
+A URL passes every filter the new credential reader applies — no spaces, no `@`, the right length —
+and the after-the-last-colon split yields a *second* candidate from it (`//mail.turbify.com`). It
+lost to the password only because the password happened to carry a digit and the URL did not.
+
+Excluded explicitly now, by scheme and by domain suffix. **The test uses a digit-free password on
+purpose:** with a digit, the letters-and-digits preference picks the password even with the scheme
+rule deleted, so the case could not fail and would not have been a pin at all. Deleting the scheme
+rule now fails the suite.
+
+### 3. The app-password path, where the robot was missing a step entirely
+
+Turbify's steps:
+
+1. Sign in to your business email account.
+2. Click your profile icon on the top-right. *"Mobile users: Go to this link instead: https://mail.turbify.com/accountinfo"*
+3. Click **Manage your account**.
+4. Under Security & Privacy, click **Manage App Passwords**.
+5. **From the dropdown menu, select the appropriate app.** *"If you do not see your application, select Other, then enter the application's name."*
+6. Click **Generate**.
+
+Three findings, in order of how badly each would have hurt:
+
+| Finding | Why it mattered |
+| --- | --- |
+| **Step 5 did not exist in the robot** | Phoenix will never be in Turbify's app list, so the answer is always **Other** plus a name. Pressing Generate with nothing selected was never going to mint anything — this step would have failed even with all three wordings right. |
+| **Steps 2–3 were unreachable by any wording** | The profile menu is revealed by a HOVER ("Mouse over your name's initial on the top-right"), and `clickOneOf` presses — it does not hover. Turbify publishes the destination as a plain URL, so `ACCOUNT_INFO_URL` replaces both clicks and the menu stops mattering. |
+| **"Manage your account" is REAL** | Correcting my own correction. Earlier the same day I replaced it with "Account info" and wrote that it "does not exist", citing two independent write-ups. Turbify's article says the link reads **Manage your account**; "Account info" is the mobile deep-link *path*. Both write-ups were paraphrasing that URL — **two sources describing the same URL are not two sources.** |
+
+### 4. And the app password stopped being able to fail the adoption
+
+The deeper problem was structural: `generateAppPassword` sat on the **critical path** of the invite
+inbox adoption while being the one step nothing had ever reached. So its failure reported
+*"MAY ALREADY HAVE BEEN RESET"* over work that had actually succeeded — the reset done, the company
+password set — and sent the owner back to click again.
+
+It now falls back to the company password, and the fallback **cannot fake a success**: `addMonitor`
+runs `testMailboxConnection` and refuses a credential it cannot log in with (422, nothing stored), so
+`adopted: true` still means a real IMAP login happened against that mailbox.
+
+🔴 **Scoped on purpose.** The one thing an app password buys over a mailbox password is that it
+survives a later password change. For an **employee** that is decisive — they change the password at
+handover and Phoenix loses access — so `runner.ts` and `adopt-runner.ts` still require it, pinned by
+a source assertion that neither carries a `?? companyPassword`. For an inbox Phoenix owns and nobody
+rotates, it buys nothing.
+
+### What this cost, and what it bought
+
+Nine breaks were applied across the three changes and all nine were watched firing, two of them only
+after the break or the test was rebuilt — the login-URL case could not fail until the password lost
+its digit, and the repeated-character break turned out to be caught by the happy path rather than by
+its own assertion. Both of those are recorded above rather than quietly fixed, because "the test
+passed after I broke it" is the exact shape that ships a defect.

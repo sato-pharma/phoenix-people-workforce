@@ -234,8 +234,150 @@ async function runRunnerCases(): Promise<void> {
   // Only a refusal reached BEFORE the driver was ever called may say nothing was reset — and those
   // return a refusal rather than a detail, which the cases above already pin.
 
+  // ── 🔴 THE APP PASSWORD MAY NOT FAIL THIS ADOPTION ────────────────────────────────────────────
+  // It sat on the critical path while being the one step nothing had ever reached, so its failure
+  // reported "MAY ALREADY HAVE BEEN RESET" over work that had actually SUCCEEDED — reset done,
+  // company password set — and sent the owner back to click again. Five times.
+  //
+  // Phoenix owns this inbox and nobody rotates its password, so the app password's one advantage
+  // (surviving a password change) buys nothing HERE. The monitor still has to log in, so this
+  // cannot become a false success.
+  const appFailCalls: Call[] = [];
+  const appFailMonitored: Array<{ appPassword: string; displayLabel: string; emailAddress: string }> = [];
+  const appFail = await runInviteInboxAdoption({
+    address: INVITE_INBOX_ADDRESS,
+    deps: {
+      companyPassword: () => COMPANY,
+      monitor: async (input) => {
+        appFailMonitored.push(input);
+        return { id: "monitor-2" };
+      },
+    },
+    driver: fakeDriver(appFailCalls, "generateAppPassword"),
+    dryRun: false,
+  });
+  assert.equal(
+    appFail.adopted, true,
+    "the app-password step must not fail an adoption whose reset and password-set both succeeded",
+  );
+  assert.deepEqual(
+    appFailCalls.map((c) => c.kind),
+    ["signIn", "resetAndCapture", "setMailboxPassword", "generateAppPassword"],
+    "it is still attempted — the fallback is what happens after it fails, not instead of trying",
+  );
+  assert.deepEqual(
+    appFailMonitored,
+    [{ appPassword: COMPANY, displayLabel: INVITE_INBOX_LABEL, emailAddress: INVITE_INBOX_ADDRESS }],
+    "the credential proven over IMAP is the company password the robot just set",
+  );
+  assert.match(appFail.detail ?? "", /No app password could be minted/);
+  assert.match(appFail.detail ?? "", /app password page did not open/, "it reports WHY, not just that");
+  assert.equal(
+    (appFail.detail ?? "").includes("MAY ALREADY HAVE BEEN RESET"), false,
+    "a completed adoption may never carry the not-finished warning",
+  );
+
+  // 🔴 AND THE MONITOR IS STILL THE GATE ON THAT PATH. App password failed AND the company password
+  // refused over IMAP → not adopted. Without this, the fallback would be a way to claim success.
+  const bothFail = await runInviteInboxAdoption({
+    address: INVITE_INBOX_ADDRESS,
+    deps: {
+      companyPassword: () => COMPANY,
+      monitor: async () => { throw new Error("Could not connect to that mailbox: invalid credentials"); },
+    },
+    driver: fakeDriver([], "generateAppPassword"),
+    dryRun: false,
+  });
+  assert.equal(
+    bothFail.adopted, false,
+    "falling back to the company password must still prove it over IMAP, or it is not an adoption",
+  );
+  assert.match(bothFail.detail ?? "", /MAY ALREADY HAVE BEEN RESET/);
+
+  // 🔴 THE FALLBACK IS SCOPED TO THIS MAILBOX. An EMPLOYEE changes their password at handover, so
+  // for them the app password is the only credential that survives — those runners must still treat
+  // a failure as fatal, and must never grow this fallback.
+  const root = new URL("../", import.meta.url);
+  assert.ok(
+    readFileSync(new URL("src/lib/new-hire-mailbox/robot/invite-inbox-runner.ts", root), "utf8")
+      .includes("appPassword ?? companyPassword"),
+    "this runner falls back to the company password",
+  );
+  for (const path of [
+    "src/lib/new-hire-mailbox/robot/runner.ts",
+    "src/lib/new-hire-mailbox/robot/adopt-runner.ts",
+  ]) {
+    const source = readFileSync(new URL(path, root), "utf8");
+    assert.ok(
+      source.includes("const { appPassword } = await"),
+      `${path} must keep requiring the app password — an employee's own password change kills the other one`,
+    );
+    assert.equal(
+      source.includes("?? companyPassword"), false,
+      `${path} must not fall back to the company password — the employee will change it`,
+    );
+  }
+
+  // ── 🔴 A PASSWORD TURBIFY WILL REJECT IS REFUSED **BEFORE** THE RESET ──────────────────────────
+  // Their help states the rule five times over (SLN29262): 8–20 characters with an uppercase, a
+  // lowercase, a number and a special character. Set one their form rejects and the mailbox is left
+  // reachable only through a one-time password nothing captured — the same disaster as resetting
+  // with no password at all, which this flow has always refused up front.
+  for (const [bad, rule] of [
+    ["Ab1!", "between 8 and 20 characters"],
+    ["Abcdefgh1!Abcdefgh1!Abc", "between 8 and 20 characters"],
+    ["company-pass-1!", "an uppercase letter"],
+    ["COMPANY-PASS-1!", "a lowercase letter"],
+    ["Company-Pass!", "a number"],
+    ["CompanyPass1", "a special character"],
+  ] as const) {
+    const badCalls: Call[] = [];
+    const result = await runInviteInboxAdoption({
+      address: INVITE_INBOX_ADDRESS,
+      deps: { companyPassword: () => bad, monitor: async () => ({}) },
+      driver: fakeDriver(badCalls),
+      dryRun: false,
+    });
+    assert.equal(result.refusal, "company_password_rejected_by_turbify", `${rule} must be refused`);
+    assert.match(result.detail ?? "", new RegExp(rule.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.deepEqual(badCalls, [], "a password Turbify rejects must be caught BEFORE anything is reset");
+    assert.equal(
+      (result.detail ?? "").includes(bad), false,
+      "a refusal about the password may never quote the password",
+    );
+  }
+
+  // 🔴 AND IT MUST **NOT** REFUSE ON THE AMBIGUOUS RULE. Turbify also says "no repeated characters"
+  // without saying whether that means consecutively or anywhere. Both readings reject ordinary
+  // passwords — `Company-Pass-1!` fails either one — so enforcing a guess here would block an
+  // adoption Turbify would have accepted. The form's own error answers that instead.
+  //
+  // 🔴 THE REAL PIN IS THE LINE BELOW, not the case after it. Every case in this suite runs on
+  // `COMPANY`, which CONTAINS a repeated character — so the moment anything starts enforcing that
+  // rule, the happy path at the top of this function goes red before the case below is reached.
+  // Asserting it here is what stops someone "tidying" COMPANY into a repeat-free value and silently
+  // deleting the protection. Measured 2026-10-03: breaking the rule back in fails this suite at the
+  // happy path's call-order check, which is exactly the intended alarm.
+  assert.ok(
+    new Set(COMPANY).size !== COMPANY.length,
+    "the suite's company password must keep a repeated character — it is what pins the ambiguous "
+    + "rule as deliberately unenforced",
+  );
+  const repeated: Call[] = [];
+  const withRepeats = await runInviteInboxAdoption({
+    address: INVITE_INBOX_ADDRESS,
+    deps: { companyPassword: () => "Company-Pass-1!", monitor: async () => ({}) },
+    driver: fakeDriver(repeated),
+    dryRun: false,
+  });
+  assert.equal(
+    withRepeats.adopted, true,
+    "a repeated character must not refuse the run — the reading is ambiguous and the form decides",
+  );
+  assert.ok(repeated.length > 0, "it must actually have been attempted");
+
   // ── no outcome may carry a credential ─────────────────────────────────────────────────────────
-  for (const result of [ok, refused, noPass, dry, rejected, earlyFail]) {
+  for (const result of [ok, refused, noPass, dry, rejected, earlyFail, appFail, bothFail]) {
     const text = JSON.stringify(result);
     assert.equal(text.includes(COMPANY), false, "no result may carry the company password");
     assert.equal(text.includes("app-pass-16-chars"), false, "no result may carry the app password");

@@ -56,6 +56,7 @@ import {
 import type { CreatedMailbox, JoinerConsoleDriver } from "./driver";
 import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
 import {
+  APP_PASSWORD_PAGE,
   APP_PASSWORD_WORDINGS,
   ECP_LOCATORS,
   ONE_TIME_PASSWORD_DIALOG,
@@ -65,6 +66,8 @@ import {
   cssQueryFor,
   dialogNamesAddress,
   MAILBOX_ROW_QUERY,
+  pickAppPassword,
+  pickOneTimePassword,
   readExistenceFromRows,
   readMailboxRowCells,
   resolveOne,
@@ -107,6 +110,18 @@ const LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fecp.turbi
  * its OWN browser context (`openMailboxPage`) where no admin cookie can forward it anywhere.
  */
 export const MAILBOX_LOGIN_URL = "https://mail.turbify.com/login";
+
+/**
+ * The mailbox's own account pages, as a DIRECT URL.
+ *
+ * 🔴 TURBIFY PUBLISHES THIS, AND IT REPLACES TWO BLIND CLICKS. Their App Passwords article (SLN29264)
+ * says to "Click your profile icon on the top-right", then "Click Manage your account" — and the
+ * companion password article describes that first step as "Mouse over your name's initial on the
+ * top-right". A HOVER-revealed menu is the one shape `clickOneOf` cannot work: it presses, it never
+ * hovers. The same article gives the destination outright — "Mobile users: Go to this link instead:
+ * https://mail.turbify.com/accountinfo" — so the robot navigates there and the menu never matters.
+ */
+export const ACCOUNT_INFO_URL = "https://mail.turbify.com/accountinfo";
 /**
  * The submit control on either login page — the sanity check `submitOpenForm` holds the one
  * `button[type="submit"]` against, never a wording it searches BY.
@@ -475,23 +490,29 @@ async function readOneTimePassword(page: ConsolePage, address: string): Promise<
   await clickOne(page, ONE_TIME_PASSWORD_DIALOG.reveal).catch(() => {});
   await settle(500);
 
-  const password = await page.evaluate<string>(`(() => {
-    const text = document.body ? document.body.innerText : "";
-    // The dialog prints the password on its own line. Take the longest line that looks like a
-    // credential and nothing like prose, rather than trusting a position in the markup.
-    const lines = text.split("\\n").map((l) => l.trim()).filter(Boolean);
-    const candidates = lines.filter((l) => l.length >= 8 && l.length <= 64 && !/\\s/.test(l) && /[^a-z]/.test(l));
-    candidates.sort((a, b) => b.length - a.length);
-    return candidates[0] || "";
+  // 🔴 READ THE DIALOG, NOT THE PAGE, AND NEVER SCORE BY LENGTH. The read this replaced took the
+  // longest non-whitespace line in `document.body`, which is the mailbox ADDRESS — the dialog is
+  // required to name it, and the account list behind the modal offers longer ones still. The robot
+  // typed that address into the password box, Turbify refused it, and the failure surfaced three
+  // steps later as "the expected page never appeared". `pickOneTimePassword` cannot return an
+  // address; it is a pure function so the whole rule is pinned in the unit suite rather than being
+  // re-learned one of the owner's clicks at a time. `innerText` keeps the line breaks that
+  // `textContent` glues away (see `dialogNamesAddress`).
+  const revealed = await page.evaluate<string>(`(() => {
+    const dialog = document.querySelector(".modal-container");
+    const scope = dialog || document.body;
+    if (!scope) return "";
+    return scope.innerText || scope.textContent || "";
   })()`).catch(() => "");
 
-  if (!password) {
+  const reading = pickOneTimePassword(revealed, address);
+  if ("refusal" in reading) {
     throw new TurbifyJoinerStepError(
-      `The "${ONE_TIME_PASSWORD_DIALOG.heading}" dialog for ${address} was open but no password could be read from it. `
-      + "The robot stopped rather than continue without one.",
+      `The "${ONE_TIME_PASSWORD_DIALOG.heading}" dialog for ${address} was open but ${reading.refusal} `
+      + "The robot stopped rather than continue with a credential it could not identify.",
     );
   }
-  return password;
+  return reading.password;
 }
 
 /** Narrow the account list to one address. Every row action depends on this having worked. */
@@ -523,6 +544,13 @@ async function fillField(page: ConsolePage, selector: string, value: string): Pr
 /** What a page looked like, in the only terms that cannot carry a credential. */
 export type PageShape = {
   buttons: string[];
+  /**
+   * 🔴 THE PAGE'S OWN ERROR TEXT, which is the only authority on a rule Turbify did not publish
+   * unambiguously. Their help says a mailbox password needs "no repeated characters" without saying
+   * whether that means consecutively or anywhere, and guessing would refuse an adoption Turbify
+   * would have accepted. So the robot reads what the FORM says instead of ruling on it.
+   */
+  errors: string[];
   headings: string[];
   inputs: string[];
   title: string;
@@ -567,13 +595,18 @@ export function withoutSecrets(raw: string, secrets: readonly string[]): string 
 export function describeShape(shape: PageShape | null, secrets: readonly string[]): string {
   if (!shape) return "the page could not be read at all.";
   const clean = (value: string) => withoutSecrets(value, secrets);
-  return [
+  const parts = [
     `url ${clean(shape.url)}`,
     `title "${clean(shape.title)}"`,
     `headings [${shape.headings.map(clean).join(" | ")}]`,
     `inputs [${shape.inputs.map(clean).join(", ")}]`,
     `buttons [${shape.buttons.map(clean).join(" | ")}]`,
-  ].join("; ");
+  ];
+  // Last, and only when there is one, so it is the thing the eye lands on. This is what turns "the
+  // form is still on screen" into "Turbify said why".
+  const errors = (shape.errors ?? []).map(clean).filter((line) => line.length > 0);
+  if (errors.length > 0) parts.push(`the page says [${errors.join(" | ")}]`);
+  return parts.join("; ");
 }
 
 /**
@@ -588,6 +621,62 @@ export function describeShape(shape: PageShape | null, secrets: readonly string[
  * It reads NO field values and drops the query string, so a one-time password cannot ride out in the
  * url; what is left goes through `withoutSecrets` on top of that.
  */
+/**
+ * Choose the app the password is for, which Turbify requires BEFORE Generate does anything.
+ *
+ * Their step 5: "From the dropdown menu, select the appropriate app… If you do not see your
+ * application, select Other, then enter the application's name." Phoenix will never be in that list,
+ * so the answer is always **Other** plus a name — and the name is what offboarding later looks for
+ * when it revokes the password, which is why it comes from one constant.
+ *
+ * Returns true when a dropdown was found and set. The caller tolerates false: the control has still
+ * never been seen, and refusing on its absence would block a step that may not need it.
+ *
+ * 🔴 The option is chosen by its TEXT, not its index, and the change event is dispatched by hand —
+ * setting `.value` on a React-controlled `<select>` updates the DOM and tells the app nothing, which
+ * is the same class of silent no-op as a click that lands on a cookie banner.
+ */
+export async function selectAppForPassword(page: ConsolePage, name: string): Promise<boolean> {
+  const chosen = await page
+    .evaluate<boolean>(`(() => {
+      const wanted = ["other", "others", "other app", "other application"];
+      const selects = Array.from(document.querySelectorAll("select"))
+        .filter((element) => element.getClientRects().length > 0);
+      for (const select of selects) {
+        const options = Array.from(select.options || []);
+        const match = options.find((option) => {
+          const label = (option.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
+          return wanted.indexOf(label) !== -1;
+        }) || options.find((option) => {
+          const label = (option.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
+          return label.indexOf("other") !== -1;
+        });
+        if (!match) continue;
+        select.value = match.value;
+        // A controlled component only learns about this from the events, never from the assignment.
+        select.dispatchEvent(new Event("input", { bubbles: true }));
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      }
+      return false;
+    })()`)
+    .catch(() => false);
+  if (!chosen) return false;
+
+  await settle(800);
+  // Choosing "Other" reveals a name field. Filled when it appears; its absence is not a failure,
+  // because a list that already held a usable entry needs no name typed into it.
+  const named = await page
+    .$$('input[type="text"]:not([name="email"]), input[name*="name" i], input[placeholder*="name" i]')
+    .catch(() => [] as Handle[]);
+  const field = named[0];
+  if (field) {
+    await field.evaluate<void>(clearField).catch(() => {});
+    await field.type(name, { delay: 15 }).catch(() => {});
+  }
+  return true;
+}
+
 export async function describePage(page: ConsolePage, secrets: readonly string[]): Promise<string> {
   const shape = await page
     .evaluate<PageShape>(() => {
@@ -600,6 +689,19 @@ export async function describePage(page: ConsolePage, secrets: readonly string[]
           .map((element) => words(element) || element.getAttribute("aria-label") || "")
           .filter((label) => label.length > 0)
           .slice(0, 12),
+        // 🔴 WHAT THE PAGE SAYS WENT WRONG. A password Turbify rejects leaves the form on screen,
+        // which every proof in this driver reads as "the page never changed" — a true statement that
+        // explains nothing. The form's own message is the only thing that names the real rule, and
+        // for the repeated-character rule it is the only authority there is. Read by role and by the
+        // error-ish class names, never by position; values are still never read.
+        errors: Array.from(
+          document.querySelectorAll('[role=alert],[aria-live=assertive],[aria-live=polite],.error,[class*="error"],[class*="Error"],[class*="invalid"]'),
+        )
+          .filter(seen)
+          .map(words)
+          .filter((label) => label.length > 0 && label.length <= 300)
+          .filter((label, index, all) => all.indexOf(label) === index)
+          .slice(0, 4),
         headings: Array.from(document.querySelectorAll("h1,h2,h3,legend"))
           .filter(seen)
           .map(words)
@@ -905,11 +1007,31 @@ export async function createTurbifyJoinerDriver(credentials: {
       // `page` here would be reading the administrator's console.
       const mailbox = await openMailboxPage();
       const secrets = [password, credentials.password];
-      // 🔴 THESE THREE LOCATORS ARE THE LAST UNCALIBRATED STEP IN THE WHOLE CHAIN — nobody has stood
-      // on a Turbify mailbox's own account pages, so "Manage your account", "Manage App Passwords"
-      // and "Generate" are wordings taken from the documentation, not read off the live page. Each
-      // refusal therefore carries the page, so the first click that reaches here settles all three
-      // instead of buying one more guess.
+      // 🔴 THE PATH IS NOW TURBIFY'S OWN, READ FROM THEIR HELP (article SLN29264, "Manage app
+      // passwords", updated 2026-07-24) rather than assembled from the checklist HR followed by
+      // hand. Their steps, in order:
+      //
+      //   1. Sign in to your business email account.                    ← already done, above
+      //   2. Click your profile icon on the top-right.
+      //      "Mobile users: Go to this link instead:
+      //       https://mail.turbify.com/accountinfo"                     ← USE THIS, see below
+      //   3. Click "Manage your account".
+      //   4. In the top-left under Security & Privacy, click "Manage App Passwords".
+      //   5. From the dropdown menu, select the appropriate app.
+      //      "If you do not see your application, select Other, then enter the application's name."
+      //   6. Click "Generate".
+      //
+      // 🔴 STEPS 2 AND 3 ARE REPLACED BY A DIRECT NAVIGATION, which is the single biggest reason this
+      // step had no chance before: step 2 is a HOVER-revealed profile menu ("Mouse over your name's
+      // initial on the top-right", as the password article puts it), and `clickOneOf` presses things,
+      // it does not hover. Turbify publishes the destination as a plain URL for mobile users, so the
+      // robot goes straight there and two blind clicks disappear.
+      //
+      // 🔴 AND "Manage your account" IS REAL — a note in this repo claimed it "does not exist", on
+      // the strength of Turbify documenting "Account info" elsewhere. Both are real: the mobile
+      // deep-link is `/accountinfo`, and the link on the desktop page reads "Manage your account".
+      // It stays in `APP_PASSWORD_WORDINGS.accountInfo` as the fallback for a page that lands
+      // somewhere other than the deep link.
       const reading = async () => describePage(mailbox, secrets);
       const named = async (step: string, error: unknown) =>
         new TurbifyJoinerStepError(
@@ -917,7 +1039,12 @@ export async function createTurbifyJoinerDriver(credentials: {
           + `The page it was on — ${await reading()}`,
         );
       const LINK_OR_BUTTON = ["a", "button"] as const;
-      // Tolerated: on a page that already shows App Passwords there is nothing to open.
+      // The documented deep link. Tolerated on failure — the click fallback below covers a page that
+      // did not navigate, and a refusal here would be refusing before trying the thing that works.
+      await mailbox.goto(ACCOUNT_INFO_URL, { waitUntil: "networkidle2", timeout: 60_000 }).catch(() => {});
+      await settle(2_500);
+      // Only needed when the deep link did not land on the account pages. Tolerated for the same
+      // reason it always was: on a page already showing App Passwords there is nothing to open.
       await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.accountInfo, "the mailbox's account pages", LINK_OR_BUTTON)
         .catch(() => {});
       await settle(2_000);
@@ -926,28 +1053,47 @@ export async function createTurbifyJoinerDriver(credentials: {
           throw await named("opening the App Passwords section", error);
         });
       await settle(2_500);
+
+      // 🔴 THE STEP THE ROBOT DID NOT KNOW EXISTED. Turbify's step 5: "From the dropdown menu, select
+      // the appropriate app… If you do not see your application, select Other, then enter the
+      // application's name." Phoenix is not in their list, so the answer is always **Other** plus a
+      // name — and pressing Generate with nothing chosen is how this step would have failed even once
+      // the three wordings were right.
+      //
+      // Tolerated rather than required, because the dropdown has still not been SEEN: on a page that
+      // mints without one, a refusal here would block a step that was about to work. If it is there
+      // and this fails to set it, Generate's own failure carries the page, errors included.
+      await selectAppForPassword(mailbox, APP_PASSWORD_PAGE.passwordName).catch(() => {});
+      await settle(1_000);
+
       await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.generate, "the button that mints a new app password", LINK_OR_BUTTON)
         .catch(async (error) => {
           throw await named("pressing the button that mints an app password", error);
         });
       await settle(3_500);
 
-      const appPassword = await mailbox.evaluate<string>(`(() => {
-        const text = document.body ? document.body.innerText : "";
-        const lines = text.split("\\n").map((l) => l.trim()).filter(Boolean);
-        // An app password is a run of letters, often in groups. Take the longest space-free line.
-        const candidates = lines.filter((l) => l.length >= 12 && l.length <= 64 && !/\\s/.test(l));
-        candidates.sort((a, b) => b.length - a.length);
-        return candidates[0] || "";
+      // 🔴 THE SECOND COPY OF THE LENGTH-SCORED READ. This took "the longest space-free line of 12
+      // characters or more" from the whole body — and this page is signed in AS the mailbox, so the
+      // longest such line is the ADDRESS (25 characters) against an app password of about 16. It
+      // would have failed, or stored the address as Phoenix's credential. `pickAppPassword` cannot
+      // return an address, allows the all-lowercase shape a real app password has, and refuses with
+      // a count when something unlisted survives.
+      const shown = await mailbox.evaluate<string>(`(() => {
+        const scope = document.body;
+        if (!scope) return "";
+        return scope.innerText || scope.textContent || "";
       })()`).catch(() => "");
 
-      if (!appPassword) {
+      const minted = pickAppPassword(shown, address);
+      if ("refusal" in minted) {
         throw new TurbifyJoinerStepError(
-          `No app password could be read after pressing ${APP_PASSWORD_WORDINGS.generate.join(" / ")} for ${address}. `
+          `No app password could be read after pressing ${APP_PASSWORD_WORDINGS.generate.join(" / ")} for ${address} `
+          + `— ${minted.refusal} `
           + "The mailbox is usable but Phoenix has no access to it, so this run is reported, not recorded as connected. "
           + `The page it was on — ${await reading()}`,
         );
       }
+      const appPassword = minted.password;
 
       // 🔴 CALIBRATION, off unless PHOENIX_TURBIFY_REPORT_CONTROLS is exactly "true". This is the one
       // moment anything in Phoenix is standing on this page, signed in as a mailbox — which is the
