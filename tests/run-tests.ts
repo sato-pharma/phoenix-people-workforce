@@ -1710,6 +1710,7 @@ import { runPhoenixCrmListEdgeTests } from "./phoenix-crm-list-edges.test.ts";
 import { runPhoenixCrmListTemplateTests } from "./phoenix-crm-list-template.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
+import { runPhoenixCrmRefuseValidationTests } from "./phoenix-crm-refuse-validation.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
 import { runPhoenixCrmPlanCapOnSendTests } from "./phoenix-crm-plan-cap-on-send.test.ts";
@@ -6149,6 +6150,11 @@ await runTest(
 await runTest(
   "Phoenix CRM moves a validated place only for the Super Admin and the SFE Manager (owner, 2026-09-29: the location is fixed forever): the service checks the mover before it reads anything, a move needs a written reason of ten characters or more, the new point is resolved by the same function a validation uses, every visit to the customer is measured again, a test account never moves one, and the database writes an audited place_moved event with the point before and after",
   runPhoenixCrmPlaceMoveTests,
+);
+
+await runTest(
+  "Phoenix CRM lets the Super Admin refuse a validation the Google check never held (2026-10-03, after one had to be undone in SQL): the check covers AM customers only, so a doctor's validation is never held and the page now lists every place validated in the last 30 days that is still in use and not already waiting in the queue; the service asks who before it reads anything, demands a written reason, refuses a place already retired, writes the SAME review row the automatic check would have written — in the rep's name, reason refused_by_admin — runs the SAME reject RPC so there is one audit shape, and measures every visit to that customer again; the screen arms the button only after the reason is typed, fits the screen as a fixed table and phone cards with no scroller, ellipsis or round corner, and nothing the rep receives says a person refused him",
+  runPhoenixCrmRefuseValidationTests,
 );
 
 await runTest(

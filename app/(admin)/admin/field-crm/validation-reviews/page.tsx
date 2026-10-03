@@ -2,12 +2,13 @@ import { redirect } from "next/navigation";
 import { CheckCircle2, Hourglass, MapPinCheck } from "lucide-react";
 
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
+import { ValidatedPlaceList } from "@/components/phoenix-crm/validated-place-list";
 import { ValidationReviewQueue } from "@/components/phoenix-crm/validation-review-queue";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { canDecideValidationReviews, loadValidationReviews } from "@/lib/phoenix-crm/server/validation-reviews";
+import { canDecideValidationReviews, loadValidatedPlaces, loadValidationReviews } from "@/lib/phoenix-crm/server/validation-reviews";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export default async function PhoenixCrmValidationReviewsPage() {
   const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
   if (!viewer || !canDecideValidationReviews(viewer)) redirect("/admin");
 
-  const rows = await loadValidationReviews(viewer);
+  const [rows, validated] = await Promise.all([loadValidationReviews(viewer), loadValidatedPlaces(viewer)]);
   const waiting = rows.filter((row) => row.status === "pending");
   const decided = rows.filter((row) => row.status !== "pending");
 
@@ -44,7 +45,7 @@ export default async function PhoenixCrmValidationReviewsPage() {
         icon={<MapPinCheck className="h-3.5 w-3.5" />}
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <AdminStatCard icon={<Hourglass className="h-5 w-5" />} label="Waiting for you" value={waiting.length} description="Saved at the door, not validated yet" tone="orange" size="compact" />
         <AdminStatCard
           icon={<CheckCircle2 className="h-5 w-5" />}
@@ -60,6 +61,14 @@ export default async function PhoenixCrmValidationReviewsPage() {
           value={decided.filter((row) => row.status === "rejected").length}
           description="Sent back to To validate"
           tone="rose"
+          size="compact"
+        />
+        <AdminStatCard
+          icon={<MapPinCheck className="h-5 w-5" />}
+          label="Validated, last 30 days"
+          value={validated.length}
+          description="In use, and refusable below"
+          tone="blue"
           size="compact"
         />
       </div>
@@ -82,6 +91,19 @@ export default async function PhoenixCrmValidationReviewsPage() {
           <ValidationReviewQueue rows={decided} />
         </AdminTableShell>
       ) : null}
+
+      <AdminTableShell
+        title="Validations the system did not question"
+        description="Only AM customers are checked against Google, so a doctor's validation is never held — and an AM one that matched its listing is not either. These are the places validated in the last 30 days and still in use. Refusing one retires the place and, when it is the customer's only place, sends him back to To validate; he reads the system's own wording and never that a person looked at him."
+      >
+        {validated.length === 0 ? (
+          <AdminCallout tone="neutral">
+            <span>Nothing has been validated in the last 30 days.</span>
+          </AdminCallout>
+        ) : (
+          <ValidatedPlaceList rows={validated} />
+        )}
+      </AdminTableShell>
     </div>
   );
 }

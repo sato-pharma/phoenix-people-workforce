@@ -25,6 +25,7 @@ const REASON_TEXT: Record<NonNullable<ValidationReviewRow["reason"]>, string> = 
   no_confident_listing: "Google has no listing the system is sure is this customer.",
   lookup_failed: "Google Maps could not be asked at the time (no answer).",
   listing_far: "Google's pin for this customer is over 1 km from him: the hospital may have moved, or the pin is old.",
+  refused_by_admin: "The system did not question this one — it was refused here, by hand. The reason is the note.",
 };
 
 function readingText(label: string, reading: ValidationReviewRow["pin"]): string | null {

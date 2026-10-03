@@ -157,6 +157,9 @@ const ROUTE_GATES: RouteGate[] = [
   // Approving or rejecting a place the Google Maps check could not confirm (owner, 2026-10-03): the
   // Super Admin alone — `update` at the route, `canDecideValidationReviews` in the service.
   post("validation-reviews", "update"),
+  // Refusing a validation the check never held — every PM customer, and the AM ones that matched
+  // (2026-10-03). The same gate, the same decider, and the same reject underneath it.
+  post("validation-reviews/refuse", "update"),
   // The rep drops a customer met outside his list; the SFE Manager brings one back from the Archive.
   post("list/outside/drop", "create"),
   post("list/archive/bring-back", "approve"),
