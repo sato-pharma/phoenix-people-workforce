@@ -436,8 +436,58 @@ function runWiringCases(): void {
   }
 }
 
+/**
+ * 🔴 THE REASON A RUN FAILED MUST REACH THE AUDIT ROW, AND THE CREDENTIAL MUST NOT.
+ *
+ * Measured on 2026-10-03. Two live invite-inbox runs failed that night and both audit rows read
+ * `adopted: false`, `refusal: null`, `dryRun: false` — nothing else. `refusal` is the pure gate's
+ * enum, so it is null on every run the gate ALLOWED, which is every run that actually reached
+ * Turbify. The sentence naming the control that stopped it existed only on the screen of whoever
+ * clicked, and had to be copied out of the browser by hand before anyone could read it.
+ *
+ * `detail` is that sentence, and it is built from redacted page text — addresses, labels, and value
+ * LENGTHS. `handover` is not: for a new hire the company password becomes their real password, so
+ * the hand-over sentence is the one field here that can carry a credential. Hence both halves below.
+ */
+function runAuditCases(): void {
+  const root = new URL("../", import.meta.url);
+  const routes = [
+    "app/api/new-hire-mailboxes/invite-inbox/route.ts",
+    "app/api/new-hire-mailboxes/adopt/route.ts",
+  ];
+
+  for (const path of routes) {
+    // 🔴 STRIPPED, AND THAT IS NOT A FORMALITY HERE. The comment this test exists to describe says
+    // the words "handover" and "detail" out loud, in the very file being read — so a raw-source
+    // negative would fail on the prose, and a raw-source positive would pass on it.
+    const code = stripComments(readFileSync(new URL(path, root), "utf8")).replace(/\s+/g, " ");
+
+    const audited = /newValues:\s*\{([\s\S]*?)\}\s*,\s*summary:/.exec(code);
+    assert.ok(
+      audited !== null,
+      `${path}: could not find the audited newValues block, so this test is reading nothing — `
+      + "fix the test before trusting it",
+    );
+    const newValues = audited[1];
+
+    assert.match(
+      newValues, /detail/,
+      `${path}: the audit row must carry the reason, not only the verdict — a row reading `
+      + "adopted:false with refusal:null is unactionable a day later, and that is exactly what the "
+      + "two failed live runs of 2026-10-03 stored",
+    );
+    assert.equal(
+      /handover/.test(newValues), false,
+      `${path}: the hand-over sentence may NEVER enter an audit row — for a new hire the company `
+      + "password becomes their real password, so that field can carry a credential where detail "
+      + "cannot",
+    );
+  }
+}
+
 export async function runNewHireMailboxInviteInboxTests(): Promise<void> {
   runVerdictCases();
   await runRunnerCases();
   runWiringCases();
+  runAuditCases();
 }
