@@ -569,6 +569,19 @@ export function runRepRankBadgesTests() {
     /text-\[#f47b20\]/.test(strip) && /text-\[#0879b8\]/.test(strip),
     `${STRIP}: Phoenix orange reads the company, Sato's one brand blue reads the line`,
   );
+  // 🔴 THE LINE CELL IS LABELLED WITH THE LINE'S NAME ALONE — never "<name> line". The ranking panel
+  // is a fixed block of whole grid squares, so each label has about 78px on a phone, and the extra
+  // word stacked the longest line name THREE deep ("ANTI" / "INFECTIVE" / "LINE") beside a one-line
+  // "COMPANY", filling the panel edge to edge and pushing the orange tick out of it. Measured on the
+  // real component at nine band widths, 2026-10-03: without the word, every label is one line from a
+  // 500px band up and at most two on a phone, with 16.8px still clear between the panel and the marks
+  // at the tightest width. Widening the panel CANNOT fix a phone — at a 351px band the marks leave it
+  // 22px a side, where two lines need 84px more — and shrinking the type is banned by the
+  // fits-the-screen rule, so the word is what goes.
+  assert.ok(
+    /label: line\.lineName\b/.test(strip) && !/lineName\} line/.test(strip),
+    `${STRIP}: the line cell carries the line's NAME alone — a trailing "line" stacks Anti Infective three deep on a phone`,
+  );
   assert.ok(
     /text-\[10\.5px\] font-bold uppercase[^"]*tracking-\[0\.2em\]/.test(strip),
     `${STRIP}: the micro label is the system's one label voice — 10.5px bold uppercase, 0.2em tracking`,
