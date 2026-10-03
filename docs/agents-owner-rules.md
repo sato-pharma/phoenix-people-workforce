@@ -5816,6 +5816,84 @@ night. The collector reads the seat from the `day/<seat>/<date>` segment, and th
 carrying one — both screens touched that night sit above the seat level, so null is the correct
 answer there, not a miss.
 
+### Reading it — the Super Admin's own page, 2026-10-04
+
+*"build the touch trail reader for the Super Admin."* The table had been filling since 23:02 the
+night before and the only way to read it was hand-written SQL. The page is
+`/admin/field-crm/touch-trail`: a visit day grouped into the page loads that made it, and one page
+load read event by event.
+
+**Why the gate is the Super Admin's and not the SFE Manager's.** `canReadTouchTrail` is the same
+predicate `canDecideValidationReviews` uses — `isSuperAdmin && canUpdate && !isTestPersona` — and it
+guards the page and both loaders, not one of them. Two reasons, and the second is the one that would
+hurt. The trail records every pair of hands on the module *including a manager's*, because
+`actor_hr_id` is the signed-in person and a manager entering a visit for a rep is recorded as the
+manager; widening the gate one tier would therefore hand one manager another manager's keystrokes.
+And the table deliberately keeps the field contents a rep typed and then deleted, which is the most
+private thing the module holds. A rep cannot reach `/admin` at all, so golden rule #1 needs nothing
+extra here: he is never shown that the trail exists, let alone that it was read.
+
+**🔴 KEYSET PAGING IS CORRECTNESS HERE, NOT PERFORMANCE.** PostgREST answers a request for 5,000 rows
+with 1,000 rows and a 200 — no error, no marker, no short-read signal — and the migration's own
+header said so when the table was created. A field day is 1,000–3,000 events per rep. So a plain
+`.select()` over a day would return the morning and be indistinguishable from the whole day, which is
+the worst failure an evidence reader can have: a confident wrong answer. Every read walks the
+`bigint id` with `.gt("id", cursor)`, a page at a time, to `MAX_TRAIL_ROWS` (40,000) for a day and
+`MAX_SESSION_EVENTS` (3,000) for one page load, and both ceilings are REPORTED on the screen when
+reached. `range` and `offset` are refused by the test: over a table still being written to they both
+repeat rows and skip them, which an identity cursor cannot.
+
+**The day is read whole and narrowed in memory.** A rep filter in the query would shrink the people
+list to the person already chosen and the totals to his share — so the filter could never be widened
+again from the page, and the day's own numbers would silently become one person's. One Super Admin
+page can afford a few extra round trips for that. The summary read does drop the heaviest column:
+`value` is never printed by the day view, and `value_length` is all a count of typed events needs.
+
+**The two clocks are never averaged.** `occurred_at` is the batch's ARRIVAL and is shared by up to
+forty events; `ms_since_load` is what orders them inside it; `device_at` is the browser's own clock,
+and the only one a phone can be wrong about. So the reported figure is the MINIMUM signed gap between
+arrival and device stamp across the session — the flush wait can only inflate it, so the closest
+event is the only honest bound — and nothing at all is said while that sits inside
+`FLUSH_EVERY_MS` + 55 s. A pill on every session would train the reader to ignore the one session
+where it means something. Measured over the first 102 real rows: **105 ms to 1,972 ms** across six
+page loads, so not one of them is flagged — which is the design working. (An earlier note in this
+file said "2–6 s"; that was the raw per-row gap, which the flush wait inflates, not the minimum the
+reader reports.)
+
+**`ms_since_load` orders a page load and the arrival never does**, for two reasons that the test
+holds in one case: forty events sharing one stamp cannot be ordered by it, and the collector queues
+events while the phone is offline, so an event that happened FIRST can arrive in a much later batch.
+
+**Nothing is rounded down.** A row that will not parse is dropped *and counted on the screen*; a day
+past its ceiling says the page is the earliest part of it; a session past the stream cap names its
+true length from a `count: "exact"` query rather than from what it is showing. The whole table exists
+because nothing is ever lost, and a reader that quietly showed less would undo that in one screen.
+
+**The reader is itself on the trail, and the page says so.** `app/(admin)/admin/field-crm/layout.tsx`
+mounts the collector over this subtree, so reading the trail writes to it and the Super Admin's own
+page loads appear in the list. That is deliberate — every pair of hands on the module is recorded —
+but a reader who did not know it would read his own sessions as somebody else's, so an `AdminCallout`
+states it above the board.
+
+**Checked against production, not only against fixtures.** The 102 rows the table held for
+2026-10-03 were pulled in the exact shape PostgREST hands the reader and run through
+`parseTrailRow` + `summariseSessions`, then compared field by field against the same summary computed
+independently in SQL. All 102 parsed with none dropped, the reader found the same six page loads, and
+`events`, `onScreenMs`, `deviceClockOffMs`, the screen count, the viewport count and the test flag
+agreed on every one of them. Two of those figures are worth keeping: a phone flipping between
+`360x633` and `360x697` as its address bar collapses shows up as two viewports on four of the six
+loads, and the test persona's single event came from a `1920x947` desktop. The oldest rows still carry
+the pre-trim 159-character labels, and they were deliberately left alone — rewriting them to match
+today's format would destroy evidence to make history tidy.
+
+**What was broken to prove the test bites.** Eleven breaks, each firing its own headline assertion:
+the cursor replaced by a `range` walk; the gate widened to the SFE Manager; an `.update()` added to
+the service; a column the table does not have added to the stream projection; a stored column
+(`viewport_h`) dropped from it, which the "every column is reachable" check caught; the day filtered
+by `actor_hr_id` in SQL; the clock gap taken as the maximum instead of the minimum; the ordering
+falling back to `occurred_at`; the Cairo clock put on a fixed `Etc/GMT-3`, which the WINTER case
+caught and the October one did not; and the unreadable count zeroed on its way to the screen.
+
 ## A refused capture keeps its photo — owner ruling, 2026-10-03
 
 His words, in two messages: *"save the photo when a validation is refused"*, then — while the first

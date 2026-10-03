@@ -4306,6 +4306,19 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    // Every tap, press and keystroke on Phoenix CRM (owner, 2026-10-03: "every single thing is saved,
+    // even if the rep didn't save it"), read a day at a time. The Super Admin's ALONE and for two
+    // reasons: it records every pair of hands on the module including a manager's, and it keeps what a
+    // rep typed and then deleted. `canReadTouchTrail` is the enforcing gate inside the page; this card
+    // only draws the link, and the rep is never shown that the trail exists.
+    href: "/admin/field-crm/touch-trail",
+    icon: Fingerprint,
+    label: "Touch Trail",
+    description: "Every tap, press and keystroke on Phoenix CRM, grouped into the page loads that made the day — including what a rep typed and then deleted.",
+    permissions: [{ resource: "phoenix_crm", action: "update" }],
+    roles: ["Super Admin"],
+  },
+  {
     // Load a territory's customer list from a sheet — the SFE's third route onto a list (the owner's
     // ask, 2026-10-02): he sends the rep a sheet, the rep fills it in, he uploads it.
     //
@@ -4930,6 +4943,9 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/phoenix-crm/duplicates",
           // A place Google Maps could not confirm: the same band, the Super Admin's alone.
           "/admin/field-crm/validation-reviews",
+          // Beside it, and in the same band for the same reason: the raw evidence under those
+          // integrity rows, and the Super Admin's alone.
+          "/admin/field-crm/touch-trail",
           // Beside the duplicates row: both are the SFE's work ON a rep's list rather than a board
           // that measures him, and a card left out of every band is appended to the FIRST one under a
           // heading nobody chose (tests/nav-hub-promotion catches that, and caught the row below).
