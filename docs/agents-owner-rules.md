@@ -4797,11 +4797,19 @@ read failed, is a message about a real person that cannot be recalled.
 | the SFE | `sfeManagerHrIds()` | The SFE Manager is a ROLE with no seat in the organogram, read from the accounts — the same list the plan edit's SFE step and the daily approval nudge already use. |
 | Omar in the BCC | **nothing in the module** | `sendPhoenixEmail` already puts `ADMIN_STANDING_EMAIL` on the BCC of EVERY email the system sends. Wiring a copy here would send him two. |
 
-**🔴 THE REGIONAL MANAGER WAS LEFT OFF FIRST, AND THE OWNER CORRECTED IT THE SAME DAY.** Pedia's Upper
-Egypt has a regional manager (`PD-0001`) between the district and the national seat — the only RSM in the
-company. He had named three people, so the first shipped version addressed exactly those three and said
-so; he answered *"add the Pedia RSM to the first-visit email"*, and `firstVisitDeliveries` now addresses
-**`managerChain` entire**.
+**🔴 THE REGIONAL MANAGER WAS LEFT OFF FIRST, AND THE OWNER CORRECTED IT THE SAME DAY.** He had named
+three people, so the first shipped version addressed exactly those three and said so; he answered *"add
+the Pedia RSM to the first-visit email"*, and `firstVisitDeliveries` now addresses **`managerChain`
+entire**.
+
+**🔴 AND THE SEAT IS NOT WHERE THIS DOC FIRST SAID IT WAS.** The company's one regional seat
+(`SEAT-PED-RSM`, `PD-0001` Hany Saad) is labelled *"PEDIA RSM (Alex-BHR, Delta (1), Delta (2))"* and
+covers exactly those three regions — **17 rep seats, 13 occupied**, measured 2026-10-03. **Pedia Upper
+Egypt 1 sits straight under the NSM** and has no regional manager at all, so the first write-up of this
+rule — and #5198's own PR body — named the wrong chain. It matters in his favour: **Delta (1) is the
+team that started on the module**, so the regional manager is on the very first emails of the rollout,
+which the wrong description made look like a quiet edge case. The code was never wrong, because it reads
+the live chain and never a region name.
 
 **Why the fix is the whole chain and not "DM + RSM + NSM" written out.** A tier list is wrong in the
 direction that looks right: a second regional seat, or a tier added between, is **silently** missed, and
@@ -4844,6 +4852,29 @@ this module is built for that is a full scan per save, so
 **The time in the email is the SERVER's.** `captured_at`, as the save returns it, rendered by
 `formatPhoenixDateTime` — "7:42 PM, Saturday, 3 October 2026", Cairo local. The phone's clock dates
 nothing in this module, which is the whole reason the save hands the stamp back.
+
+**🔴 The customer's name is bidi-isolated, and it is the only run on the line that is** (owner,
+2026-10-03, after reading the rendered wording: *"isolate the Arabic customer name in the first-visit
+email"*). **Every** Phoenix CRM customer name is Arabic — 12 of 12 sampled on one real production seat —
+so this one sentence always mixes an RTL run into LTR text, and the neutral punctuation beside it
+resolves to the paragraph's direction and can display on the wrong side of the name.
+
+`src/emails/phoenix-email-layout.tsx`'s `renderEmailParagraphs` already wraps each **line** in FSI … PDI.
+That is correct for a single-language line and does **nothing** for a run inside one — the granularity
+the `bilingual-bodies-need-direction-per-line-not-per-block` rule is about, met here from the other
+side: the line itself mixes both languages, so isolating the line only sets the paragraph to LTR (FSI
+takes its direction from the first strong character, the rep's Latin initial) and leaves the Arabic run
+bare. So `bidiIsolate` is applied where the name is **interpolated**, in `firstVisitDeliveries`, which is
+also the only place that knows which substring is the name. The nested isolate that results is legal and
+intended.
+
+**Two deliberate choices inside that.** It goes in the **shared message**, not an email-only layer,
+because the bell, Telegram and the phone show the same string and have the same problem. And it is
+applied **before** HTML-escaping, although `bidiIsolate` is documented for after it: FSI and PDI pass
+through `escapeEmailHtml` untouched, and this value is not HTML. Rendered against the real Delta (1)
+chain, the body reads `… on Phoenix CRM: ⁨احمد زهران⁩, Qalubeya · Pedia, at 10:12 AM …` — exactly one
+isolate opens and one closes. Stripping the two marks leaves the sentence that shipped before them, which
+is what the test asserts: the **wording** did not change, only the direction handling.
 
 **What it is NOT.** It is the module's fifth emailed event type and the first that is not a step of
 anything: nobody who reads it has to act, and the message says so. It raises no approval, appears in no
