@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import Link from "next/link";
 import { CheckCheck, CornerDownLeft, Fingerprint, Inbox, Keyboard, Lock, Search, UserCog, X, type LucideIcon } from "lucide-react";
 
+import { alarmGlowRef } from "@/components/layout/alarm-glow";
 import { isNavItemLockedFor } from "@/components/layout/module-lock-context";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 import {
@@ -107,6 +108,7 @@ export function PortalPendingCount({
         } ${
           overdue ? "bg-red-600 nav-badge-alarm-overdue" : "bg-[#F05A1A] nav-badge-alarm"
         }`}
+        ref={alarmGlowRef}
         role="status"
       >
         {text}

@@ -19,6 +19,7 @@ import { usePathname, useRouter } from "next/navigation";
 // import pulled the whole sidebar — dnd-kit, the layout editor, the preference machinery —
 // into every portal page's bundle for a thirty-line badge. See nav-badge.tsx's own header.
 import { NavBadge } from "@/components/layout/nav-badge";
+import { alarmGlowRef } from "@/components/layout/alarm-glow";
 // The brand asset comes from the one documented edit point for it, so a future logo swap is one
 // line in one file rather than a hunt through the rail (CLAUDE.md, "Global edit points").
 import { systemAssets } from "@/config/system-settings";
@@ -845,6 +846,7 @@ function EmployeePortalInbox() {
           <span
             aria-hidden="true"
             className="nav-badge-alarm absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center bg-phx-accent px-1 text-phx-3xs font-black text-white"
+            ref={alarmGlowRef}
           >
             {total > 99 ? "99+" : total}
           </span>
@@ -1297,7 +1299,7 @@ function EmployeePortalMenu({
                             plate, the emblem and the spacing, never in a different typeface. */}
                         <span className={`${highlighted ? "tracking-[0.015em]" : ""} ${locked ? "opacity-70" : ""}`.trim() || undefined}>{item.label}</span>
                         <RowNavBadge navBadge={item.navBadge} />
-                        {pending ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-orange-500 employee-portal-nav-pending-dot" /> : null}
+                        {pending ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-orange-500 employee-portal-nav-pending-dot" ref={alarmGlowRef} /> : null}
                       </Link>
                       {/* The heavy orange block down the left edge — the loudest part of the highlight
                           now that the row carries no fill. Absolutely positioned, so the row is not one
