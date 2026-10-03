@@ -567,43 +567,87 @@ export async function getAwaitingMyActionItemsWithHealth(
   if (excuse.status === "fulfilled" && excuse.value) {
     for (const request of excuse.value) items.push(mapExcuseItem(request, employees));
   }
-  if (resignations.status === "fulfilled" && resignations.value) {
-    for (const record of resignations.value.records) {
-      if (record.status === "submitted" || record.status === "under_review") {
-        items.push(mapResignationItem(record, employees));
-      }
-    }
-  }
-  if (outstation.status === "fulfilled" && outstation.value) {
-    for (const request of outstation.value) {
-      if (request.status === "submitted") items.push(mapOutstationItem(request, employees));
-    }
-  }
-  if (contract.status === "fulfilled" && contract.value) {
-    for (const row of contract.value.rows) {
-      const item = mapContractRenewalItem(row, employees);
-      if (item) items.push(item);
-    }
-  }
+  items.push(
+    ...residualActionItems({
+      resignations: resignations.status === "fulfilled" ? resignations.value : null,
+      outstation: outstation.status === "fulfilled" ? outstation.value : null,
+      contract: contract.status === "fulfilled" ? contract.value : null,
+      employees,
+    }),
+  );
   if (plans.status === "fulfilled" && plans.value) {
     for (const plan of plans.value) items.push(mapWeeklyPlanItem(plan, employees));
   }
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
-  // Never surface a requester's own submission in their own action inbox — the CEO
-  // role can submit requests and those should only appear in "My Requests", not here.
-  // Vacation (leave), excuse & weekly/monthly plans now live on the dedicated Approvals Hub pages
-  // (/…/approvals/vacation, /…/approvals/excuse, /…/approvals/plan) — exclude them here so this
-  // residual "Other Approvals" inbox shows each request in exactly one place.
-  return {
-    items: items.filter(
-      (item) =>
-        item.module !== "leave" &&
-        item.module !== "excuse" &&
-        item.module !== "weekly_plan" &&
-        !hrIdsMatch(item.employeeHrId, access.hrId),
-    ),
-    unavailable,
-  };
+  return { items: items.filter((item) => survivesAwaitingInbox(item, access)), unavailable };
+}
+
+// Never surface a requester's own submission in their own action inbox — the CEO
+// role can submit requests and those should only appear in "My Requests", not here.
+// Vacation (leave), excuse & weekly/monthly plans now live on the dedicated Approvals Hub pages
+// (/…/approvals/vacation, /…/approvals/excuse, /…/approvals/plan) — exclude them here so this
+// residual "Other Approvals" inbox shows each request in exactly one place.
+function survivesAwaitingInbox(item: ActionHubItem, access: AccessContext): boolean {
+  return (
+    item.module !== "leave" &&
+    item.module !== "excuse" &&
+    item.module !== "weekly_plan" &&
+    !hrIdsMatch(item.employeeHrId, access.hrId)
+  );
+}
+
+/** The items of the three sources whose items survive the inbox filter — shared so the count below can never drift from the list. */
+function residualActionItems(input: {
+  resignations: Awaited<ReturnType<typeof getResignationsDashboardData>> | null;
+  outstation: Awaited<ReturnType<typeof listOutstationRequests>> | null;
+  contract: Awaited<ReturnType<typeof getContractRenewalDashboardData>> | null;
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"];
+}): ActionHubItem[] {
+  const items: ActionHubItem[] = [];
+  for (const record of input.resignations?.records ?? []) {
+    if (record.status === "submitted" || record.status === "under_review") {
+      items.push(mapResignationItem(record, input.employees));
+    }
+  }
+  for (const request of input.outstation ?? []) {
+    if (request.status === "submitted") items.push(mapOutstationItem(request, input.employees));
+  }
+  for (const row of input.contract?.rows ?? []) {
+    const item = mapContractRenewalItem(row, input.employees);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+/**
+ * How many items {@link getAwaitingMyActionItems} would list — for the 30 s sidebar badge poll.
+ *
+ * WHY (2026-10-04 performance review, PERF-001): the list reads seven sources and then throws away
+ * every leave, excuse and plan item, so the badge was paying for the full vacation report (and the
+ * excuse and plan reads) on every poll of every open tab for items it never counted. This reads only
+ * the three sources whose items survive, through the same item builders and the same filter. The
+ * directory is skipped too: it only supplies display names, which a count never reads.
+ *
+ * A failed source counts as nothing, exactly as it always did through the list. Callers that must
+ * tell a failure from a zero keep calling {@link getAwaitingMyActionItemsWithHealth}.
+ */
+export async function countAwaitingMyActionItems(
+  access: AccessContext,
+  audience: ActionInboxAudience,
+): Promise<number> {
+  const includeOutstationAdminSource =
+    audience === "admin" && canUseAdminOutstationWorkspace(access, "approve");
+  const [resignations, outstation, contract] = await Promise.allSettled([
+    getResignationsDashboardData(access),
+    includeOutstationAdminSource ? listOutstationRequests() : Promise.resolve(null),
+    getContractRenewalDashboardData(access),
+  ]);
+  return residualActionItems({
+    resignations: resignations.status === "fulfilled" ? resignations.value : null,
+    outstation: outstation.status === "fulfilled" ? outstation.value : null,
+    contract: contract.status === "fulfilled" ? contract.value : null,
+    employees: [],
+  }).filter((item) => survivesAwaitingInbox(item, access)).length;
 }
 
 /**

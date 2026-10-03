@@ -1,0 +1,109 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { stripComments } from "./support/comment-strip.ts";
+
+/**
+ * PERF-001 (2026-10-04 performance review): the sidebar badge poll — every 30 s, from every open tab —
+ * used to build the full Vacation Report twice for the leave badge (once inside the Action Center,
+ * once more for sick leave) and once more for the hub badge, which then threw every leave, excuse and
+ * plan item away. These pin both halves of the fix:
+ *
+ *   • LIGHT: the badge paths never reach the full report, its enrichment, or the discarded sources.
+ *   • SAME ANSWER: the light paths share the exact deciding code with the full ones — the per-row
+ *     Action Center logic, the awaiting/upcoming split, and the inbox item builders and filter — so a
+ *     badge can never count a request its page would not list.
+ *
+ * Source-level on purpose: this suite runs with production credentials, and driving these functions
+ * would read live leave requests to check which helper they call.
+ */
+export function runBadgePollStaysLightTests() {
+  const read = (path: string) => stripComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"));
+  const bodyOf = (source: string, signature: string, file: string) => {
+    const start = source.indexOf(signature);
+    assert.ok(start >= 0, `${signature} not found in ${file}`);
+    const end = source.indexOf("\n}\n", start);
+    return source.slice(start, end < 0 ? undefined : end);
+  };
+
+  const VACATION = "src/lib/vacation/service.ts";
+  const HUB = "src/lib/approvals-hub/service.ts";
+  const ACTION = "src/lib/action-center/service.ts";
+  const vacation = read(VACATION);
+  const hub = read(HUB);
+  const action = read(ACTION);
+
+  // ── The leave badge's source reads no report and no enrichment ──────────────
+  const badgeSource = bodyOf(vacation, "export async function getVacationAwaitingBadgeSource(", VACATION);
+  for (const heavy of ["getVacationReportData(", "getVacationActionCenterData(", "enrichVacationRows(", "getEmployeeDirectory("]) {
+    assert.ok(
+      !badgeSource.includes(heavy),
+      `getVacationAwaitingBadgeSource calls ${heavy.slice(0, -1)} — the badge polls every 30 s from every tab and must ` +
+        "not rebuild the full Vacation Report (or its enrichment) to produce a count and an overdue flag.",
+    );
+  }
+  assert.match(
+    badgeSource,
+    /fetchVacationReportRowsFromDatabase\(\{\s*access,\s*filters: cleanFilters\(\{ status: "all" \}\),/,
+    "the badge must read the SAME scoped, cached request rows the report reads for status \"all\"",
+  );
+  assert.match(badgeSource, /canSeeVacation\(access, row, visibleEmployeeHrIds\)/, "the badge must apply the report's own visibility filter");
+  assert.match(badgeSource, /VACATION_ACTIONABLE_STATUSES\.has\(row\.status\)/, "the badge must keep the Action Center's actionable statuses");
+  assert.match(badgeSource, /fetchActorPendingApprovalStepRequestIds\(access\)/, "the badge must add the same out-of-scope pending-approver rows");
+
+  // ── Same answer: both vacation paths run the one per-row decision ───────────
+  assert.match(
+    badgeSource,
+    /buildVacationActionCenterRows\(\{ access, candidateRows, directory: null, stepsByRequest \}\)/,
+    "the badge's rows must come from the shared Action Center row builder",
+  );
+  assert.match(
+    bodyOf(vacation, "export async function getVacationActionCenterData(", VACATION),
+    /buildVacationActionCenterRows\(\{ access, candidateRows, directory, stepsByRequest \}\)/,
+    "the full Action Center must use the same row builder as the badge, or the two can drift apart",
+  );
+  const builder = bodyOf(vacation, "function buildVacationActionCenterRows(", VACATION);
+  assert.match(builder, /resolveActionAvailability\(/, "the shared builder must decide the buttons");
+  assert.match(builder, /evaluateAdminOverride\(/, "the shared builder must decide the override window");
+
+  // ── The badge, the count and the overdue flag all take the light path ──────
+  for (const fn of ["getVacationAwaitingBadge", "countVacationAwaiting", "isVacationAwaitingOverdue"]) {
+    const body = bodyOf(hub, `export async function ${fn}(`, HUB);
+    assert.ok(body.includes("getVacationAwaitingForBadge(access)"), `${fn} must read the light badge source`);
+    assert.ok(
+      !body.includes("getVacationApprovalsForResponder("),
+      `${fn} calls getVacationApprovalsForResponder — that builds the full Action Center AND a second full Vacation Report per poll`,
+    );
+  }
+  assert.match(
+    bodyOf(hub, "async function getVacationAwaitingForBadge(", HUB),
+    /partitionVacationApprovals\(access, source\?\.centerRows \?\? \[\], source\?\.scopedRows \?\? \[\]\)\.awaiting/,
+    "the badge must split awaiting from upcoming with the hub page's own partition",
+  );
+  assert.match(
+    bodyOf(hub, "export async function getVacationApprovalsForResponder(", HUB),
+    /return partitionVacationApprovals\(access, center\?\.rows \?\? \[\], report\?\.rows \?\? \[\]\);/,
+    "the hub page must split with the same partition the badge uses",
+  );
+
+  // ── The hub badge counts only the sources whose items it keeps ──────────────
+  const count = bodyOf(action, "export async function countAwaitingMyActionItems(", ACTION);
+  for (const discarded of ["getVacationActionCenterData(", "getManagerPendingExcuses(", "getPlansAwaitingAction("]) {
+    assert.ok(
+      !count.includes(discarded),
+      `countAwaitingMyActionItems reads ${discarded.slice(0, -1)} — every item it produces is filtered out of the inbox, ` +
+        "so reading it costs a full read per poll for nothing.",
+    );
+  }
+  assert.match(count, /residualActionItems\(/, "the count must build items with the list's own builders");
+  assert.match(count, /survivesAwaitingInbox\(item, access\)/, "the count must apply the list's own filter");
+  const list = bodyOf(action, "export async function getAwaitingMyActionItemsWithHealth(", ACTION);
+  assert.match(list, /residualActionItems\(/, "the list must build its residual items with the shared builders");
+  assert.match(list, /survivesAwaitingInbox\(item, access\)/, "the list must filter with the shared filter");
+
+  for (const route of ["app/api/approvals/badge-counts/route.ts", "app/api/approvals-hub/pending-count/route.ts"]) {
+    const source = read(route);
+    assert.match(source, /countAwaitingMyActionItems\(access, audience\)/, `${route} must count, not list, the hub inbox`);
+    assert.doesNotMatch(source, /getAwaitingMyActionItems\(/, `${route} must not build the seven-source inbox list just to take its length`);
+  }
+}

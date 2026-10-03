@@ -189,8 +189,8 @@ export function runCvLibraryTests() {
     // `listCandidates`, which the import line satisfies on its own — so gutting the loader body
     // left the test green.
     assert.ok(
-      /await Promise\.all\(\[listCandidates\(\), listScreeningQuestions\(\)\]\)/.test(page),
-      `${path} must actually call listCandidates() and listScreeningQuestions() — importing the loaders is not loading`,
+      /await Promise\.all\(\[listCandidates\(\{ withRepeatingCvBlocks: false \}\), listScreeningQuestions\(\)\]\)/.test(page),
+      `${path} must actually call listCandidates({ withRepeatingCvBlocks: false }) and listScreeningQuestions() — importing the loaders is not loading`,
     );
     assert.ok(
       /cvLibraryRowsFromCandidates\(candidates, questionLabels\)/.test(page),

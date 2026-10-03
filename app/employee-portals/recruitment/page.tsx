@@ -145,7 +145,9 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
       .map((row) => ({ hrId: row.hrId, fullName: row.displayName }))
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
     if (canViewCandidates) {
-      candidates = await listCandidates();
+      // The slim read: the pool table never reads the repeating CV blocks. The profile panel that
+      // does gets them from its own GET /api/recruitment/candidates/[id].
+      candidates = await listCandidates({ withRepeatingCvBlocks: false });
     }
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load recruitment data.";

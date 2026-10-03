@@ -22,6 +22,9 @@ import { logError } from "@/lib/observability/log";
 
 const SITEVERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
 const DEFAULT_MIN_SCORE = 0.5;
+// A Google hang must not hold the applicant's submission open. A timeout lands in the catch below
+// and fails OPEN, exactly like any other network failure — the policy in the header.
+const RECAPTCHA_TIMEOUT_MS = 5000;
 
 export type RecaptchaResult = { ok: boolean; skipped?: boolean; reason?: string };
 
@@ -62,6 +65,7 @@ export async function verifyRecaptcha(
       body,
       headers: { "content-type": "application/x-www-form-urlencoded" },
       method: "POST",
+      signal: AbortSignal.timeout(RECAPTCHA_TIMEOUT_MS),
     });
     if (!res.ok) {
       // Google reachable but unhappy at the transport level — treat like an outage, fail open.

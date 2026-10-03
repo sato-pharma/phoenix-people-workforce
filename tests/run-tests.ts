@@ -1149,6 +1149,11 @@ import { runMonthlyDashboardWorkbookTests } from "./monthly-dashboard-workbook.t
 import { runCustomerDirectoryRollupTests } from "./customer-directory-rollup.test.ts";
 import { runWeeklySalesPaginationTests } from "./weekly-sales-pagination.test.ts";
 import { runNavBadgeStoreTests } from "./nav-badge-store.test.ts";
+import { runBadgePollStaysLightTests } from "./badge-poll-stays-light.test.ts";
+import { runWeeklyRowCacheTests } from "./weekly-row-cache.test.ts";
+import { runOutboundDeadlinesTests } from "./outbound-deadlines.test.ts";
+import { runCandidateListSlimCallersTests } from "./candidate-list-slim-callers.test.ts";
+import { runProcessHealthTests } from "./process-health.test.ts";
 import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independence.test.ts";
 import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runSosPharmacyActionsTests } from "./sos-pharmacy-actions.test.ts";
@@ -4644,6 +4649,17 @@ await runTest(
 await runTest("monthly sales dashboard workbook export", runMonthlyDashboardWorkbookTests);
 await runTest("weekly-sales-pagination", runWeeklySalesPaginationTests);
 await runTest("nav-badge store", runNavBadgeStoreTests);
+await runTest(
+  "the sidebar badge poll stays light: no full Vacation Report, no discarded inbox sources, and the same deciding code as the pages",
+  runBadgePollStaysLightTests,
+);
+await runTest("weekly row cache: 60 s lifetime, dropped by every weekly write, shared loads, copies on read, bounded", runWeeklyRowCacheTests);
+await runTest(
+  "every outbound Google Maps and reCAPTCHA call carries a deadline, and a timed-out Maps call is never retried over node:https",
+  runOutboundDeadlinesTests,
+);
+await runTest("the six list-shaped candidate reads skip the repeating CV blocks (59% of the pool's bytes)", runCandidateListSlimCallersTests);
+await runTest("process health: per-minute event-loop, heap and timing line, started once, production only", runProcessHealthTests);
 await runTest("analytics filter independence (no cross-dimension leakage)", runAnalyticsFilterIndependenceTests);
 await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
 await runTest("portal source-of-sales pharmacy actions (stopped / dropping / new) + weekly month pace", runSosPharmacyActionsTests);

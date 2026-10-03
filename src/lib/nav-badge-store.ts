@@ -118,6 +118,16 @@ function applyCount(src: string, newCount: number, overdue: boolean): void {
   channel.listeners.forEach((l) => l(newCount, overdue));
 }
 
+/**
+ * A tab in the background skips its 30 s poll (2026-10-04 performance review, PERF-001): nobody can
+ * see its badges, and every open tab used to cost the server a full poll. The `visibilitychange`
+ * listener below fetches the moment the tab is shown again, so a returning viewer never reads a stale
+ * count.
+ */
+function tabIsHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
 /** One batched fetch distributes counts to every subscribed badge channel. */
 function fetchAndBroadcastBatch(): void {
   // inFlight guard: if a batched request is already running, reuse it.
@@ -219,7 +229,9 @@ export function subscribeNavBadge(src: string, listener: Listener): () => void {
       // (its response covers this channel too, now that it exists).
       fetchAndBroadcastBatch();
       if (batch.intervalId === null) {
-        batch.intervalId = setInterval(() => fetchAndBroadcastBatch(), 30_000);
+        batch.intervalId = setInterval(() => {
+          if (!tabIsHidden()) fetchAndBroadcastBatch();
+        }, 30_000);
       }
       if (batch.onVisible === null && typeof document !== "undefined") {
         const onVisible = () => {
@@ -232,7 +244,9 @@ export function subscribeNavBadge(src: string, listener: Listener): () => void {
   } else if (ch.listeners.size === 1) {
     // Only the first subscriber starts the polling infrastructure.
     fetchAndBroadcast(src);
-    ch.intervalId = setInterval(() => fetchAndBroadcast(src), 30_000);
+    ch.intervalId = setInterval(() => {
+      if (!tabIsHidden()) fetchAndBroadcast(src);
+    }, 30_000);
     if (typeof document !== "undefined") {
       const onVisible = () => {
         if (document.visibilityState === "visible") fetchAndBroadcast(src);

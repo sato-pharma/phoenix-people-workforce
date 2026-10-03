@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { getAwaitingMyActionItems } from "@/lib/action-center/service";
+import { countAwaitingMyActionItems } from "@/lib/action-center/service";
+import { recordTiming } from "@/lib/observability/timings";
 import { countDirectOrderAwaitingFast, getDirectOrderUnbookedBadge } from "@/lib/direct-orders/service";
 import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
 import { getMarketAwarenessDecisionBadge } from "@/lib/market-awareness/service";
@@ -26,6 +27,7 @@ export const dynamic = "force-dynamic";
 // the overdue flag), and a failing domain falls back to the same {count: 0} shape its
 // dedicated endpoint returns — one broken domain never blanks the other badges.
 export async function GET(request: Request) {
+  const startedAt = Date.now();
   try {
     const access = await resolveAccessContext(request);
     const [plan, vacation, excuse, hub, directOrders, directOrdersUnbooked, directOrderValidations, marketing, marketAwareness] = await Promise.allSettled([
@@ -44,8 +46,8 @@ export async function GET(request: Request) {
       (async () => {
         await assertPermission(access, "leave", "read");
         const audience = resolveNavigationMode(access) === "employee-portal" ? "portal" : "admin";
-        const items = await getAwaitingMyActionItems(access, audience);
-        return { count: items.length };
+        // Counts only the sources the inbox keeps — see countAwaitingMyActionItems.
+        return { count: await countAwaitingMyActionItems(access, audience) };
       })(),
       // Direct Orders Approvals was the only Approvals Hub tab with no badge, even though
       // countDirectOrderAwaiting already existed (and had zero consumers). It is scoped to the
@@ -74,6 +76,8 @@ export async function GET(request: Request) {
       // — which is most of them — settles at 0 without a refusal reaching this response.
       getMarketAwarenessDecisionBadge(access),
     ]);
+    // Every open tab polls this every 30 s; its time goes into the per-minute process_health line.
+    recordTiming("badge_counts", Date.now() - startedAt);
     return NextResponse.json(
       {
         plan: plan.status === "fulfilled" ? plan.value : { count: 0, overdue: false },

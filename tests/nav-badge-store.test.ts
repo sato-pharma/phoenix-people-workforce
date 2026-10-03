@@ -236,4 +236,43 @@ export async function runNavBadgeStoreTests() {
     _resetNavBadgeChannels();
     setupFetch(0);
   }
+
+  // ── 9. A background tab skips its 30 s poll, and polls again once shown ─────
+  // PERF-001 (2026-10-04): every open tab polled the badge endpoint whether anyone could see it or
+  // not. The interval callbacks are captured so the tick can be fired by hand in either state.
+  {
+    const realSetInterval = globalThis.setInterval;
+    const ticks: Array<() => void> = [];
+    (globalThis as unknown as Record<string, unknown>)["setInterval"] = (fn: () => void) => {
+      ticks.push(fn);
+      return 0 as unknown as ReturnType<typeof setInterval>;
+    };
+    try {
+      for (const src of ["/api/approvals/vacation/pending-count", "/api/nb-t9"]) {
+        setupFetch(1);
+        _resetNavBadgeChannels();
+        ticks.length = 0;
+        const unsub = subscribeNavBadge(src, () => {});
+        await flush();
+        const afterBoot: number = fetchCallCount;
+        assert.equal(ticks.length, 1, `9: ${src} must start exactly one 30 s poll`);
+
+        mockDocument.visibilityState = "hidden";
+        ticks[0]();
+        await flush();
+        assert.equal(fetchCallCount, afterBoot, `9: a hidden tab's 30 s tick must not fetch (${src})`);
+
+        mockDocument.visibilityState = "visible";
+        ticks[0]();
+        await flush();
+        assert.equal(fetchCallCount, afterBoot + 1, `9: a visible tab's 30 s tick must still fetch (${src})`);
+        unsub();
+      }
+    } finally {
+      mockDocument.visibilityState = "visible";
+      (globalThis as unknown as Record<string, unknown>)["setInterval"] = realSetInterval;
+      _resetNavBadgeChannels();
+      setupFetch(0);
+    }
+  }
 }

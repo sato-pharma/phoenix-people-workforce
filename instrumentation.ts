@@ -48,6 +48,16 @@ export async function register() {
     } catch (error) {
       console.error("[crm:housekeeping] failed to start:", error);
     }
+
+    // One process-health line a minute (event-loop delay, heap, RSS, request timings). Production
+    // only by its own guard; dynamic for the same edge-safety reason as the three above, and its
+    // own try so telemetry can never take a scheduler down with it.
+    try {
+      const { startProcessHealthReporter } = await import("@/lib/observability/process-health");
+      startProcessHealthReporter();
+    } catch (error) {
+      console.error("[process-health] failed to start:", error);
+    }
   }
 }
 

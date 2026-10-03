@@ -35,6 +35,14 @@ type GeocodeResponse = {
   lng: number;
 };
 
+// A rep's Phoenix CRM save awaits googleReverseGeocode (via resolveEvidenceLocation), and an
+// unbounded Google hang held that save open with it. Every call here now gives up after this.
+const GOOGLE_MAPS_TIMEOUT_MS = 8000;
+
+function isTimeoutAbort(error: unknown) {
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+}
+
 async function postJsonWithHttpsFallback(
   url: string,
   init: {
@@ -49,8 +57,12 @@ async function postJsonWithHttpsFallback(
       cache: "no-store",
       headers: init.headers,
       method: init.method,
+      signal: AbortSignal.timeout(GOOGLE_MAPS_TIMEOUT_MS),
     });
-  } catch {
+  } catch (error) {
+    // Google was reachable and simply slow: retrying over node:https would only double the wait.
+    // The fallback exists for fetch failing to connect at all, not for a deadline.
+    if (isTimeoutAbort(error)) throw error;
     const { request } = await import("node:https");
     const parsed = new URL(url);
 
@@ -82,6 +94,7 @@ async function postJsonWithHttpsFallback(
         },
       );
 
+      req.setTimeout(GOOGLE_MAPS_TIMEOUT_MS, () => req.destroy(new Error("Google Maps request timed out")));
       req.on("error", reject);
       req.write(init.body);
       req.end();
@@ -308,7 +321,10 @@ export async function googleGeocodeAddress(address: string): Promise<LatLng | nu
   url.searchParams.set("address", address);
   url.searchParams.set("key", key);
 
-  const response = await fetch(url.toString(), { cache: "no-store" });
+  const response = await fetch(url.toString(), {
+    cache: "no-store",
+    signal: AbortSignal.timeout(GOOGLE_MAPS_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error(`Google Geocoding API failed with ${response.status}.`);
   }
@@ -707,6 +723,7 @@ export async function googlePlaceDetails(placeId: string): Promise<PlaceLocation
       "X-Goog-Api-Key": key,
       "X-Goog-FieldMask": "addressComponents,displayName,formattedAddress,location",
     },
+    signal: AbortSignal.timeout(GOOGLE_MAPS_TIMEOUT_MS),
   });
   if (!response.ok) return null;
 
@@ -749,7 +766,10 @@ export async function googleGeocodeComponents(searchText: string): Promise<Geoco
   url.searchParams.set("key", key);
   url.searchParams.set("language", "en");
 
-  const response = await fetch(url.toString(), { cache: "no-store" });
+  const response = await fetch(url.toString(), {
+    cache: "no-store",
+    signal: AbortSignal.timeout(GOOGLE_MAPS_TIMEOUT_MS),
+  });
   if (!response.ok) return null;
 
   const payload = (await response.json()) as {
@@ -785,7 +805,10 @@ export async function googleReverseGeocode(
   url.searchParams.set("latlng", `${location.lat},${location.lng}`);
   url.searchParams.set("key", key);
 
-  const response = await fetch(url.toString(), { cache: "no-store" });
+  const response = await fetch(url.toString(), {
+    cache: "no-store",
+    signal: AbortSignal.timeout(GOOGLE_MAPS_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error(`Google Reverse Geocoding API failed with ${response.status}.`);
   }
@@ -919,3 +942,6 @@ export async function googleRouteThroughStops(stops: LatLng[]): Promise<{
     return null;
   }
 }
+
+/** Exported for tests: the timeout-versus-fallback branch is only provable by calling it. */
+export const __testables = { postJsonWithHttpsFallback };
