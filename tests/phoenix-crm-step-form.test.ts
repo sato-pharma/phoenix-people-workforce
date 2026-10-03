@@ -106,7 +106,9 @@ export function runPhoenixCrmStepFormTests(): void {
     assert.deepEqual(labels, ["Visit type", "Customer", "Products and comment", "Log the visit"], "Add visit is four steps, in the owner's order");
     // Eight since 2026-10-03: the Pharmacy visit picker is a screen of step 2 like the other two
     // (owner: a pharmacy visit "is logged normally"), still four steps and still inside the form.
-    assert.equal((tab.match(/return shell\(/g) ?? []).length, 8, "every screen of Add visit sits inside the step form");
+    // Nine the same night: Add a pharmacy (owner: "he can also add a pharmacy without any validation
+    // or without any approval") is another screen of step 2, inside the form like the picker it opens from.
+    assert.equal((tab.match(/return shell\(/g) ?? []).length, 9, "every screen of Add visit sits inside the step form");
     assert.equal(/CrmStepNext/.test(tab), false, "no Next on a step whose answer is a choice — a tap moves him on");
     assert.ok(tab.includes("footer={n >= 3 ? undefined : <CrmStepFooter back={back} />}"), "steps 1 and 2 have Back only");
     assert.ok(tab.includes("canJump={(target) => target < n && (n < 3 || target >= 3)}"), "the rail only goes back, and never out of the visit form past its own exit");

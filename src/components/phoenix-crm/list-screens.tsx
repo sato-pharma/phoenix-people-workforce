@@ -140,6 +140,8 @@ export type ListScreen =
   /** A customer the SFE loaded from a sheet: on the list, not validated, and in iReports360 nowhere. */
   | { name: "validate-listed"; customerId: string }
   | { name: "new" }
+  /** A pharmacy added by its name, with no photo and no approval (owner, 2026-10-03). */
+  | { name: "add-pharmacy" }
   | { name: "restore"; customerId: string; from: "customer" | "list" }
   | { name: "add-request"; customerId: string }
   | { name: "add-place"; customerId: string; draft: PlaceDraftState | null }

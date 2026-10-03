@@ -4460,6 +4460,57 @@ Everything it carries was checked against every reader that could count it twice
 
 It keeps the doctor's products because `phoenix_crm_visits_products` requires one to twelve.
 
+### One box, two pharmacies — the same evening
+
+He asked: *"fix a doctor visit that names two pharmacies in one box"*. Measured on production that
+evening: three of the doctor visits that named a pharmacy named TWO, all Mohamed Salem's (Pedia), all
+with the Arabic comma — "صيدليه التهامي، صيدليه الرحمه", "صيدليه الوكيل ،صيدليه الكوانيني" and
+"كوانيني ،الوكيل". The whole box was matched as ONE name: the first found only التهامي, the second
+half-matched two pharmacies and filed nothing, the third filed الوكيل under both names; and the day's
+Pharmacies figure read each box as a pharmacy of its own (his day read 8 where he had visited 5).
+
+- `splitNamedPharmacies` (`pharmacy-call-rules.ts`) reads each name in the box: the Arabic and Latin
+  comma and semicolon, a new line, "+", "&", and "و" standing before the word pharmacy. It never splits
+  on "/" — the reps' "ص/ناصر" IS the word pharmacy — or on "-", which names a branch ("صيدلية العطار -
+  الفرع التاني"). A part that is only the word pharmacy names none; a second spelling of one name is
+  dropped; five at most.
+- `linkNamedPharmacies` matches each name on its own with `linkNamedPharmacy`; two names that land on
+  one pharmacy on his list file it once.
+- `phoenix_crm_save_visit` (`20261003202903`) reads `linked_pharmacies: [{ name, id, new }]` and files
+  one visit per entry, named as he spelled THAT pharmacy, so the doctor's mention and the visit share
+  a key. A caller from before sends the old one-match fields, read as a list of one; the new caller
+  fills those only for a box naming ONE pharmacy, because 175653 names its visit (and any pharmacy it
+  adds) with the whole box.
+- `pharmacyNamesOnVisit` is what the day screen (`todayPharmacies`) and the manager's calendar cell
+  count: a pharmacy's OWN visit is always one pharmacy, a doctor's box is what it names.
+- His data that evening: الكوانيني got the visit his 20:19 box should have filed, and the الوكيل visit
+  filed under "كوانيني ،الوكيل" was renamed "الوكيل". His day reads 6, not 5, because he typed the same
+  pharmacy once as "الكوانيني" and once as "كوانيني": `pharmacyNameKey` keeps the article, and that
+  is a spelling question, not a box one.
+
+### He adds a pharmacy himself — the same night
+
+He asked: *"he can add to his list pharmacies without approval normally … then he goes to visits and
+when he press add a visit … in pharmacy visit … all his pharmacies to be listed and he can also add a
+pharmacy without any validation or without any approval"*, and to keep the doctor visit's pharmacy box
+exactly as it is, and never to mix these visits with the AM or PM ones.
+
+Measured first: Pharmacy visit ALREADY listed every pharmacy on his list, validated or not (the form
+reads `active` and `pending`; 576 of production's 579 pharmacies are `pending`). What was missing was a
+way to ADD one — the screen said "No pharmacy is on your list yet. Name one on a customer's visit" and
+offered nothing, and the List's Add new customer is AM/PM only, with a photo and two approvals.
+
+- **Add a pharmacy** takes the NAME and nothing else — no photo, no location, no hours, no request — on
+  the List (beside Add new customer) and on Add visit → Pharmacy visit, where saving opens the visit
+  form on it. The territory's own rep only (`territoryForRepWrite`); a manager entering a visit picks
+  from the rep's list.
+- The name is matched EXACTLY by its key (`matchAddedPharmacy`): on his list already → opened, never a
+  second row; in his Archive → refused with the way back, as typing never undoes the Archive (rule 3c);
+  otherwise `phoenix_crm_add_pharmacy` (`20261003211501`) adds it `pending`, `origin` 'new', repeating
+  the exact-name check under a per-territory lock so a double tap adds one. Never the doctor box's
+  half-match: "النور" must not open "النور الجديدة".
+- Its visits are Pharmacy visits like any other — counted in Pharmacies, never inside AM or PM.
+
 ### What must NOT be "fixed"
 
 - 🔴 **The five SQL report functions keep `c.validated_at is not null`** (Visits by day, Coverage,
@@ -4471,6 +4522,9 @@ It keeps the doctor's products because `phoenix_crm_visits_products` requires on
   screens read.
 - Never give the linked visit the doctor's people or stock answers back "for completeness".
 - Never widen `pharmacyNameKey` to the Pharmacy Master's stop words.
+- Never split the box on "/" or "-": the first is the reps' "ص/", the second names a branch.
+- Never put a photo, a location, a request or an approval back on Add a pharmacy, and never match its
+  name by half — an exact key or a new pharmacy.
 
 ## Add visit keeps every point, and its optional steps start folded — owner ruling, 2026-10-02 (night)
 

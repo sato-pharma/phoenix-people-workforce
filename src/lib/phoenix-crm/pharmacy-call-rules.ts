@@ -78,6 +78,20 @@ import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matc
  * — distinct names, keyed by {@link pharmacyNameKey} — counts the doctor's mention and the pharmacy's
  * own visit once.
  *
+ * ONE BOX CAN NAME TWO PHARMACIES. Owner, 2026-10-03: *"fix a doctor visit that names two pharmacies
+ * in one box"* — "صيدليه التهامي، صيدليه الرحمه". {@link splitNamedPharmacies} reads each name in the
+ * box, and every one is matched, filed and counted on its own; a pharmacy's OWN visit is always one
+ * pharmacy ({@link pharmacyNamesOnVisit}).
+ *
+ * ── 3d. HE ADDS A PHARMACY HIMSELF, BY ITS NAME ───────────────────────────────────────────────────
+ * Owner, 2026-10-03: *"he can add to his list pharmacies without approval normally … in pharmacy visit
+ * … all his pharmacies to be listed and he can also add a pharmacy without any validation or without
+ * any approval"*. Add a pharmacy — on the List, and on Add visit → Pharmacy visit — takes the NAME and
+ * nothing else: no signboard photo, no location, no hours, no request. It is on his list the moment it
+ * is saved (`phoenix_crm_add_pharmacy`), Pharmacy visit offers it at once, and its visits count in the
+ * Pharmacies figure only — never inside AM or PM (rule 1). The name is matched EXACTLY
+ * ({@link matchAddedPharmacy}), never by the half-match a doctor's box uses.
+ *
  * ── 4. NO KPI READS A PHARMACY ────────────────────────────────────────────────────────────────────
  * Owner, 2026-10-02: *"we are not stuck to coverage of pharmacies … grab the reps' pharmacies from
  * iReports360 only as a database or as a reference, but no KPIs is counted on it."* So there is no
@@ -257,4 +271,149 @@ export function linkNamedPharmacy(typed: string | null | undefined, listed: read
     if (near.length > 1) return { kind: "none" };
   }
   return { kind: "new" };
+}
+
+/** The most pharmacies one box files visits for — the database's own cap (`limit 5`). */
+export const MAX_NAMED_PHARMACIES = 5;
+
+/**
+ * What separates two pharmacies in the box: the Arabic and Latin comma and semicolon, a new line, "+"
+ * and "&", and a "و" ("and") standing before the word pharmacy — "صيدلية التهامي وصيدلية الرحمه".
+ * 🔴 NEVER "/" — the reps' "ص/ناصر" IS the word pharmacy — and never "-", which names a branch
+ * ("صيدلية العطار - الفرع التاني").
+ */
+const NAMED_PHARMACY_SEPARATOR = /[،,؛;\r\n+&]+|\s+و\s*(?=صيدلي|ص[./\s])/u;
+
+/**
+ * Each pharmacy the box names (rule 3c), in the order he typed them. All three two-name boxes measured
+ * on 2026-10-03 used the Arabic comma: "صيدليه التهامي، صيدليه الرحمه", "صيدليه الوكيل ،صيدليه
+ * الكوانيني", "كوانيني ،الوكيل". A part that is only the word pharmacy names none, and a second spelling
+ * of a pharmacy already named is the same pharmacy. Five at most.
+ */
+export function splitNamedPharmacies(text: string | null | undefined): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const part of String(text ?? "").split(NAMED_PHARMACY_SEPARATOR)) {
+    const name = part.trim();
+    const key = pharmacyNameKey(name);
+    if (!key || PHARMACY_WORDS.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+    if (names.length === MAX_NAMED_PHARMACIES) break;
+  }
+  return names;
+}
+
+/**
+ * The pharmacies one visit puts in the day's Pharmacies figure: a pharmacy's own visit is that ONE
+ * pharmacy, under its own name; a doctor's or account's visit, each one its box names. The day screen
+ * (`todayPharmacies`) and the manager's calendar cell both read it, so the cell and the day agree.
+ */
+export function pharmacyNamesOnVisit(listType: unknown, pharmacyName: string | null | undefined): string[] {
+  if (isPharmacyListType(listType)) {
+    const name = String(pharmacyName ?? "").trim();
+    return name ? [name] : [];
+  }
+  return splitNamedPharmacies(pharmacyName);
+}
+
+/** One name from the box, and which pharmacy on his list it is. */
+export type NamedPharmacyMatch = { name: string; link: NamedPharmacyLink };
+
+/**
+ * Every pharmacy the box names, matched on its own by {@link linkNamedPharmacy}. A name that matches
+ * nothing he may visit is left out, and two names that land on ONE pharmacy on his list file it once.
+ */
+export function linkNamedPharmacies(text: string | null | undefined, listed: readonly ListedPharmacy[]): NamedPharmacyMatch[] {
+  const matches: NamedPharmacyMatch[] = [];
+  const linked = new Set<string>();
+  for (const name of splitNamedPharmacies(text)) {
+    const link = linkNamedPharmacy(name, listed);
+    if (link.kind === "none") continue;
+    if (link.kind === "existing") {
+      if (linked.has(link.customerId)) continue;
+      linked.add(link.customerId);
+    }
+    matches.push({ name, link });
+  }
+  return matches;
+}
+
+/** "A", "A and B", "A, B and C". */
+function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The line he reads once a doctor's visit is saved, about the pharmacies it named: each one that got a
+ * visit, and which of them joined his list. Nothing when none did — a pharmacy already visited that day
+ * keeps the one visit it has.
+ */
+export function linkedPharmaciesNote(filed: ReadonlyArray<{ name: string; created: boolean }>): string | null {
+  if (filed.length === 0) return null;
+  const names = filed.map((pharmacy) => pharmacy.name);
+  const added = filed.filter((pharmacy) => pharmacy.created).map((pharmacy) => pharmacy.name);
+  if (filed.length === 1) {
+    return added.length === 1
+      ? `${names[0]} is logged as a pharmacy visit too, and added to your list.`
+      : `${names[0]} is logged as a pharmacy visit too.`;
+  }
+  const logged = `${joinNames(names)} are logged as pharmacy visits too.`;
+  if (added.length === 0) return logged;
+  return `${logged} ${joinNames(added)} ${added.length === 1 ? "is" : "are"} added to your list.`;
+}
+
+/**
+ * The longest name Add a pharmacy takes (rule 3d). The same 120 as a visit's `pharmacy_name`
+ * (entry-rules.ts `PHARMACY_NAME_MAX`, pinned equal by the test), because a pharmacy's own visit is
+ * named after it — a longer name would be refused on its first visit, not here.
+ */
+export const ADDED_PHARMACY_NAME_MAX = 120;
+
+/** Why a name typed on Add a pharmacy cannot be saved, or null when it can (rule 3d). */
+export function addedPharmacyNameProblem(name: string | null | undefined): string | null {
+  const text = String(name ?? "").trim().replace(/\s+/g, " ");
+  if (!text) return "Write the pharmacy's name.";
+  if (text.length > ADDED_PHARMACY_NAME_MAX) return `Keep the name to ${ADDED_PHARMACY_NAME_MAX} characters.`;
+  const key = pharmacyNameKey(text);
+  // "صيدلية" or "ص." alone names no pharmacy: the key keeps the word only when nothing else is there.
+  if (!key || PHARMACY_WORDS.has(key)) return "Write the pharmacy's own name, not only the word pharmacy.";
+  return null;
+}
+
+/**
+ * What Add a pharmacy does with the name he typed (rule 3d):
+ *
+ *   existing — it is on his list already, so it is opened, never added a second time;
+ *   archived — he dropped it and it was archived: bringing it back is asked from the Archive, as for
+ *              any customer, because adding it again by typing would undo that decision (rule 3c);
+ *   new      — it is added.
+ *
+ * By its key, EXACTLY. A doctor's box half-matches because he typed it in passing; here he is naming the
+ * pharmacy he wants, and opening "النور الجديدة" because he typed "النور" would hand him one he did not
+ * ask for.
+ */
+export type AddedPharmacyMatch =
+  | { kind: "existing"; customerId: string; name: string }
+  | { kind: "archived"; customerId: string; name: string }
+  | { kind: "new" };
+
+export function matchAddedPharmacy(typed: string | null | undefined, listed: readonly ListedPharmacy[]): AddedPharmacyMatch {
+  const key = pharmacyNameKey(typed ?? "");
+  if (!key) return { kind: "new" };
+  // The order is fixed, so the same name always lands on the same row — as `linkNamedPharmacy` does.
+  const same = listed.filter((pharmacy) => pharmacyNameKey(pharmacy.name) === key).sort((left, right) => left.customerId.localeCompare(right.customerId));
+  const live = same.filter((pharmacy) => pharmacy.status !== "dropped");
+  const chosen = live.find((pharmacy) => pharmacy.status === "active") ?? live[0];
+  if (chosen) return { kind: "existing", customerId: chosen.customerId, name: chosen.name };
+  const archived = same[0];
+  return archived ? { kind: "archived", customerId: archived.customerId, name: archived.name } : { kind: "new" };
+}
+
+/** What he reads once Add a pharmacy is saved. */
+export function addedPharmacyNote(added: { customerName: string; created: boolean }): string {
+  return added.created
+    ? `${added.customerName} is on your list. No approval: its visits count in Pharmacies, never in AM or PM.`
+    : `${added.customerName} is already on your list.`;
 }

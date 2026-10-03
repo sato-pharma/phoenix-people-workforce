@@ -38,6 +38,7 @@ import { Plus, Search } from "lucide-react";
 
 import { RepsListTiles } from "@/components/crm/reps-list-board";
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
+import { AddPharmacyScreen } from "@/components/phoenix-crm/add-pharmacy";
 import { useCrmGet, type CrmResource } from "@/components/phoenix-crm/api";
 import { CustomerListBoard, CustomerRowAction, type CustomerListVariant } from "@/components/phoenix-crm/customer-list-board";
 import { countText, dayLabel, dayLabelWithYear } from "@/components/phoenix-crm/format";
@@ -82,6 +83,7 @@ import type { RepsListContact } from "@/lib/crm/reps-list";
 import type { RepsListBoard } from "@/lib/crm/reps-list-board";
 import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import type { ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
+import { addedPharmacyNote } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import {
   formatTimingWindow,
   PHOENIX_CRM_WEEKDAY_NAMES,
@@ -334,6 +336,20 @@ export function ListTab({
       case "new":
         body = <ValidateScreen {...base} key="new" onAddPlaceInstead={addPlaceInstead} onBack={home} onSaved={placeSaved} subject={{ mode: "new" }} />;
         break;
+      case "add-pharmacy":
+        // By its name, with no photo and no approval (owner, 2026-10-03): it opens on his list at once.
+        body = (
+          <AddPharmacyScreen
+            backLabel="List"
+            from="list"
+            key="add-pharmacy"
+            onAdded={(added) => customerChanged(added.customerId, { tone: "good", title: addedPharmacyNote(added) })}
+            onBack={home}
+            seatId={seatId}
+            test={test}
+          />
+        );
+        break;
       case "restore": {
         const { customerId, from } = current;
         body = (
@@ -576,10 +592,17 @@ function ListHome({
     <CrmPanel
       actions={
         view.canEdit ? (
-          <CrmButton onClick={() => onOpen({ name: "new" })} variant="primary">
-            <Plus aria-hidden className="h-4 w-4" />
-            Add new customer
-          </CrmButton>
+          <>
+            <CrmButton onClick={() => onOpen({ name: "new" })} variant="primary">
+              <Plus aria-hidden className="h-4 w-4" />
+              Add new customer
+            </CrmButton>
+            {/* A pharmacy by its name alone, with no approval (owner, 2026-10-03). */}
+            <CrmButton onClick={() => onOpen({ name: "add-pharmacy" })}>
+              <Plus aria-hidden className="h-4 w-4" />
+              Add a pharmacy
+            </CrmButton>
+          </>
         ) : null
       }
       description={territoryLine(view.territory)}

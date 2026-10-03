@@ -147,6 +147,8 @@ const ROUTE_GATES: RouteGate[] = [
   post("list/rename", "create"),
   // The pharmacy the rep pins as this doctor's primary (owner, 2026-09-24): his own write.
   post("list/primary-pharmacy", "create"),
+  // A pharmacy he adds to his own list by its name (owner, 2026-10-03): his own write, no approval.
+  post("list/pharmacy", "create"),
   // One customer's past Phoenix visits, newest first, on his page (owner, 2026-10-02). Read through the
   // same seat gate as the list (`territoryForRead`), and carrying no location, distance or flag.
   get("list/timeline"),
@@ -657,6 +659,11 @@ const LATER_MIGRATIONS = [
   // reject"). ONE brand-new function and nothing else — no table, no column, and it replaces nothing,
   // so it appends safely at the end and cannot disturb the replacement ordering above.
   "supabase/migrations/20261003184147_phoenix_crm_restore_validation.sql",
+  // A doctor's visit that names two pharmacies in one box (owner, 2026-10-03). It REPLACES
+  // phoenix_crm_save_visit with 20261003175653's body and the link turned into one visit per name, so it
+  // is now the LAST entry that replaces save_visit and must stay last among them. No table, no column,
+  // no new function.
+  "supabase/migrations/20261003202903_phoenix_crm_visit_names_two_pharmacies.sql",
   // The reading a REFUSED capture was carrying (owner, 2026-10-03: "record the refused readings so
   // the next refusal is traceable"). ONE brand-new table and NOTHING else — no function, no column,
   // no view, and it replaces nothing — so it appends safely at the end and cannot disturb the
@@ -664,6 +671,10 @@ const LATER_MIGRATIONS = [
   // refused eighteen times leaves eighteen rows, and a unique constraint on any of its columns would
   // collapse exactly the retry history that IS the evidence.
   "supabase/migrations/20261003211500_phoenix_crm_refused_readings.sql",
+  // A pharmacy he adds to his own list by its name (owner, 2026-10-03: "he can also add a pharmacy
+  // without any validation or without any approval"). ONE brand-new function and nothing else — no
+  // table, no column, and it replaces nothing — so it appends safely at the end.
+  "supabase/migrations/20261003211501_phoenix_crm_add_pharmacy.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

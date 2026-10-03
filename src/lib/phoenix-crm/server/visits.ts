@@ -55,11 +55,12 @@ import { deriveOfflineCaptureTime, parseOfflineCaptureClaim } from "@/lib/phoeni
 import {
   doctorListType,
   isPharmacyListType,
-  linkNamedPharmacy,
+  linkedPharmaciesNote,
+  linkNamedPharmacies,
   parseListType,
   PHARMACY_CALL_REP_NOTE,
-  PHARMACY_LIST_TYPE,
   pharmacyNameKey,
+  splitNamedPharmacies,
   type ListedPharmacy,
   type NamedPharmacyLink,
 } from "@/lib/phoenix-crm/pharmacy-call-rules";
@@ -89,7 +90,7 @@ import { type CaptureClient } from "@/lib/phoenix-crm/server/capture-client";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
-import { ensureReferenceCustomers, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
+import { ensureReferenceCustomers, loadListedPharmacies, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPlannedOtherDays } from "@/lib/phoenix-crm/server/offplan-day";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -658,7 +659,8 @@ export type VisitFormView = {
  * The pharmacy names the form suggests as he types: the ones this seat has typed before, most recent
  * first, then the pharmacies on his list (owner, 2026-10-03) — so picking a suggestion is picking the
  * pharmacy his visit is filed against (`linkNamedPharmacy`), spelled as the list spells it. One name
- * per pharmacy, keyed by `pharmacyNameKey`; he can always type a new one.
+ * per pharmacy, keyed by `pharmacyNameKey`; he can always type a new one. A box he once filled with
+ * two pharmacies is offered as the two it named (`splitNamedPharmacies`), never as one name.
  */
 async function loadSeatPharmacies(seatId: string, isTest: boolean): Promise<string[]> {
   const [typed, listed] = await Promise.all([
@@ -685,27 +687,12 @@ async function loadSeatPharmacies(seatId: string, isTest: boolean): Promise<stri
   };
   for (const row of (typed.data ?? []) as Row[]) {
     if (names.length >= 50) break;
-    offer(row.pharmacy_name);
+    for (const name of splitNamedPharmacies(textOrNull(row.pharmacy_name))) offer(name);
   }
   for (const pharmacy of listed) {
     if (pharmacy.status !== "dropped") offer(pharmacy.name);
   }
   return names;
-}
-
-/** Every pharmacy on the seat's list, the Archive included — the match needs to know what he dropped. */
-async function loadListedPharmacies(seatId: string, isTest: boolean): Promise<ListedPharmacy[]> {
-  const rows = await fetchAllRowsKeyset<Row>(
-    () =>
-      getSupabaseAdmin()
-        .from("phoenix_crm_customers")
-        .select("id, name, status")
-        .eq("seat_id", seatId)
-        .eq("is_test", isTest)
-        .eq("list_type", PHARMACY_LIST_TYPE),
-    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-  );
-  return rows.map((row) => ({ customerId: String(row.id), name: String(row.name ?? ""), status: String(row.status ?? "") }));
 }
 
 /**
@@ -1144,9 +1131,15 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     // to find which one. No name, no read.
     visit.pharmacyName ? loadListedPharmacies(seat.seatId, isTest) : Promise.resolve([] as ListedPharmacy[]),
   ]);
-  // Decided here, where it can be tested without a database; the function only checks the pharmacy is
-  // his and files the visit. It is ignored when the customer he visited is himself a pharmacy.
-  const pharmacyLink: NamedPharmacyLink = linkNamedPharmacy(visit.pharmacyName, listedPharmacies);
+  // Decided here, where it can be tested without a database; the function only checks each pharmacy is
+  // his and files its visit. It is ignored when the customer he visited is himself a pharmacy. ONE BOX
+  // CAN NAME TWO PHARMACIES ("صيدليه التهامي، صيدليه الرحمه", owner 2026-10-03): each name is matched
+  // on its own and sent in `linked_pharmacies`.
+  const pharmacyLinks = linkNamedPharmacies(visit.pharmacyName, listedPharmacies);
+  // The one match a database still on 20261003175653 reads, and names with the WHOLE box. Only a box
+  // naming ONE pharmacy may send it: "new" for a two-name box would add a pharmacy called by both names.
+  const pharmacyLink: NamedPharmacyLink =
+    pharmacyLinks.length === 1 && splitNamedPharmacies(visit.pharmacyName).length === 1 ? pharmacyLinks[0]!.link : { kind: "none" };
   throwIfError(placesResult.error);
   const places = ((placesResult.data ?? []) as Row[]).map((row) => ({ id: String(row.id), lat: Number(row.lat), lon: Number(row.lon) }));
   const settings = viewer.config.settings;
@@ -1178,6 +1171,11 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       product_manager_hr_id: participants.value.productManagerHrId,
       products: visit.products,
       pharmacy_name: visit.pharmacyName,
+      linked_pharmacies: pharmacyLinks.map(({ name, link }) => ({
+        name,
+        id: link.kind === "existing" ? link.customerId : null,
+        new: link.kind === "new",
+      })),
       linked_pharmacy_id: pharmacyLink.kind === "existing" ? pharmacyLink.customerId : null,
       linked_pharmacy_new: pharmacyLink.kind === "new",
       product_availability: productAvailability,
@@ -1340,15 +1338,15 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
 
 /**
  * The line he reads about a pharmacy once the visit is saved: a pharmacy's own visit needs no plan and
- * no approval, and a pharmacy he named on a doctor's visit is logged as a visit to it too. Nothing when
- * that pharmacy was already visited today — its one visit of the day is already there.
+ * no approval, and each pharmacy he named on a doctor's visit is logged as a visit to it too. Nothing
+ * for one already visited today — its one visit of the day is already there.
  */
 function savedPharmacyNote(result: Row): string | null {
   if (isPharmacyListType(result.list_type)) return PHARMACY_CALL_REP_NOTE;
-  const linked = result.linked_pharmacy && typeof result.linked_pharmacy === "object" ? (result.linked_pharmacy as Row) : null;
-  if (!linked || !textOrNull(linked.visit_id)) return null;
-  const name = textOrNull(linked.name) ?? "The pharmacy";
-  return linked.created === true
-    ? `${name} is logged as a pharmacy visit too, and added to your list.`
-    : `${name} is logged as a pharmacy visit too.`;
+  // Every pharmacy the box named; a database still on 20261003175653 answers only `linked_pharmacy`.
+  const answered: unknown[] = Array.isArray(result.linked_pharmacies) ? result.linked_pharmacies : [result.linked_pharmacy];
+  const filed = answered
+    .filter((linked): linked is Row => Boolean(linked) && typeof linked === "object" && textOrNull((linked as Row).visit_id) !== null)
+    .map((linked) => ({ name: textOrNull(linked.name) ?? "The pharmacy", created: linked.created === true }));
+  return linkedPharmaciesNote(filed);
 }

@@ -4,7 +4,19 @@ import { readFileSync } from "node:fs";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 import { awaitsValidation, listRowAction, listSectionOf, onTheList } from "../src/lib/phoenix-crm/list-request-rules.ts";
-import { linkNamedPharmacy, pharmacyNameKey, type ListedPharmacy } from "../src/lib/phoenix-crm/pharmacy-call-rules.ts";
+import {
+  ADDED_PHARMACY_NAME_MAX,
+  addedPharmacyNameProblem,
+  addedPharmacyNote,
+  linkedPharmaciesNote,
+  linkNamedPharmacies,
+  linkNamedPharmacy,
+  matchAddedPharmacy,
+  pharmacyNameKey,
+  pharmacyNamesOnVisit,
+  splitNamedPharmacies,
+  type ListedPharmacy,
+} from "../src/lib/phoenix-crm/pharmacy-call-rules.ts";
 import { todayPharmacies } from "../src/lib/phoenix-crm/today-rules.ts";
 
 /**
@@ -22,6 +34,10 @@ import { todayPharmacies } from "../src/lib/phoenix-crm/today-rules.ts";
  *      names gets its own visit, matched to his list or added to it.
  *   3. One pharmacy is one pharmacy however it is spelled — "ص.الفيومي" on the doctor's visit and the
  *      visit to "صيدلية الفيومي" count once in the day's Pharmacies figure.
+ *   4. "fix a doctor visit that names two pharmacies in one box" — "صيدليه التهامي، صيدليه الرحمه" is
+ *      two pharmacies, each matched, filed and counted on its own (section 8).
+ *   5. "he can also add a pharmacy without any validation or without any approval" — Add a pharmacy,
+ *      by its name alone, on the List and on Pharmacy visit (section 9).
  */
 
 const ROOT = new URL("../", import.meta.url);
@@ -29,7 +45,12 @@ const read = (file: string) => readFileSync(new URL(file, ROOT), "utf8");
 const code = (file: string) => stripComments(read(file));
 
 const VIEW_MIGRATION = "supabase/migrations/20261003174346_phoenix_crm_pharmacy_needs_no_validation.sql";
+/** The column `linked_from_visit_id` and the trigger that names a pharmacy visit live here, and only here. */
 const SAVE_MIGRATION = "supabase/migrations/20261003175653_phoenix_crm_pharmacy_visit_logged_normally.sql";
+/** The LIVE phoenix_crm_save_visit — 175653's body with the link turned into one visit per name in the box. */
+const LINK_MIGRATION = "supabase/migrations/20261003202903_phoenix_crm_visit_names_two_pharmacies.sql";
+/** Add a pharmacy by its name — no photo, no request, no approval (section 9). */
+const ADD_MIGRATION = "supabase/migrations/20261003211501_phoenix_crm_add_pharmacy.sql";
 
 export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
   // ── 1. One pharmacy, however he spells it ─────────────────────────────────────────────────────
@@ -125,7 +146,7 @@ export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
 
   // ── 5. The database files it ──────────────────────────────────────────────────────────────────
   {
-    const sql = stripSqlComments(read(SAVE_MIGRATION));
+    const sql = stripSqlComments(read(LINK_MIGRATION));
     // The pharmacy branch comes FIRST, ahead of the out-of-list and out-of-plan ones.
     assert.match(
       sql,
@@ -135,13 +156,14 @@ export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
     assert.match(sql, /if v_is_pharmacy then\s+v_pharmacy := left\(v_customer\.name, 120\);/, "its own visit is named after it, so the day's figure counts it");
     // The named pharmacy: checked to be HIS, added when none matched, one a day.
     assert.match(sql, /and c\.seat_id = v_seat\s+and c\.is_test = v_is_test\s+and c\.list_type = 'Pharmacy'\s+and c\.status in \('active', 'pending', 'outside'\);/);
-    assert.match(sql, /'Pharmacy', v_pharmacy, 'new', 'pending', v_actor, v_is_test,/);
+    assert.match(sql, /'Pharmacy', v_entry_name, 'new', 'pending', v_actor, v_is_test,/, "a pharmacy added to his list is called as he spelled THAT pharmacy, never by the whole box");
     assert.match(sql, /on conflict \(seat_id, customer_id, visit_date, is_test\) do nothing/, "a pharmacy already visited today keeps the one visit it has");
     assert.match(sql, /null, null, 'no_place', v_is_test,/, "no place reading of its own");
-    assert.match(sql, /add column if not exists linked_from_visit_id uuid\s+references public\.phoenix_crm_visits \(id\) on delete cascade;/);
     assert.match(sql, /revoke execute on function public\.phoenix_crm_save_visit\(jsonb\) from public, anon, authenticated;/);
     assert.match(sql, /grant execute on function public\.phoenix_crm_save_visit\(jsonb\) to service_role;/);
-    assert.match(sql, /before insert on public\.phoenix_crm_visits\s+for each row execute function public\.phoenix_crm_visits_pharmacy_name\(\);/, "the Super Admin's missed-record entry is named too");
+    const first = stripSqlComments(read(SAVE_MIGRATION));
+    assert.match(first, /add column if not exists linked_from_visit_id uuid\s+references public\.phoenix_crm_visits \(id\) on delete cascade;/);
+    assert.match(first, /before insert on public\.phoenix_crm_visits\s+for each row execute function public\.phoenix_crm_visits_pharmacy_name\(\);/, "the Super Admin's missed-record entry is named too");
     // The caller sends the match; a pharmacy customer's own visit sends none of it.
     const save = code("src/lib/phoenix-crm/server/visits.ts");
     assert.match(save, /linked_pharmacy_id: pharmacyLink\.kind === "existing" \? pharmacyLink\.customerId : null,/);
@@ -160,11 +182,11 @@ export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
     assert.match(code("src/lib/phoenix-crm/server/reports.ts"), /\.neq\("capture_source", "admin"\)\s*\.is\("linked_from_visit_id", null\);/);
 
     // Nothing of the doctor's visit is counted twice through it.
-    const sql = stripSqlComments(read(SAVE_MIGRATION));
+    const sql = stripSqlComments(read(LINK_MIGRATION));
     const linked = sql.slice(sql.indexOf("if v_link.id is not null then"), sql.indexOf("returning id into v_link_visit;"));
     assert.match(
       linked,
-      /'Pharmacy', v_date, v_captured_at, 'single', v_rep,\s+case when v_rep is null then v_manager end,\s+null, null, v_actor, v_products, null, v_pharmacy, '\{\}'::jsonb,/,
+      /'Pharmacy', v_date, v_captured_at, 'single', v_rep,\s+case when v_rep is null then v_manager end,\s+null, null, v_actor, v_products, null, v_entry_name, '\{\}'::jsonb,/,
       "a SINGLE visit by the rep (or the manager on his own visit), with no stock answers of its own",
     );
     assert.doesNotMatch(linked, /v_kind|v_senior|v_product_manager|v_availability/, "never the doctor's double visit, its people or its stock answers a second time");
@@ -184,7 +206,184 @@ export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
     const fayoumi = day.find((entry) => pharmacyNameKey(entry.name) === pharmacyNameKey("الفيومي"));
     assert.deepEqual(fayoumi?.fromCustomers, ["Dr Samia"], "a pharmacy is never 'named on the visit to' itself");
     // The manager's calendar cell keys it the same way, so the cell and the day it opens agree.
-    assert.match(code("src/lib/phoenix-crm/server/team-calendar.ts"), /const pharmacy = pharmacyNameKey\(String\(row\.pharmacy_name \?\? ""\)\);/);
+    assert.match(
+      code("src/lib/phoenix-crm/server/team-calendar.ts"),
+      /for \(const name of pharmacyNamesOnVisit\(row\.list_type, String\(row\.pharmacy_name \?\? ""\)\)\) \{\s*const pharmacy = pharmacyNameKey\(name\);/,
+    );
     assert.match(code("src/lib/phoenix-crm/day-detail.ts"), /countedNames\.has\(pharmacyNameKey\(entry\.name\)\)/);
+  }
+
+  // ── 8. One box, two pharmacies (owner, 2026-10-03) ────────────────────────────────────────────
+  {
+    // The three boxes measured on production that day — Mohamed Salem (Pedia), all with the Arabic comma.
+    assert.deepEqual(splitNamedPharmacies("صيدليه التهامي، صيدليه الرحمه"), ["صيدليه التهامي", "صيدليه الرحمه"]);
+    assert.deepEqual(splitNamedPharmacies("صيدليه الوكيل ،صيدليه الكوانيني"), ["صيدليه الوكيل", "صيدليه الكوانيني"]);
+    assert.deepEqual(splitNamedPharmacies("كوانيني ،الوكيل"), ["كوانيني", "الوكيل"]);
+    assert.deepEqual(splitNamedPharmacies("صيدلية التهامي, صيدلية الرحمه; صيدلية يونس"), ["صيدلية التهامي", "صيدلية الرحمه", "صيدلية يونس"], "the Latin comma and semicolon too");
+    assert.deepEqual(splitNamedPharmacies("صيدلية التهامي وصيدلية الرحمه"), ["صيدلية التهامي", "صيدلية الرحمه"], "'and' before the word pharmacy");
+    assert.deepEqual(splitNamedPharmacies("ص.التهامي و ص.الرحمه"), ["ص.التهامي", "ص.الرحمه"]);
+    // 🔴 One pharmacy stays ONE: the reps' "ص/" is the word pharmacy, "-" names a branch, and "و" inside a
+    // name is a letter.
+    assert.deepEqual(splitNamedPharmacies("ص/ناصر"), ["ص/ناصر"]);
+    assert.deepEqual(splitNamedPharmacies("صيدلية العطار - الفرع التاني"), ["صيدلية العطار - الفرع التاني"]);
+    assert.deepEqual(splitNamedPharmacies("الفرع التاني ص العطار"), ["الفرع التاني ص العطار"]);
+    assert.deepEqual(splitNamedPharmacies("صيدلية محمد وصفي"), ["صيدلية محمد وصفي"]);
+    assert.deepEqual(splitNamedPharmacies("صيدليه التهامي، ص.التهامي"), ["صيدليه التهامي"], "a second spelling of one pharmacy is that pharmacy");
+    assert.deepEqual(splitNamedPharmacies("صيدلية التهامي، صيدلية"), ["صيدلية التهامي"], "a part that is only the word pharmacy names none");
+    assert.deepEqual(splitNamedPharmacies(" ، ،"), []);
+    assert.deepEqual(splitNamedPharmacies(null), []);
+    assert.equal(splitNamedPharmacies("ص أ، ص ب، ص ج، ص د، ص ه، ص و").length, 5, "five at most — the database files no more");
+
+    // A pharmacy's OWN visit is one pharmacy, whatever its name holds; a doctor's box is what it names.
+    assert.deepEqual(pharmacyNamesOnVisit("Pharmacy", "صيدلية العزبي، فرع مدينة نصر"), ["صيدلية العزبي، فرع مدينة نصر"]);
+    assert.deepEqual(pharmacyNamesOnVisit("PM", "صيدليه التهامي، صيدليه الرحمه"), ["صيدليه التهامي", "صيدليه الرحمه"]);
+    assert.deepEqual(pharmacyNamesOnVisit("Pharmacy", "  "), []);
+
+    // Matched one name at a time, against his list as it stood that evening (seat D11).
+    const d11: ListedPharmacy[] = [
+      { customerId: "tohamy", name: "صيدلية التهامي", status: "pending" },
+      { customerId: "kawanini", name: "صيدلية الكوانيني", status: "pending" },
+      { customerId: "wakil", name: "صيدلية الوكيل", status: "pending" },
+      { customerId: "alaa-wakil", name: "صيدلية علاء الوكيل", status: "pending" },
+      { customerId: "nour", name: "صيدلية النور", status: "dropped" },
+    ];
+    assert.deepEqual(linkNamedPharmacy("صيدليه الوكيل ،صيدليه الكوانيني", d11), { kind: "none" }, "the whole box half-matches two pharmacies — which is why 20:19 filed nothing");
+    assert.deepEqual(linkNamedPharmacies("صيدليه الوكيل ،صيدليه الكوانيني", d11), [
+      { name: "صيدليه الوكيل", link: { kind: "existing", customerId: "wakil" } },
+      { name: "صيدليه الكوانيني", link: { kind: "existing", customerId: "kawanini" } },
+    ]);
+    assert.deepEqual(linkNamedPharmacies("كوانيني ،الوكيل", d11), [
+      { name: "كوانيني", link: { kind: "existing", customerId: "kawanini" } },
+      { name: "الوكيل", link: { kind: "existing", customerId: "wakil" } },
+    ]);
+    assert.deepEqual(linkNamedPharmacies("صيدليه التهامي، صيدليه الرحمه", d11), [
+      { name: "صيدليه التهامي", link: { kind: "existing", customerId: "tohamy" } },
+      { name: "صيدليه الرحمه", link: { kind: "new" } },
+    ], "one on his list, one added to it");
+    assert.deepEqual(linkNamedPharmacies("صيدلية الكوانيني، كوانيني", d11), [
+      { name: "صيدلية الكوانيني", link: { kind: "existing", customerId: "kawanini" } },
+    ], "two spellings that land on ONE pharmacy file it once");
+    assert.deepEqual(linkNamedPharmacies("صيدلية النور، صيدلية التهامي", d11), [
+      { name: "صيدلية التهامي", link: { kind: "existing", customerId: "tohamy" } },
+    ], "a pharmacy the SFE archived is still never brought back — the other name is filed");
+
+    // What he reads once it is saved.
+    assert.equal(linkedPharmaciesNote([]), null);
+    assert.equal(linkedPharmaciesNote([{ name: "صيدلية التهامي", created: false }]), "صيدلية التهامي is logged as a pharmacy visit too.");
+    assert.equal(linkedPharmaciesNote([{ name: "صيدلية الرحمه", created: true }]), "صيدلية الرحمه is logged as a pharmacy visit too, and added to your list.");
+    assert.equal(
+      linkedPharmaciesNote([{ name: "صيدلية التهامي", created: false }, { name: "صيدلية الرحمه", created: true }]),
+      "صيدلية التهامي and صيدلية الرحمه are logged as pharmacy visits too. صيدلية الرحمه is added to your list.",
+    );
+    assert.equal(
+      linkedPharmaciesNote([{ name: "A", created: true }, { name: "B", created: false }, { name: "C", created: true }]),
+      "A, B and C are logged as pharmacy visits too. A and C are added to your list.",
+    );
+
+    // The day counts two pharmacies, not a third called by both names.
+    const day = todayPharmacies([
+      { customerId: "dr", name: "دعاء عادل فوده", listType: "PM", doneAt: "19:29", pharmacyName: "صيدليه التهامي، صيدليه الرحمه" },
+      { customerId: "ph1", name: "صيدلية التهامي", listType: "Pharmacy", doneAt: "19:29", pharmacyName: "صيدليه التهامي" },
+      { customerId: "ph2", name: "صيدلية الرحمه", listType: "Pharmacy", doneAt: "19:29", pharmacyName: "صيدليه الرحمه" },
+    ]);
+    assert.equal(day.length, 2, "التهامي and الرحمه — two pharmacies, never three");
+    assert.deepEqual(day.map((entry) => entry.fromCustomers), [["دعاء عادل فوده"], ["دعاء عادل فوده"]], "each is named on the doctor's visit");
+
+    // The caller sends one entry per name; the one-match fields stay for a database on 20261003175653,
+    // and only a box naming ONE pharmacy may fill them.
+    const save = code("src/lib/phoenix-crm/server/visits.ts");
+    assert.match(save, /const pharmacyLinks = linkNamedPharmacies\(visit\.pharmacyName, listedPharmacies\);/);
+    assert.match(save, /pharmacyLinks\.length === 1 && splitNamedPharmacies\(visit\.pharmacyName\)\.length === 1 \? pharmacyLinks\[0\]!\.link : \{ kind: "none" \};/);
+    assert.match(save, /linked_pharmacies: pharmacyLinks\.map\(\(\{ name, link \}\) => \(\{\s*name,\s*id: link\.kind === "existing" \? link\.customerId : null,\s*new: link\.kind === "new",\s*\}\)\),/);
+    assert.match(save, /for \(const name of splitNamedPharmacies\(textOrNull\(row\.pharmacy_name\)\)\) offer\(name\);/, "a two-name box is offered as the two names, never as one suggestion");
+    assert.match(save, /Array\.isArray\(result\.linked_pharmacies\) \? result\.linked_pharmacies : \[result\.linked_pharmacy\]/);
+
+    // The database files one visit per entry, named as he spelled it, and reads an old caller as one.
+    const sql = stripSqlComments(read(LINK_MIGRATION));
+    assert.match(sql, /when jsonb_typeof\(p -> 'linked_pharmacies'\) = 'array' then p -> 'linked_pharmacies'/);
+    assert.match(sql, /'name', v_pharmacy,\s+'id', nullif\(p ->> 'linked_pharmacy_id', ''\),\s+'new', coalesce\(\(p ->> 'linked_pharmacy_new'\)::boolean, false\)/, "a caller from before sends one match, named with the whole box as 175653 named it");
+    assert.match(sql, /from jsonb_array_elements\(v_links\) with ordinality as e\(value, n\) order by e\.n limit 5/);
+    assert.match(sql, /continue when v_entry_name is null or char_length\(v_entry_name\) > 120;/, "a name it cannot file is skipped, never raised — the doctor's visit is saved whatever");
+    assert.match(sql, /'linked_pharmacy', v_filed -> 0,\s+'linked_pharmacies', v_filed,/);
+    assert.doesNotMatch(sql, /raise exception[^;]*v_entry/, "nothing about a named pharmacy can refuse the doctor's visit");
+  }
+
+  // ── 9. He adds a pharmacy himself, by its name, with no approval ─────────────────────────────
+  // Owner, 2026-10-03: "he can add to his list pharmacies without approval normally … in pharmacy visit
+  // … all his pharmacies to be listed and he can also add a pharmacy without any validation or without
+  // any approval".
+  {
+    // The name is all it asks for — and a name, not only the word pharmacy.
+    assert.equal(addedPharmacyNameProblem("صيدلية الشفاء"), null);
+    assert.equal(addedPharmacyNameProblem("  El Ezaby  "), null);
+    assert.equal(addedPharmacyNameProblem(""), "Write the pharmacy's name.");
+    assert.equal(addedPharmacyNameProblem("   "), "Write the pharmacy's name.");
+    assert.equal(addedPharmacyNameProblem(null), "Write the pharmacy's name.");
+    for (const word of ["صيدلية", "صيدليه", "ص.", "ص", "Pharmacy"]) {
+      assert.equal(addedPharmacyNameProblem(word), "Write the pharmacy's own name, not only the word pharmacy.", `"${word}" alone names no pharmacy`);
+    }
+    assert.equal(addedPharmacyNameProblem("ن".repeat(121)), "Keep the name to 120 characters.");
+    assert.equal(addedPharmacyNameProblem("ن".repeat(120)), null);
+    // 🔴 The same 120 as a visit's pharmacy_name: a pharmacy's own visit is named after it, so a longer
+    // name would be accepted here and refused on its first visit.
+    assert.match(code("src/lib/phoenix-crm/entry-rules.ts"), new RegExp(`export const PHARMACY_NAME_MAX = ${ADDED_PHARMACY_NAME_MAX};`));
+
+    // EXACTLY by its key: on his list already → opened, never a second row; archived → asked back from
+    // the Archive; anything else → added. Never the doctor box's half-match.
+    const listed: ListedPharmacy[] = [
+      { customerId: "c-shefa", name: "صيدلية الشفاء", status: "pending" },
+      { customerId: "c-nour-new", name: "صيدلية النور الجديدة", status: "active" },
+      { customerId: "c-old", name: "صيدلية القديمة", status: "dropped" },
+      { customerId: "b-twice", name: "صيدلية مكة", status: "pending" },
+      { customerId: "a-twice", name: "صيدليه مكه", status: "active" },
+    ];
+    assert.deepEqual(matchAddedPharmacy("ص.الشفاء", listed), { kind: "existing", customerId: "c-shefa", name: "صيدلية الشفاء" }, "his spelling of a pharmacy on his list opens it");
+    assert.deepEqual(matchAddedPharmacy("صيدلية النور", listed), { kind: "new" }, "'Al Nour' is NOT 'the new Al Nour' — a half-match would hand him a pharmacy he did not ask for");
+    assert.deepEqual(matchAddedPharmacy("صيدلية القديمة", listed), { kind: "archived", customerId: "c-old", name: "صيدلية القديمة" }, "typing never undoes the Archive");
+    assert.deepEqual(matchAddedPharmacy("مكة", listed), { kind: "existing", customerId: "a-twice", name: "صيدليه مكه" }, "one pharmacy imported twice: the active row wins");
+    assert.deepEqual(matchAddedPharmacy("صيدلية جديدة تماما", listed), { kind: "new" });
+
+    assert.equal(addedPharmacyNote({ customerName: "صيدلية الشفاء", created: true }), "صيدلية الشفاء is on your list. No approval: its visits count in Pharmacies, never in AM or PM.");
+    assert.equal(addedPharmacyNote({ customerName: "صيدلية الشفاء", created: false }), "صيدلية الشفاء is already on your list.");
+
+    // The service: the rep's own write, the name checked, matched against his list, then the database.
+    const list = code("src/lib/phoenix-crm/server/list.ts");
+    const service = /export async function addPharmacy\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
+    assert.ok(service, "addPharmacy is the service behind Add a pharmacy");
+    assert.match(service, /territoryForRepWrite\(viewer, body\.seatId, readTestFlag\(body\.test\)\)/, "the territory's own rep, never a manager");
+    assert.match(service, /addedPharmacyNameProblem\(/);
+    assert.match(service, /matchAddedPharmacy\(name, await loadListedPharmacies\(seat\.seatId, isTest\)\)/);
+    assert.match(service, /callPhoenixCrm<Row>\("phoenix_crm_add_pharmacy"/);
+    assert.doesNotMatch(service, /firstRequestStage|notifyRequestRaised|request_kind|parsePlaceDraft|photo/i, "no request, no approval and no photo: on his list at once");
+    assert.match(code("app/api/phoenix-crm/list/pharmacy/route.ts"), /addPharmacy\(viewer, body\)/);
+
+    // The database: a pending pharmacy, origin new, under a per-territory lock that repeats the
+    // exact-name check — so a double tap adds one pharmacy. No request row of any kind.
+    const sql = stripSqlComments(read(ADD_MIGRATION));
+    assert.match(sql, /perform pg_advisory_xact_lock\(hashtext\('phoenix_crm_add_pharmacy\|' \|\| v_seat \|\| '\|' \|\| v_is_test::text\)\);/);
+    assert.match(sql, /and c\.list_type = 'Pharmacy'\s+and c\.status in \('active', 'pending', 'outside'\)/);
+    assert.match(sql, /values \(\s+v_seat, v_line, 'Pharmacy', v_name, 'new', 'pending', v_actor, v_is_test,/);
+    assert.match(sql, /or char_length\(v_name\) > 120/);
+    assert.doesNotMatch(sql, /phoenix_crm_list_requests|phoenix_crm_places/, "it files no request and asks for no place");
+
+    // The two doors: the List's header, and Pharmacy visit — which opens the visit form on the new one.
+    const tab = code("src/components/phoenix-crm/list-tab.tsx");
+    assert.match(tab, /onClick=\{\(\) => onOpen\(\{ name: "add-pharmacy" \}\)\}/);
+    assert.match(tab, /case "add-pharmacy":[\s\S]*?<AddPharmacyScreen[\s\S]*?from="list"/);
+    const visits = code("src/components/phoenix-crm/visits-tab.tsx");
+    assert.match(visits, /onAddPharmacy=\{loaded\.enteredAs === "rep" \? \(\) => onStep\(\{ name: "pharmacy_new" \}\) : undefined\}/);
+    assert.match(
+      visits,
+      /case "pharmacy_new":[\s\S]*?from="visit"[\s\S]*?resource\.reload\(\);\s*onStep\(\{ name: "form", customerId: added\.customerId, visitType: "pharmacy", reason: null, back: \{ name: "pharmacy" \} \}\);/,
+      "a pharmacy added on Pharmacy visit goes straight to its visit form",
+    );
+    const picker = code("src/components/phoenix-crm/visit-customer-picker.tsx");
+    assert.match(picker, /\{mode === "pharmacy" && onAddPharmacy \? \(/, "Add a pharmacy sits on Pharmacy visit and nowhere else in the picker");
+    const screen = code("src/components/phoenix-crm/add-pharmacy.tsx");
+    assert.match(screen, /crmPost<AddedPharmacy>\("\/api\/phoenix-crm\/list\/pharmacy", \{ seatId, test, name, from \}, "result"\)/);
+    assert.doesNotMatch(screen, /LivePhotoCapture|CaptureLocation|PlaceEditor|TimingsEditor/, "no photo, no location, no hours");
+
+    // Pharmacy visit lists every pharmacy on his list — validated or not: the form reads pending ones too.
+    assert.match(list, /query\.in\("status", options\.includeOutside \? \["active", "pending", "outside"\] : \["active", "pending"\]\)/);
   }
 }
