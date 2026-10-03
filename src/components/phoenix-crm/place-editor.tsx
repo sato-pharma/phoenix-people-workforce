@@ -73,7 +73,8 @@ export function placeDraftProblem(draft: PlaceDraftState, options: { needsPhoto:
  * They travel under the names the server's `parseCapturedFix` reads (it stores them as
  * photoLat/photoLon/photoAccuracyMeters/photoCapturedAt) and again under those place names — the same
  * body the out-of-list entry sends — and the server fixes the place on the photo's reading, falling
- * back to the pin only when the photo has none. Each is sent as it was measured: neither is ever a
+ * back to the pin when the photo has none, or when only the pin is inside the 200 m line (`placePoint`,
+ * 2026-10-03); with both wider it refuses the save. Each is sent as it was measured: neither is ever a
  * copy of the other. With no pin, `lat`/`lon` go as null and the server refuses the save.
  */
 export function placePayload(photo: CapturedPhoto, draft: PlaceDraftState) {

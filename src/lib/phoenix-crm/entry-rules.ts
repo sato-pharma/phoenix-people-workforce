@@ -144,6 +144,32 @@ const NO_FIX_AT_THE_PLACE = "Your location was not captured. Allow location on y
  */
 export const NO_FIX_FOR_A_VISIT = "Turn on location for Phoenix, then tap Log visit again.";
 
+/**
+ * 🔴 THE WIDEST READING THE SERVER TAKES — 200 m to validate a place, 500 m for a visit (owner,
+ * 2026-10-03: "accept up to max 500 m in visits and 200 m in validation").
+ *
+ * On Phoenix CRM's first real day a phone left on APPROXIMATE location validated four different Benha
+ * hospitals at one identical point, every reading "within 2,000 m". A place is fixed for good, so each
+ * later visit there would have read "0 m apart" — a blur compared with itself — and proved nothing.
+ * The place gets the tighter line because it is the point every visit is measured against.
+ *
+ * A reading wider than its line is treated exactly as NO reading: refused in plain words about his own
+ * phone — what to switch on — and nothing about any check (Golden Rule #1). An UNKNOWN accuracy is
+ * still taken, as it always was. The weak-signal flag in Settings (`weak_gps_meters`) is separate and
+ * unchanged: a visit between that line and this one saves, flagged for the manager.
+ */
+export const PLACE_MAX_ACCURACY_METERS = 200;
+export const VISIT_MAX_ACCURACY_METERS = 500;
+
+export const ROUGH_FIX_AT_THE_PLACE =
+  "Your phone gave only a rough location. Turn on precise location for Phoenix and press Capture location again at the clinic.";
+export const ROUGH_FIX_FOR_A_VISIT = "Your phone gave only a rough location. Turn on precise location for Phoenix, then tap Log visit again.";
+
+/** Whether a reading is inside a line. Unknown is inside: it is never refused, as before. */
+export function withinAccuracy(accuracyMeters: number | null, maxMeters: number): boolean {
+  return accuracyMeters === null || accuracyMeters <= maxMeters;
+}
+
 export function parseCapturedFix(raw: Record<string, unknown>, noFixMessage = NO_FIX_AT_THE_PLACE): EntryRuleResult<CapturedFix> {
   if (!isUsableFix(raw.lat, raw.lon)) {
     return { ok: false, error: noFixMessage };
@@ -205,14 +231,22 @@ export type PlaceDraft = CapturedFix & {
  * location of photo is the more trustable", his ruling for marketing and direct orders the same day).
  * Both raw readings are stored beside it; this only chooses which one the address, brick, area and
  * region are resolved from, and which one every later visit is measured against.
+ *
+ * The photo still comes first — UNLESS its reading is wider than `PLACE_MAX_ACCURACY_METERS` and the
+ * pin's is inside it (owner, 2026-10-03). Then the pin is the point, so a rep whose photo was taken on a
+ * rough reading fixes it by pressing Capture location again, without a second photo. With both rough
+ * this returns the photo, as before — `parsePlaceDraft` has refused that place before it gets here.
  */
 export type PlacePoint = { lat: number; lon: number; accuracyMeters: number | null; source: "photo" | "pin" };
 
 export function placePoint(fix: CapturedFix): PlacePoint {
-  if (fix.photoLat !== null && fix.photoLon !== null) {
-    return { lat: fix.photoLat, lon: fix.photoLon, accuracyMeters: fix.photoAccuracyMeters, source: "photo" };
+  const pin: PlacePoint = { lat: fix.lat, lon: fix.lon, accuracyMeters: fix.accuracyMeters, source: "pin" };
+  if (fix.photoLat === null || fix.photoLon === null) return pin;
+  const photo: PlacePoint = { lat: fix.photoLat, lon: fix.photoLon, accuracyMeters: fix.photoAccuracyMeters, source: "photo" };
+  if (!withinAccuracy(photo.accuracyMeters, PLACE_MAX_ACCURACY_METERS) && withinAccuracy(pin.accuracyMeters, PLACE_MAX_ACCURACY_METERS)) {
+    return pin;
   }
-  return { lat: fix.lat, lon: fix.lon, accuracyMeters: fix.accuracyMeters, source: "pin" };
+  return photo;
 }
 
 export function parsePlaceDraft(raw: unknown): EntryRuleResult<PlaceDraft> {
@@ -221,6 +255,10 @@ export function parsePlaceDraft(raw: unknown): EntryRuleResult<PlaceDraft> {
   if (!photoPath) return { ok: false, error: "Take a live photo of the clinic sign or door." };
   const fix = parseCapturedFix(body);
   if (!fix.ok) return fix;
+  // A place is fixed for good: a rough reading is no reading (owner, 2026-10-03).
+  if (!withinAccuracy(placePoint(fix.value).accuracyMeters, PLACE_MAX_ACCURACY_METERS)) {
+    return { ok: false, error: ROUGH_FIX_AT_THE_PLACE };
+  }
   const timings = parseTimings(body.timings);
   if (!timings.ok) return { ok: false, error: timings.error };
   return {
@@ -487,6 +525,7 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   const photoPath = cleanText(body.photoPath, 200);
   const fix = parseCapturedFix(body, NO_FIX_FOR_A_VISIT);
   if (!fix.ok) return fix;
+  if (!withinAccuracy(fix.value.accuracyMeters, VISIT_MAX_ACCURACY_METERS)) return { ok: false, error: ROUGH_FIX_FOR_A_VISIT };
 
   // The kind he chose. The reason is asked for here, before the save, so an off-plan visit never gets
   // as far as the server without one — the server still decides which kind it really was.
