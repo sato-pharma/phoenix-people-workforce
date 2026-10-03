@@ -61,6 +61,10 @@ export type ScreeningQuestionDraft = {
   /** Null (or absent, from a client that predates scoping) means ask everyone — see the column
    *  comment on the migration. A non-empty array narrows the question to those role families. */
   appliesToRoleFamilies?: string[] | null;
+  /** The list button and the answer heading. Blank or absent keeps the generic defaults; refused
+   *  outright on a free_text question, which has no list — see screeningQuestionViolations. */
+  buttonLabel?: string | null;
+  sectionTitle?: string | null;
 };
 
 type QuestionDbRow = {
@@ -72,17 +76,29 @@ type QuestionDbRow = {
   sort_order: number;
   is_active: boolean;
   applies_to_role_families: string[] | null;
+  /** Optional on the way in: absent is how a pre-migration read of this table arrives, and reads as
+   *  "use the generic default", so the list still works during the deploy-before-migration window. */
+  button_label?: string | null;
+  section_title?: string | null;
 };
+
+/** A list button or heading as the column wants it: the typed words, or NULL for "use the default". */
+function chromeOrNull(raw: string | null | undefined): string | null {
+  const text = (raw ?? "").trim();
+  return text.length > 0 ? text : null;
+}
 
 function mapQuestionRow(row: QuestionDbRow): ScreeningQuestion {
   return {
     appliesToRoleFamilies: row.applies_to_role_families,
     bodyText: row.body_text,
+    buttonLabel: row.button_label ?? null,
     id: row.id,
     isActive: row.is_active,
     kind: row.kind,
     options: row.options,
     questionKey: row.question_key,
+    sectionTitle: row.section_title ?? null,
     sortOrder: row.sort_order,
   };
 }
@@ -109,7 +125,9 @@ export async function listScreeningQuestions(): Promise<ScreeningQuestionAdminRo
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from(QUESTIONS_TABLE)
-    .select("id,question_key,body_text,kind,options,sort_order,is_active,applies_to_role_families")
+    .select(
+      "id,question_key,body_text,kind,options,sort_order,is_active,applies_to_role_families,button_label,section_title",
+    )
     .order("sort_order", { ascending: true });
   if (error) throw error;
 
@@ -205,9 +223,13 @@ export async function saveScreeningQuestionSet(input: {
     const payload = {
       applies_to_role_families: question.appliesToRoleFamilies,
       body_text: question.bodyText,
+      // Written as NULL rather than "" so the column's own CHECK holds and a blank box means exactly
+      // one thing: use the generic default. Always NULL for free_text, which has no list.
+      button_label: question.kind === "tappable" ? chromeOrNull(question.buttonLabel) : null,
       is_active: question.isActive,
       kind: question.kind,
       options: question.kind === "tappable" ? question.options : null,
+      section_title: question.kind === "tappable" ? chromeOrNull(question.sectionTitle) : null,
       sort_order: index + 1,
       updated_at: nowIso,
       updated_by_hr_id: input.actorHrId,

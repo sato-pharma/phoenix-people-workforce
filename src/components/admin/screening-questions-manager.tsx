@@ -10,12 +10,16 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
   WHATSAPP_BODY_MAX,
+  WHATSAPP_LIST_BUTTON_MAX,
   WHATSAPP_LIST_MAX_ROWS,
   WHATSAPP_ROW_DESCRIPTION_MAX,
   WHATSAPP_ROW_TITLE_MAX,
+  WHATSAPP_SECTION_TITLE_MAX,
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
 import { QuestionAudiencePicker } from "@/components/admin/question-audience-picker";
 import {
+  EXTRA_QUESTION_BUTTON_DEFAULT,
+  EXTRA_QUESTION_SECTION_DEFAULT,
   screeningQuestionViolations,
   withStableOptionValues,
   type ScreeningQuestionKind,
@@ -59,6 +63,14 @@ type EditableQuestion = {
   /** Empty means EVERYONE, which is what the server stores as null. Kept as an array rather than a
    *  nullable one so the checkbox handlers never have to reason about two empty states. */
   appliesToRoleFamilies: string[];
+  /**
+   * The words WhatsApp draws AROUND a tappable question's list — the button that opens it and the
+   * heading above the answers. Empty is "use the generic default", which is what the server stores
+   * as null; kept as a string rather than a nullable one for the same reason the audience is an
+   * array, so the input handlers never reason about two empty states.
+   */
+  buttonLabel: string;
+  sectionTitle: string;
 };
 
 function newOption(): EditableOption {
@@ -69,6 +81,7 @@ function fromServerRow(row: ScreeningQuestionAdminRow): EditableQuestion {
   return {
     appliesToRoleFamilies: row.appliesToRoleFamilies ?? [],
     bodyText: row.bodyText,
+    buttonLabel: row.buttonLabel ?? "",
     clientKey: row.id,
     hasAnswers: row.hasAnswers,
     id: row.id,
@@ -81,6 +94,7 @@ function fromServerRow(row: ScreeningQuestionAdminRow): EditableQuestion {
       value: option.value,
     })),
     questionKey: row.questionKey,
+    sectionTitle: row.sectionTitle ?? "",
   };
 }
 
@@ -91,12 +105,16 @@ function rowIssues(question: EditableQuestion): string[] {
     // "selected none" complaint against a question the admin has deliberately left open to all.
     appliesToRoleFamilies: question.appliesToRoleFamilies.length > 0 ? question.appliesToRoleFamilies : null,
     bodyText: question.bodyText,
+    // Only a tappable question has a list, and the validator refuses these on a free-text one — so
+    // switching the answer type back must not keep complaining about words no box is showing.
+    buttonLabel: question.kind === "tappable" ? question.buttonLabel : null,
     kind: question.kind,
     // A brand-new row has no question_key yet — the server generates and validates the real one at
     // save time. This placeholder only stands in so the OTHER checks (length, option shape) can run
     // live, without a spurious "key format" complaint on a question nobody has saved yet.
     options: question.kind === "tappable" ? withStableOptionValues(question.options) : null,
     questionKey: question.questionKey ?? "draft_question",
+    sectionTitle: question.kind === "tappable" ? question.sectionTitle : null,
   });
 }
 
@@ -122,6 +140,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
       {
         appliesToRoleFamilies: [],
         bodyText: "",
+        buttonLabel: "",
         clientKey: `new-${newRowCounter.current}`,
         hasAnswers: false,
         id: null,
@@ -129,6 +148,9 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
         kind: "tappable",
         options: [newOption()],
         questionKey: null,
+        // Blank, like the button above it — a brand-new question starts on the generic defaults, so
+        // nothing is stored until the owner actually words them.
+        sectionTitle: "",
       },
     ]);
     setNotice(null);
@@ -201,10 +223,12 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
           questions: rows.map((row) => ({
             appliesToRoleFamilies: row.appliesToRoleFamilies,
             bodyText: row.bodyText.trim(),
+            buttonLabel: row.kind === "tappable" ? row.buttonLabel.trim() : null,
             id: row.id,
             isActive: row.isActive,
             kind: row.kind,
             options: row.kind === "tappable" ? withStableOptionValues(row.options) : null,
+            sectionTitle: row.kind === "tappable" ? row.sectionTitle.trim() : null,
           })),
         }),
       });
@@ -422,6 +446,42 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
 
                 {row.kind === "tappable" ? (
                   <div className="mt-3 space-y-2">
+                    {/* The two words WhatsApp puts AROUND the list, not inside the message: the
+                        button is the tap target under it, and the heading sits above the answers.
+                        Left empty they stay generic and English, which is what made a reworded
+                        question read half-translated — so the placeholder shows exactly what an
+                        empty box sends rather than leaving it a mystery. */}
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div>
+                        <Input
+                          aria-label="The button that opens the answers"
+                          maxLength={WHATSAPP_LIST_BUTTON_MAX + 10}
+                          onChange={(event) => updateRow(row.clientKey, { buttonLabel: event.target.value })}
+                          placeholder={EXTRA_QUESTION_BUTTON_DEFAULT}
+                          value={row.buttonLabel}
+                        />
+                        <span
+                          className={`text-phx-2xs ${counterClass(row.buttonLabel.length, WHATSAPP_LIST_BUTTON_MAX)}`}
+                        >
+                          Button — {row.buttonLabel.length} / {WHATSAPP_LIST_BUTTON_MAX}
+                        </span>
+                      </div>
+                      <div>
+                        <Input
+                          aria-label="The heading above the answers"
+                          maxLength={WHATSAPP_SECTION_TITLE_MAX + 10}
+                          onChange={(event) => updateRow(row.clientKey, { sectionTitle: event.target.value })}
+                          placeholder={EXTRA_QUESTION_SECTION_DEFAULT}
+                          value={row.sectionTitle}
+                        />
+                        <span
+                          className={`text-phx-2xs ${counterClass(row.sectionTitle.length, WHATSAPP_SECTION_TITLE_MAX)}`}
+                        >
+                          Heading — {row.sectionTitle.length} / {WHATSAPP_SECTION_TITLE_MAX}
+                        </span>
+                      </div>
+                    </div>
+
                     {row.options.map((option, optionIndex) => (
                       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" key={optionIndex}>
                         <div>

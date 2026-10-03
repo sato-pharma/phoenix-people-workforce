@@ -55,9 +55,11 @@ export default async function ScreeningQuestionsPage() {
         isCustomised: Boolean(saved),
         savedAppliesToRoleFamilies: saved?.appliesToRoleFamilies ?? null,
         savedBody: saved?.body ?? null,
+        savedButtonLabel: saved?.buttonLabel ?? null,
         savedHiddenOptions: saved?.hiddenOptions ?? [],
         savedOptionLabels: saved?.optionLabels ?? {},
         savedOptionOrder: saved?.optionOrder ?? [],
+        savedSectionTitle: saved?.sectionTitle ?? null,
       };
     });
 

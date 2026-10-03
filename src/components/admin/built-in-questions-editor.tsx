@@ -10,13 +10,16 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   WHATSAPP_BODY_MAX,
+  WHATSAPP_LIST_BUTTON_MAX,
   WHATSAPP_LIST_MAX_ROWS,
   WHATSAPP_ROW_DESCRIPTION_MAX,
   WHATSAPP_ROW_TITLE_MAX,
+  WHATSAPP_SECTION_TITLE_MAX,
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
 import { audienceViolations } from "@/lib/recruitment/inbound/whatsapp-question-audience";
 import {
   answerConfigViolations,
+  menuChromeViolations,
   optionLabelViolations,
   promptViolations,
   REGION_TOKEN,
@@ -24,8 +27,9 @@ import {
 } from "@/lib/recruitment/inbound/whatsapp-question-prompts";
 
 /**
- * The six questions the WhatsApp CV bot has always asked — the question itself AND the answers the
- * applicant taps: their words, which of them are shown, and in what order.
+ * The six questions the WhatsApp CV bot has always asked — the question itself, the answers the
+ * applicant taps (their words, which of them are shown, and in what order), and the two words
+ * WhatsApp draws around the list: the button that opens it and the heading above the answers.
  *
  * Sits ABOVE the extra-question builder on the same screen, in the order an applicant meets them, so
  * the page tells the truth about the whole conversation rather than showing an empty list and
@@ -57,6 +61,13 @@ export type BuiltInPromptRow = {
   label: string;
   note: string;
   defaultBody: string;
+  /**
+   * The words WhatsApp puts around the list itself — the button that opens it and the heading above
+   * the answers. BOTH NULL for the one free-text question, which has no list: the two boxes are not
+   * rendered at all there rather than shown saving into nothing.
+   */
+  defaultButtonLabel: string | null;
+  defaultSectionTitle: string | null;
   supportsRegionToken: boolean;
   options: BuiltInPromptOptionRow[];
   optionsNote: string;
@@ -76,6 +87,8 @@ export type BuiltInPromptRow = {
    */
   savedAppliesToRoleFamilies: readonly string[] | null;
   savedBody: string | null;
+  savedButtonLabel: string | null;
+  savedSectionTitle: string | null;
   savedOptionLabels: Record<string, OptionLabel>;
   savedHiddenOptions: string[];
   savedOptionOrder: string[];
@@ -127,6 +140,8 @@ function liveShownValues(prompt: BuiltInPromptRow): string[] {
 function wordingIsCustomised(prompt: BuiltInPromptRow): boolean {
   return Boolean(
     prompt.savedBody
+      || prompt.savedButtonLabel
+      || prompt.savedSectionTitle
       || Object.keys(prompt.savedOptionLabels ?? {}).length > 0
       || (prompt.savedHiddenOptions ?? []).length > 0
       || (prompt.savedOptionOrder ?? []).length > 0,
@@ -143,7 +158,14 @@ function sameList(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-type Draft = { audience: string[]; body: string; options: Record<string, OptionLabel>; shown: string[] };
+type Draft = {
+  audience: string[];
+  body: string;
+  buttonLabel: string;
+  options: Record<string, OptionLabel>;
+  sectionTitle: string;
+  shown: string[];
+};
 
 /**
  * The job titles asked this question RIGHT NOW: what is saved when anything is, else the code
@@ -162,10 +184,29 @@ function draftFor(prompt: BuiltInPromptRow): Draft {
   return {
     audience: liveAudience(prompt),
     body: prompt.savedBody ?? prompt.defaultBody,
+    buttonLabel: prompt.savedButtonLabel ?? prompt.defaultButtonLabel ?? "",
     options: Object.fromEntries(
       prompt.options.map((option) => [option.value, liveOptionLabel(prompt, option)]),
     ),
+    sectionTitle: prompt.savedSectionTitle ?? prompt.defaultSectionTitle ?? "",
     shown: liveShownValues(prompt),
+  };
+}
+
+/**
+ * What to SEND for the list button and the answer heading: the typed words, or "" when they still
+ * match the code's own. Same rule as the answer labels — storing a copy of a default is what makes a
+ * later improvement to the code's wording invisible on a question nobody meant to customise.
+ */
+function changedMenuChrome(
+  prompt: BuiltInPromptRow,
+  draft: Draft,
+): { buttonLabel: string; sectionTitle: string } {
+  const button = draft.buttonLabel.trim();
+  const section = draft.sectionTitle.trim();
+  return {
+    buttonLabel: button && button !== (prompt.defaultButtonLabel ?? "") ? button : "",
+    sectionTitle: section && section !== (prompt.defaultSectionTitle ?? "") ? section : "",
   };
 }
 
@@ -274,6 +315,9 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
       optionLabels: Record<string, OptionLabel>;
       hiddenOptions: string[];
       optionOrder: string[];
+      /** Blank means "keep the code's own words" — the same gesture as a blank bodyText. */
+      buttonLabel?: string;
+      sectionTitle?: string;
       /** Omitted entirely for question 1, which cannot be scoped. `null` clears the audience back
        *  to the code default — the reset gesture. */
       appliesToRoleFamilies?: string[] | null;
@@ -330,14 +374,18 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
           const liveBody = prompt.savedBody ?? prompt.defaultBody;
           const nextOptionLabels = changedOptionLabels(prompt, draft);
           const nextAnswerConfig = answerConfigToSend(prompt, draft);
+          const nextChrome = changedMenuChrome(prompt, draft);
           const bodyDirty = draft.body.trim() !== liveBody.trim();
+          const chromeDirty =
+            nextChrome.buttonLabel !== (prompt.savedButtonLabel ?? "")
+            || nextChrome.sectionTitle !== (prompt.savedSectionTitle ?? "");
           const optionsDirty =
             JSON.stringify(nextOptionLabels) !== JSON.stringify(prompt.savedOptionLabels ?? {});
           const answersDirty = !sameList(draft.shown, liveShownValues(prompt));
           // Order-insensitive: ticking two boxes in the other order is not an edit.
           const audienceDirty =
             !sameList([...draft.audience].sort(), [...liveAudience(prompt)].sort());
-          const dirty = bodyDirty || optionsDirty || answersDirty || audienceDirty;
+          const dirty = bodyDirty || optionsDirty || answersDirty || audienceDirty || chromeDirty;
 
           const optionByValue = new Map(prompt.options.map((option) => [option.value, option]));
           const hiddenValues = prompt.options
@@ -347,6 +395,10 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
           const issues = [
             ...promptViolations({ bodyText: draft.body, key: prompt.key }),
             ...audienceViolations({ appliesToRoleFamilies: draft.audience, key: prompt.key }),
+            // Checked on what is TYPED, not on what would be sent: a 30-character button that
+            // happens to equal no default must still show the limit rather than silently save as
+            // "unchanged" and leave the box looking accepted.
+            ...menuChromeViolations({ buttonLabel: draft.buttonLabel, sectionTitle: draft.sectionTitle }),
             ...optionLabelViolations({
               allowedValues: prompt.options.map((option) => option.value),
               key: prompt.key,
@@ -418,6 +470,72 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                   the region name should appear — the bot replaces it with the region they chose.
                 </p>
               ) : null}
+
+              {/* -- The two words AROUND the list -----------------------------------------------
+                  WhatsApp does not draw these inside the message: the button is the tap target
+                  under it, and the heading sits above the answers once it opens. They are the
+                  reason a question reworded into Arabic still read half-English, so they belong on
+                  the same card as the question rather than in a settings page somewhere.
+                  Not rendered for the free-text question — no list, nothing to label. */}
+              {prompt.defaultButtonLabel === null ? null : (
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  <div>
+                    <label
+                      className="block text-phx-xs font-medium text-slate-600"
+                      htmlFor={`button-${prompt.key}`}
+                    >
+                      The button that opens the answers
+                    </label>
+                    <input
+                      className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-orange-300 disabled:bg-slate-50 disabled:text-slate-400"
+                      disabled={busy}
+                      id={`button-${prompt.key}`}
+                      onChange={(event) =>
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [prompt.key]: { ...draft, buttonLabel: event.target.value },
+                        }))
+                      }
+                      value={draft.buttonLabel}
+                    />
+                    <div className="mt-0.5 flex justify-end">
+                      <span
+                        className={`text-phx-xs ${counterClass(draft.buttonLabel.trim().length, WHATSAPP_LIST_BUTTON_MAX)}`}
+                      >
+                        {draft.buttonLabel.trim().length} / {WHATSAPP_LIST_BUTTON_MAX}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      className="block text-phx-xs font-medium text-slate-600"
+                      htmlFor={`section-${prompt.key}`}
+                    >
+                      The heading above the answers
+                    </label>
+                    <input
+                      className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-orange-300 disabled:bg-slate-50 disabled:text-slate-400"
+                      disabled={busy}
+                      id={`section-${prompt.key}`}
+                      onChange={(event) =>
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [prompt.key]: { ...draft, sectionTitle: event.target.value },
+                        }))
+                      }
+                      value={draft.sectionTitle}
+                    />
+                    <div className="mt-0.5 flex justify-end">
+                      <span
+                        className={`text-phx-xs ${counterClass(draft.sectionTitle.trim().length, WHATSAPP_SECTION_TITLE_MAX)}`}
+                      >
+                        {draft.sectionTitle.trim().length} / {WHATSAPP_SECTION_TITLE_MAX}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* -- Who is asked ------------------------------------------------------------------
                   The owner's 2026-09-05 request, and the same control the extra questions below
@@ -648,6 +766,7 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                           draft.body.trim() === prompt.defaultBody.trim() ? "" : draft.body.trim(),
                         optionLabels: nextOptionLabels,
                         ...nextAnswerConfig,
+                        ...nextChrome,
                         // Sent as the ticked list, empty included - an empty array is "asked to
                         // everyone" and is a real, storable decision, not the absence of one. Never
                         // sent for question 1, whose audience is not a choice.
@@ -676,9 +795,11 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                         {
                           appliesToRoleFamilies: null,
                           bodyText: "",
+                          buttonLabel: "",
                           hiddenOptions: [],
                           optionLabels: {},
                           optionOrder: [],
+                          sectionTitle: "",
                         },
                         "Back to the default question, answers and audience.",
                       )
