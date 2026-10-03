@@ -140,7 +140,18 @@ one module's code is listed, with its reason, in the test's `DELIBERATELY_GLOBAL
 - The first sort of 1,064 notes was done by eight Sonnet passes plus review; a note can sit in the
   wrong module. Moving it is one line in `assignments.json` and a rebuild.
 - Claude Code updates can change how path-scoped rules load. `proof.mjs` is how you find out.
-- 🔴 **TWO SIZE LIMITS APPLY, AND THE SMALL ONE BITES FIRST.** `MODULE_FILE_MAX_BYTES` (72,000) caps
+- 🔴 **THERE IS A THIRD LIMIT, AND IT IS THE SMALLEST OF ALL: THE INJECTED POINTER, 4,000 BYTES.**
+  `renderPointer()` sends a module's title, its counts and the first bold span of each rule — so the
+  pointer grows with the NUMBER of rules, not with the file. `tests/module-memory.test.ts` caps it,
+  and the cap is **4,000 with the hard cliff at 4,500**, so a module goes over while there is still
+  room for the rule in front of it. **Measured 2026-10-03:** `phoenix-crm` sat at **4,478 of 4,500**
+  with 38 rules — 22 bytes of headroom, nothing warning anyone — and a real 39th rule took it to
+  **4,518** and reddened the required `validate` job. Its FILE was at 70% of the 72,000-byte cap at
+  the same moment, which is why a session reading only file sizes called the module "full at 4,478 of
+  4,500 characters": it had read the pointer's number and the file's label. **The remedy is always to
+  SPLIT the module, never to trim a rule** — `phoenix-crm` → `phoenix-crm` + `phoenix-crm-approvals`
+  took the two pointers to 2,713 and 1,930, about forty rules of headroom each.
+- 🔴 **TWO MORE SIZE LIMITS APPLY, AND THE SMALL ONE BITES FIRST.** `MODULE_FILE_MAX_BYTES` (72,000) caps
   the whole file; `tests/agents-long-hooks-cite-docs.test.ts` caps each **rule bullet** at
   `LONG_HOOK_BYTES` (1,200) unless that bullet names a `docs/<file>.md`. It measures every line
   starting `- ` inside the `rules:begin`/`rules:end` block, so a module file can sit at a third of its
