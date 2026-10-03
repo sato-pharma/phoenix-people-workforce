@@ -175,6 +175,53 @@ const fillOne = (page: ConsolePage, locator: Locator, value: string) =>
   });
 
 /** Click the first of several candidate wordings that is present, or refuse naming all of them. */
+/**
+ * Submit the form that is open, resolving the control by TYPE rather than by guessing its wording.
+ *
+ * 🔴 WHY THIS EXISTS, measured on production 2026-10-03. `clickOneOf` tried the create form's submit
+ * by text, in the order Create / Create user / Add user / **Add** / Save / Continue — and the console
+ * carries a button whose text is exactly "Add": the row's `aria-label="Add alias"` control. Asked for
+ * the page's buttons while the create form was open, it answered `["Add", "Save"]`, so the robot
+ * clicked ADD ALIAS, never submitted the form, found no "One-time password" dialog, and reported
+ * "the mailbox may exist — check the panel" for a mailbox that was never created. The console's count
+ * stayed at 288 through every attempt.
+ *
+ * A wording list cannot fix that: "Add" matched exactly one element, so the ambiguity guard was
+ * satisfied — it was unique and wrong. The submit is identified by `type="submit"` instead, which is
+ * what the form's own button carries, and the wording list is kept only as a SANITY CHECK: if the one
+ * submit control does not read like a submit, the robot refuses rather than pressing it.
+ */
+async function submitOpenForm(page: ConsolePage, wordings: readonly string[], purpose: string): Promise<void> {
+  const query = 'button[type="submit"]';
+  const texts = await page
+    .$$eval<string[]>(query, (elements) =>
+      elements.map((element) => ((element as HTMLElement).innerText ?? "").replace(/\s+/g, " ").trim()),
+    )
+    .catch(() => [] as string[]);
+
+  if (texts.length === 0) {
+    throw new TurbifyJoinerStepError(
+      `No ${purpose} was found: the open form carries no button[type="submit"]. The robot stopped `
+      + "rather than press a control chosen by its wording, which is how it once pressed Add alias.",
+    );
+  }
+  if (texts.length > 1) {
+    throw new TurbifyJoinerStepError(
+      `${texts.length} submit buttons are present while looking for the ${purpose} (${texts.join(", ")}), `
+      + "so the robot cannot tell which one belongs to the form. Nothing was pressed.",
+    );
+  }
+  const allowed = new Set(wordings.map((wording) => wording.toLowerCase()));
+  if (!allowed.has(texts[0].toLowerCase())) {
+    throw new TurbifyJoinerStepError(
+      `The only submit button on the form reads "${texts[0]}", which is not one of the wordings this `
+      + `flow expects (${wordings.join(", ")}). The robot stopped rather than press an unrecognised `
+      + "control. Read the panel and add the real wording.",
+    );
+  }
+  await clickResolved(page, { kind: "text", purpose, tags: ["button"], value: texts[0] });
+}
+
 async function clickOneOf(page: ConsolePage, wordings: readonly string[], purpose: string): Promise<void> {
   for (const wording of wordings) {
     const locator: Locator = { kind: "text", purpose, tags: ["button"], value: wording };
@@ -317,7 +364,7 @@ export async function createTurbifyJoinerDriver(credentials: {
       // Deliberately empty: Turbify emails nobody. Filled in only if a value is ever configured.
       if (TURBIFY_INVITE_RECIPIENT) await fillOne(page, ECP_LOCATORS.inviteSendTo, TURBIFY_INVITE_RECIPIENT);
 
-      await clickOneOf(page, CREATE_SUBMIT_WORDINGS, "submit button for the new-mailbox form");
+      await submitOpenForm(page, CREATE_SUBMIT_WORDINGS, "submit button for the new-mailbox form");
       await settle(5_000);
 
       const oneTimePassword = await readOneTimePassword(page, address);
