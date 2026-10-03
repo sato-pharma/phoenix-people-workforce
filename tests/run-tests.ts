@@ -1705,6 +1705,7 @@ import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
+import { runPhoenixCrmPlanCapOnSendTests } from "./phoenix-crm-plan-cap-on-send.test.ts";
 import { runPhoenixCrmPlanReminderTests } from "./phoenix-crm-plan-reminder.test.ts";
 import { runPhoenixCrmPlanScreenExtrasTests } from "./phoenix-crm-plan-screen-extras.test.ts";
 import { runPhoenixCrmStepFormTests } from "./phoenix-crm-step-form.test.ts";
@@ -6099,6 +6100,11 @@ await runTest(
 await runTest(
   "Phoenix CRM plans one week at a time (owner, 2026-10-01, after the first Delta session): the rep's week is the one that begins on the coming Saturday on every day of 2026-2028, every other week is greyed and refused by the server on save and on send, his own board opens on that week's month with no month chooser, no month send and no Copy last month, a sent week is never taken back, the running week stays reachable in months that start on a Friday or a Saturday, and the week of 3 October 2026 is due Friday 2 October in TypeScript and SQL alike",
   runPhoenixCrmPlanWeeklyOnlyTests,
+);
+
+await runTest(
+  "Phoenix CRM re-checks the daily caps when the rep SENDS the week, not only when he saves a day (production, 2026-10-03): an approved week held 18 PM on its Saturday against a cap of 15, because savePlan tested the caps against the items of that one save — which covers only the days he touched — while transitionPlan did no item or cap check at all and the plan_transition RPC checks none either; the caps are now one rule and one counter shared by both paths, with one sentence for PM and one for AM, the send counts every stored item of the week in a single read and refuses naming the day and its count, and it may only name a day the rep can still change, so an over-cap day that has passed or a week returned for one OTHER day sends rather than trapping a plan nobody can fix",
+  runPhoenixCrmPlanCapOnSendTests,
 );
 
 await runTest(

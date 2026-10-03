@@ -341,6 +341,77 @@ export function dayOffPhrase(off: PlanDayOff): string {
   return off.kind === "holiday" ? `a public holiday (${off.name})` : `a day off on approved leave (${off.name})`;
 }
 
+/** A plan day's two counts. A pharmacy is never planned, so there is no third. */
+export type PlanDayCount = { AM: number; PM: number };
+
+/** Each day's AM and PM count, from items that already carry their list type. */
+export function countPlanDays(items: ReadonlyArray<{ planDate: string; listType: PhoenixCrmDoctorListType }>): Map<string, PlanDayCount> {
+  const perDay = new Map<string, PlanDayCount>();
+  for (const item of items) {
+    const counts = perDay.get(item.planDate) ?? { AM: 0, PM: 0 };
+    counts[item.listType] += 1;
+    perDay.set(item.planDate, counts);
+  }
+  return perDay;
+}
+
+/**
+ * 🔴 THE DAILY CAPS, AS ONE RULE FOR BOTH PATHS — THE SAVE AND THE SEND.
+ *
+ * A day holds at most `pmDailyCap` PM doctors and `amDailyCap` AM accounts (settings; 15 and 5). It
+ * used to be tested inside `resolvePlanItems` alone, which sees only the items of the save it is
+ * checking — so a day the rep did not touch in that save was never counted, and an over-cap day
+ * written by an earlier path or under an earlier settings value stayed on the plan and was promoted
+ * to submitted and approved unchecked. Measured on production 2026-10-03: one approved week held 18
+ * PM on its Saturday against a cap of 15, its 62 over-cap items older than the plan row they sit on.
+ *
+ * `onlyDays`, when given, is the only set of days this answer may NAME: every day is still counted,
+ * but a day outside it is passed over. The send needs that — it re-checks the whole week, and may
+ * only refuse a day the rep can still change (`repChangeableDays`), or an over-cap day that has
+ * passed would deadlock the week with no way left to fix it.
+ *
+ * The days are answered in date order, so the earliest offending one is named — never Map order,
+ * which depends on which rows a read happened to return first.
+ */
+export function planCapRefusal(input: {
+  counts: ReadonlyMap<string, PlanDayCount>;
+  settings: Pick<PhoenixCrmSettings, "pmDailyCap" | "amDailyCap">;
+  onlyDays?: ReadonlyArray<string> | null;
+}): string | null {
+  const nameable = input.onlyDays ? new Set(input.onlyDays) : null;
+  for (const day of [...input.counts.keys()].sort()) {
+    if (nameable && !nameable.has(day)) continue;
+    const counts = input.counts.get(day) ?? { AM: 0, PM: 0 };
+    if (counts.PM > input.settings.pmDailyCap) {
+      return `${planDayLabel(day)} has ${counts.PM} PM. A day holds ${input.settings.pmDailyCap} PM at most.`;
+    }
+    if (counts.AM > input.settings.amDailyCap) {
+      return `${planDayLabel(day)} has ${counts.AM} AM. A day holds ${input.settings.amDailyCap} AM at most.`;
+    }
+  }
+  return null;
+}
+
+/**
+ * 🔴 THE WHOLE WEEK RE-CHECKED AGAINST THE CAPS WHEN THE REP SENDS IT — the day he never touched
+ * included (production, 2026-10-03).
+ *
+ * `items` is every stored item of the week, not the save's payload and not only the changeable days:
+ * counting the changeable days alone is the very hole this closes. `changeableDays` is
+ * `repChangeableDays` — the days he can still edit — and only one of those may be named, so an
+ * over-cap day that has passed (or a week returned for one OTHER day) lets the send through rather
+ * than trapping a plan nobody can fix. Golden rule #1: the refusal names the day and the count and
+ * says what to do, and nothing about it is a check on him.
+ */
+export function planSendCapRefusal(input: {
+  items: ReadonlyArray<{ planDate: string; listType: PhoenixCrmDoctorListType }>;
+  settings: Pick<PhoenixCrmSettings, "pmDailyCap" | "amDailyCap">;
+  changeableDays: ReadonlyArray<string>;
+}): string | null {
+  const over = planCapRefusal({ counts: countPlanDays(input.items), settings: input.settings, onlyDays: input.changeableDays });
+  return over ? `${over} Take one off that day, save, then send.` : null;
+}
+
 /**
  * Every item checked against the week, the list, the timings and the daily limits. Only the days the
  * rep may still change are sent here; the service keeps the stored items of days that have passed.
@@ -358,7 +429,6 @@ export function resolvePlanItems(input: {
 }): PlanRuleResult<ResolvedPlanItem[]> {
   const weekDays = new Set(fieldWeekDays(input.weekStart));
   const resolved: ResolvedPlanItem[] = [];
-  const perDay = new Map<string, { AM: number; PM: number }>();
 
   for (const item of input.items) {
     if (!weekDays.has(item.planDate)) {
@@ -410,9 +480,6 @@ export function resolvePlanItems(input: {
       }
     }
 
-    const counts = perDay.get(item.planDate) ?? { AM: 0, PM: 0 };
-    counts[customer.listType] += 1;
-    perDay.set(item.planDate, counts);
     resolved.push({
       ...item,
       placeId: place ? place.placeId : null,
@@ -424,20 +491,10 @@ export function resolvePlanItems(input: {
     });
   }
 
-  for (const [day, counts] of perDay) {
-    if (counts.PM > input.settings.pmDailyCap) {
-      return {
-        ok: false,
-        error: `${planDayLabel(day)} has ${counts.PM} PM. A day holds ${input.settings.pmDailyCap} PM at most.`,
-      };
-    }
-    if (counts.AM > input.settings.amDailyCap) {
-      return {
-        ok: false,
-        error: `${planDayLabel(day)} has ${counts.AM} AM. A day holds ${input.settings.amDailyCap} AM at most.`,
-      };
-    }
-  }
+  // The caps are ONE rule, shared with the send (`planSendCapRefusal`) so a day this save never
+  // touched cannot slip past them on its way to the manager.
+  const overCap = planCapRefusal({ counts: countPlanDays(resolved), settings: input.settings });
+  if (overCap) return { ok: false, error: overCap };
 
   return { ok: true, value: resolved };
 }

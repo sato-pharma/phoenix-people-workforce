@@ -60,6 +60,7 @@ import {
   PLAN_DECISION_NOTE_MAX,
   planDayLabel,
   planDayOff,
+  planSendCapRefusal,
   planStatusLabel,
   resolvePlanItems,
   standingReturnedDay,
@@ -780,13 +781,31 @@ export async function transitionPlan(
     }
     const access = await assertRepMayChangeWeek(viewer, seat, isTest, String(planRow.week_start));
     if (action === "submit") {
+      // 🔴 THE WEEK'S OWN ITEMS, NOT THE LAST SAVE'S PAYLOAD. `savePlan` checks the caps against the
+      // items one save carries, which covers only the days that save touched — so a day written by an
+      // earlier path, or under an earlier cap, was never counted and the send promoted it to the
+      // manager unchecked (production, 2026-10-03: an approved week holding 18 PM against a cap of 15).
+      // Read every row ONCE, and never narrow this read back to the changeable days: the stale test
+      // below wants only those, the cap re-check wants the whole week.
+      const allRows = await loadPlanItemRows([planId], ITEM_COLUMNS);
       // Only the days he could change answer to this check: a day his manager returned alone is his to
       // fix, and the days left exactly as he sent them are not (owner, 2026-10-02).
       const changeable = new Set(access.editableDays);
-      const openRows = (await loadPlanItemRows([planId], ITEM_COLUMNS)).filter((row) => changeable.has(String(row.plan_date)));
+      const openRows = allRows.filter((row) => changeable.has(String(row.plan_date)));
       if (openRows.some(isStaleItem)) {
         throw conflictError("A planned customer left your list or changed place. Take it off the plan, save, then send.");
       }
+      // The caps, re-read from the whole week and refusable only on a day he can still change — one
+      // rule with the save (`planSendCapRefusal` → `planCapRefusal`), never a second copy of it.
+      const overCap = planSendCapRefusal({
+        items: allRows.flatMap((row) => {
+          const listType = listTypeOf(row.list_type);
+          return listType ? [{ planDate: String(row.plan_date), listType }] : [];
+        }),
+        settings: viewer.config.settings,
+        changeableDays: access.editableDays,
+      });
+      if (overCap) throw conflictError(overCap);
     }
   } else if (action === "approve") {
     assertReviewer(viewer, seat, isTest);
