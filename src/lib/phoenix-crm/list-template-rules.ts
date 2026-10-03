@@ -76,8 +76,8 @@ export const TEMPLATE_BLANK_ROWS = 400;
  * column hints do: the importer has to recognise it, and a second copy of the words would drift.
  */
 export const TEMPLATE_TABLE_NOTE =
-  "One customer per row. A pharmacy takes no grade and no potential. Leave the spare rows empty — "
-  + "they are ignored.";
+  "One customer per row. The grade and the potential are optional — a pharmacy has neither. Leave the "
+  + "spare rows empty — they are ignored.";
 
 /** The most rows one upload will take, so a mis-picked file cannot load a book at a territory. */
 export const TEMPLATE_ROWS_MAX = 1000;
@@ -139,14 +139,14 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     label: "Grade",
     aliases: ["grade", "abc", "a/b/c"],
     width: 10,
-    hint: "A, B or C — leave empty for a pharmacy",
+    hint: "A, B or C — optional",
   },
   {
     key: "potentialGrade",
     label: "Potential",
     aliases: ["potential", "potential grade"],
     width: 12,
-    hint: "AA to BC — leave empty for a pharmacy",
+    hint: "AA to BC — optional",
   },
   {
     key: "phone",
@@ -247,12 +247,14 @@ function text(value: unknown, max: number): string | null {
 /**
  * One filled row, judged exactly as the app judges the same facts typed by hand.
  *
- * 🔴 A PHARMACY CARRIES NO GRADE, AND A DOCTOR MUST CARRY BOTH. A pharmacy call is in no KPI, has no
- * frequency and no target, so a grade on one would be a number nothing reads (the owner's rule of
- * 2026-10-02); a grade typed against one is REFUSED rather than dropped, because silently ignoring a
- * cell somebody filled is how a sheet and a list come to disagree. A doctor without a grade and a
- * potential is the rep's own proposal with nobody's decision on it, which is the thing this route
- * exists to avoid.
+ * 🔴 THE GRADE AND THE POTENTIAL ARE OPTIONAL (owner, 2026-10-03: "make the grade and the potential
+ * optional, not required"). An empty, invalid, or pharmacy-typed value never refuses the row: the grade
+ * is kept only when it is a real A/B/C, the potential only when it is a real AA..BC, and anything else
+ * is dropped to null. A pharmacy carries neither by its nature — a grade typed on one is IGNORED, not
+ * refused (owner's choice the same day, asked directly: "ignore it, let them load"). The only things
+ * that still refuse a row are the structural ones: no list, a list that is not one of the three, and no
+ * name. The district-manager door still REQUIRES a potential before it approves an add
+ * (`phoenix_crm_decide_request`) — that flow is untouched; this loosening is the bulk sheet alone.
  */
 /**
  * The template's own guidance row, left exactly as it was downloaded.
@@ -308,28 +310,11 @@ export function parseTemplateRow(row: number, cells: Partial<Record<TemplateColu
   if (!name) return { kind: "refused", reason: "The customer's name is empty." };
   if (name.length < 3) return { kind: "refused", reason: `"${name}" is too short for a customer's name.` };
 
+  // Optional either way: a pharmacy never carries them, and for a doctor only a real grade and a real
+  // potential are kept — an empty or unrecognised cell is dropped to null, never a refusal.
   const isPharmacy = listType === "Pharmacy";
-  const grade = parseGrade(raw.grade);
-  const potentialGrade = parsePotentialGrade(raw.potentialGrade);
-  if (isPharmacy) {
-    if (raw.grade) return { kind: "refused", reason: "A pharmacy has no grade — leave Grade empty." };
-    if (raw.potentialGrade) return { kind: "refused", reason: "A pharmacy has no potential — leave Potential empty." };
-  } else {
-    if (!grade) {
-      return {
-        kind: "refused",
-        reason: raw.grade ? `"${raw.grade}" is not a grade — write A, B or C.` : "The grade is empty — write A, B or C.",
-      };
-    }
-    if (!potentialGrade) {
-      return {
-        kind: "refused",
-        reason: raw.potentialGrade
-          ? `"${raw.potentialGrade}" is not a potential — write AA, AB, AC, BA, BB or BC.`
-          : "The potential is empty — write AA to BC.",
-      };
-    }
-  }
+  const grade = isPharmacy ? null : parseGrade(raw.grade);
+  const potentialGrade = isPharmacy ? null : parsePotentialGrade(raw.potentialGrade);
 
   const phone = parseCustomerPhone(raw.phone);
   if (!phone.ok) return { kind: "refused", reason: phone.error };
@@ -341,8 +326,8 @@ export function parseTemplateRow(row: number, cells: Partial<Record<TemplateColu
       listType,
       name,
       speciality: text(raw.speciality, 120),
-      grade: isPharmacy ? null : grade,
-      potentialGrade: isPharmacy ? null : potentialGrade,
+      grade,
+      potentialGrade,
       phone: phone.value,
       whereToFind: text(raw.whereToFind, PLACE_TEXT_MAX),
       note: text(raw.note, TEMPLATE_NOTE_MAX),

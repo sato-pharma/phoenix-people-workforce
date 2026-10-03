@@ -191,7 +191,7 @@ function writeCustomersSheet(
     };
     sheet.getCell(row, indexOf("grade")).dataValidation = {
       allowBlank: true,
-      error: "A, B or C — and empty for a pharmacy.",
+      error: "A, B or C — optional, and empty for a pharmacy.",
       errorStyle: "warning",
       errorTitle: "Not a grade",
       formulae: [sources.grades],
@@ -200,7 +200,7 @@ function writeCustomersSheet(
     };
     sheet.getCell(row, indexOf("potentialGrade")).dataValidation = {
       allowBlank: true,
-      error: "AA, AB, AC, BA, BB or BC — and empty for a pharmacy.",
+      error: "AA, AB, AC, BA, BB or BC — optional, and empty for a pharmacy.",
       errorStyle: "warning",
       errorTitle: "Not a potential",
       formulae: [sources.potentials],
