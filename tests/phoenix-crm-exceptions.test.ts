@@ -333,8 +333,14 @@ export function runPhoenixCrmExceptionsTests(): void {
     // `indexOf("// ── The tab ─")` finds nothing, returns -1, and `slice(start, -1)` silently hands
     // back the whole rest of the file — every assertion below then reads the OTHER five sections and
     // fails on their buttons. It did exactly that on the first run.
-    const end = tab.indexOf("const SECTION_TITLES", start);
-    assert.ok(end > start, "the section ends before the tab's own constants");
+    //
+    // 🔴 It must also be a declaration that CANNOT LEAVE THIS FILE. The anchor was `const
+    // SECTION_TITLES`, which moved to `src/lib/phoenix-crm/report-guide.ts` on 2026-10-03 under the
+    // domain-first rule and took the end of the slice with it; the assertion below is what caught
+    // that. `BRICK_STATUS` is the next top-level declaration after the section — tighter than the old
+    // anchor, which reached past four other sections before stopping.
+    const end = tab.indexOf("const BRICK_STATUS", start);
+    assert.ok(end > start, "the section ends at the next top-level declaration in the tab");
     const body = tab.slice(start, end);
 
     assert.ok(body.includes('title="Nothing needs you"'), "an empty board says so in plain words — that is the GOOD outcome");

@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { Download, Loader2, Upload } from "lucide-react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 export type ListTemplateTerritory = { seatId: string; territoryName: string; repName: string | null; customers: number };
 
@@ -89,7 +90,11 @@ export function PhoenixCrmListTemplateWorkspace({ territories }: { territories: 
           <label className="block text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500" htmlFor="phoenix-crm-template-seat">
             Territory
           </label>
-          <select
+          {/* A COMBO BOX, not a dropdown (owner, 2026-10-03: *"make any droplist have a combo box"*).
+              This page is `/admin` only, so it names the shared component directly rather than going
+              through `CrmBareSelect`'s surface check — there is no surface here but the admin's. The
+              SFE picks one of 74 seats by typing a place or a rep's name. */}
+          <SearchableSelect
             className={CONTROL}
             id="phoenix-crm-template-seat"
             onChange={(event) => {
@@ -105,7 +110,7 @@ export function PhoenixCrmListTemplateWorkspace({ territories }: { territories: 
                 {entry.territoryName} · {entry.repName ?? "seat vacant"} · {entry.customers} on the list
               </option>
             ))}
-          </select>
+          </SearchableSelect>
           {territories.length === 0 ? (
             <AdminCallout tone="warning">
               <span>No territory is in your scope with a line in the organogram, so there is no list to load.</span>

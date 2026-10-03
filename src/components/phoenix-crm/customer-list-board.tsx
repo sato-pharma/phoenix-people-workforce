@@ -37,6 +37,7 @@ import {
 } from "@/components/phoenix-crm/labels";
 import { placesDaysText } from "@/components/phoenix-crm/list-screens";
 import {
+  CrmBareSelect,
   CrmButton,
   CrmCard,
   CrmCardsOnPhone,
@@ -76,6 +77,10 @@ import { brickTintMap, type BrickTint } from "@/components/phoenix-crm/brick-tin
  * The board's field-surface controls (reps-list-tables.tsx, FIELD_*_CLASS): a thumb's 44px on a phone
  * and 36px from `md`, labels at the house 10px floor, and a square edge written out because a phone's
  * native select draws its own.
+ *
+ * The five filters below are `CrmBareSelect`, so they keep exactly this look and become COMBO BOXES
+ * on an admin account (owner, 2026-10-03) — the Brick filter is the one that needed it: a long list's
+ * brick names are the hardest thing on this board to find by scrolling.
  */
 const LABEL_CLASS = "block text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400";
 const SELECT_CLASS =
@@ -683,52 +688,52 @@ export function CustomerListBoard({
         <div className={filtersOpen ? "contents" : "hidden md:contents"} id={filtersId}>
           <label className="block w-full sm:w-56 md:order-first">
             <span className={LABEL_CLASS}>Brick</span>
-            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setBrick(event.target.value)} value={brick}>
+            <CrmBareSelect className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setBrick(event.target.value)} value={brick}>
               <option value="">All bricks</option>
               {displayOrder(allGroups).map((group) => (
                 <option key={group.key} value={group.key}>
                   {group.mapped ? group.heading : `${group.heading} — no brick yet`}
                 </option>
               ))}
-            </select>
+            </CrmBareSelect>
           </label>
           <label className="block w-full sm:w-44 md:order-first">
             <span className={LABEL_CLASS}>List</span>
-            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setListType(event.target.value)} value={listType}>
+            <CrmBareSelect className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setListType(event.target.value)} value={listType}>
               <option value="">PM and AM lists</option>
               <option value="PM">PM list only</option>
               <option value="AM">AM list only</option>
-            </select>
+            </CrmBareSelect>
           </label>
           <label className="block w-full sm:w-52 md:order-first">
             <span className={LABEL_CLASS}>This month</span>
-            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setActivity(event.target.value)} value={activity}>
+            <CrmBareSelect className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setActivity(event.target.value)} value={activity}>
               <option value="">All activity</option>
               <option value="unvisited">Not visited this month</option>
               <option value="visited">Visited this month</option>
-            </select>
+            </CrmBareSelect>
           </label>
           <label className="block w-full sm:w-40 md:order-first">
             <span className={LABEL_CLASS}>Grade</span>
-            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setGrade(event.target.value)} value={grade}>
+            <CrmBareSelect className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setGrade(event.target.value)} value={grade}>
               <option value="">All grades</option>
               {gradeOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
               ))}
-            </select>
+            </CrmBareSelect>
           </label>
           <label className="block w-full sm:w-56 md:order-first">
             <span className={LABEL_CLASS}>Specialty</span>
-            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setSpeciality(event.target.value)} value={speciality}>
+            <CrmBareSelect className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setSpeciality(event.target.value)} value={speciality}>
               <option value="">All specialties</option>
               {specialityOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
               ))}
-            </select>
+            </CrmBareSelect>
           </label>
         </div>
       </div>

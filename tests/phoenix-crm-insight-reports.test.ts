@@ -964,13 +964,19 @@ function runScopeTests(): void {
   // A district manager whose line has not opened reads an empty board, and is not refused.
   assert.deepEqual(ids(insightTerritories(viewerFor("D-4", "District Manager"), {}).seats), []);
 
-  // SFE and the CEO: every open line. The Super Admin: every territory, and his test entries on request.
+  // SFE and the CEO: every open line. The Super Admin: every territory — on the field force's own
+  // entries, since his test mode was retired on 2026-10-03 (owner: "they test in the phoenix crm is
+  // now irrelavent u can fully retiree it"). This line used to pin the opposite.
   const openTerritories = ["SEAT-CNS-REP-1", "SEAT-PED-REP-1", "SEAT-PED-REP-2", "SEAT-PED-REP-3"];
   assert.deepEqual(ids(insightTerritories(viewerFor("S-1", "SFE Manager"), {}).seats), openTerritories);
   assert.deepEqual(ids(insightTerritories(viewerFor("C-1", "CEO"), {}).seats), openTerritories);
   const superAdmin = viewerFor("B-10", "Super Admin");
   assert.deepEqual(ids(insightTerritories(superAdmin, {}).seats), ["SEAT-AIF-REP-1", ...openTerritories]);
-  assert.equal(insightTerritories(superAdmin, { includeTest: "true" }).includeTest, true);
+  assert.equal(
+    insightTerritories(superAdmin, { includeTest: "true" }).includeTest,
+    false,
+    "the flag is read and DROPPED — a bookmark carrying includeTest=true answers with the real entries, not a 403",
+  );
   assert.deepEqual(ids(insightTerritories(superAdmin, { lineCode: "cns" }).seats), ["SEAT-CNS-REP-1"]);
 
   // The product and marketing managers (owner, 2026-10-02): What the field heard ONLY, company-wide
@@ -1007,7 +1013,9 @@ function runScopeTests(): void {
   assert.match(source("src/lib/phoenix-crm/server/reports.ts"), /audience: !readsTeamReports\(viewer\) && readsFieldHeardByProduct\(viewer\) \? "products" : "field"/);
   const tab = source("src/components/phoenix-crm/reports-tab.tsx");
   assert.match(tab, /const productsAudience = view\?\.audience === "products";/);
-  assert.match(tab, /productsAudience\s*\?\s*\[\{ value: "heard", label: SECTION_TITLES\.heard/, "a product or marketing manager is offered the one section");
+  // `offer(...)` builds each option's label and note from the report guide (2026-10-03) — before
+  // that, every section was spelled out inline here.
+  assert.match(tab, /productsAudience\s*\?\s*\[\{ \.\.\.offer\("heard"\)/, "a product or marketing manager is offered the one section");
 
   // The service gates every board before it reads anything.
   const service = source("src/lib/phoenix-crm/server/insight-reports.ts");

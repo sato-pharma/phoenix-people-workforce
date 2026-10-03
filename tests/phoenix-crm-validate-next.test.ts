@@ -265,7 +265,20 @@ function checkScreens(): void {
   assert.ok(search > 0 && search < fold, "the search sits OUTSIDE the fold, so it is always in sight on a phone");
   const foldEnd = board.indexOf("</div>", fold);
   const folded = board.slice(fold, foldEnd);
-  assert.equal((folded.match(/<select\b/g) ?? []).length, 5, "the five selects — brick, list, this month, grade, specialty — are what fold");
+  // 🔴 `CrmBareSelect` since 2026-10-03, not a raw `<select`: it keeps the caller's own look and
+  // renders a searchable combo box on an ADMIN account, a native dropdown in the portal (Brick is the
+  // filter that needed it). What this line pins is unchanged — that five of them, and only five, sit
+  // behind the Filters toggle while the search stays outside it.
+  assert.equal(
+    (folded.match(/<CrmBareSelect\b/g) ?? []).length,
+    5,
+    "the five dropdowns — brick, list, this month, grade, specialty — are what fold",
+  );
+  assert.equal(
+    (folded.match(/<select\b/g) ?? []).length,
+    0,
+    "and not one of them is a raw select any more, or an admin would never get a combo box there",
+  );
   assert.equal((folded.match(/md:order-first/g) ?? []).length, 5, "and each comes first again from md, ahead of the search, as the row always read");
   assert.match(board, /aria-controls=\{filtersId\}\s+aria-expanded=\{filtersOpen\}/, "the toggle says what it opens and whether it is open");
   assert.match(board, /className="[^"]*\bmd:hidden"\s+onClick=\{\(\) => setFiltersOpen/, "the toggle is a phone's alone");

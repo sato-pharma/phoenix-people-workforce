@@ -348,7 +348,15 @@ export function runPhoenixCrmWave2ReportTests(): void {
     assert.match(service, /from\("phoenix_crm_countable_visits"\)/, "and visits come from the countable view, never the raw table");
 
     const tab = stripComments(readFileSync("src/components/phoenix-crm/reports-tab.tsx", "utf8"));
-    assert.match(tab, /frequency: "Frequency per customer"/, "the section is offered by name");
+    // 🔴 `SECTION_TITLES` moved to `src/lib/phoenix-crm/report-guide.ts` on 2026-10-03 (domain-first),
+    // so the NAME lives in the guide and the tab only offers the section. Both halves are asserted —
+    // the name alone would pass with nothing offering it, and vice versa.
+    assert.match(tab, /offer\("frequency"\)/, "the section is offered");
+    assert.match(
+      stripComments(readFileSync("src/lib/phoenix-crm/report-guide.ts", "utf8")),
+      /frequency: "Frequency per customer"/,
+      "and it is named",
+    );
     // Membership, not the exact list: the point is that this section asks for a MONTH like
     // coverage does, and a later month-shaped report joining the constant is not a regression.
     const monthly = /MONTHLY_SECTIONS: ReadonlyArray<ReportSection> = \[([^\]]+)\]/.exec(tab)?.[1] ?? "";

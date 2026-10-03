@@ -30,7 +30,6 @@ import {
   CrmBlock,
   CrmButton,
   CrmCard,
-  CrmCheck,
   CrmChoice,
   CrmEmpty,
   CrmFacts,
@@ -93,24 +92,16 @@ import type {
   VisitsReportView,
 } from "@/lib/phoenix-crm/view-types";
 import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
+import {
+  groupReportSections,
+  reportAnswers,
+  REPORT_GUIDE,
+  SECTION_TITLES,
+  type ReportSection,
+} from "@/lib/phoenix-crm/report-guide";
+import { useCrmComboBoxes } from "@/components/phoenix-crm/surface";
 import { cn } from "@/lib/utils";
 
-type ReportSection =
-  | "exceptions"
-  | "visits"
-  | "plan"
-  | "daily"
-  | "coverage"
-  | "frequency"
-  | "tracking"
-  | "bricks"
-  | "managers"
-  | "locations"
-  | "adoption"
-  | "capacity"
-  | "heard"
-  | "stock"
-  | "samples";
 type PeriodPreset = "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month";
 type Period = { from: string; to: string };
 
@@ -1742,24 +1733,6 @@ function TrackingSection({ idPrefix, resource }: { idPrefix: string; resource: C
 
 // ── The tab ─────────────────────────────────────────────────────────────────────────────────────
 
-const SECTION_TITLES: Record<ReportSection, string> = {
-  exceptions: "Needs you today",
-  visits: "Visits per day",
-  plan: "Plan against actual",
-  daily: "Daily plan",
-  coverage: "Coverage and frequency",
-  frequency: "Frequency per customer",
-  tracking: "Tracking sheet",
-  bricks: "Coverage against sales",
-  adoption: "Who has started",
-  managers: "Double and chain visits",
-  locations: "Where the visit was saved",
-  capacity: "Grade against capacity",
-  heard: "What the field heard",
-  stock: "Missing stock",
-  samples: "Samples by month",
-};
-
 /**
  * The four insight boards of 2026-10-02. A manager's reports — the server refuses each one to a medical
  * rep, so leaving one here is UX, never the gate — read by the same predicate as the boards above them.
@@ -1800,7 +1773,9 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   // Grade against capacity reads this month or the next — the month a plan is built for — so it keeps a
   // month of its own rather than borrowing one the other sections may have set in the past.
   const [capacityMonth, setCapacityMonth] = useState(() => cairoToday.slice(0, 7));
-  const [includeTest, setIncludeTest] = useState(test);
+  // Every dropdown on this tab is a combo box on an admin account, and the report picker is a
+  // dropdown there too rather than fifteen chips (owner, 2026-10-03).
+  const combo = useCrmComboBoxes();
   // Phones only: the filters fold to a one-line summary, so the figures are not a screen further down.
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [compare, setCompare] = useState<ComparisonMode>("off");
@@ -1827,7 +1802,12 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
       : section;
   const capacityMonths = capacityMonthsOffered(today);
   const capacityMonthChosen = capacityMonths.includes(capacityMonth) ? capacityMonth : (capacityMonths[0] ?? capacityMonth);
-  const withTest = Boolean(view?.canIncludeTest) && includeTest;
+  // 🔴 THE "Include my test entries" TICK WENT WITH THE SUPER ADMIN'S TEST MODE (owner, 2026-10-03:
+  // *"the test in the phoenix crm is now irrelevant, u can fully retire it"*). It was the one control
+  // that could make a report disagree with the same report read by anybody else, and the Super Admin
+  // was the only person it was ever offered to. A TEST- login still reads its OWN world and nothing
+  // else — that is what `test` is — so the figures a test rep and his test manager read still match.
+  const withTest = test;
   // Checked whichever section is open: the export carries the daily plan's days too, and must never
   // send a range the server would refuse and so fail the whole workbook over one sheet.
   const dailyPeriodProblem = dailyPlanPeriodProblem(dailyDays.period, today);
@@ -1978,39 +1958,55 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     }
   }
 
+  // 🔴 EVERY LABEL AND NOTE COMES FROM `report-guide.ts`, never written out here. The notes used to be
+  // inline strings — "AM and PM apart", "Per brick, with the caveat" — which is why the owner could
+  // read the tab and not know what any of them answered (2026-10-03, "reports not clear"): a reader
+  // who already knows the report recognises it, and a reader who does not learns nothing. The guide
+  // carries the short note AND the full question, so both can be shown without a second copy of
+  // either. What stays HERE is only who may see each one.
+  const offer = (value: ReportSection): CrmChoiceOption<ReportSection> => ({
+    value,
+    label: SECTION_TITLES[value],
+    note: REPORT_GUIDE[value].note,
+  });
   const sectionOptions: Array<CrmChoiceOption<ReportSection>> = productsAudience
-    ? [{ value: "heard", label: SECTION_TITLES.heard, note: "Your products, company-wide" }]
+    ? [{ ...offer("heard"), note: "Your products, company-wide" }]
     : [
       // First, because it is the one a manager opens the tab FOR. Same gate as the place-vs-actual
       // report — one predicate, `readsTeamReports`, so the two can never disagree about who is a
       // manager — and the server refuses it too, since a hidden chip is UX and never the boundary.
-      ...(view.canSeeLocations ? [{ value: "exceptions" as const, label: SECTION_TITLES.exceptions, note: "Only what is wrong" }] : []),
-      { value: "visits", label: SECTION_TITLES.visits, note: "AM and PM apart" },
-      { value: "plan", label: SECTION_TITLES.plan, note: "Visited or missed, day by day" },
+      ...(view.canSeeLocations ? [offer("exceptions")] : []),
+      offer("visits"),
+      offer("plan"),
       // Every reader of the tab: a rep reads his own plan here, and a manager a rep's in his scope.
-      { value: "daily", label: SECTION_TITLES.daily, note: "Each day's customers" },
-      { value: "coverage", label: SECTION_TITLES.coverage, note: "The list, month by month" },
-      { value: "frequency", label: SECTION_TITLES.frequency, note: "Grade and plan, apart" },
-      { value: "tracking", label: SECTION_TITLES.tracking, note: "Customer against every day" },
+      offer("daily"),
+      offer("coverage"),
+      offer("frequency"),
+      offer("tracking"),
       // Same gate again: a board comparing bricks ACROSS a team is the manager's (owner, 2026-09-26).
-      ...(view.canSeeLocations ? [{ value: "bricks" as const, label: SECTION_TITLES.bricks, note: "Per brick, with the caveat" }] : []),
+      ...(view.canSeeLocations ? [offer("bricks")] : []),
       // A board naming who has never opened the module must not reach the field (F3) — same gate.
-      ...(view.canSeeLocations ? [{ value: "adoption" as const, label: SECTION_TITLES.adoption, note: "How far the rollout got" }] : []),
-      ...(view.hasManagers ? [{ value: "managers" as const, label: SECTION_TITLES.managers, note: "Per manager" }] : []),
+      ...(view.canSeeLocations ? [offer("adoption")] : []),
+      ...(view.hasManagers ? [offer("managers")] : []),
       // Managers, SFE and the Super Admin only — and the server refuses it too, so the chip is not the
       // gate (system-navigation hiding a link is UX; the boundary is server side).
-      ...(view.canSeeLocations ? [{ value: "locations" as const, label: SECTION_TITLES.locations, note: "Against the saved place" }] : []),
+      ...(view.canSeeLocations ? [offer("locations")] : []),
       // The four insight boards of 2026-10-02: the same gate as every board above them, and the server
       // refuses each one to a medical rep as well.
-      ...(view.canSeeLocations
-        ? [
-            { value: "capacity" as const, label: SECTION_TITLES.capacity, note: "The list against the month" },
-            { value: "heard" as const, label: SECTION_TITLES.heard, note: "Products and objections" },
-            { value: "stock" as const, label: SECTION_TITLES.stock, note: "Pharmacies short of a product" },
-            { value: "samples" as const, label: SECTION_TITLES.samples, note: "What was left, month by month" },
-          ]
-        : []),
+      ...(view.canSeeLocations ? [offer("capacity"), offer("heard"), offer("stock"), offer("samples")] : []),
       ];
+  const sectionGroups = groupReportSections(sectionOptions);
+  /**
+   * 🔴 THE PANEL'S DESCRIPTION IS THE QUESTION THIS REPORT ANSWERS, ON THE ADMIN SURFACE (owner,
+   * 2026-10-03: *"reports not clear"*). Before this every one of the fifteen reports carried the same
+   * sentence about AM and PM, which says nothing about the report you are looking at.
+   *
+   * The portal keeps that generic sentence. The explanations are written for every report and would
+   * read just as well to a district manager — but he scoped this message to admin accounts
+   * (*"without touching the reps account"*), and a screen a medical rep opens is not changed on an
+   * inference about what he would also have wanted.
+   */
+  const panelDescription = combo ? reportAnswers(activeSection) : REPORTS_DESCRIPTION;
   const presetOptions: Array<CrmChoiceOption<PeriodPreset>> = PRESETS.map(({ label, value }) => {
     const range = presetPeriod(value, today);
     const beforeOpening = range.to < FIRST_REPORT_DAY;
@@ -2059,14 +2055,48 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
           </CrmButton>
         </div>
       }
-      description={REPORTS_DESCRIPTION}
-      eyebrow={withTest ? "Reports · your test entries included" : "Reports"}
+      description={panelDescription}
+      eyebrow={test ? "Reports · test entries" : "Reports"}
       title={SECTION_TITLES[activeSection]}
     >
       <CrmBlock title="Report">
-        {/* Two a row on a phone whatever the count — six labels at three across would wrap "Coverage
-            and frequency" onto three lines and push the filters below the fold. */}
-        <CrmChoice columns={sectionOptions.length >= 5 ? 2 : sectionOptions.length === 4 ? 4 : 3} label="Report" onChange={setSection} options={sectionOptions} value={activeSection} />
+        {combo ? (
+          <div className="grid min-w-0 gap-3">
+            <CrmField
+              hint={REPORTS_DESCRIPTION}
+              htmlFor={`${idPrefix}-section`}
+              label={`Report · ${countText(sectionOptions.length)} in ${countText(sectionGroups.length)} subjects`}
+            >
+              {/* A COMBO BOX GROUPED BY SUBJECT, because fifteen equal chips is a wall and not an
+                  index. The subject is written into each option as well as standing over the group:
+                  the combo box flattens `optgroup`, and the word is what he types to narrow it. */}
+              <CrmSelect
+                id={`${idPrefix}-section`}
+                onChange={(event) => setSection(event.target.value as ReportSection)}
+                value={activeSection}
+              >
+                {sectionGroups.map((group) => (
+                  <optgroup key={group.family} label={group.title}>
+                    {group.sections.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {`${group.title} · ${SECTION_TITLES[option.value]} · ${REPORT_GUIDE[option.value].note}`}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </CrmSelect>
+            </CrmField>
+            {/* What the figures below are OF, always on screen and not only when a phone has folded
+                the filters away — so a number read off this tab is never quoted without its period. */}
+            <p className="break-words text-xs font-black uppercase tracking-wide text-slate-500">
+              {activeSection === "daily" ? dailySummary : filterSummary}
+            </p>
+          </div>
+        ) : (
+          /* Two a row on a phone whatever the count — six labels at three across would wrap "Coverage
+             and frequency" onto three lines and push the filters below the fold. */
+          <CrmChoice columns={sectionOptions.length >= 5 ? 2 : sectionOptions.length === 4 ? 4 : 3} label="Report" onChange={setSection} options={sectionOptions} value={activeSection} />
+        )}
       </CrmBlock>
 
       <CrmBlock
@@ -2195,12 +2225,6 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
             </div>
           ) : null}
 
-          {view.canIncludeTest ? (
-            <CrmCheck checked={includeTest} onChange={setIncludeTest}>
-              Include my test entries
-              <span className="block text-xs font-medium leading-5 text-slate-500">Nobody else can include them in a report.</span>
-            </CrmCheck>
-          ) : null}
         </div>
       </CrmBlock>
 

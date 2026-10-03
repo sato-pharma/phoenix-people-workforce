@@ -368,7 +368,14 @@ export function runPhoenixCrmDailyPlanReportTests(): void {
     assert.match(route, /section === "daily"\) report = await loadDailyPlanReport\(viewer, filters\)/, "the reports endpoint serves the section");
 
     const tab = source("src/components/phoenix-crm/reports-tab.tsx");
-    assert.match(tab, /value: "daily"/, "the Reports tab offers it");
+    // `offer("daily")` since 2026-10-03 — the option's label and note come from the report guide now,
+    // so the tab no longer spells the section out inline.
+    assert.match(tab, /offer\("daily"\)/, "the Reports tab offers it");
+    assert.match(
+      source("src/lib/phoenix-crm/report-guide.ts"),
+      /daily: \{/,
+      "and the guide carries its name, its subject and the question it answers",
+    );
     assert.match(tab, /useCrmGet<DailyPlanReportView>\(sectionUrl\("daily"\)/, "and reads it like every other section");
   }
 

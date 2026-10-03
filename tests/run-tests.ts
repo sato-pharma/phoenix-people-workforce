@@ -1654,6 +1654,7 @@ import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
 import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
 import { runPhoenixCrmFieldReachTests } from "./phoenix-crm-field-reach.test.ts";
+import { runPhoenixCrmAdminSurfaceTests } from "./phoenix-crm-admin-surface.test.ts";
 import { runPhoenixCrmNameBesidePillsTests } from "./phoenix-crm-name-beside-pills.test.ts";
 import { runPhoenixCrmCardTableParityTests } from "./phoenix-crm-card-table-parity.test.ts";
 import { runPhoenixCrmApprovalNudgeTests } from "./phoenix-crm-approval-nudge.test.ts";
@@ -5966,6 +5967,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's field day and reach (owner, 2026-10-02): a Directions link to the customer's SAVED place — the destination only, Google Maps, no key, nothing about where the rep is, and no link with no usable point — on the visit flow's customer card (under it, never inside its button), the visit form's header and his planned day; one line for his own field week, his sent plan against his countable visits, AM · PM · Pharmacies apart and never totalled, read in the day's one parallel wave; and a 'Get Phoenix CRM messages on Telegram' card at the top of Phoenix CRM for the reps and managers until the server says they are connected, through the ONE existing connect flow, hidden for the Cairo day by Later with every storage touch wrapped",
   runPhoenixCrmFieldReachTests,
+);
+
+await runTest(
+  "Phoenix CRM's ADMIN surface is separated from the rep's app (owner, 2026-10-03: \"make any droplist have a combo box not just droplist i am talking now on admin account … in admin accounts i find many defaults usage not easy at all and reports not clear. they test in the phoenix crm is now irrelevant u can fully retire it … tailored for admins without touching the reps account\"): the module is ONE component tree on two surfaces, so `CrmSurfaceContext` defaults to `portal` and a screen that forgets to declare itself keeps the rep's plain controls; both of the module's dropdowns are the repo's own combo box on an admin account and a native select in the portal; the Super Admin's test mode is retired — the flag every screen still sends is read and DROPPED on a read rather than refused, a write is refused naming \"Record a missed visit\", the server offers \"Include my test entries\" to nobody, and a TEST- login's own world is untouched; all fifteen reports carry the question they answer and a family, and a family nobody was offered a report for is left out; and an admin account lands on Team or Reports, never on one rep's Visits",
+  runPhoenixCrmAdminSurfaceTests,
 );
 
 await runTest(
