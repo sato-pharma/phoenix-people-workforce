@@ -247,9 +247,12 @@ a cloud session** (which reads the repo's own copy). The account of it:
 - 🔴 **NEVER re-add a module fact to `MEMORY.md` or `AGENTS.md` "to be sure it is seen."** That is
   precisely the cycle module memory replaced, and it re-charges every request for one module's rule.
 - **A new memory NOTE still lands in `MEMORY.md` under `## Inbox`**, so every session sees it from the
-  next one on. The weekly fold (`node scripts/module-memory/fold.mjs --apply`, Sundays ~09:02 Cairo)
-  files each note under its module in ONE PR, and the inbox empties only AFTER he merges it. Correct a
-  wrong note at its `description` — that line is what a session recalls.
+  next one on. The fold (`node scripts/module-memory/fold.mjs --apply`) files each note under its
+  module in ONE PR, and the inbox empties only AFTER he merges it. Correct a wrong note at its
+  `description` — that line is what a session recalls. 🔴 **IT RUNS THREE TIMES A DAY — 09:00, 15:00
+  and 21:00 Cairo, not Sundays** (his instruction, 2026-10-03). A run with nothing new opens NO PR and
+  only one fold PR is ever open, so the cadence costs no extra CI — it shortens the wait before a note
+  reaches its module from a week to eight hours.
 - 🔴 **Never hand-edit a generated block in `.claude/rules/*.md`.** Edit
   `scripts/module-memory/modules.mjs` or `assignments.json`, then `node scripts/module-memory/build.mjs`.
   `tests/module-memory.test.ts` runs `build.mjs --check` in the required `validate` job and refuses an
