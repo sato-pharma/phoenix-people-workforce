@@ -329,6 +329,95 @@ export function placeReadingsPrecise(fix: CapturedFix): boolean {
   return !photoRead || withinAccuracy(fix.photoAccuracyMeters, PLACE_MAX_ACCURACY_METERS);
 }
 
+// ── What a REFUSED capture was carrying ─────────────────────────────────────────────────────────
+
+/**
+ * 🔴 A REFUSED READING USED TO SURVIVE NOWHERE AT ALL, AND THAT IS WHAT THIS ANSWERS (owner,
+ * 2026-10-03: "record the refused readings so the next refusal is traceable").
+ *
+ * `phoenix_crm_location_integrity` is filed AFTER a save succeeds; a refused capture creates no place
+ * and no visit; the upload slot keeps only the fact that a slot was asked for. So the number the
+ * refusal turned on lived for one instant on the rep's screen and nowhere else — and on 2026-10-03 a
+ * rep met the rough-location refusal eighteen times in two and a half hours while the office could not
+ * read a single one of those eighteen numbers. Her 2,000 m is knowable at all only because four
+ * captures of hers were ACCEPTED earlier that morning, before the 100 m line shipped at 11:24.
+ *
+ * This is the classifier only: it says what the phone sent and which refusal it was, and writes
+ * nothing. The write is `server/refused-readings.ts`, which is void and never throws — the rep's
+ * refusal is identical, in the same words, with or without it (Golden Rule #1).
+ *
+ * 🔴 IT MUST NEVER RE-STATE A THRESHOLD. The two lines move (the place's 100 m is nine days old), so
+ * this asks the SAME predicates the doors ask — `placeReadingsPrecise` and `withinAccuracy` — and a
+ * capture those accept returns null here. Otherwise a refusal and its record could disagree about
+ * whether a reading was rough, which is a worse state than having no record.
+ */
+export type RefusedReading = {
+  /** `no_fix`: no usable coordinate at all. `rough`: a real coordinate, wider than its line. */
+  reason: "no_fix" | "rough";
+  lat: number | null;
+  lon: number | null;
+  accuracyMeters: number | null;
+  photoLat: number | null;
+  photoLon: number | null;
+  photoAccuracyMeters: number | null;
+  deviceCapturedAt: string | null;
+  deviceMocked: boolean | null;
+  /** The line it had to be inside, stored with the reading so a later rule change cannot rewrite it. */
+  maxAccuracyMeters: number;
+};
+
+/** The shutter's own pair, read through the same guards as the pin and never defaulted to it. */
+function photoReadingOf(body: Record<string, unknown>): Pick<RefusedReading, "photoLat" | "photoLon" | "photoAccuracyMeters"> {
+  const read = isUsableFix(body.shutterLat, body.shutterLon);
+  const accuracy = readAccuracyInput(body.shutterAccuracyMeters);
+  return {
+    photoLat: read ? Number(body.shutterLat) : null,
+    photoLon: read ? Number(body.shutterLon) : null,
+    photoAccuracyMeters: accuracy !== null && accuracy >= 0 ? Math.round(accuracy * 10) / 10 : null,
+  };
+}
+
+/**
+ * What a refused capture was carrying, or **null when the location was not what refused it** — a
+ * missing comment, no products, no photo, a bad customer id. Only a LOCATION refusal is recorded:
+ * a table that also held every mistyped form would be a table nobody reads.
+ */
+export function refusedReadingOf(raw: unknown, subjectKind: "place" | "visit"): RefusedReading | null {
+  const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const maxAccuracyMeters = subjectKind === "place" ? PLACE_MAX_ACCURACY_METERS : VISIT_MAX_ACCURACY_METERS;
+  const fix = parseCapturedFix(body);
+  if (!fix.ok) {
+    // No usable pin, so there is no coordinate to store — but the accuracy the phone claimed, its
+    // clock and the shutter's own pair may all still be readable, and each is worth having.
+    const accuracy = readAccuracyInput(body.accuracyMeters);
+    return {
+      reason: "no_fix",
+      lat: null,
+      lon: null,
+      accuracyMeters: accuracy !== null && accuracy >= 0 ? Math.round(accuracy * 10) / 10 : null,
+      ...photoReadingOf(body),
+      deviceCapturedAt: typeof body.deviceCapturedAt === "string" && !Number.isNaN(Date.parse(body.deviceCapturedAt)) ? body.deviceCapturedAt : null,
+      deviceMocked: typeof body.deviceMocked === "boolean" ? body.deviceMocked : null,
+      maxAccuracyMeters,
+    };
+  }
+  const precise =
+    subjectKind === "place" ? placeReadingsPrecise(fix.value) : withinAccuracy(fix.value.accuracyMeters, VISIT_MAX_ACCURACY_METERS);
+  if (precise) return null;
+  return {
+    reason: "rough",
+    lat: fix.value.lat,
+    lon: fix.value.lon,
+    accuracyMeters: fix.value.accuracyMeters,
+    photoLat: fix.value.photoLat,
+    photoLon: fix.value.photoLon,
+    photoAccuracyMeters: fix.value.photoAccuracyMeters,
+    deviceCapturedAt: fix.value.deviceCapturedAt,
+    deviceMocked: fix.value.deviceMocked,
+    maxAccuracyMeters,
+  };
+}
+
 export function parsePlaceDraft(raw: unknown): EntryRuleResult<PlaceDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const photoPath = String(body.photoPath ?? "").trim();

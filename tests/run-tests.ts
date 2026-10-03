@@ -1730,6 +1730,7 @@ import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
+import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
 import { runPhoenixCrmCommitmentsTests } from "./phoenix-crm-commitments.test.ts";
 import { runPhoenixCrmCallPrepTests } from "./phoenix-crm-call-prep.test.ts";
@@ -6033,6 +6034,11 @@ await runTest(
 await runTest(
   "Phoenix CRM pharmacy visit logged normally (owner, 2026-10-03, after Hassan in El Mahalla saved pharmacy visits that showed as not visited: no rep had ever saved one, because the 2026-10-02 rules were written and wired nowhere — the only road to a pharmacy was Out of plan, a reason and an approval. Pinned: a pending pharmacy needs no validation and sits on his list, in the TypeScript and in the countable view; Add visit → Pharmacy visit goes straight to the form with no reason; the save function files a pharmacy as never planned-out and never approved, names its visit after it, and files the pharmacy a doctor’s visit names as its own visit — matched to his list with the repo’s one Arabic normalizer, added when nothing matches, never a dropped one, never two a day; that linked visit is no rep’s first visit, no behaviour signal and no location row; and one pharmacy however it is spelled counts once in the day)",
   runPhoenixCrmPharmacyVisitLoggedTests,
+);
+
+await runTest(
+  "a REFUSED Phoenix CRM capture leaves its reading behind (owner, 2026-10-03, after one rep met the rough-location refusal eighteen times between 16:12 and 18:47 and every one of those eighteen readings was discarded — the integrity table is filed only after a save succeeds, no place or visit row is created, and the upload slot keeps only the fact that a slot was asked for, so her 2,000 m was knowable at all only because four captures were ACCEPTED that morning before the 100 m line shipped at 11:24. Pinned: her real 2,000 m capture records to every decimal with the line it missed; a capture the doors ACCEPT records nothing, and so does a refusal about a comment, the products, the customer or the photo; no usable coordinate is its own reason and keeps the radius the phone claimed, the shutter's own pair and the mock flag, with nothing coerced to 0; each door's own line and only its own, including the band where a place is refused and a visit is not; the classifier restates NO threshold but asks the doors' own predicates; the recorder is void, throws nothing, inserts and never upserts, and dates the Cairo visit day; all three refusing doors file it AWAITED before throwing, because an unawaited promise dies with the invocation; and the table is unkeyed so eighteen refusals are eighteen rows)",
+  runPhoenixCrmRefusedReadingsTests,
 );
 
 await runTest(

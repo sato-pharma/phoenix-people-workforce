@@ -92,6 +92,7 @@ import { loadLocationChecks, notifyValidationReviewWaiting, pendingLocationRevie
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
+import { recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
@@ -1298,7 +1299,21 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   const { seat, isTest, validatedAs } = territoryForValidation(viewer, body.seatId, readTestFlag(body.test));
   const lineCode = lineCodeOf(seat);
   const place = parsePlaceDraft(body.place);
-  if (!place.ok) throw validationError(place.error);
+  if (!place.ok) {
+    // The reading survives the refusal (owner, 2026-10-03). Silent, void, and never throwing: the
+    // rep reads exactly the refusal below, whether or not this lands.
+    await recordRefusedReading({
+      subjectKind: "place",
+      raw: body.place,
+      seatId: seat.seatId,
+      repHrId: viewer.hrId,
+      // Absent on `new` and `outside`, where no customer has been chosen yet. That is legitimate and
+      // must not cost the row — the reading is about the phone, not about the customer.
+      customerId: isUuid(body.customerId) ? String(body.customerId).toLowerCase() : null,
+      isTest,
+    });
+    throw validationError(place.error);
+  }
   // Optional, and written in the same save as the validation (owner, 2026-09-30) — never a second
   // step that could fail after the first one landed.
   const phone = parseCustomerPhone(body.phone);
@@ -1539,7 +1554,18 @@ export async function addPlace(
   const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
   if (!isUuid(body.customerId)) throw validationError("Choose the customer this place belongs to.");
   const place = parsePlaceDraft(body.place);
-  if (!place.ok) throw validationError(place.error);
+  if (!place.ok) {
+    // A second clinic's refused reading is filed exactly as the first one's is.
+    await recordRefusedReading({
+      subjectKind: "place",
+      raw: body.place,
+      seatId: seat.seatId,
+      repHrId: viewer.hrId,
+      customerId: String(body.customerId).toLowerCase(),
+      isTest,
+    });
+    throw validationError(place.error);
+  }
   // Another clinic is checked against Google exactly as the first one is (owner, 2026-10-03). Held, it
   // is saved and waits for the Super Admin; the customer, already validated, is not touched.
   const subject = await validationSubject(seat.seatId, isTest, "listed", { customerId: String(body.customerId).toLowerCase() });

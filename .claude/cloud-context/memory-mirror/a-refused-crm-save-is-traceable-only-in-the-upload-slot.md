@@ -1,16 +1,24 @@
 ---
 name: a-refused-crm-save-is-traceable-only-in-the-upload-slot
-description: "a REFUSED Phoenix CRM save leaves no reading anywhere — the only trace is phoenix_crm_photo_uploads / _voice_uploads with used_at NULL plus real bytes in storage.objects, which proves camera, mic, upload, network and session all worked"
+description: "a REFUSED Phoenix CRM save left no reading anywhere until 2026-10-03 — read phoenix_crm_refused_readings FIRST for anything after that, and for an EARLIER one the only trace is phoenix_crm_photo_uploads / _voice_uploads with used_at NULL plus real bytes in storage.objects, which proves camera, mic, upload, network and session all worked"
 metadata:
   node_type: memory
   type: project
   originSessionId: 1bbd035a-c8cc-4430-9c07-798a09c9000e
-  modified: 2026-10-03T16:14:06.236Z
+  modified: 2026-10-03T17:41:51.958Z
 ---
 
+🔴 **FIXED FOR ANYTHING AFTER 2026-10-03, at the owner's instruction ("record the refused readings so
+the next refusal is traceable"): a refused capture now files `phoenix_crm_refused_readings`** — the
+coordinate, both accuracies, the line it missed, `reason` (`no_fix` | `rough`), the mock flag and the
+Cairo visit day, written by `src/lib/phoenix-crm/server/refused-readings.ts` from all three refusing
+doors. **Read that table FIRST.** Everything below is how to answer the same question about a refusal
+from BEFORE that date, which is where this note was earned — and it is still the only way, because
+nothing backfills.
+
 `phoenix_crm_location_integrity` is written **only when a place or visit actually SAVES**, so a
-refused attempt leaves no reading, no accuracy and no coordinate anywhere. Saying "nothing is
-recorded since <time>" is therefore WRONG and it cost a whole audit on 2026-10-03.
+refused attempt before 2026-10-03 leaves no reading, no accuracy and no coordinate anywhere. Saying
+"nothing is recorded since <time>" is therefore WRONG and it cost a whole audit on 2026-10-03.
 
 **The trace that does exist:** `phoenix_crm_photo_uploads` and `phoenix_crm_voice_uploads` — one row
 per attempt, `issued_at` set and **`used_at` NULL** — plus the file itself in `storage.objects` with
