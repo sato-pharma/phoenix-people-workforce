@@ -41,7 +41,7 @@ import {
 import type { CreatedMailbox, JoinerConsoleDriver } from "./driver";
 import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
 import { APP_PASSWORD_PAGE, ECP_LOCATORS, ONE_TIME_PASSWORD_DIALOG, type Locator } from "@/lib/turbify/locators";
-import { cssQueryFor, resolveOne, rowCountRefusal, type CandidateReader, type ElementCandidate } from "@/lib/turbify/resolve";
+import { cssQueryFor, readExistence, resolveOne, rowCountRefusal, type CandidateReader, type ElementCandidate } from "@/lib/turbify/resolve";
 import {
   clearField,
   clickNode,
@@ -55,6 +55,8 @@ import { COMPANY_MAIL_DOMAIN } from "./safety";
 const LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fecp.turbify.com%2F";
 /** Where a mailbox signs in to its own account, as opposed to the admin panel. */
 const MAILBOX_LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fmail.turbify.com%2F";
+/** The account list. Reloaded before each existence check, because only the first search filters. */
+const consoleUrl = `https://ecp.turbify.com/${COMPANY_MAIL_DOMAIN}`;
 
 /** Candidate wordings for the create form's submit control. Tried in order; a miss is a refusal. */
 const CREATE_SUBMIT_WORDINGS = ["Create", "Create user", "Add user", "Add", "Save", "Continue"] as const;
@@ -347,11 +349,20 @@ export async function createTurbifyJoinerDriver(credentials: {
 
       // Ask the console itself whether the address exists. Phoenix's own `address_taken` gate reads
       // its register; this reads the only source that actually knows.
+      //
+      // 🔴 FROM THE ROW COUNT, NEVER THE PAGE TEXT, and after a FRESH LOAD. See `readExistence` for
+      // the measurement: the old text scan read the residue of the robot's own previous attempt and
+      // refused real new hires for ever. The reload matters just as much — only the FIRST search
+      // after a page load actually filters, so a second search on the same page answers about the
+      // address before it.
+      await page.goto(consoleUrl, { timeout: 60_000, waitUntil: "networkidle2" });
       await searchFor(page, address);
-      const existing = await page.evaluate<boolean>(
-        `(() => (document.body?.innerText || "").toLowerCase().includes(${JSON.stringify(address.toLowerCase())}))()`,
-      ).catch(() => false);
-      if (existing) {
+      const rows = await page
+        .$$eval<number>(cssQueryFor(ECP_LOCATORS.resetPassword), (elements) => elements.length)
+        .catch(() => -1);
+      const reading = readExistence(rows, address);
+      if ("refusal" in reading) throw new TurbifyJoinerStepError(reading.refusal);
+      if (reading.exists) {
         throw new TurbifyJoinerStepError(
           `${address} already exists in Turbify, so the robot did not create it. Phoenix's record disagreed with the console — reconcile before re-running.`,
         );
