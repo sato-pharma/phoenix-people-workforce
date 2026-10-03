@@ -80,6 +80,15 @@ export async function POST(request: Request) {
 
     // Audited even for a dry run: asking is worth a record of who asked. The result carries no
     // credential — a test asserts that on every path.
+    //
+    // 🔴 `detail` IS THE ONLY THING HERE THAT SAYS WHY, SO IT IS AUDITED. `refusal` is the gate's
+    // enum and is null on every run the gate allowed — so a run that reached Turbify and came back
+    // beaten stored `refusal: null`, `adopted: false` and nothing else, and the sentence naming the
+    // control that stopped it existed only on the screen of whoever clicked. Measured 2026-10-03:
+    // the two live runs that night both read exactly that, and the diagnostic had to be copied out
+    // of the browser by hand to be read at all. `handover` is deliberately NOT audited — for a new
+    // hire the company password becomes their real password, so that sentence can carry a
+    // credential where `detail` never does.
     await writeAuditLog({
       actorLoginId: access.loginId ?? null,
       entityId: result.address ?? INVITE_INBOX_ADDRESS,
@@ -87,6 +96,7 @@ export async function POST(request: Request) {
       newValues: {
         address: result.address,
         adopted: result.adopted,
+        detail: result.detail,
         dryRun: result.dryRun,
         refusal: result.refusal,
       },

@@ -80,7 +80,16 @@ export async function POST(request: Request) {
     });
 
     // Audited even for a dry run: asking which mailboxes WOULD be reset is itself worth a record of
-    // who asked. The outcomes carry no password — only addresses, verdicts and the hand-over text.
+    // who asked.
+    //
+    // 🔴 THE COUNTS SAY HOW MANY FAILED AND NOTHING SAYS WHY, so each outcome's own `detail` is
+    // audited beside them. A row reading `failed: 1` is unactionable a day later: the sentence
+    // naming what stopped that one mailbox lived only on the screen of whoever clicked, and had to
+    // be copied out of the browser by hand (measured 2026-10-03, on the invite inbox).
+    //
+    // 🔴 `handover` IS DELIBERATELY LEFT OUT. For a new hire the company password becomes their
+    // real password, so the hand-over sentence can carry a credential — `detail` and `status`
+    // never do, which is why only those two cross into an audit row.
     await writeAuditLog({
       actorLoginId: access.loginId ?? null,
       entityId: parsed.named.join(","),
@@ -91,6 +100,11 @@ export async function POST(request: Request) {
         failed: result.failed,
         lockedOut: result.lockedOut,
         named: parsed.named,
+        outcomes: result.outcomes.map((outcome) => ({
+          address: outcome.address,
+          detail: outcome.detail ?? null,
+          status: outcome.status,
+        })),
         refused: result.refused,
       },
       summary: parsed.dryRun
