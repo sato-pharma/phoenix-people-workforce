@@ -364,7 +364,7 @@ the full account, under
   Measured effect on the live directory: B-155 **57 → 42** (himself + the 41 medical reps), A-10
   **33 → 25**, GPM A-8 **24 → 22** (loses the NSM and the RSM, keeps her PMs and the field force),
   and all three National Sales Managers **unchanged** at 33 / 34 / 24. Pinned by
-  `runDoctorCoverageScopeTests` in the required CI `test` job, including a runtime assertion
+  `runDoctorCoverageScopeTests` in the required CI `validate` job, including a runtime assertion
   that every `LINE_ROLES` entry is ranked — an unranked one does not error, it silently restores the
   wide pre-2026-09-04 board. `scope-runs-downward-only-never-your-own-manager`
 
@@ -670,7 +670,7 @@ three, as they always had. A pharmacy is a pharmacy in all of them.
 **Never** join the three with a slash — the separator is the middle dot, as for the call rate above.
 Pinned by `tests/visit-count-golden-rule.test.ts` (and the pharmacy fixtures in
 `tests/double-visit-analytics.test.ts` and `tests/double-visit-report-export.test.ts`), which run in
-the required CI `test` job.
+the required CI `validate` job.
 
 ### 🔒 The August / Delta (3) golden rule
 
@@ -688,7 +688,7 @@ whenever I publish it, whenever I do it, it does not contain Delta three."*
 4. `runClosingPeriodDatingTests` pins both months **and proves it discriminates**, by re-resolving at
    run dates `2026-09-01`, `2026-09-15` and `2026-10-03` and asserting each would have wrongly
    credited August's sales to Delta (3). It is registered in `tests/run-tests.ts` and runs in the
-   required CI `test` job, so breaking it turns a PR red.
+   required CI `validate` job, so breaking it turns a PR red.
 
 **Never resolve closing geography at the run date**, and never offer to publish August "now that the
 move is live" as though the date were a problem — the date is the mechanism.
@@ -1307,7 +1307,7 @@ rows "Phoenix is right — I will fix my sheet". The correction is to his file, 
 
 `tests/qema-warehouse-split.test.ts` (named `qema-qalubeya-split.test.ts` until the rule was
 replaced on 2026-09-08) carries the `CA5` assertion forward, naming it — so removing Down town fails with an explanation rather than
-just going red. Both run in the required CI `test` job.
+just going red. Both run in the required CI `validate` job.
 
 ## El Qema leaves no trace in a closing detail — owner ruling, 2026-09-09
 
@@ -1880,7 +1880,7 @@ is published.
 
 ### What holds it
 
-`tests/qema-warehouse-split.test.ts`, in the required CI `test` job, plus the neighbouring
+`tests/qema-warehouse-split.test.ts`, in the required CI `validate` job, plus the neighbouring
 `import-split-preview`, `attribution-store-split-net` and `store-split-detail-report` suites, which
 all had to be moved onto the new geometry. `planShares` carries one running remainder across both
 blocks rather than concatenating two `evenShares` calls — measured, the naive version returned
@@ -1959,7 +1959,7 @@ Two such things were re-applied by hand, and both are pinned:
 filled areas. A session sweeping for documents not yet on the standard will find these three files,
 find filled black bands in them, and "finish the job" — reversing an owner decision while believing
 it is enforcing one. `tests/payroll-phoenix-look.test.ts` fails on ANY house colour appearing in
-these workbooks, and runs in the required CI `test` job, so the sweep goes red instead of
+these workbooks, and runs in the required CI `validate` job, so the sweep goes red instead of
 shipping.
 
 ## §4 hooks trimmed to their cue — the full text, verbatim (2026-09-07)
@@ -2004,7 +2004,7 @@ the trim — so the trim removes bytes from the auto-loaded file and removes no 
 
 ### AGENTS.md §4, line 399 as it stood on 2026-09-07
 
-- 🔒 **EL QEMA (`QM`) — its QALUBEYA sales split across Qalubeya PLUS all six Cairo areas. ONE WAY, EL QEMA ONLY.** Owner 2026-09-07, both halves asked and answered: *"one way only, only for el qema"*. A warehouse IN Qalubeya reaches Cairo; a warehouse in Cairo reaches Qalubeya NEVER, and the same Qalubeya warehouse sold through any other distributor does not split at all (Qalubeya is a one-area governorate). **This is why it canNOT live in `AREA_CITY`** — city membership is symmetric, so moving `D11` into "Cairo" would silently start paying Qalubeya a share of every Cairo wholesaler from every distributor, and the drift check would not see it (it compares UNITS; the split preserves them). It lives in `DISTRIBUTOR_SPLIT_TARGETS`, keyed `DISTRIBUTOR|ORIGIN AREA`, pinned by `tests/qema-qalubeya-split.test.ts`. The origin keeps its own share — seven areas, not six. **The divisor is AREAS — a vacant seat or NO seat** (*"حتى لو فيها فاكانت"*). **Down town (`CA5`) has no Pedia seat and STAYS IN** — owner 2026-09-07, *"we split in reference to areas not actual reps"*, ruling against his own SIX-way manual sheet. Dropping it reverses that; the test names it.
+- 🔒 **EL QEMA (`QM`) — its QALUBEYA sales split across Qalubeya PLUS all six Cairo areas. ONE WAY, EL QEMA ONLY.** Owner 2026-09-07, both halves asked and answered: *"one way only, only for el qema"*. A warehouse IN Qalubeya reaches Cairo; a warehouse in Cairo reaches Qalubeya NEVER, and the same Qalubeya warehouse sold through any other distributor does not split at all (Qalubeya is a one-area governorate). **This is why it canNOT live in `AREA_CITY`** — city membership is symmetric, so moving `D11` into "Cairo" would silently start paying Qalubeya a share of every Cairo wholesaler from every distributor, and the drift check would not see it (it compares UNITS; the split preserves them). It lives in `DISTRIBUTOR_SPLIT_TARGETS`, keyed `DISTRIBUTOR|ORIGIN AREA`, pinned by `tests/qema-warehouse-split.test.ts`. The origin keeps its own share — seven areas, not six. **The divisor is AREAS — a vacant seat or NO seat** (*"حتى لو فيها فاكانت"*). **Down town (`CA5`) has no Pedia seat and STAYS IN** — owner 2026-09-07, *"we split in reference to areas not actual reps"*, ruling against his own SIX-way manual sheet. Dropping it reverses that; the test names it.
 
 ### AGENTS.md §4, line 410 as it stood on 2026-09-07
 
@@ -2799,9 +2799,9 @@ current data, not about how it looks, and they must keep working independently o
 
 ### How it is held
 
-`tests/weekly-bi-design-lock.test.ts` builds the workbook from `sampleDashboard()` — the same fixed
+`tests/weekly-export-design-lock.test.ts` builds the workbook from `sampleDashboard()` — the same fixed
 fixture `runWeeklyExportTests` uses, so no data change can move the pin — and compares a design
-fingerprint. It runs in the required CI `test` job.
+fingerprint. It runs in the required CI `validate` job.
 
 The fingerprint is stored as a readable table of one digest per sheet, plus one for the style table
 and one for the charts, rather than a single opaque hash: a failure then says *which* sheet moved.
@@ -2960,7 +2960,7 @@ El Qema's rule spreads that distributor's Pedia book across the areas the line h
 
 ### How it is held
 
-`tests/pedia-upper-egypt-split.test.ts`, in the required CI `test` job. Its headline assertion is the golden rule itself: August's El Qema distribution built **with** the September rows present is `deepEqual` to August's built **without** them. Proved red by dating the pair to 2026-08-01, the real failure mode.
+`tests/pedia-upper-egypt-split.test.ts`, in the required CI `validate` job. Its headline assertion is the golden rule itself: August's El Qema distribution built **with** the September rows present is `deepEqual` to August's built **without** them. Proved red by dating the pair to 2026-08-01, the real failure mode.
 
 ### The Upper Egypt pool was deleted — owner, 2026-09-09
 
@@ -5097,13 +5097,13 @@ his own words at length — is in **[docs/agents-owner-rules.md](agents-owner-ru
 - 🔴 **A REJECTION NOTICE IS NEVER SENT AUTOMATICALLY.** Owner 2026-09-05, asked and answered: *"i dont want to auto send rejection notice"*. No sweep, no on-status-change trigger, no digest, in EITHER channel — and the 97 already-rejected candidates are a SETTLED question, never an unfinished phase to re-raise. The planner built that day was removed the same day; do not rebuild it, and do not read the two recipient sheets he was sent as a queue waiting for a send path. **What the removal KEPT is `isBatchActor`** (`src/lib/recruitment/batch-actor.ts`) — load-bearing for the throughput trend, nothing to do with sending.
 - 🔴 **THE SYSTEM NEVER AUTO-APPROVES A PLAN — a DM's weekly plan is submit → NSM (or RSM if applicable) → HR acknowledge, with NO CEO stage.** Owner 2026-09-05, twice; he also rejected a SYSTEM ACTOR — the objection is the approval EXISTING, not its label. `SYSTEM-AUTO-HR-ACK` on the ACKNOWLEDGEMENT stays, a system-signed APPROVAL is forbidden; reading only "drop the CEO" re-adds a cascade and believes it complies. **Never implement "skip a stage" by writing a decision row FOR the skipped stage — let the transition carry it.** **A DM plan now carries NO `ceo_approve` row AT ALL — all 50 deleted from PRODUCTION in TWO passes; do NOT undo, and do NOT read a DM plan's missing CEO row as data loss.** ⚠ The 50 were NEVER one population — classify by GAP and ACTOR before any sweep, and **never delete a human decision on the same predicate that catches a fabricated one.** Pre-image tables, counts and both passes: [docs/agents-owner-rules.md](agents-owner-rules.md). `the-system-never-auto-approves-a-plan`
 - 🔒 **A PHARMACY IS NOT A CONTACT — a CRM contact count is `PM` + `AM` only.** Pharmacies are separate: they stay OUT of the denominator the 90–120 rule judges and get their own tile. Never put `rows.length` beside the word "contacts" — route every printed size through one splitting helper — and **never name a row bag `contacts` when it holds pharmacies**, because the next session reads the field name and reprints the bug. Row label **"Pharmacist"**, count **"Pharmacies"**. `a-pharmacy-is-not-a-contact`
-- 🔒 **THE CALL RATE IS NEVER AVERAGED — AM against 2, PM against 10, reported APART.** Owner 2026-09-04: *"this two and this ten. Don't never get average."* There is deliberately NO combined figure anywhere — not on a row, not in the team totals, not as a band, not as a URL param — because every way of merging the two lets a good morning pay for an afternoon that never happened: 2 of 2 AM with nothing after lunch reads 50% averaged and 17% over one denominator, when the true answer is 100% and 0%. **Never print the pair with a slash** — he read `1.63 / 6.57` as *1.63 out of 6.57*; the separator is ` AM · ` / ` PM`. Pinned by `runKpiAttainmentAndIdentityTests` in the required CI `test` job.
+- 🔒 **THE CALL RATE IS NEVER AVERAGED — AM against 2, PM against 10, reported APART.** Owner 2026-09-04: *"this two and this ten. Don't never get average."* There is deliberately NO combined figure anywhere — not on a row, not in the team totals, not as a band, not as a URL param — because every way of merging the two lets a good morning pay for an afternoon that never happened: 2 of 2 AM with nothing after lunch reads 50% averaged and 17% over one denominator, when the true answer is 100% and 0%. **Never print the pair with a slash** — he read `1.63 / 6.57` as *1.63 out of 6.57*; the separator is ` AM · ` / ` PM`. Pinned by `runKpiAttainmentAndIdentityTests` in the required CI `validate` job.
 - Marketing Manager is hidden from the portal Incentive tab; GPM still sees it.
 - The Organogram / AU seat model is the source of truth for org-structure and vacancy data.
 - **SoS attribution is PERIOD-AWARE — read the function, never the old "today's geography" shorthand.** `au.f_monthly_attribution` and `au.f_monthly_achievement` resolve an area's region through `au.f_line_area_map_asof(period_end)`: the map as it stood at the END of the month being computed, so a forward-dated move leaves earlier months intact. It only LOOKS like today's geography because almost no `au.line_area_map` row has ever been closed. The shorthand this replaces also contradicted the August / Delta golden rule below, which forbids resolving closing geography at the run date.
 - 🔒 **A CRM account label is `[Name ]( Area / Line )`, and `E`/`F` are RETIRED line codes.** The area sits between the brackets, the line is the letter after the final `/` or `-`. **`E` became `A`; `F` became `P`** — live codes are `A`, `C`, `P`, so a trailing `/ E` or `/ F` is old naming and **never an open question**. **The CRM admin never deletes an account**: he deactivates, strips the name, keeps the area, then CLONES — so a leaver's identity is unrecoverable from the CRM. **Cloning is safe; RENAMING is what corrupts numbers.**
 - **Delta (3) territory move — LIVE, dated 2026-09-01, applied as a migration 2026-08-29.** The five areas (`D11`, `D24`, `D25`, `OT2`, `OT9`) sit on a dated PAIR, so **nothing is owed on 1 September** — do not re-apply, re-date or "finish" it. Resolver gap CLOSED both directions; recruitment CLOSED and `recruitmentAreaRegionOverrides` is PERMANENT. Keep the pre-image `delta3_defer_backup_20260829.line_area_map_pre`. **The SALES geography is DELIBERATELY LEFT ALONE (owner, Option A) — do NOT repoint `code_region_code`**, which can silently hide a district manager's own sales.
-- 🔒 **THE AUGUST / DELTA (3) GOLDEN RULE — the August closing NEVER contains Delta (3), whenever it is published.** Owner: "golden rule, no negotiation", twice in one breath. **Already enforced — do not rebuild it**, at four levels including `runClosingPeriodDatingTests`, in the required CI `test` job. **Never resolve closing geography at the run date**, and never offer to publish August "now that the move is live" — the date is the mechanism.
+- 🔒 **THE AUGUST / DELTA (3) GOLDEN RULE — the August closing NEVER contains Delta (3), whenever it is published.** Owner: "golden rule, no negotiation", twice in one breath. **Already enforced — do not rebuild it**, at four levels including `runClosingPeriodDatingTests`, in the required CI `validate` job. **Never resolve closing geography at the run date**, and never offer to publish August "now that the move is live" — the date is the mechanism.
 - 🔒 **THE AUGUST / UPPER EGYPT GOLDEN RULE — Pedia's Upper Egypt splits into Upper Egypt 1 and Upper Egypt 2 on 2026-09-01, and the August closing NEVER contains the split.** Owner 2026-09-09, *"golden, golden, golden rule"*, then twice more: *"you will pause August, August as it is."* **UE-1** Fayoum, Beni Suef, Minia 1-2, Assuit 1-2. **UE-2** Sohag 1-2, Qena 1, Qena 2, and **LUXOR, which is NOT a separate area** — it rides in as `other_permanent` with no rep seat, exactly as OT9 did into Delta (3). Aswan stays in Others. **PEDIA ONLY, said three times** — `UE-1`/`UE-2` already exist on Anti Infective with DIFFERENT membership (Assuit is UE-2 there, Fayoum is Giza), and `au.line_area_map` is per line, so **do NOT "align" them**. **The DATE is the mechanism**, as with Delta (3); the pre-image table is belt and braces and never the guard. 🔴 **El Qema's divisor goes 37 → 39** because Qena 2 and Luxor leave Others — the exclusion keys on `operational_region_code` **ALONE**, so an area carrying no target still takes a share. ⚠ `au.seats` is keyed on `seat_id` alone, so a seat cannot be forward-dated: the rep seats re-point when the migration runs, and that is chart metadata only. Pinned by `tests/pedia-upper-egypt-split.test.ts` in the required `checks` job. Account: [docs/agents-owner-rules.md](agents-owner-rules.md).
 - 🔒 **Delta (3) is ANTI-INFECTIVE ONLY.** On CNS and Pedia the five areas do not move at all, in BOTH months. A sweep that finds them "half-migrated" across lines is reading the **CORRECT** state.
 - 🔒 **THE CLOSING GOLDEN RULE — a closing is never done or sent during the month it covers.** Publishable on the **first day of the following month, Africa/Cairo**. Preparing a running month is fine; **releasing** it is what is forbidden, because publishing notifies every sales and product manager and a sent mail cannot be recalled. Enforced by `src/lib/sales/closing-period-gate.ts` + `tests/closing-period-gate.test.ts` in the required `checks` job. **`unpublishClosing` is deliberately NOT gated** — it is the recovery path. Do not add an override flag.

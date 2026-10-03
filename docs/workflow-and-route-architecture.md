@@ -97,8 +97,8 @@ pages inside it. Pages outside the group own their shell per-page on purpose.
 | Category | Where | Shell / guard ownership |
 |---|---|---|
 | **Admin group** | `app/(admin)/**` (e.g. `app/(admin)/admin/access`, `app/(admin)/employees`, `app/(admin)/admin/system-cleanup`) | `AppShell` + login redirect from `app/(admin)/layout.tsx`. Pages must **not** re-add `AppShell`. Page-specific permission guards still live in the page. |
-| **Dual-mode pages** | `app/payslips`, `app/leave-management` | Render `AppShell` (admin) **or** the employee-portal shell depending on `resolveNavigationMode`. Stay outside the group by design. |
-| **Full-width / standalone admin** | `app/organogram`, `app/offers` | Own per-page `AppShell` (often `contentWidth="full"`) + own guard. |
+| **Dual-mode pages** | `app/payslips` | Renders `AppShell` (admin) **or** the employee-portal shell depending on `resolveNavigationMode`. Stays outside the group by design — it is the only one left that does. |
+| **Moved into the group** | `app/(admin)/leave-management`, `app/(admin)/organogram`, `app/(admin)/offers` | These three were standalone, owning a per-page `AppShell`. They now sit inside the group and take the shell from `app/(admin)/layout.tsx`, so they must **not** re-add `AppShell`. |
 | **Redirect hubs** | `app/overview` | No shell — resolve role and redirect (e.g. to the role landing path). |
 | **Employee portal** | `app/employee-portals/**` | Employee-portal shell, never `AppShell`. |
 
