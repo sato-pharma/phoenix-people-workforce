@@ -65,6 +65,25 @@ export const SECTION_TITLES: Record<ReportSection, string> = {
 };
 
 /**
+ * The report's name as a filename slug, for a download that holds ONE report.
+ *
+ * 🔴 DERIVED, NOT WRITTEN, FOR THE SAME REASON THE SHEET TAB IS. The export route spelled
+ * `phoenix-crm-what-the-field-heard-…` out by hand, so renaming that report reached the screen, the
+ * worksheet tab, the heading inside it and the cover — and the file a product manager actually saves
+ * still carried the old name. It was the one surface left that a rename could miss.
+ *
+ * Only `[a-z0-9-]` survives, so the result is safe in a filename on every platform — none of
+ * Windows's forbidden `\ / : * ? " < > |` can reach it, whatever a title is renamed to. The leading
+ * and trailing dashes are trimmed, which is the spelling the rest of this repo's exports use.
+ */
+export function reportFileSlug(section: ReportSection): string {
+  return SECTION_TITLES[section]
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
  * The families, in the order a reader meets them: what is wrong first, then the work, then the list
  * it is done against, then the ground, then the rollout, then what came back from the field.
  */
