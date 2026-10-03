@@ -4641,6 +4641,79 @@ with Reps List or the KPIs board about which days a rep owed work on:
 Pinned by `tests/phoenix-crm-exceptions.test.ts` (which names the 8.3 figure both ways, so the fix
 cannot be reverted quietly) and `tests/phoenix-crm-daily-digest.test.ts`.
 
+## The SFE's list template — owner's ask, 2026-10-02 (evening)
+
+**What he asked for.** Put the question of who grades an add on a territory with no district manager, he
+answered with a third option of his own: *"make a third option for SFE and system administrator … with
+the download and upload template of the list … the SFE will send him an Excel sheet and he will populate
+it with the list, then he [sends it back to] the SFE and SFE uploads this sheet so his list appears …
+regarding the template that will be downloaded, put in its field every single thing you need. Every
+single data you need. Put it to be populated."*
+
+**What the sheet carries, and the one thing it cannot.** Every fact about a CUSTOMER is a column: his
+list (AM, PM or Pharmacy), name, speciality, grade, potential grade, phone, where to find him and a note
+for the rep. 🔴 **The PLACE is not a column and must never become one.** A place is validated once, at
+the door, from a live signboard photo and a GPS read taken on the spot, and its address, brick, area and
+region are resolved server-side from that point. A latitude in a spreadsheet is a typed location, which
+is the one thing that rule exists to forbid. So a loaded customer lands as `pending` and the rep
+validates him at his clinic exactly as he validates one carried over from iReports360 — "his list
+appears" is satisfied: they appear under **To validate**. The sheet says so on its own face, above the
+table, because otherwise somebody will add the column.
+
+**Where the grade comes from.** A rep never sets one. On the ordinary path the district manager confirms
+the A/B/C and sets the potential, then SFE admits, one customer at a time — and that path is unchanged
+and remains the normal one. This route exists for the list that cannot travel it: a territory whose
+manager chain is vacant, a seat being staffed from scratch, a whole list at once. The SFE who uploads is
+the one who graded it, in the sheet, and the load is recorded as his act (`list_loaded` plus a
+`customer_loaded` event per row, both naming him).
+
+**The shapes that had to be built for it to work at all.**
+
+- **`listed`, the third validate mode.** A loaded customer has no iReports360 contact, so
+  `phoenix_crm_reference_entry` can never find him and the reference branch cannot serve him. `listed`
+  validates a customer already on the list, by id, `pending` only — which is what the retired `restore`
+  mode was structurally, minus the hole it carried (it reached a customer in the ARCHIVE and inserted an
+  active place onto him).
+- **`rowActionFor` stopped asking for a contact id.** It fell back to Open for a pending row with
+  `referenceContactCrmId === null`, because the Validate screen could only open on a live vendor entry —
+  so a loaded customer would have sat on the list with no way off it, the exact shape rule 1 forbids.
+- **`intake_where` and `intake_note`.** The rep has to know which door to stand at for a doctor he has
+  never visited, and a loaded customer has no iReports360 address to show him. `where` is a NOTE and
+  nothing measures it; the place is still captured at the door.
+
+**Two guards worth keeping in mind.** The sheet names its own territory and an upload against a
+different one is refused — two sheets filled for two reps are otherwise one slip from loading the wrong
+rep's doctors, and nothing downstream would notice. And the List cell is canonicalised before
+`parseListType` sees it: that parser answers `PM` for anything it does not recognise, which is right for
+a stored value and catastrophic for a typed cell, because a pharmacy typed in lower case would be filed
+among the doctors and counted in their KPIs with nothing going red.
+
+## A manager validates a customer already on the list — `reference` AND `listed`, 2026-10-03
+
+The 2026-10-02 rule read **"a manager may validate only the `reference` mode"**, and its reason was
+stated in the same breath: *"Add new customer" and an out-of-list validation FILE A REQUEST whose
+first step is the territory's reviewer, and that is him — he would propose and approve in one act.*
+
+`listed` did not exist when that was written. A customer the SFE loaded from a sheet **files no
+request**: he is already on the list, already graded by SFE, and what is left of him is the door — the
+live photo and the GPS the frozen-place rule reserves for the clinic. By the rule's own reason he
+belongs with `reference`, not with `new` and `outside`.
+
+**And the hole was real.** The manager-validates screen exists for a **vacant** seat, whose list
+nobody else can work through. The list template exists for a territory whose manager chain is vacant
+or whose seat is being staffed from scratch. Those two overlap exactly: a seat with no rep yet, whose
+list SFE has just loaded. With the manager held to `reference` alone, every one of those customers
+would have sat in To validate until somebody was hired.
+
+Asked directly on 2026-10-03, with the three options spelled out — the manager too, the rep alone, or
+the manager and the SFE Manager — the owner answered **the manager, same as carried-over**. The SFE
+Manager was not extended: he loaded the sheet, but validating means standing in front of the clinic
+with the camera, and a place is captured once, at the door, for good.
+
+Unchanged by this: `territoryForRepWrite` is not widened, so the plan, the day activities, the
+forecast, the drop, the grade, the add and the hours are still the rep's alone; scope still runs
+downward only; and the place photo slot still takes the validation gate rather than the narrower one.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.

@@ -244,6 +244,15 @@ export type ListCustomer = {
   validatedByName: string | null;
   /** What iReports360 holds on him; null for a customer the rep added himself. */
   reference: ListCustomerReference | null;
+  /**
+   * What the SFE wrote for the rep when he loaded this list from a sheet: where to find the customer,
+   * and anything else worth saying. Null for every customer who arrived any other way.
+   *
+   * 🔴 `where` IS A NOTE, NEVER A LOCATION THE SYSTEM READS. The place is captured at the door and its
+   * address, brick, area and region resolved from that point; a typed address is the one thing that rule
+   * forbids. This is how the rep knows which door to stand at, and nothing measures it.
+   */
+  intake: { where: string | null; note: string | null } | null;
   droppedReason: string | null;
   droppedNote: string | null;
   statusChangedAt: string;
@@ -445,7 +454,7 @@ const PLACE_COLUMNS =
   "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes, " +
   "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason";
 const CUSTOMER_COLUMNS =
-  "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, primary_pharmacy_name, phone";
+  "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, primary_pharmacy_name, phone, intake_where, intake_note";
 
 /**
  * Every customer carried over from the territory's iReports360 list has a row here, pending until the
@@ -976,6 +985,9 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
             areaName: referenceRow.brick_id ? (referenceBrickMeta.get(referenceRow.brick_id)?.areaName ?? null) : null,
           }
         : null,
+      // What the SFE wrote for the rep when he loaded this list from a sheet. Null for every customer
+      // who did not arrive that way, which is nearly all of them.
+      intake: text(row.intake_where) || text(row.intake_note) ? { note: text(row.intake_note), where: text(row.intake_where) } : null,
       droppedReason: archiveReasonLabel(droppedReason) ?? dropReasonLabel(droppedReason) ?? droppedReason,
       droppedNote: text(row.dropped_note),
       statusChangedAt: String(row.status_changed_at),
@@ -1248,9 +1260,16 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   };
   let proposedGrade: PhoenixCrmGrade | null = null;
   const mode = String(body.mode ?? "");
-  if (validatedAs === "manager" && mode !== "reference") {
+  // A manager validates a customer who is ALREADY ON THE LIST, and nothing else: carried over from
+  // iReports360 (`reference`) or loaded from the SFE's sheet (`listed`, added on the owner's answer of
+  // 2026-10-03, asked directly). Both are the same act — somebody else admitted him and graded him, and
+  // what is left is the door. `new` and `outside` are excluded for the reason they always were: they
+  // FILE A REQUEST whose first step is the territory's reviewer, and that is him, so he would propose
+  // and approve in one act. Without `listed` here, a VACANT seat's loaded list could be worked through
+  // by nobody at all, which is the hole this screen exists to close.
+  if (validatedAs === "manager" && mode !== "reference" && mode !== "listed") {
     throw forbiddenError(
-      "A manager validates a customer carried over from iReports360. Adding a customer, or one met outside the list, is the rep's — the request it files is yours to decide.",
+      "A manager validates a customer already on the list. Adding a customer, or one met outside the list, is the rep's — the request it files is yours to decide.",
     );
   }
   if (mode === "reference") {
@@ -1258,6 +1277,19 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     if (!Number.isSafeInteger(contact) || contact <= 0) throw validationError("Choose the customer from your reference list.");
     payload.mode = "reference";
     payload.reference_contact_crm_id = contact;
+  } else if (mode === "listed") {
+    // A customer the SFE loaded from a sheet: already on the list, already graded by him, and carrying
+    // no iReports360 contact at all — so `reference` above can never reach him, and he is validated at
+    // the door exactly like a carried-over one.
+    //
+    // 🔴 WITHOUT THIS ARM THE WHOLE LIST TEMPLATE IS DEAD. The screen sends `listed`, the SQL has had
+    // its `listed` branch since 20261003000753, and this service fell through to "Reload the page and
+    // try again." — so every loaded customer sat in To validate for ever and could never have his
+    // photo and location captured. Nothing was red: the screen and the SQL were each pinned on their
+    // own, and no test walked the chain between them. Found in review, 2026-10-03.
+    if (!isUuid(body.customerId)) throw validationError("Choose the customer from your list.");
+    payload.mode = "listed";
+    payload.customer_id = body.customerId;
   } else if (mode === "new") {
     const draft = parseNewCustomer(body.customer);
     if (!draft.ok) throw validationError(draft.error);

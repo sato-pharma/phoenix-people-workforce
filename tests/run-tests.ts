@@ -1701,6 +1701,7 @@ import { runPhoenixCrmListAdmissionTests } from "./phoenix-crm-list-admission.te
 import { runPhoenixCrmListRowFactsTests } from "./phoenix-crm-list-row-facts.test.ts";
 import { runPhoenixCrmPlanPatternTests } from "./phoenix-crm-plan-pattern.test.ts";
 import { runPhoenixCrmListEdgeTests } from "./phoenix-crm-list-edges.test.ts";
+import { runPhoenixCrmListTemplateTests } from "./phoenix-crm-list-template.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
@@ -6080,6 +6081,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's five reports of 2026-10-02 keep the owner's rulings: grade against capacity weighs each list's grade numbers from Settings against the month's own field days (Thursday AM only, Friday nothing, the confirmed holidays out) and calls itself list size, never coverage, saying the carried-over grades are used; what the field heard counts what customers said by product, speciality and area, AM and PM apart, with no 'no objection' figure, no rate and no row per rep, and the product and marketing managers read it for their own products company-wide with no area while every other board stays the managers'; missing stock is each pharmacy's latest answer through the customer card's own grouping with no limit and no sales figure, printed in Cairo time; samples are a record and never a stock, and units of different products are never added — across items it counts visits; the customer's timeline is newest first with no location, distance or flag; and Export all sections carries the four boards behind the screen's own gates, a product manager's pack holding his own report and nothing else",
   runPhoenixCrmInsightReportsTests,
+);
+
+await runTest(
+  "Phoenix CRM's list template, the SFE's third route onto a list (owner, 2026-10-02): the sheet's columns carry every fact about a CUSTOMER and never a place — no latitude, no brick, no photo column exists, because a place is captured at the door and a typed one is the thing that rule forbids; the List cell is canonicalised before the module's own parser sees it, so a lower-case pharmacy is a pharmacy and not a PM doctor; a doctor must carry the grade and the potential the SFE set and a pharmacy must carry neither, each refused by its own sheet row rather than silently stripped; two rows naming one customer are caught inside the sheet with both row numbers; the sheet names its own territory and an upload against another one is refused; the gate is the integrity board's own two-reader predicate at the service, the page and the registry; the loader writes every customer as PENDING with validated_at NULL, skips one already on the list by name instead of aborting, and is service-role only; and the rep reaches him — a pending row carries Validate with no iReports360 contact at all, through the `listed` subject, which sends the place and the phone and never the grades, while the frozen Archive and an already-validated customer are both refused",
+  runPhoenixCrmListTemplateTests,
 );
 
 await runTest(

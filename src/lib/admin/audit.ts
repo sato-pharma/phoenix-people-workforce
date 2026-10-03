@@ -312,6 +312,13 @@ export type AuditEntityType =
   // access story, and a file naming individual reps and their own work leaves the building. No
   // migration — audit_logs has no CHECK on entity_type.
   | "phoenix_crm_reports_export"
+  // The SFE's customer-list template, both ways, with the territory as the entity id (2026-10-02). The
+  // download carries a territory's customers and their grades out of the building; the import writes a
+  // whole list at once, with the grades the SFE set, which on the ordinary path is the district
+  // manager's decision and SFE's approval taken one customer at a time. Who did that, and to which
+  // territory, is the row. No migration — audit_logs has no CHECK on entity_type.
+  | "phoenix_crm_list_template"
+  | "phoenix_crm_list_template_import"
   // Who pulled the shared Planning Calendar to XLSX, for which month. Gated to SFE
   // Manager / Super Admin; the month is the entity id so a row says WHICH period
   // was handed over. audit_logs has no CHECK on entity_type, so this needs no migration.

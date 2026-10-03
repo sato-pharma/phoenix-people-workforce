@@ -133,12 +133,23 @@ export function CustomerScreen({
 
   // What each part of the list knows about the customer. A customer who is not validated yet has no
   // place, no validation and no month standing: what he does have is what iReports360 says.
+  // A customer the SFE loaded from a sheet has no iReports360 row at all, so those two lines would both
+  // read "None recorded" on him. What he has instead is what the SFE wrote for the rep: which door.
+  const intakeFacts = [
+    ...(customer.intake?.where ? [{ label: "Where to find him", value: customer.intake.where }] : []),
+    ...(customer.intake?.note ? [{ label: "Note", value: customer.intake.note }] : []),
+  ];
   const facts = pending
     ? [
         { label: "This month", value: pendingVisitsText(customer.visitsThisMonth) },
         { label: "Validated", value: "Not yet" },
-        { label: "Address in iReports360", value: referenceAddressText(customer.reference) ?? "None recorded" },
-        { label: "Last visit in iReports360", value: referenceLastVisitText(customer.reference) },
+        ...(customer.reference || intakeFacts.length === 0
+          ? [
+              { label: "Address in iReports360", value: referenceAddressText(customer.reference) ?? "None recorded" },
+              { label: "Last visit in iReports360", value: referenceLastVisitText(customer.reference) },
+            ]
+          : []),
+        ...intakeFacts,
       ]
     : outside
       ? [
