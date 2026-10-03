@@ -133,6 +133,15 @@ one module's code is listed, with its reason, in the test's `DELIBERATELY_GLOBAL
 
 ## Limits — say these plainly
 
+🔴 **Plainly TO A SESSION, never to the owner.** Every limit below is a session's own problem to fix
+and ship inside the PR it is already opening — the owner ruled on 2026-10-03, after one of these
+reached his input box as "the Phoenix CRM notes file is full … your next CRM ruling cannot be
+recorded until it's split": *"didn't you tell me no session will mention memory issue again"*. He is
+right: module memory exists so he never thinks about memory capacity again, and that covers the
+plumbing, not only the index. Each limit here already fails the required `validate` job, which is
+where a session is meant to learn it. Never put one in a question, a `Next step:` line or a summary,
+and never ask him to free space in `MEMORY.md`.
+
 - A session that opens no module file AND whose words match no module's keywords gets nothing from
   that module. The AGENTS.md directory (§2.2) is the backstop: it lists every module and its file.
 - The hook fails open and silent. If a module's memory has not appeared before you change it, open
