@@ -943,11 +943,88 @@ function runCredentialReadCases(): void {
   );
 }
 
+/**
+ * The two refusals corrected on 2026-10-04, pinned because a refusal's WORDING is the whole product
+ * here — it is the only thing the owner reads, and each of these sent him somewhere wrong.
+ *
+ * 🔴 BOTH READ COMMENT-STRIPPED SOURCE, because the comment that explains why a wording went has to
+ * QUOTE it: `invite-inbox-runner.ts` carries "cannot read the mailbox until an adoption completes"
+ * verbatim in the comment above the corrected refusal. A raw-source negative assertion would fail on
+ * that documentation, and the cheapest way to make it green again is to delete the explanation —
+ * which is the one thing these cases exist to stop.
+ *
+ * 🔴 AND BOTH JOIN THE CONCATENATION SEAMS. A refusal is built from `"…" + "…"` fragments, so a
+ * phrase can be split across one, and collapsing whitespace is NOT enough — the `+ "` tokens survive
+ * it. A negative assertion written without this passes against code that still says the retired
+ * thing, which is a guard that cannot fail.
+ */
+function runCorrectedRefusalCases(): void {
+  /** Comment-stripped, whitespace-collapsed, and with adjacent string fragments joined. */
+  const readable = (path: string): string =>
+    stripComments(readFileSync(new URL(path, import.meta.url), "utf8"))
+      .replace(/\s+/g, " ")
+      .replace(/["`]\s*\+\s*["`]/g, "");
+
+  const driver = readable("../src/lib/new-hire-mailbox/robot/turbify-joiner.ts");
+  const runner = readable("../src/lib/new-hire-mailbox/robot/invite-inbox-runner.ts");
+
+  // ── 1. The setup page is Yahoo's Terms of Service, so the refusal stops sending him to a box ──
+  //
+  // Read from the live page: `pointer-events: none; opacity: 0; aria-hidden="true"; tabindex="-1"`
+  // — a hidden value carrier behind a custom control. NOBODY can tick it, him included, so "a
+  // consent box only the owner may tick" was unfollowable on every run that printed it.
+  assert.equal(
+    /owner may tick/.test(driver), false,
+    "the refusal must not tell him to tick the setup box — it is pointer-events:none and cannot be "
+    + "ticked by anyone, so that advice was unfollowable every time it was printed",
+  );
+  assert.equal(
+    /a REQUIRED UNTICKED checkbox/.test(driver), false,
+    "and it must not call that box REQUIRED — it carries no required flag and the form reports "
+    + "itself valid, so the required-consent reading is disproved, not merely unproven",
+  );
+  assert.ok(
+    driver.includes("password was NOT changed"),
+    "the refusal must say the mailbox's password was NOT changed — the one fact that decides what "
+    + "happens next, since a one-time password is left outstanding",
+  );
+  assert.match(
+    driver, /Terms of Service/,
+    "it must name what the page actually is: continuing accepts Yahoo's Terms of Service, which is "
+    + "why this step is a boundary and not a calibration gap",
+  );
+  assert.match(
+    driver, /Re-running this will not get past it/,
+    "and it must say re-running cannot help — six dead clicks went on a page no retry clears",
+  );
+
+  // ── 2. A reset does NOT cost Phoenix the mailbox wherever an app password is already stored ──
+  //
+  // Measured 2026-10-04: hr.mailbox@satopharma.com passed a real IMAP login at 00:19:54 Cairo,
+  // minutes after this refusal told the owner Phoenix could not read it. An app password survives a
+  // password change — this module's own standing rule — so the claim was simply false.
+  assert.equal(
+    /Phoenix cannot read the mailbox until an adoption completes/.test(runner), false,
+    "the runner must not claim Phoenix cannot read the mailbox until an adoption completes — an app "
+    + "password survives a reset, and hr.mailbox passed a real IMAP login minutes after that refusal",
+  );
+  assert.match(
+    runner, /an app password survives a password change/,
+    "it must say instead that an app password survives a password change, so reading the mailbox is "
+    + "a SEPARATE question from the mailbox's own password",
+  );
+  assert.match(
+    runner, /read the Mailbox Monitor page before assuming access was lost/,
+    "and it must point him at the page that answers it, rather than at a rescue he may not need",
+  );
+}
+
 export async function runNewHireMailboxRobotTests(): Promise<void> {
   runExistenceReadingCases();
   runExistenceWiringCases();
   runMailboxLoginCases();
   runCredentialReadCases();
+  runCorrectedRefusalCases();
   await runPageDescriptionCases();
   // ── the happy path, so every refusal below is attributable to the one thing it changed ───────
   const ok = verdict();
