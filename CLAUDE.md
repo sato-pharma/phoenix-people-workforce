@@ -52,9 +52,16 @@ Nothing heavy touches the 16 GB laptop, no Actions minutes are billed, and no PR
 the **commit**, so it prints any uncommitted files it is ignoring. Pinned by
 `tests/remote-check.test.ts`.
 
+🔴 **STANDING STEP, owner rule 2026-10-04: `node scripts/remote-check.mjs test` BEFORE EVERY PUSH THAT
+OPENS OR UPDATES A PR** — commit first, push only on `remote-check: PASS` for that exact sha (a
+green run on the sha you are about to push needs no re-run). Use `all` instead of `test` when the
+change adds a route, a file, or a member of a closed union. Measured across the 2026-09/10 sessions:
+8 of the sessions that turned CI red did so on a stale or broken test or guard, 3 on a type error.
+Rule and account: `.claude/rules/engineering.md` (Validation), `docs/testing.md`.
+
 **CI is the gate. Do not run a local full validation** — no "quick subset" of lint + typecheck
-before pushing, no `pnpm run ci` as a pre-push ritual. Push the branch and let the PR's two required
-checks answer, and **read `branches/main/protection/required_status_checks` live rather than trusting
+before pushing, no `pnpm run ci` as a pre-push ritual; the step above runs on the box, not here. Push
+the branch and let the PR's two required checks answer, and **read `branches/main/protection/required_status_checks` live rather than trusting
 any list**: it has rotted five times, and `lint`, `typecheck` and `test` are STEPS, not check names.
 Migrations and production deploys are the two things CI never sees.
 

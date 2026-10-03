@@ -134,6 +134,27 @@ commit's checks finish. So the merge gate and the deploy gate are the same two c
 gate hard-coded to a count from a doc does not merely wait — it waits for checks that no longer exist.
 **Count passes against `branches/main/protection/required_status_checks`, read live.**
 
+### Before every push: `remote-check.mjs test` is a standing step (owner rule, 2026-10-04)
+
+`node scripts/remote-check.mjs test` runs the unit suite on the preview box against the **committed**
+sha — about 133 s, nothing on the laptop, no Actions minutes — and a push follows only a final
+`remote-check: PASS — <sha>` for that exact sha. `all` (lint, typecheck, suite) replaces it when the
+change adds a route, a file or a member of a closed union, because the suite runs with
+`--experimental-strip-types` and cannot see a type error. A docs-only push is not exempt: the module
+memory check and the AGENTS.md/CLAUDE.md size budgets run in the suite, and a docs-only PR has broken
+`main` — and the first run of this very step, on the PR that introduced it, failed
+`AGENTS.md long hooks cite their account in docs/` on an over-long rule line, which CI would have
+spent a full round finding. A backgrounded run's notification reports the shell's exit status, so
+read the output file's last line.
+
+**Why.** The friction notes of the 2026-09-17..10-03 sessions (49 on disk, 42 with a written note) show
+where red CI came from on Claude's own code: 8 sessions a pinned or source-guard test that went stale
+or oversized (6) or a defect in the new test (2), 3 a type error. A typecheck hook would have seen
+none of the eight. Each red push costs a second full CI run (~14 billable minutes, `ci-self-hosted-runner.md`).
+This is **behavioral, not hook-enforced** — a guard that refused `git push` would also stop the
+scheduled fold and every session when the box is unreachable. If the box does not answer, say so and
+push; never wait on it.
+
 ### Waiting for the gate: allow-list `SUCCESS`, never deny-list the unfinished states
 
 Measured 2026-10-02 on one pull request, three false verdicts in roughly ten minutes — every one in
