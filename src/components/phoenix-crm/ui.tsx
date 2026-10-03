@@ -15,8 +15,10 @@ import type { ButtonHTMLAttributes, ReactNode, SelectHTMLAttributes } from "reac
 import { ArrowLeft, ChevronDown, CircleDashed, LoaderCircle, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { countText, type Tone } from "@/components/phoenix-crm/format";
 import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
+import { useCrmComboBoxes } from "@/components/phoenix-crm/surface";
 
 export const crmPanelClassName = "rounded-none border border-slate-200/90 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.07)]";
 
@@ -372,8 +374,38 @@ export function CrmChoice<T extends string>({
   );
 }
 
-/** A native select (a phone opens its own picker) with the module's arrow, since `appearance-none` drops the phone's. */
+/**
+ * The module's one dropdown.
+ *
+ * On the EMPLOYEE PORTAL it is a native select — a phone opens its own picker, with the module's own
+ * arrow since `appearance-none` drops the phone's.
+ *
+ * 🔒 ON AN ADMIN ACCOUNT IT IS A COMBO BOX HE CAN TYPE INTO (owner, 2026-10-03: *"make any droplist
+ * have a combo box not just droplist … i am talking now on admin account"*). The admin surface is the
+ * one that picks from lists nobody scrolls — every rep seat in the company, every line, twelve
+ * months — and it is the repo's own `SearchableSelect`, never a second one written here: that
+ * component already carries the measured fixes a hand-rolled combo box would have to relearn (the
+ * magnifier painting over a long value, the portal-rendered menu a panel's `overflow` would clip).
+ *
+ * 🔴 THE CALLER'S `<option>` CHILDREN ARE THE WHOLE API EITHER WAY, so no call site changes and none
+ * can drift: a screen rendered on both surfaces gets the right control from the context alone. The
+ * module's own class is passed FIRST and `pr-9` after it, so `rounded-none` beats the shared
+ * component's radius (the square-edge golden rule) and a long value never paints under the magnifier.
+ *
+ * 🔴 `optgroup` LABELS ARE LOST IN THE COMBO BOX — it flattens the groups and keeps the options. A
+ * caller carrying meaning in a group heading (the territory picker's line name) folds that word into
+ * the option's own label on this surface, which is what makes it typeable anyway.
+ */
 export function CrmSelect({ children, className, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+  if (useCrmComboBoxes()) {
+    return (
+      <div className="relative min-w-0">
+        <SearchableSelect {...rest} className={cn(crmSelectClassName, "pr-9", className)}>
+          {children}
+        </SearchableSelect>
+      </div>
+    );
+  }
   return (
     <div className="relative min-w-0">
       <select {...rest} className={cn(crmSelectClassName, "appearance-none pr-9", className)}>
@@ -381,6 +413,30 @@ export function CrmSelect({ children, className, ...rest }: SelectHTMLAttributes
       </select>
       <ChevronDown aria-hidden className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-400" />
     </div>
+  );
+}
+
+/**
+ * The same combo-box rule as `CrmSelect`, for a dropdown that keeps the CALLER'S OWN look and its own
+ * label — the customer list board's filter row, whose fields are shorter and tighter than the
+ * module's standard field because five of them sit on one line.
+ *
+ * It exists so that rule lives in ONE place. The alternative was a second `useCrmComboBoxes()` branch
+ * written out in that file, which is how a screen ends up with a native dropdown for an admin six
+ * months later: nobody greps for a condition they do not know was duplicated.
+ */
+export function CrmBareSelect({ children, className, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+  if (useCrmComboBoxes()) {
+    return (
+      <SearchableSelect {...rest} className={className}>
+        {children}
+      </SearchableSelect>
+    );
+  }
+  return (
+    <select {...rest} className={className}>
+      {children}
+    </select>
   );
 }
 

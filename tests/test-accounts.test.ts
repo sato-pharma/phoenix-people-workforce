@@ -204,8 +204,12 @@ export function runTestAccountTests(): void {
     // The real Aya, on the same seat, is untouched: real entries, and test mode refused.
     const realRep = viewerFor("B-7", "Medical Rep", { testPersona: false });
     assert.equal(territoryForRepWrite(realRep, REP.seatId, false).isTest, false, "the real rep still writes real entries");
-    refusedWith(() => territoryForRepWrite(realRep, REP.seatId, true), /Super Admin/, "the real rep cannot ask for test entries");
-    refusedWith(() => testModeFor(realRep, true), /Super Admin/, "nor read them");
+    // Retired 2026-10-03: the test world is a TEST- login's alone, so a `test` flag from the REAL
+    // rep is read and dropped rather than refused — he writes and reads his own real entries, which
+    // is what he was doing anyway. A 403 here would have been a blank screen for any tab open across
+    // the deploy.
+    assert.equal(territoryForRepWrite(realRep, REP.seatId, true).isTest, false, "the real rep's flag buys him nothing");
+    assert.equal(testModeFor(realRep, true), false, "and reads him nothing");
   }
 
   // ── 3. The test manager decides test entries only, as the person he mirrors ──────────────────────
@@ -236,8 +240,19 @@ export function runTestAccountTests(): void {
     refusedWith(() => territoryForRead(testRep, OTHER_REP.seatId, true), /outside your scope/, "another rep's territory is outside his scope");
     refusedWith(() => territoryForRepWrite(testRep, OTHER_REP.seatId, true), /territory's rep/, "and not his to change");
 
+    // 🔒 CHANGED 2026-10-03 WITH THE RETIREMENT OF THE SUPER ADMIN'S TEST MODE. This line used to
+    // pin the opposite: that his test mode reached `org.territories` whatever scope it was handed —
+    // the one read in the module that ignored the scope it was given. It is retired, so the rule now
+    // is that NOBODY reaches past the scope passed in, and the test account's half above is what the
+    // retirement had to leave untouched. Pinned from the other side by
+    // `tests/phoenix-crm-admin-surface.test.ts`.
     const superAdmin = { ...testRep, isSuperAdmin: true, isTestPersona: false } as PhoenixCrmViewer;
-    assert.equal(testReadSeats(superAdmin, true, []).length, org.territories.length, "the Super Admin's own test mode is unchanged");
+    assert.equal(testReadSeats(superAdmin, true, []).length, 0, "the Super Admin no longer reaches past the scope he was given");
+    assert.deepEqual(
+      testReadSeats(superAdmin, true, testRep.scopeTerritories).map((seat) => seat.seatId),
+      [REP.seatId],
+      "he reads exactly the scope handed to him, as everybody else now does",
+    );
   }
 
   // ── 5. Who can be mirrored, and what a test login looks like ─────────────────────────────────────

@@ -10,11 +10,14 @@
  *     Manager can also return a plan; the system never approves;
  *   - everyone reads downward only; the Super Admin, the CEO and the SFE Manager read the company;
  *   - a line's reps and managers use the module from the line's opening day;
- *   - the Super Admin's own entries are ALWAYS test entries (owner, 2026-09-16: the Super Admin tries
- *     Add Visit and the report from day one; those try-outs never reach a real report), on any territory, open or not —
- *     with THREE real-data exceptions, each its own gate below: moving a validated place
- *     (`canMovePlaces`), entering a record a rep MISSED, for that rep (`territoryForMissedRecord`), and
- *     acknowledging, as HR, a rep's request to edit a sent week (`canAcknowledgePlanEdits`);
+ *   - 🔒 THE SUPER ADMIN'S TEST WORLD IS RETIRED (owner, 2026-10-03: *"the test in the phoenix crm is
+ *     now irrelevant, u can fully retire it"*), so he READS the field force's own entries everywhere
+ *     and WRITES through the three real-data gates he always had and nothing else: moving a validated
+ *     place (`canMovePlaces`), entering a record a rep MISSED, for that rep
+ *     (`territoryForMissedRecord`), and acknowledging, as HR, a rep's request to edit a sent week
+ *     (`canAcknowledgePlanEdits`). The `test` flag a screen sends is read and dropped on a READ and
+ *     the write is refused by name (`superAdminHasNoFieldWrite`) — the earlier rule, that his every
+ *     entry was a test entry (owner, 2026-09-16), is history and not guidance;
  *   - a TEST ACCOUNT (owner, 2026-09-27; src/lib/auth/test-persona.ts) is the employee it mirrors, with
  *     that person's own territories, scope and authority — but every read and every save it makes is in
  *     the test world, always, whatever flag the screen sends. It decides test entries only, as the
@@ -142,8 +145,38 @@ function testAccountRealEntry(): ApiError {
   return forbiddenError("This is a test login: it works on test entries only. Real entries stay as they are.");
 }
 
-function superAdminTestOnly(): ApiError {
-  return forbiddenError("The Super Admin's entries are test entries. Switch on test mode to try the module.");
+/**
+ * 🔒 THE SUPER ADMIN'S TEST WORLD IS RETIRED — owner, 2026-10-03: *"the test in the phoenix crm is now
+ * irrelevant, u can fully retire it"*.
+ *
+ * It was the ONE thing he could write with in this module, and writing it was always a try-out: a
+ * parallel world of rows nothing real ever read. With the field force live there is nothing left to
+ * try, so the flag every screen used to send is READ AND DROPPED (see `territoryForRead`) and a write
+ * he used to make as a test is refused — with the one real path he has always had named in the
+ * refusal, because a message that said "switch on test mode" would now point at a control that no
+ * longer exists.
+ *
+ * 🔴 A `TEST-` LOGIN IS NOT AFFECTED. Its world is forced on by `isTestPersona` whatever the screen
+ * sends, so the reps' own test logins are untouched (the same message put them out of scope:
+ * *"without touching the reps account"*).
+ */
+export function superAdminHasNoFieldWrite(what: string): ApiError {
+  return forbiddenError(
+    `The Super Admin does not ${what}. Open the rep's day from Team or the Calendar and use "Record a missed visit" — that is a real entry, for a rep who forgot to log one.`,
+  );
+}
+
+/**
+ * The same retirement on the DECIDING side. A plan approval, a list request, an off-plan visit and a
+ * request to edit a sent week each belong to the territory's own chain — the district manager, then
+ * SFE — and the Super Admin took every one of those steps IN THE TEST WORLD, never on a real row. So
+ * the refusal he reads now is about whose decision it is, and must not point at "Record a missed
+ * visit", which answers a different question.
+ */
+function superAdminDoesNotDecide(): ApiError {
+  return forbiddenError(
+    "A decision belongs to the territory's own manager chain — the district manager, then SFE. Reopen or return the row if it is stuck; the decision itself is theirs.",
+  );
 }
 
 /** The opening day of a seat's line: "Phoenix CRM opens for Pedia on 19 September 2026." */
@@ -158,7 +191,14 @@ function lineNotOpen(viewer: PhoenixCrmViewer, seat: OrgSeat): ApiError {
   return forbiddenError(lineOpeningText(viewer, seat));
 }
 
-/** Reading a territory. Test entries are the Super Admin's view only. */
+/**
+ * Reading a territory — the field force's own entries, for everyone in whose scope it sits.
+ *
+ * 🔒 A `test` FLAG FROM ANYBODY BUT A TEST- LOGIN IS READ AND DROPPED, NOT REFUSED (the retirement
+ * above). Refusing it would make the retirement's first visible effect a 403 on every read made by a
+ * browser tab that happened to be open across the deploy, and by every bookmark carrying `test=1`.
+ * Dropping it answers the same page with the real entries, which is what the retirement means.
+ */
 export function territoryForRead(viewer: PhoenixCrmViewer, seatId: unknown, test: boolean): TerritoryAccess {
   const seat = territory(viewer, seatId);
   if (viewer.isTestPersona) {
@@ -167,23 +207,17 @@ export function territoryForRead(viewer: PhoenixCrmViewer, seatId: unknown, test
     if (viewer.waitingTerritories.some((entry) => entry.seatId === seat.seatId)) throw lineNotOpen(viewer, seat);
     throw forbiddenError("This territory is outside your scope.");
   }
-  if (test) {
-    if (!viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
-    return { seat, isTest: true };
-  }
+  void test;
   if (viewer.scopeTerritories.some((entry) => entry.seatId === seat.seatId)) return { seat, isTest: false };
   if (viewer.waitingTerritories.some((entry) => entry.seatId === seat.seatId)) throw lineNotOpen(viewer, seat);
   throw forbiddenError("This territory is outside your scope.");
 }
 
-/** Changing a territory's list or plan: its own rep; the Super Admin in test mode. */
+/** Changing a territory's list or plan: its own rep, and nobody else since test mode was retired. */
 export function territoryForRepWrite(viewer: PhoenixCrmViewer, seatId: unknown, test: boolean): TerritoryAccess {
   const seat = territory(viewer, seatId);
-  if (viewer.isSuperAdmin) {
-    if (!test) throw superAdminTestOnly();
-    return { seat, isTest: true };
-  }
-  if (test && !viewer.isTestPersona) throw forbiddenError("Test entries are the Super Admin's.");
+  void test;
+  if (viewer.isSuperAdmin) throw superAdminHasNoFieldWrite("change a rep's customer list or his plan");
   if (!viewer.canCreate) throw forbiddenError("Your role cannot change a customer list or a plan.");
   // A test account's own territory is the mirrored rep's, and what it changes there is a test entry.
   if (viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId)) return { seat, isTest: viewer.isTestPersona };
@@ -212,11 +246,8 @@ export function territoryForValidation(
   test: boolean,
 ): TerritoryAccess & { validatedAs: "rep" | "manager" } {
   const seat = territory(viewer, seatId);
-  if (viewer.isSuperAdmin) {
-    if (!test) throw superAdminTestOnly();
-    return { seat, isTest: true, validatedAs: "rep" };
-  }
-  if (test && !viewer.isTestPersona) throw forbiddenError("Test entries are the Super Admin's.");
+  void test;
+  if (viewer.isSuperAdmin) throw superAdminHasNoFieldWrite("validate a customer for a rep");
   if (!viewer.canCreate) throw forbiddenError("Your role cannot validate a customer.");
   const isTest = viewer.isTestPersona;
   if (viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId)) return { seat, isTest, validatedAs: "rep" };
@@ -247,18 +278,19 @@ export function canValidateReference(viewer: PhoenixCrmViewer, seat: OrgSeat, is
   return !viewer.isSuperAdmin && viewer.canCreate && isManagerOfTerritory(viewer, seat);
 }
 
-/** Entering a visit: the territory's rep, a manager of the territory, or the Super Admin in test mode. */
+/**
+ * Entering a visit: the territory's rep, or a manager of the territory (his own single visit, or a
+ * double or chain visit with the rep). The Super Admin reached this in test mode, which is retired —
+ * his one real path is "Record a missed visit", which has its own gate (`territoryForMissedRecord`).
+ */
 export function territoryForVisit(
   viewer: PhoenixCrmViewer,
   seatId: unknown,
   test: boolean,
 ): TerritoryAccess & { enteredAs: "rep" | "manager" } {
   const seat = territory(viewer, seatId);
-  if (viewer.isSuperAdmin) {
-    if (!test) throw superAdminTestOnly();
-    return { seat, isTest: true, enteredAs: "rep" };
-  }
-  if (test && !viewer.isTestPersona) throw forbiddenError("Test entries are the Super Admin's.");
+  void test;
+  if (viewer.isSuperAdmin) throw superAdminHasNoFieldWrite("enter a rep's visit");
   if (!viewer.canCreate) throw forbiddenError("Your role cannot enter visits.");
   const isTest = viewer.isTestPersona;
   if (viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId)) return { seat, isTest, enteredAs: "rep" };
@@ -282,7 +314,7 @@ export function assertReviewer(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: 
     if (!viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
     return;
   }
-  if (viewer.isSuperAdmin) throw superAdminTestOnly();
+  if (viewer.isSuperAdmin) throw superAdminDoesNotDecide();
   if (!viewer.canApprove) throw forbiddenError("Your role cannot decide for a territory.");
   if (!isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId)) {
     throw forbiddenError("Only the territory's reviewing manager decides this.");
@@ -438,7 +470,7 @@ export function assertUnplannedVisitApprover(
     if (!viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
     return;
   }
-  if (viewer.isSuperAdmin) throw superAdminTestOnly();
+  if (viewer.isSuperAdmin) throw superAdminDoesNotDecide();
   if (!viewer.canApprove) throw forbiddenError("Your role cannot decide for a territory.");
   if (canDecideUnplannedVisit(viewer, seat, isTest, stage)) return;
   throw forbiddenError(
@@ -486,7 +518,7 @@ export function assertPlanEditApprover(viewer: PhoenixCrmViewer, seat: OrgSeat, 
   if (viewer.isTestPersona && !isTest) throw testAccountRealEntry();
   if (isTest && !viewer.isSuperAdmin && !viewer.isTestPersona) throw forbiddenError("Test entries are the Super Admin's.");
   if (canDecidePlanEdit(viewer, seat, isTest, stage)) return;
-  if (!isTest && viewer.isSuperAdmin && stage !== "hr") throw superAdminTestOnly();
+  if (!isTest && viewer.isSuperAdmin && stage !== "hr") throw superAdminDoesNotDecide();
   throw forbiddenError(
     stage === "hr"
       ? "This request is waiting for HR's acknowledgement."
@@ -507,30 +539,38 @@ export function readTestFlag(value: unknown): boolean {
 }
 
 /**
- * The mode a read across territories runs in: always test for a test account, whatever the screen
- * sent; the Super Admin's own choice; and refused for anyone else who asks for test entries.
+ * The mode a read across territories runs in: a TEST- login's own world, and the real entries for
+ * everybody else. The Super Admin's choice of world is retired (see `superAdminHasNoFieldWrite`), and
+ * the flag a screen still sends is read and dropped rather than refused, for the reason
+ * `territoryForRead` records.
  */
 export function testModeFor(viewer: PhoenixCrmViewer, flag: unknown): boolean {
-  if (viewer.isTestPersona) return true;
-  const isTest = readTestFlag(flag);
-  if (isTest && !viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
-  return isTest;
+  void readTestFlag(flag);
+  return viewer.isTestPersona;
 }
 
 /**
- * The territories such a read covers. Only the Super Admin's test mode reaches every territory; a test
- * account reads exactly the scope of the person it mirrors, in the test world as in the real one.
+ * The territories such a read covers. It was the Super Admin's test mode that reached EVERY territory
+ * rather than a scope — retired, so this is now the viewer's scope in every case, a test account
+ * included: it reads exactly the scope of the person it mirrors, in the test world as in the real one.
  */
 export function testReadSeats(viewer: PhoenixCrmViewer, isTest: boolean, scope: OrgSeat[]): OrgSeat[] {
-  return isTest && viewer.isSuperAdmin ? viewer.org.territories : scope;
+  void viewer;
+  void isTest;
+  return scope;
 }
 
 /**
  * Whether a report carries test entries. A test account's always do — its own work is test work, read
- * beside the real entries of the people it mirrors; the Super Admin's only when he ticks the box.
+ * beside the real entries of the people it mirrors.
+ *
+ * 🔒 THE SUPER ADMIN'S "Include my test entries" TICK IS RETIRED with his test mode (owner,
+ * 2026-10-03). It was the one control in the module that could make a figure he quoted disagree with
+ * the same figure read by anybody else.
  */
 export function reportIncludesTest(viewer: PhoenixCrmViewer, flag: unknown): boolean {
-  return viewer.isTestPersona || (viewer.isSuperAdmin && readTestFlag(flag));
+  void readTestFlag(flag);
+  return viewer.isTestPersona;
 }
 
 // ── The rep's own screens are blind to location ────────────────────────────────────────────────
@@ -669,7 +709,7 @@ export function assertListRequestApprover(
     if (!viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
     return;
   }
-  if (viewer.isSuperAdmin) throw superAdminTestOnly();
+  if (viewer.isSuperAdmin) throw superAdminDoesNotDecide();
   if (!viewer.canApprove) throw forbiddenError("Your role cannot decide for a territory.");
   if (canDecideListRequest(viewer, seat, isTest, stage)) return;
   throw forbiddenError(

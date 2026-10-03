@@ -47,7 +47,7 @@ import {
   type DoubleVisitSummary,
 } from "@/lib/phoenix-crm/double-visit-plan-rules";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { superAdminHasNoFieldWrite, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
@@ -128,18 +128,17 @@ export function resolveDoubleVisitPlanReader(viewer: PhoenixCrmViewer, isTest: b
 
 /**
  * Gate two for WRITING one half-day. Answers whose plan it is: the district manager's own — real, or in
- * the test world for a test account working as him — or, in test mode only, the district manager the
- * Super Admin chose to try it as. SFE reads and never writes; everyone else is refused.
+ * the test world for a test account working as him. SFE reads and never writes; everyone else is
+ * refused.
+ *
+ * 🔒 THE SUPER ADMIN USED TO WRITE HERE as the district manager he picked, in test mode — retired on
+ * 2026-10-03 with the rest of it. He READS every district's plan as he always did; the half-day itself
+ * is its own district manager's. The refusal names that, and no longer names a control that is gone.
  */
 export function assertDoubleVisitPlanWriter(viewer: PhoenixCrmViewer, isTest: boolean, managerParam: unknown): string {
   const asked = personKey(typeof managerParam === "string" ? managerParam : null);
   if (viewer.isSuperAdmin && !viewer.isTestPersona) {
-    if (!isTest) throw forbiddenError("The Super Admin's entries are test entries. Switch on test mode to try the module.");
-    if (!viewer.canCreate) throw forbiddenError("Your role cannot plan double visits.");
-    if (!asked || !districtManagers(viewer.org).some((entry) => entry.hrId === asked)) {
-      throw validationError("Choose the district manager whose plan you are trying. Reload the page.");
-    }
-    return asked;
+    throw superAdminHasNoFieldWrite("plan a district manager's double visits");
   }
   if (viewer.isSfeManager && !viewer.isTestPersona) {
     throw forbiddenError("SFE reads the district managers' double visit plans. Each district manager plans his own.");

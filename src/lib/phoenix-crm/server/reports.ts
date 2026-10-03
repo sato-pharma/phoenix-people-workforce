@@ -246,6 +246,13 @@ export type ReportTerritory = { seatId: string; name: string; lineCode: string |
 
 export type ReportScopeView = {
   cairoToday: string;
+  /**
+   * 🔒 ALWAYS FALSE SINCE 2026-10-03 — the Super Admin's test mode is retired (owner: *"the test in
+   * the phoenix crm is now irrelevant, u can fully retire it"*) and the "Include my test entries" tick
+   * went with it. The field is KEPT rather than dropped so a browser tab open across the deploy reads
+   * a defined `false` instead of `undefined`, and so the next reader of this type sees that it was
+   * retired rather than never existing. Nothing may make it true again.
+   */
   canIncludeTest: boolean;
   maxDays: number;
   defaults: { from: string; to: string; month: string };
@@ -294,7 +301,7 @@ export async function loadReportScope(viewer: PhoenixCrmViewer): Promise<ReportS
   }
   return {
     cairoToday: viewer.cairoToday,
-    canIncludeTest: viewer.isSuperAdmin,
+    canIncludeTest: false,
     maxDays: REPORT_MAX_DAYS,
     defaults: { from: `${viewer.cairoToday.slice(0, 7)}-01`, to: viewer.cairoToday, month: viewer.cairoToday.slice(0, 7) },
     lines: [...lines]

@@ -260,7 +260,7 @@ export function runPhoenixCrmFieldReachTests() {
     const drawn = "{showsTelegramCard(overview.telegram) ? <TelegramConnectCard cairoToday={overview.cairoToday} /> : null}";
     const app = source("src/components/phoenix-crm/phoenix-crm-app.tsx");
     assert.ok(app.includes(drawn), "every module page draws it");
-    assertBefore(app, drawn, "{testModePanel()}", "at the very top");
+    assertBefore(app, drawn, "{standingNote()}", "at the very top");
     const chooser = source("src/components/phoenix-crm/module-chooser.tsx");
     assert.ok(chooser.includes(drawn), "and the chooser, Phoenix CRM's own first page");
     assert.equal(chooser.includes('"use client"'), false, "which stays a server component");

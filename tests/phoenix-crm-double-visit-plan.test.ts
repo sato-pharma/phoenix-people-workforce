@@ -321,7 +321,9 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
     assert.equal(assertDoubleVisitPlanWriter(dm, false, null), "B-12", "he writes his own plan");
     refused(() => resolveDoubleVisitPlanReader(dm, false, "B-76"), 403, /his own/, "never another district manager's plan");
     refused(() => assertDoubleVisitPlanWriter(dm, false, "B-76"), 403, /his own/, "and never writes one");
-    refused(() => testModeFor(dm, "true"), 403, /Super Admin/, "the test world is not his");
+    // Retired 2026-10-03: a `test` flag from anyone but a TEST- login is READ AND DROPPED, not
+    // refused — a 403 here would blank a tab that was open across the deploy.
+    assert.equal(testModeFor(dm, "true"), false, "the test world is nobody's now");
     assert.deepEqual(
       doubleVisitTeam(org, "B-12", testReadSeats(dm, false, dm.scopeTerritories)).map((entry) => entry.seatId),
       [D11.seatId, D13.seatId],
@@ -358,16 +360,22 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
     refused(() => resolveDoubleVisitPlanReader(sfe, false, "B-120"), 404, /organogram/, "never one on a line that has not opened");
     refused(() => resolveDoubleVisitPlanReader(sfe, false, "B-900"), 404, /organogram/, "and never a national manager's, who has none");
     refused(() => assertDoubleVisitPlanWriter(sfe, false, "B-12"), 403, /Each district manager plans his own/, "SFE never writes one");
-    refused(() => testModeFor(sfe, "true"), 403, /Super Admin/, "and has no test world");
+    assert.equal(testModeFor(sfe, "true"), false, "and has no test world either");
 
-    // The Super Admin reads every one, and writes one only in the test world, as a district manager.
+    // The Super Admin reads every one and writes none — his test mode is RETIRED (owner, 2026-10-03:
+    // "the test in the phoenix crm is now irrelevant, u can fully retire it"). He used to write a
+    // half-day as the district manager he picked, in the test world; a half-day is that district
+    // manager's own, and the refusal says so instead of naming a control that no longer exists.
     assert.deepEqual(doubleVisitPlanReach(owner, false), { mode: "pick", canWrite: false }, "real entries: he reads, read only");
-    assert.deepEqual(doubleVisitPlanReach(owner, true), { mode: "pick", canWrite: true }, "test mode: he tries the writing");
     assert.equal(resolveDoubleVisitPlanReader(owner, false, "B-120").managerHrId, "B-120", "every district, open line or not");
-    refused(() => assertDoubleVisitPlanWriter(owner, false, "B-12"), 403, /test entries/, "never a real entry");
-    assert.equal(assertDoubleVisitPlanWriter(owner, true, "B-12"), "B-12", "in test mode, as the district manager he chose");
-    refused(() => assertDoubleVisitPlanWriter(owner, true, null), 400, /Choose the district manager/, "and he has to choose one");
-    refused(() => assertDoubleVisitPlanWriter(owner, true, "B-900"), 400, /Choose the district manager/, "a national manager has no double-visit plan");
+    for (const named of ["B-12", null, "B-900"] as const) {
+      refused(
+        () => assertDoubleVisitPlanWriter(owner, false, named),
+        403,
+        /does not plan a district manager's double visits/,
+        `never a real entry, whoever he names (${named ?? "nobody"})`,
+      );
+    }
     assert.deepEqual(
       doubleVisitTeam(org, "B-120", testReadSeats(owner, true, owner.scopeTerritories)).map((entry) => entry.seatId),
       [C11.seatId],

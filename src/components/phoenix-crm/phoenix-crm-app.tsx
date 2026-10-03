@@ -1,15 +1,26 @@
 "use client";
 
 /**
- * Phoenix CRM — the module's page: its tabs, the territory they show, and the Super Admin's test mode.
+ * Phoenix CRM — the module's page: its tabs and the territory they show.
  *
  * Owner, 2026-09-16:
  *   - the rep validates the customer list at the clinic, plans the week on it and adds each visit on
  *     the day; the district manager approves the plans and decides grade and drop requests; the SFE
  *     Manager sees every plan and can return one; everyone reads the territories beneath them only;
- *   - the Super Admin tries Add Visit, the list, the plan and the report from day one, and everything
- *     entered that way is a test entry: nobody is notified, and reports leave it out unless asked;
  *   - lines open one at a time, and a line's people see the module from its opening day.
+ *
+ * 🔒 THE SUPER ADMIN'S TEST MODE IS RETIRED — owner, 2026-10-03: *"the test in the phoenix crm is now
+ * irrelevant, u can fully retire it"*. It was the page's OPENING state (`useState(true)`), so an admin
+ * account opened Phoenix CRM looking at a world with nothing real in it and had to find a toggle to
+ * see the field force at all — the first of the "many defaults … not easy at all" he named in the same
+ * message. He now reads REAL entries from the first paint, everywhere, with nothing to switch. His
+ * own try-out rows stay in the database and are simply never read again; the ONE real-data entry he
+ * had all along is unchanged — "Record a missed visit", on a day page, for a rep who forgot to log.
+ *
+ * 🔴 A `TEST-` LOGIN STILL HAS ITS TEST WORLD, and that is not the retired thing. A test account
+ * mirrors a REAL employee (src/lib/auth/test-persona.ts) and writes only test rows; retiring its
+ * world would break the reps' own test logins, which the same message put out of scope
+ * (*"without touching the reps account"*). So `test` below is `viewer.isTestPersona` and nothing else.
  *
  * The server decides the tabs, the territories and the counts (GET /api/phoenix-crm/overview) and
  * checks every read and save again; this page only lays them out.
@@ -36,19 +47,8 @@ import { countText, plural } from "@/components/phoenix-crm/format";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { preloadPhoenixCrmTab } from "@/components/phoenix-crm/tab-preload";
 import { TelegramConnectCard } from "@/components/phoenix-crm/telegram-connect-card";
-import {
-  CrmBlock,
-  CrmButton,
-  CrmChoice,
-  CrmEmpty,
-  CrmField,
-  CrmLoading,
-  CrmNote,
-  CrmPanel,
-  CrmPill,
-  CrmSelect,
-  type CrmChoiceOption,
-} from "@/components/phoenix-crm/ui";
+import { CrmSurfaceProvider, type CrmSurface } from "@/components/phoenix-crm/surface";
+import { CrmBlock, CrmButton, CrmEmpty, CrmField, CrmLoading, CrmNote, CrmPanel, CrmPill, CrmSelect } from "@/components/phoenix-crm/ui";
 import type { PendingValidate, PendingVisit } from "@/components/phoenix-crm/visits-tab";
 import { isForecastLine } from "@/lib/phoenix-crm/daily-forecast";
 import { PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
@@ -138,13 +138,6 @@ const HELD_WORK: Record<HoldingTab, string> = {
   settings: "the unsaved settings",
 };
 
-type EntriesShown = "test" | "real";
-
-const ENTRY_CHOICES: ReadonlyArray<CrmChoiceOption<EntriesShown>> = [
-  { value: "test", label: "Test mode", note: "Try the module" },
-  { value: "real", label: "Real entries", note: "The field force's, read only" },
-];
-
 /**
  * The employee portal pins its navigation bar to the bottom of a phone's screen: 60 px of buttons, its
  * top border and the safe area, hidden from `lg` up. A tab's save bar sits above it. The admin shell
@@ -155,10 +148,8 @@ const PORTAL_BOTTOM_BAR = "calc(61px + env(safe-area-inset-bottom))";
 /** Coming back to the page after at least this long reads the counts and territories again. */
 const REFRESH_AFTER_MS = 60_000;
 
-type Move =
-  /** Show another territory; `tab` opens that tab too (a territory's list, from Team or the Plan). */
-  | { kind: "seat"; seatId: string; tab: TabKey | null }
-  | { kind: "test"; test: boolean };
+/** Show another territory; `tab` opens that tab too (a territory's list, from Team or the Plan). */
+type Move = { kind: "seat"; seatId: string; tab: TabKey | null };
 
 function isTabKey(value: string | null): value is TabKey {
   return value !== null && (TAB_ORDER as readonly string[]).includes(value);
@@ -187,11 +178,22 @@ function allowedTabs(tabs: PhoenixCrmTabs): TabKey[] {
  * The tab the page opens on: the one the address asks for, when the viewer has it; else Team for a
  * manager with a real decision waiting, or for one who reads the territories without entering visits
  * (a regional or national manager, the CEO, the SFE team); else the viewer's first tab.
+ *
+ * 🔴 AN ADMIN ACCOUNT NEVER OPENS ON ONE REP'S ENTRY SCREEN (owner, 2026-10-03: *"in admin accounts i
+ * find many defaults usage not easy at all"*). `allowed[0]` is **Visits** — a single territory's
+ * day, chosen for him out of 74 by `seatOf`, with nothing to enter on it since his test mode was
+ * retired. On the admin surface the landing is the whole company instead: **Team**, and **Reports**
+ * where there is no Team tab (the Training Manager, a product manager). The portal keeps its own
+ * landing exactly as it was — a rep still opens onto his day (A2, owner 2026-09-26).
  */
-function openingTab(overview: PhoenixCrmOverview, requested: string | null): TabKey {
+function openingTab(overview: PhoenixCrmOverview, requested: string | null, surface: CrmSurface): TabKey {
   const allowed = allowedTabs(overview.tabs);
   if (isTabKey(requested) && allowed.includes(requested)) return requested;
   const { tabs, viewer, visitSeatIds, waitingForYou } = overview;
+  if (surface === "admin" && !viewer.isRep) {
+    if (tabs.team) return "team";
+    if (tabs.reports) return "reports";
+  }
   // HR's acknowledgements are real entries even for the Super Admin, so they count in either world.
   // The off-plan visits are one of the decisions since 2026-10-02 — a manager with one waiting and
   // nothing else lands on Team now, instead of on the tab he happened to be given first.
@@ -210,7 +212,7 @@ function openingTab(overview: PhoenixCrmOverview, requested: string | null): Tab
   return allowed[0] ?? "visits";
 }
 
-/** The territories a tab offers. A plan is its own rep's; the Super Admin tries any, as a test. */
+/** The territories a tab offers. A plan is its own rep's to change; the Super Admin reads any of them. */
 function territoriesFor(overview: PhoenixCrmOverview, tab: SeatTab): TerritorySummary[] {
   if (tab !== "plan" || overview.viewer.isSuperAdmin) return overview.territories;
   return overview.territories.filter((territory) => overview.ownSeatIds.includes(territory.seatId));
@@ -281,18 +283,19 @@ export function PhoenixCrmApp({
    * The admin twin keeps the one-screen shape, and so does `single={false}`.
    */
   single?: boolean;
-  /** The employee portal draws a navigation bar along the bottom of a phone; the admin shell does not. */
-  surface: "admin" | "portal";
+  /**
+   * Which surface this is. The employee portal draws a navigation bar along the bottom of a phone and
+   * the admin shell does not — and since 2026-10-03 it is also what every control on the page reads
+   * through `CrmSurfaceProvider`: the admin's dropdowns are combo boxes, the rep's are not.
+   */
+  surface: CrmSurface;
 }) {
   const idPrefix = useId();
   const [overview, setOverview] = useState(initialOverview);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabKey>(() => openingTab(initialOverview, initialTab));
+  const [tab, setTab] = useState<TabKey>(() => openingTab(initialOverview, initialTab, surface));
   const [chosenSeat, setChosenSeat] = useState<string | null>(null);
-  // The Super Admin's own entries are always test entries (owner, 2026-09-16), so the page opens in
-  // test mode; real entries are for reading.
-  const [testMode, setTestMode] = useState(true);
   const [pendingVisit, setPendingVisit] = useState<PendingVisit | null>(null);
   // The mirror of pendingVisit, running the other way: Add Visit hands a still-pending customer to the
   // List's Validate screen, so the rep who is already at the door with his phone out can finish it now.
@@ -382,7 +385,8 @@ export function PhoenixCrmApp({
   }, []);
 
   const { viewer } = overview;
-  const test = viewer.isTestPersona || (viewer.isSuperAdmin && testMode);
+  // A TEST- login's world, and nothing else: the Super Admin's test mode is retired (the header).
+  const test = viewer.isTestPersona;
   const tabs = allowedTabs(overview.tabs);
 
   // The address changed under the page (the "+" menu, or a link to another tab): answered here, while
@@ -426,8 +430,8 @@ export function PhoenixCrmApp({
     single && activeTab === "list" && validateParam && Number.isFinite(Number(validateParam))
       ? { seatId: seats.list ?? "", test, contactCrmId: Number(validateParam), customerName: customerNameParam ?? "" }
       : null;
-  // The Super Admin's counts are test entries: they show in test mode only — except HR's
-  // acknowledgements of a request to edit a week, which are real and show out of test mode.
+  // A test login's counts are its own world's; everyone else's — the Super Admin's included since his
+  // test mode was retired — are the real ones, and HR's acknowledgements were always real.
   const { waitingForYou } = overview;
   // A rep's asks for a visit waiting for this viewer's answer (owner, 2026-10-02): counted on Team for a
   // manager, and on Reports for a product manager, who has no Team tab.
@@ -500,12 +504,8 @@ export function PhoenixCrmApp({
     }
   }
 
-  /** The held work a move lets go: a territory tab whose territory changes, or every tab test mode keys. */
+  /** The held work a move lets go: a territory tab whose territory changes. */
   function workDroppedBy(move: Move): HoldingTab[] {
-    if (move.kind === "test") {
-      if ((viewer.isSuperAdmin && move.test) === test) return [];
-      return (["visits", "list", "plan", "team"] as const).filter(isHeld);
-    }
     // The guard is re-typed for SeatTab rather than reused as-is: `isHoldingTab` takes a TabKey and
     // narrows to HoldingTab, which is NOT a subtype of SeatTab (it also holds team and settings), so
     // `filter` cannot pick its narrowing overload and hands back SeatTab[] with no complaint until
@@ -518,31 +518,26 @@ export function PhoenixCrmApp({
     const dropped = workDroppedBy(move);
     setAsking(null);
     setNotice(null);
-    if (move.kind === "seat" && !overview.territories.some((territory) => territory.seatId === move.seatId)) {
+    if (!overview.territories.some((territory) => territory.seatId === move.seatId)) {
       // Opened from a list read after the page's own (Team): the page reads its territories again.
       setNotice("That territory is not on this page yet. The page is reading the latest territories: open it again in a moment.");
       refreshOverview();
       return;
     }
-    // Add Visit's hand-off belongs to one territory in one mode; it goes when that is no longer shown.
-    const nextTest = move.kind === "test" ? viewer.isSuperAdmin && move.test : test;
-    const nextVisitsSeat = move.kind === "seat" ? seatOf(overview, "visits", move.seatId) : seats.visits;
-    if (pendingVisit && (pendingVisit.seatId !== nextVisitsSeat || pendingVisit.test !== nextTest)) {
+    // Add Visit's hand-off belongs to one territory; it goes when that territory is no longer shown.
+    const nextVisitsSeat = seatOf(overview, "visits", move.seatId);
+    if (pendingVisit && (pendingVisit.seatId !== nextVisitsSeat || pendingVisit.test !== test)) {
       releaseCapturedPhoto(pendingVisit.photo);
       setPendingVisit(null);
     }
-    // The Validate hand-off belongs to one territory in one mode in the same way. It carries no photo.
-    const nextListSeat = move.kind === "seat" ? seatOf(overview, "list", move.seatId) : seats.list;
-    if (pendingValidate && (pendingValidate.seatId !== nextListSeat || pendingValidate.test !== nextTest)) {
+    // The Validate hand-off belongs to one territory in the same way. It carries no photo.
+    const nextListSeat = seatOf(overview, "list", move.seatId);
+    if (pendingValidate && (pendingValidate.seatId !== nextListSeat || pendingValidate.test !== test)) {
       setPendingValidate(null);
     }
     // A tab let go does not say so on its way out.
     if (dropped.length > 0) {
       setHolding((current) => new Set([...current].filter((key) => !dropped.includes(key))));
-    }
-    if (move.kind === "test") {
-      setTestMode(move.test);
-      return;
     }
     setChosenSeat(move.seatId);
     if (move.tab) {
@@ -626,35 +621,16 @@ export function PhoenixCrmApp({
     );
   }
 
-  function testModePanel() {
-    if (viewer.isTestPersona) return testAccountPanel();
-    if (!viewer.isSuperAdmin) return null;
-    return (
-      <CrmPanel>
-        <CrmBlock>
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] xl:items-center">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base font-black text-slate-950">{test ? "Test mode" : "Real entries"}</h2>
-                <CrmPill tone={test ? "orange" : "info"}>{test ? "Test entries" : "Read only"}</CrmPill>
-              </div>
-              <p className="mt-1 max-w-3xl text-sm font-medium leading-6 text-slate-500">
-                {test
-                  ? "What you add, on any territory, is a test entry: nobody is notified, and reports leave test entries out unless you tick “Include my test entries”."
-                  : "The field force's own entries, as they are. Your own entries are always test entries, so switch back to test mode to add anything."}
-              </p>
-            </div>
-            <CrmChoice
-              columns={2}
-              label="Entries shown"
-              onChange={(next) => requestMove({ kind: "test", test: next === "test" })}
-              options={ENTRY_CHOICES}
-              value={test ? "test" : "real"}
-            />
-          </div>
-        </CrmBlock>
-      </CrmPanel>
-    );
+  /**
+   * The only standing note the top of the page carries now: a TEST- login's.
+   *
+   * 🔴 THE SUPER ADMIN GETS NO PANEL AT ALL, which is the point rather than a gap. The retired toggle
+   * sat above every tab with a paragraph about a world he can no longer enter; a note saying "these
+   * are the real entries" would be the same furniture with nothing to decide. He simply reads the
+   * module.
+   */
+  function standingNote() {
+    return viewer.isTestPersona ? testAccountPanel() : null;
   }
 
   function refreshNote() {
@@ -774,25 +750,39 @@ export function PhoenixCrmApp({
     if (options.length < 2 || seatId === null) return null;
     const pickerId = `${idPrefix}-territory`;
     const count = plural(options.length, "territory", "territories");
-    const hint = !viewer.isSuperAdmin
-      ? `${count} you can open.`
-      : test
-        ? `${count}. What you add on any of them is a test entry.`
-        : `${count}, with the field force's own entries, read only.`;
+    const groups = groupByLine(options);
+    // 🔴 THE COMBO BOX FLATTENS `optgroup`, so on the admin surface the line is written INTO each
+    // option instead of standing above a group of them. That is not a workaround: it is what makes
+    // the control answer the admin's real question — he types "Pedia" or "Tanta" or a rep's name and
+    // the 74 seats narrow to one, which no group heading on a native dropdown ever did for him.
+    const combo = surface === "admin";
+    const hint = combo
+      ? `${count}. Type a line, a place or a rep's name to find one.`
+      : !viewer.isSuperAdmin
+        ? `${count} you can open.`
+        : `${count}, with the field force's own entries.`;
     return (
       <CrmPanel>
         <CrmBlock>
           <CrmField className="lg:max-w-xl" hint={hint} htmlFor={pickerId} label="Territory">
             <CrmSelect id={pickerId} onChange={(event) => requestMove({ kind: "seat", seatId: event.target.value, tab: null })} value={seatId}>
-              {groupByLine(options).map((group) => (
-                <optgroup key={group.line} label={group.line}>
-                  {group.territories.map((territory) => (
-                    <option key={territory.seatId} value={territory.seatId}>
-                      {`${placeOf(territory)} · ${territory.repName ?? "No rep"}`}
-                    </option>
+              {combo
+                ? groups.flatMap((group) =>
+                    group.territories.map((territory) => (
+                      <option key={territory.seatId} value={territory.seatId}>
+                        {`${group.line} · ${placeOf(territory)} · ${territory.repName ?? "No rep"}`}
+                      </option>
+                    )),
+                  )
+                : groups.map((group) => (
+                    <optgroup key={group.line} label={group.line}>
+                      {group.territories.map((territory) => (
+                        <option key={territory.seatId} value={territory.seatId}>
+                          {`${placeOf(territory)} · ${territory.repName ?? "No rep"}`}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
-                </optgroup>
-              ))}
             </CrmSelect>
           </CrmField>
         </CrmBlock>
@@ -800,18 +790,17 @@ export function PhoenixCrmApp({
     );
   }
 
-  /** Asked before a territory or test-mode change lets held work go. */
+  /** Asked before a territory change lets held work go. */
   function questionNote() {
     if (!asking) return null;
-    const { move, work } = asking;
-    const title = move.kind === "seat" ? "Change the territory?" : move.test ? "Switch to test mode?" : "Switch to real entries?";
-    const doing = move.kind === "seat" ? "Changing the territory" : "Switching";
+    const { work } = asking;
+    const move = asking.move;
     // One piece of work on a tab behind this one: keeping it opens that tab.
     const backTo = work.length === 1 && work[0] !== activeTab ? work[0] : null;
     return (
       <div className="scroll-mt-24" ref={revealQuestion}>
-        <CrmNote title={title} tone="warn">
-          <p>{`${doing} lets go of ${joinWords(work.map((key) => HELD_WORK[key]))}.`}</p>
+        <CrmNote title="Change the territory?" tone="warn">
+          <p>{`Changing the territory lets go of ${joinWords(work.map((key) => HELD_WORK[key]))}.`}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <CrmButton onClick={() => applyMove(move)} size="sm" variant="danger">
               Let it go
@@ -853,14 +842,11 @@ export function PhoenixCrmApp({
     if (key === "reports") return <ReportsTab cairoToday={cairoToday} key={`reports|${test}`} test={test} />;
     if (key === "calendar") return <CalendarTab cairoToday={cairoToday} key={`calendar|${test}`} test={test} />;
     if (key === "forecast") {
-      // The FORM is for the territory's own rep — the Super Admin reaches it in test mode only, on any
-      // CNS territory — and the BOARD for whoever has the Team tab: the same readers, by the same rule.
+      // The FORM is for the territory's OWN REP and nobody else — the Super Admin reached it in test
+      // mode, which is retired, so he now reads the BOARD only, as the CEO and the SFE Manager always
+      // did. The board is for whoever has the Team tab: the same readers, by the same rule.
       const cns = overview.territories.filter((territory) => isForecastLine(territory.lineCode));
-      const formTerritories = viewer.isSuperAdmin
-        ? test
-          ? cns
-          : []
-        : cns.filter((territory) => overview.ownSeatIds.includes(territory.seatId));
+      const formTerritories = viewer.isSuperAdmin ? [] : cns.filter((territory) => overview.ownSeatIds.includes(territory.seatId));
       return <ForecastTab formTerritories={formTerritories} key={`forecast|${test}`} showBoard={overview.tabs.team} test={test} />;
     }
     if (key === "settings") return <SettingsTab onChanged={settingsChanged} onDirtyChange={holdReporters.settings} />;
@@ -924,55 +910,62 @@ export function PhoenixCrmApp({
     const sentences = openingSentences(overview);
     const reasons = sentences.length > 0 ? sentences : [overview.closedMessage ?? "Nothing in Phoenix CRM is open for you yet."];
     return (
-      <div className="min-w-0 space-y-4" ref={topRef} style={stickyOffset}>
-        {refreshNote()}
-        <CrmPanel>
-          <CrmEmpty
-            action={
-              <CrmButton busy={refreshing} onClick={refreshOverview}>
-                Check again
-              </CrmButton>
-            }
-            message={reasons.map((reason) => (
-              <p key={reason}>{reason}</p>
-            ))}
-            title="Phoenix CRM is not open for you yet"
-          />
-        </CrmPanel>
-      </div>
+      <CrmSurfaceProvider surface={surface}>
+        <div className="min-w-0 space-y-4" ref={topRef} style={stickyOffset}>
+          {refreshNote()}
+          <CrmPanel>
+            <CrmEmpty
+              action={
+                <CrmButton busy={refreshing} onClick={refreshOverview}>
+                  Check again
+                </CrmButton>
+              }
+              message={reasons.map((reason) => (
+                <p key={reason}>{reason}</p>
+              ))}
+              title="Phoenix CRM is not open for you yet"
+            />
+          </CrmPanel>
+        </div>
+      </CrmSurfaceProvider>
     );
   }
 
   const seatTab = isSeatTab(activeTab) ? activeTab : null;
 
+  // 🔴 THE PROVIDER WRAPS THE WHOLE PAGE, not each tab. Every screen below is lazily imported, so a
+  // provider added per tab would have to be added again for the ninth one somebody writes — and the
+  // tab that forgot it would silently serve a rep's controls to an admin, or an admin's to a rep.
   return (
-    <div className="min-w-0 scroll-mt-24 space-y-4" ref={topRef} style={stickyOffset}>
-      {/* "Get Phoenix CRM messages on Telegram" (owner, 2026-10-02): at the top, for the reps and
-          managers the notices go to, until the server says he is connected. */}
-      {showsTelegramCard(overview.telegram) ? <TelegramConnectCard cairoToday={overview.cairoToday} /> : null}
-      {testModePanel()}
-      {refreshNote()}
-      {notice ? <CrmNote tone="warn">{notice}</CrmNote> : null}
-      {waitingNote()}
-      {tabBar()}
-      {startGuideLink()}
-      {seatTab ? territoryPicker(seatTab) : null}
-      {questionNote()}
-      {(single ? [activeTab] : tabs).map((key) => {
-        const active = key === activeTab;
-        return (
-          <div
-            aria-labelledby={tabs.length > 1 ? tabId(key) : undefined}
-            className="min-w-0"
-            hidden={!active}
-            id={panelId(key)}
-            key={key}
-            role={tabs.length > 1 ? "tabpanel" : undefined}
-          >
-            {active || isHeld(key) ? tabContent(key) : null}
-          </div>
-        );
-      })}
-    </div>
+    <CrmSurfaceProvider surface={surface}>
+      <div className="min-w-0 scroll-mt-24 space-y-4" ref={topRef} style={stickyOffset}>
+        {/* "Get Phoenix CRM messages on Telegram" (owner, 2026-10-02): at the top, for the reps and
+            managers the notices go to, until the server says he is connected. */}
+        {showsTelegramCard(overview.telegram) ? <TelegramConnectCard cairoToday={overview.cairoToday} /> : null}
+        {standingNote()}
+        {refreshNote()}
+        {notice ? <CrmNote tone="warn">{notice}</CrmNote> : null}
+        {waitingNote()}
+        {tabBar()}
+        {startGuideLink()}
+        {seatTab ? territoryPicker(seatTab) : null}
+        {questionNote()}
+        {(single ? [activeTab] : tabs).map((key) => {
+          const active = key === activeTab;
+          return (
+            <div
+              aria-labelledby={tabs.length > 1 ? tabId(key) : undefined}
+              className="min-w-0"
+              hidden={!active}
+              id={panelId(key)}
+              key={key}
+              role={tabs.length > 1 ? "tabpanel" : undefined}
+            >
+              {active || isHeld(key) ? tabContent(key) : null}
+            </div>
+          );
+        })}
+      </div>
+    </CrmSurfaceProvider>
   );
 }

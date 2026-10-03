@@ -164,7 +164,7 @@ export function runPhoenixCrmPlanEditRequestTests(): void {
 
     const refused = (run: () => void, pattern: RegExp, message: string) =>
       assert.throws(run, (error: unknown) => error instanceof ApiError && error.status === 403 && pattern.test(error.message), message);
-    refused(() => assertPlanEditApprover(owner, REP, false, "manager"), /test entries/, "the Super Admin's real step is HR's, never the manager's");
+    refused(() => assertPlanEditApprover(owner, REP, false, "manager"), /manager chain/, "the Super Admin's real step is HR's, never the manager's");
     refused(() => assertPlanEditApprover(dm, REP, false, "sfe"), /SFE/, "the district manager cannot take SFE's step");
     refused(() => assertPlanEditApprover(sfe, REP, false, "hr"), /HR/, "SFE cannot acknowledge for HR");
     refused(() => assertPlanEditApprover(testDm, REP, false, "manager"), /test login/, "a test login never touches a real request");

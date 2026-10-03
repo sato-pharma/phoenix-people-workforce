@@ -207,7 +207,9 @@ export function runPhoenixCrmAdoptionTests(): void {
     const screen = source("src/components/phoenix-crm/reports-tab.tsx");
     assert.ok(screen.includes("function AdoptionSection("), "the screen draws it");
     assert.ok(
-      screen.includes('...(view.canSeeLocations ? [{ value: "adoption" as const'),
+      // `offer(...)` builds the option from the report guide (2026-10-03); the gate is what matters
+      // here and it is unchanged — the audience, not the option's spelling.
+      screen.includes('...(view.canSeeLocations ? [offer("adoption")] : [])'),
       "and offers the chip only to the audience the service admits",
     );
     assert.ok(
