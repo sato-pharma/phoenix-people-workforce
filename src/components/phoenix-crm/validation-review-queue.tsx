@@ -107,6 +107,55 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
   );
 }
 
+/**
+ * Taking a rejection back (owner, 2026-10-03: "add the option to approve after reject"). Offered only
+ * while the place is still retired and nothing newer has been said about it — the same test the
+ * database makes. The reason is required, as it is for the decision this reverses.
+ */
+function Restore({ row }: { row: ValidationReviewRow }) {
+  const router = useRouter();
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function restore() {
+    if (saving) return;
+    setSaving(true);
+    setProblem(null);
+    try {
+      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", { reviewId: row.reviewId, note }, "restored");
+      router.refresh();
+    } catch (error) {
+      setProblem(messageOf(error));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 border-t border-slate-100 pt-2">
+      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`restore-note-${row.reviewId}`}>
+        Why it is accepted after all (kept on the record, never shown to the rep)
+      </label>
+      <textarea
+        className={crmTextareaClassName}
+        disabled={saving}
+        id={`restore-note-${row.reviewId}`}
+        maxLength={500}
+        onChange={(event) => setNote(event.target.value)}
+        rows={2}
+        value={note}
+      />
+      <CrmButton disabled={saving || note.trim().length === 0} onClick={() => void restore()} variant="primary">
+        {saving ? "Bringing it back…" : "Approve it after all"}
+      </CrmButton>
+      <p className="break-words text-xs text-slate-500">
+        The place comes back and the customer is validated again in {row.repName}&rsquo;s own name. His visits are measured against it again.
+      </p>
+      {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
+    </div>
+  );
+}
+
 function Decision({ row }: { row: ValidationReviewRow }) {
   const router = useRouter();
   const [note, setNote] = useState("");
@@ -119,6 +168,7 @@ function Decision({ row }: { row: ValidationReviewRow }) {
         <CrmPill tone={row.status === "approved" ? "good" : "warn"}>{row.status === "approved" ? "Approved" : "Rejected"}</CrmPill>
         <p className="break-words text-xs text-slate-500">{[row.decidedByName, row.decidedAtText].filter(Boolean).join(" · ")}</p>
         {row.decisionNote ? <p className="break-words text-xs text-slate-600">{row.decisionNote}</p> : null}
+        {row.restorable ? <Restore row={row} /> : null}
       </div>
     );
   }

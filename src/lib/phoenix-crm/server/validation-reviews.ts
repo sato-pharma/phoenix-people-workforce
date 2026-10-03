@@ -161,6 +161,11 @@ export type ValidationReviewRow = {
   decidedByName: string | null;
   decidedAtText: string | null;
   decisionNote: string | null;
+  /**
+   * Whether this rejection can still be taken back (owner, 2026-10-03: "add the option to approve
+   * after reject"): the place is still retired, and nothing newer has been said about it.
+   */
+  restorable: boolean;
 };
 
 function reading(lat: unknown, lon: unknown, accuracy: unknown): ValidationReviewReading | null {
@@ -208,7 +213,7 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
     getSupabaseAdmin().from("phoenix_crm_customers").select("id, name, list_type, speciality").in("id", customerIds),
     getSupabaseAdmin()
       .from("phoenix_crm_places")
-      .select("id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path")
+      .select("id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, status")
       .in("id", placeIds),
   ]);
   throwIfError(customers.error);
@@ -256,6 +261,9 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       decidedByName: text(row.decided_by_hr_id) ? nameOf(names, text(row.decided_by_hr_id), "") || null : null,
       decidedAtText: text(row.decided_at) ? formatPhoenixDateTime(String(row.decided_at)) : null,
       decisionNote: text(row.decision_note),
+      // One review row per place (the UNIQUE index), so this row IS the place's whole story: a
+      // rejection can be taken back while the place it retired is still retired.
+      restorable: status === "rejected" && place.status === "retired",
     };
   });
 }
@@ -292,6 +300,42 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
   // The "waiting for you" notice is answered.
   await withdrawInAppNotificationsByEventKeyPrefix(reviewNoticeKey(reviewId)).catch(() => undefined);
   return { reviewId, status: decision === "approve" ? "approved" : "rejected" };
+}
+
+/**
+ * Take a rejection back (owner, 2026-10-03: "add the option to approve after reject"). The place comes
+ * back, and the customer is validated again in the REP's own name where the rejection had sent him to
+ * To validate — he did validate it, and a reversal does not take that away from him.
+ *
+ * The place's one review row turns from `rejected` to `approved` (it is UNIQUE per place), carrying who
+ * rejected it and why in its `google` payload, beside the four events the list keeps. The rep's list
+ * simply stops saying "Validate again", with no word about a person (golden rule #1).
+ *
+ * A reason is required, exactly as the refusal it undoes: a decision reversed in silence is the one a
+ * reader cannot understand months later.
+ */
+export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ reviewId: string; validated: boolean }> {
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  const body = (raw && typeof raw === "object" ? raw : {}) as Row;
+  if (!isUuid(body.reviewId)) throw validationError("Choose the rejection to take back.");
+  const note = cleanText(body.note, 500);
+  if (!note) throw validationError("Write why this place is accepted after all — it stays on the record.");
+
+  // `review_not_found`, `review_not_rejected` and `place_not_retired` come back worded by the
+  // module's refusal table (db.ts).
+  const result = await callPhoenixCrm<Row>("phoenix_crm_restore_validation", {
+    p: { review_id: String(body.reviewId).toLowerCase(), actor_hr_id: viewer.hrId, note },
+  });
+  // The place is measurable again, so every visit to the customer gets its distance back.
+  await restampVisitLocationsQuietly({
+    seatId: String(result.seat_id),
+    isTest: result.is_test === true,
+    customerId: String(result.customer_id),
+    actorHrId: viewer.hrId,
+    settings: viewer.config.settings,
+    scope: "all",
+  });
+  return { reviewId: String(result.review_id), validated: result.validated === true };
 }
 
 // ── Refusing a validation the system never held ─────────────────────────────────────────────────
@@ -438,22 +482,34 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
   if (place.status !== "active") throw validationError("This place is already retired. Reload the page.");
 
   // The review the automatic check would have written, had this customer been in its scope.
-  const inserted = await getSupabaseAdmin()
+  //
+  // 🔴 An UPSERT on place_id, never a plain insert: `phoenix_crm_validation_reviews_place_idx` is
+  // UNIQUE on place_id, so a place that was already held once — an AM one the check held and then
+  // approved — has a row, and inserting a second died on 23505. It is put back to `pending` (and
+  // `decided_at` cleared with it, or the table's own CHECK refuses the row) so the shared reject
+  // below is what decides it, exactly as it decides an automatic hold.
+  const upserted = await getSupabaseAdmin()
     .from("phoenix_crm_validation_reviews")
-    .insert({
-      seat_id: String(place.seat_id),
-      customer_id: String(place.customer_id),
-      place_id: placeId,
-      is_test: place.is_test === true,
-      kind: "validation",
-      status: "pending",
-      google: { reason: "refused_by_admin", refused_by_hr_id: viewer.hrId },
-      created_by_hr_id: String(place.created_by_hr_id),
-    })
+    .upsert(
+      {
+        seat_id: String(place.seat_id),
+        customer_id: String(place.customer_id),
+        place_id: placeId,
+        is_test: place.is_test === true,
+        kind: "validation",
+        status: "pending",
+        google: { reason: "refused_by_admin", refused_by_hr_id: viewer.hrId },
+        created_by_hr_id: String(place.created_by_hr_id),
+        decided_by_hr_id: null,
+        decided_at: null,
+        decision_note: null,
+      },
+      { onConflict: "place_id" },
+    )
     .select("id")
     .single();
-  throwIfError(inserted.error);
-  const reviewId = String((inserted.data as Row).id);
+  throwIfError(upserted.error);
+  const reviewId = String((upserted.data as Row).id);
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
     p: { review_id: reviewId, actor_hr_id: viewer.hrId, decision: "reject", note },

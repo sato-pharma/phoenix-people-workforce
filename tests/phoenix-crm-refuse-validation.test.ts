@@ -60,6 +60,11 @@ function checkService(): void {
   const decided = refuse.indexOf('callPhoenixCrm<Row>("phoenix_crm_decide_validation_review"');
   assert.ok(inserted > -1, "it writes the review row the automatic check would have written");
   assert.ok(decided > inserted, "and only then runs the SAME reject the held reviews run");
+  // 🔴 place_id is UNIQUE on that table, so a place held once already HAS a row: a plain insert
+  // raises 23505 the first time an AM place the check approved is refused here.
+  assert.match(refuse, /\.upsert\(/, "the row is upserted, never plainly inserted");
+  assert.match(refuse, /\{ onConflict: "place_id" \}/, "on the unique column");
+  assert.match(refuse, /decided_at: null/, "and the previous decision is cleared with it — the table's CHECK ties decided_at to the status");
   assert.match(refuse, /kind: "validation"/, "recorded as a validation review");
   assert.match(refuse, /status: "pending"/, "created pending, so the shared RPC is what decides it");
   assert.match(refuse, /reason: "refused_by_admin"/, "and says it was refused by hand, not by Google");
@@ -80,12 +85,87 @@ function checkService(): void {
   assert.match(load, /otherPlaces:/, "and whether the customer has another place, which decides if he goes back to To validate");
 }
 
+/**
+ * Approving after a rejection (owner, 2026-10-03: "add the option to approve after reject"). The
+ * database is the authority on what may be reversed, so it is pinned first.
+ */
+function checkRestoreDatabase(): void {
+  const migration = readFileSync(new URL("supabase/migrations/20261003184147_phoenix_crm_restore_validation.sql", ROOT), "utf8").replace(/\r\n/g, "\n");
+  const fn = /create or replace function public\.phoenix_crm_restore_validation\(p jsonb\)([\s\S]*?)\n\$\$;/.exec(migration);
+  assert.ok(fn, "phoenix_crm_restore_validation is in its own migration");
+
+  assert.match(fn[1], /if v_review\.status <> 'rejected' then\n\s*raise exception 'phoenix_crm:review_not_rejected';/, "only a REJECTED review can be taken back");
+  assert.match(fn[1], /if v_place\.status <> 'retired' then\n\s*raise exception 'phoenix_crm:place_not_retired';/, "a place that is not retired any more is left alone");
+  assert.match(fn[1], /v_note is null/, "a reversal with no written reason is refused, like the refusal it undoes");
+
+  assert.match(fn[1], /set status = 'active', retired_at = null, retired_by_hr_id = null/, "the place comes back");
+  assert.match(fn[1], /validated_by_hr_id = v_review\.created_by_hr_id/, "and the customer is validated in the REP's own name, never the admin's");
+  assert.match(fn[1], /'place_restored'/, "the restore is on the record as its own event");
+  assert.match(fn[1], /'validation_review_approved'/, "beside the approval");
+
+  // 🔴 ONE review row per place — `phoenix_crm_validation_reviews_place_idx` is UNIQUE on place_id.
+  // The first draft INSERTED a second row and died on 23505 against real production data; it was
+  // caught by running the function there inside a transaction that was rolled back on purpose, which
+  // no source-pinned assertion could have seen. So the row is UPDATED, and what it said before is
+  // carried in `google` rather than thrown away.
+  assert.match(fn[1], /update public\.phoenix_crm_validation_reviews/, "the place's one review row is UPDATED to approved");
+  assert.doesNotMatch(fn[1], /insert into public\.phoenix_crm_validation_reviews/, "never a second row — place_id is UNIQUE and a second insert raises 23505");
+  assert.match(fn[1], /'restored', true/, "the row says it came back");
+  assert.match(fn[1], /'rejected_by_hr_id', v_review\.decided_by_hr_id/, "and keeps who had rejected it");
+  assert.match(fn[1], /'rejection_note', v_review\.decision_note/, "and why");
+
+  const grants = migration.slice(fn.index + fn[0].length);
+  assert.match(grants, /revoke execute on function public\.phoenix_crm_restore_validation\(jsonb\) from public, anon, authenticated;/, "execute is revoked from PUBLIC, which is what anon and authenticated inherit it through");
+  assert.match(grants, /grant execute on function public\.phoenix_crm_restore_validation\(jsonb\) to service_role;/, "and re-granted to the service role alone");
+  assert.match(fn[1], /security definer/i, "it runs as the owner, like every other module function");
+}
+
+function checkRestoreService(): void {
+  const service = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const restore = functionBody(service, "restoreValidation");
+
+  assert.ok(restore.indexOf("canDecideValidationReviews(viewer)") < restore.indexOf("callPhoenixCrm"), "restoreValidation asks who before it calls anything");
+  assert.match(restore, /if \(!note\) throw validationError\(/, "a reversal needs its reason here too");
+  assert.match(restore, /callPhoenixCrm<Row>\("phoenix_crm_restore_validation"/, "it goes through the database function, which owns the rules");
+  const restamp = restore.indexOf("restampVisitLocationsQuietly");
+  assert.ok(restamp > restore.indexOf("callPhoenixCrm"), "and measures the customer's visits again AFTER the place is back");
+  assert.match(restore, /scope: "all"/, "every visit of his, so the distances the rejection removed come back");
+
+  // Only the latest rejection is offered, and only while the place is still retired.
+  const load = functionBody(service, "loadValidationReviews");
+  assert.match(load, /restorable: status === "rejected" && place\.status === "retired"/, "the row says whether its rejection can still be taken back — the same test the database makes");
+
+  const db = read("src/lib/phoenix-crm/server/db.ts");
+  for (const code of ["review_not_rejected", "place_not_retired"]) {
+    assert.ok(db.includes(`${code}:`), `${code} is worded for the person who pressed the button, not left as a raw code`);
+  }
+}
+
+function checkRestoreScreen(): void {
+  const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  assert.match(queue, /"\/api\/phoenix-crm\/validation-reviews\/restore"/, "the rejected row posts to the restore route");
+  assert.match(queue, /\{ reviewId: row\.reviewId, note \}/, "with the review and the written reason");
+  assert.match(queue, /\{row\.restorable \? <Restore row=\{row\} \/> : null\}/, "and the option appears only where the server says it still can");
+  assert.match(queue, /disabled=\{saving \|\| note\.trim\(\)\.length === 0\}/, "the button cannot be pressed before the reason is written");
+  assert.match(queue, /Approve it after all/, "worded as what it does");
+}
+
 function checkRoute(): void {
   const route = read("app/api/phoenix-crm/validation-reviews/refuse/route.ts");
   assert.match(route, /assertSameOriginMutation\(request\)/, "the refusal route checks the origin");
   assert.match(route, /assertPermission\(access, "phoenix_crm", "update"\)/, "and the module's update right");
   assert.match(route, /refuseValidatedPlace\(viewer, await request\.json\(\)\)/, "before the service decides who may actually press it");
   assert.match(route, /export const runtime = "nodejs"/, "it runs on node, like every CRM route");
+
+  const restore = read("app/api/phoenix-crm/validation-reviews/restore/route.ts");
+  assert.match(restore, /assertSameOriginMutation\(request\)/, "the restore route checks the origin too");
+  assert.match(restore, /assertPermission\(access, "phoenix_crm", "update"\)/, "and the same module right");
+  assert.match(restore, /restoreValidation\(viewer, await request\.json\(\)\)/, "before the service decides who may press it");
+
+  const registry = read("src/lib/security/access-registry.ts");
+  for (const pattern of ["/api/phoenix-crm/validation-reviews/refuse", "/api/phoenix-crm/validation-reviews/restore"]) {
+    assert.ok(registry.includes(`pattern: "${pattern}"`), `${pattern} is declared in the access registry`);
+  }
 }
 
 function checkScreens(): void {
@@ -123,6 +203,9 @@ function checkTheRepReadsNothingAboutAPerson(): void {
 
 export function runPhoenixCrmRefuseValidationTests(): void {
   checkService();
+  checkRestoreDatabase();
+  checkRestoreService();
+  checkRestoreScreen();
   checkRoute();
   checkScreens();
   checkTheRepReadsNothingAboutAPerson();
