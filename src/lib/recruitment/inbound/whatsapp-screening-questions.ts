@@ -40,7 +40,26 @@ export type ScreeningQuestionContent = {
    * A non-empty array narrows it to those families.
    */
   appliesToRoleFamilies: string[] | null;
+  /**
+   * The words WhatsApp draws AROUND a tappable question's list — the button that opens it and the
+   * heading above the answers. Absent or null means the generic defaults below.
+   *
+   * Optional rather than required because absent and null mean the same thing here, and because a
+   * question saved before these existed must keep reading correctly. Meaningless on a free_text
+   * question, which is sent as a plain message: `screeningQuestionViolations` refuses one there, and
+   * so does the table's own CHECK.
+   */
+  buttonLabel?: string | null;
+  sectionTitle?: string | null;
 };
+
+/**
+ * What a tappable extra question's list says when the admin has not worded it. Named rather than
+ * inlined so the admin screen can show them as the placeholder an empty box falls back to, instead
+ * of a second copy that drifts.
+ */
+export const EXTRA_QUESTION_BUTTON_DEFAULT = "Choose an option";
+export const EXTRA_QUESTION_SECTION_DEFAULT = "Options";
 
 /** A persisted question, as read from the database. */
 export type ScreeningQuestion = ScreeningQuestionContent & {
@@ -190,15 +209,19 @@ export function withStableOptionValues(
  *  (see whatsapp-screening-questions-session.ts). */
 export function buildExtraQuestionMenu(question: ScreeningQuestionContent): ClassifyMenu {
   const options = question.options ?? [];
+  // Blank falls back to the generic default rather than through: WhatsApp refuses a list whose
+  // button has no words on it, so a half-finished edit must not be able to send one.
+  const buttonLabel = (question.buttonLabel ?? "").trim();
+  const sectionTitle = (question.sectionTitle ?? "").trim();
   return {
     body: question.bodyText,
-    buttonLabel: "Choose an option",
+    buttonLabel: buttonLabel || EXTRA_QUESTION_BUTTON_DEFAULT,
     rows: options.map((option) => ({
       description: option.description ?? undefined,
       id: extraQuestionRowId(question.questionKey, option.value),
       title: option.title,
     })),
-    sectionTitle: "Options",
+    sectionTitle: sectionTitle || EXTRA_QUESTION_SECTION_DEFAULT,
     // Widened on ClassifyMenu.step so this real menu can reuse menuViolations and sendClassifyMenu
     // verbatim — the same send-time defense the fixed six get, with no new send-side code.
     step: "extra",
@@ -243,6 +266,13 @@ export function screeningQuestionViolations(question: ScreeningQuestionContent):
   if (question.kind === "free_text") {
     if (question.options && question.options.length > 0) {
       problems.push(`${label}: a free-text question must not carry tappable options`);
+    }
+    // Saved, read back, and shown to nobody: a free-text question is sent as a plain message, so it
+    // has no list to put a button or a heading on. Refused rather than ignored, because a box that
+    // accepts words and then never uses them is the kind of thing somebody later "fixes" by
+    // sending a list.
+    if ((question.buttonLabel ?? "").trim() || (question.sectionTitle ?? "").trim()) {
+      problems.push(`${label}: a free-text question has no list, so it has no button or heading to word`);
     }
     return problems;
   }

@@ -7,8 +7,10 @@
 //
 // ── THE ONE BOUNDARY THIS FEATURE RESTS ON ──────────────────────────────────────────────────────
 //
-//   EDITABLE:     every word the applicant reads — the prompt, and each answer's title and second
-//                 line. WHICH answers are offered, and in what order.
+//   EDITABLE:     every word the applicant reads — the prompt, each answer's title and second line,
+//                 and the two words WhatsApp puts around the list itself: the button that opens it
+//                 ("Choose a role") and the heading above the answers ("Roles"). WHICH answers are
+//                 offered, and in what order.
 //   NOT EDITABLE: the CODE underneath an answer. A row's id is `phx:<step>:<value>`, and `<value>`
 //                 is a candidateRoleFamily / candidateRegionCode / background / experience code that
 //                 the CV pool filters, candidate folders, manager routing and the organogram all
@@ -52,9 +54,11 @@ import {
   regionMenu,
   salaryPromptText,
   WHATSAPP_BODY_MAX,
+  WHATSAPP_LIST_BUTTON_MAX,
   WHATSAPP_LIST_MAX_ROWS,
   WHATSAPP_ROW_DESCRIPTION_MAX,
   WHATSAPP_ROW_TITLE_MAX,
+  WHATSAPP_SECTION_TITLE_MAX,
   type ClassifyMenu,
   type ClassifyRow,
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
@@ -90,6 +94,18 @@ export type OptionLabel = { title?: string; description?: string };
 /** Everything saved for one question. `body` null means the prompt keeps its code default. */
 export type PromptOverride = {
   body: string | null;
+  /**
+   * The words on the button that opens the list — "Choose a role" in the code. Null keeps the code's
+   * own. It is NOT part of the prompt body: WhatsApp draws it as the tap target under the message,
+   * so an Arabic question with this left alone reads half-translated, which is the whole reason it
+   * is editable. Meta's ceiling is 20 characters and an over-long one is a 400 for the message.
+   */
+  buttonLabel: string | null;
+  /**
+   * The heading WhatsApp prints above the answers once the list is open — "Roles" in the code. Null
+   * keeps the code's own. Meta's ceiling is 24 characters.
+   */
+  sectionTitle: string | null;
   /**
    * Who is asked this question. THREE states — see `StoredAudience`: `undefined` is "nothing
    * configured" and falls through to the question's code default, `[]` is a saved "ask everyone",
@@ -143,6 +159,13 @@ export type BuiltInPrompt = {
   note: string;
   /** The wording used when nobody has overridden it — read from the code itself, not re-typed. */
   defaultBody: string;
+  /**
+   * The list button's and the answer heading's own defaults, read from the same menu builder as
+   * everything else here. BOTH NULL for the one free-text question: there is no list, so there is no
+   * button and no heading, and the screen must not offer two boxes that reach nobody.
+   */
+  defaultButtonLabel: string | null;
+  defaultSectionTitle: string | null;
   /** True for the one prompt that carries {region}. */
   supportsRegionToken: boolean;
   /** The tappable answers, in the order the applicant sees them. Empty for a free-text question. */
@@ -173,6 +196,8 @@ export function builtInPrompts(): BuiltInPrompt[] {
       canChooseAudience: canChooseAudience("job_title"),
       defaultAudience: BUILT_IN_DEFAULT_AUDIENCE.job_title,
       defaultBody: jobTitleMenu().body,
+      defaultButtonLabel: jobTitleMenu().buttonLabel,
+      defaultSectionTitle: jobTitleMenu().sectionTitle,
       key: "job_title",
       label: "1 · What are you applying for?",
       note: "Routes the CV to the right manager. Keep it clear that you are asking for a job title.",
@@ -187,6 +212,8 @@ export function builtInPrompts(): BuiltInPrompt[] {
       canChooseAudience: canChooseAudience("background"),
       defaultAudience: BUILT_IN_DEFAULT_AUDIENCE.background,
       defaultBody: backgroundMenu().body,
+      defaultButtonLabel: backgroundMenu().buttonLabel,
+      defaultSectionTitle: backgroundMenu().sectionTitle,
       key: "background",
       label: "2 · What did you graduate in?",
       note: "Decides the Paramedical split — anything that is not Pharmacy, Science or Veterinary.",
@@ -198,6 +225,8 @@ export function builtInPrompts(): BuiltInPrompt[] {
       canChooseAudience: canChooseAudience("region"),
       defaultAudience: BUILT_IN_DEFAULT_AUDIENCE.region,
       defaultBody: regionMenu().body,
+      defaultButtonLabel: regionMenu().buttonLabel,
+      defaultSectionTitle: regionMenu().sectionTitle,
       key: "region",
       label: "3 · Which region?",
       note: "The company's own regions, not geography. Feeds vacancy matching.",
@@ -209,6 +238,10 @@ export function builtInPrompts(): BuiltInPrompt[] {
       canChooseAudience: canChooseAudience("area"),
       defaultAudience: BUILT_IN_DEFAULT_AUDIENCE.area,
       defaultBody: AREA_PROMPT_DEFAULT,
+      // The chrome does NOT carry the region token — areaMenu's button and heading are the same two
+      // words for every region, so they are read from the builder like every other default.
+      defaultButtonLabel: areaMenu("CA", []).buttonLabel,
+      defaultSectionTitle: areaMenu("CA", []).sectionTitle,
       key: "area",
       label: "4 · Which area?",
       note: `Asked to Medical Representatives unless you widen it below. Use ${REGION_TOKEN} where the region name should appear.`,
@@ -224,6 +257,8 @@ export function builtInPrompts(): BuiltInPrompt[] {
       canChooseAudience: canChooseAudience("experience"),
       defaultAudience: BUILT_IN_DEFAULT_AUDIENCE.experience,
       defaultBody: experienceMenu().body,
+      defaultButtonLabel: experienceMenu().buttonLabel,
+      defaultSectionTitle: experienceMenu().sectionTitle,
       key: "experience",
       label: "5 · How much experience?",
       note: "The five bands cover everyone, so there is no Other to type.",
@@ -235,6 +270,9 @@ export function builtInPrompts(): BuiltInPrompt[] {
       canChooseAudience: canChooseAudience("salary"),
       defaultAudience: BUILT_IN_DEFAULT_AUDIENCE.salary,
       defaultBody: salaryPromptText(),
+      // Free text — no list, so no button and no heading to edit.
+      defaultButtonLabel: null,
+      defaultSectionTitle: null,
       key: "salary",
       label: "6 · Expected salary",
       note: "The last question, and the highest-friction one. Free text, stored exactly as written.",
@@ -289,7 +327,15 @@ export function isBuiltInPromptKey(value: string): value is BuiltInPromptKey {
 
 /** The empty override — what every question starts on, and what a failed read falls back to. */
 export function emptyPromptOverride(): PromptOverride {
-  return { appliesToRoleFamilies: undefined, body: null, hiddenOptions: [], optionLabels: {}, optionOrder: [] };
+  return {
+    appliesToRoleFamilies: undefined,
+    body: null,
+    buttonLabel: null,
+    hiddenOptions: [],
+    optionLabels: {},
+    optionOrder: [],
+    sectionTitle: null,
+  };
 }
 
 /**
@@ -350,6 +396,35 @@ export function optionLabelViolations(input: {
         `The second line under "${title || value}" is ${description.length} characters — WhatsApp allows ${WHATSAPP_ROW_DESCRIPTION_MAX}.`,
       );
     }
+  }
+  return problems;
+}
+
+/**
+ * Everything wrong with a proposed list button and answer heading, as sentences. Empty means
+ * saveable.
+ *
+ * Both ceilings are Meta's own, and both are refusals of the WHOLE message rather than truncations —
+ * a 21-character button does not arrive clipped, it does not arrive at all, and the applicant is
+ * left with a question they cannot answer. Blank is not a violation: it is the "keep the code's own
+ * words" gesture, the same as a blank prompt body.
+ */
+export function menuChromeViolations(input: {
+  buttonLabel?: string | null;
+  sectionTitle?: string | null;
+}): string[] {
+  const problems: string[] = [];
+  const buttonLabel = (input.buttonLabel ?? "").trim();
+  const sectionTitle = (input.sectionTitle ?? "").trim();
+  if (buttonLabel.length > WHATSAPP_LIST_BUTTON_MAX) {
+    problems.push(
+      `The button that opens the list is ${buttonLabel.length} characters — WhatsApp allows ${WHATSAPP_LIST_BUTTON_MAX}.`,
+    );
+  }
+  if (sectionTitle.length > WHATSAPP_SECTION_TITLE_MAX) {
+    problems.push(
+      `The heading above the answers is ${sectionTitle.length} characters — WhatsApp allows ${WHATSAPP_SECTION_TITLE_MAX}.`,
+    );
   }
   return problems;
 }
@@ -539,9 +614,34 @@ export function applyOptionLabels(
 }
 
 /**
- * A menu with the admin's wording, answer labels, and hidden/added/reordered answers applied.
- * Returns the SAME object when nothing is overridden, so the untouched path is exactly the code path
- * that shipped before this feature.
+ * The list button and answer heading actually sent, given whatever the admin has saved.
+ *
+ * A blank or absent saved value falls back to the code's own, so a half-finished edit can never send
+ * a list with no words on its button — WhatsApp refuses a message whose button is empty, exactly as
+ * it refuses one that is too long. An over-long saved value is dropped here rather than sent, for
+ * the same reason `applyAnswerConfig` falls back to the code menu: saving one is already refused by
+ * `menuChromeViolations`, and this is the second line for a row written before a code change moved
+ * the ceiling under it.
+ */
+export function resolveMenuChrome(input: {
+  defaultButtonLabel: string;
+  defaultSectionTitle: string;
+  saved?: Pick<PromptOverride, "buttonLabel" | "sectionTitle"> | null;
+}): { buttonLabel: string; sectionTitle: string } {
+  const pick = (saved: string | null | undefined, fallback: string, max: number): string => {
+    const text = (saved ?? "").trim();
+    return text.length > 0 && text.length <= max ? text : fallback;
+  };
+  return {
+    buttonLabel: pick(input.saved?.buttonLabel, input.defaultButtonLabel, WHATSAPP_LIST_BUTTON_MAX),
+    sectionTitle: pick(input.saved?.sectionTitle, input.defaultSectionTitle, WHATSAPP_SECTION_TITLE_MAX),
+  };
+}
+
+/**
+ * A menu with the admin's wording, answer labels, list button, answer heading, and
+ * hidden/added/reordered answers applied. Returns the SAME object when nothing is overridden, so the
+ * untouched path is exactly the code path that shipped before this feature.
  *
  * Which answers to show is settled BEFORE relabelling, so a label saved for an answer that is now
  * hidden simply does not apply, rather than having to be cleaned up when the answer is switched off.
@@ -568,8 +668,20 @@ export function applyPromptOverride(
     rows: menu.rows,
   });
   const rows = applyOptionLabels(offered, saved?.optionLabels);
-  if (body === menu.body && rows === menu.rows) return menu;
-  return { ...menu, body, rows: rows as ClassifyRow[] };
+  const { buttonLabel, sectionTitle } = resolveMenuChrome({
+    defaultButtonLabel: menu.buttonLabel,
+    defaultSectionTitle: menu.sectionTitle,
+    saved,
+  });
+  if (
+    body === menu.body
+    && rows === menu.rows
+    && buttonLabel === menu.buttonLabel
+    && sectionTitle === menu.sectionTitle
+  ) {
+    return menu;
+  }
+  return { ...menu, body, buttonLabel, rows: rows as ClassifyRow[], sectionTitle };
 }
 
 /** The escape answer's value, re-exported so the admin screen need not import the menus module. */

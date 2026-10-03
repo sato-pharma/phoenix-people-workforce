@@ -53,9 +53,11 @@ function promptsWithOverrides(overrides: ReadonlyMap<string, PromptOverride>) {
       isCustomised: Boolean(saved),
       savedBody: saved?.body ?? null,
       savedAppliesToRoleFamilies: saved?.appliesToRoleFamilies ?? null,
+      savedButtonLabel: saved?.buttonLabel ?? null,
       savedHiddenOptions: saved?.hiddenOptions ?? [],
       savedOptionLabels: saved?.optionLabels ?? {},
       savedOptionOrder: saved?.optionOrder ?? [],
+      savedSectionTitle: saved?.sectionTitle ?? null,
     };
   });
 }
@@ -87,6 +89,8 @@ export async function POST(request: Request) {
       hiddenOptions?: string[];
       optionOrder?: string[];
       appliesToRoleFamilies?: string[] | null;
+      buttonLabel?: string | null;
+      sectionTitle?: string | null;
     };
     const key = String(body.key ?? "").trim();
     if (!key) {
@@ -129,11 +133,16 @@ export async function POST(request: Request) {
       allowedValues,
       audience,
       bodyText: String(body.bodyText ?? ""),
+      // Blank or absent is "keep the code's own" — the store reads both that way, so a client that
+      // predates these two boxes sends nothing and changes nothing, and the reset button's empty
+      // payload clears them along with the rest of the row.
+      buttonLabel: typeof body.buttonLabel === "string" ? body.buttonLabel : null,
       defaultOfferedValues,
       hiddenOptions: Array.isArray(body.hiddenOptions) ? body.hiddenOptions : [],
       key,
       optionLabels: body.optionLabels ?? {},
       optionOrder: Array.isArray(body.optionOrder) ? body.optionOrder : [],
+      sectionTitle: typeof body.sectionTitle === "string" ? body.sectionTitle : null,
     });
 
     const overrides = await loadQuestionPromptOverrides();

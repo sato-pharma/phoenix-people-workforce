@@ -14,9 +14,11 @@ import {
   regionMenu,
   salaryPromptText,
   WHATSAPP_BODY_MAX,
+  WHATSAPP_LIST_BUTTON_MAX,
   WHATSAPP_LIST_MAX_ROWS,
   WHATSAPP_ROW_DESCRIPTION_MAX,
   WHATSAPP_ROW_TITLE_MAX,
+  WHATSAPP_SECTION_TITLE_MAX,
   type ClassifyRow,
 } from "../src/lib/recruitment/inbound/whatsapp-classify-menus.ts";
 import {
@@ -28,13 +30,21 @@ import {
   builtInPromptKeys,
   builtInPrompts,
   isBuiltInPromptKey,
+  menuChromeViolations,
   optionLabelViolations,
   promptViolations,
   REGION_TOKEN,
+  resolveMenuChrome,
   resolvePromptBody,
   type PromptOverride,
 } from "../src/lib/recruitment/inbound/whatsapp-question-prompts.ts";
 import { sendClassifyMenu } from "../src/lib/recruitment/inbound/whatsapp-interactive.ts";
+import {
+  buildExtraQuestionMenu,
+  EXTRA_QUESTION_BUTTON_DEFAULT,
+  EXTRA_QUESTION_SECTION_DEFAULT,
+  screeningQuestionViolations,
+} from "../src/lib/recruitment/inbound/whatsapp-screening-questions.ts";
 
 /**
  * Owner-editable WORDING and ANSWER LABELS for the six built-in WhatsApp screening questions.
@@ -50,15 +60,20 @@ function override(
   body: string | null,
   optionLabels: PromptOverride["optionLabels"] = {},
   answers: { hiddenOptions?: string[]; optionOrder?: string[] } = {},
+  chrome: { buttonLabel?: string | null; sectionTitle?: string | null } = {},
 ): PromptOverride {
   return {
     // `undefined` is "no audience configured", which is what every wording fixture here means: these
     // tests are about the words, and the question keeps whichever audience its code default gives it.
     appliesToRoleFamilies: undefined,
     body,
+    // Null in both is "keep the code's own button and heading", so every fixture that does not
+    // mention them asserts the untouched path — which is the one every applicant is on today.
+    buttonLabel: chrome.buttonLabel ?? null,
     hiddenOptions: answers.hiddenOptions ?? [],
     optionLabels,
     optionOrder: answers.optionOrder ?? [],
+    sectionTitle: chrome.sectionTitle ?? null,
   };
 }
 
@@ -748,6 +763,215 @@ export async function runWhatsAppQuestionPromptsTests() {
     "the not-empty CHECK must count all FOUR kinds of override, or a row that only reorders answers would be refused by the database",
   );
 
+  // -- THE TWO WORDS AROUND THE LIST - the button, and the heading above the answers --------------
+  //
+  // WhatsApp does not draw these inside the message. The button is the tap target underneath it and
+  // the heading sits above the answers once the list opens, so neither is reachable by rewording the
+  // prompt - which is exactly how a question translated into Arabic ended up under an English
+  // "Choose a role". Both are Meta ceilings that refuse the WHOLE message rather than truncating, so
+  // every path here fails toward the code's own words.
+
+  // The catalogue reads them from the real menu builders, like every other default on that screen.
+  assert.equal(
+    byKey.get("job_title")?.defaultButtonLabel,
+    jobTitleMenu().buttonLabel,
+    "the screen must show the button the bot really sends, read from the menu builder and never re-typed",
+  );
+  assert.equal(
+    byKey.get("job_title")?.defaultSectionTitle,
+    jobTitleMenu().sectionTitle,
+    "the screen must show the answer heading the bot really sends, read from the menu builder",
+  );
+  assert.equal(byKey.get("area")?.defaultButtonLabel, areaMenu("CA", []).buttonLabel);
+  assert.equal(byKey.get("experience")?.defaultSectionTitle, experienceMenu().sectionTitle);
+  assert.equal(
+    byKey.get("salary")?.defaultButtonLabel,
+    null,
+    "the free-text question has no list, so offering a button box would save words that reach nobody",
+  );
+  assert.equal(
+    byKey.get("salary")?.defaultSectionTitle,
+    null,
+    "the free-text question has no answer heading either",
+  );
+
+  // menuChromeViolations - blank is the "keep the code's own" gesture, not a violation.
+  assert.deepEqual(menuChromeViolations({}), [], "nothing typed is nothing wrong");
+  assert.deepEqual(menuChromeViolations({ buttonLabel: "   ", sectionTitle: null }), []);
+  assert.deepEqual(menuChromeViolations({ buttonLabel: "اختر الوظيفة", sectionTitle: "الوظائف" }), []);
+  assert.deepEqual(
+    menuChromeViolations({ buttonLabel: "x".repeat(WHATSAPP_LIST_BUTTON_MAX) }),
+    [],
+    "exactly at the ceiling is sendable - an off-by-one here would refuse a legal button",
+  );
+  assert.equal(
+    menuChromeViolations({ buttonLabel: "x".repeat(WHATSAPP_LIST_BUTTON_MAX + 1) }).length,
+    1,
+    "one character over the button ceiling must be refused at save time - Meta answers 400 for the whole message, not a clipped button",
+  );
+  assert.equal(
+    menuChromeViolations({ sectionTitle: "x".repeat(WHATSAPP_SECTION_TITLE_MAX + 1) }).length,
+    1,
+    "one character over the heading ceiling must be refused at save time",
+  );
+
+  // resolveMenuChrome - every fallback lands on the code's own words.
+  const chromeDefaults = { defaultButtonLabel: "Choose a role", defaultSectionTitle: "Roles" };
+  assert.deepEqual(
+    resolveMenuChrome({ ...chromeDefaults, saved: null }),
+    { buttonLabel: "Choose a role", sectionTitle: "Roles" },
+    "no saved row means the code's own button and heading, byte for byte",
+  );
+  assert.deepEqual(
+    resolveMenuChrome({ ...chromeDefaults, saved: { buttonLabel: "   ", sectionTitle: null } }),
+    { buttonLabel: "Choose a role", sectionTitle: "Roles" },
+    "a blank saved value must fall back, never send a list with no words on its button",
+  );
+  assert.deepEqual(
+    resolveMenuChrome({ ...chromeDefaults, saved: { buttonLabel: "اختر", sectionTitle: "الوظائف" } }),
+    { buttonLabel: "اختر", sectionTitle: "الوظائف" },
+    "the saved words are what gets sent",
+  );
+  assert.deepEqual(
+    resolveMenuChrome({
+      ...chromeDefaults,
+      saved: { buttonLabel: "x".repeat(WHATSAPP_LIST_BUTTON_MAX + 1), sectionTitle: null },
+    }),
+    { buttonLabel: "Choose a role", sectionTitle: "Roles" },
+    "an over-long row written before a ceiling moved must fall back rather than stop the conversation dead",
+  );
+
+  // applyPromptOverride carries them, and a chrome edit moves no answer CODE.
+  const chromeOnly = applyPromptOverride(
+    jobTitleMenu(),
+    new Map([["job_title", override(null, {}, {}, { buttonLabel: "اختر", sectionTitle: "الوظائف" })]]),
+  );
+  assert.equal(chromeOnly.buttonLabel, "اختر", "a chrome-only save must reach the menu the bot sends");
+  assert.equal(chromeOnly.sectionTitle, "الوظائف", "the saved heading must reach the menu the bot sends");
+  assert.equal(
+    chromeOnly.body,
+    jobTitleMenu().body,
+    "wording the button must not touch the question - they are separate boxes and separate columns",
+  );
+  assert.deepEqual(
+    valuesOf(chromeOnly.rows),
+    valuesOf(jobTitleMenu().rows),
+    "wording the button must not move a single answer code - that is what routes the CV",
+  );
+  assert.deepEqual(
+    menuViolations(chromeOnly),
+    [],
+    "the reworded menu must still pass the same send-time validator every menu goes through",
+  );
+  assert.equal(
+    applyPromptOverride(jobTitleMenu(), new Map([["job_title", override(null)]])).buttonLabel,
+    jobTitleMenu().buttonLabel,
+    "an override that words neither keeps the code's own button - the untouched path must be unchanged",
+  );
+
+  // -- The admin's OWN extra questions get the same two words ------------------------------------
+  const extraBase = {
+    appliesToRoleFamilies: null,
+    bodyText: "Do you drive?",
+    kind: "tappable" as const,
+    options: [{ description: null, title: "Yes", value: "yes" }],
+    questionKey: "do_you_drive",
+  };
+  assert.equal(
+    buildExtraQuestionMenu(extraBase).buttonLabel,
+    EXTRA_QUESTION_BUTTON_DEFAULT,
+    "an extra question nobody has worded keeps the generic default, which is what it said before this feature",
+  );
+  assert.equal(
+    buildExtraQuestionMenu(extraBase).sectionTitle,
+    EXTRA_QUESTION_SECTION_DEFAULT,
+    "the same for its answer heading",
+  );
+  assert.equal(
+    buildExtraQuestionMenu({ ...extraBase, buttonLabel: "اختر", sectionTitle: "الإجابات" }).buttonLabel,
+    "اختر",
+    "the owner's own question must send the button HE worded",
+  );
+  assert.equal(
+    buildExtraQuestionMenu({ ...extraBase, sectionTitle: "الإجابات" }).sectionTitle,
+    "الإجابات",
+    "and the heading HE worded",
+  );
+  assert.equal(
+    buildExtraQuestionMenu({ ...extraBase, buttonLabel: "   " }).buttonLabel,
+    EXTRA_QUESTION_BUTTON_DEFAULT,
+    "a blank falls back here too - one rule for both halves of the screen",
+  );
+  assert.deepEqual(
+    screeningQuestionViolations({ ...extraBase, buttonLabel: "اختر", sectionTitle: "الإجابات" }),
+    [],
+    "a worded list is saveable",
+  );
+  assert.equal(
+    screeningQuestionViolations({
+      ...extraBase,
+      buttonLabel: "x".repeat(WHATSAPP_LIST_BUTTON_MAX + 1),
+    }).length,
+    1,
+    "an over-long button on an extra question must be refused by the same menuViolations every send runs",
+  );
+  assert.equal(
+    screeningQuestionViolations({
+      ...extraBase,
+      buttonLabel: "اختر",
+      kind: "free_text",
+      options: null,
+    }).length,
+    1,
+    "a free-text question has no list, so wording its button must be refused rather than stored and ignored",
+  );
+
+  // -- Both migrations hold the same two ceilings the code does -----------------------------------
+  for (const file of [
+    "20261003233639_ats_question_prompts_list_chrome.sql",
+    "20261003234030_ats_screening_questions_list_chrome.sql",
+  ] as const) {
+    const sql = readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
+    for (const column of ["button_label", "section_title"] as const) {
+      assert.ok(
+        new RegExp(`add column if not exists ${column} text`).test(sql),
+        `${file} must add ${column}, or the save fails at the database with the app believing it worked`,
+      );
+    }
+    assert.ok(
+      new RegExp(
+        `button_label is null or char_length\\(btrim\\(button_label\\)\\) between 1 and ${WHATSAPP_LIST_BUTTON_MAX}`,
+      ).test(sql),
+      `${file} must refuse an over-long button at the database too - the app is not the only writer that could exist`,
+    );
+    assert.ok(
+      new RegExp(
+        `section_title is null or char_length\\(btrim\\(section_title\\)\\) between 1 and ${WHATSAPP_SECTION_TITLE_MAX}`,
+      ).test(sql),
+      `${file} must refuse an over-long answer heading at the database too`,
+    );
+    assert.ok(
+      /_free_text_chrome_check/.test(sql),
+      `${file} must refuse a button or heading on the question that has no list`,
+    );
+    assert.ok(
+      !/insert into/i.test(sql),
+      `${file} must seed nothing - a stored copy of a default goes stale the day the code's own words improve`,
+    );
+  }
+
+  // The prompts table's not-empty CHECK is the one that would otherwise refuse the common case: an
+  // owner who translates the button and leaves the question itself alone writes a row with nothing
+  // else in it. The audience column hit exactly this on 2026-09-05.
+  const chromeMigration = readFileSync(
+    new URL("../supabase/migrations/20261003233639_ats_question_prompts_list_chrome.sql", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    /not_empty_check[\s\S]*button_label is not null[\s\S]{0,160}section_title is not null/.test(chromeMigration),
+    "the not-empty CHECK must be extended to both new columns, or saving only a button label is refused by the database",
+  );
+
   // ── The message ON THE WIRE, not the object in memory ──────────────────────────────────────────
   //
   // Everything above proves `applyPromptOverride` returns the right menu. This proves the applicant
@@ -799,6 +1023,9 @@ export async function runWhatsAppQuestionPromptsTests() {
         {
           appliesToRoleFamilies: undefined,
           body: "Ahlan! Which job are you applying for at Sato Pharma?",
+          // The fifth and sixth gestures, added 2026-10-03: the button WhatsApp draws under the
+          // message and the heading it prints above the answers.
+          buttonLabel: "اختر الوظيفة",
           hiddenOptions: ["human_resources", "pharmacist"],
           optionLabels: { medical_rep: { description: "Field force", title: "Medical Rep" } },
           optionOrder: [
@@ -822,12 +1049,38 @@ export async function runWhatsAppQuestionPromptsTests() {
             "office_coordinator",
             "other",
           ],
+          sectionTitle: "الوظائف",
         },
       ],
     ]);
 
     const plain = await send(jobTitleMenu());
     const custom = await send(applyPromptOverride(jobTitleMenu(), edited));
+
+    // THE TWO WORDS WHATSAPP DRAWS AROUND THE LIST, read off the wire rather than the menu object.
+    // They live in `action.button` and `sections[0].title`, both rebuilt field by field inside
+    // sendClassifyMenu — so an edit there that dropped either would leave the applicant reading an
+    // Arabic question under an English button, and nothing in memory would look wrong.
+    assert.equal(
+      plain.interactive.action.button,
+      jobTitleMenu().buttonLabel,
+      "with nothing saved the wire must carry the code's own button — the untouched path is unchanged",
+    );
+    assert.equal(
+      custom.interactive.action.button,
+      "اختر الوظيفة",
+      "the saved button label is what WhatsApp draws under the message — this is the half-translated message this feature exists to fix",
+    );
+    assert.equal(
+      plain.interactive.action.sections[0].title,
+      jobTitleMenu().sectionTitle,
+      "with nothing saved the wire must carry the code's own answer heading",
+    );
+    assert.equal(
+      custom.interactive.action.sections[0].title,
+      "الوظائف",
+      "the saved heading is what WhatsApp prints above the answers once the list opens",
+    );
 
     assert.equal(
       plain.interactive.body.text,

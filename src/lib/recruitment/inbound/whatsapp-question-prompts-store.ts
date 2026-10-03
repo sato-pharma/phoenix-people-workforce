@@ -1,5 +1,5 @@
-// Recruitment / ATS — reading and writing the owner's wording, answer labels, and which answers are
-// offered, for the six built-in questions.
+// Recruitment / ATS — reading and writing the owner's wording, answer labels, list button, answer
+// heading, and which answers are offered, for the six built-in questions.
 //
 // The DB-touching half of whatsapp-question-prompts.ts. Read by the bot on every prompt it sends and
 // by the admin screen; written only by the admin screen, behind `admin:update` (Super Admin only).
@@ -17,6 +17,7 @@ import {
 import {
   answerConfigViolations,
   isBuiltInPromptKey,
+  menuChromeViolations,
   optionLabelViolations,
   promptViolations,
   type BuiltInPromptKey,
@@ -28,6 +29,13 @@ const PROMPTS_TABLE = "ats_whatsapp_question_prompts";
 
 /** The wording columns — everything this table held before audiences existed. */
 const WORDING_COLUMNS = "question_key,body_text,option_labels,hidden_options,option_order";
+
+/**
+ * The columns added after the wording ones. Asked for together and dropped together: the fallback
+ * below can only ask for a narrower select, so one list of "everything newer than the original
+ * shape" keeps that fallback a single branch rather than one per migration.
+ */
+const LATER_COLUMNS = "applies_to_role_families,button_label,section_title";
 
 /**
  * Postgres' "column does not exist". The one error code this module retries rather than swallows.
@@ -120,6 +128,18 @@ function readValueList(raw: unknown): string[] {
 }
 
 /**
+ * One stored chrome string — the list button or the answer heading — cleaned the same way in both
+ * directions. A blank, a NULL, or a column that does not exist yet all read as `null`, which is
+ * "keep the code's own words": there is no state in which this feature can send a list with no words
+ * on its button, which WhatsApp would refuse outright.
+ */
+function readChromeText(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const text = raw.trim();
+  return text.length > 0 ? text : null;
+}
+
+/**
  * The saved overrides, keyed by step. An absent key means "use the code default" — this map is
  * deliberately sparse, and is empty on a fresh system and after any read failure.
  */
@@ -131,10 +151,10 @@ export async function loadQuestionPromptOverrides(): Promise<Map<string, PromptO
     const supabase = recruitmentDb();
     let { data, error } = await supabase
       .from(PROMPTS_TABLE)
-      .select(`${WORDING_COLUMNS},applies_to_role_families`);
+      .select(`${WORDING_COLUMNS},${LATER_COLUMNS}`);
     // See UNDEFINED_COLUMN: pre-migration, ask for the wording alone rather than losing all of it.
     if (error && (error as { code?: string }).code === UNDEFINED_COLUMN) {
-      logWarning("WhatsApp question audiences are not migrated yet — serving wording only", {
+      logWarning("WhatsApp question audiences or list wording are not migrated yet — serving the question wording only", {
         labels: { event: "whatsapp_question_audience_column_missing" },
       });
       ({ data, error } = await supabase.from(PROMPTS_TABLE).select(WORDING_COLUMNS));
@@ -149,6 +169,10 @@ export async function loadQuestionPromptOverrides(): Promise<Map<string, PromptO
       /** Optional: absent on the pre-migration fallback select above, which is read as "nothing
        *  configured" by readAudience and so leaves every question on its code default. */
       applies_to_role_families?: unknown;
+      /** Optional for the same reason — absent reads as null, which keeps the code's own button and
+       *  heading, so the list still works during the deploy-before-migration window. */
+      button_label?: unknown;
+      section_title?: unknown;
     }[]) {
       if (!isBuiltInPromptKey(row.question_key)) continue;
       const body = typeof row.body_text === "string" ? row.body_text.trim() : "";
@@ -156,6 +180,8 @@ export async function loadQuestionPromptOverrides(): Promise<Map<string, PromptO
       const hiddenOptions = readValueList(row.hidden_options);
       const optionOrder = readValueList(row.option_order);
       const appliesToRoleFamilies = readAudience(row.applies_to_role_families);
+      const buttonLabel = readChromeText(row.button_label);
+      const sectionTitle = readChromeText(row.section_title);
       // A row overriding nothing at all is skipped, so `overrides.has(key)` stays a truthful answer
       // to "has this question been customised?" on the admin screen. THE AUDIENCE COUNTS AS AN
       // OVERRIDE: narrowing a question whose wording is untouched writes a row with nothing else in
@@ -166,11 +192,21 @@ export async function loadQuestionPromptOverrides(): Promise<Map<string, PromptO
         Object.keys(optionLabels).length === 0 &&
         hiddenOptions.length === 0 &&
         optionOrder.length === 0 &&
-        appliesToRoleFamilies === undefined
+        appliesToRoleFamilies === undefined &&
+        !buttonLabel &&
+        !sectionTitle
       ) {
         continue;
       }
-      byKey.set(row.question_key, { appliesToRoleFamilies, body: body || null, hiddenOptions, optionLabels, optionOrder });
+      byKey.set(row.question_key, {
+        appliesToRoleFamilies,
+        body: body || null,
+        buttonLabel,
+        hiddenOptions,
+        optionLabels,
+        optionOrder,
+        sectionTitle,
+      });
     }
   } catch (error) {
     // Deliberately not rethrown — see the file header. Every question falls back to its default.
@@ -191,6 +227,13 @@ export type QuestionPromptSaveInput = {
   bodyText: string;
   /** The new answer labels, keyed by option value. Blank fields mean "keep the code's own". */
   optionLabels?: Record<string, OptionLabel>;
+  /**
+   * The list button's words and the heading above the answers. Blank or absent means "keep the
+   * code's own" — the same gesture as a blank prompt body, and the reason there is no separate reset
+   * for them.
+   */
+  buttonLabel?: string | null;
+  sectionTitle?: string | null;
   /** Answer values to switch OFF. */
   hiddenOptions?: readonly string[];
   /** The order to show answers in; also what switches ON an answer not offered by default. */
@@ -233,6 +276,8 @@ export async function saveQuestionPrompt(input: QuestionPromptSaveInput): Promis
   const optionLabels = readOptionLabels(input.optionLabels ?? {});
   const hiddenOptions = readValueList(input.hiddenOptions ?? []);
   const optionOrder = readValueList(input.optionOrder ?? []);
+  const buttonLabel = readChromeText(input.buttonLabel);
+  const sectionTitle = readChromeText(input.sectionTitle);
 
   // The audience the row will end up with. A caller that did not mention it keeps whatever is
   // stored, which is read back here rather than left out of the payload: PostgREST decides an
@@ -252,7 +297,9 @@ export async function saveQuestionPrompt(input: QuestionPromptSaveInput): Promis
     Object.keys(optionLabels).length === 0 &&
     hiddenOptions.length === 0 &&
     optionOrder.length === 0 &&
-    appliesToRoleFamilies === undefined
+    appliesToRoleFamilies === undefined &&
+    !buttonLabel &&
+    !sectionTitle
   ) {
     await resetQuestionPrompt({ key: input.key });
     return;
@@ -261,6 +308,7 @@ export async function saveQuestionPrompt(input: QuestionPromptSaveInput): Promis
   const problems = [
     ...audienceViolations({ appliesToRoleFamilies, key: input.key }),
     ...(body ? promptViolations({ bodyText: body, key: input.key }) : []),
+    ...menuChromeViolations({ buttonLabel, sectionTitle }),
     ...optionLabelViolations({
       allowedValues: input.allowedValues ?? Object.keys(optionLabels),
       key: input.key,
@@ -293,10 +341,12 @@ export async function saveQuestionPrompt(input: QuestionPromptSaveInput): Promis
     {
       applies_to_role_families: appliesToRoleFamilies ?? null,
       body_text: body || null,
+      button_label: buttonLabel,
       hidden_options: hiddenOptions,
       option_labels: optionLabels,
       option_order: optionOrder,
       question_key: input.key,
+      section_title: sectionTitle,
       updated_at: new Date().toISOString(),
       updated_by_hr_id: input.actorHrId,
     },

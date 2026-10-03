@@ -50,6 +50,8 @@ type DraftBody = {
   options?: { value?: string; title?: string; description?: string | null }[] | null;
   isActive?: boolean;
   appliesToRoleFamilies?: string[] | null;
+  buttonLabel?: string | null;
+  sectionTitle?: string | null;
 };
 
 function parseDraft(raw: DraftBody): ScreeningQuestionDraft {
@@ -75,10 +77,13 @@ function parseDraft(raw: DraftBody): ScreeningQuestionDraft {
   return {
     appliesToRoleFamilies: appliesToRoleFamilies.length > 0 ? appliesToRoleFamilies : null,
     bodyText: String(raw.bodyText ?? "").trim(),
+    // Blank is "use the generic default", the same as absent — the store writes NULL for both.
+    buttonLabel: typeof raw.buttonLabel === "string" ? raw.buttonLabel.trim() : null,
     id: raw.id ? String(raw.id) : null,
     isActive: raw.isActive !== false,
     kind,
     options,
+    sectionTitle: typeof raw.sectionTitle === "string" ? raw.sectionTitle.trim() : null,
   };
 }
 
