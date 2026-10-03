@@ -189,10 +189,43 @@ export function RepHonourStrip({ standing }: { standing: RepRankStanding | null 
     company
       ? { key: "company", label: "Company", ink: "text-[#f47b20]", rank: company.rank, outOf: company.outOf }
       : null,
+    // 🔒 THE LABEL IS WRITTEN OUT IN FULL — "<name> line", never shortened to the name (owner,
+    // 2026-10-03: "no truncation ever"). Dropping the word was tried as a way to stop the longest
+    // line name stacking three deep on a phone and was REFUSED: cutting a word to make it fit IS
+    // truncation, and his standing rule is that where text collides with the space, WRAPPING wins.
+    // So the words stay and the PANEL grows instead — see the panel's own note below.
     line
       ? { key: "line", label: `${line.lineName} line`, ink: "text-[#0879b8]", rank: line.rank, outOf: line.outOf }
       : null,
   ].filter((cell): cell is NonNullable<typeof cell> => cell !== null);
+
+  // 🔒 A LONG LABEL IS SET SMALLER SO IT STAYS ON ONE LINE — the words are never cut and never broken
+  // across lines (owner, 2026-10-03: "no truncation ever", then "they are still truncated" of the
+  // broken-up wrap, then "no — small the size of the font"). Three things were tried and refused, and
+  // all three are recorded so none of them comes back:
+  //   1. dropping the word `line` so the label fit — that is cutting the text, which he banned;
+  //   2. keeping the words and letting them WRAP — "ANTI INFECTIVE LINE" came out stacked three deep
+  //      on a phone, "ANTI / INFECTIVE / LINE", which reads as mutilated even with every letter there;
+  //   3. stacking the two boards so each got the full width — he stopped that one mid-build.
+  // 🔴 SO THE TYPE GIVES WAY, AND IT IS HIS CALL: this is the one place the fits-the-screen rule's
+  // "merge, never shrink" is overridden, by the owner, for this label only. Measured on the real page
+  // against the cell each label actually gets — 95.7px on a phone, 131.6px from @md, both fixed
+  // because the panel is: 19 letter-spaced capitals need 8px/0.08em to fit the phone cell (92px of
+  // 95.7) and 10px/0.1em to fit the @md one (119px of 131.6).
+  // 🔴 BOTH labels in the row shrink together, never just the long one — two different sizes side by
+  // side read as a mistake. The rank figures are untouched: they are what the strip is for.
+  // Driven by the label itself, never a hard-coded line name, so a line renamed or added later is
+  // handled without touching this; a short label (`Company`, `CNS line`) keeps the full 10.5px.
+  const PHONE_LABEL_CHARS_PER_LINE = 9;
+  const hasLongLabel = cells.some((cell) => cell.label.length > 2 * PHONE_LABEL_CHARS_PER_LINE);
+  const labelType = hasLongLabel
+    ? "text-[8px] tracking-[0.08em] @md:text-[10px] @md:tracking-[0.1em]"
+    : "text-[10.5px] tracking-[0.2em]";
+  // 🔴 AND THE GAP CLOSES WITH THE TYPE, on a phone only. Held on one line, the long label makes its
+  // own cell 92px wide, and with the full 24px gap the two cells came to 190.4px — 10.4px WIDER than
+  // the 180px panel, so the ranking spilled out of the white onto the grid. At 12px the row is 178.4
+  // and sits inside it. From @md the panel is 14 squares wide and the original gap has room.
+  const cellGap = hasLongLabel ? "gap-3 @md:gap-10" : "gap-6 @md:gap-10";
 
   return (
     // 🔒 THE OWNER'S OWN LAYOUT, 2026-10-03: "you will make it white, striped horizontal and vertical;
@@ -255,10 +288,10 @@ export function RepHonourStrip({ standing }: { standing: RepRankStanding | null 
         {/* The ranking where his footer has the date — under the same orange tick, in the same navy. */}
         <div className="flex h-[108px] w-[180px] shrink-0 flex-col items-center justify-center bg-white @md:w-[252px]">
           <span aria-hidden="true" className="h-[3px] w-8 bg-[#f47b20]" />
-          <div className="mt-3 flex items-end gap-6 @md:gap-10">
+          <div className={`mt-3 flex items-end ${cellGap}`}>
             {cells.map((cell) => (
               <div className="flex flex-col items-center" key={cell.key}>
-                <p className="text-[10.5px] font-bold uppercase leading-none tracking-[0.2em] text-[#0b1f3a]">
+                <p className={`whitespace-nowrap font-bold uppercase leading-none text-[#0b1f3a] ${labelType}`}>
                   {cell.label}
                 </p>
                 <p className="mt-2 flex items-baseline gap-1.5 whitespace-nowrap">
