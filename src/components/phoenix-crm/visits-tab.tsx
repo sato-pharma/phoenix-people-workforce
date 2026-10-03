@@ -55,7 +55,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { customersFor, OutOfPlanReason, VisitCustomerPicker } from "@/components/phoenix-crm/visit-customer-picker";
 import { CrmStepFooter, CrmStepForm, CrmStepFrame, type CrmStep } from "@/components/phoenix-crm/step-form";
-import { decidersText, VisitLogForm, type LogVisitType, type VisitFormPart } from "@/components/phoenix-crm/visit-log-form";
+import { decidersText, logVisitTypeLabel, VisitLogForm, type LogVisitType, type VisitFormPart } from "@/components/phoenix-crm/visit-log-form";
 import { saveDayActivity, UnplannedChoice, VisitStart } from "@/components/phoenix-crm/visit-start";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
@@ -63,6 +63,7 @@ import { isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES } from "@/lib/phoenix-crm/day
 import type { ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { movedDayReason } from "@/lib/phoenix-crm/offplan-day";
+import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { outOfListVisitNote, unplannedKindLabel } from "@/lib/phoenix-crm/unplanned-rules";
 import type { DayActivityRow, SavedVisit, VisitCustomerOption, VisitDayView, VisitFormView, VisitRow } from "@/lib/phoenix-crm/view-types";
@@ -456,6 +457,12 @@ function SavedNote({ onOpenList, saved }: { onOpenList?: () => void; saved: Save
       {visit.unplannedNote ? <span className="mt-1 block">{visit.unplannedNote}</span> : null}
       {/* "Arrange a double visit" asked his manager by itself (owner, 2026-10-02) — his own request. */}
       {visit.visitAskNote ? <span className="mt-1 block break-words">{visit.visitAskNote}</span> : null}
+      {/* A pharmacy's own visit needs no plan and no approval; a pharmacy he named is logged too. */}
+      {visit.pharmacyNote ? (
+        <span className="mt-1 block break-words" dir="auto">
+          {visit.pharmacyNote}
+        </span>
+      ) : null}
       {visit.unplannedKind === "out_of_list" && onOpenList ? (
         <span className="mt-2 block">
           <span className="block">On the List, choose Request to add or Drop for this customer.</span>
@@ -546,6 +553,7 @@ type AddStep =
   | { name: "unplanned" }
   | { name: "out_of_plan" }
   | { name: "out_of_list" }
+  | { name: "pharmacy" }
   | { name: "reason"; customerId: string; reason: string; back: AddStep | null }
   | { name: "form"; customerId: string; visitType: LogVisitType; reason: string | null; back: AddStep | null; part?: VisitFormPart };
 
@@ -556,7 +564,7 @@ type AddStep =
  * step whose answer is a choice.
  */
 const VISIT_STEPS: ReadonlyArray<CrmStep> = [
-  { label: "Visit type", description: "Planned, out of plan or out of list", title: "What kind of visit" },
+  { label: "Visit type", description: "Planned, unplanned or a pharmacy", title: "What kind of visit" },
   { label: "Customer", description: "Who you visited", title: "Choose the customer" },
   { label: "Products and comment", description: "What you discussed", title: "Products and comment" },
   { label: "Log the visit", description: "Check it, then log it", title: "Log the visit" },
@@ -579,8 +587,10 @@ function visitChip(step: AddStep): string {
       return "Out of plan";
     case "out_of_list":
       return "Out of list";
+    case "pharmacy":
+      return "Pharmacy visit";
     case "form":
-      return step.visitType === "planned" ? "Planned visit" : step.visitType === "out_of_plan" ? "Out of plan" : "Out of list";
+      return logVisitTypeLabel(step.visitType);
     default:
       return "Add visit";
   }
@@ -601,6 +611,9 @@ function holdsWork(step: AddStep | null): boolean {
  * to send an unapproved week from inside Add visit was built that day and removed the same day.
  */
 function routeFor(customer: VisitCustomerOption): AddStep {
+  // A pharmacy is never planned, never off plan and never approved (owner, 2026-10-02/03): straight to
+  // the form, wherever he opened it from.
+  if (isPharmacyListType(customer.listType)) return { name: "form", customerId: customer.customerId, visitType: "pharmacy", reason: null, back: null };
   if (customer.outside) return { name: "form", customerId: customer.customerId, visitType: "out_of_list", reason: null, back: null };
   if (customer.plannedToday) return { name: "form", customerId: customer.customerId, visitType: "planned", reason: null, back: null };
   return { name: "reason", customerId: customer.customerId, reason: filledReason(customer), back: null };
@@ -676,8 +689,10 @@ function AddFlow({
         dayActivity={dayActivity}
         onActivitySaved={onActivitySaved}
         onBack={onClose}
+        onPharmacy={() => onStep({ name: "pharmacy" })}
         onPlanned={() => onStep({ name: "planned" })}
         onUnplanned={() => onStep({ name: "unplanned" })}
+        pharmacyCount={form ? customersFor("pharmacy", form.customers).length : null}
         planToday={form ? form.planToday : null}
         plannedCount={form ? customersFor("planned", form.customers).length : null}
         seatId={seatId}
@@ -769,6 +784,17 @@ function AddFlow({
           onPick={(customerId) => onStep({ name: "reason", customerId, reason: filledReason(find(customerId)), back: { name: "out_of_plan" } })}
         />,
         () => onStep({ name: "unplanned" }),
+      );
+    case "pharmacy":
+      return shell(
+        current,
+        <VisitCustomerPicker
+          allCustomers={loaded.customers}
+          mode="pharmacy"
+          onBack={() => onStep({ name: "start" })}
+          onPick={(customerId) => onStep({ name: "form", customerId, visitType: "pharmacy", reason: null, back: { name: "pharmacy" } })}
+        />,
+        () => onStep({ name: "start" }),
       );
     case "out_of_list":
       return shell(

@@ -980,7 +980,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       origin,
       referenceContactCrmId: contactCrmId,
       status,
-      section: listSectionOf({ status, origin, validatedAt }),
+      section: listSectionOf({ status, origin, validatedAt, listType: row.list_type }),
       potentialGrade: parsePotentialGrade(row.potential_grade),
       validatedAt,
       validatedByName: validatedBy ? nameOf(names, validatedBy) : null,

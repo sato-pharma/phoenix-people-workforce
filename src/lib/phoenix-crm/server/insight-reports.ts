@@ -339,7 +339,12 @@ async function familiesOfLines(lineNames: ReadonlyArray<string>): Promise<string
 /** The visits as the report reads them: the customer's speciality, and the territory's area by name. */
 async function heardVisits(seats: ReadonlyArray<OrgSeat>, period: ReportPeriod, includeTest: boolean): Promise<HeardVisit[]> {
   if (seats.length === 0) return [];
-  const rows = await countableVisits(seats, period, includeTest, "seat_id, customer_id, list_type, visit_date, products, objection, objection_note");
+  // What the DOCTORS said: the report has an AM side and a PM side and nothing else, so a pharmacy
+  // visit would be filed as PM — and the pharmacy a doctor's visit names carries that visit's own
+  // products (owner, 2026-10-03), so it would count every product heard there twice.
+  const rows = (
+    await countableVisits(seats, period, includeTest, "seat_id, customer_id, list_type, visit_date, products, objection, objection_note")
+  ).filter((row) => listTypeOf(row.list_type) !== null);
   if (rows.length === 0) return [];
 
   const specialities = new Map<string, string | null>();

@@ -1,5 +1,5 @@
 import { emptyVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
-import { parseListType, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { parseListType, pharmacyNameKey, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { todayPharmacies, type TodayVisit } from "@/lib/phoenix-crm/today-rules";
 
 /**
@@ -115,9 +115,9 @@ export function dayDetailCounts(visits: readonly DayDetailVisit[]): DayDetailCou
 
   // The LIST is every pharmacy named on the day; the FIGURE is the ones a counting visit named,
   // which is what the calendar cell counts. Two passes of the same grouping, never a second copy.
-  const countedNames = new Set(todayPharmacies(asToday(counting)).map((entry) => entry.name.toLocaleLowerCase()));
+  const countedNames = new Set(todayPharmacies(asToday(counting)).map((entry) => pharmacyNameKey(entry.name)));
   const pharmacies = todayPharmacies(asToday(visits)).map((entry) => ({
-    counted: countedNames.has(entry.name.toLocaleLowerCase()),
+    counted: countedNames.has(pharmacyNameKey(entry.name)),
     firstCapturedAt: entry.firstAt,
     fromCustomers: entry.fromCustomers,
     name: entry.name,

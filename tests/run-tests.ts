@@ -1728,6 +1728,7 @@ import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
+import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
 import { runPhoenixCrmCommitmentsTests } from "./phoenix-crm-commitments.test.ts";
 import { runPhoenixCrmCallPrepTests } from "./phoenix-crm-call-prep.test.ts";
@@ -6025,6 +6026,11 @@ await runTest(
 await runTest(
   "Phoenix CRM pharmacy calls (owner, 2026-10-02, four rulings of which three REMOVE something a reader would add back by analogy with a doctor: a pharmacy is a THIRD list_type and never a row inside AM or PM, so the binary `=== \"AM\" ? \"AM\" : \"PM\"` that every existing reader uses would file it among the doctors with nothing going red; it is NEVER planned — \"He don't plan it. We don't want extra\" reverses his own earlier \"planned like doctors\", and the 10-a-day cap he set that morning capped PLANNING, so nothing is left for it to limit and a cap on VISITS would be the extra he refused; it is NEVER approved — \"no approval for an unplanned pharmacy visit\", because the off-plan approval protects a figure and a pharmacy has none; and NO KPI reads one — no coverage, frequency, monthly target, call rate or capacity, so the Pharmacies figure stays a plain count and never a rate)",
   runPhoenixCrmPharmacyCallTests,
+);
+
+await runTest(
+  "Phoenix CRM pharmacy visit logged normally (owner, 2026-10-03, after Hassan in El Mahalla saved pharmacy visits that showed as not visited: no rep had ever saved one, because the 2026-10-02 rules were written and wired nowhere — the only road to a pharmacy was Out of plan, a reason and an approval. Pinned: a pending pharmacy needs no validation and sits on his list, in the TypeScript and in the countable view; Add visit → Pharmacy visit goes straight to the form with no reason; the save function files a pharmacy as never planned-out and never approved, names its visit after it, and files the pharmacy a doctor’s visit names as its own visit — matched to his list with the repo’s one Arabic normalizer, added when nothing matches, never a dropped one, never two a day; that linked visit is no rep’s first visit, no behaviour signal and no location row; and one pharmacy however it is spelled counts once in the day)",
+  runPhoenixCrmPharmacyVisitLoggedTests,
 );
 
 await runTest(

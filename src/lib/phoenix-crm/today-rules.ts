@@ -1,6 +1,7 @@
 import { addDaysIso } from "@/lib/crm/dates";
 import { clusterByBrick } from "@/lib/phoenix-crm/brick-groups";
 import { VISIT_DAY_CUTOFF_HOURS } from "@/lib/phoenix-crm/calendar";
+import { isPharmacyListType, pharmacyNameKey } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { formatClockMinute, PHOENIX_CRM_WEEKDAY_NAMES } from "@/lib/phoenix-crm/timings";
 
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
@@ -97,7 +98,10 @@ export type TodayExtra = {
 export type TodayPharmacy = {
   /** As the rep most recently spelled it — pharmacies are free text, grouped case-insensitively. */
   name: string;
-  /** The customers whose visits named it today, in the order he visited them. */
+  /**
+   * The customers whose visits named it today, in the order he visited them. Never the pharmacy itself:
+   * its own visit (owner, 2026-10-03) carries its name too, and is not "a visit that named it".
+   */
   fromCustomers: string[];
   /** Cairo clock of the first visit today that named it. */
   firstAt: string;
@@ -128,22 +132,25 @@ export type TodayCounts = {
 };
 
 /**
- * The day's pharmacies, grouped case-insensitively with the most recent spelling as the name — the
- * same rule the List uses for a customer's pharmacies, so one pharmacy never reads as two.
+ * The day's pharmacies, grouped by `pharmacyNameKey` with the most recent spelling as the name, so
+ * one pharmacy never reads as two — "ص.الفيومي" on a doctor's visit and the visit to "صيدلية الفيومي"
+ * itself are one pharmacy (owner, 2026-10-03: every pharmacy visit carries its own name).
  */
 export function todayPharmacies(visitsToday: readonly TodayVisit[]): TodayPharmacy[] {
   const byKey = new Map<string, { name: string; fromCustomers: string[]; firstAt: string }>();
   for (const visit of visitsToday) {
     const name = (visit.pharmacyName ?? "").trim();
     if (!name) continue;
-    const key = name.toLocaleLowerCase();
+    const key = pharmacyNameKey(name);
+    if (!key) continue;
+    const from = isPharmacyListType(visit.listType) ? [] : [visit.name];
     const entry = byKey.get(key);
     if (entry) {
       // The most recent spelling wins, exactly as the List's own grouping decides it.
       entry.name = name;
-      if (!entry.fromCustomers.includes(visit.name)) entry.fromCustomers.push(visit.name);
+      for (const customer of from) if (!entry.fromCustomers.includes(customer)) entry.fromCustomers.push(customer);
     } else {
-      byKey.set(key, { name, fromCustomers: [visit.name], firstAt: visit.doneAt });
+      byKey.set(key, { name, fromCustomers: from, firstAt: visit.doneAt });
     }
   }
   return [...byKey.values()];

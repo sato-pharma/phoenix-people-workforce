@@ -364,12 +364,13 @@ export function runPhoenixCrmOffplanDayTests(): void {
       "and so does picking the customer under Out of plan",
     );
     assert.match(functionBody(tab, "function filledReason("), /movedDayReason\(customer\.plannedOtherDays\)/, "from the days the server sent, in the one sentence");
-    // No step is added: Add visit's steps and screens are the ones it had.
+    // No step is added for the moved day: Add visit's screens are the ones it had, plus the Pharmacy
+    // visit picker (owner, 2026-10-03: a pharmacy visit is logged normally — no plan, no reason).
     const steps = /type AddStep =([\s\S]*?);\n/.exec(tab)?.[1] ?? "";
     assert.deepEqual(
       [...steps.matchAll(/name: "([a-z_]+)"/g)].map((match) => match[1]),
-      ["start", "open", "planned", "unplanned", "out_of_plan", "out_of_list", "reason", "form"],
-      "Add visit has the same screens it had",
+      ["start", "open", "planned", "unplanned", "out_of_plan", "out_of_list", "pharmacy", "reason", "form"],
+      "Add visit has the same screens it had, and the Pharmacy visit picker",
     );
     // No field is added: the reason screen still holds one box, and it is his to change.
     const picker = source("src/components/phoenix-crm/visit-customer-picker.tsx");

@@ -274,7 +274,9 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                   <span className="font-black text-slate-800" dir="auto">
                     {pharmacy.name}
                   </span>
-                  {` · from ${cairoClock(pharmacy.firstCapturedAt)} · on the visit to ${pharmacy.fromCustomers.join(", ")}`}
+                  {` · from ${cairoClock(pharmacy.firstCapturedAt)}`}
+                  {/* Visited in its own right, it was named on no doctor's visit (owner, 2026-10-03). */}
+                  {pharmacy.fromCustomers.length > 0 ? ` · on the visit to ${pharmacy.fromCustomers.join(", ")}` : " · a pharmacy visit"}
                   {pharmacy.counted ? "" : " · not in the figure above yet"}
                 </p>
               ))}

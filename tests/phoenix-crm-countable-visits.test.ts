@@ -236,10 +236,13 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
     const latestView = migrations
       .filter((file) => source(`supabase/migrations/${file}`).includes("create or replace view public.phoenix_crm_countable_visits"))
       .pop();
-    assert.equal(
-      latestView,
-      VALIDATED_VIEW_MIGRATION.replace("supabase/migrations/", ""),
-      "the newest definition of the view is the one carrying customer_validated",
+    // Since 2026-10-03 the newest is 20261003174346 (a pharmacy needs no validation), which keeps the
+    // column — what is pinned is the column, so the next replacement is held to it whatever its name.
+    assert.ok(latestView, "the view is defined by some migration");
+    assert.match(
+      source(`supabase/migrations/${latestView}`),
+      /\) as customer_validated\b/,
+      `the newest definition of the view (${latestView}) still carries customer_validated`,
     );
   }
 

@@ -644,6 +644,15 @@ const LATER_MIGRATIONS = [
   // and phoenix_crm_add_place with their live bodies plus the hold, and touches no save_visit — so it
   // must stay after 20261003000753, the last entry that replaced validate_customer.
   "supabase/migrations/20261003130536_phoenix_crm_google_place_check.sql",
+  // A pharmacy visit is logged normally (owner, 2026-10-03: "Pharmacy don't need a validation"). It
+  // REPLACES phoenix_crm_save_visit — a pharmacy is never refused as unvalidated, and the pharmacy a
+  // doctor's visit names is logged as that pharmacy's own visit — so it is now the LAST entry that
+  // replaces save_visit and must stay last among them. It adds one column to `phoenix_crm_visits`
+  // (`linked_from_visit_id`) and one BEFORE INSERT trigger function that names a pharmacy visit after its
+  // pharmacy; no table. 20261003174346_phoenix_crm_pharmacy_needs_no_validation.sql is DELIBERATELY
+  // ABSENT: it recreates the countable-visits VIEW and adds no function and no table, so this scan could
+  // see nothing in it.
+  "supabase/migrations/20261003175653_phoenix_crm_pharmacy_visit_logged_normally.sql",
   // Approving a place AFTER it was rejected (owner, 2026-10-03: "add the option to approve after
   // reject"). ONE brand-new function and nothing else — no table, no column, and it replaces nothing,
   // so it appends safely at the end and cannot disturb the replacement ordering above.

@@ -54,7 +54,8 @@ import { TimingsReadout } from "@/components/phoenix-crm/timings-editor";
 import { CrmBackBar, CrmBlock, CrmButton, CrmFacts, CrmField, CrmNote, CrmPanel, CrmPill, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE, LOCATION_NOT_CONFIRMED_TEXT } from "@/lib/phoenix-crm/google-place-rules";
-import { neverAdmitted, requestKindLabel, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
+import { awaitsValidation, neverAdmitted, onTheList, requestKindLabel, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
+import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { CustomerPharmacy, ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 
 const PLACE_RELOAD = new Set(["phoenix_crm_last_place", "phoenix_crm_place_not_found", "phoenix_crm_place_retired"]);
@@ -101,10 +102,15 @@ export function CustomerScreen({
     return <ListGone backLabel="List" message="This customer is no longer on the territory's list." onBack={onBack} refreshing={refreshing} title="Customer" />;
   }
 
-  const active = customer.status === "active";
+  // On the list — and a pharmacy is on it validated or not, because it needs no validation (owner,
+  // 2026-10-03, `awaitsValidation`).
+  const active = onTheList(customer);
   // Carried over from iReports360 and not validated yet: a real customer the rep plans and visits, who
   // counts in nothing until he validates him at the clinic. Validating is once, and it is forever.
-  const pending = customer.status === "pending";
+  const pending = awaitsValidation(customer);
+  // Validated at the door. The clinic, grade and details screens are a validated customer's, so a
+  // pharmacy that is on the list without ever being validated is offered none of them.
+  const validated = customer.status === "active";
   // Met outside the list and validated at the door: waiting for the rep to ask to add him, or for the
   // district manager and SFE once he has.
   const outside = customer.status === "outside";
@@ -173,8 +179,14 @@ export function CustomerScreen({
           ]
         : [
             { label: "This month", value: monthVisitsText(customer.visitsThisMonth, customer.target) },
-            { label: "Validated", value: cairoStamp(customer.validatedAt) },
-            { label: "Validated by", value: customer.validatedByName ?? "Not on record" },
+            // A pharmacy never validated has nothing to say here, and "Validated: not recorded" would
+            // read as something still owed.
+            ...(customer.validatedAt === null
+              ? []
+              : [
+                  { label: "Validated", value: cairoStamp(customer.validatedAt) },
+                  { label: "Validated by", value: customer.validatedByName ?? "Not on record" },
+                ]),
             { label: "Clinics", value: `${customer.places.length} of ${view.rules.placesMax}` },
             { label: "Grade", value: customer.grade ? `Grade ${customer.grade}` : "No grade" },
             // The district manager's read of the customer's potential: shown, and it changes nothing else.
@@ -257,19 +269,19 @@ export function CustomerScreen({
                 Validate this customer
               </CrmButton>
             ) : null}
-            {view.canEdit && (active || outside) ? (
+            {view.canEdit && (validated || outside) ? (
               <CrmButton disabled={full} onClick={() => onOpen({ name: "add-place", customerId: customer.customerId, draft: null })}>
                 {full ? `${view.rules.placesMax} clinics, the most a customer can have` : "Add another clinic"}
               </CrmButton>
             ) : null}
-            {view.canEdit && active ? (
+            {view.canEdit && validated ? (
               <CrmButton disabled={customer.pendingGradeRequestId !== null} onClick={() => onOpen({ name: "grade", customerId: customer.customerId })}>
                 Propose a grade
               </CrmButton>
             ) : null}
             {/* Owner, 2026-09-22: the name and the speciality are corrected here, after validating — never
                 inside it. The grade keeps its proposal flow above, because it sets the rep's own target. */}
-            {view.canEdit && (active || outside) ? (
+            {view.canEdit && (validated || outside) ? (
               <CrmButton onClick={() => onOpen({ name: "edit-details", customerId: customer.customerId })}>Change the details</CrmButton>
             ) : null}
           </div>
@@ -347,7 +359,9 @@ export function CustomerScreen({
         </CrmBlock>
       )}
 
-      {!archived ? (
+      {/* A doctor's block. A pharmacy's own visits carry its own name (owner, 2026-10-03), so on a
+          pharmacy it would list the pharmacy as the pharmacy it took feedback from. */}
+      {!archived && !isPharmacyListType(customer.listType) ? (
         <CrmBlock className="border-t border-slate-100" title="Pharmacies feedback came from">
           {customer.pharmacies.length === 0 ? (
             <p className="break-words text-sm font-medium text-slate-500">

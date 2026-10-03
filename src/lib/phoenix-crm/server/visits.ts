@@ -52,7 +52,17 @@ import { checkVisitLocation, formatDistance } from "@/lib/phoenix-crm/geo";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
 import { isEnteredForRep } from "@/lib/phoenix-crm/missed-records";
 import { deriveOfflineCaptureTime, parseOfflineCaptureClaim } from "@/lib/phoenix-crm/offline-clock";
-import { doctorListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import {
+  doctorListType,
+  isPharmacyListType,
+  linkNamedPharmacy,
+  parseListType,
+  PHARMACY_CALL_REP_NOTE,
+  PHARMACY_LIST_TYPE,
+  pharmacyNameKey,
+  type ListedPharmacy,
+  type NamedPharmacyLink,
+} from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { describeSamples, narrowSamplesToLine, parseSamplesGiven } from "@/lib/phoenix-crm/samples";
 import {
   pickLastNextStep,
@@ -644,32 +654,57 @@ export type VisitFormView = {
 };
 
 /**
- * The pharmacy names this seat has typed before, most recent first, deduped case-insensitively. The
- * form offers them as suggestions; the rep can always type a new one, and it joins the list next time.
- * A fresh read of recent visits — there is no separate pharmacy store to keep in step.
+ * The pharmacy names the form suggests as he types: the ones this seat has typed before, most recent
+ * first, then the pharmacies on his list (owner, 2026-10-03) — so picking a suggestion is picking the
+ * pharmacy his visit is filed against (`linkNamedPharmacy`), spelled as the list spells it. One name
+ * per pharmacy, keyed by `pharmacyNameKey`; he can always type a new one.
  */
 async function loadSeatPharmacies(seatId: string, isTest: boolean): Promise<string[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("phoenix_crm_visits")
-    .select("pharmacy_name, captured_at")
-    .eq("seat_id", seatId)
-    .eq("is_test", isTest)
-    .not("pharmacy_name", "is", null)
-    .order("captured_at", { ascending: false })
-    .limit(500);
-  throwIfError(error);
+  const [typed, listed] = await Promise.all([
+    getSupabaseAdmin()
+      .from("phoenix_crm_visits")
+      .select("pharmacy_name, captured_at")
+      .eq("seat_id", seatId)
+      .eq("is_test", isTest)
+      .not("pharmacy_name", "is", null)
+      .order("captured_at", { ascending: false })
+      .limit(500),
+    loadListedPharmacies(seatId, isTest),
+  ]);
+  throwIfError(typed.error);
   const seen = new Set<string>();
   const names: string[] = [];
-  for (const row of (data ?? []) as Row[]) {
-    const name = textOrNull(row.pharmacy_name);
-    if (!name) continue;
-    const key = name.toLowerCase();
-    if (seen.has(key)) continue;
+  const offer = (raw: unknown) => {
+    const name = textOrNull(raw);
+    if (!name) return;
+    const key = pharmacyNameKey(name);
+    if (!key || seen.has(key)) return;
     seen.add(key);
     names.push(name);
+  };
+  for (const row of (typed.data ?? []) as Row[]) {
     if (names.length >= 50) break;
+    offer(row.pharmacy_name);
+  }
+  for (const pharmacy of listed) {
+    if (pharmacy.status !== "dropped") offer(pharmacy.name);
   }
   return names;
+}
+
+/** Every pharmacy on the seat's list, the Archive included — the match needs to know what he dropped. */
+async function loadListedPharmacies(seatId: string, isTest: boolean): Promise<ListedPharmacy[]> {
+  const rows = await fetchAllRowsKeyset<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_customers")
+        .select("id, name, status")
+        .eq("seat_id", seatId)
+        .eq("is_test", isTest)
+        .eq("list_type", PHARMACY_LIST_TYPE),
+    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+  );
+  return rows.map((row) => ({ customerId: String(row.id), name: String(row.name ?? ""), status: String(row.status ?? "") }));
 }
 
 /**
@@ -887,7 +922,8 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       visitedToday: visitedToday.has(customerId),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       target: doctorListType(row.list_type) === null ? null : gradeTarget(settings, listType as "AM" | "PM", grade),
-      pending: row.status === "pending",
+      // A pharmacy needs no validation (owner, 2026-10-03): never "not validated yet" to him.
+      pending: row.status === "pending" && !isPharmacyListType(row.list_type),
       outside: row.status === "outside",
       referenceContactCrmId: numberOrNull(row.reference_contact_crm_id),
     };
@@ -957,6 +993,11 @@ export type SavedVisit = {
    * when there was nobody to ask — the ask is HIS request, so its words are his to read.
    */
   visitAskNote: string | null;
+  /**
+   * What became of a pharmacy (owner, 2026-10-03): a pharmacy visit's own "no plan, no approval", or
+   * that the pharmacy he named on this visit is logged as a pharmacy visit too. Null otherwise.
+   */
+  pharmacyNote: string | null;
 };
 
 /**
@@ -982,6 +1023,9 @@ async function isFirstVisitSubmittedBy(actorHrId: string, visitId: string, isTes
     .eq("entered_by_hr_id", actor)
     .eq("is_test", isTest)
     .neq("id", visitId)
+    // The pharmacy visit his doctor's visit filed beside it (owner, 2026-10-03) is part of THIS
+    // submission, written in the same transaction — counting it would make no visit ever a first.
+    .is("linked_from_visit_id", null)
     .limit(1);
   if (error) return false;
   return (data ?? []).length === 0;
@@ -1072,7 +1116,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       offlineAnchorId = offlineClaim.anchorId;
     }
   }
-  const [placesResult, issuedAt] = await Promise.all([
+  const [placesResult, issuedAt, listedPharmacies] = await Promise.all([
     supabase
       .from("phoenix_crm_places")
       .select("id, lat, lon")
@@ -1082,7 +1126,13 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       .eq("status", "active"),
     // Only a caller that still sends a photo has a slot to read; the one-tap visit has none.
     visit.photoPath ? photoSlotIssuedAt(visit.photoPath) : Promise.resolve(null),
+    // The pharmacy he named is a visit to that pharmacy too (owner, 2026-10-03): his list's pharmacies,
+    // to find which one. No name, no read.
+    visit.pharmacyName ? loadListedPharmacies(seat.seatId, isTest) : Promise.resolve([] as ListedPharmacy[]),
   ]);
+  // Decided here, where it can be tested without a database; the function only checks the pharmacy is
+  // his and files the visit. It is ignored when the customer he visited is himself a pharmacy.
+  const pharmacyLink: NamedPharmacyLink = linkNamedPharmacy(visit.pharmacyName, listedPharmacies);
   throwIfError(placesResult.error);
   const places = ((placesResult.data ?? []) as Row[]).map((row) => ({ id: String(row.id), lat: Number(row.lat), lon: Number(row.lon) }));
   const settings = viewer.config.settings;
@@ -1114,6 +1164,8 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       product_manager_hr_id: participants.value.productManagerHrId,
       products: visit.products,
       pharmacy_name: visit.pharmacyName,
+      linked_pharmacy_id: pharmacyLink.kind === "existing" ? pharmacyLink.customerId : null,
+      linked_pharmacy_new: pharmacyLink.kind === "new",
       product_availability: productAvailability,
       comment: visit.comment,
       photo_path: visit.photoPath,
@@ -1268,5 +1320,21 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
           ? unplannedVisitRepNote(unplannedFirstStatus(reviewer !== null))
           : null,
     visitAskNote: visitAskSavedNote(visitAsk),
+    pharmacyNote: savedPharmacyNote(result),
   };
+}
+
+/**
+ * The line he reads about a pharmacy once the visit is saved: a pharmacy's own visit needs no plan and
+ * no approval, and a pharmacy he named on a doctor's visit is logged as a visit to it too. Nothing when
+ * that pharmacy was already visited today — its one visit of the day is already there.
+ */
+function savedPharmacyNote(result: Row): string | null {
+  if (isPharmacyListType(result.list_type)) return PHARMACY_CALL_REP_NOTE;
+  const linked = result.linked_pharmacy && typeof result.linked_pharmacy === "object" ? (result.linked_pharmacy as Row) : null;
+  if (!linked || !textOrNull(linked.visit_id)) return null;
+  const name = textOrNull(linked.name) ?? "The pharmacy";
+  return linked.created === true
+    ? `${name} is logged as a pharmacy visit too, and added to your list.`
+    : `${name} is logged as a pharmacy visit too.`;
 }
