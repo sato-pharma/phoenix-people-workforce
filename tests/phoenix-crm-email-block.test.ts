@@ -69,6 +69,9 @@ const EVENT_TYPES = [
   // `day_start_confirmed` and emails; this one is the same news to the person who reads every line, so
   // it is in-app and Telegram only — about 74 a morning at full rollout is a burial, not a notice.
   "day_start_seen",
+  // A place the Google Maps check could not confirm, waiting for the Super Admin (owner, 2026-10-03:
+  // "only system admin can approve or reject"). In-app, Telegram and the phone — never by email.
+  "validation_review_waiting",
 ];
 
 /**
@@ -228,8 +231,11 @@ export function runPhoenixCrmEmailBlockTests() {
     const reminder = readFileSync("src/lib/phoenix-crm/server/plan-reminder.ts", "utf8");
     const nudge = readFileSync("src/lib/phoenix-crm/server/approval-nudge.ts", "utf8");
     assert.doesNotMatch(nudge, /"email"/, "the approval nudge never names email");
+    // The Super Admin's alert for a place the Google Maps check could not confirm (2026-10-03).
+    const placeCheck = readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8");
+    assert.doesNotMatch(placeCheck, /"email"/, "the place-check alert never names email");
     const sent = new Set<string>();
-    for (const line of `${notify}\n${reminder}\n${nudge}`.split("\n").filter((text) => /^\s*eventType: /.test(text))) {
+    for (const line of `${notify}\n${reminder}\n${nudge}\n${placeCheck}`.split("\n").filter((text) => /^\s*eventType: /.test(text))) {
       for (const match of line.matchAll(/"([a-z_]+)"/g)) sent.add(match[1]);
     }
     assert.deepEqual([...sent].sort(), [...EVENT_TYPES, ...EMAIL_EVENT_TYPES].sort(), "the notices this test checks are exactly the notices the module sends");

@@ -152,7 +152,9 @@ export function runPhoenixCrmManagerValidatesTests(): void {
     const screen = source("src/components/phoenix-crm/list-customer.tsx");
     assert.match(
       screen,
-      /const canValidateThis = pending && customer\.referenceContactCrmId !== null && view\.canValidateReference;/,
+      // `!checking` (2026-10-03): while the Google check holds a place he already captured there is
+      // nothing to validate — the narrow flag is still the only permission it reads.
+      /const canValidateThis = pending && !checking && customer\.referenceContactCrmId !== null && view\.canValidateReference;/,
       "the Validate button reads the narrow flag",
     );
     for (const repOnly of ["Propose a grade", "Change the details", "Add another clinic"]) {

@@ -53,6 +53,7 @@ import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card
 import { TimingsReadout } from "@/components/phoenix-crm/timings-editor";
 import { CrmBackBar, CrmBlock, CrmButton, CrmFacts, CrmField, CrmNote, CrmPanel, CrmPill, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
+import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE, LOCATION_NOT_CONFIRMED_TEXT } from "@/lib/phoenix-crm/google-place-rules";
 import { neverAdmitted, requestKindLabel, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
 import type { CustomerPharmacy, ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 
@@ -114,7 +115,10 @@ export function CustomerScreen({
   // A manager of the territory validates a carried-over customer beside its rep (owner, 2026-10-02) and
   // does NOTHING else on this screen: no drop, no grade, no hours, no add — those are the rep's own work
   // (`canValidateReference` is deliberately narrower than `canEdit`).
-  const canValidateThis = pending && customer.referenceContactCrmId !== null && view.canValidateReference;
+  // Not while the system is checking the place he already captured (2026-10-03): there is nothing to
+  // validate until the check answers.
+  const checking = customer.locationCheck === "checking";
+  const canValidateThis = pending && !checking && customer.referenceContactCrmId !== null && view.canValidateReference;
   const requests = sortRequests(
     view.requests.filter(
       (request) =>
@@ -215,7 +219,18 @@ export function CustomerScreen({
           <CrmFacts facts={facts} />
         </div>
 
-        {pending ? (
+        {/* The Google check, in the system's words — never a person's (owner, 2026-10-03). */}
+        {checking ? (
+          <CrmNote className="mt-3" title={LOCATION_CHECKING_TITLE} tone="info">
+            {LOCATION_CHECKING_TEXT}
+          </CrmNote>
+        ) : null}
+        {pending && !checking && customer.locationCheck === "not_confirmed" ? (
+          <CrmNote className="mt-3" title="Validate again" tone="warn">
+            {LOCATION_NOT_CONFIRMED_TEXT}
+          </CrmNote>
+        ) : null}
+        {pending && !checking ? (
           <CrmNote className="mt-3" title="Not validated yet" tone="info">
             {PENDING_COUNTS_NOTE} Validating captures this customer&apos;s signboard photo, the location and the days and hours. It happens once.
           </CrmNote>

@@ -792,6 +792,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/primary-pharmacy", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/update", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // Approving or rejecting a place the Google Maps check could not confirm (owner, 2026-10-03): the
+  // Super Admin ALONE — `update` at the route, `canDecideValidationReviews` in the service.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // Moving or removing a validated place: the Super Admin and the SFE Manager only (owner, 2026-09-29),
   // `approve` at the route and the movers' own check in the service.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/move", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),

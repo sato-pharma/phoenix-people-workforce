@@ -154,6 +154,9 @@ const ROUTE_GATES: RouteGate[] = [
   post("list/places/update", "create"),
   // Moving or removing a validated place (owner, 2026-09-29): the Super Admin and the SFE Manager only.
   post("list/places/move", "approve"),
+  // Approving or rejecting a place the Google Maps check could not confirm (owner, 2026-10-03): the
+  // Super Admin alone — `update` at the route, `canDecideValidationReviews` in the service.
+  post("validation-reviews", "update"),
   // The rep drops a customer met outside his list; the SFE Manager brings one back from the Archive.
   post("list/outside/drop", "create"),
   post("list/archive/bring-back", "approve"),
@@ -631,6 +634,11 @@ const LATER_MIGRATIONS = [
   // brand-new function; it replaces no save_visit and alters nothing that exists, so it appends
   // safely at the end and cannot disturb the replacement ordering above.
   "supabase/migrations/20261003075803_phoenix_crm_day_starts.sql",
+  // The Google Maps check on a validated place (owner, 2026-10-03). ONE brand-new table (the Super
+  // Admin's holds) and ONE brand-new function (his decision); it REPLACES phoenix_crm_validate_customer
+  // and phoenix_crm_add_place with their live bodies plus the hold, and touches no save_visit — so it
+  // must stay after 20261003000753, the last entry that replaced validate_customer.
+  "supabase/migrations/20261003130536_phoenix_crm_google_place_check.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

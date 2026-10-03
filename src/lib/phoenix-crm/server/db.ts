@@ -16,6 +16,10 @@ const REFUSALS: Record<string, Refusal> = {
   bad_input: { status: 400, message: "Something in this entry is missing. Reload the page and try again." },
   not_on_reference_list: { status: 404, message: "This customer is no longer on the territory's reference list. Reload the list." },
   already_validated: { status: 409, message: "This customer is already validated on the list." },
+  // The Google check (owner, 2026-10-03). The rep's words are the system's, never a person's.
+  location_in_review: { status: 409, message: "The system is still checking this customer's location. It confirms it automatically." },
+  review_not_found: { status: 404, message: "This place is no longer waiting. Reload the page." },
+  review_decided: { status: 409, message: "This place was already decided. Reload the page." },
   same_name: {
     status: 409,
     message: "A customer with this name is already on the list. If this is a different person, confirm it and save again.",

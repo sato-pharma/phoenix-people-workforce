@@ -538,6 +538,68 @@ export async function googlePlacesAutocomplete(input: string): Promise<PlaceSugg
 // hospitals as customer rows and only 38 with coordinates, which is nowhere near all of them, so
 // the rest can only come from Google.
 
+/** One Google Maps listing, with the id and link that let a person open it. */
+export type PlaceListing = {
+  placeId: string;
+  name: string;
+  lat: number;
+  lng: number;
+  mapsUri: string | null;
+};
+
+/**
+ * The listings Google holds for a name, searched AROUND a point — every candidate, not one chosen
+ * answer, because the caller decides which (if any) is the account (Phoenix CRM's place check,
+ * 2026-10-03). Names come back in Arabic, the language the customer lists are written in.
+ *
+ * 🔴 NULL MEANS "COULD NOT ASK", NEVER "NOTHING THERE". A missing key, a refusal, a network error and a
+ * timeout all answer null, and an empty array is reserved for Google genuinely having no listing — the
+ * caller holds a validation for a human on either, but records which one it was. Unlike the enrichment
+ * helpers here, this one has its own timeout: it runs inside a rep's save at the door.
+ */
+export async function googlePlacesSearchAround(
+  searchText: string,
+  center: LatLng,
+  options: { radiusMeters: number; maxResultCount: number; timeoutMs: number },
+): Promise<PlaceListing[] | null> {
+  const key = getServerKey();
+  if (!key || !searchText.trim()) return null;
+  try {
+    const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+      body: JSON.stringify({
+        languageCode: "ar",
+        locationBias: { circle: { center: { latitude: center.lat, longitude: center.lng }, radius: options.radiusMeters } },
+        maxResultCount: options.maxResultCount,
+        regionCode: "EG",
+        textQuery: searchText,
+      }),
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": "places.id,places.displayName,places.location,places.googleMapsUri",
+      },
+      method: "POST",
+      signal: AbortSignal.timeout(options.timeoutMs),
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as {
+      places?: Array<{ id?: string; displayName?: { text?: string }; location?: { latitude?: number; longitude?: number }; googleMapsUri?: string }>;
+    };
+    const listings: PlaceListing[] = [];
+    for (const place of payload.places ?? []) {
+      const lat = place.location?.latitude;
+      const lng = place.location?.longitude;
+      const name = place.displayName?.text?.trim();
+      if (!place.id || !name || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      listings.push({ placeId: place.id, name, lat: Number(lat), lng: Number(lng), mapsUri: place.googleMapsUri ?? null });
+    }
+    return listings;
+  } catch {
+    return null;
+  }
+}
+
 export type NearbyPlace = {
   address: string | null;
   lat: number;
