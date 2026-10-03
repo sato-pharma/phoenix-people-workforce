@@ -502,3 +502,133 @@ and whether the submit requires it), and where App Passwords live once the passw
 the setup page. The probe that would have walked those two steps was refused by the permission
 classifier as a remote shell write, so they stay unknown rather than guessed. Nothing ticks that
 checkbox: a consent control is never clicked on the owner's behalf.
+
+## The fourth dead click, and the three things that were actually wrong
+
+The sign-in was fixed, shipped, and failed again — this time with `Signed in as
+hr.mailbox@satopharma.com but the expected page never appeared`. That is the fourth click this one
+step has taken from the owner, and the reason it kept happening is worth more than the fix: **every
+previous calibration was bought with a click that reported only which selector was missing.** One
+click, one guess. The step was never asked what was actually on the screen.
+
+So this round began in the owner's own Chrome, signed out, reading both login pages with no
+credentials involved at all:
+
+| | `login.turbify.com/login` | `mail.turbify.com/login` |
+| --- | --- | --- |
+| title | Turbify Login Page | Bizmail Login |
+| heading | — | "Business Mail Login" |
+| address box | `input[type="email"]` | `input#email[name="email"][type="text"]` |
+| password box | `input[type="password"]`, **same page** | `input#password[name="password"]`, **same page** |
+| checkbox | one, unnamed | one, unnamed — the button beside it is `aria-label="Keep me logged in."` |
+| submit | **one**, "Log in to My Account" | **one**, "Login to Business Mail" |
+
+Three things fell out of that table, and all three were wrong in the shipped code.
+
+**One — both pages are ONE-STEP, and the "Next" branch was never real.** `signInAs` carried a
+two-step path (type the address, press submit, wait for a password box). Neither page needs it. The
+branch is kept because a change to that is survivable, but it is dead today, and it was noise in
+every attempt to reason about what the step was doing.
+
+**Two — the submit was the last control in the whole driver still delivered blind.**
+`page.click('button[type="submit"]')`, no hit test, on pages that carry Turbify's fixed cookie
+banner — the exact mechanism of incident one in `click-delivery.ts`, where a blind click landed on
+the banner and reported success. And its failure shape is the cruel one: nothing throws, the form is
+simply still sitting there afterwards, which every check downstream reads as *the credentials were
+refused*. It goes through `submitOpenForm` now, like everything else, so it is resolved by
+`type="submit"`, refused if there is more than one, sanity-checked against the measured wordings, and
+delivered through the hit test.
+
+**Three — `MAILBOX_LOGIN_URL` could not be calibrated at all, because it depended on a cookie.** It
+pointed at `login.turbify.com/login?.done=mail.turbify.com`, and by the time `setMailboxPassword`
+runs, the browser has been holding the **administrator's** session since step one. A Turbify login
+url with a live session does not render a form — it forwards to `.done`. So which page the mailbox
+sign-in landed on was a function of what the admin had done three steps earlier, which is not
+something a selector can be pinned against. Two changes close it: the url is now
+`https://mail.turbify.com/login` directly, and the mailbox signs in inside **its own browser
+context** — its own cookie jar, its own blank page. That also removes a second hazard for free, since
+`type()` appends and the admin's page had already been typed into.
+
+### The proof was wrong three times, and all three were the same mistake
+
+| Proof | Verdict | What it actually did |
+| --- | --- | --- |
+| `!url.includes("login.turbify.com")` | accepted a **refusal** | the page it lands on is `mail.turbify.com/login` |
+| `url` no longer matching `/login` | rejected a **success** | the setup page is served at `/login` too |
+| `$$(MAILBOX_EMAIL_FIELD).length === 0` | rejected a **success** | `$$` finds **hidden** inputs, and a form that never submitted still has its own |
+
+Each one asked indirectly: *is the thing I don't want gone?* An absence has a dozen causes. The
+proof is now positive and names what it found — the setup form's own `confirmPassword` field, or no
+**visible** address box (`getClientRects().length > 0`). The setup form's confirm field has exactly
+one cause.
+
+### A refusal is now a measurement
+
+The change that should outlive this fix: every refusal on this path prints the page it was looking
+at — `describePage` gives the url (path only, so a one-time password cannot ride out in a query
+string), the title, the headings, the inputs as `type:name` with hidden ones **marked**, and the
+visible button wordings. It reads no field values.
+
+It deliberately does **not** use `redactLabel`. That function also drops every space-free token of
+twelve characters or more, which is the right rule for a control's name and exactly the wrong one
+here: it would redact `https://mail.turbify.com/login`, `password:confirmPassword` and the mailbox
+address — the three things the description exists to show. `withoutSecrets` removes the credentials
+the run is holding by exact, case-insensitive match and guesses at nothing further, which is safe
+because what is read cannot contain a credential by construction.
+
+The three `APP_PASSWORD_PAGE` wordings are still guesses, and they are now the only uncalibrated
+step left. Each of those refusals carries the page too, so the first click that reaches them settles
+all three at once instead of buying one more guess. **And nothing ticks the setup page's checkbox** —
+on the login form that shape turned out to be "Keep me logged in.", on the setup form its label has
+still never been read, and a consent or terms box is the owner's click and never the robot's.
+
+### And the step after it had a wording that does not exist
+
+Reading Turbify's own documentation costs no credentials, and it should have been done before those
+three locators were written. `APP_PASSWORD_PAGE.manageAccount` read **"Manage your account"**.
+Turbify's documented path is **Account info → Manage App Passwords**, corroborated by two
+independent write-ups of Business Mail on 2026-10-03. So the *first* of the three steps would have
+missed, while `Manage App Passwords` — the second — was correct all along. That is the worst shape a
+chain can fail in: one wrong wording in the middle of a right sequence, refusing with a message
+about the wrong control.
+
+The three steps are ordered candidate lists now (`APP_PASSWORD_WORDINGS`), documented wording first
+and the old guesses kept behind rather than deleted, and they are pressed as **a link or a button** —
+`Account info` is an `<a>`, and the list was restricted to `button`, so it would have missed every
+candidate and still blamed the wording.
+
+**A wording taken off a web page is not a measurement.** It is a better-ordered guess, and it is only
+safe because each list fails closed and prints the page it was looking at. Nothing in Phoenix has
+stood on that page yet.
+
+One more thing came out of this: `clear-app-passwords.ts` stated that `APP_PASSWORD_PAGE` "proves the
+page is reachable and that `Generate` works, because the joiner presses it in production." **It does
+not and never did** — every run so far died at the mailbox sign-in, and the page's own first wording
+was wrong. A future session reading that sentence would have armed the leaver side on the strength of
+a step that has never run. It is corrected in place. The rule it leaves behind: **a downstream step
+is not proven because the code that calls it shipped.**
+
+### A third copy, in my own diff
+
+Reviewing the change before pushing it turned up a hang I had just written. Both copies of the
+secret-stripping loop did this:
+
+```
+let index = value.toLowerCase().indexOf(needle.toLowerCase());
+while (index !== -1) {
+  value = `${value.slice(0, index)}[redacted]${value.slice(index + needle.length)}`;
+  index = value.toLowerCase().indexOf(needle.toLowerCase());   // from 0, every time
+}
+```
+
+For any secret that is a substring of the marker it is replaced with — `"redact"` becomes
+`"[redacted]"`, which contains `"redact"` — that loop never ends. The passwords actually in play
+would not trigger it, but that is luck, not design, and **a redactor that hangs hangs the whole
+provisioning run with no output at all** — the same silent shape that made four of today's clicks
+unreadable. Both now resume at `index + marker.length`, and the new test cases are the ones that
+would hang, so the regression surfaces as a timeout rather than an assertion. Watched it: with the
+loop restored to searching from 0 the suite is killed by its timeout.
+
+**That is the third second-copy in a single day** — the dialog tokenisation, the missing viewport,
+and this loop. The rule it earns: in this module, when you fix something, grep for the pattern before
+you commit. The other copy is always on the path nobody has run.

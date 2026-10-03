@@ -11,7 +11,10 @@ import {
   parsePlaceDraft,
   parseVisitDraft,
   placePoint,
+  roughFixAtThePlace,
+  roughFixForAVisit,
 } from "../src/lib/phoenix-crm/entry-rules.ts";
+import type { CapturedFix } from "../src/lib/phoenix-crm/entry-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,11 +31,26 @@ import { stripComments } from "./support/comment-strip.ts";
 // compared with itself. Every other rep that morning read between 3.6 and 19.8 m.
 //
 // The validation's line is TOLD to the rep, by the owner's word: before he starts, and in the refusal.
-// His own reading is never shown, and the visit's line is still never put into words (Golden Rule #1).
+// 🔴 AND SINCE 2026-10-03 THE REFUSAL ALSO NAMES HIS OWN READING ("your phone gave 2,000 m") — the
+// owner's amendment to his 2026-09-29 rule, after the same rep met "only a rough one" eighteen more
+// times that evening and could not tell 2,000 m from 110 m. The visit's LINE is still never put into
+// words (Golden Rule #1): his reading is about his phone, the line is about the check on him.
 // An unknown accuracy is still taken, exactly as before.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BENHA = { lat: 30.4684684684685, lon: 31.1899555209043 };
+/** A fix carrying nothing but a pin reading — for the sentences, which read no coordinate. */
+const BARE_FIX: CapturedFix = {
+  accuracyMeters: null,
+  deviceCapturedAt: null,
+  deviceMocked: null,
+  lat: 30.4657861755584,
+  lon: 31.1863753029889,
+  photoAccuracyMeters: null,
+  photoCapturedAt: null,
+  photoLat: null,
+  photoLon: null,
+};
 const CLINIC = { lat: 30.4657861755584, lon: 31.1863753029889 };
 const TIMINGS = [{ weekday: 6, start: "17:00", end: "21:00" }];
 const DOCTOR = "0b6f7a52-3c1d-4e8f-9a2b-5c6d7e8f9a0b";
@@ -70,30 +88,35 @@ export function runPhoenixCrmAccuracyGateTests() {
   assert.equal(PLACE_MAX_ACCURACY_METERS, 100, "a place is validated only on readings within 100 m");
   assert.equal(VISIT_MAX_ACCURACY_METERS, 500, "a visit is taken on a reading within 500 m");
 
-  // ── The headline: the Benha place is refused ──────────────────────────────────
+  // ── The headline: the Benha place is refused, and the rep is TOLD her number ──
+  // Owner, 2026-10-03: "show the rep her own accuracy number on the refusal". Without it she read
+  // "only a rough one" eighteen times between 16:12 and 18:47 and could not tell 2,000 m from 110 m,
+  // so nothing she tried could be judged — by her or by the office, since a refusal is never stored.
   assert.equal(
     refusalOf(parsePlaceDraft(placeBody(2000, 2000, BENHA))),
-    ROUGH_FIX_AT_THE_PLACE,
-    "a place whose pin AND photo both read 2,000 m is refused — it was fixed for good on 3 Oct, four hospitals on one point",
+    "Validation needs an accurate location, within 100 m, and your phone gave 2,000 m. Turn on precise location for your browser; if it is already on, step outside the building and wait a few seconds, then take the photo and press Capture location again at the clinic.",
+    "her own 2,000 m is said back to her, grouped, in the sentence that refuses her",
   );
 
   // ── The place's line: 100 m, inclusive ────────────────────────────────────────
   assert.equal(refusalOf(parsePlaceDraft(placeBody(100, 100))), null, "100 m is inside the place's line");
-  assert.equal(refusalOf(parsePlaceDraft(placeBody(101, 5))), ROUGH_FIX_AT_THE_PLACE, "a pin at 101 m is outside it");
-  assert.equal(refusalOf(parsePlaceDraft(placeBody(5, 101))), ROUGH_FIX_AT_THE_PLACE, "a photo at 101 m is outside it");
-  assert.equal(refusalOf(parsePlaceDraft(placeBody(200, 5))), ROUGH_FIX_AT_THE_PLACE, "the first line he named, 200 m, is now too wide");
+  assert.match(refusalOf(parsePlaceDraft(placeBody(101, 5))) ?? "", /your phone gave 101 m/, "a pin at 101 m is outside it, and 101 is the number she reads");
+  assert.match(refusalOf(parsePlaceDraft(placeBody(5, 101))) ?? "", /your phone gave 101 m/, "a photo at 101 m is outside it, and the PHOTO's number is the one named");
+  assert.match(refusalOf(parsePlaceDraft(placeBody(200, 5))) ?? "", /your phone gave 200 m/, "the first line he named, 200 m, is now too wide");
 
   // ── BOTH readings must be accurate: neither rescues the other ─────────────────
-  assert.equal(
-    refusalOf(parsePlaceDraft(placeBody(5, 2000))),
-    ROUGH_FIX_AT_THE_PLACE,
+  // And the WIDER of the two is the number said: it is the one she has to bring down.
+  assert.match(
+    refusalOf(parsePlaceDraft(placeBody(5, 2000))) ?? "",
+    /your phone gave 2,000 m/,
     "a rough PHOTO is refused even beside a sharp pin — the system never accepts a rough photo in validation",
   );
-  assert.equal(
-    refusalOf(parsePlaceDraft(placeBody(1500, 15))),
-    ROUGH_FIX_AT_THE_PLACE,
+  assert.match(
+    refusalOf(parsePlaceDraft(placeBody(1500, 15))) ?? "",
+    /your phone gave 1,500 m/,
     "a rough PIN is refused even beside a sharp photo — the system never accepts a rough location in validation",
   );
+  assert.match(refusalOf(parsePlaceDraft(placeBody(900, 1800))) ?? "", /your phone gave 1,800 m/, "two rough readings name the wider one, never the first one looked at");
 
   const bothGood = parsePlaceDraft(placeBody(5, 15));
   assert.ok(bothGood.ok, "two accurate readings validate the place");
@@ -112,9 +135,9 @@ export function runPhoenixCrmAccuracyGateTests() {
   );
 
   // ── The visit's line: 500 m, inclusive ────────────────────────────────────────
-  assert.equal(refusalOf(parseVisitDraft(visitBody(2000))), ROUGH_FIX_FOR_A_VISIT, "the Benha 2,000 m visit is refused");
-  assert.equal(refusalOf(parseVisitDraft(visitBody(1414))), ROUGH_FIX_FOR_A_VISIT, "the 1,414 m Mahalla visit of 3 Oct is refused too");
-  assert.equal(refusalOf(parseVisitDraft(visitBody(501))), ROUGH_FIX_FOR_A_VISIT, "501 m is outside the visit's line");
+  assert.match(refusalOf(parseVisitDraft(visitBody(2000))) ?? "", /Your phone gave 2,000 m, which is too rough to log a visit\./, "the Benha 2,000 m visit is refused, in her own number");
+  assert.match(refusalOf(parseVisitDraft(visitBody(1414))) ?? "", /Your phone gave 1,414 m/, "the 1,414 m Mahalla visit of 3 Oct is refused too");
+  assert.match(refusalOf(parseVisitDraft(visitBody(501))) ?? "", /Your phone gave 501 m/, "501 m is outside the visit's line");
   assert.equal(refusalOf(parseVisitDraft(visitBody(500))), null, "500 m is inside it");
   assert.equal(refusalOf(parseVisitDraft(visitBody(300))), null, "a weak-signal visit (over the 100 m flag) still saves — flagged for the manager, never refused");
   assert.equal(refusalOf(parseVisitDraft(visitBody(4))), null);
@@ -131,11 +154,23 @@ export function runPhoenixCrmAccuracyGateTests() {
   }
   assert.match(ROUGH_FIX_AT_THE_PLACE, /take the photo and press Capture location again/, "a rough photo is retaken, not rescued by the pin");
 
-  // ── The visit's line is still never put into words (Golden Rule #1) ───────────
-  assert.match(ROUGH_FIX_FOR_A_VISIT, /Turn on precise location for your browser/);
-  for (const banned of [/check/i, /flag/i, /suspic/i, /accura/i, /distance/i, /\bfar\b/i, /manager/i, /report/i, /\d+\s*m\b/]) {
-    assert.doesNotMatch(ROUGH_FIX_FOR_A_VISIT, banned, `the visit's sentence must not hint at a check (${banned})`);
+  // ── The visit's LINE is still never put into words (Golden Rule #1) ───────────
+  // 🔴 HIS READING IS NOT THE LINE, and the two must not be confused now that one of them is said.
+  // "Your phone gave 2,000 m" is about his phone. "within 500 m" would be about the check on him — it
+  // would tell him exactly how far from the clinic he may stand, which is the whole reason the visit's
+  // line has never been printed. So the ban narrows from "no number at all" to "not THAT number".
+  for (const reading of [501, 600, 1414, 2000, 12345, null]) {
+    const sentence = reading === null ? ROUGH_FIX_FOR_A_VISIT : roughFixForAVisit({ ...BARE_FIX, accuracyMeters: reading });
+    assert.match(sentence, /Turn on precise location for your browser/, `${reading} m still names his browser`);
+    for (const banned of [/check/i, /flag/i, /suspic/i, /accura/i, /distance/i, /\bfar\b/i, /manager/i, /report/i]) {
+      assert.doesNotMatch(sentence, banned, `the visit's sentence must not hint at a check (${banned}, ${reading})`);
+    }
+    assert.doesNotMatch(sentence, new RegExp(`\\b${VISIT_MAX_ACCURACY_METERS}\\s*m\\b`), `the visit's line itself is never printed (${reading})`);
+    assert.doesNotMatch(sentence, /within \d/, `and never stated as a limit he is measured against (${reading})`);
   }
+  assert.match(roughFixForAVisit({ ...BARE_FIX, accuracyMeters: 500.4 }), /Your phone gave 500 m/, "a reading is said in whole metres, never to a decimal");
+  assert.equal(roughFixForAVisit({ ...BARE_FIX, accuracyMeters: null }), ROUGH_FIX_FOR_A_VISIT, "with no number to give, the sentence it always was");
+  assert.equal(roughFixAtThePlace({ ...BARE_FIX, accuracyMeters: null }), ROUGH_FIX_AT_THE_PLACE, "same at the place: no number, no half-written sentence");
 
   // ── The validation screen states the rule before the photo, and never his reading ─
   const editor = stripComments(readFileSync("src/components/phoenix-crm/place-editor.tsx", "utf8"));

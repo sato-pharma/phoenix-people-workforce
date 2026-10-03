@@ -17,11 +17,26 @@
  * and a dialog headed "One-time password" opens, carrying the account, the password behind a Show
  * toggle, and Send invite / Print / Close modal.
  *
+ * PROVEN in the owner's own Chrome, signed out (2026-10-03) — BOTH login pages read in one sitting:
+ *   - `login.turbify.com/login` renders `input[type="email"]` + `input[type="password"]` and ONE
+ *     `button[type="submit"]` reading "Log in to My Account"
+ *   - `mail.turbify.com/login` ("Bizmail Login") renders `input#email[name="email"][type="text"]`,
+ *     `input#password[name="password"]`, an unnamed checkbox that is "Keep me logged in.", and ONE
+ *     `button[type="submit"]` reading "Login to Business Mail"
+ *   - so BOTH are ONE-STEP forms — there is no "Next" page, and there never was
+ *
  * 🔴 NOT PROVEN, and therefore every one fails CLOSED with the wording it looked for:
  *   - the new-mailbox form's own submit button (`CREATE_SUBMIT_WORDINGS`)
  *   - whether creating a mailbox produces the same "One-time password" dialog a reset does
  *   - the mailbox's own account pages: Manage your account → Manage App Passwords → Generate
- *   - the change-password screen inside the mailbox (`CHANGE_PASSWORD_WORDINGS`)
+ *   - the label on the "Set up your mailbox password" page's checkbox, which is why nothing here
+ *     ticks it: a consent box is the owner's click, never the robot's
+ *
+ * 🔴 AND SINCE 2026-10-03 EVERY REFUSAL ON THAT PATH CARRIES THE PAGE IT WAS LOOKING AT
+ * (`describePage`). Each earlier calibration cost the owner a click that reported only which
+ * selector was missing, so one click bought one guess — and this step's proof was wrong three times
+ * in a row that way. A refusal that prints the headings, the inputs and the button wordings turns
+ * the next click into the measurement instead.
  *
  * The reason they are listed rather than guessed: a guessed selector produces a driver that clicks
  * nothing, finds nothing, and reports a clean run over mailboxes it never touched — and the register
@@ -40,7 +55,12 @@ import {
 
 import type { CreatedMailbox, JoinerConsoleDriver } from "./driver";
 import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
-import { APP_PASSWORD_PAGE, ECP_LOCATORS, ONE_TIME_PASSWORD_DIALOG, type Locator } from "@/lib/turbify/locators";
+import {
+  APP_PASSWORD_WORDINGS,
+  ECP_LOCATORS,
+  ONE_TIME_PASSWORD_DIALOG,
+  type Locator,
+} from "@/lib/turbify/locators";
 import {
   cssQueryFor,
   dialogNamesAddress,
@@ -68,11 +88,40 @@ const LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fecp.turbi
 /**
  * Where a mailbox signs in to its own account, as opposed to the admin panel.
  *
- * 🔴 Turbify REDIRECTS this to `https://mail.turbify.com/login` — the "Bizmail Login" page, which
- * is not the same page as the admin login and does not carry the same fields. See
- * `MAILBOX_EMAIL_FIELD`.
+ * 🔴 DIRECT, AND NOT THROUGH `login.turbify.com?.done=…`. That round-trip was the previous value and
+ * it is not something a selector can be calibrated against, because by the time this step runs the
+ * browser is ALREADY HOLDING THE ADMINISTRATOR'S SESSION — and `login.turbify.com/login` with a live
+ * session renders no form at all, it forwards to `.done`. Which page the mailbox sign-in landed on
+ * therefore depended on a cookie set three steps earlier.
+ *
+ * Read in the owner's own Chrome, signed out, 2026-10-03 — this URL is a ONE-STEP form:
+ *
+ *   url     : https://mail.turbify.com/login      title: Bizmail Login
+ *   heading : "Business Mail Login"
+ *   inputs  : input#email[name="email"][type="text"]        ← and ZERO input[type="email"]
+ *             input#password[name="password"][type="password"]
+ *             input[type="checkbox"]  — the "Keep me logged in." toggle, and nothing ticks it
+ *   submit  : button[type="submit"] reading "Login to Business Mail"
+ *
+ * Both fields sit on the same page, so there is no "Next" to press, and the mailbox signs in inside
+ * its OWN browser context (`openMailboxPage`) where no admin cookie can forward it anywhere.
  */
-const MAILBOX_LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fmail.turbify.com%2F";
+export const MAILBOX_LOGIN_URL = "https://mail.turbify.com/login";
+/**
+ * The submit control on either login page — the sanity check `submitOpenForm` holds the one
+ * `button[type="submit"]` against, never a wording it searches BY.
+ *
+ * Both were read off the live pages on 2026-10-03: the admin page's reads "Log in to My Account",
+ * the Bizmail page's "Login to Business Mail". Each page carries exactly one submit button.
+ */
+export const LOGIN_SUBMIT_WORDINGS = [
+  "Login to Business Mail",
+  "Log in to My Account",
+  "Login",
+  "Log in",
+  "Sign in",
+  "Next",
+] as const;
 /**
  * The email field on EITHER Turbify login page.
  *
@@ -99,6 +148,8 @@ export const MAILBOX_EMAIL_FIELD = 'input[type="email"], input[name="email"]';
  * at all, and a refused login still asks for one.
  */
 const CONFIRM_PASSWORD_FIELD = 'input[name="confirmPassword"]';
+/** The password box — on either login page, and on the setup form. */
+const PASSWORD_FIELD = 'input[type="password"]';
 /** The account list. Reloaded before each existence check, because only the first search filters. */
 const consoleUrl = `https://ecp.turbify.com/${COMPANY_MAIL_DOMAIN}`;
 
@@ -286,9 +337,16 @@ async function submitOpenForm(page: ConsolePage, wordings: readonly string[], pu
   await clickResolved(page, { kind: "text", purpose, tags: ["button"], value: texts[0] });
 }
 
-async function clickOneOf(page: ConsolePage, wordings: readonly string[], purpose: string): Promise<void> {
+async function clickOneOf(
+  page: ConsolePage,
+  wordings: readonly string[],
+  purpose: string,
+  // 🔴 A LINK IS NOT A BUTTON. The mailbox's own account pages reach `Account info` through an `<a>`,
+  // and a list restricted to `button` would have missed every candidate and blamed the wording.
+  tags: readonly string[] = ["button"],
+): Promise<void> {
   for (const wording of wordings) {
-    const locator: Locator = { kind: "text", purpose, tags: ["button"], value: wording };
+    const locator: Locator = { kind: "text", purpose, tags, value: wording };
     try {
       await clickOne(page, locator);
       return;
@@ -443,6 +501,126 @@ async function searchFor(page: ConsolePage, address: string): Promise<void> {
   await settle(1_500);
 }
 
+/**
+ * Type into a field found by CSS, CLEARING it first.
+ *
+ * `fillOne` does this for a `Locator`, which resolves by wording. A login field is identified by its
+ * type instead, so it needs the same clear-then-type without going through the resolver — and it
+ * needs it for the same reason: `type()` appends, and this driver reuses pages.
+ */
+async function fillField(page: ConsolePage, selector: string, value: string): Promise<void> {
+  const handles = await page.$$(selector);
+  const handle = handles[0];
+  if (!handle) {
+    throw new TurbifyJoinerStepError(
+      `No field matching ${selector} was on the page, so nothing was typed and the robot stopped.`,
+    );
+  }
+  await handle.evaluate<void>(clearField).catch(() => {});
+  await handle.type(value, { delay: 15 });
+}
+
+/** What a page looked like, in the only terms that cannot carry a credential. */
+export type PageShape = {
+  buttons: string[];
+  headings: string[];
+  inputs: string[];
+  title: string;
+  url: string;
+};
+
+/**
+ * Strip the secrets this run is holding out of a line of diagnostic.
+ *
+ * 🔴 DELIBERATELY NOT `redactLabel`. That one also drops every space-free token of twelve characters
+ * or more, which is the right rule for a control's NAME and exactly the wrong one here: it would
+ * redact `https://mail.turbify.com/login`, `password:confirmPassword` and the mailbox address — the
+ * three things a page description exists to show. What `describePage` reads cannot contain a
+ * credential by construction (attribute names and types, never `.value`; the path, never the query),
+ * so the known secrets are removed by exact match and nothing further is guessed at.
+ */
+/** What a removed secret is replaced with. Named, because the loop below must skip past it. */
+const REDACTED = "[redacted]";
+
+export function withoutSecrets(raw: string, secrets: readonly string[]): string {
+  let value = String(raw ?? "");
+  for (const secret of secrets) {
+    const needle = String(secret ?? "").trim();
+    // Under four characters a match is as likely to be coincidence as a leak, and replacing it would
+    // corrupt the description while protecting nothing.
+    if (needle.length < 4) continue;
+    let index = value.toLowerCase().indexOf(needle.toLowerCase());
+    while (index !== -1) {
+      value = `${value.slice(0, index)}${REDACTED}${value.slice(index + needle.length)}`;
+      // 🔴 RESUME AFTER THE MARKER, NEVER FROM 0. Searching from the start again is an INFINITE LOOP
+      // for any secret that is a substring of the marker — "redact" becomes "[redacted]", which
+      // contains "redact", for ever. The passwords here would not trigger it, but a redactor that
+      // hangs would hang a provisioning run with no output at all, which is the exact failure shape
+      // that cost four of the owner's clicks today. The loop now strictly advances.
+      index = value.toLowerCase().indexOf(needle.toLowerCase(), index + REDACTED.length);
+    }
+  }
+  return value;
+}
+
+/** Turn a page reading into one line a person can act on. */
+export function describeShape(shape: PageShape | null, secrets: readonly string[]): string {
+  if (!shape) return "the page could not be read at all.";
+  const clean = (value: string) => withoutSecrets(value, secrets);
+  return [
+    `url ${clean(shape.url)}`,
+    `title "${clean(shape.title)}"`,
+    `headings [${shape.headings.map(clean).join(" | ")}]`,
+    `inputs [${shape.inputs.map(clean).join(", ")}]`,
+    `buttons [${shape.buttons.map(clean).join(" | ")}]`,
+  ].join("; ");
+}
+
+/**
+ * Read the page the robot is standing on, well enough that one refusal replaces a probe.
+ *
+ * 🔴 THE POINT OF THIS IS THAT A REFUSAL IS A MEASUREMENT. Every calibration in this driver so far
+ * cost the owner a click that reported only which selector was missing — never what was actually on
+ * screen — so each click bought one guess. A refusal carrying the headings, the inputs (hidden ones
+ * marked, because a leftover hidden input is one of the things that fools an absence test) and the
+ * button wordings buys the answer instead.
+ *
+ * It reads NO field values and drops the query string, so a one-time password cannot ride out in the
+ * url; what is left goes through `withoutSecrets` on top of that.
+ */
+export async function describePage(page: ConsolePage, secrets: readonly string[]): Promise<string> {
+  const shape = await page
+    .evaluate<PageShape>(() => {
+      const seen = (element: Element) => element.getClientRects().length > 0;
+      const words = (element: Element) =>
+        ((element as HTMLElement).innerText || element.textContent || "").replace(/\s+/g, " ").trim();
+      return {
+        buttons: Array.from(document.querySelectorAll("button,input[type=submit]"))
+          .filter(seen)
+          .map((element) => words(element) || element.getAttribute("aria-label") || "")
+          .filter((label) => label.length > 0)
+          .slice(0, 12),
+        headings: Array.from(document.querySelectorAll("h1,h2,h3,legend"))
+          .filter(seen)
+          .map(words)
+          .filter((label) => label.length > 0)
+          .slice(0, 6),
+        // `type:name` only — never `.value`, which is where a credential would be.
+        inputs: Array.from(document.querySelectorAll("input"))
+          .map((element) => {
+            const field = element as HTMLInputElement;
+            return `${field.type}:${field.name || field.id || "-"}${seen(field) ? "" : " (hidden)"}`;
+          })
+          .slice(0, 12),
+        title: document.title || "",
+        // Path only: a query string is where a one-time password would travel.
+        url: `${location.origin}${location.pathname}`,
+      };
+    })
+    .catch(() => null);
+  return describeShape(shape, secrets);
+}
+
 export async function createTurbifyJoinerDriver(credentials: {
   username: string;
   password: string;
@@ -460,8 +638,52 @@ export async function createTurbifyJoinerDriver(credentials: {
   // to be created on 2026-10-02. `click-delivery.ts` carries the measurement.
   await page.setViewport({ ...CONSOLE_VIEWPORT }).catch(() => {});
 
-  async function signInAs(url: string, username: string, password: string, proof: () => Promise<boolean>, who: string) {
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 60_000 });
+  /**
+   * The mailbox's own browser context — its own cookie jar, its own blank page.
+   *
+   * 🔴 A MAILBOX MUST NOT SIGN IN ON THE ADMINISTRATOR'S PAGE. By the time `setMailboxPassword`
+   * runs, the admin session has been live since step one, and a Turbify login URL with a live
+   * session does not render a form at all — it forwards to `.done`. So which page the mailbox
+   * sign-in landed on depended on a cookie set three steps earlier, which is not something a
+   * selector can be calibrated against. On top of that, `type()` APPENDS (see `clearField`) and the
+   * admin page has already been typed into, so a re-entered field submits two values joined — and a
+   * login answers that by simply refusing, with nothing on screen to say why.
+   *
+   * An isolated context removes both at once: the Bizmail form is the only thing it can land on.
+   */
+  let mailboxContext: { close: () => Promise<void>; newPage: () => Promise<unknown> } | null = null;
+  let mailboxPage: ConsolePage | null = null;
+
+  async function openMailboxPage(): Promise<ConsolePage> {
+    if (mailboxPage) return mailboxPage;
+    const withContexts = browser as unknown as {
+      createBrowserContext?: () => Promise<{ close: () => Promise<void>; newPage: () => Promise<unknown> }>;
+      createIncognitoBrowserContext?: () => Promise<{ close: () => Promise<void>; newPage: () => Promise<unknown> }>;
+      newPage: () => Promise<unknown>;
+    };
+    const create = withContexts.createBrowserContext ?? withContexts.createIncognitoBrowserContext;
+    if (create) {
+      mailboxContext = await create.call(withContexts);
+      mailboxPage = (await mailboxContext.newPage()) as ConsolePage;
+    } else {
+      // A puppeteer with no browser contexts: a second page still beats reusing the admin's, because
+      // the fields are at least empty. The cookie jar is shared, so this is the weaker path.
+      mailboxPage = (await withContexts.newPage()) as ConsolePage;
+    }
+    await mailboxPage.setViewport({ ...CONSOLE_VIEWPORT }).catch(() => {});
+    return mailboxPage;
+  }
+
+  async function signInAs(
+    target: ConsolePage,
+    url: string,
+    username: string,
+    password: string,
+    proof: () => Promise<boolean>,
+    who: string,
+    secrets: readonly string[],
+  ) {
+    await target.goto(url, { waitUntil: "networkidle2", timeout: 60_000 });
     // 🔴 THERE ARE TWO DIFFERENT TURBIFY LOGIN PAGES AND THEIR EMAIL FIELDS DO NOT SHARE A SELECTOR.
     // Measured in the production container 2026-10-03, both pages read in the same run:
     //
@@ -469,40 +691,59 @@ export async function createTurbifyJoinerDriver(credentials: {
     //   mail.turbify.com   ("Bizmail Login")        input[type="email"]   → 0 matches
     //                                               input#email[name="email"][type="text"]
     //
-    // `MAILBOX_LOGIN_URL` points at login.turbify.com with `.done=mail.turbify.com`, and Turbify
-    // REDIRECTS that to https://mail.turbify.com/login — the Bizmail page. So `setMailboxPassword`
-    // sat for its full 45 seconds waiting for a field that page does not have, every time, and the
-    // adoption died there AFTER the reset had already happened. The owner's click just spun.
     // `MAILBOX_EMAIL_FIELD` matches both shapes; neither page carries the other's field, so the
     // union cannot pick up the wrong input. Pinned by `tests/new-hire-mailbox-robot.test.ts`.
-    await page.waitForSelector(MAILBOX_EMAIL_FIELD, { timeout: 45_000 });
-    await page.type(MAILBOX_EMAIL_FIELD, username, { delay: 15 });
-    const hasPassword = (await page.$$('input[type="password"]')).length > 0;
+    await target.waitForSelector(MAILBOX_EMAIL_FIELD, { timeout: 45_000 });
+    // 🔴 CLEARED BEFORE TYPING, both fields. `type()` appends, and this step can run on a page that
+    // has been used — see `clearField` for the 54-character two-addresses-joined measurement.
+    await fillField(target, MAILBOX_EMAIL_FIELD, username);
+    const hasPassword = (await target.$$(PASSWORD_FIELD)).length > 0;
     if (!hasPassword) {
-      await page.click('button[type="submit"]').catch(() => {});
-      await page.waitForSelector('input[type="password"]', { timeout: 20_000 }).catch(() => {});
+      // A two-step login. NEITHER Turbify page is one (both carry the password box on the same page,
+      // read 2026-10-03), so this branch is dead today and kept only so a change to that is survived
+      // rather than mistaken for bad credentials.
+      await submitOpenForm(target, LOGIN_SUBMIT_WORDINGS, `continue button on the sign-in page for ${who}`).catch(() => {});
+      await target.waitForSelector(PASSWORD_FIELD, { timeout: 20_000 }).catch(() => {});
     }
-    await page.type('input[type="password"]', password, { delay: 15 });
-    await page.click('button[type="submit"]');
+    await fillField(target, PASSWORD_FIELD, password);
+    // 🔴 THE SUBMIT GOES THROUGH THE HIT-TESTED PATH NOW, like every other click in this driver. Until
+    // 2026-10-03 it was a bare `page.click('button[type="submit"]')` — the one control in the whole
+    // file still delivered blind — and a blind click is exactly what Turbify's fixed cookie banner ate
+    // on 2026-10-02 (`click-delivery.ts`, incident one). The failure it produces is the cruel one: the
+    // form is simply still there afterwards, which every downstream check reads as "refused".
+    await submitOpenForm(target, LOGIN_SUBMIT_WORDINGS, `sign-in button for ${who}`);
     await settle(6_000);
     // 🔴 Two-step verification must stay OFF on the accounts the robot uses: Turbify only sends the
     // code to a phone or an email, so there is nothing a server can answer. Fail loudly, never stall.
-    if (page.url().includes("/tfavalidate")) {
+    if (target.url().includes("/tfavalidate")) {
       throw new TurbifyJoinerStepError(
         `Turbify asked ${who} for two-step verification, which the robot cannot answer. Two-step must be `
         + "turned off on this login (My Profile → Security and Privacy → Turn off two-step verification).",
       );
     }
     if (!(await proof())) {
+      // 🔴 THE REFUSAL CARRIES THE PAGE IT WAS LOOKING AT. This one proof has now been wrong three
+      // times — twice reading the address bar, once reading the absence of a field — and each wrong
+      // answer cost the owner a click that told nobody anything. Whatever page this turns out to be,
+      // it is described here, so the next click produces a measurement instead of another guess.
       throw new TurbifyJoinerStepError(
-        `Signed in as ${who} but the expected page never appeared, so the robot stopped rather than act on an unknown page.`,
+        `Signed in as ${who} but the expected page never appeared, so the robot stopped rather than act `
+        + `on an unknown page. The page it was on — ${await describePage(target, secrets)}`,
       );
     }
   }
 
   return {
     async signIn() {
-      await signInAs(LOGIN_URL, credentials.username, credentials.password, async () => page.url().includes("ecp.turbify.com"), "the administrator");
+      await signInAs(
+        page,
+        LOGIN_URL,
+        credentials.username,
+        credentials.password,
+        async () => page.url().includes("ecp.turbify.com"),
+        "the administrator",
+        [credentials.password],
+      );
     },
 
     async createMailbox({ displayName, local }): Promise<CreatedMailbox> {
@@ -590,45 +831,108 @@ export async function createTurbifyJoinerDriver(credentials: {
     },
 
     async setMailboxPassword({ address, newPassword, oneTimePassword }) {
-      // 🔴 THE PROOF READS THE FORM, NEVER THE ADDRESS BAR — see `CONFIRM_PASSWORD_FIELD` for the
-      // measurement. A good one-time password lands on "Set up your mailbox password", served at the
-      // SAME url and title as the form it came from, so both URL-shaped proofs this step has carried
-      // were wrong: one accepted a refusal, the next rejected a success. The address field is the
-      // discriminator — the setup page has none, a refused login still asks for one.
-      const signedIn = async () => (await page.$$(MAILBOX_EMAIL_FIELD)).length === 0;
-      await signInAs(MAILBOX_LOGIN_URL, address, oneTimePassword, signedIn, address);
+      const mailbox = await openMailboxPage();
+      const secrets = [oneTimePassword, newPassword, credentials.password];
+      // 🔴 THE PROOF IS POSITIVE NOW: it names the page it found rather than the thing it did not.
+      // Three wrong answers came out of asking indirectly — `!url.includes("login.turbify.com")`
+      // accepted a refusal, the `/login` path test rejected a SUCCESS, and the absence of an address
+      // field rejected one too. An absence has a dozen causes (a leftover hidden input, a form that
+      // never submitted because something covered the button, a redirect part-way); the setup form's
+      // own confirm field has exactly one.
+      const onSetupPage = async () => (await mailbox.$$(CONFIRM_PASSWORD_FIELD)).length > 0;
+      // Signed in somewhere that is not a login form: no VISIBLE address box. Visibility matters —
+      // `$$` finds hidden inputs, and a hidden `name="email"` left in the DOM reads as a login form.
+      const pastTheLoginForm = async () =>
+        (await mailbox
+          .$$eval<number>(MAILBOX_EMAIL_FIELD, (elements) =>
+            elements.filter((element) => element.getClientRects().length > 0).length,
+          )
+          .catch(() => 1)) === 0;
+      await signInAs(
+        mailbox,
+        MAILBOX_LOGIN_URL,
+        address,
+        oneTimePassword,
+        async () => (await onSetupPage()) || (await pastTheLoginForm()),
+        address,
+        secrets,
+      );
       // Turbify forces a setup screen on a one-time password — measured as two password fields,
       // `password` and `confirmPassword`. Where that screen is absent the account pages carry the
       // change instead, so the confirm field is a positive signal and not a requirement.
-      const onTheSetupScreen = (await page.$$(CONFIRM_PASSWORD_FIELD)).length > 0;
-      const changeField = await page.$$('input[type="password"]');
-      if (!onTheSetupScreen && changeField.length === 0) {
-        await clickOne(page, APP_PASSWORD_PAGE.manageAccount);
+      if (!(await onSetupPage()) && (await mailbox.$$(PASSWORD_FIELD)).length === 0) {
+        await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.accountInfo, "the mailbox's account pages", ["a", "button"]);
         await settle(3_000);
       }
-      const fields = await page.$$('input[type="password"]');
+      const fields = await mailbox.$$(PASSWORD_FIELD);
       if (fields.length === 0) {
         throw new TurbifyJoinerStepError(
-          `No password field was found while setting the password for ${address}. The mailbox exists on its one-time password; the robot stopped.`,
+          `No password field was found while setting the password for ${address}. The mailbox exists on `
+          + `its one-time password; the robot stopped. The page it was on — ${await describePage(mailbox, secrets)}`,
         );
       }
       // Every password box on a change form takes the new value: Turbify asks for it twice, and the
-      // current one is already satisfied by having just signed in with it.
-      for (const field of fields) await field.type(newPassword, { delay: 15 });
-      await clickOneOf(page, CHANGE_PASSWORD_WORDINGS, "save button on the change-password screen");
+      // current one is already satisfied by having just signed in with it. Cleared first, because
+      // `type()` appends and a pre-filled box would submit the value twice over.
+      for (const field of fields) {
+        await field.evaluate<void>(clearField).catch(() => {});
+        await field.type(newPassword, { delay: 15 });
+      }
+      // 🔴 NOTHING HERE TICKS THE SETUP PAGE'S CHECKBOX, and that is deliberate. The page carries one
+      // unnamed checkbox; on the login form the same shape turned out to be "Keep me logged in.", but
+      // on the setup form its label has not been read by anyone. A box that proves to be a consent or
+      // terms box is the owner's to tick and never the robot's — so the form is submitted as it
+      // stands, and if it does not move the refusal below prints the checkbox for him to act on.
+      //
+      // `submitOpenForm` is tried first because identifying the submit by `type="submit"` is what
+      // stopped this driver pressing "Add alias"; `clickOneOf` remains the fallback for a setup page
+      // whose control is a plain `button`, which has not been read either way.
+      await submitOpenForm(mailbox, CHANGE_PASSWORD_WORDINGS, "save button on the change-password screen")
+        .catch(() => clickOneOf(mailbox, CHANGE_PASSWORD_WORDINGS, "save button on the change-password screen"));
       await settle(4_000);
+      if (await onSetupPage()) {
+        throw new TurbifyJoinerStepError(
+          `The password form for ${address} was filled and submitted but is still on screen, so the new `
+          + `password was not accepted. The page it was on — ${await describePage(mailbox, secrets)}`,
+        );
+      }
       return "done";
     },
 
     async generateAppPassword({ address, password }) {
-      await clickOne(page, APP_PASSWORD_PAGE.manageAccount).catch(() => {});
+      // 🔴 THE MAILBOX'S OWN PAGE, not the admin's. This step is only reachable while signed in as
+      // the mailbox, and since 2026-10-03 that sign-in happens in an isolated context — so reading
+      // `page` here would be reading the administrator's console.
+      const mailbox = await openMailboxPage();
+      const secrets = [password, credentials.password];
+      // 🔴 THESE THREE LOCATORS ARE THE LAST UNCALIBRATED STEP IN THE WHOLE CHAIN — nobody has stood
+      // on a Turbify mailbox's own account pages, so "Manage your account", "Manage App Passwords"
+      // and "Generate" are wordings taken from the documentation, not read off the live page. Each
+      // refusal therefore carries the page, so the first click that reaches here settles all three
+      // instead of buying one more guess.
+      const reading = async () => describePage(mailbox, secrets);
+      const named = async (step: string, error: unknown) =>
+        new TurbifyJoinerStepError(
+          `${error instanceof Error ? error.message : String(error)} (${step}, for ${address}) `
+          + `The page it was on — ${await reading()}`,
+        );
+      const LINK_OR_BUTTON = ["a", "button"] as const;
+      // Tolerated: on a page that already shows App Passwords there is nothing to open.
+      await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.accountInfo, "the mailbox's account pages", LINK_OR_BUTTON)
+        .catch(() => {});
       await settle(2_000);
-      await clickOne(page, APP_PASSWORD_PAGE.manageAppPasswords);
+      await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.appPasswords, "the App Passwords section", LINK_OR_BUTTON)
+        .catch(async (error) => {
+          throw await named("opening the App Passwords section", error);
+        });
       await settle(2_500);
-      await clickOne(page, APP_PASSWORD_PAGE.generate);
+      await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.generate, "the button that mints a new app password", LINK_OR_BUTTON)
+        .catch(async (error) => {
+          throw await named("pressing the button that mints an app password", error);
+        });
       await settle(3_500);
 
-      const appPassword = await page.evaluate<string>(`(() => {
+      const appPassword = await mailbox.evaluate<string>(`(() => {
         const text = document.body ? document.body.innerText : "";
         const lines = text.split("\\n").map((l) => l.trim()).filter(Boolean);
         // An app password is a run of letters, often in groups. Take the longest space-free line.
@@ -639,8 +943,9 @@ export async function createTurbifyJoinerDriver(credentials: {
 
       if (!appPassword) {
         throw new TurbifyJoinerStepError(
-          `No app password could be read after pressing ${APP_PASSWORD_PAGE.generate.value} for ${address}. `
-          + "The mailbox is usable but Phoenix has no access to it, so this run is reported, not recorded as connected.",
+          `No app password could be read after pressing ${APP_PASSWORD_WORDINGS.generate.join(" / ")} for ${address}. `
+          + "The mailbox is usable but Phoenix has no access to it, so this run is reported, not recorded as connected. "
+          + `The page it was on — ${await reading()}`,
         );
       }
 
@@ -655,7 +960,7 @@ export async function createTurbifyJoinerDriver(credentials: {
       // swallowed: a diagnostic must never fail a provisioning run that has otherwise succeeded.
       if (controlReportEnabled()) {
         try {
-          const observed = await page.evaluate<ObservedControl[]>(CONTROL_READ_EXPRESSION);
+          const observed = await mailbox.evaluate<ObservedControl[]>(CONTROL_READ_EXPRESSION);
           const report = buildControlReport("app-passwords", observed ?? [], [appPassword, password]);
           logInfo("Turbify control report", {
             labels: {
@@ -675,6 +980,9 @@ export async function createTurbifyJoinerDriver(credentials: {
     },
 
     async close() {
+      // The mailbox's isolated context goes first, so its cookie jar is disposed even if the browser
+      // itself resists closing.
+      await mailboxContext?.close().catch(() => {});
       await (browser as unknown as { close: () => Promise<void> }).close().catch(() => {});
     },
   };
