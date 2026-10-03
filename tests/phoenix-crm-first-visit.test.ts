@@ -172,7 +172,11 @@ export function runPhoenixCrmFirstVisitTests() {
   {
     const [delivery] = firstVisitDeliveries(notice(REP1, "B-7", "Dr Hani Farouk"), NAMES, SFE);
     assert.equal(delivery.title, "First Phoenix CRM visit: Aya Ibrahim", "the title names the rep, as his example does");
-    assert.match(delivery.message, /^Aya Ibrahim submitted a first visit on Phoenix CRM: Dr Hani Farouk, /, "the rep's name and the account's name");
+    assert.match(
+      delivery.message,
+      /^Aya Ibrahim submitted a first visit on Phoenix CRM: ⁨Dr Hani Farouk⁩, /,
+      "the rep's name and the account's name, the account's name bidi-isolated",
+    );
     assert.match(delivery.message, /Tanta/, "and his territory");
     // The time the visit was submitted in — Cairo local, from the SERVER's stamp, never the phone's.
     assert.equal(formatPhoenixDateTime(CAPTURED_AT), "7:42 PM, Saturday, 3 October 2026");
@@ -183,6 +187,29 @@ export function runPhoenixCrmFirstVisitTests() {
     // A rep with no employee row still produces a sendable notice rather than an empty name.
     const [unnamed] = firstVisitDeliveries(notice(REP1, "B-7"), new Map(), SFE);
     assert.match(unnamed.title, /^First Phoenix CRM visit: A rep$/);
+  }
+
+  {
+    // 🔴 THE ARABIC CUSTOMER NAME IS BIDI-ISOLATED (owner, 2026-10-03). Every Phoenix CRM customer name
+    // is Arabic — all twelve sampled on one real production seat — so this one sentence always mixes an
+    // RTL run into LTR text, and the neutral punctuation beside it can display on the wrong side.
+    const arabic = "احمد زهران";
+    const [delivery] = firstVisitDeliveries(notice(REP1, "B-7", arabic), NAMES, SFE);
+    assert.match(delivery.message, new RegExp(`: ⁨${arabic}⁩, Tanta`), "the name is wrapped in FSI … PDI, and nothing else on the line is");
+    assert.equal((delivery.message.match(/⁨/g) ?? []).length, 1, "exactly one isolate opens");
+    assert.equal((delivery.message.match(/⁩/g) ?? []).length, 1, "and exactly one closes it");
+    // The marks go around the NAME, never around the whole line — that is the granularity the whole fix
+    // is about, and `renderEmailParagraphs` already does the per-line half.
+    assert.equal(delivery.message.startsWith("⁨"), false, "the line itself is not isolated here");
+    assert.equal(delivery.message.endsWith("⁩"), false);
+    // Stripping the marks leaves exactly the sentence that shipped before them, so the WORDING is
+    // unchanged and only the direction handling moved.
+    assert.equal(
+      delivery.message.replace(/[⁨⁩]/g, ""),
+      `Aya Ibrahim submitted a first visit on Phoenix CRM: ${arabic}, Tanta · Pedia, at 7:42 PM, Saturday, 3 October 2026 (Cairo). It is the first visit this rep has submitted on the module — nothing waits on you.`,
+    );
+    // The title carries no isolate: it names the rep, never the customer.
+    assert.doesNotMatch(delivery.title, /[⁨⁩]/, "the subject line has no customer name to isolate");
   }
 
   // ── 4 · ONE per rep, ever ────────────────────────────────────────────────────────────────────

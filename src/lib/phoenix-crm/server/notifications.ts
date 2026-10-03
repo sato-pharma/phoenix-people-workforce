@@ -61,6 +61,7 @@
  * Never throws: a notice that cannot be delivered must not undo a saved decision.
  */
 
+import { bidiIsolate } from "@/emails/bidi";
 import { formatPhoenixDateTime, formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
 import { phoenixCrmChannels } from "@/lib/notifications/phoenix-crm-channel-guard";
 import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
@@ -442,8 +443,23 @@ export function firstVisitDeliveries(
       recipients,
       eventType: "first_visit_submitted",
       title: `First Phoenix CRM visit: ${rep}`,
+      /**
+       * 🔴 THE CUSTOMER'S NAME IS BIDI-ISOLATED, AND IT IS THE ONLY PART OF THIS LINE THAT NEEDS IT
+       * (owner, 2026-10-03). Every Phoenix CRM customer name is ARABIC — all twelve sampled on one real
+       * seat — so this one sentence mixes an RTL run into LTR text, and the neutral punctuation beside
+       * it then resolves to the paragraph's direction and can display on the wrong side of the name.
+       *
+       * `renderEmailParagraphs` already isolates each LINE, which is right for a single-language line
+       * and does nothing for a run INSIDE one — the granularity the bilingual-bodies rule is about. So
+       * the isolate goes where the name is interpolated, which is also the only place that knows which
+       * substring is the name. The resulting nested isolate is legal and intended.
+       *
+       * Applied BEFORE HTML-escaping, deliberately, although `bidiIsolate` is documented for after it:
+       * FSI and PDI are untouched by escaping, and this string is not HTML — it is the one message the
+       * bell, Telegram and the phone show too, and all three have the same mixed-direction problem.
+       */
       message:
-        `${rep} submitted a first visit on Phoenix CRM: ${notice.customerName}, ${territory}, ` +
+        `${rep} submitted a first visit on Phoenix CRM: ${bidiIsolate(notice.customerName)}, ${territory}, ` +
         `at ${formatPhoenixDateTime(notice.capturedAt)} (Cairo). ` +
         `It is the first visit this rep has submitted on the module — nothing waits on you.`,
       tab: "team",
