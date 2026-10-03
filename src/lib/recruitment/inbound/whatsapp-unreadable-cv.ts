@@ -48,6 +48,8 @@
 import { logError } from "@/lib/observability/log";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { notifyInboundWhatsAppUnreadableCv } from "@/lib/recruitment/inbound/recruitment-notify";
+import { resolveAutoReply, type AutoReplyOverrides } from "@/lib/recruitment/inbound/whatsapp-auto-replies";
+import { loadAutoReplyOverrides } from "@/lib/recruitment/inbound/whatsapp-auto-replies-store";
 import { sendWhatsAppText } from "@/lib/recruitment/inbound/whatsapp-interactive";
 import { isWhatsAppImportSender } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
 import { textOnlySenderLabel, TEXT_ONLY_WINDOW_MS } from "@/lib/recruitment/inbound/whatsapp-text-only-applicant";
@@ -125,19 +127,42 @@ export function isUnreadableCvReplyEnabled(): boolean {
  *
  * Arabic first — the adverts run in Arabic and the applicants write in Arabic.
  */
-export function unreadableCvReplyText(cause: UnreadableCvCause, maxBytes = 15 * 1024 * 1024): string {
+export function unreadableCvReplyText(
+  cause: UnreadableCvCause,
+  maxBytes = DEFAULT_MAX_CV_BYTES,
+  overrides?: AutoReplyOverrides | null,
+): string {
+  // Derived, never written down twice: the ceiling is env-overridable
+  // (RECRUITMENT_INBOUND_CV_MAX_BYTES), and a message quoting a number the system no longer
+  // enforces sends people away to shrink a file that would have been accepted. The owner's own
+  // wording is filled through this SAME token, which is why {maxMb} is required of an override and
+  // not merely offered — see AUTO_REPLY_REQUIRED_TOKENS.
+  const maxMb = Math.max(1, Math.floor(maxBytes / (1024 * 1024)));
+  return resolveAutoReply({
+    fallback: unreadableCvReplyDefault(cause),
+    key: cause === "too_large" ? "unreadable_too_large" : "unreadable_photo",
+    overrides,
+    tokens: { maxMb },
+  });
+}
+
+/** The default ceiling, named so the signature above and the screen can agree on one number. */
+export const DEFAULT_MAX_CV_BYTES = 15 * 1024 * 1024;
+
+/**
+ * The wording in code, with {maxMb} still a token — the fallback when nobody has reworded it, and
+ * what the Screening Questions screen seeds its box with. Never copied into the database, so
+ * improving it here still reaches every message nobody has touched.
+ */
+export function unreadableCvReplyDefault(cause: UnreadableCvCause): string {
   if (cause === "too_large") {
-    // Derived, never written down twice: the ceiling is env-overridable
-    // (RECRUITMENT_INBOUND_CV_MAX_BYTES), and a message quoting a number the system no longer
-    // enforces sends people away to shrink a file that would have been accepted.
-    const maxMb = Math.max(1, Math.floor(maxBytes / (1024 * 1024)));
     return [
       "‏شكراً لإرسالك السيرة الذاتية 🌟",
       "‏لكن حجم الملف كبير جداً ولم نستطع فتحه.",
-      `‏من فضلك أرسله مرة أخرى بحجم أصغر (أقل من ${maxMb} ميجابايت) كملف PDF أو Word.`,
+      "‏من فضلك أرسله مرة أخرى بحجم أصغر (أقل من {maxMb} ميجابايت) كملف PDF أو Word.",
       "",
       "Thanks for sending your CV.",
-      `The file was too large for us to open — please send it again under ${maxMb} MB, as a PDF or Word file.`,
+      "The file was too large for us to open — please send it again under {maxMb} MB, as a PDF or Word file.",
     ].join("\n");
   }
   return [
@@ -187,7 +212,10 @@ export async function askForCvAsFile(input: {
 }): Promise<boolean> {
   const result = await sendWhatsAppText({
     phoneNumberId: input.phoneNumberId,
-    text: unreadableCvReplyText(input.cause, input.maxBytes),
+    // The owner's wording if he has saved one, else the default. Loaded at send time so a rewording
+    // reaches the very next applicant; the store swallows its own failures, so this costs the words
+    // at worst and never the reply.
+    text: unreadableCvReplyText(input.cause, input.maxBytes, await loadAutoReplyOverrides()),
     toWaId: input.waId,
   }).catch((error) => {
     logError("WhatsApp unreadable-CV reply threw", {

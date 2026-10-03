@@ -37,6 +37,8 @@
 import { logError } from "@/lib/observability/log";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { notifyInboundWhatsAppTextOnly } from "@/lib/recruitment/inbound/recruitment-notify";
+import { resolveAutoReply, type AutoReplyOverrides } from "@/lib/recruitment/inbound/whatsapp-auto-replies";
+import { loadAutoReplyOverrides } from "@/lib/recruitment/inbound/whatsapp-auto-replies-store";
 import { sendWhatsAppText } from "@/lib/recruitment/inbound/whatsapp-interactive";
 import { isWhatsAppImportSender } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
 
@@ -248,7 +250,25 @@ export function classifyTextOnlyEnquiry(body: string | null | undefined): TextOn
  * hiring is per-area, and that a human sends the specifics. If a real vacancy feed ever lands in
  * `ats_requisitions`, this is the function that should read it.
  */
-export function textOnlyReplyText(enquiry: TextOnlyEnquiry = "plain"): string {
+export function textOnlyReplyText(
+  enquiry: TextOnlyEnquiry = "plain",
+  overrides?: AutoReplyOverrides | null,
+): string {
+  return resolveAutoReply({
+    fallback: textOnlyReplyDefault(enquiry),
+    key: enquiry === "asked_about_the_job" ? "text_only_job_enquiry" : "text_only_plain",
+    overrides,
+  });
+}
+
+/**
+ * The wording in code — what is sent until the owner rewords it on the Screening Questions screen,
+ * and what that screen seeds its box with.
+ *
+ * Kept as the FALLBACK rather than copied into the database, so improving it here still reaches
+ * every message nobody has reworded, and "reset to default" can be a row delete.
+ */
+export function textOnlyReplyDefault(enquiry: TextOnlyEnquiry = "plain"): string {
   // The ⚠️ line is identical in both variants on purpose: it is the one instruction that recovers a
   // photographed CV, and it must not vary with how the question was phrased.
   const cannotBeProcessed = "‏⚠️ الصورة الفوتوغرافية أو الرسالة المكتوبة لا يمكن معالجتها.";
@@ -398,7 +418,10 @@ export async function askForCvFile(input: {
   const result = await sendWhatsAppText({
     phoneNumberId: input.phoneNumberId,
     logContext: { detail: { enquiry: classifyTextOnlyEnquiry(input.body) }, inboundWamid: input.inboundWamid ?? null },
-    text: textOnlyReplyText(classifyTextOnlyEnquiry(input.body)),
+    // The owner's own wording when he has saved one, else the default above. Loaded here rather than
+    // at module load so a rewording reaches the very next applicant, and best-effort inside the
+    // store — a database hiccup must cost the words, never the reply.
+    text: textOnlyReplyText(classifyTextOnlyEnquiry(input.body), await loadAutoReplyOverrides()),
     toWaId: input.waId,
   }).catch((error) => {
     logError("WhatsApp text-only reply threw", {
