@@ -65,8 +65,30 @@ import {
 import { COMPANY_MAIL_DOMAIN } from "./safety";
 
 const LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fecp.turbify.com%2F";
-/** Where a mailbox signs in to its own account, as opposed to the admin panel. */
+/**
+ * Where a mailbox signs in to its own account, as opposed to the admin panel.
+ *
+ * 🔴 Turbify REDIRECTS this to `https://mail.turbify.com/login` — the "Bizmail Login" page, which
+ * is not the same page as the admin login and does not carry the same fields. See
+ * `MAILBOX_EMAIL_FIELD`.
+ */
 const MAILBOX_LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fmail.turbify.com%2F";
+/**
+ * The email field on EITHER Turbify login page.
+ *
+ * Measured in the production container 2026-10-03: the admin page renders `input[type="email"]`,
+ * the Bizmail page renders `input#email[name="email"][type="text"]` and **zero** `type="email"`
+ * inputs. Exported so a test can assert the union, rather than a session re-deriving it from a
+ * page that is no longer in front of anyone.
+ */
+export const MAILBOX_EMAIL_FIELD = 'input[type="email"], input[name="email"]';
+/**
+ * A URL that is still ON a login page, whichever of the two it is.
+ *
+ * The question a sign-in proof must ask is "did we leave the form?", never "which host is this?".
+ * Both login pages end in `/login`; every page past one does not.
+ */
+export const LOGIN_PAGE_URL = /\/login(?:[/?#]|$)/;
 /** The account list. Reloaded before each existence check, because only the first search filters. */
 const consoleUrl = `https://ecp.turbify.com/${COMPANY_MAIL_DOMAIN}`;
 
@@ -412,8 +434,21 @@ export async function createTurbifyJoinerDriver(credentials: {
 
   async function signInAs(url: string, username: string, password: string, proof: () => Promise<boolean>, who: string) {
     await page.goto(url, { waitUntil: "networkidle2", timeout: 60_000 });
-    await page.waitForSelector('input[type="email"]', { timeout: 45_000 });
-    await page.type('input[type="email"]', username, { delay: 15 });
+    // 🔴 THERE ARE TWO DIFFERENT TURBIFY LOGIN PAGES AND THEIR EMAIL FIELDS DO NOT SHARE A SELECTOR.
+    // Measured in the production container 2026-10-03, both pages read in the same run:
+    //
+    //   login.turbify.com  ("Turbify Login Page")   input[type="email"]   → 1 match
+    //   mail.turbify.com   ("Bizmail Login")        input[type="email"]   → 0 matches
+    //                                               input#email[name="email"][type="text"]
+    //
+    // `MAILBOX_LOGIN_URL` points at login.turbify.com with `.done=mail.turbify.com`, and Turbify
+    // REDIRECTS that to https://mail.turbify.com/login — the Bizmail page. So `setMailboxPassword`
+    // sat for its full 45 seconds waiting for a field that page does not have, every time, and the
+    // adoption died there AFTER the reset had already happened. The owner's click just spun.
+    // `MAILBOX_EMAIL_FIELD` matches both shapes; neither page carries the other's field, so the
+    // union cannot pick up the wrong input. Pinned by `tests/new-hire-mailbox-robot.test.ts`.
+    await page.waitForSelector(MAILBOX_EMAIL_FIELD, { timeout: 45_000 });
+    await page.type(MAILBOX_EMAIL_FIELD, username, { delay: 15 });
     const hasPassword = (await page.$$('input[type="password"]')).length > 0;
     if (!hasPassword) {
       await page.click('button[type="submit"]').catch(() => {});
@@ -527,7 +562,13 @@ export async function createTurbifyJoinerDriver(credentials: {
     },
 
     async setMailboxPassword({ address, newPassword, oneTimePassword }) {
-      await signInAs(MAILBOX_LOGIN_URL, address, oneTimePassword, async () => !page.url().includes("login.turbify.com"), address);
+      // 🔴 THE PROOF ASKS WHETHER WE LEFT THE LOGIN PAGE, NOT WHICH HOST WE ARE ON. It used to read
+      // `!url.includes("login.turbify.com")` — and the page this sign-in actually lands on is
+      // `https://mail.turbify.com/login`, which does NOT contain that string. So a REFUSED login,
+      // still sitting on the form, satisfied the proof and the robot carried on as though signed in
+      // (measured 2026-10-03, the same run that found the selector). A wrong one-time password would
+      // have been reported as a successful sign-in and failed later somewhere innocent-looking.
+      await signInAs(MAILBOX_LOGIN_URL, address, oneTimePassword, async () => !LOGIN_PAGE_URL.test(page.url()), address);
       // Turbify forces a change on first sign-in; where it does not, the account pages carry it.
       const changeField = await page.$$('input[type="password"]');
       if (changeField.length === 0) {

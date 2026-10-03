@@ -17,6 +17,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+import {
+  LOGIN_PAGE_URL,
+  MAILBOX_EMAIL_FIELD,
+} from "../src/lib/new-hire-mailbox/robot/turbify-joiner.ts";
 import {
   APP_PASSWORD_PAGE,
   ECP_LOCATORS,
@@ -172,6 +177,71 @@ function runExistenceReadingCases(): void {
   assert.equal(readRowStatus("Pending"), "pending");
   assert.equal(readRowStatus("Active"), "active");
   assert.equal(readRowStatus(undefined), "unknown");
+}
+
+/**
+ * THE TWO TURBIFY LOGIN PAGES.
+ *
+ * `MAILBOX_LOGIN_URL` is a login.turbify.com URL with `.done=mail.turbify.com`, and Turbify
+ * redirects it to `https://mail.turbify.com/login` — the "Bizmail Login" page. Measured in the
+ * production container 2026-10-03, both pages read in one run:
+ *
+ *   login.turbify.com   input[type="email"] → 1
+ *   mail.turbify.com    input[type="email"] → 0, and input#email[name="email"][type="text"]
+ *
+ * Two defects came out of that one reading, and both had already reached the owner:
+ *
+ *   1. `setMailboxPassword` waited 45s for `input[type="email"]` on a page that has none, so the
+ *      adoption always died there — AFTER the reset, leaving a one-time password outstanding. His
+ *      click just span, twice.
+ *   2. The sign-in proof read `!url.includes("login.turbify.com")`, and the page it lands on is
+ *      `mail.turbify.com/login` — so a REFUSED login satisfied the proof. A wrong one-time password
+ *      would have been reported as a successful sign-in.
+ */
+function runMailboxLoginCases(): void {
+  // The proof must ask "did we leave the form?", which is the defect that could pass silently.
+  for (const stillOnTheForm of [
+    "https://mail.turbify.com/login",
+    "https://mail.turbify.com/login?err=1",
+    "https://login.turbify.com/login?.done=https%3A%2F%2Fmail.turbify.com%2F",
+  ]) {
+    assert.equal(
+      LOGIN_PAGE_URL.test(stillOnTheForm), true,
+      `${stillOnTheForm} is still the login form — a sign-in proof must not accept it`,
+    );
+  }
+  for (const pastTheForm of [
+    "https://mail.turbify.com/",
+    "https://mail.turbify.com/d/folders/1",
+    "https://ecp.turbify.com/satopharma.com",
+  ]) {
+    assert.equal(
+      LOGIN_PAGE_URL.test(pastTheForm), false,
+      `${pastTheForm} is past the login form, so the proof must accept it`,
+    );
+  }
+
+  // The email field must be looked for in BOTH shapes. Neither page carries the other's field, so
+  // the union cannot select the wrong input on either one.
+  assert.match(MAILBOX_EMAIL_FIELD, /input\[type="email"\]/, "the admin login's field must be covered");
+  assert.match(MAILBOX_EMAIL_FIELD, /input\[name="email"\]/, "the Bizmail login's field must be covered");
+
+  const driver = stripComments(
+    readFileSync(
+      new URL("src/lib/new-hire-mailbox/robot/turbify-joiner.ts", new URL("../", import.meta.url)),
+      "utf8",
+    ),
+  ).replace(/\s+/g, " ");
+  // 🔴 THE REGRESSION ITSELF: waiting on the bare selector. It cost the owner two dead clicks and
+  // two outstanding one-time passwords on a mailbox Phoenix needs to read.
+  assert.equal(
+    /waitForSelector\('input\[type="email"\]'/.test(driver), false,
+    "the sign-in must wait on MAILBOX_EMAIL_FIELD, never on the admin page's field alone",
+  );
+  assert.equal(
+    /includes\("login\.turbify\.com"\)/.test(driver), false,
+    "a sign-in proof must not be a host check — mail.turbify.com/login passes one while refused",
+  );
 }
 
 /** The driver must ask the DOM for rows, and reload first — only the first search filters. */
@@ -332,6 +402,7 @@ function runRowReaderCases(): void {
 export async function runNewHireMailboxRobotTests(): Promise<void> {
   runExistenceReadingCases();
   runExistenceWiringCases();
+  runMailboxLoginCases();
   // ── the happy path, so every refusal below is attributable to the one thing it changed ───────
   const ok = verdict();
   assert.equal(ok.allowed, true);
