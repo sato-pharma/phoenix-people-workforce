@@ -96,7 +96,15 @@ import { recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings"
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
-import { doctorListType, isPharmacyListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import {
+  addedPharmacyNameProblem,
+  doctorListType,
+  isPharmacyListType,
+  matchAddedPharmacy,
+  parseListType,
+  PHARMACY_LIST_TYPE,
+  type ListedPharmacy,
+} from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { parseTimings, sortTimings } from "@/lib/phoenix-crm/timings";
 import { isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 import type {
@@ -565,6 +573,24 @@ export async function loadMonthVisitCounts(seatId: string, isTest: boolean, mont
 /** The key a free-typed pharmacy name is grouped by — the same normalization the visit form suggests with. */
 export function normalizePharmacyName(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * Every pharmacy on the seat's list, the Archive included — a match needs to know what he dropped. The
+ * doctor's box (`linkNamedPharmacies`) and Add a pharmacy (`matchAddedPharmacy`) both read it.
+ */
+export async function loadListedPharmacies(seatId: string, isTest: boolean): Promise<ListedPharmacy[]> {
+  const rows = await fetchAllRowsKeyset<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_customers")
+        .select("id, name, status")
+        .eq("seat_id", seatId)
+        .eq("is_test", isTest)
+        .eq("list_type", PHARMACY_LIST_TYPE),
+    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+  );
+  return rows.map((row) => ({ customerId: String(row.id), name: String(row.name ?? ""), status: String(row.status ?? "") }));
 }
 
 /** At most this many pharmacies are shown per doctor, most-recent first. */
@@ -1544,6 +1570,43 @@ export async function setPrimaryPharmacy(
     },
   });
   return { customerId: String(result.customer_id), primaryPharmacyName: text(result.primary_pharmacy_name) };
+}
+
+/**
+ * Add a pharmacy to his own list by its name (owner, 2026-10-03 — pharmacy-call-rules.ts rule 3d): no
+ * photo, no location, no hours, no request and no approval. The territory's rep only (the Super Admin in
+ * test mode), from the List or from Add visit → Pharmacy visit (`from`).
+ *
+ * The name is matched against his list FIRST, by its key and exactly (`matchAddedPharmacy`): one already
+ * on it is handed back rather than added twice, and one in his Archive is refused with the way back. The
+ * database repeats the exact-name check under a per-territory lock, so a double tap adds one pharmacy.
+ */
+export async function addPharmacy(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ customerId: string; customerName: string; created: boolean }> {
+  const body = record(raw);
+  const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
+  const lineCode = lineCodeOf(seat);
+  const problem = addedPharmacyNameProblem(typeof body.name === "string" ? body.name : null);
+  if (problem) throw validationError(problem);
+  const name = String(body.name).trim().replace(/\s+/g, " ");
+  const match = matchAddedPharmacy(name, await loadListedPharmacies(seat.seatId, isTest));
+  if (match.kind === "existing") return { customerId: match.customerId, customerName: match.name, created: false };
+  if (match.kind === "archived") {
+    throw validationError(`${match.name} is in your Archive. Open it there to ask to bring it back to your list.`);
+  }
+  const result = await callPhoenixCrm<Row>("phoenix_crm_add_pharmacy", {
+    p: {
+      seat_id: seat.seatId,
+      line_code: lineCode,
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      name,
+      from: body.from === "visit" ? "visit" : "list",
+    },
+  });
+  return { customerId: String(result.customer_id), customerName: String(result.customer_name), created: result.created === true };
 }
 
 export async function addPlace(

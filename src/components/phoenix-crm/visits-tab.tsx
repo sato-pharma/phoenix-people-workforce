@@ -22,6 +22,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
+import { AddPharmacyScreen } from "@/components/phoenix-crm/add-pharmacy";
 import { crmUrl, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
 import { CallPrepPanel } from "@/components/phoenix-crm/call-prep-panel";
 import { CommitmentsPanel } from "@/components/phoenix-crm/commitments-panel";
@@ -554,6 +555,8 @@ type AddStep =
   | { name: "out_of_plan" }
   | { name: "out_of_list" }
   | { name: "pharmacy" }
+  /** Pharmacy visit → Add a pharmacy: one not on his list yet, by its name, with no approval. */
+  | { name: "pharmacy_new" }
   | { name: "reason"; customerId: string; reason: string; back: AddStep | null }
   | { name: "form"; customerId: string; visitType: LogVisitType; reason: string | null; back: AddStep | null; part?: VisitFormPart };
 
@@ -588,6 +591,7 @@ function visitChip(step: AddStep): string {
     case "out_of_list":
       return "Out of list";
     case "pharmacy":
+    case "pharmacy_new":
       return "Pharmacy visit";
     case "form":
       return logVisitTypeLabel(step.visitType);
@@ -598,7 +602,10 @@ function visitChip(step: AddStep): string {
 
 /** Steps holding something he has started: a hand-off from Today never replaces them. */
 function holdsWork(step: AddStep | null): boolean {
-  return step !== null && (step.name === "form" || step.name === "open" || step.name === "reason" || step.name === "out_of_list");
+  return (
+    step !== null &&
+    (step.name === "form" || step.name === "open" || step.name === "reason" || step.name === "out_of_list" || step.name === "pharmacy_new")
+  );
 }
 
 /**
@@ -791,10 +798,29 @@ function AddFlow({
         <VisitCustomerPicker
           allCustomers={loaded.customers}
           mode="pharmacy"
+          // The territory's own rep adds one (owner, 2026-10-03); a manager entering a visit picks from his list.
+          onAddPharmacy={loaded.enteredAs === "rep" ? () => onStep({ name: "pharmacy_new" }) : undefined}
           onBack={() => onStep({ name: "start" })}
           onPick={(customerId) => onStep({ name: "form", customerId, visitType: "pharmacy", reason: null, back: { name: "pharmacy" } })}
         />,
         () => onStep({ name: "start" }),
+      );
+    case "pharmacy_new":
+      return shell(
+        current,
+        <AddPharmacyScreen
+          backLabel="Pharmacy visit"
+          from="visit"
+          onAdded={(added) => {
+            // On the form's customers from its next read — `missing` reads as loading until then.
+            resource.reload();
+            onStep({ name: "form", customerId: added.customerId, visitType: "pharmacy", reason: null, back: { name: "pharmacy" } });
+          }}
+          onBack={() => onStep({ name: "pharmacy" })}
+          seatId={seatId}
+          test={test}
+        />,
+        () => onStep({ name: "pharmacy" }),
       );
     case "out_of_list":
       return shell(

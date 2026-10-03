@@ -10,9 +10,11 @@
  *   - OUT OF PLAN is his list minus today's plan — pending customers included, customers waiting
  *     outside the list excluded (a visit to one of them is an out-of-list visit). It needs a written
  *     reason, and counts once his manager and then SFE approve it.
- *   - PHARMACY (owner, 2026-10-03) is the pharmacies on his list, and only them. A pharmacy is never
- *     planned, never approved and never validated (pharmacy-call-rules.ts), so it is no longer offered
- *     under Out of plan, where it was asked for a reason and an approval it never needed.
+ *   - PHARMACY (owner, 2026-10-03) is the pharmacies on his list — every one he has not dropped,
+ *     validated or not — and only them. A pharmacy is never planned, never approved and never validated
+ *     (pharmacy-call-rules.ts), so it is no longer offered under Out of plan, where it was asked for a
+ *     reason and an approval it never needed. One that is not on his list yet he adds right here, by
+ *     its name and with no approval ("Add a pharmacy", rule 3d), and the visit form opens on it.
  *
  * Grouped by brick with the module's one palette (brick-tints.ts), not-yet-visited first and the
  * customers who receive today ahead of the ones who do not, so his day reads geographically — and in
@@ -20,7 +22,7 @@
  */
 
 import { useState } from "react";
-import { Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 
 import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
 import { DirectionsLink } from "@/components/phoenix-crm/directions-link";
@@ -121,6 +123,7 @@ type PickerGroup = { key: string; name: string; customers: VisitCustomerOption[]
 export function VisitCustomerPicker({
   allCustomers,
   mode,
+  onAddPharmacy,
   onBack,
   onChooseUnplanned,
   onPick,
@@ -128,6 +131,8 @@ export function VisitCustomerPicker({
   /** The form's whole customer list: brick hues are keyed off it, so a brick keeps its colour. */
   allCustomers: ReadonlyArray<VisitCustomerOption>;
   mode: PickerMode;
+  /** Pharmacy visit: a pharmacy not on his list yet, added by its name with no approval. */
+  onAddPharmacy?: () => void;
   onBack: () => void;
   /** Planned with nobody on today's plan: straight to Unplanned. */
   onChooseUnplanned?: () => void;
@@ -179,6 +184,14 @@ export function VisitCustomerPicker({
                 : "Your list, without today’s plan, grouped by brick."}
             {byHours ? " Customers who receive today come first." : ""} Tap the customer you are with.
           </p>
+          {mode === "pharmacy" && onAddPharmacy ? (
+            <div>
+              <CrmButton onClick={onAddPharmacy}>
+                <Plus aria-hidden className="h-4 w-4" />
+                Add a pharmacy
+              </CrmButton>
+            </div>
+          ) : null}
           {offered.length > PICKER_PAGE ? (
             <div className="relative min-w-0">
               <Search aria-hidden className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
@@ -219,7 +232,9 @@ export function VisitCustomerPicker({
                   : mode === "planned"
                     ? "Nobody is on a plan you have sent for today."
                     : mode === "pharmacy"
-                      ? "No pharmacy is on your list yet. Name one on a customer’s visit and it is added."
+                      ? onAddPharmacy
+                        ? "No pharmacy is on your list yet. Add the one you are at."
+                        : "No pharmacy is on your list yet. Name one on a customer’s visit and it is added."
                       : "Everyone on your list is on today’s plan."}
               </p>
               {offered.length === 0 && mode === "planned" && onChooseUnplanned ? (
