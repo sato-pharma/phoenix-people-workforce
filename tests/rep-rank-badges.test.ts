@@ -471,6 +471,15 @@ export function runRepRankBadgesTests() {
       /cells\.some\(\(cell\) => cell\.label\.length > 2 \* PHONE_LABEL_CHARS_PER_LINE\)/.test(strip),
     `${STRIP}: a long label — measured from the label itself — makes the panel EIGHT squares tall on a phone, rather than the words being cut to fit`,
   );
+  // 🔴 AND ONLY WHEN THE TWO BOARDS SHARE THE WIDTH. A rep inside his line's top seven but outside the
+  // company's top fifteen has ONE cell, which takes the whole panel: "Anti Infective line" then sits on
+  // a single line (measured live on his own landing, 2026-10-03 — content 90.5px of 108). Without this
+  // guard he was handed the taller panel for a label that never wrapped, 36px of empty white space on a
+  // phone for nothing.
+  assert.ok(
+    /cells\.length > 1 &&/.test(strip),
+    `${STRIP}: the taller panel is only for the TWO-board case — one board already has the width for the longest label`,
+  );
   // 🔒 PHOENIX IS NAMED ON A PHONE — kept by the owner, same day. Below @md the lockup gives way to the
   // bird, and the strip read "SATO PHARMA" on one side and an unlabelled bird on the other.
   assert.ok(

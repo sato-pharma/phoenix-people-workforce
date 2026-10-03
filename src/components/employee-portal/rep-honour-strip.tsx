@@ -209,8 +209,14 @@ export function RepHonourStrip({ standing }: { standing: RepRankStanding | null 
   // 🔴 The step is driven by the LABEL ITSELF, not by a hard-coded line name, so a line renamed or
   // added later gets the taller panel automatically. The threshold is in characters because that is
   // what the wrap depends on: past ~18 the label cannot fit two lines of about nine.
+  // 🔴 AND ONLY WHEN THE TWO BOARDS SHARE THE WIDTH. A rep inside his line's top seven but outside
+  // the company's top fifteen has ONE cell, which takes the whole panel — "Anti Infective line" then
+  // sits on a single line in the six-square height (measured live, 2026-10-03: content 90.5px of
+  // 108). Without this he was handed the taller panel for a label that never wrapped, which is 36px
+  // of empty white space on a phone for nothing.
   const PHONE_LABEL_CHARS_PER_LINE = 9;
-  const needsTallPanel = cells.some((cell) => cell.label.length > 2 * PHONE_LABEL_CHARS_PER_LINE);
+  const needsTallPanel =
+    cells.length > 1 && cells.some((cell) => cell.label.length > 2 * PHONE_LABEL_CHARS_PER_LINE);
   // From @md the panel is 14 squares wide, where even the longest label settles on two lines inside
   // the six-square height — so the step back down is unconditional there.
   const panelHeight = needsTallPanel ? "h-[144px] @md:h-[108px]" : "h-[108px]";

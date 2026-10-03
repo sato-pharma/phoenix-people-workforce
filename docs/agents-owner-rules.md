@@ -5363,6 +5363,18 @@ under the portal's 88% zoom — with the full label restored:
 | 500 and up | 252 × 108 | 2 lines | 92.9px of 108 |
 | CNS, Pedia, every band | **unchanged** | 1 line | unchanged |
 
+**Verified in a real browser, signed in as real Anti Infective reps** (dev-auth preview, 2026-10-03). Two cases, because they
+differ: **B-7** holds BOTH boards (9th of 111 company, 1st of 38 line) — phone panel 180×144, the full label on three lines,
+content 111.5px inside it, the orange tick back in, panel edges 0.00px off the grid, no horizontal overflow; at laptop width
+252×108 on two lines. **AI-0020** holds the LINE board only — one cell takes the whole panel, so the same label sits on a single
+line and the panel stays at 108 (content 90.5px). The first cut gave him the taller panel for a label that never wrapped, 36px of
+empty space for nothing, so the step now requires two boards. 🔴 **At laptop width the two-line label leaves only ~2px inside the
+108px panel** — it fits, measured twice, but that is a thin margin: re-measure before touching this label's size or tracking.
+
+🔴 **A dev-auth preview must be opened on the SAME host the app redirects to.** The cookie is set on the host that answers
+`/api/dev-auth`, and the redirect lands on `localhost`: opening it on `127.0.0.1` set the cookie on a different origin, so the
+page kept the PREVIOUS rep's session and showed his line instead — which reads exactly like the hrId being rejected.
+
 🔴 **Widening the panel could never have fixed a phone, which is why the height is what moves.** At a 351px
 band the two marks leave the panel 22px a side, and fitting `ANTI INFECTIVE` on one line needs ~84px more;
 shrinking the type is banned by the fits-the-screen rule (merge, never shrink). Vertical space on a phone is
