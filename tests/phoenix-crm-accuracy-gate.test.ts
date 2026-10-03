@@ -18,11 +18,21 @@ import type { CapturedFix } from "../src/lib/phoenix-crm/entry-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phoenix CRM validates a place only on readings within 100 m — the photo's own AND the Capture-location
+// Phoenix CRM validates a place only on readings within 250 m — the photo's own AND the Capture-location
 // pin — and takes a visit on a reading within 500 m (owner, 2026-10-03: "accept up to max 500 m in
 // visits and 200 m in validation"; then "the system should never accept a photo or location … in
 // validation", "in validation the system can block inaccurate validation", and "inform the rep that
-// validation must be accurate minimum accepted 100m accuracy").
+// validation must be accurate minimum accepted 100m accuracy"; then, that evening, "make the 100m 250m").
+//
+// 🔴 THE PLACE'S LINE WENT 100 → 250 ON THE FIRST NIGHT, BECAUSE 100 DEAD-ENDED A REP WHOSE PHONE WAS
+// FINE. Half an hour after phoenix_crm_refused_readings went live it recorded nine refusals in 67
+// seconds (21:30:29 → 21:31:36 Cairo) from one rep whose PIN read 47 → 58 → 30 → 29 → 27 m, every one
+// inside even the old line, while the photo he took at 21:29:58 read 220 m and NEVER CHANGED —
+// device_captured_at was that one instant on all nine rows and photo_lat/photo_lon were identical to 13
+// decimals, because a retry resends the same photo. So every attempt failed on a reading that could not
+// improve, and his coordinate sat 890–911 m from a 2 km privacy-grid corner: no blurring, just a first
+// fix taken before the GPS settled. The owner was offered "make a refused photo force a retake, keep
+// 100 m" and chose the wider line instead. 250 m still refuses the case below by a factor of eight.
 //
 // Production, Sat 3 Oct 2026 — the first real day of Delta (1) on Phoenix CRM: one rep's phone was on
 // APPROXIMATE location, and between 09:10 and 09:57 Cairo it validated four different Benha hospitals
@@ -85,7 +95,7 @@ function refusalOf(result: { ok: true } | { ok: false; error: string }): string 
 
 export function runPhoenixCrmAccuracyGateTests() {
   // ── The owner's two numbers ───────────────────────────────────────────────────
-  assert.equal(PLACE_MAX_ACCURACY_METERS, 100, "a place is validated only on readings within 100 m");
+  assert.equal(PLACE_MAX_ACCURACY_METERS, 250, "a place is validated only on readings within 250 m (owner, 2026-10-03 evening: \"make the 100m 250m\")");
   assert.equal(VISIT_MAX_ACCURACY_METERS, 500, "a visit is taken on a reading within 500 m");
 
   // ── The headline: the Benha place is refused, and the rep is TOLD her number ──
@@ -94,15 +104,25 @@ export function runPhoenixCrmAccuracyGateTests() {
   // so nothing she tried could be judged — by her or by the office, since a refusal is never stored.
   assert.equal(
     refusalOf(parsePlaceDraft(placeBody(2000, 2000, BENHA))),
-    "Validation needs an accurate location, within 100 m, and your phone gave 2,000 m. Turn on precise location for your browser; if it is already on, step outside the building and wait a few seconds, then take the photo and press Capture location again at the clinic.",
+    "Validation needs an accurate location, within 250 m, and your phone gave 2,000 m. Turn on precise location for your browser; if it is already on, step outside the building and wait a few seconds, then take the photo and press Capture location again at the clinic.",
     "her own 2,000 m is said back to her, grouped, in the sentence that refuses her",
   );
 
-  // ── The place's line: 100 m, inclusive ────────────────────────────────────────
-  assert.equal(refusalOf(parsePlaceDraft(placeBody(100, 100))), null, "100 m is inside the place's line");
-  assert.match(refusalOf(parsePlaceDraft(placeBody(101, 5))) ?? "", /your phone gave 101 m/, "a pin at 101 m is outside it, and 101 is the number she reads");
-  assert.match(refusalOf(parsePlaceDraft(placeBody(5, 101))) ?? "", /your phone gave 101 m/, "a photo at 101 m is outside it, and the PHOTO's number is the one named");
-  assert.match(refusalOf(parsePlaceDraft(placeBody(200, 5))) ?? "", /your phone gave 200 m/, "the first line he named, 200 m, is now too wide");
+  // ── The place's line: 250 m, inclusive ────────────────────────────────────────
+  assert.equal(refusalOf(parsePlaceDraft(placeBody(250, 250))), null, "250 m is inside the place's line");
+  assert.match(refusalOf(parsePlaceDraft(placeBody(251, 5))) ?? "", /your phone gave 251 m/, "a pin at 251 m is outside it, and 251 is the number she reads");
+  assert.match(refusalOf(parsePlaceDraft(placeBody(5, 251))) ?? "", /your phone gave 251 m/, "a photo at 251 m is outside it, and the PHOTO's number is the one named");
+
+  // ── The nine refusals of 21:30 — the reason the line moved ────────────────────
+  // 🔴 THE REGRESSION THIS CHANGE EXISTS FOR. His pin was never the problem; the photo he had already
+  // taken was stuck at 220 m, and a retry resends it, so 100 m was a dead end with no exit but a
+  // retake. Both of his readings now validate, and the OLD line is what these assertions would fail on.
+  assert.equal(refusalOf(parsePlaceDraft(placeBody(47, 220))), null, "21:30:29 — pin 47 m, photo 220 m: validated now, refused under 100 m");
+  assert.equal(refusalOf(parsePlaceDraft(placeBody(27, 220))), null, "21:31:36 — his sharpest pin, same stuck photo: validated");
+  assert.equal(refusalOf(parsePlaceDraft(placeBody(220, 220))), null, "and a phone reading 220 m on BOTH is inside the line he set");
+  // The old line's own boundary cases are inside the new one — the point of widening it.
+  assert.equal(refusalOf(parsePlaceDraft(placeBody(101, 5))), null, "101 m, refused on the first night, is taken now");
+  assert.equal(refusalOf(parsePlaceDraft(placeBody(200, 5))), null, "so is 200 m, the first line he named");
 
   // ── BOTH readings must be accurate: neither rescues the other ─────────────────
   // And the WIDER of the two is the number said: it is the one she has to bring down.
@@ -146,7 +166,7 @@ export function runPhoenixCrmAccuracyGateTests() {
 
   // ── The rep is TOLD the validation's line, by the owner's word ─────────────────
   for (const message of [PLACE_PRECISION_NOTE, ROUGH_FIX_AT_THE_PLACE]) {
-    assert.match(message, /Validation needs an accurate location, within 100 m/, "he is told the validation must be accurate, within 100 m");
+    assert.match(message, /Validation needs an accurate location, within 250 m/, "he is told the validation must be accurate, within 250 m — the sentence moves with the constant, so a widened line is never said as the old one");
     assert.match(message, /Turn on precise location for your browser/, "and what to switch on — named for HIS browser, never \"Phoenix\", which no phone has");
     for (const banned of [/check/i, /flag/i, /suspic/i, /distance/i, /\bfar\b/i, /manager/i, /report/i]) {
       assert.doesNotMatch(message, banned, `it states the rule of his work, never a check on him (${banned})`);
