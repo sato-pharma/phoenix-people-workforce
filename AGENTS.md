@@ -472,7 +472,9 @@ reintroduce them or invent a replacement — no "quick subset" of lint + typeche
 `pnpm run ci` as a pre-push ritual. 🔴 **The one standing step is NOT local: `node scripts/remote-check.mjs
 test` on the committed sha before EVERY push that opens or updates a PR** (owner, 2026-10-04; `all` when
 the change adds a route, a file or a closed-union member) — `docs/testing.md`, "Before every push".
-**Then push the branch and let the PR's checks answer.** The two
+Its typecheck half runs by itself: `.claude/hooks/push-typecheck-guard.mjs` refuses a push whose
+typecheck FAILED on the box — commit and push in separate commands (`docs/ci-self-hosted-runner.md`,
+"The remote typecheck before every push"). **Then push the branch and let the PR's checks answer.** The two
 **required** checks — `validate` (the `check:*` contracts, **the unit suite**, and on non-PR events
 the build and login smoke) and `checks` (lint, `next typegen`, typecheck) — run on the PR head commit
 and block the merge if either is red. 🔴 **THE UNIT SUITE MOVED BACK INTO `validate` ON 2026-09-30, FOR

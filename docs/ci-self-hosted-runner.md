@@ -925,6 +925,44 @@ eslint cache per run. `~/remote-check/work` is no longer used. The bash lives in
 `scripts/remote-check-plan.mjs`; `tests/remote-check.test.ts` runs it for real against a throwaway
 bare repo with two overlapping invocations on two commits.
 
+### The remote typecheck before every push — owner, 2026-10-04
+
+*"add a remote typecheck before every push, in a worktree."* `buggy_code` is the top friction
+category in his own usage report, and the costly shape is a type error that only the PR's `checks` job
+finds: a full CI round to find it (~14 billable minutes, twice with the `main` run) and another to fix
+it. A local `tsc` cannot be the answer (bash-guard C8, 4.0–4.5 GB), but `remote-check.mjs typecheck`
+answers in about two minutes with nothing heavy on the laptop, so
+`.claude/hooks/push-typecheck-guard.mjs` makes it the push's own first step — PreToolUse on Bash and
+PowerShell, timeout 480 s in `.claude/settings.json`, pinned by `tests/push-typecheck-guard.test.ts`.
+
+**What it does.** On a `git push` that sends the checked-out commit it runs the typecheck on the box for
+that exact sha and **refuses the push only on a FAILED verdict**, handing back every `tsc` error. It
+resolves `cd <dir> &&` and `git -C <dir>` first, so a push typed from another folder checks the right
+repository. **What it leaves alone:** a dry run, a delete, a tag push, `--all`/`--mirror`, a push of
+another ref or of `refs/backups/*`, a branch origin already holds, a push whose diff against
+`origin/main` holds no `.ts/.tsx/.js/.mjs/.json` and no pnpm manifest (the same call CI makes for a
+docs-only change, so a migration-only push is not made to wait), and a commit that already PASSED —
+remembered per sha in `<git-common-dir>/phx-remote-typecheck/`, shared by every worktree.
+
+**What it cannot do — and says so.** A PreToolUse hook runs before the WHOLE command, so for
+`git commit … && git push` HEAD is still the commit BEFORE the one about to ship. Checking it would prove
+nothing, so a push chained after a commit, merge, rebase, cherry-pick, pull, reset, am, revert, checkout
+or switch is **refused** with the instruction to run those as their own command first (unless the work
+holds nothing a typechecker reads). That is the one cost of "before every push". It sends the COMMIT, not
+the working tree, exactly like `remote-check.mjs` itself.
+
+**When the box cannot answer it does NOT block.** No SSH key, box down, a run whose tree moved (exit 3),
+a failed install, or more than 7 minutes: the push is allowed with a plain "NO VERDICT, not checked"
+note, and the PR's `checks` job is still the gate. A guard that stopped every push whenever the box was
+unreachable would be switched off inside the hour — bash-guard C12 (gitleaks) makes the same call.
+
+**This is not the retired pre-push git hook.** AGENTS.md §7 retired `check:harden` and
+`.git/hooks/pre-push` on 2026-08-18 because they ran heavy work ON THIS LAPTOP. This one runs nothing
+heavy here, is not a git hook (a push typed in a plain terminal never sees it), and exists because he
+asked for it by name. `PHX_PUSH_CHECK_OFF=1 <cmd>` (`$env:PHX_PUSH_CHECK_OFF=1; <cmd>` in PowerShell)
+pushes one command regardless — only when he said to. **Like every hook it loads at session start from
+the worktree's own branch**, so a session already open when this merged does not have it.
+
 ### REVERSED the same day — PRs back on hosted, the box is previews only, 2026-09-30
 
 The owner widened it in the morning and reversed it that evening, in his own words: *"put PRs back
