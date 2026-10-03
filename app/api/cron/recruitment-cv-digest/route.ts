@@ -35,7 +35,16 @@ export async function GET(request: Request) {
       });
     }
 
-    await pingDeadMansSwitch(JOB_SLUG, "success", `${result.total} CV(s) in the window`);
+    // The detail now says whether the loop finished. A deferred count is the READABLE form of the
+    // failure that previously showed up as a STRAND — nothing written at all, because the handler
+    // was torn down before this line (the 18:47 fire on 02 Oct 2026).
+    await pingDeadMansSwitch(
+      JOB_SLUG,
+      "success",
+      result.deferred > 0
+        ? `${result.total} CV(s) in the window; ${result.recipientCount} sent, ${result.deferred} deferred to the next tick`
+        : `${result.total} CV(s) in the window`,
+    );
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     logError("CV intake 6h digest failed", {

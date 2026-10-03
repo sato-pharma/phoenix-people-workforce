@@ -45,6 +45,21 @@ export type JobHeartbeatVerdict = {
   misdeclared: JobHeartbeatProblem[];
   /** Declared but with no row yet — the sweeper's bootstrap has not reached them. Not an alert. */
   awaitingBootstrap: string[];
+  /**
+   * Rows with no declaration behind them — a slug that was retired while its heartbeat row stayed.
+   *
+   * REPORTED, never deleted. `bootstrapJobHeartbeatRows` only ever inserts, and this function
+   * iterates DECLARATIONS, so such a row is invisible: never counted in `checked`, never alerted,
+   * never cleared. `phoenix-interview-digest` was in exactly that state — created 26 Sep 17:39 and
+   * retired 26 Sep 22:43 (its cron-job.org job deleted first, so it never fired once), leaving a
+   * row with `last_success_at` NULL for ever. docs/observability.md:368-380 warns about this from
+   * the other direction.
+   *
+   * Not an alert either: a retired job is not a broken job, and paging every Super Admin about one
+   * is how an alert channel gets ignored. It rides the sweep's detail line so somebody reading the
+   * heartbeat sees it, and the row is removed by hand.
+   */
+  undeclared: string[];
 };
 
 /**
@@ -134,6 +149,10 @@ export function assessJobHeartbeats(params: {
   const failing: JobHeartbeatProblem[] = [];
   const misdeclared: JobHeartbeatProblem[] = [];
   const awaitingBootstrap: string[] = [];
+  // Rows no declaration claims. Computed from the other direction to this loop, which is the whole
+  // point: iterating declarations is what made a retired slug's row invisible.
+  const declaredSlugs = new Set(declarations.map((declaration) => declaration.slug));
+  const undeclared = rows.map((row) => row.slug).filter((slug) => !declaredSlugs.has(slug));
   let checked = 0;
 
   for (const declaration of declarations) {
@@ -248,9 +267,13 @@ export function assessJobHeartbeats(params: {
     awaitingBootstrap,
     checked,
     failing,
+    // `undeclared` deliberately does NOT affect health. A retired job's leftover row is tidying, not
+    // an incident, and making it unhealthy would page every Super Admin every 15 minutes until
+    // somebody deleted a row — which is how an alert channel stops being read.
     healthy: stranded.length === 0 && failing.length === 0 && misdeclared.length === 0,
     misdeclared,
     stranded,
+    undeclared,
   };
 }
 

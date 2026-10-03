@@ -147,7 +147,23 @@ export async function runCvIntakeDigest6hTests() {
   // --- source code contract: silent when no managers received CVs ---
   assert.match(
     serviceSource,
-    /if \(batches\.length === 0\) return \{ total: 0, recipientCount: 0 \}/,
+    /if \(batches\.length === 0\) return \{ total: 0, recipientCount: 0, deferred: 0 \}/,
     "service returns early when no managers received CVs — no email sent",
+  );
+
+  // --- source code contract: the send loop cannot outlive the scheduler's own ceiling ---
+  // This job went STRANDED on 02 Oct 2026 with NOTHING written, because the route's heartbeat ping
+  // is after the loop and the handler was torn down first. cron-job.org cuts at 30s whatever
+  // maxDuration says, so the budget has to be the loop's own.
+  assert.match(serviceSource, /const SEND_BUDGET_MS = 20_000;/, "the per-manager loop carries a wall-clock budget");
+  assert.match(
+    serviceSource,
+    /if \(Date\.now\(\) - startedAt > SEND_BUDGET_MS\)/,
+    "and it is checked per batch, before the next send, not merely declared",
+  );
+  assert.match(
+    serviceSource,
+    /cv_intake_digest_6h_deferred/,
+    "a deferred remainder is reported under its own event, so a slow run is readable instead of silent",
   );
 }

@@ -79,10 +79,18 @@ export async function GET(request: Request) {
     }
 
     // Success = the sweep completed. See the header note on why findings do not turn this red.
+    //
+    // `undeclared` rides the detail line because there is nowhere else it would ever be seen: a
+    // heartbeat row whose declaration was retired is skipped by the assess loop, so it is counted in
+    // nothing and alerted on nothing. Reported, never deleted — removing a row is a decision, and a
+    // sweep that quietly deletes state is not one anybody can audit afterwards.
     await pingDeadMansSwitch(
       JOB_HEARTBEAT_SWEEP_SLUG,
       "success",
-      `${verdict.checked} job(s) checked, ${verdict.stranded.length} stranded, ${verdict.failing.length} failing`,
+      `${verdict.checked} job(s) checked, ${verdict.stranded.length} stranded, ${verdict.failing.length} failing`
+        + (verdict.undeclared.length > 0
+          ? `; ${verdict.undeclared.length} retired slug(s) still holding a row: ${verdict.undeclared.join(", ")}`
+          : ""),
     );
 
     return NextResponse.json(
