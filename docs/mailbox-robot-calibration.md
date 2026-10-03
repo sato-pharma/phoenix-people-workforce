@@ -823,3 +823,104 @@ after the break or the test was rebuilt — the login-URL case could not fail un
 its digit, and the repeated-character break turned out to be caught by the happy path rather than by
 its own assertion. Both of those are recorded above rather than quietly fixed, because "the test
 passed after I broke it" is the exact shape that ships a defect.
+
+## The sixth click: the sign-in worked, and the refusal withheld the one fact needed
+
+**2026-10-03, after #5264 shipped.** The owner clicked, and for the first time the robot got *past*
+the thing that had beaten five previous attempts:
+
+```
+The password form for hr.mailbox@satopharma.com was filled and submitted but is still on screen.
+url https://mail.turbify.com/login; title "Bizmail Login";
+headings [Set up your mailbox password];
+inputs [password:password, password:confirmPassword, checkbox:-];
+buttons [Hide password | Hide password | Generate mailbox password | Cookie Settings | Accept All];
+the page says [Very Strong]
+```
+
+**Read what that proves before reading what it does not.** Standing on "Set up your mailbox
+password" means the one-time password was located in the dialog, typed into the login form, and
+*accepted by Turbify*. The credential read is fixed. Five clicks' worth of failure is over, and the
+remaining fault is one step further down.
+
+### `Very Strong` is the evidence, and it arrived by accident
+
+The error reader picks up `[role=alert]` and `aria-live` regions. A password strength meter is
+normally an `aria-live` region, so the meter's own verdict landed in the errors list — and **that
+reading is what ruled the password out as the cause.** The page's validator had looked at the typed
+password and called it Very Strong. Turbify was not refusing it.
+
+Which makes the deliberate over-breadth of that selector a feature: a narrower `[role=alert]`-only
+reader would have reported no errors at all, and the password would still have been a live suspect.
+Do not narrow it.
+
+### Three causes, and a refusal that could not tell them apart
+
+With the password cleared, exactly three things could leave that form on screen:
+
+| Candidate | How it would be distinguished |
+| --- | --- |
+| A **required consent checkbox**, unticked — and nothing may tick it | its `required` flag and `checked` state |
+| The **confirm box empty or mismatched** (`type()` appends, `clearField` fails silently) | the two boxes' value **lengths** |
+| The **submit click never landing** (incident one's signature) | the form reporting itself *valid* |
+
+The refusal distinguished none of them. It printed **`checkbox:-`**.
+
+🔴 **And the code had promised otherwise.** `setMailboxPassword`'s own comment read: *"a box that
+proves to be a consent or terms box is the owner's to tick and never the robot's — so the form is
+submitted as it stands, and if it does not move the refusal below prints the checkbox for him to act
+on."* It printed a dash: no label, no required flag, no ticked state. The owner was pointed at a
+control and then denied every fact about it.
+
+**A promise in a comment is not an emitted diagnostic.** When a comment says the refusal will show
+something, check that the refusal shows it — this module had written the intention down and shipped
+the opposite, and it cost a real click.
+
+### What was ruled out by reading, not by clicking
+
+Two hypotheses were killed in the source before any change was made, which is the only reason this
+did not become two more clicks:
+
+- **The cookie banner covering the submit.** `Cookie Settings | Accept All` are on that page, and
+  that banner is exactly what ate the clicks in incident one. But `openMailboxPage` already sets
+  `CONSOLE_VIEWPORT` on the mailbox's own context, and `submitOpenForm` ends in the hit-tested
+  `clickResolved`. Both halves were already fixed.
+- **The wrong button being pressed.** `CHANGE_PASSWORD_WORDINGS[0]` is `"Generate mailbox password"`,
+  which is on the page verbatim.
+
+### What now gets reported
+
+`PageShape.controls` carries, per control: `required`, `disabled`, ticked state, the **length** of
+its value, which constraint the browser says is unsatisfied plus its `validationMessage`, and — for
+the unnamed checkbox — its **label**, read from `label[for]`, `aria-label`, `aria-labelledby`, a
+wrapping `<label>`, `title`, then the parent's text. Plus `formValid` from `form.checkValidity()`,
+which does not submit and changes no value.
+
+🔴 **Lengths, never values.** `filled` is `value.length`. That separates the only two readings that
+matter — an empty confirm box from a matching pair — and cannot carry a credential out of the
+container. A test asserts `filled` can never be the value itself.
+
+And the typing is now **proven before anything is pressed**: if any password box does not hold
+exactly the expected number of characters, the run refuses with the lengths and submits nothing.
+
+### The test flaw this uncovered, which is not about Turbify at all
+
+Eight breaks were applied. Three did not fire, and all three were weak *tests*, not weak code:
+
+| Break | What happened | Why |
+| --- | --- | --- |
+| `form.checkValidity()` → `return null` | **stayed GREEN** | the assertion was `driver.includes("checkValidity()")`, and this module's own comment *explaining the call* contains that string |
+| the control selector gutted | **stayed GREEN** | the assertion looked for the key `controls:`, which a gutted selector keeps while reporting an empty form |
+| a hidden field made to emit a line | red on the right assertion, unmatchable | `assert.equal` carried no message, so the break could not be tied to it |
+
+🔴 **A SOURCE ASSERTION ABOUT A CALL MUST READ COMMENT-STRIPPED SOURCE.** In a module this heavily
+commented, the prose documenting a call keeps passing the test for the call — the test becomes
+self-satisfying, and the more carefully the code is explained the less its tests prove. `driverCode
+= stripComments(driver)` now backs every assertion that something *runs*; `driver` stays only for
+assertions genuinely about wording. Negative assertions (`must NOT appear`) are safe either way,
+because a comment mentioning a banned pattern fails loudly rather than passing quietly.
+
+Six pre-existing positive assertions in this suite had the same flaw and were repointed. All six
+still pass, so the calls were genuinely there — but they were not being proved.
+
+After fixing the three tests: **8 of 8 breaks fire on their own named assertion.**

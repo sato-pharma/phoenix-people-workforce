@@ -541,16 +541,66 @@ async function fillField(page: ConsolePage, selector: string, value: string): Pr
   await handle.type(value, { delay: 15 });
 }
 
+/**
+ * One control's state, as the FORM sees it — the layer that decides whether a submit does anything.
+ *
+ * 🔴 A LENGTH, NEVER A VALUE. `filled` is `value.length`, which is enough to separate the two
+ * readings that matter — "the confirm box is empty" from "both boxes hold the same thing" — and
+ * cannot carry a credential out of the container the way `.value` would.
+ */
+export type FieldState = {
+  /** `true`/`false` for a checkbox or radio, `null` for everything else. */
+  checked: boolean | null;
+  disabled: boolean;
+  /** `value.length`. NEVER the value — see above. */
+  filled: number;
+  /**
+   * 🔴 THE THING NOBODY HAS EVER READ. The setup page carries one unnamed checkbox, and since nothing
+   * may tick it — a consent box is the owner's click — the whole run can stop there while the refusal
+   * says only `checkbox:-`. Read from `label[for]`, `aria-label`, `aria-labelledby`, a wrapping
+   * `<label>`, `title`, then the parent's text, in that order of trustworthiness.
+   */
+  label: string;
+  name: string;
+  required: boolean;
+  type: string;
+  /**
+   * Which constraint the browser reports unsatisfied — `valueMissing`, `tooShort`, `customError` —
+   * with its own `validationMessage` where there is one. Empty when the field is valid. This is what
+   * separates "Turbify refused the password" from "the form never submitted".
+   */
+  why: string;
+};
+
 /** What a page looked like, in the only terms that cannot carry a credential. */
 export type PageShape = {
   buttons: string[];
+  /**
+   * Every control's state, with `formValid` for the enclosing form.
+   *
+   * 🔴 THIS EXISTS BECAUSE THE PREVIOUS REFUSAL PROMISED IT AND DID NOT DELIVER IT. `setMailboxPassword`
+   * states in its own comment that if the form does not move, "the refusal below prints the checkbox
+   * for him to act on". What the owner received on 2026-10-03 was `checkbox:-` — a dash. He was told
+   * to act on a control whose label, required flag and ticked state were all withheld, which left
+   * three different causes indistinguishable: a required consent box, an empty confirm field, or a
+   * submit that never landed. **A refusal that cannot be acted on is what this driver keeps paying
+   * for in the owner's clicks** — and promising a detail in a comment is not the same as emitting it.
+   */
+  controls: FieldState[];
   /**
    * 🔴 THE PAGE'S OWN ERROR TEXT, which is the only authority on a rule Turbify did not publish
    * unambiguously. Their help says a mailbox password needs "no repeated characters" without saying
    * whether that means consecutively or anywhere, and guessing would refuse an adoption Turbify
    * would have accepted. So the robot reads what the FORM says instead of ruling on it.
+   *
+   * 🔴 IT ALSO CATCHES NON-ERRORS, AND THAT MUST NOT BE "FIXED" BY NARROWING IT. A strength meter is
+   * commonly an `aria-live` region, so `Very Strong` arrives here — and on 2026-10-03 that reading is
+   * what PROVED the password had satisfied the page's own validator, which ruled the password out and
+   * moved the search to the form. Restricting this to `[role=alert]` would have thrown that away.
    */
   errors: string[];
+  /** `form.checkValidity()` for the form the controls belong to; `null` when there is no form. */
+  formValid: boolean | null;
   headings: string[];
   inputs: string[];
   title: string;
@@ -602,11 +652,44 @@ export function describeShape(shape: PageShape | null, secrets: readonly string[
     `inputs [${shape.inputs.map(clean).join(", ")}]`,
     `buttons [${shape.buttons.map(clean).join(" | ")}]`,
   ];
+  // The form's own verdict, which is the layer a "still on screen" failure actually lives in. A
+  // control is only worth a line when it carries something actionable — a required flag, an
+  // unsatisfied constraint, a label nobody has read, or a length that shows a box is empty.
+  const controls = (shape.controls ?? []).map((field) => describeField(field, clean)).filter((line) => line.length > 0);
+  if (controls.length > 0) parts.push(`controls [${controls.join(" | ")}]`);
+  if (shape.formValid === false) parts.push("the form reports itself INVALID");
+  else if (shape.formValid === true) parts.push("the form reports itself valid, so the submit is not being refused by validation");
   // Last, and only when there is one, so it is the thing the eye lands on. This is what turns "the
   // form is still on screen" into "Turbify said why".
   const errors = (shape.errors ?? []).map(clean).filter((line) => line.length > 0);
   if (errors.length > 0) parts.push(`the page says [${errors.join(" | ")}]`);
   return parts.join("; ");
+}
+
+/**
+ * One control, in the words someone has to act on.
+ *
+ * 🔴 `filled` IS PRINTED AS A LENGTH AND THE VALUE IS NEVER AVAILABLE HERE. `empty` and `filled=14`
+ * are the two readings that separate an unfilled confirm box from a matching pair, and neither can
+ * leak a password. A hidden field with nothing interesting about it prints nothing at all, so the
+ * line stays short enough to read at 4am.
+ */
+export function describeField(field: FieldState, clean: (value: string) => string): string {
+  const name = clean(`${field.type}:${field.name || "-"}`);
+  const notes: string[] = [];
+  if (field.required) notes.push("REQUIRED");
+  if (field.disabled) notes.push("disabled");
+  if (field.checked === true) notes.push("ticked");
+  if (field.checked === false) notes.push("UNTICKED");
+  if (field.type !== "checkbox" && field.type !== "radio" && field.type !== "hidden") {
+    notes.push(field.filled === 0 ? "EMPTY" : `filled=${field.filled}`);
+  }
+  // The label matters most for the control nobody has identified, so it is quoted rather than
+  // folded into the notes — and capped, because a parent's text can be the whole page.
+  if (field.label.length > 0) notes.push(`"${clean(field.label).slice(0, 160)}"`);
+  if (field.why.length > 0) notes.push(`INVALID(${clean(field.why).slice(0, 120)})`);
+  if (notes.length === 0) return "";
+  return `${name} ${notes.join(" ")}`;
 }
 
 /**
@@ -707,6 +790,48 @@ export async function describePage(page: ConsolePage, secrets: readonly string[]
           .map(words)
           .filter((label) => label.length > 0)
           .slice(0, 6),
+        // The form's own view of each control: required, ticked, how MANY characters it holds, which
+        // constraint it fails, and — for the unnamed checkbox — what it actually says. No `.value`.
+        controls: Array.from(document.querySelectorAll("input,select,textarea"))
+          .slice(0, 14)
+          .map((element) => {
+            const field = element as HTMLInputElement;
+            const box = field.type === "checkbox" || field.type === "radio";
+            const labelled = field.getAttribute("aria-labelledby");
+            const label =
+              (field.id ? words(document.querySelector(`label[for="${field.id}"]`) ?? field) : "")
+              || field.getAttribute("aria-label")
+              || (labelled ? words(document.getElementById(labelled) ?? field) : "")
+              || words(field.closest("label") ?? field)
+              || field.title
+              // Last resort, and capped hard: a parent's text can be the entire page, but for a bare
+              // checkbox with no label of its own it is the only place the wording lives.
+              || words(field.parentElement ?? field).slice(0, 200);
+            const v = field.validity;
+            const flags = [
+              "valueMissing", "typeMismatch", "patternMismatch", "tooLong", "tooShort",
+              "rangeUnderflow", "rangeOverflow", "stepMismatch", "badInput", "customError",
+            ];
+            const failed = v && !v.valid ? (flags.find((flag) => Boolean((v as unknown as Record<string, boolean>)[flag])) ?? "invalid") : "";
+            const message = v && !v.valid ? (field.validationMessage || "").replace(/\s+/g, " ").trim() : "";
+            return {
+              checked: box ? field.checked : null,
+              disabled: Boolean(field.disabled),
+              filled: typeof field.value === "string" ? field.value.length : 0,
+              label: (label || "").replace(/\s+/g, " ").trim(),
+              name: field.name || field.id || "",
+              required: Boolean(field.required),
+              type: field.type || field.tagName.toLowerCase(),
+              why: failed === "" ? "" : message === "" ? failed : `${failed}: ${message}`,
+            };
+          }),
+        // 🔴 `checkValidity()` DOES NOT SUBMIT and changes no value — it only asks. It can make the
+        // page render its own messages, which lands in `errors` above and is the point.
+        formValid: (() => {
+          const form = document.querySelector("form");
+          if (!form) return null;
+          try { return form.checkValidity(); } catch { return null; }
+        })(),
         // `type:name` only — never `.value`, which is where a credential would be.
         inputs: Array.from(document.querySelectorAll("input"))
           .map((element) => {
@@ -980,11 +1105,37 @@ export async function createTurbifyJoinerDriver(credentials: {
         await field.evaluate<void>(clearField).catch(() => {});
         await field.type(newPassword, { delay: 15 });
       }
+      // 🔴 PROVE THE TYPING LANDED BEFORE PRESSING ANYTHING, because the alternative is a form that
+      // stays on screen for a reason the refusal then has to guess at. `type()` APPENDS and
+      // `clearField` fails silently by design, so the two failures worth separating are a box that
+      // took nothing and a pair that disagree — and both are invisible from the outside. Lengths
+      // only: the values are never read, and a length cannot carry a password out of the container.
+      const typed = await mailbox
+        .$$eval<number[]>(PASSWORD_FIELD, (elements) =>
+          elements.map((element) => ((element as HTMLInputElement).value ?? "").length),
+        )
+        .catch(() => [] as number[]);
+      const expected = newPassword.length;
+      if (typed.length > 0 && typed.some((length) => length !== expected)) {
+        throw new TurbifyJoinerStepError(
+          `The password boxes for ${address} did not take the value as typed — ${typed.length} box(es) `
+          + `hold ${typed.join(", ")} characters where every one should hold ${expected}. Nothing was `
+          + "submitted. A box holding 0 never received the keystrokes; one holding more than expected "
+          + `is \`type()\` appending onto text that was already there. The page it was on — ${await describePage(mailbox, secrets)}`,
+        );
+      }
       // 🔴 NOTHING HERE TICKS THE SETUP PAGE'S CHECKBOX, and that is deliberate. The page carries one
       // unnamed checkbox; on the login form the same shape turned out to be "Keep me logged in.", but
       // on the setup form its label has not been read by anyone. A box that proves to be a consent or
       // terms box is the owner's to tick and never the robot's — so the form is submitted as it
-      // stands, and if it does not move the refusal below prints the checkbox for him to act on.
+      // stands, and if it does not move the refusal below prints that checkbox for him to act on.
+      //
+      // 🔴 THAT LAST CLAUSE WAS NOT TRUE UNTIL 2026-10-03, AND IT COST A CLICK. The refusal printed
+      // `checkbox:-` and nothing else: no label, no required flag, no ticked state. The owner was
+      // directed at a control and then denied every fact about it, leaving a required consent box, an
+      // unfilled confirm field and a submit that never landed indistinguishable. `PageShape.controls`
+      // now carries all three readings. **A promise in a comment is not an emitted diagnostic** —
+      // when a comment says the refusal will show something, check that the refusal shows it.
       //
       // `submitOpenForm` is tried first because identifying the submit by `type="submit"` is what
       // stopped this driver pressing "Add alias"; `clickOneOf` remains the fallback for a setup page
@@ -995,7 +1146,10 @@ export async function createTurbifyJoinerDriver(credentials: {
       if (await onSetupPage()) {
         throw new TurbifyJoinerStepError(
           `The password form for ${address} was filled and submitted but is still on screen, so the new `
-          + `password was not accepted. The page it was on — ${await describePage(mailbox, secrets)}`,
+          + `password was not accepted. Both password boxes held ${expected} characters, so the typing `
+          + "landed — read the controls below: a REQUIRED UNTICKED checkbox is a consent box only the "
+          + "owner may tick, and a form reporting itself valid means the submit is not being refused by "
+          + `validation at all. The page it was on — ${await describePage(mailbox, secrets)}`,
         );
       }
       return "done";
