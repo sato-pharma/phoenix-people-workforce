@@ -44,6 +44,7 @@ import { countPlanAwaiting } from "@/lib/approvals-hub/service";
 import { getDoubleVisitPortalFocus } from "@/lib/double-visit-analytics/service";
 import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types";
 import { getNsmCrmCompliance, nsmCrmComplianceUnavailable, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
+import { loadRepRankStanding, type RepRankStanding } from "@/lib/employee-portal/rep-rank";
 import { getLatestLineEarlyBirds, type EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { logError } from "@/lib/observability/log";
@@ -75,6 +76,17 @@ import {
 async function loadMrCanonicalSales(hrId: string, period?: string): Promise<{
   current: { achievementPercent: number; salesValue: number; targetValue: number } | null;
   trend: Array<{ year: number; month: number; achievementPercent: number; salesValue: number; targetValue: number }> | null;
+  /**
+   * THE MONTH THE ACHIEVEMENT TILE WILL ACTUALLY SHOW — the picked month when it is published with
+   * a target, otherwise the newest published month on the trend that has one, otherwise null.
+   *
+   * It exists so the tile's own label and the rank badges beneath it cannot name two different
+   * months. The tile has fallen back to the newest published month since 2026-10-01 (the owner's
+   * own ruling, see the component), so "the month on screen" is NOT `kpiMonth` and deriving it
+   * twice — once for the label, once for the rank — is how the badge would quote August's rank
+   * under a September heading. One value, computed here, read by both.
+   */
+  effectivePeriod: string | null;
 }> {
   const { year, month } = currentCairoDateParts();
   // `period` is THE MONTH ON SCREEN, not always the running one. The rep's landing keycards carry a
@@ -85,12 +97,15 @@ async function loadMrCanonicalSales(hrId: string, period?: string): Promise<{
   const currentPeriod = period ?? `${year}-${String(month).padStart(2, "0")}`;
   const window = await loadEmployeeMonthlyAchievement([hrId], SALES_HISTORY_FLOOR, currentPeriod);
   const points = publishedPointsOnly(window.byHrId.get(hrId) ?? []);
-  if (points.length === 0) return { current: null, trend: null };
+  if (points.length === 0) return { current: null, trend: null, effectivePeriod: null };
 
   const percentOf = (point: MonthlyAchievementPoint) =>
     point.achievementValue != null ? point.achievementValue * 100 : 0;
 
   const currentPoint = points.find((point) => point.period === currentPeriod) ?? null;
+  // Newest first, and never capped by a row limit — the engine returns one row per month,
+  // so a high-volume rep cannot lose a month to pagination the way the old 200-row cap allowed.
+  const newestFirst = points.slice().sort((left, right) => right.period.localeCompare(left.period)).slice(0, 4);
   return {
     current: currentPoint
       ? {
@@ -99,22 +114,24 @@ async function loadMrCanonicalSales(hrId: string, period?: string): Promise<{
           targetValue: currentPoint.targetValue,
         }
       : null,
-    // Newest first, and never capped by a row limit — the engine returns one row per month,
-    // so a high-volume rep cannot lose a month to pagination the way the old 200-row cap allowed.
-    trend: points
-      .slice()
-      .sort((left, right) => right.period.localeCompare(left.period))
-      .slice(0, 4)
-      .map((point) => {
-        const [yearPart, monthPart] = point.period.split("-");
-        return {
-          year: Number(yearPart),
-          month: Number(monthPart),
-          achievementPercent: Math.round(percentOf(point)),
-          salesValue: point.actualValue,
-          targetValue: point.targetValue,
-        };
-      }),
+    // The SAME four points the tile's `closed` list is built from, and the same `targetValue > 0`
+    // test: a published month with no target is 0% by arithmetic, not by performance, so it is
+    // neither drawn nor eligible to be the fallback. Reading all of `points` here instead of these
+    // four would let a 5th-newest month become the tile's month, which the tile would never show.
+    effectivePeriod:
+      currentPoint && currentPoint.targetValue > 0
+        ? currentPeriod
+        : (newestFirst.find((point) => point.targetValue > 0)?.period ?? null),
+    trend: newestFirst.map((point) => {
+      const [yearPart, monthPart] = point.period.split("-");
+      return {
+        year: Number(yearPart),
+        month: Number(monthPart),
+        achievementPercent: Math.round(percentOf(point)),
+        salesValue: point.actualValue,
+        targetValue: point.targetValue,
+      };
+    }),
   };
 }
 
@@ -396,6 +413,25 @@ export type PortalHomeSnapshot = {
   leaveDaysRemaining: number | null;
   mrSalesAchievement: { achievementPercent: number; salesValue: number; targetValue: number } | null;
   monthlySalesTrend: Array<{ year: number; month: number; achievementPercent: number; salesValue: number; targetValue: number }> | null;
+  /**
+   * The month the Medical Rep's Achievement tile is actually showing, `YYYY-MM`, or null when
+   * nothing is published for them. NOT `kpiMonth`: the tile falls back to the newest published
+   * month (owner, 2026-10-01), so this is the month the tile NAMES and the month the honour badges
+   * rank — one value so the two can never disagree. See loadMrCanonicalSales's `effectivePeriod`.
+   */
+  mrAchievementPeriod: string | null;
+  /**
+   * The rep's honour badges: top 15 company-wide, top 7 in his own line (owner, 2026-10-03). Null
+   * outside both bands, or when nothing is published — and each half is null on its own, so a rep
+   * can hold one badge, two, or none. Never a consolation badge.
+   *
+   * 🔒 THE WINDOW IS CUMULATIVE AND IS **NOT** `mrAchievementPeriod` (owner, 2026-10-03: "do not
+   * calculate only August, calculate up to date — example for now 7 and 8, when 9 closing is
+   * published then 7 8 9"). The keycard shows ONE month; this ranks every published month summed.
+   * The standing carries its own `windowLabel`, which the badge prints, so the two are never read
+   * as the same number.
+   */
+  mrRankStanding: RepRankStanding | null;
   doubleVisitPulse: { daysSinceLastDv: number | null; dvsThisMonth: number; dvsLast90Days: number } | null;
   /**
    * This rep's own field KPIs for the running month, straight from the CRM KPI board rather than
@@ -1071,6 +1107,15 @@ export async function getPortalHomeSnapshot(
 
   // One canonical load serves BOTH the hero and the 4-month trend — they are the same window.
   const mrSalesPromise = isMr && hrId ? loadMrCanonicalSales(hrId, kpiMonth) : Promise.resolve(null);
+  // The honour badges, started BESIDE the sales load, not after it. They rank the whole PUBLISHED
+  // window — July and August today, July/August/September the day he publishes September (owner,
+  // 2026-10-03) — so they depend on nothing this page computes and have no reason to wait. It costs
+  // almost nothing beyond that: loadAchievementRange caches PER MONTH, so the months it asks for are
+  // the ones the rep's own history load is already asking for, and the directory behind the leaver
+  // filter is TTL-cached. Never rejects — a badge is an ornament on a landing page and must not be
+  // able to fail one.
+  const mrRankPromise: Promise<RepRankStanding | null> =
+    isMr && hrId ? loadRepRankStanding(hrId).catch(() => null) : Promise.resolve(null);
   const fieldKpisPromise: Promise<MrFieldKpis | null> =
     isMr && hrId ? loadMrFieldKpis(access, hrId, kpiMonth).catch(() => null) : Promise.resolve(null);
   const roleExtrasPromise = getRoleSpecificExtras(access, role, hrId);
@@ -1210,13 +1255,15 @@ export async function getPortalHomeSnapshot(
   }
 
   // Await all MR + manager promises together (they've been in-flight since the start).
-  const [mrSalesResult, dvResult, expenseResult, managerPlanResult, fieldKpisResult] = await Promise.allSettled([
-    mrSalesPromise,
-    dvPromise,
-    expensePromise,
-    managerPlanCountPromise,
-    fieldKpisPromise,
-  ]);
+  const [mrSalesResult, dvResult, expenseResult, managerPlanResult, fieldKpisResult, mrRankResult] =
+    await Promise.allSettled([
+      mrSalesPromise,
+      dvPromise,
+      expensePromise,
+      managerPlanCountPromise,
+      fieldKpisPromise,
+      mrRankPromise,
+    ]);
 
   const mrFieldKpis: PortalHomeSnapshot["mrFieldKpis"] =
     fieldKpisResult.status === "fulfilled" ? fieldKpisResult.value : null;
@@ -1225,6 +1272,9 @@ export async function getPortalHomeSnapshot(
   const mrCanonical = mrSalesResult.status === "fulfilled" ? mrSalesResult.value : null;
   const mrSalesAchievement: PortalHomeSnapshot["mrSalesAchievement"] = mrCanonical?.current ?? null;
   const monthlySalesTrend: PortalHomeSnapshot["monthlySalesTrend"] = mrCanonical?.trend ?? null;
+  const mrAchievementPeriod: PortalHomeSnapshot["mrAchievementPeriod"] = mrCanonical?.effectivePeriod ?? null;
+  const mrRankStanding: PortalHomeSnapshot["mrRankStanding"] =
+    mrRankResult.status === "fulfilled" ? mrRankResult.value : null;
 
   // Double-visit pulse for this MR.
   let doubleVisitPulse: PortalHomeSnapshot["doubleVisitPulse"] = null;
@@ -1294,6 +1344,8 @@ export async function getPortalHomeSnapshot(
     leaveDaysRemaining,
     mrSalesAchievement,
     monthlySalesTrend,
+    mrAchievementPeriod,
+    mrRankStanding,
     doubleVisitPulse,
     mrFieldKpis,
     kpiMonth,
