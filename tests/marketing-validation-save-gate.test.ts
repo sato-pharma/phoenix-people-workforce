@@ -1,0 +1,225 @@
+import { strict as assert } from "node:assert";
+
+import {
+  canSaveMarketingValidation,
+  describeMissingSaveRequirement,
+  type SaveGateCapture,
+  type SaveGateCustomer,
+  type SaveGatePharmacy,
+} from "../src/lib/marketing-requests/validation-save-gate.ts";
+import { VENUE_TYPE_UNANSWERED_MESSAGE } from "../src/lib/venues/venue-type.ts";
+
+const jpeg = `data:image/jpeg;base64,${Buffer.from("a-real-jpeg-frame").toString("base64")}`;
+
+function emptyCapture(): SaveGateCapture {
+  return {
+    capturedAt: null,
+    latitude: null,
+    longitude: null,
+    photoCapturedAt: null,
+    photoDataUrl: null,
+    photoName: "",
+  };
+}
+
+/** A capture complete enough to stand as a venue's proof: pin, time, and the stamped photo. */
+function fullCapture(): SaveGateCapture {
+  return {
+    capturedAt: "2026-10-03T12:00:00.000Z",
+    latitude: 31.1303563,
+    longitude: 30.1226590,
+    photoCapturedAt: "2026-10-03T12:00:00.000Z",
+    photoDataUrl: jpeg,
+    photoName: "venue-live.jpg",
+  };
+}
+
+/** GPS fixed, no photo — a desk-mode map pin, which is a pin and nothing more. */
+function pinOnlyCapture(): SaveGateCapture {
+  return { ...emptyCapture(), latitude: 31.1303563, longitude: 30.1226590 };
+}
+
+function pharmacy(overrides: Partial<SaveGatePharmacy> = {}): SaveGatePharmacy {
+  return {
+    capture: emptyCapture(),
+    existingPharmacyId: "",
+    name: "صيدلية النيل",
+    source: "new",
+    vendorCodes: [{ distributorCode: "0010453", distributorId: "dist-pos" }],
+    venueType: "pharmacy",
+    ...overrides,
+  };
+}
+
+function customer(overrides: Partial<SaveGateCustomer> = {}): SaveGateCustomer {
+  return {
+    capture: emptyCapture(),
+    customerComplete: false,
+    name: "د. احمد محارب",
+    pharmacies: [pharmacy()],
+    ...overrides,
+  };
+}
+
+export async function runMarketingValidationSaveGateTests() {
+  // ---------------------------------------------------------------- the defect this module exists for
+
+  /*
+   * A nursery has no distributor account, so the form hides its vendor-codes block entirely — the
+   * default empty code row stays in state with nothing on screen to fill it. The old boolean still
+   * demanded a distributor and a code from every venue while the sentence skipped both for a
+   * nursery, so answering "Nursery" greyed Save for good AND printed no reason, in a form whose
+   * only feedback channel is that sentence. This is the whole point of deriving one from the other.
+   */
+  const nursery = [customer({ pharmacies: [pharmacy({ venueType: "nursery", vendorCodes: [{ distributorCode: "", distributorId: "" }] })] })];
+  assert.equal(
+    describeMissingSaveRequirement(nursery, false),
+    null,
+    "a nursery needs no distributor code, so nothing is missing",
+  );
+  assert.equal(
+    canSaveMarketingValidation(nursery, false),
+    true,
+    "Save must be ENABLED for a nursery with no code — the codes block is hidden, so a greyed button here can never be acted on",
+  );
+
+  // Same, with the code row removed outright rather than left blank.
+  assert.equal(
+    canSaveMarketingValidation([customer({ pharmacies: [pharmacy({ venueType: "nursery", vendorCodes: [] })] })], false),
+    true,
+    "a nursery with no code row at all saves too",
+  );
+
+  // ------------------------------------------------------- the button and the sentence never disagree
+
+  /*
+   * The invariant, stated as a test rather than as a comment on two functions: Save is disabled
+   * exactly when there is a sentence to show, and enabled exactly when there is not. Every case
+   * below is a real form state, and each one asserts BOTH halves.
+   */
+  const cases: Array<{ customers: SaveGateCustomer[]; isDeskMode: boolean; expect: RegExp | null; what: string }> = [
+    { customers: [], expect: null, isDeskMode: false, what: "an empty form has nothing to name" },
+    {
+      customers: [customer({ name: "   " })],
+      expect: /Enter a name for Customer 1\./,
+      isDeskMode: false,
+      what: "an unnamed customer",
+    },
+    {
+      customers: [customer({ pharmacies: [] })],
+      expect: /needs at least one pharmacy/,
+      isDeskMode: false,
+      what: "a customer with no venue",
+    },
+    {
+      customers: [customer({ pharmacies: [pharmacy({ name: "  " })] })],
+      expect: /Enter a name for Pharmacy 1 under/,
+      isDeskMode: false,
+      what: "an unnamed venue",
+    },
+    {
+      customers: [customer({ pharmacies: [pharmacy({ venueType: null })] })],
+      expect: new RegExp(VENUE_TYPE_UNANSWERED_MESSAGE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      isDeskMode: false,
+      what: "a venue type nobody answered",
+    },
+    {
+      customers: [customer({ pharmacies: [pharmacy({ vendorCodes: [] })] })],
+      expect: /needs at least one distributor code/,
+      isDeskMode: false,
+      what: "a pharmacy with no code row",
+    },
+    {
+      customers: [customer({ pharmacies: [pharmacy({ vendorCodes: [{ distributorCode: "0010453", distributorId: "" }] })] })],
+      expect: /Pick a distributor for/,
+      isDeskMode: false,
+      what: "a code with no distributor",
+    },
+    {
+      customers: [customer({ pharmacies: [pharmacy({ vendorCodes: [{ distributorCode: "  ", distributorId: "dist-pos" }] })] })],
+      expect: /Enter the distributor code for/,
+      isDeskMode: false,
+      what: "a distributor with no code",
+    },
+    {
+      customers: [customer({ pharmacies: [pharmacy({ existingPharmacyId: "", source: "existing" })] })],
+      expect: /Choose which pharmacy to attach/,
+      isDeskMode: false,
+      what: "the My Pharmacies tab with nothing picked",
+    },
+    {
+      customers: [customer({ pharmacies: [pharmacy({ existingPharmacyId: "ph-1", source: "existing", vendorCodes: [] })] })],
+      expect: null,
+      isDeskMode: false,
+      what: "an attached pharmacy needs only the pick — its codes come from its stored record",
+    },
+    {
+      customers: [customer()],
+      expect: /Pin "د\. احمد محارب"'s location on the map\./,
+      isDeskMode: true,
+      what: "desk mode with no customer pin",
+    },
+    {
+      customers: [customer({ capture: pinOnlyCapture() })],
+      expect: /Pin "صيدلية النيل"'s location on the map\./,
+      isDeskMode: true,
+      what: "desk mode with no venue pin",
+    },
+    {
+      customers: [customer({ capture: pinOnlyCapture(), pharmacies: [pharmacy({ capture: pinOnlyCapture() })] })],
+      expect: null,
+      isDeskMode: true,
+      what: "desk mode with both pins placed",
+    },
+    {
+      customers: [customer({ customerComplete: true, pharmacies: [pharmacy({ existingPharmacyId: "ph-1", source: "existing" })] })],
+      expect: /Capture the venue's live photo and location for/,
+      isDeskMode: false,
+      what: "a complete customer whose only reason to save is a venue capture it does not have",
+    },
+    {
+      customers: [customer({
+        customerComplete: true,
+        pharmacies: [pharmacy({ capture: fullCapture(), existingPharmacyId: "ph-1", source: "existing" })],
+      })],
+      expect: null,
+      isDeskMode: false,
+      what: "the same customer once the venue capture is in hand",
+    },
+    { customers: [customer()], expect: null, isDeskMode: false, what: "the ordinary field path" },
+  ];
+
+  for (const testCase of cases) {
+    const reason = describeMissingSaveRequirement(testCase.customers, testCase.isDeskMode);
+    if (testCase.expect === null) {
+      assert.equal(reason, null, `${testCase.what}: nothing should be reported, got ${JSON.stringify(reason)}`);
+    } else {
+      assert.ok(reason, `${testCase.what}: a blocked form must name its reason, never leave the rep guessing`);
+      assert.match(reason, testCase.expect, `${testCase.what}: the reason names the right thing`);
+    }
+
+    // The invariant. A disabled Save with no sentence is the defect; a sentence under an enabled
+    // Save is the mirror of it. Neither is reachable while the boolean is the sentence.
+    const expectedSave = testCase.expect === null && testCase.customers.length > 0;
+    assert.equal(
+      canSaveMarketingValidation(testCase.customers, testCase.isDeskMode),
+      expectedSave,
+      `${testCase.what}: Save ${expectedSave ? "must be enabled" : "must be disabled"}, in step with the reason shown`,
+    );
+  }
+
+  // --------------------------------------------------------------- the first unmet thing, not any of them
+
+  // Several customers: the sentence names the one the rep must fix first, in form order, so the
+  // message does not jump between rows as fields are filled.
+  assert.match(
+    describeMissingSaveRequirement([customer(), customer({ name: "", pharmacies: [] })], false) ?? "",
+    /Enter a name for Customer 2\./,
+    "the second customer's first gap is reported once the first customer is complete",
+  );
+  assert.equal(
+    canSaveMarketingValidation([customer(), customer({ name: "د. سيد" })], false),
+    true,
+    "two complete customers save together",
+  );
+}
