@@ -15,7 +15,7 @@
  *    were two copies — that file's probation rule filtered to people still employed and this one's
  *    did not, so the same question had two answers. Never re-implement one of those three over
  *    there, and never "simplify" the CEO's three-adapter call into `getNeedsYouBoard`: that runs
- *    all sixteen sources to use three of them, on the owner's heaviest landing page.
+ *    EVERY source to use three of them, on the owner's heaviest landing page.
  *  - `GET /api/approvals/badge-counts` is an HTTP hop from a server component back into its own app:
  *    it needs the session cookie, doubles the latency, and inherits the route's deliberate
  *    `{count: 0}` fallback — which is right for a badge and is the ONE shape this board must never
@@ -44,6 +44,9 @@ import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
 import { getCoachingReports } from "@/lib/coaching/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
+import { ApiError } from "@/lib/http/api-errors";
+import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { loadPhoenixCrmDecisionCounts, phoenixCrmReadsDecisions } from "@/lib/phoenix-crm/server/needs-you";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
 import { countDirectOrderAwaitingFast, getDirectOrderUnbookedBadge } from "@/lib/direct-orders/service";
@@ -715,6 +718,117 @@ const salaryFlags: NeedsYouAdapter = {
     }),
 };
 
+// ── Phoenix CRM ─────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Phoenix CRM's own decisions (added 2026-10-03): a list request and an off-plan visit at THIS
+ * viewer's step, and how much of the carried-over lists is still waiting to be validated.
+ *
+ * 🔴 IT COUNTS NOTHING ITSELF. Every figure comes from `loadPhoenixCrmDecisionCounts`, which reads the
+ * module's own producer — the same one the Phoenix CRM page's "waiting for you" badge reads — so the
+ * board and the module cannot disagree about whose turn it is. The reasons the two decision counts may
+ * be TEST entries, why the validation figure is always real, and why a medical rep is
+ * `not-applicable`, are all in that file's header.
+ *
+ * 🔴 AND IT NEVER ACTS, AND NEVER CARRIES A MEASUREMENT. This board links; the Phoenix CRM Team tab
+ * owns every one of these decisions. Nothing here reads a distance, an accuracy, a location flag or
+ * any integrity signal — Phoenix CRM's golden rule #1 keeps those to the Super Admin and the SFE
+ * Manager inside the module, and a central board is not a back door to them.
+ */
+const phoenixCrmDecisions: NeedsYouAdapter = {
+  id: "phoenix-crm-decisions",
+  load: async (access) => {
+    // The module's own gate, asserted HERE and not left to the page — the same shape `hubBadge` uses
+    // and for the same reason: a `Forbidden:` rejection is classified as a TRUE zero upstream.
+    await assertPermission(access, "phoenix_crm", "read");
+    let viewer: PhoenixCrmViewer;
+    try {
+      viewer = await resolvePhoenixCrmViewer(access);
+    } catch (error) {
+      // 🔴 `resolvePhoenixCrmViewer` refuses a login with no HR record through `forbiddenError`, whose
+      // message does NOT begin "Forbidden:" — so `service.ts` would read it as amber and the board
+      // would carry a permanent "could not be read" row for an account that simply holds no seat.
+      // A 403 from the module is a viewer with no rung, which is the third state.
+      if (error instanceof ApiError && error.status === 403) {
+        return { status: "not-applicable", because: error.message };
+      }
+      throw error;
+    }
+    if (!phoenixCrmReadsDecisions(viewer)) {
+      return {
+        status: "not-applicable",
+        because: "Phoenix CRM decisions belong to a territory's managers, the SFE Manager and the Super Admin",
+      };
+    }
+    const counts = await loadPhoenixCrmDecisionCounts(viewer);
+    // Said on every row the test world produced, because a test entry is a real row of his own making
+    // and a reader has to be able to tell the two apart at a glance.
+    const world = counts.isTest ? "These are test entries — the Super Admin's own entries in Phoenix CRM are test entries." : null;
+    const items: NeedsYouItem[] = [];
+
+    if (counts.listRequests > 0) {
+      items.push({
+        key: "phoenix-crm-decisions:list-requests",
+        sourceId: "phoenix-crm-decisions",
+        kind: "approval",
+        lane: "yours",
+        label: `${counts.listRequests} Phoenix CRM list ${plural(counts.listRequests, "request is", "requests are")} at your step`,
+        count: counts.listRequests,
+        people: [],
+        href: needsYouDestinations["phoenix-crm-decisions"].href,
+        externalUrl: null,
+        // No SLA upstream, so no verdict and no age invented here.
+        oldestAt: null,
+        ageDays: null,
+        overdue: false,
+        note: world ?? "A grade, a drop, an add or a bring-back — including the add an out-of-list visit files at the door.",
+      });
+    }
+
+    if (counts.offPlanVisits > 0) {
+      items.push({
+        key: "phoenix-crm-decisions:off-plan-visits",
+        sourceId: "phoenix-crm-decisions",
+        kind: "approval",
+        lane: "yours",
+        label: `${counts.offPlanVisits} off-plan ${plural(counts.offPlanVisits, "visit is", "visits are")} waiting for your approval`,
+        count: counts.offPlanVisits,
+        people: [],
+        href: needsYouDestinations["phoenix-crm-decisions"].href,
+        externalUrl: null,
+        oldestAt: null,
+        ageDays: null,
+        overdue: false,
+        // The cost of the delay, stated plainly. It is the module's own rule, not an SLA.
+        note: world ?? "An off-plan visit counts in nothing until it is decided, so the rep's figures wait on this.",
+      });
+    }
+
+    if (counts.awaitingValidation > 0) {
+      items.push({
+        key: "phoenix-crm-decisions:awaiting-validation",
+        sourceId: "phoenix-crm-decisions",
+        kind: "flag",
+        // WORTH KNOWING, never `yours`: validating a carried-over customer is the rep's own work, and
+        // a district manager may do it beside him (owner, 2026-10-02) — but nothing in it is blocked
+        // on a decision only this viewer can make, which is what the `yours` lane means.
+        lane: "worth-knowing",
+        label: `${counts.awaitingValidation} carried-over ${plural(counts.awaitingValidation, "customer is", "customers are")} still waiting to be validated`,
+        count: counts.awaitingValidation,
+        people: [],
+        href: needsYouDestinations["phoenix-crm-decisions"].href,
+        externalUrl: null,
+        oldestAt: null,
+        ageDays: null,
+        overdue: false,
+        note: `Across ${counts.territories} ${plural(counts.territories, "territory", "territories")}. A visit to a customer nobody has validated yet is saved and scores nothing.`,
+      });
+    }
+
+    return ok(items);
+  },
+};
+
 /**
  * THE REGISTRY. `service.ts` fans out over exactly this array, and
  * `tests/needs-you-never-under-reports.test.ts` holds its ids against `needsYouSourceIds` — so an
@@ -738,6 +852,7 @@ export const needsYouAdapters: readonly NeedsYouAdapter[] = [
   probationDecisions,
   coachingRedZone,
   salaryFlags,
+  phoenixCrmDecisions,
 ];
 
 /**

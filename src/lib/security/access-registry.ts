@@ -761,6 +761,13 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits/form", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: false }),
+  // The rep's own open commitments, and his prep for the next day a plan can hold (2026-10-03). Both
+  // are plain reads with NO POST at all: a commitment closes by going back to the customer, and a
+  // sent week changes only through "Ask to edit this week" — so neither path may ever write. Both are
+  // narrowed in the service to the territory's OWN rep (`territoryForRepWrite`), because they are the
+  // sentences he wrote and his own plan; `read` here is gate one of two, as everywhere in the module.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/commitments", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/call-prep", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // Deciding an off-plan visit: the same split as a grade or drop request, `approve` rather than
   // `update`, and narrowed AGAIN in the service to the one person whose step it is — the territory's
   // reviewing manager, then the SFE Manager. A district manager holding `approve` is not entitled to

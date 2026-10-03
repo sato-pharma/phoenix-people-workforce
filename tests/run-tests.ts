@@ -1723,6 +1723,9 @@ import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
+import { runPhoenixCrmCommitmentsTests } from "./phoenix-crm-commitments.test.ts";
+import { runPhoenixCrmCallPrepTests } from "./phoenix-crm-call-prep.test.ts";
+import { runPhoenixCrmNeedsYouSourceTests } from "./phoenix-crm-needs-you-source.test.ts";
 import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
 import { runPhoenixCrmBlindPayloadTests } from "./phoenix-crm-blind-payloads.test.ts";
 import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
@@ -5973,6 +5976,21 @@ await runTest(
 await runTest(
   "Phoenix CRM visits awaiting validation (a manager must be able to read a zero the rep did not earn: a Phoenix visit to a customer who is not validated yet is SAVED and scores nothing, and on a team that has just started that is EVERY visit — 0 of Delta (1)'s 1,551 customers were validated the day before it began, so a flat 0 on the board had nothing to explain it. The count is a count of work DONE and never a score: it moves no slice, no rate and no target, validating the customer still moves the visit into its own day, only the validation gate feeds it (never a weekend, a holiday, the catch-all contact or a vendor row), the sentence is a statement about the LIST and never a complaint about the rep, \"No calls\" is replaced because it would be untrue of a rep whose every call is waiting, and the rep's own screens never read it at all)",
   runPhoenixCrmAwaitingValidationTests,
+);
+
+await runTest(
+  "Phoenix CRM rep commitments (the four next steps that had NO home: at every visit the rep records one of six next steps with an optional day, and only follow_up ever came back to him — as a next-week plan suggestion. This pins that all five actionable steps resurface and \"Nothing to follow\" does not; that open-or-closed is DERIVED through the module's own pickLastNextStep, so a LATER visit to the same customer addresses it, the newest visit's answer stands, a later \"Nothing to follow\" closes an older promise and a repeat re-opens it on the new day; the four groups measured against the VISIT day with a Friday looking into the week that starts the next morning; that nothing open is silently dropped — dated past this week or undated beyond the named 30-day window is counted and said in a sentence; that the view carries NO aggregate figure and the wording never reads as a verdict on the rep (golden rule #1, and his surfaces were stripped of meters); and that the read is his OWN seat on the RAW visits table with no POST at all, because a commitment closes by going back and a tick would be a step added to his day)",
+  runPhoenixCrmCommitmentsTests,
+);
+
+await runTest(
+  "Phoenix CRM tomorrow's call prep (four continuity facts that existed and could only be read from INSIDE the visit form: \"tomorrow\" is the next day a PLAN can hold, so Thursday's tomorrow is the Saturday and `today + 1` would prepare a Friday that holds no plan at all; the objection is the NEWEST visit's answer and never the newest visit that happens to carry one, with \"No objection\" a stored answer that closes an older one and prints nothing; a missing fact is ABSENT rather than blank, because \"nothing to prepare\" and \"he prepared nothing\" are different sentences; a pharmacy is never a prep line, since it is never planned and the AM/PM binary is the spelling that filed 26 readers' pharmacies among the doctors; and the read is the rep's own seat, the raw visits table, paged, composed of the module's own picks, with NOTHING that writes — a sent week changes only through \"Ask to edit this week\")",
+  runPhoenixCrmCallPrepTests,
+);
+
+await runTest(
+  "Phoenix CRM on the central Needs You board (the board had sixteen sources and none was Phoenix CRM, so a district manager's and the SFE Manager's decisions were visible only inside the module — and the off-plan visit, whose delay costs a rep his figures, counts in nothing until it is decided. This pins the source wired in all four places (id, label a person would say, destination, adapter) rather than one; the link pointing at the LIVE app's Team tab and not at the retired 2026-09-14 pilot path; ONE producer for the counts, read by the module page's own badge AND by the board, with overview.ts holding no private copy — a board reading a smaller number than the module is the under-report; a 403 from the module mapped to not-applicable rather than amber, because forbiddenError's message does not begin \"Forbidden:\"; a medical rep gated out by readsTeamReports instead of handed his own list progress; no catch and no ?? 0 anywhere on the path, so a failed read travels; no integrity signal reaching a central board; and the pure board classifying the two decisions into his own lane, the validation figure into worth-knowing, and a dead Phoenix CRM read into a named amber row that makes the all-clear unprovable)",
+  runPhoenixCrmNeedsYouSourceTests,
 );
 
 await runTest(

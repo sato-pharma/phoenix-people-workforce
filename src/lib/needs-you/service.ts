@@ -1,5 +1,5 @@
 /**
- * The fan-out. Sixteen adapters, one call, a per-source timeout, and no branch that can turn a
+ * The fan-out. One adapter per source, one call, a per-source timeout, and no branch that can turn a
  * failure into a zero.
  *
  * 🔴 WHY THIS IS ONE CALL AND NOT A DEFERRED/STREAMING SECOND PHASE. Several of these reads take

@@ -117,6 +117,18 @@ const ROUTE_GATES: RouteGate[] = [
   post("visits", "create"),
   // Only someone who may enter a visit opens its form.
   get("visits/form", "create"),
+  // The rep's own open commitments — what he told a customer he would do and has not been back for
+  // (2026-10-03). A plain `read`, and there is NO POST on purpose: a commitment closes by going back
+  // to the customer, never by a tick, because a completion input would be a step added to his day
+  // (golden rule #1, the EASY half). Narrowed in the service to the territory's OWN rep
+  // (`territoryForRepWrite`) — these are the sentences HE wrote, and a manager-readable list of them
+  // is a judgement of him.
+  get("commitments"),
+  // His prep for the next day a plan can hold: last seen, the last objection, his own open next step,
+  // the last products (2026-10-03). A plain `read`, no POST at all — the plan is weekly and a SENT
+  // week changes only through "Ask to edit this week", so nothing on this path may write. Narrowed in
+  // the service to the territory's own rep, like the commitments above.
+  get("call-prep"),
   get("list"),
   // The same territory's list as the Reps List board holds it — by brick, with the month's activity.
   // It reads a SECOND source beside the CRM's own, so it is authorised through the CRM's own seat

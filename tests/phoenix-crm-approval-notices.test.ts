@@ -53,25 +53,38 @@ const MIGRATION = "supabase/migrations/20261002220047_phoenix_crm_activity_and_p
 
 export function runPhoenixCrmApprovalNoticeTests() {
   // ── 1. The off-plan visits are counted, and counted at the viewer's OWN step ───────────────────
+  //
+  // 🔴 THE COUNT MOVED OUT OF `overview.ts` ON 2026-10-03 AND THE RULE DID NOT. The central Needs You
+  // board grew a Phoenix CRM source that asks the same question, and a board reading a smaller number
+  // than the module's own badge is the under-report `src/lib/needs-you/types.ts` exists to prevent —
+  // so there is now ONE producer (`server/decision-queues.ts`) and two readers. Every assertion below
+  // is the same assertion it was; only the file it is made against follows the code.
   {
     const overview = source("src/lib/phoenix-crm/server/overview.ts");
+    const queues = source("src/lib/phoenix-crm/server/decision-queues.ts");
     assert.match(overview, /offPlanVisits: number;/, "the overview carries an off-plan count");
     assert.match(
       overview,
-      /offPlanVisits: managerUnplanned \+ sfeUnplanned,/,
+      /offPlanVisits,/,
       "and it is the two steps this viewer may decide, added — never every waiting visit in his scope",
     );
+    assert.match(
+      overview,
+      /countPhoenixCrmOffPlanVisitsWaitingForYou\(decisionSeats\)/,
+      "the badge reads the ONE producer; a private copy here is how it and the board drift apart",
+    );
+    assert.match(queues, /return manager \+ sfe;/, "the producer adds exactly the two steps");
     // The steps are exactly the two `canDecideUnplannedVisit` allows: the manager step on the
     // territories he REVIEWS, the SFE step across the SFE Manager's scope. Reading the count from a
     // wider set than the gate would badge a manager for a decision he cannot take.
     assert.match(
-      overview,
-      /countUnplannedVisits\(reviewSeatIds === null \? UNPLANNED_FIRST_STATUSES : \["manager_pending"\], waitingIsTest, reviewSeatIds\)/,
+      queues,
+      /countPhoenixCrmUnplannedVisits\(\s*seats\.reviewSeatIds === null \? UNPLANNED_FIRST_STATUSES : \["manager_pending"\],\s*seats\.isTest,\s*seats\.reviewSeatIds,\s*\)/,
       "the manager step counts manager_pending on the territories he reviews",
     );
     assert.match(
-      overview,
-      /sfeSeatIds\.length === 0 \? 0 : countUnplannedVisits\(\["sfe_pending"\], false, sfeSeatIds\)/,
+      queues,
+      /seats\.sfeSeatIds\.length === 0 \? Promise\.resolve\(0\) : countPhoenixCrmUnplannedVisits\(\["sfe_pending"\], false, seats\.sfeSeatIds\)/,
       "the SFE step counts sfe_pending across his scope, REAL entries only",
     );
     assert.deepEqual(
@@ -80,10 +93,14 @@ export function runPhoenixCrmApprovalNoticeTests() {
       "the Super Admin's test count holds both steps, as his list-request count does",
     );
     // A head count, never a row read: this runs on every Phoenix CRM page open.
-    assert.match(overview, /\.select\("visit_id", \{ count: "exact", head: true \}\)/, "it is a head count");
+    assert.match(queues, /\.select\("visit_id", \{ count: "exact", head: true \}\)/, "it is a head count");
     // 🔴 No week filter, unlike the plan edits: a waiting off-plan visit does not expire with its
     // week. The visit happened, and it counts in nothing until somebody decides it, however late.
-    const counter = overview.slice(overview.indexOf("async function countUnplannedVisits("), overview.indexOf("async function telegramConnectedOrNull("));
+    const counter = queues.slice(
+      queues.indexOf("export async function countPhoenixCrmUnplannedVisits("),
+      queues.indexOf("function reviewsNothing("),
+    );
+    assert.ok(counter.length > 0, "the off-plan counter is where it says it is");
     assert.equal(/week_start/.test(counter), false, "a waiting off-plan visit never expires, so no week is filtered");
   }
 
