@@ -147,11 +147,26 @@ export function runDirectOrdersShareLinkControlsTests() {
     const assertIdx = source.indexOf("export async function assertDirectOrderShareToken(");
     assert.ok(assertIdx > -1, "assertDirectOrderShareToken must remain the single liveness check");
     const gate = topLevelBlock(source, assertIdx);
-    assert.match(gate, /if \(link\.revoked_at\) throw forbiddenError\(/, "a revoked link must be refused");
+    // These two were pinned to the ONE-LINE form (`if (…) throw forbiddenError(`) until 2026-10-03,
+    // when both branches gained a `noteDeadShareTokenRead` call so a dead token being polled leaves
+    // a trace Phoenix can see (`src/lib/share-links/dead-token-polling.ts`). The spelling changed;
+    // the control did not. `[^}]*` is the deliberate limit — it cannot cross the branch's own
+    // closing brace, so the throw it finds is still inside the `if`, and the counting line between
+    // them cannot grow into a nested condition that skips the refusal.
     assert.match(
       gate,
-      /if \(new Date\(String\(link\.expires_at\)\)\.getTime\(\) < Date\.now\(\)\) throw forbiddenError\(/,
-      "an expired link must be refused",
+      /if \(link\.revoked_at\)\s*\{?[^}]*throw forbiddenError\(/,
+      "a revoked link must be refused — whatever else that branch does first",
+    );
+    assert.match(
+      gate,
+      /if \(new Date\(String\(link\.expires_at\)\)\.getTime\(\) < Date\.now\(\)\)\s*\{?[^}]*throw forbiddenError\(/,
+      "an expired link must be refused — whatever else that branch does first",
+    );
+    assert.ok(
+      !/if \(link\.revoked_at\)\s*\{[^}]*\breturn\b/.test(gate)
+        && !/getTime\(\) < Date\.now\(\)\)\s*\{[^}]*\breturn\b/.test(gate),
+      "neither dead branch may RETURN the link: counting the read must not become a way past the gate",
     );
     assert.match(
       gate,

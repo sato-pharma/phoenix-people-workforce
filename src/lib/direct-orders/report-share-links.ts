@@ -5,6 +5,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission, systemAccessContext } from "@/lib/auth/permissions";
 import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { noteDeadShareTokenRead } from "@/lib/share-links/refusal-counter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   DIRECT_ORDER_REPORT_COLUMNS,
@@ -224,8 +225,18 @@ export async function assertDirectOrderShareToken(input: {
   if (!row) throw notFoundError("Link not found.");
   const link = row as Record<string, unknown>;
   if (String(link.surface) !== input.surface) throw notFoundError("Link not found.");
-  if (link.revoked_at) throw forbiddenError("This link has been revoked.");
-  if (new Date(String(link.expires_at)).getTime() < Date.now()) throw forbiddenError("This link has expired.");
+  // Count the refusal before refusing. What the caller gets back is unchanged — same status, same
+  // terse message — but a dead token being polled now leaves a trace this application can see, and
+  // `dead-token-polling-alert.ts` is what turns that into a message. `refusal-counter.ts` says why
+  // only a row that already exists is ever written.
+  if (link.revoked_at) {
+    await noteDeadShareTokenRead("direct_order_report_share_links", link);
+    throw forbiddenError("This link has been revoked.");
+  }
+  if (new Date(String(link.expires_at)).getTime() < Date.now()) {
+    await noteDeadShareTokenRead("direct_order_report_share_links", link);
+    throw forbiddenError("This link has expired.");
+  }
   // Files are a SEPARATE grant from the table. A token minted to feed a spreadsheet must not become
   // a key to photographs of real shop fronts just because someone guessed the file route exists.
   if (input.requireFiles && !link.allow_files) throw forbiddenError("This link does not carry file access.");
