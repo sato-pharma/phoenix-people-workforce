@@ -1288,6 +1288,12 @@ export const adminNavigationSectionSeeds = [
     id: "sales-vs-target-module",
     items: [
       { href: "/sales/vs-target", icon: Gauge, label: "Sales vs Target", permissions: [{ action: "read", resource: "sales" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
+      // Rankings — the standing of the whole field over any window, cut by line, by several lines,
+      // by the whole company, by title, by region or down to one person (owner, 2026-10-03: the
+      // rep's two ranking cards, "built as a new tab", never inside an overview). Same engine,
+      // same gate and the same three admin-shell roles as Sales vs Target above; portal roles are
+      // redirected to their own scoped analytics by the page itself, exactly as that one does.
+      { href: "/sales/rankings", icon: Trophy, label: "Rankings", permissions: [{ action: "read", resource: "sales" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
       // Make It Happen — the forecast planner (owner 2026-09-13). Of the admin-shell roles only SFE
       // Manager and Super Admin were named; the CEO was not. Enforced by canUseMakeItHappen in
       // src/lib/sales/make-it-happen/scope.ts; portal roles are redirected to their own twin.

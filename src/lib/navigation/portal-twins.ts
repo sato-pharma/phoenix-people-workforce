@@ -194,6 +194,10 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/sales/monthly-closing", to: SOS },
   { from: "/sales/monthly-closing/performance-review", to: SOS },
   { from: "/sales/normalizer", to: SOS },
+  // The Rankings board reads the same published closing figures as Sales vs Target and is gated on
+  // the same `sales:read`, so a portal-mode viewer asking for it belongs on the portal's own Sales
+  // vs Target — the destination `app/(admin)/sales/rankings/page.tsx` already names.
+  { from: "/sales/rankings", to: "/employee-portals/sales-vs-target" },
   { from: "/sales/targets", to: SOS },
   { from: "/sales/truth-check", to: SOS },
   { from: "/sales/upload", to: SOS },

@@ -67,7 +67,7 @@ export const MODULES = [
       "src/lib/business-review/**",
       "src/components/{sales,business-review}/**",
       "app/**/{sales,monthly-closing,sales-vs-target,dsms-performance,med-reps-performance,team-performance,make-it-happen,business-review}/**",
-      "tests/*{closing,qema,office-golden,city-split,business-review}*",
+      "tests/*{closing,qema,office-golden,city-split,business-review,rankings}*",
       "supabase/migrations/*{closing,store_split}*",
     ],
     keywords: ["monthly closing", "closing", "el qema", "qema", "office rule", "city rule", "business review", "factory price", "تقفيل", "مبيعات"],
