@@ -5775,6 +5775,47 @@ drop and the kept comment, the descriptor that never carries a class list, the t
 blindness of the collector and the route, the session-resolved actor and test flag, both layouts,
 the registry declaration, and the unkeyed locked table).
 
+### The label is the control's words, never the card's — the first hour of real data
+
+Owner, 2026-10-03, after reading the first hour: *"trim the touch trail label to the control, not the
+whole card."*
+
+`elementOf` returns the interactive **owner** of a press when there is one, and the bare element under
+the finger when there is not. A touch screen produces that second case constantly: a finger down to
+scroll a list fires a press on a container with no control above it — **36 presses against only 3 taps**
+in the first hour, the gap being the scrolling itself. And a container's `innerText` is every
+descendant's text joined, so the 160-character cap was never a trim. It recorded, for single taps:
+
+| What was pressed | What was recorded | Length |
+| --- | --- | --- |
+| the Telegram banner | "Get Phoenix CRM messages on Telegram Plans, requests and reminders reach your phone the moment they happen. Connect Telegram Later New here? The one-page guide" | **159** |
+| a territory card | "Menoufia 1 · CNS Nada Saied APPROVED 17 AM · 71 PM Approved Fri 2 Oct, 10:34 PM by Mahmoud ElHassanin Nothing flagged Open the plan" | **131** |
+
+At a rep's thousand-odd events a field day that buries the signal the column exists to carry.
+
+**The fix is the first LINE, not a smaller cap**, and that distinction is the whole design. Cutting the
+joined text at 48 characters would keep the start of line one plus whatever of line two happened to
+fit, which reads as one sentence nobody ever saw. `innerText` already breaks a line per rendered
+block, so its first line **is** the heading a person would name the thing by — "Get Phoenix CRM
+messages on Telegram", "Menoufia 1 · CNS". That keeps **which** card was pressed, the only thing a
+container label is for, and drops the paragraph behind it.
+
+So `containerLabelOf` takes the first non-blank line, flattens its whitespace and caps it at
+`MAX_CONTAINER_LABEL_CHARS` (48). An element that is itself interactive is unchanged — its `innerText`
+**is** its own words, and keeps the full 160. An authored `aria-label`, `title` or `placeholder` is
+still asked first for both: an author who wrote a label wrote the label, however long. Cut, never
+ellipsed, for the reason `labelOf` gives — an added "…" is indistinguishable from one the rep typed.
+
+Proved by breaking it three ways and watching each fire its own assertion: flattening the subtree
+again reproduced the exact 159-character banner label; rewiring the collector to `labelOf` fired the
+source assertion, measured on comment-STRIPPED source so the comment explaining the call cannot
+satisfy it; and appending an ellipsis fired the no-ellipsis rule.
+
+**One thing that looked like a defect and is not.** `seat_id` is null on every row recorded that
+night. The collector reads the seat from the `day/<seat>/<date>` segment, and that is the only route
+carrying one — both screens touched that night sit above the seat level, so null is the correct
+answer there, not a miss.
+
 ## A refused capture keeps its photo — owner ruling, 2026-10-03
 
 His words, in two messages: *"save the photo when a validation is refused"*, then — while the first

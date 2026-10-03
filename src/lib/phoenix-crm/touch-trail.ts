@@ -85,6 +85,17 @@ export const SCROLL_SAMPLE_MS = 1_000;
 export const MAX_VALUE_CHARS = 4_000;
 /** A label is the words on the control, not a paragraph. */
 export const MAX_LABEL_CHARS = 160;
+/**
+ * And a CONTAINER the finger merely landed on gets this much — one heading's worth.
+ *
+ * Owner, 2026-10-03: "trim the touch trail label to the control, not the whole card." A press that
+ * finds no interactive owner is recorded against the element under the finger, and that element's
+ * `innerText` is every descendant's text joined — so the first hour of real data recorded a 159-char
+ * label for one tap on a banner ("Get Phoenix CRM messages on Telegram Plans, requests and reminders
+ * reach your phone the moment they happen. Connect Telegram Later New here? The one-page guide").
+ * At a rep's thousand events a day that buries the signal it exists to carry.
+ */
+export const MAX_CONTAINER_LABEL_CHARS = 48;
 /** Held in the browser while it is offline. Past this the OLDEST are dropped: recent is worth more. */
 export const MAX_QUEUED_EVENTS = 1_000;
 
@@ -169,6 +180,29 @@ export function labelOf(text: unknown): string | null {
   const flat = text.replace(/\s+/g, " ").trim();
   if (!flat) return null;
   return flat.length > MAX_LABEL_CHARS ? flat.slice(0, MAX_LABEL_CHARS) : flat;
+}
+
+/**
+ * The words on a CONTAINER the finger landed on — its FIRST LINE, never its whole subtree.
+ *
+ * 🔴 WHY A LINE AND NOT A SHORTER CAP. Cutting the joined text at 48 characters would keep the start
+ * of the first line and then whatever of the second happened to fit, which reads as one sentence that
+ * nobody ever saw. `innerText` already breaks a line per rendered block, so the first line IS the
+ * heading a person would name the thing by — "Menoufia 1 · CNS" for a territory card, "Get Phoenix
+ * CRM messages on Telegram" for the banner. That keeps WHICH card was pressed, which is the whole
+ * value of a container label, and drops the paragraph behind it.
+ *
+ * Blank-line tolerant: a card whose markup opens with an empty block would otherwise label as null.
+ * Cut, never ellipsed, for the reason `labelOf` gives.
+ */
+export function containerLabelOf(text: unknown): string | null {
+  if (typeof text !== "string") return null;
+  for (const line of text.split(/\r?\n/)) {
+    const flat = line.replace(/\s+/g, " ").trim();
+    if (!flat) continue;
+    return flat.length > MAX_CONTAINER_LABEL_CHARS ? flat.slice(0, MAX_CONTAINER_LABEL_CHARS) : flat;
+  }
+  return null;
 }
 
 function textOrNull(raw: unknown, max: number): string | null {
