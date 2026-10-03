@@ -5172,6 +5172,253 @@ queue, and changes no figure. Rule: `.claude/rules/phoenix-crm.md`. Pinned by
 `tests/phoenix-crm-first-visit.test.ts` (who is told, the once-ever key, the words, the save-side gate)
 and by `tests/phoenix-crm-email-block.test.ts`, which holds the whole emailed list to exactly five.
 
+## The rep honour strip's two watermarks — owner's layout, 2026-10-03
+
+He designed this strip himself over one morning, correcting it five times while watching the running
+page. The rule is in `.claude/rules/portal.md`; this is what each correction was and what it measured.
+
+**The layout.** *"You will make it white, striped horizontal and vertical; at the left is PHX logo
+watermark and the right Sato logo watermark, and the ranking centered in between."* A navy band was
+tried first and rejected. Then *"replace Arabic Sato logo with normal logo"* — so the mark is
+`public/brand/sato-pharma-logo-on-light.png`, never `sato-pharma-arabic.png`, and the
+`sato-pharma-identity` skill's "Arabic wordmark as watermark" guidance does not apply here.
+
+**"Mobile view is different than desktop view."** It was, and the cause was structural. The marks hung
+off the **capped plate** (`max-w-[34rem]`), which stops growing at 544px while the band does not — so
+on a 351px band they sat at the band's edges and on a 668px band they sat ~116px inside it. They hang
+off the **band** now. Nothing about the strip may re-introduce a mark positioned against the plate.
+
+**"But resize based on the view, do not fix a size."** Every size is a `cqw` clamp against the strip's
+own width — the `<section>` carries `@container`. 🔴 **Without that class `cqw` silently resolves
+against the viewport**, which is a different number on every page that embeds the strip, so the
+`@container` is load-bearing and is pinned by its own assertion.
+
+**The sizes, corrected four times in one morning.** *"In desktop view the logos are very small"*,
+*"bigger a bit again in the desktop view"*, then *"PHX logo size OK — the Sato logo make a bit smaller,
+same size as the one above"*, then *"also in mobile view needs to be … a bit bigger"*. Each change moved
+one end of a clamp and left the other alone, which is the whole reason the sizes are clamps:
+
+| band width | Phoenix mark | Sato mark |
+| --- | --- | --- |
+| 351px (phone) | 24 → 28 → 32 → 38 → **46px** | 33 → 34 → 40 → 44 → **48px** |
+| 668px (laptop) | 24 → 47 → **73px** | 33 → 53 → 83 → **57px** |
+
+🔴 **The Sato mark's desktop size is not a taste call — it MATCHES the identity card's own mark directly
+above it**, which is `h-7 w-auto` and measures **57×22**. The strip's measures 57×22 at a 668px band.
+That card hides its mark below `sm`, which is why the phone is free to carry a larger one.
+
+**"Align them on the same line" — and the real reason it looked wrong.** Anchoring each mark to the
+band's bottom put their **bottom edges** on one line, which is not the same thing, so they moved onto one
+`flex items-center` row. That still was not enough, and he said so again about mobile. 🔴 **Centring the
+BOXES does not centre the INK.** Measured off the real files: the Phoenix ink centre sits at **46.78%** of
+its 1024×1024 canvas and its ink fills only **64%** of it, while the Sato ink is centred at **50.00%** and
+fills **93%**. So the Phoenix mark read as sitting high. A `translate-y-[3.2%]` on that image — in its
+OWN height, so it survives every clamp — puts the two ink lines on one line: measured **0.01px** apart at
+both 351px and 668px, with the boxes themselves 1.5px and 2.4px apart. The `sato-pharma-identity` skill
+states the general rule this is an instance of: align a Sato mark to its **ink**, never its file edges.
+
+**The clearance has to scale with the marks, and the tightest width is not the phone.** A fixed padding
+against a growing mark is a collision waiting for a wider screen — a `px-10` foot left **2px** between
+the Sato mark and the share control at 375px. Both paddings are `cqw` clamps now. The worst case is the
+**~544px band**, where the plate still fills the strip *and* the marks have already grown with it; above
+it the plate caps and the bare band margin `(w − 544) / 2` does the clearing by itself.
+
+**He then rebuilt it from a banner of his own.** He sent a picture of an existing Phoenix band — Sato
+left, a dateline centred under a short orange tick, Phoenix right, on faint ruled paper — and said
+*"exactly like this, but logos are watermarked and instead of date put rankings."* That reversed the
+sides this strip had carried all day, and it replaced the capped centre plate with three columns.
+
+🔴 **THE MARKS MOVED INTO FLOW, AND THAT IS THE LESSON.** Every overlap this strip ever had — a mark on
+top of "of 35", a mark 2px from the share control, a mark sliced by the foot's rule — came from pinning
+them absolutely: an absolute mark reserves no space, so each width had to be cleared by hand with a
+padding clamp, and a width I had not measured was a defect waiting. Two `flex-1` columns centre the
+middle in the band whatever the marks measure and make a collision impossible. The clearance clamps were
+deleted with the problem they solved.
+
+**The ruled paper, in three corrections.** *"Make the strip with horizontal and vertical lines"* (it had
+been damped to 18% and could not be seen); then *"too much"* at a 24px pitch, which gave twenty-seven
+verticals and read as graph paper; then *"all squares must be … same size"* — the cells were
+`calc(100%/8)` by `calc(100%/2)`, which divides the band exactly but makes RECTANGLES. It is one length
+used twice now, so each cell is a true square.
+
+**The frame he dictated last**, while looking at the page: *"above the July–August 2026 you will make a
+thicker line, its colour is more clearer, only this line. And after the Company and after the CNS line
+you will make also a thick line that ends with the horizontal thick line. And this square will be empty,
+no strips in it. The logo of Sato and the logo of Phoenix are at the bottom down, Sato at the left
+bottom and Phoenix at the right bottom."*
+
+🔴 **AND THEY BRACKET THE RANKING, THEY DO NOT DIVIDE IT.** Read literally, "after the Company and
+after the CNS line" put one rule between the two cells and one past the last — which is what shipped
+first, and he corrected it in the next breath: *"the thicker lines are left the ranking and right it, no
+lines is in between."* Exactly two, one per side, and the count is pinned so a per-cell loop cannot
+quietly reintroduce the middle one.
+
+🔴 **"Ends with" is geometry, not ink.** The rank panel is `self-stretch` and its cell row `flex-1`, so
+the panel's bottom edge IS the row's bottom edge and a full-height rule lands on the horizontal with
+**0.00px** of gap, measured at both 351px and 668px. Give that panel bottom padding back and every
+vertical floats above the line.
+🔴 **The horizontal is a SPAN, not a border.** `border-t-2` computed to **1.25px** here — some app rule
+beats it — so the line he asked to be *thicker* rendered **thinner** than the 2px verticals meeting it.
+A span cannot be out-specified. Verified after: horizontal 2px, verticals 2px, gap 0.00px.
+🔴 **And the bird is trimmed to its ink at the bottom too.** Its ink ends at **78.7%** of its 1024×1024
+canvas, so 21.3% of that image is empty space below the drawing; bottom-aligning the BOXES would have
+stranded it ~15px above the Sato mark's baseline. A wrapper at 78.7% of the mark's own width clips the
+rest, so its bottom edge is the ink's bottom edge — measured 0.00px apart at both widths.
+
+**And then he asked for an honest verdict, and the frame came off.** *"To be honest I don't like it …
+eyeball it yourself and tell me what we can do."* Measured on what was there: the rank panel was 206×64
+in a 668px band — **31%** of it — with **231px** of empty white each side, a foot row spending **26%** of
+the strip's height to say "JUL – AUG 2026", and **five** line weights (1px grid, 2px verticals, 2px
+horizontal, 3px seam, 2px tick). The frame enclosed nothing, so it read as a piece cut out of a
+spreadsheet. Each instruction had been right on its own; the sum had no hierarchy, and the two figures —
+the entire point — were not the loudest thing on it.
+
+Three directions were rendered side by side with his real figures — **A** stripped back, **B** the frame
+pushed out to enclose the whole band, **C** the same strip shrunk to a plate. I recommended B. **He chose
+A**, then on seeing it built: *"not too pale — premium polish and enhance the best."*
+
+🔴 **A's lesson is that the furniture comes back one piece at a time.** Every element removed was once
+a reasonable instruction, so the ABSENCE of each — grid, tick, verticals, second rule, foot row — is pinned
+by its own assertion, and each was broken back in to watch it fire.
+🔴 **And pale is not premium.** A first shipped with every remaining tone at watermark strength — marks at
+22% and 10%, labels `#8a959d`, the window `#a9b2b9`, the share glyph `#b6bec4`: four greys all
+fainter than the identity's own body ink. Now every grey is a real SATO token (soft `#69757e`, body
+`#45515a`), the marks are 62% and 45%, and the figures are 28px from `@md` (24px on a phone so the row
+still fits 351px). The floor is pinned so nobody makes it "quieter" again.
+🔴 **The bird is shown as its ink box.** Its ink spans 14.8%–78.7% of a square canvas, so 36% of the
+image is empty space above and below the drawing — and that empty space set the STRIP'S height: A was
+meant to be ~62px and measured 91px. The wrapper is the ink's own height with the image pulled up by its
+top margin, so the mark keeps its size and a centred row centres the drawing. Measured after: **72px** at
+a 914px band and **89px** on a phone (the window wraps under the figures there), ink centres **0.0px**
+apart at both, no horizontal overflow.
+
+**"Too pale" — said twice — and the period moves under the ranking.** The first polish lifted the
+marks to 62% and 45% and moved the greys up one token; he looked again and said the same word, and
+added *"I want the duration under the rank, not beside."* So nothing on the strip is faded any more:
+both marks are at full strength and every piece of type is the identity's body ink `#45515a` or a brand
+colour. The two marks and the two figures now share one palette — Sato blue and Phoenix orange — which
+is his own *"brand Sato + Phoenix"* from earlier the same day.
+
+🔴 **The Phoenix mark became the COLOUR BIRD** (`phoenix-bird-icon.png`, the logo the sidebar uses) in
+place of the camera line-art. The line-art is a watermark drawing — at full strength it reads as an
+illustration — and its square canvas is 36% empty space that had to be clipped by hand. Measured off the
+bird icon: ink centred at **50.05%** of its canvas and filling **87.5%** of it, so it needs no clip and no
+nudge. If anyone puts the line-art back, the ink-box wrapper has to come back with it.
+🔴 **One window label, always in the centre column, under the figures.** It had been split into a phone
+copy under the figures and a laptop copy inline beside them; that split is what he overruled.
+
+Measured after, both widths: Sato **57×22** at a 668px band (exactly the identity card's own mark directly
+above), the bird 33×33, the period centred under the figures to **0.0px**, the two marks' centres **0.0px**
+apart, no horizontal overflow; 76px tall on a laptop, 91px on a phone.
+
+**Then he showed the design he had wanted all along.** He sent a finished Sato × Phoenix photo frame —
+a team photo over a footer: a blue rule, a faint square grid, Sato on the left, the Phoenix lockup on
+the right, and a date under a short orange tick in the middle — and said *"check this design"*, then
+*"build the rank strip in this footer's style"*, then *"put a line at the bottom as the one at the top"*.
+A navy-tile redesign tried just before it was rejected in one word ("no") and parked on the local
+branch `trial/rank-strip-seal-tiles`; it never reached CI.
+
+**The footer, measured off the image (2000×1659) rather than eyeballed:** a 3px brand-blue rule; a grid
+of true 34px squares in neutral grey; Sato at 9.6% of the width; the lockup at 17.5% — the bird 114×88,
+then PHOENIX in navy `#00132a` over WORKFORCE in orange, 4px from the bird; a 32×3px orange tick 18px
+above a line of near-black navy capitals.
+
+🔴 **Two of the footer's own defects were deliberately NOT copied.** Its date is centred BETWEEN the logos
+(x=927 of 2000), which is 73px left of the photo above it, because the lockup is 158px wider than the Sato
+mark; and its side margins differ by 13px (138 vs 125). The strip puts the ranking between two EQUAL
+`flex-1` columns — on the true centre, measured 0.0px off — and pads both sides the same.
+🔴 **His own earlier rule overrides the footer in one place:** the area behind the ranking stays blank
+(*"this square will be empty, no strips in it"*). The footer's small date can sit on the grid; 26–30px
+figures cannot.
+🔴 **The grid had to be FAINTER than the footer's grey to read the same.** At `#e4e7ea` it read far louder
+on a phone than on his image, because a 1px CSS line is two device pixels at 2x. It is `#ebeef1`.
+🔴 **The portal's own 88% zoom shrinks container units by about that factor**, so the first cut landed
+the logos ~12% under the footer's proportions. They are calibrated to how he views it; the lockup is
+1.87× the Sato mark's width against the footer's 1.83×, and on a phone, where the wordmark gives way to
+the bird alone, the bird's floor is 40px so the two sides weigh the same.
+
+Pinned by `tests/rep-rank-badges.test.ts` — the corner anchoring, the one centre-aligned row, the fluid
+mark widths, the fluid clearance paddings, and the `@container`. Each was broken and watched to fire.
+
+## The rep's performance card — his banner, his proof, his footer (2026-10-03)
+
+The card a Medical Rep saves or shares from his rank strip. The rule is in `.claude/rules/portal.md`;
+this is why it looks the way it does.
+
+**What he asked for.** *"The export picture must show the photo, the name, the title, the identity banner
+and the rank — so full redesign the photo, premium, polishing it."* The first card had none of the
+photograph, printed the HR id under the name, and carried its ranks on two navy "metal" panels — the
+look he had just rejected for the strip.
+
+**Three bands, each one a design he already owns.** Nothing on the card is invented for it.
+- **The identity banner** is `PhoenixSignatureCard` restated in print CSS: the cream field and its two
+  radial glows, `identity-watermark.png` bleeding off the right exactly as the component places it, the
+  portrait in `EmployeePortrait`'s gold gradient bezel with its glow, the hairline divider, the Pinyon
+  Script name over the orange rule with its square, the title in spaced orange capitals, and the navy wave
+  with its orange stroke (the component's own SVG path). The component is design-locked, so the card
+  never imports or edits it.
+- **The proof**: the cumulative figure toned by the one target scale, a bar drawn TO SCALE (at 108% the
+  100% tick sits at 100/108 of the bar — Sato's "charts are drawn to scale or not at all"), the facts as
+  label/value rows, and the Achievement-by-month chart.
+- **His footer**, the strip's own design at card scale: 3px Sato-blue rules top and bottom, the faint
+  `#ebeef1` grid offset half a square so a line runs through the centre, Sato left, the Phoenix lockup
+  right, and both ranks on a blank panel of 20 × 8 whole squares under the orange tick, the period beneath.
+  A long line label ("Anti Infective line") widens the panel two squares at a time, so it stays even.
+
+🔴 **No HR id.** The portal banner prints one under the title; a card built to be posted publicly shows a
+name or nothing. Pinned on the emitted document: the HR id appears nowhere in it.
+
+🔴 **The structure line is seats and vacancies only.** The first card printed "111 seats · 35 vacant · 70
+scored this period". His rule that same day was *"do not show the current medical reps, only show total
+structure of medical reps count vacants"* — the scored count IS the current reps, so it went: the card
+reads "111 rep seats · 35 vacant".
+
+**The photograph is the portal's, polished like the milestone keepsake.** `loadMilestonePhotoBytes` is
+the one place photo resolution lives (uploaded → bundled static → none, the portal's order), and the
+milestone card's `polishPortraitDataUri` grades it — at 640px, since the card draws it 204px wide at twice
+the pixels. No readable photo is the monogram plate, never a failed card.
+
+**The name is the banner's signature** (`signatureNameFor`, `src/lib/employee-portal/signature-name.ts`):
+three parts or more cut the middle to its initial, "Hager N. Abdelmaged". The banner's copy lives inside
+the locked component, so the test pins BOTH copies — a change to one without the other fails it.
+
+**Built for the longest real values, measured off production that day** (76 reps): area "Dokki -
+Mohandseen - Bolak", line "Anti Infective", title "Senior Medical Representative", signature names from
+"Amr M. Gbr" to "Esraa F. Al-Shandalati". Three defects the stress renders caught before he saw anything:
+- **Equal thirds broke "MONTHS CLOSED" onto two lines** and dropped its value below the others; with a
+  long area the facts then ran under the footer, and the 8px achievement bar — a flex item — was squeezed
+  to nothing, leaving only its 100% tick. Facts are label/value rows now, nothing in the column shrinks,
+  and the worst case ends 14px clear of the footer.
+- **A value broke inside a word** ("Alexandri / a") under `overflow-wrap: anywhere`. It wraps at spaces only.
+- **A short name under a long title** let the centred title spill left across the divider. The signature
+  block is now as wide as the WIDER of the two, so the rule becomes a signing line under a short name.
+
+**Fonts.** "Noto Sans" at 400 and 700 only — production's Chromium has `font-noto` (the Dockerfile) and
+the laptop has it too, so the render approved here is the one served there; the PDF embeds exactly
+NotoSans-Regular, NotoSans-Bold and PinyonScript-Regular. Pinyon Script is inlined as a data URI, and the
+layout pass fits the one-line name only after `document.fonts.ready` — an unloaded webfont measures at the
+fallback's metrics.
+
+🔴 **The PDF was checked as a PICTURE, and that found the one defect the picture did not have.** Both files were
+exported through the real route (`POST /api/employee-portals/performance-card`, dev-auth as the rep), the PDF
+page rasterised with the repo's own pdf.js, and the two diffed pixel by pixel. They agreed everywhere but
+one place: the banner's 1px divider, which the component fades out through ALPHA, printed as a dark line
+in the PDF — darkest pixel 87 against 203. It fades between solid colours now (cream → beige → cream):
+197 against 203, and no differing pixel left in it. (Rewriting its 'transparent' stops as zero-alpha
+colour changed nothing — Chrome already normalises them; the alpha itself was the problem.)
+
+🔴 **The gradient-numeral trap is retired, not forgotten.** The first card's metal numerals needed BOTH
+`-webkit-text-fill-color: transparent` and an inline `background-image` (the `background` shorthand
+resets `background-clip`) — two real renders had shipped an empty gold box where the rank belonged. The
+redesign has no gradient text; the test keeps the guard and arms it the moment `background-clip: text`
+returns.
+
+Pinned by `tests/rep-performance-card.test.ts` on the emitted HTML — the photo in the bezel and the
+monogram fallback, the signature name and title, the inlined script face, no HR id, both ranks in his
+footer and their order, the rules, the grid, the whole-square panel, the to-scale bar, the structure line
+without the scored count, and the refusal to print a card the layout pass did not run on. The photo, the
+HR id, the scored count and the ranks were each broken and watched to fire.
+
 ## Sick leave evidence is an append-only dated history — owner ruling, 2026-10-03
 
 **His words**, on `/employee-portals/vacation-request`: *"here in sick leaves, make the employee able

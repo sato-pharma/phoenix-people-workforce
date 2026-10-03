@@ -35,11 +35,17 @@ export async function GET(_request: Request, context: { params: Promise<{ token:
   const image = shareCardImageUrl(token);
   const canonical = shareCardPublicUrl(token);
   const title =
-    payload.k === "milestone" ? "A Sato Pharma milestone" : "A Sato Pharma spotlight";
+    payload.k === "milestone"
+      ? "A Sato Pharma milestone"
+      : payload.k === "performance"
+        ? "A Sato Pharma performance card"
+        : "A Sato Pharma spotlight";
   const description =
     payload.k === "milestone"
       ? "A service anniversary or birthday at Sato Pharma."
-      : "A sales achievement recognised at Sato Pharma.";
+      : payload.k === "performance"
+        ? "A medical representative's achievement against target at Sato Pharma."
+        : "A sales achievement recognised at Sato Pharma.";
   const portal = systemDeployment.productionUrl;
 
   const html = `<!doctype html>

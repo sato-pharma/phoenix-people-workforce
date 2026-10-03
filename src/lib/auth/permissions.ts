@@ -99,6 +99,14 @@ export type PermissionResource =
   // the wire. Owner, 2026-09-30: a rep may filter his own achievement over any period and generate
   // the pic or PDF only at 90% and above.
   | "spotlight_self"
+  // The performance card (self): a MEDICAL REP exporting his OWN keepsake — his banner, his rank
+  // and his achievement by month — as a picture or a PDF, and minting the public link that lets
+  // LinkedIn, Facebook and WhatsApp show it (owner, 2026-10-03). Its OWN resource for the same
+  // reason `spotlight_self` is one: the route renders the caller's card from his session HR id and
+  // never from the wire, so the grant reaches nobody else's numbers. Deliberately NOT folded into
+  // `employee_profile:export`, which is a broad record-export right the rep does not hold and must
+  // not gain in order to save a picture of himself.
+  | "performance_card_self"
   // Milestones: the service-anniversary and birthday keepsake. SUPER ADMIN ONLY — it is NOT the
   // same shape as spotlight above, and this is the one place that says so. It was Super Admin and
   // CEO until the owner narrowed it himself on 2026-09-23, in these words: "not approved. Make it
@@ -247,6 +255,7 @@ export const permissionResources: PermissionResource[] = [
   "admin",
   "spotlight",
   "spotlight_self",
+  "performance_card_self",
   "milestones",
   "customer_identity",
   "overview",
@@ -1271,6 +1280,10 @@ const defaultPermissionMatrix: PermissionMap = {
     // `export` renders the picture or the PDF. Self-scope is enforced in the loader by his session
     // HR id, never a wire field — this grant reaches nobody else's numbers.
     spotlight_self: ["read", "export"],
+    // The performance card (self): his own banner, rank and achievement chart as a picture or a
+    // PDF, plus the public link that carries it to LinkedIn/Facebook/WhatsApp. `export` is the only
+    // action — there is nothing to read that his landing page does not already show him.
+    performance_card_self: ["export"],
   },
   "District Manager": {
     // Market Awareness: NO GRANT. He held `read` as an informed party (owner answers 42 and 43)

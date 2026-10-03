@@ -1800,6 +1800,7 @@ export const accessRegistry = [
   // published closing.
   sessionApi({ methods: ["POST"], pattern: "/api/spotlight/me/preview", permission: { resource: "spotlight_self", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET", "POST"], pattern: "/api/spotlight/me/sheet", permission: { resource: "spotlight_self", action: "export" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET", "POST"], pattern: "/api/employee-portals/performance-card", permission: { resource: "performance_card_self", action: "export" } }),
   // ── Milestones ───────────────────────────────────────────────────────────────────────────────
   // The service-anniversary keepsake. SUPER ADMIN ONLY — the owner narrowed it from Super Admin +
   // CEO on 2026-09-23 ("make it only super admin. None either uh, CEO"). The due list reads every

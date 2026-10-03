@@ -1967,6 +1967,7 @@ import { runSectionCardHeaderFitsAPhoneTests } from "./section-card-header-fits-
 import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-phone.test.ts";
 import { runPortalRepKpiMonthTests } from "./portal-rep-kpi-month.test.ts";
 import { runRepRankBadgesTests } from "./rep-rank-badges.test.ts";
+import { runRepPerformanceCardTests } from "./rep-performance-card.test.ts";
 import { runPhoenixCrmVisitOrganogramTitlesTests } from "./phoenix-crm-visit-organogram-titles.test.ts";
 import { runSalesCommandBandFitsALaptopTests } from "./sales-command-band-fits-a-laptop.test.ts";
 
@@ -7162,6 +7163,10 @@ await runTest(
 await runTest(
   "a Medical Rep's honour badges rank the month his tile shows: top 15 of the company, top 7 of his line, nothing outside them",
   runRepRankBadgesTests,
+);
+await runTest(
+  "a Medical Rep exports and shares his own performance card: the structure is the denominator, no money on it, self only",
+  runRepPerformanceCardTests,
 );
 await runTest(
   "who was on a visit is named with his organogram job title, never the visit slot (Rep / Manager / Senior manager)",

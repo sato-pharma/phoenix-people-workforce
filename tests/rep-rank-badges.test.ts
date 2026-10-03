@@ -41,6 +41,7 @@ import { stripComments } from "./support/comment-strip.ts";
 const RANK = "src/lib/employee-portal/rep-rank.ts";
 const SNAPSHOT = "src/lib/employee-portal/home-snapshot.ts";
 const CENTER = "src/components/employee-portal/portal-command-center.tsx";
+const STRIP = "src/components/employee-portal/rep-honour-strip.tsx";
 
 /** Source with comments removed and whitespace flattened — these files are hard-wrapped at ~100 cols. */
 const flat = (path: string) => stripComments(readFileSync(path, "utf8")).replace(/\s+/g, " ");
@@ -370,105 +371,222 @@ export function runRepRankBadgesTests() {
     /const achMonth = mrAchievementPeriod \?/.test(center),
     `${CENTER}: the Achievement tile's own month label comes from mrAchievementPeriod`,
   );
+  // 🔒 HIS OWN PLACEMENT, 2026-10-03: "no, put it above Medical Representative / Field Performance",
+  // and then "I want only a strip … that simple, easy cake — not all over-engineered." Two medals and
+  // a separate export panel became ONE strip.
   assert.ok(
-    /<RepRankBadges standing=\{mrRankStanding\} \/>/.test(center),
-    `${CENTER}: the badge prints its OWN window, never the tile's month — they cover different periods`,
+    (center.match(/<RepHonourStrip standing=\{mrRankStanding\} \/>/g) ?? []).length === 1,
+    `${CENTER}: ONE strip on the rep's landing`,
   );
-  // 🔒 HIS OWN PLACEMENT, 2026-10-03: "no, put it above Medical Representative / Field Performance".
+  // 🔒 "Remove this section, Medical Representative / Field Performance" (owner, 2026-10-03). The bar
+  // the strip used to sit above is gone from the REP's landing — the other roles keep theirs.
   assert.ok(
-    /<RepRankBadges standing=\{mrRankStanding\} \/> <PortalContextBar context="Field Performance"/.test(center),
-    `${CENTER}: the badges sit directly ABOVE the Field Performance context bar — the owner moved them there`,
+    !/<PortalContextBar context="Field Performance" role="Medical Representative"/.test(center),
+    `${CENTER}: no "Medical Representative · Field Performance" bar on the rep's landing — he removed it`,
   );
-
-  // ── 8. The badge's own look ──────────────────────────────────────────────────────────────────
-  const badgeStart = center.indexOf("function RepRankBadges");
-  const badgeEnd = center.indexOf("function RepFrequencyBreakdown", badgeStart);
-  assert.ok(badgeStart > 0 && badgeEnd > badgeStart, `${CENTER}: RepRankBadges must exist to be measured`);
-  const badge = center.slice(badgeStart, badgeEnd);
+  // 🔒 LINE · JOINED · REPORTS TO ON ONE LINE, AT EVERY WIDTH (owner, 2026-10-03: "in mobile view I want
+  // this to be in one line, not two"). It paired Line + Joined on a phone and stacked Reports To under
+  // them. The row no longer turns into a column below sm, and the last cell takes what is left. Every
+  // cell stays min-w-0 and its value wraps: a long name breaks onto a second line inside its own cell,
+  // never an ellipsis and never a sideways scroll (measured with "Anti Infective" and a three-part
+  // manager name at 375px — one row, nothing clipped, page overflow 0).
   assert.ok(
-    /if \(!standing\) return null;/.test(badge) && /if \(badges\.length === 0\) return null;/.test(badge),
-    `${CENTER}: no badge and no consolation state outside the two bands — the owner's own sentence`,
-  );
-  assert.ok(
-    !/\brounded(-|\b)/.test(badge),
-    `${CENTER}: the square-edge golden rule — no round or semi-round corners on the badges`,
-  );
-  assert.ok(
-    !/truncate|line-clamp|text-ellipsis|…/.test(badge),
-    `${CENTER}: never truncate — where it collides with fitting the screen, wrapping wins (AGENTS.md §4)`,
+    /<div className="relative flex gap-px">/.test(center) && !/flex flex-col gap-px sm:flex-row/.test(center),
+    `${CENTER}: Line, Joined and Reports To share ONE row on a phone — never stacked into two`,
   );
   assert.ok(
-    !/overflow-x-auto|min-w-\[/.test(badge),
-    `${CENTER}: a horizontal scroll is the bug the fits-the-screen rule names, never the fix`,
-  );
-  assert.ok(
-    badge.includes("@container") && /@2xl:grid-cols-2/.test(badge),
-    `${CENTER}: two across only once the ROW has the width — a container query, never the viewport`,
+    !/RepRankBadges|RepPerformanceCardShare/.test(center),
+    `${CENTER}: the two medals and the export panel are gone — they are what made the page crowded`,
   );
 
-  // 🔒 THE BRANDS, AND THE FIELD THEY ARE STRUCK ON (owner, 2026-10-03: "colour off, matching the
-  // system identity" → "brand Sato + Phoenix"). The company badge wears Phoenix's own orange and
-  // warm gold off the signature card; the line badge wears Sato's logo blues; both sit on the
-  // identity card's navy band, which is the colour immediately above them on the page.
-  const tonesStart = center.indexOf("const REP_HONOUR_FIELD");
-  const tones = center.slice(tonesStart, center.indexOf("function RepRankBadges"));
-  assert.ok(tonesStart > 0 && tones.length > 0, `${CENTER}: the honour metals must be declared before the badge`);
+  // ── 8. The strip itself ──────────────────────────────────────────────────────────────────────
+  const strip = flat(STRIP);
+  assert.ok(strip.startsWith('"use client"'), `${STRIP}: it renders and shares files, so it is a client component`);
   assert.ok(
-    /#0b1f3a/.test(tones) && /#2a3a5c/.test(tones),
-    `${CENTER}: the field is PhoenixSignatureCard's own navy — the band sitting directly above these badges`,
+    /if \(!standing\) return null;/.test(strip),
+    `${STRIP}: no strip and no consolation state outside the two bands — the owner's own sentence`,
   );
   assert.ok(
-    /#f47b20/.test(tones) && /#f9c06a/.test(tones),
-    `${CENTER}: the company badge is struck in PHOENIX metal — the signature card's orange and warm gold`,
+    !/\brounded(-|\b)/.test(strip),
+    `${STRIP}: the square-edge golden rule — no round or semi-round corners, not even on an icon frame`,
   );
   assert.ok(
-    /#1482C2/.test(tones) && /#0A527D/.test(tones),
-    `${CENTER}: the line badge is struck in SATO metal — the logo blues from house-identity.ts`,
+    !/truncate|line-clamp|text-ellipsis|…/.test(strip),
+    `${STRIP}: never truncate — where it collides with fitting the screen, wrapping wins (AGENTS.md §4)`,
   );
   assert.ok(
-    /REP_HONOUR_PHOENIX/.test(badge) && /REP_HONOUR_SATO/.test(badge),
-    `${CENTER}: one brand per board — Phoenix for the company, Sato for the line`,
+    !/overflow-x-auto|min-w-\[/.test(strip),
+    `${STRIP}: a horizontal scroll is the bug the fits-the-screen rule names, never the fix`,
+  );
+  // 🔒 HIS FOOTER, 2026-10-03. He sent a finished Sato × Phoenix photo frame — "check this design" —
+  // then "build the rank strip in this footer's style", then "put a line at the bottom as the one you
+  // are putting at the top". Everything pinned below is that footer, MEASURED off the image: a 3px
+  // brand-blue rule, a faint SQUARE grid, Sato full colour on the left, the full Phoenix LOCKUP (bird +
+  // PHOENIX + WORKFORCE) on the right, and a 32×3px orange tick over a line of navy capitals in the
+  // middle — the date on his footer, the RANKING here.
+  // 🔴 THIS SUPERSEDES DIRECTION A, which pinned the ABSENCE of the grid and the tick. Those were right
+  // for A and are wrong for this; his newer instruction is the design. Do not "restore" A's bans.
+  assert.ok(
+    /linear-gradient\(to_right,#ebeef1_1px,transparent_1px\),linear-gradient\(to_bottom,#ebeef1_1px,transparent_1px\)/.test(strip)
+      && /bg-\[length:18px_18px\]/.test(strip),
+    `${STRIP}: the ruled paper is a faint SQUARE grid — one length used twice, as on his footer`,
+  );
+  // 🔴 FAINT ON PURPOSE. The first build used #e4e7ea and on a phone it read far louder than his
+  // footer: a 1px CSS line is TWO device pixels at 2x, so the same grey draws twice the weight.
+  assert.ok(
+    !/linear-gradient\(to_right,#e4e7ea|linear-gradient\(to_right,#dde4e8/.test(strip),
+    `${STRIP}: the grid stays at the faint #ebeef1 — the darker greys read louder than his footer on a 2x screen`,
   );
   assert.ok(
-    !/slate-900|slate-800|amber-400|sky-400/.test(badge + tones),
-    `${CENTER}: no generic palette colour on an honour — it is the two brands or nothing`,
+    /shrink-0 flex-col items-center justify-center bg-white/.test(strip),
+    `${STRIP}: the area behind the ranking stays BLANK — his own rule ("this square will be empty") overrides the footer`,
   );
-  // The award devices, pinned so a later tidy-up cannot flatten the badge back into a plain tile.
+  // 🔒 THE BLANK PANEL IS CUT EXACTLY ON THE GRID — kept by the owner, 2026-10-03. Measured before: its
+  // edges sat 1.8px off the nearest line at the sides and 4px off at top and bottom, so it was ringed
+  // by slivers of squares — his "all squares must be the same size", at the panel's edge. A line runs
+  // through the strip's CENTRE (the half-tile offset — `bg-center` centres a TILE, whose line sits on
+  // its own edge, 9px off centre), and the panel is an EVEN number of whole 18px cells: 10 × 6 on a
+  // phone, 14 × 6 from @md. Measured after: 0.00px and 0.04px off the lines.
   assert.ok(
-    /linear-gradient\(90deg/.test(tones),
-    `${CENTER}: the top edge is a metal gradient with a highlight band, never a flat status rail`,
-  );
-  assert.ok(
-    /bg-clip-text text-transparent/.test(tones),
-    `${CENTER}: the rank numerals are struck in metal, not painted one flat colour`,
-  );
-  assert.ok(
-    (badge.match(/border-l border-t|border-r border-t|border-b border-l|border-b border-r/g) ?? []).length === 4,
-    `${CENTER}: four corner brackets — the certificate device, and four right angles by construction`,
+    /bg-\[position:calc\(50%_\+_9px\)_calc\(50%_\+_9px\)\]/.test(strip),
+    `${STRIP}: a grid line runs through the strip's centre — the half-tile offset the panel's cut depends on`,
   );
   assert.ok(
-    />\s*Rank\s*<\/span>/.test(badge) && /sealOuter/.test(badge) && /sealInner/.test(badge),
-    `${CENTER}: the double-ruled square seal holds the place — a square hallmark, never a round medal`,
+    /h-\[108px\] w-\[180px\]/.test(strip) && /@md:w-\[252px\]/.test(strip),
+    `${STRIP}: the blank panel is an even number of WHOLE grid cells — 10 × 6, and 14 × 6 from @md`,
+  );
+  // 🔒 PHOENIX IS NAMED ON A PHONE — kept by the owner, same day. Below @md the lockup gives way to the
+  // bird, and the strip read "SATO PHARMA" on one side and an unlabelled bird on the other.
+  assert.ok(
+    />\s*PHOENIX\s*<\/span>[\s\S]{0,40}<\/span>/.test(strip) && /tracking-\[0\.14em\] text-\[#0b1f3a\] @md:hidden/.test(strip),
+    `${STRIP}: on a phone the bird carries the word PHOENIX under it; from @md the full lockup takes over`,
   );
   assert.ok(
-    badge.includes("COMPANY_RANK_BADGE_LIMIT") && badge.includes("LINE_RANK_BADGE_LIMIT"),
-    `${CENTER}: the badge prints the limits from the module that enforces them, so the two cannot drift`,
+    /h-\[3px\] w-8 bg-\[#f47b20\]/.test(strip),
+    `${STRIP}: the orange tick sits over the ranking, as it sits over the date on his footer`,
   );
   assert.ok(
-    badge.includes("You ranked") && badge.includes("medical reps"),
-    `${CENTER}: the badge says what the owner asked for — "you ranked Nth of N medical reps"`,
+    /absolute inset-x-0 top-0 z-10 h-\[3px\] bg-\[#0879b8\]/.test(strip)
+      && /absolute inset-x-0 bottom-0 z-10 h-\[3px\] bg-\[#0879b8\]/.test(strip),
+    `${STRIP}: a 3px brand-blue rule along the TOP and its twin along the BOTTOM — "a line at the bottom as the one at the top"`,
   );
   assert.ok(
-    /ordinal\(badge\.rank\)/.test(badge),
-    `${CENTER}: a rank reads as an ordinal — "8th", not "8"`,
+    !/self-stretch bg-\[#0879b8\]/.test(strip) && !/inset-y-0 left-0 w-\[3px\]/.test(strip),
+    `${STRIP}: no vertical rules and no side seam — the footer is framed top and bottom only`,
+  );
+  // 🔴 THE PERIOD IS UNDER THE RANKING, AT EVERY WIDTH — "I want the duration under the rank, not beside".
+  assert.ok(
+    (strip.match(/\{standing\.windowLabel\}/g) ?? []).length === 1,
+    `${STRIP}: ONE window label, always UNDER the ranking — never split into a phone copy and an inline laptop copy`,
+  );
+  {
+    const centre = strip.indexOf("shrink-0 flex-col items-center justify-center bg-white"); // comments are stripped from strip
+    const label = strip.indexOf("{standing.windowLabel}");
+    const right = strip.indexOf("flex min-w-0 flex-1 items-center justify-end gap-1");
+    assert.ok(
+      centre >= 0 && label > centre && label < right,
+      `${STRIP}: the window label lives in the CENTRE column, under the figures — where his footer has the date`,
+    );
+  }
+  assert.ok(
+    /aria-label=\{open \? "Hide save and share"/.test(strip) && /<Share2/.test(strip),
+    `${STRIP}: save and share are still one control on the strip — beside the period, never a second panel`,
+  );
+  // 🔴 NOT PALE — said twice. No wash-grey type and no faded mark.
+  assert.ok(
+    !/text-\[#a9b2b9\]|text-\[#b6bec4\]/.test(strip),
+    `${STRIP}: no wash-grey type on the strip`,
   );
   assert.ok(
-    /standing\.windowLabel/.test(badge),
-    `${CENTER}: every badge names the window it ranked — a rank with no period on it is a fact about nothing`,
+    !/opacity-\[0\.\d+\][^"]*"\s*src="\/brand\/(sato-pharma|phoenix)/.test(strip) && !/select-none opacity-/.test(strip),
+    `${STRIP}: both marks at FULL strength, as on his footer — he called the faded ones "too pale" twice`,
   );
-  // The payslip rule covers every landing surface, and this is a new element on one of them.
+  // The footer's own ink: the date on it is near-black navy (darkest pixel #061319). The labels, the
+  // period and the denominators carry the identity navy, never a grey.
   assert.ok(
-    !/netSalary|payslip/i.test(badge),
-    `${CENTER}: no payslip on a landing surface, not even by accident on a new badge`,
+    (strip.match(/text-\[#0b1f3a\]/g) ?? []).length >= 3
+      && !/tracking-\[0\.2em\] text-\[#69757e\]|tracking-\[0\.2em\] text-\[#8a959d\]/.test(strip.split("{open && (")[0]),
+    `${STRIP}: labels, period and denominators are the footer's NAVY ink — no grey type on the strip itself`,
+  );
+  assert.ok(
+    /@md:text-\[30px\]/.test(strip),
+    `${STRIP}: the figures carry HERO weight on a laptop — they are the whole point of the strip`,
+  );
+  // 🔒 SATO LEFT, PHOENIX RIGHT — his footer's order. Structural, not distance-based.
+  {
+    const leftCol = strip.indexOf("flex min-w-0 flex-1 justify-start");
+    const rightCol = strip.indexOf("flex min-w-0 flex-1 items-center justify-end gap-1");
+    const sato = strip.indexOf("sato-pharma-logo-on-light.png");
+    const phoenix = strip.indexOf("phoenix-bird-icon.png");
+    assert.ok(
+      leftCol >= 0 && sato > leftCol && sato < rightCol,
+      `${STRIP}: the SATO mark is in the LEFT column — his footer's own order`,
+    );
+    assert.ok(
+      rightCol >= 0 && phoenix > rightCol && sato < phoenix,
+      `${STRIP}: the PHOENIX lockup is in the RIGHT column — his footer's own order`,
+    );
+  }
+  // 🔴 THE FULL LOCKUP, as on his footer: the bird, then PHOENIX in navy over WORKFORCE in orange. Below
+  // @md there is no room for the words beside a ranking, so the bird carries the mark alone there.
+  assert.ok(
+    />\s*PHOENIX\s*</.test(strip) && />\s*WORKFORCE\s*</.test(strip) && /hidden flex-col @md:flex/.test(strip),
+    `${STRIP}: the Phoenix mark is the full LOCKUP from @md — bird, PHOENIX and WORKFORCE — and the bird alone on a phone`,
+  );
+  // 🔴 THE MARKS STAY IN FLOW in their own flex-1 columns — every overlap this strip ever had came from
+  // pinning them absolutely. And the two columns are EQUAL, which is what puts the ranking on the TRUE
+  // centre: his footer centres its date BETWEEN the logos, 73px left of the photo above it, because the
+  // lockup is 158px wider than the Sato mark. That defect is deliberately not copied.
+  assert.ok(
+    !/absolute[^"]*(sato-pharma|phoenix-bird)/.test(strip)
+      && /flex min-w-0 flex-1 justify-start/.test(strip)
+      && /flex min-w-0 flex-1 items-center justify-end gap-1/.test(strip),
+    `${STRIP}: both marks in FLOW in two EQUAL flex-1 columns — the ranking sits on the true centre, not between the logos`,
+  );
+  assert.ok(
+    !/px-\[clamp\(|\bpl-\d|\bpr-\d/.test(strip.split("{open && (")[0]),
+    `${STRIP}: symmetric side padding — his footer's margins differ by 13px, this one's do not`,
+  );
+  assert.ok(
+    /src="\/brand\/phoenix-bird-icon\.png"/.test(strip) && !/phoenix-camera-watermark/.test(strip),
+    `${STRIP}: the Phoenix bird is the colour logo, not the faded camera line-art`,
+  );
+  assert.ok(
+    /@container/.test(strip),
+    `${STRIP}: the strip is its own query container, so every size below scales with the STRIP, not the page`,
+  );
+  // Calibrated against his footer as he VIEWS it: the portal's own 88% zoom shrinks container units by
+  // about that factor, so these land on the footer's proportions at the zoom he uses.
+  assert.ok(
+    /w-\[clamp\(46px,11cqw,112px\)\]/.test(strip) && /w-\[clamp\(40px,6\.5cqw,66px\)\]/.test(strip),
+    `${STRIP}: each mark RESIZES with the view between a floor and a ceiling — never a fixed width`,
+  );
+  assert.ok(
+    /justify-center|items-center/.test(strip),
+    `${STRIP}: the ranking is CENTRED between the two marks`,
+  );
+  assert.ok(
+    /text-\[#f47b20\]/.test(strip) && /text-\[#0879b8\]/.test(strip),
+    `${STRIP}: Phoenix orange reads the company, Sato's one brand blue reads the line`,
+  );
+  assert.ok(
+    /text-\[10\.5px\] font-bold uppercase[^"]*tracking-\[0\.2em\]/.test(strip),
+    `${STRIP}: the micro label is the system's one label voice — 10.5px bold uppercase, 0.2em tracking`,
+  );
+  assert.ok(
+    !/slate-900|amber-400|sky-400|f9c06a|5db7e8/.test(strip),
+    `${STRIP}: no generic palette colour and no invented metal — the two marks or nothing`,
+  );
+  assert.ok(
+    /standing\.windowLabel/.test(strip),
+    `${STRIP}: the band names the window it ranked — a rank with no period on it is a fact about nothing`,
+  );
+  assert.ok(
+    /ordinal\(cell\.rank\)/.test(strip),
+    `${STRIP}: a rank reads as an ordinal — "8th", not "8"`,
+  );
+  assert.ok(
+    !/netSalary|payslip/i.test(strip),
+    `${STRIP}: no payslip on a landing surface, not even by accident on a new strip`,
   );
 }
