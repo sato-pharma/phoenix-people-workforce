@@ -308,7 +308,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     const full = pack({
       adoption: adoptionView(),
       bricks: bricksView(),
-      exceptions: { rows: [], summary: { territories: 0, needingAttention: 0, byKind: [] }, holidaysUnread: false, isTest: false, lastWorkingDay: "2026-09-23", weekStart: "2026-09-19", windowWorkingDays: 6 } as unknown as NonNullable<ReportsPackInput["exceptions"]>,
+      exceptions: { rows: [], onLeave: [], summary: { territories: 0, needingAttention: 0, onLeave: 0, byKind: [] }, holidaysUnread: false, leaveUnread: false, isTest: false, lastWorkingDay: "2026-09-23", weekStart: "2026-09-19", windowWorkingDays: 6 } as unknown as NonNullable<ReportsPackInput["exceptions"]>,
       locations: locationsView(),
       managers: { period: PERIOD, includeTest: false, rows: [] } as unknown as NonNullable<ReportsPackInput["managers"]>,
       plan: planView(),

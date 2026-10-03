@@ -170,6 +170,32 @@ export type TerritoryFacts = {
    * reading as a zero.
    */
   lastWorkingDayVisits: number | null;
+  /**
+   * 🔴 APPROVED LEAVE IS A DAY NOBODY OWED WORK ON, EXACTLY LIKE A HOLIDAY — and until 2026-10-03
+   * this board could not see it at all.
+   *
+   * The owner found it on Delta (1)'s go-live morning: the board listed a rep as missing her plan
+   * while she was on sick leave, which is a manager being told to chase someone who is signed off.
+   * His ruling was *"Show 'On leave', not an exception"*, so leave now does two separate things —
+   * it comes OUT of the call-rate denominator the way `isCallRateWorkingDay` takes holidays out,
+   * and a territory whose rep is away reads as a state rather than a failure.
+   *
+   * 🔴 FULL DAYS ONLY, AND THE HALF DAY IS A DELIBERATE GAP, NOT AN OVERSIGHT. `ApprovedLeaveDay`
+   * reduces the stored `day_part` (`full_day` / `am_only` / `pm_only`) to a bare `fullDay` boolean,
+   * so by the time leave reaches a reader it no longer says WHICH half was taken — and that type has
+   * fourteen consumers across attendance, the CEO command centre and compliance, so widening it is
+   * not this fix's business. A half day therefore changes nothing here: the rep owed the other half,
+   * and guessing which one would either excuse work that was owed or accuse work that was not. The
+   * conservative direction is the one that never silently forgives a missed day.
+   */
+  leaveFullDaysInWindow: number;
+  /** True only when the rep had a FULL day of approved leave on `lastFinishedWorkingDay`. */
+  leaveOnLastWorkingDay: boolean;
+  /**
+   * True only when approved leave covers EVERY working day of this field week. A week signed off in
+   * full has no plan to make; leave on two days of five does not excuse the plan for the other three.
+   */
+  leaveCoversWholeWeek: boolean;
 };
 
 export type TerritoryException = {
@@ -183,6 +209,32 @@ export type TerritoryException = {
   /** The figure behind it, already worded — "3 of 12 validated", "1.4 a day against 10". */
   detail: string | null;
 };
+
+/**
+ * A territory whose rep is away: on the board, but not an exception.
+ *
+ * It is a separate list rather than a ninth {@link EXCEPTION_KINDS} entry on purpose. Everything in
+ * `EXCEPTION_KINDS` is counted into `needingAttention` and sorted into the worst-first ladder, and
+ * being on approved leave is neither — it needs no action from the manager. Keeping it visible is
+ * the other half of the owner's ruling: a territory nobody is covering this week is worth SEEING,
+ * so hiding the row would trade one blind spot for another.
+ */
+export const ON_LEAVE_LABEL = "On leave";
+
+export type TerritoryOnLeave = {
+  seatId: string;
+  territoryName: string;
+  lineName: string | null;
+  repName: string | null;
+  label: typeof ON_LEAVE_LABEL;
+  /** What the leave covers, already worded — "all week", "the last working day". */
+  detail: string;
+};
+
+/** Whole-week leave is the only shape that takes a territory off the exception ladder entirely. */
+function onLeaveAllWeek(facts: TerritoryFacts): boolean {
+  return facts.hasRep && facts.leaveCoversWholeWeek;
+}
 
 function daysBetween(from: string, to: string): number {
   const start = Date.parse(`${from}T00:00:00Z`);
@@ -222,6 +274,12 @@ export function judgeTerritory(facts: TerritoryFacts, rules: ExceptionRules): Te
 
   if (!facts.hasRep) return of("vacant", null);
 
+  // 🔴 A WEEK SIGNED OFF IN FULL HAS NOTHING TO ACCUSE. It is not "no plan this week" — there was no
+  // week to plan — so the territory leaves the ladder entirely and `buildExceptions` lists it as
+  // ON LEAVE instead. Part-week leave deliberately falls through: two days off does not excuse the
+  // plan for the other three, it only takes those two days out of the rate below.
+  if (onLeaveAllWeek(facts)) return null;
+
   const list = facts.readiness;
   if (list && list.total > 0) {
     // "Never started" is not "no visit yet" — it is that NOTHING on the carried-over list has been
@@ -245,17 +303,26 @@ export function judgeTerritory(facts: TerritoryFacts, rules: ExceptionRules): Te
     return of("plan_unsent", facts.planStatus === "returned" ? "Returned, not sent again" : "Still a draft");
   }
 
-  if (facts.lastWorkingDayVisits === 0) return of("no_visit", null);
+  // 🔴 ONLY A FULL DAY OF LEAVE ANSWERS "anything?" — a rep on half a day still worked the other
+  // half, so a day with no visit at all is still a day with no visit.
+  if (facts.lastWorkingDayVisits === 0 && !facts.leaveOnLastWorkingDay) return of("no_visit", null);
 
   // AM and PM are judged APART and never averaged (the call-rate golden rule). PM leads because a
   // doctor list is the bigger half of the day; only ONE of the two is ever shown, so a territory
   // under both reads as the PM one and the AM figure is not lost — it is simply not the headline.
-  if (facts.windowWorkingDays > 0) {
-    const pm = rate(facts.windowPmVisits, facts.windowWorkingDays);
+  //
+  // 🔴 AND APPROVED LEAVE COMES OUT OF THE DENOMINATOR, EXACTLY AS A HOLIDAY DOES. Six working days
+  // with two full days of approved leave is a four-day week for that rep; dividing his real calls by
+  // six reports a rep who worked every day he owed as "below the rate" — the same defect the Thursday
+  // fix removed, arriving through leave instead of the calendar. Both halves share one figure because
+  // only FULL days are known (see `leaveFullDaysInWindow`), and both are still judged APART.
+  const owedDays = Math.max(0, facts.windowWorkingDays - facts.leaveFullDaysInWindow);
+  if (owedDays > 0) {
+    const pm = rate(facts.windowPmVisits, owedDays);
     if (pm < rules.callRatePmTarget) {
       return of("below_pm_rate", `${oneDecimal(pm)} a day against ${rules.callRatePmTarget}`);
     }
-    const am = rate(facts.windowAmVisits, facts.windowWorkingDays);
+    const am = rate(facts.windowAmVisits, owedDays);
     if (am < rules.callRateAmTarget) {
       return of("below_am_rate", `${oneDecimal(am)} a day against ${rules.callRateAmTarget}`);
     }
@@ -267,11 +334,19 @@ export function judgeTerritory(facts: TerritoryFacts, rules: ExceptionRules): Te
 export type ExceptionsSummary = {
   territories: number;
   needingAttention: number;
+  /**
+   * Territories whose rep is away all week. Counted separately and NEVER folded into
+   * `needingAttention` — that figure is what the 06:55 digest sends and what a manager acts on, so
+   * an on-leave rep inside it is a chase nobody owes.
+   */
+  onLeave: number;
   byKind: Array<{ kind: ExceptionKind; label: string; count: number }>;
 };
 
 export type ExceptionsBoard = {
   rows: TerritoryException[];
+  /** Visible, but not a failure — the owner's "Show 'On leave', not an exception". */
+  onLeave: TerritoryOnLeave[];
   summary: ExceptionsSummary;
 };
 
@@ -293,11 +368,29 @@ export function buildExceptions(facts: ReadonlyArray<TerritoryFacts>, rules: Exc
   const counts = new Map<ExceptionKind, number>();
   for (const row of rows) counts.set(row.kind, (counts.get(row.kind) ?? 0) + 1);
 
+  // Same name order as the ladder, for the same reason: the list must not reshuffle under a manager
+  // reading down it.
+  const onLeave: TerritoryOnLeave[] = facts
+    .filter((entry) => onLeaveAllWeek(entry))
+    // The return annotation is what keeps `label` at its literal type — without it the object
+    // literal widens to `string` and the board's own label can drift from ON_LEAVE_LABEL.
+    .map((entry): TerritoryOnLeave => ({
+      seatId: entry.seatId,
+      territoryName: entry.territoryName,
+      lineName: entry.lineName,
+      repName: entry.repName,
+      label: ON_LEAVE_LABEL,
+      detail: "Approved leave all week",
+    }))
+    .sort((left, right) => left.territoryName.localeCompare(right.territoryName));
+
   return {
     rows,
+    onLeave,
     summary: {
       territories: facts.length,
       needingAttention: rows.length,
+      onLeave: onLeave.length,
       // Only the kinds that actually occurred, in the same worst-first order — a chip reading zero is
       // the same noise as a green row, one line further up the screen.
       byKind: EXCEPTION_KINDS.flatMap((entry) =>

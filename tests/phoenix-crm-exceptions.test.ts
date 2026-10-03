@@ -7,6 +7,7 @@ import {
   DAY_KINDS,
   EXCEPTION_KINDS,
   LIST_GRACE_DAYS,
+  ON_LEAVE_LABEL,
   RATE_WINDOW_WORKING_DAYS,
   buildExceptions,
   isWorkingDay,
@@ -56,6 +57,12 @@ function clean(overrides: Partial<TerritoryFacts> = {}): TerritoryFacts {
     windowAmVisits: 18,
     windowPmVisits: 72,
     lastWorkingDayVisits: 9,
+    // No leave is the default, so every case written before 2026-10-03 keeps asking exactly what it
+    // asked — leave only ever makes the board say LESS, so a silent default of "away" would quietly
+    // excuse the defects these cases exist to catch.
+    leaveFullDaysInWindow: 0,
+    leaveOnLastWorkingDay: false,
+    leaveCoversWholeWeek: false,
     ...overrides,
   };
 }
@@ -338,6 +345,67 @@ export function runPhoenixCrmExceptionsTests(): void {
     // Golden Rule #1's blind half: this is a manager's screen, but the module's words are the same
     // everywhere, and a rate is a fact about work, never a verdict about honesty.
     assert.doesNotMatch(body, /\b(fraud|cheat|integrity|suspicious)\b/i, "a manager's board is still not an accusation");
+  }
+
+  // ── 🔴 APPROVED LEAVE IS NOT AN EXCEPTION ─────────────────────────────────────────────────────
+  //
+  // Found by the owner on Delta (1)'s go-live morning, 2026-10-03: the board listed a rep as missing
+  // her plan while she was on sick leave. His ruling was "Show 'On leave', not an exception". Before
+  // this, neither `exceptions.ts` nor its server half contained the word leave at all — the plan
+  // report already honoured it ("on leave: never missed"), so the two disagreed about the same rep.
+  {
+    const awayAllWeek = clean({ leaveCoversWholeWeek: true, planStatus: null, planItems: 0, lastWorkingDayVisits: 0 });
+
+    // The headline: a week signed off in full is NOT "no plan this week". There was no week to plan.
+    assert.equal(
+      judgeTerritory(awayAllWeek, RULES),
+      null,
+      "a rep on approved leave all week must raise NO exception — chasing a plan from someone signed off is the defect",
+    );
+
+    const board = buildExceptions([awayAllWeek, clean({ seatId: "SEAT-2", territoryName: "Cairo 2", lastWorkingDayVisits: 0 })], RULES);
+    assert.equal(board.rows.length, 1, "the territory that is genuinely behind still raises its row");
+    assert.equal(board.rows[0]?.kind, "no_visit");
+    assert.equal(board.summary.needingAttention, 1, "needingAttention is what the 06:55 digest sends — an on-leave rep must not be in it");
+
+    // Visible, though: an uncovered territory is worth seeing even when nobody owes a chase.
+    assert.equal(board.onLeave.length, 1, "it must still appear, or one blind spot is traded for another");
+    assert.equal(board.onLeave[0]?.label, ON_LEAVE_LABEL);
+    assert.equal(board.onLeave[0]?.territoryName, "Cairo 1");
+    assert.equal(board.summary.onLeave, 1);
+    assert.equal(board.summary.territories, 2, "both territories are still counted — leave does not shrink the scope");
+
+    // A FULL day of leave answers "anything?" for that day; a half day does not, because the rep
+    // worked the other half and `ApprovedLeaveDay` does not record which half it was.
+    assert.equal(judgeTerritory(clean({ lastWorkingDayVisits: 0, leaveOnLastWorkingDay: true }), RULES), null,
+      "a full day of approved leave on the last working day owes no visit");
+    assert.equal(judgeTerritory(clean({ lastWorkingDayVisits: 0, leaveOnLastWorkingDay: false }), RULES)?.kind, "no_visit",
+      "a half day still owed the other half, so a day with no visit at all is still a day with no visit");
+
+    // 🔴 THE DENOMINATOR. Six working days, two of them approved leave, is a FOUR-day week for that
+    // rep — the same correction the Thursday fix made, arriving through leave instead of the calendar.
+    const twoDaysOff = { windowWorkingDays: 6, windowPmVisits: 40, windowAmVisits: 8, lastWorkingDayVisits: 4 };
+    assert.equal(
+      judgeTerritory(clean({ ...twoDaysOff, leaveFullDaysInWindow: 0 }), RULES)?.kind,
+      "below_pm_rate",
+      "40 PM calls over six days is 6.7 against 10 — below, when no leave is known",
+    );
+    assert.equal(
+      judgeTerritory(clean({ ...twoDaysOff, leaveFullDaysInWindow: 2 }), RULES),
+      null,
+      "the same 40 calls over the FOUR days he actually owed is 10.0 — on target, and reporting him as below is the bug",
+    );
+
+    // Part-week leave excuses nothing but the days themselves.
+    assert.equal(
+      judgeTerritory(clean({ leaveFullDaysInWindow: 2, planStatus: "draft" }), RULES)?.kind,
+      "plan_unsent",
+      "two days off does not excuse the plan for the other three",
+    );
+
+    // Leave never rescues a seat with nobody in it, and never outranks a vacancy.
+    assert.equal(judgeTerritory(clean({ hasRep: false, leaveCoversWholeWeek: true }), RULES)?.kind, "vacant",
+      "an empty seat is still an empty seat — there is nobody to be on leave");
   }
 
   console.log("phoenix-crm exceptions: OK");
