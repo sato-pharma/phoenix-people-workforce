@@ -234,6 +234,13 @@ a cloud session** (which reads the repo's own copy). The account of it:
   `.claude/hooks/module-memory-injector.mjs`, which matches the prompt, the command and table names.
   None of it costs a startup byte. **About to change a module and its memory has not appeared? OPEN
   `.claude/rules/<module>.md` yourself** — the hook fails open and silent, so its silence proves nothing.
+- 🔴 **NO MEMORY LIMIT IS EVER PUT TO HIM — NOT THE INDEX, NOT THE PLUMBING** (his ruling,
+  2026-10-03: *"didn't you tell me no session will mention memory issue again"*, after a session put
+  "the Phoenix CRM notes file is full at 4,478 of 4,500 characters" in his box). A pointer over its
+  margin, a module file near its cap, an orphan note, a stale generated block: **split it, rebuild it
+  and ship it in the PR you are already opening** — never a question, never a `Next step:` line,
+  never a sentence in a summary. Every one of them already fails the required `validate` job, which
+  is how a SESSION learns it. Enforced half: `AGENTS.md` §2.2, first bullet.
 - 🔴 **`MEMORY.md` IS NEVER TRIMMED AGAIN, AND NOTHING MAY ASK HIM TO FREE SPACE IN IT.** It now holds
   only what is true everywhere plus an `## Inbox`, and it ended the cycle that made him say the memory
   was "saturated and always full": every new rule used to push an old one out of sight, so sessions
