@@ -159,8 +159,9 @@ So `createMailbox` now says what it left behind — `describeCreateWithoutPasswo
 and states whether the mailbox **WAS CREATED** and in what state — and reports the controls the
 post-save view offered, through `buildControlReport`'s redaction. The dialog's own blurb points at
 where the rest of the flow lives: "use Add more mailbox (+) next to **send invite and print** to open
-the form again". **Print** is the candidate for handing the password over with no email involved, and
-it is the next thing to calibrate.
+the form again". **Print was the candidate for handing the password over with no email involved, and
+it turned out not to be needed** — the invitation already carries the credential, and reading it is
+what closed this (see "Wiring the invitation reader into the create path" at the end of this file).
 
 ### A probe that drives this console must pass real functions to `page.evaluate`
 
@@ -924,3 +925,83 @@ Six pre-existing positive assertions in this suite had the same flaw and were re
 still pass, so the calls were genuinely there — but they were not being proved.
 
 After fixing the three tests: **8 of 8 breaks fire on their own named assertion.**
+
+
+## Wiring the invitation reader into the create path
+
+2026-10-03, after the sixth click. The gap this closes is a specific and slightly embarrassing one:
+`invitation.ts` could read a Turbify invitation correctly — matched by identity, refusing a changed
+label, refusing a near-miss address, never quoting the credential — and **nothing called it**.
+`readInvitation`, `readTempPassword` and `pickInvitation` had zero callers in `src/` or `app/`. The
+inbox was readable, the reader was tested, and the two were not connected, so a created mailbox still
+ended as a PENDING row with its password sitting unread in a mailbox Phoenix owns and monitors.
+
+The wiring is two files and one seam.
+
+`src/lib/new-hire-mailbox/robot/invite-inbox-reader.ts` turns "a monitored mailbox" into "the
+messages those three functions judge". It resolves the monitor for `TURBIFY_INVITE_RECIPIENT` by
+address, lists headers, narrows, opens the plausible ones newest-first, and stops at the first that
+yields credentials. `createMailbox`'s no-dialog branch consumes it and returns the invitation's temp
+password in the one-time password's place — both are one-use, and both are spent the same way one
+step later, by signing in as the mailbox and setting the company password.
+
+### Five decisions, and what each one is defending against
+
+**The dialog still wins where it exists.** The invitation is the fallback inside the `!hasHeading`
+branch, never read ahead of it: the dialog is immediate and touches no mailbox. A test pins the
+ordering by index, because "reads the invitation" and "reads the invitation *first*" are different
+programs and only one of them is right.
+
+**The order is imposed by the reader, not trusted from IMAP.** `pickInvitation` returns the FIRST
+match and documents that it is handed messages newest-first — so a mailbox re-invited after a failed
+activation gets its latest temp password rather than a spent one. Nothing satisfied that contract
+until something sorted. 🔴 **And the undated case is subtler than it looks.** The hazard is not 1970:
+substituting `0` for `-Infinity` was tried as a break and the suite **stayed green**, because 1970 is
+older than every real date anyway. The hazard is `NaN` — `Date.parse` of a missing header returns it,
+every comparison with `NaN` is false, so an unguarded comparator is inconsistent and the sort is free
+to leave the array exactly as IMAP gave it, with an undated message first and taken as the newest
+invitation. The guard is against that, and the comment in the module said the wrong thing until
+break-and-watch corrected it.
+
+**Only a plausible invitation is opened.** A listing is headers; each body is another fetch, and each
+fetch is an audited `mailbox_access` row written by `withMonitorRead`. So narrowing on headers is a
+privacy property before it is a cost one: Phoenix does not open mail it has no business opening, even
+in a mailbox it owns. The recipient test is identity for the usual reason — `adel.sayed@` contains
+`el.sayed@`. The subject test is the one containment test, and it only promotes a message to being
+*opened*, after which `readInvitation` matches by identity and refuses the near miss.
+
+**Every read is attributed to the robot.** `ROBOT_ACTOR`, never a null actor: the audit row is the
+only account of Phoenix having opened a mailbox and read a message out of it, and a null actor records
+it as nobody's.
+
+**An unreadable inbox is never read as an empty one, and that distinction is what the poll is for.**
+The reader returns `retryable`, true only when the inbox was genuinely read and simply held nothing
+for this mailbox yet — the one refusal a delivery can change. Everything else (no invite inbox
+configured, the inbox not connected, a lookup or listing that threw, a listing that is not a list)
+says the same thing on the sixth pass as the first, so the poll stops dead rather than sleeping out a
+minute while the browser session ages. And there is deliberately **no "only invitations newer than
+this create" filter**: it would defend against a spent invitation for an address `readExistingRow`
+has already refused one step earlier, while silently dropping the real invitation on any clock skew
+between the mail server and the container — trading an honest, retryable failure for the exact
+confusion this whole flow exists to end.
+
+### The refusal that had to stop being true
+
+`describeCreateWithoutPassword` ended with "so this half of the flow is not calibrated yet". That was
+true while nothing read the invitation and is a lie the moment something does — and the owner acts on
+that sentence. It now takes the inbox's refusal and says the invitation **was** looked for and what
+stopped it, which is a different job for a different person: a mailbox to connect, or a wording of
+Turbify's to re-read. Either way the mailbox's own state — **WAS CREATED / is PENDING** — stays the
+first fact in the message, because burying it is how "was created" got read as "failed".
+
+### What this does NOT finish
+
+Step 2 still signs in as the new mailbox and lands on the same `Set up your mailbox password` page
+whose unlabelled, non-`required` checkbox stopped `hr.mailbox@satopharma.com` — typing landed
+(`filled=9` in both boxes), the password was rated `Very Strong`, the form reported itself valid, and
+the cookie banner was not covering the button. The invitation closes the credential gap. It does not
+close that one.
+
+**16 of 16 breaks fired on their own named assertion**, including the two that had to be corrected
+first: the `0`-for-`-Infinity` break that proved nothing, and a break whose red came from an earlier
+helper's message rather than the assertion below it.

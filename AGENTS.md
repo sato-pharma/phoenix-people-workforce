@@ -133,6 +133,7 @@ cost, the deploy path or the region.
 | `portal` — Employee portal, dashboards and command centres | `src/lib/{employee-portal,navigation,overview,dashboard,action-center,needs-you,ceo,company-activity-report,support-requests,workspace,reports,activity}/**` and 5 more |
 | `notifications` — Email, notifications and messaging | `src/lib/{email,email-templates,notifications,communication,internal-messages,distribution-lists,sato-email,personal-mailbox,mailbox-offboarding,conversations,whatsapp-videos}/**` and 5 more |
 | `turbify` — Turbify mailbox console — the shared browser driver | `src/lib/turbify/**` and 3 more |
+| `turbify-provisioning` — Turbify provisioning — creating a mailbox, its invitation and its app password | `src/lib/new-hire-mailbox/**` and 3 more |
 | `coaching` — Coaching, training and visual aids | `src/lib/{coaching,visual-aids}/**` and 4 more |
 | `report-it` — Report It (pharmacovigilance — patient data) | `src/lib/report-it/**` and 3 more |
 | `approvals` — Approvals and workflow | `src/lib/{approvals-hub,workflow-control,workflow-registry,approvals}/**` and 4 more |
