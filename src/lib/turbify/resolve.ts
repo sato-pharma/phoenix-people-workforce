@@ -174,7 +174,23 @@ export function dialogNamesAddress(text: string | null | undefined, address: str
   if (wanted.length === 0) return false;
   const local = wanted.split("@")[0];
   const tokens = new Set(
+    // 🔴 THE GLUE BOUNDARY, measured on the live dialog 2026-10-03. `textContent` runs the address
+    // straight into the NEXT LABEL with no separator at all:
+    //
+    //     Email account:hr.mailbox@satopharma.comOne-time password: ...
+    //
+    // so the only token was `hr.mailbox@satopharma.comone-time`, and neither the address nor its
+    // local part survived. The check then refused a dialog that DOES name the mailbox, and the
+    // invite-inbox adoption stopped on it. This is the same `textContent` concatenation that made a
+    // table row's address parse as `Abd-Elnaimahmed.mohamed@satopharma.com` — met a second time, in
+    // the dialog, after being fixed for rows.
+    //
+    // A lowercase→uppercase transition is where that glue always falls, because what follows is the
+    // next label's capitalised first word. Inserting a boundary there can only ever SPLIT a token,
+    // so it cannot turn a near miss into a match: `adel.sayed@satopharma.comOne-time` still yields
+    // `adel.sayed@satopharma.com`, which still does not equal `el.sayed@satopharma.com`.
     String(text ?? "")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
       .toLowerCase()
       .split(/[^a-z0-9._%+@-]+/)
       .filter((token) => token.length > 0),

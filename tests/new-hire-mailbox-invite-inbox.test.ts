@@ -210,10 +210,14 @@ async function runRunnerCases(): Promise<void> {
     dryRun: false,
   });
   assert.equal(rejected.adopted, false, "a credential the monitor could not connect with is not an adoption");
-  assert.match(rejected.detail ?? "", /was reset and now holds the company password/);
-  assert.match(rejected.detail ?? "", /still cannot read it/);
+  assert.match(rejected.detail ?? "", /MAY ALREADY HAVE BEEN RESET/);
+  assert.match(rejected.detail ?? "", /Phoenix cannot read the mailbox/);
 
-  // ── a failure BEFORE the reset says so, which is a different state to recover from ─────────────
+  // ── 🔴 A FAILURE INSIDE `resetAndCapture` MUST NOT CLAIM THE MAILBOX WAS UNTOUCHED ─────────────
+  // The reset is CLICKED inside that step, before the dialog is read, so anything it throws leaves
+  // the mailbox possibly reset. The first version of this reported "was not reset" — and that is
+  // exactly what the owner was told on 2026-10-03 about a mailbox Turbify had in fact just reset,
+  // which sent him looking for the wrong problem. The flag may only ever OVERSTATE the damage.
   const earlyFail = await runInviteInboxAdoption({
     address: INVITE_INBOX_ADDRESS,
     deps: { companyPassword: () => COMPANY, monitor: async () => ({}) },
@@ -221,7 +225,14 @@ async function runRunnerCases(): Promise<void> {
     dryRun: false,
   });
   assert.equal(earlyFail.adopted, false);
-  assert.match(earlyFail.detail ?? "", /was not reset/);
+  assert.match(earlyFail.detail ?? "", /MAY ALREADY HAVE BEEN RESET/);
+  assert.equal(
+    (earlyFail.detail ?? "").includes("was not reset"), false,
+    "a reset-step failure may never report the mailbox as untouched",
+  );
+
+  // Only a refusal reached BEFORE the driver was ever called may say nothing was reset — and those
+  // return a refusal rather than a detail, which the cases above already pin.
 
   // ── no outcome may carry a credential ─────────────────────────────────────────────────────────
   for (const result of [ok, refused, noPass, dry, rejected, earlyFail]) {
