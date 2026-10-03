@@ -44,6 +44,7 @@
  * programmatic append) and the two error rules.
  */
 
+import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { correctDictatedProducts } from "@/lib/phoenix-crm/dictation-correct";
 
 /** Egyptian Arabic. The engine still handles English product names mixed into the sentence. */
@@ -126,7 +127,7 @@ export function dictationErrorMessage(code: string): string {
     return "This browser cannot write Arabic while you talk. Type the comment instead — the recording is still saved.";
   }
   if (code === "not-allowed" || code === "service-not-allowed") {
-    return "The microphone is blocked for Phoenix. Allow it for this site in the phone's settings, or type the comment instead.";
+    return `The microphone is blocked for ${BROWSER_PLACEHOLDER}. Allow it for this site in its settings, or type the comment instead.`;
   }
   if (code === "audio-capture") {
     return "No microphone was found on this phone. Type the comment instead.";

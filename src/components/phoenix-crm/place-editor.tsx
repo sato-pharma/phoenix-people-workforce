@@ -15,6 +15,7 @@ import { dayLabelWithYear } from "@/components/phoenix-crm/format";
 import { LivePhotoCapture, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { TimingsEditor, timingsToDrafts } from "@/components/phoenix-crm/timings-editor";
 import { CrmBlock, CrmField, CrmNote, crmInputClassName } from "@/components/phoenix-crm/ui";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { PLACE_PRECISION_NOTE, PLACE_TEXT_MAX } from "@/lib/phoenix-crm/entry-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
@@ -180,6 +181,9 @@ export function PlaceEditor({
   /** Accepted and ignored since 2026-09-29 — the capture no longer judges a reading in front of the rep. */
   weakGpsMeters?: number;
 }) {
+  // The rule names HIS browser, never "Phoenix" — the setting it sends him to belongs to the browser
+  // (use-browser-name.ts). Unnamed it still reads "your browser", so the note is never half-written.
+  const browserNamed = useBrowserNamed();
   // A capture has two steps before the timings: the photo, then Capture location.
   const pinStep = firstStep + 1;
   const timingsStep = firstStep + (capture ? 2 : 0);
@@ -206,7 +210,7 @@ export function PlaceEditor({
         <CrmBlock className="border-t border-slate-100" title={`${firstStep} · Signboard photo`}>
           {/* The owner's rule, told before he starts (2026-10-03) — the rule only, never his reading. */}
           <CrmNote className="mb-3" tone="info">
-            {PLACE_PRECISION_NOTE}
+            {browserNamed(PLACE_PRECISION_NOTE)}
           </CrmNote>
           {photoBlockedReason && !value.photo ? (
             <p className="text-sm font-semibold text-slate-500">{photoBlockedReason}</p>

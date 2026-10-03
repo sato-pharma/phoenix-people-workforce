@@ -48,6 +48,7 @@ import {
 } from "@/components/phoenix-crm/labels";
 import { ListGone, movesOf, twoStepText, type ListNotice, type ListScreen, type ListScreenBase } from "@/components/phoenix-crm/list-screens";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { pointSourceText } from "@/components/phoenix-crm/place-move-screen";
 import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card";
 import { TimingsReadout } from "@/components/phoenix-crm/timings-editor";
@@ -437,6 +438,8 @@ function ListMoves({
   const [confirmDrop, setConfirmDrop] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // A location refusal names HIS browser, never "Phoenix" (use-browser-name.ts); anything else is untouched.
+  const browserNamed = useBrowserNamed();
 
   async function dropOutside() {
     setBusy(true);
@@ -501,7 +504,7 @@ function ListMoves({
           {twoStepText(view, moves.includes("ask_to_drop") ? "take him off your list" : moves.includes("request_add") ? "add him to your list" : "bring him back to your list")}
         </p>
       ) : null}
-      {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
+      {problem ? <CrmNote tone="bad">{browserNamed(problem)}</CrmNote> : null}
     </div>
   );
 }
@@ -525,6 +528,8 @@ function BringBackNow({
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // A location refusal names HIS browser, never "Phoenix" (use-browser-name.ts); anything else is untouched.
+  const browserNamed = useBrowserNamed();
 
   async function bringBack() {
     setBusy(true);
@@ -562,7 +567,7 @@ function BringBackNow({
           </CrmButton>
         </div>
       )}
-      {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
+      {problem ? <CrmNote tone="bad">{browserNamed(problem)}</CrmNote> : null}
     </div>
   );
 }
@@ -592,6 +597,8 @@ function PlaceCard({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // A location refusal names HIS browser, never "Phoenix" (use-browser-name.ts); anything else is untouched.
+  const browserNamed = useBrowserNamed();
 
   const reasonLength = reason.trim().length;
   const name = placeName(place, index);
@@ -725,7 +732,7 @@ function PlaceCard({
 
       {problem ? (
         <CrmNote className="mt-3" tone="bad">
-          {problem}
+          {browserNamed(problem)}
         </CrmNote>
       ) : null}
     </article>
@@ -760,6 +767,8 @@ function PharmacyCard({
 }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // A location refusal names HIS browser, never "Phoenix" (use-browser-name.ts); anything else is untouched.
+  const browserNamed = useBrowserNamed();
   const { has, missing } = availabilitySplit(pharmacy.products);
 
   async function pin(pharmacyName: string) {
@@ -835,7 +844,7 @@ function PharmacyCard({
 
       {problem ? (
         <CrmNote className="mt-3" tone="bad">
-          {problem}
+          {browserNamed(problem)}
         </CrmNote>
       ) : null}
     </article>

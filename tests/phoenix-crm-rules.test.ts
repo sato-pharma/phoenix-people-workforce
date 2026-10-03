@@ -520,7 +520,7 @@ function runEntryRuleTests() {
   assert.equal(cleanText("   ", 10), null);
   assert.equal(cleanText("abcdef", 3), "abc");
 
-  const LOCATION = "Your location was not captured. Allow location on your phone and capture it again at the clinic.";
+  const LOCATION = "Your location was not captured. Allow location for your browser and capture it again at the clinic.";
   assert.equal(refusalOf(parseCapturedFix({ lat: 0, lon: 0 })), LOCATION);
   assert.equal(refusalOf(parseCapturedFix({})), LOCATION);
   assert.deepEqual(valueOf(parseCapturedFix({ lat: "30.05", lon: "31.23", accuracyMeters: 12.345, deviceCapturedAt: "2026-10-03T15:00:00Z" })), {
@@ -655,7 +655,7 @@ function runEntryRuleTests() {
   assert.equal(valueOf(parseVisitDraft(visit)).photoPath, "seat/visit.jpg", "a caller one release behind is served as before");
   assert.equal(
     refusalOf(parseVisitDraft({ ...visit, lat: 0, lon: 0 })),
-    "Turn on location for Phoenix, then tap Log visit again.",
+    "Turn on location for your browser, then tap Log visit again.",
     "every visit still carries its location — read silently, and a missing one is said plainly as his own step",
   );
   assert.notEqual(PHOTO, LOCATION, "the validation screen keeps its own two sentences");

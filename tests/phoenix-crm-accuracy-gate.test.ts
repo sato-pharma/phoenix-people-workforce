@@ -124,7 +124,7 @@ export function runPhoenixCrmAccuracyGateTests() {
   // ── The rep is TOLD the validation's line, by the owner's word ─────────────────
   for (const message of [PLACE_PRECISION_NOTE, ROUGH_FIX_AT_THE_PLACE]) {
     assert.match(message, /Validation needs an accurate location, within 100 m/, "he is told the validation must be accurate, within 100 m");
-    assert.match(message, /Turn on precise location for Phoenix/, "and what to switch on — approximate location is the cause");
+    assert.match(message, /Turn on precise location for your browser/, "and what to switch on — named for HIS browser, never \"Phoenix\", which no phone has");
     for (const banned of [/check/i, /flag/i, /suspic/i, /distance/i, /\bfar\b/i, /manager/i, /report/i]) {
       assert.doesNotMatch(message, banned, `it states the rule of his work, never a check on him (${banned})`);
     }
@@ -132,7 +132,7 @@ export function runPhoenixCrmAccuracyGateTests() {
   assert.match(ROUGH_FIX_AT_THE_PLACE, /take the photo and press Capture location again/, "a rough photo is retaken, not rescued by the pin");
 
   // ── The visit's line is still never put into words (Golden Rule #1) ───────────
-  assert.match(ROUGH_FIX_FOR_A_VISIT, /Turn on precise location for Phoenix/);
+  assert.match(ROUGH_FIX_FOR_A_VISIT, /Turn on precise location for your browser/);
   for (const banned of [/check/i, /flag/i, /suspic/i, /accura/i, /distance/i, /\bfar\b/i, /manager/i, /report/i, /\d+\s*m\b/]) {
     assert.doesNotMatch(ROUGH_FIX_FOR_A_VISIT, banned, `the visit's sentence must not hint at a check (${banned})`);
   }
@@ -141,7 +141,7 @@ export function runPhoenixCrmAccuracyGateTests() {
   const editor = stripComments(readFileSync("src/components/phoenix-crm/place-editor.tsx", "utf8"));
   const photoBlock = /title=\{`\$\{firstStep\} · Signboard photo`\}>([\s\S]*?)<LivePhotoCapture/.exec(editor);
   assert.ok(photoBlock, "the Signboard photo step opens with what comes before the camera");
-  assert.ok(photoBlock[1].includes("{PLACE_PRECISION_NOTE}"), "the rule is told on the validation screen, before the photo is taken");
+  assert.ok(photoBlock[1].includes("browserNamed(PLACE_PRECISION_NOTE)"), "the rule is told on the validation screen, before the photo is taken — with HIS browser named");
   // His own reading is still never printed: tests/phoenix-crm-place-location-frozen.test.ts pins the
   // location block, and the note above is a constant that names the rule and nothing measured.
 
