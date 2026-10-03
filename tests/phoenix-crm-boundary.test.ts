@@ -657,6 +657,13 @@ const LATER_MIGRATIONS = [
   // reject"). ONE brand-new function and nothing else — no table, no column, and it replaces nothing,
   // so it appends safely at the end and cannot disturb the replacement ordering above.
   "supabase/migrations/20261003184147_phoenix_crm_restore_validation.sql",
+  // The reading a REFUSED capture was carrying (owner, 2026-10-03: "record the refused readings so
+  // the next refusal is traceable"). ONE brand-new table and NOTHING else — no function, no column,
+  // no view, and it replaces nothing — so it appends safely at the end and cannot disturb the
+  // replacement ordering above. It is the module's only table deliberately left UNKEYED: a rep
+  // refused eighteen times leaves eighteen rows, and a unique constraint on any of its columns would
+  // collapse exactly the retry history that IS the evidence.
+  "supabase/migrations/20261003211500_phoenix_crm_refused_readings.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

@@ -95,6 +95,7 @@ import { loadPlannedOtherDays } from "@/lib/phoenix-crm/server/offplan-day";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
+import { recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
 import { loadLineProductManagers, raiseVisitAskFromVisit, visitAskSavedNote } from "@/lib/phoenix-crm/server/visit-asks";
@@ -1046,7 +1047,20 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   const { seat, isTest, enteredAs } = territoryForVisit(viewer, body.seatId, readTestFlag(body.test));
   if (!seat.lineCode) throw validationError("This territory has no line in the organogram, so visits cannot be saved.");
   const draft = parseVisitDraft(body);
-  if (!draft.ok) throw validationError(draft.error);
+  if (!draft.ok) {
+    // The reading survives the refusal (owner, 2026-10-03). Silent, void, and never throwing: the
+    // rep reads exactly the refusal below, whether or not this lands. A refusal about anything else
+    // — no comment, no products — records nothing.
+    await recordRefusedReading({
+      subjectKind: "visit",
+      raw: body,
+      seatId: seat.seatId,
+      repHrId: viewer.hrId,
+      customerId: isUuid(body.customerId) ? String(body.customerId).toLowerCase() : null,
+      isTest,
+    });
+    throw validationError(draft.error);
+  }
   const visit = draft.value;
 
   const participants = resolveVisitParticipants({
