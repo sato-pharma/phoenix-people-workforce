@@ -62,6 +62,7 @@
   "a-squash-merge-makes-a-stacked-branch-rebuild-not-merge": "git-worktrees",
   "a-superseded-deploy-reached-success-a-withheld-one-never-did": "engineering",
   "a-test-can-never-hand-a-function-a-process-env-literal": "engineering",
+  "a-tested-module-with-zero-callers-reads-as-a-shipped-feature": "notifications",
   "a-third-of-target-carrying-territories-have-no-rep": "org",
   "a-utc-timestamp-compared-against-cairo-manufactures-a-false-signal": "sessions",
   "a-watchers-exit-code-is-a-verdict-about-the-watcher": "sessions",
