@@ -90,8 +90,15 @@ export function runModuleMemoryTests() {
     "a path into ANY checkout — with the space in 'Phoenix Workforce' — must reduce to repo-relative");
 
   // 4. The pointer stays small: Claude Code shows only a 2 KB preview of hook context over ~10 KB.
+  // 🔴 THE LIMIT IS 4,000, NOT THE 4,500 CLIFF, SO A MODULE IS SPLIT BEFORE A RULE IS BLOCKED. On
+  // 2026-10-03 `phoenix-crm` measured 4,478 of 4,500 with 38 rules: the next CRM ruling anyone wrote
+  // took it to 4,518 and reddened this required job, with nothing having warned beforehand. A margin
+  // means the file goes over while there is still room for the rule in front of it — the remedy is
+  // always to SPLIT the module (phoenix-crm -> + phoenix-crm-approvals), never to trim a rule.
+  // 🔴 And this is NOT the module file's 72,000-byte cap: phoenix-crm sat at 70% of that while this
+  // was 22 bytes from red. Two different limits, and the one that bites is the small one.
   const biggest = MODULES.map((m) => renderPointer(m, readFileSync(`.claude/rules/${m.id}.md`, "utf8")));
-  for (const p of biggest) assert.ok(Buffer.byteLength(p) < 4_500, `a module pointer must stay well under the preview cliff:\n${p.slice(0, 200)}`);
+  for (const p of biggest) assert.ok(Buffer.byteLength(p) < 4_000, `a module pointer is ${Buffer.byteLength(p)} bytes, over the 4,000 margin before the 4,500 preview cliff — SPLIT that module (see phoenix-crm-approvals), do not trim its rules:\n${p.slice(0, 200)}`);
   assert.ok(ruleHeadlines(readFileSync(".claude/rules/payroll.md", "utf8")).length > 0, "rule headlines must parse");
 
   // 5. The fold files a note by its own words when its session left no record.

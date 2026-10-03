@@ -156,6 +156,26 @@ export const MODULES = [
     keywords: ["phoenix crm", "phoenix-crm", "phoenix_crm", "visit app", "rep's app", "list admission", "location integrity", "mock location"],
     tables: ["phoenix_crm"],
   },
+  // 🔴 `phoenix-crm` KEEPS EVERY GLOB IT HAD, and `phoenix-crm-approvals` ADDS its own narrower ones,
+  // so an approvals file loads the PAIR and nothing that used to arrive stops arriving. The split is
+  // for the POINTER, not the file: phoenix-crm had 38 rules and its injected pointer measured 4,478
+  // of the 4,500 bytes `tests/module-memory.test.ts` allows, so the NEXT CRM rule would have reddened
+  // the required `validate` job (measured 2026-10-03: a real 39th rule took it to 4,518). The file
+  // itself was only at 70% of its 72,000-byte cap — two different limits, and this was the small one.
+  {
+    id: "phoenix-crm-approvals",
+    title: "Phoenix CRM — lists, validation, plans and approvals",
+    scope: "Who may admit a customer to a rep's list and who validates it, grades, drop/add/bring-back, the weekly plan and its review, off-plan and pharmacy calls, and the decision queues that count what is waiting.",
+    globs: [
+      "src/lib/phoenix-crm/{adoption-rules,approval-nudge-rules,customer-list-grouping,entry-rules,list-request-rules,list-row-facts,list-template-rules,monthly-plan-rules,offplan-day,pharmacy-call-rules,plan-edit-rules,plan-review-rules,plan-rules,unplanned-rules,validate-next}.ts",
+      "src/lib/phoenix-crm/server/{adoption,approval-nudge,awaiting-decisions,decision-queues}.ts",
+      "app/api/phoenix-crm/list/**",
+      "app/**/phoenix-crm/list-template/**",
+      "tests/phoenix-crm-{adoption,approval-notices,approval-nudge,customer-list-board,list-admission,list-edges,list-row-facts,list-template,manager-validates}*",
+    ],
+    keywords: ["list admission", "off-plan", "off plan", "bring back", "bring-back", "plan review", "decision queue", "awaiting decision", "validated at the door"],
+    tables: [],
+  },
   {
     id: "crm",
     title: "Field CRM analytics (iReports360) — visits, KPIs, reps lists and plans",

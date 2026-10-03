@@ -1,9 +1,23 @@
 /**
  * Phoenix Workforce — Direct Orders live Google Sheet
  * ==================================================================================
- * Keeps the owner's Google Sheet in step with the share-link feed, as a faithful
- * copy of the downloadable Direct Orders .xlsx: the same three tabs, the same 39
- * columns, the same Phoenix styling, the same totals.
+ * Keeps the owner's Google Sheet in step with the share-link feed. It carries the
+ * downloadable Direct Orders .xlsx faithfully -- the same columns, the same Phoenix
+ * styling, the same totals -- and then adds to it.
+ *
+ * NO COUNTS IN THIS COMMENT, DELIBERATELY. It used to say "the same three tabs, the
+ * same 39 columns", and both had quietly gone stale: the columns are whatever
+ * DIRECT_ORDER_REPORT_COLUMNS holds (45 on 2026-10-03, and the .xlsx reads the SAME
+ * array, which is what keeps the two from ever quoting different totals), and the
+ * tabs grew past the workbook's three. A number written here cannot be checked by
+ * anything, so it rots silently and the next reader believes it; the array and
+ * TAB_ORDER below can be read, so they are the answer.
+ *
+ *   From the .xlsx   Cover · Direct Orders · Status Breakdown ("By Status" there)
+ *   Added since      Executive Summary · Comparison · Audit Trail
+ *   Not a report tab  _Phoenix notes (do not delete), hidden
+ *
+ * The Audit Trail is the one that is NOT a mirror of the feed -- see its own builder.
  *
  * STRUCTURE ONCE, VALUES EVERY MINUTE
  *   The layout is only rebuilt when it is actually wrong -- first run, or the column
@@ -16,8 +30,8 @@
  * WHY A SCRIPT AND NOT =IMPORTDATA
  *   IMPORTDATA refreshes on Google's own schedule — roughly hourly, not configurable
  *   — and can only ever produce one flat table. This runs on a 1-minute trigger and
- *   builds all three sheets. The feed itself answers in ~1.5s with no caching, so the
- *   sheet is effectively live.
+ *   builds every tab in TAB_ORDER. The feed itself answers in ~1.5s with no caching,
+ *   so the sheet is effectively live.
  *
  * SETUP (once)
  *   1. Extensions -> Apps Script
@@ -472,7 +486,7 @@ function onOpen() {
     .addToUi();
 }
 
-/** The trigger target. Fetch, parse, then rebuild all three tabs. */
+/** The trigger target. Fetch, parse, then rebuild every tab in TAB_ORDER. */
 function refreshDirectOrders() {
   var url = feedUrl();
   if (!url) {
@@ -565,9 +579,10 @@ function refreshDirectOrders() {
  * Split the one payload into its three sections.
  *
  * The feed marks them with `#SUMMARY` / `#BYSTATUS` / `#ORDERS` lines and returns
- * them together, so all three tabs are guaranteed to describe the same instant. A
- * cover reading "14 orders" above a table listing 15 is exactly the sort of quiet
- * inconsistency that makes people stop trusting a report.
+ * them together, so every tab built from this one payload is guaranteed to describe
+ * the same instant -- which is the point, and is why the section count here is three
+ * while the tab count is not. A cover reading "14 orders" above a table listing 15 is
+ * exactly the sort of quiet inconsistency that makes people stop trusting a report.
  */
 function parseBundle(text) {
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // strip the Excel BOM
@@ -650,7 +665,7 @@ function deriveSections(orders) {
 
 // ── Sheet builders ──────────────────────────────────────────────────────────────
 
-/** The main table: 39 columns, frozen header, filter, banded rows, grand total. */
+/** The main table: every column the feed sent, frozen header, filter, banded rows, grand total. */
 function buildOrdersSheet(ss, grid, stamp, created) {
   var header = grid[0];
   var body = grid.slice(1);
@@ -1651,8 +1666,8 @@ function buildCoverSheet(ss, summary, rowCount, stamp, created) {
 /**
  * An append-only archive of every order state this sheet has ever seen.
  *
- * The three live tabs are a MIRROR: they show what the feed says right now, so anything the feed
- * stops sending disappears from them. That is correct for a live report and useless as a record.
+ * Every other tab is a MIRROR: it shows what the feed says right now, so anything the feed
+ * stops sending disappears from it. That is correct for a live report and useless as a record.
  * This tab is the opposite — nothing is ever cleared, so it survives:
  *
  *   · an order deleted, reversed or expired upstream       (its last known state stays here)
