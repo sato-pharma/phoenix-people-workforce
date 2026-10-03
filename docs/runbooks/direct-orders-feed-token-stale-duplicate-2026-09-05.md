@@ -7,6 +7,13 @@
 > to be stopped instead (see **Fix**). That version also carried two full share
 > tokens; both are revoked, and each is now cut to its first 6 characters.
 > **Re-measured 2026-09-15** is new. All times are Cairo local.
+>
+> **Re-measured again 2026-10-03, and two things changed.** The owner asked
+> outright which Google account owns the copy, so **What Phoenix cannot answer**
+> is now a measured negative with three disproved leads rather than a note — and
+> one claim in it is corrected: the egress IP does not merely fail to identify a
+> person, it is shared with the LIVE sheet. And the silence itself is closed: a
+> refused read is now counted on the link's own row and alerted on (#5221).
 
 Production is healthy. This is not an incident with the app — it is a dead
 external consumer that has been silently failing for a month, found while
@@ -95,6 +102,51 @@ itself. That answer, if it exists, is in that Sheet's own Google Drive
 version history / Activity panel — outside anything this app or its logs can
 see.
 
+**Measured 2026-10-03, because the owner asked outright.** The answer is no,
+and three things that look like evidence are not. Each was tested, not assumed:
+
+1. **The User-Agent `id:` is not a script id.** The ghost's live header reads
+   `Mozilla/5.0 (compatible; Google-Apps-Script; beanserver;
+   +https://script.google.com; id: UAEmdDd-ww0d96vY8iUi2qkqtUWEC_Q4xMQ)` — **35
+   characters**, and the live sheet's is 36. A real Apps Script project id is
+   **57** (`docs/environment.md`, "Finding a sheet's script id"). So it reaches
+   neither `projects.get`, the one Google call that returns `creator.email`, nor
+   Drive. The id above is still conclusive that these are two *different*
+   projects, which is all the table above ever claimed — it just cannot be
+   resolved to an owner.
+2. **The source IP is shared with the LIVE sheet, which corrects the note
+   above.** In one 15-minute window both the ghost and the canonical sheet were
+   served from `107.178.193.70` and `107.178.193.71`. The pool is also wider
+   than `34.116.28.67-69`: `34.116.21.232` and `34.116.39.236` appeared in the
+   same window. So the IP does not merely fail to name a person — it does not
+   even separate the two sheets.
+3. **The `UAEmdDd` prefix is not an account fingerprint**, which is the lead
+   worth writing down because it looks like one. All five Apps Script projects
+   that call Phoenix carry it — the two direct-orders ones, CV Lifecycle,
+   Marketing Requests and the master map — including the three whose owner is
+   known. It is a Google-wide constant.
+
+And the credential that could ask Google is not reachable from the laptop
+anyway: `GOOGLE_APPS_SCRIPT_REFRESH_TOKEN`, `GOOGLE_APPS_SCRIPT_CLIENT_*` and
+all three `*_APPS_SCRIPT_ID`s are **write-only GitHub Actions secrets** (they
+appear in `gh secret list`, none in `gh variable list`) and are unset in
+`.env.local`.
+
+**What does identify it — one positive test, in the copy's own source.** The
+ghost runs pre-#1792 code with the dead token written into it, where the live
+sheet keeps `FEED_TOKEN` in a Script Property and the file holds nothing. So
+opening a candidate project's `Code.gs` and searching it for `pgn0W2` settles
+the question outright. That token has been revoked since 2026-08-05, so
+searching for it exposes nothing.
+
+**And the Drive-history window is narrower than "around 2026-08-05".** The dead
+token recorded **470** reads in its 260-minute life (11:01:34 → 15:22:04 on
+2026-08-05) — about **1.8 a minute**, where a single one-minute trigger can only
+produce one. So two pollers were on it that morning. Allowing the live sheet the
+whole window leaves ~210 minutes for the copy, putting its first poll at roughly
+**11:52**. Look at Drive Activity between **11:45 and 15:25** on 2026-08-05, not
+across the day.
+
 ## Fix
 
 **Stop the copy; never give it a token.** The first version of this runbook
@@ -147,12 +199,73 @@ right answer to it. The once-a-minute 403 stops when the trigger does.
   harmless only because both are dead. `tests/docs-share-token-guard.test.ts`
   now fails any tracked file under `docs/` that carries a token-shaped string.
 
+## Re-measured 2026-10-03
+
+- **The ghost is still running, 58.7 days in.** In a 9-minute Railway HTTP
+  window (08:27:24 → 08:36 on 2026-10-03) the dead `pgn0W2…` token was refused
+  **8 times** and the live token answered **200 nine times**, at exactly one a
+  minute each. At that rate the refusals since 15:22 on 2026-08-05 come to about
+  **84,500**. Nothing about the diagnosis above has changed.
+- **The live sheet is healthy.** One live feed link, `dOtz3E…`, minted by the
+  Friday rotation at 03:23:01 on 2026-10-02, **1,719 reads**, the last at
+  08:35:26 on 2026-10-03 — six seconds before it was read. Never revoked.
+- **Rotation has now confirmed nine times in a row.** 2026-09-18 (`uOZdjd…`),
+  09-25 (`U12Cm-…`) and 10-02 (`dOtz3E…`) each wrote the `confirmedBySheet`
+  audit row, and each carried `allowFiles: true`, so the evidence photographs
+  stayed reachable — the regression every rotation from 2026-08-23 once had.
+- **The feed's own output is sound, checked rather than assumed.** It answered
+  **200 in 0.82s**, 111 KB, **183 rows × 45 columns**, with **0** malformed
+  rows under an RFC4180 parse. One Arabic bonus-override reason contains a line
+  break; that is handled, because the Apps Script parses with Google's own
+  `Utilities.parseCsv` rather than splitting on newlines.
+- **And the figures are faithful.** The feed's by-status block and the database
+  agree row for row: approved 117, rejected 37, returned 20, cancelled 9 = 183;
+  3,104,118.52 EGP total, 1,823,329.02 approved, 20,539 units. Every one of the
+  183 is in a terminal state — nothing is sitting unapproved.
+- **One cosmetic drift, no action taken.** `docs/direct-orders-live-sheet.gs`
+  still says "the same 39 columns" in its header while the feed now emits 45.
+  The layout is rebuilt from the feed's own header, so the sheet is correct and
+  only the prose is stale.
+
+## The silence is closed — #5221, merged 2026-10-03 09:17
+
+The reason this ran for 31 days before anyone noticed is that **a refused read
+left no trace Phoenix could see.** The route answered 403 and returned; the only
+record was Railway's HTTP log, which the app cannot read and which keeps barely
+a quarter of an hour of lines for the current deployment. "Is anything being
+refused?" was unanswerable from inside the system.
+
+It is answerable now. All three share-token guards count the refusal on the
+link's own row (`refused_count`, `last_refused_at`) before refusing — the
+caller's answer is unchanged, and only a row that already exists is ever
+written, so an unauthenticated caller cannot drive the write path.
+`src/lib/share-links/dead-token-polling.ts` then judges them on
+`job-heartbeat-sweep`'s existing 15-minute clock: revoked or lapsed, **≥10**
+refusals, last refused **inside 24 hours**, feed links only. The owner gets one
+Telegram/in-app/push message a Cairo day while it continues, and none once the
+trigger stops.
+
+**Confirmed against the live row, not the code.** The merge reached production
+at 09:27:15 (live `revision` = the merge sha `ef3219f2c`, `main`'s CI
+`success`), and at **09:27:03** — the ghost's first poll after the counting
+shipped — `pgn0W2…` went to `refused_count = 1` with `last_refused_at` stamped,
+while the live `dOtz3E…` stayed at `refused_count = 0` and its `access_count`
+rose to 1,771. The dead token is counted, the working one is not, which is the
+whole distinction the alert rests on.
+
+So this runbook no longer needs re-measuring by hand. **If the ghost is still
+polling, the alert says so.**
+
 ## Still open
 
-1. **Which Sheet holds the dead token, and who owns it — unresolved.** Not
-   findable from Phoenix. The Triggers pages in **Fix** are the quickest first
-   look; after that, someone with access to the relevant Google Drive folder
-   can check file version history around 2026-08-05.
+1. **Which Sheet holds the dead token, and who owns it — not resolvable from
+   Phoenix, and that is now measured rather than assumed** (see the three
+   disproved leads under **What Phoenix cannot answer**). The Triggers pages in
+   **Fix** are the quickest first look, and `Code.gs` carrying `pgn0W2` is the
+   one positive test; failing both, Drive version history between **11:45 and
+   15:25** on 2026-08-05.
 2. The dead token itself was left as-is (already revoked, does no harm sitting
    in the table) — no cleanup action taken against
-   `direct_order_report_share_links`.
+   `direct_order_report_share_links`. It is now also the thing the new alert
+   fires on, so removing the row would silence the alert while the ghost kept
+   polling. Leave it.
