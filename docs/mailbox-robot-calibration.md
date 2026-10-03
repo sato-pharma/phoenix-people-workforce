@@ -390,3 +390,68 @@ mailbox the dialog names is decided in node, where the shared resolver can be re
 is a real function rather than a string, and `ConsolePage.evaluate` is typed to accept nothing else.
 
 Two copies of one judgement is how a fix lands on one path and silently leaves the other broken.
+
+## Two Turbify login pages, and the 45 seconds the adoption spent on the wrong one
+
+The owner pressed **Reset it and take the app password** and the card span. Twice — 14:58 and 15:13
+Cairo on 2026-10-03 — and both runs landed in `app_error_events` as:
+
+```
+TimeoutError: Waiting for selector `input[type="email"]` failed
+  at async Object.setMailboxPassword (/app/.next/server/chunks/src_lib_0rwhnfi._.js:13:3358)
+```
+
+The frame is what makes this readable: **`setMailboxPassword`**, not the console sign-in. So the
+chain had already got past the hard part — the mailbox WAS reset and the one-time password WAS read
+out of the dialog, which is the fix that shipped hours earlier working. It then died on the next
+step, and threw the captured password away with the error.
+
+### What the pages actually are
+
+Measured in the production container, both pages read in one run:
+
+```
+A) FRESH login page  emailInputs=1 pwInputs=1  title=Turbify Login Page
+B) after admin sign-in, url=https://ecp.turbify.com/satopharma.com
+C) MAILBOX login on the SAME page
+   url          : https://mail.turbify.com/login
+   title        : Bizmail Login
+   emailInputs  : 0   <-- the selector signInAs waits 45s for
+   pwInputs     : 1
+   inputs       : ["text name=email visible","password name=password visible","checkbox visible"]
+   form action  : (none)   submits in form: ["button type=submit text=Login to Business Mail visible"]
+```
+
+`MAILBOX_LOGIN_URL` is a `login.turbify.com` URL whose `.done` points at mail — and Turbify
+**redirects it to `https://mail.turbify.com/login`**, a different page with a different form. Its
+email field is `input#email[name="email"][type="text"]`. There is no `input[type="email"]` on it at
+all, so the wait could only ever time out.
+
+`MAILBOX_EMAIL_FIELD` is the union of both shapes. The union is safe in the strong sense: neither
+page carries the other's field, so it cannot select the wrong input on either one. The submit
+control is `button[type="submit"]` on both, which is why only the one line was wrong.
+
+🔴 **A first hypothesis was wrong and worth recording.** The obvious read was that the driver reuses
+ONE page, already signed in as the administrator, so Turbify saw a live session and skipped the
+form. Reading `B)` and `C)` in the same run killed that: the page genuinely navigated to a login
+form, it was simply a form with different markup. The probe was built to measure both pages rather
+than to confirm the guess, which is the only reason the real cause surfaced in one pass.
+
+### The second defect in the same four lines
+
+The sign-in proof read `!page.url().includes("login.turbify.com")`. The page this sign-in lands on
+is `mail.turbify.com/login` — which does **not** contain that string. So a **refused** login, still
+sitting on the form, satisfied the proof and the robot carried on as though signed in. A wrong
+one-time password would have been reported as a successful sign-in and failed later somewhere
+innocent-looking, which is the shape of defect this module keeps producing.
+
+`LOGIN_PAGE_URL` replaces it: a proof asks whether we left the form, never which host we are on.
+Both pages end in `/login`; everything past one does not.
+
+### Cost
+
+Three outstanding one-time passwords on `hr.mailbox@satopharma.com` by the end of it — the earlier
+measurements, and one per spun click. None of it is damage: the mailbox belongs to Phoenix, nobody
+reads it, and the adoption resets *and* captures in one pass, so a run that gets through makes every
+earlier password irrelevant. The real cost was the owner's time, twice, on a card that gave him no
+error until the request finally returned.
