@@ -56,7 +56,7 @@ Read of a module file is recorded but never injected, because Claude Code alread
 | `.claude/rules/<module>.md` | The module memory. `## Rules` is hand-written and preserved; the notes block is generated. |
 | `docs/module-memory/history.md` | Notes about retired platforms and frozen areas. Never loaded; never act on it. |
 | `.claude/hooks/module-memory-injector.mjs` | The pointer hook above. Also records the modules each session touched. |
-| `scripts/module-memory/fold.mjs` | The weekly fold below. |
+| `scripts/module-memory/fold.mjs` | The fold below — three times a day. |
 | `scripts/module-memory/proof.mjs` | The live per-module proof above. |
 | `tests/module-memory.test.ts` | Runs `build.mjs --check` and pins the glob dialect, the hook's routing, the pointer size and the no-regrowth rule, in the required `validate` job. |
 
@@ -67,7 +67,7 @@ Read of a module file is recorded but never injected, because Claude Code alread
    contradicts it. It is live for every session the moment the PR merges.
 2. **A ruling the owner gives in chat** goes in the same way, inside that session's PR.
 3. **Work with no PR.** The note is written on the laptop as before, with its pointer under
-   `## Inbox` in `MEMORY.md`, so every local session sees it at once. The weekly fold
+   `## Inbox` in `MEMORY.md`, so every local session sees it at once. The fold
    (`node scripts/module-memory/fold.mjs --apply`) files each unfiled note under a module — by the
    modules its own session touched (`originSessionId` + the hook's record), else by its own words —
    refreshes the repo mirror, rebuilds, and opens ONE PR. After that PR merges, the next fold removes
@@ -76,6 +76,38 @@ Read of a module file is recorded but never injected, because Claude Code alread
 
 The fold works in a temporary worktree from `origin/main`, never merges, never deletes a note, and
 waits while an earlier fold PR is still open.
+
+### The cadence: three times a day, not weekly
+
+🔴 **The fold runs at 09:00, 15:00 and 21:00 Cairo** — the owner's instruction on 2026-10-03 ("this
+report needs to run twice or 3 times a day"), replacing the Sunday-only schedule it launched with on
+2026-10-02. The laptop scheduled task `module-memory-fold` (`0 9,15,21 * * *`, local time) runs it
+from the dedicated detached worktree `_wt-memory-fold-runner`, which it re-points at `origin/main`
+on every run, and reports to the owner.
+
+**Why three runs a day cost no extra CI.** Two things in the script make the cadence free:
+
+- **A run with nothing new opens no PR at all.** It prints `nothing to file — every note on this
+  laptop is already filed on main` and exits. Most runs are this.
+- **Only ONE fold PR is ever open.** A run that finds an open one prints
+  `an open fold PR already exists (#N) — merge it first` and files nothing. So the number of fold
+  merges is set by how many notes get written, exactly as it was when it ran weekly; what changed is
+  the WAIT before a note reaches its module — up to seven days, now at most eight hours.
+
+🔴 **That throttle keys on the BRANCH (`codex/memory-fold-<digits>`), never on the PR title.** The
+title test it shipped with matched any open PR whose name contained "memory fold" — so a PR *about*
+the fold silently stopped every run until it merged, which is what #5215 did to itself on 2026-10-03.
+Only this script creates that branch, and the digits keep a human branch like
+`codex/memory-fold-cadence` out of it.
+
+**The inbox settle still happens on every run**, PR or no PR: it is a laptop-only edit to `MEMORY.md`
+that removes pointers whose notes are already filed on `main`, so the index tidies itself three times
+a day without anything to approve.
+
+🔴 **The branch name carries the clock time** (`codex/memory-fold-<day>-<HHmm>`), because
+`git worktree add -b` fails on a branch that already exists and the local branch outlives both the
+temporary worktree and the PR's merge. A day-only name broke every second run of a day that filed a
+note twice.
 
 ## What stays in AGENTS.md, and why
 

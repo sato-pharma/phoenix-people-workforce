@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-// THE WEEKLY FOLD — file every new memory note under its module, in ONE PR.
+// THE MEMORY FOLD — file every new memory note under its module, in ONE PR.
 //
 //   node scripts/module-memory/fold.mjs            dry run: prints what it would file, writes nothing
 //   node scripts/module-memory/fold.mjs --apply    settle the inbox, then open the fold PR
+//
+// 🔴 IT RUNS THREE TIMES A DAY — 09:00, 15:00 and 21:00 Cairo (owner, 2026-10-03: "this report
+// needs to run twice or 3 times a day"), not weekly. A run with nothing new to file opens NO PR and
+// costs nothing, and only ONE fold PR is ever open at a time: a run that finds an open one stops.
+// So the cadence shortens the wait before a note reaches its module; it does not multiply merges.
 //
 // HOW MEMORY FLOWS (docs/module-memory.md):
 //   1. A session writes a memory note on the laptop (~/.claude/projects/<slug>/memory/<name>.md) and
@@ -137,7 +142,7 @@ export function settleIndex(text, filedOnMain) {
     out.splice(h + 1, 0, "", "**Module memory holds everything module-specific** — `.claude/rules/<module>.md` in the repo, loaded when a session works in that module (AGENTS.md §2.2, docs/module-memory.md). This index holds what is true everywhere, plus the inbox. Nothing is trimmed from it any more.");
   }
   if (!out.some((l) => INBOX_HEADING.test(l))) {
-    out.push("", "## Inbox — new notes land here", "Put each new memory note's pointer here, one line. The weekly fold (`node scripts/module-memory/fold.mjs --apply`) files it under its module in ONE PR; once that merges, the next fold removes the line.");
+    out.push("", "## Inbox — new notes land here", "Put each new memory note's pointer here, one line. The fold (`node scripts/module-memory/fold.mjs --apply`, three times a day — 09:00, 15:00 and 21:00 Cairo) files it under its module in ONE PR; once that merges, the next fold removes the line.");
   }
   return { text: out.join("\n"), removed };
 }
@@ -167,8 +172,13 @@ async function main() {
   const settled = settleInbox(onMain);
   say(`${settled} index pointer(s) whose note is filed in a module on main ${APPLY ? "removed from" : "would be removed from"} MEMORY.md`);
 
-  const open = execFileSync("gh", ["pr", "list", "--state", "open", "--search", "memory fold in:title", "--json", "number,title"], { cwd: REPO, encoding: "utf8" });
-  const openFold = JSON.parse(open).find((p) => /memory fold/i.test(p.title));
+  // 🔴 A FOLD PR IS IDENTIFIED BY ITS BRANCH, NEVER BY ITS TITLE. The title test matched any open PR
+  // with "memory fold" in its name — including a PR *about* the fold, which then silently stopped
+  // every run until it merged. Measured 2026-10-03: #5215, the PR that introduced this cadence, was
+  // itself read as the open fold. Only this script creates `codex/memory-fold-*`, so the branch is
+  // the one signal a human cannot collide with.
+  const open = execFileSync("gh", ["pr", "list", "--state", "open", "--limit", "100", "--json", "number,title,headRefName"], { cwd: REPO, encoding: "utf8" });
+  const openFold = JSON.parse(open).find((p) => /^codex\/memory-fold-\d/.test(p.headRefName));
   if (openFold) {
     say(`an open fold PR already exists (#${openFold.number}) — merge it first; nothing new is filed until then`);
     return;
@@ -190,9 +200,16 @@ async function main() {
     return;
   }
 
-  const day = new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Cairo" });
-  const branch = `codex/memory-fold-${day}`;
-  const wt = path.join(path.dirname(REPO), `_wt-memory-fold-${day}`);
+  // 🔴 THE BRANCH CARRIES THE CLOCK TIME, NOT ONLY THE DAY. It runs three times a day, and
+  // `git worktree add -b` fails outright on a branch that already exists — the local branch
+  // survives both the temporary worktree's removal and the PR's merge (GitHub deletes only the
+  // remote one). A day-only name broke every second run of a day that filed a note twice.
+  const now = new Date();
+  const day = now.toLocaleDateString("en-CA", { timeZone: "Africa/Cairo" });
+  const clock = now.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const stamp = `${day}-${clock.replace(":", "")}`;
+  const branch = `codex/memory-fold-${stamp}`;
+  const wt = path.join(path.dirname(REPO), `_wt-memory-fold-${stamp}`);
   git(["worktree", "add", "-q", "-b", branch, wt, "origin/main"]);
   try {
     const assignments = { ...onMain };
@@ -216,9 +233,9 @@ async function main() {
       "",
       "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
     ].join("\n");
-    git(["commit", "-q", "-m", `chore(memory): weekly memory fold — ${filed.length} note(s) filed\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`], wt);
+    git(["commit", "-q", "-m", `chore(memory): memory fold — ${filed.length} note(s) filed\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`], wt);
     git(["push", "-q", "-u", "origin", branch], wt);
-    const url = execFileSync("gh", ["pr", "create", "--title", `chore(memory): weekly memory fold — ${day}`, "--body", body, "--head", branch, "--base", "main"], { cwd: wt, encoding: "utf8" }).trim();
+    const url = execFileSync("gh", ["pr", "create", "--title", `chore(memory): memory fold — ${day} ${clock} Cairo`, "--body", body, "--head", branch, "--base", "main"], { cwd: wt, encoding: "utf8" }).trim();
     say(`opened ${url}`);
   } finally {
     // The branch is pushed; the temporary folder holds nothing that is not on origin.
