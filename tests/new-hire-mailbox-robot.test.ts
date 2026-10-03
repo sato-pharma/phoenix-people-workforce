@@ -401,8 +401,19 @@ export async function runNewHireMailboxRobotTests(): Promise<void> {
   assert.match(describeLocator(ECP_LOCATORS.searchBox), /placeholder "Search users\.\.\."/);
 
   // ── the company password the Super Admin hands over ──────────────────────────────────────────
-  // Nobody is emailed: Turbify's invite field is deliberately empty.
-  assert.equal(TURBIFY_INVITE_RECIPIENT, "", "Turbify must be given no invite recipient");
+  // 🔴 THE INVITE RECIPIENT CHANGED ON 2026-10-03, AND THE OLD ASSERTION HERE DEMANDED THE BUG.
+  // It pinned an EMPTY recipient, on the belief that nobody should be emailed a credential. Then
+  // Turbify's create turned out to hand back no password at all: it emails a `Temp Password:` line,
+  // so with no recipient the only credential a new mailbox ever has went nowhere, and three real
+  // mailboxes were stranded `Pending` while the sweep reported `provisioned: 0`.
+  //
+  // The intent behind the old line is kept, and it is the stronger half: no PERSON is emailed a new
+  // hire's credential. The recipient is a mailbox Phoenix itself owns and reads.
+  assert.equal(
+    TURBIFY_INVITE_RECIPIENT, "hr.mailbox@satopharma.com",
+    "the invitation must go to the mailbox Phoenix reads, so the robot can finish the mailbox itself",
+  );
+  assert.notEqual(TURBIFY_INVITE_RECIPIENT, "", "an empty recipient strands every mailbox the robot creates");
   assert.equal(INITIAL_PASSWORD_AUDIENCE, "super_admin_only");
 
   // 🔴 THE HEADLINE ASSERTION. With no company password configured the robot gets NOTHING, so it
