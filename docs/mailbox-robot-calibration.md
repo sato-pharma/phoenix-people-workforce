@@ -268,3 +268,46 @@ being asked to choose a password is a flow no session has read off the live page
 deliberately not written blind — a guessed selector produces a driver that clicks nothing and reports
 a clean run, which is how three flows in this module already shipped doing nothing. The next real
 invitation lands in `hr.mailbox@`, and that is the one to read it from.
+
+## Adopting the invite inbox, and why the monitor is the proof
+
+The invitation reader needs an inbox it can open. `hr.mailbox@satopharma.com` is `Active`, but
+nothing stored a credential for it — and `/app/node_modules` in the production image holds 36 entries
+with no `imap*`, because the image keeps only what Next bundles, so no throwaway script can test an
+IMAP login either. It has to go through the app.
+
+`addMonitor` is the seam, and it already fits: its `employeeHrId` is **optional**, so a mailbox
+belonging to no employee is a shape it supports, and it runs `testMailboxConnection` and refuses to
+store a credential that cannot open the mailbox. So "adopted" means an IMAP login really succeeded —
+not that a password was typed somewhere and assumed to work. In a module where three flows have
+already shipped reporting success over a step that did nothing, that distinction is the feature.
+
+### The one safety property
+
+The chain is `resetAndCapture` → `setMailboxPassword` → `generateAppPassword` → `addMonitor`, and the
+first step is a password **reset**. The same chain pointed at an employee's address locks that person
+out of their mail with nobody told — the state `adopt-runner.ts` reports as `locked_out`.
+
+So the address is **not a parameter the caller chooses**. `evaluateInviteInboxAdoption` compares it
+against `TURBIFY_INVITE_RECIPIENT` by identity and refuses everything else, the route passes the
+constant rather than anything from the request body, and the card has no address field at all. There
+is deliberately no `force`, `override` or `allowAnyAddress` — a flow that can reset ANY mailbox is a
+far more dangerous feature than this one, and it would arrive by someone adding exactly that
+parameter.
+
+A missing company password is refused **before** the reset rather than discovered after it, because a
+reset with no password set afterwards leaves the mailbox unreachable. A company password the robot
+could not *read* is treated as absent, never as empty-but-fine.
+
+### Not on a schedule
+
+Like adoption, the only caller is a Super-Admin route. The invite inbox is adopted once; a sweep that
+re-ran it would reset the inbox the robot is mid-way through reading and rotate a credential the
+monitor had just proved. The test fails if anything scheduled so much as names the runner.
+
+### A test that asserted on prose
+
+The first version of the no-escape-hatch check searched the whole module for the words `force` and
+`override` — and the module's own comment explaining that there are none made it fail. It now strips
+comment lines and matches `force\s*[?:=]` against code only. Worth remembering as the mirror of the
+usual failure: an assertion can be fooled by a comment in either direction.

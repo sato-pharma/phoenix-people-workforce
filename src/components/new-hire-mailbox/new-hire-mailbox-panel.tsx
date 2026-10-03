@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, ExternalLink, Loader2, MailPlus, Search } from "lucide-react";
 
 import { AdoptMailboxCard } from "@/components/new-hire-mailbox/adopt-mailbox-card";
+import { InviteInboxCard } from "@/components/new-hire-mailbox/invite-inbox-card";
+import { INVITE_INBOX_ADDRESS } from "@/lib/new-hire-mailbox/robot/invite-inbox";
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import {
@@ -323,6 +325,11 @@ export function NewHireMailboxPanel({
         ) : null}
 
         {canAdopt ? <AdoptMailboxCard pending={pending} /> : null}
+
+        {/* Same audience as adoption: it resets a mailbox password. Unlike the adopt card it
+            does not depend on the queue — the invite inbox is adopted once, and from then on
+            the robot finishes every mailbox it creates without anybody clicking. */}
+        {canAdopt ? <InviteInboxCard inviteInbox={INVITE_INBOX_ADDRESS} /> : null}
 
         <div className="flex flex-wrap items-center justify-between gap-3 border border-slate-200 bg-white px-4 py-3">
           <p className="min-w-0 text-sm font-medium text-slate-600">
