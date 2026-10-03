@@ -24,9 +24,10 @@ import { stripComments } from "./support/comment-strip.ts";
  * Phoenix CRM — the SFE's list template (owner's ask, 2026-10-02): he sends the rep a sheet, the rep
  * fills in his list, SFE uploads it and the list appears.
  *
- * The rules worth having are all about what the sheet may NOT do: it may not carry a place, it may not
- * grade a pharmacy, it may not reach a territory it was not built for, and it may not put a customer on
- * the list without the rep still standing at his door.
+ * The rules worth having: the grade and the potential are OPTIONAL (owner, 2026-10-03 — a pharmacy
+ * carries neither, and an ungraded doctor loads and waits to be validated); the sheet may not carry a
+ * place; it may not reach a territory it was not built for; and it may not put a customer on the list
+ * without the rep still standing at his door.
  */
 
 const ROOT = new URL("../", import.meta.url);
@@ -98,16 +99,31 @@ function checkRow(): void {
   assert.equal(parseTemplateRow(2, cells({ listType: "" })).kind, "refused", "a row with no list is refused");
   assert.equal(parseTemplateRow(2, cells({ listType: "Doctors" })).kind, "refused", "and one whose list is not one of the three");
 
-  // 🔴 A REP NEVER SETS A GRADE, SO THE SHEET MUST CARRY ONE. A doctor with no grade and no potential
-  //    is the rep's own proposal with nobody's decision on it, which is what this route exists to avoid.
-  assert.equal(parseTemplateRow(2, cells({ grade: "" })).kind, "refused", "a doctor with no grade is refused");
-  assert.equal(parseTemplateRow(2, cells({ potentialGrade: "" })).kind, "refused", "and one with no potential");
-  assert.equal(parseTemplateRow(2, cells({ grade: "D" })).kind, "refused", "D is not a grade");
-  assert.equal(parseTemplateRow(2, cells({ potentialGrade: "CC" })).kind, "refused", "CC is not a potential");
+  // 🔴 THE GRADE AND THE POTENTIAL ARE OPTIONAL (owner, 2026-10-03): no row is refused over either one.
+  //    A doctor with neither loads with both left null — he waits under To validate, and the grade is
+  //    set later through the admission door, which is where it was always decided.
+  const noGrade = parseTemplateRow(2, cells({ grade: "", potentialGrade: "" }));
+  assert.equal(noGrade.kind, "row", "a doctor with no grade and no potential loads, it is not refused");
+  if (noGrade.kind === "row") {
+    assert.equal(noGrade.value.grade, null, "and the missing grade is stored null");
+    assert.equal(noGrade.value.potentialGrade, null, "and the missing potential null");
+  }
+  // An unrecognised value is DROPPED to null, never a refusal: the function still cannot write a junk
+  // grade, it simply no longer blocks the row over one.
+  const junk = parseTemplateRow(2, cells({ grade: "D", potentialGrade: "CC" }));
+  assert.equal(junk.kind, "row", "a doctor with a value that is not a grade still loads");
+  if (junk.kind === "row") {
+    assert.equal(junk.value.grade, null, "the non-grade 'D' is dropped to null");
+    assert.equal(junk.value.potentialGrade, null, "and the non-potential 'CC' too");
+  }
+  // A real grade and potential still survive, so optional is not the same as ignored.
+  const graded = parseTemplateRow(2, cells({ grade: "B", potentialGrade: "BC" }));
+  assert.equal(graded.kind === "row" ? graded.value.grade : null, "B", "a real grade is kept");
+  assert.equal(graded.kind === "row" ? graded.value.potentialGrade : null, "BC", "and a real potential");
 
-  // 🔴 AND A PHARMACY CARRIES NEITHER. It is in no KPI, has no frequency and no target, so a grade on
-  //    one is a number nothing reads — refused rather than dropped, because silently ignoring a cell
-  //    somebody filled is how a sheet and a list come to disagree.
+  // 🔴 A PHARMACY CARRIES NEITHER, AND A GRADE TYPED ON ONE IS IGNORED, NOT REFUSED (owner, 2026-10-03:
+  //    "ignore it, let them load"). It is in no KPI and has no target, so the value means nothing — the
+  //    row loads with both null rather than being blocked.
   const pharmacy = parseTemplateRow(4, { grade: "", listType: "Pharmacy", name: "El Ezaby Pharmacy", potentialGrade: "" });
   assert.equal(pharmacy.kind, "row", "a pharmacy with no grade is fine");
   if (pharmacy.kind === "row") {
@@ -115,11 +131,12 @@ function checkRow(): void {
     assert.equal(pharmacy.value.grade, null);
     assert.equal(pharmacy.value.potentialGrade, null);
   }
-  assert.equal(
-    parseTemplateRow(4, { grade: "A", listType: "Pharmacy", name: "El Ezaby Pharmacy" }).kind,
-    "refused",
-    "a graded pharmacy is refused, not quietly stripped",
-  );
+  const gradedPharmacy = parseTemplateRow(4, { grade: "A", listType: "Pharmacy", name: "El Ezaby Pharmacy", potentialGrade: "AB" });
+  assert.equal(gradedPharmacy.kind, "row", "a pharmacy with a grade typed on it loads — the grade is ignored, not refused");
+  if (gradedPharmacy.kind === "row") {
+    assert.equal(gradedPharmacy.value.grade, null, "and the ignored grade is stored null");
+    assert.equal(gradedPharmacy.value.potentialGrade, null, "and the ignored potential too");
+  }
 }
 
 // ── The whole sheet ──────────────────────────────────────────────────────────────────────────────
@@ -131,11 +148,15 @@ function checkSheet(): void {
     { cells: cells({ grade: "", name: "Dr Two" }), row: 10 },
     { cells: cells({ listType: "AM", name: "Dr One" }), row: 11 },
   ]);
-  assert.deepEqual(customers.map((customer) => customer.name), ["Dr One", "Dr One"], "one PM Dr One and one AM Dr One are two people");
+  assert.deepEqual(
+    customers.map((customer) => customer.name),
+    ["Dr One", "Dr Two", "Dr One"],
+    "a PM Dr One, the now-optional ungraded Dr Two, and an AM Dr One all load",
+  );
   assert.deepEqual(
     refused.map((entry) => entry.row),
-    [9, 10],
-    "the second PM Dr One and the ungraded row are refused, each by its own row number",
+    [9],
+    "only the second PM Dr One is refused — the ungraded doctor now loads, not refused",
   );
   assert.match(refused[0]!.reason, /row 7/, "and a duplicate names the row it duplicates, so the SFE can see both");
 }
@@ -244,50 +265,65 @@ function checkRepCanValidate(): void {
 }
 
 /**
- * 🔴 THE LOADER'S GRADE GUARD NEVER FIRED, AND ONLY A LIVE RUN COULD SHOW IT.
+ * 🔴 THE GRADE AND THE POTENTIAL ARE OPTIONAL ON THE SHEET (owner, 2026-10-03: "make the grade and the
+ * potential optional, not required").
  *
- * `if v_list_type <> 'Pharmacy' and (v_grade not in ('A','B','C') or v_potential not in (...))`
+ * An SFE's 170-row sheet came back "0 of 170 loaded" — the doctor rows refused for an empty Potential
+ * and the pharmacy rows for a typed Grade. The owner made both optional, and chose, asked directly, that
+ * a grade typed on a pharmacy is IGNORED rather than refused ("ignore it, let them load"). This replaces
+ * the `grade_required` guard added hours earlier in 20261003075335, which was itself correct for the
+ * rule as it stood then.
  *
- * An empty sheet cell leaves `v_grade` NULL, and in SQL `NULL not in (...)` is NULL, not TRUE. `NULL or
- * NULL` is NULL, `if NULL then` does not fire — so an UNGRADED doctor was INSERTED onto a rep's list as
- * `pending` with `grade = NULL`, breaking the owner's locked rule that every doctor on a list carries
- * A/B/C and a potential set by his district manager or by SFE.
+ * The loosening is the BULK SHEET alone. The admission door is untouched: `phoenix_crm_decide_request`
+ * still raises `potential_grade_required` before a district manager approves an add — pinned by
+ * phoenix-crm-list-admission.test.ts.
  *
- * Measured on PRODUCTION on 2026-10-03 by loading a test-world sheet: the row came back `loaded`, while
- * the three verdicts either side of it were right, which is why nothing looked wrong. `parseTemplateRow`
- * refuses the same row before the RPC is called, so the upload path was safe and the whole suite stayed
- * green — and this function, whose own comment calls itself the authority, was not one. Fixed by
- * migration 20261003075335 with `coalesce(..., '')`, which is a real value and compares as one.
- *
- * Pinned on BOTH halves, because either alone would have passed while the defect shipped:
- * the SQL must use `coalesce`, and `parseTemplateRow` must refuse every shape the SQL refuses.
+ * Pinned on BOTH halves, the lesson of the guard it replaces: the SQL (20261003090000) sanitises grade
+ * and potential to null with no `grade_required` or `pharmacy_has_no_grade` skip, and the caller refuses
+ * none of the shapes the sheet can carry — each loads with the value it should store.
  */
-function checkGradeGuard(): void {
-  const fix = readFileSync("supabase/migrations/20261003075335_phoenix_crm_load_list_grade_guard.sql", "utf8");
+function checkGradeOptional(): void {
+  const live = readFileSync("supabase/migrations/20261003090000_phoenix_crm_load_list_optional_grade.sql", "utf8");
+  assert.doesNotMatch(live, /'grade_required'/, "the loader no longer refuses a doctor over a missing grade");
+  assert.doesNotMatch(live, /'pharmacy_has_no_grade'/, "nor a pharmacy over a typed one");
   assert.match(
-    fix,
-    /coalesce\(v_grade, ''\) not in \('A', 'B', 'C'\)\s*\n?\s*or coalesce\(v_potential, ''\) not in/,
-    "the SQL guard compares a real value, never a bare NULL column",
+    live,
+    /coalesce\(v_row ->> 'grade', ''\) in \('A', 'B', 'C'\)/,
+    "a doctor's grade is kept only when it is a real one",
   );
-  assert.doesNotMatch(fix, /\(\s*v_grade not in \('A', 'B', 'C'\)/, "and the NULL-swallowing form is gone");
+  assert.match(
+    live,
+    /coalesce\(v_row ->> 'potential_grade', ''\) in \('AA', 'AB', 'AC', 'BA', 'BB', 'BC'\)/,
+    "and his potential only when it is a real one — anything else is written null, never refused",
+  );
+  assert.match(live, /v_list_type <> 'Pharmacy'/, "a pharmacy carries neither, whatever the sheet typed");
 
-  // The caller refuses every shape the database refuses — the four the live probe sent after the fix.
+  // The caller loads every shape the live probe once sent, each with the value it should store. None is
+  // a refusal any more — grade and potential are optional and sanitised, never a reason to drop the row.
   const base = { listType: "PM", name: "Dr Mahmoud Fathy", speciality: "Pediatrics" } as const;
-  const shapes: ReadonlyArray<readonly [string, Partial<Record<TemplateColumnKey, unknown>>]> = [
-    ["no grade and no potential", { ...base }],
-    ["a grade but no potential", { ...base, grade: "B" }],
-    ["a potential but no grade", { ...base, potentialGrade: "BB" }],
-    ["a grade that is not one", { ...base, grade: "X", potentialGrade: "AA" }],
+  const shapes: ReadonlyArray<readonly [string, Partial<Record<TemplateColumnKey, unknown>>, string | null, string | null]> = [
+    ["no grade and no potential", { ...base }, null, null],
+    ["a grade but no potential", { ...base, grade: "B" }, "B", null],
+    ["a potential but no grade", { ...base, potentialGrade: "BB" }, null, "BB"],
+    ["a value that is not a grade", { ...base, grade: "X", potentialGrade: "AA" }, null, "AA"],
   ];
-  for (const [what, cells] of shapes) {
+  for (const [what, cells, grade, potential] of shapes) {
     const verdict = parseTemplateRow(30, cells);
-    assert.equal(verdict.kind, "refused", `a doctor with ${what} is refused by the caller too`);
+    assert.equal(verdict.kind, "row", `a doctor with ${what} loads — grade and potential are optional`);
+    if (verdict.kind === "row") {
+      assert.equal(verdict.value.grade, grade, `and stores grade ${grade ?? "null"}`);
+      assert.equal(verdict.value.potentialGrade, potential, `and potential ${potential ?? "null"}`);
+    }
   }
-  // And the one good shape still loads, so the guard is not simply refusing everything.
-  assert.equal(parseTemplateRow(31, { ...base, grade: "A", potentialGrade: "AC" }).kind, "row", "a fully graded doctor still loads");
-  // A pharmacy takes none of it, which is the other side of the same branch.
+  // A fully graded doctor keeps both, so optional is not the same as ignored.
+  const full = parseTemplateRow(31, { ...base, grade: "A", potentialGrade: "AC" });
+  assert.equal(full.kind === "row" ? full.value.grade : null, "A", "a fully graded doctor keeps his grade");
+  assert.equal(full.kind === "row" ? full.value.potentialGrade : null, "AC", "and his potential");
+  // A pharmacy loads whether or not a grade was typed on it; the grade is dropped either way.
   assert.equal(parseTemplateRow(32, { listType: "Pharmacy", name: "El Ezaby Pharmacy" }).kind, "row", "a pharmacy needs no grade");
-  assert.equal(parseTemplateRow(33, { listType: "Pharmacy", name: "El Ezaby Pharmacy", grade: "A" }).kind, "refused", "and may not carry one");
+  const gradedPharmacy = parseTemplateRow(33, { listType: "Pharmacy", name: "El Ezaby Pharmacy", grade: "A" });
+  assert.equal(gradedPharmacy.kind, "row", "and one with a grade typed on it still loads — ignored, not refused");
+  assert.equal(gradedPharmacy.kind === "row" ? gradedPharmacy.value.grade : "x", null, "the pharmacy's grade is dropped to null");
 }
 
 /**
@@ -416,6 +452,6 @@ export async function runPhoenixCrmListTemplateTests() {
   checkGateAndWrite();
   checkRepCanValidate();
   checkReviewEdges();
-  checkGradeGuard();
+  checkGradeOptional();
   await checkBuildsAndReadsBack();
 }
