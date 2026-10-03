@@ -468,12 +468,12 @@ async function getCeoAdminSignals(
       // ever filed and was the slowest read behind /admin (11.7 s measured 2026-09-21).
       getVacationPendingApprovalCounts(access),
       // 🔴 CONTRACTS, PROBATION AND COACHING ARE NO LONGER COMPUTED HERE. They are three of the
-      // sixteen sources `src/lib/needs-you` already owns, and until this change both files carried
+      // sources `src/lib/needs-you` already owns, and until this change both files carried
       // their own copy of each rule — which had already drifted: this file's probation count filters
       // to people still employed and reads `lifecycleRiskWindows.probationCriticalDays`, where the
       // board's adapter did neither and so counted leavers. One producer per rule, from here on.
       //
-      // The adapters, not `getNeedsYouBoard`: the board runs sixteen sources and this screen needs
+      // The adapters, not `getNeedsYouBoard`: the board runs every source and this screen needs
       // three, so calling it here would add thirteen reads to the owner's heaviest landing page to
       // use none of them. `loadNeedsYouSources` runs exactly these three, with the same eight-second
       // timeout and the same three-state result.

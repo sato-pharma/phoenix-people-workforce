@@ -56,6 +56,13 @@ export const needsYouSourceIds = [
   "probation-decisions",
   "coaching-red-zone",
   "salary-flags",
+  // Added 2026-10-03. Phoenix CRM's own decisions — a list request and an off-plan visit at this
+  // viewer's own step, and how much of the carried-over lists is still waiting to be validated. Until
+  // then the module was the ONLY place a district manager or the SFE Manager could see them, and the
+  // off-plan visit is the one whose delay costs a rep his figures: it counts in nothing until it is
+  // decided. The counts come from the module's own producer (`server/decision-queues.ts`), which the
+  // module page's own badge reads too, so the two can never disagree.
+  "phoenix-crm-decisions",
 ] as const;
 
 export type NeedsYouSourceId = (typeof needsYouSourceIds)[number];
@@ -84,6 +91,7 @@ export const needsYouSourceLabels: Record<NeedsYouSourceId, string> = {
   "probation-decisions": "Probation decisions",
   "coaching-red-zone": "Coaching red-zone reps",
   "salary-flags": "Unresolved salary flags",
+  "phoenix-crm-decisions": "Phoenix CRM decisions",
 };
 
 /**
@@ -113,6 +121,10 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
   "probation-decisions": { href: "/probation", screen: "Probation" },
   "coaching-red-zone": { href: "/coaching", screen: "Coaching" },
   "salary-flags": { href: "/admin/m-payroll", screen: "Payroll Management" },
+  // The live Phoenix CRM app is `/admin/field-crm`; `/admin/phoenix-crm` is the retired 2026-09-14
+  // pilot and only forwards here. The Team tab is where every one of these decisions is actually
+  // taken — the list requests, the off-plan visits and each territory's list readiness are all on it.
+  "phoenix-crm-decisions": { href: "/admin/field-crm?tab=team", screen: "Phoenix CRM Team" },
 };
 
 /**

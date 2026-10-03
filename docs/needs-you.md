@@ -7,7 +7,7 @@ One question, asked once: **what is waiting on a decision only the owner can mak
 | `/admin/needs-you` | on demand, Super Admin only | the full board, five bands |
 | `node scripts/needs-you.mjs` | on demand, terminal | PRs and the production revision — tier 1, no model, no credentials |
 | Telegram + in-app digest | every morning, 06:36 Cairo | the board, fitted to 900 characters |
-| Email | Sundays, 06:36 Cairo | the board, **complete** — every item and all sixteen source verdicts |
+| Email | Sundays, 06:36 Cairo | the board, **complete** — every item and every source's verdict |
 | Claude Code status bar | when a session opens | one line: the oldest thing waiting, and how old the reading is |
 
 Tier 1 has its own page — [tier-1-needs-you.md](tier-1-needs-you.md) — because it is a different
@@ -53,13 +53,20 @@ type NeedsYouSourceState =
 
 ## The sources
 
-Sixteen adapters, one fan-out, an 8-second per-source timeout. A source that has not answered in
+One adapter per source, one fan-out, an 8-second per-source timeout. A source that has not answered in
 eight seconds is a source whose contents are unknown, and it renders amber rather than empty.
 
 `action-inbox` · `plan-approvals` · `leave-approvals` · `excuse-approvals` ·
 `direct-order-approvals` · `direct-order-unbooked` · `direct-order-validations` ·
 `marketing-approvals` · `market-awareness-approvals` · `monthly-closings` · `payroll-publish` ·
-`resignations` · `contract-renewals` · `probation-decisions` · `coaching-red-zone` · `salary-flags`
+`resignations` · `contract-renewals` · `probation-decisions` · `coaching-red-zone` · `salary-flags` ·
+`phoenix-crm-decisions`
+
+`phoenix-crm-decisions` joined on 2026-10-03: Phoenix CRM's list requests and off-plan visits at the
+viewer's own step, plus the carried-over customers still waiting to be validated. 🔴 **It counts
+nothing itself** — `src/lib/phoenix-crm/server/decision-queues.ts` is the ONE producer and the Phoenix
+CRM page's own "waiting for you" badge reads the same functions, so the board and the module can never
+disagree about whose turn it is. A medical rep is `not-applicable`, never a zero and never a row.
 
 Each adapter owns its own `assertPermission` call. Leaning on the page being Super-Admin-only would
 be true today and the wrong shape: the module would then be correct only because of a caller, and
@@ -90,7 +97,7 @@ probation count filtered to people still employed and read the window from
 `lifecycleRiskWindows.probationCriticalDays`; the adapter did neither, so it billed **leavers** as
 decisions he still owed — the same defect that reached production once before as PD-0003.
 
-**Do not call `getNeedsYouBoard` from the command centre.** It runs all sixteen sources, and that
+**Do not call `getNeedsYouBoard` from the command centre.** It runs every source, and that
 screen needs three, on the owner's heaviest landing page. `adaptersFor` runs exactly the ones asked
 for. A test refuses the "simplification".
 

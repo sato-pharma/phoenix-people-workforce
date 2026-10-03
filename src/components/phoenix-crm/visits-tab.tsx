@@ -23,6 +23,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import { crmUrl, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
+import { CallPrepPanel } from "@/components/phoenix-crm/call-prep-panel";
+import { CommitmentsPanel } from "@/components/phoenix-crm/commitments-panel";
 import { DayStartBlock } from "@/components/phoenix-crm/day-start-button";
 import { canStartDay } from "@/lib/phoenix-crm/day-start-rules";
 import { cairoClock, dayLabel, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
@@ -971,105 +973,125 @@ export function VisitsTab({
       </CrmButton>
     ) : null;
 
+  // 🔴 THE TWO READ-ONLY PANELS BELOW ARE THE REP'S OWN, AND THE GATE IS `canSetDayActivity`.
+  //
+  // That flag is `date === today && canWriteAsRep(viewer, seat, isTest)` — exactly "this is my own
+  // territory and my own current day", which is the boundary Golden rule #1 draws (WHOSE WORK IT IS).
+  // His managers, the SFE Manager and the Super Admin outside test mode read neither: a
+  // manager-readable list of a rep's open promises is a judgement of him, which the rule keeps off
+  // this module, and the server refuses both reads for them anyway (`territoryForRepWrite`). A past
+  // day draws neither either — both are about now and next.
+  const ownDay = isToday && view?.canSetDayActivity === true;
+
   return (
-    <CrmPanel
-      actions={addButton}
-      description={view ? territoryLine(view.territory) : null}
-      eyebrow="Visits"
-      title={
-        <span className="inline-flex flex-wrap items-center gap-2">
-          <span>{dayLabelLong(shownDate)}</span>
-          {isToday ? <CrmPill tone="orange">Today</CrmPill> : null}
-        </span>
-      }
-    >
-      <CrmBlock className="border-b border-slate-100">
-        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:max-w-md">
-          <CrmButton aria-label="Previous day" onClick={() => moveTo(shiftIsoDay(shownDate, -1))}>
-            <ChevronLeft aria-hidden className="h-4 w-4" />
-          </CrmButton>
-          <input
-            aria-label="Day"
-            className={cn(crmInputClassName, "appearance-none")}
-            max={latest}
-            onChange={(event) => moveTo(event.target.value)}
-            type="date"
-            value={shownDate}
-          />
-          <CrmButton aria-label="Next day" disabled={isToday} onClick={() => moveTo(shiftIsoDay(shownDate, 1))}>
-            <ChevronRight aria-hidden className="h-4 w-4" />
-          </CrmButton>
-        </div>
-        {isToday ? null : (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <CrmButton
-              onClick={() => {
-                setSaved(null);
-                setDate(null);
-              }}
-              size="sm"
-            >
-              Back to today
+    <div className="grid min-w-0 gap-4">
+      <CrmPanel
+        actions={addButton}
+        description={view ? territoryLine(view.territory) : null}
+        eyebrow="Visits"
+        title={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <span>{dayLabelLong(shownDate)}</span>
+            {isToday ? <CrmPill tone="orange">Today</CrmPill> : null}
+          </span>
+        }
+      >
+        <CrmBlock className="border-b border-slate-100">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:max-w-md">
+            <CrmButton aria-label="Previous day" onClick={() => moveTo(shiftIsoDay(shownDate, -1))}>
+              <ChevronLeft aria-hidden className="h-4 w-4" />
             </CrmButton>
-            <span className="text-xs font-semibold text-slate-500">Visits are logged on the day they happen.</span>
-          </div>
-        )}
-      </CrmBlock>
-
-      {saved ? (
-        <div className="px-4 pt-4 sm:px-5">
-          <SavedNote onOpenList={onOpenList} saved={saved} />
-        </div>
-      ) : null}
-
-      {!view && day.error ? <CrmLoadError message={day.error} onRetry={day.reload} /> : null}
-      {!view && !day.error ? <CrmLoading label="Loading the day's visits" /> : null}
-
-      {view ? (
-        <>
-          {day.error ? <CrmLoadError message={day.error} onRetry={day.reload} /> : null}
-          {/* 🔴 FIRST ON THE DAY, AND ONLY BEFORE THE FIRST AM VISIT (owner, 2026-10-03). It sits above
-              the day's record and the counters because it is the one thing he is asked to do BEFORE he
-              works — "press here before doing only the first AM visit … before not after". `canStartDay`
-              is the same rule the server applies, so the button is never offered where the save refuses. */}
-          <DayStartBlock
-            dayStart={view.dayStart}
-            onStarted={day.reload}
-            seatId={view.territory.seatId}
-            show={canStartDay({
-              viewerIsRep: view.canSetDayActivity,
-              isToday,
-              amVisits: figures.am,
-              alreadyStarted: view.dayStart !== null,
-            })}
-            test={view.isTest}
-          />
-          <DayActivityBlock onChanged={day.reload} view={view} />
-          <CrmBlock>
-            {/* AM first, as every sentence and the Day screen say it. Two figures, never a total. */}
-            <CrmStatGrid>
-              <CrmStat label="AM visited" note={plural(figures.pairedAm, "double or chain visit", "double or chain visits")} value={figures.am} />
-              <CrmStat label="PM visited" note={plural(figures.pairedPm, "double or chain visit", "double or chain visits")} value={figures.pm} />
-            </CrmStatGrid>
-          </CrmBlock>
-          {visits.length === 0 ? (
-            <CrmEmpty
-              action={addButton}
-              message={isToday && view.canAdd ? "Log each visit at the customer — one tap on Log visit." : null}
-              title={isToday ? "No visits yet today" : "No visits this day"}
+            <input
+              aria-label="Day"
+              className={cn(crmInputClassName, "appearance-none")}
+              max={latest}
+              onChange={(event) => moveTo(event.target.value)}
+              type="date"
+              value={shownDate}
             />
-          ) : (
-            <div className="border-t border-slate-100">
-              <CrmCardsOnPhone>
-                {visits.map((visit) => (
-                  <VisitCard key={visit.visitId} visit={visit} />
-                ))}
-              </CrmCardsOnPhone>
-              <VisitTable visits={visits} />
+            <CrmButton aria-label="Next day" disabled={isToday} onClick={() => moveTo(shiftIsoDay(shownDate, 1))}>
+              <ChevronRight aria-hidden className="h-4 w-4" />
+            </CrmButton>
+          </div>
+          {isToday ? null : (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <CrmButton
+                onClick={() => {
+                  setSaved(null);
+                  setDate(null);
+                }}
+                size="sm"
+              >
+                Back to today
+              </CrmButton>
+              <span className="text-xs font-semibold text-slate-500">Visits are logged on the day they happen.</span>
             </div>
           )}
+        </CrmBlock>
+
+        {saved ? (
+          <div className="px-4 pt-4 sm:px-5">
+            <SavedNote onOpenList={onOpenList} saved={saved} />
+          </div>
+        ) : null}
+
+        {!view && day.error ? <CrmLoadError message={day.error} onRetry={day.reload} /> : null}
+        {!view && !day.error ? <CrmLoading label="Loading the day's visits" /> : null}
+
+        {view ? (
+          <>
+            {day.error ? <CrmLoadError message={day.error} onRetry={day.reload} /> : null}
+            {/* 🔴 FIRST ON THE DAY, AND ONLY BEFORE THE FIRST AM VISIT (owner, 2026-10-03). It sits above
+                the day's record and the counters because it is the one thing he is asked to do BEFORE he
+                works — "press here before doing only the first AM visit … before not after". `canStartDay`
+                is the same rule the server applies, so the button is never offered where the save refuses. */}
+            <DayStartBlock
+              dayStart={view.dayStart}
+              onStarted={day.reload}
+              seatId={view.territory.seatId}
+              show={canStartDay({
+                viewerIsRep: view.canSetDayActivity,
+                isToday,
+                amVisits: figures.am,
+                alreadyStarted: view.dayStart !== null,
+              })}
+              test={view.isTest}
+            />
+            <DayActivityBlock onChanged={day.reload} view={view} />
+            <CrmBlock>
+              {/* AM first, as every sentence and the Day screen say it. Two figures, never a total. */}
+              <CrmStatGrid>
+                <CrmStat label="AM visited" note={plural(figures.pairedAm, "double or chain visit", "double or chain visits")} value={figures.am} />
+                <CrmStat label="PM visited" note={plural(figures.pairedPm, "double or chain visit", "double or chain visits")} value={figures.pm} />
+              </CrmStatGrid>
+            </CrmBlock>
+            {visits.length === 0 ? (
+              <CrmEmpty
+                action={addButton}
+                message={isToday && view.canAdd ? "Log each visit at the customer — one tap on Log visit." : null}
+                title={isToday ? "No visits yet today" : "No visits this day"}
+              />
+            ) : (
+              <div className="border-t border-slate-100">
+                <CrmCardsOnPhone>
+                  {visits.map((visit) => (
+                    <VisitCard key={visit.visitId} visit={visit} />
+                  ))}
+                </CrmCardsOnPhone>
+                <VisitTable visits={visits} />
+              </div>
+            )}
+          </>
+        ) : null}
+      </CrmPanel>
+      {ownDay ? (
+        <>
+          {/* What he said he would do, and has not been back for. His own notes, never a score. */}
+          <CommitmentsPanel seatId={seatId} test={test} />
+          {/* The four continuity facts for his next planned day — read-only, off the plan-change path. */}
+          <CallPrepPanel seatId={seatId} test={test} />
         </>
       ) : null}
-    </CrmPanel>
+    </div>
   );
 }

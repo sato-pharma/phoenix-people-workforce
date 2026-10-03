@@ -20,15 +20,19 @@ import { forecastIsOffered } from "@/lib/phoenix-crm/daily-forecast";
 import { PLAN_EDIT_WAITING_STATUSES, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { managerChain, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { telegramCardOffered } from "@/lib/phoenix-crm/telegram-card";
-import { UNPLANNED_FIRST_STATUSES, type UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
 import {
   canAcknowledgePlanEdits,
-  canReviewTerritory,
   lineOpeningText,
   readsCalendar,
   readsFieldHeardByProduct,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
+import {
+  countPhoenixCrmListRequestsWaitingForYou,
+  countPhoenixCrmOffPlanVisitsWaitingForYou,
+  countPhoenixCrmWaiting,
+  phoenixCrmDecisionSeats,
+} from "@/lib/phoenix-crm/server/decision-queues";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { isDirectoryCompanyRole } from "@/lib/phoenix-crm/server/doctors";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -154,41 +158,12 @@ function closedMessage(viewer: PhoenixCrmViewer): string | null {
 }
 
 /**
- * `fromWeek` keeps a plan count to the weeks the Team tab lists (plannableWeeks): a plan whose week
- * is over no longer waits for anyone.
+ * 🔴 THE LIST-REQUEST, PLAN AND OFF-PLAN COUNTS MOVED TO `server/decision-queues.ts` ON 2026-10-03,
+ * AND MUST NOT BE COPIED BACK. The central Needs You board grew a Phoenix CRM source that reads the
+ * same question, and a board that disagrees with this badge is the under-report `src/lib/needs-you`
+ * exists to make impossible — so there is now exactly one producer and two readers. `countPlanEdits`
+ * below stays here because nothing else asks it.
  */
-async function countWaiting(
-  table: "phoenix_crm_list_requests" | "phoenix_crm_plans",
-  status: "pending" | "submitted",
-  isTest: boolean,
-  seatIds: string[] | null,
-  fromWeek: string | null = null,
-  stage: "reviewer" | "sfe" | null = null,
-): Promise<number> {
-  const supabase = getSupabaseAdmin();
-  const count = (seatPart: string[] | null) => {
-    let query = supabase.from(table).select("id", { count: "exact", head: true }).eq("status", status).eq("is_test", isTest);
-    if (seatPart) query = query.in("seat_id", seatPart);
-    if (fromWeek) query = query.gte("week_start", fromWeek);
-    // A list request waits on the step it is ON (2026-09-29): a grade change and the first step of a
-    // drop, an add or a bring-back are the territory's reviewer's; the second step is the SFE Manager's.
-    if (stage === "reviewer") query = query.or("stage.is.null,stage.eq.manager");
-    if (stage === "sfe") query = query.eq("stage", "sfe");
-    return query;
-  };
-  if (seatIds === null) {
-    const { count: total, error } = await count(null);
-    throwIfError(error);
-    return total ?? 0;
-  }
-  let total = 0;
-  for (const part of chunk(seatIds, 100)) {
-    const { count: partCount, error } = await count(part);
-    throwIfError(error);
-    total += partCount ?? 0;
-  }
-  return total;
-}
 
 /** Requests to edit a sent week waiting at the given steps, on weeks that still have a day ahead. */
 async function countPlanEdits(statuses: PlanEditStatus[], isTest: boolean, seatIds: string[] | null, cairoToday: string): Promise<number> {
@@ -200,41 +175,6 @@ async function countPlanEdits(statuses: PlanEditStatus[], isTest: boolean, seatI
       .in("status", statuses)
       .eq("is_test", isTest)
       .gte("week_start", addDaysIso(cairoToday, -5));
-    if (seatPart) query = query.in("seat_id", seatPart);
-    return query;
-  };
-  if (seatIds === null) {
-    const { count: total, error } = await count(null);
-    throwIfError(error);
-    return total ?? 0;
-  }
-  let total = 0;
-  for (const part of chunk(seatIds, 100)) {
-    const { count: partCount, error } = await count(part);
-    throwIfError(error);
-    total += partCount ?? 0;
-  }
-  return total;
-}
-
-/**
- * Off-plan visits waiting at the given steps.
- *
- * No date filter, unlike `countPlanEdits`: a waiting off-plan visit does not expire with its week —
- * the visit happened, and it counts in nothing until somebody decides it, however late that is.
- */
-async function countUnplannedVisits(
-  statuses: ReadonlyArray<UnplannedVisitStatus>,
-  isTest: boolean,
-  seatIds: string[] | null,
-): Promise<number> {
-  const supabase = getSupabaseAdmin();
-  const count = (seatPart: string[] | null) => {
-    let query = supabase
-      .from("phoenix_crm_unplanned_visits")
-      .select("visit_id", { count: "exact", head: true })
-      .in("status", [...statuses])
-      .eq("is_test", isTest);
     if (seatPart) query = query.in("seat_id", seatPart);
     return query;
   };
@@ -297,17 +237,10 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
             ownSeatIds.includes(seat.seatId) || managerChain(viewer.org, seat.seatId).some((member) => member.hrId === viewer.hrId),
         )
       : [];
-  // Real decisions are the reviewer's; the Super Admin decides test entries only, and so does a test
-  // account — on the territories the person it mirrors reviews.
-  const waitingIsTest = viewer.isSuperAdmin || viewer.isTestPersona;
-  const reviewSeatIds = viewer.isSuperAdmin
-    ? null
-    : scope.filter((seat) => canReviewTerritory(viewer, seat, viewer.isTestPersona)).map((seat) => seat.seatId);
-
-  // The SFE step of a list request is the SFE Manager's across his whole scope (real entries only; the
-  // Super Admin's test count above already holds every step).
-  const sfeSeatIds =
-    !viewer.isSuperAdmin && !viewer.isTestPersona && viewer.isSfeManager && viewer.canApprove ? scope.map((seat) => seat.seatId) : [];
+  // Who decides what, in which world — the ONE producer of that rule (server/decision-queues.ts),
+  // shared with the central Needs You board so the two can never disagree about whose turn it is.
+  const decisionSeats = phoenixCrmDecisionSeats(viewer);
+  const { isTest: waitingIsTest, reviewSeatIds, sfeSeatIds } = decisionSeats;
 
   // The Telegram card (owner, 2026-10-02) is for the reps and managers the module's notices go to.
   const telegramOffered = telegramCardOffered({
@@ -318,48 +251,38 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     isSfeManager: viewer.isSfeManager,
   });
 
-  const [
-    names,
-    reviewerRequests,
-    sfeRequests,
-    plans,
-    managerEdits,
-    sfeEdits,
-    hrAcknowledgements,
-    telegramConnected,
-    visitAsks,
-    managerUnplanned,
-    sfeUnplanned,
-  ] = await Promise.all([
-    loadPeopleNames([viewer.hrId, ...territoryPeople(viewer.org, [...scope, ...viewer.waitingTerritories])]),
-    reviewSeatIds !== null && reviewSeatIds.length === 0
-      ? 0
-      : countWaiting("phoenix_crm_list_requests", "pending", waitingIsTest, reviewSeatIds, null, reviewSeatIds === null ? null : "reviewer"),
-    sfeSeatIds.length === 0 ? 0 : countWaiting("phoenix_crm_list_requests", "pending", false, sfeSeatIds, null, "sfe"),
-    reviewSeatIds !== null && reviewSeatIds.length === 0
-      ? 0
-      : countWaiting("phoenix_crm_plans", "submitted", waitingIsTest, reviewSeatIds, plannableWeeks(viewer.cairoToday)[0]),
-    // A request to edit a sent week (owner, 2026-10-01): the district manager's step, SFE's, and HR's.
-    // The Super Admin's test count holds every step, as his list-request count does.
-    reviewSeatIds !== null && reviewSeatIds.length === 0
-      ? 0
-      : countPlanEdits(reviewSeatIds === null ? [...PLAN_EDIT_WAITING_STATUSES] : ["manager_pending"], waitingIsTest, reviewSeatIds, viewer.cairoToday),
-    sfeSeatIds.length === 0 ? 0 : countPlanEdits(["sfe_pending"], false, sfeSeatIds, viewer.cairoToday),
-    canAcknowledgePlanEdits(viewer) ? countPlanEdits(["hr_pending"], false, null, viewer.cairoToday) : 0,
-    // In the same wave, and never able to fail the page: an unreadable status draws no card.
-    telegramOffered ? telegramConnectedOrNull(viewer) : null,
-    // The visit asks waiting for his answer (owner, 2026-10-02), in the world his other counts are in.
-    // Never able to fail the page either: a count that cannot be read is no count, and the bell still
-    // carries every ask.
-    visitAsksWaitingOrZero(viewer, waitingIsTest),
-    // The off-plan visits at his own step. Exactly the two steps `canDecideUnplannedVisit` allows: the
-    // manager's on the territories he reviews, SFE's across his scope — and the Super Admin's test
-    // count holds both steps, as his list-request count does.
-    reviewSeatIds !== null && reviewSeatIds.length === 0
-      ? 0
-      : countUnplannedVisits(reviewSeatIds === null ? UNPLANNED_FIRST_STATUSES : ["manager_pending"], waitingIsTest, reviewSeatIds),
-    sfeSeatIds.length === 0 ? 0 : countUnplannedVisits(["sfe_pending"], false, sfeSeatIds),
-  ]);
+  const [names, requests, plans, managerEdits, sfeEdits, hrAcknowledgements, telegramConnected, visitAsks, offPlanVisits] =
+    await Promise.all([
+      loadPeopleNames([viewer.hrId, ...territoryPeople(viewer.org, [...scope, ...viewer.waitingTerritories])]),
+      // The list requests at his own step — the reviewer's and the SFE's, summed by the one producer
+      // (server/decision-queues.ts). An out-of-list visit's approval is one of these: the visit files
+      // an `add` whose first step is the district manager.
+      countPhoenixCrmListRequestsWaitingForYou(decisionSeats),
+      reviewSeatIds !== null && reviewSeatIds.length === 0
+        ? 0
+        : countPhoenixCrmWaiting("phoenix_crm_plans", "submitted", waitingIsTest, reviewSeatIds, plannableWeeks(viewer.cairoToday)[0]),
+      // A request to edit a sent week (owner, 2026-10-01): the district manager's step, SFE's, and HR's.
+      // The Super Admin's test count holds every step, as his list-request count does.
+      reviewSeatIds !== null && reviewSeatIds.length === 0
+        ? 0
+        : countPlanEdits(
+            reviewSeatIds === null ? [...PLAN_EDIT_WAITING_STATUSES] : ["manager_pending"],
+            waitingIsTest,
+            reviewSeatIds,
+            viewer.cairoToday,
+          ),
+      sfeSeatIds.length === 0 ? 0 : countPlanEdits(["sfe_pending"], false, sfeSeatIds, viewer.cairoToday),
+      canAcknowledgePlanEdits(viewer) ? countPlanEdits(["hr_pending"], false, null, viewer.cairoToday) : 0,
+      // In the same wave, and never able to fail the page: an unreadable status draws no card.
+      telegramOffered ? telegramConnectedOrNull(viewer) : null,
+      // The visit asks waiting for his answer (owner, 2026-10-02), in the world his other counts are in.
+      // Never able to fail the page either: a count that cannot be read is no count, and the bell still
+      // carries every ask.
+      visitAsksWaitingOrZero(viewer, waitingIsTest),
+      // The off-plan visits at his own step — the manager's on the territories he reviews, SFE's across
+      // his scope, and both steps in the Super Admin's test world.
+      countPhoenixCrmOffPlanVisitsWaitingForYou(decisionSeats),
+    ]);
 
   const territories = scope
     .map((seat) => describeTerritory(viewer.org, seat, names))
@@ -415,13 +338,13 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       message: lineOpeningText(viewer, seat),
     })),
     waitingForYou: {
-      requests: reviewerRequests + sfeRequests,
+      requests,
       plans,
       planEdits: managerEdits + sfeEdits,
       isTest: waitingIsTest,
       hrAcknowledgements,
       visitAsks,
-      offPlanVisits: managerUnplanned + sfeUnplanned,
+      offPlanVisits,
     },
     closedMessage: closedMessage(viewer),
     telegram: telegramConnected === null ? null : { connected: telegramConnected },

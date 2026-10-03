@@ -6,7 +6,7 @@
  * built TO A BUDGET: it fits what it can and counts what it left out. Email has no such ceiling, so
  * this one is COMPLETE — every item in every lane, plus the full source roster with each source's
  * own verdict. The daily answers "what needs me today"; the weekly answers "what is the state of all
- * sixteen sources", which is the question a budgeted message structurally cannot answer.
+ * every source", which is the question a budgeted message structurally cannot answer.
  *
  * 🔴 ONE EMAIL TO HIM IS ALREADY THREE DELIVERIES. `send-phoenix-email.ts` always BCCs
  * `ADMIN_STANDING_EMAIL` and mirrors a preview to his Telegram, with no opt-out. That is the whole
@@ -92,7 +92,7 @@ export function buildNeedsYouWeeklySubject(board: NeedsYouBoard): string {
  * channel.
  *
  * 🔴 AND IT ENDS WITH THE FULL SOURCE ROSTER, which is this channel's entire reason for existing.
- * The daily digest can never carry sixteen source verdicts inside 900 characters, so "which sources
+ * The daily digest can never carry every source verdict inside 900 characters, so "which sources
  * answered this week" is a question only the email can answer. `board.sources` holds one entry per
  * source ALWAYS — pinned by a test — so a source dropped by a lost `await` shows up here as a row
  * rather than as an absence nobody notices.
