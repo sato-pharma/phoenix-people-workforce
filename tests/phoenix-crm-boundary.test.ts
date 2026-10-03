@@ -276,6 +276,12 @@ const ROUTE_GATES: RouteGate[] = [
   { route: "voice/transcribe", method: "POST", action: "create", audit: "access-read", auditRequired: true },
   // The place stamp burned into a live photo: same gate as taking the photo; it persists nothing.
   { route: "location", method: "POST", action: "create", audit: "access-read", auditRequired: false },
+  // The touch trail (owner, 2026-10-03: "anything touches him, automatically saved"). `read`, and
+  // deliberately not `create`: a rep who may OPEN the module is a rep whose taps belong in its trail,
+  // and a `create` gate would have left every manager who only reads the module untraced. Classified
+  // as a mutation because it does write rows, but not REQUIRED — this route IS the record, so an
+  // audit entry per flush would be a second copy of the same fact every few seconds per rep.
+  { route: "touch-trail", method: "POST", action: "read", audit: "mutation", auditRequired: false },
   get("settings", "update"),
   post("settings", "update"),
 ];
@@ -675,6 +681,12 @@ const LATER_MIGRATIONS = [
   // without any validation or without any approval"). ONE brand-new function and nothing else — no
   // table, no column, and it replaces nothing — so it appends safely at the end.
   "supabase/migrations/20261003211501_phoenix_crm_add_pharmacy.sql",
+  // THE TOUCH TRAIL (owner, 2026-10-03: "anything touches him, automatically saved"). ONE brand-new
+  // table and NOTHING else — no function, no column, no view, and it replaces nothing — so it appends
+  // safely at the end and cannot disturb the replacement ordering above. It is the module's SECOND
+  // deliberately UNKEYED table, for the same reason as the refused readings two entries up: nine
+  // identical presses are nine rows, and the repetition is the evidence.
+  "supabase/migrations/20261003221224_phoenix_crm_touch_trail.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

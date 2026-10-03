@@ -898,6 +898,12 @@ export const accessRegistry = [
   // The place stamp burned into a live photo (address, brick, area, coordinates). Same gate as taking
   // the photo; it resolves and returns, persisting nothing, so audit is classified but not required.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["POST"], pattern: "/api/phoenix-crm/location", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // The touch trail (owner, 2026-10-03: "anything touches him, automatically saved"). `read`, not
+  // `create`: a rep who may OPEN Phoenix CRM is a rep whose taps belong in its trail, and gating it on
+  // `create` would have left every manager who only reads the module untraced. Audit is classified as a
+  // mutation — it does write rows — but NOT required, because this route IS the record: an audit entry
+  // per flush would be a second copy of the same fact, every few seconds per rep.
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/phoenix-crm/touch-trail", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   // The module's settings: the Super Admin's only (`update`, narrowed again by assertSettingsWriter).
   // The SFE's customer-list template (owner's ask, 2026-10-02): the download for one territory, and the
   // filled sheet back. `approve`, the same gate as MOVING A PLACE — the module's other act reserved to

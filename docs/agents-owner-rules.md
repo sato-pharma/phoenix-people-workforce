@@ -5698,3 +5698,79 @@ wider line instead. His design is final: **do not move it back, and do not re-pr
 
 250 m still catches what the gate exists for — an approximate-location phone reports a flat 2,000 m,
 eight times the line — and the visit's own 500 m stays the wider of the two.
+
+## The Phoenix CRM touch trail — owner ruling, 2026-10-03
+
+His words, on the evening of 3 October 2026, after a day in which two reps were blocked and both
+diagnoses had to be reconstructed from fragments:
+
+> "Look, in Phoenix CRM, I want every click or every touch on the touch screen for this module to be
+> saved in a separate audit trail for Phoenix CRM. Every separate touch, every single thing is
+> saved, even if the rep didn't save it. Since it touched Phoenix, then automatic saved. Anything,
+> anything you can record, anything you can capture. Anything is automatically saved. I want Phoenix
+> this to be like a file manager grabber. Anything touches him, automatically saved."
+
+**Why he asked.** Until that evening the module recorded only what a rep SUCCEEDED in saving, and
+that gap cost a whole day twice over:
+
+| Rep | What happened | What it left behind |
+| --- | --- | --- |
+| B-130, 16:12–18:47 | Refused eighteen times on the 100 m place line, her phone on Android's approximate location | **Nothing.** `phoenix_crm_location_integrity` is filed only after a save succeeds, no place or visit row is created, and the upload slot keeps only the fact that a slot was asked for |
+| Hassan Elsherbiny, 21:29–21:31 | Nine refusals in 67 seconds — his pin 27–58 m, his photo frozen at 220 m from one capture | **Nothing.** The retry loop he could not escape existed only in his hands |
+
+Her 2,000 m was knowable at all because four captures were ACCEPTED that morning, before the line
+shipped at 11:24; his nine were knowable because `phoenix_crm_refused_readings` had gone live forty
+minutes earlier. Neither was knowable from the module. The refused-readings table closed one door;
+the touch trail closes the module.
+
+**What it is.** One table, `phoenix_crm_touch_trail` (migration `20261003221224`), and one collector
+mounted once over each half of the module — the rep's `app/employee-portals/field-crm/layout.tsx`
+and the admin twin — recording press · tap · type · change · focus · submit · screen · scroll ·
+hide · show · offline · online, with the element touched, the words on it, the field's contents at
+that moment, the point on the glass, the viewport, and three clocks (the server's, the phone's, and
+the Cairo 02:00 visit day).
+
+**Golden rule #1 is not bent, and the three things that hold it mechanically.** The rep's app is
+easy and BLIND, and `tests/phoenix-crm-touch-trail.test.ts` pins each of these rather than trusting
+them:
+
+1. **The collector draws nothing and intervenes in nothing.** It returns null, every listener is
+   registered `{capture: true, passive: true}` so it cannot swallow or delay a tap, it never calls
+   `preventDefault` or `stopPropagation`, and it never throws — a trail that fails is a trail with a
+   hole in it, never a rep who is stuck.
+2. **The route answers 204 on every path.** A count, an id or an error message is exactly what would
+   tell a rep this table exists, so there is no readable body anywhere — not even the module's own
+   `phoenixCrmFailure` helper, which writes one.
+3. **It is readable only above the rep**, the same tier as the mock-location evidence: service role
+   only, revoked from `public`, `anon` and `authenticated`.
+
+**What a browser cannot see, stated so nobody reads the table as more than it is.** Taps outside the
+page (the launcher, another app, the camera's own shutter), individual keyboard keys, and anything
+at all while the page is closed. Offline is covered — a failed flush is held in `localStorage`,
+capped at 1,000 events with the OLDEST dropped, and retried on the next flush or the next page load.
+
+**The two things that are not literal, and why.** Typing is coalesced after 800 ms of quiet and on
+every commit and focus change; scrolling is coalesced to one row per second per screen. A row per
+keystroke would be roughly fifty times the volume for no finding the settled text does not already
+carry — what is recorded is the field's CONTENTS at each pause, not the key pressed, so **the
+abandoned comment he asked for by name survives in full either way**, and the timing is still in the
+`ms_since_load` gaps between successive rows for the same field. Every other kind is one row per
+event. There is no keystroke listener at all.
+
+**The one thing that is never recorded.** A password-type field, a field a password manager fills
+(`autocomplete` naming a password or a one-time code), or a field NAMED for a password has its value
+dropped **in the browser, at the point of capture** — so there is no stored secret for a later
+redaction to forget. Its LENGTH is kept: that a password of eleven characters was typed tells a
+failed sign-in from an abandoned one and discloses nothing.
+
+**The table is deliberately UNKEYED**, the module's second after the refused readings. Nine
+identical presses are nine rows: the repetition IS the evidence, and a unique constraint on any
+column here would collapse exactly the retry history that diagnosed both of 3 October's incidents.
+`id` is a `bigint` identity rather than a uuid because of the volume — roughly 1,000–3,000 events
+per rep per field day — and because a monotonic key is what lets a reader page the table by keyset
+instead of by offset, which it must: PostgREST stops at 1,000 rows with no error and no marker.
+
+Rule: `.claude/rules/phoenix-crm.md`. Pinned by `tests/phoenix-crm-touch-trail.test.ts` (the secret
+drop and the kept comment, the descriptor that never carries a class list, the total parse, the
+blindness of the collector and the route, the session-resolved actor and test flag, both layouts,
+the registry declaration, and the unkeyed locked table).

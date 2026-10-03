@@ -10,10 +10,17 @@ import { stripComments } from "./support/comment-strip.ts";
 //
 // app/(admin)/layout.tsx resolves the access context and redirects every
 // portal-mode viewer to /employee-portals BEFORE it returns its children, so no
-// page in the group ever renders for such a viewer. There are exactly two nested
-// layouts under the group — the group layout itself and
-// app/(admin)/admin/direct-orders/(desks)/layout.tsx — and neither overrides that
+// page in the group ever renders for such a viewer. There are exactly three nested
+// layouts under the group — the group layout itself,
+// app/(admin)/admin/direct-orders/(desks)/layout.tsx, and
+// app/(admin)/admin/field-crm/layout.tsx — and none overrides that
 // redirect, so there is no route in the group where it does not apply.
+//
+// The field-crm one was added on 2026-10-03 to mount the Phoenix CRM touch trail once
+// over that subtree. It renders `{children}` beside a null-returning client collector
+// and nothing else: it resolves no access context, reads no navigation mode, imports no
+// portal shell and redirects nowhere, so it introduces no portal-mode route and cannot
+// weaken the premise below.
 //
 // That makes any `if (mode === "admin") … else <EmployeePortalPageShell>` branch in
 // a page here unreachable: it is written for a reader the layout has already sent
@@ -143,7 +150,10 @@ export async function runAdminGroupHasNoPortalShellTests(): Promise<void> {
     .map((file) => file.split(path.sep).join("/"));
   assert.deepEqual(
     nestedLayouts,
-    ["app/(admin)/admin/direct-orders/(desks)/layout.tsx"],
+    [
+      "app/(admin)/admin/direct-orders/(desks)/layout.tsx",
+      "app/(admin)/admin/field-crm/layout.tsx",
+    ],
     "a new nested layout appeared under app/(admin)/. A nested layout cannot cancel the parent's " +
       "redirect, so this is not automatically a problem — but the reasoning above enumerates the " +
       "layouts by name, so confirm the new one does not introduce a portal-mode route and add it here.",
