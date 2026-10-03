@@ -998,6 +998,37 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
      exactly how an empty read certifies a check nobody performed. Verify with a POSITIVE
      CONTROL: print the bytes or lines actually read and the count of the thing you expect to
      find, so a zero-hit result is only believable alongside a non-zero read.
+  3. 🔴 **IT MAKES THE BRANCH-DELETION GATE PASS HAVING LOOKED AT NOTHING — the one gate whose whole
+     job is to be the last word before work is destroyed.** Measured 2026-10-03 on PR #5199's
+     `_wt-crm-mirror-refresh`, deregistered while the session still held the folder.
+     `new-session.mjs --remove` prints three gates, and the third — *every file the branch changed is
+     byte-identical on `origin/main`* — is the only one that also holds for a roll-up member, which
+     lands CLOSED rather than merged. Run from inside the deregistered folder,
+     `git log origin/main..HEAD` and `git rev-parse HEAD:<file>` both answer for the PRIMARY, on
+     `main`: the gate compares `main` with `main`, reports **twelve files, all `same`, 0 differing**,
+     and reads as a clean pass. That branch was in fact safe — re-proved afterwards from the primary
+     against the archived tip — but **the vacuous pass and the true pass were indistinguishable at the
+     time**, and the action it authorises is a deletion. Same family as consequence 2, one step worse:
+     there an EMPTY read certifies an unperformed check, here a POSITIVE-looking one does.
+
+     So run a branch gate **from the primary, naming the tip**, never from the worktree:
+     `git show --name-only --pretty=format: <tip>` for the file list, then
+     `git rev-parse <tip>:<file>` against `git rev-parse origin/main:<file>`. That form survives the
+     branch's deletion too, provided the tip was archived first. And before trusting ANY git reading
+     taken inside a `_wt-*` or `.claude/worktrees/*` folder, make the folder prove itself:
+     `git rev-parse --absolute-git-dir` must end in `.git/worktrees/<that task>` and
+     `git branch --show-current` must be that branch. One line, and it is the only thing that
+     distinguishes a live worktree from a husk that answers anyway.
+     `a-deregistered-worktree-folder-answers-git-from-the-primary`
+
+  🔴 **AND A LIVE SESSION CAN BE SITTING IN ONE RIGHT NOW WITHOUT KNOWING IT.** Measured the same day:
+  `.claude/worktrees/funny-lalande-3cfc0c` was reported by repo-doctor as a HUSK — 0 files, no `.git` —
+  while the app still listed its session `isRunning: true`, active seconds earlier, and
+  `archive_session` refused it as *"still working (a turn in progress)"*. From that folder git answered
+  `F:/Phoenix Workforce/phoenix-workforce/.git`, branch `main`, at the primary's stale tip. The husk
+  report and the session list disagree because they measure different things: the folder is empty AND
+  occupied. **A husk with a running session in it is not a tidy-up, it is a live hazard** — tell that
+  session, with the three readings, instead of trying to clear the folder around it.
 
   The recovery is not to fix the folder — it cannot be fixed from inside. Create a fresh worktree
   addressed at the primary (`git -C <primary> worktree add ...`), work there, and let the husk
