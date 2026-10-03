@@ -49,9 +49,11 @@
 
 import { windowLabel } from "@/lib/business-review/period-format";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { loadRepEstablishment, type RepEstablishment } from "@/lib/employee-portal/rep-establishment";
 import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import { lineName } from "@/lib/sales/monthly-targets";
+import type { SeatCount } from "@/lib/employee-portal/rep-establishment";
 import {
   SALES_VS_TARGET_FLOOR,
   isRowPublished,
@@ -68,11 +70,22 @@ import {
 export const COMPANY_RANK_BADGE_LIMIT = 15;
 export const LINE_RANK_BADGE_LIMIT = 7;
 
-/** One placing: the rank, the size of the board it was won on, and the % that won it. */
+/** One placing: the rank, the company it was won against, and the % that won it. */
 export type RepRankPlace = {
   rank: number;
-  /** How many reps were ranked — the "out of N" the badge prints. */
+  /**
+   * The "out of N" the badge prints: every MEDICAL REP SEAT in the structure, vacant ones included.
+   *
+   * 🔒 Owner, 2026-10-03: *"do not show the current medical reps, only show total structure of
+   * medical reps count vacants."* Not the number who scored — that shrinks the company to whoever
+   * sold something and MOVES every month, so the same performance would read as a better rank in a
+   * thin month. Falls back to `ranked` only when the seat model could not be read at all.
+   */
   outOf: number;
+  /** How many reps could actually be scored in the window. Kept for the card, never on the badge. */
+  ranked: number;
+  /** Empty seats inside `outOf`. Shown on the performance card, never on the badge. */
+  vacant: number;
   achievementPercent: number;
 };
 
@@ -119,7 +132,7 @@ type Standing = { key: string; totals: Totals };
  * a 400% month do not make 205%, and averaging is how a cumulative figure drifts away from the
  * months it is made of.
  */
-function placeOn(board: readonly Standing[], ownKey: string): RepRankPlace | null {
+function placeOn(board: readonly Standing[], ownKey: string, establishment: SeatCount | null): RepRankPlace | null {
   const ranked = board
     .filter((entry) => entry.totals.target > 0)
     .sort((a, b) => {
@@ -130,9 +143,14 @@ function placeOn(board: readonly Standing[], ownKey: string): RepRankPlace | nul
   const index = ranked.findIndex((entry) => entry.key === ownKey);
   if (index < 0) return null;
   const own = ranked[index];
+  // The structure when we have it, the scored count when we do not — never zero, which would print
+  // "of 0 medical reps" on a rep's own keepsake.
+  const seats = establishment && establishment.seats > 0 ? establishment.seats : ranked.length;
   return {
     rank: index + 1,
-    outOf: ranked.length,
+    outOf: seats,
+    ranked: ranked.length,
+    vacant: establishment && establishment.seats > 0 ? establishment.vacant : 0,
     achievementPercent: (own.totals.covered / own.totals.target) * 100,
   };
 }
@@ -149,7 +167,7 @@ function placeOn(board: readonly Standing[], ownKey: string): RepRankPlace | nul
 export function repRankStanding(
   rows: readonly AchievementRow[],
   publishedKeys: ReadonlySet<string>,
-  options: { hrId: string; activeHrKeys?: ReadonlySet<string> | null },
+  options: { hrId: string; activeHrKeys?: ReadonlySet<string> | null; establishment?: RepEstablishment | null },
 ): RepRankStanding | null {
   const ownKey = hrKey(options.hrId);
   if (!ownKey) return null;
@@ -197,7 +215,8 @@ export function repRankStanding(
   const toBoard = (totals: Map<string, Totals>): Standing[] =>
     Array.from(totals, ([key, value]) => ({ key, totals: value }));
 
-  const companyPlace = placeOn(toBoard(company), ownKey);
+  const establishment = options.establishment ?? null;
+  const companyPlace = placeOn(toBoard(company), ownKey, establishment?.company ?? null);
 
   // THE REP'S OWN LINE is the one carrying the most of his money — not the first row seen. A rep
   // straddling two lines belongs on the board where he actually sells; picking by row order would
@@ -206,7 +225,9 @@ export function repRankStanding(
     Array.from(ownLines.entries()).sort(
       (a, b) => b[1].full - a[1].full || b[1].target - a[1].target,
     )[0] ?? null;
-  const linePlace = ownLine ? placeOn(toBoard(byLine.get(ownLine[0]) ?? new Map()), ownKey) : null;
+  const linePlace = ownLine
+    ? placeOn(toBoard(byLine.get(ownLine[0]) ?? new Map()), ownKey, establishment?.byLine.get(ownLine[0]) ?? null)
+    : null;
 
   const companyBadge = companyPlace && companyPlace.rank <= COMPANY_RANK_BADGE_LIMIT ? companyPlace : null;
   const lineBadge =
@@ -238,15 +259,18 @@ export function repRankStanding(
 export async function loadRepRankStanding(hrId: string): Promise<RepRankStanding | null> {
   if (!hrId) return null;
   const { current } = salesVsTargetPeriods();
-  const [rows, publishedKeys, directoryRows] = await Promise.all([
+  const [rows, publishedKeys, directoryRows, establishment] = await Promise.all([
     loadAchievementRange(SALES_VS_TARGET_FLOOR, current),
     loadPublishedPeriodKeys(SALES_VS_TARGET_FLOOR, current),
     // Active employees only by default — see isActiveDirectoryEmployee. Caught, because a badge
     // must never be the thing that fails a landing page; an empty set then ranks everybody.
     getEmployeeDirectoryRows().catch(() => []),
+    // The "out of N" on every badge — the organogram's rep seats, vacancies included (owner,
+    // 2026-10-03). Never throws; zeros mean the badge falls back to the scored count.
+    loadRepEstablishment(),
   ]);
   const activeHrKeys = new Set(directoryRows.map((row) => hrKey(row.hrId)).filter(Boolean));
   // Merge Fayoum/Beni Suef BEFORE grouping, like every other consumer of these rows: the merge
   // rewrites areaCode, and a rep on a merging line would otherwise be split across two codes.
-  return repRankStanding(applyAchievementAreaMerges(rows), publishedKeys, { hrId, activeHrKeys });
+  return repRankStanding(applyAchievementAreaMerges(rows), publishedKeys, { hrId, activeHrKeys, establishment });
 }

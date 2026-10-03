@@ -2,6 +2,8 @@ import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { parsePlainDate } from "@/lib/milestones/periods";
 import { renderMilestoneCardImage } from "@/lib/milestones/render";
 import { buildMilestoneCardInput } from "@/lib/milestones/service";
+import { loadPerformanceCard } from "@/lib/employee-portal/performance-card";
+import { renderPerformanceCardPng } from "@/lib/employee-portal/performance-card-render";
 import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { readShareCardToken, unpackShareFocus } from "@/lib/share/share-card-token";
@@ -51,6 +53,13 @@ export async function GET(request: Request, context: { params: Promise<{ token: 
         photoUpload: null,
       });
       png = new Uint8Array((await renderMilestoneCardImage(built.input, "trim")).png).buffer;
+    } else if (payload.k === "performance") {
+      // The card always covers every PUBLISHED month, so an old link keeps showing the rep's season
+      // as it stands today rather than a frozen snapshot — and it stops resolving the moment there
+      // is nothing published to draw, exactly as the spotlight link does.
+      const card = await loadPerformanceCard(payload.hr);
+      if (!card) return new Response("Not found", { status: 404 });
+      png = new Uint8Array(await renderPerformanceCardPng(card)).buffer;
     } else {
       const range = parseRepSpotlightRange({ from: payload.from, to: payload.to });
       const spotlight = await loadRepSpotlight(payload.hr, range);

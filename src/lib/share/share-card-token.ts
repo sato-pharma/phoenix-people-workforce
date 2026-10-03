@@ -23,7 +23,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
  * nobody is logged in to mint one either).
  */
 
-export type ShareCardKind = "milestone" | "spotlight";
+export type ShareCardKind = "milestone" | "spotlight" | "performance";
 
 export type ShareCardPayload =
   // `np` (no photo) carries a rep's deliberate monogram choice onto the PUBLIC link — a photo-less
@@ -32,7 +32,12 @@ export type ShareCardPayload =
   // dragged, not the centre default. Only ever carried for the record photo (a custom UPLOAD cannot
   // fit in a URL, so an uploaded card falls back to the default crop). Optional.
   | { v: 1; k: "milestone"; hr: string; spec: string; on: string; np?: boolean; f?: [number, number, number]; exp: number }
-  | { v: 1; k: "spotlight"; hr: string; from: string; to: string; exp: number };
+  | { v: 1; k: "spotlight"; hr: string; from: string; to: string; exp: number }
+  // A rep's own PERFORMANCE CARD (owner, 2026-10-03). It carries no period of its own: the card
+  // always covers every PUBLISHED month, so the window widens with the closings rather than being
+  // frozen at mint time — which is what a rep sharing "my season so far" actually means. Nothing
+  // but the subject needs signing, and the subject is the only thing a public route may trust.
+  | { v: 1; k: "performance"; hr: string; exp: number };
 
 /** A drag framing → the compact `[x, y, zoom]` the token carries (each rounded, clamped to its range). */
 function packFocus(focus: { x: number; y: number; zoom: number } | null | undefined): [number, number, number] | null {
@@ -81,7 +86,8 @@ export function issueShareCardToken(
         focus?: { x: number; y: number; zoom: number } | null;
         nowSeconds?: number;
       }
-    | { kind: "spotlight"; hrId: string; from: string; to: string; nowSeconds?: number },
+    | { kind: "spotlight"; hrId: string; from: string; to: string; nowSeconds?: number }
+    | { kind: "performance"; hrId: string; nowSeconds?: number },
 ): string {
   const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
   const hr = canonicalHrIdKey(input.hrId) ?? "";
@@ -101,7 +107,9 @@ export function issueShareCardToken(
           ...(packedFocus ? { f: packedFocus } : {}),
           exp,
         }
-      : { v: 1, k: "spotlight", hr, from: input.from, to: input.to, exp };
+      : input.kind === "spotlight"
+        ? { v: 1, k: "spotlight", hr, from: input.from, to: input.to, exp }
+        : { v: 1, k: "performance", hr, exp };
   const encoded = encode(payload);
   return `${encoded}.${sign(encoded)}`;
 }
@@ -128,7 +136,7 @@ export function readShareCardToken(token: string | null | undefined, nowSeconds?
   } catch {
     return null;
   }
-  if (payload.v !== 1 || (payload.k !== "milestone" && payload.k !== "spotlight")) return null;
+  if (payload.v !== 1 || (payload.k !== "milestone" && payload.k !== "spotlight" && payload.k !== "performance")) return null;
   if (typeof payload.exp !== "number" || payload.exp < (nowSeconds ?? Math.floor(Date.now() / 1000))) return null;
   if (typeof payload.hr !== "string" || payload.hr.length === 0) return null;
   if (payload.k === "milestone" && (typeof payload.spec !== "string" || typeof payload.on !== "string")) return null;

@@ -70,6 +70,18 @@ export function spotlightShareCaption(rangeLabel: string): string {
   return `My Sato Pharma spotlight — ${rangeLabel}. 🏆 #SatoPharma`;
 }
 
+/**
+ * The performance card's caption. It states the WINDOW, because a rank with no period on it is a
+ * claim about nothing — and because this one is posted publicly, where nobody can ask which months
+ * it covered. The rank clause is dropped when he holds no badge: the card is still his achievement.
+ */
+export function performanceShareCaption(rangeLabel: string, rankClause?: string | null): string {
+  const rank = rankClause?.trim();
+  return rank
+    ? `${rank} at Sato Pharma — ${rangeLabel}. 🏅 #SatoPharma`
+    : `My Sato Pharma performance — ${rangeLabel}. 📈 #SatoPharma`;
+}
+
 /** What the fallback toast says once the picture is saved and the composer is open. */
 export function shareFallbackHint(target: ShareTargetId): string {
   if (target === "whatsapp-status") {

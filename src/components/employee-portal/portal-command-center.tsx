@@ -24,6 +24,7 @@ import {
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
 import { RepKpiMonthPicker } from "@/components/employee-portal/rep-kpi-month-picker";
+import { RepHonourStrip } from "@/components/employee-portal/rep-honour-strip";
 import { RepTodayPlanPanel } from "@/components/employee-portal/rep-today-plan-panel";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
@@ -34,7 +35,6 @@ import { PlanAdherenceDashboardCard } from "@/components/weekly-planning/plan-ad
 import type { AccessContext } from "@/lib/auth/permissions";
 import { MyInterviewsCard } from "@/components/employee-portal/my-interviews-card";
 import type { PortalHomeSnapshot, PortalMyInterview } from "@/lib/employee-portal/home-snapshot";
-import { COMPANY_RANK_BADGE_LIMIT, LINE_RANK_BADGE_LIMIT } from "@/lib/employee-portal/rep-rank";
 import type { RepTodayPlan } from "@/lib/phoenix-crm/server/rep-landing";
 import type { PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
@@ -202,7 +202,7 @@ function IntelField({
   className?: string;
 }) {
   return (
-    <div className={`flex min-w-0 flex-col gap-1 bg-white px-4 py-3 sm:px-7 sm:py-4 ${className}`}>
+    <div className={`flex min-w-0 flex-col gap-1 bg-white px-3 py-3 sm:px-7 sm:py-4 ${className}`}>
       <div className="flex items-center gap-1.5">
         <Icon className="h-3 w-3 shrink-0 text-orange-600" />
         <span className="text-phx-3xs font-black uppercase tracking-[0.18em] text-slate-400">{label}</span>
@@ -241,21 +241,35 @@ export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
         alt="SATO Pharma"
         className="pointer-events-none absolute right-5 top-1/2 z-10 hidden h-7 w-auto -translate-y-1/2 sm:block"
       />
-      {/* Mobile: Line + Joined paired, Reports To stacked below. Desktop (sm+): all three on one
-          line. The slate ground shows through the 1px gaps as the rules between cells. */}
-      <div className="relative flex flex-col gap-px sm:flex-row">
-        {(employee.line || hireDateLabel) && (
-          <div className="flex gap-px sm:contents">
-            {employee.line && (
-              <IntelField icon={Layers} label="Line" value={employee.line} className="flex-1 sm:flex-none sm:shrink-0" />
-            )}
-            {hireDateLabel && (
-              <IntelField icon={CalendarDays} label="Joined" value={hireDateLabel} className="flex-1 sm:flex-none sm:shrink-0" />
-            )}
-          </div>
+      {/* 🔒 ONE LINE AT EVERY WIDTH — owner, 2026-10-03: "in mobile view I want Line / Joined / Reports
+          To to be in one line, not two". It used to pair Line + Joined on a phone and stack Reports To
+          under them. Now the three share one row on a phone too; the slate ground still shows through
+          the 1px gaps as the rules between cells.
+          🔴 THE LAST CELL TAKES THE REST, AND EVERY CELL MAY WRAP. Line and Joined size to their words;
+          whichever cell is last grows into what is left, so the row never ends on a bare slate patch
+          when there is no manager. Every cell is min-w-0, so a long manager or line name WRAPS onto a
+          second line inside its cell — never an ellipsis (banned) and never a sideways scroll (the
+          fits-the-screen rule). From sm up nothing changes: the last cell keeps its pr-24 so the Sato
+          mark never sits on a name. */}
+      <div className="relative flex gap-px">
+        {employee.line && (
+          <IntelField
+            icon={Layers}
+            label="Line"
+            value={employee.line}
+            className={`sm:shrink-0 ${!hireDateLabel && !employee.manager ? "flex-1 sm:pr-24" : "sm:flex-none"}`}
+          />
+        )}
+        {hireDateLabel && (
+          <IntelField
+            icon={CalendarDays}
+            label="Joined"
+            value={hireDateLabel}
+            className={`sm:shrink-0 ${!employee.manager ? "flex-1 sm:pr-24" : "sm:flex-none"}`}
+          />
         )}
         {employee.manager && (
-          <IntelField icon={User} label="Reports To" value={employee.manager} className="sm:min-w-0 sm:flex-1 sm:pr-24" />
+          <IntelField icon={User} label="Reports To" value={employee.manager} className="flex-1 sm:pr-24" />
         )}
       </div>
     </div>
@@ -916,253 +930,6 @@ function RepPercent({ pct, note }: { pct: number; note?: React.ReactNode }) {
   );
 }
 
-/* ── The rep's honour badges ─────────────────────────────────────── */
-
-/** "1st", "2nd", "3rd", "4th" … "11th", "21st". Written out because a rank reads as an ordinal. */
-function ordinal(rank: number): string {
-  const n = Math.trunc(rank);
-  // 11th, 12th, 13th are the exceptions the naive last-digit rule gets wrong.
-  const teen = n % 100;
-  if (teen >= 11 && teen <= 13) return `${n}th`;
-  const last = n % 10;
-  return `${n}${last === 1 ? "st" : last === 2 ? "nd" : last === 3 ? "rd" : "th"}`;
-}
-
-/**
- * A FIVE-POINT STAR, drawn point by point rather than taken from the icon set.
- *
- * Every vertex is a hard corner: the icon library strokes with round joins, which puts a radius on
- * ten corners of the one element on this page whose whole job is to look earned (AGENTS.md §4, the
- * square-edge golden rule). Filled, no stroke, so there is nothing to round.
- */
-function RepHonourStar({ className }: { className: string }) {
-  return (
-    <svg aria-hidden="true" className={className} fill="currentColor" viewBox="0 0 16 16">
-      <polygon points="8,1 9.7,5.65 14.66,5.84 10.76,8.9 12.11,13.66 8,10.9 3.89,13.66 5.24,8.9 1.34,5.84 6.3,5.65" />
-    </svg>
-  );
-}
-
-/**
- * The two metals an honour badge is struck in — one per brand (owner, 2026-10-03: "brand Sato +
- * Phoenix", after the first cut came back "colour off, matching the system identity").
- *
- * THE FIELD IS THE IDENTITY CARD'S OWN NAVY, #0b1f3a → #2a3a5c — the exact band sitting a few
- * pixels above these badges on `PhoenixSignatureCard`, so the honours read as part of that card
- * rather than as a stranger's colour dropped onto the page. Both badges share it: a matched pair of
- * medals struck on the same stock, told apart by the metal and nothing else.
- *
- * THE METALS ARE THE TWO BRANDS. The company badge is PHOENIX — #f47b20 into #f9c06a into #fff6eb,
- * the signature card's own orange and warm gold. The line badge is SATO — #0A527D into #1482C2 into
- * #9ED8F5, the logo palette from `house-identity.ts`. Every value is a literal rather than a palette
- * token on purpose: a metal is a gradient with a highlight band in it, and no flat `amber-400` or
- * `--phx-accent` can look struck.
- *
- * 🔒 Not one rounded corner anywhere in here (AGENTS.md §4). The seal is a square hallmark, the
- * brackets are right angles, the card's own edge is square — which is why this can carry as much
- * ornament as it does without touching the page's rule.
- */
-type RepHonourTone = {
-  border: string;
-  bracket: string;
-  eyebrow: string;
-  field: string;
-  figure: string;
-  ghost: string;
-  rail: string;
-  rule: string;
-  sealField: string;
-  sealInner: string;
-  sealLabel: string;
-  sealOuter: string;
-  sealText: string;
-  star: string;
-  window: string;
-};
-
-/** The navy both badges are struck on — `PhoenixSignatureCard`'s own band, directly above them. */
-const REP_HONOUR_FIELD = "bg-[linear-gradient(135deg,#0b1f3a_0%,#152f55_58%,#2a3a5c_100%)]";
-
-/** PHOENIX metal — the signature card's orange (#f47b20) and its warm gold (#f9c06a). */
-const REP_HONOUR_PHOENIX: RepHonourTone = {
-  border: "border-[#f47b20]/70",
-  bracket: "border-[#f9c06a]/55",
-  eyebrow: "text-[#f9c06a]",
-  field: REP_HONOUR_FIELD,
-  figure: "bg-[linear-gradient(180deg,#fff6eb_0%,#f9c06a_46%,#f47b20_100%)] bg-clip-text text-transparent",
-  ghost: "text-[#f9c06a]/[0.10]",
-  rail: "bg-[linear-gradient(90deg,#c45200_0%,#f47b20_15%,#f9c06a_32%,#fff6eb_46%,#f9c06a_60%,#f47b20_78%,#f9c06a_100%)]",
-  rule: "border-[#f9c06a]/25",
-  sealField: "bg-[#081627]",
-  sealInner: "border-[#f9c06a]/35",
-  sealLabel: "text-[#f9c06a]/70",
-  sealOuter: "border-[#f9c06a]/75",
-  sealText: "bg-[linear-gradient(180deg,#fff6eb_0%,#f9c06a_44%,#f47b20_100%)] bg-clip-text text-transparent",
-  star: "text-[#f9c06a]",
-  window: "text-[#f9c06a]/80",
-};
-
-/** SATO metal — the logo blues #0A527D / #0A6BA6 / #1482C2 from `house-identity.ts`. */
-const REP_HONOUR_SATO: RepHonourTone = {
-  border: "border-[#1482C2]/70",
-  bracket: "border-[#9ED8F5]/55",
-  eyebrow: "text-[#9ED8F5]",
-  field: REP_HONOUR_FIELD,
-  figure: "bg-[linear-gradient(180deg,#ffffff_0%,#9ED8F5_46%,#1482C2_100%)] bg-clip-text text-transparent",
-  ghost: "text-[#9ED8F5]/[0.10]",
-  rail: "bg-[linear-gradient(90deg,#0A527D_0%,#1482C2_15%,#9ED8F5_32%,#ffffff_46%,#9ED8F5_60%,#0A6BA6_78%,#1482C2_100%)]",
-  rule: "border-[#9ED8F5]/25",
-  sealField: "bg-[#081627]",
-  sealInner: "border-[#9ED8F5]/35",
-  sealLabel: "text-[#9ED8F5]/70",
-  sealOuter: "border-[#9ED8F5]/75",
-  sealText: "bg-[linear-gradient(180deg,#ffffff_0%,#9ED8F5_44%,#1482C2_100%)] bg-clip-text text-transparent",
-  star: "text-[#9ED8F5]",
-  window: "text-[#9ED8F5]/80",
-};
-
-/**
- * The rep's standing badges — "You ranked 8th of 70 medical reps" — company-wide and in their line.
- *
- * 🔒 THE OWNER'S OWN BRIEF, 2026-10-03: a badge for the top 15 of the company, a second for the top
- * 7 of the rep's line, each naming the rank, the number of medical reps it was won against and the
- * period — "if not from 15 do not show anything". So there is deliberately NO consolation state: a
- * rep outside both bands sees nothing at all, not a greyed badge and not a "keep going" line. A
- * badge every rep has is not a badge, and the whole point is that it is worth reaching.
- *
- * WHY IT IS DARK. Every other surface on this page is a white tile with a status rail, and a
- * fourteenth white tile would read as one more measurement. This keeps the tile's exact structure —
- * accent rail across the top edge, square corners, micro uppercase label, big tabular numeral — and
- * inverts the field, so it reads as an honour beside the measurements rather than another one of
- * them. Gold for the company board, sky for the line board, and that is the only ornament.
- *
- * 🔒 THE WINDOW IS CUMULATIVE AND IS PRINTED ON EVERY BADGE — "Jul – Aug 2026" today, "Jul – Sep
- * 2026" the day he publishes September (owner, 2026-10-03: "do not calculate only August, calculate
- * up to date"). It comes from the standing itself, never from this page: the Achievement keycard
- * below shows ONE month and this ranks all of them summed, so the two figures legitimately differ
- * and the label is what keeps that honest. A rank with no period on it is not a fact about anything.
- */
-function RepRankBadges({ standing }: { standing: PortalHomeSnapshot["mrRankStanding"] }) {
-  if (!standing) return null;
-  const badges: Array<{
-    board: string;
-    eyebrow: string;
-    key: string;
-    outOf: number;
-    rank: number;
-    tone: RepHonourTone;
-  }> = [];
-  if (standing.company) {
-    badges.push({
-      board: "Company",
-      eyebrow: `Top ${COMPANY_RANK_BADGE_LIMIT} · Company`,
-      key: "company",
-      outOf: standing.company.outOf,
-      rank: standing.company.rank,
-      tone: REP_HONOUR_PHOENIX,
-    });
-  }
-  if (standing.line) {
-    badges.push({
-      board: `${standing.line.lineName} line`,
-      eyebrow: `Top ${LINE_RANK_BADGE_LIMIT} · ${standing.line.lineName} line`,
-      key: "line",
-      outOf: standing.line.outOf,
-      rank: standing.line.rank,
-      tone: REP_HONOUR_SATO,
-    });
-  }
-  if (badges.length === 0) return null;
-
-  return (
-    // Two badges side by side only once the ROW has the width for two — a container query, not a
-    // viewport one, for the same measured reason the keycards below use one: `sm:`/`lg:` fire on the
-    // window, which says nothing about the width this row actually got once the sidebar is open.
-    <div className="@container">
-      <div className={`grid gap-2 ${badges.length > 1 ? "@2xl:grid-cols-2" : ""}`}>
-        {badges.map((badge) => (
-          <div
-            className={`relative isolate flex min-w-0 flex-col overflow-hidden border ${badge.tone.border} ${badge.tone.field}`}
-            key={badge.key}
-          >
-            {/* The metal edge. A flat 2px bar reads as a status rail like every tile on this page;
-                a gradient with a highlight in it reads as leaf, which is the whole difference
-                between a measurement and an award. */}
-            <div aria-hidden="true" className={`h-[3px] w-full ${badge.tone.rail}`} />
-
-            {/* The engraved rank, bled off the right edge and clipped by the card. It is the one
-                ornament that makes the badge feel struck rather than drawn — and it is `aria-hidden`
-                with the real figure in the text below, so a screen reader hears the rank once. */}
-            <span
-              aria-hidden="true"
-              className={`pointer-events-none absolute -right-4 top-1/2 -translate-y-1/2 select-none text-[92px] font-black leading-none tracking-[-0.06em] tabular-nums ${badge.tone.ghost}`}
-            >
-              {ordinal(badge.rank)}
-            </span>
-            {/* A single diagonal sweep of light across the field. Low enough that it never competes
-                with the type, present enough that the card is not a flat rectangle. */}
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 bg-[linear-gradient(118deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0)_38%,rgba(255,255,255,0)_72%,rgba(255,255,255,0.08)_100%)]"
-            />
-            {/* Four corner brackets — the certificate device, and the one piece of ornament that is
-                impossible to round off, since each is two 1px borders meeting at a right angle. */}
-            <span aria-hidden="true" className={`pointer-events-none absolute left-1.5 top-2.5 h-2 w-2 border-l border-t ${badge.tone.bracket}`} />
-            <span aria-hidden="true" className={`pointer-events-none absolute right-1.5 top-2.5 h-2 w-2 border-r border-t ${badge.tone.bracket}`} />
-            <span aria-hidden="true" className={`pointer-events-none absolute bottom-1.5 left-1.5 h-2 w-2 border-b border-l ${badge.tone.bracket}`} />
-            <span aria-hidden="true" className={`pointer-events-none absolute bottom-1.5 right-1.5 h-2 w-2 border-b border-r ${badge.tone.bracket}`} />
-
-            <div className="relative flex min-w-0 flex-1 items-center gap-3 px-4 py-3">
-              {/* The medallion: a double-ruled square seal holding the place. Square because the
-                  square-edge golden rule binds every corner on this page (AGENTS.md §4), and a
-                  square seal is a real award form — a wax stamp, a hallmark — not a compromise. */}
-              <div className={`shrink-0 border p-[3px] ${badge.tone.sealOuter}`}>
-                <div className={`flex h-11 w-11 flex-col items-center justify-center border ${badge.tone.sealInner} ${badge.tone.sealField}`}>
-                  <span className={`text-[17px] font-black leading-none tracking-[-0.02em] tabular-nums ${badge.tone.sealText}`}>
-                    {ordinal(badge.rank)}
-                  </span>
-                  <span className={`mt-[3px] text-[7px] font-bold uppercase leading-none tracking-[0.18em] ${badge.tone.sealLabel}`}>
-                    Rank
-                  </span>
-                </div>
-              </div>
-
-              <div className="min-w-0 flex-1">
-                {/* Wraps rather than clips: the window drops to its own right-aligned line on a
-                    narrow badge. Nothing here is ever truncated with an ellipsis (AGENTS.md §4). */}
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <RepHonourStar className={`h-2.5 w-2.5 shrink-0 ${badge.tone.star}`} />
-                  <span className={`text-phx-2xs font-black uppercase tracking-[0.14em] ${badge.tone.eyebrow}`}>
-                    {badge.eyebrow}
-                  </span>
-                </div>
-                {/* Sentence case, NOT a tracked micro label like the eyebrow above it: this line is
-                    spoken TO the rep, which is what was asked for, and uppercase with tracking costs
-                    ~14px — enough to wrap it onto two lines inside a 288px badge (a 320px phone once
-                    its gutters are taken). */}
-                <p className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                  <span className="text-phx-xs font-semibold text-white/60">You ranked</span>
-                  <span className={`text-phx-base font-black tabular-nums ${badge.tone.figure}`}>
-                    {ordinal(badge.rank)}
-                  </span>
-                  <span className="text-phx-sm font-semibold tabular-nums text-white/85">
-                    of {badge.outOf} medical reps
-                  </span>
-                </p>
-                {/* The window, under a hairline — it qualifies everything above it, so it sits apart
-                    from the sentence rather than inside it. */}
-                <p className={`mt-1.5 border-t pt-1 text-phx-3xs font-bold uppercase tracking-[0.12em] ${badge.tone.rule} ${badge.tone.window}`}>
-                  {standing.windowLabel}
-                </p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /**
  * The frequency split, shown under the big percentage on the Frequency keycard (owner, 2026-09-23).
  *
@@ -1420,9 +1187,19 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
           first thing he wants the rep to see, not a footnote to a keycard. It also no longer belongs
           beside that keycard: the badge ranks the whole published window and the keycard shows one
           month. Renders nothing at all when the rep is outside both bands, which is most reps most
-          months — by design, so the page simply starts at the context bar for them, nothing moves. */}
-      <RepRankBadges standing={mrRankStanding} />
-      <PortalContextBar context="Field Performance" role="Medical Representative" />
+          months — by design, so for them the page simply goes on to the KPI month, nothing moves. */}
+      {/* 🔒 ONE STRIP — his rank in the company, his rank in his line, and the buttons that take the
+          card with him. Owner, 2026-10-03, after the first build: "the page became so crowded. I want
+          only a strip telling the rank in company and line, then buttons telling the export or share.
+          That simple, easy cake — not all over-engineered." It replaced two full-width medals and a
+          separate export panel, ~330px of a phone before he reached his own keycards. Renders nothing
+          when he is outside both bands, which is most reps most months. */}
+      <RepHonourStrip standing={mrRankStanding} />
+      {/* 🔒 NO "MEDICAL REPRESENTATIVE · FIELD PERFORMANCE" BAR — removed at the owner's instruction,
+          2026-10-03: "remove this section, Medical Representative / Field Performance". The rep's
+          landing goes straight from the identity rows (and his rank strip, when he has one) to his KPI
+          month and keycards. The bar is still used by the other roles' landings; only this one dropped it.
+          Do not put it back as a "section header" for the keycards. */}
 
       {/* Same reason: two columns only when the row itself has the width for them — and only when
           there is a second column to hold. With no approved day the right-hand column renders
