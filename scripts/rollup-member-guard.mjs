@@ -72,6 +72,82 @@ export function unreadableRollups(rollups) {
     .map((r) => ({ number: Number(r.number), headRefName: r.headRefName ?? null }));
 }
 
+/**
+ * Members whose head has MOVED since the roll-up carried them.
+ *
+ * 🔴 THE BUILD CHECKS THE SHA AND THEN STOPS LOOKING, AND THE MERGE IS MINUTES LATER. `--apply`
+ * re-reads each member's head immediately before merging it into the branch and skips one that
+ * moved, so the branch is always built from commits whose checks and file sets were measured. But
+ * the roll-up then waits for the owner's approval, and nothing looks again. Measured 2026-10-02:
+ * #5191 was built at 20:54:51Z from #5188's head `4df18d572`; its author pushed the real fix at
+ * 20:58:41Z; the roll-up merged at 21:12:41Z and shipped the superseded commit. The member was left
+ * CONFLICTING against the squash of its own first commit — which earns it NO CI run at all, so it
+ * could not go green on its own and needed a hand-built merge to recover.
+ *
+ * Pure, for the same reason as {@link rollupHolding}: the caller does the API reads and this
+ * decides, so the whole table is testable without a network.
+ *
+ * @param recorded  `[{ number, sha }]` from {@link rollupMemberHeads} — what the body says was carried.
+ * @param live      `[{ number, headRefOid }]` read back now, one row per member.
+ * @returns `{ moved, unrecorded, unread }`. Only `moved` is a refusal. `unrecorded` is a body with
+ *          no sha on that line (a roll-up built before this shipped) and `unread` is a member the
+ *          caller could not read — both UNKNOWN, and a caller must report them rather than refuse,
+ *          because an unknown that blocks would block every merge on this guard's own blind spot.
+ */
+export function staleRollupMembers({ recorded, live }) {
+  const seen = new Map();
+  for (const row of live ?? []) {
+    const number = Number(row?.number);
+    if (Number.isInteger(number)) seen.set(number, row);
+  }
+
+  const moved = [];
+  const unrecorded = [];
+  const unread = [];
+  for (const entry of recorded ?? []) {
+    const number = Number(entry?.number);
+    if (!Number.isInteger(number)) continue;
+    const row = seen.get(number);
+    const head = row?.headRefOid == null ? '' : String(row.headRefOid);
+    if (head === '') {
+      unread.push(number);
+      continue;
+    }
+    if (entry.sha == null) {
+      unrecorded.push(number);
+      continue;
+    }
+    if (head !== String(entry.sha)) moved.push({ number, carried: String(entry.sha), now: head });
+  }
+  return { moved, unrecorded, unread };
+}
+
+/** What C13 prints when a roll-up's member has moved. Kept beside the decision it explains. */
+export function rollupStaleDenial({ rollup, moved }) {
+  const lines = moved
+    .map((m) => `  #${m.number}: carried ${m.carried.slice(0, 9)}, now ${m.now.slice(0, 9)}`)
+    .join('\n');
+  return (
+    `C13 — roll-up #${rollup.number}${rollup.headRefName ? ` (${rollup.headRefName})` : ''} carries a ` +
+    'commit its author has already replaced:\n\n' +
+    `${lines}\n\n` +
+    'Merging it now ships the SUPERSEDED commit and leaves that member conflicting against the ' +
+    'squash of its own earlier work — and a conflicted PR gets NO CI run at all, so it cannot go ' +
+    'green again on its own.\n\n' +
+    '🔴 THIS IS MEASURED, NOT HYPOTHETICAL. On 2026-10-02 roll-up #5191 was built at 20:54:51Z from ' +
+    "#5188's head 4df18d572. Its own session pushed the real fix four minutes later — \"my own fix " +
+    'made every click a no-op — pass functions, not strings" — and the roll-up merged at 21:12:41Z ' +
+    'carrying the broken one. The member then sat CONFLICTING and had to be rebuilt by hand. ' +
+    "`--apply` re-reads each head before it merges, but it stops looking once the branch is pushed, " +
+    'and the approval came eighteen minutes later.\n\n' +
+    'REBUILD IT instead — the members are still open, so nothing is lost:\n' +
+    `  gh pr close ${rollup.number}\n  node scripts/rollup-prs.mjs --apply\n\n` +
+    'To see exactly what moved before deciding:\n  node scripts/rollup-prs.mjs --verify-heads\n\n' +
+    'If you mean to ship the older commit anyway, stand this down for one command:\n' +
+    '  PHX_MERGE_OK=1 <cmd>   ($env:PHX_MERGE_OK=1; <cmd> in PowerShell)'
+  );
+}
+
 /** What C13 prints when it refuses. Kept here so the test reads the real words, not a paraphrase. */
 export function rollupMemberDenial({ merging, rollup }) {
   return (

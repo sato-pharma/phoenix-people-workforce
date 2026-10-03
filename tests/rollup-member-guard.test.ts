@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { rollupMembers, isRollupBranch } from "../scripts/rollup-duplicate-guard.mjs";
-import { rollupHolding, rollupMemberDenial, unreadableRollups } from "../scripts/rollup-member-guard.mjs";
+import { rollupMemberHeads, rollupMembers, isRollupBranch } from "../scripts/rollup-duplicate-guard.mjs";
+import {
+  rollupHolding,
+  rollupMemberDenial,
+  rollupStaleDenial,
+  staleRollupMembers,
+  unreadableRollups,
+} from "../scripts/rollup-member-guard.mjs";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -41,14 +47,20 @@ import { stripComments } from "./support/comment-strip.ts";
 const GUARD = ".claude/hooks/bash-guard.mjs";
 const flat = (path: string) => stripComments(readFileSync(path, "utf8")).replace(/\s+/g, " ");
 
-/** A roll-up PR body in the exact shape `rollup-prs.mjs --apply` writes it. */
-const bodyFor = (members: Array<{ n: number; title: string; files: number }>) =>
+/**
+ * A roll-up PR body in the exact shape `rollup-prs.mjs --apply` writes it.
+ *
+ * `sha` is optional on purpose: a body WITHOUT one is a roll-up built before the carried sha was
+ * recorded, and those must read UNKNOWN rather than stale — otherwise shipping this guard would
+ * have blocked every roll-up already open at the time.
+ */
+const bodyFor = (members: Array<{ n: number; title: string; files: number; sha?: string }>) =>
   [
     "Rolls up several open pull requests into ONE merge, so the CI bill is paid once instead of 2 times (about 28 billable minutes).",
     "",
     "Each is carried by merging its own head commit, so authorship and history are preserved:",
     "",
-    ...members.map((m) => `- #${m.n} — ${m.title} (${m.files} files)`),
+    ...members.map((m) => `- #${m.n} — ${m.title} (${m.files} files)${m.sha ? ` @ ${m.sha}` : ""}`),
     "",
     "Their file sets are disjoint, which is the condition this was built on — two PRs touching one file "
       + "can merge cleanly and still be wrong together, `tests/run-tests.ts` being the standing example.",
@@ -155,5 +167,113 @@ export function runRollupMemberGuardTests() {
   assert.ok(
     guardRaw.includes("C13 a MERGE of a PR that is a MEMBER of an open roll-up"),
     `${GUARD}: the clause roster at the top is how a session learns what refused it`,
+  );
+
+  // ── 6. The carried sha, and the gap between BUILDING and MERGING ──────────────────────────────
+  //
+  // 🔴 `--apply` ALREADY RE-READS EVERY HEAD AND THEN STOPS LOOKING. Its build loop takes a last
+  // look at each member's sha and skips one that moved, so the branch is always made of commits
+  // whose checks and file sets were measured. The approval, though, arrives minutes later and
+  // nothing looks again. Measured 2026-10-02: #5191 was built at 20:54:51Z from #5188's head
+  // 4df18d572; #5188's own session pushed f93c220e8 at 20:58:41Z — "my own fix made every click a
+  // no-op — pass functions, not strings" — and the roll-up merged at 21:12:41Z carrying the commit
+  // its author had already replaced. #5188 was then left CONFLICTING against the squash of its own
+  // first commit, and a conflicted PR gets NO CI run at all, so it could not go green again on its
+  // own and had to be rebuilt by hand. Eighteen minutes of gap, one shipped non-fix.
+  const CARRIED = "4df18d572d484e5902d0f1d1f276b4af16364e68";
+  const PUSHED_SINCE = "f93c220e8024d4bc2aca660dd990eef94fa0cd8a";
+  const UNMOVED = "a".repeat(40);
+  const staleBody = bodyFor([
+    { n: 5188, title: "fix(new-hire-mailbox): typing into a console field must clear it first", files: 3, sha: CARRIED },
+    { n: 5189, title: "docs(traps): git grep's rev form is the one count that does not lie", files: 2, sha: UNMOVED },
+  ]);
+
+  // Recording the sha must not disturb the member list C13's first clause is built on.
+  assert.deepEqual(rollupMembers(staleBody), [5188, 5189], "recording a carried sha must not change how members parse");
+  assert.deepEqual(
+    rollupMemberHeads(staleBody).map((m: { number: number; sha: string | null }) => [m.number, m.sha]),
+    [[5188, CARRIED], [5189, UNMOVED]],
+    "each member line must yield the commit it was carried at",
+  );
+
+  // The 2026-10-02 failure itself: one member pushed since the build, one untouched.
+  const verdict = staleRollupMembers({
+    recorded: rollupMemberHeads(staleBody),
+    live: [{ number: 5188, headRefOid: PUSHED_SINCE }, { number: 5189, headRefOid: UNMOVED }],
+  });
+  assert.deepEqual(
+    verdict.moved.map((m: { number: number }) => m.number),
+    [5188],
+    "the member whose head moved after the build must be the one reported",
+  );
+  assert.equal(verdict.moved[0].carried, CARRIED, "the refusal has to say which commit is being shipped");
+  assert.equal(verdict.moved[0].now, PUSHED_SINCE, "and which one supersedes it");
+  assert.deepEqual(verdict.unrecorded, [], "both members recorded a sha");
+  assert.deepEqual(verdict.unread, [], "and both heads were readable");
+
+  assert.deepEqual(
+    staleRollupMembers({
+      recorded: rollupMemberHeads(staleBody),
+      live: [{ number: 5188, headRefOid: CARRIED }, { number: 5189, headRefOid: UNMOVED }],
+    }).moved,
+    [],
+    "a roll-up whose members have not moved must merge freely — this guard must not block the common case",
+  );
+
+  // 🔴 THE TWO FAIL-OPEN SHAPES. Either one reading as "moved" would have blocked every roll-up
+  // open on the day this shipped, and every merge whose member list runs past the 50-PR window.
+  const oldBody = bodyFor([{ n: 4901, title: "fix(x): built before the carried sha was recorded", files: 2 }]);
+  const older = staleRollupMembers({
+    recorded: rollupMemberHeads(oldBody),
+    live: [{ number: 4901, headRefOid: PUSHED_SINCE }],
+  });
+  assert.deepEqual(older.moved, [], "a body recording no sha must never read as moved");
+  assert.deepEqual(older.unrecorded, [4901], "it is UNKNOWN, and must be reported as such");
+
+  const blind = staleRollupMembers({
+    recorded: rollupMemberHeads(staleBody),
+    live: [{ number: 5188, headRefOid: null }],
+  });
+  assert.deepEqual(blind.moved, [], "a head that could not be read must never read as moved");
+  assert.deepEqual(blind.unread, [5188, 5189], "an unread member and a missing one are both reported");
+
+  assert.deepEqual(staleRollupMembers({ recorded: undefined as never, live: undefined as never }).moved, []);
+
+  // The words it refuses with: a refusal that does not say what to do instead gets forced through.
+  const stale = rollupStaleDenial({
+    rollup: { number: 5191, headRefName: "codex/rollup-20261002-2054" },
+    moved: verdict.moved,
+  });
+  assert.match(stale, /^C13 /, "every clause names itself first");
+  assert.match(stale, /gh pr close 5191/, "rebuilding is the way out, not merging it anyway");
+  assert.match(stale, /--verify-heads/, "and it must name the read that shows exactly what moved");
+  assert.match(stale, /PHX_MERGE_OK=1/, "a guard with no way past it gets deleted instead of used");
+  assert.ok(
+    stale.includes("4df18d57") && stale.includes("f93c220e8"),
+    "the refusal must name both shas — a session cannot judge 'stale' without them",
+  );
+
+  // ── 7. The wiring for the sha: the builder RECORDS it, C13 COMPARES it ───────────────────────
+  const builder = flat("scripts/rollup-prs.mjs");
+  assert.ok(
+    builder.includes("files) @ ${p.headRefOid}"),
+    "scripts/rollup-prs.mjs: the body must record the sha each member was carried at — with nothing recorded there is nothing to compare at merge time",
+  );
+  assert.ok(builder.includes("--verify-heads"), "scripts/rollup-prs.mjs: the read-only check must exist to be recommended");
+  assert.ok(
+    builder.includes("staleRollupMembers("),
+    "scripts/rollup-prs.mjs: --verify-heads must use the same decision C13 does, not a second copy of it",
+  );
+  assert.ok(
+    guard.includes("staleRollupMembers("),
+    `${GUARD}: C13 must actually compare the carried shas — recording them and never reading them back is the comment that already failed`,
+  );
+  assert.ok(
+    /deny\(rollupStaleDenial\(/.test(guard),
+    `${GUARD}: a stale roll-up must be DENIED, not merely reported`,
+  );
+  assert.ok(
+    guard.includes("number,headRefName,headRefOid,body"),
+    `${GUARD}: the heads must come from the same single PR listing the member list does, so both answers describe one snapshot`,
   );
 }
