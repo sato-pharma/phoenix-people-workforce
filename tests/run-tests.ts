@@ -2266,6 +2266,7 @@ import { runStoreSplitDriftTests } from "./store-split-drift.test.ts";
 import { runPhoenixCrmVisitsEverywhereTests } from "./phoenix-crm-visits-everywhere.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 import { runPhoenixCrmTeamReadinessTests } from "./phoenix-crm-team-readiness.test.ts";
+import { runShareLinkDeadTokenPollingTests } from "./share-link-dead-token-polling.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -8605,6 +8606,10 @@ await runTest(
 await runTest(
   "which team is READY to start in Phoenix CRM, beside the Start button: the headline is REPS WITH A LIST and never seats filled (Pedia Upper Egypt 1 read 6 of 6 seats filled with five reps hired in four days and one list), the new hires are named so an empty list explains itself, and one person on two seats is ONE person — his visits taken once, never summed per seat, and a district manager sitting in his own team's rep seat named rather than folded away; test customers filtered at the read, the 'Others' pseudo-DM buckets dropped, a failed read unreadable rather than zeros, the visits through the CRM door, and the board square-edged, table-fixed, desktop-table / phone-cards with nothing truncated",
   runPhoenixCrmTeamReadinessTests,
+);
+await runTest(
+  "a DEAD sheet link that is still being polled is counted and reported (the 2026-08-05 ghost copy: a revoked token read once a minute for 59 days with nothing anywhere saying so) — a live link never is however much traffic it carries, a person's stale bookmark is under the floor, a trigger somebody stopped falls out of the 24h window, revocation beats a lapsed date, an unjudgeable row is skipped, the order is stable so the one-a-day key holds, the message carries no token, and all three token guards still COUNT the refusal on both dead branches without changing the answer the caller gets",
+  runShareLinkDeadTokenPollingTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

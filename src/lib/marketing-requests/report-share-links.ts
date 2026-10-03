@@ -4,6 +4,7 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission, systemAccessContext } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { noteDeadShareTokenRead } from "@/lib/share-links/refusal-counter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   APPROVAL_COLUMNS,
@@ -223,8 +224,16 @@ export async function assertMarketingShareToken(input: {
   if (!row) throw notFoundError("Link not found.");
   const link = row as Record<string, unknown>;
   if (String(link.surface) !== input.surface) throw notFoundError("Link not found.");
-  if (link.revoked_at) throw forbiddenError("This link has been revoked.");
-  if (new Date(String(link.expires_at)).getTime() < Date.now()) throw forbiddenError("This link has expired.");
+  // Count the refusal before refusing — the caller's answer is unchanged, but a dead token being
+  // polled now leaves a trace Phoenix can see. See `dead-token-polling.ts` for the failure mode.
+  if (link.revoked_at) {
+    await noteDeadShareTokenRead(TABLE, link);
+    throw forbiddenError("This link has been revoked.");
+  }
+  if (new Date(String(link.expires_at)).getTime() < Date.now()) {
+    await noteDeadShareTokenRead(TABLE, link);
+    throw forbiddenError("This link has expired.");
+  }
   // Files are a separate grant from the table. A token minted for the numbers must not become a
   // key to photographs of real clinics just because someone guessed the file route exists.
   if (input.requireFiles && !link.allow_files) throw forbiddenError("This link does not carry file access.");

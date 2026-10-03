@@ -10,6 +10,7 @@ import { sweepJobHeartbeats } from "@/lib/observability/job-heartbeat";
 import { JOB_HEARTBEAT_SWEEP_SLUG } from "@/lib/observability/job-schedule";
 import { logError, logInfo } from "@/lib/observability/log";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
+import { runDeadTokenPollingCheck } from "@/lib/share-links/dead-token-polling-alert";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +41,24 @@ export async function GET(request: Request) {
   if (denied) return denied;
 
   const startedAt = Date.now();
+
+  // A SECOND, INDEPENDENT WATCH riding this clock, on purpose, and placed FIRST on purpose.
+  //
+  // Why here: a dead share-link token being polled is the same species of fault as a stranded job
+  // — something outside Phoenix has stopped working and nothing says so — and this is the one route
+  // that already runs often enough to notice it quickly. It needs no new cron, which matters: a new
+  // declared job has to be created at cron-job.org in the same sitting or the heartbeat assessment
+  // alarms about a job nobody created (`job-schedule.ts`), and `phoenix-notify-daily` is already at
+  // the scheduler's unraisable 30-second cut. Three indexed selects cost this sweep nothing.
+  //
+  // Why first: it swallows its own errors and returns a verdict, so running it before the sweep
+  // means a throwing sweep cannot silently skip the check — the same ordering, for the same reason,
+  // as the three checks at the head of `runRecruitmentDailyNotifications`.
+  //
+  // It does NOT change this route's own verdict. The dead-man's switch below still answers exactly
+  // one question — "is the sweeper running?" — see the header note on why findings never turn it
+  // red; the alert is the channel a human reads, and it is bucketed to one message a Cairo day.
+  const deadTokenPolling = await runDeadTokenPollingCheck();
 
   try {
     const verdict = await sweepJobHeartbeats();
@@ -98,6 +117,11 @@ export async function GET(request: Request) {
         alertDelivered: alert.delivered,
         awaitingBootstrap: verdict.awaitingBootstrap,
         checked: verdict.checked,
+        deadTokenPolling: {
+          alertDelivered: deadTokenPolling.delivered,
+          polled: deadTokenPolling.verdict?.polled ?? [],
+          skippedReason: deadTokenPolling.reason ?? null,
+        },
         durationMs: Date.now() - startedAt,
         failing: verdict.failing,
         healthy: verdict.healthy,

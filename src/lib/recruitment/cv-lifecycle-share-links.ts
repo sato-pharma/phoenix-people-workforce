@@ -32,6 +32,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { noteDeadShareTokenRead } from "@/lib/share-links/refusal-counter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildCvLifecycleCsv,
@@ -253,8 +254,16 @@ export async function assertCvLifecycleShareToken(token: string): Promise<Record
 
   const link = row as Record<string, unknown>;
   if (String(link.surface) !== "feed") throw notFoundError("Link not found.");
-  if (link.revoked_at) throw forbiddenError("This link has been revoked.");
-  if (new Date(String(link.expires_at)).getTime() < Date.now()) throw forbiddenError("This link has expired.");
+  // Count the refusal before refusing — the caller's answer is unchanged, but a dead token being
+  // polled now leaves a trace Phoenix can see. See `dead-token-polling.ts` for the failure mode.
+  if (link.revoked_at) {
+    await noteDeadShareTokenRead(TABLE, link);
+    throw forbiddenError("This link has been revoked.");
+  }
+  if (new Date(String(link.expires_at)).getTime() < Date.now()) {
+    await noteDeadShareTokenRead(TABLE, link);
+    throw forbiddenError("This link has expired.");
+  }
   return link;
 }
 
