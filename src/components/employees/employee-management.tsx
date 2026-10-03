@@ -72,6 +72,7 @@ import { formatVacancyOptionLabel } from "@/lib/employees/vacancy-option-label";
 import { deriveSalaryFromNet } from "@/lib/payroll/salary-autofill";
 import { todayInCairo } from "@/lib/date-only";
 import { DECLINE_OFFER_WINDOW_DAYS, isDeclineOfferEligible } from "@/lib/resignations/decline-offer-eligibility";
+import { COMPANY_MAIL_DOMAIN } from "@/lib/new-hire-mailbox/address";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
@@ -575,6 +576,70 @@ function TextField({
         type={type}
         value={value}
       />
+    </label>
+  );
+}
+
+/**
+ * The company address, typed as the LOCAL PART ONLY.
+ *
+ * 🔴 WHY THE DOMAIN IS NOT TYPEABLE (owner, 2026-10-03): the address stored here is the one the
+ * mailbox robot creates in Turbify, verbatim. It must never be derived from the name — a derivation
+ * turned "El Sayed Rady" into `el.sayed@satopharma.com`, splitting a first name that is one word,
+ * and created a real mailbox at the wrong address. So the owner types `elsayed.ramdan` and the
+ * domain is fixed: one less thing to mistype, and no path to a mailbox on another domain.
+ *
+ * An address already on the record that is NOT on the company domain keeps a plain full-width input,
+ * because showing only its local part beside a fixed @satopharma.com would silently move somebody's
+ * address to another domain the next time this form is saved.
+ */
+function CompanyEmailField({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const suffix = `@${COMPANY_MAIL_DOMAIN}`;
+  const current = value.trim();
+  const foreign = current.length > 0 && !current.toLowerCase().endsWith(suffix);
+
+  if (foreign) {
+    return (
+      <div className="block">
+        <TextField label={label} onChange={onChange} placeholder="employee@company.com" type="email" value={value} />
+        <span className="mt-1.5 block text-xs text-text-tertiary">
+          This address is not on {COMPANY_MAIL_DOMAIN}, so it stays editable in full.
+        </span>
+      </div>
+    );
+  }
+
+  const local = current.toLowerCase().endsWith(suffix) ? current.slice(0, current.length - suffix.length) : current;
+
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-medium text-text-secondary">{label}</span>
+      <div className="flex h-11 w-full items-stretch overflow-hidden rounded-2xl border border-[#D7E0EA] bg-white/95 shadow-sm focus-within:border-phx-blue">
+        <input
+          className="h-full min-w-0 flex-1 border-0 bg-transparent px-3 text-sm text-text-primary outline-none"
+          // A pasted full address is accepted and its domain dropped, rather than ending up as
+          // "elsayed.ramdan@satopharma.com@satopharma.com".
+          onChange={(event) => {
+            const typed = event.target.value.trim().toLowerCase().replace(/\s+/g, "");
+            const localPart = (typed.includes("@") ? typed.slice(0, typed.indexOf("@")) : typed)
+              .replace(/[^a-z0-9._-]/g, "");
+            onChange(localPart ? `${localPart}${suffix}` : "");
+          }}
+          placeholder="elsayed.ramdan"
+          value={local}
+        />
+        <span className="flex shrink-0 items-center border-l border-[#D7E0EA] bg-phx-paper px-3 text-sm text-phx-ink-soft">
+          {suffix}
+        </span>
+      </div>
     </label>
   );
 }
@@ -3566,11 +3631,9 @@ export function EmployeeManagement({
                   <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">Contact & System Access</h3>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <TextField
+                  <CompanyEmailField
                     label="Work Email Address"
                     onChange={(value) => updateForm("workEmail", value)}
-                    placeholder="employee@company.com"
-                    type="email"
                     value={form.workEmail}
                   />
                   <TextField

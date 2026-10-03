@@ -30,7 +30,7 @@ import {
 import { logError } from "@/lib/observability/log";
 import { connectNewHireMailbox } from "@/lib/personal-mailbox/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { COMPANY_MAIL_DOMAIN, isCompanyAddress, proposeMailboxAddress } from "@/lib/new-hire-mailbox/address";
+import { COMPANY_MAIL_DOMAIN, isCompanyAddress } from "@/lib/new-hire-mailbox/address";
 import type { NewHireMailboxSubject } from "@/lib/new-hire-mailbox/messages";
 
 export const NEW_HIRE_MAILBOX_TABLE = "new_hire_mailbox_tasks" as const;
@@ -184,10 +184,19 @@ export async function openNewHireMailboxTasks(input: {
     if (!key || seen.has(key)) continue;
     seen.add(key);
 
-    const proposed = proposeMailboxAddress(
-      { fullName: hire.fullName, nickname: hire.nickname, workEmail: hire.workEmail },
-      taken,
-    );
+    // 🔴 THE TYPED ADDRESS, OR NONE AT ALL (owner, 2026-10-03): "I will enter the email of the hired
+    // in the employee master in his record, you take what I enter and make his email with it."
+    //
+    // A derived address is not a convenience here — it is the thing that creates a real mailbox at
+    // the wrong address. "El Sayed Rady" became `el.sayed@satopharma.com` because the generator took
+    // the first two words as first.last, but "Elsayed" is one word and his whole first name. The
+    // mailbox was created on the live domain before anyone could read the register.
+    //
+    // So a hire saved without a company work email opens with NO address, and waits. The Employee
+    // Master's own field now types the local part against a fixed @satopharma.com, so there is one
+    // place that address comes from and nothing invents one.
+    const typed = String(hire.workEmail ?? "").trim().toLowerCase();
+    const proposed = isCompanyAddress(typed) && !taken.has(typed) ? typed : null;
     const row = {
       email_address: proposed,
       employee_hr_id: hrIdForStorage(hire.hrId),
