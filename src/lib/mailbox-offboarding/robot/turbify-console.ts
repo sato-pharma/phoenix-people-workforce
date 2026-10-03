@@ -34,7 +34,12 @@ import { loadPuppeteer, resolveChromiumPath, type ChromiumPage } from "@/lib/pdf
 // The exactly-one-row rule is stated ONCE for the whole Turbify console, in the shared resolver,
 // so the revocation driver and the provisioning driver cannot drift into two different ideas of
 // when it is safe to click a row action.
-import { rowCountRefusal } from "@/lib/turbify/resolve";
+import {
+  MAILBOX_ROW_QUERY,
+  readMailboxRowCells,
+  rowIdentityRefusal,
+  type ConsoleMailboxRow,
+} from "@/lib/turbify/resolve";
 
 import type { RobotStepResult, TurbifyConsoleDriver } from "./driver";
 
@@ -327,10 +332,15 @@ export async function createTurbifyConsoleDriver(): Promise<TurbifyConsoleDriver
       //     their mail. Step 3 would catch it, but only AFTER the reset had happened: detection is
       //     not prevention, so refuse here instead. `countMatches` is the shared Turbify resolver's
       //     rule — exactly one, or stop — applied to the one flow that is already armed.
-      const rowCount = await page
-        .$$eval(MAILBOX_SELECTORS.resetPassword.selector, (elements) => elements.length)
-        .catch(() => -1);
-      const ambiguous = rowCountRefusal(rowCount, email);
+      //     🔴 AND IT IS AN IDENTITY CHECK, NOT A COUNT — changed 2026-10-03. The console's search
+      //     is a SUBSTRING match, so the "prefix of another address" case this comment already
+      //     warned about produces exactly ONE row belonging to somebody else:
+      //     `adel.sayed@satopharma.com` matches a search for `el.sayed@satopharma.com` and carries
+      //     its own Reset password button. The count said "safe to act".
+      const rows = await page
+        .$$eval<ConsoleMailboxRow[]>(MAILBOX_ROW_QUERY, readMailboxRowCells)
+        .catch(() => null);
+      const ambiguous = rowIdentityRefusal(rows, email);
       if (ambiguous) throw new Error(ambiguous);
 
       await page.click(MAILBOX_SELECTORS.resetPassword.selector);
@@ -346,7 +356,12 @@ export async function createTurbifyConsoleDriver(): Promise<TurbifyConsoleDriver
             const dialog = document.querySelector(".modal-container");
             if (!dialog) return false;
             const text = (dialog.textContent ?? "").toLowerCase();
-            return text.includes(heading.toLowerCase()) && (text.includes(addr) || text.includes(local));
+            if (!text.includes(heading.toLowerCase())) return false;
+            // 🔴 WHOLE TOKENS, NEVER `includes`. A dialog opened for adel.sayed@satopharma.com
+            // CONTAINS el.sayed@satopharma.com, so an includes() check confirmed the wrong reset as
+            // the right one — the same substring relation that defeats the row filter.
+            const tokens = new Set(text.split(/[^a-z0-9._%+@-]+/).filter((token) => token.length > 0));
+            return tokens.has(addr) || tokens.has(local);
           },
           { timeout: 20_000 },
           { heading: MAILBOX_SELECTORS.resetConfirmation.label, addr: email, local: localPart },

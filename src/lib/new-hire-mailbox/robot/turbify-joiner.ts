@@ -41,7 +41,19 @@ import {
 import type { CreatedMailbox, JoinerConsoleDriver } from "./driver";
 import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
 import { APP_PASSWORD_PAGE, ECP_LOCATORS, ONE_TIME_PASSWORD_DIALOG, type Locator } from "@/lib/turbify/locators";
-import { cssQueryFor, readExistence, resolveOne, rowCountRefusal, type CandidateReader, type ElementCandidate } from "@/lib/turbify/resolve";
+import {
+  cssQueryFor,
+  dialogNamesAddress,
+  MAILBOX_ROW_QUERY,
+  readExistenceFromRows,
+  readMailboxRowCells,
+  resolveOne,
+  rowIdentityRefusal,
+  type CandidateReader,
+  type ConsoleMailboxRow,
+  type ElementCandidate,
+  type ExistenceReading,
+} from "@/lib/turbify/resolve";
 import {
   clearField,
   clickNode,
@@ -248,6 +260,71 @@ async function hasHeading(page: ConsolePage, heading: string): Promise<boolean> 
     .catch(() => false);
 }
 
+/**
+ * Does this EXACT address have a row in the console, and in what state?
+ *
+ * The caller loads the page first, because only the FIRST search after a load actually filters — a
+ * second search on the same page answers about the address before it.
+ *
+ * 🔴 The answer comes from the rows' own address cells, never from a row COUNT. The console's search
+ * is a SUBSTRING match, so `el.sayed@satopharma.com` returns `adel.sayed@satopharma.com` — one row,
+ * the wrong employee — and a count-based reader refused a real new hire for ever. See
+ * `readExistenceFromRows`.
+ */
+async function readExistingRow(page: ConsolePage, address: string): Promise<ExistenceReading> {
+  await searchFor(page, address);
+  const rows = await page
+    .$$eval<ConsoleMailboxRow[]>(MAILBOX_ROW_QUERY, readMailboxRowCells)
+    .catch(() => null);
+  return readExistenceFromRows(rows, address);
+}
+
+/**
+ * What to say when the form was submitted and no one-time password appeared.
+ *
+ * 🔴 The point of this function is that "no password" is NOT the same as "nothing happened", and the
+ * old message implied the second. Turbify's create makes the mailbox PENDING and hands the password
+ * over through the invitation; the dialog only ever belonged to the RESET path. So this re-reads the
+ * row and states plainly whether a mailbox now exists on the live domain, and reports the controls
+ * the post-save view offered — which is the only way to learn that flow without a redeploy to turn
+ * the control report on.
+ *
+ * The controls go through `buildControlReport`, which is redaction-first, and the address is passed
+ * as a known value so it cannot survive into the message either.
+ */
+async function describeCreateWithoutPassword(
+  page: ConsolePage,
+  address: string,
+  consoleUrl: string,
+): Promise<string> {
+  // Read the post-save view BEFORE navigating away from it.
+  const observed = await page
+    .evaluate<ObservedControl[]>(CONTROL_READ_EXPRESSION)
+    .catch(() => [] as ObservedControl[]);
+  const report = buildControlReport(`after saving the new-mailbox form for ${address}`, observed, [address]);
+  const controls = report.controls.slice(0, 10).join(" · ");
+
+  let landed = "could not be re-read, so whether it exists is unknown";
+  try {
+    await page.goto(consoleUrl, { timeout: 60_000, waitUntil: "networkidle2" });
+    const reading = await readExistingRow(page, address);
+    if ("refusal" in reading) landed = "could not be re-read, so whether it exists is unknown";
+    else if (!reading.exists) landed = "was NOT created";
+    else if (reading.status === "unknown") landed = "WAS CREATED, in a state the row did not name";
+    else landed = `WAS CREATED and is ${reading.status.toUpperCase()}`;
+  } catch {
+    landed = "could not be re-read, so whether it exists is unknown";
+  }
+
+  return (
+    `Turbify did not show the "${ONE_TIME_PASSWORD_DIALOG.heading}" dialog after saving the form for `
+    + `${address}, so the robot holds no password for it. The mailbox ${landed}. Turbify's create path `
+    + "hands the password over through its invitation rather than through that dialog, so this half of "
+    + "the flow is not calibrated yet"
+    + (controls.length > 0 ? `. The view it left behind offered: ${controls}` : ".")
+  );
+}
+
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -261,9 +338,30 @@ async function readOneTimePassword(page: ConsolePage, address: string): Promise<
   if (!(await hasHeading(page, ONE_TIME_PASSWORD_DIALOG.heading))) {
     throw new TurbifyJoinerStepError(
       `Turbify did not show the "${ONE_TIME_PASSWORD_DIALOG.heading}" dialog for ${address}, so the robot `
-      + "has no password for the new mailbox and stopped. The mailbox may exist — check the panel before re-running.",
+      + "has no password for it and stopped. Nothing further was clicked.",
     );
   }
+  // 🔴 THE DIALOG MUST NAME THIS MAILBOX. The heading only proves A dialog is open. `resetAndCapture`
+  // clicks a row action, and if the filter put somebody else's row first, the dialog that opens is
+  // theirs — so reading a password out of it would hand back one that does not open this mailbox and
+  // record a reset against the wrong employee. Checked BEFORE the reveal, so the comparison never
+  // sees the password. Whole tokens, never `includes`: adel.sayed@satopharma.com contains
+  // el.sayed@satopharma.com.
+  const dialogText = await page
+    .evaluate<string>(`(() => {
+      const dialog = document.querySelector(".modal-container");
+      const scope = dialog || document.body;
+      return scope ? (scope.textContent || "") : "";
+    })()`)
+    .catch(() => "");
+  if (!dialogNamesAddress(dialogText, address)) {
+    throw new TurbifyJoinerStepError(
+      `The "${ONE_TIME_PASSWORD_DIALOG.heading}" dialog is open but does not name ${address}, so it `
+      + "belongs to a different mailbox. The robot stopped rather than hand back a password that does "
+      + "not open this one.",
+    );
+  }
+
   // The password renders masked; reveal it first. A missing Show toggle is not fatal on its own —
   // some panels render it in clear — so this one failure is tolerated and the read below decides.
   await clickOne(page, ONE_TIME_PASSWORD_DIALOG.reveal).catch(() => {});
@@ -350,21 +448,25 @@ export async function createTurbifyJoinerDriver(credentials: {
       // Ask the console itself whether the address exists. Phoenix's own `address_taken` gate reads
       // its register; this reads the only source that actually knows.
       //
-      // 🔴 FROM THE ROW COUNT, NEVER THE PAGE TEXT, and after a FRESH LOAD. See `readExistence` for
-      // the measurement: the old text scan read the residue of the robot's own previous attempt and
-      // refused real new hires for ever. The reload matters just as much — only the FIRST search
-      // after a page load actually filters, so a second search on the same page answers about the
-      // address before it.
+      // 🔴 FROM THE ROWS' OWN ADDRESSES — never the page text, never a row COUNT — and after a
+      // FRESH LOAD. Three measured defects sit behind that one sentence, each found after fixing the
+      // one before it. A text scan read the residue of the robot's own previous attempt and refused
+      // real new hires for ever. A row count then passed a SUBSTRING hit as the mailbox itself:
+      // `adel.sayed@satopharma.com` answers a search for `el.sayed@satopharma.com`, so El Sayed Rady
+      // was refused while Phoenix's record was right. And the reload matters as much as either —
+      // only the FIRST search after a page load actually filters, so a second search on the same
+      // page answers about the address before it. See `readExistenceFromRows`.
       await page.goto(consoleUrl, { timeout: 60_000, waitUntil: "networkidle2" });
-      await searchFor(page, address);
-      const rows = await page
-        .$$eval<number>(cssQueryFor(ECP_LOCATORS.resetPassword), (elements) => elements.length)
-        .catch(() => -1);
-      const reading = readExistence(rows, address);
+      const reading = await readExistingRow(page, address);
       if ("refusal" in reading) throw new TurbifyJoinerStepError(reading.refusal);
       if (reading.exists) {
         throw new TurbifyJoinerStepError(
-          `${address} already exists in Turbify, so the robot did not create it. Phoenix's record disagreed with the console — reconcile before re-running.`,
+          reading.status === "pending"
+            ? `${address} already exists in Turbify as PENDING, so the robot did not create it again. `
+              + "A Pending mailbox was created but never completed its invitation, so it carries no "
+              + "password at all — it needs that invitation finished, not a second create."
+            : `${address} already exists in Turbify, so the robot did not create it. Phoenix's record `
+              + "disagreed with the console — reconcile before re-running.",
         );
       }
 
@@ -378,6 +480,16 @@ export async function createTurbifyJoinerDriver(credentials: {
       await submitOpenForm(page, CREATE_SUBMIT_WORDINGS, "submit button for the new-mailbox form");
       await settle(5_000);
 
+      // 🔴 THE SUBMIT USUALLY WORKED EVEN WHEN THE NEXT LINE FAILS. Turbify's create does NOT raise
+      // the "One-time password" dialog a RESET does: it creates the mailbox as PENDING and relies on
+      // an invitation. So the robot must say what it actually left behind on the live domain rather
+      // than imply nothing happened — two real mailboxes were created and then reported as never
+      // created at all, because `Active mailboxes` excludes Pending and a Pending row carries no
+      // `Reset password` button for a count to find.
+      if (!(await hasHeading(page, ONE_TIME_PASSWORD_DIALOG.heading))) {
+        throw new TurbifyJoinerStepError(await describeCreateWithoutPassword(page, address, consoleUrl));
+      }
+
       const oneTimePassword = await readOneTimePassword(page, address);
       await clickOne(page, ONE_TIME_PASSWORD_DIALOG.close).catch(() => {});
       return { address, oneTimePassword };
@@ -388,15 +500,19 @@ export async function createTurbifyJoinerDriver(credentials: {
       // Phoenix may mint an app password; everything after it is the same as the create path.
       await searchFor(page, address);
 
-      // 🔴 EXACTLY ONE ROW, OR NOTHING. Every row in the list carries its own
+      // 🔴 ONE ROW CARRYING THIS EXACT ADDRESS, OR NOTHING. Every row in the list carries its own
       // `aria-label="Reset password"`, so a click takes whichever is first in the document — which
-      // is this mailbox only if the search actually narrowed the list. Resetting the wrong row here
+      // is this mailbox only if the search actually narrowed to it. Resetting the wrong row here
       // locks a working employee out of their mail. Same rule, same statement of it, as the
       // revocation driver.
+      //
+      // 🔴 AND IT IS AN IDENTITY CHECK, NOT A COUNT: the console's search is a substring match, so
+      // `el.sayed@satopharma.com` returns the single Active row for `adel.sayed@satopharma.com` —
+      // one row, the wrong employee, with its own Reset password button. A count called that safe.
       const rows = await page
-        .$$eval(cssQueryFor(ECP_LOCATORS.resetPassword), (elements) => elements.length)
-        .catch(() => -1);
-      const ambiguous = rowCountRefusal(rows, address, "Adopt");
+        .$$eval<ConsoleMailboxRow[]>(MAILBOX_ROW_QUERY, readMailboxRowCells)
+        .catch(() => null);
+      const ambiguous = rowIdentityRefusal(rows, address, "Adopt");
       if (ambiguous) throw new TurbifyJoinerStepError(ambiguous);
 
       await clickOne(page, ECP_LOCATORS.resetPassword);
