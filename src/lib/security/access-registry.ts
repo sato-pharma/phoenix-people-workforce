@@ -476,6 +476,9 @@ export const accessRegistry = [
   // this registry keeps saying what actually gates the route.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "DELETE"], pattern: "/api/admin/screening-questions", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/question-prompts", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
+  // The third editor on the same screen: the automatic WhatsApp replies the bot sends by itself.
+  // Same helper, same gate, same reason the two above carry `guard: "domain-helper"`.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/whatsapp-auto-replies", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/**", permission: { resource: "admin", action: "read" } }),
 
   sessionApi({ methods: allMethods, pattern: "/api/attendance/agent/**", permission: { resource: "employees", action: "read" } }),

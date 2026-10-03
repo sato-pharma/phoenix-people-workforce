@@ -30,6 +30,7 @@ import { logError, logWarning } from "@/lib/observability/log";
 import { candidateRegionLabels, recruitmentRegionForArea, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilyLabels, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
+import { loadAutoReplyOverrides } from "@/lib/recruitment/inbound/whatsapp-auto-replies-store";
 import { SESSION_COLUMNS, type SessionRow } from "@/lib/recruitment/inbound/whatsapp-classify-session-row";
 // The owner's own wording for these six questions, when he has saved any. Pure helper + a cached,
 // never-throwing read: with nothing saved (or on a read failure) every prompt keeps its code default.
@@ -974,6 +975,9 @@ export async function finishSession(session: SessionRow, fallbackPhoneNumberId: 
         backgroundLabel,
         expectedSalary,
         experienceLabel,
+        // The owner's wording for the first and last lines, if he has saved any. Best-effort inside
+        // the store, so a database hiccup costs the wording and never the confirmation itself.
+        overrides: await loadAutoReplyOverrides(),
         regionLabel,
         roleLabel,
       }),

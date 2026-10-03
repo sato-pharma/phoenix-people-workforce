@@ -29,6 +29,7 @@
 
 import { candidateRegionCodes, candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilies, candidateRoleFamilyLabels, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
+import { resolveAutoReply, type AutoReplyOverrides } from "@/lib/recruitment/inbound/whatsapp-auto-replies";
 import { areaPlaceHint, regionPlaceHint } from "@/lib/recruitment/inbound/whatsapp-classify-place-hints";
 
 // ── Meta's interactive-message limits ────────────────────────────────────────────────────────────
@@ -630,12 +631,25 @@ export function salaryTooLongText(): string {
   ].join("\n");
 }
 
+/** The closing message's opening line, in code. The owner may reword it on the Screening Questions
+ *  screen (`closing_intro`); the summary lines under it are written from his applicant's own answers
+ *  and are deliberately not editable. */
+export const CLOSING_INTRO_DEFAULT = "Thank you — your application is now recorded as:";
+
+/** The last line of that same message (`closing_outro`). */
+export const CLOSING_OUTRO_DEFAULT =
+  "Our HR team will review your CV and contact you if there is a suitable opening.";
+
 /**
  * The closing message, sent once the answers are in. Plain text, not a menu.
  *
  * Background, experience and expected salary are shown when given (everyone is asked, so they are
  * normally present); the area line is shown only for a Medical Rep, who is the only role asked it —
  * a manager's confirmation reading "Area: —" would look like they missed a question never shown.
+ *
+ * THE FIRST AND LAST LINES ARE THE OWNER'S to reword; everything between them is generated. Keeping
+ * that split is the whole safety property here: a free-typed copy of "Role: …" could tell somebody
+ * their application was recorded against a role they never chose.
  */
 export function classifyThankYouText(input: {
   roleLabel: string;
@@ -650,8 +664,14 @@ export function classifyThankYouText(input: {
   areaName: string | null;
   experienceLabel: string | null;
   expectedSalary: string | null;
+  /** The owner's saved wording for the first and last lines, when he has any. */
+  overrides?: AutoReplyOverrides | null;
 }): string {
-  const lines = ["Thank you — your application is now recorded as:", "", `Role: ${input.roleLabel}`];
+  const lines = [
+    resolveAutoReply({ fallback: CLOSING_INTRO_DEFAULT, key: "closing_intro", overrides: input.overrides }),
+    "",
+    `Role: ${input.roleLabel}`,
+  ];
   if (input.backgroundLabel) lines.push(`Background: ${input.backgroundLabel}`);
   // Printed only when there is one — same rule as every other optional line below. A question the
   // applicant was never asked has no place in the summary of what they told us.
@@ -659,7 +679,10 @@ export function classifyThankYouText(input: {
   if (input.areaName) lines.push(`Area: ${input.areaName}`);
   if (input.experienceLabel) lines.push(`Experience: ${input.experienceLabel}`);
   if (input.expectedSalary) lines.push(`Expected salary: ${input.expectedSalary}`);
-  lines.push("", "Our HR team will review your CV and contact you if there is a suitable opening.");
+  lines.push(
+    "",
+    resolveAutoReply({ fallback: CLOSING_OUTRO_DEFAULT, key: "closing_outro", overrides: input.overrides }),
+  );
   return lines.join("\n");
 }
 

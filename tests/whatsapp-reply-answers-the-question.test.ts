@@ -164,8 +164,11 @@ export async function runWhatsAppReplyAnswersTheQuestionTests(): Promise<void> {
 
   // ── 6. The wiring — the half that can silently regress ────────────────────
   // A classifier nothing calls is dead code, and the reply would quietly stay one-size-fits-all.
+  // The second argument arrived on 2026-10-03, when the owner made these replies editable in
+  // Phoenix — tests/whatsapp-auto-replies.test.ts owns that half. What this still pins is the
+  // FIRST one: the classification happens at the point of sending.
   assert.ok(
-    /textOnlyReplyText\(classifyTextOnlyEnquiry\(input\.body\)\)/.test(APPLICANT_SOURCE),
+    /textOnlyReplyText\(\s*classifyTextOnlyEnquiry\(input\.body\),/.test(APPLICANT_SOURCE),
     "askForCvFile classifies what they wrote — without this every sender gets the greeting reply again",
   );
   assert.ok(
