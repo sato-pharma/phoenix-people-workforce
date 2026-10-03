@@ -10,6 +10,9 @@
 # what the owner asked for. It is a parameter because that judgement may not survive contact with a
 # Ramadan schedule.
 #
+# 🔴 THE TASK RUNS A COPY OF `run-nightly.mjs` IN ~/.claude/scripts, NOT A FILE IN A CHECKOUT — see
+# the note beside the deploy below for the measurement that forced it.
+#
 # WHY A WINDOWS TASK AND NOT CI OR THE APP. The papers are company documents that land in the owner's
 # own `xlsx/` folder beside everything else he keeps, and they read PRODUCTION through the service
 # role in `.env.local`, which exists on this machine and is not a CI secret. A GitHub Action would
@@ -51,19 +54,28 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $scriptRoot)
 $common = (& git -C $repoRoot rev-parse --git-common-dir).Trim()
 if (-not [System.IO.Path]::IsPathRooted($common)) { $common = Join-Path $repoRoot $common }
 $primary = Split-Path -Parent ([System.IO.Path]::GetFullPath($common))
-$printer = Join-Path $primary "scripts\field-day\print-day.mjs"
-
-if (-not (Test-Path $printer)) {
-  throw "the printer is not in the primary checkout yet: $printer — merge the branch that adds it first."
-}
+# Deploy the launcher OUTSIDE every checkout, beside the machine's other scheduled work.
+#
+# 🔴 THE TASK MUST NOT NAME A FILE IN A WORKING TREE, and that indirection is the whole point. The
+# primary is a shared folder nobody pulls — measured 2026-10-03, minutes after the printer merged, it
+# sat 74 commits behind `origin/main` with a live session in it — so a task pointed at a working tree
+# runs whatever that tree happens to hold, or on the first night nothing at all, and says so to no
+# one. The launcher is tiny, uses node builtins only, and fetches the real printer from `origin/main`
+# on every run, so what it builds is always what merged.
+$launcherDir = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".claude\scripts"
+New-Item -ItemType Directory -Force -Path $launcherDir | Out-Null
+$launcher = Join-Path $launcherDir "field-day-nightly.mjs"
+Copy-Item -Path (Join-Path $scriptRoot "run-nightly.mjs") -Destination $launcher -Force
 
 $node = (Get-Command node).Source
 $log = Join-Path $primary "xlsx\field-day-task.log"
 
-# cmd /c, so one line can both run node and append its output to a log. A failure at 21:00 with
-# nobody watching is only discoverable if it wrote down why.
-$command = "`"$node`" `"$printer`" >> `"$log`" 2>&1"
-$action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c $command" -WorkingDirectory $primary
+# 🔴 NODE DIRECTLY, NEVER `cmd /c node ... >> log`. Measured 2026-10-03: with cmd in the chain the
+# task returned 0x1 the instant it fired and wrote NOTHING at all, because `cmd /c "A" "B" >> "C"`
+# strips the outer pair of quotes and mangles the path to node.exe. The launcher writes the log
+# itself, so there is no shell to misquote and a failed run still leaves its reason behind — which is
+# the only thing anybody will ever read about a 21:00 run.
+$action = New-ScheduledTaskAction -Execute $node -Argument "`"$launcher`"" -WorkingDirectory $primary
 $trigger = New-ScheduledTaskTrigger -Daily -At $At
 $settings = New-ScheduledTaskSettingsSet `
   -WakeToRun `
@@ -75,7 +87,8 @@ $settings = New-ScheduledTaskSettingsSet `
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Force -Description @"
 Builds the Phoenix CRM field day papers — one per line for the district managers and a one-page
-summary for the Chief Executive — into the primary checkout's xlsx folder, reading production live.
+summary for the Chief Executive — into the primary checkout's xlsx folder, reading production live
+from origin/main in a throwaway worktree.
 Sends no email and notifies nobody. Installed by scripts/field-day/install-task.ps1.
 "@ | Out-Null
 
@@ -83,6 +96,7 @@ $task = Get-ScheduledTask -TaskName $TaskName
 $info = Get-ScheduledTaskInfo -TaskName $TaskName
 "installed: $TaskName"
 "  runs      daily at $At  (next: $($info.NextRunTime))"
-"  command   $($task.Actions[0].Execute) $($task.Actions[0].Arguments)"
+"  launcher  $launcher"
+"  papers    $(Join-Path $primary 'xlsx')"
 "  log       $log"
 "  state     $($task.State)"
