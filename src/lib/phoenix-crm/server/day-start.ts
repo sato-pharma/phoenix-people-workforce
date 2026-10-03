@@ -52,6 +52,41 @@ export async function loadDayStartOn(seatId: string, isTest: boolean, date: stri
   return mapRow(data as Row | null);
 }
 
+/** A bounded `in (...)` per read, the same shape the Team tab's own batched queries use. */
+const SEAT_CHUNK = 60;
+
+/**
+ * Every seat's start on ONE day, in one batched read — what a manager's Team tab needs for a whole
+ * district, and the SFE Manager's for the whole company, without a query per rep.
+ *
+ * The table's unique index gives at most one row per seat per day, so the reply cannot approach
+ * PostgREST's 1,000-row cap however many seats are asked for; the chunking bounds the URL, nothing
+ * else. A seat with no start is simply absent from the map — the caller reads that as no press,
+ * which is what the feature's rule says a manager sees.
+ */
+export async function loadDayStartsBySeat(
+  seatIds: ReadonlyArray<string>,
+  isTest: boolean,
+  date: string,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (seatIds.length === 0) return out;
+  const supabase = getSupabaseAdmin();
+  for (let index = 0; index < seatIds.length; index += SEAT_CHUNK) {
+    const { data, error } = await supabase
+      .from("phoenix_crm_day_starts")
+      .select("seat_id, started_at")
+      .in("seat_id", seatIds.slice(index, index + SEAT_CHUNK))
+      .eq("is_test", isTest)
+      .eq("started_on", date);
+    throwIfError(error);
+    for (const row of (data ?? []) as Row[]) {
+      if (typeof row.started_at === "string") out.set(String(row.seat_id), row.started_at);
+    }
+  }
+  return out;
+}
+
 /**
  * The minute his SENT plan says he starts the morning, for the day on screen — the other half of the
  * pair this feature completes. Null when he has no sent plan for the day, which is itself worth

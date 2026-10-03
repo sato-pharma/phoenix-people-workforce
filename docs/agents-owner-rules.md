@@ -4472,7 +4472,28 @@ their time send to managers and saved in system."*
   "Your district manager and the SFE Manager see the time and where you are" — is part of the ruling,
   not decoration. Golden Rule #1 forbids a check he cannot see; it does not forbid this.
 
-Pinned by `tests/phoenix-crm-day-start.test.ts`; the database half is
+**Where his managers read it, and the silence that is part of the rule.** He asked the same day:
+*"show the day start time on the manager's team day screen too."* It now appears on both manager
+surfaces — the **day in full** (the page a calendar cell opens, `day-detail-view.tsx`: "Started
+working: 08:42 · his plan said 08:00") and the **Team tab row** ("Started 08:42 · Planned AM 1 of 2
+· …"), which is where the notice's own `tab: "team"` already sends him. The clock on both is the
+server's time read in Cairo and the planned minute beside it is the snapshot on the row, so the two
+screens and the Telegram message cannot print three different figures.
+
+🔴 **A DAY WITH NO PRESS SHOWS NO LINE AT ALL, and that is the rule rather than an omission.** No
+"not confirmed", no "not started yet" half. The press never blocks a visit and was never required of
+him, so printing its absence would put a flag on every rep's row before the first press of a morning
+— and on every day that passed before the button existed, which is the module's whole history up to
+2026-10-03. `dayStartReadLine` and `teamTodayLine` both return the line unchanged when there is no
+start, and the test asserts the word does not appear at all.
+
+The Team tab's read is one batched query for the whole scope (`loadDayStartsBySeat`), beside the day's
+figures rather than inside them: an SFE Manager's Team tab holds every territory in the company, and
+the table's unique index gives at most one row per seat, so the reply cannot approach PostgREST's
+1,000-row cap.
+
+Pinned by `tests/phoenix-crm-day-start.test.ts` (section (f) for the two manager screens) and
+`tests/phoenix-crm-team-today.test.ts`; the database half is
 `supabase/migrations/20261003075803_phoenix_crm_day_starts.sql`.
 
 ## A visit is never dated onto an earlier visit day than its arrival — the 2026-10-02 audit

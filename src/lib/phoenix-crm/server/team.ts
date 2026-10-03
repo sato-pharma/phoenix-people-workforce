@@ -37,6 +37,7 @@ import {
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { offPlanLocationFlag } from "@/lib/phoenix-crm/server/blind-payloads";
+import { loadDayStartsBySeat } from "@/lib/phoenix-crm/server/day-start";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { doubleVisitPlanReach, type DoubleVisitPlanReach } from "@/lib/phoenix-crm/server/double-visit-plans";
 import { loadReadiness, loadRequestRows, mapRequestRow, requestPeople, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
@@ -74,8 +75,12 @@ export type TeamTerritoryRow = {
   pendingRequests: number;
   /** The viewer decides this territory's requests and approves its plans. */
   canReview: boolean;
-  /** The rep's visit day so far — his plan's progress AM and PM apart, and what he logged. */
-  today: TeamTodayFigures & { lastVisitClock: string | null };
+  /**
+   * The rep's visit day so far — when he said he started, his plan's progress AM and PM apart, and
+   * what he logged. `startedClock` is null when he did not press it, which the line reads as nothing
+   * rather than as a flag against him (owner, 2026-10-03; `team-today.ts`).
+   */
+  today: TeamTodayFigures & { lastVisitClock: string | null; startedClock: string | null };
   /**
    * Who on this territory is still recording his day in iReports360 since the team moved — work that
    * now lands in no figure at all. Empty on the rep's OWN row: it is his managers' to read, never his
@@ -105,8 +110,17 @@ function listTypeOf(value: unknown): PhoenixCrmDoctorListType | null {
   return doctorListType(value);
 }
 
-function withClock(figures: TeamTodayFigures): TeamTodayFigures & { lastVisitClock: string | null } {
-  return { ...figures, lastVisitClock: figures.lastVisitAt ? teamClockOf(figures.lastVisitAt) : null };
+function withClock(
+  figures: TeamTodayFigures,
+  startedAt: string | null,
+): TeamTodayFigures & { lastVisitClock: string | null; startedClock: string | null } {
+  return {
+    ...figures,
+    lastVisitClock: figures.lastVisitAt ? teamClockOf(figures.lastVisitAt) : null,
+    // Both clocks are the SERVER's time read in Cairo — the phone never states a zone, here or on the
+    // day page.
+    startedClock: startedAt ? teamClockOf(startedAt) : null,
+  };
 }
 
 /**
@@ -265,17 +279,21 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   const seats: OrgSeat[] = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const seatIds = seats.map((seat) => seat.seatId);
 
-  const [readiness, requestRows, unplannedRows, planEditRows, todayBySeat, visitAsks, vendorLeftovers] = await Promise.all([
-    isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
-    seatIds.length === 0 ? Promise.resolve([]) : loadRequestRows(seatIds, isTest, { pendingOnly: true }),
-    loadUnplannedRows(seatIds, isTest),
-    loadPlanEditRows(seatIds, isTest, viewer.cairoToday),
-    // The VISIT day (until 02:00 the day that just ended), the same day the rep's own Today shows.
-    seatIds.length === 0 ? Promise.resolve(new Map<string, TeamTodayFigures>()) : loadTeamToday(seatIds, isTest, viewer.visitDay),
-    visitAskSummaryOrNull(viewer, isTest),
-    // The vendor mirror knows nothing of test entries, so test mode asks it nothing.
-    isTest ? Promise.resolve(new Map<string, VendorLeftoverRep[]>()) : loadVendorLeftoversBySeat(),
-  ]);
+  const [readiness, requestRows, unplannedRows, planEditRows, todayBySeat, dayStartBySeat, visitAsks, vendorLeftovers] =
+    await Promise.all([
+      isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
+      seatIds.length === 0 ? Promise.resolve([]) : loadRequestRows(seatIds, isTest, { pendingOnly: true }),
+      loadUnplannedRows(seatIds, isTest),
+      loadPlanEditRows(seatIds, isTest, viewer.cairoToday),
+      // The VISIT day (until 02:00 the day that just ended), the same day the rep's own Today shows.
+      seatIds.length === 0 ? Promise.resolve(new Map<string, TeamTodayFigures>()) : loadTeamToday(seatIds, isTest, viewer.visitDay),
+      // The same day again: when each rep said he started it (owner, 2026-10-03). One batched read for
+      // the whole scope, beside the figures rather than inside them — it is a different table.
+      loadDayStartsBySeat(seatIds, isTest, viewer.visitDay),
+      visitAskSummaryOrNull(viewer, isTest),
+      // The vendor mirror knows nothing of test entries, so test mode asks it nothing.
+      isTest ? Promise.resolve(new Map<string, VendorLeftoverRep[]>()) : loadVendorLeftoversBySeat(),
+    ]);
 
   const pendingBySeat = new Map<string, number>();
   for (const row of requestRows) {
@@ -312,7 +330,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       readiness: isTest ? null : (readiness.get(seat.seatId) as SeatReadiness),
       pendingRequests: pendingBySeat.get(seat.seatId) ?? 0,
       canReview: canReviewTerritory(viewer, seat, isTest),
-      today: withClock(todayBySeat.get(seat.seatId) ?? emptyTeamToday()),
+      today: withClock(todayBySeat.get(seat.seatId) ?? emptyTeamToday(), dayStartBySeat.get(seat.seatId) ?? null),
       // 🔴 Golden Rule #1, the same clearing the off-plan location flag gets below: a rep's scope
       // holds his own territory, so this answer would otherwise carry his own row to him.
       stillOnVendor: isLocationBlind(viewer, seat) ? [] : sortVendorLeftovers(vendorLeftovers.get(seat.seatId) ?? []),

@@ -13,9 +13,12 @@ import {
   DAY_START_BUTTON_LABEL,
   DAY_START_BUTTON_NOTE,
   DAY_START_LOCATION_NOTE,
+  DAY_START_READ_LABEL,
+  dayStartReadLine,
   minuteClock,
 } from "../src/lib/phoenix-crm/day-start-rules.ts";
 import { buildOrgIndex, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
+import { emptyTeamToday, teamTodayLine } from "../src/lib/phoenix-crm/team-today.ts";
 import { dayStartDeliveries } from "../src/lib/phoenix-crm/server/notifications.ts";
 
 /**
@@ -43,6 +46,11 @@ import { dayStartDeliveries } from "../src/lib/phoenix-crm/server/notifications.
  *       can read it before pressing.
  *   (e) THE SERVER TAKES NEITHER THE DAY NOR THE TIME FROM THE PHONE — the same closure the module put
  *       on back-dating a visit, and here it is the entire point of the feature.
+ *   (f) THE MANAGERS' OWN SCREENS READ IT, and a day with NO start says nothing at all (owner,
+ *       2026-10-03: "show the day start time on the manager's team day screen too"). The press was
+ *       never required and never blocks a visit, so an "it was not confirmed" sentence would put a
+ *       flag on every row before the first press of the morning — and on every day that passed before
+ *       the button existed.
  */
 
 const ROOT = new URL("../", import.meta.url);
@@ -231,6 +239,65 @@ export function runPhoenixCrmDayStartTests(): void {
       migration,
       /revoke execute on function public\.phoenix_crm_start_day\(jsonb\) from public, anon, authenticated;/,
       "and the RPC is revoked from the browser roles, which inherit EXECUTE through PUBLIC",
+    );
+  }
+
+  // ── (f) The managers' screens, and the silence of a day with no start ──────────────────────────
+  {
+    assert.equal(DAY_START_READ_LABEL, "Started working", "the managers' screens call it what the button called it");
+    assert.equal(
+      dayStartReadLine({ startedAt: STARTED_AT, plannedAmMinute: 8 * 60 }, "08:42"),
+      "08:42 · his plan said 08:00",
+      "the day in full prints the clock beside what his own sent plan had said",
+    );
+    assert.equal(
+      dayStartReadLine({ startedAt: STARTED_AT, plannedAmMinute: null }, "08:42"),
+      "08:42 · he had no sent plan for this day",
+      "a rep who started a day he never planned says so on the manager's screen, exactly as the notice does",
+    );
+
+    // The Team tab's one line: the start OPENS it, and the figures behind it are untouched.
+    const figures = { ...emptyTeamToday(), planSent: true, amPlanned: 2, amPlannedDone: 1, amLogged: 1 };
+    assert.equal(
+      teamTodayLine(figures, "09:30", "08:42"),
+      "Started 08:42 · Planned AM 1 of 2 · PM none planned · logged 1 AM · 0 PM, last at 09:30",
+      "when he pressed it, his managers read it first on the row",
+    );
+    // 🔴 NO "NOT STARTED" HALF, ANYWHERE. This is the assertion that keeps a voluntary report from
+    // turning into a flag: before the first press of a morning every row would carry one.
+    assert.equal(
+      teamTodayLine(figures, "09:30", null),
+      teamTodayLine(figures, "09:30"),
+      "no press, no half — the line is exactly what it was before this feature",
+    );
+    assert.equal(/start/i.test(teamTodayLine(figures, "09:30", null)), false, "and the word does not appear at all without a press");
+    assert.equal(
+      /start/i.test(teamTodayLine(emptyTeamToday(), null, null)),
+      false,
+      "including on a rep with no plan and no visit yet, which is every row at seven in the morning",
+    );
+
+    const page = source("src/components/phoenix-crm/day-detail-view.tsx");
+    assert.ok(page.includes("dayStartReadLine(dayStart"), "the day in full prints it through the rule, never its own wording");
+    assert.ok(page.includes("{DAY_START_READ_LABEL}"), "and labels it from the rule as well");
+    assert.ok(page.includes("{dayStart ? ("), "shown only when he pressed it");
+    assert.equal(
+      /not confirmed|did not press|no start/i.test(page),
+      false,
+      "🔴 a day with no start is a MISSING LINE, never a sentence written against him",
+    );
+
+    // One batched read for the whole scope — an SFE Manager's Team tab holds every territory.
+    const service = source("src/lib/phoenix-crm/server/day-start.ts");
+    const batch = service.slice(service.indexOf("export async function loadDayStartsBySeat("));
+    assert.ok(batch.length > 200, "loadDayStartsBySeat was found");
+    assert.ok(batch.includes('.in("seat_id"'), "batched over the seats, never one query per rep");
+    assert.ok(batch.includes('.eq("is_test", isTest)'), "and a test entry never leaks into a real reading");
+
+    const team = source("src/lib/phoenix-crm/server/team.ts");
+    assert.ok(
+      team.includes("loadDayStartsBySeat(seatIds, isTest, viewer.visitDay)"),
+      "the Team tab asks for the VISIT day — the same day its own figures are for, not the calendar date",
     );
   }
 

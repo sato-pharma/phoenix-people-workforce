@@ -89,16 +89,26 @@ export function teamClockOf(capturedAt: string): string {
   return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hour12: false, minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(capturedAt));
 }
 
-/** The one line a manager reads: the plan's progress AM and PM apart, then what was logged. */
-export function teamTodayLine(figures: TeamTodayFigures, lastVisitClock: string | null): string {
+/**
+ * The one line a manager reads: when the rep said he started, then the plan's progress AM and PM
+ * apart, then what was logged.
+ *
+ * 🔴 THE START OPENS THE LINE ONLY WHEN HE PRESSED IT (owner, 2026-10-03). There is deliberately no
+ * "not started yet" half: the press never blocks a visit and was never required, so printing its
+ * absence would put an alarm on every rep's row at seven in the morning and on every day that passed
+ * before the button existed. Absence is read as nothing — the same rule the day page keeps
+ * (`day-start-rules.ts`).
+ */
+export function teamTodayLine(figures: TeamTodayFigures, lastVisitClock: string | null, startedClock?: string | null): string {
   const logged =
     figures.amLogged === 0 && figures.pmLogged === 0
       ? "no visit logged yet"
       : `logged ${figures.amLogged} AM · ${figures.pmLogged} PM${lastVisitClock ? `, last at ${lastVisitClock}` : ""}`;
-  if (!figures.planSent) return `No plan sent for today · ${logged}`;
+  const started = startedClock ? `Started ${startedClock} · ` : "";
+  if (!figures.planSent) return `${started}No plan sent for today · ${logged}`;
   // A list with nothing planned says so, the way the rep's own Today does — never "0 of 0".
   const half = (list: "AM" | "PM", done: number, planned: number) => (planned === 0 ? `${list} none planned` : `${list} ${done} of ${planned}`);
-  return `Planned ${half("AM", figures.amPlannedDone, figures.amPlanned)} · ${half("PM", figures.pmPlannedDone, figures.pmPlanned)} · ${logged}`;
+  return `${started}Planned ${half("AM", figures.amPlannedDone, figures.amPlanned)} · ${half("PM", figures.pmPlannedDone, figures.pmPlanned)} · ${logged}`;
 }
 
 /** Where the line sits on the card's colour rule: all planned done, some done, none done, no plan. */

@@ -252,7 +252,9 @@ function TodayLine({ row }: { row: TeamTerritoryRow }) {
   return (
     <p className="flex min-w-0 items-start gap-2 text-xs font-semibold leading-5 text-slate-700">
       <span aria-hidden className={cn("mt-1.5 h-2 w-2 shrink-0", TODAY_TONE_SQUARE[teamTodayTone(row.today)])} />
-      <span className="min-w-0 break-words">{teamTodayLine(row.today, row.today.lastVisitClock)}</span>
+      {/* The start opens the line when he pressed it, and is absent when he did not — never a
+          "not started" flag on a row at seven in the morning (`team-today.ts`). */}
+      <span className="min-w-0 break-words">{teamTodayLine(row.today, row.today.lastVisitClock, row.today.startedClock)}</span>
     </p>
   );
 }

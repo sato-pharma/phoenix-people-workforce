@@ -58,6 +58,21 @@ export function runPhoenixCrmTeamTodayTests(): void {
       "a list with nothing planned says so — never \"PM 0 of 0\" (browser walk, 2026-09-30)",
     );
 
+    // When he pressed "Show your manager you started working", it opens the line (owner, 2026-10-03).
+    assert.equal(
+      teamTodayLine(gz6, "17:40", "08:42"),
+      "Started 08:42 · Planned AM 1 of 2 · PM 0 of 1 · logged 1 AM · 1 PM, last at 17:40",
+      "the start comes first, before the plan's progress",
+    );
+    // 🔴 AND NOTHING WHEN HE DID NOT PRESS IT. There is no "not started" half: it would put a flag on
+    // every row before the first press of a morning, and the press was never required of him.
+    assert.equal(teamTodayLine(gz6, "17:40", null), line, "no press leaves the line exactly as it was");
+    assert.equal(
+      /start/i.test(teamTodayLine(emptyTeamToday(), null, null)),
+      false,
+      "and the word appears nowhere on a row with no plan, no visit and no press",
+    );
+
     assert.equal(teamTodayTone(gz6), "progress");
     assert.equal(
       teamTodayTone({ ...gz6, amPlannedDone: 2, pmPlannedDone: 1 }),
