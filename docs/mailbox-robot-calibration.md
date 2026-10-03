@@ -213,3 +213,58 @@ reintroduced "as a suggestion the person can edit" is exactly the shape the old 
 `if (!address) continue;` already guards the holder map higher in `sweep-deps.ts`, so an unscoped
 source match passed with the real guard deleted. Break-and-watch caught it; that is the only reason
 the assertion slices the loop out by hand.
+
+## The invitation carries the password, and that is the whole provisioning flow
+
+Measured on production 2026-10-03, from the real message after the robot created
+`hr.mailbox@satopharma.com`.
+
+Turbify's **create** hands back nothing. It makes the mailbox `Pending` and emails the credential:
+
+```
+Subject: An administrator for [satopharma.com] has invited you to activate
+         [hr.mailbox@satopharma.com]
+From:    Turbify <no-reply@turbify.com>
+
+  Username: hr.mailbox@satopharma.com
+  Temp Password: <15 characters>
+  Activate your account <https://mail.turbify.com/login?>
+```
+
+So the `One-time password` dialog the robot waited for was never coming on the create path — it
+belongs only to a RESET. Three real mailboxes were created and stranded `Pending` while the sweep
+reported `provisioned: 0`, and `TURBIFY_INVITE_RECIPIENT` was `""`, so the email that carried their
+only credential went nowhere at all.
+
+### What the reader refuses, and why each refusal exists
+
+| Refusal | The failure it prevents |
+| --- | --- |
+| the message is not from `no-reply@turbify.com` | anything else claiming to be an invitation |
+| the invitation activates a different mailbox | **one invite inbox receives every hire's invitation**, and `adel.sayed@satopharma.com` contains `el.sayed@satopharma.com` — matched loosely, the robot would set a password it then recorded against the wrong person |
+| the invitation names more than one mailbox | no way to tell which one its temp password opens |
+| no `Temp Password:` line | Turbify reworded it; refuse and re-calibrate rather than guess at another label |
+| the inbox could not be read | an unreadable inbox is not an empty one |
+
+Two traps the body itself sets. Its help section prints `*Password:* {The password you create during
+the activation...}`, so a reader that accepted the plain `Password:` label returns `{The` as the
+credential. And the subject carries `[satopharma.com]` in its own brackets — a **domain**, not a
+mailbox — so the address parse has to reject it.
+
+**No refusal may quote the credential.** These strings reach the production log and the sweep's own
+report, where a temp password would outlive the mailbox. A test asserts it for every refusal path.
+
+### Why the recipient is a constant, not an env var
+
+`railway variables --set` triggers a redeploy that **bypasses the CI deploy gate** (AGENTS.md §2.3),
+and the address this points at decides where every new hire's credential is delivered. That belongs
+in a reviewed diff. It is `hr.mailbox@satopharma.com` — a mailbox Phoenix owns and reads, never an
+employee and never the owner's personal address, so no person receives a new hire's credential.
+
+### Still to calibrate
+
+The activation page at `mail.turbify.com/login` is **unmeasured**: signing in with a temp password and
+being asked to choose a password is a flow no session has read off the live page yet. It is
+deliberately not written blind — a guessed selector produces a driver that clicks nothing and reports
+a clean run, which is how three flows in this module already shipped doing nothing. The next real
+invitation lands in `hr.mailbox@`, and that is the one to read it from.

@@ -917,6 +917,7 @@ import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runMailboxOffboardingRobotTests } from "./mailbox-offboarding-robot.test.ts";
 import { runNewHireMailboxRobotTests } from "./new-hire-mailbox-robot.test.ts";
+import { runNewHireMailboxInvitationTests } from "./new-hire-mailbox-invitation.test.ts";
 import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
 import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts";
 import { runNewHireMailboxAdoptTests } from "./new-hire-mailbox-adopt.test.ts";
@@ -4039,6 +4040,14 @@ await runTest(
   + "malformed local part and a hire more than 14 days out are each refused; and every console "
   + "locator stays semantic — an aria-label, a form name or visible text, never a captured CSS path)",
   runNewHireMailboxRobotTests,
+);
+await runTest(
+  "new hire mailbox invitation (Turbify's CREATE hands back no password at all — it emails a "
+  + "Temp Password line, so this is the whole provisioning credential; the invitation is matched "
+  + "to its mailbox by IDENTITY, because one invite inbox receives every hire's and "
+  + "adel.sayed@ contains el.sayed@; a changed label REFUSES rather than guessing; an unreadable "
+  + "inbox is never read as an empty one; and no refusal may ever quote the credential)",
+  runNewHireMailboxInvitationTests,
 );
 await runTest(
   "new hire mailbox initial password store (the one recoverable password in the system — so NO role "

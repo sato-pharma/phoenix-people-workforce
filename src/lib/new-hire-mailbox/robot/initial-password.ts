@@ -92,10 +92,25 @@ export function explainUnusableInitialPassword(password: string | null | undefin
 export const INITIAL_PASSWORD_AUDIENCE = "super_admin_only" as const;
 
 /**
- * Turbify's invite field is left EMPTY, by the owner's instruction — nobody is emailed.
+ * Where Turbify sends the activation invitation for a mailbox the robot creates.
  *
- * Exported as a constant rather than an inline blank so the intent cannot be read as an oversight
- * and quietly "fixed" by filling in an address. If Turbify ever refuses the form without one, the
- * robot fails closed and reports it rather than inventing a recipient.
+ * 🔴 THIS WAS EMPTY, AND THAT IS WHY NO MAILBOX THE ROBOT MADE COULD EVER BE FINISHED. Measured on
+ * production 2026-10-03: Turbify's CREATE does not hand back a password — it makes the mailbox
+ * `Pending` and emails the credential, as a plain `Temp Password:` line. With no recipient that
+ * email went nowhere, so three real mailboxes sat `Pending` with no password and no route to one,
+ * while the sweep reported `provisioned: 0`. The instruction behind the blank was that nobody should
+ * be emailed; it was written while the one-time-password dialog was believed to carry the password,
+ * and a permanently unreachable mailbox is not what it was protecting.
+ *
+ * It is a mailbox **Phoenix itself owns and reads** — not an employee, not the owner's personal
+ * address — so no person ever receives a new hire's credential. `hr.mailbox@satopharma.com` exists
+ * for this and nothing else, and the robot reads its invitations over IMAP
+ * (`src/lib/new-hire-mailbox/robot/invitation.ts`).
+ *
+ * Still a constant rather than an env var, for two reasons: `railway variables --set` triggers a
+ * redeploy that BYPASSES the CI deploy gate (AGENTS.md §2.3), and the address this points at decides
+ * where every new hire's credential is delivered — that belongs in a reviewed diff, not a dashboard
+ * field. If Turbify ever refuses the form, the robot fails closed and reports it rather than
+ * inventing a recipient.
  */
-export const TURBIFY_INVITE_RECIPIENT = "" as const;
+export const TURBIFY_INVITE_RECIPIENT = "hr.mailbox@satopharma.com" as const;
