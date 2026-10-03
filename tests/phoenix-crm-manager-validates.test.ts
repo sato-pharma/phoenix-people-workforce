@@ -166,12 +166,16 @@ export function runPhoenixCrmManagerValidatesTests(): void {
     }
   }
 
-  // ── 3. A manager validates a CARRIED-OVER customer and no other mode ─────────────────────────
+  // ── 3. A manager validates a customer ALREADY ON THE LIST, and no other mode ──────────────────
   {
     const list = source("src/lib/phoenix-crm/server/list.ts");
+    // `listed` joined `reference` on the owner's answer of 2026-10-03, asked directly: a customer the
+    // SFE loaded from a sheet is already on the list and already graded, so validating him is the same
+    // act as validating a carried-over one — and without it a VACANT seat's loaded list could be worked
+    // through by nobody. `new` and `outside` are still the rep's, for the reason they always were.
     assert.match(
       list,
-      /if \(validatedAs === "manager" && mode !== "reference"\) \{/,
+      /if \(validatedAs === "manager" && mode !== "reference" && mode !== "listed"\) \{/,
       'the add and out-of-list modes file a request the manager himself decides — they stay the rep\'s',
     );
     // The gate is the new one, not the rep-write one widened.

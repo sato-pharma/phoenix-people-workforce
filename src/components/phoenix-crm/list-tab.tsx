@@ -244,6 +244,12 @@ export function ListTab({
       go({ name: "validate", contactCrmId: customer.referenceContactCrmId });
       return;
     }
+    // A customer the SFE loaded from a sheet: on the list, waiting to be validated, and carrying no
+    // iReports360 contact at all. He is validated at the door exactly like a carried-over one.
+    if (action === "validate" && customer.status === "pending") {
+      go({ name: "validate-listed", customerId: customer.customerId });
+      return;
+    }
     openCustomer(customer.customerId);
   }
 
@@ -306,6 +312,21 @@ export function ListTab({
             onBack={home}
             onSaved={placeSaved}
             subject={{ mode: "reference", contactCrmId }}
+          />
+        );
+        break;
+      }
+      case "validate-listed": {
+        const { customerId } = current;
+        body = (
+          <ValidateScreen
+            {...base}
+            key={`validate-listed-${customerId}`}
+            onAddPlaceInstead={addPlaceInstead}
+            onAskToDrop={(id) => go({ name: "drop", customerId: id, contactCrmId: null })}
+            onBack={home}
+            onSaved={placeSaved}
+            subject={{ mode: "listed", customerId }}
           />
         );
         break;

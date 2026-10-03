@@ -142,9 +142,13 @@ export function checkListAdmissionScreens(): void {
   // ── 2. One button per row, drawn from the rule ────────────────────────────────────────────────
   const board = read("src/components/phoenix-crm/customer-list-board.tsx");
   assert.match(board, /const action = listRowAction\(customer\);/, "the row's button comes from listRowAction, never a rule of its own");
+  // Only the territory's rep validates; anyone else is offered Open on the same row. The iReports360
+  // contact is NOT part of that test any more (2026-10-02): a customer the SFE loaded from a sheet has
+  // no vendor row at all and must still be validated at the door, so falling back to Open for him would
+  // leave him on the list with no way off it.
   assert.match(
     board,
-    /if \(action === "validate" && \(!canValidate \|\| customer\.referenceContactCrmId === null\)\) return "open";/,
+    /if \(action === "validate" && !canValidate\) return "open";/,
     "only the territory's rep validates; anyone else is offered Open on the same row",
   );
   assert.doesNotMatch(board, /\browActions\s*[:?]/, "a section can no longer hand the row buttons of its own");

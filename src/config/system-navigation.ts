@@ -4287,6 +4287,27 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
+    // Load a territory's customer list from a sheet — the SFE's third route onto a list (the owner's
+    // ask, 2026-10-02): he sends the rep a sheet, the rep fills it in, he uploads it.
+    //
+    // 🔴 A CARD, NOT A BACKLOG ROW, FOR THE REASON THE CUSTOMER LINKS CARD BELOW RECORDS.
+    // `tests/navigation-granted-but-unreachable` caught this page the moment it shipped, and the fix
+    // for a page the owner asked for is the link — recording it as unreachable would silence a true
+    // report about a screen whose two readers would otherwise have to type the address.
+    //
+    // `approve`, not `read` and not `update`: it writes a whole list at once WITH the grades, which on
+    // the ordinary path is the district manager's decision and SFE's approval taken one customer at a
+    // time — and `approve` is the verb the SFE Manager actually holds (`phoenix_crm: ["read",
+    // "approve"]`), so naming him against `update` would have granted him nothing anywhere. That is
+    // exactly what tests/nav-roles-name-only-permission-holders caught. Same verb as moving a place.
+    href: "/admin/phoenix-crm/list-template",
+    icon: ClipboardList,
+    label: "Load a Customer List",
+    description: "Send a rep a sheet for his territory and load his list back from it. Each customer lands under To validate for him to validate at the clinic — the one part no sheet can carry.",
+    permissions: [{ resource: "phoenix_crm", action: "approve" }],
+    roles: ["Super Admin", "SFE Manager"],
+  },
+  {
     // Customer Links — Wave 2's review screen, and the door to the 360 view behind it (the owner,
     // 2026-09-30: the system suggests links and the Super Admin confirms each one).
     //
@@ -4888,6 +4909,10 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           // Beside the board rather than inside it, and in this band because a duplicate on a
           // rep's list IS a CRM data-quality question — the same kind the two rows above ask.
           "/admin/phoenix-crm/duplicates",
+          // Beside the duplicates row: both are the SFE's work ON a rep's list rather than a board
+          // that measures him, and a card left out of every band is appended to the FIRST one under a
+          // heading nobody chose (tests/nav-hub-promotion catches that, and caught the row below).
+          "/admin/phoenix-crm/list-template",
           // Data quality rather than a board: it answers whether two rows in two modules are one
           // person, which is the same kind of question as the two integrity rows above it. A card
           // left out of every band here is not dropped — it is appended to the FIRST band and filed

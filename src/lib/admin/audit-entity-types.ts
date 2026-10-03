@@ -125,6 +125,8 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   payroll_batch: true,
   permission_override: true,
   pharmacy_search_discovery: true,
+  phoenix_crm_list_template: true,
+  phoenix_crm_list_template_import: true,
   phoenix_crm_reports_export: true,
   planning_calendar_export: true,
   private_calendar_data_dispute: true,

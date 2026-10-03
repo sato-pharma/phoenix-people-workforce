@@ -89,13 +89,19 @@ export type CustomerListVariant = "pending" | "active" | "outside" | "dropped";
 /**
  * The one button a customer's row carries, for THIS viewer.
  *
- * `listRowAction` decides it (Validate while not validated, Open once he is). Only the territory's rep
- * validates, and only a customer carried over from iReports360 has an entry the Validate screen opens
- * on — so anyone else, or a row with no such entry, is offered Open, which is exactly what they can do.
+ * `listRowAction` decides it (Validate while not validated, Open once he is), and only the territory's
+ * rep validates — anyone else is offered Open, which is exactly what they can do.
+ *
+ * 🔴 IT NO LONGER ASKS FOR AN iREPORTS360 CONTACT. It used to fall back to Open for a pending row
+ * with `referenceContactCrmId === null`, because the Validate screen could only open on a live vendor
+ * entry. Since 2026-10-02 a customer can reach the list from the SFE's own sheet, with no vendor row
+ * anywhere — and that customer must be validated at the door like any other, through the `listed`
+ * subject. Falling back to Open there left him on the list with no way off it, which is the shape of
+ * defect the owner's rule 1 forbids.
  */
 export function rowActionFor(customer: ListCustomer, canValidate: boolean): ListRowAction | null {
   const action = listRowAction(customer);
-  if (action === "validate" && (!canValidate || customer.referenceContactCrmId === null)) return "open";
+  if (action === "validate" && !canValidate) return "open";
   return action;
 }
 

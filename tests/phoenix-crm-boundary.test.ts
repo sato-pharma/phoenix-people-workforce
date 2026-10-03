@@ -123,6 +123,13 @@ const ROUTE_GATES: RouteGate[] = [
   // gate (`territoryForRead`, the first line of `loadTerritoryList`) before the board is ever loaded,
   // and is scoped to that seat's rep. The gate alone — never the whole List load a second time.
   get("list/board"),
+  // The SFE's customer-list template (owner's ask, 2026-10-02): the sheet for one territory out, the
+  // filled sheet back. `update` — the same gate as Settings — because it writes a whole list at once
+  // WITH the grades, which on the ordinary path is the district manager's decision and SFE's approval
+  // taken one customer at a time. Narrowed again in the service to the SFE Manager and the Super Admin,
+  // through the integrity board's own two-reader predicate.
+  exportGet("list/template", "approve"),
+  post("list/template/import", "approve"),
   post("list/validate", "create"),
   // The name and speciality, corrected after validating (owner, 2026-09-22): the rep's own write.
   post("list/rename", "create"),
@@ -592,6 +599,17 @@ const LATER_MIGRATIONS = [
   // last among them — liveMigrationSql applies each replacement in order and the last one wins. One
   // block inserted into 20261002205436's body and nothing else: no table, no column, no constraint.
   "supabase/migrations/20261002222403_phoenix_crm_visit_day_never_before_arrival.sql",
+  // The SFE's list template (owner's ask, 2026-10-02): the bulk loader, and `phoenix_crm_validate_customer`
+  // gaining the `listed` mode so a customer loaded from a sheet — who has no iReports360 contact at all —
+  // can still be validated at the door. It replaces no save_visit, so it appends safely after the entry
+  // that does, and it creates no table: two columns on `phoenix_crm_customers` and nothing else.
+  //
+  // 🔴 20261002224250_phoenix_crm_seat_reference_and_place_removal.sql is DELIBERATELY ABSENT, and the
+  // reason is the table rule just below: it creates `phoenix_crm_backup_20261002.misminted_reference_customers`,
+  // a pre-image in its own dated schema, which is not a `public.phoenix_crm_*` table and cannot be locked
+  // like one. Its functions are all REPLACEMENTS already in `callable`, so nothing it adds is missed here —
+  // and `liveMigrationSql` reads the bodies this entry replaces anyway.
+  "supabase/migrations/20261003000753_phoenix_crm_list_template_bulk_add.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

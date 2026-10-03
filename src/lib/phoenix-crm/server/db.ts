@@ -32,6 +32,8 @@ const REFUSALS: Record<string, Refusal> = {
   // Removing a clinic is kept on record exactly as a move is (2026-10-02), so the reason has the same
   // bounds and the same sentence: the person refused here is a mover, and he is told the length.
   reason_required: { status: 400, message: "Write why the place is removed (at least 10 characters)." },
+  // The SFE's list upload, and the only person who can meet it is the one holding the sheet.
+  too_many_rows: { status: 400, message: "That sheet holds too many customers for one upload. Split it and load it in two." },
   not_validated: { status: 409, message: "Validate this customer first." },
   same_grade: { status: 409, message: "The customer already has this grade." },
   already_pending: { status: 409, message: "A request for this customer is already waiting for a decision." },

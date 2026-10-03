@@ -75,7 +75,7 @@ import { CUSTOMER_NAME_MAX, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, t
 import { listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
 import { receivingDaysLabel } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
-import type { ListCustomer, ListPlace, ListReferenceEntry, TerritoryListView, ValidateResult } from "@/lib/phoenix-crm/view-types";
+import type { ListCustomer, ListPlace, TerritoryListView, ValidateResult } from "@/lib/phoenix-crm/view-types";
 
 /** The server keeps a speciality to this length (entry-rules.ts parseNewCustomer). */
 const SPECIALITY_TEXT_MAX = 80;
@@ -135,6 +135,8 @@ export type ListScreen =
   | { name: "home" }
   | { name: "customer"; customerId: string }
   | { name: "validate"; contactCrmId: number }
+  /** A customer the SFE loaded from a sheet: on the list, not validated, and in iReports360 nowhere. */
+  | { name: "validate-listed"; customerId: string }
   | { name: "new" }
   | { name: "restore"; customerId: string; from: "customer" | "list" }
   | { name: "add-request"; customerId: string }
@@ -348,8 +350,18 @@ function RequestNoteField({ disabled, id, onChange, value }: { disabled: boolean
 
 // ── Validating a customer ───────────────────────────────────────────────────────────────────────
 
-/** A customer carried over from iReports360, or "Add new customer" (validated on the spot). */
-export type ValidateSubject = { mode: "reference"; contactCrmId: number } | { mode: "new" };
+/**
+ * A customer carried over from iReports360, one the SFE loaded from a sheet, or "Add new customer"
+ * (validated on the spot).
+ *
+ * `listed` is the third because a loaded customer is on the list ALREADY and has no vendor contact, so
+ * neither of the other two can reach him: `reference` resolves a contact id, and `new` would create a
+ * second row for somebody who is on the list.
+ */
+export type ValidateSubject =
+  | { mode: "reference"; contactCrmId: number }
+  | { mode: "listed"; customerId: string }
+  | { mode: "new" };
 
 /**
  * The state of a carried-over customer read from his OWN surviving row, for when iReports360 no longer
@@ -373,8 +385,15 @@ function carriedOverState(customer: ListCustomer | null): ReferenceState | null 
 
 function validateGone(view: TerritoryListView, subject: ValidateSubject, state: ReferenceState | null): string | null {
   // A manager of the territory validates a CARRIED-OVER customer beside its rep (owner, 2026-10-02);
-  // "Add new customer" stays the rep's, because the request it files is the manager's to decide.
-  if (subject.mode === "reference" ? !view.canValidateReference : !view.canEdit) return EDIT_ONLY;
+  // "Add new customer" stays the rep's, because the request it files is the manager's to decide. A
+  // customer the SFE loaded is the same work as a carried-over one — it is the list's own customer,
+  // waiting at a door — so it takes the same gate.
+  if (subject.mode === "new" ? !view.canEdit : !view.canValidateReference) return EDIT_ONLY;
+  if (subject.mode === "listed") {
+    if (!state) return NOT_ON_LIST;
+    if (state === "validated") return "This customer is already validated. Find it under Your list.";
+    if (state === "dropped") return "This customer is in the Archive. Open it there to ask to bring it back to your list.";
+  }
   if (subject.mode === "reference") {
     if (!state) return "This customer is no longer on the territory's reference list.";
     if (state === "validated") return "This customer is already validated. Find it under Your list.";
@@ -433,11 +452,15 @@ export function ValidateScreen({
   const [problem, setProblem] = useState<string | null>(null);
 
   const reference = subject.mode === "reference" ? (view.reference.find((entry) => entry.contactCrmId === subject.contactCrmId) ?? null) : null;
+  /** The loaded customer this screen is validating, read from the list by id. */
+  const listed = subject.mode === "listed" ? (view.customers.find((customer) => customer.customerId === subject.customerId) ?? null) : null;
   // The carried-over customer this entry was minted as, whatever became of him since. Read whatever his
   // status, because he is the fallback when iReports360 ended the rep's assignment and the live
   // reference entry above is gone (`carriedOverState`); the pending one is what a drop is asked for.
   const carried =
-    subject.mode === "reference" ? (view.customers.find((customer) => customer.referenceContactCrmId === subject.contactCrmId) ?? null) : null;
+    subject.mode === "reference"
+      ? (view.customers.find((customer) => customer.referenceContactCrmId === subject.contactCrmId) ?? null)
+      : listed;
   const pendingCustomer = carried?.status === "pending" ? carried : null;
   // His name, kind and grade: iReports360's while it still carries him, else his own row's.
   const subjectFacts = reference ?? carried;
@@ -447,6 +470,8 @@ export function ValidateScreen({
   /** iReports360 no longer has him assigned to this rep, and his row is all that is left of him. */
   const carriedOverOnly = subject.mode === "reference" && !reference && carried !== null;
   const title = subject.mode === "new" ? "Add new customer" : "Validate a customer";
+  /** What the SFE wrote for him in the sheet: where to find the customer, and anything else. */
+  const intake = listed?.intake ?? null;
 
   function close() {
     if (saving) return;
@@ -479,6 +504,9 @@ export function ValidateScreen({
     const place = placePayload(photo, draft);
     const phoneValue = phone.trim() || null;
     if (subject.mode === "reference") return { seatId, test, mode: "reference", referenceContactCrmId: subject.contactCrmId, phone: phoneValue, place };
+    // His name, list and grades were set when the sheet was loaded; the validation adds the place and
+    // nothing else, so none of them is sent back and none of them can be changed at the door.
+    if (subject.mode === "listed") return { seatId, test, mode: "listed", customerId: subject.customerId, phone: phoneValue, place };
     return {
       seatId,
       test,
@@ -565,7 +593,11 @@ export function ValidateScreen({
           <CustomerHeading customer={subjectFacts}>
             <div className="mt-2">
               {referenceAddress ? <Detail label="Address in iReports360">{referenceAddress}</Detail> : null}
-              <Detail label="Last visit in iReports360">{referenceLastVisitText(subjectReference)}</Detail>
+              {subjectReference ? <Detail label="Last visit in iReports360">{referenceLastVisitText(subjectReference)}</Detail> : null}
+              {/* What the SFE wrote for him when the list was loaded. The place is still captured here;
+                  this is how he knows which door to stand at. */}
+              {intake?.where ? <Detail label="Where to find him">{intake.where}</Detail> : null}
+              {intake?.note ? <Detail label="Note">{intake.note}</Detail> : null}
             </div>
           </CustomerHeading>
           {/* His assignment in iReports360 ended; his row on this list did not, and the rule is that he
@@ -582,11 +614,14 @@ export function ValidateScreen({
             </CrmNote>
           ) : null}
           {/* Owner, 2026-09-22, kept 2026-09-29: validating is the captures and nothing else, once and for
-              good. The name and the grade are changed later, from the customer's own page. */}
+              good. The name and the grade are changed later, from the customer's own page. A loaded
+              customer's grade is the SFE's, not iReports360's, so the sentence says whose it is. */}
           <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
-            The name and grade are iReports360&apos;s for now — you can change them later from the customer&apos;s page. The signboard photo,
-            the location and the days and hours become this customer&apos;s real record, and its visits start counting. You validate a customer
-            once.
+            {subject.mode === "listed"
+              ? "The name and grade were set when this list was loaded — the name is yours to correct later from the customer’s page. "
+              : "The name and grade are iReports360’s for now — you can change them later from the customer’s page. "}
+            The signboard photo, the location and the days and hours become this customer&apos;s real record, and its visits start counting.
+            You validate a customer once.
           </p>
           {/* Owner, 2026-09-30: the phone is asked for here, optional, and saved with the validation. */}
           <CustomerPhoneField

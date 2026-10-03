@@ -37,6 +37,7 @@ export const LIST_CUSTOMER_BASE: ListCustomer = {
   validatedAt: null,
   validatedByName: null,
   reference: null,
+  intake: null,
   droppedReason: null,
   droppedNote: null,
   statusChangedAt: "2026-09-01T00:00:00Z",

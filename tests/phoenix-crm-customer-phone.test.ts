@@ -115,8 +115,12 @@ export function runPhoenixCrmCustomerPhoneTests(): void {
   {
     const screens = source("src/components/phoenix-crm/list-screens.tsx");
     const validate = screens.slice(screens.indexOf("export function ValidateScreen("), screens.indexOf("export function EditDetailsScreen("));
-    assert.equal((validate.match(/<CustomerPhoneField/g) ?? []).length, 2, "the List's Validate asks for it — a carried-over customer and Add new customer");
-    assert.equal((validate.match(/phone: phoneValue/g) ?? []).length, 2, "and sends it in both");
+    assert.equal((validate.match(/<CustomerPhoneField/g) ?? []).length, 2, "the List's Validate asks for it — one field for a customer already on the list, one for Add new customer");
+    // THREE sends, TWO fields, and that is the right shape rather than a drift: a customer carried
+    // over from iReports360 and one the SFE loaded from a sheet (`listed`, 2026-10-02) are the same
+    // screen and share the one field, but they are two payload modes and each has to carry the phone.
+    // The count is what catches a mode added later that quietly drops it.
+    assert.equal((validate.match(/phone: phoneValue/g) ?? []).length, 3, "and every mode sends it — reference, listed and new");
     const outside = source("src/components/phoenix-crm/out-of-list-entry.tsx");
     assert.match(outside, /<CustomerPhoneField/, "Someone new, met on an out-of-list visit, is asked too");
     assert.match(outside, /phone: phone\.trim\(\) \|\| null,/, "and it is sent with his validation");
@@ -128,7 +132,10 @@ export function runPhoenixCrmCustomerPhoneTests(): void {
   // ── 6. Only what the rep types — never the old list's phones ────────────────────────────────────
   {
     const list = source("src/lib/phoenix-crm/server/list.ts");
-    assert.match(list, /primary_pharmacy_name, phone";/, "the list reads the customer's own phone column");
+    // No `";` on the end: this pins that the select names the CUSTOMER's own phone column, not that
+    // phone is the last one in it — `intake_where`/`intake_note` were appended after it on 2026-10-02
+    // and a position test would have gone red for a change that has nothing to do with the phone.
+    assert.match(list, /primary_pharmacy_name, phone\b/, "the list reads the customer's own phone column");
     assert.match(list, /phone: text\(row\.phone\),/, "and hands it over as it is stored");
     const daily = source("src/lib/phoenix-crm/server/daily-plan-report.ts");
     assert.match(daily, /customer:phoenix_crm_customers!customer_id\([^)]*\bphone\)/, "the daily plan reads the phone from the customer row");

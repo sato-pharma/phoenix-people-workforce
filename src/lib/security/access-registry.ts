@@ -877,6 +877,14 @@ export const accessRegistry = [
   // the photo; it resolves and returns, persisting nothing, so audit is classified but not required.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["POST"], pattern: "/api/phoenix-crm/location", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // The module's settings: the Super Admin's only (`update`, narrowed again by assertSettingsWriter).
+  // The SFE's customer-list template (owner's ask, 2026-10-02): the download for one territory, and the
+  // filled sheet back. `approve`, the same gate as MOVING A PLACE — the module's other act reserved to
+  // the SFE Manager and the Super Admin — and narrowed again in the service by the integrity board's own
+  // predicate. NOT `update`: SFE holds `read` and `approve` only, so an update gate would silently have
+  // made this the Super Admin's alone. The GET audits as an export because a workbook naming a
+  // territory's customers and their grades leaves the building; the POST as a mutation.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/phoenix-crm/list/template", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/template/import", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/settings", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/settings", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/approvals/early-bird/:id/decision", permission: { resource: "early_birds", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
