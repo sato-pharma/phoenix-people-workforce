@@ -102,8 +102,38 @@ export function alertsEnabled() {
  *   manifest: string,
  *   vulnerableRange: string,
  *   patchedVersion: string | null,
+ *   scope: string,
+ *   outOfAuditReach: string | null,
  * }} AlertRow
  */
+
+/**
+ * The manifests `pnpm audit` walks when run at the repository root. See `classifyAlerts` below for why
+ * this is the root pair and nothing else, and for the fail-closed rule that governs it.
+ */
+export const AUDITED_MANIFESTS = new Set(['package.json', 'pnpm-lock.yaml']);
+
+/**
+ * Why this alert cannot turn `validate` red — or `null` when it can, which is deliberately also the
+ * answer whenever the reason could not be positively read.
+ *
+ * @param {{ scope: string, manifest: string }} row
+ * @returns {string | null}
+ */
+export function whyOutOfAuditReach(row) {
+  const manifest = row.manifest;
+  // An ABSENT manifest is not an out-of-tree manifest. "(unknown manifest)" and an empty string are
+  // absent answers, and the fail-closed rule says an absent answer stays failing — so they are
+  // excluded here rather than being allowed to satisfy "not in the audited set".
+  const manifestWasRead = Boolean(manifest) && manifest !== '(unknown manifest)';
+  if (manifestWasRead && !AUDITED_MANIFESTS.has(manifest)) {
+    return manifest + ' is not a manifest `pnpm audit` reads at the root';
+  }
+  if (row.scope === 'development') {
+    return 'development scope, which the audit\'s `--prod` filter excludes';
+  }
+  return null;
+}
 
 /**
  * Sort the open alerts into the ones that will fail the audit and the ones that will not.
@@ -111,41 +141,71 @@ export function alertsEnabled() {
  * PURE, so the judgement that matters is testable without network or `gh` auth — the live read above
  * cannot be, which is exactly why the split is here.
  *
- * `manifest_path` is reported because it is the one field that says whether a finding is in the app's
- * own dependency tree or in a workspace the audit never walks. It is NOT used to decide urgency: the
- * audit's `--prod` filter is about prod-vs-dev, which the alert payload does not state, so guessing it
- * here would produce a confident wrong answer. Naming the package and letting the reader trace it is
- * better than inventing the tree.
+ * 🔴 A HIGH ALERT THE AUDIT CANNOT REACH IS REPORTED, NOT GRADED AS FAILING — and this corrected a
+ * claim that used to stand right here. This comment previously said the `--prod` filter is about
+ * prod-vs-dev "which the alert payload does not state, so guessing it here would produce a confident
+ * wrong answer". The payload DOES state it: every open alert carries `dependency.scope`, which is
+ * `development` or `runtime`. Grading without it is what produced the confident wrong answer —
+ * measured 2026-10-04, this tool printed `WILL FAIL CI` for three alerts and exited 1 while the gate
+ * command itself, `node scripts/ci-dependency-audit.mjs`, exited 0 on "No known vulnerabilities
+ * found" with all three open. A pre-merge check that cries wolf before every merge is one people learn
+ * to wave through, and it sends sessions hunting a bump that does not exist.
+ *
+ * 🔴 IT FAILS CLOSED, AND THAT IS THE WHOLE SAFETY ARGUMENT. An alert leaves `failing` only when the
+ * reason it cannot reach the audit is POSITIVELY read: scope literally `development`, or a manifest
+ * literally outside the audited set. An absent scope, an unrecognised scope, an absent manifest or a
+ * manifest this function does not know all count as REACHABLE and stay failing. So the worst a wrong
+ * reading can do is keep an alert noisy, never quiet it — the direction the 2026-09-30 incident and the
+ * unreadable-severity rule below both insist on.
+ *
+ * AUDITED_MANIFESTS is the root manifest pair on purpose: `pnpm-workspace.yaml` declares no
+ * `packages:` list ("This is a single-package repo: no `packages:` list on purpose"), so the root
+ * audit walks exactly one tree. A second lockfile elsewhere in the repository — an npm or yarn one for
+ * a separate application — is never read by `pnpm audit` at the root and therefore cannot turn a check
+ * red. Add to this set if the repo ever gains a real workspace, or the new package's alerts go unread.
  *
  * @param {ReadonlyArray<Record<string, unknown>>} alerts raw `dependabot/alerts` entries.
- * @returns {{ failing: AlertRow[], other: AlertRow[] }}
+ * @returns {{ failing: AlertRow[], other: AlertRow[], unreachable: AlertRow[] }}
  */
 export function classifyAlerts(alerts) {
   const failing = [];
   const other = [];
+  const unreachable = [];
   for (const alert of alerts ?? []) {
     const severity = String(alert?.security_advisory?.severity ?? '').toLowerCase();
+    const manifest = alert?.dependency?.manifest_path ?? '(unknown manifest)';
+    const scope = String(alert?.dependency?.scope ?? '').toLowerCase() || '(unstated)';
     const row = {
       severity,
       ghsa: alert?.security_advisory?.ghsa_id ?? '(no id)',
       package: alert?.dependency?.package?.name ?? '(unnamed)',
-      manifest: alert?.dependency?.manifest_path ?? '(unknown manifest)',
+      manifest,
       vulnerableRange: alert?.security_vulnerability?.vulnerable_version_range ?? '(unstated)',
       patchedVersion: alert?.security_vulnerability?.first_patched_version?.identifier ?? null,
+      scope,
+      // Computed in the literal, not assigned afterwards: a later `row.x = …` on an object whose
+      // shape was already inferred is a typecheck error, and this file is checked.
+      outOfAuditReach: whyOutOfAuditReach({ scope, manifest }),
     };
     // 🔴 AN UNREADABLE SEVERITY IS TREATED AS URGENT, NOT AS QUIET. A missing or unrecognised
     // `severity` is an absent answer, and routing it to `other` would make it read as "not urgent" on
     // no evidence at all — the same shape as the zero-alerts-but-nobody-looking case above, and as the
     // four roll-up defects of 2026-09-30. Being noisy about an alert nobody can grade is recoverable;
     // filing it as harmless is not.
-    if (AUDIT_FAILING_SEVERITIES.has(severity) || !KNOWN_SEVERITIES.has(severity)) failing.push(row);
+    const urgent = AUDIT_FAILING_SEVERITIES.has(severity) || !KNOWN_SEVERITIES.has(severity);
+    // An UNREADABLE severity is never parked as unreachable. Reachability answers "can this turn the
+    // gate red", which is a weaker question than "is this dangerous", and an alert nobody could grade
+    // must stay loud whatever tree it sits in.
+    const gradable = KNOWN_SEVERITIES.has(severity);
+    if (urgent && gradable && row.outOfAuditReach) unreachable.push(row);
+    else if (urgent) failing.push(row);
     else other.push(row);
   }
   // Critical before high, then by package, so the same set always prints in the same order — a report
   // whose order moves between runs cannot be diffed by a reader.
   const rank = (s) => (s === 'critical' ? 0 : s === 'high' ? 1 : s === 'moderate' ? 2 : s === 'low' ? 3 : 4);
   const order = (a, b) => rank(a.severity) - rank(b.severity) || a.package.localeCompare(b.package);
-  return { failing: failing.sort(order), other: other.sort(order) };
+  return { failing: failing.sort(order), other: other.sort(order), unreachable: unreachable.sort(order) };
 }
 
 /**
@@ -182,7 +242,7 @@ export function describeAlert(row) {
  *
  * @param {{ skipped?: string, alerts?: ReadonlyArray<object> }} read result of `readOpenAlerts()`.
  * @param {{ enabled?: boolean, unknown?: string }} enabled result of `alertsEnabled()`.
- * @returns {{ exitCode: 0|1, errors: string[], notes: string[], failing: AlertRow[], other: AlertRow[] }}
+ * @returns {{ exitCode: 0|1, errors: string[], notes: string[], failing: AlertRow[], other: AlertRow[], unreachable: AlertRow[] }}
  */
 export function judgeAlerts(read, enabled) {
   const errors = [];
@@ -193,12 +253,12 @@ export function judgeAlerts(read, enabled) {
     // first: a bare "skipped" reads like a pass to a tired reader at 4am.
     notes.push(`skipped — ${read.skipped}`);
     notes.push('this is not a pass: nothing was read, so nothing was judged.');
-    return { exitCode: 0, errors, notes, failing: [], other: [] };
+    return { exitCode: 0, errors, notes, failing: [], other: [], unreachable: [] };
   }
 
-  const { failing, other } = classifyAlerts(read?.alerts);
+  const { failing, other, unreachable } = classifyAlerts(read?.alerts);
 
-  if (failing.length === 0 && other.length === 0) {
+  if (failing.length === 0 && other.length === 0 && unreachable.length === 0) {
     if (enabled?.enabled === false) {
       // 🔴 The clause the whole file is built around. Zero alerts from a repo that is not looking is
       // not evidence of anything, and reporting it as OK is the false green.
@@ -208,24 +268,45 @@ export function judgeAlerts(read, enabled) {
           + 'Security settings; until then `pnpm audit` in CI is the first thing that will notice a new '
           + 'advisory, which is the frozen-afternoon case this check exists to prevent.',
       );
-      return { exitCode: 1, errors, notes, failing, other };
+      return { exitCode: 1, errors, notes, failing, other, unreachable };
     }
     const how = enabled?.enabled === true
       ? 'and alerts are switched ON, so the zero was looked for'
       : `though ${enabled?.unknown ?? 'whether alerts are switched on could not be read'}`;
     notes.push(`OK — no open alerts (${how}).`);
-    return { exitCode: 0, errors, notes, failing, other };
+    return { exitCode: 0, errors, notes, failing, other, unreachable };
   }
 
   for (const row of failing) errors.push(`WILL FAIL CI: ${describeAlert(row)}`);
+  // Printed, never silent: these are real open alerts and a reader must still see them. What changed
+  // is only the verdict attached — they cannot turn `validate` red, so they must not block a merge.
+  for (const row of unreachable) {
+    notes.push(`open, but CANNOT fail the gate — ${row.outOfAuditReach}: ${describeAlert(row)}`);
+  }
   for (const row of other) notes.push(`below the audit level: ${describeAlert(row)}`);
 
   if (failing.length === 0) {
-    notes.push(
-      `OK — ${other.length} open alert(s), none of them HIGH or CRITICAL, so none of them fails `
-        + '`--audit-level=high`. Nothing is urgent; bump them with the next dependency PR.',
-    );
-    return { exitCode: 0, errors, notes, failing, other };
+    // 🔴 TWO SENTENCES, BECAUSE ONE OF THEM MUST NOT BE WEAKENED. With no unreachable rows this is
+    // the original all-clear, word for word: "none of them HIGH or CRITICAL" is TRUE and worth saying
+    // when the only open alerts are moderate and low, and `tests/dependabot-alerts.test.ts` pins it.
+    // With unreachable rows that same sentence would be printed directly beneath HIGH lines and would
+    // be a lie, so that case gets its own wording and names the reason instead.
+    if (unreachable.length === 0) {
+      notes.push(
+        `OK — ${other.length} open alert(s), none of them HIGH or CRITICAL, so none of them fails `
+          + '`--audit-level=high`. Nothing is urgent; bump them with the next dependency PR.',
+      );
+    } else {
+      const also = other.length > 0 ? `, plus ${other.length} below \`--audit-level=high\`` : '';
+      notes.push(
+        `OK — ${unreachable.length} open HIGH+ alert(s) that the audit cannot reach${also}. Each is `
+          + 'listed above with the reason it sits outside the tree `pnpm audit --prod` walks at the '
+          + 'root, so none of them can turn `validate` red and none of them blocks a merge. They are '
+          + 'still real open alerts: a decision to leave recorded, not a bump to chase — see '
+          + 'docs/security/open-dependency-alerts.md.',
+      );
+    }
+    return { exitCode: 0, errors, notes, failing, other, unreachable };
   }
 
   errors.push(
@@ -235,5 +316,5 @@ export function judgeAlerts(read, enabled) {
       + 'PR (AGENTS.md §6.1), then re-run this. A transitive one needs `pnpm update --depth Infinity '
       + '<pkg>`: `pnpm up` only touches direct dependencies and reports "Already up to date" for the rest.',
   );
-  return { exitCode: 1, errors, notes, failing, other };
+  return { exitCode: 1, errors, notes, failing, other, unreachable };
 }

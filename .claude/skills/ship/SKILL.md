@@ -103,10 +103,17 @@ and a red suite there makes Railway mark the production deploy `SKIPPED` for goo
 re-run does not resurrect. An open HIGH alert is that failure with the clock already running.
 
 - Nothing open → merge.
-- **An open HIGH or CRITICAL → bump it first, in its own PR, and merge that one before this one.**
-  The output names the version to bump to; a transitive one needs `pnpm update --depth Infinity
-  <pkg>`, because `pnpm up` touches only direct dependencies and answers "Already up to date" for
-  everything else.
+- **An open HIGH or CRITICAL *that the audit can reach* → bump it first, in its own PR, and merge
+  that one before this one.** The output names the version to bump to; a transitive one needs
+  `pnpm update --depth Infinity <pkg>`, because `pnpm up` touches only direct dependencies and
+  answers "Already up to date" for everything else.
+- 🔴 **`open, but CANNOT fail the gate — <reason>` is NOT something to bump, and NOT something to
+  wait for.** `pnpm audit --prod` runs at the root, so an alert in `development` scope or in a
+  manifest that audit never reads cannot turn `validate` red — the check prints it with its reason
+  and exits 0. Measured 2026-10-04: three such alerts, none with a patched version, were being
+  reported as `WILL FAIL CI` while the gate command itself passed, so the instruction above could
+  not be followed by anyone. The decision and the fail-closed rule behind it:
+  [docs/security/open-dependency-alerts.md](../../../docs/security/open-dependency-alerts.md).
 - **`skipped — …` is NOT a pass.** It means nothing was read — no `gh`, not authenticated, no
   network, or a token without `security_events`. Report it as unread, never as clear.
 - The alert appears here hours before the audit feed learns it, which is the whole window this buys.

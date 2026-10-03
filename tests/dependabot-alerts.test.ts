@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 // The SHARED stripper, not a line filter: `tests/comment-strip-ratchet.test.ts` refuses a hand-rolled
 // one by name, because a line judged by how it starts cannot know a block comment is already open.
@@ -51,6 +51,7 @@ export function runDependabotAlertsTests() {
     manifest?: string;
     range?: string;
     patched?: string | null;
+    scope?: string;
   };
   const alert = (over: AlertOverride = {}) => ({
     security_advisory: {
@@ -59,7 +60,8 @@ export function runDependabotAlertsTests() {
     },
     dependency: {
       package: { name: over.pkg ?? "left-pad" },
-      manifest_path: over.manifest ?? "package.json",
+      manifest_path: "manifest" in over ? over.manifest : "package.json",
+      scope: "scope" in over ? over.scope : "runtime",
     },
     security_vulnerability: {
       vulnerable_version_range: over.range ?? ">= 1.0.0 < 1.0.5",
@@ -191,6 +193,169 @@ export function runDependabotAlertsTests() {
   assert.match(describeAlert(unpatched.failing[0]), /NO patched version exists yet/);
   assert.doesNotMatch(describeAlert(unpatched.failing[0]), /bump to (null|undefined)/);
 
+
+  // 6. AUDIT REACHABILITY — AND THE FAIL-CLOSED RULE, WHICH IS THE ONLY REASON THIS IS SAFE
+  //
+  // `validate` runs `pnpm audit --audit-level=high --prod` at the repository ROOT. Two kinds of open
+  // HIGH alert provably cannot turn that red: one whose scope is `development` (the `--prod` filter
+  // drops it) and one in a manifest the root audit never reads. Grading those as "WILL FAIL CI" is
+  // what this tool did until 2026-10-04 — it printed three such lines and exited 1 while
+  // `node scripts/ci-dependency-audit.mjs`, the gate command itself, exited 0 on "No known
+  // vulnerabilities found" with all three open. A pre-merge check that cries wolf before every merge
+  // is one people learn to wave through.
+  //
+  // The danger in the other direction is obvious, so every case below pins the SAME rule: an alert
+  // leaves `failing` only when the reason is POSITIVELY read. Every absent or unrecognised answer
+  // stays failing.
+
+  const reachable = classifyAlerts([
+    alert({ severity: "high", pkg: "in-prod-tree", manifest: "pnpm-lock.yaml", scope: "runtime" }),
+  ]);
+  assert.deepEqual(
+    reachable.failing.map((r) => r.package),
+    ["in-prod-tree"],
+    "a runtime-scope HIGH in the audited lockfile is exactly what fails the gate - it must stay failing",
+  );
+  assert.deepEqual(reachable.unreachable, [], "and it must not be parked as unreachable");
+
+  const devScope = classifyAlerts([
+    alert({ severity: "high", pkg: "dev-only", manifest: "pnpm-lock.yaml", scope: "development" }),
+  ]);
+  assert.deepEqual(
+    devScope.failing,
+    [],
+    "a development-scope alert cannot fail `--prod`, so calling it WILL FAIL CI is a false alarm",
+  );
+  assert.deepEqual(
+    devScope.unreachable.map((r) => r.package),
+    ["dev-only"],
+    "it must still be REPORTED - the change is the verdict attached, never whether a reader sees it",
+  );
+  assert.match(
+    String(devScope.unreachable[0].outOfAuditReach),
+    /development scope/,
+    "and the row must carry the reason, so the report can say WHY rather than asserting it",
+  );
+
+  const otherTree = classifyAlerts([
+    alert({ severity: "high", pkg: "elsewhere", manifest: "some-other-app/package-lock.json", scope: "runtime" }),
+  ]);
+  assert.deepEqual(
+    otherTree.failing,
+    [],
+    "a manifest the root audit never walks cannot turn the root audit red",
+  );
+  assert.deepEqual(
+    otherTree.unreachable.map((r) => r.package),
+    ["elsewhere"],
+    "but it is a real open alert and must be printed",
+  );
+
+  // THE FAIL-CLOSED CASES. Each one is an ABSENT answer, and each must stay failing. If any of these
+  // four ever flips to `unreachable`, the tool has started quieting alerts on no evidence - which is
+  // the 2026-09-30 frozen-afternoon failure with the sign reversed.
+  for (const [label, over] of [
+    ["an absent scope", { scope: undefined, manifest: "pnpm-lock.yaml" }],
+    ["an unrecognised scope", { scope: "whatever", manifest: "pnpm-lock.yaml" }],
+    ["an absent manifest", { scope: "runtime", manifest: undefined }],
+    ["an empty manifest", { scope: "runtime", manifest: "" }],
+    ["an unreadable manifest", { scope: "runtime", manifest: "(unknown manifest)" }],
+  ] as const) {
+    const closed = classifyAlerts([alert({ severity: "high", pkg: "unknown-shape", ...over })]);
+    assert.deepEqual(
+      closed.unreachable,
+      [],
+      `${label} is an absent answer, not a proof of safety - it must NOT be parked as unreachable`,
+    );
+    assert.deepEqual(
+      closed.failing.map((r) => r.package),
+      ["unknown-shape"],
+      `${label} must stay failing, so a wrong reading can only ever be noisy, never quiet`,
+    );
+  }
+
+  // An UNREADABLE severity outranks reachability. Reachability answers "can this turn the gate red",
+  // which is a weaker question than "is this dangerous"; an alert nobody could grade stays loud
+  // whatever tree it sits in. This is the §3 rule above, re-pinned where it could be undone.
+  const ungradable = classifyAlerts([
+    alert({ severity: "", pkg: "mystery", manifest: "some-other-app/package-lock.json", scope: "runtime" }),
+  ]);
+  assert.deepEqual(
+    ungradable.unreachable,
+    [],
+    "an unreadable severity must never be quieted by a reachability rule - it could be a CRITICAL",
+  );
+  assert.deepEqual(
+    ungradable.failing.map((r) => r.package),
+    ["mystery"],
+    "it stays urgent, exactly as it does in the audited tree",
+  );
+
+  // THE EXIT CODE IS THE WHOLE POINT: unreachable HIGH alerts must not block a merge.
+  const unreachableOnly = judgeAlerts(
+    {
+      alerts: [
+        alert({ severity: "high", pkg: "dev-only", manifest: "pnpm-lock.yaml", scope: "development" }),
+        alert({ severity: "high", pkg: "elsewhere", manifest: "some-other-app/package-lock.json", scope: "runtime" }),
+      ],
+    },
+    { enabled: true },
+  );
+  assert.equal(
+    unreachableOnly.exitCode,
+    0,
+    "open HIGH alerts that provably cannot fail the audit must not fail this check either - that "
+      + "mismatch is what sent sessions hunting a bump that does not exist",
+  );
+  assert.deepEqual(unreachableOnly.errors, [], "and nothing may be reported as an error");
+  assert.equal(
+    unreachableOnly.notes.filter((n) => /CANNOT fail the gate/.test(n)).length,
+    2,
+    "both must still be listed - silence here would be the false green this file exists to prevent",
+  );
+  // 🔴 The all-clear sentence must not contradict the lines above it. It used to read "none of them
+  // HIGH or CRITICAL", which would be printed directly beneath two HIGH rows.
+  const allClear = unreachableOnly.notes.find((n) => /^OK —/.test(n)) ?? "";
+  assert.ok(allClear, "an all-clear line must be printed");
+  assert.doesNotMatch(
+    allClear,
+    /none of them HIGH/i,
+    "the all-clear must not claim nothing is HIGH while HIGH rows are listed immediately above it",
+  );
+  assert.match(
+    allClear,
+    /cannot reach/i,
+    "it must say WHY they are tolerable - a bare OK over a HIGH alert is the shape of a false green",
+  );
+
+  // A reachable HIGH beside unreachable ones still fails. The feature must not become an escape hatch.
+  const mixed = judgeAlerts(
+    {
+      alerts: [
+        alert({ severity: "high", pkg: "dev-only", manifest: "pnpm-lock.yaml", scope: "development" }),
+        alert({ severity: "high", pkg: "real-one", manifest: "pnpm-lock.yaml", scope: "runtime" }),
+      ],
+    },
+    { enabled: true },
+  );
+  assert.equal(mixed.exitCode, 1, "one reachable HIGH must still fail the check");
+  assert.equal(
+    mixed.errors.filter((e) => /WILL FAIL CI/.test(e)).length,
+    1,
+    "and exactly the reachable one is named - the count in the summary drives what a session bumps",
+  );
+
+  // The reachability set is derived from the repo's own shape, not guessed. `pnpm-workspace.yaml`
+  // declares no `packages:` list, so the root audit walks exactly one tree; if that ever changes, this
+  // assertion is the thing that says the set must change with it.
+  const workspace = readFileSync("pnpm-workspace.yaml", "utf8");
+  assert.doesNotMatch(
+    stripComments(workspace),
+    /^packages:/m,
+    "AUDITED_MANIFESTS assumes a single-package repo - if a `packages:` list appears, every workspace "
+      + "manifest becomes audit-reachable and the set in scripts/dependabot-alerts.mjs must grow to match",
+  );
+
   // Deterministic order, so two runs of the same set can be diffed by a human.
   const ordered = classifyAlerts([
     alert({ severity: "high", pkg: "zebra" }),
@@ -265,5 +430,27 @@ export function runDependabotAlertsTests() {
     /skipped[^\n]*is NOT a pass/i,
     "the ship skill must say a skip is not a pass, or the one degraded reading reads as clear at the "
       + "moment it matters most",
+  );
+
+  // And it must carry the unreachable branch too. Without it the skill still says "an open HIGH →
+  // bump it first", which is an instruction nobody can follow when no patched version exists — the
+  // exact dead end measured on 2026-10-04.
+  assert.match(
+    ship,
+    /CANNOT fail the gate/,
+    "the ship skill must tell a session that an unreachable HIGH alert is not a bump to chase, or the "
+      + "pre-merge read sends it hunting a version that does not exist",
+  );
+  assert.match(
+    ship,
+    /docs\/security\/open-dependency-alerts\.md/,
+    "and it must point at the recorded decision, so the reasoning is one click away at the moment the "
+      + "session has to act on it",
+  );
+  assert.ok(
+    existsSync("docs/security/open-dependency-alerts.md"),
+    "the recorded decision must exist - a skill pointing at a missing file is worse than no pointer. "
+      + "existsSync, not readFileSync: a read THROWS ENOENT before the assertion is evaluated, so the "
+      + "message never prints and the case proves nothing",
   );
 }
