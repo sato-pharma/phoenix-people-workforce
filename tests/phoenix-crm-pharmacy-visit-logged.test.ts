@@ -47,10 +47,12 @@ const code = (file: string) => stripComments(read(file));
 const VIEW_MIGRATION = "supabase/migrations/20261003174346_phoenix_crm_pharmacy_needs_no_validation.sql";
 /** The column `linked_from_visit_id` and the trigger that names a pharmacy visit live here, and only here. */
 const SAVE_MIGRATION = "supabase/migrations/20261003175653_phoenix_crm_pharmacy_visit_logged_normally.sql";
-/** The LIVE phoenix_crm_save_visit — 175653's body with the link turned into one visit per name in the box. */
+/** 175653's body with the link turned into one visit per name in the box (LOCK_MIGRATION keeps it all). */
 const LINK_MIGRATION = "supabase/migrations/20261003202903_phoenix_crm_visit_names_two_pharmacies.sql";
 /** Add a pharmacy by its name — no photo, no request, no approval (section 9). */
 const ADD_MIGRATION = "supabase/migrations/20261003211501_phoenix_crm_add_pharmacy.sql";
+/** The LIVE save_visit and add_pharmacy: a new pharmacy is checked again under ONE lock, and its add is a list event (section 10). */
+const LOCK_MIGRATION = "supabase/migrations/20261004005543_phoenix_crm_one_lock_for_a_new_pharmacy.sql";
 
 export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
   // ── 1. One pharmacy, however he spells it ─────────────────────────────────────────────────────
@@ -164,10 +166,10 @@ export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
     const first = stripSqlComments(read(SAVE_MIGRATION));
     assert.match(first, /add column if not exists linked_from_visit_id uuid\s+references public\.phoenix_crm_visits \(id\) on delete cascade;/);
     assert.match(first, /before insert on public\.phoenix_crm_visits\s+for each row execute function public\.phoenix_crm_visits_pharmacy_name\(\);/, "the Super Admin's missed-record entry is named too");
-    // The caller sends the match; a pharmacy customer's own visit sends none of it.
+    // The caller sends the matches as `linked_pharmacies` only: every live database reads that array,
+    // so the single-match fields a database on 20261003175653 read are no longer sent.
     const save = code("src/lib/phoenix-crm/server/visits.ts");
-    assert.match(save, /linked_pharmacy_id: pharmacyLink\.kind === "existing" \? pharmacyLink\.customerId : null,/);
-    assert.match(save, /linked_pharmacy_new: pharmacyLink\.kind === "new",/);
+    assert.doesNotMatch(save, /linked_pharmacy_id|linked_pharmacy_new|pharmacyLink\b/, "no second, dead shape of the link");
   }
 
   // ── 6. The visit it files is part of the doctor's, not a second piece of work ─────────────────
@@ -228,11 +230,16 @@ export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
     assert.deepEqual(splitNamedPharmacies("صيدلية العطار - الفرع التاني"), ["صيدلية العطار - الفرع التاني"]);
     assert.deepEqual(splitNamedPharmacies("الفرع التاني ص العطار"), ["الفرع التاني ص العطار"]);
     assert.deepEqual(splitNamedPharmacies("صيدلية محمد وصفي"), ["صيدلية محمد وصفي"]);
+    // "و" splits only between TWO mentions of the word pharmacy, and "+" and "&" are part of a name.
+    assert.deepEqual(splitNamedPharmacies("مخزن وصيدلية الشفاء"), ["مخزن وصيدلية الشفاء"], "never a pharmacy called 'مخزن' added to his list");
+    assert.deepEqual(splitNamedPharmacies("مخلص للدواء وصيدلية الشفاء"), ["مخلص للدواء وصيدلية الشفاء"], "a word ending in ص is not the reps' 'ص'");
+    assert.deepEqual(splitNamedPharmacies("صيدلية A & B"), ["صيدلية A & B"], "'&' is part of one pharmacy's name");
+    assert.deepEqual(splitNamedPharmacies("صيدلية العطار + الشفاء"), ["صيدلية العطار + الشفاء"], "'+' is part of one pharmacy's name");
     assert.deepEqual(splitNamedPharmacies("صيدليه التهامي، ص.التهامي"), ["صيدليه التهامي"], "a second spelling of one pharmacy is that pharmacy");
     assert.deepEqual(splitNamedPharmacies("صيدلية التهامي، صيدلية"), ["صيدلية التهامي"], "a part that is only the word pharmacy names none");
     assert.deepEqual(splitNamedPharmacies(" ، ،"), []);
     assert.deepEqual(splitNamedPharmacies(null), []);
-    assert.equal(splitNamedPharmacies("ص أ، ص ب، ص ج، ص د، ص ه، ص و").length, 5, "five at most — the database files no more");
+    assert.equal(splitNamedPharmacies("ص أ، ص ب، ص ج، ص د، ص ه، ص و").length, 6, "every name is read — the day counts each one");
 
     // A pharmacy's OWN visit is one pharmacy, whatever its name holds; a doctor's box is what it names.
     assert.deepEqual(pharmacyNamesOnVisit("Pharmacy", "صيدلية العزبي، فرع مدينة نصر"), ["صيدلية العزبي، فرع مدينة نصر"]);
@@ -266,6 +273,11 @@ export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
     assert.deepEqual(linkNamedPharmacies("صيدلية النور، صيدلية التهامي", d11), [
       { name: "صيدلية التهامي", link: { kind: "existing", customerId: "tohamy" } },
     ], "a pharmacy the SFE archived is still never brought back — the other name is filed");
+    // Five filed at most — the database files no more — counted AFTER the names that match nothing.
+    const six = linkNamedPharmacies("صيدلية النور، صيدلية الف، صيدلية باء، صيدلية جيم، صيدلية دال، صيدلية هاء", d11);
+    assert.equal(six.length, 5);
+    assert.equal(six[4]?.name, "صيدلية هاء", "the archived first name never takes the sixth name's place");
+    assert.equal(linkNamedPharmacies("ص أ، ص ب، ص ج، ص د، ص ه، ص و", d11).length, 5);
 
     // What he reads once it is saved.
     assert.equal(linkedPharmaciesNote([]), null);
@@ -289,14 +301,16 @@ export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
     assert.equal(day.length, 2, "التهامي and الرحمه — two pharmacies, never three");
     assert.deepEqual(day.map((entry) => entry.fromCustomers), [["دعاء عادل فوده"], ["دعاء عادل فوده"]], "each is named on the doctor's visit");
 
-    // The caller sends one entry per name; the one-match fields stay for a database on 20261003175653,
-    // and only a box naming ONE pharmacy may fill them.
+    // The caller sends one entry per name, and nothing else.
     const save = code("src/lib/phoenix-crm/server/visits.ts");
     assert.match(save, /const pharmacyLinks = linkNamedPharmacies\(visit\.pharmacyName, listedPharmacies\);/);
-    assert.match(save, /pharmacyLinks\.length === 1 && splitNamedPharmacies\(visit\.pharmacyName\)\.length === 1 \? pharmacyLinks\[0\]!\.link : \{ kind: "none" \};/);
     assert.match(save, /linked_pharmacies: pharmacyLinks\.map\(\(\{ name, link \}\) => \(\{\s*name,\s*id: link\.kind === "existing" \? link\.customerId : null,\s*new: link\.kind === "new",\s*\}\)\),/);
-    assert.match(save, /for \(const name of splitNamedPharmacies\(textOrNull\(row\.pharmacy_name\)\)\) offer\(name\);/, "a two-name box is offered as the two names, never as one suggestion");
-    assert.match(save, /Array\.isArray\(result\.linked_pharmacies\) \? result\.linked_pharmacies : \[result\.linked_pharmacy\]/);
+    assert.match(
+      save,
+      /for \(const name of splitNamedPharmacies\(textOrNull\(row\.pharmacy_name\)\)\) \{\s*if \(names\.length >= 50\) break rows;\s*offer\(name\);/,
+      "a two-name box is offered as the two names, never as one suggestion — and the 50 holds per NAME",
+    );
+    assert.match(save, /Array\.isArray\(result\.linked_pharmacies\) \? result\.linked_pharmacies : \[\]/);
 
     // The database files one visit per entry, named as he spelled it, and reads an old caller as one.
     const sql = stripSqlComments(read(LINK_MIGRATION));
@@ -365,6 +379,25 @@ export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
     assert.match(sql, /values \(\s+v_seat, v_line, 'Pharmacy', v_name, 'new', 'pending', v_actor, v_is_test,/);
     assert.match(sql, /or char_length\(v_name\) > 120/);
     assert.doesNotMatch(sql, /phoenix_crm_list_requests|phoenix_crm_places/, "it files no request and asks for no place");
+
+    // ── 10. One lock for a new pharmacy, and its add is on the record (review of #5263) ──────────
+    // A doctor's box decides "new" from a read taken BEFORE the call, so the database checks the name
+    // again under the very lock Add a pharmacy takes — two saves, or a save and an add, file ONE row.
+    const lock = stripSqlComments(read(LOCK_MIGRATION));
+    const lockKey = /pg_advisory_xact_lock\(hashtext\('phoenix_crm_add_pharmacy\|' \|\| v_seat \|\| '\|' \|\| v_is_test::text\)\)/g;
+    assert.equal(lock.match(lockKey)?.length, 2, "save_visit's new pharmacy and add_pharmacy take ONE lock");
+    const branch = lock.slice(lock.indexOf("elsif v_entry_new then"), lock.indexOf("if v_link.id is not null then"));
+    assert.match(
+      branch,
+      /perform pg_advisory_xact_lock[\s\S]*?select c\.\* into v_link[\s\S]*?and c\.status in \('active', 'pending', 'outside'\)[\s\S]*?if v_link\.id is null then\s+insert into public\.phoenix_crm_customers/,
+      "the name is looked for again under the lock, and added only when it is still not there",
+    );
+    const added = lock.slice(lock.indexOf("create or replace function public.phoenix_crm_add_pharmacy("));
+    assert.match(
+      added,
+      /insert into public\.phoenix_crm_list_events \(seat_id, customer_id, event_type, actor_hr_id, details, is_test\)\s+values \(\s+v_seat, v_added\.id, 'pharmacy_added', v_actor,/,
+      "a pharmacy added by name leaves a list event, as every other way onto the list does",
+    );
 
     // The two doors: the List's header, and Pharmacy visit — which opens the visit form on the new one.
     const tab = code("src/components/phoenix-crm/list-tab.tsx");

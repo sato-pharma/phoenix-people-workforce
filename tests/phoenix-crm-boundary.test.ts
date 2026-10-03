@@ -687,6 +687,11 @@ const LATER_MIGRATIONS = [
   // deliberately UNKEYED table, for the same reason as the refused readings two entries up: nine
   // identical presses are nine rows, and the repetition is the evidence.
   "supabase/migrations/20261003221224_phoenix_crm_touch_trail.sql",
+  // One lock for a new pharmacy (review of #5263, 2026-10-04). It REPLACES phoenix_crm_save_visit
+  // (20261003202903's body, the new-pharmacy branch re-checked under phoenix_crm_add_pharmacy's lock) and
+  // phoenix_crm_add_pharmacy (plus its list event), so it is now the LAST entry that replaces either and
+  // must stay last among them. No table, no column, no new function.
+  "supabase/migrations/20261004005543_phoenix_crm_one_lock_for_a_new_pharmacy.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
