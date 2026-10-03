@@ -11,6 +11,17 @@
         ]
       },
       {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/push-typecheck-guard.mjs\"",
+            "timeout": 480,
+            "statusMessage": "Typechecking on the CI box before the push"
+          }
+        ]
+      },
+      {
         "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Grep|Glob|mcp__supabase.*",
         "hooks": [
           {
