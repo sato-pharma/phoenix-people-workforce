@@ -196,6 +196,26 @@ export const APP_PASSWORD_WORDINGS = {
    * Generate with nothing selected is how this step would have failed even with the rest correct.
    */
   otherApp: ["Other", "Others", "Other app", "Other application"],
+  /**
+   * The control that removes one issued app password. MEASURED — `button: Remove`, read off the
+   * live page on 2026-10-04 beside `Generate`.
+   *
+   * 🔴 MEASURED AS PRESENT, NOT MEASURED AS PER-ENTRY. The page showed `Remove` while listing no
+   * entries at all, so whether it belongs to a row or to the panel is still unknown. The rehearsal
+   * answers that, and the path captured beside it is what will say which.
+   */
+  removeAppPassword: ["Remove", "Delete", "Revoke", "Remove app password"],
+  /**
+   * Whatever answers the removal.
+   *
+   * 🔴 EVERY ONE OF THESE IS A GUESS, and saying so is the point. Nothing has ever seen this
+   * control, because it exists only in the moment after Remove is pressed — which is exactly why
+   * the read-only capture could never fill `removeConfirm`. The list fails closed like every other
+   * one here, so a wrong guess costs a printed page rather than a wrong click inside a live
+   * mailbox's security settings. Replacing this with the measured wording and its path is the
+   * rehearsal's entire purpose.
+   */
+  removeConfirm: ["Remove", "Delete", "Confirm", "Yes", "OK", "Yes, remove"],
 } as const;
 
 /** A human-readable description of a locator, for an error a person has to act on. */

@@ -925,6 +925,7 @@ import { runNewHireMailboxInvitationTests } from "./new-hire-mailbox-invitation.
 import { runNewHireMailboxInviteInboxTests } from "./new-hire-mailbox-invite-inbox.test.ts";
 import { runNewHireMailboxInviteInboxReaderTests } from "./new-hire-mailbox-invite-inbox-reader.test.ts";
 import { runNewHireMailboxAppPasswordCaptureTests } from "./new-hire-mailbox-app-password-capture.test.ts";
+import { runNewHireMailboxAppPasswordRehearsalTests } from "./new-hire-mailbox-app-password-rehearsal.test.ts";
 import { runNewHireMailboxResultSurvivesTests } from "./new-hire-mailbox-result-survives.test.ts";
 import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
 import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts";
@@ -4139,6 +4140,16 @@ await runTest(
   + "provisioning sequence and from the scheduled sweep, and shipping it does NOT calibrate the "
   + "clear step — the flag stays false until a live run replaces all four placeholders)",
   runNewHireMailboxAppPasswordCaptureTests,
+);
+await runTest(
+  "the app-password rehearsal mints ONE app password only on Phoenix's own invite inbox, refused "
+  + "before a browser is opened for any other address; it captures the page before, after minting, "
+  + "at the confirm step and after removing, so a run that stops early still keeps what it bought; "
+  + "the minted value joins the redactor and never leaves; a failed mint and a failed removal report "
+  + "DIFFERENTLY because only one of them leaves a working credential live; a throw records "
+  + "outstanding as unknown rather than false; and it is in neither the provisioning sequence nor "
+  + "the scheduled sweep",
+  runNewHireMailboxAppPasswordRehearsalTests,
 );
 await runTest(
   "a mailbox run's own account survives the run (neither adoption card refreshes the route "

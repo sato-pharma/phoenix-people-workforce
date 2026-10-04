@@ -53,7 +53,12 @@ import {
   type ObservedControl,
 } from "@/lib/turbify/control-report";
 
-import type { CreatedMailbox, JoinerConsoleDriver } from "./driver";
+import type {
+  AppPasswordPageReading,
+  AppPasswordRehearsal,
+  CreatedMailbox,
+  JoinerConsoleDriver,
+} from "./driver";
 import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
 import type { InvitationReading } from "./invitation";
 import {
@@ -1531,6 +1536,211 @@ export async function createTurbifyJoinerDriver(
         redacted: report.redacted,
         why: null,
       };
+    },
+
+    /**
+     * Mint one app password, read the page at every stage, then remove it.
+     *
+     * 🔴 THIS IS THE ONE STEP IN THIS FILE THAT CREATES A LIVE CREDENTIAL IN ORDER TO LOOK AT IT.
+     * `removeConfirm` exists only between pressing Remove and answering it, so no reading of an
+     * untouched page can ever produce it — the 2026-10-04 capture filled three of four and stopped
+     * there, and re-running it would have stopped there every time.
+     *
+     * 🔴 THE ADDRESS GUARD IS THE FIRST STATEMENT, BEFORE A BROWSER EXISTS. Phoenix's own invite
+     * inbox holds nobody's mail; every other mailbox belongs to a person whose phone would stop
+     * syncing. A guard placed after the sign-in would still be correct and would still be wrong —
+     * by then the run has committed to a mailbox, and the refusal costs a live session.
+     *
+     * Every stage is captured even when a later one fails, because a rehearsal that minted but
+     * could not remove still carries the list and the remove control — three of the four — and
+     * throwing that away to report a failure would waste the credential it spent.
+     */
+    async rehearseAppPasswordRemoval({ address, password }) {
+      if (address.trim().toLowerCase() !== TURBIFY_INVITE_RECIPIENT.toLowerCase()) {
+        throw new TurbifyJoinerStepError(
+          `The app-password rehearsal refuses ${address}. It mints a real app password and then `
+          + `removes it, so it runs on ${TURBIFY_INVITE_RECIPIENT} — Phoenix's own invite inbox, which `
+          + "holds nobody's mail — and on no other mailbox. Nothing was opened and nothing was changed.",
+        );
+      }
+
+      const mailbox = await openMailboxPage();
+      // The minted password joins this list the moment it exists, so every reading AFTER the mint
+      // is redacted against it by exact match and not only by shape.
+      const secrets = [password, credentials.password];
+      const reading = async () => describePage(mailbox, secrets);
+      const LINK_OR_BUTTON = ["a", "button"] as const;
+
+      const capture = async (): Promise<AppPasswordPageReading> => {
+        const observed = await mailbox
+          .evaluate<ObservedControl[]>(CONTROL_READ_EXPRESSION)
+          .catch(() => [] as ObservedControl[]);
+        const report = buildControlReport(`app-password rehearsal for ${address}`, observed ?? [], secrets);
+        return {
+          controls: report.controls,
+          observed: report.observed,
+          reached: true,
+          redacted: report.redacted,
+          why: null,
+        };
+      };
+      const unreached = (why: string): AppPasswordPageReading =>
+        ({ controls: [], observed: 0, reached: false, redacted: 0, why });
+
+      const onSetupPage = async () => (await mailbox.$$(CONFIRM_PASSWORD_FIELD)).length > 0;
+      const pastTheLoginForm = async () =>
+        (await mailbox
+          .$$eval<number>(MAILBOX_EMAIL_FIELD, (elements) =>
+            elements.filter((element) => element.getClientRects().length > 0).length,
+          )
+          .catch(() => 1)) === 0;
+
+      await signInAs(
+        mailbox,
+        MAILBOX_LOGIN_URL,
+        address,
+        password,
+        async () => (await onSetupPage()) || (await pastTheLoginForm()),
+        address,
+        secrets,
+      );
+
+      const stopped = async (why: string): Promise<AppPasswordRehearsal> => ({
+        after: unreached(why),
+        before: unreached(why),
+        confirming: unreached(why),
+        listed: unreached(why),
+        minted: false,
+        outstanding: false,
+        removed: false,
+        why,
+      });
+
+      if (await onSetupPage()) {
+        return stopped(
+          `${address} opened the "Set up your mailbox password" screen, so the password Phoenix holds `
+          + "for it is a one-time password and it has never completed a first sign-in. Nothing was "
+          + `minted and nothing was changed. The page it was on — ${await reading()}`,
+        );
+      }
+
+      await mailbox.goto(ACCOUNT_INFO_URL, { waitUntil: "networkidle2", timeout: 60_000 }).catch(() => {});
+      await settle(2_500);
+      await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.accountInfo, "the mailbox's account pages", LINK_OR_BUTTON)
+        .catch(() => {});
+      await settle(2_000);
+      try {
+        await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.appPasswords, "the App Passwords section", LINK_OR_BUTTON);
+      } catch (error) {
+        return stopped(
+          `The App Passwords section could not be opened for ${address}: `
+          + `${error instanceof Error ? error.message : String(error)}. Nothing was minted and nothing `
+          + `was changed. The page it was on — ${await reading()}`,
+        );
+      }
+      await settle(2_500);
+
+      const before = await capture();
+
+      // ── Mint ──────────────────────────────────────────────────────────────────────────────────
+      // Turbify's own step 5: pick an app, and Phoenix is not in their list, so it is always Other
+      // plus a name. Tolerated rather than required for the same reason `generateAppPassword`
+      // tolerates it — on a page already showing the form there may be nothing to choose.
+      await selectAppForPassword(mailbox, "Phoenix").catch(() => false);
+      await settle(1_000);
+      try {
+        await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.generate, "the button that mints a new app password", ["button"]);
+      } catch (error) {
+        return {
+          after: unreached("nothing was minted, so there was nothing to remove"),
+          before,
+          confirming: unreached("nothing was minted, so no confirm was reached"),
+          listed: unreached("nothing was minted"),
+          minted: false,
+          // Nothing was created, so nothing is loose. This is the benign failure.
+          outstanding: false,
+          removed: false,
+          why:
+            `Generate could not be pressed for ${address}: `
+            + `${error instanceof Error ? error.message : String(error)}. No app password was minted, `
+            + `so none is outstanding. The page it was on — ${await reading()}`,
+        };
+      }
+      await settle(3_000);
+
+      // 🔴 FROM HERE A LIVE CREDENTIAL EXISTS. Read it only to REDACT it: `pickAppPassword` is how
+      // the provisioning path reads the minted value, and feeding it into `secrets` is what stops
+      // it reaching the report, the audit row and the log. It is never returned and never stored.
+      //
+      // 🔴 RAW BODY TEXT, AND NOT `describePage`, WHICH WOULD HAVE MADE THIS UNABLE TO WORK.
+      // `describePage` redacts — and one of the things it drops is anything secret-shaped, which is
+      // precisely the minted password. Reading the value out of a redacted description can never
+      // find it, and the "could not be read" that followed would have been the redactor doing its
+      // job. The first draft of this function did exactly that.
+      const shownAfterMint = await mailbox.evaluate<string>(`(() => {
+        const scope = document.body;
+        if (!scope) return "";
+        return scope.innerText || scope.textContent || "";
+      })()`).catch(() => "");
+      const minted = pickAppPassword(shownAfterMint, address);
+      // 🔴 AN UNREADABLE VALUE IS NOT A REASON TO STOP. The credential already exists, so returning
+      // here would leave it live on the mailbox — the one outcome this whole function is built to
+      // avoid. Carry on to the removal, and keep a refusal out of the redactor's list rather than
+      // pushing its sentence in as though it were a password.
+      const mintedValue = "refusal" in minted ? null : minted.password;
+      if (mintedValue) secrets.push(mintedValue);
+
+      const listed = await capture();
+
+      // ── Remove ────────────────────────────────────────────────────────────────────────────────
+      try {
+        await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.removeAppPassword, "the control that removes an app password", ["a", "button"]);
+      } catch (error) {
+        return {
+          after: unreached("the removal was never started"),
+          before,
+          confirming: unreached("the removal was never started"),
+          listed,
+          minted: true,
+          // 🔴 THE CASE THIS FLAG EXISTS FOR.
+          outstanding: true,
+          removed: false,
+          why:
+            `An app password WAS minted on ${address} and the control to remove it could not be `
+            + `pressed: ${error instanceof Error ? error.message : String(error)}. 🔴 A WORKING APP `
+            + "PASSWORD IS NOW LIVE ON THAT MAILBOX and must be removed by hand. The reading above "
+            + `still carries the list and its controls. The page it was on — ${await reading()}`,
+        };
+      }
+      await settle(2_000);
+
+      // The confirm step, captured BEFORE it is answered — this reading is the whole reason the
+      // rehearsal mints anything at all.
+      const confirming = await capture();
+
+      try {
+        await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.removeConfirm, "the control that confirms the removal", ["a", "button"]);
+      } catch (error) {
+        return {
+          after: unreached("the removal was never confirmed"),
+          before,
+          confirming,
+          listed,
+          minted: true,
+          outstanding: true,
+          removed: false,
+          why:
+            `An app password WAS minted on ${address}, Remove was pressed, and nothing matched the `
+            + `confirm: ${error instanceof Error ? error.message : String(error)}. 🔴 A WORKING APP `
+            + "PASSWORD IS PROBABLY STILL LIVE ON THAT MAILBOX — check it by hand. This is the "
+            + "expected outcome of the FIRST rehearsal, because no wording for this control has ever "
+            + `been seen; the confirm reading above is what replaces the guesses. The page — ${await reading()}`,
+        };
+      }
+      await settle(2_500);
+
+      const after = await capture();
+      return { after, before, confirming, listed, minted: true, outstanding: false, removed: true, why: null };
     },
 
     async close() {

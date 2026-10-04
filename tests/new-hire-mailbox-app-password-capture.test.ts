@@ -44,14 +44,24 @@ function readable(path: string): string {
     .replace(/["`]\s*\+\s*["`]/g, "");
 }
 
-/** Just the body of `describeAppPasswords`, so a mint elsewhere in the driver cannot read as one here. */
+/**
+ * Just the body of `describeAppPasswords`, so a mint elsewhere in the driver cannot read as one here.
+ *
+ * 🔴 THE END ANCHOR IS "THE NEXT METHOD", NOT `close(`. It was `close(`, which quietly assumed the
+ * capture was the LAST method in the driver — and on 2026-10-04 `rehearseAppPasswordRemoval` was
+ * added between the two. The slice then swallowed the whole rehearsal, which mints on purpose, and
+ * these "mints nothing" assertions went red against a capture that had not changed by a character.
+ * A boundary that holds only while nothing is added after it breaks on the next addition, and it
+ * fails in the most confusing direction: the red test names an innocent function.
+ */
 function captureStep(): string {
   const driver = readable("../src/lib/new-hire-mailbox/robot/turbify-joiner.ts");
   const start = driver.indexOf("async describeAppPasswords(");
   assert.notEqual(start, -1, "describeAppPasswords must exist in the joiner driver");
-  const end = driver.indexOf("async close(", start);
-  assert.notEqual(end, -1, "the capture step must sit before close(), so its body can be isolated");
-  return driver.slice(start, end);
+  // `readable` collapses whitespace, so every following method reads as `}, async name(`.
+  const next = driver.indexOf("}, async ", start);
+  assert.notEqual(next, -1, "the capture step must be followed by another method, so it can be isolated");
+  return driver.slice(start, next);
 }
 
 function runItChangesNothingCases(): void {
