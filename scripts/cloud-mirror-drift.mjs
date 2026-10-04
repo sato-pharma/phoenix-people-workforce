@@ -21,14 +21,38 @@
 /**
  * Line endings are normalised before comparing, and that is load-bearing rather than tidiness.
  *
- * `sync-cloud-context.mjs` copies BUFFERS, so a freshly synced mirror file is byte-identical to its
- * live original on disk — but git normalises CRLF to LF on the way into the index, so the COMMITTED
- * blob (which is what a cloud session actually clones) differs from the working-tree file on a
- * Windows checkout. Comparing raw bytes therefore reports every file as drifted the moment anything
- * touches the tree. Measured the same day: a `git status` after a sync listed 36 changed files while
- * the commit held 9, the other 27 being line endings and nothing else.
+ * The LIVE memory still holds files with CRLF (27 of 1,111 on 2026-10-04, written by Windows tools),
+ * while git normalises CRLF to LF on the way into the index, so the COMMITTED blob — which is what a
+ * cloud session actually clones — never carries a CR. Comparing raw bytes would therefore report
+ * every one of those files as drifted. Measured 2026-10-02: a `git status` after a sync listed 36
+ * changed files while the commit held 9, the other 27 being line endings and nothing else.
+ * `sync-cloud-context.mjs` now WRITES LF (see `crlfToLf`), so a refresh no longer leaves those files
+ * dirty; this comparison stays normalised because the live side is still free to hold CRLF.
  */
 const norm = (text) => String(text).replace(/\r\n/g, "\n");
+
+/**
+ * CRLF to LF on a Buffer, byte for byte. Only a CR that is immediately followed by an LF goes — a
+ * lone CR stays — and the bytes are never decoded, so a file that is not valid UTF-8 comes back
+ * untouched rather than re-encoded with replacement characters. Returns the SAME buffer when there
+ * is no CRLF in it, which is the common case.
+ *
+ * It is what `sync-cloud-context.mjs` writes with: the mirror is committed with LF whatever the
+ * laptop holds, so the working copy should already be LF too. Left CRLF, the working copy differs
+ * from the index and `git status` lists the file as modified, which made
+ * `new-session.mjs --remove` REFUSE to retire a worktree whose refresh was already merged
+ * (measured 2026-10-04: 27 files, no content change among them).
+ */
+export function crlfToLf(buf) {
+  if (!buf.includes(0x0d)) return buf;
+  const out = Buffer.allocUnsafe(buf.length);
+  let n = 0;
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i] === 0x0d && buf[i + 1] === 0x0a) continue;
+    out[n++] = buf[i];
+  }
+  return out.subarray(0, n);
+}
 
 /**
  * Compare the mirror against the live memory.
