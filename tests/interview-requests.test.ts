@@ -121,6 +121,25 @@ export async function runInterviewRequestTests() {
   const inbox = stripComments(read("src/components/recruitment/interview-calendar/requests-inbox.tsx"));
   assert.match(inbox, /\/requests\/\$\{encodeURIComponent\(request\.id\)\}\/schedule/, "HR books a time from the inbox");
 
+  // ── A request waiting for a time can OPEN its CV (owner, 2026-10-04: "the request appears to me but I
+  // am not able to download the CV"). The calendar's own CV doors need a booking, which a pending
+  // request does not have — so the inbox said "CV attached" as a sentence with nothing to press.
+  assert.match(inbox, /<CvPreviewModal/, "the inbox opens the CV in the shared preview, which carries Download");
+  assert.match(
+    inbox,
+    /\/requests\/\$\{encodeURIComponent\(request\.id\)\}\/items\/\$\{encodeURIComponent\(reading\.id\)\}\/cv/,
+    "and reads it through the REQUEST's own CV door, never the booking's",
+  );
+  assert.match(inbox, /item\.hasCv \? \(\s*<Action onClick=\{\(\) => setReading\(item\)\}/, "View CV is drawn for every item that has one — in-house or outside");
+  const cvRoute = stripComments(read("app/api/recruitment/interview-calendar/requests/[id]/items/[itemId]/cv/route.ts"));
+  assert.match(cvRoute, /getInterviewRequestItemCv\(caller, id, itemId\)/, "the route serves the CV of one request item");
+  assert.match(cvRoute, /recruitmentFileResponse\(request, download\)/, "through the shared file response, so inline / base64 / download all work");
+  const requestsLib = stripComments(read("src/lib/recruitment/interview-requests.ts"));
+  assert.match(requestsLib, /if \(!mayReadRequest\(caller, request\)\) throw new Error\(FORBIDDEN_READ\)/, "the CV is gated by who may read THIS request");
+  assert.match(requestsLib, /assertCvsOpenTo\(caller\)/, "and a link holder who is not signed in is refused unless the link's CVs are on");
+  assert.match(requestsLib, /\.eq\("request_id", requestId\)/, "the item must belong to the request in the address — an item id cannot be swapped for another request's CV");
+  assert.match(requestsLib, /listCandidateFilesByCandidate\(candidateIds\)/, "the inbox learns every in-house candidate's CV in ONE read, never one per card");
+
   // ── mayReadSessions no longer leaks group sessions to the own-only tier. ────────────────────────
   const calendar = stripComments(read("src/lib/recruitment/interview-calendar.ts"));
   assert.match(calendar, /role !== null && role !== "interviewer" && role !== "requester"/, "sessions stay with Viewer-and-up, never a requester");

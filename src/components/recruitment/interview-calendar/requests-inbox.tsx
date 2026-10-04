@@ -8,9 +8,10 @@
 // Two panels, each drawn only for who may use it: the INBOX for a caller with book rights (HR and the
 // owners), and MY REQUESTS for a requester (a District Manager and above, or HR). The owner sees both.
 
-import { CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Clock3, Loader2, Trash2, UserRound, Users } from "lucide-react";
+import { CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileText, Loader2, Trash2, UserRound, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import {
   INTERVIEW_REQUEST_STATUS_LABEL,
@@ -184,6 +185,8 @@ function RequestCard({
 }) {
   const [open, setOpen] = useState(request.pendingItemCount > 0);
   const [booking, setBooking] = useState<InterviewRequestItem | null>(null);
+  // The CV being read — opened from the request itself, so HR can read it BEFORE phoning the candidate.
+  const [reading, setReading] = useState<InterviewRequestItem | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -257,10 +260,17 @@ function RequestCard({
                   <span className="flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
                     {item.candidateJobTitle ? <span className="break-words">{item.candidateJobTitle}</span> : null}
                     {item.external ? <span>from outside</span> : <span>from Recruitment</span>}
-                    {item.external && item.externalHasCv ? <span>CV attached</span> : null}
                     {item.external && item.externalPhone ? <span dir="ltr">{item.externalPhone}</span> : null}
+                    {item.hasCv ? null : <span>No CV on record</span>}
                   </span>
                 </span>
+                <span className="flex shrink-0 flex-wrap items-center gap-2">
+                {item.hasCv ? (
+                  <Action onClick={() => setReading(item)} tone="quiet">
+                    <FileText className="h-3.5 w-3.5" />
+                    View CV
+                  </Action>
+                ) : null}
                 {item.booked ? (
                   <button
                     className="inline-flex shrink-0 items-center gap-1 text-[12px] font-bold text-emerald-800 hover:underline"
@@ -277,6 +287,7 @@ function RequestCard({
                 ) : (
                   <span className="shrink-0 text-[11px] font-semibold text-orange-700">Waiting for HR</span>
                 )}
+                </span>
               </li>
             ))}
           </ul>
@@ -311,6 +322,15 @@ function RequestCard({
           ) : null}
           {error ? <div className="mt-2"><ErrorLine>{error}</ErrorLine></div> : null}
         </div>
+      ) : null}
+
+      {reading ? (
+        <CvPreviewModal
+          downloadUrl={api.href(`/requests/${encodeURIComponent(request.id)}/items/${encodeURIComponent(reading.id)}/cv`)}
+          fileName={`${reading.candidateName} · ${reading.cvFileName ?? "CV"}`}
+          mimeType={reading.cvMimeType}
+          onClose={() => setReading(null)}
+        />
       ) : null}
 
       {booking ? (
