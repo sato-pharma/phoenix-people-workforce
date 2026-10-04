@@ -2284,6 +2284,7 @@ import { runNeedsYouEmailOwnerOnlyTests } from "./needs-you-email-owner-only.tes
 import { runNeedsYouBoardTests } from "./needs-you-board.test.ts";
 import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts";
 import { runNeedsYouNeverUnderReportsTests } from "./needs-you-never-under-reports.test.ts";
+import { runOrphanedRequestsTests } from "./orphaned-requests.test.ts";
 import { runNeedsYouPageNeverDecidesTests } from "./needs-you-page-never-decides.test.ts";
 import { runNeedsYouFitsTheScreenTests } from "./needs-you-fits-the-screen.test.ts";
 import { runNeedsYouDailyDigestTests } from "./needs-you-daily-digest.test.ts";
@@ -8742,6 +8743,10 @@ await runTest(
 await runTest(
   "the Needs You board never under-reports: one dead source among fifteen live ones makes the clean board UNPROVABLE and keeps the all-clear sentence off the render (which is gated on allClearProvable and never on yours.length, also zero when every source is dead), a permission refusal stays a TRUE zero that does NOT spend the all-clear so nine refusals cannot become nine permanent amber rows, a failed source reports itemCount null rather than 0, the every-source band carries one row per NeedsYouSourceId for all-ok, all-failed, mixed AND nothing-reported-at-all (classify.ts walks the registry, so a source lost to a dropped await arrives as amber instead of vanishing), the adapter registry and the source union are the same set in both directions, every yours row has an href or an externalUrl, the headline counts only what is his, oldest sorts first with an undated row last, nothing printed carries an ellipsis, and could-not-be-read is band ONE",
   runNeedsYouNeverUnderReportsTests,
+);
+await runTest(
+  "the orphaned-request detector flags a request stranded because its next actor has left: a resigned actor is caught even through a casing difference (assigned_hr_id keeps the master's casing), while an ACTIVE actor, a role rung with no named person, and an actor the master does not hold are each left alone (it detects a KNOWN departure, never guesses one from a missing row); grouping is by (module, reason), dedupes the people and keeps the OLDEST timestamp; and the source is wired into the Needs You board in all four places (id, label, destination, adapter) so it reaches the morning digest rather than only existing",
+  runOrphanedRequestsTests,
 );
 await runTest(
   "the Needs You page links and never decides: no server action, form, HTTP method, click handler, form-state hook, revalidate or action prop anywhere under the route, and no fetch at all (an HTTP hop back into this app would inherit /api/approvals/badge-counts' deliberate {count: 0} fallback, the one shape this page must never have), with the route force-dynamic and its gate a server-side redirect on canAccessSystemAdministratorWorkspace rather than a hidden nav row",

@@ -63,6 +63,13 @@ export const needsYouSourceIds = [
   // decided. The counts come from the module's own producer (`server/decision-queues.ts`), which the
   // module page's own badge reads too, so the two can never disagree.
   "phoenix-crm-decisions",
+  // Added 2026-10-04. A request in ANY chain (marketing, direct orders, vacation) stranded because
+  // the one person who must act next has resigned — a `returned` request whose requester has left and
+  // can never resubmit it, or an approval rung named to someone who has left. Nothing else in the
+  // product surfaces it: it is not in anyone's "waiting on me" queue and it is not terminal, so it
+  // ages out of sight — five direct orders sat 48–52 days this way before a hand sweep found them.
+  // Produced by `src/lib/approvals/orphaned-requests.ts`.
+  "orphaned-requests",
 ] as const;
 
 export type NeedsYouSourceId = (typeof needsYouSourceIds)[number];
@@ -92,6 +99,7 @@ export const needsYouSourceLabels: Record<NeedsYouSourceId, string> = {
   "coaching-red-zone": "Coaching red-zone reps",
   "salary-flags": "Unresolved salary flags",
   "phoenix-crm-decisions": "Phoenix CRM decisions",
+  "orphaned-requests": "Requests stranded on someone who left",
 };
 
 /**
@@ -127,6 +135,10 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
   // pilot and only forwards here. The Team tab is where every one of these decisions is actually
   // taken — the list requests, the off-plan visits and each territory's list readiness are all on it.
   "phoenix-crm-decisions": { href: "/admin/field-crm?tab=team", screen: "Phoenix CRM Team" },
+  // Spans three modules, so each ITEM carries its own href to the screen that owns it (see the
+  // adapter). This source-level default is only the fallback for the amber "could not be read" row
+  // and the every-source band label; Direct Orders is where today's real orphans live.
+  "orphaned-requests": { href: "/admin/direct-orders", screen: "Direct Orders" },
 };
 
 /**
