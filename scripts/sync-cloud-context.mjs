@@ -7,8 +7,12 @@
 //
 // Copies, into <repo>/.claude/cloud-context/ :
 //   memory-mirror/           <- ~/.claude/projects/<slug>/memory/   (index + every file)
-//   global-standing-rules.md <- ~/.claude/CLAUDE.md                 (verbatim)
+//   global-standing-rules.md <- ~/.claude/CLAUDE.md                 (verbatim, but LF)
 //   README.md                <- generated metadata (counts, bytes, when)
+//
+// Every file is written with LF line endings (crlfToLf), whatever the laptop holds: git commits the
+// mirror as LF anyway, and a CRLF working copy lists as modified in `git status`, which made
+// `new-session.mjs --remove` refuse a worktree whose refresh had already merged.
 //
 // NOTE: the subdir is memory-mirror/, NOT memory/, on purpose — .gitignore has a
 // bare `memory/` rule (protects against committing a real auto-memory dir), so a
@@ -29,6 +33,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
+import { crlfToLf } from './cloud-mirror-drift.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
@@ -67,7 +72,7 @@ const memFiles = fs
 
 let bytes = 0;
 for (const name of memFiles) {
-  const buf = fs.readFileSync(path.join(MEMORY_DIR, name));
+  const buf = crlfToLf(fs.readFileSync(path.join(MEMORY_DIR, name)));
   fs.writeFileSync(path.join(OUT_MEMORY, name), buf);
   bytes += buf.length;
 }
@@ -76,7 +81,7 @@ for (const name of memFiles) {
 //    the memory mirror is still worth shipping on its own.
 let rulesBytes = 0;
 if (fs.existsSync(GLOBAL_RULES)) {
-  const buf = fs.readFileSync(GLOBAL_RULES);
+  const buf = crlfToLf(fs.readFileSync(GLOBAL_RULES));
   fs.writeFileSync(path.join(OUT_DIR, 'global-standing-rules.md'), buf);
   rulesBytes = buf.length;
 } else {

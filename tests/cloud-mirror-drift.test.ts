@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { cloudMirrorDrift, cloudMirrorDriftReport, cloudMirrorSessionLines } from "../scripts/cloud-mirror-drift.mjs";
+import {
+  cloudMirrorDrift,
+  cloudMirrorDriftReport,
+  cloudMirrorSessionLines,
+  crlfToLf,
+} from "../scripts/cloud-mirror-drift.mjs";
 import { readMirrorFromRef } from "../scripts/cloud-mirror-source.mjs";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -26,11 +31,15 @@ import { stripComments } from "./support/comment-strip.ts";
  *  1. THE THREE KINDS OF DRIFT, apart. Stale, missing from the mirror, and present in the mirror
  *     with no live memory are different problems with different fixes, and a single count hides
  *     which one you have.
- *  2. LINE ENDINGS ARE NOT DRIFT. `sync-cloud-context.mjs` copies buffers, so a fresh mirror is
- *     byte-identical on disk — but git normalises CRLF to LF on the way in, so the COMMITTED blob a
- *     cloud session clones differs from a Windows working tree. Comparing raw bytes reports every
- *     file as drifted. Measured the same day: `git status` listed 36 changed files after a sync
- *     while the commit held 9.
+ *  2. LINE ENDINGS ARE NOT DRIFT. The live memory still holds files with CRLF, while git normalises
+ *     CRLF to LF on the way in, so the COMMITTED blob a cloud session clones never carries a CR.
+ *     Comparing raw bytes reports every such file as drifted. Measured the same day: `git status`
+ *     listed 36 changed files after a sync while the commit held 9.
+ *  5. THE REFRESH WRITES LF. `sync-cloud-context.mjs` used to copy those CRLF files verbatim, so the
+ *     working copy differed from the index and `git status` listed 27 files as modified with no
+ *     content change — which made `new-session.mjs --remove` refuse to retire a worktree whose
+ *     refresh had already merged (2026-10-04). `crlfToLf` is pinned by behaviour, and the script's
+ *     two writes by source.
  *  3. THE REPORT NAMES FILES. A count nobody can act on is not a finding.
  *  4. THE FAIL DIRECTION. repo-doctor must say "cannot measure" when a side is missing, never
  *     "none drifted" — a cloud session running it has no memory directory at all.
@@ -42,6 +51,7 @@ import { stripComments } from "./support/comment-strip.ts";
 const DOCTOR = "scripts/repo-doctor.mjs";
 const GUARD = ".claude/hooks/memory-index-guard.mjs";
 const SOURCE = "scripts/cloud-mirror-source.mjs";
+const SYNC = "scripts/sync-cloud-context.mjs";
 const flat = (path: string) => stripComments(readFileSync(path, "utf8")).replace(/\s+/g, " ");
 
 const m = (entries: Array<[string, string]>) => new Map(entries);
@@ -246,4 +256,49 @@ export function runCloudMirrorDriftTests() {
     assert.ok(real.size > 500, `${SOURCE}: origin/main's mirror should hold the whole memory set`);
     assert.ok(real.has("MEMORY.md"), `${SOURCE}: the index itself is part of what cloud reads`);
   }
+
+  // ── 5. The refresh WRITES LF ─────────────────────────────────────────────────────────────────
+  // 27 of 1,111 live memory files carry CRLF. Copied verbatim they land in the working tree as CRLF
+  // while the index holds LF, so `git status` lists them as modified and `new-session.mjs --remove`
+  // refuses the worktree. The function is pinned by behaviour; the script's use of it by source.
+  const hex = (b: Buffer) => b.toString("hex");
+  assert.equal(hex(crlfToLf(Buffer.from("a\r\nb\r\n"))), hex(Buffer.from("a\nb\n")), "CRLF becomes LF");
+  assert.equal(hex(crlfToLf(Buffer.from("a\nb\n"))), hex(Buffer.from("a\nb\n")), "LF is left alone");
+  assert.equal(
+    hex(crlfToLf(Buffer.from("a\rb\r\n"))),
+    hex(Buffer.from("a\rb\n")),
+    "a lone CR is not a line ending and stays",
+  );
+  assert.equal(
+    hex(crlfToLf(Buffer.from("a\r\r\nb"))),
+    hex(Buffer.from("a\r\nb")),
+    "only the CR directly before the LF goes",
+  );
+  assert.equal(
+    hex(crlfToLf(Buffer.from([0xff, 0x0d, 0x0a, 0xfe, 0x80]))),
+    hex(Buffer.from([0xff, 0x0a, 0xfe, 0x80])),
+    "bytes that are not valid UTF-8 pass through untouched — never decoded, never re-encoded",
+  );
+  assert.equal(crlfToLf(Buffer.alloc(0)).length, 0, "an empty file stays empty");
+  const noCr = Buffer.from("no carriage return here\n");
+  assert.equal(crlfToLf(noCr), noCr, "a buffer with no CR comes back as the very same buffer");
+
+  const sync = flat(SYNC);
+  assert.ok(
+    /import \{ crlfToLf \} from ['"]\.\/cloud-mirror-drift\.mjs['"]/.test(sync),
+    `${SYNC}: it must import crlfToLf from the pure module that owns line-ending knowledge`,
+  );
+  assert.ok(
+    /crlfToLf\(fs\.readFileSync\(path\.join\(MEMORY_DIR, name\)\)\)/.test(sync),
+    `${SYNC}: every memory file must be written through crlfToLf`,
+  );
+  assert.ok(
+    /crlfToLf\(fs\.readFileSync\(GLOBAL_RULES\)\)/.test(sync),
+    `${SYNC}: the global standing rules must be written through crlfToLf too`,
+  );
+  assert.equal(
+    (sync.match(/readFileSync\(/g) ?? []).length,
+    (sync.match(/crlfToLf\(fs\.readFileSync\(/g) ?? []).length,
+    `${SYNC}: no file may be read for the mirror without going through crlfToLf`,
+  );
 }
