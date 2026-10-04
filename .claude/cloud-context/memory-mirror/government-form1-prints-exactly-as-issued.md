@@ -1,6 +1,6 @@
 ---
 name: government-form1-prints-exactly-as-issued
-description: "Owner rule — social-insurance Form 1 prints as the Authority issues it; page 2 carries nothing Phoenix wrote, and the whole form is duplex."
+description: "Owner rule — social-insurance Form 1 and Form 6 print as the Authority issues them, duplex; the back page's identification blanks (company name, insurance number, address, insured name and number) DO print data since 2026-09-03 (Form 1) and 2026-10-04 (Form 6); signatures never."
 metadata: 
   node_type: memory
   type: feedback

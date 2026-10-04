@@ -1,6 +1,6 @@
 "use client";
 
-// The HR Forms drive — folders, the papers in them, and the two ways to fill one.
+// The HR Forms drive — folders, the papers in them, and the three ways to fill one.
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The owner, 2026-09-13: "i want it to look like a drive with folders every folder contain documents
@@ -11,6 +11,9 @@
 // renderer, same free typing on the page — so a paper reached through a folder cannot print
 // differently from one reached through the package tabs below. TYPE IT IN draws the same paper from
 // typed values instead (manual-paper-workspace.tsx).
+//
+// PRINT FOR MANY is the owner's later ask (2026-10-04): the same paper for 15, 20, 30 employees in one
+// go. It is a third way to fill the same paper, not a separate screen — see bulk-print-panel.tsx.
 //
 // THE EMPLOYEE LIST FOLLOWS THE PAPER. A leaving paper lists leavers only — the bug the owner
 // reported — and the rule lives in `candidatesForDocument`, not here, so it is tested once.
@@ -24,6 +27,7 @@ import {
   Hash,
   Keyboard,
   Loader2,
+  Printer,
   Lock,
   UserRound,
   UserX,
@@ -32,6 +36,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AdminTableShell } from "@/components/admin/admin-design-system";
 import { PAPER_ISSUED_EVENT } from "@/components/hiring-pack/issue-paper-reference";
+import { BulkPrintPanel } from "@/components/hiring-pack/bulk-print-panel";
 import { ManualPaperWorkspace } from "@/components/hiring-pack/manual-paper-workspace";
 import type { StoredTemplate } from "@/components/hiring-pack/use-company-templates";
 import { Button } from "@/components/ui/button";
@@ -47,10 +52,11 @@ import {
 } from "@/lib/hiring-pack/forms-drive";
 import type { HiringPackCandidate } from "@/lib/hiring-pack/types";
 
-type FillMode = "employee" | "manual";
+type FillMode = "employee" | "bulk" | "manual";
 
 const FILL_MODES: ReadonlyArray<{ label: string; value: FillMode }> = [
   { label: "Choose an employee", value: "employee" },
+  { label: "Print for many", value: "bulk" },
   { label: "Type it in", value: "manual" },
 ];
 
@@ -134,7 +140,7 @@ export function FormsDrive({
 
   return (
     <AdminTableShell
-      description="Open a folder, press the paper you need, then fill it from an employee's record or type the details in. Every print is numbered."
+      description="Open a folder, press the paper you need, then fill it from an employee's record, print it for many employees at once, or type the details in. Every print is numbered."
       title="HR Forms drive"
     >
       <div className="flex flex-col gap-4 px-5 py-5 sm:px-6">
@@ -243,7 +249,7 @@ export function FormsDrive({
 
             <ChoiceGroup
               aria-label="How to fill this paper"
-              className="grid-cols-2"
+              className="grid-cols-3"
               onChange={setMode}
               options={FILL_MODES}
               value={mode}
@@ -308,6 +314,25 @@ export function FormsDrive({
                     </span>
                   )}
                 </div>
+              </div>
+            ) : mode === "bulk" ? (
+              <div className="flex flex-col gap-3">
+                <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                  <Printer className="h-4 w-4 text-phx-accent-press" />
+                  One paper, many employees
+                </p>
+                {entry.audience === "departed" ? (
+                  <p className="flex items-start gap-2 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <UserX className="mt-0.5 h-4 w-4 shrink-0" />
+                    This is a leaving paper, so only people who have left are listed.
+                  </p>
+                ) : null}
+                <BulkPrintPanel
+                  candidates={offered}
+                  defaultCopies={templates.find((template) => template.id === entry.versionId)?.defaultCopies}
+                  entry={entry}
+                  key={entry.document}
+                />
               </div>
             ) : (
               <div className="flex flex-col gap-3">

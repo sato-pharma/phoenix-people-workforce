@@ -55,6 +55,9 @@ export function buildForm6Values(data: HiringPackData): Record<string, string> {
 
     establishmentNumber: registration.insuranceEstablishmentNumber,
     companyName: data.company.legalNameAr,
+    // The back page's إقرار asks for the establishment's address as well; Form 1's back prints the
+    // same fact under the same key, so the two forms in one person's file carry one address.
+    companyAddress: data.company.headOfficeAr,
     taxRegPart1,
     taxRegPart2,
     taxRegPart3,
@@ -132,7 +135,7 @@ ${printBanner([
   "MUST be printed DOUBLE-SIDED — tick “Print on both sides” in the dialog. Page 2 is the back of page 1: page 1 ends “أنظر خلفه”, and both the employee and the responsible manager sign the back.",
   `Paper size: US Legal (8.5in x 14in). ${copies} copies are already laid out below — leave the dialog's copy count at 1.`,
   "Scale must stay at 100% / “Actual size”. Fit-to-page shifts every value off its box.",
-  "The signatures, the dates beside them and the stamp are written by hand. Nothing below the address block is filled by Phoenix.",
+  "The signatures, the dates beside them and the stamp are written by hand. On the front nothing below the address block is filled by Phoenix; on the back only the declaration's name, insurance-number and address blanks are.",
 ])}
 ${sheets.join("\n")}
 ${FIT_TO_BOX_SCRIPT}

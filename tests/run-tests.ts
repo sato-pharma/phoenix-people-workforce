@@ -1124,6 +1124,7 @@ import { runHiringPackPrintOptionsTests } from "./hiring-pack-print-options.test
 import { runHrFormsClearanceTests } from "./hr-forms-clearance.test.ts";
 import { runHrFormsContractArchiveTests } from "./hr-forms-contract-archive.test.ts";
 import { runHrFormsCustodyTests } from "./hr-forms-custody.test.ts";
+import { runHrFormsBulkPrintTests } from "./hr-forms-bulk-print.test.ts";
 import { runHrFormsExitDocumentTests } from "./hr-forms-exit-documents.test.ts";
 import { runHrFormsNationalIdTests } from "./hr-forms-national-id.test.ts";
 import { runHrFormsReadinessTests } from "./hr-forms-readiness.test.ts";
@@ -4533,7 +4534,11 @@ await runTest(
   runHiringPackCompanyDetailsTests,
 );
 await runTest(
-  "HR Forms exit documents (Form 6 measured and double-sided x3, nothing typed on a signature line, one exit form never both, one last working day for both authorities, a long value compressed inside its own rule)",
+  "HR Forms bulk print (one paper for many employees: the single-print route request, no inherited stamp, selection order kept through a failure, one joined PDF that keeps the duplex pairing)",
+  runHrFormsBulkPrintTests,
+);
+await runTest(
+  "HR Forms exit documents (Form 6 measured and double-sided x3, the back blanks printed, nothing typed on a signature line, one exit form never both, one last working day for both authorities, a long value compressed inside its own rule)",
   runHrFormsExitDocumentTests,
 );
 await runTest(
