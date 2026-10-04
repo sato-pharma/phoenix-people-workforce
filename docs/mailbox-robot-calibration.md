@@ -1186,3 +1186,75 @@ version of the assertion sliced the route from the driver down to the response, 
 path's own `writeAuditLog` sat inside that window — so deleting the failure audit entirely left the
 suite green. The slice now ends at the rethrow. A source assertion is only as good as the region it
 reads, and the wrong call site satisfying it is the same defect as a comment satisfying it.
+
+## The wording the live page actually carries (2026-10-04, 07:44 Cairo)
+
+The second capture run — the first after the owner completed `hr.mailbox`'s own first sign-in by hand
+— **signed in, reached `https://mail.turbify.com/accountinfo` ("Update User Profile"), and refused at
+the section lookup.** That refusal is the whole return on the step: because every wording list fails
+closed and `describePage` prints the page, the run handed back the button's own text instead of
+pressing something unknown inside a live mailbox's security settings.
+
+The button reads:
+
+```
+APP Password Manage App Passwords
+```
+
+The section **heading** is inside the button, run straight into its label — `textContent` with no
+separator, which is the third time this console has done it (a table row glued a display name to an
+address; the one-time-password dialog glued an address to the next label). The sibling control on the
+same page has the identical shape, `Account Password Change Password`, so expect `<heading> <label>`
+for anything else read off these account pages.
+
+`matchesLocator` compares a text locator **exactly**, after trimming and collapsing whitespace, and
+never as a substring — deliberately, because a substring match on `App Passwords` would also match
+the heading, and a wrong click here lands inside a live mailbox's security settings. So the label on
+its own could never have matched, however many spellings of it were listed, and the measured
+composite has to be listed verbatim.
+
+What changed in `APP_PASSWORD_WORDINGS.appPasswords`:
+
+- `"APP Password Manage App Passwords"` leads the list — the measured wording, tried first.
+- The four earlier guesses stay **below** it rather than being deleted. They cost one failed match
+  each, and they are what still works if Turbify ever drops the heading back out of the button.
+
+Pinned in `tests/new-hire-mailbox-app-password-capture.test.ts`, which asserts the composite is
+present, that it is first, that the documented label is still behind it, and — against
+`src/lib/turbify/resolve.ts` — that the text comparison is still `===` and not a substring. Four
+breaks, four fired on their own messages.
+
+Two things about that verification are worth carrying:
+
+- **The sibling suite had pinned the old wording.** `tests/new-hire-mailbox-robot.test.ts` asserted
+  `appPasswords[0] === "Manage App Passwords"`, so the corrected list would have gone red in CI on a
+  suite the new assertion cannot see. `git grep` for the retired wording before pushing — the same
+  shape that reddened #5285.
+- **A break harness that re-imports is measuring its own module cache.** Run each break in its own
+  child process. The first attempt ran all four in one process, ESM kept `locators.ts` from break A,
+  and breaks B, C and D all fired on A's message while the restore "failed" against a file that was
+  correct on disk. And a short break anchor edits the wrong line: `.trim() === value;` matched the
+  `aria` case three lines above the `text` case, so `String.replace` patched a sibling and the break
+  scored NOT CAUGHT against an assertion that was right all along.
+
+### And the refusal itself had to be made readable
+
+The sentence a failed capture hands back is the step's whole deliverable, and it said:
+
+> No the App Passwords section was found on the Turbify page. … It looked for a button reading one
+> of: …
+
+Two defects in one line. `purpose` is written with its article because that is how it reads inside
+`describeLocator`'s parentheses (`button reading "Generate" (the button that mints a new app
+password)`), so interpolating it after "No" produces "No the". And `clickOneOf` accepts a link **or**
+a button on these pages — a refusal claiming it looked for a button sends the next reader to check
+the wrong element type, which is exactly the kind of misdirection that cost four clicks earlier in
+this chain. It now strips the leading article and names the tags it actually searched.
+
+🔴 **`submitOpenForm` raises the same sentence and is CORRECT — do not "fix" it.** Its purposes are
+written without an article (`submit button for the new-mailbox form`), so "No submit button for the
+new-mailbox form was found" reads properly. The pin is therefore sliced to `clickOneOf`'s body: a
+repo-wide ban on the article-bearing form would have demanded a change next door that makes its
+message worse. Seven breaks, seven fired on their own messages — and break E had to **shadow** rather
+than replace, because swapping the stripped subject back out fires the positive assertion one line
+earlier, which is the right assertion under a different wording rather than a misaim.

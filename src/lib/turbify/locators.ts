@@ -158,17 +158,36 @@ export const APP_PASSWORD_PAGE = {
  * profile menu, and `clickOneOf` presses, so it could never have been reached by any wording. The
  * driver navigates to `ACCOUNT_INFO_URL` instead and these remain the fallback.
  *
- * 🔴 STILL NOT MEASURED ON A LIVE PAGE — a documented wording is a well-sourced guess, not a
- * measurement. That stays safe because every one fails CLOSED: a list matching nothing refuses and
- * prints the page it was looking at, errors included (`describePage` in the joiner), so the first
- * click that reaches here settles them rather than pressing something unknown inside a live
- * mailbox's security settings.
+ * 🔴 THE GUESSES FAIL CLOSED, AND THAT IS WHAT SETTLED `appPasswords` ON 2026-10-04. A list matching
+ * nothing refuses and prints the page it was looking at (`describePage` in the joiner), so the first
+ * click that reached here handed back the real wording instead of pressing something unknown inside
+ * a live mailbox's security settings. Every other list below is still a well-sourced guess.
  */
 export const APP_PASSWORD_WORDINGS = {
   accountInfo: [
     "Manage your account", "Account info", "Account Info", "Account information", "Account settings", "Account Security",
   ],
-  appPasswords: ["Manage App Passwords", "Manage app passwords", "App Passwords", "App passwords"],
+  /**
+   * 🔴 THE FIRST ENTRY IS MEASURED, AND IT IS THE GLUE AGAIN. On `mail.turbify.com/accountinfo`
+   * ("Update User Profile") the button's own text reads `APP Password Manage App Passwords` — the
+   * section HEADING is inside the button, run straight into its label, so none of the four guesses
+   * below could ever equal it. `matchesLocator` compares text EXACTLY and never as a substring (on
+   * purpose: a substring match on "App Passwords" would also catch a heading), so the real wording
+   * has to be listed, not approximated.
+   *
+   * This is the same `textContent` concatenation that made a console row parse as
+   * `Abd-Elnaimahmed.mohamed@satopharma.com` and a dialog token as
+   * `hr.mailbox@satopharma.comone-time` — met a THIRD time, now in a button. The sibling control on
+   * that page has the identical shape (`Account Password Change Password`), so expect
+   * `<heading> <label>` for anything else read off this panel.
+   *
+   * The four guesses stay BELOW it rather than being deleted: they cost one failed match each and
+   * they are what will still work if Turbify ever drops the heading out of the button.
+   */
+  appPasswords: [
+    "APP Password Manage App Passwords",
+    "Manage App Passwords", "Manage app passwords", "App Passwords", "App passwords",
+  ],
   generate: ["Generate", "Generate app password", "Generate password", "Create app password"],
   /**
    * 🔴 THE STEP THE ROBOT DID NOT KNOW EXISTED. Turbify: "From the dropdown menu, select the

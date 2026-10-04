@@ -371,9 +371,16 @@ async function clickOneOf(
       // only as "none matched", which is why the panel must be read on the first real run.
     }
   }
+  // The purpose is written with its article ("the App Passwords section") because that is how it
+  // reads inside `describeLocator`'s parentheses — so this sentence drops it, or the refusal the
+  // owner actually reads says "No the App Passwords section was found". And it names the TAGS it
+  // searched: the app-password steps accept a link, and a refusal claiming it looked for a button
+  // sends the next reader to check the wrong thing.
+  const subject = purpose.replace(/^(?:the|a|an) /i, "");
   throw new TurbifyJoinerStepError(
-    `No ${purpose} was found on the Turbify page. The robot stopped rather than guess. `
-    + `It looked for a button reading one of: ${wordings.join(", ")}. Read the panel and add the real wording.`,
+    `No ${subject} was found on the Turbify page. The robot stopped rather than guess. `
+    + `It looked for a ${tags.join(" or ")} reading one of: ${wordings.join(", ")}. `
+    + "Read the panel and add the real wording.",
   );
 }
 
