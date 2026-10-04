@@ -411,8 +411,11 @@ export const VISITS_RULE =
   "keeps the visits it really had. Every visit is reported AM · PM · Pharmacies, three figures " +
   "apart: a pharmacy call is never counted among the PM doctors, whatever period the vendor tagged " +
   "it with, and an unmarked period counts as PM so the three always add to the total.";
+// The same door as VISITS_ORIGIN above. It was left naming the raw mirror when the visits line moved onto
+// the view, so for a started team the pack told its reader the customers came from iReports360 when they
+// came from Phoenix CRM — the one question a provenance cell exists to answer.
 export const CUSTOMERS_ORIGIN =
-  "public.ireports360_visits, distinct contact_crm_id on regular visits";
+  "public.crm_visits_unified via the CRM read door, distinct contact_crm_id on regular visits";
 export const CUSTOMERS_RULE =
   "A customer counts in a month when a regular (type 0) visit named them. Area, district, line and " +
   "company totals are unions of those contacts, never sums, so one doctor seen by two reps is one " +

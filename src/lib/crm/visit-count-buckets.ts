@@ -12,26 +12,34 @@
 // for the vendor's undocumented -30 code, which carries no contact — the rep's comment, which
 // classifyVisit already routes to "Pharmacy Visit". Two helpers, one answer.
 //
-// PHOENIX CRM LOGS NO PHARMACY VISIT (2026-10-02). From a team's start the visit door serves that
-// team's Phoenix CRM visits instead of its iReports360 rows (src/lib/crm/phoenix-team-starts.ts), and
-// a Phoenix customer is an AM account or a PM doctor only — a pharmacy there is stock feedback recorded
-// ON a doctor's visit, never a visit of its own. So for a started team the Pharmacies figure is not a
-// zero: it was never recorded. A split therefore knows how many of its rows came from Phoenix CRM
-// (`phoenix`), and every printed figure says the truth through ONE set of words:
-//   no Phoenix row            "AM 3 · PM 9 · Pharmacies 2"                      exactly as before
-//   only Phoenix rows         "AM 3 · PM 9 · Pharmacies not recorded in Phoenix" never "Pharmacies 0"
-//   both                      "AM 3 · PM 9 · Pharmacies 2 (iReports360 only)"   the vendor's count, named
-// and a workbook cell is BLANK, never 0, with the same words in its note (`pharmacyCellValue`,
-// `pharmacyCellNote`, `PHARMACY_CELL_FOOTNOTE`). Nothing here moves a pharmacy into AM or PM, invents a
-// pharmacy count from Phoenix feedback, or changes any figure — only the words a figure is printed with.
+// AND THE CUSTOMER'S OWN LIST, which is how a PHOENIX pharmacy call says so. Phoenix CRM carries the
+// list in `list_type`, the view hands it over as `ampm`, and `Pharmacy` is one of its three values
+// (src/lib/phoenix-crm/pharmacy-call-rules.ts, rule 1) — so a row tagged `ampm = 'Pharmacy'` is a
+// pharmacy whatever its speciality says. Reading only the speciality filed a Phoenix pharmacy call whose
+// customer had none among the PM DOCTORS, which is the mistake `doctorListType` was written to stop
+// ("not a refusal but a wrong answer"): measured on production 2026-10-04, 5 of Delta (1)'s 25 pharmacy
+// calls of 3 October — three of B-158's, two of B-100's — were counted as PM doctor calls, against the
+// rule that a pharmacy call is in NO KPI. No iReports360 row has ever carried `ampm = 'Pharmacy'`
+// (0 of 139,369 measured the same day), so reading the list restates no vendor history at all.
 //
-// Pure — it imports only the pure CRM vocabularies and the one test of a Phoenix row — so the client
-// components that print a count import it as readily as the server reads that build one. It is the ONE
-// place that decides the bucket, and the ONE place that words a pharmacy figure Phoenix cannot give.
+// PHOENIX CRM RECORDS PHARMACY CALLS — since the owner's ruling of 2026-10-03, and this module said the
+// opposite until 2026-10-04. It used to be true that a pharmacy existed there only as stock feedback
+// typed ON a doctor's visit, so a started team's Pharmacies figure was worded "not recorded in Phoenix"
+// rather than printed as 0, and a workbook cell was left BLANK. Then he ruled that a pharmacy named on a
+// visit counts as that pharmacy's own visit, needing no validation, no plan and no approval; Delta (1)
+// logged 25 on its first Phoenix day. So a Phoenix split's pharmacy figure is a REAL count again:
+// `pharmacyRecordingOf` answers "recorded" for every split, and the three sets of words below are
+// retired rather than deleted — the helpers still print the plain figure, so no caller changed, and the
+// constants stay only so that nothing re-adopts a claim that is no longer true.
+//
+// Pure — it imports only the pure CRM vocabularies, the one test of a Phoenix row and the one parser of
+// a Phoenix list — so the client components that print a count import it as readily as the server reads
+// that build one. It is the ONE place that decides the bucket.
 
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { classifyVisit } from "@/lib/crm/visit-types";
+import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 
 export type VisitCountBucket = "AM" | "PM" | "Pharmacies";
 
@@ -65,6 +73,9 @@ export type VisitCountRow = {
 };
 
 export function isPharmacyVisitRow(row: VisitCountRow): boolean {
+  // The customer's own list, which is what a Phoenix pharmacy call carries — before the speciality,
+  // because a rep adding a pharmacy at the door often leaves that field empty.
+  if (isPharmacyListType(row.ampm)) return true;
   if (isPharmacySpeciality(row.speciality)) return true;
   if (row.visit_type === undefined || row.visit_type === null) return false;
   return classifyVisit(row.visit_type, row.comment ?? null, row.visit_type_description ?? null).label === "Pharmacy Visit";
@@ -116,23 +127,23 @@ export function visitCountSplitTotal(split: VisitCountSplit): number {
 // ── The pharmacy figure Phoenix CRM cannot give ─────────────────────────────────────────────────
 
 /**
- * Whether a split's pharmacy figure says what it seems to:
- *   recorded      no row behind it is Phoenix CRM's — the figure is the whole count, as always;
- *   not-recorded  every row is Phoenix CRM's and none was a pharmacy — there is no figure at all;
- *   partial       Phoenix rows sit beside iReports360 ones — the figure counts the iReports360 rows only.
+ * Whether a split's pharmacy figure says what it seems to. ALWAYS "recorded" since the owner's ruling of
+ * 2026-10-03: Phoenix CRM records a pharmacy call of its own, so every split's pharmacy figure is the
+ * whole count, a 0 means nobody called a pharmacy, and the other two verdicts became false statements —
+ *   not-recorded  claimed "Phoenix CRM logs no pharmacy visit" of a team that logged 25 on its first day;
+ *   partial       claimed the figure counted the iReports360 rows only, when it counts both sources.
  *
- * `fromVisits` judges a split that was DERIVED from visits rather than counting them (distinct
- * customers, say) by the visits it came from: its pharmacy figure is missing exactly when theirs is.
+ * Kept as the one gate rather than deleted at thirteen call sites: every helper below asks it, so one
+ * answer here is what puts the real number back on every screen, export and workbook cell at once. A
+ * started team's Pharmacies figure is a count again — it is no longer blanked, and no longer footnoted.
+ *
+ * `fromVisits` judged a derived split (distinct customers, say) by the visits it came from; it is still
+ * accepted so no caller had to change, and it no longer alters the answer.
  */
 export type PharmacyRecording = "recorded" | "not-recorded" | "partial";
 
-export function pharmacyRecordingOf(split: VisitCountSplit, fromVisits?: VisitCountSplit | null): PharmacyRecording {
-  const judged = fromVisits ?? split;
-  const phoenix = Number(judged.phoenix ?? 0);
-  if (!(phoenix > 0)) return "recorded";
-  const nothingElse = judged.pharmacies <= 0 && phoenix >= judged.am + judged.pm;
-  // A real pharmacy count is never hidden behind "not recorded", whatever the visits say.
-  return nothingElse && split.pharmacies <= 0 ? "not-recorded" : "partial";
+export function pharmacyRecordingOf(_split: VisitCountSplit, _fromVisits?: VisitCountSplit | null): PharmacyRecording {
+  return "recorded";
 }
 
 /** After "Pharmacies" when every row is Phoenix CRM's: "Pharmacies not recorded in Phoenix". */

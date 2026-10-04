@@ -9,35 +9,14 @@
 // leaves out his iReports360 visits.
 //
 // The day's start itself is `phoenixFirstVisitStarts` (src/lib/crm/sfe-field-analytics.ts), the ONE
-// helper the SFE start-time table reads too. This file holds what only Early Birds needs: which of its
-// rep-days a start covers. Pure, so the rule is tested against fixed rows; collect.ts reads the rows.
+// helper the SFE start-time table reads too.
+//
+// WHICH REP-DAYS A START COVERS IS NOT EARLY BIRDS' RULE ANY MORE. It began here because Early Birds was
+// the first reader to need it, and it is re-exported from here so this module's own doc and its pinned
+// test keep their path — but it now lives in the feature's canon (`src/lib/crm/phoenix-team-starts.ts`),
+// beside `isPhoenixNativeVisitRow`, because a second reader outside Early Birds needs the same answer:
+// `rep-day.ts`, which asks the LIVE vendor API and so has no `source` column to judge a row by. The rows
+// are still read by collect.ts — through `loadStartedRepWindows` in `src/lib/crm/phoenix-started-reps.ts`,
+// the one read of that RPC.
 
-import { normalizeHrIdForAccess } from "@/lib/hr-id";
-
-/** One person's days within a team's start: [from, until), until null while it runs. */
-export type StartedRepWindow = {
-  /** The roster key (`normalizeHrIdForAccess`), or null. */
-  hrIdKey: string | null;
-  agentCrmId: number | null;
-  from: string;
-  until: string | null;
-};
-
-/**
- * Whether a row (a check-in, a visit) of this person on this day falls within a start. Matched as the
- * read door matches: on the hr id, or — on a row that carries no hr id — on the CRM id.
- */
-export function startedWindowCovers(
-  windows: readonly StartedRepWindow[],
-  row: { hrId: string | null | undefined; crmId: number | null | undefined },
-  dateIso: string,
-): boolean {
-  if (!dateIso) return false;
-  const key = normalizeHrIdForAccess(row.hrId ?? null);
-  return windows.some(
-    (window) =>
-      dateIso >= window.from &&
-      (window.until === null || dateIso < window.until) &&
-      (key ? window.hrIdKey === key : row.crmId != null && window.agentCrmId === row.crmId),
-  );
-}
+export { startedWindowCovers, type StartedRepWindow } from "@/lib/crm/phoenix-team-starts";

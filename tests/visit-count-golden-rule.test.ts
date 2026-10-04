@@ -2,7 +2,6 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import {
-  PHARMACY_CELL_FOOTNOTE,
   addBucketToSplit,
   addVisitToSplit,
   emptyVisitCountSplit,
@@ -63,6 +62,13 @@ export function runVisitCountGoldenRuleTests() {
     "a -30 visit that does not read as a pharmacy stays with the doctors",
   );
   assert.equal(isPharmacyVisitRow({ comment: "pharmacy", visit_type: 0 }), false, "the comment route is -30's alone; a regular visit is judged by its contact");
+  // AND THE CUSTOMER'S OWN LIST, which is how a Phoenix pharmacy call says so: the view hands `list_type`
+  // over as `ampm`, and `Pharmacy` is one of its three values. The speciality alone was not enough — 5 of
+  // Delta (1)'s 25 pharmacy calls of 2026-10-03 carried none and were counted among the PM DOCTORS.
+  assert.equal(visitCountBucket({ ampm: "Pharmacy", speciality: null, visit_type: 0 }), "Pharmacies", "a pharmacy on its list alone, with no speciality to help");
+  assert.equal(visitCountBucket({ ampm: "Pharmacy", speciality: "Pharmacy", visit_type: 0 }), "Pharmacies", "and with one");
+  assert.equal(isPharmacyVisitRow({ ampm: "Pharmacy" }), true, "the list is read on its own, before anything else on the row");
+  assert.notEqual(visitCountBucket({ ampm: "Pharmacy", speciality: null, visit_type: 0 }), "PM", "never among the doctors — a pharmacy call is in no KPI");
 
   // ── the split and its words ────────────────────────────────────────────────────────────────
   {
@@ -355,20 +361,29 @@ export function runVisitCountGoldenRuleTests() {
     }
   }
 
-  runPhoenixPharmaciesNotRecordedTests();
+  runPhoenixPharmacyFigureTests();
 }
 
-// ── PHOENIX CRM LOGS NO PHARMACY VISIT (2026-10-02) ───────────────────────────────────────────────
+// ── PHOENIX CRM RECORDS PHARMACY CALLS (owner, 2026-10-03) ────────────────────────────────────────
 //
-// From a team's start the visit door serves its Phoenix CRM visits instead of its iReports360 rows
-// (src/lib/crm/phoenix-team-starts.ts), and a Phoenix customer is an AM account or a PM doctor only — a
-// pharmacy there is feedback ON a doctor's visit, never a row. So a started team's Pharmacies figure is
-// not 0: it was never recorded. AGENTS.md §7: "When a data source is unavailable, verify the UI says so
-// rather than showing a misleading zero." The helper words it; nothing moves a pharmacy into AM or PM,
-// invents a pharmacy count, or changes any figure.
-function runPhoenixPharmaciesNotRecordedTests() {
+// It did NOT until that ruling, and this suite pinned the consequence: a pharmacy existed in Phoenix CRM
+// only as stock feedback typed ON a doctor's visit, so a started team's Pharmacies figure was worded
+// "not recorded in Phoenix" rather than printed as 0, under AGENTS.md §7 ("when a data source is
+// unavailable, verify the UI says so rather than showing a misleading zero"). Then the owner ruled that a
+// pharmacy named on a visit counts as that pharmacy's own visit — no validation, no plan, no approval —
+// and Delta (1) logged 25 of them on its first Phoenix day. The source was never unavailable again, so
+// the three sets of words became three false statements and `pharmacyRecordingOf` now answers "recorded"
+// for every split.
+//
+// What this function pins now: the figure is a REAL count in every layout, the retired wording appears
+// NOWHERE, and the structural half is untouched — every consumer still reads the helper rather than a
+// bare figure of its own, and a split still knows which of its rows are Phoenix CRM's (`phoenix`), which
+// is what the AM · PM · Pharmacies bar's tooltip reads.
+function runPhoenixPharmacyFigureTests() {
   const phoenixVisit = (ampm: "AM" | "PM") => ({ ampm, crm_visit_id: -3543007088324739, source: "phoenix", speciality: "Pediatrics", visit_type: 0 });
   const vendorVisit = (ampm: "AM" | "PM", speciality = "Cardiology") => ({ ampm, crm_visit_id: 9_120_001, source: "ireports360", speciality, visit_type: 0 });
+  /** A Phoenix pharmacy call: its customer's own list, and — as 5 of Delta (1)'s 25 were — no speciality. */
+  const phoenixPharmacyCall = { ampm: "Pharmacy", crm_visit_id: -948269888598658, source: "phoenix", speciality: null, visit_type: 0 };
 
   // ── the split learns which rows are Phoenix CRM's ──
   {
@@ -383,11 +398,22 @@ function runPhoenixPharmaciesNotRecordedTests() {
     addVisitToSplit(phoenixOnly, phoenixVisit("PM"));
     addVisitToSplit(phoenixOnly, { ampm: "PM", crm_visit_id: -12, speciality: null, visit_type: 0 });
     assert.deepEqual(phoenixOnly, { am: 1, pm: 2, pharmacies: 0, phoenix: 3 }, "a reader that never selected `source` is told by the negative id");
-    assert.equal(pharmacyRecordingOf(phoenixOnly), "not-recorded");
+    assert.equal(pharmacyRecordingOf(phoenixOnly), "recorded", "a Phoenix-only split's 0 is a true 0 — nobody called a pharmacy that day");
+
+    // A PHOENIX PHARMACY CALL LANDS IN PHARMACIES ON ITS LIST ALONE. Its customer carries no speciality,
+    // so reading only the speciality filed it among the PM DOCTORS — 5 of Delta (1)'s 25 calls of
+    // 3 October, three of B-158's and two of B-100's, against the rule that a pharmacy is in no KPI.
+    assert.equal(visitCountBucket(phoenixPharmacyCall), "Pharmacies", "the customer's list says pharmacy, with no speciality to help");
+    assert.equal(visitCountBucket({ ...phoenixPharmacyCall, speciality: "Pharmacy" }), "Pharmacies", "and with one");
+    const phoenixWithPharmacy = emptyVisitCountSplit();
+    addVisitToSplit(phoenixWithPharmacy, phoenixVisit("PM"));
+    addVisitToSplit(phoenixWithPharmacy, phoenixPharmacyCall);
+    assert.deepEqual(phoenixWithPharmacy, { am: 0, pm: 1, pharmacies: 1, phoenix: 2 }, "never 2 PM doctors");
+    assert.equal(pharmacyRecordingOf(phoenixWithPharmacy), "recorded", "and Phoenix's own count is the whole count");
 
     const both = mergeVisitCountSplits(mergeVisitCountSplits(emptyVisitCountSplit(), vendorOnly), phoenixOnly);
     assert.deepEqual(both, { am: 2, pm: 2, pharmacies: 1, phoenix: 3 }, "a merge carries the Phoenix share with the figures");
-    assert.equal(pharmacyRecordingOf(both), "partial");
+    assert.equal(pharmacyRecordingOf(both), "recorded", "beside vendor rows the figure counts BOTH sources, so \"(iReports360 only)\" would be false");
     assert.deepEqual(emptyVisitCountSplit(), { am: 0, pm: 0, pharmacies: 0 }, "the empty split keeps its shape");
     assert.deepEqual(addBucketToSplit(emptyVisitCountSplit(), "PM", 2, true), { am: 0, pm: 2, pharmacies: 0, phoenix: 2 });
     assert.deepEqual(addBucketToSplit(emptyVisitCountSplit(), "PM", 2), { am: 0, pm: 2, pharmacies: 0 });
@@ -398,9 +424,10 @@ function runPhoenixPharmaciesNotRecordedTests() {
     );
   }
 
-  // ── THE WORDS: the three cases, full and compact ──
+  // ── THE WORDS: one case now — the figure — in every layout, full and compact ──
   {
     const phoenixOnly: VisitCountSplit = { am: 2, pm: 5, pharmacies: 0, phoenix: 7 };
+    const phoenixWithPharmacies: VisitCountSplit = { am: 2, pm: 5, pharmacies: 3, phoenix: 10 };
     const both: VisitCountSplit = { am: 3, pm: 9, pharmacies: 2, phoenix: 4 };
     const vendorOnly: VisitCountSplit = { am: 3, pm: 9, pharmacies: 2 };
 
@@ -408,61 +435,64 @@ function runPhoenixPharmaciesNotRecordedTests() {
     assert.equal(formatVisitCountSplit(vendorOnly, { compact: true }), "AM 3 · PM 9 · Pharmacies 2");
     assert.equal(formatVisitCountSplit({ am: 0, pm: 4, pharmacies: 0 }, { compact: true }), "PM 4", "and a compact chip still drops a real zero");
 
-    // THE HEADLINE: a Phoenix-only split never prints "Pharmacies 0".
-    assert.equal(
-      formatVisitCountSplit(phoenixOnly),
-      "AM 2 · PM 5 · Pharmacies not recorded in Phoenix",
-      "only Phoenix rows: the pharmacy figure was never recorded — never \"Pharmacies 0\"",
-    );
-    assert.doesNotMatch(formatVisitCountSplit(phoenixOnly), /Pharmacies 0/);
-    assert.equal(
-      formatVisitCountSplit({ am: 0, pm: 5, pharmacies: 0, phoenix: 5 }, { compact: true }),
-      "PM 5 · Pharmacies not recorded in Phoenix",
-      "a compact chip drops the zero AM but never the unrecorded pharmacy figure — dropped, it would read as none",
-    );
+    // THE HEADLINE, INVERTED BY THE 2026-10-03 RULING: a Phoenix split prints its pharmacy COUNT. A 0 is
+    // a true 0 — the rep called no pharmacy — and 3 is three calls Phoenix recorded.
+    assert.equal(formatVisitCountSplit(phoenixWithPharmacies), "AM 2 · PM 5 · Pharmacies 3", "Phoenix's own pharmacy calls, counted");
+    assert.equal(formatVisitCountSplit(phoenixOnly), "AM 2 · PM 5 · Pharmacies 0", "and a 0 means none was called, not that none could be");
+    assert.equal(formatVisitCountSplit({ am: 0, pm: 5, pharmacies: 0, phoenix: 5 }, { compact: true }), "PM 5", "a compact chip drops it like any real zero");
+    assert.equal(formatVisitCountSplit(both), "AM 3 · PM 9 · Pharmacies 2", "beside vendor rows the figure counts both sources");
+    assert.equal(formatVisitCountSplit(both, { compact: true }), "AM 3 · PM 9 · Pharmacies 2");
 
-    assert.equal(formatVisitCountSplit(both), "AM 3 · PM 9 · Pharmacies 2 (iReports360 only)", "both: the vendor's count, named as the vendor's");
-    assert.equal(formatVisitCountSplit(both, { compact: true }), "AM 3 · PM 9 · Pharmacies 2 (iReports360 only)");
-    assert.equal(
-      formatVisitCountSplit({ am: 1, pm: 6, pharmacies: 0, phoenix: 5 }, { compact: true }),
-      "AM 1 · PM 6 · Pharmacies 0 (iReports360 only)",
-      "a zero beside Phoenix rows is the vendor's zero, said as such — a compact chip keeps it",
-    );
-    for (const split of [phoenixOnly, both]) {
+    // THE RETIRED WORDING REACHES NO LAYOUT AT ALL. This is the assertion that fails if anything rewires
+    // `pharmacyRecordingOf` to speak again, and it is checked against every split shape and every helper.
+    const retired = /not recorded in Phoenix|iReports360 only|logs no pharmacy|Not recorded/;
+    for (const split of [phoenixOnly, phoenixWithPharmacies, both, vendorOnly, { am: 0, pm: 0, pharmacies: 2, phoenix: 2 }]) {
+      assert.equal(pharmacyRecordingOf(split), "recorded", "every split's pharmacy figure is the whole count");
+      for (const text of [
+        formatVisitCountSplit(split),
+        formatVisitCountSplit(split, { compact: true }),
+        formatPharmacyFigure(split),
+        formatPharmacyFigure(split, { numberFirst: true }),
+        pharmacyFigureText(split),
+        pharmacyValueText(split),
+        pharmacyTileFigure(split).value,
+        pharmacyTileFigure(split).note ?? "",
+        pharmacyCellNote(split) ?? "",
+      ]) {
+        assert.doesNotMatch(text, retired, `no layout says the retired wording — got "${text}"`);
+      }
       assert.doesNotMatch(formatVisitCountSplit(split), /\//, "never a slash");
       assert.doesNotMatch(formatVisitCountSplit(split), /…/, "never an ellipsis");
     }
 
-    // A real pharmacy count is never hidden behind "not recorded", whatever the share says.
-    assert.equal(pharmacyRecordingOf({ am: 0, pm: 0, pharmacies: 2, phoenix: 2 }), "partial");
-
-    // Distinct customers are judged by the visits they were counted from.
+    // Distinct customers are judged by the visits they were counted from — still accepted, and it no
+    // longer changes the answer, so no caller had to be edited.
     const customers: VisitCountSplit = { am: 4, pm: 10, pharmacies: 0 };
-    assert.equal(formatVisitCountSplit(customers, { fromVisits: phoenixOnly }), "AM 4 · PM 10 · Pharmacies not recorded in Phoenix");
-    assert.equal(formatVisitCountSplit({ am: 4, pm: 10, pharmacies: 1 }, { fromVisits: both }), "AM 4 · PM 10 · Pharmacies 1 (iReports360 only)");
+    assert.equal(formatVisitCountSplit(customers, { fromVisits: phoenixOnly }), "AM 4 · PM 10 · Pharmacies 0");
+    assert.equal(formatVisitCountSplit({ am: 4, pm: 10, pharmacies: 1 }, { fromVisits: both }), "AM 4 · PM 10 · Pharmacies 1");
     assert.equal(formatVisitCountSplit(customers, { fromVisits: vendorOnly }), "AM 4 · PM 10 · Pharmacies 0");
 
-    // The same words for every other layout.
-    assert.equal(formatPharmacyFigure(phoenixOnly), "Pharmacies not recorded in Phoenix");
-    assert.equal(formatPharmacyFigure(both, { numberFirst: true }), "2 Pharmacies (iReports360 only)");
+    // The figure, in every other layout.
+    assert.equal(formatPharmacyFigure(phoenixWithPharmacies), "Pharmacies 3");
+    assert.equal(formatPharmacyFigure(both, { numberFirst: true }), "2 Pharmacies");
     assert.equal(formatPharmacyFigure(vendorOnly, { numberFirst: true, formatNumber: (n) => n.toLocaleString("en-US") }), "2 Pharmacies");
-    assert.equal(formatPharmacyFigure(phoenixOnly, { label: "pharmacies", numberFirst: true }), "pharmacies not recorded in Phoenix");
-    assert.equal(pharmacyFigureText(phoenixOnly), "not recorded in Phoenix");
-    assert.equal(pharmacyValueText(phoenixOnly), "Not recorded in Phoenix");
-    assert.equal(pharmacyValueText(both), "2 (iReports360 only)");
+    assert.equal(formatPharmacyFigure(phoenixWithPharmacies, { label: "pharmacies", numberFirst: true }), "3 pharmacies");
+    assert.equal(pharmacyFigureText(phoenixWithPharmacies), "3");
+    assert.equal(pharmacyValueText(phoenixWithPharmacies), "3");
+    assert.equal(pharmacyValueText(both), "2");
     assert.equal(pharmacyValueText(vendorOnly), "2");
-    assert.deepEqual(pharmacyTileFigure(phoenixOnly), { note: "Phoenix CRM logs no pharmacy visit", value: "Not recorded" });
-    assert.deepEqual(pharmacyTileFigure(both), { note: "iReports360 only", value: "2" });
+    assert.deepEqual(pharmacyTileFigure(phoenixWithPharmacies), { note: null, value: "3" });
+    assert.deepEqual(pharmacyTileFigure(both), { note: null, value: "2" });
     assert.deepEqual(pharmacyTileFigure(vendorOnly), { note: null, value: "2" });
 
-    // A workbook cell is BLANK, never 0, with the words in its note — the outstation export's rule.
-    assert.equal(pharmacyCellValue(phoenixOnly), null, "blank, never 0");
+    // A WORKBOOK CELL IS THE COUNT AGAIN — never blank, and with no note to explain a blank.
+    assert.equal(pharmacyCellValue(phoenixOnly), 0, "0 calls is 0, not a blank cell");
+    assert.equal(pharmacyCellValue(phoenixWithPharmacies), 3);
     assert.equal(pharmacyCellValue(both), 2);
     assert.equal(pharmacyCellValue(vendorOnly), 2);
-    assert.match(pharmacyCellNote(phoenixOnly) ?? "", /not recorded in Phoenix/);
-    assert.match(pharmacyCellNote(both) ?? "", /iReports360 only/);
-    assert.equal(pharmacyCellNote(vendorOnly), null, "an iReports360-only cell carries no note at all");
-    assert.match(PHARMACY_CELL_FOOTNOTE, /blank = not recorded in Phoenix, never 0/);
+    for (const split of [phoenixOnly, phoenixWithPharmacies, both, vendorOnly]) {
+      assert.equal(pharmacyCellNote(split), null, "no cell carries a note any more, so no footnote is added either");
+    }
   }
 
   // ── the private calendar: a double visit record carries the mark into the summary ──
@@ -472,7 +502,7 @@ function runPhoenixPharmaciesNotRecordedTests() {
       { activityKind: "single_regular", source: "field_visit", visitCounts: { am: 1, pm: 3, pharmacies: 0, phoenix: 4 } },
     ]);
     assert.deepEqual(summary.all, { am: 1, pm: 4, pharmacies: 0, phoenix: 5 });
-    assert.equal(formatVisitCountSplit(summary.all), "AM 1 · PM 4 · Pharmacies not recorded in Phoenix", "the key figures and the team snapshot say it too");
+    assert.equal(formatVisitCountSplit(summary.all), "AM 1 · PM 4 · Pharmacies 0", "the key figures and the team snapshot print the count");
   }
 
   // ── Employee 360: the summary counts its Phoenix visits; the page prints through the helper ──
@@ -535,7 +565,7 @@ function runPhoenixPharmaciesNotRecordedTests() {
       visits: [fieldVisit({ source: "phoenix" }), fieldVisit({ ampm: "AM", contactCrmId: 501, source: "phoenix" })],
     });
     assert.deepEqual(report.days[0].counts, { am: 1, pm: 1, pharmacies: 0, phoenix: 2 });
-    assert.equal(formatVisitCountSplit(report.totals.counts), "AM 1 · PM 1 · Pharmacies not recorded in Phoenix", "the period total keeps the mark");
+    assert.equal(formatVisitCountSplit(report.totals.counts), "AM 1 · PM 1 · Pharmacies 0", "the period total prints the count — these two days held no pharmacy call");
     const fieldReport = readFileSync("src/lib/field-activity/report.ts", "utf8");
     assert.match(fieldReport, /crm_save_date, source";/, "the read carries `source`, or no row is ever known as Phoenix CRM's");
     assert.match(fieldReport, /source: \(row\.source as string \| null\) \?\? null/);
@@ -564,8 +594,8 @@ function runPhoenixPharmaciesNotRecordedTests() {
     });
     const metric = (rows: DoubleVisitReportRow[]) =>
       buildReportSummaryMetrics({ logRows: rows, neverVisitedRows: [], probationRows: [] }).find((m) => m.metric === "Pharmacy Visits")?.value;
-    assert.equal(metric([reportRow({ fromPhoenix: true }), reportRow({ countBucket: "AM", fromPhoenix: true, period: "AM" })]), "Not recorded in Phoenix");
-    assert.equal(metric([reportRow({ fromPhoenix: true }), reportRow({ countBucket: "Pharmacies", visitCount: 3 })]), "3 (iReports360 only)");
+    assert.equal(metric([reportRow({ fromPhoenix: true }), reportRow({ countBucket: "AM", fromPhoenix: true, period: "AM" })]), 0, "Phoenix rows only, no pharmacy call: a true 0");
+    assert.equal(metric([reportRow({ fromPhoenix: true }), reportRow({ countBucket: "Pharmacies", visitCount: 3 })]), 3, "and beside Phoenix rows the count is the whole count");
     assert.equal(metric([reportRow({ countBucket: "Pharmacies", visitCount: 3 })]), 3, "no Phoenix row: the count, exactly as before");
   }
 
