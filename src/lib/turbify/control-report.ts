@@ -35,6 +35,30 @@ export type ObservedControl = {
   name?: string | null;
   /** Its visible text, if any. */
   text?: string | null;
+  /**
+   * Where the element SITS, as a short CSS path — tags, ids, classes and positions, never text.
+   *
+   * 🔴 THIS IS WHY THE CAPTURE EXISTS AT ALL NOW. Two of the four controls a clear needs —
+   * `existingList` (the rows of app passwords already issued) and `emptyState` (how the page reads
+   * once none are left) — are plain TEXT, and the reader above is forbidden from reading a
+   * container's text because on this page that text IS a credential. They were therefore
+   * uncalibratable by label for as long as the label was the only thing reported: the 10:30 Cairo
+   * run on 2026-10-04 read 22 controls and could fill exactly one of the four.
+   *
+   * A path names those two without reading a character more: the entry rows are whatever contains
+   * the Remove buttons, and the empty state is that same container with none of them under it. It
+   * is also what `APP_PASSWORD_REVOKE_CONTROLS` actually stores — `{ label, selector }` — so a
+   * path, not a wording, is the thing those fields were always waiting for.
+   */
+  selector?: string | null;
+  /**
+   * How many siblings share this element's tag, counting itself.
+   *
+   * The one number that separates "no app passwords are listed" from "the rows are there and the
+   * reader cannot see their text". Without it, an empty `existingList` and a redacted one look
+   * identical in the report — which is exactly the ambiguity the first run left behind.
+   */
+  siblings?: number | null;
 };
 
 /**
@@ -100,6 +124,94 @@ export function redactLabel(raw: string | null | undefined, secrets: readonly st
   return cleaned.length > MAX_LABEL_LENGTH ? `${cleaned.slice(0, MAX_LABEL_LENGTH)}` : cleaned;
 }
 
+/**
+ * The longest a path may be before it is truncated.
+ *
+ * Three segments of tag + id + two classes + a position is comfortably inside this; anything longer
+ * is a generated class soup that is useless as a locator and worth less than the bytes.
+ */
+export const MAX_SELECTOR_LENGTH = 160;
+
+/**
+ * True when one word inside a CSS identifier reads like English rather than like a credential.
+ *
+ * 🔴 ONLY EVER USED ON A PATH, NEVER ON A LABEL. A label is prose and `looksLikeSecret` is right
+ * about it; an identifier is not. `notifications` is 13 characters with no space, so the plain
+ * shape rule drops it and the path loses the one class that made it worth keeping — while
+ * `xqhdlpzwmrkfabcd` must still go. The two are told apart by how they are SPELLED: a word is all
+ * lower case, carries no digits, and has vowels in roughly the proportion English has them. A
+ * minted password is vowel-starved, or mixes case and digits, or both.
+ *
+ * It is deliberately conservative: anything it is unsure about is NOT a word, and so is dropped.
+ */
+export function looksLikePathWord(word: string): boolean {
+  if (!/^[a-z]+$/.test(word)) return false;
+  const vowels = (word.match(/[aeiou]/g) ?? []).length;
+  return vowels / word.length >= 0.25;
+}
+
+/**
+ * Strip anything secret-shaped out of a CSS path, segment by segment.
+ *
+ * 🔴 A PATH IS BUILT FROM ATTRIBUTES, AND AN ATTRIBUTE CAN CARRY A SECRET — `id="pw-xqhdlpzwmrkf"`
+ * is a perfectly ordinary thing for a credential row to have. So a path goes through the same two
+ * rules as a label: every secret in hand by exact match, then anything secret-SHAPED by shape. It
+ * cannot reuse `redactLabel`, which splits on whitespace: a path has none, so the whole path would
+ * be judged as one token and a long one dropped wholesale.
+ *
+ * Returns null when nothing usable survives, so the caller omits the path rather than printing a
+ * row of `[redacted]` that reads like a located control.
+ */
+export function redactSelector(raw: string | null | undefined, secrets: readonly string[] = []): string | null {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+
+  // Split on the CSS punctuation so each id, class and tag is judged on its own, and so the
+  // punctuation itself is never mistaken for part of a long token. A `#` or `.` is kept WITH the
+  // token it introduces, so dropping the token drops its punctuation too.
+  const parts = value.split(/(?=[\s>#.:,])|(?<=[\s>:,([\]])/);
+  let dropped = 0;
+
+  const kept = parts.map((part) => {
+    const head = (/^[#.]/.exec(part) ?? [""])[0];
+    const token = part.slice(head.length);
+    if (!token || /^[\s>:,()[\]"'=]+$/.test(token)) return part;
+
+    for (const secret of secrets) {
+      const needle = String(secret ?? "").trim();
+      if (needle.length >= 4 && token.toLowerCase().includes(needle.toLowerCase())) {
+        dropped += 1;
+        return "";
+      }
+    }
+    // 🔴 `looksLikeSecret` IS WRONG FOR A PATH AND MUST NOT BE USED ON ONE WHOLE. Its rule is "12+
+    // characters with no whitespace", which is the shape of every ordinary CSS identifier —
+    // `app-password-row` is 16. Applied directly it would redact exactly the class names that make
+    // a path worth having. So the token is split on its own separators first and each WORD judged:
+    // a credential is one long undivided run, an identifier is short words joined by - or _.
+    if (token.split(/[-_]/).some((word) => looksLikeSecret(word) && !looksLikePathWord(word))) {
+      dropped += 1;
+      return "";
+    }
+    return part;
+  });
+
+  // 🔴 AND A DROPPED PART IS REMOVED, NOT REPLACED WITH A MARKER. `div#[redacted] > button.rm` is
+  // not a selector any more — it names a class that does not exist, so a later reader pins a
+  // locator that can never match. `div > button.rm` is shorter, honest, and still resolves.
+  const cleaned = kept.join("").replace(/\s+/g, " ").replace(/\s*>\s*/g, " > ").trim();
+  // Nothing left means the path locates nothing — omit it rather than return an empty string that
+  // a caller would print as a located control.
+  //
+  // 🔴 THERE IS DELIBERATELY NO SECOND GUARD HERE for "something was dropped and no letters
+  // survive". It was written, and breaking it changed no test: a path always carries tag names, so
+  // letters survive every drop, and the only case with none left is the empty string this line
+  // already catches. A dead branch in a redactor is worse than no branch — it reads like a
+  // protection while doing nothing, so the next reader trusts a guard that has never run.
+  if (!cleaned) return null;
+  return cleaned.length > MAX_SELECTOR_LENGTH ? cleaned.slice(0, MAX_SELECTOR_LENGTH) : cleaned;
+}
+
 export type ControlReport = {
   page: string;
   /** One line per control that survived redaction, deduplicated and ordered as read. */
@@ -137,7 +249,16 @@ export function buildControlReport(
     // `name` and `text` often agree; print the pair only when they differ, so the report stays
     // readable enough to turn straight into a locator.
     const label = name && text && name !== text ? `${name} | ${text}` : (name ?? text ?? "");
-    const line = `${role}: ${label}`;
+    const selector = redactSelector(control.selector, secrets);
+    const siblings = typeof control.siblings === "number" && control.siblings > 1 ? control.siblings : null;
+    // 🔴 THE PATH IS PART OF THE DEDUPLICATION KEY, AND THAT IS THE POINT, not a side effect. Two
+    // `Remove` buttons used to collapse into one line, which is precisely the reading that hid how
+    // many app passwords a mailbox actually has — one entry and five entries printed identically.
+    // Pathed separately, they stay separate, and the count becomes readable off the report.
+    const line =
+      `${role}: ${label}`
+      + (selector ? ` @ ${selector}` : "")
+      + (siblings ? ` ×${siblings}` : "");
     if (seen.has(line)) continue;
     seen.add(line);
     lines.push(line);
@@ -161,12 +282,48 @@ export function controlReportEnabled(value = process.env[CONTROL_REPORT_ENV]): b
 /**
  * The page-reading expression, kept here beside the redaction so the two are read together.
  *
- * 🔴 It collects role, accessible name and SHORT text, and deliberately never reads `value`, an
- * `input`'s contents, or `innerText` of the whole document — the places the minted password is. The
- * redaction above is the second line of defence, not the first.
+ * 🔴 It collects role, accessible name, SHORT text and a STRUCTURAL path, and deliberately never
+ * reads `value`, an `input`'s contents, or `innerText` of the whole document — the places the
+ * minted password is. The redaction above is the second line of defence, not the first.
+ *
+ * The path was added on 2026-10-04 and reads no text whatsoever: tag, id, class and position only.
+ * That is the whole reason it was a safe way to finish the calibration — the two controls still
+ * unknown after the first live run are text that this reader is forbidden to touch, and a path
+ * names them without touching it.
  */
 export const CONTROL_READ_EXPRESSION = `(() => {
   const out = [];
+  // A path is built from ATTRIBUTES ONLY — tag, id, class, position. It never reads text, so it
+  // adds no new way for the displayed password to escape, and the redaction still runs over it.
+  const SAFE = /^[A-Za-z][\\w-]{0,31}$/;
+  const segment = (el) => {
+    const tag = (el.tagName || '').toLowerCase();
+    const id = el.getAttribute('id') || '';
+    if (SAFE.test(id)) return tag + '#' + id;
+    const classes = (el.getAttribute('class') || '').trim().split(/\\s+/).filter((c) => SAFE.test(c)).slice(0, 2);
+    let seg = tag + classes.map((c) => '.' + c).join('');
+    const parent = el.parentElement;
+    if (parent) {
+      let n = 1;
+      for (const sib of parent.children) {
+        if (sib === el) break;
+        if (sib.tagName === el.tagName) n += 1;
+      }
+      seg += ':nth-of-type(' + n + ')';
+    }
+    return seg;
+  };
+  // Three levels is enough to name the row AND the container it sits in, which is what tells an
+  // entry apart from the list holding it. Deeper is a generated-class soup that locates nothing.
+  const pathOf = (el) => {
+    const parts = [];
+    let node = el;
+    for (let depth = 0; node && node.nodeType === 1 && depth < 3; depth += 1) {
+      parts.unshift(segment(node));
+      node = node.parentElement;
+    }
+    return parts.join(' > ');
+  };
   const nodes = document.querySelectorAll('button, a, [role="button"], [role="link"], input, [aria-label]');
   for (const el of nodes) {
     const role = (el.getAttribute('role') || el.tagName || '').toLowerCase();
@@ -174,7 +331,15 @@ export const CONTROL_READ_EXPRESSION = `(() => {
     // The element's own text, trimmed and capped. Never a form field's contents, and never a
     // whole container's rendered text — those are where a displayed credential lives.
     const text = (el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 64);
-    out.push({ role, name, text });
+    const parent = el.parentElement;
+    let siblings = 1;
+    if (parent) {
+      siblings = 0;
+      for (const sib of parent.children) {
+        if (sib.tagName === el.tagName) siblings += 1;
+      }
+    }
+    out.push({ name, role, selector: pathOf(el), siblings, text });
   }
   return out;
 })()`;
