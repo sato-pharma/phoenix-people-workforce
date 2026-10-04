@@ -1127,7 +1127,15 @@ export async function runNewHireMailboxRobotTests(): Promise<void> {
   // that were both describing that URL, and demoted the right answer on the strength of it.
   assert.equal(APP_PASSWORD_PAGE.manageAccount.value, "Manage your account");
   assert.equal(APP_PASSWORD_WORDINGS.accountInfo[0], "Manage your account");
-  assert.equal(APP_PASSWORD_WORDINGS.appPasswords[0], "Manage App Passwords");
+  // 🔴 EDITED 2026-10-04 WHEN THE LIVE PAGE ANSWERED. This asserted "Manage App Passwords", which
+  // is the LABEL — and the real button's text is `APP Password Manage App Passwords`, the section
+  // HEADING glued into it. `matchesLocator` compares exactly, never as a substring, so the label
+  // alone can never match. The measured composite leads; the label stays behind it.
+  assert.equal(APP_PASSWORD_WORDINGS.appPasswords[0], "APP Password Manage App Passwords");
+  assert.ok(
+    (APP_PASSWORD_WORDINGS.appPasswords as readonly string[]).includes("Manage App Passwords"),
+    "the label stays behind the composite — it is what works if Turbify drops the heading back out",
+  );
   assert.ok(
     (APP_PASSWORD_WORDINGS.accountInfo as readonly string[]).includes("Account info"),
     "the deep-link wording stays behind it rather than being deleted — a page may well show both",
@@ -1136,7 +1144,9 @@ export async function runNewHireMailboxRobotTests(): Promise<void> {
   // answer is always "Other" plus a name.
   assert.equal(APP_PASSWORD_WORDINGS.otherApp[0], "Other");
   for (const [step, wordings] of Object.entries(APP_PASSWORD_WORDINGS)) {
-    assert.ok(wordings.length > 1, `${step} must offer more than one candidate, since none is measured`);
+    // `appPasswords` IS measured now (2026-10-04); the rest are still well-sourced guesses, and
+    // every list keeps more than one candidate so a reworded page has somewhere to land.
+    assert.ok(wordings.length > 1, `${step} must offer more than one candidate`);
     for (const wording of wordings) {
       assert.doesNotMatch(wording, /[>#[\]]|__UNCALIBRATED__/, `${wording} must not be a CSS path`);
     }

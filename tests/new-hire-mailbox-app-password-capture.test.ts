@@ -30,6 +30,7 @@ import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 import { JOINER_STEP_ORDER, createDryRunJoinerDriver } from "../src/lib/new-hire-mailbox/robot/driver.ts";
 import { INVITE_INBOX_ADDRESS } from "../src/lib/new-hire-mailbox/robot/invite-inbox.ts";
+import { APP_PASSWORD_WORDINGS } from "../src/lib/turbify/locators.ts";
 import {
   APP_PASSWORD_REVOKE_CONTROLS,
   uncalibratedRevokeControls,
@@ -225,6 +226,96 @@ function runAFailedRunIsRecordedCases(): void {
   );
 }
 
+/**
+ * 🔴 THE MEASURED WORDING, AND WHY IT CANNOT BE TIDIED AWAY.
+ *
+ * The live run of 2026-10-04 07:44 Cairo signed in, reached `mail.turbify.com/accountinfo` ("Update
+ * User Profile") and refused at the section lookup, printing the page: the button's own text reads
+ * `APP Password Manage App Passwords`. The section HEADING sits inside the button, run straight into
+ * its label — the same `textContent` glue that made a console row parse as
+ * `Abd-Elnaimahmed.mohamed@satopharma.com`, met a third time.
+ *
+ * `matchesLocator` compares text EXACTLY and never as a substring, deliberately, so `Manage App
+ * Passwords` alone can never match that button. The composite reads like a typo and is the one entry
+ * that actually works; it is first in the list so it is tried before four guesses that cannot.
+ */
+function runTheMeasuredWordingCases(): void {
+  assert.ok(
+    APP_PASSWORD_WORDINGS.appPasswords.includes("APP Password Manage App Passwords"),
+    "the MEASURED button text must stay in the list — the heading is glued inside the button, and "
+    + "the exact matcher means the composite is the only entry that can ever match it",
+  );
+  assert.equal(
+    APP_PASSWORD_WORDINGS.appPasswords[0], "APP Password Manage App Passwords",
+    "and it must be tried FIRST, ahead of the four guesses that cannot match the live page",
+  );
+  assert.ok(
+    APP_PASSWORD_WORDINGS.appPasswords.includes("Manage App Passwords"),
+    "the older guesses stay BELOW it rather than being deleted: they cost one failed match each and "
+    + "are what still works if Turbify ever drops the heading back out of the button",
+  );
+
+  // The matcher this depends on. If it ever became a substring match, the composite would stop
+  // being necessary — and a substring on "App Passwords" would also catch the heading, so the
+  // exactness is the thing protecting this page from a wrong click.
+  const resolve = readable("../src/lib/turbify/resolve.ts");
+  assert.match(
+    resolve, /case "text": return \(candidate\.text \?\? ""\)\.replace\(\/\\s\+\/g, " "\)\.trim\(\) === value;/,
+    "a text locator must stay an EXACT comparison — a substring match would make 'App Passwords' "
+    + "also match the section heading, which is a wrong click inside a live mailbox's security page",
+  );
+}
+
+/**
+ * The refusal is the step's whole deliverable, so it has to READ.
+ *
+ * Every wording list fails closed and prints the page, which is why one click bought the measured
+ * button text instead of a press on something unknown. That makes the sentence the owner reads the
+ * product — and it said **"No the App Passwords section was found"**, because `purpose` carries its
+ * article for `describeLocator`'s parentheses, and claimed it "looked for a button" on a step that
+ * accepts a link, which sends the next reader to check the wrong thing.
+ *
+ * Read against comment-stripped source on purpose: the comment above the fix NAMES the broken
+ * sentence, so an unstripped negative assertion can never fail.
+ */
+function runTheRefusalReadsCases(): void {
+  const joiner = readable("../src/lib/new-hire-mailbox/robot/turbify-joiner.ts");
+
+  // 🔴 SCOPED TO `clickOneOf`, BECAUSE THE BARE PATTERN IS LEGITIMATE NEXT DOOR. `submitOpenForm`
+  // raises the same sentence and is CORRECT: its purposes are written without an article ("submit
+  // button for the new-mailbox form"). A repo-wide ban on `No ${purpose} was found` would have
+  // demanded a change there that makes its message worse. The slice ends at the next function, which
+  // the body must be followed by.
+  const start = joiner.indexOf("async function clickOneOf(");
+  assert.notEqual(start, -1, "clickOneOf must exist — it is what presses every wording list");
+  const end = joiner.indexOf("async function hasHeading(", start);
+  assert.notEqual(end, -1, "and hasHeading must still follow it, so clickOneOf's body can be isolated");
+  const body = joiner.slice(start, end);
+
+  assert.ok(
+    body.includes('const subject = purpose.replace(/^(?:the|a|an) /i, "")'),
+    "the refusal must drop the article off `purpose`, or it reads \"No the App Passwords section "
+    + 'was found" — the one sentence a failed capture hands back',
+  );
+  assert.ok(
+    body.includes("`No ${subject} was found on the Turbify page."),
+    "and it must interpolate that stripped subject, not `purpose` itself",
+  );
+  assert.equal(
+    body.includes("`No ${purpose} was found"), false,
+    "the article-bearing form must be gone, not merely shadowed by a second message",
+  );
+  assert.ok(
+    body.includes('It looked for a ${tags.join(" or ")} reading one of:'),
+    "and the refusal must name the TAGS it searched — the app-password steps accept a link, and "
+    + "`a button` sent a reader to check the wrong element type",
+  );
+  assert.equal(
+    body.includes("It looked for a button reading one of:"), false,
+    "so the hard-coded `a button` must be gone",
+  );
+}
+
 function runNotAProvisioningStepCases(): void {
   assert.equal(
     (JOINER_STEP_ORDER as readonly string[]).includes("describeAppPasswords"), false,
@@ -326,6 +417,8 @@ export async function runNewHireMailboxAppPasswordCaptureTests(): Promise<void> 
   runSetupScreenIsAnAnswerCases();
   runAddressIsTheConstantCases();
   runAFailedRunIsRecordedCases();
+  runTheMeasuredWordingCases();
+  runTheRefusalReadsCases();
   runNotAProvisioningStepCases();
   await runDryRunCases();
   runStillUncalibratedCases();
