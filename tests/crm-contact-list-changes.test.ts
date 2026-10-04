@@ -205,7 +205,12 @@ export function runCrmContactListChangesTests() {
   const apply = sql.slice(applyStart, refreshStart);
   assert.doesNotMatch(apply, /security definer/, "the apply function runs with the caller's rights");
   assert.match(apply, /Only the manager this change was sent to can approve it\./, "the database refuses an approval by anyone but the stored manager");
-  assert.match(apply, /until the CRM cutover date/, "the database refuses a change before the cutover");
+  // The gate AS THIS MIGRATION SHIPPED IT. Superseded on 2026-10-04 by
+  // 20261004120000_doctor_lists_follow_each_team_start.sql, because `v_cutover is null or ...` refused
+  // EVERY change while the global date stayed unset — crm_contact_list_changes held 0 rows. The live
+  // rule is each team's own Phoenix CRM start, pinned in tests/doctor-lists-follow-team-starts.test.ts;
+  // this line is history, not current behaviour.
+  assert.match(apply, /until the CRM cutover date/, "this migration's own gate was the global cutover date");
   assert.match(apply, /revoke execute on function public\.crm_contact_list_change_apply\(uuid, text, text\) from public, anon, authenticated/);
   assert.match(sql, /manager_hr_id <> rep_hr_id/, "a rep is never his own manager");
   assert.match(sql, /list_type in \('AM', 'PM'\)/, "a pharmacy list is never changed here");
