@@ -971,6 +971,7 @@ function runWiringTests() {
     "getInterviewRequest(caller",
     "scheduleInterviewRequestItem(caller",
     "cancelInterviewRequest(caller",
+    "getInterviewRequestItemCv(caller",
     // The per-person .ics subscription: minting a feed token is its own gate — signed-in Phoenix
     // person only, and only their own token (interview-calendar-ics.ts).
     "getOrCreateMyCalendarFeedToken(caller",
