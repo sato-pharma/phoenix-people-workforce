@@ -326,19 +326,26 @@ export const config = {
   // navigation, so there is nothing there to spoof, and matching them is pure latency on every
   // page load.
   //
-  // 🔴 THE TWO DEVICE UPLOAD ROUTES ARE EXCLUDED, AND ONLY THEY ARE. When the proxy matches a request
-  // Next copies the body so the proxy could read it, and stops copying at `proxyClientMaxBodySize`
-  // (10 MB by default): the route then receives a body cut off at 10 MB, `request.formData()` throws,
-  // and the person is told "Choose a file to send." — for any APK over 10 MB, which is every APK.
-  // Measured on staging 2026-10-04: an 11 MB POST logged "Request body exceeded 10MB for
-  // /api/devices/headwind/upload. Only the first 10MB will be available". Nothing is lost by leaving
-  // these two out: both routes run `assertSameOriginMutation` (same test as the CSRF rule below) and
-  // `assertPermission(…, "company_devices", "approve")`, and the preview wall is inert on Railway.
-  // Never raise `proxyClientMaxBodySize` instead — it would make the proxy buffer that much of ANY
-  // request body on any path, before authentication. `$` anchors each exclusion to the exact path.
-  // Next reads this object statically, so the matcher must stay a literal. Pinned by
+  // 🔴 ONLY THE ROUTES THAT TAKE A FILE OVER 10 MB ARE EXCLUDED, AND EACH ONE BY ITS EXACT PATH. When the
+  // proxy matches a request Next copies the body so the proxy could read it, and stops copying at
+  // `proxyClientMaxBodySize` (10 MB by default): the route then receives a body cut off at 10 MB,
+  // `request.formData()` throws, and the person gets a misleading "choose a file" error. Measured on
+  // staging 2026-10-04: an 11 MB POST logged "Request body exceeded 10MB for
+  // /api/devices/headwind/upload. Only the first 10MB will be available".
+  //
+  // The list is the two device APK uploads (Headwind, ManageEngine) and the six other multipart routes
+  // whose OWN limit is above 10 MB (audit, 2026-10-04): hiring documents (15 MB), custom hiring-pack
+  // templates (15 MB a page), personal-mailbox send (15 MB of attachments), the WhatsApp inbox (25 MB),
+  // an employee's CV and its staging draft (15 MB). Routes capped at 10 MB or less stay behind the
+  // proxy, and so do PUBLIC ones (`/api/public/apply`): excluding a route removes the proxy's 10 MB
+  // ceiling, which is only safe once the route turns an anonymous caller away BEFORE it reads the body.
+  // Nothing else the proxy did is lost: each excluded route runs `assertSameOriginMutation` (same test
+  // as the CSRF rule below) and its own permission or sign-in check first, and the preview wall is
+  // inert on Railway. Never raise `proxyClientMaxBodySize` instead — it would make the proxy buffer
+  // that much of ANY request body on any path, before authentication. `$` anchors each exclusion to
+  // the exact path. Next reads this object statically, so the matcher must stay a literal. Pinned by
   // tests/proxy-upload-body-limit.test.ts.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|api/devices/headwind/upload$|api/devices/manageengine/apps/upload$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|api/devices/headwind/upload$|api/devices/manageengine/apps/upload$|api/hiring-documents/files$|api/hiring-pack/custom-templates$|api/messages/mailbox/send$|api/whatsapp-inbox/conversations/[^/]+/messages$|api/employees/[^/]+/cv$|api/employees/cv-staging$).*)",
   ],
 };
