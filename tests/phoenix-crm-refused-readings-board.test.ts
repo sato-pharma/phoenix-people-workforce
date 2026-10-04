@@ -273,4 +273,86 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
       "and it is in the CRM Data Quality band, or it would be appended to the first band under a heading nobody chose",
     );
   }
+
+  // ── 9 · The photo the phone sent (owner, 2026-10-04: "show the refused photo on the refused-readings page") ──
+  {
+    const GOOD = "SEAT-CNS-REP-D11/2026/10/place/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg";
+    const VISIT = "SEAT-CNS-REP-D11/2026/10/visit/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.jpg";
+    const rows = [
+      { id: "r1", subject_kind: "place", reason: "rough", rep_hr_id: REP, customer_id: CUSTOMER, refused_at: "2026-10-03T18:31:37.000Z", photo_path: GOOD },
+      { id: "r2", subject_kind: "visit", reason: "rough", rep_hr_id: REP, customer_id: CUSTOMER, refused_at: "2026-10-03T18:31:00.000Z", photo_path: VISIT },
+      // A row from before 3 October: no pointer was kept.
+      { id: "r3", subject_kind: "place", reason: "rough", rep_hr_id: REP, customer_id: CUSTOMER, refused_at: "2026-10-03T18:30:00.000Z", photo_path: null },
+      // Never a thing the board should hand to a signer: a test photo, and anything that is not a slot.
+      { id: "r4", subject_kind: "place", reason: "rough", rep_hr_id: REP, customer_id: CUSTOMER, refused_at: "2026-10-03T18:29:00.000Z", photo_path: `test/${GOOD}` },
+      { id: "r5", subject_kind: "place", reason: "rough", rep_hr_id: REP, customer_id: CUSTOMER, refused_at: "2026-10-03T18:28:00.000Z", photo_path: "../../etc/passwd" },
+      { id: "r6", subject_kind: "place", reason: "rough", rep_hr_id: REP, customer_id: CUSTOMER, refused_at: "2026-10-03T18:27:00.000Z", photo_path: "" },
+    ];
+
+    async function load(who: PhoenixCrmViewer) {
+      const original = globalThis.fetch;
+      // The admin client is built from these, and the suite may run with the real ones in its
+      // environment — so a sentinel pair stands in, and the stub below answers every request: nothing
+      // here can reach a database. Same pair `vacancy-close-manager-hr-id-canonical.test.ts` uses.
+      const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+      process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
+      const selects: string[] = [];
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        const url = new URL(String(input instanceof Request ? input.url : input));
+        const table = url.pathname.split("/").pop() ?? "";
+        if (table === "phoenix_crm_refused_readings") {
+          selects.push(url.searchParams.get("select") ?? "");
+          return new Response(JSON.stringify(rows), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        if (table === "employees") {
+          return new Response(JSON.stringify([{ hr_id: REP, full_name: "Test Rep", nickname: null }]), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        // Customers, later visits, later places: nothing came of it, which is all this section needs.
+        return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch;
+      try {
+        return { board: await loadRefusedReadingsBoard(who), selects };
+      } finally {
+        globalThis.fetch = original;
+        if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+        else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+        if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+        else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+      }
+    }
+
+    const sfe = await load(viewer({ sfe: true }));
+    const byId = new Map(sfe.board.latest.map((entry) => [entry.id, entry.photoPath]));
+    assert.equal(byId.get("r1"), GOOD, "a place refusal carries the pointer to the photo the phone sent");
+    assert.equal(byId.get("r2"), VISIT, "so does a visit refusal");
+    assert.equal(byId.get("r3"), null, "a row that kept no pointer has no photo, and says so rather than guessing one");
+    assert.equal(byId.get("r4"), null, "a test photo is never handed to the signer from this board");
+    assert.equal(byId.get("r5"), null, "and a stored value that is not the shape of a slot is no photo at all");
+    assert.equal(byId.get("r6"), null, "an empty string is none either");
+    assert.match(sfe.selects[0] ?? "", /\bphoto_path\b/, "the photo pointer is asked of the database for the SFE Manager");
+    assert.doesNotMatch(sfe.selects[0] ?? "", /device_mocked/, "while the mock-location answer still is not");
+
+    const owner = await load(viewer({ superAdmin: true }));
+    assert.match(owner.selects[0] ?? "", /\bphoto_path\b/, "and for the Super Admin: the two readers see the same picture");
+    assert.match(owner.selects[0] ?? "", /\bdevice_mocked\b/, "who alone also asks for the phone's mock-location answer");
+    assert.equal(owner.board.latest.find((entry) => entry.id === "r1")?.photoPath, GOOD);
+
+    // The page draws it through the SCOPED photo route and never signs a URL of its own.
+    const code = stripComments(read("app/(admin)/admin/phoenix-crm/refused-readings/page.tsx"));
+    assert.match(code, /import \{ CrmPhotoThumb \} from "@\/components\/phoenix-crm\/photo"/, "the page uses the module's own thumbnail, which signs through /api/phoenix-crm/photos/sign");
+    assert.doesNotMatch(code, /createSignedUrl|storage\.from|getSupabaseAdmin|<img\b/, "the page never opens the bucket and never draws a bare image");
+    assert.equal((code.match(/<SentPhoto entry=\{entry\} size="h-\d+ w-\d+" \/>/g) ?? []).length, 2, "the photo comes from one component, so the table cell and the phone card cannot disagree");
+    assert.ok(code.includes("path={entry.photoPath}"), "and it is handed the pointer, nothing signed");
+    assert.match(code, /className=\{size\} lazy path=/, "lazy — a worklist of a hundred must not fetch every picture, twice, on open");
+    assert.ok(code.includes("None kept"), "a row with no photo says so in words instead of drawing a broken tile");
+    assert.equal((code.match(/<th className="px-3 py-3">Photo<\/th>/g) ?? []).length, 1, "the table has its Photo column");
+
+    // The shared thumbnail passes `lazy` down to the one `<img>`, and by default nothing changes for the other surfaces.
+    const thumb = stripComments(read("src/components/phoenix-crm/photo.tsx"));
+    assert.ok(thumb.includes("lazy={lazy}"), "the module thumbnail hands `lazy` to the zoomable photo");
+    const zoom = stripComments(read("src/components/ui/zoomable-photo.tsx"));
+    assert.ok(zoom.includes('loading={lazy ? "lazy" : undefined}'), "and it becomes the browser's own loading=lazy — and only when asked, so every other surface loads as before");
+  }
 }

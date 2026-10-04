@@ -33,6 +33,7 @@ import {
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { photoPathTerritory } from "@/lib/phoenix-crm/server/photos";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -52,7 +53,21 @@ export type RefusedAttemptRow = RefusedAttempt & {
   outcome: AttemptOutcome;
   /** The phone's own mock-location answer. Super Admin only; null for everyone else AND when not asked. */
   deviceMocked: boolean | null;
+  /**
+   * Where the photo the phone sent sits in the bucket, or null — a refusal before 3 October kept no
+   * pointer, and a refusal for no position at all may have had no picture yet. It is a POINTER, never
+   * a link: the page signs it through the scoped photo route, which is what keeps it ten minutes long.
+   */
+  photoPath: string | null;
 };
+
+/** A stored pointer is shown only if it is the shape of a real slot — anything else is a row with no photo. */
+function storedPhotoPath(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  const owner = photoPathTerritory(value);
+  // `is_test` rows never reach this board, so a `test/` path here is not one of ours.
+  return owner && !owner.isTest ? value : null;
+}
 
 export type RepRefusalRow = RepRefusals & { repName: string };
 
@@ -144,7 +159,9 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
   const mock = readsMockAnswer(viewer);
   // `device_mocked` is named in the select ONLY for the Super Admin. For anyone else it is not asked
   // of the database at all, so the SFE Manager's process never holds it.
-  const columns = `id, subject_kind, reason, rep_hr_id, customer_id, refused_at, accuracy_meters, photo_accuracy_meters, max_accuracy_meters${mock ? ", device_mocked" : ""}`;
+  // `photo_path` is asked for EVERYONE: the picture is what the phone sent to prove where it stood, and the
+  // two readers see the same one. It is the mock-location answer, not the photo, that is the Super Admin's.
+  const columns = `id, subject_kind, reason, rep_hr_id, customer_id, refused_at, accuracy_meters, photo_accuracy_meters, max_accuracy_meters, photo_path${mock ? ", device_mocked" : ""}`;
   const { data, error } = await supabase
     .from("phoenix_crm_refused_readings")
     .select(columns)
@@ -189,6 +206,11 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
   ]);
 
   const reps = summariseByRep(attempts, saves).map((entry) => ({ ...entry, repName: nameOf(people, entry.repHrId) || entry.repHrId }));
+  const photoById = new Map<string, string>();
+  for (const row of rows) {
+    const photoPath = storedPhotoPath(row.photo_path);
+    if (photoPath) photoById.set(String(row.id), photoPath);
+  }
   const mocked = new Map<string, boolean | null>();
   if (mock) {
     for (const row of rows) mocked.set(String(row.id), typeof row.device_mocked === "boolean" ? row.device_mocked : null);
@@ -206,6 +228,7 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
       customerName: attempt.customerId ? customerNames.get(attempt.customerId) ?? null : null,
       outcome: attemptOutcome(attempt, saves),
       deviceMocked: mocked.get(attempt.id) ?? null,
+      photoPath: photoById.get(attempt.id) ?? null,
     })),
   };
 }

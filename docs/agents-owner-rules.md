@@ -6055,10 +6055,28 @@ Nine retries on one customer are ONE blocked customer, never nine. A refusal tie
 customer, one met outside the list) is counted apart — never as stuck and never as through. If the save
 lookup fails the board still opens and reads "not through yet", the safe direction.
 
-**What it does not do.** No button, no write, no notification, and no photo: `photo_path` is kept on each row
-but the board does not sign a URL for it — that is a separate piece if the SFE asks.
+**The photo the phone sent** (owner, 2026-10-04: *"show the refused photo on the refused-readings page"*). Each row in
+"Latest refusals" shows the picture that came with the refused capture, as a thumbnail that opens full screen — what
+shows where the rep stood, and whether nine retries sent the same one nine times. Four things hold it:
 
-Rule: `.claude/rules/phoenix-crm.md`. Logic `src/lib/phoenix-crm/refused-readings-rules.ts`, reader
+- **Both readers see it**, unlike the mock-location answer: `photo_path` is in the select for the SFE Manager too.
+- **The board hands the page a POINTER, never a link.** The page draws it with `CrmPhotoThumb`, which signs through
+  `/api/phoenix-crm/photos/sign` — the scoped route, ten-minute links, re-signed when one expires. The SFE Manager's
+  scope is every open line (`COMPANY_ROLES`, `access.ts`), so that route already covers every rep he can see here and
+  nothing about it was widened. The page never opens the bucket itself (`photos.ts` is the one file that does).
+- **Only a real slot path is handed on** (`photoPathTerritory`, and not a `test/` one) — a stored value of any other
+  shape reads as "None kept", never as a broken tile. Refusals before 3 October kept no pointer, so they say the same.
+- **Lazy.** The list holds up to a hundred refusals and each is rendered twice (desktop table, phone card, one hidden
+  by CSS), and a hidden eager image still loads. `ZoomablePhoto` and `CrmPhotoThumb` gained an optional `lazy` that sets
+  `loading="lazy"`; with it unset, every other surface loads as before.
+
+The table fits by MERGING columns, not by shrinking type: Rep and Customer became one "Rep and customer" column to make
+room for a 64 px photo column.
+
+**What it does not do.** No button, no write, no notification, and nothing the rep is told.
+
+Rule: `.claude/rules/phoenix-crm-boards.md`. Logic `src/lib/phoenix-crm/refused-readings-rules.ts`, reader
 `src/lib/phoenix-crm/server/refused-readings-board.ts`. Pinned by `tests/phoenix-crm-refused-readings-board.test.ts`
 (the wording, the strict "got through afterwards", the audience, the mock-flag select, that only the recorder and
-this reader name the table, the page shape and its card).
+this reader name the table, the page shape and its card, and the photo: a pointer for both readers, slot paths only,
+the page never signs, `lazy` end to end).

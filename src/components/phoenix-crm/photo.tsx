@@ -126,11 +126,14 @@ export function CrmPhotoThumb({
   alt,
   caption,
   className,
+  lazy,
   path,
 }: {
   alt: string;
   caption?: string | null;
   className?: string;
+  /** For a long list: the picture is fetched when it nears the screen, not when the page opens. */
+  lazy?: boolean;
   path: string | null;
 }) {
   const state = usePhotoLink(path);
@@ -143,6 +146,7 @@ export function CrmPhotoThumb({
           alt={alt}
           caption={caption ?? alt}
           className="h-full w-full object-cover"
+          lazy={lazy}
           onError={() => {
             // An expired link (the phone slept past ten minutes) is signed again; a fresh link that
             // still fails is a file that never arrived.
