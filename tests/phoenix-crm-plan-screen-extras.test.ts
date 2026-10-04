@@ -336,7 +336,6 @@ export function runPhoenixCrmPlanScreenExtrasTests(): void {
 
     // The week of 3 October at version 4: Monday holds a customer who has since left the list.
     const customers = [customer("pm-1", "PM"), customer("pm-2", "PM"), customer("pm-3", "PM")];
-    const byId = indexCustomers(customers);
     const week: DraftWeek = {
       weekStart: WEEK,
       plan: { planId: "plan-1", version: 4 },

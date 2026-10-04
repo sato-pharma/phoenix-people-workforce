@@ -170,8 +170,6 @@ export function redactSelector(raw: string | null | undefined, secrets: readonly
   // punctuation itself is never mistaken for part of a long token. A `#` or `.` is kept WITH the
   // token it introduces, so dropping the token drops its punctuation too.
   const parts = value.split(/(?=[\s>#.:,])|(?<=[\s>:,([\]])/);
-  let dropped = 0;
-
   const kept = parts.map((part) => {
     const head = (/^[#.]/.exec(part) ?? [""])[0];
     const token = part.slice(head.length);
@@ -180,7 +178,6 @@ export function redactSelector(raw: string | null | undefined, secrets: readonly
     for (const secret of secrets) {
       const needle = String(secret ?? "").trim();
       if (needle.length >= 4 && token.toLowerCase().includes(needle.toLowerCase())) {
-        dropped += 1;
         return "";
       }
     }
@@ -190,7 +187,6 @@ export function redactSelector(raw: string | null | undefined, secrets: readonly
     // a path worth having. So the token is split on its own separators first and each WORD judged:
     // a credential is one long undivided run, an identifier is short words joined by - or _.
     if (token.split(/[-_]/).some((word) => looksLikeSecret(word) && !looksLikePathWord(word))) {
-      dropped += 1;
       return "";
     }
     return part;

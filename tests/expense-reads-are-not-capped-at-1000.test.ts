@@ -98,7 +98,7 @@ export async function runExpenseReadsAreNotCappedAt1000Tests() {
   // first — several of them turn a missing-schema error into an empty list rather than throwing,
   // and that behaviour has to survive the read becoming paged.
   let calls = 0;
-  const failing = await fetchAllRows<{ id: number }, { message: string }>((from, to) => {
+  const failing = await fetchAllRows<{ id: number }, { message: string }>((from, _to) => {
     calls += 1;
     if (calls === 1) {
       return Promise.resolve({ data: Array.from({ length: PAGE }, (_, i) => ({ id: from + i })), error: null });

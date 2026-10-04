@@ -10,7 +10,6 @@ import { isPayrollConflictError } from "@/lib/payroll/errors";
 import { payrollBatchHref, payrollBatchNotificationMetadata } from "@/lib/payroll/links";
 import { runPayrollWorkflow } from "@/lib/payroll/service";
 import type { PayrollWorkflowAction } from "@/lib/payroll/types";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { notifyPayslipAvailable } from "@/lib/payroll/notify-payslip-available";
 import { logError } from "@/lib/observability/log";

@@ -78,7 +78,6 @@ import {
   salaryTooLongText,
   shouldReaskParkedSession,
   typedAnswerTooLongText,
-  type CandidateBackgroundCode,
   type ClassifyMenu,
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
 import {

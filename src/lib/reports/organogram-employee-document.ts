@@ -223,7 +223,6 @@ export function organogramRecordFileName(detail: Pick<OrganogramEmployeeDetail, 
 
   const cleaned = (person ?? "")
     // C0 controls, DEL, and the set Windows refuses in a filename — spelled with explicit escapes.
-    // eslint-disable-next-line no-control-regex -- C0 is precisely what a filename may not contain
     .replace(/[\u0000-\u001F\u007F<>:"/\\|?*]+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[.\s]+|[.\s]+$/g, "")

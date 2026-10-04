@@ -428,7 +428,6 @@ export function PrivateCalendar({
     const filtersStartOpen = readStoredOpen(FILTERS_OPEN_KEY) ?? !window.matchMedia("(max-width: 767px)").matches;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (storedFigures !== null) setKeyFiguresOpen(storedFigures);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFiltersOpen(filtersStartOpen);
   }, []);
   const [message, setMessage] = useState<string | null>(null);

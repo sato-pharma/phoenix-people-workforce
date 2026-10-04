@@ -145,7 +145,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
    * than just flagging them. */
   const [excludePrompt, setExcludePrompt] = useState<{ hrId: string; fullName: string } | null>(null);
   const [excludeReason, setExcludeReason] = useState("");
-  const [draftRows, setDraftRows] = useState<DraftRow[]>([]);
+  const [, setDraftRows] = useState<DraftRow[]>([]);
   /**
    * Excluded people as the SERVER names them (audit finding 54). A draft row carries only the HR
    * code; the name has to be joined server-side, so this cannot be derived from `draftRows` here.

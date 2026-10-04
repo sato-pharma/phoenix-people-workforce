@@ -32,7 +32,7 @@
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
-import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
   editablePlanDays,

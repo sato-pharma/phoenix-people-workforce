@@ -128,7 +128,6 @@ export function validateSatoEmailUpload(input: {
 export function safeAttachmentFileName(name: string, extension: string): string {
   const base = String(name ?? "")
     .replace(/[\\/]+/g, " ")
-    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f"]/g, "")
     .replace(/\.[A-Za-z0-9]{1,8}$/, "")
     .trim()
