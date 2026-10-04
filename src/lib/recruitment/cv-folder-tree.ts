@@ -85,7 +85,6 @@ export type CvFolderNode = CvFolderRow & {
  * is merely invisible is worse than one that is quietly cleaned.
  */
 export function normalizeCvFolderName(value: string | null | undefined): string {
-  // eslint-disable-next-line no-control-regex -- stripping control characters is the point.
   return String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, "").replace(/\s+/g, " ").trim();
 }
 

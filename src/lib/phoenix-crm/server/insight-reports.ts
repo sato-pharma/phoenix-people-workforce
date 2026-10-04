@@ -64,7 +64,7 @@ import { buildMissingStock, type MissingStockResult, type StockAnswer, type Stoc
 import { resolveReportMonth, type ReportMonth, type ReportPeriod } from "@/lib/phoenix-crm/report-rules";
 import { buildSamplesReport, type SamplesReportResult } from "@/lib/phoenix-crm/samples-report";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { readsFieldHeardByProduct, readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { groupCustomerPharmacies, normalizePharmacyName, type PharmacyFeedback } from "@/lib/phoenix-crm/server/list";

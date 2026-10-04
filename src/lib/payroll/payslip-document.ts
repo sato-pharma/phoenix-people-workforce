@@ -598,7 +598,6 @@ export function payslipFileName(
     // escapes. NEVER write these as literal characters: the class then holds invisible bytes that
     // no reviewer can see and no diff renders. Nor as a range like [ -<], which reads as "space to
     // less-than" and silently swallows every digit and apostrophe in a name.
-    // eslint-disable-next-line no-control-regex -- C0 is precisely what a filename may not contain
     .replace(/[\u0000-\u001F\u007F<>:"/\\|?*]+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[.\s]+|[.\s]+$/g, "")

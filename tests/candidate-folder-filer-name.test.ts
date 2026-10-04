@@ -7,7 +7,6 @@ import {
   managerLabel,
   managerLabelOrNull,
   personLabel,
-  UNNAMED_FILER_LABEL,
   UNNAMED_MANAGER_LABEL,
 } from "../src/lib/recruitment/person-labels.ts";
 import { stripComments } from "./support/comment-strip.ts";

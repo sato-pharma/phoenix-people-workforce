@@ -370,11 +370,9 @@ export function runPhoenixCrmWave2ReportTests(): void {
     assert.match(tab, /\) : MONTHLY_SECTIONS\.includes\(activeSection\) \? \(/, "the Month select follows the same list");
     // Every section has a key in the resource map, or Refresh throws the moment it is open.
     const activeMap = /const active = \{([^}]+)\}\[activeSection\]/.exec(tab)?.[1] ?? "";
-    for (const key of ["frequency", "tracking"]) {
     const mapKeys = activeMap.split(",").map((key) => key.trim());
     for (const key of ["frequency", "tracking"]) {
       assert.ok(mapKeys.includes(key), `the ${key} resource is in the map Refresh reads`);
-    }
     }
     assert.doesNotMatch(tab, /againstGrade\s*\+\s*[A-Za-z.]*againstPlan/, "the two comparisons are never added into one score");
   }

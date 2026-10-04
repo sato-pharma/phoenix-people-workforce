@@ -90,7 +90,6 @@ export const OUTSIDE_EGYPT_FOLDER_NAME = "Outside Egypt";
  */
 export function sanitizeDriveSegment(name: string): string {
   const cleaned = String(name ?? "")
-    // eslint-disable-next-line no-control-regex -- control characters are exactly what is stripped
     .replace(/[\u0000-\u001f\u007f]/g, " ")
     .replace(/[\\/]/g, "-")
     .replace(/\s+/g, " ")

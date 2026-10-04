@@ -187,7 +187,7 @@ function monthLabel(period: string): string {
 // SELECTABLE month made "This month" and "Last 2 months" guaranteed dead ends. That file holds the
 // measurement and the reason.
 
-export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshold, latestPublished }: Props) {
+export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, latestPublished }: Props) {
   const [step, setStep] = useState(1);
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(defaultTo);
@@ -467,6 +467,7 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
                 <>
                   {sheet && (
                     <figure className="border border-slate-200 bg-slate-50 p-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- the sheet is a server-rendered blob URL, not an optimisable asset */}
                       <img
                         alt={`Your spotlight for ${preview.rangeLabel}`}
                         className="block w-full border border-slate-200 bg-white"

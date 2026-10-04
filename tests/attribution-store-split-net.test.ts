@@ -10,7 +10,6 @@ import {
 } from "@/lib/sales/attribution-store-split-net";
 import { othersLookupLineCode, usesOrganogramRegions } from "@/lib/sales/closing-organogram-regions";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
-import { ALL_SPLIT_AREAS } from "@/lib/sales/store-sales-city-split";
 
 import { referenceQemaShares } from "./qema-warehouse-split.test.ts";
 

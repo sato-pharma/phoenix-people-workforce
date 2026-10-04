@@ -12,7 +12,6 @@ import {
   isSettledUnmappedRow,
   loadCrmIdentityMaps,
   normalizeCrmName,
-  type CrmIdentityMaps,
 } from "@/lib/crm/identity";
 import type { CrmMappingEmployeeOption } from "@/lib/crm/mapping-picker";
 import { getEffectiveExcludedAgentCrmIds } from "@/lib/crm/reads";

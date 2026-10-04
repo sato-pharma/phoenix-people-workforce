@@ -29,7 +29,7 @@
 import { logError, logInfo } from "@/lib/observability/log";
 
 import { createDryRunJoinerDriver, type JoinerConsoleDriver } from "./driver";
-import { readCompanyInitialPassword, explainUnusableInitialPassword, isUsableInitialPassword } from "./initial-password";
+import { explainUnusableInitialPassword, isUsableInitialPassword } from "./initial-password";
 import {
   ROBOT_ACTOR,
   ROBOT_DEFAULT_MAX_CREATES_PER_RUN,

@@ -41,7 +41,6 @@ import {
   Trophy,
   UserRound,
   Users,
-  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";

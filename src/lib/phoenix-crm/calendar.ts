@@ -12,7 +12,7 @@
 
 import { addDaysIso } from "@/lib/crm/dates";
 import { cairoOffsetMinutes } from "@/lib/format/cairo-zone";
-import type { PhoenixCrmDoctorListType, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 
 const ISO_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 

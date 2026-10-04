@@ -16,7 +16,7 @@ import { Action } from "@/components/recruitment/workstation/workstation-look";
 import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-types";
 
 import { type CalendarApi, reasonText } from "./calendar-api";
-import { CalendarDialog, ErrorLine } from "./calendar-dialog";
+import { CalendarDialog } from "./calendar-dialog";
 import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
 import { OrgFields } from "./org-fields";
 import { PanelPicker } from "./panel-picker";

@@ -119,8 +119,6 @@ export type ScheduleInterviewRequestItemInput = {
 
 const FORBIDDEN_REQUEST =
   "Forbidden: only District Managers and above, and HR, can request interviews.";
-const FORBIDDEN_BOOK =
-  "Forbidden: only HR and the calendar's owners give interview requests a time.";
 const FORBIDDEN_READ =
   "Forbidden: this interview request is not one you asked for or were chosen to conduct.";
 

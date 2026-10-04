@@ -65,7 +65,7 @@ import {
   type TeamTodayVisit,
 } from "@/lib/phoenix-crm/team-today";
 import { sortVendorLeftovers, type VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
-import type { PhoenixCrmDoctorListType, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type TeamTerritoryRow = {

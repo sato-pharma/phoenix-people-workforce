@@ -23,9 +23,6 @@
 // PURE. No DOM, no pdf.js, no React: the PDF path measures spans on a canvas and the Word path
 // walks text nodes, and both have to agree about what a number IS. The test pins the shapes.
 
-/** Arabic-Indic and Eastern Arabic-Indic digits, so a CV typed in Arabic is not a hole. */
-const EASTERN_DIGITS = /[٠-٩۰-۹]/g;
-
 /** How many digits a run must carry before it is treated as a phone number. */
 export const PHONE_LIKE_MIN_DIGITS = 9;
 

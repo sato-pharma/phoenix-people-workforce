@@ -80,7 +80,6 @@ import {
 } from "@/lib/marketing-requests/validation-report";
 import {
   canSaveMarketingValidation,
-  customerIsVenueOnlyWithoutCapture,
   describeMissingSaveRequirement,
   hasCompleteCapture,
 } from "@/lib/marketing-requests/validation-save-gate";

@@ -25,9 +25,6 @@ import { periodMonthEnd } from "../src/lib/business-review/period-format.ts";
 
 const SOURCES_DIR = fileURLToPath(new URL("../src/lib/business-review/sources/", import.meta.url));
 const source = (name: string) => readFileSync(`${SOURCES_DIR}${name}`, "utf8");
-/** Collapse runs of whitespace so a reformat or a line-wrap does not false-fail a source check. */
-const flat = (s: string) => s.replace(/\s+/g, " ");
-
 export function runBusinessReviewMonthEndTests() {
   // The helper answers the calendar's last day, including both kinds of February.
   assert.equal(periodMonthEnd("2026-09"), "2026-09-30", "September has 30 days");

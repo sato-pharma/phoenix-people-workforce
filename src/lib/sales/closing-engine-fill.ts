@@ -1676,7 +1676,7 @@ async function addRepCardStyles(zip: JSZip, sheetXml: string): Promise<RepCardSt
  * also the key every one of the card's product rows SUMIFS on. Hiding the code from the reader is
  * the ask; taking it off the sheet would empty the card.
  */
-async function polishRepCard(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
+async function polishRepCard(zip: JSZip, _fill: ClosingEngineFill): Promise<void> {
   const spec = MANIFEST.sheets[REP_CARD];
   const file = spec ? zip.file(spec.file) : null;
   if (!spec || !file) return;

@@ -29,7 +29,7 @@
 
 import { logError, logInfo } from "@/lib/observability/log";
 
-import { runTurbifyJoinerRobot, type JoinerRunResult, type JoinerRunnerDeps } from "./runner";
+import { type JoinerRunResult, type JoinerRunnerDeps } from "./runner";
 import type { JoinerConsoleDriver } from "./driver";
 
 export type JoinerSweepConfig = {

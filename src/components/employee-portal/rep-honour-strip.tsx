@@ -277,6 +277,7 @@ export function RepHonourStrip({ standing }: { standing: RepRankStanding | null 
       />
       <div className="relative flex items-center gap-3 px-4 pb-[calc(0.5rem+3px)] pt-[calc(0.5rem+3px)] @md:gap-6 @md:px-6">
         <div className="flex min-w-0 flex-1 justify-start">
+          {/* eslint-disable-next-line @next/next/no-img-element -- static brand PNG; swapping to next/image would change the footer's look */}
           <img
             alt=""
             aria-hidden="true"
@@ -328,6 +329,7 @@ export function RepHonourStrip({ standing }: { standing: RepRankStanding | null 
             no room for the words beside a ranking, so the bird carries the mark alone. */}
         <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
           <span className="flex shrink-0 flex-col items-center">
+            {/* eslint-disable-next-line @next/next/no-img-element -- static brand image; swapping to next/image would change the footer's look */}
             <img
               alt=""
               aria-hidden="true"

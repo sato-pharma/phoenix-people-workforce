@@ -190,21 +190,6 @@ function Metric({
   );
 }
 
-function Info({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-[18px] border border-phx-line bg-phx-paper/85 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
-      <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
-      <p className="mt-2 text-sm font-semibold text-phx-ink">{value}</p>
-    </div>
-  );
-}
-
 function RequestActionButtons({
   actionMessage,
   acting,

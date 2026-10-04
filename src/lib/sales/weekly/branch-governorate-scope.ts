@@ -34,7 +34,6 @@ import {
   placeMentions,
 } from "@/lib/sales/weekly/governorates";
 import type { WeeklyAccessScope } from "@/lib/sales/weekly/access";
-import { fieldForceKey } from "@/lib/sales/weekly/portal-weekly-field-force";
 
 /** What a depot resolves to: the governorates it belongs to, or a rule that skips governorate scope. */
 export type BranchGovernorateScope = Set<GovernorateKey> | "ALL" | "FLOOR";

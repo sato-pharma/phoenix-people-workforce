@@ -7,7 +7,6 @@ import {
   UNITS_FMT,
   VALUE_FMT,
   sanitizeSheetName,
-  writeTable,
   type CellValue,
   type TableColumn,
 } from "@/lib/sales/sales-workbook-kit";

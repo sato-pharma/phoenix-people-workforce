@@ -20,8 +20,6 @@
 
 import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 
-import type { ReviewCoverage } from "./coverage";
-import type { ReviewWindow } from "./period";
 import type { ConcentrationFacts } from "./concentration";
 import type { SpecialtyMix } from "./specialty-mix";
 import type { ReviewPersonRow, ReviewRoleRow } from "./sources/roles";

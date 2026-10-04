@@ -484,7 +484,7 @@ function CompanyDashboard({
 
 function LineDashboard({
   ds, dms, areas, viewerRole, view: currentLine, restatementNotice,
-  window: reviewWindow, coverage, provenance, available, company, packLevel, packMetrics,
+  window: reviewWindow, coverage, provenance, available, packLevel, packMetrics,
   scopeFilter, exportParams, narrowed = false, scopeLabel,
 }: Extract<Props, { ds: ReviewDataset }>) {
   const [tab, setTab] = useState<TabId>("achievers");
