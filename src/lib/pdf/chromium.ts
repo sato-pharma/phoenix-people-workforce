@@ -37,6 +37,100 @@ export class ChromiumUnavailableError extends Error {
   }
 }
 
+/**
+ * Thrown when every Chromium slot stayed taken for the whole wait. It IS a
+ * `ChromiumUnavailableError`, so every caller that already degrades on "no PDF could be rendered"
+ * degrades on "the renderer is busy" the same way, with no new branch to forget.
+ */
+export class ChromiumBusyError extends ChromiumUnavailableError {
+  constructor(message: string, reason?: unknown) {
+    super(message, reason);
+    this.name = "ChromiumBusyError";
+  }
+}
+
+export type SlotLimiter = {
+  /** Resolves with a release function once a slot is free; rejects with ChromiumBusyError on timeout. */
+  acquire: () => Promise<() => void>;
+};
+
+/**
+ * At most `limit` holders at once; the rest wait in arrival order (FIFO), each for at most `waitMs`.
+ *
+ * WHY A LIMIT AT ALL (PERF-005). Every `withChromiumPage` call launches a whole Chromium — a few
+ * hundred MB each — and nothing bounded how many ran at once, so a burst of exports (a manager
+ * clicking down a list of milestone cards, two admins printing payslips) launched one browser per
+ * click on the single production container until it ran out of memory and restarted. Two at a
+ * time keeps the common case instant and turns a burst into a short queue instead of an OOM.
+ *
+ * A waiter that times out is REMOVED from the queue before it rejects, so a slot freed later is
+ * never handed to a caller who has already given up (which would leak that slot forever). The
+ * release function is idempotent for the same reason: a double release must not mint a slot.
+ */
+export function createSlotLimiter(limit: number, waitMs: number): SlotLimiter {
+  let active = 0;
+  const waiters: Array<{ grant: () => void; timer: ReturnType<typeof setTimeout> }> = [];
+
+  function makeRelease(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const next = waiters.shift();
+      if (next) {
+        // Hand the slot straight to the oldest waiter: `active` does not change.
+        clearTimeout(next.timer);
+        next.grant();
+        return;
+      }
+      active -= 1;
+    };
+  }
+
+  return {
+    acquire() {
+      if (active < limit) {
+        active += 1;
+        return Promise.resolve(makeRelease());
+      }
+      return new Promise<() => void>((resolve, reject) => {
+        const waiter = {
+          grant: () => resolve(makeRelease()),
+          timer: setTimeout(() => {
+            const index = waiters.indexOf(waiter);
+            if (index !== -1) waiters.splice(index, 1);
+            reject(
+              new ChromiumBusyError(
+                `Every PDF renderer stayed busy for ${Math.round(waitMs / 1000)}s, so this document was not rendered.`,
+              ),
+            );
+          }, waitMs),
+        };
+        waiters.push(waiter);
+      });
+    },
+  };
+}
+
+/** The one process-wide limit on concurrent Chromium browsers for document rendering. */
+export const chromiumSlots = createSlotLimiter(2, 60_000);
+
+/**
+ * Run `fn` while holding a Chromium slot, and always give the slot back — even when `fn` throws.
+ *
+ * 🔴 NEVER NEST: a callback holding a slot that renders another document waits for a slot it may
+ * itself be blocking, and two such callers deadlock until the wait times out. The Turbify mailbox
+ * robots launch their own browser through `loadPuppeteer` and are deliberately NOT limited here.
+ */
+export async function withChromiumSlot<T>(fn: () => Promise<T>): Promise<T> {
+  const release = await chromiumSlots.acquire();
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
 function fileExists(path: string): boolean {
   try {
     return existsSync(path);
@@ -159,28 +253,34 @@ export async function isChromiumAvailable(): Promise<boolean> {
  */
 export async function withChromiumPage<T>(render: (page: ChromiumPage) => Promise<T>): Promise<T> {
   const puppeteer = await loadPuppeteer();
-  let browser: ChromiumBrowser | null = null;
-  try {
-    // ── ONE OF THESE TWO, NEVER NEITHER ────────────────────────────────────────────────────────
-    // `puppeteer-core` ships no browser and does NO discovery of its own: given neither an
-    // `executablePath` nor a `channel` it refuses outright with "An `executablePath` or `channel`
-    // must be specified for `puppeteer-core`". In the container the path always resolves, so the
-    // channel below is never reached there. On a developer's Windows or macOS machine nothing
-    // resolves, and asking for the installed Chrome is what makes the feature testable at all
-    // before it ships — measured 2026-09-04, where launching with neither produced exactly that
-    // error and `channel: "chrome"` launched immediately.
-    const executablePath = resolveChromiumPath();
-    browser = await puppeteer.launch({
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-      headless: true,
-      ...(executablePath ? { executablePath } : { channel: "chrome" }),
-    });
-    const page = await browser.newPage();
-    return await render(page);
-  } catch (error) {
-    if (error instanceof ChromiumUnavailableError) throw error;
-    throw new ChromiumUnavailableError("Chromium failed to render the document.", error);
-  } finally {
-    if (browser) await browser.close().catch(() => undefined);
-  }
+  // The slot wraps the launch AND the close, so it is given back only once this browser is gone —
+  // releasing it before `browser.close()` would let a third Chromium start while the second is
+  // still resident, which is the overlap the limit exists to prevent. A busy timeout rejects with
+  // ChromiumBusyError, which is a ChromiumUnavailableError, so callers degrade exactly as before.
+  return withChromiumSlot(async () => {
+    let browser: ChromiumBrowser | null = null;
+    try {
+      // ── ONE OF THESE TWO, NEVER NEITHER ──────────────────────────────────────────────────────
+      // `puppeteer-core` ships no browser and does NO discovery of its own: given neither an
+      // `executablePath` nor a `channel` it refuses outright with "An `executablePath` or `channel`
+      // must be specified for `puppeteer-core`". In the container the path always resolves, so the
+      // channel below is never reached there. On a developer's Windows or macOS machine nothing
+      // resolves, and asking for the installed Chrome is what makes the feature testable at all
+      // before it ships — measured 2026-09-04, where launching with neither produced exactly that
+      // error and `channel: "chrome"` launched immediately.
+      const executablePath = resolveChromiumPath();
+      browser = await puppeteer.launch({
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+        headless: true,
+        ...(executablePath ? { executablePath } : { channel: "chrome" }),
+      });
+      const page = await browser.newPage();
+      return await render(page);
+    } catch (error) {
+      if (error instanceof ChromiumUnavailableError) throw error;
+      throw new ChromiumUnavailableError("Chromium failed to render the document.", error);
+    } finally {
+      if (browser) await browser.close().catch(() => undefined);
+    }
+  });
 }

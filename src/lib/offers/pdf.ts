@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { renderOfferDocument } from "@/lib/offers/render";
 import { satoLogoDataUri, satoLogoReverseDataUri, satoSealDataUri, satoSignatureDataUri } from "@/lib/offers/brand";
 import type { OfferBlock, OfferFields, OfferTemplateVariant, OfferTheme } from "@/lib/offers/types";
+import { withChromiumSlot } from "@/lib/pdf/chromium";
 
 /**
  * The offer letter as a real PDF, rendered by headless Chromium.
@@ -175,50 +176,57 @@ export async function renderOfferPdf(
   });
   const timeout = options.timeoutMs ?? 30_000;
 
-  let browser: Awaited<ReturnType<PuppeteerModule["launch"]>> | null = null;
   try {
-    browser = await puppeteer.launch({
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        // The container has a small /dev/shm; without this Chromium crashes on larger documents.
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-      ],
-      executablePath: resolveChromiumPath(),
-      headless: true,
-    });
+    // The slot wraps the launch AND the close, so it is given back only once this browser is gone.
+    // A busy timeout (ChromiumBusyError) lands in the catch below and becomes an
+    // OfferPdfUnavailableError like every other failure, so the send degrades the way it always has.
+    return await withChromiumSlot(async () => {
+      let browser: Awaited<ReturnType<PuppeteerModule["launch"]>> | null = null;
+      try {
+        browser = await puppeteer.launch({
+          args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            // The container has a small /dev/shm; without this Chromium crashes on larger documents.
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+          ],
+          executablePath: resolveChromiumPath(),
+          headless: true,
+        });
 
-    const page = await browser.newPage();
-    // `domcontentloaded`, not `networkidle0`: the document embeds its own stylesheet and the only
-    // possible network request is the logo. Waiting for network idle would add seconds to every
-    // offer, and would hang the send outright if the logo host were slow.
-    await page.setContent(html, { timeout, waitUntil: "domcontentloaded" });
-    // Chromium applies `@media screen` by default even when producing a PDF.
-    await page.emulateMediaType("print");
+        const page = await browser.newPage();
+        // `domcontentloaded`, not `networkidle0`: the document embeds its own stylesheet and the only
+        // possible network request is the logo. Waiting for network idle would add seconds to every
+        // offer, and would hang the send outright if the logo host were slow.
+        await page.setContent(html, { timeout, waitUntil: "domcontentloaded" });
+        // Chromium applies `@media screen` by default even when producing a PDF.
+        await page.emulateMediaType("print");
 
-    return await page.pdf({
-      // Only the designs that ask for a running foot get one. `headerTemplate` still has to be a
-      // non-empty element: given "" Chromium falls back to its own default header, which prints
-      // the page title and the date across the top of a legal document.
-      displayHeaderFooter: pageFooterHtml !== "" || pageHeaderHtml !== "",
-      footerTemplate: pageFooterHtml || "<span></span>",
-      format: pageSize,
-      headerTemplate: pageHeaderHtml || "<span></span>",
-      // The margins live in the document's own `@page` rule, next to the design they belong to;
-      // `preferCSSPageSize` is what makes that rule win over the format above.
-      margin: { bottom: "14mm", left: "13mm", right: "13mm", top: "12mm" },
-      preferCSSPageSize: true,
-      printBackground: true,
-      timeout,
+        return await page.pdf({
+          // Only the designs that ask for a running foot get one. `headerTemplate` still has to be a
+          // non-empty element: given "" Chromium falls back to its own default header, which prints
+          // the page title and the date across the top of a legal document.
+          displayHeaderFooter: pageFooterHtml !== "" || pageHeaderHtml !== "",
+          footerTemplate: pageFooterHtml || "<span></span>",
+          format: pageSize,
+          headerTemplate: pageHeaderHtml || "<span></span>",
+          // The margins live in the document's own `@page` rule, next to the design they belong to;
+          // `preferCSSPageSize` is what makes that rule win over the format above.
+          margin: { bottom: "14mm", left: "13mm", right: "13mm", top: "12mm" },
+          preferCSSPageSize: true,
+          printBackground: true,
+          timeout,
+        });
+      } finally {
+        // Never leak a browser process. One leaked Chromium per offer would exhaust the container's
+        // memory within a day of normal HR use.
+        if (browser) await browser.close().catch(() => undefined);
+      }
     });
   } catch (error) {
     if (error instanceof OfferPdfUnavailableError) throw error;
     throw new OfferPdfUnavailableError("Chromium failed to render the offer PDF.", error);
-  } finally {
-    // Never leak a browser process. One leaked Chromium per offer would exhaust the container's
-    // memory within a day of normal HR use.
-    if (browser) await browser.close().catch(() => undefined);
   }
 }
 

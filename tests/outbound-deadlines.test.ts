@@ -73,6 +73,11 @@ export async function runOutboundDeadlinesTests() {
     /req\.setTimeout\(GOOGLE_MAPS_TIMEOUT_MS,/,
     "the node:https fallback request must call req.setTimeout(GOOGLE_MAPS_TIMEOUT_MS, ...)",
   );
+  assert.match(
+    fallback,
+    /req\.destroy\(Object\.assign\(new Error\([^)]*\), \{ name: "TimeoutError" \}\)\)/,
+    "the node:https deadline must be named TimeoutError, or the route ladder reads it as a rejection and asks three more times",
+  );
   const rethrowAt = fallback.indexOf("if (isTimeoutAbort(error)) throw error;");
   const httpsAt = fallback.indexOf('import("node:https")');
   assert.ok(
@@ -129,5 +134,61 @@ export async function runOutboundDeadlinesTests() {
   } finally {
     globalThis.fetch = realFetch;
     await server.close();
+  }
+
+  // --- the route ladder: a rejection tries the simpler variants, a deadline stops at once ---------
+  // Four variants each bounded by 8 s held an outstation request ~32 s when Google stopped answering.
+  const realKey = process.env.GOOGLE_MAPS_SERVER_KEY;
+  process.env.GOOGLE_MAPS_SERVER_KEY = "test-key";
+  const origin = { lat: 30.04, lng: 31.23 };
+  const destination = { lat: 31.2, lng: 29.91 };
+  try {
+    for (const deadline of [new DOMException("deadline", "TimeoutError"), Object.assign(new Error("Google Maps request timed out"), { name: "TimeoutError" })]) {
+      let calls = 0;
+      globalThis.fetch = (async () => {
+        calls += 1;
+        throw deadline;
+      }) as typeof fetch;
+      await assert.rejects(__testables.computeRoutes(origin, destination), (error) => {
+        assert.equal(error, deadline, "a timed-out route lookup must surface the timeout itself");
+        return true;
+      });
+      assert.equal(calls, 1, `a route lookup that times out must not try the other variants (made ${calls} calls)`);
+    }
+
+    // Google REJECTS the first three asks and answers the fourth: the ladder still climbs to it.
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      if (calls < 4) return new Response('{"error":{"status":"INVALID_ARGUMENT"}}', { status: 400 });
+      return new Response(JSON.stringify({ routes: [{ distanceMeters: 220_000, duration: "9000s", staticDuration: "8800s" }] }), { status: 200 });
+    }) as typeof fetch;
+    const answered = await __testables.computeRoutes(origin, destination);
+    assert.equal(calls, 4, "a rejected request must still fall through every simpler variant");
+    assert.equal(answered.distanceMeters, 220_000, "the variant that answered must be the one returned");
+
+    // Every variant rejected: the FIRST error is the one thrown, as before the change.
+    calls = 0;
+    const statuses = [403, 400, 400, 400];
+    globalThis.fetch = (async () => {
+      const status = statuses[calls] ?? 400;
+      calls += 1;
+      return new Response("{}", { status });
+    }) as typeof fetch;
+    const errors: string[] = [];
+    await assert.rejects(__testables.computeRoutes(origin, destination), (error) => {
+      errors.push(String(error));
+      return true;
+    });
+    assert.equal(calls, 4, "with no deadline involved every variant is still tried");
+    globalThis.fetch = (async () => new Response("{}", { status: 403 })) as typeof fetch;
+    await assert.rejects(__testables.computeRoutes(origin, destination), (error) => {
+      assert.equal(String(error), errors[0], "when every variant fails, the first variant's error must be the one thrown");
+      return true;
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realKey === undefined) delete process.env.GOOGLE_MAPS_SERVER_KEY;
+    else process.env.GOOGLE_MAPS_SERVER_KEY = realKey;
   }
 }

@@ -111,30 +111,74 @@ export function dhashFromGreyscale(pixels: ArrayLike<number>): string | null {
 
 const HEX_HASH = /^[0-9a-f]{16}$/;
 
-function bitsOf(hash: string): string | null {
+/**
+ * A 64-bit hash as two 32-bit integers — the high 8 hex characters, then the low 8.
+ *
+ * WHY INTEGERS. The sweep compares every fresh photo with the whole corpus, and the string version
+ * built two 64-character bit strings per pair; at tens of thousands of fingerprints that was the
+ * night's CPU. Two XORs and two popcounts give the SAME count of differing bits — the verdicts must
+ * stay byte-identical, because a false flag here accuses a rep of fraud. `| 0` keeps each half a
+ * signed 32-bit integer, which is all `^` and `popcount32` ever read.
+ *
+ * The validity check is unchanged: anything that is not exactly 16 lowercase hex characters is not a
+ * hash and returns null, exactly as before.
+ */
+export function hashHalves(hash: string): [number, number] | null {
   if (!HEX_HASH.test(hash)) return null;
-  let bits = "";
-  for (const character of hash) bits += parseInt(character, 16).toString(2).padStart(4, "0");
-  return bits;
+  return [parseInt(hash.slice(0, 8), 16) | 0, parseInt(hash.slice(8), 16) | 0];
+}
+
+/** Set bits in a 32-bit integer (the classic SWAR count). */
+export function popcount32(value: number): number {
+  let v = value | 0;
+  v = v - ((v >>> 1) & 0x55555555);
+  v = (v & 0x33333333) + ((v >>> 2) & 0x33333333);
+  v = (v + (v >>> 4)) & 0x0f0f0f0f;
+  return Math.imul(v, 0x01010101) >>> 24;
 }
 
 /** How many of the 64 bits are set. Exported because the plain-image guard is worth reading. */
 export function setBits(hash: string): number | null {
-  const bits = bitsOf(hash);
-  if (bits === null) return null;
-  let count = 0;
-  for (const bit of bits) if (bit === "1") count += 1;
-  return count;
+  const halves = hashHalves(hash);
+  if (halves === null) return null;
+  return popcount32(halves[0]) + popcount32(halves[1]);
 }
 
 /** Bits that differ between two hashes, or null if either is not a 64-bit hash. */
 export function hammingDistance(left: string, right: string): number | null {
-  const a = bitsOf(left);
-  const b = bitsOf(right);
+  const a = hashHalves(left);
+  const b = hashHalves(right);
   if (a === null || b === null) return null;
-  let distance = 0;
-  for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) distance += 1;
-  return distance;
+  return popcount32(a[0] ^ b[0]) + popcount32(a[1] ^ b[1]);
+}
+
+/** A hash parsed once: its halves and whether it carries enough picture to compare. */
+type ParsedHash = { halves: [number, number]; comparable: boolean };
+
+function parseHash(hash: string | null): ParsedHash | null {
+  if (!hash) return null;
+  const halves = hashHalves(hash);
+  if (halves === null) return null;
+  const count = popcount32(halves[0]) + popcount32(halves[1]);
+  return { halves, comparable: count >= PHOTO_DHASH_MIN_SET_BITS && count <= PHOTO_DHASH_MAX_SET_BITS };
+}
+
+/**
+ * Each prior's parsed dhash, computed once per fingerprint OBJECT rather than once per comparison.
+ *
+ * The sweep judges every fresh photo against the same corpus array, so without this every prior was
+ * re-parsed once per fresh photo. Keyed weakly so a corpus that goes out of scope takes its entries
+ * with it, and the dhash string is stored beside the parse so a fingerprint whose `dhash` was changed
+ * after it was first judged is re-parsed rather than answered from a stale entry.
+ */
+const PRIOR_HASH_MEMO = new WeakMap<PhotoFingerprint, { dhash: string | null; parsed: ParsedHash | null }>();
+
+function parsedPrior(prior: PhotoFingerprint): ParsedHash | null {
+  const cached = PRIOR_HASH_MEMO.get(prior);
+  if (cached !== undefined && cached.dhash === prior.dhash) return cached.parsed;
+  const parsed = parseHash(prior.dhash);
+  PRIOR_HASH_MEMO.set(prior, { dhash: prior.dhash, parsed });
+  return parsed;
 }
 
 /** Does this hash carry enough picture to be compared at all? See `PHOTO_DHASH_MIN_SET_BITS`. */
@@ -203,13 +247,21 @@ export function judgePhotoDuplicate(
     signals.exactMatches = exact.map((prior) => describe(prior));
   }
 
-  if (isComparableHash(subject.dhash)) {
+  // The subject is parsed once, outside the comparison, and each prior through the memo.
+  const subjectHash = parseHash(subject.dhash);
+  if (subjectHash !== null && subjectHash.comparable) {
+    const [subjectHigh, subjectLow] = subjectHash.halves;
     const alreadyExact = new Set(exact.map((prior) => prior.photoPath));
     const near = others
-      .filter((prior) => !alreadyExact.has(prior.photoPath) && isComparableHash(prior.dhash))
+      .filter((prior) => !alreadyExact.has(prior.photoPath) && parsedPrior(prior)?.comparable === true)
       // 🔴 The same-door rule. Read the header before widening this.
       .filter((prior) => prior.repHrId !== subject.repHrId || !sameCustomer(prior.customerId, subject.customerId))
-      .map((prior) => ({ prior, distance: hammingDistance(String(subject.dhash), String(prior.dhash)) }))
+      .map((prior) => {
+        const parsed = parsedPrior(prior);
+        const distance =
+          parsed === null ? null : popcount32(subjectHigh ^ parsed.halves[0]) + popcount32(subjectLow ^ parsed.halves[1]);
+        return { prior, distance };
+      })
       .filter((entry): entry is { prior: PhotoFingerprint; distance: number } => entry.distance !== null)
       .filter((entry) => entry.distance <= PHOTO_DHASH_MAX_DISTANCE)
       .sort((left, right) => left.distance - right.distance);

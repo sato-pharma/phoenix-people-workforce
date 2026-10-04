@@ -51,11 +51,11 @@ import { logError } from "@/lib/observability/log";
 import { loadPortalPlanAdherence, type PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import {
-  SALES_HISTORY_FLOOR,
   loadEmployeeMonthlyAchievement,
   publishedPointsOnly,
   type MonthlyAchievementPoint,
 } from "@/lib/sales/employee-achievement";
+import { SALES_VS_TARGET_FLOOR } from "@/lib/sales/vs-target";
 
 /**
  * The MR landing figures, from SoS Monthly Closing — the same engine as Monthly Closing and
@@ -95,7 +95,13 @@ async function loadMrCanonicalSales(hrId: string, period?: string): Promise<{
   // published closing, no visits — so every keycard read empty until he could name the month he
   // wanted. When he names one, `current` means the month he named, and the window ends there.
   const currentPeriod = period ?? `${year}-${String(month).padStart(2, "0")}`;
-  const window = await loadEmployeeMonthlyAchievement([hrId], SALES_HISTORY_FLOOR, currentPeriod);
+  // FROM THE PUBLICATION FLOOR, NOT THE HISTORY FLOOR (PERF-022, 2026-10-04). Only PUBLISHED months
+  // survive `publishedPointsOnly`, and nothing before SALES_VS_TARGET_FLOOR (2026-07) can be
+  // published — loadEmployeeMonthlyAchievement clamps its publication read to that floor, so every
+  // Jan–Jun point came back `published: false` and was thrown away. Reading those six months was
+  // pure cost on every rep's landing. A picked month before the floor still answers nothing, as it
+  // did: the window is then empty rather than holding unpublishable months.
+  const window = await loadEmployeeMonthlyAchievement([hrId], SALES_VS_TARGET_FLOOR, currentPeriod);
   const points = publishedPointsOnly(window.byHrId.get(hrId) ?? []);
   if (points.length === 0) return { current: null, trend: null, effectivePeriod: null };
 
@@ -841,16 +847,6 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
   return emptyRoleExtras;
 }
 
-// Stats-only snapshot for the MR streaming path (called after the fast shell render)
-export type MrHomeStats = {
-  pendingVacationCount: number;
-  pendingExcuseCount: number;
-  pendingCountsAvailable: boolean;
-  latestPayslip: { month: string; netSalary: number } | null;
-  leaveEntitlementDays: number | null;
-  mrSalesAchievement: { achievementPercent: number; salesValue: number; targetValue: number } | null;
-};
-
 /**
  * The rep's own KPI row, by asking the board that already owns this arithmetic.
  *
@@ -900,84 +896,6 @@ async function loadMrFieldKpis(access: AccessContext, hrId: string, month: strin
     hasCallRate: row.hasCallRate,
     noGpsFeed: row.noGpsFeed,
     kpiRules: board.kpiRules ?? "legacy",
-  };
-}
-
-export async function getMrHomeStats(
-  access: AccessContext,
-  shell: EmployeePortalShellData,
-): Promise<MrHomeStats> {
-  const hrId = normalizeHrId(access.hrId) ?? "";
-  // Cairo's calendar day — see getUpcomingMarketingActivity. A rep opening his portal at 1am Cairo
-  // was being shown a UTC date that still read yesterday.
-  const today = cairoTodayIso();
-  const supabase = getSupabaseAdmin();
-
-  const mrSalesPromise = hrId
-    ? loadMrCanonicalSales(hrId).catch(() => null)
-    : Promise.resolve(null);
-
-  const [vacationResult, excuseResult, batchResult] = await Promise.allSettled([
-    supabase
-      .from("v2_vacation_requests")
-      .select("id", { count: "exact", head: true })
-      .eq("employee_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
-      .in("status", ["pending_manager", "pending_hr"]),
-    supabase
-      .from("v2_excuse_requests")
-      .select("id", { count: "exact", head: true })
-      .eq("employee_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
-      .eq("status", "pending_manager"),
-    supabase
-      .from("salary_batches")
-      .select("id, year, month")
-      .in("status", ["approved", "locked"])
-      .order("year", { ascending: false })
-      .order("month", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
-
-  const pendingVacationCount =
-    vacationResult.status === "fulfilled" ? (vacationResult.value.count ?? 0) : 0;
-  const pendingExcuseCount =
-    excuseResult.status === "fulfilled" ? (excuseResult.value.count ?? 0) : 0;
-  const pendingCountsAvailable =
-    vacationResult.status === "fulfilled" && excuseResult.status === "fulfilled";
-
-  let latestPayslip: MrHomeStats["latestPayslip"] = null;
-  if (batchResult.status === "fulfilled" && batchResult.value.data && hrId) {
-    const batch = batchResult.value.data;
-    const { data: record } = await supabase
-      .from("salary_records")
-      .select("net_salary")
-      .eq("batch_id", batch.id)
-      .eq("hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
-      .maybeSingle();
-    if (record?.net_salary) {
-      latestPayslip = {
-        month: `${batch.year}-${String(batch.month).padStart(2, "0")}`,
-        netSalary: Number(record.net_salary),
-      };
-    }
-  }
-
-  let mrSalesAchievement: MrHomeStats["mrSalesAchievement"] = null;
-  try {
-    mrSalesAchievement = (await mrSalesPromise)?.current ?? null;
-  } catch {
-    // null on failure
-  }
-
-  const balance = getVacationBalancePeriod({ hireDate: shell.hrContract.hireDate, referenceDate: today });
-
-  return {
-    pendingVacationCount,
-    pendingExcuseCount,
-    pendingCountsAvailable,
-    latestPayslip,
-    leaveEntitlementDays: balance?.entitlementDays ?? null,
-    mrSalesAchievement,
   };
 }
 

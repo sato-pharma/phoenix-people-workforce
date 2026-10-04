@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { buildBackupWorkbook, loadDataBackup, type DataBackupScope } from "@/lib/admin/data-backup";
+import { buildBackupWorkbook, loadDataBackup, runBackupExclusive, type DataBackupScope } from "@/lib/admin/data-backup";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
@@ -46,11 +46,19 @@ export async function GET(request: NextRequest) {
     const scope = normalizeScope(params.get("scope"));
     const format = normalizeFormat(params.get("format"));
 
-    const payload = await loadDataBackup(scope, access.loginId ?? access.hrId ?? "system");
+    // One backup at a time per process (PERF-009): the load and the build both run inside the
+    // exclusive section, so two downloads never hold two full datasets in memory at once. Each
+    // caller still gets its OWN payload — the Contents sheet carries who generated it and when.
+    const generatedBy = access.loginId ?? access.hrId ?? "system";
+    const built = await runBackupExclusive(async () => {
+      const payload = await loadDataBackup(scope, generatedBy);
+      if (format === "json") return { format: "json" as const, body: JSON.stringify(payload) };
+      return { format: "xlsx" as const, body: await buildBackupWorkbook(payload) };
+    });
     const filename = makeFilename(scope, format);
 
-    if (format === "json") {
-      const text = JSON.stringify(payload);
+    if (built.format === "json") {
+      const text = built.body;
       return new NextResponse(text, {
         status: 200,
         headers: {
@@ -61,7 +69,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const buffer = await buildBackupWorkbook(payload);
+    const buffer = built.body;
     return new NextResponse(buffer, {
       status: 200,
       headers: {

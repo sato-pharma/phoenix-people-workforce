@@ -124,8 +124,8 @@ export function runVacationReportFilterEquivalenceTests() {
   const service = src("src/lib/vacation/service.ts");
   assert.match(
     service,
-    /unstable_cache\(\s*loadAllVacationRequestRowsRaw,\s*\["vacation-report-all-rows"\],\s*\{[^}]*tags:\s*\[VACATION_REPORT_ROWS_CACHE_TAG\][^}]*\}/,
-    "service.ts must cache the unscoped base read under VACATION_REPORT_ROWS_CACHE_TAG",
+    /unstable_cache\(\s*async \(\) => packVacationReportRows\(await loadAllVacationRequestRowsRaw\(\)\),\s*\["vacation-report-all-rows-packed"\],\s*\{[^}]*revalidate:\s*VACATION_REPORT_ROWS_REVALIDATE_SECONDS[^}]*tags:\s*\[VACATION_REPORT_ROWS_CACHE_TAG\][^}]*\}/,
+    "service.ts must cache the unscoped base read (packed, PERF-018) under VACATION_REPORT_ROWS_CACHE_TAG with the 60 s backstop",
   );
   assert.match(
     service,

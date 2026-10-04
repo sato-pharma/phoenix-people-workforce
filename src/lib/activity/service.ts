@@ -247,6 +247,72 @@ async function fetchAll(
   return { rows, truncated };
 }
 
+/**
+ * `fetchAll`, but paged by KEYSET on (created_at, id) instead of by OFFSET.
+ *
+ * WHY. An offset page makes Postgres walk and discard every row before it, so page 200 of a
+ * 200,000-row activity_events read scanned ~200,000 rows to return 1,000 — the whole read was
+ * quadratic. And without a total order an offset page is not even stable: rows sharing one
+ * `created_at` can swap between two page reads, so a row is read twice and its neighbour never.
+ * A keyset seek starts each page exactly after the last row of the previous one, entering the
+ * created_at indexes at the cursor, and the `id` tie-break makes the order total.
+ *
+ * Same contract as `fetchAll`: the same `{ rows, truncated }` cap semantics (a full page landing on
+ * the cap reports `truncated`), the same missing-relation degrade, and the same row shape — `id` is
+ * selected for the cursor when the caller did not ask for it, and taken off again before returning.
+ * The caller's `apply` adds FILTERS only; this orders. `options` exists for the test's fake client.
+ */
+export async function fetchAllKeysetByTime(
+  table: string,
+  columns: string,
+  apply: (query: any) => any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  direction: "asc" | "desc",
+  cap: number,
+  options: { client?: { from: (table: string) => any }; pageSize?: number } = {}, // eslint-disable-line @typescript-eslint/no-explicit-any
+): Promise<{ rows: Row[]; truncated: boolean }> {
+  const client = options.client ?? getSupabaseAdmin();
+  const pageSize = options.pageSize ?? PAGE_SIZE;
+  const ascending = direction === "asc";
+  const seek = ascending ? "gt" : "lt";
+  const callerSelectsId = columns.split(",").some((column) => column.trim() === "id");
+  const selectColumns = callerSelectsId ? columns : `${columns},id`;
+  const rows: Row[] = [];
+  let truncated = false;
+  let cursor: { createdAt: string; id: string } | null = null;
+  for (let fetched = 0; fetched < cap; fetched += pageSize) {
+    let query = apply(client.from(table).select(selectColumns));
+    if (cursor !== null) {
+      // The timestamp is double-quoted: it carries `:`, `.` and `+`, which PostgREST's or-grammar
+      // would otherwise read as its own punctuation.
+      query = query.or(
+        `created_at.${seek}."${cursor.createdAt}",and(created_at.eq."${cursor.createdAt}",id.${seek}.${cursor.id})`,
+      );
+    }
+    query = query.order("created_at", { ascending }).order("id", { ascending }).limit(pageSize);
+    const { data, error } = await query;
+    if (error) {
+      if (isMissingRelationError(error)) {
+        console.warn(`[activity] table ${table} not available yet; treating as empty`);
+        return { rows: callerSelectsId ? rows : rows.map(withoutCursorId), truncated: false };
+      }
+      throw new Error(`Failed to read ${table}: ${error.message}`);
+    }
+    const batch = (data ?? []) as Row[];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+    // A full last page that lands exactly on the cap means there may be more.
+    if (rows.length >= cap) truncated = true;
+    const last = batch[batch.length - 1];
+    cursor = { createdAt: String(last.created_at), id: String(last.id) };
+  }
+  return { rows: callerSelectsId ? rows : rows.map(withoutCursorId), truncated };
+}
+
+function withoutCursorId(row: Row): Row {
+  const { id: _cursorId, ...rest } = row;
+  return rest;
+}
+
 type IdentityMaps = {
   employeeByHrId: Map<string, { name: string; jobTitle: string | null; team: string | null; status: string | null }>;
   roleByHrId: Map<string, string>;
@@ -714,10 +780,11 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
       (q) => q.gte("created_at", range.fromIso).lte("created_at", range.toIso).order("created_at", { ascending: false }),
       SESSION_FETCH_CAP,
     ),
-    fetchAll(
+    fetchAllKeysetByTime(
       "activity_events",
       "hr_id,login_id,session_id,module_key,module_label,path,duration_ms,role,created_at,entered_at",
-      (q) => q.gte("created_at", range.fromIso).lte("created_at", range.toIso).order("created_at", { ascending: false }),
+      (q) => q.gte("created_at", range.fromIso).lte("created_at", range.toIso),
+      "desc",
       EVENT_FETCH_CAP,
     ),
     fetchAll(
@@ -1066,7 +1133,7 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
       (q) => q.in("hr_id", hrIdLookupKeys(targetHrId)).gte("created_at", range.fromIso).lte("created_at", range.toIso).order("created_at", { ascending: false }),
       SESSION_FETCH_CAP,
     ),
-    fetchAll(
+    fetchAllKeysetByTime(
       "activity_events",
       "hr_id,login_id,session_id,module_key,module_label,path,duration_ms,role,created_at,entered_at",
       // Every accepted spelling, exactly like the session read above. This was an
@@ -1074,7 +1141,8 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
       // does NOT store one spelling: 51,024 rows are lower-cased across 56 people,
       // and 11,934 are `B-10` — the owner's own history, invisible on his own
       // timeline for every window reaching before 19 Aug 2026.
-      (q) => q.in("hr_id", hrIdLookupKeys(targetHrId)).gte("created_at", range.fromIso).lte("created_at", range.toIso).order("created_at", { ascending: true }),
+      (q) => q.in("hr_id", hrIdLookupKeys(targetHrId)).gte("created_at", range.fromIso).lte("created_at", range.toIso),
+      "asc",
       EVENT_FETCH_CAP,
     ),
     // The login-frequency calendar's OWN window. It is labelled in months and
@@ -1289,10 +1357,13 @@ export async function getActivityUserSummaries(range: ActivityRange): Promise<Us
       (q) => q.gte("created_at", range.fromIso).lte("created_at", range.toIso),
       SESSION_FETCH_CAP,
     ),
-    fetchAll(
+    // Keyset-paged like the screen's read, in the screen's order: the offset pages had no order at
+    // all here, so rows could repeat or vanish between two pages of the same export.
+    fetchAllKeysetByTime(
       "activity_events",
       "hr_id,login_id,session_id,module_key,module_label,path,duration_ms,role,created_at,entered_at",
       (q) => q.gte("created_at", range.fromIso).lte("created_at", range.toIso),
+      "desc",
       EVENT_FETCH_CAP,
     ),
   ]);

@@ -1155,6 +1155,17 @@ import { runWeeklyRowCacheTests } from "./weekly-row-cache.test.ts";
 import { runOutboundDeadlinesTests } from "./outbound-deadlines.test.ts";
 import { runCandidateListSlimCallersTests } from "./candidate-list-slim-callers.test.ts";
 import { runProcessHealthTests } from "./process-health.test.ts";
+import { runChromiumSlotLimiterTests } from "./chromium-slot-limiter.test.ts";
+import { runDataBackupExclusiveTests } from "./data-backup-exclusive.test.ts";
+import { runVacationRowsCachePackedTests } from "./vacation-rows-cache-packed.test.ts";
+import { runWhatsAppMediaTimeoutTests } from "./whatsapp-media-timeout.test.ts";
+import { runActivityKeysetPagingTests } from "./activity-keyset-paging.test.ts";
+import { runCrmTtlSingleFlightTests } from "./crm-ttl-single-flight.test.ts";
+import { runBusinessReviewClosingDetailBoundedFanoutTests } from "./business-review-closing-detail-bounded-fanout.test.ts";
+import { runClosingPerformanceReviewSeriesReuseTests } from "./closing-performance-review-series-reuse.test.ts";
+import { runMrKeycardSalesFloorTests } from "./mr-keycard-sales-floor.test.ts";
+import { runSosMonthPaceCachedAchievementTests } from "./sos-month-pace-cached-achievement.test.ts";
+import { runSosDashboardPackedCacheTests } from "./sos-dashboard-packed-cache.test.ts";
 import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independence.test.ts";
 import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runSosPharmacyActionsTests } from "./sos-pharmacy-actions.test.ts";
@@ -4670,11 +4681,55 @@ await runTest(
 );
 await runTest("weekly row cache: 60 s lifetime, dropped by every weekly write, shared loads, copies on read, bounded", runWeeklyRowCacheTests);
 await runTest(
-  "every outbound Google Maps and reCAPTCHA call carries a deadline, and a timed-out Maps call is never retried over node:https",
+  "every outbound Google Maps and reCAPTCHA call carries a deadline, a timed-out Maps call is never retried over node:https, and a timed-out route lookup stops instead of asking three more variants",
   runOutboundDeadlinesTests,
 );
 await runTest("the six list-shaped candidate reads skip the repeating CV blocks (59% of the pool's bytes)", runCandidateListSlimCallersTests);
 await runTest("process health: per-minute event-loop, heap and timing line, started once, production only", runProcessHealthTests);
+await runTest(
+  "Chromium renders at most two at a time (waiters served first-in first-out; a throwing render still frees its slot; a timed-out wait rejects with ChromiumBusyError, a ChromiumUnavailableError, and is removed from the queue; withChromiumPage and renderOfferPdf both launch and close inside withChromiumSlot)",
+  runChromiumSlotLimiterTests,
+);
+await runTest(
+  "data backups run one at a time (the next starts only after the previous settles, even when it failed; each caller gets its own result or error; the GET route and the background worker both go through runBackupExclusive; rows are normalised in place)",
+  runDataBackupExclusiveTests,
+);
+await runTest(
+  "the vacation report base rows are cached gzip-packed under vacation-report-all-rows-packed (lossless round trip; an oversize pack returns null and the caller reads the rows directly; the tag and the 60 s backstop are kept)",
+  runVacationRowsCachePackedTests,
+);
+await runTest(
+  "a WhatsApp media fetch can never hang the intake worker (PERF-014: the Graph lookup is bounded at 20 s and the byte download at 120 s by AbortSignal.timeout, every fetch in the file carries one, and a timeout surfaces as a retryable TimeoutError — never as WhatsAppMediaTooLargeError, which the worker treats as terminal and would drop a real CV)",
+  runWhatsAppMediaTimeoutTests,
+);
+await runTest(
+  "the big activity_events reads page by KEYSET on (created_at, id), not by offset (PERF-015: every row exactly once in both directions even with seven rows on one timestamp across a page seam, the caller's filters ANDed with the seek, fetchAll's truncated-at-cap and missing-table semantics kept, and only the one-page live feed left on the offset reader)",
+  runActivityKeysetPagingTests,
+);
+await runTest(
+  "CRM Master's whole-mirror scans are single-flight memos (PERF-019: concurrent callers share one in-flight scan, a failed scan reaches every sharer and is never cached, a late failure never evicts a newer entry, the 60 s TTL runs from completion, and the map is bounded at 20)",
+  runCrmTtlSingleFlightTests,
+);
+await runTest(
+  "business review closing detail is a BOUNDED fan-out (PERF-020: at most 4 phx_closing_customers calls in flight through asyncPool, results in input order, one failed month still fails the whole pack and starts nothing new)",
+  runBusinessReviewClosingDetailBoundedFanoutTests,
+);
+await runTest(
+  "performance review reads the selected month ONCE (PERF-021: the series reuses the headline's unmerged byPeriod matrix only when its own period and line match, narrows it like a fresh read, loads every other month, and a fallback or failed load is still null — never the folded multi-month matrix)",
+  runClosingPerformanceReviewSeriesReuseTests,
+);
+await runTest(
+  "the rep's landing keycard reads sales from the publication floor (PERF-022: nothing before July 2026 can be published, so reading from SALES_VS_TARGET_FLOOR gives exactly the published points the January floor gave)",
+  runMrKeycardSalesFloorTests,
+);
+await runTest(
+  "the SoS month-pace strip reads its month through the cached achievement engine (PERF-010: loadAchievementRange(period, period), never the uncached loadMonthlyAchievement; the only rows it drops have no sales line and never reached the strip)",
+  runSosMonthPaceCachedAchievementTests,
+);
+await runTest(
+  "the SoS dashboard cache holds PACKED rows and every viewer uses it (PERF-004: gzip+base64 round-trips exactly, a failed RPC or an over-cap pack is never cached, unstable_cache never sees raw rows, and the CEO / Super Admin view is no longer routed around the 5-minute cache — owner, 2026-10-04)",
+  runSosDashboardPackedCacheTests,
+);
 await runTest("analytics filter independence (no cross-dimension leakage)", runAnalyticsFilterIndependenceTests);
 await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
 await runTest("portal source-of-sales pharmacy actions (stopped / dropping / new) + weekly month pace", runSosPharmacyActionsTests);
