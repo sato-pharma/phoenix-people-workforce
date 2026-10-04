@@ -21,8 +21,10 @@ export const dynamic = "force-dynamic";
 export default async function EmployeePortalMarketAwarenessPage() {
   const access = await resolveAccessContextFromPage();
 
+  // Notification links (`?activity=…`) name this address for every recipient, the admin-shell CEO
+  // and Finance Manager included, so the hop goes to the admin workspace rather than /overview.
   if (resolveNavigationMode(access) !== "employee-portal") {
-    redirect("/overview");
+    redirect("/admin/market-awareness");
   }
   if (!(await canAccess(access, "market_awareness", "read"))) {
     redirect("/employee-portals");

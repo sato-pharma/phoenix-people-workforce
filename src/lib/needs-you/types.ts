@@ -113,7 +113,9 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
   "direct-order-unbooked": { href: "/admin/direct-orders", screen: "Direct Orders" },
   "direct-order-validations": { href: "/admin/direct-orders/validations", screen: "Validation Desk" },
   "marketing-approvals": { href: "/admin/marketing-requests/inbox", screen: "Marketing Inbox" },
-  "market-awareness-approvals": { href: "/admin/market-awareness", screen: "Market Awareness" },
+  // The INBOX, not the workspace: the workspace has no decision buttons, so a card that said "awaiting
+  // your decision" and opened it left the CEO looking at a request he could not answer.
+  "market-awareness-approvals": { href: "/admin/market-awareness/inbox", screen: "Awareness Approvals" },
   "monthly-closings": { href: "/sales/monthly-closing", screen: "Monthly Closing" },
   "payroll-publish": { href: "/admin/automated-payroll", screen: "Automated Payroll" },
   resignations: { href: "/resignations", screen: "Resignations" },

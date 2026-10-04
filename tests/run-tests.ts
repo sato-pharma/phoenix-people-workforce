@@ -1567,6 +1567,7 @@ import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
 import { runClosingQuarterGapTests } from "./closing-quarter-gap.test.ts";
 import { runClosingConsolidatedExportTests } from "./closing-consolidated-export.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
+import { runCeoMarketAwarenessApprovalInboxTests } from "./ceo-market-awareness-approval-inbox.test.ts";
 import { runMarketAwarenessApprovalInboxNavBadgeTests } from "./market-awareness-approval-inbox-nav-badge.test.ts";
 import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inbox-nav-badge.test.ts";
 
@@ -5292,6 +5293,10 @@ await runTest(
 await runTest(
   "CEO marketing approval inbox (the final rung reaches page, sidebar link and decision page in the admin shell; the opt-in widens nothing else)",
   runCeoMarketingApprovalInboxTests,
+);
+await runTest(
+  "CEO market awareness approval inbox (the CEO and Super Admin reach the inbox buttons from the admin shell: page, sidebar row, portal forwarding, Needs You card, twin rule)",
+  runCeoMarketAwarenessApprovalInboxTests,
 );
 
 await runTest(
