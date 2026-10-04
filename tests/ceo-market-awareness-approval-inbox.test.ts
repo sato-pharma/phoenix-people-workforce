@@ -7,15 +7,14 @@ import {
   type NavigationSection,
 } from "../src/config/system-navigation.ts";
 import {
+  buildPermissionLookup,
   createAccessContext,
-  permissionActions,
   permissionMatrix,
-  permissionResources,
   resolveNavigationMode,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 import { needsYouDestinations } from "../src/lib/needs-you/types.ts";
-import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
+import { getSections } from "../src/lib/navigation/active-path.ts";
 import { portalTwinRules, resolvePortalTwin } from "../src/lib/navigation/portal-twins.ts";
 import { canDecideStep } from "../src/lib/market-awareness/workflow.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -23,19 +22,14 @@ import { stripComments } from "./support/comment-strip.ts";
 const ADMIN_INBOX = "/admin/market-awareness/inbox";
 const PORTAL_INBOX = "/employee-portals/market-awareness/inbox";
 
-function lookupForRole(role: PhoenixRole): PermissionLookup {
-  const rolePermissions = permissionMatrix[role];
-  const lookup: PermissionLookup = {};
-  for (const resource of permissionResources) {
-    for (const action of permissionActions) {
-      lookup[`${resource}:${action}`] = rolePermissions[resource]?.includes(action) ?? false;
-    }
-  }
-  return lookup;
-}
-
 function adminHrefsFor(role: PhoenixRole): string[] {
-  return getSections(adminNavigationSections as readonly NavigationSection[], "admin", lookupForRole(role), role)
+  // buildPermissionLookup, never a hand-rolled double loop: tests/permission-lookup-totality counts them.
+  return getSections(
+    adminNavigationSections as readonly NavigationSection[],
+    "admin",
+    buildPermissionLookup(permissionMatrix, role),
+    role,
+  )
     .flatMap((navSection) => navSection.items.map((navItem) => navItem.href));
 }
 
