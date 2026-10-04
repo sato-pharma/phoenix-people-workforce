@@ -71,7 +71,8 @@ import { testAccountsMirroring } from "@/lib/auth/test-persona-directory";
 import { logError } from "@/lib/observability/log";
 import { minuteClock } from "@/lib/phoenix-crm/day-start-rules";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
-import { PLAN_EDIT_ACKNOWLEDGER_HR_ID, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
+import { PLAN_EDIT_ACKNOWLEDGER_HR_ID, planEditStatusLabel, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
+import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { managerChain, personKey, territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
@@ -966,10 +967,340 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
   };
 }
 
+/**
+ * The activity mirror — every Phoenix CRM action, to the NATIONAL SALES MANAGER above the rep and to the
+ * SFE Managers, in-app and by Telegram (owner, 2026-10-05: "in nsm and sfe i want every single action
+ * that happens on Phoenix CRM by their scope to be sent to Telegram to them").
+ *
+ * It is a PARALLEL stream, appended at the one choke point (`notifyPhoenixCrm`) rather than wired into
+ * every write path, so the module's tuned notices — who they reach, what they say, the first-visit chain,
+ * the day-start split — are untouched and their tests still hold. Its recipients are the NSM in the rep's
+ * chain plus the SFE Managers, MINUS anyone a native notice of the SAME action already reached: nobody is
+ * pinged twice, which is why the first visit (already the whole chain and SFE) and the day-start,
+ * plan-edit and off-plan-to-SFE notices (already SFE) produce no second message for them.
+ *
+ * 🔴 NEVER THE REP (Golden Rule #1): the subject of every line is excluded by `personKey`, and the one
+ * line that reports a position — the day start — carries the TIME ONLY here, never the location, which the
+ * owner scoped to the district manager and SFE alone (see `dayStartDeliveries`).
+ *
+ * 🔴 IN-APP AND TELEGRAM ONLY: `activity_mirror` is on PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES, so the phone
+ * and the Telegram-failure email fallback are both shut — the same guarantee the 06:55 digest has. Routine
+ * PLANNED visits (about 600 a working day) are NOT mirrored here: they are the hourly rollup, which the
+ * owner chose over a per-visit firehose.
+ */
+type MirrorLine = {
+  title: string;
+  message: string;
+  tab: Delivery["tab"];
+  recordId: string;
+  subjectHrId: string | null;
+  keySuffix: string;
+};
+
+/** The hr ids whose display names the mirror line for this notice needs. */
+function activityMirrorPeopleIds(notice: PhoenixCrmNotice): string[] {
+  const ids: Array<string | null | undefined> = [];
+  switch (notice.kind) {
+    case "request_created":
+      ids.push(notice.requesterHrId);
+      break;
+    case "request_decided":
+      ids.push(notice.requesterHrId, notice.deciderHrId);
+      break;
+    case "plan_submitted":
+    case "monthly_plan_submitted":
+      ids.push(notice.submitterHrId);
+      break;
+    case "plan_decided":
+    case "monthly_plan_decided":
+      ids.push(notice.deciderHrId, ...notice.repHrIds);
+      break;
+    case "plan_edit":
+      ids.push(notice.repHrId, notice.actorHrId);
+      break;
+    case "unplanned_visit_decided":
+      ids.push(notice.repHrId, notice.deciderHrId);
+      break;
+    case "visit_ask":
+      ids.push(notice.repHrId, notice.askedHrId);
+      break;
+    case "forecast_sent":
+    case "unplanned_visit_raised":
+    case "day_start":
+    case "first_visit":
+      ids.push(notice.repHrId);
+      break;
+  }
+  return ids.filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
+/**
+ * The neutral, third-person line the mirror sends for one action — never the actionable wording of the
+ * native notice ("approve it"), which is addressed to the person who must act. Returns null for an action
+ * the NSM and SFE already hear of natively (the first visit).
+ */
+function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): MirrorLine | null {
+  const territory = territoryName(notice.seat);
+  switch (notice.kind) {
+    case "first_visit":
+      return null;
+    case "request_created": {
+      const rep = nameOf(names, notice.requesterHrId, "A rep");
+      const verb =
+        notice.requestKind === "grade"
+          ? `proposed grade ${notice.proposedGrade ?? "—"} for`
+          : notice.requestKind === "drop"
+            ? "asked to drop"
+            : notice.requestKind === "add"
+              ? "asked to add"
+              : "asked to bring back";
+      return {
+        title: `Activity · list request: ${notice.customerName}`,
+        message: `${rep} ${verb} ${bidiIsolate(notice.customerName)} (${notice.listType}) on ${territory}.`,
+        tab: "team",
+        recordId: notice.requestId,
+        subjectHrId: notice.requesterHrId,
+        keySuffix: `request:${notice.requestId}:created`,
+      };
+    }
+    case "request_decided": {
+      const decider = nameOf(names, notice.deciderHrId, "A manager");
+      const rep = nameOf(names, notice.requesterHrId, "a rep");
+      const approved = notice.status === "approved";
+      const what =
+        notice.requestKind === "grade"
+          ? `grade ${notice.proposedGrade ?? "—"} for ${bidiIsolate(notice.customerName)}`
+          : notice.requestKind === "drop"
+            ? `dropping ${bidiIsolate(notice.customerName)}`
+            : notice.requestKind === "add"
+              ? `adding ${bidiIsolate(notice.customerName)}`
+              : `bringing ${bidiIsolate(notice.customerName)} back`;
+      return {
+        title: `Activity · list request ${approved ? "approved" : "refused"}: ${notice.customerName}`,
+        message: `${decider} ${approved ? "approved" : "refused"} ${rep}'s request — ${what} on ${territory}.`,
+        tab: "team",
+        recordId: notice.requestId,
+        subjectHrId: notice.requesterHrId,
+        keySuffix: `request:${notice.requestId}:${notice.status}`,
+      };
+    }
+    case "plan_submitted": {
+      const rep = nameOf(names, notice.submitterHrId, "A rep");
+      return {
+        title: `Activity · weekly plan sent: ${rep}`,
+        message: `${rep} sent the ${territory} weekly plan for the week starting ${formatPhoenixLongDate(notice.weekStart)}.`,
+        tab: "team",
+        recordId: notice.planId,
+        subjectHrId: notice.submitterHrId,
+        keySuffix: `plan:${notice.planId}:v${notice.version}:submitted`,
+      };
+    }
+    case "plan_decided": {
+      const decider = nameOf(names, notice.deciderHrId, "A manager");
+      const approved = notice.status === "approved";
+      const week = formatPhoenixLongDate(notice.weekStart);
+      const oneDay = !approved && notice.returnedDay ? formatPhoenixLongDate(notice.returnedDay) : null;
+      return {
+        title: `Activity · weekly plan ${approved ? "approved" : "returned"}`,
+        message: approved
+          ? `${decider} approved the ${territory} weekly plan for the week starting ${week}.`
+          : `${decider} returned ${oneDay ? `${oneDay} of ` : ""}the ${territory} weekly plan for the week starting ${week}.`,
+        tab: "team",
+        recordId: notice.planId,
+        subjectHrId: notice.repHrIds[0] ?? null,
+        keySuffix: `plan:${notice.planId}:v${notice.version}:${notice.status}`,
+      };
+    }
+    case "monthly_plan_submitted": {
+      const rep = nameOf(names, notice.submitterHrId, "A rep");
+      return {
+        title: `Activity · monthly plan sent: ${rep}`,
+        message: `${rep} sent the ${territory} plan for ${formatPhoenixMonth(notice.monthStart)}.`,
+        tab: "team",
+        recordId: notice.monthlyPlanId,
+        subjectHrId: notice.submitterHrId,
+        keySuffix: `monthly:${notice.monthlyPlanId}:v${notice.version}:submitted`,
+      };
+    }
+    case "monthly_plan_decided": {
+      const decider = nameOf(names, notice.deciderHrId, "A manager");
+      const approved = notice.status === "approved";
+      return {
+        title: `Activity · monthly plan ${approved ? "approved" : "returned"}`,
+        message: `${decider} ${approved ? "approved" : "returned"} the ${territory} plan for ${formatPhoenixMonth(notice.monthStart)}.`,
+        tab: "team",
+        recordId: notice.monthlyPlanId,
+        subjectHrId: notice.repHrIds[0] ?? null,
+        keySuffix: `monthly:${notice.monthlyPlanId}:v${notice.version}:${notice.status}`,
+      };
+    }
+    case "plan_edit": {
+      const rep = nameOf(names, notice.repHrId, "A rep");
+      return {
+        title: `Activity · plan edit: ${rep}`,
+        message: `${rep}'s request to edit the ${territory} week starting ${formatPhoenixLongDate(notice.weekStart)} — ${planEditStatusLabel(notice.status)}.`,
+        tab: "team",
+        recordId: notice.requestId,
+        subjectHrId: notice.repHrId,
+        keySuffix: `plan_edit:${notice.requestId}:v${notice.version}:${notice.status}`,
+      };
+    }
+    case "forecast_sent": {
+      const rep = nameOf(names, notice.repHrId, "A rep");
+      return {
+        title: `Activity · daily forecast: ${rep}`,
+        message: `${rep} sent the ${territory} daily forecast for ${formatPhoenixLongDate(notice.day)}.`,
+        tab: "forecast",
+        recordId: `${notice.seat.seatId}:${notice.day}`,
+        subjectHrId: notice.repHrId,
+        keySuffix: `forecast:${notice.seat.seatId}:${notice.day}`,
+      };
+    }
+    case "unplanned_visit_raised": {
+      const rep = nameOf(names, notice.repHrId, "A rep");
+      const day = formatPhoenixLongDate(notice.visitDate);
+      return {
+        title: `Activity · off-plan visit: ${notice.customerName}`,
+        message: notice.enteredByAdmin
+          ? `An off-plan visit was logged for ${rep}: ${bidiIsolate(notice.customerName)} on ${territory} (${day}).`
+          : `${rep} logged an off-plan visit to ${bidiIsolate(notice.customerName)} on ${territory} (${day}).`,
+        tab: "team",
+        recordId: notice.visitId,
+        subjectHrId: notice.repHrId,
+        keySuffix: `unplanned:${notice.visitId}:raised`,
+      };
+    }
+    case "unplanned_visit_decided": {
+      const decider = nameOf(names, notice.deciderHrId, "A manager");
+      const rep = nameOf(names, notice.repHrId, "a rep");
+      const day = formatPhoenixLongDate(notice.visitDate);
+      const word = notice.status === "approved" ? "approved" : notice.status === "refused" ? "refused" : "passed to SFE";
+      return {
+        title: `Activity · off-plan visit ${word}: ${notice.customerName}`,
+        message: `${decider} ${word} ${rep}'s off-plan visit to ${bidiIsolate(notice.customerName)} on ${territory} (${day}).`,
+        tab: "team",
+        recordId: notice.visitId,
+        subjectHrId: notice.repHrId,
+        keySuffix: `unplanned:${notice.visitId}:v${notice.version}:${notice.status}`,
+      };
+    }
+    case "visit_ask": {
+      const rep = nameOf(names, notice.repHrId, "A rep");
+      const asked = nameOf(names, notice.askedHrId, "the person asked");
+      const kindWord = notice.askKind === "chain" ? "chain visit" : notice.askKind === "product_manager" ? "product manager visit" : "double visit";
+      const customer = `${bidiIsolate(notice.customerName)} (${notice.listType})`;
+      const message =
+        notice.status === "waiting"
+          ? `${rep} asked ${asked} for a ${kindWord} to ${customer} on ${territory}.`
+          : notice.status === "accepted"
+            ? `${asked} accepted ${rep}'s ${kindWord} to ${customer}${notice.visitOn ? ` on ${formatPhoenixLongDate(notice.visitOn)}` : ""}.`
+            : `${asked} declined ${rep}'s ${kindWord} to ${customer}.`;
+      return {
+        title: `Activity · ${kindWord}: ${notice.customerName}`,
+        message,
+        tab: "team",
+        recordId: notice.askId,
+        subjectHrId: notice.repHrId,
+        keySuffix: `visit_ask:${notice.askId}:${notice.status}`,
+      };
+    }
+    case "day_start": {
+      const rep = nameOf(names, notice.repHrId, "A rep");
+      return {
+        title: `Activity · started working: ${rep}`,
+        // Time only — the place is the district manager's and the SFE Manager's alone (dayStartDeliveries).
+        message: `${rep} confirmed he started working at ${formatPhoenixDateTime(notice.startedAt)} (Cairo), ${territory}.`,
+        tab: "team",
+        recordId: notice.seat.seatId,
+        subjectHrId: notice.repHrId,
+        keySuffix: `day_start:${personKey(notice.repHrId) ?? notice.repHrId}:${notice.startedAt.slice(0, 10)}`,
+      };
+    }
+  }
+}
+
+/**
+ * Who DID the action, when that is a decider or an answerer rather than the rep the line is about — so the
+ * mirror never echoes a manager's own decision back to him. An NSM who approves a request, or an SFE
+ * Manager who answers a visit ask, is the one person in scope who already knows it happened.
+ */
+function activityMirrorActorHrId(notice: PhoenixCrmNotice): string | null {
+  switch (notice.kind) {
+    case "request_decided":
+    case "plan_decided":
+    case "monthly_plan_decided":
+    case "unplanned_visit_decided":
+      return notice.deciderHrId;
+    case "plan_edit":
+      return notice.actorHrId;
+    case "visit_ask":
+      return notice.status === "waiting" ? notice.repHrId : notice.askedHrId;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The mirror delivery for one action: the NSM in the rep's chain plus the SFE Managers, minus the rep, the
+ * actor, and anyone the native notices already reached. Pure, so who it reaches, the dedup, and the one
+ * line that must carry no location are pinned by a test (tests/phoenix-crm-activity-mirror.test.ts).
+ */
+export function buildActivityMirrorDelivery(
+  notice: PhoenixCrmNotice,
+  org: OrgIndex,
+  names: PeopleNames,
+  sfeHrIds: readonly string[],
+  nativeRecipientKeys: ReadonlySet<string>,
+): Delivery | null {
+  const line = activityMirrorLine(notice, names);
+  if (!line) return null;
+  const nsm = managerChain(org, notice.seat.seatId).find((member) => member.seat.tier === "NSM")?.hrId ?? null;
+  const excluded = new Set(
+    [line.subjectHrId, activityMirrorActorHrId(notice)].map((hrId) => personKey(hrId)).filter((key): key is string => key !== null),
+  );
+  const recipients: string[] = [];
+  const seen = new Set<string>();
+  for (const hrId of [...(nsm ? [nsm] : []), ...sfeHrIds]) {
+    const key = personKey(hrId);
+    if (!key || seen.has(key) || nativeRecipientKeys.has(key) || excluded.has(key)) continue;
+    seen.add(key);
+    recipients.push(key);
+  }
+  if (recipients.length === 0) return null;
+  return {
+    recipients,
+    eventType: "activity_mirror",
+    title: line.title,
+    message: line.message,
+    tab: line.tab,
+    recordId: line.recordId,
+    idempotencyKey: `phoenix_crm:activity:${line.keySuffix}`,
+    subjectHrId: line.subjectHrId,
+  };
+}
+
+/** Resolve the people and org the mirror needs, then build its one delivery (null when nobody is left). */
+async function activityMirrorDelivery(notice: PhoenixCrmNotice, nativeDeliveries: Delivery[]): Promise<Delivery | null> {
+  if (notice.kind === "first_visit") return null;
+  const org = (notice as { org?: OrgIndex }).org ?? (await loadPhoenixCrmOrg());
+  const [sfe, names] = await Promise.all([sfeManagerHrIds(), loadPeopleNames(activityMirrorPeopleIds(notice))]);
+  const nativeRecipientKeys = new Set(
+    nativeDeliveries
+      .flatMap((delivery) => delivery.recipients)
+      .map((hrId) => personKey(hrId))
+      .filter((key): key is string => key !== null),
+  );
+  return buildActivityMirrorDelivery(notice, org, names, sfe, nativeRecipientKeys);
+}
+
 export async function notifyPhoenixCrm(notice: PhoenixCrmNotice, isTest: boolean): Promise<void> {
   try {
     const described = await describe(notice);
     const deliveries = described === null ? [] : Array.isArray(described) ? described : [described];
+    // Mirror the action to the NSM and SFE in scope (owner, 2026-10-05), as a parallel delivery deduped
+    // against the native recipients — so the tuned notices above are untouched and nobody is told twice.
+    const mirror = await activityMirrorDelivery(notice, deliveries);
+    if (mirror) deliveries.push(mirror);
     for (const delivery of deliveries) await deliver(notice, delivery, isTest);
   } catch (error) {
     logError("Phoenix CRM notification failed", {

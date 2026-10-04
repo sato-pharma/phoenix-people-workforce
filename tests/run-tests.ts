@@ -1664,6 +1664,7 @@ import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
 import { runPhoenixCrmDayStartTests } from "./phoenix-crm-day-start.test.ts";
 import { runPhoenixCrmFirstVisitTests } from "./phoenix-crm-first-visit.test.ts";
+import { runPhoenixCrmActivityMirrorTests } from "./phoenix-crm-activity-mirror.test.ts";
 import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
 import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-customers.test.ts";
 import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list-board.test.ts";
@@ -5893,6 +5894,11 @@ await runTest(
 await runTest(
   "A rep's FIRST Phoenix CRM visit emails his district manager, his national sales manager and SFE — never the rep, once per rep ever, with the account and the Cairo time it was submitted",
   runPhoenixCrmFirstVisitTests,
+);
+
+await runTest(
+  "Every Phoenix CRM action mirrors to the national sales manager and SFE in scope (in-app + Telegram), deduped against the native recipients, never the rep, and the day start carries no location",
+  runPhoenixCrmActivityMirrorTests,
 );
 
 await runTest(

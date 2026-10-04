@@ -234,6 +234,11 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // push-blocked list too, so the Telegram-failure fallback cannot mail him by the back door.
   "phoenix_crm.day_start_confirmed": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.day_start_seen": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  // The activity mirror (owner, 2026-10-05): every Phoenix CRM action to the national sales manager and
+  // the SFE Managers — in-app and Telegram ONLY. It is on PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES too, so
+  // the phone and the Telegram-failure email fallback are both shut; this row is the intent, that guard
+  // is the enforcement. Recipients are passed explicitly by the notifier, hence "cc".
+  "phoenix_crm.activity_mirror": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // Phoenix CRM (owner rule 2026-09-16): a grade or drop request and a weekly plan waiting for the
   // reviewing manager, and the decision back to the rep — in-app, Telegram and (since 2026-10-02) the
   // phone, never email.

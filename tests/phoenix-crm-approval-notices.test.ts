@@ -181,8 +181,11 @@ export function runPhoenixCrmApprovalNoticeTests() {
       // working". The district manager's copy (`day_start_confirmed`) emails; the SFE's cannot, because
       // this notice repeats EVERY WORKING DAY and he reads every line — about 74 a morning at full
       // rollout. Both axes are shut here, so the Telegram-failure fallback cannot mail him either.
-      ["crm_daily_digest", "day_start_seen", "plan_edit_expired"],
-      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, and the SFE's copy of a rep's day start",
+      // `activity_mirror` joined on 2026-10-05: every Phoenix CRM action, to the NSM and SFE in scope —
+      // the module's highest-volume feed to its two widest readers, so in-app and Telegram only, exactly
+      // like the digest, and the Telegram-failure fallback is shut for it too (an unlinked NSM is the rule).
+      ["activity_mirror", "crm_daily_digest", "day_start_seen", "plan_edit_expired"],
+      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, the SFE's copy of a rep's day start, and the NSM/SFE activity mirror",
     );
     // Behaviour, not source: the re-send's own channel list, filtered.
     assert.deepEqual(
