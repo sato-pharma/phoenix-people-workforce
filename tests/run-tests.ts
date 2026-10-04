@@ -95,6 +95,7 @@ import { runOutstationRejectionEmailBlockTests } from "./outstation-rejection-em
 import { runCandidateSendAlertIdentityTests } from "./candidate-send-alert-identity.test.ts";
 import { runTelegramOperationsTests } from "./telegram-operations.test.ts";
 import { runTelegramWebhookOutcomeTests } from "./telegram-webhook-outcome.test.ts";
+import { runTelegramInviteOnePersonTests } from "./telegram-invite-one-person.test.ts";
 import { runTelegramAdminControlCenterTests } from "./telegram-admin-control-center.test.ts";
 import { runEmailAdminControlCenterTests } from "./email-admin-control-center.test.ts";
 import { runTelegramTemplateManagementTests } from "./telegram-template-management.test.ts";
@@ -2500,6 +2501,10 @@ await runTest("telegram operations", runTelegramOperationsTests);
 await runTest(
   "the Telegram webhook answers the person in the chat and logs every update — a successful connect is confirmed, a used, expired or replaced link is explained with the button that fixes it, a transient failure says nothing and is still retried, and no log line or reply carries a token, a chat id or a username (before 2026-10-04 a START press changed nothing anyone could see: fifteen connections sat pending, the last completed link was 9 Aug, and the server could not say whether START ever arrived)",
   runTelegramWebhookOutcomeTests,
+);
+await runTest(
+  "the Telegram admin page can email ONE person a connect invitation and can never widen it into the mass send — Super Admin only, exactly the one userId with a limit of 1 and no force, a missing person is a 400, an EMPTY userIds list on the mass campaign is refused instead of read as everybody (108 people that day), the row asks first naming the person and saying it sends real email, only a not-yet-connected person is offered it, and a skip or a failure reads as an error, never as a green 'processed'",
+  runTelegramInviteOnePersonTests,
 );
 await runTest("telegram admin control center", runTelegramAdminControlCenterTests);
 await runTest("email admin control center", runEmailAdminControlCenterTests);
