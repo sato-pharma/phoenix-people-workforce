@@ -980,6 +980,9 @@ export function DoubleVisitAnalyticsWorkspace({
   }
 
   const exportHref = `/api/admin/double-visit-analytics/export?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}`;
+  // The coaching audit export mirrors the board's live filters — date range, role, period — so the
+  // workbook is the on-screen view: one tab per coach with the full per-rep / per-day / dated trail.
+  const auditExportHref = `/api/admin/double-visit-analytics/audit-export?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}&role=${encodeURIComponent(roleFilter)}&period=${encodeURIComponent(periodFilter)}`;
   const periodLabel = periodFilter === "ALL" ? "" : periodFilter;
   const activeManagerCount = managerSummaries.length;
   const idleCount = executiveSummary?.idleManagers.length ?? 0;
@@ -1023,6 +1026,11 @@ export function DoubleVisitAnalyticsWorkspace({
                 <Download className="h-4 w-4" /> Excel
               </Button>
             </a>
+            <a href={auditExportHref}>
+              <Button className="min-h-10 gap-2 rounded border border-slate-300 bg-white px-3 text-slate-700 hover:bg-slate-50" type="button">
+                <Download className="h-4 w-4" /> Coaching audit
+              </Button>
+            </a>
           </div>
         </div>
       ) : (
@@ -1034,11 +1042,18 @@ export function DoubleVisitAnalyticsWorkspace({
               Live iReports360 mirror (auto-synced 3x daily) · {fmtDate(dashboard.dateFrom)} – {fmtDate(dashboard.dateTo)} · {fmt(dashboard.kpis.totalVisits)} visits
             </p>
           </div>
-          <a href={exportHref}>
-            <Button className="min-h-11 gap-2 rounded bg-slate-950 px-4 text-white hover:bg-slate-800" type="button">
-              <Download className="h-4 w-4" /> Executive Excel
-            </Button>
-          </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <a href={exportHref}>
+              <Button className="min-h-11 gap-2 rounded bg-slate-950 px-4 text-white hover:bg-slate-800" type="button">
+                <Download className="h-4 w-4" /> Executive Excel
+              </Button>
+            </a>
+            <a href={auditExportHref}>
+              <Button className="min-h-11 gap-2 rounded border border-slate-300 bg-white px-4 text-slate-700 hover:bg-slate-50" type="button">
+                <Download className="h-4 w-4" /> Coaching audit
+              </Button>
+            </a>
+          </div>
         </div>
       )}
 

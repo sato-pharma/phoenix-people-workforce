@@ -419,6 +419,7 @@ import { runActionCenterWeeklyPlansTests } from "./action-center-weekly-plans.te
 import { runWeeklyPlansRound3FeaturesTests } from "./weekly-plans-round3-features.test.ts";
 import { runDoubleVisitAnalyticsTests } from "./double-visit-analytics.test.ts";
 import { runDoubleVisitReportExportTests } from "./double-visit-report-export.test.ts";
+import { runDoubleVisitAuditExportTests } from "./double-visit-audit-export.test.ts";
 import { runDoubleVisitDownwardScopeTests } from "./double-visit-downward-scope.test.ts";
 import { runDvPlannerDateCheckTests } from "./dv-planner-date-check.test.ts";
 import { runVisitsReportSyncTests } from "./visits-report-sync.test.ts";
@@ -3275,6 +3276,7 @@ await runTest("action center weekly plans (approver inbox)", runActionCenterWeek
 await runTest("weekly plans round-3 features (bulk approve, export, autosave, timeline, notifications, a11y, virtualization)", runWeeklyPlansRound3FeaturesTests);
 await runTest("double visit analytics", runDoubleVisitAnalyticsTests);
 await runTest("double visit report export (filters, xlsx, pdf)", runDoubleVisitReportExportTests);
+await runTest("double visit coaching audit export (weeks, period filter, workbook)", runDoubleVisitAuditExportTests);
 await runTest("double visit downward scope (chain + ladder cut, hidden from totals, coaching line roles)", runDoubleVisitDownwardScopeTests);
 await runTest("dv planner date check (confirmed/not-recorded/future/outside-range + visitor names)", runDvPlannerDateCheckTests);
 await runTest("visits report sync (dedup + null-guard + delete-reconciliation + attendance/crm_save_date)", runVisitsReportSyncTests);
