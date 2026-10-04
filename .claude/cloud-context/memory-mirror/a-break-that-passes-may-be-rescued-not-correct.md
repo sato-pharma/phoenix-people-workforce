@@ -1,11 +1,11 @@
 ---
 name: a-break-that-passes-may-be-rescued-not-correct
-description: "Break-the-fix proved nothing SIX ways: a case that cannot fail, a break caught by an EARLIER assertion, a substituted value that was not a defect, a case RESCUED BY A FIXTURE DEFAULT so it never built the input it claimed (`??` cannot express absence — use `in`), and an UNREACHABLE assertion whose readFileSync threw before assert.ok ran. and a cheap PRECONDITION asserted after the code that consumes it, where the consumer (ExcelJS, not another case) reaches the broken input first and reports the symptom. Demand the break fire the SPECIFIC message; a break that fires another case's message, or neither a pass nor a failure, is itself the diagnosis — and a WRONG-REASON can mean the assertion is in the wrong PLACE in the suite, not misaimed."
+description: "Break-the-fix proved nothing SIX ways: a case that cannot fail, a break caught by an EARLIER assertion, a substituted value that was not a defect, a case RESCUED BY A FIXTURE DEFAULT so it never built the input it claimed (`??` cannot express absence — use `in`), and an UNREACHABLE assertion whose readFileSync threw before assert.ok ran. and a cheap PRECONDITION asserted after the code that consumes it, where the consumer (ExcelJS, not another case) reaches the broken input first and reports the symptom. Demand the break fire the SPECIFIC message; a break that fires another case's message, or neither a pass nor a failure, is itself the diagnosis — and a WRONG-REASON can mean the assertion is in the wrong PLACE in the suite, not misaimed. TWO MORE live in the HARNESS, not the test: a harness that re-imports measures its own ESM module cache, so every later break fires the FIRST break's message and the restore looks failed against a file that is correct on disk — one CHILD PROCESS per break; and a SHORT break anchor patches a sibling line, since String.replace takes the first match, which scores NOT CAUGHT against an assertion that was right all along."
 metadata:
   node_type: memory
   type: feedback
   originSessionId: 49c63508-cfb2-4e16-af62-0961f3808359
-  modified: 2026-10-04T00:00:00.000Z
+  modified: 2026-10-04T05:40:00.000Z
 ---
 
 The standing rule is "a regression test counts only if you break the fix and watch the NEW assertion
@@ -85,6 +85,23 @@ break was about the input.
    unreachable because its own argument throws first.
 5. Restore from a COPY taken before the first break, never `git checkout --`, which would discard the
    uncommitted fix along with the break. See [[verify-the-emitted-artifact-never-the-source]].
+
+🔴 **TWO MORE SHAPES, AND BOTH LIVE IN THE HARNESS RATHER THAN IN THE TEST.** Measured 2026-10-04
+pinning the measured App Passwords wording (4 breaks across `src/lib/turbify/locators.ts` and
+`resolve.ts`). Both produced a verdict table that was entirely wrong while looking orderly:
+
+- **A harness that re-imports is measuring its own ESM module cache.** The first version ran all
+  four breaks in one process and cache-busted the TEST module's url with `?v=`, which does nothing
+  for its transitive imports. `locators.ts` stayed loaded from break A, so breaks B, C and D all
+  fired on A's message — scored `WRONG REASON` — and the final restore check "failed" against a
+  file that was byte-correct on disk. **One child process per break.** The tell is every later
+  break reporting the FIRST break's message, and a restore that fails while `git status` is clean.
+- **A short break anchor patches a SIBLING line.** `String.replace` takes the first match, and
+  `.trim() === value;` appeared on the `aria`, `name` and `placeholder` cases three lines above the
+  `text` case the assertion reads. So the break edited a sibling, the real line was untouched, and
+  it scored `NOT CAUGHT` against an assertion that was correct all along. Anchor on something
+  unique to the line (`" ").trim() === value;`), and read a `NOT CAUGHT` as possibly the
+  harness's aim rather than the test's weakness — **confirm the anchor appears exactly once first.**
 
 Write the rebuilt breaks into the account doc rather than quietly fixing them: "the test passed after
 I broke it" is the exact shape that ships a defect.

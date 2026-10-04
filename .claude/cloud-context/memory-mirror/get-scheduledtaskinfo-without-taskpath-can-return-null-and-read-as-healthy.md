@@ -1,6 +1,6 @@
 ---
 name: get-scheduledtaskinfo-without-taskpath-can-return-null-and-read-as-healthy
-description: "Get-ScheduledTaskInfo -TaskName '<name>' without -TaskPath '\\' intermittently throws ERROR_INVALID_NAME (0x8007007B, \"The filename, directory name, or volume label syntax is incorrect\") for a perfectly healthy task — and with -ErrorAction SilentlyContinue that becomes $null, [int64]$null is 0, so a watchdog reads a DEAD task as \"last result 0, healthy\"; always pass -TaskPath, fall back to without, and treat unreadable as a fault, never as all clear."
+description: "A 0x0 from the Windows scheduler proves nothing, in TWO different ways: Get-ScheduledTaskInfo -TaskName without -TaskPath '\\' intermittently throws ERROR_INVALID_NAME (0x8007007B) for a healthy task and [int64]$null coerces to 0; and the scheduler ZEROES LastTaskResult when a task starts, so a read taken as the state leaves Running is the start-zero, not the verdict - an exit code does reach it (cmd exit 7 reads 0x7, node exit 3 reads 0x3), so wait, re-read, and corroborate with schtasks /query /v before believing a 0x0. A genuine reading always has a LastRunTime beside it."
 metadata:
   node_type: memory
   type: project
@@ -61,3 +61,42 @@ so it is reasoned-and-reviewed, not break-and-watched. Said plainly rather than 
 Related: [[uncommitted-worktree-work-is-snapshotted-hourly]] ·
 [[a-break-that-passes-may-be-rescued-not-correct]] — a seventh shape for that list: an assertion
 satisfied by a **coerced null**, where `[int64]$null → 0` collides with 0 meaning success.
+
+## The second shape: a `0x0` read too soon
+
+An exit code **does** reach `LastTaskResult`. Re-measured 2026-10-04 from two independent readers,
+with the task registered the way the real ones are (satoh / Interactive / Limited):
+
+```
+cmd.exe  /c exit 7     → CIM 0x7   schtasks "Last Result: 7"
+node -e process.exit(3) → CIM 0x3   schtasks "Last Result: 3"
+node -e process.exit(0) → CIM 0x0   schtasks "Last Result: 0"
+```
+
+🔴 **BUT AN EARLIER PROBE THE SAME MORNING REPORTED `0x0` FOR AN EXIT 3, THREE TIMES OVER, AND I
+ALMOST RECORDED THAT AS FACT.** The scheduler **zeroes** `LastTaskResult` when a task starts and
+writes the real code as it finishes, so a read taken the moment the state leaves `Running` can still
+be the start-zero. That probe read 2 seconds after, and registered its task with **no `-Principal`**,
+so it was not the shape that actually runs here. **Wait, re-read, and corroborate with
+`schtasks /query /tn <name> /fo LIST /v` before believing a `0x0`** — which is the same discipline
+as the first shape above, from the other direction: there a `0x0` was `$null`, here it was premature.
+
+Caught by noticing that an unrelated hourly task's `LastRunTime` matched the probe's to the second,
+which looked like the probe having started the wrong task. It had not — the transcript showed it
+used its own name — but checking that is what prompted the re-measurement.
+
+**So the task result is a sound primary signal, and the log branch is still not redundant:** a bare
+exit code cannot say WHAT went wrong, and a later clean run resets the result while the same fault
+is still standing. Both reasons were already in the watchers' comments; the headers' claim that the
+result "catches a kill, a crash and a clean non-zero exit alike" is correct and was restored after
+being wrongly corrected away on the strength of that bad probe.
+
+**And read the last ENTRY of the backup's log, not the last LINE.** The worktree snapshot writes one
+line per run, but the `~/.claude` backup's `FAIL` carries git's own multi-line error underneath it —
+so the last line of a failed run is `error: failed to push some refs`, which matched nothing and
+read as **healthy**. Scan upwards to the last line that opens with `[<timestamp>] `. Both watchers
+also read that log with `-Encoding UTF8` now: an em-dash read as ANSI arrived mojibake in the
+message *and* could never match the state file written as utf8, so the de-duplication would have
+re-sent the same fault every hour.
+
+Related: [[the-claude-scripts-live-off-machine-on-a-never-merge-branch]]
