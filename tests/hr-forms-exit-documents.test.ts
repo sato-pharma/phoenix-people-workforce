@@ -324,24 +324,54 @@ function testEveryPlacementKeyIsBuilt() {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * The back of Form 6 prints blank — the same standing rule Form 1's back page runs under.
+ * The back of Form 6 carries its إقرار identification — the owner's instruction of 2026-10-04.
  *
- * The reverse carries the Authority's own إرشادات and two declarations signed in the first person,
- * one by the employee and one by the responsible manager. What belongs there is a pen.
+ * THIS TEST USED TO PIN THE OPPOSITE. The back printed blank from 2026-08-22, under the same standing
+ * rule Form 1's back ran under until 2026-09-03; on 2026-10-04 he reversed it for Form 6 too — "form
+ * 6 paper back is printing without the fields that should be printable". Neither state is a defect.
+ * What would be a defect is the back silently emptying again, which is why the values are asserted by
+ * NAME rather than by a count of marks: a page that prints four of the five blanks passes any "is
+ * something on it" check.
+ *
+ * THE SIGNATURES ARE THE PART THAT DID NOT CHANGE: they are signed by a person at the moment it
+ * happens, so no placement may sit on or below the first signature block (ink y≈650) — see
+ * testNothingIsTypedOnASignatureLine.
  */
-function testTheBackOfForm6IsPrintedBlank() {
-  assert.equal(
-    FORM6_PAGE_2_PLACEMENTS.length,
-    0,
-    "the back of Form 6 must carry no placements at all",
+function testTheBackOfForm6CarriesItsDeclaration() {
+  const backKeys = FORM6_PAGE_2_PLACEMENTS.map((placement) => placement.key);
+  assert.deepEqual(
+    [...backKeys].sort(),
+    ["companyAddress", "companyName", "establishmentNumber", "insuranceNumber", "insuredName"],
+    "the back page's إقرار asks for the establishment's name, insurance number and address, and the " +
+      "insured person's name and insurance number — placing some and not others prints a half-filled declaration",
   );
+
+  const form6Values = buildForm6Values(packFixture());
+  for (const placement of FORM6_PAGE_2_PLACEMENTS) {
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(form6Values, placement.key),
+      `the back of Form 6 places "${placement.key}" but nothing builds it — that blank can never be filled`,
+    );
+  }
 
   const html = renderForm6Html(packFixture(), 1);
   const [front, back] = sheets(html);
   assert.ok(front?.includes(FORM6_PAGE_1_SVG), "the first sheet must be page 1");
   assert.ok(back?.includes(FORM6_PAGE_2_SVG), "the second sheet must be page 2");
-  assert.equal(printedFields(back ?? "").length, 0, "Phoenix wrote a value on the back of Form 6");
   assert.ok(printedFields(front ?? "").length > 0, "the front of Form 6 printed nothing at all");
+
+  const printedKeys = [...(back ?? "").matchAll(/data-hp-key="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(
+    [...printedKeys].sort(),
+    ["companyAddress", "companyName", "establishmentNumber", "insuranceNumber", "insuredName"],
+    "every blank of the back page's إقرار must print when the record holds its value",
+  );
+
+  // The insured person's number and name on the back are the front's own values, not a second copy
+  // that could drift: the same employee fact, so the two sides can never disagree.
+  assert.equal(form6Values.insuranceNumber, "98765432");
+  assert.equal(form6Values.insuredName, "كريم فؤاد");
+  assert.equal(form6Values.companyAddress, COMPANY_DETAILS_DEFAULT.headOfficeAr);
 }
 
 /**
@@ -361,6 +391,16 @@ function testNothingIsTypedOnASignatureLine() {
     assert.ok(
       placement.y + placement.h <= form6SignatureInk,
       `Form 6 writes "${placement.key}" at y=${placement.y}, on or below the إقرار signature blocks`,
+    );
+  }
+
+  // The back's two signature blocks (توقيع المؤمن عليه / توقيع صاحب العمل) start at ink y≈650; the
+  // identification blanks end at 505. Nothing Phoenix writes may reach the signatures.
+  const form6BackSignatureInk = 640;
+  for (const placement of FORM6_PAGE_2_PLACEMENTS) {
+    assert.ok(
+      placement.y + placement.h <= form6BackSignatureInk,
+      `the back of Form 6 writes "${placement.key}" at y=${placement.y}, on or below the signature blocks`,
     );
   }
 
@@ -753,7 +793,7 @@ function testThePartiesColumnsNeverOverlapOnPage3() {
 export function runHrFormsExitDocumentTests() {
   testForm6LayoutIsTheMeasuredForm();
   testEveryPlacementKeyIsBuilt();
-  testTheBackOfForm6IsPrintedBlank();
+  testTheBackOfForm6CarriesItsDeclaration();
   testNothingIsTypedOnASignatureLine();
   testForm6PrintsThreeDoubleSidedCopies();
   testTheTwoLabourFormsAreAlternatives();
