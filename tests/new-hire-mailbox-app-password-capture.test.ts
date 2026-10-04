@@ -144,6 +144,87 @@ function runAddressIsTheConstantCases(): void {
   );
 }
 
+/**
+ * 🔴 A RUN THAT THREW MUST LEAVE A ROW, because the first live run did not.
+ *
+ * On 2026-10-04 at 07:16 Cairo the capture refused inside `signInAs` — the sign-in never left
+ * Turbify's login page — and the throw went straight past the audit write, so the only account of
+ * it was the text rendered on the card. `audit_logs` held nothing at all. One reload would have
+ * destroyed the finding, which is the same loss a `router.refresh()` caused on 2026-10-03.
+ *
+ * What makes the row worth having is the MESSAGE: it carries the measured page — url, title,
+ * headings, buttons, controls — with every `filled` already reduced to a length. That is the whole
+ * diagnostic; without it a failure is just "it did not work".
+ */
+function runAFailedRunIsRecordedCases(): void {
+  const route = readable("../app/api/new-hire-mailboxes/app-password-controls/route.ts");
+
+  const start = route.indexOf("const driver = await createJoinerDriverFromEnv()");
+  assert.notEqual(start, -1, "the route must still create the driver, or this slice means nothing");
+
+  // 🔴 THE SLICE ENDS AT THE RETHROW, AND THAT IS LOAD-BEARING. The SUCCESS path's own
+  // `writeAuditLog` sits just after it, so a region that ran to the response was satisfied by the
+  // wrong call site and the first assertion below could not fail — caught by breaking it on
+  // 2026-10-04. The rethrow is also the end marker, so its absence fires here rather than silently
+  // widening the slice to the rest of the handler.
+  const rethrowAt = route.indexOf("throw error;", start);
+  assert.notEqual(
+    rethrowAt, -1,
+    "it must rethrow after recording — recording a failure must never convert it into a success, "
+    + "and the status still comes from the handler's own catch",
+  );
+  const runRegion = route.slice(start, rethrowAt);
+
+  const catchAt = runRegion.indexOf("} catch (error) {");
+  assert.notEqual(
+    catchAt, -1,
+    "the run must have its OWN catch, separate from the handler's — that is what lets a failed "
+    + "capture be recorded without also recording the refusals that never opened a browser",
+  );
+  const failureRegion = runRegion.slice(catchAt);
+
+  assert.match(
+    failureRegion, /writeAuditLog\(/,
+    "a run that threw must write an audit row before it rethrows — without it a failed capture's "
+    + "only account is the text on the card, which one reload destroys",
+  );
+  assert.match(
+    failureRegion, /why: clientSafeErrorMessage\(error,/,
+    "and the row must carry the ERROR MESSAGE as `why` — that string holds the measured page (url, "
+    + "title, headings, buttons, controls), which is the entire diagnostic value of a failure",
+  );
+  assert.match(
+    failureRegion, /failed: true/,
+    "the failure row must mark itself `failed: true`: a run that reached the page and found nothing "
+    + "and a run that never got there are different diagnoses and must not read alike",
+  );
+  assert.match(
+    route, /failed: false/,
+    "and the SUCCESS row must carry the same key, or the field's absence would mean both 'an older "
+    + "row' and 'a run that did not throw', and a query for failures would answer with a mix",
+  );
+
+  // The browser close must sit inside the run and BEFORE the audit: a slow or failing insert must
+  // never hold a signed-in mailbox session open behind it.
+  const closeAt = runRegion.indexOf("driver.close()");
+  const auditAt = runRegion.indexOf("writeAuditLog");
+  assert.notEqual(closeAt, -1, "the browser must still be closed inside the run region");
+  assert.notEqual(auditAt, -1, "the failure audit must sit inside the run region");
+  assert.ok(
+    closeAt < auditAt,
+    "the browser must close BEFORE the failure is recorded — the audit has its own timeout, and a "
+    + "slow insert must not hold a signed-in mailbox session open behind it",
+  );
+
+  // An access refusal is not a capture attempt. Both are raised before a driver exists, so neither
+  // may appear inside the region that records a run.
+  assert.equal(
+    /isForbiddenError|isApiRateLimitError/.test(runRegion), false,
+    "a forbidden or rate-limited request must NOT be recorded as a failed capture: nothing was "
+    + "opened, and logging it as a run would make the audit overstate how often the robot ran",
+  );
+}
+
 function runNotAProvisioningStepCases(): void {
   assert.equal(
     (JOINER_STEP_ORDER as readonly string[]).includes("describeAppPasswords"), false,
@@ -244,6 +325,7 @@ export async function runNewHireMailboxAppPasswordCaptureTests(): Promise<void> 
   runTheRouteHasACallerCases();
   runSetupScreenIsAnAnswerCases();
   runAddressIsTheConstantCases();
+  runAFailedRunIsRecordedCases();
   runNotAProvisioningStepCases();
   await runDryRunCases();
   runStillUncalibratedCases();

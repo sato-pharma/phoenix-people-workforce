@@ -1120,3 +1120,69 @@ four placeholders stay placeholders until a live run replaces them with observed
 `tests/new-hire-mailbox-app-password-capture.test.ts` asserts both, and flipping the flag on the
 strength of this route existing is one of the seven breaks it catches (7 of 7 fired on their own
 messages).
+
+## The first live capture: the invite inbox is itself behind the terms wall (2026-10-04)
+
+The capture ran on production at **07:16 Cairo**, on revision `3d84bf395`. It did not reach the App
+Passwords page, and the reason is the finding.
+
+It refused inside `signInAs`, quoting the page it was actually on:
+
+> Signed in as hr.mailbox@satopharma.com but the expected page never appeared, so the robot stopped
+> rather than act on an unknown page. The page it was on — url `https://mail.turbify.com/login`;
+> title "Bizmail Login"; … controls [text:email filled=25 "Business Email Address" |
+> password:password filled=9 "Password"]; the form reports itself valid, so the submit is not being
+> refused by validation
+
+Read it in order. The email field held 25 characters, which is exactly
+`hr.mailbox@satopharma.com`. The password field held 9, which is the company initial password. The
+form reported itself valid, so nothing was being refused by client-side validation. And the page was
+still `Bizmail Login`. The credentials were delivered correctly and the sign-in simply did not
+happen.
+
+The reason is in this file already, one section up: on **3 October at 21:53** the attempt to SET
+that 9-character password ended on the `Set up your mailbox password` screen, submitted, and stayed
+there — the submit is the acceptance of Yahoo's terms, which no automation may give. So the password
+was never actually set. Phoenix holds a password for `hr.mailbox@satopharma.com` that the mailbox
+has never had.
+
+**The trap this closes.** `hr.mailbox@satopharma.com` reads mail perfectly well:
+`mailbox_monitors` has it `active`, `last_ok_at` **2026-10-04 00:19:54 Cairo**, with a stored
+credential. That is an **app password**, and an app password survives a password change — so a green
+monitor says nothing whatever about whether the mailbox can be signed into on the web. The two are
+independent, and conflating them is what makes "the mailbox works" sound like "the capture should
+work". The App Passwords page lives behind the web sign-in, so it is unreachable until a human
+completes that first sign-in.
+
+So the invite inbox — the one mailbox the capture is hardcoded to target, deliberately, so the same
+chain can never be pointed at an employee — is itself one of the mailboxes waiting on the four
+manual clicks. Four clicks on that one mailbox unblock the whole leaver-side clear.
+
+### A run that threw left no record at all
+
+The throw went past `writeAuditLog`, which sat after the driver call on the success path only. So
+`audit_logs` held **nothing** for that run: the only account of the finding above was the text
+rendered on the card, and one reload would have destroyed it — the same loss a `router.refresh()`
+caused on 2026-10-03, arriving by a different route.
+
+The failure is recorded now, in its own `catch` around the run:
+
+- `failed: true`, and the success row carries `failed: false`. Written on **both** paths on purpose:
+  if only the failure row had it, its absence would mean both "an older row" and "a run that did not
+  throw", and a query for the failures would quietly answer with a mix of the two.
+- `why` is the error message, which is what carries the value — the measured page, with every
+  `filled` already reduced to a length and every secret-shaped value dropped by `describePage`. It
+  is the same string the card renders, so storing it is exactly as safe as showing it.
+- The browser closes **before** the audit write, not after. The audit has its own 3-second timeout,
+  and a slow or failing insert must never hold a signed-in mailbox session open behind it.
+- The error is **rethrown**, so the HTTP status still comes from the handler's own catch. Recording
+  a failure must never convert it into a success.
+- The access refusals — forbidden, rate-limited — are raised before a driver exists and are
+  deliberately *not* recorded as capture attempts, or the audit would overstate how often the robot
+  actually ran.
+
+Seven breaks, seven fired on their own messages. One of them is worth keeping in mind: the first
+version of the assertion sliced the route from the driver down to the response, and the **success**
+path's own `writeAuditLog` sat inside that window — so deleting the failure audit entirely left the
+suite green. The slice now ends at the rethrow. A source assertion is only as good as the region it
+reads, and the wrong call site satisfying it is the same defect as a comment satisfying it.
