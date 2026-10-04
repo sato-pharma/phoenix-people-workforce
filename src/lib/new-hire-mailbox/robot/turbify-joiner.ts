@@ -1408,6 +1408,124 @@ export async function createTurbifyJoinerDriver(
       return { appPassword };
     },
 
+    /**
+     * READ the app-passwords page and report its controls. Clicks nothing that changes anything.
+     *
+     * 🔴 WHY THIS EXISTS AS ITS OWN STEP. `APP_PASSWORD_REVOKE_CONTROLS` in
+     * `mailbox-offboarding/robot/clear-app-passwords.ts` holds four `__UNCALIBRATED__` placeholders —
+     * the list, the remove control, its confirm, and the empty state — and until they are real text
+     * `APP_PASSWORD_CLEAR_CALIBRATED` cannot honestly be flipped, so a leaver's phone keeps syncing
+     * after a password reset. The only way to see them is to stand on that page signed in AS a
+     * mailbox, and nothing in Phoenix could: `generateAppPassword` reads the controls (above) but
+     * only AFTER minting, and it is reachable only through a flow that RESETS the mailbox first —
+     * which lands on the `Set up your mailbox password` screen, whose submit is Yahoo's own
+     * terms-of-service acceptance and therefore never an automation's to give.
+     *
+     * 🔴 SO THIS STEP SIGNS IN WITH A PASSWORD PHOENIX ALREADY HOLDS AND RESETS NOTHING. That is the
+     * whole difference: a mailbox already past its first sign-in opens straight into its account
+     * pages, and the page can be read without touching anybody's mail.
+     *
+     * What it will NOT do, and what the tests pin:
+     *   · no `resetAndCapture`, so no password is rotated and no one-time password is left outstanding
+     *   · no `selectAppForPassword` and no `generate` press, so no app password is minted
+     *   · nothing from `APP_PASSWORD_REVOKE_CONTROLS` is clicked — reading them is the point
+     *
+     * The only clicks are NAVIGATION — `Manage your account`, then `Manage App Passwords` — which is
+     * unavoidable: a page cannot be read without being reached. Both are tolerated on failure and
+     * the refusal carries the page it was on, so a wrong wording reports itself instead of guessing.
+     */
+    async describeAppPasswords({ address, password }) {
+      const mailbox = await openMailboxPage();
+      const secrets = [password, credentials.password];
+      const reading = async () => describePage(mailbox, secrets);
+
+      // Both probes are lifted verbatim from `setMailboxPassword`, where the comment explains why
+      // each is POSITIVE: three indirect tests gave three wrong answers about whether a sign-in had
+      // worked. `$$` finds hidden inputs, so visibility is what makes the second one mean anything.
+      const onSetupPage = async () => (await mailbox.$$(CONFIRM_PASSWORD_FIELD)).length > 0;
+      const pastTheLoginForm = async () =>
+        (await mailbox
+          .$$eval<number>(MAILBOX_EMAIL_FIELD, (elements) =>
+            elements.filter((element) => element.getClientRects().length > 0).length,
+          )
+          .catch(() => 1)) === 0;
+
+      await signInAs(
+        mailbox,
+        MAILBOX_LOGIN_URL,
+        address,
+        password,
+        async () => (await onSetupPage()) || (await pastTheLoginForm()),
+        address,
+        secrets,
+      );
+
+      // 🔴 THE SETUP SCREEN HERE IS AN ANSWER, NOT A FAILURE TO RETRY. It means the password Phoenix
+      // holds is a one-time one — the mailbox has never completed a first sign-in, or a later reset
+      // rotated it — so this mailbox cannot be read until a human completes those four clicks. Say
+      // that, rather than reporting a missing control on a page the robot never reached.
+      if (await onSetupPage()) {
+        return {
+          controls: [],
+          observed: 0,
+          reached: false,
+          redacted: 0,
+          why:
+            `${address} opened the "Set up your mailbox password" screen instead of its account pages, `
+            + "so the password Phoenix holds for it is a one-time password and the mailbox has never "
+            + "completed a first sign-in. Nothing was clicked and nothing was changed. The app-password "
+            + "page sits behind that screen, whose submit IS the acceptance of Yahoo's terms, so it "
+            + "needs the four manual clicks once before anything can be captured here. "
+            + `The page it was on — ${await reading()}`,
+        };
+      }
+
+      await mailbox.goto(ACCOUNT_INFO_URL, { waitUntil: "networkidle2", timeout: 60_000 }).catch(() => {});
+      await settle(2_500);
+      await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.accountInfo, "the mailbox's account pages", ["a", "button"])
+        .catch(() => {});
+      await settle(2_000);
+      try {
+        await clickOneOf(mailbox, APP_PASSWORD_WORDINGS.appPasswords, "the App Passwords section", ["a", "button"]);
+      } catch (error) {
+        return {
+          controls: [],
+          observed: 0,
+          reached: false,
+          redacted: 0,
+          why:
+            `The App Passwords section could not be opened for ${address}: `
+            + `${error instanceof Error ? error.message : String(error)}. Nothing was clicked beyond `
+            + `navigation and nothing was changed. The page it was on — ${await reading()}`,
+        };
+      }
+      await settle(2_500);
+
+      // Every secret in hand goes to the redactor. This page LISTS credentials by nature, so the
+      // shape rule in `buildControlReport` is the load-bearing guard and the exact matches are the
+      // belt: a control whose label is secret-shaped is dropped whatever it is.
+      const observed = await mailbox
+        .evaluate<ObservedControl[]>(CONTROL_READ_EXPRESSION)
+        .catch(() => [] as ObservedControl[]);
+      const report = buildControlReport(`app-passwords (read-only capture) for ${address}`, observed ?? [], secrets);
+      logInfo("Turbify control report", {
+        labels: {
+          controls: report.controls.join(" || "),
+          event: "turbify_control_report",
+          observed: report.observed,
+          page: report.page,
+          redacted: report.redacted,
+        },
+      });
+      return {
+        controls: report.controls,
+        observed: report.observed,
+        reached: true,
+        redacted: report.redacted,
+        why: null,
+      };
+    },
+
     async close() {
       // The mailbox's isolated context goes first, so its cookie jar is disposed even if the browser
       // itself resists closing.

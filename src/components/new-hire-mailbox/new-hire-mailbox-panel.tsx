@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, ExternalLink, Loader2, MailPlus, Search } from "lucide-react";
 
 import { AdoptMailboxCard } from "@/components/new-hire-mailbox/adopt-mailbox-card";
+import { AppPasswordControlsCard } from "@/components/new-hire-mailbox/app-password-controls-card";
 import { InviteInboxCard } from "@/components/new-hire-mailbox/invite-inbox-card";
 import { INVITE_INBOX_ADDRESS } from "@/lib/new-hire-mailbox/robot/invite-inbox";
 import { PremiumHero } from "@/components/ui/premium-hero";
@@ -330,6 +331,13 @@ export function NewHireMailboxPanel({
             does not depend on the queue — the invite inbox is adopted once, and from then on
             the robot finishes every mailbox it creates without anybody clicking. */}
         {canAdopt ? <InviteInboxCard inviteInbox={INVITE_INBOX_ADDRESS} /> : null}
+
+        {/* The one trigger for the App Passwords capture. It changes nothing — it signs in with the
+            password Phoenix already holds and reads the page — but the gate is the same audience
+            anyway, because signing in AS a mailbox is what it does. Without this card the route has
+            no caller at all: it refuses a cross-origin request, and this module has already shipped
+            one tested, documented, merged module that nothing called. */}
+        {canAdopt ? <AppPasswordControlsCard inviteInbox={INVITE_INBOX_ADDRESS} /> : null}
 
         <div className="flex flex-wrap items-center justify-between gap-3 border border-slate-200 bg-white px-4 py-3">
           <p className="min-w-0 text-sm font-medium text-slate-600">

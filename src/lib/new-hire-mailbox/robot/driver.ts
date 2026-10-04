@@ -64,7 +64,33 @@ export type JoinerConsoleDriver = {
   setMailboxPassword: (input: { address: string; oneTimePassword: string; newPassword: string }) => Promise<RobotStepResult>;
   /** Mint the "Phoenix email" app password inside the mailbox, and return it. */
   generateAppPassword: (input: { address: string; password: string }) => Promise<{ appPassword: string }>;
+  /**
+   * READ the app-passwords page and report its controls, changing nothing.
+   *
+   * 🔴 NOT part of `JOINER_STEP_ORDER`, and deliberately outside it: this is a calibration read, not
+   * a provisioning step, and a test fails if it is ever wired into the sweep or the adoption
+   * sequence. It signs in with a password Phoenix already holds — so it resets nothing, mints
+   * nothing, and leaves no one-time password outstanding — and the four
+   * `APP_PASSWORD_REVOKE_CONTROLS` placeholders in the offboarding robot are what it exists to
+   * replace. `reached: false` carries `why` and the page, because "the mailbox opened its setup
+   * screen" is an ANSWER (its password is a one-time one) and not a control to hunt for.
+   */
+  describeAppPasswords: (input: { address: string; password: string }) => Promise<AppPasswordPageReading>;
   close: () => Promise<void>;
+};
+
+/** What a read-only capture of the app-passwords page comes back with. Never a credential. */
+export type AppPasswordPageReading = {
+  /** One line per control that survived redaction, as `buildControlReport` ordered them. */
+  controls: string[];
+  /** How many were read BEFORE redaction, so a silent drop is visible rather than inferred. */
+  observed: number;
+  /** False when the page was never reached — then `why` says what was on screen instead. */
+  reached: boolean;
+  /** How many controls were dropped because nothing printable survived redaction. */
+  redacted: number;
+  /** Why the page was not reached, with the page it was on. Null on a reading that landed. */
+  why: string | null;
 };
 
 /**
@@ -95,6 +121,18 @@ export function createDryRunJoinerDriver(domain = "satopharma.com"): JoinerConso
     async generateAppPassword({ address }) {
       calls.push(`generateAppPassword:${address}`);
       return { appPassword: "DRY-RUN-APP-PASSWORD" };
+    },
+    async describeAppPasswords({ address }) {
+      calls.push(`describeAppPasswords:${address}`);
+      // `reached: false` on a dry run, because a dry run reached nothing — returning a plausible
+      // control list here is exactly the shape of green that means nothing.
+      return {
+        controls: [],
+        observed: 0,
+        reached: false,
+        redacted: 0,
+        why: `Dry run: ${address} was never opened, so no control was read.`,
+      };
     },
     async close() { calls.push("close"); },
   };

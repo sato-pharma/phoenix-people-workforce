@@ -922,6 +922,7 @@ import { runNewHireMailboxRobotTests } from "./new-hire-mailbox-robot.test.ts";
 import { runNewHireMailboxInvitationTests } from "./new-hire-mailbox-invitation.test.ts";
 import { runNewHireMailboxInviteInboxTests } from "./new-hire-mailbox-invite-inbox.test.ts";
 import { runNewHireMailboxInviteInboxReaderTests } from "./new-hire-mailbox-invite-inbox-reader.test.ts";
+import { runNewHireMailboxAppPasswordCaptureTests } from "./new-hire-mailbox-app-password-capture.test.ts";
 import { runNewHireMailboxResultSurvivesTests } from "./new-hire-mailbox-result-survives.test.ts";
 import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
 import { runNewHireMailboxRunnerTests } from "./new-hire-mailbox-runner.test.ts";
@@ -4100,6 +4101,17 @@ await runTest(
   + "credential, an unreadable inbox is never read as an empty one, and the poll stops dead on a "
   + "refusal that waiting cannot change)",
   runNewHireMailboxInviteInboxReaderTests,
+);
+await runTest(
+  "the app-passwords page is captured by a READ and nothing else (it signs in with the password "
+  + "Phoenix already holds, so it resets nothing, mints nothing and presses no remove control — the "
+  + "four APP_PASSWORD_REVOKE_CONTROLS placeholders are what it exists to IDENTIFY, and clicking one "
+  + "is the accident it prevents; the address is the invite-inbox constant and never the request "
+  + "body, the setup screen is reported as an ANSWER rather than hunted past, the browser closes "
+  + "whatever happened, no credential reaches the response or the audit row, it is absent from the "
+  + "provisioning sequence and from the scheduled sweep, and shipping it does NOT calibrate the "
+  + "clear step — the flag stays false until a live run replaces all four placeholders)",
+  runNewHireMailboxAppPasswordCaptureTests,
 );
 await runTest(
   "a mailbox run's own account survives the run (neither adoption card refreshes the route "

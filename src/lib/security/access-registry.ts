@@ -1539,6 +1539,12 @@ export const accessRegistry = [
   // as adoption and for the same reason — it resets that mailbox's password — and the address is
   // never taken from the request, only compared against TURBIFY_INVITE_RECIPIENT.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/new-hire-mailboxes/invite-inbox", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Reading the invite inbox's App Passwords page, to replace the four __UNCALIBRATED__ placeholders
+  // that keep a leaver's app passwords uncleareable. It changes nothing — no reset, no mint, no
+  // remove press — but it SIGNS IN as that mailbox with the company password, which is why the gate
+  // is the same `canReadInitialPassword` audience as adoption rather than a read-level one. Audited
+  // as a mutation for the same reason: a sign-in to a live mailbox is worth a record of who asked.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/new-hire-mailboxes/app-password-controls", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Company device register. The GET returns, per employee, the serial or IMEI of the machine he
   // carries and what the company values it at — a shopping list if it were readable company-wide,
   // which is why `company_devices` is its own resource rather than a corner of `sales` or `team`.

@@ -89,6 +89,13 @@ function spyDriver(failAt?: "createMailbox" | "setMailboxPassword" | "generateAp
       if (failAt === "generateAppPassword") throw new Error("no app password could be read");
       return { appPassword: "APP-PASSWORD-TEST" };
     },
+    // The read-only calibration step, which the joiner runner must NEVER call: it is a hand-run
+    // read of a mailbox's own security page, and a sweep that reached it would sign into a live
+    // mailbox every night. The whole-sequence assertion below is what proves it does not.
+    async describeAppPasswords({ address }) {
+      calls.push(`describeAppPasswords:${address}`);
+      return { controls: [], observed: 0, reached: false, redacted: 0, why: "spy driver: nothing was read" };
+    },
     async close() { calls.push("close"); },
   };
 }

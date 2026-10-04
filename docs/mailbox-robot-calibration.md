@@ -1070,3 +1070,53 @@ The robot takes a new mailbox as far as a credential and no further:
 
 That is the honest deliverable: not hands-off provisioning, but every mailbox brought to the point
 where one sign-in and one password entry finish it.
+
+## The app-passwords page can be captured without resetting anything (2026-10-04)
+
+`APP_PASSWORD_REVOKE_CONTROLS` in `src/lib/mailbox-offboarding/robot/clear-app-passwords.ts` holds
+four placeholders — `existingList`, `removeOne`, `removeConfirm`, `emptyState` — all literally
+`__UNCALIBRATED__`. Until they are real text, `APP_PASSWORD_CLEAR_CALIBRATED` cannot honestly be
+flipped, and a leaver's phone and Outlook keep syncing mail after their password is reset. That is
+the `isHalfRevoked` state the register already reports and nothing can close.
+
+**Why nobody had ever seen those controls.** They exist only inside a mailbox's own security pages,
+which an admin session cannot reach — confirmed against the live console 2026-09-24 and still true.
+The single read that existed sat *after* minting, at the end of `generateAppPassword`, gated on
+`PHOENIX_TURBIFY_REPORT_CONTROLS`. And `generateAppPassword` is reachable only through a flow that
+**resets** the mailbox first, which lands on `Set up your mailbox password` — whose submit IS the
+acceptance of Yahoo's Terms of Service and is therefore not an automation's to give. So the capture
+had no path at all: every route to the page went through a wall.
+
+**The way through.** A mailbox that is already past its first sign-in opens straight into its account
+pages when signed into with the password Phoenix holds. No reset, so no setup screen, so no wall.
+`describeAppPasswords` in `src/lib/new-hire-mailbox/robot/turbify-joiner.ts` does exactly that and
+nothing else:
+
+- it signs in with the password it is handed, and resets nothing
+- it navigates — `Manage your account`, then `Manage App Passwords`, both tolerated on failure with
+  the page carried in the refusal; a page cannot be read without being reached
+- it never calls `selectAppForPassword` and never presses `APP_PASSWORD_WORDINGS.generate`, so no app
+  password is minted onto a live mailbox
+- it never names `APP_PASSWORD_REVOKE_CONTROLS`, because identifying those four is the point
+- it reads `CONTROL_READ_EXPRESSION` and reports through `buildControlReport`, which drops a
+  secret-shaped label whatever it is — this page lists credentials by nature
+
+**The setup screen is an answer, not a missing control.** If the sign-in lands on
+`Set up your mailbox password`, the password Phoenix holds for that mailbox is a one-time password:
+the mailbox has never completed a first sign-in, or a later reset rotated it. The capture returns
+`reached: false` with that sentence and the page, rather than reporting a control it never looked
+for. The unblock is the four manual clicks, once, for that mailbox.
+
+**The route is `POST /api/new-hire-mailboxes/app-password-controls`.** Super Admin only
+(`canReadInitialPassword`, the same audience as adoption, because it signs in as a mailbox with the
+company password), same-origin, rate-capped at 3/hour, `dryRun` unless the body says `false`. The
+address is `INVITE_INBOX_ADDRESS` and is never read from the request — the same chain pointed at an
+employee signs into their mail. The controls come back **in the response** and go to the audit row,
+not only to the log: the two live runs of 2026-10-03 stored `adopted: false, refusal: null` and
+nothing else, and the diagnostic had to be copied out of a browser by hand.
+
+🔴 **Shipping the capture calibrates nothing.** `APP_PASSWORD_CLEAR_CALIBRATED` stays `false` and all
+four placeholders stay placeholders until a live run replaces them with observed text.
+`tests/new-hire-mailbox-app-password-capture.test.ts` asserts both, and flipping the flag on the
+strength of this route existing is one of the seven breaks it catches (7 of 7 fired on their own
+messages).
