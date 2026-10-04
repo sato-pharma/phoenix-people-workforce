@@ -64,6 +64,13 @@ function spyDriver(failAt?: "resetAndCapture" | "setMailboxPassword" | "generate
       if (failAt === "generateAppPassword") throw new Error("no app password could be read");
       return { appPassword: "APP-PW" };
     },
+    // The read-only calibration step. Adoption must never reach it — it is triggered by hand from
+    // the panel, not by a sweep — and because the call lists below are compared whole, a stray
+    // call shows up as a failure rather than as an extra line nobody reads.
+    async describeAppPasswords({ address }) {
+      calls.push(`describeAppPasswords:${address}`);
+      return { controls: [], observed: 0, reached: false, redacted: 0, why: "spy driver: nothing was read" };
+    },
     async close() { calls.push("close"); },
   };
 }
