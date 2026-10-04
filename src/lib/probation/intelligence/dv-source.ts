@@ -26,7 +26,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getDoubleVisitRows } from "@/lib/crm/reads";
 
-/** The CRM mirror table that carries synced visits. */
+/**
+ * NOT WHAT THIS MODULE READS. The double visits come from `getDoubleVisitRows` — the read door, i.e.
+ * `crm_visits_unified`, which from a team's start serves its Phoenix CRM visits instead of its reps'
+ * iReports360 rows (verified on production 2026-10-04: Delta (1)'s double-visit day of 3 October carried
+ * five Phoenix-born source ids, all negative, and no vendor row). These two name the vendor mirror the
+ * feature was BUILT on. They are kept because `tests/probation-dv-source.test.ts` asserts the value and
+ * the `tests/crm-single-source.test.ts` guardrail regex names the symbol — never as the source.
+ */
 export const DV_SOURCE_TABLE = "ireports360_visits";
 export const DV_SOURCE_TYPE = "ireports360" as const;
 

@@ -16,6 +16,7 @@
 import { mergeDayMapVisitPages } from "@/lib/attendance/crm-day-maps";
 import { collapseDuplicateVisitSubmissions, CRM_DOUBLE_VISIT_TYPE_CODES, queryVisits, scanVisitsForRange } from "@/lib/crm/reads.ts";
 import { addVisitToSplit, emptyVisitCountSplit, formatVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { CRM_LEAVE_VISIT_TYPE_CODES } from "@/lib/crm/visit-type-meaning";
 import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import { hrIdLookupKeys } from "@/lib/hr-id";
@@ -287,10 +288,11 @@ export async function loadFieldVisitPrivateCalendarItems(
         managerName: null,
         severity: "success",
         source: "field_visit",
-        sourceLabel: "Live iReports360 visit mirror",
+        // The read door, not the raw mirror: a started team's days here are its Phoenix CRM visits.
+        sourceLabel: "Field visits through the CRM read door",
         sourceRecordId: `field-visit-${key}`,
         sourceSystem: "CRM Field Visits",
-        sourceTable: "ireports360_visits",
+        sourceTable: CRM_VISITS_UNIFIED_VIEW,
         startDate: group.date,
         status: "performed",
         time: group.kind === "vacation" ? "Full day" : counts,

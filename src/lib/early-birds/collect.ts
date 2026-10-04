@@ -14,9 +14,8 @@ import { isMedicalRepDirectoryEmployee } from "@/lib/employee-portal/service";
 import { fieldWorkforceDeductionDayWeight } from "@/lib/field-workforce-compliance/weekend-policy";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { buildEarlyBirdsDailyWinners } from "@/lib/early-birds/daily-board";
-import { startedWindowCovers, type StartedRepWindow } from "@/lib/early-birds/phoenix-start";
-import { logError } from "@/lib/observability/log";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { loadStartedRepWindows } from "@/lib/crm/phoenix-started-reps";
+import { startedWindowCovers } from "@/lib/early-birds/phoenix-start";
 import { earlyBirdsPeriodDays, type EarlyBirdsPeriod } from "@/lib/early-birds/period";
 import { EARLY_BIRDS_EARLIEST_PLAUSIBLE_START_MINUTES } from "@/lib/early-birds/scoring";
 import type {
@@ -32,37 +31,6 @@ const VISIT_COLUMNS =
   "visit_type_description, contact_name, customer_name, comment, visit_date, crm_visit_id, source";
 
 type VisitRowWithDate = NsmCrmVisitRow & { visit_date: string | null; crm_visit_id?: number | null; source?: string | null };
-
-/**
- * Every person's days within a started Phoenix CRM team's start (phoenix_crm_started_team_reps). An
- * unreadable answer — or the function not there yet — reads as NO started team, which is the module as
- * it was: the clock stays the GPS check-in for everybody, and a Phoenix row still carries its own time.
- */
-async function loadStartedRepWindows(): Promise<StartedRepWindow[]> {
-  try {
-    const { data, error } = await getSupabaseAdmin().rpc("phoenix_crm_started_team_reps");
-    if (error) throw error;
-    return ((data ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
-      const from = typeof row.counted_from === "string" ? row.counted_from.slice(0, 10) : null;
-      if (!from) return [];
-      const crmId = row.agent_crm_id === null || row.agent_crm_id === undefined ? null : Number(row.agent_crm_id);
-      return [
-        {
-          hrIdKey: normalizeHrIdForAccess(typeof row.hr_id === "string" ? row.hr_id : null),
-          agentCrmId: crmId !== null && Number.isFinite(crmId) ? crmId : null,
-          from,
-          until: typeof row.counted_until === "string" ? row.counted_until.slice(0, 10) : null,
-        },
-      ];
-    });
-  } catch (error) {
-    logError("Early Birds could not read the started Phoenix CRM teams", {
-      labels: { event: "early_birds_started_teams_unreadable" },
-      error,
-    });
-    return [];
-  }
-}
 
 export type EarlyBirdsInputs = {
   reps: EarlyBirdsRepContext[];

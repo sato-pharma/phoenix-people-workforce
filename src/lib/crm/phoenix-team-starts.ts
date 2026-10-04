@@ -138,11 +138,16 @@
  *   - Outside a start, no Phoenix row is served at all (pilot or onboarding work stays out).
  *   - One Phoenix visit is one row: the agent and manager lookups are one row per person whatever the
  *     casing, so a join can never double a visit; the starts never overlap, so a seat is in one start a day.
- *   - A pharmacy is feedback ON a Phoenix visit, never a row of its own, so nothing is added for it and
- *     no Phoenix row is a pharmacy: AM · PM · Pharmacies stay apart and a pharmacy is never counted
- *     inside AM or PM (`visitCountBucket` reads `ampm` = the list; no Phoenix customer's speciality is
- *     'Pharmacy', measured 2026-10-02). The cost, named: the Pharmacies figure of a started team reads
- *     0 on the other screens — Phoenix CRM's own Team calendar is where its pharmacies are counted.
+ *   - A PHARMACY IS A ROW OF ITS OWN SINCE 2026-10-03, and this paragraph said the opposite until
+ *     2026-10-04. It WAS feedback typed ON a Phoenix visit, so nothing was added for it and the
+ *     Pharmacies figure of a started team read "not recorded in Phoenix" on the other screens. Then the
+ *     owner ruled that a pharmacy named on a visit counts as that pharmacy's own visit — no validation,
+ *     no plan, no approval — and Delta (1) logged 25 on its first Phoenix day. AM · PM · Pharmacies
+ *     still stay apart, and the door still adds nothing of its own: a pharmacy call is one countable
+ *     Phoenix visit, carried with `ampm` = `Pharmacy`, its customer's own list. `visitCountBucket` reads
+ *     THAT (the speciality alone was not enough — 5 of those 25 carried none, and were counted among the
+ *     PM doctors until it did), and `pharmacyRecordingOf` answers "recorded" for every split, so a
+ *     started team's Pharmacies figure is a real count rather than a blank.
  *   - The Phoenix CRM List's "iReports360 history" (`readContactVisitHistory`) reads vendor rows only,
  *     so the visits it already counts as "saved here" are never counted twice beside them.
  *   - The district manager who holds the team's seat leaves the iReports360 branches with his reps
@@ -205,7 +210,27 @@
  *     pharmacy search. The call rate and its drill-down need none: a Phoenix visit is its own check-in.
  *     The manager's Early Birds decision line still names "N GPS-verified", 0 for a Phoenix candidate.
  *   - A customer created new in Phoenix has no iReports360 contact id: his visits and plans count for
- *     the rep, but no contact-keyed figure (coverage, per-doctor tallies) can name him.
+ *     the rep, but no contact-keyed figure (coverage, per-doctor tallies) can name him. Measured on
+ *     production 2026-10-04: 13 such customers on Delta (1)'s first Phoenix day, carrying 12 of its 128
+ *     Phoenix visits — 9.4% of them — with `contact_crm_id` null.
+ *   - 🔴 THE DOCTOR LIST ITSELF IS STILL THE VENDOR'S, and it is the largest thing the starts do not yet
+ *     reach. `crm_contact_master_refresh` (migration 20260914020000) rebuilds `crm_contacts` and
+ *     `crm_contact_assignments` from the raw `ireports360_contacts` scrape, and its `v_lists_live` gate
+ *     is `cairo_today < crm_cutover.cutover_date` COALESCED TO TRUE — so with the global date unset the
+ *     vendor passes still run for a started team, and no `phoenix_crm_started_team_*` appears anywhere in
+ *     the function. A started rep's real list lives in `phoenix_crm_customers`, read only inside
+ *     `src/lib/phoenix-crm/` and `src/lib/customer-identity/`, so a doctor he added or dropped in Phoenix
+ *     CRM from his start is invisible to every list surface outside the module: Rep Doctor Lists, the
+ *     Reps List doctor column, the rep KPI reports' coverage and frequency denominators, the Business
+ *     Review field link, Employee 360's doctor list and the direct-order venue picker. Measured
+ *     2026-10-04: 1,984 Phoenix customers across Delta (1)'s seats against 1,997 live vendor assignments,
+ *     the sizes near-identical because the Phoenix lists were SEEDED from the vendor's — so the defect is
+ *     silent today and widens with every add and drop. Second shape, worse: the moment a rep's vendor
+ *     account is disabled the scrape returns nothing, `contacts-sync` refuses an empty answer rather than
+ *     applying it, and his list FREEZES at its last vendor contents for good.
+ *   - A started team's October is scored by the PRE-cutover KPI rules: `kpiRulesFor`
+ *     (phoenix-kpi-rules.ts) answers `legacy` whenever `cutoverDate` is null, which a per-team start
+ *     never sets — the same shape as owner decision 18 below, and it needs the same ruling.
  *   - Leave is HR's: an APPROVED leave request already lifts a continuing rep's no-activity deduction —
  *     but the CRM connector's LEAVER path has no such check, so a leaving Phoenix rep's approved leave
  *     days would read as no activity (it used to see the iReports360 leave rows).
@@ -222,6 +247,7 @@
 import { addDaysIso } from "@/lib/crm/dates";
 import type { PhoenixTeamReadinessPanelData } from "@/lib/crm/phoenix-team-readiness";
 import { utcDate } from "@/lib/format/cairo-datetime";
+import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import type { OrgIndex, OrgSeat } from "@/lib/phoenix-crm/scope";
 import { sortVendorLeftovers, type VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
 
@@ -257,6 +283,40 @@ export const IREPORTS360_VISIT_SOURCE = "ireports360";
  */
 export function isPhoenixNativeVisitRow(row: { source?: string | null; crm_visit_id?: number | null }): boolean {
   return row.source === PHOENIX_VISIT_SOURCE || (row.crm_visit_id != null && row.crm_visit_id < 0);
+}
+
+/** One person's days within a team's start: [from, until), until null while it runs. */
+export type StartedRepWindow = {
+  /** The roster key (`normalizeHrIdForAccess`), or null. */
+  hrIdKey: string | null;
+  agentCrmId: number | null;
+  from: string;
+  until: string | null;
+};
+
+/**
+ * Whether a row (a check-in, a visit) of this person on this day falls within a start. Matched as the
+ * read door matches: on the hr id, or — on a row that carries no hr id — on the CRM id.
+ *
+ * The SECOND predicate of this module, beside {@link isPhoenixNativeVisitRow}: that one asks what a row
+ * IS, this one asks whether a person's day is Phoenix's to answer at all. A reader that goes anywhere
+ * other than the views — the live vendor API, a raw mirror read — has no `source` column to look at, so
+ * it must ask THIS before it picks a source. `rep-day.ts` is why the rule moved here from Early Birds:
+ * it chose live-vs-mirror on the global `crm_cutover` alone, which a per-team start never sets.
+ */
+export function startedWindowCovers(
+  windows: readonly StartedRepWindow[],
+  row: { hrId: string | null | undefined; crmId: number | null | undefined },
+  dateIso: string,
+): boolean {
+  if (!dateIso) return false;
+  const key = normalizeHrIdForAccess(row.hrId ?? null);
+  return windows.some(
+    (window) =>
+      dateIso >= window.from &&
+      (window.until === null || dateIso < window.until) &&
+      (key ? window.hrIdKey === key : row.crmId != null && window.agentCrmId === row.crmId),
+  );
 }
 
 // ── The starts ─────────────────────────────────────────────────────────────────────────────────────

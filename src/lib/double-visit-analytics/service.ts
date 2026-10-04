@@ -20,7 +20,7 @@ import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildDownwardCut } from "@/lib/crm/doctor-coverage-scope";
 import { getCrmIdentityResolutions } from "@/lib/crm/identity";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
-import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
+import { CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import type { CrmResolutionRow } from "@/lib/crm/types";
 import { logWarning } from "@/lib/observability/log";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
@@ -2252,10 +2252,12 @@ function privateCalendarItem(input: {
     managerName: null,
     severity: "success",
     source: "double_visit",
-    sourceLabel: "Live iReports360 double-visit mirror",
+    // The read door, not the raw mirror: from a started team's start these rows are its Phoenix CRM
+    // double visits, so naming iReports360 on the evidence card told the reader the wrong system.
+    sourceLabel: "Double visits through the CRM read door",
     sourceRecordId: input.id,
     sourceSystem: "Double Visit Analytics",
-    sourceTable: CRM_VISITS_TABLE,
+    sourceTable: CRM_VISITS_UNIFIED_VIEW,
     startDate: input.date,
     status: input.status,
     time: input.time,

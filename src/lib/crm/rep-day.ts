@@ -33,6 +33,8 @@ import {
   queryCheckins,
 } from "@/lib/crm/reads";
 import { getCrmCutoverSetting, isOnOrAfterCrmCutover, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
+import { loadStartedRepWindows } from "@/lib/crm/phoenix-started-reps";
+import { startedWindowCovers } from "@/lib/crm/phoenix-team-starts";
 import { CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import type { CrmCheckinRow } from "@/lib/crm/types";
 
@@ -539,11 +541,27 @@ export async function getIReports360RepDayVisits(input: {
   // THE CRM CUTOVER. From the cutover date the day is Phoenix's own record, and after the vendor is
   // retired there is no live CRM to ask — both read the unified view only. An unreadable setting falls
   // back to no cutover, which is the pre-cutover behaviour and never hides a row.
-  const cutover = await getCrmCutoverSetting().catch(() => NO_CRM_CUTOVER);
+  //
+  // A STARTED TEAM'S DAY IS NEVER FETCHED LIVE (owner, 2026-10-02 — "from the team's start"). The global
+  // cutover above is NOT that switch: a per-team start never sets `crm_cutover.cutover_date`, so this gate
+  // used to let a started rep's recent day through to the vendor, and a live call that SUCCEEDS with zero
+  // rows is served as the truth (the fallback below only catches a THROW). Measured on production
+  // 2026-10-04: 14 of Delta (1)'s 17 people had logged Phoenix visits since their 3 October start and the
+  // unified view returns no vendor row for any of the 17, so B-158's 22 Phoenix calls rendered as "no
+  // visits" on HR's field-workforce-compliance drill-down and the National Sales Manager's team calendar.
+  // B-120 is the sharper case: 3 of his rows are still in the raw mirror, which the view hides correctly,
+  // so going around it answered with the vendor's 3 rather than his 2 Phoenix visits. The mirror path below
+  // already reads the unified view with `includePhoenixVisits`, so it is the right answer for these days.
+  const [cutover, startedWindows] = await Promise.all([
+    getCrmCutoverSetting().catch(() => NO_CRM_CUTOVER),
+    loadStartedRepWindows(),
+  ]);
+  const countedFromPhoenix = startedWindowCovers(startedWindows, { hrId: rep.hrId, crmId: self.crmId }, day);
   const wantLive =
     self.crmId != null &&
     (input.preferLive ?? isRecentRepDay(day)) &&
     isIReports360Configured() &&
+    !countedFromPhoenix &&
     !cutover.vendorSyncRetiredAt &&
     !isOnOrAfterCrmCutover(cutover, day);
   if (wantLive) {

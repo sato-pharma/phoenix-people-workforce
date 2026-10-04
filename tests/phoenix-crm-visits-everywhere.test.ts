@@ -48,7 +48,7 @@ import {
 import { isCrmDoubleVisitRow } from "../src/lib/crm/reads.ts";
 import { buildRepVisits, unscoredLabel, type VisitForRepDrilldown } from "../src/lib/crm/rep-visits.ts";
 import { buildStartTimeRows, phoenixFirstVisitStarts } from "../src/lib/crm/sfe-field-analytics.ts";
-import { addVisitToSplit, emptyVisitCountSplit, visitCountBucket } from "../src/lib/crm/visit-count-buckets.ts";
+import { addVisitToSplit, emptyVisitCountSplit, pharmacyRecordingOf, visitCountBucket } from "../src/lib/crm/visit-count-buckets.ts";
 import { crmVisitTypeMeaningStrict } from "../src/lib/crm/visit-type-meaning.ts";
 import { classifyVisit, isFieldWorkVisit } from "../src/lib/crm/visit-types.ts";
 import { buildEarlyBirdsDailyWinners } from "../src/lib/early-birds/daily-board.ts";
@@ -960,7 +960,8 @@ function runRowShapeTests(code: string): void {
     assert.ok(sample.row < 0 && Number.isSafeInteger(sample.row), "negative, so it never meets a vendor id, and exact in a JavaScript number");
   }
 
-  // A Phoenix row buckets by its list: AM is AM, PM is PM, and nothing it says makes it a pharmacy.
+  // A Phoenix row buckets by ITS LIST and by nothing else it says: a doctor's call stays AM or PM however
+  // much its comment talks about a pharmacy.
   const split = emptyVisitCountSplit();
   for (const row of [
     phoenixRow({ ampm: "AM" }),
@@ -969,13 +970,24 @@ function runRowShapeTests(code: string): void {
     phoenixRow({ ampm: "PM", speciality: "General Practice" }),
     phoenixRow({ ampm: "PM", comment: "pharmacy" }),
   ]) {
-    assert.notEqual(visitCountBucket(row), "Pharmacies", "a Phoenix row is a doctor's call, never a pharmacy");
+    assert.notEqual(visitCountBucket(row), "Pharmacies", "a Phoenix doctor's call is never a pharmacy, whatever its comment says");
     addVisitToSplit(split, row);
   }
   addVisitToSplit(split, vendorRow({ ampm: "AM", speciality: "Pharmacy" }));
-  // `phoenix` counts the five Phoenix rows, so the figure is worded "(iReports360 only)", never a bare
-  // count that reads as the whole of it (src/lib/crm/visit-count-buckets.ts).
   assert.deepEqual(split, { am: 2, pm: 3, pharmacies: 1, phoenix: 5 }, "AM · PM · Pharmacies stay apart — a vendor pharmacy row is still a pharmacy, in neither AM nor PM");
+
+  // THE PHARMACY CALL (owner, 2026-10-03) — a countable Phoenix visit of its own, carried with the
+  // customer's own list in `ampm`. A rep adding a pharmacy at the door often leaves the speciality
+  // empty — 5 of Delta (1)'s 25 calls of 3 October did — and those 5 were counted among the PM DOCTORS
+  // until `visitCountBucket` read the list. Both spellings must bucket the same.
+  for (const row of [phoenixRow({ ampm: "Pharmacy" }), phoenixRow({ ampm: "Pharmacy", speciality: "Pharmacy" })]) {
+    assert.equal(visitCountBucket(row), "Pharmacies", "a Phoenix pharmacy call is a pharmacy on its list alone, speciality or not");
+  }
+  const pharmacySplit = addVisitToSplit(emptyVisitCountSplit(), phoenixRow({ ampm: "Pharmacy" }));
+  assert.deepEqual(pharmacySplit, { am: 0, pm: 0, pharmacies: 1, phoenix: 1 }, "it lands in Pharmacies, never in PM");
+  // And Phoenix records them now, so its figure is a real count — never "not recorded in Phoenix".
+  assert.equal(pharmacyRecordingOf(pharmacySplit), "recorded", "Phoenix CRM records pharmacy calls since 2026-10-03");
+  assert.equal(pharmacyRecordingOf({ am: 2, pm: 5, pharmacies: 0, phoenix: 7 }), "recorded", "a Phoenix-only split's 0 means nobody called a pharmacy, not that none was recorded");
 
   // The flags view: unchanged in shape, and a Phoenix row is its own check-in.
   const flagsView = viewSql(code, "crm_visits_checkin_flags");
@@ -1307,6 +1319,32 @@ function runStartClockTests(): void {
   assert.equal(startedWindowCovers(windows, { hrId: "B-7", crmId: 4401 }, "2026-10-24"), false, "and the vendor's again from the stop");
   assert.equal(startedWindowCovers(windows, { hrId: null, crmId: 6006 }, "2026-10-12"), true, "a row with no hr id is matched on its CRM id");
   assert.equal(startedWindowCovers(windows, { hrId: "Z-9", crmId: 6006 }, "2026-10-12"), false, "but a row WITH an hr id never on the CRM id alone");
+
+  // A STARTED TEAM'S DAY IS NEVER FETCHED LIVE FROM THE VENDOR. `rep-day.ts` prefers a live iReports360
+  // call for any day within 2 days of today, and gated that on the GLOBAL `crm_cutover` alone — which a
+  // per-team start never sets. A live call that SUCCEEDS with zero rows is served as the truth (the
+  // fallback below it only catches a THROW), and on production 2026-10-04 thirteen of Delta (1)'s
+  // seventeen people had Phoenix visits since their 3 October start and no vendor visits at all — so
+  // B-158's 22 Phoenix calls rendered as "no visits" on HR's field-workforce-compliance drill-down and
+  // the National Sales Manager's team calendar. Asserted on the stripped source: the comment above the
+  // gate names every one of these symbols, so a test reading the raw file would pass with the gate gone.
+  const repDay = stripComments(read("src/lib/crm/rep-day.ts"));
+  assert.match(repDay, /loadStartedRepWindows\(\)/, "rep-day reads the started windows");
+  assert.match(
+    repDay,
+    /const countedFromPhoenix = startedWindowCovers\(startedWindows, \{ hrId: rep\.hrId, crmId: self\.crmId \}, day\)/,
+    "it asks the shared rule for THIS rep on THIS day, matched on the hr id with the CRM id as the fallback",
+  );
+  assert.match(repDay, /!countedFromPhoenix &&/, "and a started rep-day can never reach the live vendor call");
+  // Bounded by the gate's own semicolon, NOT by the `if (wantLive)` below it: a clause sitting between
+  // the two would otherwise read as "inside the gate" when it decides nothing. Measured — a decoy
+  // `const decoy = !countedFromPhoenix && true;` placed there passed a slice cut at the `if`.
+  const gateStart = repDay.indexOf("const wantLive =");
+  assert.ok(gateStart >= 0, "the live gate is still one `const wantLive =` expression");
+  const liveGate = repDay.slice(gateStart, repDay.indexOf(";", gateStart));
+  assert.ok(liveGate.length > 0 && liveGate.length < 600, "and it is the expression alone, not the block after it");
+  assert.match(liveGate, /!countedFromPhoenix/, "the clause is INSIDE the gate, not merely somewhere in the file");
+  assert.match(liveGate, /!isOnOrAfterCrmCutover\(cutover, day\)/, "and it stands BESIDE the global cutover, which it did not replace — neither one implies the other");
 
   // THE ONE HELPER: the first countable Phoenix visit of a rep-day, Cairo wall clock, never before 05:00.
   type StartRow = { agent_hr_id: string | null; crm_save_date: string | null; crm_visit_id?: number | null; source?: string | null; visit_date: string | null; visit_type: number | null };
