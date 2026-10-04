@@ -122,6 +122,7 @@ export default async function TargetsPage({
       rows={rows}
       error={error}
       canEdit={canEdit}
+      canDrop={canEdit && access.role === "Super Admin"}
     />
   );
 }

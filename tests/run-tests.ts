@@ -2121,6 +2121,7 @@ import { runReturnedOrdersAgeingTests } from "./returned-orders-ageing.test.ts";
 import { runNotificationHeldAgeingTests } from "./notification-held-ageing.test.ts";
 import { runOverCapNeverBlocksTests } from "./over-cap-never-blocks.test.ts";
 import { runTargetsUnsavedEditGuardTests } from "./targets-unsaved-edit-guard.test.ts";
+import { runTargetsDropMonthTests } from "./targets-drop-month.test.ts";
 import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts";
 import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
 import { runEmployeeAreaLineOptionsTests } from "./employee-area-line-options.test.ts";
@@ -7805,6 +7806,11 @@ await runTest(
 await runTest(
   "a typed sales target survives a reload, a sidebar click and a dropdown change (a month of Pedia targets was lost this way, 2026-09-08)",
   runTargetsUnsavedEditGuardTests,
+);
+
+await runTest(
+  "only a Super Admin can drop one line's month of targets, the rows are archived first, and a published closing is refused",
+  runTargetsDropMonthTests,
 );
 
 await runTest(

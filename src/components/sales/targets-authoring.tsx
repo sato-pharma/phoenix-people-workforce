@@ -236,15 +236,18 @@ export function TargetsAuthoring(props: {
   rows: TargetGridRow[];
   error: string | null;
   canEdit?: boolean;
+  /** Super Admin only — renders "Drop this month". The route re-checks the role; this is UX. */
+  canDrop?: boolean;
 }) {
   const router = useRouter();
   const canEdit = props.canEdit !== false;
+  const canDrop = canEdit && props.canDrop === true;
 
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [unitEdits, setUnitEdits] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<UploadPreview | null>(null);
-  const [busy, setBusy] = useState<null | "preview" | "commit" | "save">(null);
+  const [busy, setBusy] = useState<null | "preview" | "commit" | "save" | "drop">(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
@@ -636,6 +639,44 @@ export function TargetsAuthoring(props: {
     }
   }
 
+  // Targets stored for this line + month (not counting unsaved typing) — what a drop would remove.
+  const storedCells = props.rows.filter((row) => row.targetUnits != null || row.targetValue != null).length;
+
+  async function dropMonth() {
+    if (
+      !window.confirm(
+        `Drop ALL ${lineLabel} targets for ${formatPeriod(props.selectedPeriod)}?\n\n`
+          + `${storedCells.toLocaleString("en-US")} stored target cell(s) will be removed from this line and month only. `
+          + "They are archived first, but nothing on this screen brings them back.\n\nPress OK to drop them.",
+      )
+    ) {
+      return;
+    }
+    setBusy("drop");
+    setMessage(null);
+    try {
+      const res = await fetch("/api/sales/targets/drop", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ period: props.selectedPeriod, line: props.selectedLine }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setMessage(json.error ?? "Drop failed.");
+        return;
+      }
+      // Typing for the dropped grid is stale now; leaving it would offer to re-save the dropped numbers.
+      setEdits({});
+      setUnitEdits({});
+      setMessage(`Dropped ${json.dropped} ${lineLabel} target row(s) for ${formatPeriod(props.selectedPeriod)}.`);
+      router.refresh();
+    } catch {
+      setMessage("Drop failed (network).");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   /** Typing units auto-fills Target value = units × unit price. The value stays editable after. */
   const onUnitsChange = (row: TargetGridRow, raw: string) => {
     const key = keyOf(row);
@@ -822,6 +863,16 @@ export function TargetsAuthoring(props: {
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden />
                   Not saved yet
                 </span>
+              ) : null}
+              {canDrop ? (
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center border border-red-200 bg-white px-3 text-phx-xs font-bold text-red-700 transition-colors hover:border-red-400 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={storedCells === 0 || busy !== null}
+                  onClick={dropMonth}
+                >
+                  {busy === "drop" ? "Dropping…" : "Drop this month"}
+                </button>
               ) : null}
               <Button size="sm" disabled={editedKeys.length === 0 || busy !== null} onClick={saveEdits}>
                 {busy === "save" ? "Saving…" : `Save edits${editedKeys.length ? ` (${editedKeys.length})` : ""}`}
