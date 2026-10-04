@@ -60,7 +60,17 @@ eight seconds is a source whose contents are unknown, and it renders amber rathe
 `direct-order-approvals` · `direct-order-unbooked` · `direct-order-validations` ·
 `marketing-approvals` · `market-awareness-approvals` · `monthly-closings` · `payroll-publish` ·
 `resignations` · `contract-renewals` · `probation-decisions` · `coaching-red-zone` · `salary-flags` ·
-`phoenix-crm-decisions`
+`phoenix-crm-decisions` · `orphaned-requests`
+
+`orphaned-requests` joined on 2026-10-04: a request in ANY chain (marketing, direct orders, vacation)
+stranded because the one person who must act next has resigned — a `returned` request whose requester
+has left and can never resubmit it, or an approval rung named to someone who has gone. Nothing else in
+the product surfaces it (it is not in anyone's "waiting on me" queue and it is not terminal), so it
+ages out of sight; five direct orders sat 48–52 days this way before a hand sweep found them. The rule
+and the three-chain read live in `src/lib/approvals/orphaned-requests.ts`, which THROWS on a failed
+read so an unread chain is amber, never calm. It sits in `worth-knowing`, each item links to the module
+screen that owns the cleanup, and — like the payroll row — it never states the money a direct order
+carries.
 
 `phoenix-crm-decisions` joined on 2026-10-03: Phoenix CRM's list requests and off-plan visits at the
 viewer's own step, plus the carried-over customers still waiting to be validated. 🔴 **It counts
@@ -202,6 +212,7 @@ file that is not registered never runs.
 | `needs-you-email-owner-only` | the guard chain and its fail-closed direction |
 | `needs-you-telegram-budget` | the 900-character fit, by construction rather than truncation |
 | `needs-you-fits-the-screen` · `needs-you-page-never-decides` | horizontal scroll, rounded corners, any write path |
+| `orphaned-requests` | flagging an active rep's returned request, a role rung, or an unknown actor; and the source not wired into the board |
 
 **A fixture has to be able to reach the limit it tests.** The budget assertion first used a 12-item
 board, which renders 889 characters when broken — *under* the 900 ceiling — so it passed with and

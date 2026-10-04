@@ -33,6 +33,12 @@ import {
   getAwaitingMyActionItemsWithHealth,
   isForbiddenSourceError,
 } from "@/lib/action-center/service";
+import {
+  findOrphanedRequests,
+  orphanedRequestModuleLabels,
+  orphanedRequestModuleScreens,
+  summarizeOrphans,
+} from "@/lib/approvals/orphaned-requests";
 import { getPayrollAwaitingPublish } from "@/lib/automated-payroll/awaiting-publish";
 import {
   getExcuseAwaitingBadge,
@@ -718,6 +724,62 @@ const salaryFlags: NeedsYouAdapter = {
     }),
 };
 
+// ── Orphaned requests ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A request in any chain (marketing, direct orders, vacation) that can no longer move because the one
+ * person who must act next has left the company — a `returned` request whose requester has resigned
+ * and can never resubmit it, or an approval rung named to a person who has left. `findOrphanedRequests`
+ * owns the rule (and the three-chain read); this adapter only groups and labels.
+ *
+ * 🔴 WORTH-KNOWING, never `yours`. It is a cleanup to look at, not a rung decision only he can take,
+ * and the fix — reassign the step, or close the request — is taken on the module's own screen, which
+ * each item links to. The board links; it never acts.
+ *
+ * 🔴 NO MONEY ON THIS ROW. A direct order carries a value, and that value is never stated here: the
+ * row names how many are stranded and on whom, and the figure lives on the Direct Orders screen. Same
+ * rule the payroll adapter keeps.
+ *
+ * 🔴 IT THROWS rather than returning empty when a chain cannot be read — `service.ts` turns that into
+ * the amber "could not be read" row. "Nothing is stranded" and "a chain did not answer" are different
+ * facts, and only the first may read as calm.
+ */
+const orphanedRequests: NeedsYouAdapter = {
+  id: "orphaned-requests",
+  load: async (_access, now) => {
+    const groups = summarizeOrphans(await findOrphanedRequests());
+    const items: NeedsYouItem[] = groups.map((group) => {
+      const noun = group.count === 1
+        ? orphanedRequestModuleLabels[group.module]
+        : `${orphanedRequestModuleLabels[group.module]}s`;
+      const them = group.count === 1 ? "it" : "them";
+      const screen = orphanedRequestModuleScreens[group.module];
+      const label = group.actorRole === "requester"
+        ? `${group.count} ${noun} ${plural(group.count, "is", "are")} stuck — the rep who raised ${them} has left`
+        : `${group.count} ${noun} ${plural(group.count, "is", "are")} stuck — the approver on ${them} has left`;
+      const note = group.actorRole === "requester"
+        ? `Handed back to edit, but the rep has resigned and can never resubmit ${them} — reassign or close ${them} on the ${screen.screen} screen.`
+        : `The approver named on the current rung has left, so ${them} cannot advance — reassign the rung on the ${screen.screen} screen.`;
+      return {
+        key: `orphaned-requests:${group.module}:${group.actorRole}`,
+        sourceId: "orphaned-requests" as const,
+        kind: "flag" as const,
+        lane: "worth-knowing" as const,
+        label,
+        count: group.count,
+        people: group.people,
+        href: screen.href,
+        externalUrl: null,
+        oldestAt: group.oldestAt,
+        ageDays: ageDaysSince(group.oldestAt, now),
+        overdue: false,
+        note,
+      };
+    });
+    return ok(items);
+  },
+};
+
 // ── Phoenix CRM ─────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -853,6 +915,7 @@ export const needsYouAdapters: readonly NeedsYouAdapter[] = [
   coachingRedZone,
   salaryFlags,
   phoenixCrmDecisions,
+  orphanedRequests,
 ];
 
 /**
