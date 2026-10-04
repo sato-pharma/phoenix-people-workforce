@@ -2074,6 +2074,7 @@ import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
 import { runRetentionRiskRecipientExclusionTests } from "./retention-risk-recipient-exclusion.test.ts";
 import { runCrmAccountSetupTests } from "./crm-account-setup.test.ts";
 import { runCsrfBlockIsLoggedTests } from "./csrf-block-is-logged.test.ts";
+import { runProxyUploadBodyLimitTests } from "./proxy-upload-body-limit.test.ts";
 import { runPortalSosSourceMaskTests } from "./portal-sos-source-mask.test.ts";
 import { runPortalTotalValueDeltaTests } from "./portal-total-value-delta.test.ts";
 import {
@@ -8766,6 +8767,10 @@ await runTest(
   runVacationSickAttachmentsTests,
 );
 
+await runTest(
+  "the two device upload routes stay OUT of the proxy matcher, because the proxy copies a matched request's body and stops at 10 MB — so an APK reached the route truncated, formData() threw and the person read 'Choose a file to send.' (measured on staging 2026-10-04: 'Request body exceeded 10MB for /api/devices/headwind/upload'); nothing else is excluded, each route still checks same-origin and company_devices:approve BEFORE it reads the body, and next.config.ts never raises the global limit",
+  runProxyUploadBodyLimitTests,
+);
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
