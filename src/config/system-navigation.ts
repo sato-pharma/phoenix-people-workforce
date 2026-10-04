@@ -50,6 +50,7 @@ import {
   MailX,
   MousePointerClick,
   MapPinCheck,
+  MapPinOff,
   MapPinned,
   PauseCircle,
   Megaphone,
@@ -4294,6 +4295,23 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
+    // Captures Phoenix CRM turned away on their LOCATION, and whether the rep got through afterwards
+    // (owner, 2026-10-03: "build the refused readings view for the SFE").
+    //
+    // 🔴 HOUSEKEEPING, NOT A FLAG, AND DELIBERATELY NOT UNDER LOCATION INTEGRITY. The rep read the
+    // refusal on his own screen when it happened; the question here is who is stuck and can the SFE
+    // help, so a rep turned away eighteen times for a rough GPS fix is never filed beside a mock-location
+    // case. The same two readers as the integrity board; the enforcing gate is `canReadRefusedReadings`
+    // inside the service AND the page, and this card only draws the link. The mock-location answer
+    // inside it is the Super Admin's alone (`readsMockAnswer`).
+    href: "/admin/phoenix-crm/refused-readings",
+    icon: MapPinOff,
+    label: "Refused Readings",
+    description: "Reps whose phone was turned away for a missing or rough location, and whether each got through afterwards. Housekeeping rather than a flag — nobody is accused, and the rep is never shown it.",
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin", "SFE Manager"],
+  },
+  {
     // Places the Google Maps check could not confirm (owner, 2026-10-03: "held for review and only
     // system admin can approve or reject"). The Super Admin's ALONE — not the SFE Manager — and the
     // enforcing gate is `canDecideValidationReviews` inside the page and the route; this card only draws
@@ -4941,6 +4959,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           // Beside the board rather than inside it, and in this band because a duplicate on a
           // rep's list IS a CRM data-quality question — the same kind the two rows above ask.
           "/admin/phoenix-crm/duplicates",
+          // A rep turned away on his location: housekeeping like the duplicates row, same band.
+          "/admin/phoenix-crm/refused-readings",
           // A place Google Maps could not confirm: the same band, the Super Admin's alone.
           "/admin/field-crm/validation-reviews",
           // Beside it, and in the same band for the same reason: the raw evidence under those

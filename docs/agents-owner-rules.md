@@ -6028,3 +6028,37 @@ and its prior window, sum-then-divide, the per-line published gate, leavers and 
 directory read, each filter's effect on the seat count, the trend, the loader reading only the
 closing engine, the page's `assertPermission` and portal redirect, no slice, no `Top 5`, the
 container switch and the colgroup arithmetic). Real pixels: `scripts/measure-rankings-fit.mjs`.
+
+## The refused-readings board — the SFE's view of who the location check turned away
+
+Owner, 2026-10-03: *"record the refused readings so the next refusal is traceable"*, and the same night,
+once `phoenix_crm_refused_readings` had caught its first real case — **nine refusals in 67 seconds from
+one rep whose phone was fine**, every one a retry of the same photo — *"build the refused readings view
+for the SFE"*. Until then only SQL could read the table, so the people who could help a stuck rep would
+never have seen him.
+
+**Where and for whom.** `/admin/phoenix-crm/refused-readings`, the Super Admin and the SFE Manager (the
+integrity board's audience), a 404 for anybody else in the service AND on the page, behind gate one. It is
+a page of its own and not a tab of Location Integrity on purpose: a refusal is the system saying no to a
+phone, and the rep already read it on his own screen, so the wording is housekeeping — *who is stuck and can
+I help* — never *who is lying*. Same stance as the duplicate-customers list.
+
+**The mock-location answer** (`device_mocked`) is the Super Admin's alone, as on the integrity board
+(owner, 2026-10-02) — and not by filtering: the select names the column only under `readsMockAnswer`, so
+the SFE Manager's process never holds it.
+
+**What it counts.** The last 14 days, one line per rep: how many customers he was refused on and how many he
+later SAVED (a visit saved for the same customer, or a place created for it, by the same rep, AT or AFTER the
+refusal — a save before it proves nothing). Reps with a customer still blocked sort first; a rep refused often
+who always gets through is listed below him, because a phone that needs eleven tries is worth knowing about.
+Nine retries on one customer are ONE blocked customer, never nine. A refusal tied to no customer (a new
+customer, one met outside the list) is counted apart — never as stuck and never as through. If the save
+lookup fails the board still opens and reads "not through yet", the safe direction.
+
+**What it does not do.** No button, no write, no notification, and no photo: `photo_path` is kept on each row
+but the board does not sign a URL for it — that is a separate piece if the SFE asks.
+
+Rule: `.claude/rules/phoenix-crm.md`. Logic `src/lib/phoenix-crm/refused-readings-rules.ts`, reader
+`src/lib/phoenix-crm/server/refused-readings-board.ts`. Pinned by `tests/phoenix-crm-refused-readings-board.test.ts`
+(the wording, the strict "got through afterwards", the audience, the mock-flag select, that only the recorder and
+this reader name the table, the page shape and its card).
