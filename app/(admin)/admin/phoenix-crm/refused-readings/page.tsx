@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { CheckCircle2, MapPinOff, Users } from "lucide-react";
 
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
+import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
@@ -95,6 +96,19 @@ function Readings({ entry, showMock }: { entry: RefusedAttemptRow; showMock: boo
       ) : null}
     </>
   );
+}
+
+/**
+ * The picture the phone sent with the refused capture, as a small thumbnail that opens full screen —
+ * what shows WHERE the rep stood, and whether a retry sent the same one again. One component for the
+ * table cell AND the phone card. `lazy`, because the list holds up to a hundred and the hidden copy
+ * (desktop or phone) of an eager image still loads. A row with no photo says so in words: a grey tile
+ * per old row would read as a broken picture rather than as a refusal that never kept one.
+ */
+function SentPhoto({ entry, size }: { entry: RefusedAttemptRow; size: string }) {
+  if (!entry.photoPath) return <span className="text-xs text-slate-500">None kept</span>;
+  const caption = [entry.repName, entry.customerName ?? "No customer chosen yet", cairo(entry.refusedAt)].join(" · ");
+  return <CrmPhotoThumb alt={`Photo the phone sent: ${caption}`} caption={caption} className={size} lazy path={entry.photoPath} />;
 }
 
 export default async function PhoenixCrmRefusedReadingsPage() {
@@ -222,23 +236,23 @@ export default async function PhoenixCrmRefusedReadingsPage() {
       {board.latest.length > 0 ? (
         <AdminTableShell
           title="Latest refusals"
-          description="Newest first. A retry resends the same photo, so several refusals in a row with the same photo reading mean the photo itself could not improve."
+          description="Newest first. A retry resends the same photo, so several refusals in a row with the same photo reading mean the photo itself could not improve. Tap a photo to open it."
         >
           {/* Desktop: the full table. `table-fixed` with a colgroup, never a min-width in a scroller. */}
           <div className="hidden lg:block">
             <table className="w-full table-fixed border-collapse">
               <colgroup>
+                <col className="w-[13%]" />
+                <col className="w-[22%]" />
                 <col className="w-[14%]" />
-                <col className="w-[16%]" />
-                <col className="w-[16%]" />
-                <col className="w-[36%]" />
+                <col className="w-[33%]" />
                 <col className="w-[18%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
                   <th className="px-5 py-3">When</th>
-                  <th className="px-5 py-3">Rep</th>
-                  <th className="px-5 py-3">Customer</th>
+                  <th className="px-5 py-3">Rep and customer</th>
+                  <th className="px-3 py-3">Photo</th>
                   <th className="px-5 py-3">What happened</th>
                   <th className="px-5 py-3">After that</th>
                 </tr>
@@ -250,8 +264,13 @@ export default async function PhoenixCrmRefusedReadingsPage() {
                       <div className="font-semibold text-slate-900">{cairo(entry.refusedAt)}</div>
                       <div className="text-xs text-slate-500">{refusedSubjectLabel(entry.subjectKind)}</div>
                     </td>
-                    <td className="px-5 py-4 text-sm font-semibold text-slate-900">{entry.repName}</td>
-                    <td className="px-5 py-4 text-sm text-slate-700">{entry.customerName ?? "—"}</td>
+                    <td className="px-5 py-4 text-sm">
+                      <div className="font-semibold text-slate-900">{entry.repName}</div>
+                      <div className="text-slate-700">{entry.customerName ?? "—"}</div>
+                    </td>
+                    <td className="px-3 py-4">
+                      <SentPhoto entry={entry} size="h-16 w-16" />
+                    </td>
                     <td className="px-5 py-4">
                       <Readings entry={entry} showMock={showMock} />
                     </td>
@@ -277,6 +296,9 @@ export default async function PhoenixCrmRefusedReadingsPage() {
                 </p>
                 <div className="mt-3">
                   <Readings entry={entry} showMock={showMock} />
+                </div>
+                <div className="mt-3">
+                  <SentPhoto entry={entry} size="h-20 w-20" />
                 </div>
                 <div className="mt-3 border-t border-slate-100 pt-3">
                   <Outcome outcome={entry.outcome} />

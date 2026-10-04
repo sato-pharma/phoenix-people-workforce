@@ -307,6 +307,7 @@ export function ZoomablePhoto({
   ariaHidden,
   caption,
   className,
+  lazy,
   onError,
   onLoad,
   src,
@@ -317,6 +318,12 @@ export function ZoomablePhoto({
   /** Shown in the overlay's header instead of `alt` when the photo has a real caption. */
   caption?: string | null;
   className?: string;
+  /**
+   * Hold the thumbnail back until it nears the screen. For a LONG list only: a worklist of a hundred
+   * photos would otherwise fetch every one on open — and twice, when a phone card and a desktop row
+   * both carry it, because the hidden copy of an eager image still loads.
+   */
+  lazy?: boolean;
   onError?: () => void;
   /**
    * Fires on the THUMBNAIL once the browser has the pixels. Threaded through for the one caller
@@ -340,6 +347,7 @@ export function ZoomablePhoto({
         alt={alt}
         aria-hidden={ariaHidden ? "true" : undefined}
         className={cn(className, "cursor-zoom-in")}
+        loading={lazy ? "lazy" : undefined}
         onClick={(event) => {
           // A photo often sits inside a clickable row or a link. Opening the viewer must not also
           // fire that row's own action.
