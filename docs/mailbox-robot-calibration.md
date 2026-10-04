@@ -1383,3 +1383,64 @@ nothing has ever seen that control — so the fail-closed list will probably mat
 live app password on the invite inbox and saying so loudly. The `confirming` reading is what the run
 is buying, and it is what replaces the guesses. Phoenix's own inbox is the one mailbox where that
 outcome costs nobody their mail.
+
+## The read that could never have worked: asking the redactor for the thing it redacts
+
+The rehearsal's first draft read the minted app password like this:
+
+```ts
+const shownAfterMint = await describePage(mailbox, secrets);
+const mintedValue = pickAppPassword(shownAfterMint, address);
+```
+
+It typechecked as far as the picker's own return type, and it could never have succeeded.
+
+`describePage` exists to produce a sentence safe to put in a refusal, a log line and an audit row on
+a page that may be displaying credentials. It does that by redacting — against every secret in hand,
+**and against anything secret-shaped whatever it is**. A freshly minted app password is about sixteen
+space-free characters, which is exactly the shape it drops. So the password was gone from the text
+before `pickAppPassword` ever saw it.
+
+**The reason this is worth a doc entry is the shape of the failure, not the bug.** `pickAppPassword`
+refuses with a count rather than guessing, so the run would have reported:
+
+> No app password could be read
+
+which is **the same sentence a changed console gives**. A session reading that would have gone
+looking at the page — new wording, a moved control, a layout change — and found nothing wrong,
+because nothing was wrong with the page. The redactor was working correctly. Meanwhile the real cost
+sits one line further on: `secrets.push(mintedValue)` never runs, so a **live credential on the
+mailbox** is in neither the redactor's list nor anybody's attention, and every reading taken
+afterwards is redacted against a list that does not contain it.
+
+The provisioning path never had this problem because it reads the page's own text directly:
+
+```ts
+const shown = await mailbox.evaluate<string>(`(() => {
+  const scope = document.body;
+  if (!scope) return "";
+  return scope.innerText || scope.textContent || "";
+})()`).catch(() => "");
+```
+
+So the rule is narrow and mechanical: **`describePage` is for the `why` of a refusal, and for nothing
+a caller must still parse.** Anything that has to be read as a value is read from raw page text.
+
+Two smaller things were settled in the same fix:
+
+- **`pickAppPassword` returns `{ password } | { refusal }`, not a string.** Pushing the reading itself
+  into `secrets` is what the typecheck actually caught — a union where a `string[]` was expected.
+- **An unreadable minted value is not a reason to stop.** The credential exists by the time this read
+  happens, so returning early leaves it live on the mailbox, which is the single outcome the
+  rehearsal is built to avoid. It carries on to the removal and keeps the refusal's sentence out of
+  the redactor's list rather than pushing it in as though it were a password.
+
+**Pinned on what `pickAppPassword` is handed**, in
+`tests/new-hire-mailbox-app-password-rehearsal.test.ts` — the assertion resolves the identifier the
+picker is given and reads the `const` that declares it. That is deliberate: `describePage` sits two
+lines away in the same function and reads like a tidy-up waiting to happen. Broken to confirm it
+fires on exactly that substitution:
+
+```
+FIRED:: the minted value must NOT be read from describePage, which redacts the very thing being read
+```
