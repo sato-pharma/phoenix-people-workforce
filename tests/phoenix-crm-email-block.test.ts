@@ -72,6 +72,11 @@ const EVENT_TYPES = [
   // A place the Google Maps check could not confirm, waiting for the Super Admin (owner, 2026-10-03:
   // "only system admin can approve or reject"). In-app, Telegram and the phone — never by email.
   "validation_review_waiting",
+  // The activity mirror (owner, 2026-10-05): every Phoenix CRM action, to the national sales manager
+  // above the rep and to the SFE Managers — "in nsm and sfe i want every single action … sent to
+  // telegram to them". In-app and Telegram only, never email and never the phone (push-blocked below),
+  // because it is the module's highest-volume feed to its two widest-scope readers.
+  "activity_mirror",
 ];
 
 /**
@@ -85,6 +90,9 @@ const PUSH_BLOCKED_EVENT_TYPES = [
   // the expected case — so "off the email list" alone would mail him once per rep on exactly the days
   // Telegram fails. Here both axes are shut and `phoenixCrmChannels` answers in-app + Telegram.
   "day_start_seen",
+  // The activity mirror (2026-10-05): in-app and Telegram only, for the same reason — a high-volume feed
+  // to the NSM and SFE whose Telegram is often not linked yet, so a push/email fallback would flood them.
+  "activity_mirror",
 ];
 
 /**

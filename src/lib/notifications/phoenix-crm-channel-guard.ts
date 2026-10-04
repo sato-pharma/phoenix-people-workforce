@@ -79,6 +79,12 @@ export const PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES: readonly string[] = [
   // EXPECTED case — so "off the email list" alone would mail him once per rep on exactly the days
   // Telegram fails. Here `phoenixCrmChannels` answers `["in_app", "telegram"]` and neither axis widens.
   "day_start_seen",
+  // The activity mirror (owner, 2026-10-05): every Phoenix CRM action, to the national sales manager
+  // and the SFE Managers — "in nsm and sfe i want every single action … sent to telegram to them". It
+  // is a high-volume feed to the two widest-scope readers, so it is in-app and Telegram only, exactly
+  // like the 06:55 digest: no phone, and the Telegram-failure fallback (email + in-app) is shut for it
+  // too, which for an as-yet-unlinked manager is the expected case rather than an edge one.
+  "activity_mirror",
 ];
 
 export function isPhoenixCrmModule(module: string | null | undefined): boolean {
