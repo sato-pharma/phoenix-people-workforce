@@ -712,6 +712,7 @@ async function runZoomTests() {
 function booking(overrides: Partial<InterviewBooking> & Pick<InterviewBooking, "id" | "candidateName" | "dateKey" | "startMinutes">): InterviewBooking {
   return {
     bookedByName: "Omar Gawish",
+    canReschedule: false,
     candidateId: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
     candidateJobTitle: null,
     comments: [],
@@ -1104,6 +1105,27 @@ function runWiringTests() {
   assert.match(editDialog, /body\.external = \{/, "the edit dialog sends the outside person's name, phone and e-mail");
   const viewSrc = stripComments(read("src/components/recruitment/interview-calendar/interview-calendar-view.tsx"));
   assert.match(viewSrc, /<EditInterviewDetailsDialog\b/, "the interview panel opens the edit dialog");
+
+  // The DISTRICT MANAGER WHO REQUESTED an interview may change its day, time and place (owner,
+  // 2026-10-04: "make able to change the day of the requester booked interview"). The requester is
+  // identified by the booking's requested_by_hr_id, passes the book gate on their OWN request only,
+  // and is held to when/where — the interviewer, panel, area/line, outside contact and session stay
+  // HR's. HR's full Move is unchanged. Break any one of these and the matching assertion fires.
+  assert.match(updateFn, /const isRequester =[\s\S]*?canonicalHrIdKey\(row\.requested_by_hr_id\)/, "the requester is the booking's requested_by person");
+  assert.match(updateFn, /if \(!hasBook && !isRequester\) requireCalendarAccess\(caller, "book"/, "a requester passes the book gate on their own request's booking");
+  assert.match(
+    updateFn,
+    /if \(!hasBook\) \{[\s\S]*?patch\.interviewerHrId !== undefined[\s\S]*?patch\.panelistHrIds !== undefined[\s\S]*?patch\.area !== undefined[\s\S]*?patch\.line !== undefined[\s\S]*?patch\.external !== undefined[\s\S]*?patch\.sessionId !== undefined[\s\S]*?throw new Error/,
+    "a non-book caller (the requester) is refused the interviewer, panel, area/line, outside contact and session",
+  );
+  assert.match(updateFn, /if \(hasBook\) requireCalendarAccess\(caller, "book", weekStartFor\(input\.dateKey\)\)/, "only the booking tier is re-gated for the destination week — a requester may move across weeks");
+  assert.match(domainSrc, /canReschedule:[\s\S]*?canonicalHrIdKey\(row\.requested_by_hr_id\)/, "the hydrated booking tells the requester (or booking tier) it may be rescheduled");
+  assert.match(viewSrc, /booking\.canReschedule \?/, "the interview panel offers the requester a move control");
+  assert.match(viewSrc, /Change day & time/, "the requester's control reads 'Change day & time'");
+  assert.match(viewSrc, /timeOnly=\{!canBook\}/, "the move dialog is time-only for a requester, full for HR");
+  const scheduleDialog = stripComments(read("src/components/recruitment/interview-calendar/schedule-interview-dialog.tsx"));
+  assert.match(scheduleDialog, /timeOnly\?: boolean/, "the schedule dialog accepts a timeOnly flag");
+  assert.match(scheduleDialog, /timeOnly\s*\r?\n?\s*\? \{ dateKey, durationMinutes, notes: notes\.trim\(\), platform, startMinutes \}/, "a timeOnly save sends only day, time and place — never the HR-only fields");
 
   // "My interviews" on the portal home + a per-person .ics subscription (owner, 2026-09-26: make the
   // calendar relevant to everyone daily). The card travels inside the ONE identity band every role

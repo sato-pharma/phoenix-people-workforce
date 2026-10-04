@@ -476,6 +476,15 @@ export type InterviewBooking = {
   outcomeSetAt: string | null;
   /** Whether THIS viewer may set the outcome: the interviewer, or the calendar's owner. */
   canSetOutcome: boolean;
+  /**
+   * Whether THIS viewer may change the interview's day, time and place.
+   *
+   * True for the calendar's booking tier (owner/editor/HR) as always — and, since the owner asked for
+   * it, ALSO for the DISTRICT MANAGER WHO REQUESTED this interview, on their own request's booking. It
+   * covers the day/time/place only; the interviewer, panel and area/line stay HR's, and a session slot
+   * is never rescheduled this way. A past interview and a link guest are both false.
+   */
+  canReschedule: boolean;
   bookedByName: string | null;
   createdAt: string;
   updatedAt: string;

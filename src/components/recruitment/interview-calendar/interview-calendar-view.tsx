@@ -1459,6 +1459,14 @@ function InterviewPanel({
             </Action>
           </div>
         )
+      ) : booking.canReschedule ? (
+        <div>
+          <Action onClick={() => setMoving(true)} tone="quiet">
+            <CalendarDays className="h-3.5 w-3.5" />
+            Change day & time
+          </Action>
+          <p className="mt-1 text-[11px] text-slate-500">You requested this interview — you can change its day, time and place. The interviewer and area are HR&rsquo;s to set.</p>
+        </div>
       ) : null}
 
       {error ? <ErrorLine>{error}</ErrorLine> : null}
@@ -1535,6 +1543,7 @@ function InterviewPanel({
           existing={booking}
           onClose={() => setMoving(false)}
           onSaved={onChanged}
+          timeOnly={!canBook}
           zoomConnected={zoomConnected}
         />
       ) : null}

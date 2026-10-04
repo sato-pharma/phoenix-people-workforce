@@ -80,6 +80,7 @@ export function ScheduleInterviewDialog({
   api: givenApi,
   candidate,
   existing,
+  timeOnly = false,
   onClose,
   onSaved,
   zoomConnected,
@@ -89,6 +90,12 @@ export function ScheduleInterviewDialog({
   candidate: ScheduleCandidate;
   /** Set to move an interview already on the calendar; absent to book a new one. */
   existing?: InterviewBooking | null;
+  /**
+   * Day/time/place only — no interviewer, panel or area/line. Used when the person moving the interview
+   * is the DISTRICT MANAGER WHO REQUESTED it (owner, 2026-10-04): those fields are HR's, and the server
+   * refuses a requester who sends them, so the dialog must not send them at all.
+   */
+  timeOnly?: boolean;
   onClose: () => void;
   onSaved?: (booking: InterviewBooking) => void;
   zoomConnected: boolean;
@@ -200,7 +207,11 @@ export function ScheduleInterviewDialog({
     setSaving(true);
     setError(null);
     try {
-      const body = { dateKey, durationMinutes, interviewerHrId: interviewer?.hrId ?? null, panelistHrIds: panel.map((member) => member.hrId), area: area.trim() || null, line: line.trim() || null, notes: notes.trim(), platform, startMinutes };
+      // A requester (timeOnly) sends day/time/place only — the interviewer, panel and area/line are
+      // HR's, and the server rejects a requester who sends them.
+      const body = timeOnly
+        ? { dateKey, durationMinutes, notes: notes.trim(), platform, startMinutes }
+        : { dateKey, durationMinutes, interviewerHrId: interviewer?.hrId ?? null, panelistHrIds: panel.map((member) => member.hrId), area: area.trim() || null, line: line.trim() || null, notes: notes.trim(), platform, startMinutes };
       const data = existing
         ? await api.patch(`/bookings/${encodeURIComponent(existing.id)}`, body)
         : await api.post(`/bookings`, { ...body, candidateId: candidate.id });
@@ -432,19 +443,28 @@ export function ScheduleInterviewDialog({
                     ) : null}
                   </div>
 
-                  <div className="mt-4">
-                    <StepLabel number={4}>Interviewer (optional)</StepLabel>
-                    <InterviewerPicker api={api} onChange={chooseInterviewer} value={interviewer} />
-                    <p className="mt-1 text-[11px] text-slate-500">Choosing the interviewer fills in the area & line below — you can change them.</p>
-                    <div className="mt-3">
-                      <OrgFields area={area} line={line} onArea={setArea} onLine={setLine} />
+                  {timeOnly ? (
+                    existing?.interviewerName ? (
+                      <p className="mt-4 border-l-[3px] border-l-slate-300 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+                        Interviewer: <span className="font-semibold text-slate-800">{existing.interviewerName}</span>. The interviewer, panel
+                        and area are set by HR.
+                      </p>
+                    ) : null
+                  ) : (
+                    <div className="mt-4">
+                      <StepLabel number={4}>Interviewer (optional)</StepLabel>
+                      <InterviewerPicker api={api} onChange={chooseInterviewer} value={interviewer} />
+                      <p className="mt-1 text-[11px] text-slate-500">Choosing the interviewer fills in the area & line below — you can change them.</p>
+                      <div className="mt-3">
+                        <OrgFields area={area} line={line} onArea={setArea} onLine={setLine} />
+                      </div>
+                      <div className="mt-3">
+                        <p className="mb-1 text-[12px] font-bold text-slate-700">Panel (optional)</p>
+                        <PanelPicker api={api} excludeHrId={interviewer?.hrId ?? null} onChange={setPanel} value={panel} />
+                        <p className="mt-1 text-[11px] text-slate-500">Everyone added also sees this interview on their own calendar; the interviewer above records how it went.</p>
+                      </div>
                     </div>
-                    <div className="mt-3">
-                      <p className="mb-1 text-[12px] font-bold text-slate-700">Panel (optional)</p>
-                      <PanelPicker api={api} excludeHrId={interviewer?.hrId ?? null} onChange={setPanel} value={panel} />
-                      <p className="mt-1 text-[11px] text-slate-500">Everyone added also sees this interview on their own calendar; the interviewer above records how it went.</p>
-                    </div>
-                  </div>
+                  )}
 
                   <label className="mt-4 block">
                     <span className="text-[12px] font-bold text-slate-700">Note (optional)</span>

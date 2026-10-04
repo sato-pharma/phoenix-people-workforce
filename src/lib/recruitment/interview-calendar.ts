@@ -957,6 +957,15 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
       line: row.interview_line?.trim() || null,
       notes: row.notes,
       canSetOutcome: canSetInterviewOutcome(caller, row.interviewer_hr_id),
+      // Who may change the day/time/place: the booking tier as always, OR the District Manager who
+      // REQUESTED this interview (owner, 2026-10-04). Never a session slot (HR re-slots those), never a
+      // past interview, never a link guest. The server (updateInterviewBooking) re-checks and confines
+      // a requester to the day/time/place.
+      canReschedule:
+        !session &&
+        now.getTime() < endsAt(row.starts_at, row.duration_minutes) &&
+        (roleMeets(effectiveCalendarRole(caller, weekStartFor(dateKey)), "book") ||
+          (Boolean(viewerKey) && viewerKey === canonicalHrIdKey(row.requested_by_hr_id))),
       outcome: readInterviewOutcome(row.outcome),
       outcomeSetAt: row.outcome_set_at,
       outcomeSetByName: personName(people, row.outcome_set_by_hr_id),
@@ -1828,7 +1837,32 @@ export async function updateInterviewBooking(
   zoomConfig: ZoomConfig | null = readZoomConfig(),
 ): Promise<InterviewBooking> {
   const row = await loadBookingRow(bookingId);
-  requireCalendarAccess(caller, "book", weekOfInstant(row.starts_at));
+  // The booking tier (owner/editor/HR) may change everything. The owner also let the DISTRICT MANAGER
+  // WHO REQUESTED an interview change its day, time and place (2026-10-04) — so a requester passes the
+  // gate on their OWN request's booking, and is held to day/time/place below. Everyone else still gets
+  // the ordinary book refusal.
+  const hasBook = roleMeets(calendarRoleFor(caller, weekOfInstant(row.starts_at)), "book");
+  const callerKey = canonicalHrIdKey(caller.access.hrId);
+  const isRequester =
+    isSignedInCaller(caller.access) &&
+    Boolean(row.requested_by_hr_id) &&
+    Boolean(callerKey) &&
+    callerKey === canonicalHrIdKey(row.requested_by_hr_id);
+  if (!hasBook && !isRequester) requireCalendarAccess(caller, "book", weekOfInstant(row.starts_at));
+  if (!hasBook) {
+    // A requester changes only when and where — never who conducts it, the panel, the area/line, the
+    // outside person's contact details, or which session it sits in. Those stay HR's.
+    if (
+      patch.interviewerHrId !== undefined ||
+      patch.panelistHrIds !== undefined ||
+      patch.area !== undefined ||
+      patch.line !== undefined ||
+      patch.external !== undefined ||
+      patch.sessionId !== undefined
+    ) {
+      throw new Error("You can change your interview's day, time and place — the interviewer, panel and area are HR's to change.");
+    }
+  }
   const at = new Date(row.starts_at);
   const notes = patch.notes === undefined ? row.notes : cleanNotes(patch.notes);
   const actor = hrIdForStorage(caller.access.hrId);
@@ -1920,7 +1954,10 @@ export async function updateInterviewBooking(
     });
     const platform = patch.platform ?? (session ? session.platform : row.platform);
     if (!isInterviewPlatform(platform)) throw new Error("Choose In office or Zoom.");
-    requireCalendarAccess(caller, "book", weekStartFor(input.dateKey));
+    // The week the interview LANDS in is a book-tier check — but a requester has no book right, so for
+    // them the gate above (their own request) is what authorises the move; the day itself is still held
+    // to a bookable Sun–Thu future slot by validateInterviewTime.
+    if (hasBook) requireCalendarAccess(caller, "book", weekStartFor(input.dateKey));
     const moved =
       input.dateKey !== cairoDateKey(at) || input.startMinutes !== cairoMinutesOfDay(at) || input.durationMinutes !== Number(row.duration_minutes);
 
