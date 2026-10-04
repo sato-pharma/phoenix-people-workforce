@@ -89,6 +89,9 @@ export function TelegramAdminControlCenter({ canGovern, canUpdate, initialData }
   // Holds the eligible-recipient count once previewed, so the admin must confirm
   // "email N people" before any mass send goes out.
   const [inviteConfirm, setInviteConfirm] = useState<{ count: number } | null>(null);
+  // The ONE person whose row is asking "email this person?" — a separate, narrower send than the
+  // mass one above, and never the same state.
+  const [inviteOne, setInviteOne] = useState<{ name: string; userId: string } | null>(null);
 
   const filteredConnections = useMemo(() => {
     if (statusFilter === "all") return data.connections;
@@ -207,6 +210,33 @@ export function TelegramAdminControlCenter({ canGovern, canUpdate, initialData }
       else lines.push(`${summary.available ?? 0} eligible employees were targeted in this run.`);
       return lines;
     });
+  }
+
+  // One person's connect invitation, after the row's own confirmation. It states what really
+  // happened: a skip or a failure is an error line, never a green "processed".
+  async function sendOneInvitation(person: { name: string; userId: string }) {
+    setInviteOne(null);
+    setBusy("send_invitation");
+    setError(null);
+    setNotice(null);
+    setOpsDetail(null);
+    try {
+      const response = await fetch("/api/admin/notifications/telegram", {
+        body: JSON.stringify({ action: "send_invitation", userId: person.userId }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? "Could not send the invitation.");
+      setData(payload.data?.view ?? initialData);
+      const result = (payload.data?.summary?.results ?? [])[0] as { detail?: string; status?: string } | undefined;
+      if (result?.status === "sent") setNotice(`Connect invitation emailed to ${person.name}.`);
+      else setError(`${person.name}: ${result?.detail ?? "No invitation was sent."}`);
+    } catch (inviteError) {
+      setError(inviteError instanceof Error ? inviteError.message : "Could not send the invitation.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   const lastTestLabel = data.summary.lastTestStatus === "none"
@@ -517,6 +547,17 @@ export function TelegramAdminControlCenter({ canGovern, canUpdate, initialData }
                   <td className="adm-col-hide-xl px-3 py-3 text-xs font-semibold text-slate-600">{connection.maskedChatId ?? "Not stored"}</td>
                   <td className="px-3 py-3">
                       <div className="flex flex-wrap gap-2">
+                      {connection.status !== "connected" ? (
+                        inviteOne?.userId === connection.userId ? (
+                          <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-none border border-amber-300 bg-amber-50 px-2 py-1">
+                            <span className="min-w-0 break-words text-xs font-bold text-amber-900">Email {inviteOne.name} a connect link? This sends real email.</span>
+                            <button className="rounded-none border border-orange-200 bg-orange-600 px-2 py-1 text-xs font-bold text-white disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => void sendOneInvitation(inviteOne)} type="button">Send</button>
+                            <button className="rounded-none border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 disabled:opacity-50" disabled={Boolean(busy)} onClick={() => setInviteOne(null)} type="button">Cancel</button>
+                          </div>
+                        ) : (
+                          <button className="rounded-none border border-orange-200 px-2 py-1 text-xs font-bold text-orange-700 disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => setInviteOne({ name: connection.employeeName ?? connection.userId, userId: connection.userId })} type="button"><Mail className="inline h-3 w-3" /> Email invitation</button>
+                        )
+                      ) : null}
                       <button className="rounded border border-amber-200 px-2 py-1 text-xs font-bold text-amber-700 disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => request("POST", { action: "disable_user", userId: connection.userId }, "Telegram disabled for user.")} type="button"><PlugZap className="inline h-3 w-3" /> Disable</button>
                       <button className="rounded border border-rose-200 px-2 py-1 text-xs font-bold text-rose-700 disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => request("POST", { action: "disconnect_user", userId: connection.userId }, "Telegram disconnected for user.")} type="button"><Unplug className="inline h-3 w-3" /> Disconnect</button>
                     </div>

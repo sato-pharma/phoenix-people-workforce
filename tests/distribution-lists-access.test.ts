@@ -216,6 +216,7 @@ export function runDistributionListsAccessTests() {
   // walk past.
   for (const [guard, what] of [
     ['body?.action === "send_invitations"', "the 250-recipient onboarding campaign"],
+    ['body?.action === "send_invitation"', "emailing one person's connect invitation"],
     ['body?.type === "global_switch"', "the company-wide Telegram switch"],
     ['body?.type === "module_policy"', "a module's Telegram policy"],
     ['body?.action === "disable_user"', "switching off one person's Telegram"],

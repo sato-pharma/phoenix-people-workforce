@@ -140,6 +140,19 @@ export async function POST(request: Request) {
       const count = await countTelegramOnboardingTargets();
       return NextResponse.json({ data: { count }, success: true });
     }
+    if (body?.action === "send_invitation") {
+      // ONE person's connect invitation, from the Connections table (owner, 2026-10-04: six people
+      // sat pending and the only button emailed all 108 eligible). Super Admin only, like the
+      // campaign it narrows. It can never widen: `userIds` is exactly the one person, `limit` is 1,
+      // and `force` is never passed, so an already-connected person is skipped, not re-emailed.
+      const refused = refuseUnlessSuperAdmin(access.role, "Emailing a Telegram connect invitation");
+      if (refused) return refused;
+      if (!userId) {
+        return NextResponse.json({ error: "missing_user", message: "Choose the person to invite." }, { status: 400 });
+      }
+      const summary = await runTelegramOnboardingCampaign({ access, limit: 1, userIds: [userId] });
+      return NextResponse.json({ data: { summary, view: await getTelegramAdminControlCenter(access) }, success: true });
+    }
     if (body?.action === "send_invitations") {
       // SUPER ADMIN ONLY - this is a BULK EMAIL and the standing rule is that the system never
       // fires one. One call emails up to DEFAULT_CAMPAIGN_LIMIT (250) employees, and the mass-send
@@ -151,6 +164,11 @@ export async function POST(request: Request) {
           { error: "forbidden", message: "Sending connect invitations is Super Admin only." },
           { status: 403 },
         );
+      }
+      // An EMPTY `userIds` list used to read as "no filter" and emailed every eligible employee. A
+      // caller that names people and ends up naming none must be refused, never widened.
+      if (Array.isArray(body?.userIds) && body.userIds.length === 0) {
+        return NextResponse.json({ error: "empty_selection", message: "No people were chosen, so nothing was sent." }, { status: 400 });
       }
       // `force` (re-emails already-connected users / bypasses the unconnected filter) is
       // a Super-Admin-only escalation; broad HR/recruitment roles cannot use it.
