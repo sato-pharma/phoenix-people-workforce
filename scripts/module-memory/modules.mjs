@@ -176,6 +176,29 @@ export const MODULES = [
     keywords: ["list admission", "off-plan", "off plan", "bring back", "bring-back", "plan review", "decision queue", "awaiting decision", "validated at the door", "refused reading", "rough location"],
     tables: ["phoenix_crm_refused_readings"],
   },
+  // 🔴 SPLIT AGAIN, 2026-10-04, FOR THE SAME REASON AS THE ONE ABOVE: `phoenix-crm` reached 33 rules and its
+  // injected pointer measured 4,019 bytes against the 4,000 margin `tests/module-memory.test.ts` holds, the
+  // moment the SFE's refused-readings board added its rule. The silent detectors (location, behaviour and
+  // photo integrity), the touch trail and the two SFE boards that read them are ONE family of rules — the
+  // evidence a rep is never shown and who may read it — so they move together. `phoenix-crm` still keeps every
+  // glob it had, so a file in this family loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "phoenix-crm-boards",
+    title: "Phoenix CRM — the silent detectors, the touch trail and the SFE's boards",
+    scope: "Location, behaviour and photo integrity, mock-location detection, the touch trail, refused readings and duplicate customers — the evidence a rep is never shown, and the admin boards that read it and who may open each.",
+    globs: [
+      "src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules,touch-trail,touch-trail-reader}.ts",
+      "src/lib/phoenix-crm/server/{behaviour,blind-payloads,duplicate-customers,integrity-board,location-integrity,photo-dupes,refused-readings-board,touch-trail,touch-trail-reader}.ts",
+      "src/components/phoenix-crm/touch-trail-{board,collector}.tsx",
+      "app/**/phoenix-crm/{integrity,duplicates,refused-readings}/**",
+      "app/**/field-crm/touch-trail/**",
+      "app/api/phoenix-crm/touch-trail/**",
+      "app/api/cron/phoenix-crm-integrity-sweep/**",
+      "tests/phoenix-crm-{behaviour-integrity,blind,duplicate,location-integrity,refused-readings-board,touch-trail}*",
+    ],
+    keywords: ["integrity board", "behaviour integrity", "photo sweep", "duplicate customers", "touch trail", "refused readings", "mock-location", "mock location detection"],
+    tables: ["phoenix_crm_location_integrity", "phoenix_crm_behaviour_integrity", "phoenix_crm_photo_fingerprints", "phoenix_crm_touch_trail"],
+  },
   {
     id: "crm",
     title: "Field CRM analytics (iReports360) — visits, KPIs, reps lists and plans",

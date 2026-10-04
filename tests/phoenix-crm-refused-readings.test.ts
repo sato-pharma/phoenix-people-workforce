@@ -238,7 +238,9 @@ export function runPhoenixCrmRefusedReadingsTests() {
 
   // ── 9. Nothing a rep can open reads it ────────────────────────────────────────
   // The table is service-role only in SQL (tests/phoenix-crm-boundary.test.ts holds its four lock
-  // statements); this is the other half — no screen, no rep-facing payload and no report names it.
+  // statements); this is the other half — no rep-facing screen, payload or report names it. The ONE
+  // reader is the SFE's board (server/refused-readings-board.ts), pinned by
+  // tests/phoenix-crm-refused-readings-board.test.ts to the Super Admin and the SFE Manager.
   const migration = readFileSync("supabase/migrations/20261003211500_phoenix_crm_refused_readings.sql", "utf8");
   assert.match(migration, /create table if not exists public\.phoenix_crm_refused_readings \(/, "the table is created here");
   assert.match(migration, /drop table if exists public\.phoenix_crm_refused_readings;/, "with its rollback stated");

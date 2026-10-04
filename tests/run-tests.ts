@@ -1742,6 +1742,7 @@ import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visit
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
+import { runPhoenixCrmRefusedReadingsBoardTests } from "./phoenix-crm-refused-readings-board.test.ts";
 import { runPhoenixCrmTouchTrailTests } from "./phoenix-crm-touch-trail.test.ts";
 import { runPhoenixCrmTouchTrailReaderTests } from "./phoenix-crm-touch-trail-reader.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
@@ -6109,6 +6110,11 @@ await runTest(
 await runTest(
   "a REFUSED Phoenix CRM capture leaves its reading behind (owner, 2026-10-03, after one rep met the rough-location refusal eighteen times between 16:12 and 18:47 and every one of those eighteen readings was discarded — the integrity table is filed only after a save succeeds, no place or visit row is created, and the upload slot keeps only the fact that a slot was asked for, so her 2,000 m was knowable at all only because four captures were ACCEPTED that morning before the 100 m line shipped at 11:24. Pinned: her real 2,000 m capture records to every decimal with the line it missed; a capture the doors ACCEPT records nothing, and so does a refusal about a comment, the products, the customer or the photo; no usable coordinate is its own reason and keeps the radius the phone claimed, the shutter's own pair and the mock flag, with nothing coerced to 0; each door's own line and only its own, including the band where a place is refused and a visit is not; the classifier restates NO threshold but asks the doors' own predicates; the recorder is void, throws nothing, inserts and never upserts, and dates the Cairo visit day; all three refusing doors file it AWAITED before throwing, because an unawaited promise dies with the invocation; and the table is unkeyed so eighteen refusals are eighteen rows)",
   runPhoenixCrmRefusedReadingsTests,
+);
+
+await runTest(
+  "the Phoenix CRM refused-readings board, the SFE's view of who the location check turned away (owner, 2026-10-03: \"build the refused readings view for the SFE\", the night the table caught its first real case — nine refusals in 67 seconds from one rep whose phone was fine, and nothing but SQL could read them. Pinned: a refusal reads in plain English with BOTH a place's readings and the line it missed, a reading the phone never sent reads 'not reported' and never 0 m; 'got through afterwards' is strict — a save before the refusal proves nothing, another rep's, customer's or kind's does not count, ids compare upper-cased, and a refusal tied to no customer says so; one line per rep with the rep who cannot work before the one who got through, nine retries on one customer being one blocked customer and a later refusal never undoing a save; the audience is the Super Admin and the SFE Manager with a 404 before any database call; the phone's mock-location answer is named in the select only for the Super Admin; only the recorder and this reader name the table; the page asks gate one before the organogram, acts on nothing, fits the screen with a fixed-layout table and phone cards from shared components, uses Cairo time and no accusing words; and its card is in the CRM Data Quality band for exactly the two readers)",
+  runPhoenixCrmRefusedReadingsBoardTests,
 );
 
 await runTest(
