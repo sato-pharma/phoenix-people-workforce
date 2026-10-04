@@ -171,22 +171,77 @@ export function summarizeOrphans(orphans: readonly OrphanedRequest[]): OrphanedR
 
 // ── The reader — the one part that touches the database ───────────────────────────────────────────
 
+/**
+ * Every status each chain's parent table can actually hold, copied from its own `CHECK` constraint.
+ * These are the vocabularies the three tables below must partition exactly — `tests/orphaned-requests.test.ts`
+ * fails if one of them classifies a status twice, leaves one unclassified, or names a status the
+ * table cannot store.
+ *
+ * 🔴 THE LISTS BELOW WERE GUESSES AND THREE OF THEM WERE WRONG (fixed 2026-10-04, measured against
+ * production): `direct_order_requests` also allows `draft`, `reversed` and `expired`;
+ * `marketing_requests` also allows `pending_validation`; and `v2_vacation_requests` DOES have
+ * `returned` while it never had `cancelled`. The direct-order misses were the dangerous ones,
+ * because this system does not clear its rungs when a request reaches a terminal state — 27
+ * rejected, 20 returned and 3 cancelled direct orders carried a `pending` step on the day this was
+ * written — so a reversed or expired order with a resigned name still on a rung would have been
+ * reported as stuck. The vacation miss was the opposite: a returned vacation request whose employee
+ * has resigned was read as awaiting an approver, found no pending rung, and vanished.
+ */
+export const REQUEST_STATUS_VOCABULARY: Record<OrphanedRequestModule, readonly string[]> = {
+  marketing: ["draft", "pending_validation", "pending_approval", "returned", "rejected", "approved", "active", "roi_tracking", "closed", "finance_hold", "archived", "cancelled"],
+  "direct-order": ["draft", "pending_approval", "approved", "rejected", "returned", "reversed", "held", "expired", "cancelled"],
+  vacation: ["needs_assignment", "pending_manager", "pending_hr", "approved", "rejected", "returned"],
+};
+
 /** Statuses that mean "handed back to the requester to edit", per module. The actor is the requester. */
-const BACK_WITH_REQUESTER: Record<OrphanedRequestModule, readonly string[]> = {
+export const BACK_WITH_REQUESTER: Record<OrphanedRequestModule, readonly string[]> = {
   marketing: ["returned"],
   "direct-order": ["returned"],
-  vacation: [],
+  vacation: ["returned"],
 };
 
 /**
  * Statuses that are finished OR deliberately paused — neither awaits an actor, so they are never
- * candidates. Everything else on a module is treated as awaiting its active-rung approver.
+ * candidates. `draft` belongs here on every module: nobody is waiting on an unsubmitted request.
  */
-const NO_ACTOR_EXPECTED: Record<OrphanedRequestModule, readonly string[]> = {
+export const NO_ACTOR_EXPECTED: Record<OrphanedRequestModule, readonly string[]> = {
   marketing: ["draft", "approved", "active", "roi_tracking", "closed", "finance_hold", "archived", "cancelled", "rejected"],
-  "direct-order": ["approved", "rejected", "cancelled", "held"],
-  vacation: ["approved", "rejected", "cancelled"],
+  "direct-order": ["draft", "approved", "rejected", "cancelled", "held", "reversed", "expired"],
+  vacation: ["approved", "rejected"],
 };
+
+/**
+ * Statuses that await a decision — the actor is the approver on the active rung. Stated explicitly
+ * rather than left as "everything else", so that adding a status to a chain cannot quietly change
+ * what this module does with it.
+ */
+export const AWAITING_APPROVER: Record<OrphanedRequestModule, readonly string[]> = {
+  marketing: ["pending_approval"],
+  "direct-order": ["pending_approval"],
+  vacation: ["needs_assignment", "pending_manager", "pending_hr"],
+};
+
+/** What a status means for this module: who, if anyone, is the next actor. */
+export type StatusClass = "terminal" | "requester" | "approver";
+
+/**
+ * Classify one parent status. 🔴 **An unrecognised status THROWS**, and the caller turns that into
+ * the board's amber "could not be read" row. It is the only honest third answer: guessing `terminal`
+ * would hide a genuinely stranded request behind a status nobody taught this module, and guessing
+ * `approver` would invent a stuck request out of one. A new status in any of the three chains must
+ * be added to the vocabulary and to exactly one of the three tables above.
+ */
+export function classifyStatus(module: OrphanedRequestModule, status: string): StatusClass {
+  const value = status.trim().toLowerCase();
+  if (NO_ACTOR_EXPECTED[module].includes(value)) return "terminal";
+  if (BACK_WITH_REQUESTER[module].includes(value)) return "requester";
+  if (AWAITING_APPROVER[module].includes(value)) return "approver";
+  throw new Error(
+    `orphaned-requests: ${module} has a status this module does not classify: "${status}". ` +
+      `Add it to REQUEST_STATUS_VOCABULARY and to exactly one of NO_ACTOR_EXPECTED, ` +
+      `BACK_WITH_REQUESTER or AWAITING_APPROVER before the board can report on it.`,
+  );
+}
 
 type ParentRow = { id: string; status: string | null; actorHrId: string | null; updatedAt: string | null };
 
@@ -217,29 +272,17 @@ function candidatesForModule(
   parents: readonly ParentRow[],
   resolveApprover: (requestId: string) => string | null,
 ): OrphanedRequestCandidate[] {
-  const backWith = new Set(BACK_WITH_REQUESTER[module]);
-  const finished = new Set(NO_ACTOR_EXPECTED[module]);
   const candidates: OrphanedRequestCandidate[] = [];
   for (const parent of parents) {
     const status = String(parent.status ?? "").trim().toLowerCase();
-    if (finished.has(status)) continue;
-    if (backWith.has(status)) {
-      candidates.push({
-        module,
-        requestKey: parent.id,
-        status,
-        actorRole: "requester",
-        actorHrId: parent.actorHrId,
-        oldestAt: parent.updatedAt,
-      });
-      continue;
-    }
+    const kind = classifyStatus(module, status);
+    if (kind === "terminal") continue;
     candidates.push({
       module,
       requestKey: parent.id,
       status,
-      actorRole: "approver",
-      actorHrId: resolveApprover(parent.id),
+      actorRole: kind,
+      actorHrId: kind === "requester" ? parent.actorHrId : resolveApprover(parent.id),
       oldestAt: parent.updatedAt,
     });
   }
@@ -262,7 +305,7 @@ export async function findOrphanedRequests(
   if (marketingParents.error) throw marketingParents.error;
   const marketingRows = (marketingParents.data ?? []) as Array<{ id: string; status: string | null; requester_hr_id: string | null; updated_at: string | null }>;
   const marketingAwaiting = marketingRows
-    .filter((row) => !new Set(BACK_WITH_REQUESTER.marketing).has(String(row.status ?? "").trim().toLowerCase()))
+    .filter((row) => classifyStatus("marketing", String(row.status ?? "")) === "approver")
     .map((row) => row.id);
   const marketingCurrent = marketingAwaiting.length
     ? await supabase
@@ -291,7 +334,7 @@ export async function findOrphanedRequests(
   if (directParents.error) throw directParents.error;
   const directRows = (directParents.data ?? []) as Array<{ id: string; status: string | null; requester_hr_id: string | null; updated_at: string | null }>;
   const directAwaiting = directRows
-    .filter((row) => !new Set(BACK_WITH_REQUESTER["direct-order"]).has(String(row.status ?? "").trim().toLowerCase()))
+    .filter((row) => classifyStatus("direct-order", String(row.status ?? "")) === "approver")
     .map((row) => row.id);
   const directSteps = directAwaiting.length
     ? await supabase
@@ -316,11 +359,14 @@ export async function findOrphanedRequests(
     .not("status", "in", `(${NO_ACTOR_EXPECTED.vacation.join(",")})`);
   if (vacationParents.error) throw vacationParents.error;
   const vacationRows = (vacationParents.data ?? []) as Array<{ id: string; status: string | null; employee_hr_id: string | null; updated_at: string | null }>;
-  const vacationSteps = vacationRows.length
+  const vacationAwaiting = vacationRows
+    .filter((row) => classifyStatus("vacation", String(row.status ?? "")) === "approver")
+    .map((row) => row.id);
+  const vacationSteps = vacationAwaiting.length
     ? await supabase
         .from("v2_vacation_approval_steps")
         .select("request_id, step_order, approver_hr_id, status")
-        .in("request_id", vacationRows.map((row) => row.id))
+        .in("request_id", vacationAwaiting)
     : { data: [], error: null };
   if (vacationSteps.error) throw vacationSteps.error;
   const vacationApproverByRequest = earliestPendingApprover(
