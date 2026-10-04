@@ -2389,7 +2389,7 @@ export function EmployeePortalChrome({
       },
     );
     return list;
-  }, [currentRow, focusMode, navigate, pinnedHrefs, sections, setPinnedHrefs, visibility, wideScreen]);
+  }, [currentRow, focusMode, navigate, pinnedHrefs, setPinnedHrefs, visibility, wideScreen]);
 
   return (
     <RouteTransitionProvider>

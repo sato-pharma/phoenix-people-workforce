@@ -1410,7 +1410,6 @@ export async function runClosingEngineExportTests() {
     const opened = await JSZip.loadAsync(reviewBook);
     const workbook = await opened.file("xl/workbook.xml")!.async("string");
     const wbRels = await opened.file("xl/_rels/workbook.xml.rels")!.async("string");
-    const stylesXml = await opened.file("xl/styles.xml")!.async("string");
     const target = Object.fromEntries(
       [...wbRels.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]+)"/g)].map((m) => [m[1], m[2]]),
     );
@@ -1613,10 +1612,6 @@ export async function runClosingEngineExportTests() {
       return target ? `xl/${target.replace(/^\//, "")}` : null;
     })();
     assert.ok(overviewPart && opened.file(overviewPart), `${label}: the Overview sheet must be resolvable`);
-    const overviewXml = await opened.file(overviewPart!)!.async("string");
-    const overviewStyles = new Set(
-      [...overviewXml.matchAll(/<c r="[A-Z]+\d+"[^>]*?\bs="(\d+)"/g)].map((m) => m[1]),
-    );
 
     const titleStyle = /<row r="1"[^>]*>(?:(?!<\/row>)[\s\S])*?<c r="A1" s="(\d+)"/.exec(sheet)?.[1];
     assert.ok(titleStyle, `${label}: the contents page must carry a masthead on row 1`);

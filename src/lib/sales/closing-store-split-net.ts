@@ -32,7 +32,6 @@
 import { unstable_cache } from "next/cache.js";
 
 import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
-import type { SplitRegions } from "@/lib/sales/store-sales-city-split";
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";

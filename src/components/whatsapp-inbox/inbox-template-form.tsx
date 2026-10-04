@@ -66,7 +66,7 @@ export function InboxTemplateForm({
     };
   }, [line]);
 
-  const templates = state.kind === "ready" ? state.templates : [];
+  const templates = useMemo(() => (state.kind === "ready" ? state.templates : []), [state]);
   const selected = useMemo(() => templates.find((template) => templateKey(template) === selectedKey) ?? null, [selectedKey, templates]);
   const missing = selected ? missingTemplateFields(selected, values) : [];
   const preview = selected ? renderInboxTemplate(selected, values) : "";

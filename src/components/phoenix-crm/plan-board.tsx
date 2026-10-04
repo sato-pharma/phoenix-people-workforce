@@ -124,7 +124,7 @@ import {
   type WeekContent,
   type WeekDraft,
 } from "@/lib/phoenix-crm/plan-week-draft";
-import type { PhoenixCrmDoctorListType, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 import type { MonthlyPlannerView, MonthlyWeekView, SavedPlan } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 

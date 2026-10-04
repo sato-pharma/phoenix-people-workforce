@@ -34,7 +34,6 @@ function read(rel: string) {
 }
 
 const VISIBILITY = "../src/lib/direct-orders/validation-visibility.ts";
-const GAP = "../src/lib/direct-orders/field-evidence-gap.ts";
 const VALIDATION = "../src/lib/direct-orders/pharmacy-validation.ts";
 const SERVICE = "../src/lib/direct-orders/service.ts";
 const LINE = "../src/components/validation/not-field-validated-line.tsx";

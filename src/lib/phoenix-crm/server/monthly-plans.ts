@@ -36,7 +36,7 @@
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
-import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
 import {
   boardLeadingWeek,
@@ -120,7 +120,7 @@ import {
 } from "@/lib/phoenix-crm/server/plans";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PlannerCustomer, PlannerInsight } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 

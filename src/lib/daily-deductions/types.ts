@@ -17,8 +17,6 @@
 // exclusion, the manager/zero-signal exclusions, the vacation double-charge
 // guards) is inherited rather than re-implemented.
 
-import type { DeductionsCategory } from "@/lib/deductions/types.ts";
-
 export type { DeductionsCategory } from "@/lib/deductions/types.ts";
 
 /** The daily module counts every automated category the month module collects. */

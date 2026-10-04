@@ -50,7 +50,6 @@ import {
   findPartSplitConflicts,
 } from "./part-split-conflict.ts";
 import {
-  describeModuleDrift,
   detectModuleDrift,
   mergeModuleDrift,
   MODULE_SOURCED_STEP_KEYS,

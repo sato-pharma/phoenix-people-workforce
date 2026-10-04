@@ -16,6 +16,8 @@
 import "next/link";
 
 declare module "next/dist/client/link" {
+  // The type parameter must keep Next's own name for the declaration to merge.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface LinkProps<RouteInferType> {
     /** Upgrade to a full prefetch on hover or touch — see next/dist/client/app-dir/link. */
     unstable_dynamicOnHover?: boolean;

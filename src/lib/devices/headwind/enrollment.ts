@@ -33,7 +33,6 @@ const EXTRAS_KEY = "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE";
 
 /** The agent's own keys inside the extras bundle, as the Headwind console writes them. */
 const BASE_URL_KEY = "com.hmdm.BASE_URL";
-const PROJECT_KEY = "com.hmdm.SERVER_PROJECT";
 const CONFIG_KEY = "com.hmdm.CONFIG";
 
 export class HeadwindEnrollmentError extends Error {
