@@ -1335,3 +1335,51 @@ redactor is worse than no branch: it reads like a protection while never running
 `APP_PASSWORD_CLEAR_CALIBRATED` stays `false`. The next live run fills `existingList`, `removeOne`
 and `emptyState` from the paths. `removeConfirm` needs one real removal to be observed at all,
 which is a decision about a live mailbox and not a thing a session takes on its own.
+
+## The rehearsal: why the fourth placeholder needs a credential minted to be seen
+
+`removeConfirm` is not a wording nobody looked up. It is a control that **does not exist on the page
+until Remove has been pressed**. So the 2026-10-04 10:30 capture filling three of four was not a
+shortfall in that run — every future read of an untouched page would fill exactly the same three.
+
+`rehearseAppPasswordRemoval` is the only way through: mint one app password on Phoenix's own invite
+inbox, capture the page at four stages, then remove it.
+
+| stage | what it is for |
+| --- | --- |
+| `before` | the empty state |
+| `listed` | the entry row and its remove control |
+| `confirming` | captured **between** pressing Remove and answering it — the only place the confirm exists |
+| `after` | should read like `before` again |
+
+Every stage is returned even when a later one fails, because a run that minted but could not remove
+still carries three of the four placeholders, and discarding them to report a failure would waste
+the credential it spent.
+
+### The three things that had to be right
+
+**The address guard is the first statement in the function, before a browser exists.** A guard after
+the sign-in would still be correct and still be wrong: by then the run has committed a live session
+to a mailbox. It compares against `TURBIFY_INVITE_RECIPIENT` and refuses everything else — the route
+never passes an address at all, and a test reads the call's actual argument rather than banning two
+spellings of reading one off the body. That matters: the first version of that test banned
+`body.address` and `body?.address`, and a break using `(body as { address?: string }).address`
+sailed straight through it.
+
+**`outstanding` means a working credential is adrift.** Two failures look alike and are not: failing
+to press Generate leaves nothing behind, failing to answer the confirm leaves a live app password on
+the mailbox. Reporting only `removed: false` would read as "nothing happened" — the opposite of the
+truth. The flag, the audit summary and the card all say it in words, and a test pins that the prose
+and the flag agree in every early return, because prose is read once by a person and the flag is
+read for ever by everything else.
+
+**A throw records `outstanding: null`, never `false`.** If the run threw after minting, claiming
+nothing is outstanding is a claim that path cannot support.
+
+### What the first run is expected to do
+
+🔴 **Fail at the confirm, and that is a success.** Every wording in `removeConfirm` is a guess —
+nothing has ever seen that control — so the fail-closed list will probably match nothing, leaving a
+live app password on the invite inbox and saying so loudly. The `confirming` reading is what the run
+is buying, and it is what replaces the guesses. Phoenix's own inbox is the one mailbox where that
+outcome costs nobody their mail.

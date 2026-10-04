@@ -76,7 +76,54 @@ export type JoinerConsoleDriver = {
    * screen" is an ANSWER (its password is a one-time one) and not a control to hunt for.
    */
   describeAppPasswords: (input: { address: string; password: string }) => Promise<AppPasswordPageReading>;
+  /**
+   * Mint one app password, read the page at every stage, then remove it again.
+   *
+   * 🔴 THE ONLY WAY `removeConfirm` CAN EVER BE SEEN. The other three placeholders are readable off
+   * a page that merely HAS app passwords; the confirm exists only in the moment between pressing
+   * Remove and answering it. No amount of reading an untouched page produces it — which is why the
+   * read-only capture filled three of four and then stopped, and why re-running it would not have
+   * helped however many times it was tried.
+   *
+   * 🔴 HARD-SCOPED TO THE INVITE INBOX, AND NOT BY CONVENTION — the implementation refuses any
+   * other address before it opens a browser. This mints a real credential on a real mailbox and
+   * then destroys it, so the one mailbox it may do that to is Phoenix's own, which holds nobody's
+   * mail. An address parameter that could name an employee is one typo away from cutting off the
+   * phone of somebody still working.
+   *
+   * Not in `JOINER_STEP_ORDER`, and a test fails if it is ever wired into the sweep.
+   */
+  rehearseAppPasswordRemoval: (input: { address: string; password: string }) => Promise<AppPasswordRehearsal>;
   close: () => Promise<void>;
+};
+
+/**
+ * What a mint-read-remove rehearsal comes back with: four readings and what actually happened.
+ *
+ * Each stage is a full `AppPasswordPageReading`, so the calibration survives a run that stops
+ * early — a rehearsal that minted but could not remove still carries the list and the remove
+ * control, which is three of the four placeholders.
+ */
+export type AppPasswordRehearsal = {
+  /** The page before anything was minted — the empty state, if the mailbox had none. */
+  before: AppPasswordPageReading;
+  /** After minting. The entry row and its remove control are visible here, and nowhere else. */
+  listed: AppPasswordPageReading;
+  /** After pressing Remove and BEFORE answering it. The one place the confirm control exists. */
+  confirming: AppPasswordPageReading;
+  /** After the removal was answered. Should read like `before` again. */
+  after: AppPasswordPageReading;
+  minted: boolean;
+  removed: boolean;
+  /**
+   * 🔴 TRUE WHEN A MINTED APP PASSWORD IS STILL LIVE ON THE MAILBOX AND A HUMAN MUST REMOVE IT.
+   *
+   * The whole point of saying this loudly: a rehearsal that mints and then cannot press an
+   * unknown confirm has left a working credential behind. Reporting "removed: false" alone would
+   * be read as "nothing happened", which is the opposite of the truth.
+   */
+  outstanding: boolean;
+  why: string | null;
 };
 
 /** What a read-only capture of the app-passwords page comes back with. Never a credential. */
@@ -132,6 +179,29 @@ export function createDryRunJoinerDriver(domain = "satopharma.com"): JoinerConso
         reached: false,
         redacted: 0,
         why: `Dry run: ${address} was never opened, so no control was read.`,
+      };
+    },
+    async rehearseAppPasswordRemoval({ address }) {
+      calls.push(`rehearseAppPasswordRemoval:${address}`);
+      const nothing = (stage: string): AppPasswordPageReading => ({
+        controls: [],
+        observed: 0,
+        reached: false,
+        redacted: 0,
+        why: `Dry run: ${address} was never opened, so ${stage} was never read.`,
+      });
+      // 🔴 `minted` AND `outstanding` ARE BOTH FALSE, and that pair is the honest dry-run answer:
+      // nothing was created, so nothing is outstanding. A dry run that reported `minted: true`
+      // would make the one field that means "a live credential is loose" untrustworthy.
+      return {
+        after: nothing("the page after removal"),
+        before: nothing("the page before minting"),
+        confirming: nothing("the confirm step"),
+        listed: nothing("the page after minting"),
+        minted: false,
+        outstanding: false,
+        removed: false,
+        why: `Dry run: no app password was minted on ${address} and nothing was removed.`,
       };
     },
     async close() { calls.push("close"); },

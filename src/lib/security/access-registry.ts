@@ -1545,6 +1545,7 @@ export const accessRegistry = [
   // is the same `canReadInitialPassword` audience as adoption rather than a read-level one. Audited
   // as a mutation for the same reason: a sign-in to a live mailbox is worth a record of who asked.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/new-hire-mailboxes/app-password-controls", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/new-hire-mailboxes/app-password-rehearsal", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Company device register. The GET returns, per employee, the serial or IMEI of the machine he
   // carries and what the company values it at — a shopping list if it were readable company-wide,
   // which is why `company_devices` is its own resource rather than a corner of `sales` or `team`.

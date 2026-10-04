@@ -96,6 +96,19 @@ function spyDriver(failAt?: "createMailbox" | "setMailboxPassword" | "generateAp
       calls.push(`describeAppPasswords:${address}`);
       return { controls: [], observed: 0, reached: false, redacted: 0, why: "spy driver: nothing was read" };
     },
+    // 🔴 THE MINT-AND-REMOVE REHEARSAL, WHICH NEITHER PATH MAY EVER REACH. It creates a real
+    // credential on a real mailbox; a sweep or an adoption run that called it would mint one on
+    // somebody's live mailbox. It is here only so this spy satisfies the driver contract, and the
+    // whole-sequence call-list assertions below are what prove nothing calls it.
+    async rehearseAppPasswordRemoval({ address }) {
+      calls.push(`rehearseAppPasswordRemoval:${address}`);
+      const nothing = { controls: [], observed: 0, reached: false, redacted: 0, why: "spy driver: nothing was read" };
+      return {
+        after: nothing, before: nothing, confirming: nothing, listed: nothing,
+        minted: false, outstanding: false, removed: false,
+        why: "spy driver: nothing was minted and nothing was removed",
+      };
+    },
     async close() { calls.push("close"); },
   };
 }
