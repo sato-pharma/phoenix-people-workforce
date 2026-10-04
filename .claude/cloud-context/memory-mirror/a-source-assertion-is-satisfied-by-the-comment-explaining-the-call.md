@@ -1,11 +1,11 @@
 ---
 name: a-source-assertion-is-satisfied-by-the-comment-explaining-the-call
-description: "A test asserting source `includes(\"someCall()\")` is passed by the COMMENT that documents the call, so deleting the call stays green — assert against comment-stripped source, assert the selector rather than the key, and join `\" + \"` seams, because a phrase split across one hides from a negative assertion even after whitespace is collapsed; and a QUOTED-ONLY positive check (`includes('\"' + name + '\"')`) is blind to the same name inside a backtick template, so measure whether a bare substring is safe and use that."
+description: "A test asserting source `includes(\"someCall()\")` is passed by the COMMENT that documents the call, so deleting the call stays green — assert against comment-stripped source, assert the selector rather than the key, and join `\" + \"` seams, because a phrase split across one hides from a negative assertion even after whitespace is collapsed; a QUOTED-ONLY positive check (`includes('\"' + name + '\"')`) is blind to the same name inside a backtick template, so measure whether a bare substring is safe and use that; and SLICING a region is not a defence by itself — a window reaching a second call site of the same function passed while the first was deleted, so end the slice on a marker the behaviour must produce."
 metadata:
   node_type: memory
   type: project
   originSessionId: 49c63508-cfb2-4e16-af62-0961f3808359
-  modified: 2026-10-03T21:32:32.191Z
+  modified: 2026-10-04T04:28:57.282Z
 ---
 
 A source assertion of the form `assert.ok(source.includes("someCall()"))` does not prove the call
@@ -95,9 +95,22 @@ bare check over the wrong file is a false alarm: the same sweep found "What the 
 legitimately in `reports-tab.tsx` while no title appeared at all in the workbook file the guard
 reads. With the bare check the break fired on its own message.
 
+**A sixth, and the one that is easiest to feel safe about: the REGION YOU SLICED contains another
+call site of the same function.** 2026-10-04, the app-password capture. To prove a failed run writes
+an audit row I sliced the route from `const driver = await createJoinerDriverFromEnv()` to the
+success `return NextResponse.json({ result:` and asserted `/writeAuditLog\(/` inside it — but the
+SUCCESS path's own `writeAuditLog` sits in that same window, so deleting the failure audit entirely
+left the suite GREEN. Slicing is the standard defence against the other five shapes, which is
+exactly why it reads as rigour; the slice is only as good as its END. Fixed by ending it at the
+`throw error;` that the failure path must carry, which doubles as the rethrow assertion — its
+absence fires there instead of silently widening the slice. 🔴 **So after slicing, ask the same
+question of the region that you asked of the file: what else in HERE satisfies this?** And prefer an
+end marker that the behaviour itself must produce.
+
 **So the family is: comment, object key, conditional guard — three things that hold the string while
 the behaviour is gone — plus the concatenation seam, which hides the string while the behaviour is
-still there, plus the quoting that narrows the needle to one of four syntaxes.** Ask what ELSE in the file contains this text, and whether the text is even contiguous,
+still there, plus the quoting that narrows the needle to one of four syntaxes, plus a slice whose
+window reaches a second call site.** Ask what ELSE in the file contains this text, and whether the text is even contiguous,
 before trusting any source assertion in either direction.
 
 Related: [[a-break-that-passes-may-be-rescued-not-correct]] is the same lesson one level up — a

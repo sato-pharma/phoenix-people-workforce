@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 1bbd035a-c8cc-4430-9c07-798a09c9000e
-  modified: 2026-10-03T22:28:59.672Z
+  modified: 2026-10-04T04:28:19.170Z
 ---
 
 🔴 **FIXED FOR ANYTHING AFTER 2026-10-03, at the owner's instruction ("record the refused readings so
@@ -19,7 +19,9 @@ nothing backfills.
 🔴 **AND IT HAS A SCREEN SINCE 2026-10-04 — `/admin/phoenix-crm/refused-readings`, the Super Admin's and
 the SFE Manager's** (owner: "build the refused readings view for the SFE"). It lists the last 14 days
 per rep and whether each customer he was refused on was later SAVED; the phone's mock-location answer
-shows for the Super Admin only. Read it before opening SQL. Logic is
+shows for the Super Admin only. **Each refusal also shows the PHOTO the phone sent (owner 2026-10-04,
+"show the refused photo on the refused-readings page") to both readers, signed through the scoped photo
+route; a row with no kept pointer reads "None kept".** Read it before opening SQL. Logic is
 `src/lib/phoenix-crm/refused-readings-rules.ts`, reader `server/refused-readings-board.ts`.
 
 `phoenix_crm_location_integrity` is written **only when a place or visit actually SAVES**, so a
