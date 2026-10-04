@@ -19,9 +19,12 @@ import {
   CONTROL_READ_EXPRESSION,
   CONTROL_REPORT_ENV,
   controlReportEnabled,
+  looksLikePathWord,
   looksLikeSecret,
   MAX_LABEL_LENGTH,
+  MAX_SELECTOR_LENGTH,
   redactLabel,
+  redactSelector,
   SECRET_LIKE_MIN_LENGTH,
   type ObservedControl,
 } from "../src/lib/turbify/control-report.ts";
@@ -142,9 +145,115 @@ function runReadExpressionCases(): void {
   assert.doesNotMatch(CONTROL_READ_EXPRESSION, /\.click\(|submit\(/, "the reader must never act on the page");
 }
 
+/**
+ * The structural path — added 2026-10-04 so `existingList` and `emptyState` can be calibrated.
+ *
+ * Those two controls are plain TEXT on a page whose text is a credential, so the reader is
+ * forbidden to read them and the first live run filled one placeholder of four. A path names them
+ * from attributes alone. These cases hold that bargain: the path must carry no secret, and it must
+ * not have quietly become a second way to read the page.
+ */
+function runSelectorCases(): void {
+  // 🔴 FIRST, THE RULE `redactLabel` COULD NOT HAVE ENFORCED — and the reason these are two
+  // functions. A path has no whitespace inside a segment, so `redactLabel` would judge even an
+  // innocent one as a single long token and drop the WHOLE path, taking the locator with it.
+  // Asserted before anything else so that collapsing the split is caught HERE, by the case that
+  // explains it, rather than further down by a match that only looks like a different fault.
+  assert.equal(looksLikeSecret("div.app-password-row"), true,
+    "a perfectly innocent path segment is long and space-free, i.e. secret-SHAPED");
+  assert.equal(redactSelector("div.list > div.app-password-row > button.x", []),
+    "div.list > div.app-password-row > button.x",
+    "the path must survive the shape rule that would have eaten it whole as one label");
+
+  // 🔴 AND A LONG ENGLISH WORD INSIDE A CLASS SURVIVES TOO. `notifications` is 13 characters with
+  // no space, so the bare shape rule drops it and the path loses the only class worth having.
+  // This is the case that made `looksLikePathWord` necessary rather than nice.
+  assert.equal(looksLikeSecret("notifications"), true, "13 characters, no space — secret-SHAPED");
+  assert.equal(looksLikePathWord("notifications"), true, "...but spelled like English");
+  assert.equal(redactSelector("div.notifications-panel > button", []), "div.notifications-panel > button",
+    "an ordinary long word in a class must not be mistaken for a credential");
+
+  // The discriminator in both directions, so it cannot be widened into uselessness.
+  assert.equal(looksLikePathWord(MINTED), false, "vowel-starved: not a word");
+  assert.equal(looksLikePathWord("ZmFrZS1zZWNyZXQ"), false, "mixed case and a digit: not a word");
+  assert.equal(looksLikePathWord("app"), true);
+
+  // 🔴 A DROPPED PART IS REMOVED, NOT MARKED. A marker would name a class that does not exist, so
+  // the path would stop being a selector at the exact moment it is pinned as one.
+  const withSecretId = redactSelector(`div#pw-${MINTED} > button.rm`, [MINTED]) ?? "";
+  assert.doesNotMatch(withSecretId, /redacted/, "no marker is left inside a path");
+  assert.equal(withSecretId, "div > button.rm", "the path stays a usable selector after the drop");
+
+  // 🔴 THE EXACT-MATCH BRANCH, ON ITS OWN. This secret is 10 characters, so the shape rule does
+  // NOT reach it — only the secrets the caller passed do. Without a case this short the exact match
+  // could be deleted outright and every other assertion here would still pass, because the minted
+  // password is long enough to be caught twice over.
+  assert.equal(looksLikeSecret(MAILBOX_PASSWORD), false, "too short for the shape rule to see");
+  const shortInPath = redactSelector(`div#${MAILBOX_PASSWORD} > button.rm`, [MAILBOX_PASSWORD]) ?? "";
+  assert.equal(shortInPath.includes(MAILBOX_PASSWORD), false,
+    "a secret too short for the shape rule must still be removed from the path by exact match");
+
+  // THE HEADLINE, AGAIN, FOR THE PATH. An id or a class is an ordinary place for a credential row
+  // to put the credential.
+  const pathWithSecret = `div#pw-${MINTED} > button.remove:nth-of-type(2)`;
+  const cleaned = redactSelector(pathWithSecret, [MINTED]) ?? "";
+  assert.equal(cleaned.toLowerCase().includes(MINTED.toLowerCase()), false,
+    "a secret sitting in an id must not survive in the path");
+  // What is left still locates the button, which is the entire value of keeping it.
+  assert.match(cleaned, /button\.remove:nth-of-type\(2\)/);
+
+  // A secret nobody passed is dropped on shape alone, exactly as a label would be.
+  const unknownId = "div#ZmFrZS1zZWNyZXQtdmFs > button";
+  assert.equal((redactSelector(unknownId, []) ?? "").includes("ZmFrZS1zZWNyZXQtdmFs"), false,
+    "a secret-shaped id must be dropped without being named as a secret");
+
+  // Nothing usable left means no path at all, rather than a row of [redacted] that reads located.
+  assert.equal(redactSelector(MINTED, [MINTED]), null,
+    "a path that was nothing but the secret must be omitted, not emitted as [redacted]");
+  assert.equal(redactSelector("", []), null);
+  assert.equal(redactSelector(null, []), null);
+
+  // Long paths are capped.
+  const long = `${"div.a > ".repeat(60)}button`;
+  assert.ok((redactSelector(long, []) ?? "").length <= MAX_SELECTOR_LENGTH);
+
+  // 🔴 THE AMBIGUITY THE FIRST RUN LEFT BEHIND, closed. Two Remove buttons used to collapse into
+  // one line, so one app password and five printed identically — which is why `existingList` could
+  // not be told from `emptyState`. Pathed, they stay apart and the count is readable.
+  const twoEntries: ObservedControl[] = [
+    { name: "", role: "button", selector: "div.list > div.row:nth-of-type(1) > button.rm", siblings: 2, text: "Remove" },
+    { name: "", role: "button", selector: "div.list > div.row:nth-of-type(2) > button.rm", siblings: 2, text: "Remove" },
+  ];
+  const listed = buildControlReport("app-passwords", twoEntries, [MINTED]);
+  assert.equal(listed.controls.length, 2, "two entries must report as two, not collapse into one");
+  assert.equal(listed.controls.filter((l) => l.includes("×2")).length, 2, "the sibling count rides along");
+
+  // A control with no path reports exactly as it always did — the old shape is untouched.
+  const pathless = buildControlReport("app-passwords", [{ name: "", role: "button", text: "Generate" }], []);
+  assert.deepEqual(pathless.controls, ["button: Generate"]);
+}
+
+function runReadExpressionSelectorCases(): void {
+  // The reader builds the path from ATTRIBUTES, never from text.
+  assert.match(CONTROL_READ_EXPRESSION, /nth-of-type/);
+  assert.match(CONTROL_READ_EXPRESSION, /parentElement/);
+  assert.match(CONTROL_READ_EXPRESSION, /selector: pathOf\(el\)/);
+
+  // 🔴 AND THE BARGAIN THE PATH WAS ALLOWED ON: it added no second reading of the page's text.
+  // `textContent` is read exactly once, in the one capped place it was already read.
+  const reads = CONTROL_READ_EXPRESSION.match(/textContent/g) ?? [];
+  assert.equal(reads.length, 1, "the path must not have introduced a second read of the page's text");
+  assert.doesNotMatch(CONTROL_READ_EXPRESSION, /\.value\b/, "still never an input's value");
+  assert.doesNotMatch(CONTROL_READ_EXPRESSION, /innerText|outerHTML|document\.body/,
+    "still never a container's rendered text or markup");
+  assert.doesNotMatch(CONTROL_READ_EXPRESSION, /\.click\(|submit\(/, "the reader must never act on the page");
+}
+
 export function runTurbifyControlReportTests(): void {
   runRedactionCases();
   runReportCases();
   runFlagCases();
   runReadExpressionCases();
+  runSelectorCases();
+  runReadExpressionSelectorCases();
 }

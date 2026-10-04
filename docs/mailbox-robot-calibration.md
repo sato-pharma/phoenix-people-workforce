@@ -1258,3 +1258,80 @@ repo-wide ban on the article-bearing form would have demanded a change next door
 message worse. Seven breaks, seven fired on their own messages — and break E had to **shadow** rather
 than replace, because swapping the stripped subject back out fires the positive assertion one line
 earlier, which is the right assertion under a different wording rather than a misaim.
+
+## The structural path, and why the first live run could only fill one placeholder of four
+
+The 2026-10-04 10:30 Cairo run is the first that ever reached the App Passwords page of
+`hr.mailbox@satopharma.com` and read it. It succeeded — `failed: false`, `reached: true`, 22
+controls, 0 dropped as credential-shaped — and the audit row carries the lot. The section opener it
+had been failing on, `APP Password Manage App Passwords`, worked on the first attempt.
+
+What it found:
+
+```
+button: APP Password | APP [redacted] App Passwords
+button: Account Password | Account [redacted] Password
+button: Generate          button: Remove           button: Skip for now
+a: iPhone & iPad (iOS Mail) · Mac Mail Client · Android Email Setup · Microsoft Outlook / Office 365
+input: Text Input   input: mobileNum   a: Skip   button: save | Save
+a: Manage Cookies   button: Cookie Settings   button: Accept All
+```
+
+Against the four placeholders in `APP_PASSWORD_REVOKE_CONTROLS`, that fills exactly one:
+
+| placeholder | outcome |
+| --- | --- |
+| `removeOne` | `button: Remove` — observed |
+| `removeConfirm` | not observed; it exists only after a removal is actually pressed |
+| `existingList` | **unobservable by this capture, by design** |
+| `emptyState` | **unobservable by this capture, by design** |
+
+The last two are not a bad run and no amount of re-running fixes them.
+`CONTROL_READ_EXPRESSION` reads `button, a, [role], input, [aria-label]` and nothing else, under an
+explicit rule against reading a container's rendered text — because on a page that lists
+credentials, the container's text **is** the credential. Both of those controls are plain text. The
+rule that makes the capture safe is precisely the rule that blocks them.
+
+🔴 **So the absence of an entry row in that report proves nothing about whether the mailbox has an
+app password.** A reader who treats it as an empty-state reading is reading the scraper's blind
+spot as a fact about Turbify.
+
+### The path reads no text, which is why it was a safe way through
+
+`ObservedControl` now also carries a `selector` — a CSS path of at most three segments, built from
+**attributes only**: tag, id, class, `nth-of-type` position. Plus `siblings`, the count of
+same-tag siblings. Neither reads a character of text, so the capture gained no new way for a
+displayed password to escape, and `tests/turbify-control-report.test.ts` pins that `textContent`
+is still read exactly once.
+
+That is enough to name both missing controls without reading them: the entry rows are whatever
+contains the `Remove` buttons, and the empty state is that same container with none underneath. It
+is also what the four fields actually store — `{ label, selector }` — so a path, rather than a
+wording, is what they were waiting for all along.
+
+### Two things that had to be got right, both found by breaking them
+
+**`looksLikeSecret` is wrong about a path.** Its rule is "12 or more characters with no
+whitespace", which is the shape of every ordinary CSS identifier — `app-password-row` is 16, and
+`notifications` is 13. Applied to a path it redacts exactly the class names that make the path
+worth having. So a path token is split on `-` and `_` and each word judged separately, and a word
+that is spelled like English (all lower case, no digits, vowels at a normal rate) is exempt:
+`looksLikePathWord`. A minted password is vowel-starved or mixes case and digits, so it is not.
+
+**A dropped part is removed, not marked.** `div#[redacted] > button.rm` names a class that does not
+exist, so substituting a marker turns the path into a selector that can never match — at the exact
+moment somebody pins it as one. Dropping the part and its punctuation leaves `div > button.rm`,
+which is shorter, honest and still resolves.
+
+Eight breaks, eight fired on their own assertion. Two of them changed the code rather than
+confirming it: the English-word exemption exists because breaking the naive rule showed
+`notifications-panel` losing its class, and a guard for "something was dropped and no letters
+survive" was **deleted** when breaking it changed no test — it was unreachable, because a path
+always keeps its tag names and the empty case is caught one line earlier. A dead branch in a
+redactor is worse than no branch: it reads like a protection while never running.
+
+### What is still not calibrated
+
+`APP_PASSWORD_CLEAR_CALIBRATED` stays `false`. The next live run fills `existingList`, `removeOne`
+and `emptyState` from the paths. `removeConfirm` needs one real removal to be observed at all,
+which is a decision about a live mailbox and not a thing a session takes on its own.
