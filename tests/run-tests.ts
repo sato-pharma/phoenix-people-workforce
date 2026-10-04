@@ -94,6 +94,7 @@ import { runCandidateAssignedEmailBlockTests } from "./candidate-assigned-email-
 import { runOutstationRejectionEmailBlockTests } from "./outstation-rejection-email-block.test.ts";
 import { runCandidateSendAlertIdentityTests } from "./candidate-send-alert-identity.test.ts";
 import { runTelegramOperationsTests } from "./telegram-operations.test.ts";
+import { runTelegramWebhookOutcomeTests } from "./telegram-webhook-outcome.test.ts";
 import { runTelegramAdminControlCenterTests } from "./telegram-admin-control-center.test.ts";
 import { runEmailAdminControlCenterTests } from "./email-admin-control-center.test.ts";
 import { runTelegramTemplateManagementTests } from "./telegram-template-management.test.ts";
@@ -2494,6 +2495,10 @@ await runTest("active roster only (resigned reps never reach a board)", runActiv
 await runTest("leaver name hide (a resigned/terminated coach's name is withheld on the DV dashboard; manager-name filter set)", runLeaverNameHideTests);
 await runTest("acting District Manager landing never lists her own row (My Reps, Team Size, CRM board)", runActingDmLandingExcludesSelfTests);
 await runTest("telegram operations", runTelegramOperationsTests);
+await runTest(
+  "the Telegram webhook answers the person in the chat and logs every update — a successful connect is confirmed, a used, expired or replaced link is explained with the button that fixes it, a transient failure says nothing and is still retried, and no log line or reply carries a token, a chat id or a username (before 2026-10-04 a START press changed nothing anyone could see: fifteen connections sat pending, the last completed link was 9 Aug, and the server could not say whether START ever arrived)",
+  runTelegramWebhookOutcomeTests,
+);
 await runTest("telegram admin control center", runTelegramAdminControlCenterTests);
 await runTest("email admin control center", runEmailAdminControlCenterTests);
 await runTest("telegram template management", runTelegramTemplateManagementTests);
