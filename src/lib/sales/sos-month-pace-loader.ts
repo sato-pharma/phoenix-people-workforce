@@ -22,10 +22,11 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { currentCairoDateParts } from "@/lib/i18n/format";
-import { loadAreaNameMap, loadMonthlyAchievement, type AchievementRow } from "@/lib/sales/monthly-targets";
+import { loadAreaNameMap, type AchievementRow } from "@/lib/sales/monthly-targets";
 import { daysInPeriod } from "@/lib/sales/periods";
 import { salesLineCodeForOfficialLine } from "@/lib/sales/portal-targets";
 import { buildMonthPace, type MonthPaceResult } from "@/lib/sales/sos-month-pace";
+import { loadAchievementRange } from "@/lib/sales/vs-target";
 import { filterRowsForBound, resolveVsTargetBound, type VsTargetBound } from "@/lib/sales/vs-target-scope";
 import { getPortalWeeklyMonthFieldForce } from "@/lib/sales/weekly/portal-weekly-dashboard";
 import type { FieldForceProduct, FieldForceRep } from "@/lib/sales/weekly/portal-weekly-field-force";
@@ -160,7 +161,11 @@ export async function loadPortalMonthPace(input: {
   // A failed direct read fails the strip (the route hides it) rather than showing areas behind that are
   // not, and a failed area-name read fails it rather than labelling areas with their codes.
   const [achievement, bound, weekly, directRows, directInWeekly, areaNames] = await Promise.all([
-    loadMonthlyAchievement(period),
+    // The month through the achievement engine's token-keyed per-month cache (PERF-010, 2026-10-04)
+    // rather than a raw phx_monthly_achievement call on every render. Same function underneath —
+    // both RPCs return au.f_monthly_achievement(period) — and the rows the cached loader drops (no
+    // sales line) never passed the line check in buildPortalMonthPace anyway.
+    loadAchievementRange(period, period),
     resolveVsTargetBound(input.access),
     getPortalWeeklyMonthFieldForce(input.access, `${period}-01`).catch(() => null),
     rpcAll<ClosingDirectRow>(getSupabaseAdmin(), "phx_monthly_closing_direct", { p_line: input.line, p_period: period }, [

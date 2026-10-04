@@ -332,7 +332,12 @@ export function runVacationModuleTests() {
   // the piastre against the live RPC in tests/vacation-report-filter-equivalence.test.ts). Guard that
   // the per-request RPC call cannot silently return, and that the cached read + in-memory filter stay wired.
   assert.doesNotMatch(serviceSource, /\.rpc\("phx_vacation_report_rows"/);
-  assert.match(serviceSource, /unstable_cache\(\s*loadAllVacationRequestRowsRaw/);
+  // PERF-018: the base rows are cached PACKED (gzip + base64) so the entry stays under Next's 2MB limit.
+  assert.match(
+    serviceSource,
+    /unstable_cache\(\s*async \(\) => packVacationReportRows\(await loadAllVacationRequestRowsRaw\(\)\)/,
+    "the vacation base rows must stay cross-request cached, packed, from loadAllVacationRequestRowsRaw",
+  );
   assert.match(serviceSource, /filterVacationRowsInMemory\(scopedRows, input\.filters\)/);
   assert.match(serviceSource, /reviewVacationEvidence/);
   assert.match(serviceSource, /getVacationRequestTimeline/);

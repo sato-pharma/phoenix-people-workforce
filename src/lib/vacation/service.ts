@@ -113,6 +113,7 @@ import type {
 } from "@/lib/vacation/types";
 import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES, VACATION_TYPES, VACATION_WEEKLY_OFF_MODES } from "@/lib/vacation/types";
 import { filterVacationRowsInMemory } from "@/lib/vacation/report-filter";
+import { packVacationReportRows, unpackVacationReportRows } from "@/lib/vacation/report-rows-pack";
 import { resolveVacationInformedHrId } from "@/lib/vacation/informed-recipients";
 
 const vacationRequestsTable = "v2_vacation_requests";
@@ -5221,11 +5222,26 @@ async function loadAllVacationRequestRowsRaw(): Promise<VacationRequestDbRow[]> 
   return rows;
 }
 
-const loadAllVacationRequestRowsCached = unstable_cache(
-  loadAllVacationRequestRowsRaw,
-  ["vacation-report-all-rows"],
+// PACKED (PERF-018): the raw rows were 1.58MB of JSON on production and growing ~275KB a month
+// toward Next's 2MB data-cache limit, past which the write is silently skipped and the cache stops
+// existing. Gzipped + base64 they are a small fraction of that — see ./report-rows-pack. A NEW key,
+// so no entry written in the old shape is ever read back as a packed string.
+const loadAllVacationRequestRowsPacked = unstable_cache(
+  async () => packVacationReportRows(await loadAllVacationRequestRowsRaw()),
+  ["vacation-report-all-rows-packed"],
   { revalidate: VACATION_REPORT_ROWS_REVALIDATE_SECONDS, tags: [VACATION_REPORT_ROWS_CACHE_TAG] },
 );
+
+/**
+ * Every vacation request row, from the cross-request cache. A null pack means even compressed the
+ * rows would not fit, so they are read live rather than handing the cache an entry it would refuse;
+ * that null is itself cached for the TTL, so the next caller skips straight to the live read.
+ */
+async function loadAllVacationRequestRowsCached(): Promise<VacationRequestDbRow[]> {
+  const packed = await loadAllVacationRequestRowsPacked();
+  if (packed === null) return loadAllVacationRequestRowsRaw();
+  return unpackVacationReportRows<VacationRequestDbRow>(packed);
+}
 
 // The scope + WHERE-clause mirror of phx_vacation_report_rows lives in the pure, dependency-free
 // ./report-filter module (filterVacationRowsInMemory) so it can be unit-tested without loading this

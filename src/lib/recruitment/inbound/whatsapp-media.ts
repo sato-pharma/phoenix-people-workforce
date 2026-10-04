@@ -13,18 +13,29 @@ function accessToken(): string {
   return token;
 }
 
+// A fetch with no signal waits for ever on a socket Meta never answers, and the intake worker holding
+// it never reaches the next CV. The lookup is a small JSON reply; the download is a whole file, so it
+// gets the longer bound. A timeout rejects with a TimeoutError — a RETRYABLE failure, never the
+// terminal too-large one.
+export const MEDIA_LOOKUP_TIMEOUT_MS = 20_000;
+export const MEDIA_DOWNLOAD_TIMEOUT_MS = 120_000;
+
 type WhatsAppMediaUrlResponse = { url?: string; mime_type?: string; file_size?: number };
 
 // Thrown when Meta reports (or the actual bytes reveal) a media file over the accepted CV size. A
 // distinct type so the worker can treat it as TERMINAL (this file will never be a valid CV) rather
 // than a retryable download failure.
+// Plain fields rather than constructor parameter properties: the test runner loads TypeScript with
+// node's type STRIPPING, which refuses parameter properties, and this file is now under test.
 export class WhatsAppMediaTooLargeError extends Error {
-  constructor(
-    readonly sizeBytes: number,
-    readonly maxBytes: number,
-  ) {
+  readonly sizeBytes: number;
+  readonly maxBytes: number;
+
+  constructor(sizeBytes: number, maxBytes: number) {
     super(`WhatsApp media is ${sizeBytes} bytes, over the ${maxBytes}-byte limit.`);
     this.name = "WhatsAppMediaTooLargeError";
+    this.sizeBytes = sizeBytes;
+    this.maxBytes = maxBytes;
   }
 }
 
@@ -32,6 +43,7 @@ export class WhatsAppMediaTooLargeError extends Error {
 async function fetchWhatsAppMediaUrl(mediaId: string): Promise<{ url: string; mimeType: string; fileSize: number | null }> {
   const response = await fetch(`https://graph.facebook.com/${graphApiVersion()}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken()}` },
+    signal: AbortSignal.timeout(MEDIA_LOOKUP_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`WhatsApp media lookup failed (${response.status}) for media id ${mediaId}.`);
@@ -48,7 +60,10 @@ async function fetchWhatsAppMediaUrl(mediaId: string): Promise<{ url: string; mi
 
 /** Step 2: download the actual bytes from the short-lived URL (also bearer-authenticated). */
 async function downloadWhatsAppMediaBytes(url: string): Promise<Buffer> {
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken()}` } });
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken()}` },
+    signal: AbortSignal.timeout(MEDIA_DOWNLOAD_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error(`WhatsApp media download failed (${response.status}).`);
   }

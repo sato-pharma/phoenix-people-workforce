@@ -904,6 +904,44 @@ export function buildClosingPerformanceReview(input: {
 }
 
 /**
+ * The review's by-month series: one single-month matrix per period, narrowed, or null.
+ *
+ * REUSES A MONTH ALREADY READ (PERF-021, 2026-10-04). The selected month used to be read twice —
+ * once by `loadMergedMonthlyClosingParts` for the headline and again here for its own bar. A month in
+ * `byPeriod` is that first read's UNMERGED matrix for the same (line, period), so it is handed on as
+ * it is; it is reused only when its own `period` AND `line` are the ones this series would request,
+ * so the store split and line resolution are provably the same read. Never the folded `combined`:
+ * under a multi-month selection that is several months summed, and dropping it in would draw one
+ * bar carrying all of them. Every other month is loaded, and a load that falls back to the closing's
+ * default month (its own `period` is not the one asked for) gives null rather than duplicating a
+ * column under the wrong heading. A month that fails to load, or to narrow, renders as "not
+ * uploaded" rather than losing the other five. Nothing here mutates a matrix.
+ */
+export async function loadSeriesMatrices(input: {
+  byPeriod: ReadonlyMap<string, MonthlyClosingMatrix>;
+  line: string | null;
+  load: (period: string) => Promise<MonthlyClosingMatrix>;
+  narrow: (matrix: MonthlyClosingMatrix) => MonthlyClosingMatrix;
+  periods: string[];
+}): Promise<Array<{ matrix: MonthlyClosingMatrix | null; period: string }>> {
+  const { byPeriod, line, load, narrow, periods } = input;
+  return Promise.all(
+    periods.map(async (period) => {
+      try {
+        const already = byPeriod.get(period);
+        if (already && already.period === period && already.line === line) {
+          return { matrix: narrow(already), period };
+        }
+        const loaded = await load(period);
+        return { matrix: loaded.period === period ? narrow(loaded) : null, period };
+      } catch {
+        return { matrix: null, period };
+      }
+    }),
+  );
+}
+
+/**
  * Load the review for one (line, period), including the months behind it.
  *
  * Every month is read through `loadMonthlyClosingPartsWithStoreSplit` — the exact loader the
@@ -947,25 +985,16 @@ export async function loadClosingPerformanceReview(input?: {
     Math.max(2, input?.months ?? PERFORMANCE_REVIEW_MONTHS),
   );
 
+  const seriesLine = parts.combined.line;
   const [seatAssignments, seriesMatrices] = await Promise.all([
     loadAreaSeatAssignments(periodEndDate(parts.combined.period)),
-    Promise.all(
-      periods.map(async (period) => {
-        try {
-          const loaded = await loadMonthlyClosingPartsWithStoreSplit({ line: parts.combined.line, period });
-          // Guard against the loader falling back to its default month: a matrix for the wrong
-          // period would silently duplicate a column of the series under the wrong heading.
-          //
-          // Read fresh for EVERY month rather than reusing `parts.combined` for the selected one:
-          // under a multi-month selection that object is several months folded together, and
-          // dropping it into the series would draw one bar carrying the sum of all of them.
-          return { matrix: loaded.combined.period === period ? narrow(loaded.combined) : null, period };
-        } catch {
-          // One unreadable month must not lose the other five — it renders as "not uploaded".
-          return { matrix: null, period };
-        }
-      }),
-    ),
+    loadSeriesMatrices({
+      byPeriod: parts.byPeriod,
+      line: seriesLine,
+      load: async (period) => (await loadMonthlyClosingPartsWithStoreSplit({ line: seriesLine, period })).combined,
+      narrow,
+      periods,
+    }),
   ]);
 
   return buildClosingPerformanceReview({

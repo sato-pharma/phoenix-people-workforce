@@ -8,6 +8,9 @@
 // Direct rows = the stored sheet value; bonus qty and the discount column are both excluded. Confidential products
 // (LA003/LA004/SS001) are stripped at leaf level for everyone except CEO / Super Admin.
 
+import { promisify } from "node:util";
+import { gunzip, gzip } from "node:zlib";
+
 import { unstable_cache } from "next/cache.js";
 
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -366,7 +369,7 @@ type SosRpcInputs = {
   canSeeCrossLineGeography: boolean;
 };
 
-type SosRpcRows = {
+export type SosRpcRows = {
   detailRows: Array<Record<string, unknown>>;
   trendRowsRaw: Array<Record<string, unknown>>;
   brickRaw: Array<Record<string, unknown>>;
@@ -521,26 +524,67 @@ const fetchSosDashboardRpcRowsUncached = async (inputs: SosRpcInputs): Promise<S
     };
 };
 
-const fetchSosDashboardRpcRowsCached = unstable_cache(fetchSosDashboardRpcRowsUncached, ["sos-dashboard"], {
-  revalidate: 300,
-  tags: ["sos-dashboard"],
-});
+/**
+ * The ceiling for one packed SoS dashboard entry — well under Next's hard 2MB data-cache limit.
+ *
+ * The SAME number and the same reasoning as ACHIEVEMENT_CACHE_MAX_BYTES in vs-target.ts: Next
+ * refuses any entry over 2MB, by THROWING an unhandled rejection that kills the dev server, and in
+ * production by a console.warn and a skipped write — the cache silently stops existing. The raw
+ * rows crossed that line (PERF-004, measured 2026-10-04: a CNS cross-line view for 2026-08 was
+ * 2.08 MB raw, so it was never cached in production). Compressed, the same rows are a fraction of it.
+ */
+export const SOS_DASHBOARD_CACHE_MAX_BYTES = 1_500_000;
 
-// Company-wide callers (no line restriction + cross-line geography, i.e. CEO / Super Admin)
-// pull the full brick + customer row sets, which exceed Next's 2MB data-cache entry limit —
-// unstable_cache then rejects asynchronously (unhandledRejection noise) and nothing gets
-// cached anyway. Route those callers straight to the fetcher; every line/region/product
-// scoped viewer keeps the cached path exactly as before.
+const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
+
+/**
+ * Rows -> a base64 gzip payload, or null when the rows must NOT be cached.
+ *
+ * Null in two cases, and both are load-bearing. (1) A FAILED aggregate (`failedRpcs` non-empty):
+ * caching it would serve the same incomplete numbers for the whole TTL, so the caller reads live
+ * instead and a transient timeout heals on the next load. (2) Even compressed the entry would not
+ * fit — never hand the data cache an oversize entry (see SOS_DASHBOARD_CACHE_MAX_BYTES).
+ *
+ * base64 because the entry is stored through JSON.stringify and base64 needs no escaping, so the
+ * size checked here is the size Next measures. Async so the deflate runs off the event loop.
+ */
+export async function packSosRows(rows: SosRpcRows): Promise<string | null> {
+  if (rows.failedRpcs.length > 0) return null;
+  const packed = (await gzipAsync(JSON.stringify(rows))).toString("base64");
+  return packed.length > SOS_DASHBOARD_CACHE_MAX_BYTES ? null : packed;
+}
+
+/** The exact inverse of packSosRows. Every caller gets its own copy of the rows. */
+export async function unpackSosRows(packed: string): Promise<SosRpcRows> {
+  const json = (await gunzipAsync(Buffer.from(packed, "base64"))).toString("utf8");
+  return JSON.parse(json) as SosRpcRows;
+}
+
+// The data cache holds the PACKED rows only — never the raw SosRpcRows, which outgrew Next's 2MB
+// entry (PERF-004). Same tag and same 300s as before; a new key part so an old raw entry is never
+// read back as a packed one. The key is still the fully scope-resolved `inputs`, confidential
+// exclude codes included, so two viewers share an entry only when they are entitled to the same rows.
+const fetchSosDashboardRpcRowsPacked = unstable_cache(
+  async (inputs: SosRpcInputs) => packSosRows(await fetchSosDashboardRpcRowsUncached(inputs)),
+  ["sos-dashboard-packed"],
+  { revalidate: 300, tags: ["sos-dashboard"] },
+);
+
+// EVERY viewer goes through the cache — the CEO and the Super Admin included. OWNER DECISION,
+// 2026-10-04: the company-wide view (no line restriction + cross-line geography) used to skip the
+// cache because its raw brick + customer rows outgrew Next's 2MB entry; packed, it fits, and the
+// owner chose the same 5-minute cache for that view as for everyone else.
 async function fetchSosDashboardRpcRows(inputs: SosRpcInputs): Promise<SosRpcRows> {
-  const unrestrictedLines = !inputs.trendLineNames || inputs.trendLineNames.length === 0;
-  if (inputs.canSeeCrossLineGeography && unrestrictedLines) {
-    return fetchSosDashboardRpcRowsUncached(inputs);
+  const packed = await fetchSosDashboardRpcRowsPacked(inputs);
+  if (packed !== null) {
+    const cached = await unpackSosRows(packed);
+    // packSosRows never packs a failure; this is the second lock, so a cached entry carrying one can
+    // never be served for the full TTL even if the first is ever loosened.
+    if (cached.failedRpcs.length === 0) return cached;
   }
-  const cached = await fetchSosDashboardRpcRowsCached(inputs);
-  if (cached.failedRpcs.length === 0) return cached;
-  // A cached entry carrying a failure would keep serving the same incomplete numbers for the full
-  // 300s TTL. Re-run uncached so a transient timeout self-heals on the next load; if it still fails,
-  // failedRpcs comes back set and the caller says so instead of showing a stale zero.
+  // Not cacheable (a failed aggregate, or too big even packed): read live. A failure that persists
+  // comes back in failedRpcs and the caller says so instead of showing a stale zero.
   return fetchSosDashboardRpcRowsUncached(inputs);
 }
 

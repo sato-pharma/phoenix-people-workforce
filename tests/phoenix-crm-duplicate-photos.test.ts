@@ -4,9 +4,12 @@ import { readFileSync } from "node:fs";
 import {
   dhashFromGreyscale,
   hammingDistance,
+  hashHalves,
   isComparableHash,
   judgePhotoDuplicate,
+  PHOENIX_CRM_STRONG_PHOTO_FLAGS,
   PHOTO_DHASH_MAX_DISTANCE,
+  PHOTO_DHASH_MAX_SET_BITS,
   PHOTO_DHASH_MIN_SET_BITS,
   PHOTO_HASH_BITS,
   PHOTO_HASH_HEIGHT,
@@ -272,5 +275,229 @@ export function runPhoenixCrmDuplicatePhotosTests(): void {
     assert.ok(board.includes("PHOENIX_CRM_PHOTO_LABELS"), "and the board is the one place the two detectors' wording is read together");
   }
 
+  // ── 10. 🔴 PERF-013: the integer hash maths gives BYTE-IDENTICAL verdicts ──────────────────────
+  //
+  // The string bit-by-bit maths was the nightly sweep's CPU, so it became two 32-bit XORs and a
+  // popcount, with each prior's hash parsed once per fingerprint object. A false-positive photo flag
+  // accuses a rep of fraud, so the only acceptable change is one that answers EXACTLY as before: the
+  // old string implementations live below as the reference, and the new code must match them on
+  // every pair and every verdict.
+  {
+    const random = seededRandom(0x5a70_2026);
+    const randomHash = (): string => {
+      let hex = "";
+      for (let index = 0; index < 16; index += 1) hex += Math.floor(random() * 16).toString(16);
+      return hex;
+    };
+
+    // Invalid inputs keep their null: uppercase, 15 characters, 17 characters, empty, non-hex, null.
+    const invalid: Array<string | null> = [
+      "F0F0F0F0F0F0F0F0",
+      "f0f0f0f0f0f0f0f",
+      "f0f0f0f0f0f0f0f00",
+      "",
+      "g0f0f0f0f0f0f0f0",
+      " 0f0f0f0f0f0f0f0",
+      null,
+    ];
+    for (const bad of invalid) {
+      assert.equal(setBits(bad as string), null, `setBits(${JSON.stringify(bad)}) must stay null, exactly as the string version answered`);
+      assert.equal(referenceSetBits(bad as string), null, `the reference itself answers null for ${JSON.stringify(bad)}`);
+      assert.equal(
+        hammingDistance(bad as string, "f0f0f0f0f0f0f0f0"),
+        null,
+        `hammingDistance with ${JSON.stringify(bad)} on the left must stay null`,
+      );
+      assert.equal(
+        hammingDistance("f0f0f0f0f0f0f0f0", bad as string),
+        null,
+        `hammingDistance with ${JSON.stringify(bad)} on the right must stay null`,
+      );
+      assert.equal(hashHalves(bad as string), null, `hashHalves(${JSON.stringify(bad)}) keeps the HEX_HASH validity check`);
+    }
+    // The sign bit of each half: a high nibble of 8–f makes `| 0` negative, which XOR must not mind.
+    assert.equal(hammingDistance("8000000080000000", "0000000000000000"), 2, "the sign bit of each half counts as one bit");
+    assert.equal(setBits("ffffffff00000000"), 32, "a negative high half still counts 32 bits");
+
+    for (let index = 0; index < 10_000; index += 1) {
+      const left = randomHash();
+      // Every fourth pair is a near neighbour, so small distances are exercised and not only ~32.
+      const right = index % 4 === 0 ? flipBits(left, Math.floor(random() * 8), random) : randomHash();
+      assert.equal(
+        hammingDistance(left, right),
+        referenceHammingDistance(left, right),
+        `🔴 hammingDistance(${left}, ${right}) must equal the string reference — a different count changes who is flagged`,
+      );
+      assert.equal(setBits(left), referenceSetBits(left), `🔴 setBits(${left}) must equal the string reference`);
+    }
+
+    // A seeded 2,000-photo corpus with near-duplicates, plain walls, unreadable photos, re-sent files,
+    // shared customers and shared reps — every verdict must deep-equal the reference judge's.
+    const bases = Array.from({ length: 40 }, () => randomHash());
+    const shas = Array.from({ length: 30 }, (_, index) => index.toString(16).padStart(64, "0"));
+    const corpus: PhotoFingerprint[] = [];
+    for (let index = 0; index < 2_000; index += 1) {
+      const roll = random();
+      let dhash: string | null;
+      if (roll < 0.05) dhash = null;
+      else if (roll < 0.1) dhash = random() < 0.5 ? "0000000000000001" : "fffffffffffffffe";
+      else if (roll < 0.12) dhash = "NOT-A-HASH";
+      else if (roll < 0.7) dhash = flipBits(bases[Math.floor(random() * bases.length)], Math.floor(random() * 10), random);
+      else dhash = randomHash();
+      corpus.push({
+        subjectKind: random() < 0.8 ? "visit" : "place",
+        subjectId: `S-${Math.floor(random() * 1_900)}`,
+        photoPath: `photos/${index}.jpg`,
+        repHrId: `B-${100 + Math.floor(random() * 12)}`,
+        customerId: random() < 0.1 ? null : `CUST-${Math.floor(random() * 25)}`,
+        capturedAt: new Date(Date.UTC(2026, 8, 1) + index * 60_000),
+        sha256: random() < 0.08 ? null : random() < 0.15 ? shas[Math.floor(random() * shas.length)] : `${index}`.padStart(64, "f"),
+        dhash,
+      });
+    }
+
+    let exactFlagged = 0;
+    let nearFlagged = 0;
+    let tooPlain = 0;
+    // Every fifth photo is judged against all 2,000 — the reference string judge is the slow part,
+    // and 400 full-corpus verdicts already exercise every branch (asserted just below).
+    for (let index = 0; index < corpus.length; index += 5) {
+      const subject = corpus[index];
+      const actual = judgePhotoDuplicate(subject, corpus);
+      const expected = referenceJudge(subject, corpus);
+      assert.deepEqual(
+        actual,
+        expected,
+        `🔴 judgePhotoDuplicate must deep-equal the reference judge for corpus photo ${index} — a changed verdict is a changed accusation`,
+      );
+      if (actual.flags.includes("photo_exact_duplicate")) exactFlagged += 1;
+      if (actual.flags.includes("photo_near_identical")) nearFlagged += 1;
+      if (actual.signals.tooPlainToCompare === true) tooPlain += 1;
+    }
+    assert.ok(exactFlagged > 0 && nearFlagged > 0 && tooPlain > 0, "the corpus must exercise exact, near and too-plain verdicts or it proves nothing");
+
+    // The per-object memo must not answer from a stale parse when a fingerprint's dhash changes.
+    const mutable = corpus.map((entry) => ({ ...entry }));
+    const subject = mutable[0];
+    judgePhotoDuplicate(subject, mutable);
+    for (const entry of mutable) entry.dhash = entry.dhash === null ? null : flipBits(subject.dhash ?? randomHash(), 1, random);
+    assert.deepEqual(
+      judgePhotoDuplicate(subject, mutable),
+      referenceJudge(subject, mutable),
+      "🔴 a fingerprint whose dhash changed after it was first judged must be re-parsed, never answered from the memo",
+    );
+
+    // The sweep yields to the event loop while it judges, so a large batch never stalls live requests.
+    const sweep = source("src/lib/phoenix-crm/server/photo-dupes.ts");
+    assert.ok(
+      /for\s*\(\s*let i = 0;\s*i < fresh\.length;[^]*?if\s*\(\s*i % 25 === 24\s*\)\s*await new Promise\(\s*\(resolve\)\s*=>\s*setImmediate\(resolve\)\s*\);[^]*?judgePhotoDuplicate\(photo, corpus\)/.test(
+        sweep,
+      ),
+      "the photo sweep's judging loop must yield via setImmediate every 25 photos before it judges",
+    );
+  }
+
   console.log("phoenix-crm duplicate photos: OK");
+}
+
+// ── The reference: the string implementations as they stood before PERF-013 ─────────────────────
+
+const REFERENCE_HEX_HASH = /^[0-9a-f]{16}$/;
+
+function referenceBitsOf(hash: string): string | null {
+  if (!REFERENCE_HEX_HASH.test(hash)) return null;
+  let bits = "";
+  for (const character of hash) bits += parseInt(character, 16).toString(2).padStart(4, "0");
+  return bits;
+}
+
+function referenceSetBits(hash: string): number | null {
+  const bits = referenceBitsOf(hash);
+  if (bits === null) return null;
+  let count = 0;
+  for (const bit of bits) if (bit === "1") count += 1;
+  return count;
+}
+
+function referenceHammingDistance(left: string, right: string): number | null {
+  const a = referenceBitsOf(left);
+  const b = referenceBitsOf(right);
+  if (a === null || b === null) return null;
+  let distance = 0;
+  for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) distance += 1;
+  return distance;
+}
+
+function referenceIsComparable(hash: string | null): boolean {
+  if (!hash) return false;
+  const count = referenceSetBits(hash);
+  return count !== null && count >= PHOTO_DHASH_MIN_SET_BITS && count <= PHOTO_DHASH_MAX_SET_BITS;
+}
+
+function referenceDescribe(prior: PhotoFingerprint): Record<string, unknown> {
+  return {
+    subjectKind: prior.subjectKind,
+    subjectId: prior.subjectId,
+    photoPath: prior.photoPath,
+    repHrId: prior.repHrId,
+    customerId: prior.customerId,
+    capturedAt: prior.capturedAt.toISOString(),
+  };
+}
+
+function referenceJudge(subject: PhotoFingerprint, priors: ReadonlyArray<PhotoFingerprint>): ReturnType<typeof judgePhotoDuplicate> {
+  const sameCustomer = (left: string | null, right: string | null) => left !== null && right !== null && left === right;
+  const others = priors.filter((prior) => prior.subjectId !== subject.subjectId && prior.photoPath !== subject.photoPath);
+  if (others.length === 0) return { flags: [], strong: false, signals: { comparedWith: 0 } };
+  const flags: Array<"photo_exact_duplicate" | "photo_near_identical"> = [];
+  const signals: Record<string, unknown> = { comparedWith: others.length };
+  const exact = subject.sha256 ? others.filter((prior) => prior.sha256 !== null && prior.sha256 === subject.sha256) : [];
+  if (exact.length > 0) {
+    flags.push("photo_exact_duplicate");
+    signals.exactMatches = exact.map((prior) => referenceDescribe(prior));
+  }
+  if (referenceIsComparable(subject.dhash)) {
+    const alreadyExact = new Set(exact.map((prior) => prior.photoPath));
+    const near = others
+      .filter((prior) => !alreadyExact.has(prior.photoPath) && referenceIsComparable(prior.dhash))
+      .filter((prior) => prior.repHrId !== subject.repHrId || !sameCustomer(prior.customerId, subject.customerId))
+      .map((prior) => ({ prior, distance: referenceHammingDistance(String(subject.dhash), String(prior.dhash)) }))
+      .filter((entry): entry is { prior: PhotoFingerprint; distance: number } => entry.distance !== null)
+      .filter((entry) => entry.distance <= PHOTO_DHASH_MAX_DISTANCE)
+      .sort((left, right) => left.distance - right.distance);
+    if (near.length > 0) {
+      flags.push("photo_near_identical");
+      signals.nearMatches = near.map((entry) => ({ ...referenceDescribe(entry.prior), distance: entry.distance }));
+      signals.nearestDistance = near[0].distance;
+    }
+  } else if (subject.dhash) {
+    signals.tooPlainToCompare = true;
+  }
+  return {
+    flags: [...flags].sort(),
+    strong: flags.some((flag) => PHOENIX_CRM_STRONG_PHOTO_FLAGS.includes(flag)),
+    signals,
+  };
+}
+
+/** mulberry32 — a small seeded generator, so a failure reproduces exactly. */
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Flip `count` random bits of a 16-hex-character hash (a bit may flip back; that is fine). */
+function flipBits(hash: string, count: number, random: () => number): string {
+  const nibbles = hash.split("").map((character) => parseInt(character, 16));
+  for (let flip = 0; flip < count; flip += 1) {
+    const bit = Math.floor(random() * 64);
+    nibbles[bit >> 2] ^= 1 << (3 - (bit & 3));
+  }
+  return nibbles.map((nibble) => nibble.toString(16)).join("");
 }

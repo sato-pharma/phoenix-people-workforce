@@ -45,8 +45,12 @@ import {
   type SourceMaskViewer,
 } from "@/lib/sales/closing-source-mask";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
+import { asyncPool } from "@/lib/utils/async-pool";
 
 import type { ReviewSalesDetail, SalesChannel } from "../concentration";
+
+/** At most this many `phx_closing_customers` calls in flight per load (asyncPool clamps to 1 in dev). */
+const CLOSING_DETAIL_FETCH_CONCURRENCY = 4;
 
 /** The distributor codes that ARE the direct-order book rather than a distributor. */
 const DIRECT_DISTRIBUTOR_CODES = new Set(["DIRECT", "DIRECTREQ"]);
@@ -152,19 +156,23 @@ export async function loadClosingDetailFacts(input: {
   const jobs: { line: ClosingDetailLine; period: string }[] = [];
   for (const line of input.lines) for (const period of periods) jobs.push({ line, period });
 
+  // BOUNDED, NOT ALL AT ONCE (PERF-020, 2026-10-04). A three-line pack over a six-month window is
+  // eighteen `phx_closing_customers` scans, and an unbounded fan-out opened all eighteen pooler
+  // connections together — several managers exporting at once could exhaust Supavisor. Four in
+  // flight is the same budget `ACHIEVEMENT_MONTH_FETCH_CONCURRENCY` holds in vs-target.ts. asyncPool
+  // keeps the results in `jobs` order, starts nothing new after a rejection, and rejects the whole
+  // load exactly as the old unbounded fan-out did, so a failed month still fails the pack.
   const [brickNames, loaded] = await Promise.all([
     brickNamesLoad,
-    Promise.all(
-      jobs.map(async ({ line, period }) => {
-        const data = (await rpcAll<CustomerRpcRow>(
-          db,
-          "phx_closing_customers",
-          { p_line: line.officialLine, p_period: period },
-          ["client_code", "distributor_code"],
-        )) as CustomerRpcRow[];
-        return { line, period, rows: data };
-      }),
-    ),
+    asyncPool(CLOSING_DETAIL_FETCH_CONCURRENCY, jobs, async ({ line, period }) => {
+      const data = (await rpcAll<CustomerRpcRow>(
+        db,
+        "phx_closing_customers",
+        { p_line: line.officialLine, p_period: period },
+        ["client_code", "distributor_code"],
+      )) as CustomerRpcRow[];
+      return { line, period, rows: data };
+    }),
   ]);
 
   // Customer NAMES, never the code (owner, 2026-10-01: "NEVER SHOW CODES ALWAYS SHOW NAMES"). The

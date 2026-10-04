@@ -1,4 +1,4 @@
-import { buildBackupWorkbook, loadDataBackup, type DataBackupScope } from "@/lib/admin/data-backup";
+import { buildBackupWorkbook, loadDataBackup, runBackupExclusive, type DataBackupScope } from "@/lib/admin/data-backup";
 import { logError, logInfo } from "@/lib/observability/log";
 
 import {
@@ -65,7 +65,10 @@ export async function processBackgroundJobs(maxJobs = 3): Promise<BackgroundJobs
 
     try {
       if (job.job_type === DATA_BACKUP_EXPORT_JOB) {
-        await runDataBackupExport(job);
+        // One backup at a time per process (PERF-009) — shared with the download route, so a
+        // queued job never builds alongside an admin's direct download. The upload runs inside it
+        // too, because the built file stays in memory until it is stored.
+        await runBackupExclusive(() => runDataBackupExport(job));
       } else {
         throw new Error(`Unknown background job type: ${job.job_type}`);
       }

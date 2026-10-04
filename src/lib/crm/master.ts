@@ -10,6 +10,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { memoInFlight, type SingleFlightEntry } from "@/lib/crm/ttl-single-flight";
 // The unified views, never the vendor tables: vendor history plus Phoenix's own visits and
 // check-ins from the cutover on. Every exclusion below is on `exclusion_crm_id`, which the views
 // carry for both halves — `agent_crm_id` is null for a rep hired without a CRM account.
@@ -768,20 +769,16 @@ type TriplesResult = {
  */
 const TRIPLES_CACHE_TTL_MS = 60_000;
 const TRIPLES_CACHE_MAX = 20;
-const triplesCache = new Map<string, { at: number; value: TriplesResult }>();
+// Single-flight (memoInFlight): the PROMISE is cached, so callers arriving while the scan runs share
+// it rather than each starting their own; a failed scan is never cached. Bounded as before.
+const triplesCache = new Map<string, SingleFlightEntry<TriplesResult>>();
 
 async function computeTriplesInRange(range: {
   dateFrom: string | null;
   dateTo: string | null;
 }): Promise<TriplesResult> {
   const key = `${range.dateFrom ?? ""}|${range.dateTo ?? ""}`;
-  const cached = triplesCache.get(key);
-  if (cached && Date.now() - cached.at < TRIPLES_CACHE_TTL_MS) return cached.value;
-  const value = await computeTriplesUncached(range);
-  // Bounded: distinct date ranges are few in practice, but never let this grow without limit.
-  if (triplesCache.size >= TRIPLES_CACHE_MAX) triplesCache.clear();
-  triplesCache.set(key, { at: Date.now(), value });
-  return value;
+  return memoInFlight(triplesCache, key, TRIPLES_CACHE_TTL_MS, TRIPLES_CACHE_MAX, () => computeTriplesUncached(range));
 }
 
 async function computeTriplesUncached(range: {
@@ -1545,20 +1542,18 @@ export function vacationAgentKey(row: Pick<VacationDayRow, "agent_crm_id" | "age
 // afterwards (filterComputedRows), exactly as the triples path does.
 const VACATIONS_CACHE_TTL_MS = 60_000;
 const VACATIONS_CACHE_MAX = 20;
-const vacationsCache = new Map<string, { at: number; value: { periods: CrmMasterRow[]; truncated: boolean } }>();
+// Single-flight like triplesCache: concurrent renders share one in-flight scan, and a failed scan is
+// never cached.
+const vacationsCache = new Map<string, SingleFlightEntry<{ periods: CrmMasterRow[]; truncated: boolean }>>();
 
 async function computeVacationPeriods(range: {
   dateFrom: string | null;
   dateTo: string | null;
 }): Promise<{ periods: CrmMasterRow[]; truncated: boolean }> {
   const key = `${range.dateFrom ?? ""}|${range.dateTo ?? ""}`;
-  const cached = vacationsCache.get(key);
-  if (cached && Date.now() - cached.at < VACATIONS_CACHE_TTL_MS) return cached.value;
-  const value = await computeVacationPeriodsUncached(range);
-  // Bounded: distinct date ranges are few in practice, but never let this grow without limit.
-  if (vacationsCache.size >= VACATIONS_CACHE_MAX) vacationsCache.clear();
-  vacationsCache.set(key, { at: Date.now(), value });
-  return value;
+  return memoInFlight(vacationsCache, key, VACATIONS_CACHE_TTL_MS, VACATIONS_CACHE_MAX, () =>
+    computeVacationPeriodsUncached(range),
+  );
 }
 
 async function computeVacationPeriodsUncached(range: { dateFrom: string | null; dateTo: string | null }): Promise<{ periods: CrmMasterRow[]; truncated: boolean }> {

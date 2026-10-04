@@ -271,7 +271,11 @@ export async function runPhoenixCrmPhotoSweep(options: { limit?: number; include
   const corpus = await loadPhotoCorpus(supabase, includeTest);
   const byPath = new Map(candidates.map((entry) => [entry.photoPath, entry]));
   const evidence: Row[] = [];
-  for (const photo of fresh) {
+  for (let i = 0; i < fresh.length; i += 1) {
+    // Each judgement walks the whole corpus synchronously; yield to the event loop every 25 so a
+    // large nightly batch never holds the server's one thread long enough to stall live requests.
+    if (i % 25 === 24) await new Promise((resolve) => setImmediate(resolve));
+    const photo = fresh[i];
     const verdict = judgePhotoDuplicate(photo, corpus);
     if (verdict.flags.length === 0) continue;
     const candidate = byPath.get(photo.photoPath);

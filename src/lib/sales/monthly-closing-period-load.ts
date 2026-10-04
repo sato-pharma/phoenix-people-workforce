@@ -17,6 +17,16 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type MergedMonthlyClosingParts = {
+  /**
+   * The UNMERGED `combined` matrix of every month actually read, keyed by that matrix's OWN
+   * `period` — so a caller that needs one month on its own (the Performance Review's by-month
+   * series) can reuse the read instead of loading the month a second time (PERF-021, 2026-10-04).
+   * Never the folded matrix: under a multi-month selection `combined` is several months summed, and
+   * one bar carrying all of them is exactly the defect the series guards against. One entry for a
+   * single month (and for the default-month fallback), none when the read resolved no month.
+   * Treat every entry as read-only — it is the same object `combined` holds for a single month.
+   */
+  byPeriod: ReadonlyMap<string, MonthlyClosingMatrix>;
   combined: MonthlyClosingMatrix;
   directCells: MonthlyClosingDirectCell[];
   office: MonthlyClosingMatrix | null;
@@ -26,6 +36,15 @@ export type MergedMonthlyClosingParts = {
   /** Requested but unreadable, so a screen can say which month is missing instead of undercounting silently. */
   skipped: string[];
 };
+
+/** Key single-month matrices by their OWN period; a matrix that resolved no month is left out. */
+function byOwnPeriod(matrices: MonthlyClosingMatrix[]): ReadonlyMap<string, MonthlyClosingMatrix> {
+  const map = new Map<string, MonthlyClosingMatrix>();
+  for (const matrix of matrices) {
+    if (matrix.period) map.set(matrix.period, matrix);
+  }
+  return map;
+}
 
 /**
  * Load one or several months of the closing and hand back one set of parts.
@@ -58,6 +77,7 @@ export async function loadMergedMonthlyClosingParts(input: {
     });
     const resolved = parts.combined.period;
     return {
+      byPeriod: byOwnPeriod([parts.combined]),
       combined: parts.combined,
       directCells: parts.directCells,
       office: parts.office ?? null,
@@ -88,6 +108,7 @@ export async function loadMergedMonthlyClosingParts(input: {
     // empty closing, which would render as a real month that happens to be all zeros.
     const parts = await loadMonthlyClosingPartsWithStoreSplit({ line: input.line ?? null, period: null });
     return {
+      byPeriod: byOwnPeriod([parts.combined]),
       combined: parts.combined,
       directCells: parts.directCells,
       office: parts.office ?? null,
@@ -102,6 +123,8 @@ export async function loadMergedMonthlyClosingParts(input: {
     .filter((office): office is MonthlyClosingMatrix => Boolean(office));
 
   return {
+    // `usable` already guarantees each entry's own `combined.period` is the month it was read for.
+    byPeriod: byOwnPeriod(usable.map((entry) => entry.parts!.combined)),
     combined: mergeMonthlyClosingMatrices(usable.map((entry) => entry.parts!.combined)),
     directCells: usable.flatMap((entry) => entry.parts!.directCells),
     office: offices.length > 0 ? mergeMonthlyClosingMatrices(offices) : null,

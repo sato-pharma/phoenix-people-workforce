@@ -94,7 +94,10 @@ async function postJsonWithHttpsFallback(
         },
       );
 
-      req.setTimeout(GOOGLE_MAPS_TIMEOUT_MS, () => req.destroy(new Error("Google Maps request timed out")));
+      // Named TimeoutError so computeRoutes reads it as a deadline, exactly as it reads fetch's own.
+      req.setTimeout(GOOGLE_MAPS_TIMEOUT_MS, () =>
+        req.destroy(Object.assign(new Error("Google Maps request timed out"), { name: "TimeoutError" })),
+      );
       req.on("error", reject);
       req.write(init.body);
       req.end();
@@ -255,36 +258,29 @@ async function computeRoutes(
     return response;
   }
 
-  let response: Response;
-  try {
-    response = await requestRoutes({
-      computeAlternativeRoutes: true,
-      routingPreference: "TRAFFIC_AWARE",
-    });
-  } catch (trafficAwareAlternativesError) {
+  // Each variant asks for less than the one before, so a request Google REJECTS can still be
+  // answered by a simpler one. A DEADLINE is different: Google did not answer at all, and asking a
+  // simpler question of a service that is not answering only multiplies the wait — four 8-second
+  // timeouts held an outstation request open ~32 s (performance review, 2026-10-04). So a timeout
+  // stops the ladder at once. Whatever stops it, the error thrown is the FIRST one, as before.
+  const variants = [
+    { computeAlternativeRoutes: true, routingPreference: "TRAFFIC_AWARE" },
+    { computeAlternativeRoutes: true, routingPreference: "TRAFFIC_UNAWARE" },
+    { computeAlternativeRoutes: false, routingPreference: "TRAFFIC_AWARE" },
+    { computeAlternativeRoutes: false, routingPreference: "TRAFFIC_UNAWARE" },
+  ] as const;
+  let response: Response | null = null;
+  let firstError: unknown = null;
+  for (const variant of variants) {
     try {
-      response = await requestRoutes({
-        computeAlternativeRoutes: true,
-        routingPreference: "TRAFFIC_UNAWARE",
-      });
-    } catch {
-      try {
-        response = await requestRoutes({
-          computeAlternativeRoutes: false,
-          routingPreference: "TRAFFIC_AWARE",
-        });
-      } catch {
-        try {
-          response = await requestRoutes({
-            computeAlternativeRoutes: false,
-            routingPreference: "TRAFFIC_UNAWARE",
-          });
-        } catch {
-          throw trafficAwareAlternativesError;
-        }
-      }
+      response = await requestRoutes(variant);
+      break;
+    } catch (error) {
+      if (firstError === null) firstError = error;
+      if (isTimeoutAbort(error)) break;
     }
   }
+  if (!response) throw firstError;
 
   const payload = (await response.json()) as {
     routes?: GoogleRoutesApiRoute[];
@@ -944,4 +940,4 @@ export async function googleRouteThroughStops(stops: LatLng[]): Promise<{
 }
 
 /** Exported for tests: the timeout-versus-fallback branch is only provable by calling it. */
-export const __testables = { postJsonWithHttpsFallback };
+export const __testables = { computeRoutes, postJsonWithHttpsFallback };
