@@ -101,15 +101,62 @@ export const FORM6_PAGE_1_PLACEMENTS: readonly Placement[] = [
 ];
 
 /**
- * Page 2 — the إرشادات and the إقرار on the back. PRINTED BLANK, BY THE OWNER'S INSTRUCTION.
+ * Page 2 — the إرشادات and the إقرار on the back. NOW PRINTED WITH DATA.
  *
- * This is the same standing rule that governs Form 1's back page (2026-08-22): the reverse of a
- * social-insurance form comes off the printer exactly as the Authority issues it, with no value
- * written on it by Phoenix. The back carries the government's instructions and two declarations
- * that are signed in the first person by the employee and the responsible manager — the إقرار about
- * the البطاقة العلاجية, the treatment card — so what belongs there is a pen, not a database.
+ * THE OWNER REVERSED THE 2026-08-22 INSTRUCTION FOR THIS SIDE ON 2026-10-04: "form 6 paper back is
+ * printing without the fields that should be printable". Until then the reverse came off the printer
+ * exactly as the Authority issues it, the same standing rule Form 1's back ran under until he
+ * reversed that one on 2026-09-03. The blank version was never a defect — it was his earlier
+ * decision, and this is his later one. The reasoning for Form 1 carries over unchanged: Form 6's
+ * back is the same sheet in the same family.
+ *
+ * WHAT IS PRINTED IS THE إقرار's IDENTIFICATION BLANKS AND NOTHING ELSE — the five rules the form
+ * itself prints for them: اسم المنشأة and رقمها التأميني, العنوان, اسم المؤمن عليه and رقمه التأميني.
+ * The two signatures (توقيع المؤمن عليه, توقيع صاحب العمل), the second declaration and its signature
+ * stay blank: a person signs those at the moment it happens, and a signature typed in advance is a
+ * signature nobody gave. The إرشادات above are the Authority's text and carry nothing.
+ *
+ * THE KEYS ARE THE FRONT'S, NOT NEW ONES. `establishmentNumber`, `insuranceNumber` and
+ * `insuredName` are the very values page 1 places, and `companyAddress` is the one Form 1's back
+ * already uses — two keys for one fact are two things that can disagree, and a form whose front and
+ * back state different insurance numbers is worse than one that states neither. The company's number
+ * is eight digits on the front's grid and the back's grid has nine cells, so it fills from the left
+ * exactly as every other grid in this file does.
+ *
+ * MEASURED, NOT EYEBALLED. Rasterised from the source artwork at 288 DPI: the three dotted rules sit
+ * at ink y=453.84 (اسم المنشأة, x=294.3..493.8), y=478.84 (العنوان, x=62.0..492.6) and y=497.10
+ * (اسم المؤمن عليه, x=292.3..456.8); the two nine-cell grids have their vertical lines 19.87pt
+ * apart from x=15.5 (company) and x=14.5 (insured), their top edges at y=441.59 and y=484.60. Text
+ * sits 9.4pt above its rule, the same offset page 1 uses.
  *
  * Page 1 ends with "( أنظـر خلفه )" — see the back. The two sides are one sheet, which is exactly
  * why this document must be printed double-sided.
  */
-export const FORM6_PAGE_2_PLACEMENTS: readonly Placement[] = [];
+export const FORM6_PAGE_2_PLACEMENTS: readonly Placement[] = [
+  // "اسم المنشأة" — the establishment's name, on the rule right of the insurance-number grid.
+  { kind: "text", key: "companyName", x: 295, y: 444.4, w: 198, h: 13, align: "right", size: 9 },
+  // "رقمها التأميني" — the establishment's insurance number, nine cells, x=15.5..194.3.
+  {
+    kind: "digits",
+    key: "establishmentNumber",
+    x: 15.5,
+    y: 441.6,
+    pitch: 19.87,
+    cells: 9,
+    h: 19.75,
+  },
+  // "العنوان" — the establishment's address, on the full-width rule.
+  { kind: "text", key: "companyAddress", x: 63, y: 469.4, w: 429, h: 13, align: "right", size: 9 },
+  // "اسم المؤمن عليه" — the insured person, in his Arabic name as on the front.
+  { kind: "text", key: "insuredName", x: 293, y: 487.7, w: 163, h: 13, align: "right", size: 9 },
+  // "رقمه التأميني" — the insured person's insurance number, nine cells, x=14.5..193.3.
+  {
+    kind: "digits",
+    key: "insuranceNumber",
+    x: 14.5,
+    y: 484.6,
+    pitch: 19.87,
+    cells: 9,
+    h: 20,
+  },
+];
