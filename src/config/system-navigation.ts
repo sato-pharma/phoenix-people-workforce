@@ -712,6 +712,25 @@ export const adminNavigationSectionSeeds = [
         navBadge: "marketing-approvals-pending",
         roles: ["CEO", "District Manager", "Super Admin", "SFE Manager", "Finance Manager"],
       },
+      // Market Awareness' own approvals queue, in the admin shell (2026-10-04). The CEO is the last
+      // rung of the awareness chain and Super Admin may answer any step, and BOTH live in this shell
+      // — resolveNavigationMode pins the CEO to it — so until this row existed the only Approve /
+      // Return / Reject buttons in the module sat behind /employee-portals/market-awareness/inbox,
+      // which bounced them to /overview. Four activities were waiting at the CEO step with no screen
+      // on which to answer them. The Marketing Manager, the Group Product Manager and the National
+      // Sales Managers are portal-shell roles and keep the portal row of the same name.
+      //
+      // Its own badge kind for the same reason as the Marketing Inbox above: market awareness is
+      // deliberately outside the consolidated approvals hub, so "approvals-hub-pending" would count
+      // everything except this queue.
+      {
+        href: "/admin/market-awareness/inbox",
+        icon: Inbox,
+        label: "Awareness Approvals",
+        navBadge: "market-awareness-approvals-pending",
+        permissions: [{ resource: "market_awareness", action: "read" }],
+        roles: ["CEO", "Super Admin"],
+      },
       // RE-OPENED 2026-08-30 on the owner's explicit instruction ("open the sidebar route"), after
       // #2713 gave the Finance Manager an overdue-invoice figure on his dashboard and a link to the
       // screen behind it. Read the history before removing this again, because it has been removed

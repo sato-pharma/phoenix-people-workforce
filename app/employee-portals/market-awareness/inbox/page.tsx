@@ -21,8 +21,11 @@ export const dynamic = "force-dynamic";
 export default async function EmployeePortalMarketAwarenessInboxPage() {
   const access = await resolveAccessContextFromPage();
 
+  // The CEO and the Super Admin are admin-shell viewers, and every notification and Needs You link
+  // for a decision names THIS address. Sending them to /overview left the one person the chain ends
+  // with on a page that has no inbox — so they go to the admin twin, which holds the same buttons.
   if (resolveNavigationMode(access) !== "employee-portal") {
-    redirect("/overview");
+    redirect("/admin/market-awareness/inbox");
   }
   if (!(await canAccess(access, "market_awareness", "read"))) {
     redirect("/employee-portals");

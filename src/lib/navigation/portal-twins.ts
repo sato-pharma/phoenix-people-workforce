@@ -86,6 +86,10 @@ const TWIN_RULES: readonly TwinRule[] = [
   // an admin link belongs on the portal half rather than at the portal root. `activity` is
   // carried so a deep link to one activity survives the hop.
   { from: "/admin/market-awareness", to: "/employee-portals/market-awareness", carryQuery: ["activity"] },
+  // The admin door to the approvals inbox. Only the CEO and Super Admin are drawn it, but the Needs
+  // You card is shared, so a Marketing Manager or National Sales Manager following it lands on his
+  // own inbox instead of the workspace.
+  { from: "/admin/market-awareness/inbox", to: "/employee-portals/market-awareness/inbox" },
   { from: "/admin/approvals-hub", to: "/employee-portals/approvals-hub", carryQuery: ["module", "id", "tab"] },
   // An admin-only view of the same queue; the portal has no `stuck` page, so the page's
   // own source sends the viewer to the hub instead.
