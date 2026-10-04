@@ -1612,7 +1612,6 @@ export async function runClosingEngineExportTests() {
       return target ? `xl/${target.replace(/^\//, "")}` : null;
     })();
     assert.ok(overviewPart && opened.file(overviewPart), `${label}: the Overview sheet must be resolvable`);
-    const overviewXml = await opened.file(overviewPart!)!.async("string");
 
     const titleStyle = /<row r="1"[^>]*>(?:(?!<\/row>)[\s\S])*?<c r="A1" s="(\d+)"/.exec(sheet)?.[1];
     assert.ok(titleStyle, `${label}: the contents page must carry a masthead on row 1`);
