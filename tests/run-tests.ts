@@ -1772,6 +1772,7 @@ import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
 import { runCrmNativeVacationDaysTests } from "./crm-native-vacation-days.test.ts";
 import { runCrmContactListChangesTests } from "./crm-contact-list-changes.test.ts";
+import { runDoctorListsFollowTeamStartsTests } from "./doctor-lists-follow-team-starts.test.ts";
 import { runCrmSwitchOffSafetyTests } from "./crm-switch-off-safety.test.ts";
 import { runCrmNewHireKeyingTests } from "./crm-new-hire-keying.test.ts";
 import { runCrmReportsReadPhoenixTests } from "./crm-reports-read-phoenix.test.ts";
@@ -6431,6 +6432,11 @@ await runTest(
 await runTest(
   "CRM doctor lists maintained in Phoenix, phase 7 (not before the CRM cutover; a rep asks only for his own AM or PM list and it goes to his nearest manager; only that stored manager approves, for a rep beneath him, and the database re-checks it; the SFE Manager and the administrator apply a change directly within their scope; no pharmacy goes on a doctor list; the nightly scrape stops touching lists from the cutover and never closes a row Phoenix wrote)",
   runCrmContactListChangesTests,
+);
+
+await runTest(
+  "a doctor list follows ITS OWN TEAM's Phoenix CRM start, not the global cutover date (which is NULL on production, so the apply function refused EVERY change for everyone while the hourly rebuild still ran the vendor passes): one migration moves both halves, all FOUR assignment passes skip a started rep - the INSERT above all, because a removed doctor has no open row and would be re-opened the next hour - the HR id decides with the CRM id only as a fallback, contact IDENTITY stays global on purpose, the run reports what it froze, and the migration writes no rows so every list reads the same today",
+  runDoctorListsFollowTeamStartsTests,
 );
 
 await runTest(
