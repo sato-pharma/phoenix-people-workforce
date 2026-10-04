@@ -69,6 +69,54 @@ That mattered because the ship skill reads this check before every merge. A pre-
 wolf is one people learn to wave through, which is the same failure as not having it — and the
 2026-09-30 incident it was built for is the case where waving through costs three production deploys.
 
+## The standing decisions, per advisory
+
+The policy above says an unreachable alert is reported rather than bumped. That is the *rule*. This
+is the **record of each one it has actually been applied to**, so that "still open" reads as a
+decision somebody made rather than an oversight nobody noticed. An alert with no row here has not
+been judged yet.
+
+### `braces` — GHSA-vfj7-8cjw-p6xm · CVE-2026-93687 · HIGH (CVSS 7.5)
+
+| | |
+| --- | --- |
+| **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-10-04 at the owner's instruction. |
+| Alert | #112, opened 2026-10-03, root `pnpm-lock.yaml` |
+| Scope | `development` — the `--prod` filter drops it, so it cannot turn `validate` red |
+| Patched version | **none exists** — there is nothing to bump to |
+| How it arrives | `braces@3.0.3` ← `micromatch@4.0.8` ← `fast-glob` ← **`shadcn`**, a `devDependency` |
+| What it is | Stack-exhaustion denial of service through deeply nested patterns |
+| Impact vector | `C:N/I:N/A:H` — **availability only.** No confidentiality or integrity impact |
+
+**Why accepting is the right answer rather than the convenient one.** Three things have to be true
+together, and all three are:
+
+1. **There is no fix to apply.** `first_patched_version` is null. The only alternatives to accepting
+   are a `pnpm.overrides` pin to a version that does not exist, or dropping `shadcn` — a tool used by
+   hand to scaffold components, whose removal would cost real workflow to avoid a risk that does not
+   reach anything.
+2. **It is not in the production graph.** `shadcn` is a `devDependency`; `braces` is never bundled,
+   never served, and never present on the Railway image. The scope is read from the alert payload,
+   not inferred — and the gate command agrees: `node scripts/ci-dependency-audit.mjs` exits 0 on
+   *"No known vulnerabilities found"* with this alert open.
+3. **The attack needs input nobody untrusted supplies.** The DoS needs a deeply nested glob pattern.
+   The patterns `shadcn` expands are written by a developer in this repository, on a laptop, at a
+   moment of their choosing. There is no path by which an employee, a rep, or an anonymous request
+   reaches it. The worst outcome is a developer hanging their own terminal.
+
+**What would reverse this.** Any one of these, and it stops being accepted:
+
+- a patched version is published → bump it, in its own PR, and delete this row
+- the alert's `scope` turns `runtime`, or `braces` appears in the root `dependencies` graph → it is
+  then a reachable HIGH, it blocks `validate`, and AGENTS.md §2.3 applies
+- the advisory is re-scored with a confidentiality or integrity impact
+- `shadcn` stops being a `devDependency`
+
+🔴 **This row is not a precedent for the other open alerts.** It accepts *this* advisory on *these*
+three facts. The alerts that sit in a manifest the root audit never reads are a different situation
+entirely: they are not accepted here, they belong to that application's own scanning, and nothing in
+this file should be read as judging them.
+
 ## Reading it
 
 ```bash
