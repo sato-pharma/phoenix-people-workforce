@@ -557,6 +557,15 @@ export type InterviewRequestItem = {
   externalHasCv: boolean;
   externalCvFileName: string | null;
   externalCvMimeType: string | null;
+  /**
+   * The CV a reader can open from the request itself, for an in-house candidate AND an outside person
+   * alike — so the inbox can draw one "View CV" control without knowing where the file is kept. Until
+   * this existed a request waiting for a time showed "CV attached" as a sentence with nothing to press:
+   * the calendar's CV doors open only a candidate who already holds a booking.
+   */
+  hasCv: boolean;
+  cvFileName: string | null;
+  cvMimeType: string | null;
   /** The booking this CV became once HR gave it a time, or null while it waits. */
   bookingId: string | null;
   booked: boolean;

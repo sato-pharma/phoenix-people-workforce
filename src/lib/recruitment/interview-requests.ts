@@ -16,9 +16,13 @@
 // entry point resolves the caller and checks a right before it touches a row.
 
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { getRecruitmentFileStorage } from "@/lib/recruitment/file-storage";
+import { type FileDownload, getFileForDownload, listCandidateFilesByCandidate } from "@/lib/recruitment/files";
+import type { RecruitmentFile } from "@/lib/recruitment/types";
 import {
+  assertCvsOpenTo,
   checkCvUpload,
   createInterviewBooking,
   type InterviewCalendarCaller,
@@ -161,6 +165,18 @@ function cleanExternalName(value: unknown): string {
   return text.replace(/\s+/g, " ").slice(0, 200);
 }
 
+// ── The CV on a request item ─────────────────────────────────────────────────────────────────────
+
+/**
+ * The file a request item's "View CV" opens. Files arrive newest first; the newest CV the preview can
+ * DRAW wins, and failing that the newest CV of any kind — so the viewer's Download still works for a
+ * format it cannot draw, instead of the item reading "no CV" over a CV that is sitting right there.
+ */
+function pickCandidateCv(files: readonly RecruitmentFile[] | undefined): RecruitmentFile | null {
+  const cvs = (files ?? []).filter((file) => file.kind === "cv");
+  return cvs.find((file) => detectCvFileKind(file.mimeType ?? "", file.fileName) !== "unsupported") ?? cvs[0] ?? null;
+}
+
 // ── Hydration ────────────────────────────────────────────────────────────────────────────────────
 
 async function hydrateRequests(rows: readonly RequestRow[]): Promise<InterviewRequest[]> {
@@ -175,7 +191,10 @@ async function hydrateRequests(rows: readonly RequestRow[]): Promise<InterviewRe
   const items = (itemData ?? []) as ItemRow[];
 
   const people = await loadPeople(rows.flatMap((row) => [row.requested_by_hr_id, row.interviewer_hr_id]));
-  const candidates = await loadCandidates(items.map((item) => item.candidate_id).filter((id): id is string => Boolean(id)));
+  const candidateIds = items.map((item) => item.candidate_id).filter((id): id is string => Boolean(id));
+  const candidates = await loadCandidates(candidateIds);
+  // One chunked read for every candidate on the screen — never one per card.
+  const candidateFiles = await listCandidateFilesByCandidate(candidateIds);
 
   const itemsByRequest = new Map<string, ItemRow[]>();
   for (const item of items) {
@@ -191,7 +210,12 @@ async function hydrateRequests(rows: readonly RequestRow[]): Promise<InterviewRe
     const hydratedItems: InterviewRequestItem[] = rowItems.map((item) => {
       const candidate = item.candidate_id ? candidates.get(item.candidate_id) : undefined;
       const external = !item.candidate_id;
+      const candidateCv = item.candidate_id ? pickCandidateCv(candidateFiles.get(item.candidate_id)) : null;
+      const externalCv = external && item.external_cv_file_id;
       return {
+        cvFileName: candidateCv ? candidateCv.fileName : externalCv ? item.external_cv_file_name?.trim() || "CV" : null,
+        cvMimeType: candidateCv ? candidateCv.mimeType : externalCv ? item.external_cv_mime_type ?? null : null,
+        hasCv: Boolean(candidateCv) || Boolean(externalCv),
         id: item.id,
         booked: Boolean(item.booking_id),
         bookingId: item.booking_id,
@@ -250,6 +274,50 @@ export async function getInterviewRequest(
   if (!mayReadRequest(caller, row)) throw new Error(FORBIDDEN_READ);
   const [request] = await hydrateRequests([row]);
   return request;
+}
+
+/**
+ * The bytes of the CV on one request item — the door "View CV" on a request waiting for a time opens.
+ *
+ * THE CALENDAR'S OWN CV DOORS CANNOT SERVE THIS. They prove a candidate holds an INTERVIEW in a week
+ * open to the caller, and a request that has not been given a time has no interview yet — so before this,
+ * the inbox could say "CV attached" and nothing more, and HR could not open the CV they were about to
+ * phone the candidate about. The proof here is the request's own: the caller may read THIS request
+ * (HR and the owners any; a requester or the chosen interviewer only their own), the item must belong
+ * to it, and a link holder who is not signed in opens it only when the link's CVs are on.
+ */
+export async function getInterviewRequestItemCv(
+  caller: InterviewCalendarCaller,
+  requestId: string,
+  itemId: string,
+): Promise<FileDownload | null> {
+  requireCalendarAccess(caller, "view", "any");
+  const request = await loadRequestRow(requestId);
+  if (!mayReadRequest(caller, request)) throw new Error(FORBIDDEN_READ);
+  assertCvsOpenTo(caller);
+
+  const { data, error } = await recruitmentDb()
+    .from(ITEMS)
+    .select(ITEM_COLUMNS)
+    .eq("id", itemId)
+    .eq("request_id", requestId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("That CV is no longer on the request.");
+  const item = data as ItemRow;
+
+  if (item.candidate_id) {
+    const file = pickCandidateCv((await listCandidateFilesByCandidate([item.candidate_id])).get(item.candidate_id));
+    return file ? getFileForDownload(file.id) : null;
+  }
+  if (!item.external_cv_file_id) return null;
+  const downloaded = await getRecruitmentFileStorage().downloadFile(item.external_cv_file_id);
+  return {
+    bytes: Buffer.from(downloaded.bytes),
+    fileName: item.external_cv_file_name?.trim() || downloaded.fileName || "cv",
+    kind: "binary",
+    mimeType: item.external_cv_mime_type || downloaded.mimeType || "application/octet-stream",
+  };
 }
 
 // ── Create (step 1) ──────────────────────────────────────────────────────────────────────────────

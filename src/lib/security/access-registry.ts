@@ -1445,6 +1445,8 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/requests", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "DELETE"], pattern: "/api/recruitment/interview-calendar/requests/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/interview-calendar/requests/*/schedule", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // The CV on one request item, read-only — gated by the request itself (getInterviewRequestItemCv).
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/requests/*/items/*/cv", permission: null, guard: "domain-helper" }),
   // A district manager hands a CV back to the administrator ("area not match — or any other
   // situation"), and the administrator later clears it from the Returned CVs queue. TWO DIFFERENT
   // GRANTS on purpose: returning is `hiring_interviews:update` — the same folder grant every district
