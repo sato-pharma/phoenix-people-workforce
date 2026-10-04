@@ -2576,7 +2576,7 @@ export async function searchInterviewCandidates(caller: InterviewCalendarCaller,
 
 const GUEST_CVS_OFF = "Forbidden: the CVs on this link open only after signing in to Phoenix.";
 
-function assertCvsOpenTo(caller: InterviewCalendarCaller) {
+export function assertCvsOpenTo(caller: InterviewCalendarCaller) {
   if (!isSignedInCaller(caller.access) && caller.access.source !== "system" && !caller.link?.guestCvs) throw new Error(GUEST_CVS_OFF);
 }
 
