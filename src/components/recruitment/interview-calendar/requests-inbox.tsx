@@ -8,11 +8,12 @@
 // Two panels, each drawn only for who may use it: the INBOX for a caller with book rights (HR and the
 // owners), and MY REQUESTS for a requester (a District Manager and above, or HR). The owner sees both.
 
-import { CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileText, Loader2, Trash2, UserRound, Users } from "lucide-react";
+import { CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Clock3, Loader2, Trash2, UserRound, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
+import { Button } from "@/components/ui/button";
 import {
   INTERVIEW_REQUEST_STATUS_LABEL,
   PLATFORM_LABEL,
@@ -186,7 +187,10 @@ function RequestCard({
   const [open, setOpen] = useState(request.pendingItemCount > 0);
   const [booking, setBooking] = useState<InterviewRequestItem | null>(null);
   // The CV being read — opened from the request itself, so HR can read it BEFORE phoning the candidate.
+  // `previewOpen` is the same idiom every other "View CV" control uses (candidate-cv-actions.tsx), and
+  // `reading` carries WHICH item's CV, since one card lists several.
   const [reading, setReading] = useState<InterviewRequestItem | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -266,10 +270,9 @@ function RequestCard({
                 </span>
                 <span className="flex shrink-0 flex-wrap items-center gap-2">
                 {item.hasCv ? (
-                  <Action onClick={() => setReading(item)} tone="quiet">
-                    <FileText className="h-3.5 w-3.5" />
+                  <Button variant="secondary" onClick={() => { setReading(item); setPreviewOpen(true); }}>
                     View CV
-                  </Action>
+                  </Button>
                 ) : null}
                 {item.booked ? (
                   <button
@@ -324,12 +327,12 @@ function RequestCard({
         </div>
       ) : null}
 
-      {reading ? (
+      {previewOpen && reading ? (
         <CvPreviewModal
           downloadUrl={api.href(`/requests/${encodeURIComponent(request.id)}/items/${encodeURIComponent(reading.id)}/cv`)}
           fileName={`${reading.candidateName} · ${reading.cvFileName ?? "CV"}`}
           mimeType={reading.cvMimeType}
-          onClose={() => setReading(null)}
+          onClose={() => { setPreviewOpen(false); setReading(null); }}
         />
       ) : null}
 

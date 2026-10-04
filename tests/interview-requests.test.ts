@@ -130,7 +130,7 @@ export async function runInterviewRequestTests() {
     /\/requests\/\$\{encodeURIComponent\(request\.id\)\}\/items\/\$\{encodeURIComponent\(reading\.id\)\}\/cv/,
     "and reads it through the REQUEST's own CV door, never the booking's",
   );
-  assert.match(inbox, /item\.hasCv \? \(\s*<Action onClick=\{\(\) => setReading\(item\)\}/, "View CV is drawn for every item that has one — in-house or outside");
+  assert.match(inbox, /item\.hasCv \? \(\s*<Button variant="secondary" onClick=\{\(\) => \{ setReading\(item\); setPreviewOpen\(true\); \}\}/, "View CV is a Button opening the preview — drawn for every item that has one, in-house or outside");
   const cvRoute = stripComments(read("app/api/recruitment/interview-calendar/requests/[id]/items/[itemId]/cv/route.ts"));
   assert.match(cvRoute, /getInterviewRequestItemCv\(caller, id, itemId\)/, "the route serves the CV of one request item");
   assert.match(cvRoute, /recruitmentFileResponse\(request, download\)/, "through the shared file response, so inline / base64 / download all work");
