@@ -325,5 +325,20 @@ export const config = {
   // `isSecurityProxyPath`. Static assets, images and the favicon are excluded: they render no
   // navigation, so there is nothing there to spoof, and matching them is pure latency on every
   // page load.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png).*)"],
+  //
+  // 🔴 THE TWO DEVICE UPLOAD ROUTES ARE EXCLUDED, AND ONLY THEY ARE. When the proxy matches a request
+  // Next copies the body so the proxy could read it, and stops copying at `proxyClientMaxBodySize`
+  // (10 MB by default): the route then receives a body cut off at 10 MB, `request.formData()` throws,
+  // and the person is told "Choose a file to send." — for any APK over 10 MB, which is every APK.
+  // Measured on staging 2026-10-04: an 11 MB POST logged "Request body exceeded 10MB for
+  // /api/devices/headwind/upload. Only the first 10MB will be available". Nothing is lost by leaving
+  // these two out: both routes run `assertSameOriginMutation` (same test as the CSRF rule below) and
+  // `assertPermission(…, "company_devices", "approve")`, and the preview wall is inert on Railway.
+  // Never raise `proxyClientMaxBodySize` instead — it would make the proxy buffer that much of ANY
+  // request body on any path, before authentication. `$` anchors each exclusion to the exact path.
+  // Next reads this object statically, so the matcher must stay a literal. Pinned by
+  // tests/proxy-upload-body-limit.test.ts.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|api/devices/headwind/upload$|api/devices/manageengine/apps/upload$).*)",
+  ],
 };
