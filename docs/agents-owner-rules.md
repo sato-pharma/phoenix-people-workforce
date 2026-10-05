@@ -6126,3 +6126,160 @@ site would read as sending email while the guard stripped it. Both halves are pi
 `tests/phoenix-crm-email-block.test.ts`, which compares the two lists exactly so a widening is visible
 rather than quiet. **The rep's side is untouched: he still reads only "the system is checking", never
 that a person looked at him (Phoenix CRM Golden Rule #1).**
+
+---
+
+## The accuracy gate and an approximate-location fix — owner, 2026-10-05
+
+*"fix the accuracy gate that is flagging Hassan"*. He had read the Super Admin's integrity board and
+seen a rep accused of preset coordinates. The board was right about what it measured and wrong about
+what it meant, and the first thing the fix had to establish was **who it was actually accusing**.
+
+**The rep was not Hassan.** The rows belong to **Yasmeen Samy** (B-130), four of them on 3 October.
+Hassan Mohamed (B-158) does have coarse fixes of his own — 1273.4 m and 1414.0 m — and they produced
+no integrity rows at all. Acting quietly on the name he gave would have "fixed" a rep who was never
+flagged and left the flagged one accused, so the name correction is part of the account rather than a
+footnote to it.
+
+**What the phone was doing.** Android's **Precise location** toggle has an off position. With it off
+the OS stops handing an app a receiver reading and returns the **centre of a ~1–2 km grid tile with a
+fixed accuracy figure**. The coordinate therefore repeats and the accuracy never varies — *by
+construction*, for every app on the phone, with nothing for the rep to do about it and nothing for the
+phone to confess. Her morning, read from `phoenix_crm_location_integrity` on production:
+
+| | |
+| --- | --- |
+| fixes | 11, across 4 customers, in 59 minutes |
+| spread | `spreadMeters: 0` |
+| accuracy | exactly `2000` on **every** reading |
+| the phone's mock flag | `deviceMocked: null` — nothing confessed, because there was nothing to confess |
+| what the board said | `coordinate_replay` + `constant_accuracy`, three rows of them **strong** |
+
+🔴 **`zero_jitter` — also strong, and worse — missed her only on the clock.** It wants a 120-minute
+span and her morning was 59 minutes. A full day on the same phone setting reads as *"the position
+never moved all day"* about a rep who moved all day. That is the version of this that would have
+reached him as a fraud finding.
+
+**The threshold is measured, not chosen.** 772 real fixes from 14 reps: median **14 m**, 95th
+percentile **60 m**, 99th **122.4 m** — and then **nothing at all until 1273.4 m**, where the only
+inhabitants are approximate-mode fixes. `COARSE_ACCURACY_METERS = 500` sits inside that empty band:
+four times the worst honest fix, under half the nearest coarse one. No real reading is on either side
+of it, so it separates the two populations without touching a single honest fix.
+
+**What goes quiet, and what does not.** The four **precision-dependent** detectors are suppressed
+above the line — `coordinate_replay`, `zero_jitter`, `constant_accuracy`, `typed_coordinate`
+(`PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS`). 🔴 **`mock_provider` and `impossible_travel` still fire**:
+the first is the phone's own confession and owes nothing to precision, and the second already
+subtracts both error bars before it judges a speed. Both are pinned, because waiving them is what
+would turn a false-positive fix into a hole.
+
+**Coarse readings leave the EVIDENCE on both sides, not only the verdict.** Without that half the same
+false accusation lands one fix later: an honest *precise* fix gets flagged for "replaying" the tile
+centre its own phone returned an hour earlier. `signals.coarseHistoryIgnored` records how many priors
+were set aside.
+
+**The row is not silent.** It carries the weak flag **`coarse_location`** — *"The phone was set to
+approximate location, not precise"* — with `signals.coarse.suppressed` naming exactly what was set
+aside. A manager can act on that: a rep whose every fix is coarse is a **visible pattern** to be asked
+about, instead of a false accusation. Golden Rule #1 is untouched — none of this reaches the rep's own
+screen.
+
+**Her four rows were re-scored**, because code alone would have left three strong accusations standing
+on the board. They now read `coarse_location`, `strong = false`, with the original preserved in
+`signals.rescored.previousFlags`; nothing was deleted and a rollback file was written before the
+update ran. Afterwards: `strong_rows_left=0 replay_rows_left=0 coarse_rows=4 rows_total=4`. **The
+integrity board now holds no strong rows at all** — the same answer the field audit reached by
+measurement, which is that its entire strong content was this one false positive.
+
+---
+
+## One customer, one name key — owner, 2026-10-05
+
+*"fix the customer name match in Phoenix CRM"*. **Two keys were answering one question.**
+`server/duplicate-customers.ts` folds a name through `normalizeContactName` before deciding two rows
+are the same customer — NFKC, the hamza carriers أ إ آ ٱ onto ا, final ى onto ي, final ة onto ه, the
+diacritics and the tatweel, punctuation, honorifics, case — while `phoenix_crm_load_list_customers`
+compared `lower(c.name) = lower(v_name)`. **So the loader created the second row and the board then
+reported it.** The system disagreed with itself, and the SFE got a duplicate that nothing had
+prevented.
+
+**Measured on production, 2026-10-06.** **2,708 of 9,137** customer names (29.6%) change under the
+fold, and **8** groups on one seat and one list type hold the same customer twice where the raw key
+could never have seen it. Every one of the eight is a pure orthography pair — the same doctor or
+pharmacy, typed by two keyboards:
+
+```
+أحمد محمد الصباغ / احمد محمد الصباغ            hamza carrier
+مستشفي مصطفى محمود / مستشفي مصطفي محمود        final ى
+محمد الشكلى / محمد الشكلي                       final ى
+أيسر بسالى / ايسر بسالي                         both
+احمد شلبى / احمد شلبي                           final ى
+أسلام نعيم / اسلام نعيم                         hamza carrier
+صيدلية الحرية الجديدة / صيدلية الحرية الجديده    final ة
+بيشوى نبيل / بيشوي نبيل                         final ى
+```
+
+**`public.phoenix_crm_fold_name(text)` is the SQL half** — immutable, service-role only — and it is
+used by **both** of the loader's name comparisons: the customer insert *and* the days-and-hours pass.
+A fix to one of them would still let the duplicate in through the other, which is why the test counts
+the folded comparisons rather than merely finding one.
+
+🔴 **It only ever SKIPS.** A folded hit takes the existing `already_on_the_list` branch, which reports
+the row to the SFE and moves on. **Nothing merges, deletes, renames or overwrites a customer** —
+removing a duplicate is the district-manager-then-SFE two-step the owner owns — so the 55 groups
+already on the list stay exactly as they are. (A unique index could not have been created over them
+anyway.)
+
+**Exercised on production in the test world, then removed:** `أحمد محمد الصباغ` loaded; the hamza
+variant and the honorific form (`د/أحمد محمد الصباغ`) were both **skipped · already_on_the_list**; the
+same name on the **AM** list loaded, because a different list is a different list; and `محمد أحمد
+الصباغ` — the names reordered — loaded, so the fold has not become a blunt instrument that folds a
+stranger onto a customer. Afterwards: `0 customers and 0 events left behind, 9,137 real customers
+untouched`.
+
+🔴 **The fold now exists TWICE, and that is the whole cost of this change — so it is measured, not
+assumed.** `TITLE_TOKENS` is exported for the purpose, `tests/phoenix-crm-customer-name-fold.test.ts`
+compares the two honorific lists **literally**, and all 9,137 live names were folded by both halves
+with matching digests (`00807c0abf8c22d7f9d55c57bbeda6a4`).
+
+🔴 **Replacing that loader again: take the body from `pg_proc.prosrc` and prove it by md5 BEFORE
+editing it.** The repo's newest migration is the live body only until the next one lands, and the
+first attempt at this was refused by exactly that check over a 3-character difference
+(`893c9642aa53799b4a9f949f13a40ab5` is the pre-edit digest; the two functions afterwards are
+`6ccedbf0aad66e7a04424c69716c6b93` and `6cbec6c37b04152d0af1f009b2eb905e`, identical in production,
+staging and the migration file).
+
+---
+
+## The objection and the next step are UNFOLDED — owner, 2026-10-06
+
+*"unfold objection and next step in Phoenix CRM"*. This **amends his own 2026-10-02 ruling**, which
+folded all three optional steps of the visit form, and only his own word could do it.
+
+**Why he was asked for it, and what the field had said.** On 2026-10-02 he asked for fewer steps and
+fewer clicks: *"I need all the points in the current form of entering the visit … I don't need too
+many steps and too many clicks by the reps."* Every point stayed and kept its header, and each of the
+three optional steps shrank to a one-tap dashed row. Then the field answered. Across the module's
+first three live days the reps recorded a **next step on 1 visit of 332** and an **objection on 2** —
+and these are the two questions a pharmaceutical manager actually coaches on. Five readers run on
+them (`commitments.ts`, `call-prep.ts`'s last objection, `field-heard.ts`, and the boards that quote
+those), so they were not broken, they were simply never filled in.
+
+**What changed, exactly.** Step 7, *What you took away*, renders its two rows of chips with nothing in
+front of them. The other two optional steps — the pharmacy stock check and what he left behind — are
+**unchanged and still folded**, so `VisitExtra` is now `"pharmacy" | "left"` and `openExtras` still
+starts empty. 🔴 **Step 7 carries no folded branch at all.** A step that can never be folded must not
+keep the row that folds it: a key nothing folds would leave an *"Add what the customer said"* row on
+screen that could never be shown, which is the silently-dead branch this repo has been bitten by
+before.
+
+🔴 **UNFOLDED IS NOT REQUIRED, and that is the half that would go wrong quietly.** Chips in view read
+as a question the save asks. The save's own check (`draft`) refuses a visit for the customer, the
+products and the comment and **for nothing else** — a rep at a door must never be refused for an
+objection he was not given, and the header still reads `Optional` above the line that says the visit
+logs without it. `tests/phoenix-crm-visit-form-ease.test.ts` (e) asserts the refusal half of `draft`
+mentions neither `objection` nor `nextStep`, and the break that adds one goes red.
+
+**The press count moves the right way.** A rep who answers now taps 2 instead of 3; a rep who skips
+taps nothing either way and pays only the scroll. Nothing was asked twice and no step was added —
+which is the 2026-10-02 ruling's own standard, met with the step open.

@@ -13,15 +13,23 @@
  *     why it sits straight under the products rather than after the optional steps;
  *   - OPTIONAL: the pharmacy and its per-product stock answers (the box stays, it never blocks);
  *   - OPTIONAL: what he left behind — a record, never a stock movement;
- *   - OPTIONAL: the customer's objection and his next step, both chips.
+ *   - OPTIONAL and OPEN: the customer's objection and his next step, both chips.
  *
- * 🔴 THE THREE OPTIONAL STEPS START FOLDED (owner, 2026-10-02, asked how step 3 should follow Report
- * It: "I need all the points in the current form of entering the visit … I don't need too many steps
- * and too many clicks by the reps"). Every point stays and keeps its header, so the form still shows
- * all seven; an optional one opens IN PLACE with one tap on its row, the way Report It adds a block.
- * No step was added and no press was added to a visit that skips them — the usual visit — while the
- * step shrinks to what the save needs. Never fold a REQUIRED step: the bar's jump would land on a
- * closed box.
+ * 🔴 TWO OPTIONAL STEPS START FOLDED (owner, 2026-10-02, asked how step 3 should follow Report It: "I
+ * need all the points in the current form of entering the visit … I don't need too many steps and too
+ * many clicks by the reps"). Every point stays and keeps its header, so the form still shows all
+ * seven; a folded one opens IN PLACE with one tap on its row, the way Report It adds a block. No step
+ * was added and no press was added to a visit that skips them — the usual visit — while the step
+ * shrinks to what the save needs. Never fold a REQUIRED step: the bar's jump would land on a closed
+ * box.
+ *
+ * 🔴 STEP 7 — the objection and the next step — IS UNFOLDED AGAIN (owner, 2026-10-06: "unfold
+ * objection and next step in Phoenix CRM"). It had been folded with the other two, and the field
+ * answered: across the module's first three live days the reps recorded a next step on 1 visit of 332
+ * and an objection on 2 — the two questions a pharmaceutical manager actually coaches on, behind a
+ * tap nobody took. Optional is untouched: the save still never asks for either, so this costs the rep
+ * who skips them nothing but the scroll, and saves a tap for the rep who answers. Only the owner's
+ * own word can fold it again — his 2026-10-02 ruling is what this amends.
  *
  * Log visit lives in a bar held at the bottom of the screen, under his thumb wherever he has scrolled
  * to, and the bar names the ONE thing still missing in the save's own words — so he never taps into a
@@ -152,8 +160,15 @@ function stepMark(mark: StepMark) {
   return mark === "required" ? <CrmPill tone="orange">Required</CrmPill> : <CrmPill>Optional</CrmPill>;
 }
 
-/** The three optional steps, each folded until he opens it (owner, 2026-10-02). */
-type VisitExtra = "pharmacy" | "left" | "outcome";
+/**
+ * The optional steps that are still FOLDED until he opens one (owner, 2026-10-02).
+ *
+ * 🔴 "What you took away" — the objection and the next step — LEFT THIS TYPE on 2026-10-06, at the
+ * owner's own instruction ("unfold objection and next step in Phoenix CRM"), which is the only thing
+ * that can lift one of his own rulings. It renders open, so it needs no key here and no tap to reach:
+ * a key that nothing folds would leave a row on screen that can never be shown.
+ */
+type VisitExtra = "pharmacy" | "left";
 
 /**
  * An optional step, folded: Report It's dashed "add" row, the whole row one tap. Its header stays above
@@ -399,8 +414,9 @@ export function VisitLogForm({
   const [objectionNote, setObjectionNote] = useState("");
   // What he handed over. A RECORD, never a stock movement — nothing here subtracts from anything.
   const [samples, setSamples] = useState<SamplesGiven>({});
-  // The optional steps he has opened on THIS visit. Every visit starts with all three folded; one tap
-  // opens one in place, and it stays open across Next and "Change something", so nothing typed is lost.
+  // The optional steps he has opened on THIS visit. Every visit starts with both of them folded; one
+  // tap opens one in place, and it stays open across Next and "Change something", so nothing typed is
+  // lost. "What you took away" is not among them since 2026-10-06 — it is simply open (VisitExtra).
   const [openExtras, setOpenExtras] = useState<ReadonlySet<VisitExtra>>(() => new Set());
   // The spoken note, already uploaded by the control. Null is the normal case: it was never required.
   const [voiceNote, setVoiceNote] = useState<VoiceNoteValue | null>(null);
@@ -1139,9 +1155,12 @@ export function VisitLogForm({
       </CrmBlock>
 
       <CrmBlock actions={stepMark("optional")} className="border-t border-slate-100" title="7 · What you took away">
-        {openExtras.has("outcome") ? (
-          <>
-        {/* Both optional, both taps. The objection is the CUSTOMER's, never a mark against him, and the
+        {/* 🔴 OPEN, NOT FOLDED (owner, 2026-10-06: "unfold objection and next step in Phoenix CRM").
+            Both are still OPTIONAL — nothing here gates the save and a rep who taps neither loses
+            nothing — but the chips are in view instead of behind a tap. There is no folded branch to
+            fall back to: a step that can never be folded must not carry the row that folds it.
+
+            Both optional, both taps. The objection is the CUSTOMER's, never a mark against him, and the
             next step comes back to him at the door next time. */}
         <p className="text-sm font-black text-slate-800">Did the customer push back on anything?</p>
         <CrmChoice
@@ -1180,15 +1199,6 @@ export function VisitLogForm({
           value={nextStep}
         />
         {isFollowUp(nextStep) ? <p className="mt-2 text-xs font-semibold text-slate-500">It comes back to you at this customer&apos;s door next time.</p> : null}
-          </>
-        ) : (
-          <FoldedStep
-            disabled={saving}
-            label="Add what the customer said"
-            note="What they pushed back on, and your next step."
-            onOpen={() => openExtra("outcome")}
-          />
-        )}
       </CrmBlock>
         </>
       )}

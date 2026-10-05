@@ -30,6 +30,12 @@
  * — a real receiver's own noise is the thing being measured, and every bound is on the generous side
  * of what a phone in a pocket in Cairo traffic actually does. A flag here is evidence for a human to
  * read, never a verdict and never an action.
+ *
+ * 🔴 AND THE FIRST THING TO ASK OF A FIX IS WHETHER IT IS A RECEIVER READING AT ALL. With Android's
+ * "Precise location" switched off the OS hands back a grid-snapped tile centre with a fixed
+ * accuracy — a number that repeats and never drifts by construction — and four of the five
+ * detectors below read exactly that as a preset. It accused a working rep three times on
+ * 2026-10-03. `COARSE_ACCURACY_METERS` is that gate, and its comment carries the measurement.
  */
 
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
@@ -48,13 +54,28 @@ export type PhoenixCrmIntegrityFlag =
   /** Every fix of the day reported the same accuracy to the tenth of a metre. */
   | "constant_accuracy"
   /** A coordinate with a typist's precision rather than a receiver's. */
-  | "typed_coordinate";
+  | "typed_coordinate"
+  /** The phone was handing out approximate location, so no precision test below means anything. */
+  | "coarse_location";
 
 export const PHOENIX_CRM_STRONG_INTEGRITY_FLAGS: readonly PhoenixCrmIntegrityFlag[] = [
   "mock_provider",
   "coordinate_replay",
   "impossible_travel",
   "zero_jitter",
+];
+
+/**
+ * The flags that rest on the fix being PRECISE. Each one reads a coarse reading as a preset: an
+ * approximate fix repeats its coordinate because it is quantised, and reports one accuracy all day
+ * because that number is a constant, not a measurement. None of them can say anything about a fix
+ * whose own error bar is wider than the thing being measured.
+ */
+export const PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS: readonly PhoenixCrmIntegrityFlag[] = [
+  "coordinate_replay",
+  "zero_jitter",
+  "constant_accuracy",
+  "typed_coordinate",
 ];
 
 /** Human wording for the board. Plain English — the reader is a manager, not an engineer. */
@@ -65,6 +86,7 @@ export const PHOENIX_CRM_INTEGRITY_LABELS: Record<PhoenixCrmIntegrityFlag, strin
   zero_jitter: "The position never moved all day",
   constant_accuracy: "Every reading had identical accuracy",
   typed_coordinate: "The coordinate looks typed, not measured",
+  coarse_location: "The phone was set to approximate location, not precise",
 };
 
 // ── Thresholds ──────────────────────────────────────────────────────────────────────────────────
@@ -104,6 +126,38 @@ export const CONSTANT_ACCURACY_MIN_FIXES = 5;
 
 /** A coordinate that is exactly itself at four decimals (~11 m) was chosen, not measured. */
 export const TYPED_COORDINATE_DECIMALS = 4;
+
+/**
+ * At or above this reported accuracy the fix is an APPROXIMATE-LOCATION fix, and no precision test
+ * may be run on it.
+ *
+ * 🔴 WHY, measured on production 2026-10-05. Android's "Precise location" toggle has an off
+ * position, and with it off the OS stops giving the app a receiver reading: it hands back a
+ * grid-snapped coordinate for a ~1–2 km tile with a FIXED accuracy. That is not a degraded GPS fix,
+ * it is a different kind of number — and every detector above read it as a preset. One rep,
+ * Yasmeen Samy, had her phone that way for one morning on 3 October and the board accused her
+ * three times over with `coordinate_replay` (a STRONG flag) and `constant_accuracy`: 11 fixes,
+ * 4 customers, `spreadMeters: 0`, every reading exactly 2000 m, and `deviceMocked: null` — the
+ * phone never confessed anything, because there was nothing to confess. She was working.
+ *
+ * 🔴 And `zero_jitter` — also strong, and worse — missed her only on the clock: that morning spanned
+ * 59 minutes against the 120 the detector wants. A full day on the same setting reads as "the
+ * position never moved all day" about a rep who moved all day.
+ *
+ * WHERE THE LINE GOES. 772 real fixes from 14 reps: median 14 m, 95th 60 m, 99th 122.4 m. Above
+ * that the population is EMPTY until 1273.4 m, and the only inhabitants of the far end are the four
+ * approximate-mode fixes themselves (1273.4, 1414.0, 2000.0 ×2). 500 m sits in that empty band —
+ * four times the worst honest fix, and well under half the nearest coarse one — so it separates the
+ * two populations without touching a single real reading.
+ *
+ * WHAT IT DOES NOT WAIVE. `mock_provider` and `impossible_travel` still fire on a coarse fix: the
+ * first is the phone's own confession and owes nothing to precision, and the second already
+ * subtracts both readings' error bars, so a 2000 m fix simply needs a bigger impossibility. And a
+ * coarse fix is not silent — it carries `coarse_location`, which is the honest reading of it and
+ * the one a manager can act on by asking for Precise location to be switched back on. A rep whose
+ * every fix is coarse is now a visible pattern instead of a false accusation.
+ */
+export const COARSE_ACCURACY_METERS = 500;
 
 // ── Input ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -188,14 +242,44 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
   if (input.deviceMocked === true) flags.add("mock_provider");
   signals.deviceMocked = input.deviceMocked;
 
+  // ── Is this fix precise enough to be judged on precision at all? ──────────────────────────────
+  //
+  // A coarse reading is evidence of nothing precise on EITHER side of a comparison, so it is taken
+  // out of both: this fix stops being judged, and a coarse fix already on record stops being
+  // something to judge against. Without that second half an honest precise fix gets flagged for
+  // "replaying" the tile centre its own phone handed back an hour earlier — the same false
+  // accusation, one reading later.
+  const isCoarse = (accuracyMeters: number | null): boolean =>
+    accuracyMeters !== null && Number.isFinite(accuracyMeters) && accuracyMeters >= COARSE_ACCURACY_METERS;
+
+  const fixIsCoarse = isCoarse(fix.accuracyMeters);
+  const measured = history.filter((prior) => !isCoarse(prior.accuracyMeters));
+
+  if (fixIsCoarse) {
+    flags.add("coarse_location");
+    signals.coarse = {
+      accuracyMeters: fix.accuracyMeters,
+      thresholdMeters: COARSE_ACCURACY_METERS,
+      suppressed: [...PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS],
+    };
+  }
+  if (measured.length !== history.length) {
+    signals.coarseHistoryIgnored = history.length - measured.length;
+  }
+
+  /** Publish a precision-dependent flag — unless this fix is too coarse to support one. */
+  const addPrecisionFlag = (flag: PhoenixCrmIntegrityFlag): void => {
+    if (!fixIsCoarse) flags.add(flag);
+  };
+
   // ── Replay — this coordinate has been used before ─────────────────────────────────────────────
-  const replay = history.find((prior) => {
+  const replay = measured.find((prior) => {
     if (!sameCoordinate(fix, prior)) return false;
     if (prior.repHrId !== repHrId) return true;
     return minutesBetween(fix.capturedAt, prior.capturedAt) > REPLAY_MIN_GAP_MINUTES;
   });
   if (replay) {
-    flags.add("coordinate_replay");
+    addPrecisionFlag("coordinate_replay");
     signals.replay = {
       byRepHrId: replay.repHrId,
       sameRep: replay.repHrId === repHrId,
@@ -225,7 +309,7 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
   const day = cairoDay(fix.capturedAt);
   const sameDay = [
     { lat: fix.lat, lon: fix.lon, accuracyMeters: fix.accuracyMeters, capturedAt: fix.capturedAt, customerId: input.customerId },
-    ...history.filter((prior) => prior.repHrId === repHrId && cairoDay(prior.capturedAt) === day),
+    ...measured.filter((prior) => prior.repHrId === repHrId && cairoDay(prior.capturedAt) === day),
   ];
 
   if (sameDay.length >= ZERO_JITTER_MIN_FIXES) {
@@ -240,19 +324,19 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
     const spanMinutes = (Math.max(...times) - Math.min(...times)) / 60_000;
     signals.day = { fixes: sameDay.length, customers, spreadMeters: Math.round(spread), spanMinutes: Math.round(spanMinutes) };
     if (spread < ZERO_JITTER_METERS && customers >= ZERO_JITTER_MIN_CUSTOMERS && spanMinutes >= ZERO_JITTER_MIN_SPAN_MINUTES) {
-      flags.add("zero_jitter");
+      addPrecisionFlag("zero_jitter");
     }
 
     const accuracies = sameDay.map((entry) => entry.accuracyMeters).filter((value): value is number => value !== null);
     if (accuracies.length >= CONSTANT_ACCURACY_MIN_FIXES && new Set(accuracies.map((value) => roundTo(value, 1))).size === 1) {
-      flags.add("constant_accuracy");
+      addPrecisionFlag("constant_accuracy");
       signals.constantAccuracy = accuracies[0];
     }
   }
 
   // ── Precision — a coordinate nobody measured ──────────────────────────────────────────────────
   if (isRounded(fix.lat, TYPED_COORDINATE_DECIMALS) && isRounded(fix.lon, TYPED_COORDINATE_DECIMALS)) {
-    flags.add("typed_coordinate");
+    addPrecisionFlag("typed_coordinate");
   }
 
   const ordered = [...flags].sort();

@@ -36,8 +36,14 @@ const ARABIC_MARKS = /[ً-ْٰـ]/g;
  * Honorifics. A rep writes "د/أحمد سمير" one day and "أحمد سمير" the next; the CRM record holds
  * one form or the other. Stripping the title from BOTH sides is what makes those the same person.
  * `prof` and `mr` appear in the English-typed notes.
+ *
+ * 🔴 EXPORTED because the fold now has a second implementation. `phoenix_crm_fold_name` in the
+ * database carries the same list, so the Phoenix CRM loader's duplicate guard can ask the same
+ * question the duplicate board asks; `tests/phoenix-crm-customer-name-fold.test.ts` compares the
+ * two sets literally. Adding a title here without adding it there is the one drift that would put
+ * the two keys back out of step, and that test is what refuses it.
  */
-const TITLE_TOKENS = new Set([
+export const TITLE_TOKENS: ReadonlySet<string> = new Set([
   "د",
   "دكتور",
   "دكتوره",

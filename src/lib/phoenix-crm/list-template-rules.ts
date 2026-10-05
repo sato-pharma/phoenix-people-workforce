@@ -11,8 +11,14 @@
  * ## What the sheet can and cannot carry
  *
  * Everything the system needs about a CUSTOMER is a column here: his list (AM, PM or Pharmacy), his
- * name, his speciality, the grade and the potential grade, his phone, where to find him and a note
- * for the rep.
+ * name, his speciality, the grade and the potential grade, his phone, the days and hours he receives,
+ * where to find him and a note for the rep.
+ *
+ * 🔴 THE DAYS AND HOURS ARE A COLUMN (owner, 2026-10-05) AND THEY ARE NOT THE PLACE. The measured
+ * reason, the cell's grammar and why this leaves the frozen-place rule untouched are all in
+ * `list-sheet-hours.ts`; the short of it is that the rule below is about a POSITION, days and hours are
+ * not one, and what the sheet carries is a DRAFT the rep is shown pre-filled and confirms at the door.
+ * A cell nobody can read never refuses the row — exactly as with the grade and the potential.
  *
  * 🔴 THE PLACE IS NOT A COLUMN, AND MUST NEVER BECOME ONE. A place is validated once, at the door,
  * from a live signboard photo and a GPS read taken on the spot, and its address, brick, area and
@@ -44,8 +50,9 @@ import {
   parsePotentialGrade,
   type PotentialGrade,
 } from "@/lib/phoenix-crm/entry-rules";
+import { parseListSheetHours } from "@/lib/phoenix-crm/list-sheet-hours";
 import { parseListType, type PhoenixListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
-import type { PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
 /** The sheet the fillable table lives on. Single word: a formula or a validation needs no quoting. */
 export const TEMPLATE_SHEET = "Customers";
@@ -105,6 +112,7 @@ export type TemplateColumnKey =
   | "grade"
   | "potentialGrade"
   | "phone"
+  | "daysAndHours"
   | "whereToFind"
   | "note";
 
@@ -154,6 +162,18 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     aliases: ["phone", "mobile", "telephone"],
     width: 18,
     hint: "Optional, digits only",
+  },
+  {
+    // 🔴 ONE COLUMN, NOT A DAY COLUMN AND AN HOUR COLUMN. The hours differ by day — the owner's own
+    // example is "Saturday 2 to 4" — so two columns could not say what a clinic actually does, and the
+    // rep's own editor already works the way this cell reads: pick the days that share an hour, write
+    // the hour once. The format is the same one Phoenix PRINTS on the plan (`weekTimingsText`), so the
+    // words a rep reads back are the words he is asked for here.
+    key: "daysAndHours",
+    label: "Days and hours",
+    aliases: ["days and hours", "days & hours", "days", "hours", "timings", "timing", "clinic hours", "visit hours"],
+    width: 34,
+    hint: "Sat 5:00 PM - 8:00 PM, Mon 6:00 PM — optional",
   },
   {
     key: "whereToFind",
@@ -224,6 +244,12 @@ export type TemplateCustomerRow = {
   grade: PhoenixCrmGrade | null;
   potentialGrade: PotentialGrade | null;
   phone: string | null;
+  /**
+   * The days and hours the cell named, already checked by the module's own `parseTimings`. Null when the
+   * cell was empty OR unreadable — the caller never tells those apart, because the customer loads either
+   * way and the rep types his hours at the door exactly as he does today.
+   */
+  timings: PhoenixCrmTiming[] | null;
   whereToFind: string | null;
   note: string | null;
 };
@@ -329,6 +355,8 @@ export function parseTemplateRow(row: number, cells: Partial<Record<TemplateColu
       grade,
       potentialGrade,
       phone: phone.value,
+      // Never a refusal: an unreadable cell is null and the row still loads (`list-sheet-hours.ts`).
+      timings: parseListSheetHours(raw.daysAndHours),
       whereToFind: text(raw.whereToFind, PLACE_TEXT_MAX),
       note: text(raw.note, TEMPLATE_NOTE_MAX),
     },
@@ -365,4 +393,87 @@ export function readTemplateRows(
     customers.push(verdict.value);
   }
   return { customers, refused };
+}
+
+/**
+ * The "Already on the list" sheet — READ ONLY except for its last column, the days and hours.
+ *
+ * 🔴 WITHOUT THIS SHEET THE WHOLE FEATURE REACHES NOBODY WHO IS ALREADY WAITING. The customers now
+ * pending were minted from iReports360, not loaded from a sheet, and the Customers sheet cannot carry
+ * them: the loader's same-name guard refuses a second row for a customer already on the list, exactly as
+ * it should. So the hours for them are written against the row that is already there, on the sheet that
+ * already prints it, and the upload reads both sheets. Everything else here stays read-only — the four
+ * columns before the hours are printed so the person filling it knows WHICH customer each line is, and
+ * the upload never reads them back as an instruction to change anything.
+ */
+export type TemplateExistingColumnKey = "listType" | "name" | "speciality" | "grade" | "standing" | "daysAndHours";
+
+export const TEMPLATE_EXISTING_COLUMNS: readonly { key: TemplateExistingColumnKey; label: string; width: number; aliases: readonly string[] }[] = [
+  { aliases: ["list", "list type"], key: "listType", label: "List", width: 14 },
+  { aliases: ["customer name", "name", "customer"], key: "name", label: "Customer name", width: 34 },
+  { aliases: ["speciality", "specialty"], key: "speciality", label: "Speciality", width: 22 },
+  { aliases: ["grade", "abc", "a/b/c"], key: "grade", label: "Grade", width: 10 },
+  { aliases: ["where they stand", "standing", "status"], key: "standing", label: "Where they stand", width: 22 },
+  {
+    aliases: ["days and hours", "days & hours", "days", "hours", "timings", "timing", "clinic hours"],
+    key: "daysAndHours",
+    label: "Days and hours",
+    width: 34,
+  },
+];
+
+/** The two tokens the "Already on the list" sheet must carry for the upload to read its hours. */
+export const TEMPLATE_EXISTING_REQUIRED_KEYS: readonly TemplateExistingColumnKey[] = ["name", "daysAndHours"];
+
+/** The note printed under the "Already on the list" table. Recognised by the parser as furniture. */
+export const TEMPLATE_EXISTING_NOTE =
+  "Only the Days and hours column is read back from this sheet, and only for a customer still waiting to "
+  + "be validated. Everything else here is read only — a customer already on this sheet does not need a "
+  + "row on the Customers sheet.";
+
+/** Which column each header cell of the existing sheet is, by index. */
+export function locateExistingColumns(headers: readonly unknown[]): Map<TemplateExistingColumnKey, number> {
+  const found = new Map<TemplateExistingColumnKey, number>();
+  headers.forEach((header, index) => {
+    const folded = foldHeader(header);
+    if (!folded) return;
+    for (const column of TEMPLATE_EXISTING_COLUMNS) {
+      if (found.has(column.key)) continue;
+      if (folded === foldHeader(column.label) || column.aliases.includes(folded)) found.set(column.key, index);
+    }
+  });
+  return found;
+}
+
+/** One hours-only row of the existing sheet: who it is, and the hours written beside him. */
+export type TemplateHoursRow = { row: number; listType: PhoenixListType; name: string; timings: PhoenixCrmTiming[] };
+
+/**
+ * The hours written on the "Already on the list" sheet, for the rows that carry readable ones.
+ *
+ * 🔴 SILENCE IS THE ANSWER FOR EVERY OTHER ROW. A line with no hours is the ordinary case — the sheet
+ * prints every customer the seat holds and only some of them will have hours written in — so an empty or
+ * unreadable cell produces nothing at all and is never reported as a refusal. The only thing this sheet
+ * can do is ADD hours; it can never refuse an upload, and it can never change anything else.
+ */
+export function readTemplateHoursRows(
+  rows: ReadonlyArray<{ row: number; cells: Partial<Record<TemplateExistingColumnKey, unknown>> }>,
+): TemplateHoursRow[] {
+  const out: TemplateHoursRow[] = [];
+  const seen = new Set<string>();
+  for (const entry of rows) {
+    const name = text(String(entry.cells.name ?? ""), CUSTOMER_NAME_MAX);
+    if (!name || name.length < 3) continue;
+    if (name === TEMPLATE_EXISTING_NOTE) continue;
+    const listType = readListTypeCell(entry.cells.listType);
+    if (!listType) continue;
+    const timings = parseListSheetHours(entry.cells.daysAndHours);
+    if (!timings) continue;
+    const key = `${listType}:${name.toLowerCase()}`;
+    // The sheet prints each customer once, so a repeat is a paste slip: the first reading stands.
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ listType, name, row: entry.row, timings });
+  }
+  return out;
 }

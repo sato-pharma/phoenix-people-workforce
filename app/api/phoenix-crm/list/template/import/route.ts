@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       actorLoginId: access.loginId ?? null,
       entityId: result.seatId,
       entityType: "phoenix_crm_list_template_import",
-      summary: `Loaded ${result.loaded} customer(s) onto the Phoenix CRM list for ${result.seatId} from a sheet (${result.refused.length} row(s) refused)`,
+      summary: `Loaded ${result.loaded} customer(s) onto the Phoenix CRM list for ${result.seatId} from a sheet (${result.refused.length} row(s) refused, days and hours set for ${result.hoursSet})`,
     });
     return NextResponse.json({ result, success: true });
   } catch (error) {

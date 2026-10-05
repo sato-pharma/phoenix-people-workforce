@@ -22,8 +22,10 @@ import { VISIT_COMMENT_REQUIRED } from "../src/lib/phoenix-crm/entry-rules.ts";
  *       straight away; everything the save does not need comes after one line that says Optional.
  *   (d) THE ONE-TAP RULE STANDS (owner, 2026-09-29): no photo, no date, no time, no AM/PM picker on the
  *       form, and every control a thumb's size — square, never truncated.
- *   (e) EVERY POINT STAYS, AND THE OPTIONAL THREE START FOLDED (owner, 2026-10-02): no point removed, no
- *       step added, one tap opens an optional step in place, and a required step is never folded.
+ *   (e) EVERY POINT STAYS; THE PHARMACY AND WHAT HE LEFT START FOLDED (owner, 2026-10-02) AND WHAT HE
+ *       TOOK AWAY IS OPEN (owner, 2026-10-06): no point removed, no step added, one tap opens a folded
+ *       step in place, a required step is never folded — and the two chips that are open stay OPTIONAL,
+ *       which is the half that goes wrong most quietly of all.
  *
  * The picker half: today's receiving customers come first, but only when the data carries hours —
  * a list with none keeps the server's order.
@@ -191,19 +193,23 @@ export function runPhoenixCrmVisitFormEaseTests(): void {
     }
   }
 
-  // ── (e) Every point stays; the three optional steps start folded (owner, 2026-10-02) ───────────
-  // "I need all the points in the current form of entering the visit … I don't need too many steps and
-  // too many clicks by the reps." So no point is removed and no step is added: each optional step keeps
-  // its header (the seven titles above still hold) and opens IN PLACE with one tap on its row.
+  // ── (e) Every point stays; two optional steps start folded, and step 7 is OPEN ────────────────
+  // Folded, 2026-10-02: "I need all the points in the current form of entering the visit … I don't need
+  // too many steps and too many clicks by the reps." So no point is removed and no step is added: each
+  // folded step keeps its header (the seven titles above still hold) and opens IN PLACE with one tap.
+  //
+  // 🔴 UNFOLDED, 2026-10-06, for step 7 ONLY: "unfold objection and next step in Phoenix CRM". The
+  // field had answered the fold — a next step on 1 visit of 332 and an objection on 2, across the
+  // module's first three live days — so the two questions a manager actually coaches on sat behind a
+  // tap nobody took. Only the owner's own word can fold it again.
   {
     assert.ok(
       form.includes("const [openExtras, setOpenExtras] = useState<ReadonlySet<VisitExtra>>(() => new Set());"),
-      "every visit starts with the optional steps folded",
+      "every visit starts with the foldable optional steps folded",
     );
     for (const [title, extra] of [
       ["5 · Pharmacy you took feedback from", "pharmacy"],
       ["6 · What you left", "left"],
-      ["7 · What you took away", "outcome"],
     ] as const) {
       const at = form.indexOf(`title="${title}">`);
       assert.notEqual(at, -1, `${title} is still on the form`);
@@ -211,6 +217,33 @@ export function runPhoenixCrmVisitFormEaseTests(): void {
       assert.ok(block.includes(`{openExtras.has("${extra}") ? (`), `${title} shows its boxes once opened`);
       assert.ok(block.includes(`onOpen={() => openExtra("${extra}")}`), `${title}, folded, is one tap on its own row`);
     }
+
+    // Step 7 renders its chips with nothing in front of them, and carries no fold at all: a key that
+    // nothing folds would leave an "Add what the customer said" row on screen that can never be shown.
+    const outcomeAt = form.indexOf('title="7 · What you took away">');
+    assert.notEqual(outcomeAt, -1, "What you took away is still on the form");
+    const outcome = form.slice(outcomeAt, form.indexOf("</CrmBlock>", outcomeAt));
+    assert.equal(outcome.includes("openExtras"), false, "the objection and the next step wait on no tap to open (owner, 2026-10-06)");
+    assert.equal(outcome.includes("<FoldedStep"), false, "and step 7 carries no folded row to fall back to");
+    assert.match(outcome, /options=\{VISIT_OBJECTIONS\.map/, "the objection chips are in view");
+    assert.match(outcome, /options=\{VISIT_NEXT_STEPS\.map/, "and so are the next-step chips");
+    assert.doesNotMatch(form, /type VisitExtra = [^;]*"outcome"/, "and `outcome` is no longer one of the foldable steps");
+
+    // 🔴 UNFOLDED IS NOT REQUIRED. Chips in view are one step away from reading as a question the save
+    // asks, and the rule written above them is that the visit logs without them — a rep at a door must
+    // never be refused for an objection he was not given. The save's own check is the authority.
+    const draftAt = form.indexOf("function draft(visitId: string");
+    assert.notEqual(draftAt, -1, "the save's own check must still be `draft`, or this assertion reads nothing");
+    const refusals = form.slice(draftAt, form.indexOf("ok: true", draftAt));
+    assert.ok(refusals.length > 200, "the refusal half of `draft` must be the slice that was read, not an empty one");
+    assert.doesNotMatch(refusals, /objection/i, "no refusal may mention the objection — it stays optional");
+    assert.doesNotMatch(refusals, /nextStep/i, "and none may mention the next step");
+    assert.match(
+      form,
+      /<CrmBlock actions=\{stepMark\("optional"\)\}[^>]*title="7 · What you took away"/,
+      "its header still reads Optional, so he can see the visit logs without it",
+    );
+
     // A required step is never folded: the bar's jump must land on an open box.
     const required = form.slice(form.indexOf('<CrmBlock title="1 · Customer">'), form.indexOf('title="5 · Pharmacy you took feedback from"'));
     assert.equal(required.includes("<FoldedStep"), false, "nothing the save needs is ever folded");
