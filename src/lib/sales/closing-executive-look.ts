@@ -1,6 +1,7 @@
 import type JSZip from "jszip";
 
 import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emblem-on-dark";
+import { CLOSING_MATRIX_NO_OFFICE_SHEET } from "./closing-matrix-without-office";
 
 /**
  * The Monthly Closing workbook's approved executive geometry.
@@ -492,6 +493,9 @@ export const EXECUTIVE_TAB_COLOURS: ReadonlyMap<string, string> = new Map([
   ["Top Achievers", EXECUTIVE_PALETTE.primaryNavy],
   // By area
   ["Closing Matrix", EXECUTIVE_PALETTE.secondaryNavy],
+  // The Office-free twin sits in the same section and takes the same navy, so the tab strip shows
+  // the two matrices as one block rather than implying a different kind of page (owner, 2026-10-05).
+  [CLOSING_MATRIX_NO_OFFICE_SHEET, EXECUTIVE_PALETTE.secondaryNavy],
   ["Units Matrix", EXECUTIVE_PALETTE.secondaryNavy],
   ["Area x Product", EXECUTIVE_PALETTE.secondaryNavy],
   // By product family
@@ -783,7 +787,25 @@ export async function ensureAccentButtonStyle(zip: JSZip): Promise<number> {
  * The strip is painted ONLY where there is something to warn about. A month with nothing missing has
  * no note, and an amber band across an empty row would read as a warning with the text lost.
  */
-export async function paintExecutiveBands(zip: JSZip, sheetParts: Map<string, string>): Promise<string[]> {
+/**
+ * `widthOverrides` is for APPENDED tabs whose column count is not knowable here.
+ *
+ * Every sheet in `EXECUTIVE_GEOMETRY` has a fixed shape, so the band's width can be a number in a
+ * table. A matrix-shaped tab does not: it carries one block per product, so CNS's fourteen and a
+ * reader's filtered three are different sheets. Pinning the widest in the table would paint a band
+ * forty columns past the end of a filtered grid, and pinning the narrowest would cut the masthead
+ * off inside its own merge — which is the exact defect the owner pointed at in September
+ * ("Units Matrix stopped at 8 while the sheet runs to N").
+ *
+ * So the AUTHOR of such a tab says how wide it is, in columns, and the table stays the authority
+ * for every sheet whose shape it actually describes: an entry here is consulted only where
+ * `EXECUTIVE_GEOMETRY` has none, so nothing already in the table can be overridden from outside.
+ */
+export async function paintExecutiveBands(
+  zip: JSZip,
+  sheetParts: Map<string, string>,
+  widthOverrides: ReadonlyMap<string, number> = new Map(),
+): Promise<string[]> {
   const stylesFile = zip.file("xl/styles.xml");
   if (!stylesFile) return [];
   let styles = await stylesFile.async("string");
@@ -822,12 +844,15 @@ export async function paintExecutiveBands(zip: JSZip, sheetParts: Map<string, st
     // same test was written to stop.
     if (sheetName === INDEX_SHEET_NAME) continue;
     const geometry = EXECUTIVE_GEOMETRY[sheetName];
-    if (!geometry) continue;
+    const override = geometry ? undefined : widthOverrides.get(sheetName);
+    if (!geometry && override === undefined) continue;
     const file = zip.file(part);
     if (!file) continue;
     let xml = await file.async("string");
 
-    const width = Math.max(...Object.keys(geometry.cols).map(Number), 1);
+    const width = geometry
+      ? Math.max(...Object.keys(geometry.cols).map(Number), 1)
+      : Math.max(override ?? 1, 1);
     const letters = (column: number): string => {
       let out = "";
       for (let n = column; n > 0; n = Math.floor((n - 1) / 26)) out = String.fromCharCode(65 + ((n - 1) % 26)) + out;

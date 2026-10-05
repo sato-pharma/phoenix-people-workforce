@@ -31,6 +31,23 @@ export type ReviewSheetRowKind = "detail" | "group" | "total";
 /** A sheet this module asks the filler to create, declaratively — no OOXML in here. */
 export type ReviewSheet = {
   /**
+   * Put this tab immediately AFTER the named sheet instead of on the end of the tab strip.
+   *
+   * 🔴 IT IS NOT A COSMETIC PREFERENCE AND IT IS NOT FREE. `localSheetId` on a defined name is a
+   * POSITION in the workbook's sheet list, not a name, so a sheet inserted anywhere but the end
+   * silently re-attaches every print area, print title and filter range at or after that position
+   * to its neighbour — the defect `addIndexSheet` pays for deliberately and documents at length.
+   * The filler shifts those ids to match, which is the only reason this option can exist; it stays
+   * absent on every sheet that does not NEED a position, which is all three of the review's own.
+   *
+   * It exists for the Office-free matrix twin, which the owner asked for as the tab that "will
+   * follow the closing matrix" (2026-10-05) — a grid meant to be read line for line against the one
+   * beside it is worth the shift, and a copy of it eleven tabs away is not. A name that is not in
+   * the workbook is ignored and the sheet simply appends, so a renamed template cannot fail an
+   * export.
+   */
+  after?: string;
+  /**
    * The contents page heading this sheet is listed under. Absent means "Performance review", which
    * is where every sheet built here belongs.
    *

@@ -23,6 +23,7 @@ import {
   describeConsolidatedClosing,
 } from "@/lib/sales/closing-consolidated";
 import { buildClosingEngineFill } from "@/lib/sales/closing-engine-data";
+import { buildClosingNoOfficeSheet } from "@/lib/sales/closing-no-office-sheet";
 import { fillClosingEngine } from "@/lib/sales/closing-engine-fill";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
 import type { ClosingExportFilter } from "@/lib/sales/closing-export-payload";
@@ -72,6 +73,9 @@ export async function buildConsolidatedPremiumClosing(input: {
   }
 
   const matrix = filterMonthlyClosingMatrix(parts.combined, input.filter);
+  // The span's Office slice, on the same grid and narrowed by the SAME filter — which is all the
+  // Office-free twin needs, and `ClosingExportFilter` has no row-level field for it to miss.
+  const office = parts.office ? filterMonthlyClosingMatrix(parts.office, input.filter) : null;
 
   // Every month's invoice lines, for the Details and Top Customers pages. Masked by default — this
   // read never reveals. All or nothing: a month that failed to load would make those pages undercount
@@ -109,7 +113,18 @@ export async function buildConsolidatedPremiumClosing(input: {
     { latestPeriod: matrix.period, periods: parts.periods },
   );
   const reviewSheets = buildReviewSheets(review, { line: matrix.line, period: consolidatedSpanLabel(parts.periods) });
-  const buffer = await fillClosingEngine(fill, { macroFree: !input.macros, reviewSheets });
+  // 🔴 THE CLOSING MATRIX WITHOUT THE OFFICE CHANNEL, as the tab straight after it (owner,
+  // 2026-10-05). CNS only — Office is a CNS-only channel, so the builder returns null on every
+  // other line and no other workbook gains a copy of the grid before it. Its title carries the
+  // span rather than one month, because the matrix it reduces is the merged one.
+  const noOfficeSheet = buildClosingNoOfficeSheet(matrix, office, {
+    filterNote,
+    periodLabel: consolidatedSpanLabel(parts.periods),
+  });
+  const buffer = await fillClosingEngine(fill, {
+    macroFree: !input.macros,
+    reviewSheets: noOfficeSheet ? [...reviewSheets, noOfficeSheet] : reviewSheets,
+  });
 
   return {
     buffer,

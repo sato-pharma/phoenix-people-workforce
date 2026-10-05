@@ -566,6 +566,11 @@ export async function POST(request: Request) {
         // builds it from an aggregate that carries no customer and no distributor. So rather than
         // hide it, the note below states in words that these figures are the whole month's Office.
         office: officeFiltered,
+        // Whether the Office grid above is comparable with the matrix, which is what decides the
+        // "Closing Matrix (No Office)" tab. Under a row-level filter it is NOT — the note three
+        // lines up says so in words — and subtracting the whole month's Office from a narrowed
+        // matrix would print negative sales, so the tab is absent there rather than wrong.
+        officeNarrowedWithMatrix: !rowLevelActive,
         // The whole month's rows drive the Store Split sheet, so a reader who filtered to one area
         // can still see WHERE the rest of that city's share went; `storeSplitScopeAreaCodes` marks
         // which of those areas this workbook actually covers.

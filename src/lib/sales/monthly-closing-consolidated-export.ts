@@ -292,6 +292,14 @@ export async function buildConsolidatedClosingWorkbook(input: {
     filterNote,
     includeTargetSheet: true,
     office,
+    // The Office-free twin, right after the Closing Matrix (owner, 2026-10-05 — "add the no-office
+    // tab to the consolidated closing export too"). Unconditionally true here, and that is a
+    // property of the type rather than a judgement: `ClosingExportFilter` carries areas, regions,
+    // products and an area search and NOTHING row-level, so this path cannot produce the one case
+    // the flag exists to refuse — a matrix narrowed by a filter the Office aggregate cannot see.
+    // `office` above is merged from the per-month grids each filtered with the same filter, and is
+    // null unless EVERY month had one, so a short span omits the tab rather than under-subtracting.
+    officeNarrowedWithMatrix: true,
     storeSplitApplied,
     storeSplitCells,
     // Masked by code from EVERY month's whole rows, because a split entry carries no distributor to
