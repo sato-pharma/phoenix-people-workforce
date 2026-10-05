@@ -903,6 +903,49 @@ runs anyway with a warning, so a stuck holder cannot fail a PR by itself; on a G
 the lock is always free. Pinned by `tests/ci-typecheck-lock.test.ts`, which on Linux holds the lock
 from another process and proves the step waits.
 
+### The build OOM was contention, not size — measured 2026-10-05
+
+`node scripts/remote-check.mjs build` was recorded on 2026-10-04 dying `Killed` with exit **137** —
+SIGKILL, the kernel's OOM killer — during `Collecting page data using 3 workers`, **after**
+`✓ Compiled successfully`, taking ~300s to die where the measured figure for a whole build was 112s.
+That left the build as the one stage with no proof before `main`: a PR's CI does not build
+(`validate` builds only on non-PR events) and `remote-check all` is lint + typecheck + test.
+
+🔴 **THE OBVIOUS FIX IS WRONG, AND THIS SECTION EXISTS SO NOBODY PAYS FOR IT TWICE.** Capping
+`next build` is the natural reading of "3 workers" plus "out of memory", and it does nothing. Four
+runs on the box, each sampled every 10s for `free -m` and per-process RSS:
+
+| workers (`PHX_BUILD_CPUS`) | heap cap | result | peak available | peak `next-build` RSS |
+| --- | --- | --- | --- | --- |
+| 2 | 3072 MB | PASS 113s | 307 MB | — |
+| 2 | 2048 MB | PASS 118s | 213 MB | — |
+| 1 | 2048 MB | PASS 123s | 215 MB | 6455 MB |
+| **3 (uncapped control)** | **none** | **PASS 118s** | **295 MB** | **6458 MB** |
+
+**The uncapped control passes.** So no cap was ever the fix, and two commit messages claiming
+otherwise were squashed out rather than shipped. Both knobs are inert here for one reason: the
+"workers" are **threads inside a single `next-build` process** — `ps` shows `next-build` at 6.4 GB
+with `next-server` at 5 MB and `node` at 2 MB beside it — and that memory is Turbopack's native
+Rust allocation. `--max-old-space-size` bounds the V8 heap and not that, which is why 3072 → 2048
+moved the peak by nothing; `experimental.cpus` barely moves it either, with 2 workers → 1 returning
+**2 MB** of headroom for **5 extra seconds**.
+
+What the table does establish is that this build needs **~7.4 GB of a 7.7 GB box** however it is
+invoked. It has no headroom at all, so it survives alone and dies beside anything substantial —
+which is exactly what ~300s-to-die against ~118s-to-finish describes, and three concurrent checks
+have left this box at 250 MB available on their own.
+
+So the protection is the lock, not a number. The `build` entry now takes the same
+`/tmp/phx-typecheck.lock` as the section above, so a build waits for a typecheck instead of racing
+it into the OOM killer. Pinned by `tests/remote-check.test.ts`, watched failing with the lock
+removed and with a different lock path. 🔴 **Do not "improve" it by adding `PHX_BUILD_CPUS` or
+`NODE_OPTIONS` back** — and `ci.yml`'s `PHX_BUILD_CPUS: 4` is not a precedent: that is a different
+host with a different failure (47 visible CPUs and a thread-spawn abort, above), not this one.
+
+🔴 **And exit 137 is not a code error.** It reads like a compile failure and is not one — the build
+had already succeeded when it was killed, so a 137 here says nothing about the branch. Check `main`'s
+own `Build` step before spending a minute on it.
+
 ### remote-check: one tree per invocation — 2026-10-01
 
 The lock above serialises `tsc`, and nothing else. Until 2026-10-01 every `remote-check.mjs`

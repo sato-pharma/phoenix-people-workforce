@@ -53,6 +53,27 @@ export async function runRemoteCheckTests(): Promise<void> {
       "local typecheck (AGENTS.md §5: a warm incremental cache lies).",
   );
 
+  // 2c — the build must take the SAME lock as the typecheck. It was killed with exit 137 on
+  // 2026-10-04 during "Collecting page data", AFTER compiling successfully, and the cause was
+  // CONTENTION rather than size: the uncapped build passes in ~118s on an idle box, but it needs
+  // ~7.4 GB of this 7.7 GB machine to do it, so it dies beside anything substantial. Three
+  // concurrent checks have left the box at 250 MB available on their own.
+  //
+  // 🔴 DO NOT REPLACE THIS WITH A CAP. PHX_BUILD_CPUS and --max-old-space-size were both
+  // measured and both inert — the "workers" are threads inside ONE next-build process and its
+  // memory is Turbopack's native allocation, so 2 workers to 1 returned 2 MB and cost 5s. The four
+  // runs are tabulated above the CHECKS entry; the lock is the only thing that changed the failure
+  // mode, so it is the only thing asserted.
+  const buildCmd = SRC.match(/^\s*build:\s*"([^"]+)"/m)?.[1] ?? "";
+  assert.ok(buildCmd !== "", "tests/remote-check.test.ts can no longer find the `build` entry in the CHECKS table.");
+  assert.ok(
+    /flock -w \d+ \/tmp\/phx-typecheck\.lock/.test(buildCmd),
+    "the remote build no longer takes /tmp/phx-typecheck.lock. ci.yml's typecheck step and the " +
+      "typecheck above both take it; without it a build races a typecheck on a 7.7 GB box, which " +
+      "is the OOM kill (exit 137) this lock exists to prevent. Command read: " +
+      JSON.stringify(buildCmd),
+  );
+
   // 3 — it must not use the runner's own working directory. A CI job owns ~/actions-runner/_work
   // and cleans it between runs; sharing it makes a real CI run fail for reasons nobody can
   // reproduce, and a persistent runner already has stale-state hazards of its own.
