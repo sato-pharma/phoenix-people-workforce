@@ -53,6 +53,7 @@ import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { ApiError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmDecisionCounts, phoenixCrmReadsDecisions } from "@/lib/phoenix-crm/server/needs-you";
+import { VALIDATION_REVIEWS_PATH } from "@/lib/phoenix-crm/server/validation-reviews";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
 import { countDirectOrderAwaitingFast, getDirectOrderUnbookedBadge } from "@/lib/direct-orders/service";
@@ -784,7 +785,8 @@ const orphanedRequests: NeedsYouAdapter = {
 
 /**
  * Phoenix CRM's own decisions (added 2026-10-03): a list request and an off-plan visit at THIS
- * viewer's step, and how much of the carried-over lists is still waiting to be validated.
+ * viewer's step, how much of the carried-over lists is still waiting to be validated, and — since
+ * 2026-10-05 — the places the Google Maps check could not settle, which only the Super Admin decides.
  *
  * 🔴 IT COUNTS NOTHING ITSELF. Every figure comes from `loadPhoenixCrmDecisionCounts`, which reads the
  * module's own producer — the same one the Phoenix CRM page's "waiting for you" badge reads — so the
@@ -799,7 +801,7 @@ const orphanedRequests: NeedsYouAdapter = {
  */
 const phoenixCrmDecisions: NeedsYouAdapter = {
   id: "phoenix-crm-decisions",
-  load: async (access) => {
+  load: async (access, now) => {
     // The module's own gate, asserted HERE and not left to the page — the same shape `hubBadge` uses
     // and for the same reason: a `Forbidden:` rejection is classified as a TRUE zero upstream.
     await assertPermission(access, "phoenix_crm", "read");
@@ -863,6 +865,33 @@ const phoenixCrmDecisions: NeedsYouAdapter = {
         overdue: false,
         // The cost of the delay, stated plainly. It is the module's own rule, not an SLA.
         note: world ?? "An off-plan visit counts in nothing until it is decided, so the rep's figures wait on this.",
+      });
+    }
+
+    // Added 2026-10-05, the day the owner put this queue on email, in-app and Telegram by name. The
+    // board is the fourth way the same hold reaches him and the only one still showing it tomorrow,
+    // so a notice read at midnight and left is not a notice lost.
+    if (counts.placeChecks > 0) {
+      items.push({
+        key: "phoenix-crm-decisions:place-checks",
+        sourceId: "phoenix-crm-decisions",
+        kind: "approval",
+        // HIS OWN LANE, and the strongest claim to it in this module: the Super Admin is the only
+        // person who can decide a held place, so nobody else can clear this row for him.
+        lane: "yours",
+        label: `${counts.placeChecks} ${plural(counts.placeChecks, "place is", "places are")} held for your approval`,
+        count: counts.placeChecks,
+        people: [],
+        // 🔴 ITS OWN HREF, not the source's Team tab — that screen cannot decide one of these. The
+        // `orphaned-requests` source carries per-item hrefs for the same reason.
+        href: VALIDATION_REVIEWS_PATH,
+        externalUrl: null,
+        // An age, because this one has a cost that grows: the customer stays unvalidated meanwhile.
+        // Still no `overdue` verdict — the module publishes no SLA for it and this board invents none.
+        oldestAt: counts.oldestPlaceCheckAt,
+        ageDays: ageDaysSince(counts.oldestPlaceCheckAt, now),
+        overdue: false,
+        note: "The system could not confirm the place, so it is waiting on you. Until it is decided the customer stays unvalidated and a visit there scores nothing.",
       });
     }
 
