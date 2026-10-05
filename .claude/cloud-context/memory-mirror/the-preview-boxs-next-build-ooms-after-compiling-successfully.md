@@ -1,6 +1,6 @@
 ---
 name: the-preview-boxs-next-build-ooms-after-compiling-successfully
-description: "CORRECTED 2026-10-05 — `remote-check.mjs build` is NOT broken and never needed a cap. The exit-137 kill of 2026-10-04 was CONTENTION: uncapped it passes in ~118s on an idle box, but it needs ~7.4 GB of the 7.7 GB box however it is invoked, so it dies beside anything substantial. Capping is measurably inert — the \"3 workers\" are threads inside ONE `next-build` process holding ~6.4 GB of native Turbopack memory, so `--max-old-space-size` bounds the wrong thing and 2 workers to 1 returned 2 MB for 5 extra seconds. The fix is the `/tmp/phx-typecheck.lock` the build now takes. Exit 137 is never a code error."
+description: "The preview box build is OOM-killed by CONTENTION, never by its own size — and the per-stage typecheck lock was NOT enough: `lint` and `test` take no lock, so a second session's `all` kills a build anyway (measured twice, 2026-10-04 and 2026-10-05). The run now takes /tmp/phx-remote-check.lock for its WHOLE duration — a different file from the per-stage one, because flock locks a file description and re-taking the same one would deadlock the run against itself. Exit 137 is SIGKILL after `Compiled successfully` and now reports NO VERDICT (exit 4), never FAIL. And a lock cannot bind a branch that never heard of it, so remote-check now ASKS THE BOX before it pushes anything — it reads /proc/*/cwd for a process under remote-check/runs/ and REFUSES to start a second run (PHX_CHECK_FORCE=1 overrides); the probe fails CLOSED, so an unreadable answer refuses rather than reading as an idle box. Capping workers or heap is measurably inert."
 metadata:
   node_type: memory
   type: reference
@@ -31,21 +31,53 @@ beside it at 5 MB and 2 MB — and its ~6.4 GB is Turbopack's **native Rust** al
 beside anything substantial — which is exactly the 2026-10-04 reading, ~300s to die against ~118s
 to finish, and three concurrent checks have left this box at 250 MB available on their own.
 
-**So the protection is a lock, not a number.** `remote-check`'s `build` entry takes the same
-`/tmp/phx-typecheck.lock` as its typecheck and ci.yml's, so a build waits for a typecheck instead
-of racing it into the OOM killer. Pinned by `tests/remote-check.test.ts`. 🔴 **Do not add
-`PHX_BUILD_CPUS` or `NODE_OPTIONS` back** — ci.yml's `PHX_BUILD_CPUS: 4` is a different host with a
-different failure (47 visible CPUs, a thread-spawn abort), not a precedent for this one.
+🔴 **THE PER-STAGE LOCK WAS NOT ENOUGH, AND THE NEXT BUILD PROVED IT THE SAME DAY.** #5333 gave
+the `build` entry the typecheck lock; the first run of the new `all` was OOM-killed anyway, in 210s,
+at the same "Collecting page data" stage. Sampling the box straight afterwards: two unrelated node
+processes holding **~4.7 GB** of 7,740 MB, and a second `remote-check` minutes later — a
+`tsc --noEmit` at **5,499 MB**. **`lint` and `test` take no lock at all**, so a second session's
+`all` collides on its two unguarded stages, and the box also carries a standing preview dev server.
 
-🔴 **Exit 137 is SIGKILL and is never a code error.** The build prints `✓ Compiled successfully`
+**The unit of exclusion is the RUN, not the stage.** `buildRunScript` opens
+`/tmp/phx-remote-check.lock` on fd 9 and holds it for the whole run. A **different file** from the
+per-stage lock on purpose: `flock(2)` locks an open file *description*, so re-taking
+`/tmp/phx-typecheck.lock` inside the typecheck would deadlock the run against itself. It falls
+through to a warning after 30 minutes and never fails the run — a lock that can turn a check red is
+a check people learn to skip. 🔴 **Do not add `PHX_BUILD_CPUS` or `NODE_OPTIONS` back** — the table
+above is what happens, and ci.yml's `PHX_BUILD_CPUS: 4` is a different host with a different
+failure (47 visible CPUs, a thread-spawn abort), not a precedent for this one.
+
+🔴 **Exit 137 is SIGKILL, is never a code error, and now reports NO VERDICT (exit 4) rather than FAIL.** The build prints `✓ Compiled successfully`
 first and is killed after, so a 137 says nothing about the branch — compilation, the stage that
 catches a client/server boundary violation, had already passed. Read `main`'s own `Build` step
 before spending a minute on it.
 
-**The coverage gap is real and unchanged.** A PR's CI does not build (`validate` builds only on
-non-PR events) and `remote-check all` is lint + typecheck + test, so `remote-check build` run by
-hand is the only pre-merge proof. A build failure on `main` does not go red loudly — it makes
+**The coverage gap is CLOSED on the `all` side (2026-10-05).** A PR's CI still does not build
+(`validate` builds only on non-PR events), but `remote-check all` now INCLUDES the build, so the
+standing pre-push step covers it instead of leaving it to the `main` commit. `all` is ~7 min. A build failure on `main` does not go red loudly — it makes
 Railway **withhold the deploy**, which looks like a successful one until `/api/healthz` `revision`
 is read; see [[a-merge-is-not-a-deploy-read-healthz-revision]].
+
+🔴 **AND A LOCK CANNOT BIND A BRANCH THAT NEVER HEARD OF IT — SO THE BOX IS ASKED FIRST.** The
+run-level lock only serializes runs whose branch carries it; every older branch still walks straight
+in. Measured 2026-10-05 while shipping this very change: **three concurrent runs** on the box at
+once, from three sessions. So `remote-check` now reads the box's own `/proc/*/cwd` in the state call
+it already makes, before the push, and **refuses to start when any process sits under
+`remote-check/runs/`** — naming the run ids it found. `PHX_CHECK_FORCE=1` overrides it.
+
+**The probe fails CLOSED.** It ends with `PROBE_OK`; without that marker the answer is UNKNOWN and
+the run refuses, because an empty string, an ssh error or a truncated read would otherwise be
+indistinguishable from an idle box — the one misreading that would reintroduce exactly the collision
+this prevents. It uses no `pgrep`, `lsof` or `fuser`, none of which the box has.
+
+🔴 **THE REFUSAL IS A QUEUE SIGNAL, NOT A VERDICT — an automated chain must RETRY it.** A
+wrapper that polls the box until it is idle and *then* runs `remote-check` still loses the race:
+another session started a run in the gap between the poll and the probe, and the chain read exit 2
+as "did not pass" and halted without pushing. Retry exit 2 on a timer; never reach for
+`PHX_CHECK_FORCE=1` to get past it, which is the collision wearing a different hat.
+
+🔴 **Stopping the LOCAL wrapper does not kill the REMOTE run.** A stopped background task left a
+37-minute orphan holding the box, and the new refusal then reads it as a live run — correctly. Kill
+it by its run directory: match `/proc/*/cwd` under that run id and `kill -TERM`, then `-KILL`.
 
 Account: `docs/ci-self-hosted-runner.md`, "The build OOM was contention, not size".
