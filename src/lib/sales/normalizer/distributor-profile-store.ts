@@ -118,6 +118,10 @@ export function dbRowToProfile(row: DbProfileRow): DistributorProfile | null {
     dateColumns: strArray(row.date_columns),
     customerCodeColumns: strArray(row.customer_code_columns),
     customerNameColumns: strArray(row.customer_name_columns),
+    // A code-level BEHAVIOUR flag, not a user-editable column: carry it from the code profile so a DB
+    // override (which wins whole-row) keeps El Qema's name-fallback. A blank-code→name key is a rule
+    // about this distributor's data shape, not something an operator sets per field.
+    customerKeyNameFallback: rawProfileForDistributor(code)?.customerKeyNameFallback,
     customerAddressColumns: strArray(row.customer_address_columns),
     territoryColumns: strArray(row.area_id_columns),
     brickIdColumns: strArray(row.brick_id_columns),

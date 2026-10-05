@@ -256,6 +256,13 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     dateFormat: "day-first",
     customerCodeColumns: ["ACCOUNT_ID"],
     customerNameColumns: ["الاسم"],
+    // Owner, 2026-10-05: "map by id if not available fall back to name". The September export
+    // (`exclusive - El Qema9.xlsx`) carried the ACCOUNT_ID and رقم الصنف HEADERS but left every data
+    // cell blank — only the customer NAME (`الاسم`) and product NAME (`الصنف`) were filled — so all 70
+    // real sales rows were skipped as locationless footers. With this flag, a blank ACCOUNT_ID falls
+    // back to `الاسم` as the customer key: the row resolves through the same customer→brick crosswalk
+    // and, until a name is mapped, surfaces as a mappable customer unknown rather than being dropped.
+    customerKeyNameFallback: true,
     // NO discountColumns, and that is a decision — owner, 2026-09-07: "you only consider the qty and
     // the city". `خصم 1` holds a real 17-22% and mapping it looked obviously right. At the time it
     // would have CREDITED THE REP FEWER UNITS THAN THE CUSTOMER BOUGHT, because `discount` then fed
