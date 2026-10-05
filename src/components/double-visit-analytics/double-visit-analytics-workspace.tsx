@@ -1028,6 +1028,20 @@ export function DoubleVisitAnalyticsWorkspace({
                 <Download className="h-4 w-4" /> Excel
               </Button>
             </a>
+            <label className="flex items-center gap-2">
+              <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Period</span>
+              <select
+                aria-label="Period for the coaching audit export"
+                value={periodFilter}
+                onChange={(e) => setPeriodFilter(e.target.value as PeriodFilter)}
+                className="min-h-10 rounded border border-slate-300 bg-white px-2 text-sm font-semibold text-slate-700"
+              >
+                <option value="ALL">All periods</option>
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+                <option value="Pharmacies">Pharmacies</option>
+              </select>
+            </label>
             <a href={auditExportHref}>
               <Button className="min-h-10 gap-2 rounded border border-slate-300 bg-white px-3 text-slate-700 hover:bg-slate-50" type="button">
                 <Download className="h-4 w-4" /> Coaching audit
@@ -1045,6 +1059,20 @@ export function DoubleVisitAnalyticsWorkspace({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2">
+              <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Period</span>
+              <select
+                aria-label="Period for the coaching audit export"
+                value={periodFilter}
+                onChange={(e) => setPeriodFilter(e.target.value as PeriodFilter)}
+                className="min-h-11 rounded border border-slate-300 bg-white px-2 text-sm font-semibold text-slate-700"
+              >
+                <option value="ALL">All periods</option>
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+                <option value="Pharmacies">Pharmacies</option>
+              </select>
+            </label>
             <a href={exportHref}>
               <Button className="min-h-11 gap-2 rounded bg-slate-950 px-4 text-white hover:bg-slate-800" type="button">
                 <Download className="h-4 w-4" /> Executive Excel
