@@ -119,6 +119,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   // ── iReports 360 ──────────────────────────────────────────────────────────────────────────────
   "/employee-portals/visits": { icon: "navigate-outline", section: "iReports 360" },
   "/employee-portals/early-birds": { icon: "partly-sunny-outline", section: "iReports 360" },
+  "/employee-portals/ranks": { icon: "star-outline", section: "iReports 360" },
   "/employee-portals/crm": { icon: "server-outline", section: "iReports 360" },
   "/employee-portals/reps-list": { icon: "people-outline", section: "iReports 360" },
   "/employee-portals/kpis": { icon: "pulse-outline", section: "iReports 360" },

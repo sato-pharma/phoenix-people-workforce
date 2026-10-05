@@ -158,7 +158,7 @@ function houseMark(onDark: boolean): string {
  * decoded image however many pages reference the same URI.
  */
 const arabicCache = { html: "" };
-function arabicMark(): string {
+export function arabicMark(): string {
   if (arabicCache.html === "") {
     const png = readFileSync(join(process.cwd(), "public", "brand", "sato-pharma-arabic-on-light.png"));
     arabicCache.html = `<img alt="" src="data:image/png;base64,${png.toString("base64")}">`;
@@ -411,6 +411,15 @@ function pageShell(
   page: number,
   total: number,
 ): string {
+  return sheetShell(`Sato Pharma &middot; Sales Performance Spotlight &middot; ${escapeHtml(result.windowLabel)}`, body, page, total);
+}
+
+/**
+ * The sheet's frame with the plinth line given — shared with the Phoenix Ranks certificate
+ * (src/lib/rep-ranks/certificate.ts), so a rep's two recognition sheets are one design and cannot
+ * drift apart. `plinth` is already-escaped HTML.
+ */
+export function sheetShell(plinth: string, body: string, page: number, total: number): string {
   return `<div class="sheet${page === total ? "" : " sheet--break"}">
     <header class="crest">
       <div class="crest__mark">${houseMark(true)}</div>
@@ -440,12 +449,12 @@ function pageShell(
       </div>
     </div>
 
-    <div class="plinth"><span>Sato Pharma &middot; Sales Performance Spotlight &middot; ${escapeHtml(result.windowLabel)}</span></div>
+    <div class="plinth"><span>${plinth}</span></div>
   </div>`;
 }
 
 /** The eyebrow-over-a-rule that opens every sheet. */
-function opener(text: string): string {
+export function opener(text: string): string {
   return `<p class="eyebrow">${escapeHtml(text)}</p>${TICK}`;
 }
 
@@ -572,7 +581,7 @@ const LB_HEAD = `<thead><tr>
 </tr></thead>`;
 
 /** The three figures on a tint, closed top and bottom — the reference's band, doing the same job. */
-function statBand(cells: { value: string; label: string; tone?: string }[]): string {
+export function statBand(cells: { value: string; label: string; tone?: string }[]): string {
   return `<section class="stats">
     ${cells.map((cell) => `<div class="stat">
       <p class="stat__v ${cell.tone ?? ""}">${cell.value}</p>
@@ -1002,6 +1011,9 @@ const CSS = `
   .foot__no span { display: block; font-size: 6pt; font-weight: 600; color: var(--muted);
     letter-spacing: .14em; text-transform: uppercase; }
 `;
+
+/** The sheet's stylesheet, for the Phoenix Ranks certificate, which wears the same design. */
+export const SHEET_CSS = CSS;
 
 /** The whole document, as HTML. Exported so a test can assert on the markup without Chromium. */
 export function spotlightDocumentHtml(result: SpotlightResult): string {

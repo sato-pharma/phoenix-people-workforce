@@ -207,6 +207,11 @@ export type EmployeePortalNavVisibility = {
   // answers "which districts", so a viewer with an empty subtree gets the page's own named empty
   // state rather than a missing row, which reads as a permission fault.
   showEarlyBirdsTab?: boolean;
+  // Phoenix Ranks — the shared board at /employee-portals/ranks (owner, 2026-10-05): every medical
+  // rep of every line, scored on eight equal measures. Unlike Early Birds it is FOR the rep, so the
+  // Medical Rep keeps the row; the rest of the audience is Early Birds' own, and the page enforces
+  // `early_birds:read` server-side.
+  showRanksTab?: boolean;
   showActionsTab?: boolean;
   // Direct Orders — submit/report are the same requester-role set the module itself
   // enforces server-side (DIRECT_ORDER_REQUESTER_ROLES); approvals is only the two
@@ -1051,6 +1056,15 @@ export function resolveEmployeePortalNavVisibility(
     // reports to you" beats an empty grid. The owner ruled otherwise on 2026-09-29: it is not in
     // the catalog row this claims to mirror "exactly", it holds no `early_birds:read`, and a row
     // that only ever says "nothing here" is a row worth removing.
+    showRanksTab:
+      resolvedRole === "Medical Rep" ||
+      (isDistrictManager && !isHeadOfficeManagerRung) ||
+      resolvedRole === "Regional Manager" ||
+      isNationalSalesManager ||
+      isProductManager ||
+      isGroupProductManager ||
+      isMarketingManager ||
+      isTrainingManager,
     showEarlyBirdsTab:
       (isDistrictManager && !isHeadOfficeManagerRung) ||
       resolvedRole === "Regional Manager" ||

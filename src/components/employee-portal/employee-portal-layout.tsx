@@ -386,6 +386,7 @@ function buildEmployeePortalSections({
   showDoubleVisitReportTab = false,
   showFieldActivityTab = false,
   showEarlyBirdsTab = false,
+  showRanksTab = false,
   showCoachingAnalyticsTab: _showCoachingAnalyticsTab = false,
   showActionsTab = false,
   showDirectOrdersTab = false,
@@ -549,6 +550,8 @@ function buildEmployeePortalSections({
         // Every portal role sees their own CRM visits.
         ...(showMyVisitsTab ? [{ href: "/employee-portals/visits", label: "My Visits", icon: MapPinned }] : []),
         ...(showEarlyBirdsTab ? [{ href: "/employee-portals/early-birds", label: "Early Birds", icon: Sunrise }] : []),
+        // The shared board every rep of every line is ranked on (owner, 2026-10-05).
+        ...(showRanksTab ? [{ href: "/employee-portals/ranks", label: "Phoenix Ranks", icon: Award }] : []),
         // Full scoped CRM Master — self for a Medical Rep, the team's rows for DSM/RM/NSM.
         ...(showCrmMasterTab ? [{ href: "/employee-portals/crm", label: "CRM", icon: Database }] : []),
         ...(showRepsListTab ? [{ href: "/employee-portals/reps-list", label: "Reps List", icon: BookUser }] : []),

@@ -237,6 +237,17 @@ const JOBS = {
     // execution colour. 300 matches the rest of the account; the platform still cuts at 30 (header).
     requestTimeout: 300,
   },
+  "rep-ranks": {
+    title: "Phoenix — Phoenix Ranks nightly",
+    path: "/api/cron/rep-ranks",
+    // 04:17 Cairo (owner, 2026-10-05). Rebuilds every Phoenix Ranks window that holds yesterday —
+    // day, week, month, quarter, semester — from the KPIs board and the Early Birds clock, so the
+    // board every rep opens in the morning is complete. On :17, a minute nothing else holds.
+    schedule: { hours: [4], minutes: [17], mdays: [-1], months: [-1], wdays: [-1] },
+    // A handful of KPIs boards plus every district's day facts: past the 30 s platform cut, so
+    // cron-job.org logs a timeout while the server finishes and the dead-man's switch is the witness.
+    requestTimeout: 300,
+  },
   "reconciliation-check": {
     title: "Phoenix — nightly reconciliation harness",
     path: "/api/cron/reconciliation-check",

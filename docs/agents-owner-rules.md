@@ -6127,6 +6127,81 @@ site would read as sending email while the guard stripped it. Both halves are pi
 rather than quiet. **The rep's side is untouched: he still reads only "the system is checking", never
 that a person looked at him (Phoenix CRM Golden Rule #1).**
 
+## Phoenix Ranks — owner's rulings, 2026-10-05
+
+He asked for one board shared by every medical rep of every line: a score for accuracy, timing,
+number of visits, the KPIs and sticking to plan; the top of the day, week, month, quarter and
+semester; military ranks in Arabic with stars a colleague can see on a profile and a timeline; and
+every rep able to read exactly why they are or are not #1. His answers, asked as multiple choice:
+
+| Question | His answer |
+| --- | --- |
+| Sales in the score? | **Never — field work only.** Sales stay on Sales Rankings. |
+| Who sees what? | **Everything for everyone** — every rep sees every rep's pillars, rank and timeline. |
+| Ranks | **Egyptian army, Arabic** — جندي (Private) up to لواء (Major General), twelve rungs. |
+| Weights | **Equal, and printed on the page.** |
+| GPS | A visible score only. His words: *"for the reps, only accuracy score and give them a score … the metrics keep in your back end or show it to the admin account."* |
+| Added mid-build | *"also am start time"* — its own pillar, on the Early Birds clock (08:00 = 100, 12:00 = 0). |
+
+**What it is built from — Phoenix CRM only.** The first build read the KPIs board, Early Birds and
+iReports360 check-ins; the same evening he ruled *"all data in phoenix crm not ever any data from old
+crm"*, and it was rebuilt before it merged. Now: Phoenix CRM's countable visits (real, validated, AM
+and PM lists — Pharmacy is in no KPI), its lists and grade targets, `phoenix_crm_report_plan_vs_actual`
+with leave applied by `groupPlanByTerritory`, the rep's own "I started working" press, and its place
+check. A rep owes days from the team's start (`phoenix_crm_team_starts`), or from the first real visit
+for a team never started, never before hiring; working days are `isCallRateWorkingDay` and approved
+full-day leave comes out. The call-rate targets are Phoenix CRM's locked AM 2 and PM 10, two pillars.
+
+**Coverage and frequency over any duration.** Asked how they should appear on a day or a week, he
+answered *"it's monthly now, but we can measure it by weekly … it thinks monthly"*. Each window is cut
+into month slices; in each, the month's expectation is prorated by the share of the month's working
+days the rep owed there, and slices are weighted by owed days. A whole month at full attendance equals
+Phoenix CRM's own coverage figure; frequency counts visits against the grade's monthly target at that
+pace, and visits beyond it earn nothing.
+
+**AM start is a BONUS, not a measure.** The first rebuild left a day with no press out of the AM
+start average, and the live October data showed the flaw at once: only 4 of 13 reps had pressed, and
+pressing LOWERED a score — Hassan Mohamed pressed at 10:11 and ranked #5 while Mohamed Ahmed never
+pressed and ranked #1. Asked, he ruled: *"suppose that he forgot, but he made his visits. So give it a
+bonus, but do not make it zero for the whole AM."* So the total is the average of the other
+measures (seven then, twelve now) plus up to 5 bonus points, earned day by day (08:00 earns the day's full share, 12:00 none, a
+day without a press nothing), never above 100. Pressing can only add. Field accuracy is left out when no
+visit could be judged against a place; every other missing measure is a 0 (no plan scores 0).
+
+**Five deeper measures, added the same evening — twelve in all.** Asked which to add, he chose all
+four offered — *"Time between visits, Products per visit, Visit notes, GPS precision"* — each worth the
+same as the first seven, and integrity *"In the score, admin sees detail"*; reps still see scores only.
+
+| Measure | How it scores |
+| --- | --- |
+| Time between visits | His own model, in his words: *"calculate the distance in kilometer between each visit and the other … if walking how much time it will take and consider to add … from 10 to 30 minutes … a waiting list to enter to the doctor and the visit itself it takes from 5 to 10 minutes maximum"*. Walking is the straight line × 1.3 at 5 km/h — **not Google Maps**: Phoenix CRM's `geo.ts` records his earlier rule never to buy a map API. A gap inside walk + 15 to walk + 40 minutes is 100; shorter falls in a straight line to 0, longer falls to 0 at three hours. A pharmacy saved within 3 minutes of a doctor visit is the same stop; a gap over 3 hours is a break, not a gap; both fixes must be 100 m or better. |
+| Products per visit | Three products discussed on a doctor visit is full marks. |
+| Visit notes | The share of field saves with a comment of three characters or more, or a voice note. |
+| GPS precision | A fix of 20 m or better is 100, 200 m or worse is 0. |
+| Integrity | Each save carrying a strong location flag (mock provider, replay, impossible travel, zero jitter) costs five times its share. A fix past Phoenix CRM's own coarse line (`COARSE_ACCURACY_METERS`, 500 m — the accuracy-gate section below) never counts the precision flags, whose list is that module's too: Android's approximate location raises them by itself, the false positive measured on an honest rep, and a row written before the gate landed must not cost a rep either. The admin twin sees the flags; the rep and the certificate never see which check fired. |
+
+🔴 **Time between visits reads `captured_at`, which is the SAVE time, not the arrival** — a rep who
+saves in batches from the car scores low on it. That is the trade-off he chose knowingly; it is why
+this measure was left out of the first build.
+
+**The board is wide cards and every ranked rep can print a certificate.** He found the table *"so
+condensed"* with *"very small"* fonts and asked for cards, and for *"any rep who is taking a rank or a
+title to be able to export premium polished PDF showing his title, his rank and his score and a
+snapshot of why he is in this place"*. `GET /api/rep-ranks/certificate` renders one A4 sheet in the
+spotlight sheet's own design (crest, brackets, stat band, SATO-DIS-2026-01): the rank and its insignia
+(the same SVG the board draws) beside the rep's portrait (owner, 2026-10-06: *"and add his picture"* —
+the performance card's photo source, initials when there is none), titles held, the score, "Why this
+place" and the twelve measures. A
+rep prints their own; Super Admin, CEO and SFE Manager print anyone's from `/admin/ranks`. It reads the
+portal audience, so it never carries a count.
+
+**Where it runs.** A nightly cron at 04:17 Cairo (`/api/cron/rep-ranks`, dead-man's switch
+`phoenix-rep-ranks`) snapshots every window into `rep_rank_standings`; `?backfill=YYYY-MM` rebuilds a
+past month. The portal page (`/employee-portals/ranks`) reads `PORTAL_COLUMNS`, which never selects
+`metrics`; only `/admin/ranks` (Super Admin, CEO, SFE Manager) reads the raw counts. A star is a
+month, quarter or semester title; day and week wins are medals. The rank is the mean of the newest
+three ranked months. Pinned by `tests/rep-ranks.test.ts`.
+
 ---
 
 ## The accuracy gate and an approximate-location fix — owner, 2026-10-05
