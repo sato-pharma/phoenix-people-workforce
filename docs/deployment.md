@@ -676,6 +676,27 @@ HTTP 200. The nudge now has its own route and its own clock
 this to tolerating the red:** "the status lies" is true, and still a worse place to be than a job
 whose red means something.
 
+### Arming a new cron on deploy (`cron-autoarm.yml`)
+
+A cron route merged with a new entry in `scripts/cronjob-sync.mjs`'s `JOBS` map **arms itself** on
+the deploy that ships it. `.github/workflows/cron-autoarm.yml` runs on any push to `main` that
+touches `scripts/cronjob-sync.mjs`, and `scripts/cron-autoarm.mjs` diffs that file, takes only the
+keys that were **added** on the push, and runs the sanctioned one-at-a-time
+`cronjob-sync.mjs --job <key> --apply` for each. So the manual "don't forget to arm it" step that
+once left `territory-restamp` dead for weeks is gone for a genuinely new job.
+
+It stays strictly inside `cronjob-sync`'s own rule (that script's header: 100 cron-job.org requests
+per day, bulk edits are unrollback-able, "resist the urge to add `--all`"): it never sweeps and
+never patches an existing job. A **changed schedule** on a job already live, or one you disabled by
+hand, is left untouched — that stays a deliberate manual `--apply`. New jobs are rare, so this fires
+seldom and spends a handful of the daily budget.
+
+It needs two Actions secrets: `CRON_SECRET` (already present, and upstream of Railway) and
+`CRONJOB_API_KEY` (**must be added once**, same value as Railway). Until the key exists, a push that
+adds a new job fails this run with that message; a push that adds none stays green. The workflow is
+**not** a required check and never blocks a merge — the route is already shipped; this only winds its
+clock. Scope and the new-key detection are pinned by `tests/cron-autoarm.test.ts`.
+
 ## Environment Variables
 
 Production environment variables live on the Railway service `phoenix-people-workforce` (use the

@@ -1,0 +1,56 @@
+name: Arm newly-declared cron jobs
+
+# Closes the last manual step in shipping a cron. Merging a cron route arms NOTHING — cron-job.org is
+# a third-party scheduler with no representation in this repo — so until now someone had to run
+# `scripts/cronjob-sync.mjs --job <key> --apply` by hand, and it has been forgotten before. When a push
+# to main ADDS an entry to the JOBS map in scripts/cronjob-sync.mjs, this arms exactly that new job.
+#
+# IT STAYS WITHIN cronjob-sync's OWN RULE. That script's header forbids a bulk sweep (the cron-job.org
+# API allows 100 requests/day and a bulk edit cannot be rolled back) and says "resist the urge to add
+# --all". This workflow never sweeps and never patches an existing job: scripts/cron-autoarm.mjs diffs
+# the one file, takes only the keys ADDED on this push, and runs the sanctioned one-at-a-time
+# `--job <key> --apply` for each. A changed schedule, or a job disabled by hand, is left alone.
+#
+# SECRETS. CRON_SECRET is already a repo Actions secret and is UPSTREAM of Railway
+# (sync-railway-production-secrets.yml pushes it down), so it matches production; cronjob-sync's bearer
+# check will confirm the length before it writes. CRONJOB_API_KEY must be added as an Actions secret
+# (same value as Railway). Until it is, a push that adds a new job fails this run loudly with that
+# message — a push that adds none stays green.
+#
+# NOT a required check and NOT the deploy gate: it runs after the merge, alongside the Railway deploy,
+# and a red run here never blocks anything. The route is already shipped; this only winds its clock.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/cronjob-sync.mjs
+
+permissions:
+  contents: read
+
+# One arming at a time; never cancel a run that may already be creating a job.
+concurrency:
+  group: cron-autoarm
+  cancel-in-progress: false
+
+jobs:
+  autoarm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # HEAD^ must be reachable to diff what this push introduced.
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Arm newly-declared cron jobs
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CRONJOB_API_KEY: ${{ secrets.CRONJOB_API_KEY }}
+          AUTOARM_BASE_SHA: ${{ github.event.before }}
+        run: node scripts/cron-autoarm.mjs
