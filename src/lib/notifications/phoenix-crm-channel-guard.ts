@@ -4,7 +4,7 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
 // request waiting for the district manager, a request decided, a weekly plan sent for review, a
 // plan approved or returned. Email is blocked for the whole module.
 //
-// TWO exceptions, each by the owner's own order. Those event types — and only those — keep their
+// FOUR exceptions, each by the owner's own order. Those event types — and only those — keep their
 // email. Every other Phoenix CRM notice, the 06:55 digest included, stays email-free.
 //
 // (1) 2026-10-01: a rep's request to edit a week he already sent runs the district manager → SFE → HR,
@@ -15,6 +15,15 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
 // national sales manager and the SFE Manager, with the owner on the BCC — and the BCC needs nothing
 // here, because `sendPhoenixEmail` puts the standing admin on every email the system sends. It is an
 // adoption notice, not a decision: ONE per rep, ever, and nothing waits on anybody who gets it.
+//
+// (3) 2026-10-03: a rep's "Show your manager you started working", to his DISTRICT MANAGER only — see
+// the note on `day_start_confirmed` below for why the SFE Manager's copy is a second event type.
+//
+// (4) 2026-10-05: a place the Google Maps check could not confirm, waiting on the Super Admin's own
+// page — the owner, naming that page: "when an update here /admin/field-crm/validation-reviews I must
+// be notified by email, in app and telegram". He is the module's ONE decider and its only recipient
+// here, so this is the narrowest email in the module: one address, and only when something is actually
+// waiting on his decision. Nothing about it reaches a rep.
 //
 // 🔴 IT IS FOUR, NOT FIVE, SINCE 2026-10-02: the owner was asked directly whether the daily expiry
 // pass should email when it closes a request whose week has passed, and chose "in-app and Telegram
@@ -36,8 +45,9 @@ const PHOENIX_CRM_MODULE = "phoenix_crm";
 
 /**
  * The request to edit a sent week, at each step a PERSON takes (owner, 2026-10-01) — the expiry, which
- * no person takes, is not among them (owner, 2026-10-02) — and a rep's first visit ever on the module
- * (owner, 2026-10-03). Nothing else emails.
+ * no person takes, is not among them (owner, 2026-10-02) — a rep's first visit ever on the module and
+ * his daily start to his district manager (owner, 2026-10-03), and a place held for the Super Admin's
+ * decision (owner, 2026-10-05). Nothing else emails.
  */
 export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = [
   "plan_edit_waiting",
@@ -54,6 +64,13 @@ export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = [
   // push-blocked below) rather than a second recipient here. Adding the SFE to this type is the one
   // change that silently buries him.
   "day_start_confirmed",
+  // (4) 2026-10-05: a place the Google Maps check could not confirm, waiting on the Super Admin's own
+  // page (`/admin/field-crm/validation-reviews`) — the owner asked for "email, in app and telegram"
+  // there by name. It is the only notice in the module whose recipient is the owner HIMSELF and nobody
+  // else (`resolveHrIdsForRole("Super Admin")`, test logins filtered out), so the volume question that
+  // narrowed `day_start_confirmed` does not arise: one address, and only while a decision is waiting.
+  // The rep's side is untouched — he still reads only "the system is checking" (Golden Rule #1).
+  "validation_review_waiting",
 ];
 
 /**

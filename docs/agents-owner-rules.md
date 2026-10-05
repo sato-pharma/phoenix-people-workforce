@@ -6080,3 +6080,49 @@ Rule: `.claude/rules/phoenix-crm-boards.md`. Logic `src/lib/phoenix-crm/refused-
 (the wording, the strict "got through afterwards", the audience, the mock-flag select, that only the recorder and
 this reader name the table, the page shape and its card, and the photo: a pointer for both readers, slot paths only,
 the page never signs, `lazy` end to end).
+
+## The place check reaches him on all three channels — owner ruling, 2026-10-05
+
+His instruction, naming the page itself: *"WHEN AN UPDATE HERE /admin/field-crm/validation-reviews I
+MUST BE NOTIFIIED BY EMAUL, IN APP AND TELEHGRAM"*.
+
+**What "an update" is, read mechanically.** The only thing that ARRIVES on that page is a place the
+Google Maps check could not settle — no listing the system is confident is the account, a lookup that
+failed, a listing over `GOOGLE_STALE_PIN_METERS` away, or (since #5337) a second mismatch on the same
+account. That raises `validation_review_waiting`. His own approve / reject / refuse / restore are NOT
+mailed back to him: he is the sole decider, so a notice about his own click is the only thing it could
+be, and `B-10` is the owner himself (`MEMORY.md`, rule #1).
+
+**What was actually missing.** In-app, Telegram and push were already live on that notice from the
+2026-10-03 ruling. **Email was not** — Phoenix CRM's standing email block (`enforcePhoenixCrmEmailBlock`)
+strips email for the whole module whatever a call site asks for, and it is keyed on the module with an
+allowlist on the exact event type. So the notice was arriving on two of the three channels he named,
+and no amount of asking at the call site could have changed that.
+
+**Why this email is narrow, and why that matters.** It is the FOURTH exception to the module's email ban
+and the only one whose recipient is him and nobody else. `resolveHrIdsForRole("Super Admin")` reads
+`app_auth_users` for active holders of that role, drops anyone whose employee record is terminal, and
+`notifyValidationReviewWaiting` filters `TEST-` logins out. Read on production 2026-10-05: **one**
+holder with an hr id — `B-10`, `omar.anwar@satopharma.com`, employment status active — plus one row with
+a NULL hr id, which the resolver's own `.filter(Boolean)` drops. So the volume arithmetic that narrowed
+`day_start_confirmed` to district managers (~74 emails a morning for the SFE Manager at full rollout)
+does not reach this one: one address, and only while a decision is actually waiting on him.
+
+**All three channels verified reachable the same day, not assumed.** `notification_preferences` for
+`B-10`: `email_enabled`, `telegram_enabled`, `in_app_enabled` and `push_enabled` all true, no quiet
+hours, `module_preferences` empty. `telegram_connections`: `status = connected`, chat id present, linked
+2026-07-11, never disabled. `notification_module_channel_policies` holds no `phoenix_crm` row, so the
+code default (`defaultTelegramPolicyFor`, enabled and not generic-only) applies. An email channel
+switched on over a missing address delivers nothing and looks identical to working, which is why this
+was read rather than inferred.
+
+**Where the ruling lives, and the one shape that would quietly undo it.** The allowlist
+(`PHOENIX_CRM_EMAIL_EVENT_TYPES` in `src/lib/notifications/phoenix-crm-channel-guard.ts`) is the single
+place the exception is declared; the policy row `phoenix_crm.validation_review_waiting` is the intent and
+the guard is the enforcement. 🔴 **The service must not name its channels itself** — it asks
+`phoenixCrmChannels("validation_review_waiting")`. A hardcoded `["in_app", "email", "telegram", "push"]`
+there is a second truth the guard silently overrules, so the day this notice is narrowed again the call
+site would read as sending email while the guard stripped it. Both halves are pinned by
+`tests/phoenix-crm-email-block.test.ts`, which compares the two lists exactly so a widening is visible
+rather than quiet. **The rep's side is untouched: he still reads only "the system is checking", never
+that a person looked at him (Phoenix CRM Golden Rule #1).**

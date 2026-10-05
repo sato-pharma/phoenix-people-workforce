@@ -244,6 +244,12 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // Telegram ONLY, and on PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES so the phone and the Telegram-failure
   // email fallback are both shut; this row is the intent, that guard is the enforcement.
   "phoenix_crm.crm_visit_rollup": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  // A place the Google Maps check could not confirm, waiting on the Super Admin's own page (owner,
+  // 2026-10-05, naming it: "when an update here /admin/field-crm/validation-reviews I must be notified
+  // by email, in app and telegram"). The module's narrowest email: one recipient — the owner, the ONE
+  // decider — and only while something waits on his decision. `PHOENIX_CRM_EMAIL_EVENT_TYPES` is the
+  // enforcement; this row is the intent, and the two must agree or the email-block test goes red.
+  "phoenix_crm.validation_review_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // Phoenix CRM (owner rule 2026-09-16): a grade or drop request and a weekly plan waiting for the
   // reviewing manager, and the decision back to the rep — in-app, Telegram and (since 2026-10-02) the
   // phone, never email.
