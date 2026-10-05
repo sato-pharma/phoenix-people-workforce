@@ -11,12 +11,16 @@ import {
   locateTemplateColumns,
   parseTemplateRow,
   readListTypeCell,
+  locateExistingColumns,
+  readTemplateHoursRows,
   readTemplateRows,
   TEMPLATE_COLUMNS,
+  TEMPLATE_EXISTING_REQUIRED_KEYS,
   TEMPLATE_REQUIRED_KEYS,
   TEMPLATE_SEAT_LABEL,
   TEMPLATE_SHEET,
   type TemplateColumnKey,
+  type TemplateExistingColumnKey,
 } from "../src/lib/phoenix-crm/list-template-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -37,6 +41,7 @@ function read(path: string): string {
 }
 
 const MIGRATION = "supabase/migrations/20261003000753_phoenix_crm_list_template_bulk_add.sql";
+const MIGRATION_HOURS = "supabase/migrations/20261005221500_phoenix_crm_list_sheet_days_and_hours.sql";
 
 function cells(overrides: Partial<Record<TemplateColumnKey, unknown>> = {}): Partial<Record<TemplateColumnKey, unknown>> {
   return { grade: "A", listType: "PM", name: "Dr Ahmed Shalaby", potentialGrade: "AB", ...overrides };
@@ -46,7 +51,7 @@ function cells(overrides: Partial<Record<TemplateColumnKey, unknown>> = {}): Par
 function checkColumns(): void {
   assert.deepEqual(
     TEMPLATE_COLUMNS.map((column) => column.key),
-    ["listType", "name", "speciality", "grade", "potentialGrade", "phone", "whereToFind", "note"],
+    ["listType", "name", "speciality", "grade", "potentialGrade", "phone", "daysAndHours", "whereToFind", "note"],
     "the sheet's columns, in order — the builder writes these and the parser reads them back",
   );
   // 🔴 NO PLACE COLUMN, EVER. A place is validated once at the door from a live photo and a GPS read,
@@ -61,7 +66,7 @@ function checkColumns(): void {
   assert.deepEqual([...TEMPLATE_REQUIRED_KEYS], ["listType", "name"], "a sheet is this template when it names a list and a customer");
 
   // The parser finds a column by any of its aliases, folded, so a sheet somebody rebuilt still reads.
-  const located = locateTemplateColumns(["list", "CUSTOMER NAME", "specialty", " Grade ", "potential", "mobile", "address", "notes"]);
+  const located = locateTemplateColumns(["list", "CUSTOMER NAME", "specialty", " Grade ", "potential", "mobile", " TIMINGS ", "address", "notes"]);
   for (const column of TEMPLATE_COLUMNS) assert.ok(located.has(column.key), `${column.key} is found through its aliases`);
   assert.equal(locateTemplateColumns(["something", "else"]).size, 0, "and a sheet that is not the template matches nothing");
 }
@@ -338,7 +343,15 @@ function checkGradeOptional(): void {
  */
 async function checkBuildsAndReadsBack(): Promise<void> {
   const bytes = await buildPhoenixCrmListTemplate({
-    existing: [{ grade: "A", listType: "PM", name: "Dr Already There", speciality: "Pediatrics", status: "On the list" }],
+    existing: [
+      // One already validated: his hours are the rep's, and the sheet must not invite them to be retyped.
+      { acceptsHours: false, daysAndHours: "Sat 5:00 PM – 8:00 PM", grade: "A", listType: "PM", name: "Dr Already There", speciality: "Pediatrics", status: "On the list" },
+      // One still waiting, with nothing known: this is the row the SFE writes the hours on.
+      { acceptsHours: true, daysAndHours: null, grade: "B", listType: "AM", name: "Dr Waiting To Be Seen", speciality: "Internal medicine", status: "Waiting to be validated" },
+      // Validated with no hours recorded: the cell must say it will do nothing, or the sheet invites
+      // work the upload silently drops.
+      { acceptsHours: false, daysAndHours: null, grade: "C", listType: "PM", name: "Dr Validated No Hours", speciality: "Cardiology", status: "On the list" },
+    ],
     generatedAtIso: "2026-10-03T06:00:00.000Z",
     lineName: "Pedia",
     preparedFor: "Omar Gawish",
@@ -410,6 +423,85 @@ async function checkBuildsAndReadsBack(): Promise<void> {
   const verdict = parseTemplateRow(header.row + 2, cellsBack);
   assert.equal(verdict.kind, "row", "a row typed into the sheet reads back as a customer");
   assert.equal(verdict.kind === "row" ? verdict.value.listType : null, "Pharmacy", "and a lower-case pharmacy survives as a PHARMACY");
+
+  // ── The second sheet, as the upload actually reads it ──────────────────────────────────────────
+  //
+  // 🔴 THE EMITTED WORKBOOK, NOT THE BUILDER'S SOURCE. This sheet is an INPUT now, and the two ways it
+  // could fail are both invisible in the code: a header the locator does not recognise, and Excel
+  // reading "5:00 PM - 8:00 PM" as a date and handing the upload a serial number where a clinic's
+  // evening should be. Both only show up by reading the bytes back through the real readers.
+  const second = workbook.getWorksheet("Already on the list");
+  assert.ok(second, "the workbook carries the Already on the list sheet");
+  if (!second) return;
+
+  let existingHeader: { row: number; columns: Map<TemplateExistingColumnKey, number> } | null = null;
+  for (let rowNumber = 1; rowNumber <= 6; rowNumber += 1) {
+    const row = second.getRow(rowNumber);
+    const values: unknown[] = [];
+    for (let column = 1; column <= 8; column += 1) values.push(excelCellText(row.getCell(column).value));
+    const columns = locateExistingColumns(values);
+    if (!existingHeader && TEMPLATE_EXISTING_REQUIRED_KEYS.every((key) => columns.has(key))) {
+      existingHeader = { columns, row: rowNumber };
+    }
+  }
+  assert.ok(existingHeader, "and its header row names both the customer and his hours, so the upload can read it");
+  if (!existingHeader) return;
+
+  const existingRows: Array<{ row: number; cells: Partial<Record<TemplateExistingColumnKey, unknown>> }> = [];
+  for (let rowNumber = existingHeader.row + 1; rowNumber <= second.rowCount; rowNumber += 1) {
+    const row = second.getRow(rowNumber);
+    const line: Partial<Record<TemplateExistingColumnKey, unknown>> = {};
+    for (const [key, index] of existingHeader.columns) line[key] = excelCellText(row.getCell(index + 1).value);
+    existingRows.push({ cells: line, row: rowNumber });
+  }
+
+  // The customer who already HAS hours: they are printed, and they survive the trip through Excel. If
+  // this drifts, re-uploading an untouched sheet rewrites a clinic's evening and nothing notices.
+  const hoursAsRead = readTemplateHoursRows(existingRows);
+  const alreadyThere = hoursAsRead.find((entry) => entry.name === "Dr Already There");
+  assert.ok(alreadyThere, "the hours printed for a customer who has them read back off the emitted sheet");
+  assert.deepEqual(
+    alreadyThere?.timings.map((timing) => `${timing.weekday}:${timing.startMinute}-${timing.endMinute}`),
+    ["6:1020-1200"],
+    "as the same Saturday evening, not as a date Excel invented",
+  );
+  assert.ok(
+    !hoursAsRead.some((entry) => entry.name === "Dr Waiting To Be Seen"),
+    "and the one with an empty cell yields nothing at all — the sheet prints every customer, few get hours",
+  );
+
+  // The customer past validating with no hours recorded: the cell SAYS it will do nothing, rather than
+  // sitting blank and inviting an entry the upload would silently drop.
+  const closed = existingRows.find((entry) => String(entry.cells.name ?? "") === "Dr Validated No Hours");
+  assert.ok(closed, "a validated customer with no hours is still printed");
+  assert.match(
+    String(closed?.cells.daysAndHours ?? ""),
+    /hours are the rep's now/,
+    "and that cell says the hours are the rep's, so nobody writes into one the upload will not read",
+  );
+  assert.ok(
+    !hoursAsRead.some((entry) => entry.name === "Dr Validated No Hours"),
+    "and that sentence is not itself read back as a clinic's hours",
+  );
+
+  // And the cell the SFE actually fills: written onto the pending row, it reads back as his hours.
+  const waiting = existingRows.find((entry) => String(entry.cells.name ?? "") === "Dr Waiting To Be Seen");
+  assert.ok(waiting, "the customer waiting to be validated is printed on that sheet");
+  if (!waiting) return;
+  const hoursIndex = existingHeader.columns.get("daysAndHours");
+  assert.ok(hoursIndex !== undefined, "and the hours column is locatable on it");
+  if (hoursIndex === undefined) return;
+  second.getRow(waiting.row).getCell(hoursIndex + 1).value = "Sun, Tue 10-12";
+  const filledLine: Partial<Record<TemplateExistingColumnKey, unknown>> = {};
+  for (const [key, index] of existingHeader.columns) filledLine[key] = excelCellText(second.getRow(waiting.row).getCell(index + 1).value);
+  const filledRead = readTemplateHoursRows([{ cells: filledLine, row: waiting.row }]);
+  assert.equal(filledRead.length, 1, "hours typed beside a waiting customer are read");
+  assert.equal(filledRead[0]?.listType, "AM", "on his own list");
+  assert.deepEqual(
+    filledRead[0]?.timings.map((timing) => `${timing.weekday}:${timing.startMinute}-${timing.endMinute}`),
+    ["0:600-720", "2:600-720"],
+    "with both days sharing the one window he wrote",
+  );
 }
 
 /**
@@ -443,6 +535,100 @@ function checkReviewEdges(): void {
   assert.match(importer, /if \(marked !== seat\.seatId\) \{/, "and a mismatched one still names both territories");
 }
 
+/**
+ * ── Days and hours: a column on the sheet, a DRAFT on the customer, never a place ────────────────
+ *
+ * Owner, 2026-10-05: *"put the clinic days and hours in the SFE's list-template sheet."* The audit
+ * counted 1,238 presses of the timings editor's weekday buttons against 554 recorded calls — about three
+ * day-and-hour rows typed by hand per customer, at the door. The cell's own grammar is pinned in
+ * `phoenix-crm-list-sheet-hours.test.ts`; what is pinned HERE is the wiring: the column exists and is
+ * optional, the second sheet is readable, and the loader writes one column and nothing else.
+ */
+function checkDaysAndHours(): void {
+  const hours = TEMPLATE_COLUMNS.find((column) => column.key === "daysAndHours");
+  assert.ok(hours, "the sheet carries a Days and hours column");
+  assert.match(hours?.hint ?? "", /optional/i, "and says on the sheet itself that it is optional");
+
+  // 🔴 OPTIONAL IN THE SAME WAY THE GRADE IS (owner, 2026-10-03, on this very sheet). A row with an
+  // unreadable time cell LOADS, with no hours — a sheet that refused 170 rows over a free-text time
+  // column would cost far more than the column saves.
+  const readable = parseTemplateRow(7, cells({ daysAndHours: "Sat 5:00 PM - 8:00 PM" }));
+  assert.equal(readable.kind, "row", "a row with hours loads");
+  assert.equal(readable.kind === "row" ? readable.value.timings?.length : null, 1, "and carries them");
+  for (const unreadable of ["", "   ", "ask the rep", "whenever he is free"]) {
+    const verdict = parseTemplateRow(8, cells({ daysAndHours: unreadable }));
+    assert.equal(verdict.kind, "row", `"${unreadable}" does not refuse the row`);
+    assert.equal(verdict.kind === "row" ? verdict.value.timings : "missing", null, "and reads as no hours at all, never as a refusal");
+  }
+
+  // The second sheet is an INPUT for this one column, and silent about everything else.
+  assert.deepEqual([...TEMPLATE_EXISTING_REQUIRED_KEYS], ["name", "daysAndHours"], "the second sheet is read when it names a customer and his hours");
+  const readBack = readTemplateHoursRows([
+    { cells: { daysAndHours: "Sat 17:00-20:00", listType: "PM", name: "Dr Already There" }, row: 3 },
+    // Every one of these is an ordinary line on a real sheet, and every one must produce NOTHING rather
+    // than a refusal — the sheet prints every customer the seat holds and only some get hours written.
+    { cells: { daysAndHours: "", listType: "PM", name: "Dr Nobody Filled In" }, row: 4 },
+    { cells: { daysAndHours: "ask him", listType: "PM", name: "Dr Unreadable Cell" }, row: 5 },
+    { cells: { daysAndHours: "Sat 17:00-20:00", listType: "", name: "Dr No List Printed" }, row: 6 },
+    { cells: { daysAndHours: "Sat 17:00-20:00", listType: "PM", name: "" }, row: 7 },
+    { cells: { daysAndHours: "Mon 18:00-20:00", listType: "PM", name: "Dr Already There" }, row: 8 },
+  ]);
+  assert.deepEqual(
+    readBack.map((entry) => entry.row),
+    [3],
+    "only a row with a name, a list and readable hours is read — and a customer printed twice keeps the first reading",
+  );
+  assert.equal(readBack[0]?.listType, "PM", "canonicalised through the module's own list parser");
+  assert.equal(readBack[0]?.timings.length, 1, "with the hours the cell named");
+
+  const service = stripComments(readFileSync("src/lib/phoenix-crm/server/list-template.ts", "utf8"));
+  // 🔴 THE RAW STATUS, NEVER THE LABEL. `standing()` returns what the sheet PRINTS — "Waiting to be
+  // validated" — so comparing it to "pending" is always false and every row reads as closed to hours,
+  // which is the whole feature silently doing nothing. Caught before the first upload, 2026-10-05.
+  assert.match(service, /acceptsHours: row\.status === "pending" && places\.length === 0/, "the sheet asks the raw status whether hours may still be written");
+  assert.doesNotMatch(service, /acceptsHours: standing\(/, "never the printed label, which can never equal a status");
+  assert.match(service, /hours: hours\.map\(hoursPayload\)/, "the upload sends the second sheet's hours with the load");
+  assert.match(service, /intake_timings: customer\.timings/, "and the first sheet's hours travel on the customer");
+  // A sheet downloaded before this column existed has no such sheet, or has it with no hours column.
+  // Neither may throw: the upload it belongs to must still load its customers.
+  const reader = service.slice(service.indexOf("function readExistingHours("));
+  assert.match(reader, /if \(!sheet\) return \[\];/, "a workbook without that sheet reads as no hours");
+  assert.match(reader, /if \(!header\) return \[\];/, "and one without its header row too");
+
+  const migration = read(MIGRATION_HOURS);
+  // 🔴 THE SECOND PASS WRITES ONE COLUMN. It inserts no customer, so the same-name guard above keeps its
+  // whole job; it is the only way hours reach the ~8,700 customers minted from iReports360 rather than
+  // loaded from a sheet, who are nearly everyone waiting to be validated.
+  const pass = migration.slice(migration.indexOf("if jsonb_typeof(p -> 'hours') = 'array' then"));
+  assert.match(
+    pass,
+    /update public\.phoenix_crm_customers\s+set intake_timings = v_timings, updated_at = now\(\)/,
+    "it writes intake_timings and the stamp, and nothing else",
+  );
+  for (const forbidden of ["set status", "set grade", "set name", "set list_type", "insert into public.phoenix_crm_customers"]) {
+    assert.ok(!pass.includes(forbidden), `the hours pass must never "${forbidden}"`);
+  }
+  // 🔴 PENDING AND PLACELESS: the window in which nothing has read the draft yet. Once the rep has
+  // validated him the hours are HIS, on his place, and a re-upload must not reach back and disagree
+  // with what he confirmed standing at the door.
+  assert.match(pass, /and c\.status = 'pending'/, "and only reaches a customer still waiting to be validated");
+  assert.match(pass, /not exists \(select 1 from public\.phoenix_crm_places pl where pl\.customer_id = c\.id\)/, "who has no place captured yet");
+
+  // The place is still only what the rep confirmed: the screen OFFERS the draft, it never saves it.
+  const screens = stripComments(readFileSync("src/components/phoenix-crm/list-screens.tsx", "utf8"));
+  assert.match(screens, /timings: listed\?\.intake\?\.timings \?\? \[\]/, "the validate screen opens with the sheet's hours already ticked");
+  assert.match(screens, /Days and hours from the sheet/, "and says where they came from, so a wrong one is corrected rather than trusted");
+
+  // 🔴 AND THE SHEET STILL CANNOT WRITE A PLACE. The frozen-place rule is about a POSITION; this is the
+  // assertion that stops this column being widened into one later.
+  for (const forbidden of ["lat", "lon", "latitude", "longitude", "brick", "photo"]) {
+    assert.ok(
+      !TEMPLATE_COLUMNS.some((column) => foldHeader(column.label).includes(forbidden)),
+      `the sheet must not carry a "${forbidden}" column — days and hours are not a position`,
+    );
+  }
+}
+
 export async function runPhoenixCrmListTemplateTests() {
   checkColumns();
   checkListCell();
@@ -453,5 +639,6 @@ export async function runPhoenixCrmListTemplateTests() {
   checkRepCanValidate();
   checkReviewEdges();
   checkGradeOptional();
+  checkDaysAndHours();
   await checkBuildsAndReadsBack();
 }

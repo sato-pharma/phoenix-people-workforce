@@ -12,6 +12,20 @@
  * it writes a whole list at once, with the grades, which is the decision the owner gave to these two
  * seats.
  *
+ * 🔴 THE DAYS AND HOURS COLUMN IS A DRAFT, NOT THE PLACE (owner, 2026-10-05: "put the clinic days and
+ * hours in the SFE's list-template sheet"). The SFE knows the clinic's hours once; the rep was typing
+ * them again at every door. So the sheet carries them, `parseListSheetHours` reads the cell, and they
+ * land on the CUSTOMER as `intake_timings` — a draft the validate screen offers pre-ticked. The PLACE
+ * still stores only what the rep confirmed standing in front of the signboard, which is the frozen-place
+ * rule untouched. An unreadable cell is dropped in silence and never refuses the row: the list is the
+ * point, the hours are a convenience.
+ *
+ * 🔴 AND THE SECOND SHEET IS AN INPUT NOW, NOT JUST A REMINDER. "Already on the list" used to be
+ * read-only. It carries a Days and hours column the SFE may fill for a customer already waiting to be
+ * validated — 8,712 of them on the day this shipped — because those were loaded before the column
+ * existed and would otherwise never get their hours. Only a customer still `pending` with no place
+ * takes one; one the rep has already validated keeps the hours he confirmed.
+ *
  * 🔴 AND THE TERRITORY IS NAMED TWICE — once by the screen and once by the sheet — because they must
  * agree. `templateSeatMismatch` is what stops a sheet filled for one rep being loaded onto another, which
  * nothing downstream would ever notice.
@@ -23,9 +37,14 @@ import { forbiddenError, validationError } from "@/lib/http/api-errors";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   foldHeader,
+  locateExistingColumns,
   locateTemplateColumns,
+  readTemplateHoursRows,
   readTemplateRows,
   TEMPLATE_COLUMNS,
+  TEMPLATE_EXISTING_COLUMNS,
+  TEMPLATE_EXISTING_REQUIRED_KEYS,
+  TEMPLATE_EXISTING_SHEET,
   TEMPLATE_HEADER_SCAN_ROWS,
   TEMPLATE_REQUIRED_KEYS,
   TEMPLATE_ROWS_MAX,
@@ -33,12 +52,15 @@ import {
   TEMPLATE_SHEET,
   type TemplateColumnKey,
   type TemplateCustomerRow,
+  type TemplateExistingColumnKey,
+  type TemplateHoursRow,
   type TemplateRowRefusal,
 } from "@/lib/phoenix-crm/list-template-rules";
 import { readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { weekTimingsText } from "@/lib/phoenix-crm/timings";
 import { callPhoenixCrm, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { canReadIntegrityBoard } from "@/lib/phoenix-crm/server/integrity-board";
-import { loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
+import { loadTerritoryCustomers, mapTimings } from "@/lib/phoenix-crm/server/list";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { buildPhoenixCrmListTemplate, type ListTemplateCustomer } from "@/lib/phoenix-crm/server/list-template-workbook";
@@ -76,16 +98,33 @@ function seatOf(viewer: PhoenixCrmViewer, seatId: unknown, test: unknown): { sea
 export async function buildListTemplateFor(viewer: PhoenixCrmViewer, seatId: unknown, test: unknown): Promise<{ buffer: Buffer; fileName: string; seat: OrgSeat }> {
   assertListLoader(viewer);
   const { seat, isTest } = seatOf(viewer, seatId, test);
-  const { customers } = await loadTerritoryCustomers(seat.seatId, isTest);
+  const { customers, placesByCustomer } = await loadTerritoryCustomers(seat.seatId, isTest);
   const names = await loadPeopleNames([seat.occupantHrId, viewer.hrId]);
   const existing: ListTemplateCustomer[] = customers
-    .map((row) => ({
-      grade: typeof row.grade === "string" ? row.grade : null,
-      listType: String(row.list_type ?? ""),
-      name: String(row.name ?? ""),
-      speciality: typeof row.speciality === "string" ? row.speciality : null,
-      status: standing(row.status),
-    }))
+    .map((row) => {
+      // What the sheet shows in the hours column, and whether it will be read back on upload.
+      //
+      // 🔴 CONFIRMED HOURS WIN OVER THE DRAFT, AND A VALIDATED CUSTOMER IS NOT ASKED AGAIN. Once the rep
+      // has stood at the door and ticked the days, those hours are the place's and the SFE's cell cannot
+      // overwrite them — the sheet prints them so she can see they are already there. The draft is only
+      // offered where there is nothing: still pending, no place captured.
+      const places = placesByCustomer.get(String(row.id)) ?? [];
+      const confirmed = places.flatMap((place) => place.timings);
+      const draft = mapTimings(row.intake_timings);
+      const hours = confirmed.length > 0 ? confirmed : draft;
+      return {
+        // 🔴 THE RAW STATUS, NEVER `standing()` — that returns the LABEL the sheet prints
+        // ("Waiting to be validated"), so comparing it to "pending" is always false and every row
+        // would have read as closed to hours. Caught before the first upload, 2026-10-05.
+        acceptsHours: row.status === "pending" && places.length === 0,
+        daysAndHours: hours.length > 0 ? weekTimingsText(hours, false) : null,
+        grade: typeof row.grade === "string" ? row.grade : null,
+        listType: String(row.list_type ?? ""),
+        name: String(row.name ?? ""),
+        speciality: typeof row.speciality === "string" ? row.speciality : null,
+        status: standing(row.status),
+      };
+    })
     .sort((left, right) => left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name));
 
   const buffer = await buildPhoenixCrmListTemplate({
@@ -162,6 +201,8 @@ export type ListTemplateImportResult = {
   /** Rows the sheet offered, blank ones excluded. */
   read: number;
   loaded: number;
+  /** Customers already waiting to be validated whose days and hours the second sheet filled in. */
+  hoursSet: number;
   /** A line per row the sheet offered and the list would not take, in sheet order. */
   refused: TemplateRowRefusal[];
 };
@@ -237,8 +278,12 @@ export async function importListTemplate(viewer: PhoenixCrmViewer, form: FormDat
   }
 
   const { customers, refused } = readTemplateRows(rows);
-  if (customers.length === 0) {
-    return { loaded: 0, read: refused.length, refused, seatId: seat.seatId, territoryName: territoryName(seat) };
+  // The second sheet's hours, for customers already waiting to be validated. Read whether or not the
+  // first sheet offered a single new row — an SFE may upload purely to fill the hours in — and never
+  // allowed to refuse anything: a sheet without that sheet, or with it and no header row, yields none.
+  const hours = readExistingHours(workbook);
+  if (customers.length === 0 && hours.length === 0) {
+    return { hoursSet: 0, loaded: 0, read: refused.length, refused, seatId: seat.seatId, territoryName: territoryName(seat) };
   }
   if (customers.length > TEMPLATE_ROWS_MAX) {
     throw validationError(`That sheet holds ${customers.length} customers. One upload takes ${TEMPLATE_ROWS_MAX}.`);
@@ -248,6 +293,7 @@ export async function importListTemplate(viewer: PhoenixCrmViewer, form: FormDat
     p: {
       actor_hr_id: viewer.hrId,
       customers: customers.map(toPayload),
+      hours: hours.map(hoursPayload),
       is_test: isTest,
       line_code: seat.lineCode,
       seat_id: seat.seatId,
@@ -262,13 +308,47 @@ export async function importListTemplate(viewer: PhoenixCrmViewer, form: FormDat
     ...skipped.map((entry) => ({ reason: skipReason(entry.reason, entry.name), row: Number(entry.row ?? 0) })),
   ].sort((left, right) => left.row - right.row);
 
-  return { loaded, read: customers.length + refused.length, refused: all, seatId: seat.seatId, territoryName: territoryName(seat) };
+  return {
+    hoursSet: Array.isArray(result.hours_set) ? result.hours_set.length : 0,
+    loaded,
+    read: customers.length + refused.length,
+    refused: all,
+    seatId: seat.seatId,
+    territoryName: territoryName(seat),
+  };
+}
+
+/**
+ * The "Already on the list" sheet's hours, or none at all.
+ *
+ * 🔴 IT NEVER THROWS AND IT NEVER REFUSES A ROW. A sheet downloaded before this column existed has no
+ * such sheet, or has it without the column; an SFE who filled only the first sheet leaves every cell
+ * blank. All three are ordinary, and the upload they belong to must still load its customers.
+ */
+function readExistingHours(workbook: ExcelJS.Workbook): TemplateHoursRow[] {
+  const sheet = workbook.getWorksheet(TEMPLATE_EXISTING_SHEET);
+  if (!sheet) return [];
+  const header = findExistingHeaderRow(sheet);
+  if (!header) return [];
+  const rows: Array<{ row: number; cells: Partial<Record<TemplateExistingColumnKey, unknown>> }> = [];
+  for (let rowNumber = header.rowNumber + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+    const cells: Partial<Record<TemplateExistingColumnKey, unknown>> = {};
+    for (const [key, index] of header.columns) cells[key] = excelCellText(row.getCell(index + 1).value);
+    rows.push({ row: rowNumber, cells });
+  }
+  return readTemplateHoursRows(rows);
+}
+
+function hoursPayload(row: TemplateHoursRow): Row {
+  return { list_type: row.listType, name: row.name, row: row.row, timings: row.timings };
 }
 
 function toPayload(customer: TemplateCustomerRow): Row {
   return {
     grade: customer.grade,
     intake_note: customer.note,
+    intake_timings: customer.timings,
     intake_where: customer.whereToFind,
     list_type: customer.listType,
     name: customer.name,
@@ -300,6 +380,29 @@ function seatMarkerOf(sheet: ExcelJS.Worksheet): string | null {
  * table: a fixed row number would break the moment that preamble grows by a line, and it is exactly the
  * kind of break that reads as "the file is wrong".
  */
+/**
+ * The same scan over the "Already on the list" sheet, which has its own callout rows above the header.
+ *
+ * It asks for the NAME and the HOURS column only (`TEMPLATE_EXISTING_REQUIRED_KEYS`). A sheet built
+ * before the hours column existed has the header row but not that column, and must read as "no hours to
+ * load" rather than as a sheet nobody can parse.
+ */
+function findExistingHeaderRow(
+  sheet: ExcelJS.Worksheet,
+): { rowNumber: number; columns: Map<TemplateExistingColumnKey, number> } | null {
+  const limit = Math.min(TEMPLATE_HEADER_SCAN_ROWS, sheet.rowCount);
+  for (let rowNumber = 1; rowNumber <= limit; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+    const headers: unknown[] = [];
+    for (let column = 1; column <= Math.max(TEMPLATE_EXISTING_COLUMNS.length, sheet.columnCount); column += 1) {
+      headers.push(excelCellText(row.getCell(column).value));
+    }
+    const columns = locateExistingColumns(headers);
+    if (TEMPLATE_EXISTING_REQUIRED_KEYS.every((key) => columns.has(key))) return { columns, rowNumber };
+  }
+  return null;
+}
+
 function findHeaderRow(sheet: ExcelJS.Worksheet): { rowNumber: number; columns: Map<TemplateColumnKey, number> } | null {
   const limit = Math.min(TEMPLATE_HEADER_SCAN_ROWS, sheet.rowCount);
   for (let rowNumber = 1; rowNumber <= limit; rowNumber += 1) {

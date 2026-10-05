@@ -264,8 +264,12 @@ export type ListCustomer = {
    * 🔴 `where` IS A NOTE, NEVER A LOCATION THE SYSTEM READS. The place is captured at the door and its
    * address, brick, area and region resolved from that point; a typed address is the one thing that rule
    * forbids. This is how the rep knows which door to stand at, and nothing measures it.
+   *
+   * `timings` is the same kind of thing for the clinic's days and hours: a DRAFT the SFE typed in the
+   * sheet, which the rep's validate screen offers him pre-ticked and which he confirms or corrects at the
+   * door. The place still stores only what he confirmed — this never becomes the place's own hours.
    */
-  intake: { where: string | null; note: string | null } | null;
+  intake: { where: string | null; note: string | null; timings: PhoenixCrmTiming[] | null } | null;
   droppedReason: string | null;
   droppedNote: string | null;
   statusChangedAt: string;
@@ -473,7 +477,7 @@ const PLACE_COLUMNS =
   "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes, " +
   "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason";
 const CUSTOMER_COLUMNS =
-  "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, primary_pharmacy_name, phone, intake_where, intake_note";
+  "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, primary_pharmacy_name, phone, intake_where, intake_note, intake_timings";
 
 /**
  * Every customer carried over from the territory's iReports360 list has a row here, pending until the
@@ -999,6 +1003,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     const status = customerStatusOf(row.status);
     const origin = row.origin === "new" ? "new" : "reference";
     const validatedAt = text(row.validated_at);
+    const intakeTimings = mapTimings(row.intake_timings);
     return {
       customerId,
       listType,
@@ -1025,7 +1030,10 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
         : null,
       // What the SFE wrote for the rep when he loaded this list from a sheet. Null for every customer
       // who did not arrive that way, which is nearly all of them.
-      intake: text(row.intake_where) || text(row.intake_note) ? { note: text(row.intake_note), where: text(row.intake_where) } : null,
+      intake:
+        text(row.intake_where) || text(row.intake_note) || intakeTimings.length
+          ? { note: text(row.intake_note), where: text(row.intake_where), timings: intakeTimings.length ? intakeTimings : null }
+          : null,
       droppedReason: archiveReasonLabel(droppedReason) ?? dropReasonLabel(droppedReason) ?? droppedReason,
       droppedNote: text(row.dropped_note),
       statusChangedAt: String(row.status_changed_at),

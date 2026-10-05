@@ -29,6 +29,7 @@ type ImportResult = {
   territoryName: string;
   read: number;
   loaded: number;
+  hoursSet: number;
   refused: Array<{ row: number; reason: string }>;
 };
 
@@ -184,6 +185,9 @@ export function PhoenixCrmListTemplateWorkspace({ territories }: { territories: 
             <h2 className="text-sm font-black uppercase tracking-wide text-slate-900">What was loaded</h2>
             <p className="mt-1 text-sm font-medium leading-6 text-slate-600">
               {result.loaded} of {result.read} row{result.read === 1 ? "" : "s"} loaded onto {result.territoryName}.
+              {result.hoursSet > 0
+                ? ` Days and hours were filled in for ${result.hoursSet} customer${result.hoursSet === 1 ? "" : "s"} already waiting to be validated.`
+                : ""}
               {result.refused.length > 0
                 ? " The rows below were not: fix them on the sheet and upload it again — the ones that landed are not loaded twice."
                 : " Every row was taken."}

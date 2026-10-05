@@ -31,6 +31,8 @@ import { POTENTIAL_GRADES } from "@/lib/phoenix-crm/entry-rules";
 import {
   TEMPLATE_BLANK_ROWS,
   TEMPLATE_COLUMNS,
+  TEMPLATE_EXISTING_COLUMNS,
+  TEMPLATE_EXISTING_NOTE,
   TEMPLATE_EXISTING_SHEET,
   TEMPLATE_LIST_TYPES,
   TEMPLATE_LISTS_SHEET,
@@ -48,6 +50,13 @@ export type ListTemplateCustomer = {
   speciality: string | null;
   grade: string | null;
   status: string;
+  /**
+   * The days and hours already known for this customer — his validated place's, or the draft a sheet
+   * loaded earlier — printed back so nobody writes out hours Phoenix already holds.
+   */
+  daysAndHours: string | null;
+  /** True while his hours can still be written on this sheet: waiting to be validated, no place yet. */
+  acceptsHours: boolean;
 };
 
 export type ListTemplateInput = {
@@ -144,15 +153,19 @@ function writeCustomersSheet(
   for (const ref of ["A1", "B1", "A2", "B2"]) houseBodyStyle(sheet.getCell(ref), { size: 9.5 });
 
   // 🔴 Said on the sheet itself, because the one thing a filled sheet cannot carry is the place, and
-  // somebody will otherwise add a column for it.
-  sheet.mergeCells("A3:H3");
+  // somebody will otherwise add a column for it. The span is DERIVED from the column count: it read
+  // "A3:H3" while there were eight columns, and the ninth left the callout short of the table.
+  const lastColumn = sheet.getColumn(TEMPLATE_COLUMNS.length).letter;
+  sheet.mergeCells(`A3:${lastColumn}3`);
   const rule = sheet.getCell("A3");
   rule.value =
     "The clinic's photo and its location are NOT on this sheet: the rep captures them at the door, once, "
     + "and Phoenix resolves the address, brick, area and region from that. Every customer loaded from here "
-    + "appears under To validate for them to validate on the spot.";
+    + "appears under To validate for them to validate on the spot. Days and hours ARE on this sheet — write "
+    + "them once here and the rep only confirms them at the door. Write a 24-hour time or add AM/PM; a bare "
+    + "hour from 1 to 7 is read as the afternoon, so \"Sat 2-4\" is 2:00 PM to 4:00 PM.";
   houseCalloutStyle(rule, { emphasis: true });
-  sheet.getRow(3).height = 30;
+  sheet.getRow(3).height = 44;
 
   const columns = TEMPLATE_COLUMNS.map((entry) => column(entry.label, entry.width));
   const hints: CellValue[] = TEMPLATE_COLUMNS.map((entry) => entry.hint);
@@ -209,25 +222,50 @@ function writeCustomersSheet(
     };
     // The phone as TEXT, or Excel eats the leading zero of an Egyptian mobile.
     sheet.getCell(row, indexOf("phone")).numFmt = "@";
+    // The hours as TEXT too, or Excel reads "5:00 PM - 8:00 PM" as a date and hands the upload a serial
+    // number where a clinic's evening should be.
+    sheet.getCell(row, indexOf("daysAndHours")).numFmt = "@";
   }
 }
 
+/**
+ * What the seat already holds — and the ONE column that is written here rather than read.
+ *
+ * 🔴 THIS SHEET IS NO LONGER READ-ONLY, AND THAT IS THE WHOLE POINT (owner, 2026-10-05). The customers
+ * waiting to be validated were minted from iReports360, so the Customers sheet cannot carry them — the
+ * loader's same-name guard refuses a second row for a customer already on the list. Their hours are
+ * therefore written beside the line that is already printed, and the upload reads this sheet's last
+ * column too. Nothing else here is read back.
+ *
+ * A customer who already has his hours gets them PRINTED, so nobody types out what Phoenix holds; one
+ * who is past validating is marked as closed, because writing hours beside him would do nothing and the
+ * sheet must not invite work it will silently drop.
+ */
 function writeExistingSheet(workbook: ExcelJS.Workbook, input: ListTemplateInput): void {
   const sheet = workbook.addWorksheet(TEMPLATE_EXISTING_SHEET);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
+  const headerRow = 2;
   writeHouseTable(sheet, 1, {
-    columns: [column("List", 14), column("Customer name", 34), column("Speciality", 22), column("Grade", 10), column("Where they stand", 20)],
+    columns: TEMPLATE_EXISTING_COLUMNS.map((entry) => column(entry.label, entry.width)),
     note:
       input.existing.length === 0
         ? "This territory holds no customers yet, which is why the whole list is being loaded."
-        : "Read only. A customer already here does not need a row on the Customers sheet — the upload refuses a second one.",
+        : TEMPLATE_EXISTING_NOTE,
     rows: input.existing.map((customer) => [
       customer.listType,
       customer.name,
       customer.speciality,
       customer.grade,
       customer.status,
+      customer.daysAndHours ?? (customer.acceptsHours ? null : "Already validated — hours are the rep's now"),
     ]),
     title: `Already on the list · ${input.territoryName}`,
   });
+
+  // The hours cell as TEXT on every printed row, or Excel turns "5:00 PM - 8:00 PM" into a date and the
+  // upload reads back a serial number instead of a clinic's evening.
+  const hoursColumn = TEMPLATE_EXISTING_COLUMNS.findIndex((entry) => entry.key === "daysAndHours") + 1;
+  for (let row = headerRow + 1; row <= headerRow + input.existing.length; row += 1) {
+    sheet.getCell(row, hoursColumn).numFmt = "@";
+  }
 }

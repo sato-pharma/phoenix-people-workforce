@@ -142,7 +142,10 @@ export function runNeutralWordingTests() {
   const neutralNow: Array<[string, RegExp]> = [
     ["src/lib/phoenix-crm/server/notifications.ts", /confirmed they started working at/],
     ["src/lib/phoenix-crm/server/db.ts", /Ask to add them to your list first\./],
-    ["src/lib/phoenix-crm/server/list-template-workbook.ts", /column\("Where they stand", 20\)/],
+    // The column moved into the rules module on 2026-10-05, when the "Already on the list" sheet
+    // became an input and had to be built from one shared list. The WORDING is what is pinned, so
+    // the pin follows it rather than the file it used to be typed in.
+    ["src/lib/phoenix-crm/list-template-rules.ts", /label: "Where they stand"/],
     ["src/lib/business-review/pack/model.ts", /"Area they stand in"/],
   ];
   for (const [path, expected] of neutralNow) {

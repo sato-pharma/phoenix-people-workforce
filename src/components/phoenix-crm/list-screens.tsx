@@ -74,7 +74,7 @@ import type { ReferenceState } from "@/lib/phoenix-crm/coverage";
 import { CUSTOMER_NAME_MAX, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { awaitsValidation, listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
-import { receivingDaysLabel } from "@/lib/phoenix-crm/timings";
+import { receivingDaysLabel, weekTimingsText } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { ListCustomer, ListPlace, TerritoryListView, ValidateResult } from "@/lib/phoenix-crm/view-types";
 
@@ -444,7 +444,14 @@ export function ValidateScreen({
   onSaved: (saved: SavedPlace, photo: CapturedPhoto) => void;
   subject: ValidateSubject;
 }) {
-  const [draft, setDraft] = useState<PlaceDraftState>(emptyPlaceDraft);
+  /** The loaded customer this screen is validating, read from the list by id. */
+  const listed = subject.mode === "listed" ? (view.customers.find((customer) => customer.customerId === subject.customerId) ?? null) : null;
+  // 🔴 THE SFE'S DAYS AND HOURS ARE OFFERED, NEVER IMPOSED (owner, 2026-10-05: "put the clinic days and
+  // hours in the SFE's list-template sheet"). She knows the clinic's hours once and typed them in the
+  // sheet; this screen opens with them already ticked so the rep CONFIRMS them instead of typing the
+  // same thing at every door. He can change or clear every one, and what the place stores is what he
+  // leaves here — the place is still only what he saw, which is the frozen-place rule untouched.
+  const [draft, setDraft] = useState<PlaceDraftState>(() => ({ ...emptyPlaceDraft(), timings: listed?.intake?.timings ?? [] }));
   const [listType, setListType] = useState<PhoenixCrmListType | null>(null);
   const [name, setName] = useState("");
   const [speciality, setSpeciality] = useState("");
@@ -456,8 +463,6 @@ export function ValidateScreen({
   const [problem, setProblem] = useState<string | null>(null);
 
   const reference = subject.mode === "reference" ? (view.reference.find((entry) => entry.contactCrmId === subject.contactCrmId) ?? null) : null;
-  /** The loaded customer this screen is validating, read from the list by id. */
-  const listed = subject.mode === "listed" ? (view.customers.find((customer) => customer.customerId === subject.customerId) ?? null) : null;
   // The carried-over customer this entry was minted as, whatever became of him since. Read whatever his
   // status, because he is the fallback when iReports360 ended the rep's assignment and the live
   // reference entry above is gone (`carriedOverState`); the pending one is what a drop is asked for.
@@ -602,6 +607,9 @@ export function ValidateScreen({
                   this is how he knows which door to stand at. */}
               {intake?.where ? <Detail label="Where to find them">{intake.where}</Detail> : null}
               {intake?.note ? <Detail label="Note">{intake.note}</Detail> : null}
+              {intake?.timings?.length ? (
+                <Detail label="Days and hours from the sheet">{weekTimingsText(intake.timings, false)} — ticked below. Change them if they are wrong.</Detail>
+              ) : null}
             </div>
           </CustomerHeading>
           {/* His assignment in iReports360 ended; his row on this list did not, and the rule is that he

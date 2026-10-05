@@ -1704,6 +1704,7 @@ import { runPhoenixCrmBrickCoverageReportTests } from "./phoenix-crm-brick-cover
 import { runPhoenixCrmMobileManagerTests } from "./phoenix-crm-mobile-manager.test.ts";
 import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
+import { runPhoenixCrmCustomerNameFoldTests } from "./phoenix-crm-customer-name-fold.test.ts";
 import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photos.test.ts";
 import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
 import { runPhoenixCrmSweepPagingTests } from "./phoenix-crm-sweep-paging.test.ts";
@@ -1742,6 +1743,7 @@ import { runPhoenixCrmListAdmissionTests } from "./phoenix-crm-list-admission.te
 import { runPhoenixCrmListRowFactsTests } from "./phoenix-crm-list-row-facts.test.ts";
 import { runPhoenixCrmPlanPatternTests } from "./phoenix-crm-plan-pattern.test.ts";
 import { runPhoenixCrmListEdgeTests } from "./phoenix-crm-list-edges.test.ts";
+import { runPhoenixCrmListSheetHoursTests } from "./phoenix-crm-list-sheet-hours.test.ts";
 import { runPhoenixCrmListTemplateTests } from "./phoenix-crm-list-template.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
@@ -5951,6 +5953,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM asks one question about a customer's name (owner, 2026-10-05: “fix the customer name match” — the duplicate board folded the name and the loader compared raw lower(), so the loader created the second row and the board then reported it; 2,708 of 9,137 production names change under the fold and 8 groups held the same customer twice where the raw key could not see it, every one a hamza, final ya or final ta pair; the honorific list is now literally the same set in SQL and TypeScript, both of the loader's comparisons fold, and a folded hit only ever SKIPS — nothing merges, deletes or renames a customer)",
+  runPhoenixCrmCustomerNameFoldTests,
+);
+
+await runTest(
   "Phoenix CRM records a day that was not a call (E1 — owner, 2026-09-26: a meeting, training, a conference, admin work, travelling or a health day, so a rep at a training day stops looking like a rep who did nothing; a RECORD ONLY that no report, no coverage and no call rate reads; LEAVE IS NOT HERE because HR's vacation module is the only leave record; an unknown kind is refused rather than coerced; one row a day, replaced not piled up; and the date is the server's Cairo today, never the body's)",
   runPhoenixCrmDayActivitiesTests,
 );
@@ -6367,6 +6374,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's list template, the SFE's third route onto a list (owner, 2026-10-02): the sheet's columns carry every fact about a CUSTOMER and never a place — no latitude, no brick, no photo column exists, because a place is captured at the door and a typed one is the thing that rule forbids; the List cell is canonicalised before the module's own parser sees it, so a lower-case pharmacy is a pharmacy and not a PM doctor; a doctor must carry the grade and the potential the SFE set and a pharmacy must carry neither, each refused by its own sheet row rather than silently stripped; two rows naming one customer are caught inside the sheet with both row numbers; the sheet names its own territory and an upload against another one is refused; the gate is the integrity board's own two-reader predicate at the service, the page and the registry; the loader writes every customer as PENDING with validated_at NULL, skips one already on the list by name instead of aborting, and is service-role only; and the rep reaches him — a pending row carries Validate with no iReports360 contact at all, through the `listed` subject, which sends the place and the phone and never the grades, while the frozen Archive and an already-validated customer are both refused",
   runPhoenixCrmListTemplateTests,
+);
+
+await runTest(
+  "Phoenix CRM's clinic days and hours, read out of ONE spreadsheet cell (owner, 2026-10-05, answering the field audit's 1,238 presses of the timings editor against 554 recorded calls): the cell is free text in English or Arabic, and Arabic-Indic digits and every kind of dash fold before anything is matched; a bare hour from 1 to 7 is the afternoon, so the owner's own \u201cSaturday 2 to 4\u201d is 14:00-16:00 while an 8:00 hospital round is left as written; a marker-less range keeps BOTH ends in the same half of the day, so \u201c5-8\u201d is the evening and not 17:00 to 08:00, while an end before its start still rolls into the next morning so the clinic closing at 1:00 AM survives; the Arabic \u0648 glued to a day name is stripped where it is written, so \u201c\u0627\u0644\u0633\u0628\u062a \u0648\u0627\u0644\u0627\u062b\u0646\u064a\u0646\u201d is two days and not one; days sharing a window inherit it and hours with no day belong to the day last named; a repeated day-and-window pair is ONE window rather than an overlap the whole cell is refused for; parseTimings is the only authority on what is valid and no second opinion lives in this file; what the download PRINTS reads back as the same hours, so re-uploading an untouched sheet cannot rewrite a clinic's evening; an empty cell and an unreadable one give the same null and never refuse the row; and the parser can never learn a latitude, a brick or an address, because the place is still captured at the door",
+  runPhoenixCrmListSheetHoursTests,
 );
 
 await runTest(

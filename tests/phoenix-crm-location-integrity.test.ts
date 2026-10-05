@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 
 import {
+  COARSE_ACCURACY_METERS,
   CONSTANT_ACCURACY_MIN_FIXES,
   checkLocationIntegrity,
   MAX_TRAVEL_KMH,
   PHOENIX_CRM_INTEGRITY_LABELS,
+  PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS,
   PHOENIX_CRM_STRONG_INTEGRITY_FLAGS,
   REPLAY_MIN_GAP_MINUTES,
   TRAVEL_MIN_METERS,
@@ -210,6 +212,132 @@ export function runPhoenixCrmLocationIntegrityTests(): void {
   {
     assert.ok(judge({ lat: 30.05, lon: 31.24 }).flags.includes("typed_coordinate"), "a four-decimal pin was chosen, not measured");
     assert.equal(judge({}).flags.includes("typed_coordinate"), false, "a real seven-decimal fix is clean");
+  }
+
+  // ── Approximate location — a phone setting, not a fraud ───────────────────────────────────────
+  //
+  // Android's "Precise location" toggle has an off position. With it off the OS returns a
+  // grid-snapped tile centre with one fixed accuracy, so the coordinate repeats and the accuracy
+  // never varies BY CONSTRUCTION. Four of the detectors above read that as a preset, and on
+  // 2026-10-03 they accused a working rep three times over. These cases are the gate.
+
+  {
+    // The production shape, to the digit: Yasmeen Samy's morning — 11 fixes, 4 customers, zero
+    // spread, every reading exactly 2000 m, and the phone confessing nothing because there was
+    // nothing to confess. Those rows carried `coordinate_replay`, which is STRONG.
+    const COARSE_TILE = { lat: 30.4684684684685, lon: 31.1899555209043 };
+    const morning = Array.from({ length: 10 }, (_unused, index) =>
+      prior({
+        ...COARSE_TILE,
+        accuracyMeters: 2000,
+        customerId: `c-${index % 4}`,
+        capturedAt: at(`2026-10-03T07:${String(19 + index * 3).padStart(2, "0")}:58.648Z`),
+      }),
+    );
+    const verdict = checkLocationIntegrity({
+      fix: { ...COARSE_TILE, accuracyMeters: 2000, capturedAt: at("2026-10-03T08:10:00.000Z") },
+      repHrId: "R-1",
+      customerId: "c-3",
+      deviceMocked: null,
+      history: morning,
+    });
+    assert.deepEqual(verdict.flags, ["coarse_location"], "an approximate-location morning is ONE honest observation, not a case");
+    assert.equal(verdict.strong, false, "a phone setting must never be damning");
+    assert.equal(PHOENIX_CRM_STRONG_INTEGRITY_FLAGS.includes("coarse_location"), false);
+  }
+
+  {
+    // Every precision flag, one at a time, must go quiet on a coarse fix — and say so in `signals`
+    // rather than vanishing, so a manager reading the row can see what was set aside and why.
+    const verdict = judge({
+      lat: 30.05,
+      lon: 31.24,
+      accuracyMeters: COARSE_ACCURACY_METERS,
+      history: [prior({ lat: 30.05, lon: 31.24, accuracyMeters: 2000, capturedAt: at("2026-09-24T09:00:00.000Z") })],
+    });
+    for (const flag of PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS) {
+      assert.equal(verdict.flags.includes(flag), false, `${flag} cannot be claimed about an approximate fix`);
+    }
+    const coarse = verdict.signals.coarse as { thresholdMeters: number; suppressed: string[] } | undefined;
+    assert.equal(coarse?.thresholdMeters, COARSE_ACCURACY_METERS, "the row records the line it fell on");
+    assert.deepEqual([...(coarse?.suppressed ?? [])].sort(), [...PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS].sort());
+    assert.equal(verdict.signals.coarseHistoryIgnored, 1, "and how many coarse readings were left out of the evidence");
+  }
+
+  {
+    // 🔴 THE LATENT ONE. Her morning spanned 59 minutes and `zero_jitter` wants 120, so the clock is
+    // all that saved her from "the position never moved all day" — a STRONG flag — on a full day.
+    const allDay = [
+      prior({ accuracyMeters: 2000, customerId: "c-1", capturedAt: at("2026-10-03T06:00:00.000Z") }),
+      prior({ accuracyMeters: 2000, customerId: "c-2", capturedAt: at("2026-10-03T08:00:00.000Z") }),
+      prior({ accuracyMeters: 2000, customerId: "c-3", capturedAt: at("2026-10-03T10:00:00.000Z") }),
+    ];
+    const verdict = checkLocationIntegrity({
+      fix: { ...CAIRO_CLINIC, accuracyMeters: 2000, capturedAt: at("2026-10-03T11:00:00.000Z") },
+      repHrId: "R-1",
+      customerId: "c-4",
+      deviceMocked: null,
+      history: allDay,
+    });
+    assert.equal(verdict.flags.includes("zero_jitter"), false, "a tile centre that never drifts is the tile, not the rep");
+    assert.equal(verdict.strong, false);
+  }
+
+  {
+    // The other half of the gate: a PRECISE fix must not be flagged for repeating a coarse reading
+    // its own phone produced earlier. Without this the false accusation just lands one fix later.
+    const verdict = judge({
+      accuracyMeters: 14,
+      capturedAt: "2026-09-24T12:00:00.000Z",
+      history: [prior({ accuracyMeters: 2000, capturedAt: at("2026-09-24T09:00:00.000Z") })],
+    });
+    assert.equal(verdict.flags.includes("coordinate_replay"), false, "a coarse prior is not a coordinate anyone can replay");
+    assert.deepEqual(verdict.flags, [], "and nothing else may fire on it either");
+  }
+
+  {
+    // What the gate does NOT waive. The phone's own confession owes nothing to precision…
+    const confessed = judge({ accuracyMeters: 2000, deviceMocked: true });
+    assert.ok(confessed.flags.includes("mock_provider"), "a mock provider is caught at any accuracy");
+    assert.equal(confessed.strong, true, "and is still damning");
+
+    // …and physics still applies, with both error bars subtracted first: Cairo to Alexandria in
+    // twenty minutes is impossible by far more than 4 km of slack.
+    const flown = judge({
+      lat: 31.2000924,
+      lon: 29.9187387,
+      accuracyMeters: 2000,
+      capturedAt: "2026-09-24T09:20:00.000Z",
+      history: [prior({ accuracyMeters: 2000, capturedAt: at("2026-09-24T09:00:00.000Z") })],
+    });
+    assert.ok(flown.flags.includes("impossible_travel"), "a coarse fix cannot buy immunity from physics");
+    assert.equal(flown.strong, true);
+  }
+
+  {
+    // The line sits in an empty band: 772 real fixes reach 122.4 m at the 99th, and the nearest
+    // coarse reading measured was 1273.4 m. A wide-but-real indoor fix stays fully judged.
+    const wideButReal = judge({
+      accuracyMeters: 122.4,
+      capturedAt: "2026-09-24T12:00:00.000Z",
+      history: [prior({ accuracyMeters: 122.4, capturedAt: at("2026-09-24T09:00:00.000Z") })],
+    });
+    assert.ok(wideButReal.flags.includes("coordinate_replay"), "an honest wide fix is still held to the precision tests");
+    assert.equal(wideButReal.flags.includes("coarse_location"), false, "122 m is a receiver reading, not a tile");
+    assert.ok(COARSE_ACCURACY_METERS > 122.4 * 4, "the gate stays clear of the worst honest fix measured");
+    assert.ok(COARSE_ACCURACY_METERS < 1273.4, "and below the nearest approximate-mode fix measured");
+  }
+
+  {
+    // A fix that never reported an accuracy is "not asked", never "coarse" — the same reading the
+    // mock flag gets. An older build that sends no accuracy must keep being judged as before.
+    const silent = judge({
+      accuracyMeters: null,
+      capturedAt: "2026-09-24T12:00:00.000Z",
+      history: [prior({ accuracyMeters: null, capturedAt: at("2026-09-24T09:00:00.000Z") })],
+    });
+    assert.equal(silent.flags.includes("coarse_location"), false, "a missing accuracy is not an approximate fix");
+    assert.ok(silent.flags.includes("coordinate_replay"), "and it is still judged on its coordinates");
   }
 
   // ── An honest visit is completely clean ───────────────────────────────────────────────────────
