@@ -78,6 +78,24 @@ nothing itself** — `src/lib/phoenix-crm/server/decision-queues.ts` is the ONE 
 CRM page's own "waiting for you" badge reads the same functions, so the board and the module can never
 disagree about whose turn it is. A medical rep is `not-applicable`, never a zero and never a row.
 
+🔴 **A fourth row joined that source on 2026-10-05: the places the Google Maps check could not
+settle.** The owner had put that queue on email, in-app and Telegram the same day, naming the page
+("when an update here /admin/field-crm/validation-reviews I must be notified by email, in app and
+telegram"), and the board is the fourth way the same hold reaches him — the only one that still shows
+it tomorrow if a notice arrives at midnight and nothing is done about it. Two things about it look
+like tidying and are not. **It carries its OWN `href`** to `/admin/field-crm/validation-reviews`,
+because the source's Team tab cannot decide one of these; `orphaned-requests` does the same for the
+same reason. And **the count is the Super Admin's alone** — `countValidationReviewsWaiting` is asked
+only when `canDecideValidationReviews` is true, so every other viewer gets a true zero with no query
+at all, rather than a figure about a queue nobody but him can clear. It is the one row in this source
+that carries an `oldestAt` and an age, because the delay has a growing cost: the customer stays
+unvalidated and a visit there scores nothing. It still carries no `overdue` verdict — the module
+publishes no SLA for it. 🔴 **And the count filters NEITHER world**, because the page lists both and
+marks each row, and the decider's own entries are test entries (owner, 2026-09-16) — a real-only count
+would be a board permanently calm about the only queue that is his by name. The count lives in
+`src/lib/phoenix-crm/server/validation-reviews.ts`, the file that owns that table and its gate, for
+the same one-producer reason the other two live in `decision-queues.ts`.
+
 Each adapter owns its own `assertPermission` call. Leaning on the page being Super-Admin-only would
 be true today and the wrong shape: the module would then be correct only because of a caller, and
 `not-applicable` could never be reached.
@@ -213,6 +231,7 @@ file that is not registered never runs.
 | `needs-you-telegram-budget` | the 900-character fit, by construction rather than truncation |
 | `needs-you-fits-the-screen` · `needs-you-page-never-decides` | horizontal scroll, rounded corners, any write path |
 | `orphaned-requests` | flagging an active rep's returned request, a role rung, or an unknown actor; and the source not wired into the board |
+| `phoenix-crm-needs-you-source` | a second copy of the Phoenix CRM counts; a rep handed a row; an integrity signal reaching the board; the held-place row linked to a screen that cannot decide it, gated past the Super Admin, or counted in one world only |
 
 **A fixture has to be able to reach the limit it tests.** The budget assertion first used a 12-item
 board, which renders 889 characters when broken — *under* the 900 ceiling — so it passed with and

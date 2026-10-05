@@ -175,8 +175,8 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     for (const swallow of ["catch", "?? 0", "|| 0"]) {
       assert.ok(!crmNeedsYou.includes(swallow), `a failed read must travel, never become a figure (${swallow})`);
     }
-    // And no item is produced at zero: the three pushes are each behind a `> 0`.
-    assert.equal((block.match(/> 0\) \{/g) ?? []).length, 3, "each of the three counts produces an item only when it is non-zero");
+    // And no item is produced at zero: the four pushes are each behind a `> 0`.
+    assert.equal((block.match(/> 0\) \{/g) ?? []).length, 4, "each of the four counts produces an item only when it is non-zero");
   }
 
   // ── 5. No measurement, no money, no id ───────────────────────────────────────────────────────
@@ -239,6 +239,78 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
       ["Phoenix CRM decisions"],
       "and it is named the way a person would say it",
     );
+  }
+
+  // ── 7. The held places: his queue alone, counted once, linked to the screen that decides it ──
+  //
+  // Added 2026-10-05, the day the owner put that queue on email, in-app and Telegram by name. The
+  // board is the fourth way the same hold reaches him and the only one that still shows it tomorrow,
+  // so a notice read late and left is not a decision lost. What this section refuses:
+  //
+  //  · the count read with its own query here, or in `needs-you.ts`, instead of from the file that
+  //    owns the table and the gate — the drift section 3 already paid for once;
+  //  · the row linking to the source's Team tab, which cannot decide one of these;
+  //  · the gate widened past the Super Admin, putting the queue on the screens of people who cannot
+  //    act on it, or a role test spelled out again here instead of the module's own predicate;
+  //  · the count narrowed to one world, which would read 0 while the page shows a row — and the
+  //    decider's own entries are TEST entries, so a real-only count is permanently calm;
+  //  · an `overdue` verdict invented for a queue the module publishes no SLA for.
+  {
+    const reviews = source("src/lib/phoenix-crm/server/validation-reviews.ts");
+    const crmNeedsYou = source("src/lib/phoenix-crm/server/needs-you.ts");
+
+    assert.ok(
+      reviews.includes("export async function countValidationReviewsWaiting"),
+      "the file that owns the table and the gate owns the count too",
+    );
+    assert.ok(crmNeedsYou.includes("countValidationReviewsWaiting("), "and the board's loader reads it rather than querying");
+    assert.ok(
+      crmNeedsYou.includes("canDecideValidationReviews(viewer)"),
+      "gated by the module's own predicate — the Super Admin alone decides a held place",
+    );
+    assert.ok(
+      !crmNeedsYou.includes("isSuperAdmin"),
+      "the role test travels with the gate; reading it again here is how two copies come apart",
+    );
+
+    // Both worlds, exactly as the page lists them. A filter either way is the under-report.
+    const countBlock = reviews.slice(
+      reviews.indexOf("export async function countValidationReviewsWaiting"),
+      reviews.indexOf("function reviewNoticeKey"),
+    );
+    assert.ok(countBlock.length > 0, "the count could not be located");
+    assert.ok(!countBlock.includes("is_test"), "the page shows both worlds and marks each row, so the count filters neither");
+    assert.ok(countBlock.includes('{ count: "exact", head: true }'), "a head count, so the 1,000-row ceiling cannot shorten it");
+    for (const swallow of ["catch", "|| 0"]) {
+      assert.ok(!countBlock.includes(swallow), `a failed read must travel, never become a figure (${swallow})`);
+    }
+
+    // The row carries its OWN href, because the Team tab has no decision on it.
+    const adapterSource = source("src/lib/needs-you/sources.ts");
+    const block = adapterSource.slice(
+      adapterSource.indexOf("const phoenixCrmDecisions:"),
+      adapterSource.indexOf("export const needsYouAdapters"),
+    );
+    assert.ok(block.includes("href: VALIDATION_REVIEWS_PATH"), "it links to the page that decides these, by the module's own constant");
+    assert.ok(!block.includes('href: "/admin'), "and never to a path written out again here");
+
+    // And it renders in HIS lane, with an age and no invented verdict.
+    const held = item({
+      key: "phoenix-crm-decisions:place-checks",
+      label: "2 places are held for your approval",
+      href: "/admin/field-crm/validation-reviews",
+      oldestAt: "2026-09-30T06:00:00.000Z",
+      ageDays: 3,
+    });
+    const board = buildNeedsYouBoard(withPhoenixCrm([held]), NOW);
+    const row = board.yours.find((entry) => entry.key === "phoenix-crm-decisions:place-checks");
+    assert.ok(row, "a held place is in his own lane — nobody else can clear it");
+    assert.equal(row?.href, "/admin/field-crm/validation-reviews", "and it opens the page that decides it");
+    assert.equal(row?.ageDays, 3, "the age is carried, because the customer stays unvalidated meanwhile");
+    assert.equal(row?.overdue, false, "no SLA upstream, so no verdict");
+    assert.equal(board.allClearProvable, false, "a held place can never sit under the all-clear");
+    const printed = [needsYouHeroDescription(board), ...needsYouSectionLines(buildNeedsYouSections(board))].join("\n");
+    assert.ok(printed.includes("held for your approval"), "the row is printed in his own words");
   }
 
   console.log("phoenix-crm on the needs-you board: OK");

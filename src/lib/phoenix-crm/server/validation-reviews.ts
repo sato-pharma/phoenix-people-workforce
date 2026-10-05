@@ -89,6 +89,33 @@ export async function pendingLocationReview(customerId: string): Promise<boolean
   return (count ?? 0) > 0;
 }
 
+/**
+ * How many places are waiting on his decision right now, and when the oldest of them was held — the
+ * one figure the central Needs You board asks of this queue (`src/lib/needs-you`, added 2026-10-05).
+ *
+ * 🔴 THE SAME TWO WORLDS THE PAGE SHOWS, and so no `is_test` filter. `loadValidationReviews` lists
+ * every waiting review and marks each row's world rather than hiding one, so a count that filtered
+ * either way would read 0 where the page shows a row — the under-report that `needs-you/types.ts`
+ * exists to make impossible. The decider is the Super Admin alone and his own entries are test
+ * entries (owner, 2026-09-16), so a real-only count would be a board permanently calm about the only
+ * queue that is his by name.
+ *
+ * A head count, so PostgREST's 1,000-row ceiling cannot shorten it, plus the oldest stamp so the row
+ * can state its age. It THROWS on a failed read: the board turns a rejection into its amber "could
+ * not be read" row, and a zero it cannot prove is the one shape that board must never have.
+ */
+export async function countValidationReviewsWaiting(): Promise<{ count: number; oldestAt: string | null }> {
+  const supabase = getSupabaseAdmin();
+  const [waiting, oldest] = await Promise.all([
+    supabase.from("phoenix_crm_validation_reviews").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    supabase.from("phoenix_crm_validation_reviews").select("created_at").eq("status", "pending").order("created_at", { ascending: true }).limit(1),
+  ]);
+  throwIfError(waiting.error);
+  throwIfError(oldest.error);
+  const first = ((oldest.data ?? []) as Row[])[0];
+  return { count: waiting.count ?? 0, oldestAt: first ? String(first.created_at) : null };
+}
+
 // ── Telling the Super Admin ─────────────────────────────────────────────────────────────────────
 
 function reviewNoticeKey(reviewId: string): string {

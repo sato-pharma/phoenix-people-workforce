@@ -14,7 +14,7 @@
  * disagree about whose turn it is. Who may read at all is `readsTeamReports` (server/access.ts), and
  * the awaiting-validation figure is `loadReadiness`, the Team tab's own progress read.
  *
- * ## Three things a reader will want to change, and must not
+ * ## Four things a reader will want to change, and must not
  *
  * 🔴 **The two decision counts are in the module's OWN world, test included.** The Super Admin's
  * entries are test entries (owner, 2026-09-16), so `phoenixCrmDecisionSeats` puts his counts in the
@@ -33,6 +33,16 @@
  * his screens), and his own list progress is not something a central board reports about him. A rep
  * holds a territory in scope, so a gate on "has any scope" would have handed him a readiness figure
  * about his own list on a board built for the people above him.
+ *
+ * 🔴 **THE HELD-PLACE COUNT IS THE SUPER ADMIN'S ALONE, AND IT LINKS OFF THE TEAM TAB.** Added
+ * 2026-10-05, after the owner put that queue on email, in-app and Telegram by name — the board is the
+ * fourth way the same hold reaches him, and the only one that still shows it tomorrow if he reads a
+ * notice and does nothing. `countValidationReviewsWaiting` is asked only when
+ * `canDecideValidationReviews` is true, so every other viewer gets a true zero with no query; and its
+ * row carries its OWN href to `/admin/field-crm/validation-reviews`, because the Team tab cannot
+ * decide one. Both halves look like tidying and are not: narrowing the href to the source's default
+ * would send him to a screen with no decision on it, and widening the gate would put the queue on the
+ * screens of people who cannot act on it.
  */
 
 import { readsTeamReports, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -42,6 +52,7 @@ import {
   phoenixCrmDecisionSeats,
 } from "@/lib/phoenix-crm/server/decision-queues";
 import { loadReadiness } from "@/lib/phoenix-crm/server/list";
+import { canDecideValidationReviews, countValidationReviewsWaiting } from "@/lib/phoenix-crm/server/validation-reviews";
 
 export type PhoenixCrmDecisionCounts = {
   /** List requests — a grade, a drop, an add, a bring-back — at a step this viewer takes. */
@@ -57,6 +68,15 @@ export type PhoenixCrmDecisionCounts = {
   awaitingValidation: number;
   /** How many territories that figure covers, so the sentence can say so. */
   territories: number;
+  /**
+   * Places the Google Maps check could not settle, waiting on the Super Admin's own page — and 0,
+   * with no query at all, for every other viewer, because he is the only person who decides one
+   * (`canDecideValidationReviews`). It is the one count here that is BLOCKED on a decision nobody
+   * else can take, which is why it reaches his own lane rather than the worth-knowing band.
+   */
+  placeChecks: number;
+  /** When the oldest of those was held, so the row can state its age. */
+  oldestPlaceCheckAt: string | null;
   /** True when the two decision counts are TEST entries — the Super Admin, or a test account. */
   isTest: boolean;
 };
@@ -73,7 +93,7 @@ export function phoenixCrmReadsDecisions(viewer: PhoenixCrmViewer): boolean {
 }
 
 /**
- * The three counts, in one wave. It THROWS on any failed read rather than reporting a zero — the
+ * The four counts, in one wave. It THROWS on any failed read rather than reporting a zero — the
  * board turns a rejection into its amber "could not be read" row, and a zero it cannot prove is the
  * one shape that board must never have.
  */
@@ -81,17 +101,29 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
   const seats = phoenixCrmDecisionSeats(viewer);
   const seatIds = viewer.scopeTerritories.map((seat) => seat.seatId);
 
-  const [listRequests, offPlanVisits, readiness] = await Promise.all([
+  const [listRequests, offPlanVisits, readiness, placeCheck] = await Promise.all([
     countPhoenixCrmListRequestsWaitingForYou(seats),
     countPhoenixCrmOffPlanVisitsWaitingForYou(seats),
     // `loadReadiness` answers for EVERY seat asked about or throws — a territory the database did not
     // answer for is never read as ready, or as anything else. That is precisely the contract this
     // board needs, so it is called bare and its rejection travels.
     seatIds.length === 0 ? Promise.resolve(null) : loadReadiness(seatIds),
+    // The held-place queue is the Super Admin's alone, so for everybody else it is a TRUE zero and no
+    // query is made at all — the gate is the module's own (`canDecideValidationReviews`), never a
+    // role test spelled out again here.
+    canDecideValidationReviews(viewer) ? countValidationReviewsWaiting() : Promise.resolve({ count: 0, oldestAt: null }),
   ]);
 
   let awaitingValidation = 0;
   if (readiness) for (const seat of readiness.values()) awaitingValidation += seat.open;
 
-  return { listRequests, offPlanVisits, awaitingValidation, territories: seatIds.length, isTest: seats.isTest };
+  return {
+    listRequests,
+    offPlanVisits,
+    awaitingValidation,
+    territories: seatIds.length,
+    placeChecks: placeCheck.count,
+    oldestPlaceCheckAt: placeCheck.oldestAt,
+    isTest: seats.isTest,
+  };
 }
