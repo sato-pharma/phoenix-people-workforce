@@ -124,6 +124,29 @@ node scripts/check-dependabot-alerts.mjs          # exit 1 only on an alert that
 node scripts/check-dependabot-alerts.mjs --json   # the whole reading, including the unreachable set
 ```
 
+🔴 **THE CHECK READS THE ROWS ABOVE, so a decision written here stops the tool demanding one.** An
+unpatched alert with a row prints `risk ACCEPTED, recorded <date>`; one without keeps
+`needs an override, a replacement, or a recorded risk decision`. Added 2026-10-05, because the
+demand used to print on **every** unpatched alert including `#112`, whose decision was already
+written and dated — and the ship skill reads this check before every merge, so a session read that
+line at the moment it was deciding to merge, believed three alerts were unjudged, and put the
+already-answered question to the owner. A demand that outlives its answer is the same cry-wolf
+failure as the 2026-10-04 false `WILL FAIL CI`, arriving from the other direction.
+
+**It is keyed on the alert NUMBER, never the GHSA** — which is what makes the red note above true
+mechanically rather than only in prose. One advisory opens one alert per manifest, so `braces`
+`GHSA-vfj7-8cjw-p6xm` is open as both `#112` here and `#111` elsewhere; keying on the advisory would
+turn this file's explicit refusal to judge the other one into an automatic acceptance, silently.
+
+**The parser fails closed**, like every other grading in `dependabot-alerts.mjs`: a row is honoured
+only when one `###` section positively yields **one** alert number and a Decision cell saying
+**Accepted** with a `Recorded <date>`. A differently-worded decision, a missing date, no alert
+number, two numbers in one cell, or an unreadable file all record nothing and leave the demand
+standing. 🔴 **So the table shape above is load-bearing** — if you restyle a row, keep its
+`| **Decision** | **Accepted …** Recorded YYYY-MM-DD |` and `| Alert | #N … |` cells, or the
+decision silently stops being honoured. `tests/dependabot-alerts.test.ts` asserts that at least one
+decision still parses out of this file, so a restyle that breaks it goes red rather than quiet.
+
 🔴 **`skipped — …` is still not a pass.** It means nothing was read — no `gh`, not authenticated, no
 network, or a token without `security_events`. A zero from a repo with alerts switched off still
 exits 1. Neither of those changed here.

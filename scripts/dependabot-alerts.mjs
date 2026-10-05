@@ -97,6 +97,7 @@ export function alertsEnabled() {
  *
  * @typedef {{
  *   severity: string,
+ *   number: number | null,
  *   ghsa: string,
  *   package: string,
  *   manifest: string,
@@ -177,6 +178,11 @@ export function classifyAlerts(alerts) {
     const scope = String(alert?.dependency?.scope ?? '').toLowerCase() || '(unstated)';
     const row = {
       severity,
+      // The alert NUMBER, which is what a recorded decision is keyed on. Never the GHSA: one advisory
+      // can open several alerts, one per manifest, and `open-dependency-alerts.md` says in red that a
+      // row for one of them "is not a precedent for the other open alerts". Keying on the GHSA would
+      // make that precedent automatic and silent — braces GHSA-vfj7-8cjw-p6xm is open twice here.
+      number: Number.isInteger(alert?.number) ? alert.number : null,
       ghsa: alert?.security_advisory?.ghsa_id ?? '(no id)',
       package: alert?.dependency?.package?.name ?? '(unnamed)',
       manifest,
@@ -216,12 +222,62 @@ export function classifyAlerts(alerts) {
  * "bump to null" would send a reader hunting for a version that does not exist.
  *
  * @param {AlertRow} row
+ * @param {Map<number, { recorded: string }>} [decisions] from `readRecordedDecisions()`; absent = none recorded.
  * @returns {string}
  */
-export function describeAlert(row) {
+export const DECISIONS_DOC = 'docs/security/open-dependency-alerts.md';
+
+/**
+ * THE RECORDED RISK DECISIONS, READ FROM THE DOC THAT HOLDS THEM — pure, so it is testable.
+ *
+ * 🔴 WHY THIS EXISTS. `describeAlert` used to end every unpatched alert with "needs an override, a
+ * replacement, or a recorded risk decision", including ones whose decision was already written down
+ * and dated in `open-dependency-alerts.md`. The ship skill reads this check before every merge, so
+ * that line is what a session sees at the moment it is deciding whether to merge: on 2026-10-05 one
+ * read it, believed three alerts were unjudged, and put the already-answered question to the owner.
+ * A demand that stays up after it has been satisfied is the cry-wolf failure the 2026-10-04 fix was
+ * itself about, arriving from the other direction.
+ *
+ * 🔴 IT FAILS CLOSED, like every other grading in this file. A decision is recognised ONLY when a
+ * single `###` section positively yields BOTH an alert number and a Decision cell that says
+ * "Accepted". Anything else — no number, a decision worded some other way, a section that names two
+ * alerts, an unreadable or absent file — records nothing, and the alert keeps its demand. The worst
+ * a wrong reading can do is leave the demand up; it can never retire one that was not written.
+ *
+ * @param {string} markdown contents of `open-dependency-alerts.md`.
+ * @returns {Map<number, { recorded: string }>} by ALERT NUMBER, never by GHSA (see `classifyAlerts`).
+ */
+export function readRecordedDecisions(markdown) {
+  const decisions = new Map();
+  if (typeof markdown !== 'string' || markdown === '') return decisions;
+  for (const section of markdown.split(/^### /m).slice(1)) {
+    // Stop at the next heading level so a later section's table cannot be read into this one.
+    const body = section.split(/^## /m)[0];
+    // Take the Alert CELL first, then every `#N` inside it. Matching `Alert |…#(\d+)` directly finds
+    // only the first number, because the `| Alert |` prefix occurs once — so a cell reading
+    // "#112 and #111" would look like a decision about #112 alone. Caught by its own case below.
+    const cell = body.match(/\|\s*Alert\s*\|([^|\n]*)\|/);
+    const numbers = cell ? [...cell[1].matchAll(/#(\d+)/g)].map((m) => Number(m[1])) : [];
+    // Exactly one, or we cannot say which alert the decision belongs to.
+    if (numbers.length !== 1) continue;
+    const decision = body.match(/\|\s*\*\*Decision\*\*\s*\|([^|\n]*)\|/);
+    if (!decision || !/\bAccepted\b/i.test(decision[1])) continue;
+    const recorded = decision[1].match(/\bRecorded\s+(\d{4}-\d{2}-\d{2})\b/i);
+    if (!recorded) continue;
+    decisions.set(numbers[0], { recorded: recorded[1] });
+  }
+  return decisions;
+}
+
+export function describeAlert(row, decisions) {
+  const decided = row.number === null ? undefined : decisions?.get(row.number);
   const fix = row.patchedVersion
     ? `bump to ${row.patchedVersion}`
-    : 'NO patched version exists yet — needs an override, a replacement, or a recorded risk decision';
+    : decided
+      // Not "nothing to do" — the decision is a standing one with its own reversal conditions, and the
+      // row names them. This says WHERE it is written so a reader can disagree with it on the evidence.
+      ? `no patched version — risk ACCEPTED, recorded ${decided.recorded} in ${DECISIONS_DOC}`
+      : 'NO patched version exists yet — needs an override, a replacement, or a recorded risk decision';
   const severity = KNOWN_SEVERITIES.has(row.severity)
     ? row.severity.toUpperCase()
     // Says WHY it is in the urgent list, so a reader does not go hunting for a HIGH advisory that the
@@ -242,9 +298,10 @@ export function describeAlert(row) {
  *
  * @param {{ skipped?: string, alerts?: ReadonlyArray<object> }} read result of `readOpenAlerts()`.
  * @param {{ enabled?: boolean, unknown?: string }} enabled result of `alertsEnabled()`.
+ * @param {Map<number, { recorded: string }>} [decisions] recorded risk decisions, by alert number.
  * @returns {{ exitCode: 0|1, errors: string[], notes: string[], failing: AlertRow[], other: AlertRow[], unreachable: AlertRow[] }}
  */
-export function judgeAlerts(read, enabled) {
+export function judgeAlerts(read, enabled, decisions) {
   const errors = [];
   const notes = [];
 
@@ -277,13 +334,13 @@ export function judgeAlerts(read, enabled) {
     return { exitCode: 0, errors, notes, failing, other, unreachable };
   }
 
-  for (const row of failing) errors.push(`WILL FAIL CI: ${describeAlert(row)}`);
+  for (const row of failing) errors.push(`WILL FAIL CI: ${describeAlert(row, decisions)}`);
   // Printed, never silent: these are real open alerts and a reader must still see them. What changed
   // is only the verdict attached — they cannot turn `validate` red, so they must not block a merge.
   for (const row of unreachable) {
-    notes.push(`open, but CANNOT fail the gate — ${row.outOfAuditReach}: ${describeAlert(row)}`);
+    notes.push(`open, but CANNOT fail the gate — ${row.outOfAuditReach}: ${describeAlert(row, decisions)}`);
   }
-  for (const row of other) notes.push(`below the audit level: ${describeAlert(row)}`);
+  for (const row of other) notes.push(`below the audit level: ${describeAlert(row, decisions)}`);
 
   if (failing.length === 0) {
     // 🔴 TWO SENTENCES, BECAUSE ONE OF THEM MUST NOT BE WEAKENED. With no unreachable rows this is
