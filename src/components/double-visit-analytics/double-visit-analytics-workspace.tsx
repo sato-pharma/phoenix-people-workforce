@@ -982,7 +982,9 @@ export function DoubleVisitAnalyticsWorkspace({
   const exportHref = `/api/admin/double-visit-analytics/export?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}`;
   // The coaching audit export mirrors the board's live filters — date range, role, period — so the
   // workbook is the on-screen view: one tab per coach with the full per-rep / per-day / dated trail.
-  const auditExportHref = `/api/admin/double-visit-analytics/audit-export?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}&role=${encodeURIComponent(roleFilter)}&period=${encodeURIComponent(periodFilter)}`;
+  // split=month keeps each calendar month's own figures in one file (one tab per coach per month),
+  // so a multi-month range comes back as a single combined audit rather than a collapsed total.
+  const auditExportHref = `/api/admin/double-visit-analytics/audit-export?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}&role=${encodeURIComponent(roleFilter)}&period=${encodeURIComponent(periodFilter)}&split=month`;
   const periodLabel = periodFilter === "ALL" ? "" : periodFilter;
   const activeManagerCount = managerSummaries.length;
   const idleCount = executiveSummary?.idleManagers.length ?? 0;
