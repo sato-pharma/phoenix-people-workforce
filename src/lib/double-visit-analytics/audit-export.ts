@@ -205,6 +205,29 @@ export function weekIndexOf(weeks: DoubleVisitAuditWeek[], dateIso: string): num
   return weeks.findIndex((week) => dateIso >= week.start && dateIso <= week.end);
 }
 
+/** Split [dateFrom, dateTo] into one window per calendar month it spans, each clamped to the range,
+ * labelled "July 2026". For a range inside one month, a single section. Pure, exported for its test. */
+export function splitRangeByMonth(dateFrom: string, dateTo: string): { label: string; from: string; to: string }[] {
+  if (!dateFrom || !dateTo || dateFrom > dateTo) return [];
+  const sections: { label: string; from: string; to: string }[] = [];
+  let cursor = `${dateFrom.slice(0, 7)}-01`;
+  let guard = 0;
+  while (cursor <= dateTo && guard < 120) {
+    const date = new Date(`${cursor}T00:00:00Z`);
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth();
+    const monthStart = `${cursor.slice(0, 7)}-01`;
+    const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const monthEnd = `${cursor.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
+    const from = monthStart < dateFrom ? dateFrom : monthStart;
+    const to = monthEnd > dateTo ? dateTo : monthEnd;
+    sections.push({ label: `${MONTHS[month]} ${year}`, from, to });
+    cursor = new Date(Date.UTC(year, month + 1, 1)).toISOString().slice(0, 10);
+    guard += 1;
+  }
+  return sections;
+}
+
 /** Keep only rows whose AM·PM·Pharmacies bucket matches the period filter. ALL keeps everything.
  * Pure, exported for its unit test. */
 export function filterRowsByPeriod(rows: DoubleVisitDbRow[], period: AuditPeriodFilter): DoubleVisitDbRow[] {
@@ -265,8 +288,12 @@ export async function loadDoubleVisitAuditData(input: {
   dateTo: string;
   role: AuditRoleFilter;
   period: AuditPeriodFilter;
+  /** Keep rows whose recording agent is a resigned CRM account — so a coaching audit SURFACES the
+   * resigned/reused-slot reps (flagged by the Status column) instead of hiding them as the live
+   * board does. Default false, so the board export is byte-for-byte what the screen shows. */
+  includeResignedAgents?: boolean;
 }): Promise<DoubleVisitAuditData> {
-  const { access, dateFrom, dateTo, role, period } = input;
+  const { access, dateFrom, dateTo, role, period, includeResignedAgents } = input;
   const generatedAt = cairoTodayIso();
   const weeks = buildAuditWeeks(dateFrom, dateTo);
 
@@ -282,6 +309,7 @@ export async function loadDoubleVisitAuditData(input: {
     dateFrom,
     dateTo,
     visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
+    ...(includeResignedAgents ? { includeResignedAgents: true } : {}),
     columns:
       "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
       "double_crm_id, double_hr_id, double_name, ampm, visit_type, visit_type_description, speciality, contact_crm_id",
@@ -536,6 +564,110 @@ export async function buildDoubleVisitAuditWorkbook(data: DoubleVisitAuditData):
   return workbook;
 }
 
+export type DoubleVisitAuditSection = { label: string; data: DoubleVisitAuditData };
+
+/**
+ * Several months (or windows) in ONE workbook, ONE TAB PER COACH: a combined Summary tab with a
+ * leaderboard per section, then for each coach a single tab that stacks every section they appear
+ * in — a "July 2026 · …" band, that month's KPI/per-rep/per-day/dated blocks, then "August 2026 · …",
+ * and so on. A coach keeps each month's own figures and the whole of their quarter reads top to
+ * bottom on one sheet (owner: "jul - aug - sep of the same dsm in one tab"). Pure given the sections.
+ */
+export async function buildCombinedAuditWorkbook(sections: DoubleVisitAuditSection[]): Promise<ExcelJS.Workbook> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Phoenix Workforce";
+  workbook.created = new Date();
+
+  const summary = workbook.addWorksheet("Summary");
+  summary.columns = [
+    { width: 30 }, { width: 10 }, { width: 22 }, { width: 14 }, { width: 12 },
+    { width: 12 }, { width: 10 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 14 },
+  ];
+  summary.addRow(["Double Visit Coaching Audit — combined"]).font = { bold: true, size: 16 };
+  if (sections[0]) {
+    summary.addRow([`Scope: ${sections[0].data.scopeLabel}`]);
+    summary.addRow([`Generated: ${sections[0].data.generatedAt} (Cairo)`]);
+  }
+  summary.addRow([]);
+
+  for (const section of sections) {
+    styleBandRow(
+      summary.addRow([
+        `${section.label}  ·  ${section.data.dateFrom} to ${section.data.dateTo}  ·  ${section.data.coaches.length} coaches`,
+      ]),
+      SUBHEADER_FILL,
+    );
+    styleBandRow(
+      summary.addRow(["Coach", "Role", "Area", "Line", "Status", "Total DVs", "Days", "MRs", "AM", "PM", "Pharmacies"]),
+      HEADER_FILL,
+    );
+    for (const coach of section.data.coaches) {
+      summary.addRow([
+        coach.name,
+        coach.roleCode ?? "—",
+        coach.area ?? "—",
+        coach.line ?? "—",
+        STATUS_LABELS[coach.status],
+        coach.totalDvs,
+        coach.activeDays,
+        coach.distinctMrs,
+        coach.am,
+        coach.pm,
+        coach.pharmacies,
+      ]);
+    }
+    summary.addRow([]);
+  }
+  summary.views = [{ state: "frozen", ySplit: 1 }];
+
+  // Gather each coach across every section, keyed by their resolved identity (hr id, else name), in
+  // first-appearance order within each month so a coach's quarter reads in calendar order.
+  type CoachTimeline = { key: string; name: string; entries: { label: string; coach: DoubleVisitAuditCoach; weeks: DoubleVisitAuditWeek[] }[] };
+  const timelines = new Map<string, CoachTimeline>();
+  for (const section of sections) {
+    for (const coach of section.data.coaches) {
+      const key = canonicalHrIdKey(coach.hrId) ?? `name:${coach.name.toLowerCase()}`;
+      const timeline = timelines.get(key) ?? { key, name: coach.name, entries: [] };
+      timeline.entries.push({ label: section.label, coach, weeks: section.data.weeks });
+      timelines.set(key, timeline);
+    }
+  }
+
+  // Order coaches by their total activity across all sections (busiest first), matching the board.
+  const ordered = Array.from(timelines.values()).sort(
+    (a, b) =>
+      b.entries.reduce((s, e) => s + e.coach.totalDvs, 0) - a.entries.reduce((s, e) => s + e.coach.totalDvs, 0) ||
+      a.name.localeCompare(b.name),
+  );
+
+  const usedNames = new Set<string>(["summary"]);
+  for (const timeline of ordered) {
+    const sheet = workbook.addWorksheet(sanitizeSheetName(timeline.name, usedNames));
+    sheet.columns = [{ width: 30 }, { width: 12 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }];
+
+    const head = timeline.entries[timeline.entries.length - 1]?.coach ?? timeline.entries[0].coach;
+    sheet.addRow([head.name]).font = { bold: true, size: 14 };
+    sheet.addRow([`${head.roleLabel ?? head.roleCode ?? "Coach"}`]);
+    sheet.addRow([`Area: ${head.area ?? "—"}    Line: ${head.line ?? "—"}`]);
+    sheet.addRow([]);
+
+    for (const entry of timeline.entries) {
+      const { coach } = entry;
+      styleBandRow(
+        sheet.addRow([
+          `${entry.label}  ·  ${coach.totalDvs} DVs · ${coach.activeDays} days${coach.status !== "" ? ` · ${STATUS_LABELS[coach.status]}` : ""}`,
+        ]),
+        SUBHEADER_FILL,
+      );
+      writeCoachBlocks(sheet, coach, entry.weeks);
+    }
+
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+  }
+
+  return workbook;
+}
+
 function styleBandRow(row: ExcelJS.Row, fill: string): void {
   row.font = { bold: true, color: { argb: "FFFFFFFF" } };
   row.fill = { fgColor: { argb: fill }, pattern: "solid", type: "pattern" };
@@ -639,6 +771,14 @@ function buildCoachSheet(
   sheet.addRow([`Area: ${coach.area ?? "—"}    Line: ${coach.line ?? "—"}`]);
   sheet.addRow([]);
 
+  writeCoachBlocks(sheet, coach, weeks);
+
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+}
+
+/** Write one coach's KPI strip, per-rep, per-day and dated-visit blocks into an existing sheet, at
+ * the current row — so a single coach tab can stack several windows (months) one after another. */
+function writeCoachBlocks(sheet: ExcelJS.Worksheet, coach: DoubleVisitAuditCoach, weeks: DoubleVisitAuditWeek[]): void {
   // KPI strip.
   const kpiHeader = sheet.addRow(["Total DVs", "Active Days", "MRs", "AM", "PM", "Pharmacies", "Days w/ GPS"]);
   styleBandRow(kpiHeader, HEADER_FILL);
@@ -704,6 +844,5 @@ function buildCoachSheet(
       visit.visitType,
     ]);
   }
-
-  sheet.views = [{ state: "frozen", ySplit: 1 }];
+  sheet.addRow([]);
 }

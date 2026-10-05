@@ -7,8 +7,10 @@ import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import {
+  buildCombinedAuditWorkbook,
   buildDoubleVisitAuditWorkbook,
   loadDoubleVisitAuditData,
+  splitRangeByMonth,
   type AuditPeriodFilter,
   type AuditRoleFilter,
 } from "@/lib/double-visit-analytics/audit-export";
@@ -52,13 +54,37 @@ export async function GET(request: Request) {
       ? (periodParam as AuditPeriodFilter)
       : "ALL";
 
-    const data = await loadDoubleVisitAuditData({ access, dateFrom, dateTo, role, period });
-    const workbook = await buildDoubleVisitAuditWorkbook(data);
+    // A coaching audit must SURFACE the resigned / reused-slot reps (flagged by the Status column),
+    // not hide them as the live board does — that is the whole point of the sheet, and it is what
+    // makes the export match the hand-built audit the owner approved.
+    // split=month keeps each calendar month's own figures in one workbook (one tab per coach per
+    // month); otherwise the whole range is a single audit.
+    const splitByMonth = url.searchParams.get("split") === "month";
+    let workbook;
+    if (splitByMonth) {
+      const sections = await Promise.all(
+        splitRangeByMonth(dateFrom, dateTo).map(async (month) => ({
+          label: month.label,
+          data: await loadDoubleVisitAuditData({
+            access,
+            dateFrom: month.from,
+            dateTo: month.to,
+            role,
+            period,
+            includeResignedAgents: true,
+          }),
+        })),
+      );
+      workbook = await buildCombinedAuditWorkbook(sections);
+    } else {
+      const data = await loadDoubleVisitAuditData({ access, dateFrom, dateTo, role, period, includeResignedAgents: true });
+      workbook = await buildDoubleVisitAuditWorkbook(data);
+    }
     const buffer = await workbook.xlsx.writeBuffer();
     const body = buffer instanceof ArrayBuffer ? buffer : Buffer.from(buffer);
     return new NextResponse(body, {
       headers: {
-        "Content-Disposition": `attachment; filename="double-visit-coaching-audit-${data.dateFrom}-to-${data.dateTo}.xlsx"`,
+        "Content-Disposition": `attachment; filename="double-visit-coaching-audit-${dateFrom}-to-${dateTo}.xlsx"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },
     });
