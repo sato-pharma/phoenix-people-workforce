@@ -1,11 +1,11 @@
 ---
 name: anti-infective-identity
-description: The Sato Pharma Anti-Infective line's event identity — the navy-field invitation and one-sheet look built for the Royafloxacin 500 mg + Saginkgo 120 mg combination (first used for the Delta 3 "SATO ENT CIRCLE" round-table, Sharkia, October 2026). Carries the exact geometry of the personalised invitation card, the name-only variant for a guest with no photograph, the consolidated one sheet, the duotone portrait law that makes ten unrelated snapshots read as one set, the pack lockup rules and the Arabic wordmark placement. Use when building an invitation, a round-table or speaker card, a guest one-sheet, an event poster, a save-the-date or any personalised piece for Royafloxacin, Saginkgo or an Anti-Infective team event. It does NOT replace sato-pharma-identity, which still governs certificates, documents, the business card and the website.
+description: The Anti-Infective identity — the navy-field invitation and one-sheet look built for the Royafloxacin 500 mg + Saginkgo 120 mg combination (first used for the Delta 3 "SATO ENT CIRCLE" round-table, Sharkia, October 2026). Carries the exact geometry of the personalised invitation card, the name-only variant for a guest with no photograph, the consolidated one sheet, the duotone portrait law that makes ten unrelated snapshots read as one set, the pack lockup rules and the Arabic wordmark placement. Use when building an invitation, a round-table or speaker card, a guest one-sheet, an event poster, a save-the-date or any personalised piece for Royafloxacin, Saginkgo or an Anti-Infective team event. It does NOT replace sato-pharma-identity, which still governs certificates, documents, the business card and the website.
 ---
 
 # Anti-Infective identity
 
-The event look for Sato Pharma's Anti-Infective line: a deep navy field, one
+The event look for the Anti-Infective line: a deep navy field, one
 photograph or one name held in the middle of it, and a white foot carrying the
 facts, the two cartons and the company's own Arabic calligraphy.
 
