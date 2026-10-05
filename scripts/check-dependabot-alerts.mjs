@@ -41,12 +41,24 @@
 // that a test cannot reach.
 'use strict';
 
-import { alertsEnabled, judgeAlerts, readOpenAlerts } from './dependabot-alerts.mjs';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { DECISIONS_DOC, alertsEnabled, judgeAlerts, readOpenAlerts, readRecordedDecisions } from './dependabot-alerts.mjs';
 
 const asJson = process.argv.includes('--json');
 const read = readOpenAlerts();
 const enabled = read.skipped ? { unknown: 'not read — the alerts themselves could not be read' } : alertsEnabled();
-const verdict = judgeAlerts(read, enabled);
+// An alert whose risk decision is already written down must not keep demanding one. Unreadable file,
+// moved file, no rows: `readRecordedDecisions` returns an empty map and every alert keeps its demand,
+// which is the fail-closed direction — see its header.
+let decisionsDoc = '';
+try {
+  decisionsDoc = readFileSync(path.join(import.meta.dirname, '..', DECISIONS_DOC), 'utf8');
+} catch {
+  decisionsDoc = '';
+}
+const verdict = judgeAlerts(read, enabled, readRecordedDecisions(decisionsDoc));
 
 if (asJson) {
   console.log(JSON.stringify({

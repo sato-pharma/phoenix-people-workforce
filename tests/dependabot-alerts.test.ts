@@ -9,10 +9,12 @@ import { stripComments } from "./support/comment-strip.ts";
 // `scripts/dependabot-alerts.mjs` is that the exit decision the CLI takes is the one this test drives.
 import {
   AUDIT_FAILING_SEVERITIES,
+  DECISIONS_DOC,
   KNOWN_SEVERITIES,
   classifyAlerts,
   describeAlert,
   judgeAlerts,
+  readRecordedDecisions,
 } from "../scripts/dependabot-alerts.mjs";
 
 /**
@@ -452,5 +454,101 @@ export function runDependabotAlertsTests() {
     "the recorded decision must exist - a skill pointing at a missing file is worse than no pointer. "
       + "existsSync, not readFileSync: a read THROWS ENOENT before the assertion is evaluated, so the "
       + "message never prints and the case proves nothing",
+  );
+
+  // ---------------------------------------------------------------------------------------------
+  // A RECORDED RISK DECISION RETIRES THE DEMAND FOR ONE — AND NOTHING ELSE RETIRES IT.
+  //
+  // `describeAlert` ended every unpatched alert with "needs ... a recorded risk decision", including
+  // the one whose decision was already written and dated in open-dependency-alerts.md. The ship skill
+  // reads this check before every merge, so on 2026-10-05 a session read that line, believed three
+  // alerts were unjudged, and put the already-answered question to the owner. A demand that outlives
+  // its answer is the same cry-wolf failure as the 2026-10-04 false `WILL FAIL CI`, from the other side.
+  const ACCEPTED_DOC = [
+    "### `braces` — GHSA-vfj7-8cjw-p6xm · HIGH",
+    "",
+    "| | |",
+    "| --- | --- |",
+    "| **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-10-04 at the owner's instruction. |",
+    "| Alert | #112, opened 2026-10-03, root `pnpm-lock.yaml` |",
+    "",
+  ].join("\n");
+
+  assert.deepEqual(
+    [...readRecordedDecisions(ACCEPTED_DOC).entries()],
+    [[112, { recorded: "2026-10-04" }]],
+    "a section that positively yields BOTH one alert number and an Accepted decision must be read as "
+      + "a recorded decision, keyed on the alert NUMBER",
+  );
+
+  // 🔴 THE CASE THE WHOLE KEYING CHOICE EXISTS FOR. One advisory opens one alert PER MANIFEST, and
+  // open-dependency-alerts.md says in red that a row for one "is not a precedent for the other open
+  // alerts". braces GHSA-vfj7-8cjw-p6xm is open twice here — #112 in the audited root tree and #111
+  // in another application's lockfile — and only #112 is decided. Keying on the GHSA would silently
+  // accept the undecided one, turning a written refusal to judge it into an automatic acceptance.
+  const twoAlertsOneAdvisory = classifyAlerts([
+    { number: 112, security_advisory: { severity: "high", ghsa_id: "GHSA-vfj7-8cjw-p6xm" }, dependency: { package: { name: "braces" }, scope: "development", manifest_path: "pnpm-lock.yaml" }, security_vulnerability: { vulnerable_version_range: "<= 3.0.3" } },
+    { number: 111, security_advisory: { severity: "high", ghsa_id: "GHSA-vfj7-8cjw-p6xm" }, dependency: { package: { name: "braces" }, scope: "runtime", manifest_path: "other-app/package-lock.json" }, security_vulnerability: { vulnerable_version_range: "<= 3.0.3" } },
+  ]).unreachable;
+  const decisions = readRecordedDecisions(ACCEPTED_DOC);
+  const decided = twoAlertsOneAdvisory.find((r) => r.number === 112);
+  const undecided = twoAlertsOneAdvisory.find((r) => r.number === 111);
+  assert.ok(decided && undecided, "both alerts of the shared advisory must classify as unreachable");
+  assert.match(
+    describeAlert(decided, decisions),
+    /risk ACCEPTED, recorded 2026-10-04/,
+    "the alert whose decision IS recorded must stop demanding one",
+  );
+  assert.doesNotMatch(
+    describeAlert(undecided, decisions),
+    /ACCEPTED/,
+    "the OTHER alert of the same advisory must keep its demand — open-dependency-alerts.md states in "
+      + "red that one row is not a precedent for the others, and keying on the GHSA would make that "
+      + "precedent automatic and invisible",
+  );
+  assert.match(
+    describeAlert(undecided, decisions),
+    /needs an override, a replacement, or a recorded risk decision/,
+    "and it must keep the ORIGINAL wording, not a softened one",
+  );
+
+  // FAIL CLOSED in every direction: the worst a misreading can do is leave a demand up, never retire
+  // one nobody wrote. Each clause is its own case so a failure names which direction broke.
+  for (const [why, doc] of [
+    ["a decision worded as something other than Accepted", ACCEPTED_DOC.replace("**Accepted. Not bumped, not overridden.**", "**Deferred for now.**")],
+    ["no Recorded date", ACCEPTED_DOC.replace("Recorded 2026-10-04 at the owner's instruction.", "at the owner's instruction.")],
+    ["no alert number", ACCEPTED_DOC.replace("| Alert | #112, opened 2026-10-03, root `pnpm-lock.yaml` |", "| Alert | root `pnpm-lock.yaml` |")],
+    ["two alert numbers in one section, so which is decided cannot be said", ACCEPTED_DOC.replace("| Alert | #112, opened", "| Alert | #112 and #111, opened")],
+    ["an empty file", ""],
+    ["an unreadable file (the CLI passes '' when the read throws)", ""],
+  ] as Array<[string, string]>) {
+    assert.equal(
+      readRecordedDecisions(doc).size,
+      0,
+      `readRecordedDecisions must record NOTHING when there is ${why} — it fails closed, so an alert `
+        + "keeps its demand rather than being quietly accepted",
+    );
+  }
+  assert.equal(readRecordedDecisions(undefined as unknown as string).size, 0, "a non-string records nothing");
+
+  // And with no decisions at all, every unpatched alert keeps the original demand — the behaviour
+  // before this change, unchanged for everything that has not been judged.
+  assert.match(
+    describeAlert(undecided, undefined),
+    /needs an override, a replacement, or a recorded risk decision/,
+    "with no decisions map at all, nothing is downgraded",
+  );
+
+  // The doc the CLI reads must be where the constant says, or the read returns '' and every decision
+  // silently stops being honoured — quiet in the safe direction, but the feature would be dead.
+  assert.ok(
+    existsSync(DECISIONS_DOC),
+    `DECISIONS_DOC points at ${DECISIONS_DOC}, which does not exist — readRecordedDecisions would get `
+      + "'' forever and no recorded decision would ever be honoured",
+  );
+  assert.ok(
+    readRecordedDecisions(readFileSync(DECISIONS_DOC, "utf8")).size > 0,
+    `${DECISIONS_DOC} exists but no recorded decision parses out of it. Either the table shape changed `
+      + "or a row lost its Decision/Alert cell; the parser and the doc have to move together",
   );
 }
