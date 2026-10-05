@@ -12,6 +12,7 @@ import {
 } from "@/lib/sales/access-scope";
 import { fillClosingEngine } from "@/lib/sales/closing-engine-fill";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
+import { buildClosingNoOfficeSheet } from "@/lib/sales/closing-no-office-sheet";
 import { loadClosingExportPayload } from "@/lib/sales/closing-export-payload";
 import { sealClosingSelection, sealedRepCardPdfBase } from "@/lib/sales/closing-pdf-link-seal";
 import { loadClosingQuarterGap } from "@/lib/sales/closing-quarter-gap";
@@ -222,7 +223,24 @@ export async function POST(request: Request) {
       })
       : null;
     const quarterGapSheet = buildQuarterGapSheet(quarterGap, { line: payload.line, period: payload.period });
-    const appendedSheets = quarterGapSheet ? [...reviewSheets, quarterGapSheet] : reviewSheets;
+
+    // 🔴 THE CLOSING MATRIX WITHOUT THE OFFICE CHANNEL, as the tab straight after it — owner,
+    // 2026-10-05: "only in CNS ... a new tab is added without the office sales ... in the premium
+    // and in the normal xlsx monthly closing." Null on every other line, because Office is CNS-only,
+    // so no other workbook gains a tab that would be a copy of the grid it already has.
+    //
+    // It reads the payload's own Office slice, narrowed by the SAME filter as `payload.matrix`, so a
+    // filtered workbook's twin covers exactly the slice the rest of the file does. This route has no
+    // ROW-LEVEL filter, which is the one case where the two grids cannot be subtracted at all.
+    const noOfficeSheet = buildClosingNoOfficeSheet(payload.matrix, payload.office, {
+      filterNote: payload.filterNote,
+    });
+
+    const appendedSheets = [
+      ...reviewSheets,
+      ...(quarterGapSheet ? [quarterGapSheet] : []),
+      ...(noOfficeSheet ? [noOfficeSheet] : []),
+    ];
 
     const buffer = await fillClosingEngine(payload.fill, {
       macroFree: !macros,

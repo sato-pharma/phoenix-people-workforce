@@ -30,6 +30,11 @@ import type { ClosingDetailRow, ClosingDetailsResult } from "@/lib/sales/monthly
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS, type JulyDirectRow } from "@/lib/sales/july-2026-direct-orders";
 import { lineHasOfficeChannel } from "@/lib/sales/office-distributor";
 import {
+  CLOSING_MATRIX_NO_OFFICE_NOTE,
+  CLOSING_MATRIX_NO_OFFICE_SHEET,
+  matrixWithoutOffice,
+} from "@/lib/sales/closing-matrix-without-office";
+import {
   foldStoreSplitByArea,
   foldStoreSplitByCustomer,
   foldStoreSplitDetail,
@@ -1000,13 +1005,19 @@ function fillFor(tone: Tone, zebra: boolean): string | null {
 // still passed `ref` in order to write its Office cells as SUMIFS over the Calc sheet. The parameter
 // is carried over; the SUMIFS are NOT. An Office figure is a plain value like every other number
 // here, for exactly the reasons the note gives.
+//
+// `sheetName` exists for ONE caller — the Office-free twin written straight after this grid (owner,
+// 2026-10-05). It names the tab AND the band header, so the two can never disagree: a band reading
+// "Closing Matrix" over a tab that is not it is how a forwarded screenshot gets quoted as the
+// published closing. It is not a styling hook, and every other caller leaves it alone.
 function writeMatrixSheet(
   workbook: ExcelJS.Workbook,
   matrix: MonthlyClosingMatrix,
   note?: string,
   office?: MonthlyClosingMatrix | null,
+  sheetName: string = "Closing Matrix",
 ) {
-  const sheet = workbook.addWorksheet(sanitizeSheetName("Closing Matrix"), { views: [{ state: "frozen", xSplit: 2, ySplit: 5 }] });
+  const sheet = workbook.addWorksheet(sanitizeSheetName(sheetName), { views: [{ state: "frozen", xSplit: 2, ySplit: 5 }] });
   const products = matrix.columns;
   // Each product block is Units, [of wh. Office], Value, Tgt Units, Tgt Value, Ach %, then this
   // row's share of the LINE for that product — sales share and target share.
@@ -1063,7 +1074,7 @@ function writeMatrixSheet(
     put("grand:", office.grandTotal.cells, office.grandTotal.rowTotal);
   }
 
-  bandHeader(sheet, matrix.line, matrix.period, "Closing Matrix", totalCols);
+  bandHeader(sheet, matrix.line, matrix.period, sheetName, totalCols);
 
   const bandRow = sheet.getRow(4);
   const metricRow = sheet.getRow(5);
@@ -3297,6 +3308,10 @@ const SHEET_GUIDE: Record<string, { ar: string; en: string }> = {
     ar: "الشيت الرئيسي: إجمالي المبيعات (موزعين + أوردرات مباشرة) لكل منطقة ومنتج، مع التارجت ونسبة التحقيق.",
     en: "The master sheet: total sales (distributors + direct) per area and product, with target and achievement.",
   },
+  [CLOSING_MATRIX_NO_OFFICE_SHEET]: {
+    ar: "نفس الشيت الرئيسي بالكامل، لكن بعد خصم مبيعات الأوفيس من كل خانة. التارجت كما هو، فنسبة التحقيق هنا أقل بمقدار نصيب الأوفيس. الشيت الرئيسي هو الإغلاق المعتمد؛ هذا الشيت للقراءة فقط.",
+    en: "The master sheet exactly, with the Office channel's units and value taken out of every cell. Targets are unchanged, so the achievement here is lower than the Closing Matrix by exactly the Office share. CNS only — Office is a CNS-only channel.",
+  },
   "Office Allocation": {
     ar: "وحدات الأوفيس وحدها: لكل منطقة ولكل منتج. الأوفيس ليس موزعاً — وحداته توزَّع على المناطق بقاعدة المالك حسب مساهمة كل منطقة في قيمة مبيعات الخط.",
     en: "The Office channel on its own, per area and product. Office is not a distributor: its units are spread across areas by the owner's rule, on each area's share of the line's value. The same figures as the “of wh. Office” columns on the Closing Matrix.",
@@ -3613,6 +3628,18 @@ export async function buildMonthlyClosingWorkbook(
      */
     office?: MonthlyClosingMatrix | null;
     /**
+     * True when `office` was narrowed by the SAME filter as `matrix`, so the Office slice can be
+     * taken out of it cell by cell — which is what the "Closing Matrix (No Office)" tab is.
+     *
+     * 🔴 OFF BY DEFAULT, AND THE DEFAULT IS THE SAFE ANSWER. Under a ROW-LEVEL filter (distributor,
+     * Included/Excluded, free-text search) the admin route deliberately passes the WHOLE month's
+     * Office grid, because `loadMonthlyClosingParts` builds it from an aggregate carrying no
+     * customer and no distributor and there is nothing in it for such a filter to match — the sheet
+     * says so in words. Subtracting that from a narrowed matrix would remove money the matrix never
+     * held and print NEGATIVE sales, so the tab is simply absent there instead.
+     */
+    officeNarrowedWithMatrix?: boolean;
+    /**
      * OFF BY DEFAULT. Present only on the CONSOLIDATED export — several months of one line added
      * together, Super Admin and CEO only (owner, 2026-09-14). Absent, this workbook is exactly the
      * single-month file it has always been.
@@ -3649,6 +3676,26 @@ export async function buildMonthlyClosingWorkbook(
   // the sheet can never disagree about whether this workbook has an Office layer.
   const office = lineHasOfficeChannel(matrix.line) ? (options?.office ?? null) : null;
   writeMatrixSheet(workbook, matrix, options?.filterNote, office);
+  // 🔴 THE SAME GRID WITH OFFICE TAKEN OUT, IMMEDIATELY AFTER IT — owner, 2026-10-05: "a new tab is
+  // added without the office sales ... then the closing matrix as it is". CNS only, because Office
+  // is a CNS-only channel (`lineHasOfficeChannel` above), and `office` is already null everywhere
+  // else — so no other line gains a tab that would be a byte-identical copy of the one before it.
+  //
+  // It carries NO "of wh. Office" columns, deliberately: the whole grid is the non-Office half, so a
+  // column of zeroes would be the one number on the sheet that says nothing. That also makes it
+  // narrower than the Closing Matrix by one column per product, which is the visible signal that
+  // the reader is on the twin rather than on the published grid.
+  //
+  // Only when the Office grid is comparable with this matrix — see `officeNarrowedWithMatrix`.
+  if (office && options?.officeNarrowedWithMatrix) {
+    writeMatrixSheet(
+      workbook,
+      matrixWithoutOffice(matrix, office),
+      [CLOSING_MATRIX_NO_OFFICE_NOTE, options?.filterNote].filter(Boolean).join(" "),
+      null,
+      CLOSING_MATRIX_NO_OFFICE_SHEET,
+    );
+  }
   // Straight after the master, so the Office layer reads as a lens ON the closing rather than as a
   // separate report buried at the back.
   //

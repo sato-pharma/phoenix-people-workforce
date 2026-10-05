@@ -59,6 +59,14 @@ export type ClosingExportPayload = {
   /** The filter stamp in human names, or "" when nothing was narrowed. */
   filterNote: string;
   matrix: Awaited<ReturnType<typeof loadMonthlyClosingPartsWithStoreSplit>>["combined"];
+  /**
+   * The Office slice of `matrix`, on the same grid and narrowed by the same filter.
+   *
+   * Null on every line but CNS (Office is a CNS-only channel) and on a month with no Office rows.
+   * It is DELIBERATELY not store-split — Office rows carry no customer, so none of them is ever a
+   * store row that moves — which is also what makes `matrix` minus this exactly the non-Office half.
+   */
+  office: Awaited<ReturnType<typeof loadMonthlyClosingPartsWithStoreSplit>>["office"];
   review: Awaited<ReturnType<typeof loadClosingPerformanceReview>>;
 };
 
@@ -157,6 +165,13 @@ export async function loadClosingExportPayload(
 
   const filterNote = describeFilter(selection.filter, review.filterOptions);
 
+  // The Office slice, narrowed by the SAME filter as the matrix above, so a caller may subtract it
+  // cell by cell. This path has no ROW-LEVEL filter at all — its only filter is the matrix one
+  // (regions, areas, products, area search), and `filterMonthlyClosingMatrix` applies it identically
+  // to both grids — which is the one condition `closing-matrix-without-office.ts` requires. Null on
+  // every line but CNS, and on a month whose Office read came back empty.
+  const office = parts.office ? filterMonthlyClosingMatrix(parts.office, selection.filter) : null;
+
   return {
     filterNote,
     fill: buildClosingEngineFill({
@@ -169,6 +184,7 @@ export async function loadClosingExportPayload(
     }),
     line: matrix.line,
     matrix,
+    office,
     period: matrix.period,
     review,
   };

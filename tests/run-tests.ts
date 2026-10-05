@@ -1569,6 +1569,7 @@ import { runClosingManagerAsOfTests, runClosingPerformanceReviewTests } from "./
 import { runMonthlyClosingPeriodMergeTests } from "./monthly-closing-period-merge.test.ts";
 import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
 import { runClosingQuarterGapTests } from "./closing-quarter-gap.test.ts";
+import { runClosingMatrixNoOfficeTests } from "./closing-matrix-no-office.test.ts";
 import { runClosingConsolidatedExportTests } from "./closing-consolidated-export.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
 import { runCeoMarketAwarenessApprovalInboxTests } from "./ceo-market-awareness-approval-inbox.test.ts";
@@ -5422,6 +5423,11 @@ await runTest(
 await runTest(
   "the premium workbook's Gap to Quarter Target tab (the target spans all three months of the calendar quarter INCLUDING the one with no closing yet, sales stop at the month on the cover, an area row carries value only because units are never added across products, a missing target stays blank rather than becoming a zero gap at 0%, each month's targets fold by that month's own area-merge rules, and the emitted tab is registered, coloured, listed under its own contents band and formatted as a percentage where it says Achievement)",
   runClosingQuarterGapTests,
+);
+
+await runTest(
+  "the CNS-only Closing Matrix (No Office) tab in both workbooks (the Office slice is matched by product CODE and taken out of every cell, targets are NOT reduced with it so the achievement falls, every subtotal and both bottom rows are re-derived from the rows that survived, the tab is absent on any other line and absent when the Office grid was not narrowed with the matrix, and in each emitted file it lands immediately after the Closing Matrix with its defined names shifted, its percentage columns formatted, its masthead painted to the table's width and one contents heading rather than two)",
+  runClosingMatrixNoOfficeTests,
 );
 
 await runTest(

@@ -359,7 +359,15 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await applyExecutivePalette(zip);
 
   const finalParts = await resolveSheetParts(zip);
-  const banded = await paintExecutiveBands(zip, finalParts);
+  // An appended tab's own column count, for the ones `EXECUTIVE_GEOMETRY` cannot describe because
+  // their width depends on the month (a block per product). Taken from the widths the author
+  // actually wrote, so the navy band ends exactly where the table does; the table still wins for
+  // every sheet it has an entry for, the review's three and the quarter gap included.
+  const banded = await paintExecutiveBands(
+    zip,
+    finalParts,
+    new Map(reviewAdded.map((sheet): [string, number] => [sheet.name, sheet.headers.length])),
+  );
   // Only the sheets that actually got a navy masthead. A sheet still on white keeps the black-SATO
   // mark, which is the correct one for it.
   await applyOnDarkEmblem(zip, finalParts, banded);
@@ -2645,17 +2653,54 @@ const INDEX_FOOTNOTE =
 /** The band an appended sheet is listed under when it names none of its own. */
 const DEFAULT_APPENDED_BAND = "Performance review";
 
+type IndexEntry = { after?: string; sheet: string; what: string };
+type IndexSection = { band: string; entries: ReadonlyArray<IndexEntry> };
+
 /** Group the appended sheets into contents-page sections, in the order their bands first appear. */
-function appendedSections(
-  sheets: ReviewSheet[],
-): Array<{ band: string; entries: Array<{ sheet: string; what: string }> }> {
-  const bands = new Map<string, Array<{ sheet: string; what: string }>>();
+function appendedSections(sheets: ReviewSheet[]): IndexSection[] {
+  const bands = new Map<string, IndexEntry[]>();
   for (const sheet of sheets) {
     const band = sheet.band ?? DEFAULT_APPENDED_BAND;
     if (!bands.has(band)) bands.set(band, []);
-    bands.get(band)?.push({ sheet: sheet.name, what: sheet.what });
+    bands.get(band)?.push({ ...(sheet.after ? { after: sheet.after } : {}), sheet: sheet.name, what: sheet.what });
   }
   return [...bands.entries()].map(([band, entries]) => ({ band, entries }));
+}
+
+/**
+ * Fold the appended sections into the literal ones, so a band is never printed twice.
+ *
+ * An appended sheet that names a band the page ALREADY has belongs inside it: the contents page is
+ * in tab order on purpose (a page that sorts its own way disagrees with the tab strip under it and
+ * the reader then holds two orders in their head), and a tab inserted next to the Closing Matrix
+ * has to be listed next to it too. Where that sheet also names an `after`, it lands directly under
+ * that row; otherwise it goes to the end of its band. A band the page does not have is appended
+ * whole, exactly as before — which is every sheet this mechanism was built for.
+ */
+function mergeIndexSections(
+  literal: ReadonlyArray<IndexSection>,
+  appended: ReadonlyArray<IndexSection>,
+): IndexSection[] {
+  const byBand = new Map(
+    appended.map((section): [string, ReadonlyArray<IndexEntry>] => [section.band, section.entries]),
+  );
+  const merged: IndexSection[] = literal.map((section) => {
+    const extra = byBand.get(section.band);
+    if (!extra) return section;
+    byBand.delete(section.band);
+    const entries: IndexEntry[] = [...section.entries];
+    for (const entry of extra) {
+      const at = entry.after ? entries.findIndex((one) => one.sheet === entry.after) : -1;
+      if (at < 0) entries.push(entry);
+      else entries.splice(at + 1, 0, entry);
+    }
+    return { ...section, entries };
+  });
+  // Whatever named a band of its own, in the order those bands first appeared.
+  for (const section of appended) {
+    if (byBand.has(section.band)) merged.push(section);
+  }
+  return merged;
 }
 
 /**
@@ -2731,19 +2776,13 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   const present = new Set(
     [...workbook.matchAll(/<sheet name="([^"]+)"/g)].map((m) => unescapeSheetName(m[1])),
   );
-  const sections = [
-    ...INDEX_SECTIONS,
-    // The appended sheets are built at export time from the month's own data, so they cannot sit in
-    // the literal above. They get their OWN bands rather than being added to "Behind the numbers":
-    // they answer different questions, and when one is not included its heading disappears with it
-    // instead of standing over nothing.
-    //
-    // Grouped by the band each sheet names, in the order the bands first appear, so a caller that
-    // appends a second kind of sheet does not have to file it under the review's heading. A sheet
-    // that names none is the review's, which is where every sheet this mechanism was built for
-    // belongs.
-    ...appendedSections(extra),
-  ]
+  // The appended sheets are built at export time from the month's own data, so they cannot sit in
+  // the literal above. One that names a band of its OWN gets it rather than being added to "Behind
+  // the numbers" — it answers a different question, and when it is not included its heading
+  // disappears with it instead of standing over nothing. One that names a band the page already
+  // has is folded INTO it, under the row it follows, so the page stays in tab order; printing the
+  // same heading twice is what reads as a broken page. A sheet that names no band is the review's.
+  const sections = mergeIndexSections(INDEX_SECTIONS, appendedSections(extra))
     .map((section) => ({ ...section, entries: section.entries.filter((entry) => present.has(entry.sheet)) }))
     .filter((section) => section.entries.length > 0);
   if (sections.length === 0) return;
@@ -2940,6 +2979,12 @@ function reviewColumnStyle(heading: string): string {
   const name = heading.trim().toLowerCase();
   if (name.startsWith("against the month before")) return REVIEW_STYLE.growth;
   if (name.startsWith("achievement") || name.startsWith("share")) return REVIEW_STYLE.percent;
+  // A matrix-shaped tab repeats its achievement column once per product, so the heading cannot
+  // START with the word — it has to name the product first ("Rispadex Ach"). Matching the END as
+  // well is what lets such a sheet exist; without it every one of those columns silently takes the
+  // money format and prints a ratio of 0.863 as "1". Kept to the exact words the two spellings
+  // above already reserve, so no heading changes meaning that did not before.
+  if (name.endsWith(" ach") || name.endsWith(" achievement")) return REVIEW_STYLE.percent;
   return REVIEW_STYLE.money;
 }
 
@@ -3101,6 +3146,46 @@ function stripeRanges(kinds: ReviewSheetRowKind[], firstRow: number, lastColumn:
   return ranges;
 }
 
+/**
+ * Put a `<sheet>` element immediately after the named one, and move every defined name with it.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * `localSheetId` IS A POSITION IN THIS LIST, NOT A NAME. Inserting a tab at position N therefore
+ * re-attaches every print area, print title and filter range from N onwards to the sheet BEFORE it:
+ * Family Performance's print area becomes the new tab's, Family by Month's becomes Family
+ * Performance's, and so on to the end of the strip. Nothing about it is visible in any sheet — it
+ * surfaces as the wrong rows printing, which reaches paper before anybody notices. `addIndexSheet`
+ * carries the same shift for the contents page and the long note there is the account of it.
+ *
+ * Ids strictly BELOW the insertion point are left alone, which is the whole difference from the
+ * contents page: that one goes to the front, so every id moves. Here only the tail does.
+ *
+ * An unknown name appends instead, unshifted. A template whose sheet was renamed then ships a tab
+ * at the end of the strip rather than failing the whole export over a position.
+ */
+function insertSheetAfter(workbook: string, afterName: string, entry: string): string {
+  const sheetTags = [...workbook.matchAll(/<sheet\b[^>]*\/>/g)];
+  const index = sheetTags.findIndex(
+    (tag) => unescapeSheetName(/\bname="([^"]*)"/.exec(tag[0])?.[1] ?? "") === afterName,
+  );
+  if (index < 0) return workbook.replace("</sheets>", () => `${entry}</sheets>`);
+
+  const insertAt = index + 1;
+  const shifted = workbook.replace(
+    /<definedName\b([^>]*?)\blocalSheetId="(\d+)"/g,
+    (_match, before: string, id: string) => {
+      const current = Number(id);
+      return `<definedName${before}localSheetId="${current >= insertAt ? current + 1 : current}"`;
+    },
+  );
+
+  // Anchored on the matched TAG rather than on its offset: the shift above rewrites the string, so
+  // every offset measured before it is stale by however many digits changed. The tag text itself is
+  // untouched by that rewrite and is unique — it carries its own `r:id`.
+  const anchor = sheetTags[index]![0];
+  return shifted.replace(anchor, () => `${anchor}${entry}`);
+}
+
 async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<ReviewSheet[]> {
   if (sheets.length === 0) return [];
 
@@ -3247,10 +3332,10 @@ async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<Revie
       "</Relationships>",
       `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${nextPart}.xml"/></Relationships>`,
     );
-    workbook = workbook.replace(
-      "</sheets>",
-      () => `<sheet name="${xmlEscape(sheet.name)}" sheetId="${nextSheetId}" r:id="${relId}"/></sheets>`,
-    );
+    const entry = `<sheet name="${xmlEscape(sheet.name)}" sheetId="${nextSheetId}" r:id="${relId}"/>`;
+    workbook = sheet.after
+      ? insertSheetAfter(workbook, sheet.after, entry)
+      : workbook.replace("</sheets>", () => `${entry}</sheets>`);
 
     existing.add(sheet.name);
     written.push(sheet);
