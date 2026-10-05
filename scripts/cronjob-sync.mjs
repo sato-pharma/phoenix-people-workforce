@@ -179,6 +179,18 @@ const JOBS = {
     // Three small reads of what is waiting, then one notification per approver.
     requestTimeout: 300,
   },
+  "phoenix-crm-visit-rollup": {
+    title: "Phoenix — CRM routine-visit rollup",
+    path: "/api/cron/phoenix-crm-visit-rollup",
+    // Hourly on :49 (owner, 2026-10-05). The batched half of the activity mirror: routine planned
+    // visits — about 600 a working day — gathered into one message an hour per in-scope manager (the
+    // national sales manager and the SFE Managers), rather than one notice each. On :49, an odd minute
+    // no other hourly job holds — inbound-intake takes every even minute. Each fire reports the
+    // previous completed clock hour, so a quiet hour (overnight) sends nothing at all.
+    schedule: { hours: [-1], minutes: [49], mdays: [-1], months: [-1], wdays: [-1] },
+    // One keyset-paged read of an hour of visits, then at most a handful of notifications.
+    requestTimeout: 300,
+  },
   "job-heartbeat-sweep": {
     title: "Phoenix — job heartbeat sweep",
     path: "/api/cron/job-heartbeat-sweep",

@@ -85,6 +85,11 @@ export const PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES: readonly string[] = [
   // like the 06:55 digest: no phone, and the Telegram-failure fallback (email + in-app) is shut for it
   // too, which for an as-yet-unlinked manager is the expected case rather than an edge one.
   "activity_mirror",
+  // The hourly routine-visit rollup (owner, 2026-10-05): the batched half of the same instruction —
+  // routine planned visits (~600 a working day) gathered into one message an hour to the NSM and the
+  // SFE Managers, rather than one notice each. In-app and Telegram only, exactly like the mirror and
+  // the digest: no phone, and the Telegram-failure fallback shut so an unlinked manager is not mailed.
+  "crm_visit_rollup",
 ];
 
 export function isPhoenixCrmModule(module: string | null | undefined): boolean {

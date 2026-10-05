@@ -184,8 +184,10 @@ export function runPhoenixCrmApprovalNoticeTests() {
       // `activity_mirror` joined on 2026-10-05: every Phoenix CRM action, to the NSM and SFE in scope —
       // the module's highest-volume feed to its two widest readers, so in-app and Telegram only, exactly
       // like the digest, and the Telegram-failure fallback is shut for it too (an unlinked NSM is the rule).
-      ["activity_mirror", "crm_daily_digest", "day_start_seen", "plan_edit_expired"],
-      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, the SFE's copy of a rep's day start, and the NSM/SFE activity mirror",
+      // `crm_visit_rollup` joined the same day: the batched half of that feed — routine planned visits
+      // gathered hourly for the NSM and SFE — in-app and Telegram only for the same reasons.
+      ["activity_mirror", "crm_daily_digest", "crm_visit_rollup", "day_start_seen", "plan_edit_expired"],
+      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, the SFE's copy of a rep's day start, the NSM/SFE activity mirror, and the hourly visit rollup",
     );
     // Behaviour, not source: the re-send's own channel list, filtered.
     assert.deepEqual(

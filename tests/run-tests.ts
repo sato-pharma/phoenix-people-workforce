@@ -1690,6 +1690,7 @@ import { runPhoenixCrmSamplesTests } from "./phoenix-crm-samples.test.ts";
 import { runPhoenixCrmVisitDwellTests } from "./phoenix-crm-visit-dwell.test.ts";
 import { runPhoenixCrmExceptionsTests } from "./phoenix-crm-exceptions.test.ts";
 import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.ts";
+import { runPhoenixCrmVisitRollupTests } from "./phoenix-crm-visit-rollup.test.ts";
 import { runPhoenixCrmAdoptionTests } from "./phoenix-crm-adoption.test.ts";
 import { runPhoenixCrmReportComparisonTests } from "./phoenix-crm-report-comparison.test.ts";
 import { runPhoenixCrmReportsExportTests } from "./phoenix-crm-reports-export.test.ts";
@@ -5972,6 +5973,11 @@ await runTest(
 await runTest(
   "Phoenix CRM tells a District Manager at 06:55 what needs him (B1 — owner, 2026-09-26: a CLEAN MANAGER IS TOLD NOTHING, because a digest that arrives every morning whatever happened is muted within a week and a muted one is worse than none; one message per manager, worst first, names and never HR codes; the key is per manager per DAY so a retry or a double fire reaches nobody twice; it judges nothing itself but calls the board's own gathering over ONE field day where the board reads six; email cannot escape, since the guard filters on the module key and not on any call site; and the cron expression matches cron-job.org exactly on a minute no other job uses)",
   runPhoenixCrmDailyDigestTests,
+);
+
+await runTest(
+  "Phoenix CRM batches routine planned visits into an hourly rollup to the NSM and SFE in scope (Phase 2 — owner, 2026-10-05: 'Live + visit rollup' for ~600 visits a working day; the national sales manager hears the visits beneath him and every SFE Manager hears the whole hour, never the rep; a quiet hour tells nobody; counts per rep, caps its lines, and the key is per manager per hour so a retry reaches nobody twice; in-app and Telegram only; and the five registration sites agree so the cron is watched, armed and cannot strand)",
+  runPhoenixCrmVisitRollupTests,
 );
 
 await runTest(
