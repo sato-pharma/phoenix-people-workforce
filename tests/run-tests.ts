@@ -1691,6 +1691,7 @@ import { runPhoenixCrmVisitDwellTests } from "./phoenix-crm-visit-dwell.test.ts"
 import { runPhoenixCrmExceptionsTests } from "./phoenix-crm-exceptions.test.ts";
 import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.ts";
 import { runPhoenixCrmVisitRollupTests } from "./phoenix-crm-visit-rollup.test.ts";
+import { runCronAutoarmTests } from "./cron-autoarm.test.ts";
 import { runPhoenixCrmAdoptionTests } from "./phoenix-crm-adoption.test.ts";
 import { runPhoenixCrmReportComparisonTests } from "./phoenix-crm-report-comparison.test.ts";
 import { runPhoenixCrmReportsExportTests } from "./phoenix-crm-reports-export.test.ts";
@@ -5978,6 +5979,11 @@ await runTest(
 await runTest(
   "Phoenix CRM batches routine planned visits into an hourly rollup to the NSM and SFE in scope (Phase 2 — owner, 2026-10-05: 'Live + visit rollup' for ~600 visits a working day; the national sales manager hears the visits beneath him and every SFE Manager hears the whole hour, never the rep; a quiet hour tells nobody; counts per rep, caps its lines, and the key is per manager per hour so a retry reaches nobody twice; in-app and Telegram only; and the five registration sites agree so the cron is watched, armed and cannot strand)",
   runPhoenixCrmVisitRollupTests,
+);
+
+await runTest(
+  "the deploy-time cron auto-arm arms only a NEWLY-declared job, one at a time (owner, 2026-10-05: 'build the deploy-time cron auto-arm') — newlyAddedJobKeys returns a push's added JOBS keys and never a removed, reordered, field-edited or deeper-indented one; the runner shells out to the sanctioned cronjob-sync --job … --apply and never a bulk --all, honouring that script's 100-request/day rule; and the workflow triggers only on a push to main touching scripts/cronjob-sync.mjs, carrying both CRON_SECRET and CRONJOB_API_KEY",
+  runCronAutoarmTests,
 );
 
 await runTest(
