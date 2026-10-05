@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 
 import {
   buildAuditWeeks,
+  buildCombinedAuditWorkbook,
   buildDoubleVisitAuditWorkbook,
   filterRowsByPeriod,
+  splitRangeByMonth,
   weekIndexOf,
   type DoubleVisitAuditData,
 } from "../src/lib/double-visit-analytics/audit-export.ts";
@@ -163,4 +165,39 @@ export async function runDoubleVisitAuditExportTests() {
     if (typeof value === "string") summaryText.push(value);
   });
   assert.ok(summaryText.some((line) => line.includes("Role filter: DSM")), "the Summary states the active role filter");
+
+  // ── splitRangeByMonth: one section per calendar month, clamped to the range ─────────
+  const q3 = splitRangeByMonth("2026-07-01", "2026-09-30");
+  assert.deepEqual(
+    q3.map((s) => `${s.label}|${s.from}|${s.to}`),
+    ["Jul 2026|2026-07-01|2026-07-31", "Aug 2026|2026-08-01|2026-08-31", "Sep 2026|2026-09-01|2026-09-30"],
+    "a quarter splits into three month sections",
+  );
+  const clamped = splitRangeByMonth("2026-07-15", "2026-08-10");
+  assert.deepEqual(
+    clamped.map((s) => `${s.from}|${s.to}`),
+    ["2026-07-15|2026-07-31", "2026-08-01|2026-08-10"],
+    "the first and last sections are clamped to the range",
+  );
+  assert.equal(splitRangeByMonth("2026-09-01", "2026-09-30").length, 1, "a single-month range is one section");
+  assert.equal(splitRangeByMonth("2026-09-30", "2026-09-01").length, 0, "an inverted range is empty");
+
+  // ── buildCombinedAuditWorkbook: one Summary + ONE tab per coach, months stacked inside ──
+  const combined = await buildCombinedAuditWorkbook([
+    { label: "Jul 2026", data: { ...data, dateFrom: "2026-07-01", dateTo: "2026-07-31" } },
+    { label: "Sep 2026", data },
+  ]);
+  const combinedNames = combined.worksheets.map((sheet) => sheet.name);
+  assert.ok(combinedNames.includes("Summary"), "the combined workbook has one Summary tab");
+  assert.equal(combinedNames.length, 2, "the same coach across two months collapses to ONE coach tab");
+  assert.ok(combinedNames.includes("Nosiba Sample"), "the coach tab is named after the coach, not the month");
+
+  // The one coach tab stacks both months' sections, in calendar order.
+  const coachTab = combined.getWorksheet("Nosiba Sample");
+  const bandCells: string[] = [];
+  coachTab?.eachRow((row) => {
+    const value = row.getCell(1).value;
+    if (typeof value === "string" && /^(Jul|Sep) 2026/.test(value)) bandCells.push(value.slice(0, 8));
+  });
+  assert.deepEqual(bandCells, ["Jul 2026", "Sep 2026"], "both months appear as stacked bands in the one coach tab, in order");
 }
