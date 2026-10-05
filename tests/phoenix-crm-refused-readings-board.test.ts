@@ -98,6 +98,14 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
 
     assert.match(refusalSentence({ subjectKind: "visit", reason: "no_fix", accuracyMeters: null, photoAccuracyMeters: null, maxAccuracyMeters: null }), /no usable position at all/, "no fix is its own sentence");
 
+    // off_listing is NOT a position problem: both readings were precise, and the ACCOUNT is what did
+    // not match (google-place-rules.ts). Printing an accuracy radius here would read as a phone fault.
+    const offListing = refusalSentence({ subjectKind: "place", reason: "off_listing", accuracyMeters: 11, photoAccuracyMeters: 14, maxAccuracyMeters: 250 });
+    assert.match(offListing, /Google Maps pin/, "it names the pin the save was measured against");
+    assert.match(offListing, /moved/, "and says the account may have moved, which is the usual reason");
+    assert.doesNotMatch(offListing, /\b11 m\b|\b14 m\b|too rough/, "never the accuracy radius, and never 'too rough'");
+    assert.match(offListing, /second refusal[\s\S]*Super Admin/, "and it says what happens next, so the SFE knows it is not a dead end");
+
     assert.equal(widestReading({ accuracyMeters: 47, photoAccuracyMeters: 220 }), 220, "the widest of the two readings");
     assert.equal(widestReading({ accuracyMeters: null, photoAccuracyMeters: null }), null, "and none when none was reported");
     assert.equal(refusedSubjectLabel("place"), "Validating a place");

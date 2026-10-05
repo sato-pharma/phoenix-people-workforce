@@ -22,7 +22,7 @@
  */
 
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
-import { refusedReadingOf } from "@/lib/phoenix-crm/entry-rules";
+import { PLACE_MAX_ACCURACY_METERS, refusedReadingOf, type PlaceDraft } from "@/lib/phoenix-crm/entry-rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type RecordRefusedReadingInput = {
@@ -84,5 +84,99 @@ export async function recordRefusedReading(input: RecordRefusedReadingInput): Pr
     }
   } catch (error) {
     console.error("[phoenix-crm] refused reading record failed", { seatId: input.seatId, error });
+  }
+}
+
+export type OffListingRefusalInput = {
+  /** The place draft that already parsed — both its readings are precise, which is the point. */
+  place: PlaceDraft;
+  seatId: string;
+  repHrId: string;
+  /** Null for "Add new customer" and an out-of-list customer: there is no row to count against yet. */
+  customerId: string | null;
+  isTest: boolean;
+};
+
+/**
+ * File a validation Google refused as a MISMATCH — the listing IS the account, and the rep's point is
+ * 150 m - 1 km from its pin (`google-place-rules.ts`).
+ *
+ * It needs its own entry point because `refusedReadingOf` answers null here, correctly: BOTH readings
+ * are precise, so there is nothing wrong with the position and the existing recorder has nothing to
+ * say about it. What refused the save was the account's own pin, which is why the reason is
+ * `off_listing` and the place's readings are taken from the draft that already parsed.
+ *
+ * 🔴 IT IS COUNTED, NOT JUST KEPT. The next attempt on the same customer reads these rows to decide
+ * whether to refuse again or HOLD it for the Super Admin, so a failure to insert costs the rep his
+ * way out — and still must never cost him his refusal message or a 500. It returns the row's own id,
+ * or null when nothing was written, so the caller can say in its log whether the count will see it.
+ *
+ * The same three rules as above hold: the rep learns nothing new, it never throws, and it is awaited.
+ */
+export async function recordOffListingRefusal(input: OffListingRefusalInput): Promise<string | null> {
+  try {
+    const refusedAt = new Date();
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .insert({
+        subject_kind: "place",
+        reason: "off_listing",
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        customer_id: input.customerId,
+        refused_at: refusedAt.toISOString(),
+        visit_date: cairoBusinessDay(refusedAt),
+        lat: input.place.lat,
+        lon: input.place.lon,
+        accuracy_meters: input.place.accuracyMeters,
+        photo_lat: input.place.photoLat,
+        photo_lon: input.place.photoLon,
+        photo_accuracy_meters: input.place.photoAccuracyMeters,
+        photo_path: input.place.photoPath,
+        max_accuracy_meters: PLACE_MAX_ACCURACY_METERS,
+        device_captured_at: input.place.deviceCapturedAt,
+        device_mocked: input.place.deviceMocked,
+        is_test: input.isTest,
+      })
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      console.error("[phoenix-crm] off-listing refusal not recorded", { seatId: input.seatId, message: error.message });
+      return null;
+    }
+    const row = (data ?? null) as { id?: unknown } | null;
+    return row && row.id ? String(row.id) : null;
+  } catch (error) {
+    console.error("[phoenix-crm] off-listing refusal record failed", { seatId: input.seatId, error });
+    return null;
+  }
+}
+
+/**
+ * How many times this rep has already been refused on this customer for standing off its Google
+ * listing. Zero for a customer with no row to count against (a brand-new one), and zero on any error:
+ * a read that fails must refuse the rep as before, never hold on a count it does not have.
+ */
+export async function countOffListingRefusals(input: { seatId: string; repHrId: string; customerId: string | null; isTest: boolean }): Promise<number> {
+  if (!input.customerId) return 0;
+  try {
+    const { count, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .select("id", { count: "exact", head: true })
+      .eq("seat_id", input.seatId)
+      .eq("customer_id", input.customerId)
+      .eq("subject_kind", "place")
+      .eq("reason", "off_listing")
+      .eq("is_test", input.isTest)
+      // HR ids are mixed case in this database, and the recorder upper-cases what it writes.
+      .eq("rep_hr_id", input.repHrId.toUpperCase());
+    if (error) {
+      console.error("[phoenix-crm] off-listing refusal count failed", { seatId: input.seatId, message: error.message });
+      return 0;
+    }
+    return count ?? 0;
+  } catch (error) {
+    console.error("[phoenix-crm] off-listing refusal count failed", { seatId: input.seatId, error });
+    return 0;
   }
 }
