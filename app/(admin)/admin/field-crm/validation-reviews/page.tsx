@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 import { CheckCircle2, Hourglass, MapPinCheck } from "lucide-react";
 
-import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
-import { ValidatedPlaceList } from "@/components/phoenix-crm/validated-place-list";
-import { ValidationReviewQueue } from "@/components/phoenix-crm/validation-review-queue";
+import { AdminPageHero, AdminStatCard } from "@/components/admin/admin-design-system";
+import { ValidationReviewsBoard } from "@/components/phoenix-crm/validation-reviews-board";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
@@ -73,37 +72,7 @@ export default async function PhoenixCrmValidationReviewsPage() {
         />
       </div>
 
-      {waiting.length === 0 ? (
-        <AdminCallout tone="success">
-          <span>Nothing is waiting. Every place validated since the check started has either matched its Google Maps listing, been refused at the door, or been decided by you.</span>
-        </AdminCallout>
-      ) : (
-        <AdminTableShell
-          title="Waiting for your decision"
-          description="Approve validates the customer in the rep's name and their visits start counting. Reject retires the place; when it was their only one, the customer goes back to To validate. The rep reads either as the system's answer."
-        >
-          <ValidationReviewQueue rows={waiting} />
-        </AdminTableShell>
-      )}
-
-      {decided.length > 0 ? (
-        <AdminTableShell title="Decided in the last 14 days" description="What was approved or rejected, by whom, with the note kept on the record.">
-          <ValidationReviewQueue rows={decided} />
-        </AdminTableShell>
-      ) : null}
-
-      <AdminTableShell
-        title="Validations the system did not question"
-        description="Only AM customers are checked against Google, so a doctor's validation is never held — and an AM one that matched its listing is not either. These are the places validated in the last 30 days and still in use. Refusing one retires the place and, when it is the customer's only place, sends them back to To validate; the rep reads the system's own wording and never that a person looked at them."
-      >
-        {validated.length === 0 ? (
-          <AdminCallout tone="neutral">
-            <span>Nothing has been validated in the last 30 days.</span>
-          </AdminCallout>
-        ) : (
-          <ValidatedPlaceList rows={validated} />
-        )}
-      </AdminTableShell>
+      <ValidationReviewsBoard pending={waiting} decided={decided} validated={validated} />
     </div>
   );
 }

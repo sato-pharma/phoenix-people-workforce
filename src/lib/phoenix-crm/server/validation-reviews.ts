@@ -178,6 +178,9 @@ export type ValidationReviewRow = {
   createdAtText: string;
   repName: string;
   territory: string;
+  /** The seat's line and region, carried apart from `territory` so the page can filter by each. */
+  line: string | null;
+  region: string | null;
   customerName: string;
   listType: string;
   speciality: string | null;
@@ -284,6 +287,8 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       createdAtText: formatPhoenixDateTime(String(row.created_at)),
       repName: nameOf(names, text(row.created_by_hr_id), "A rep"),
       territory: seat ? territoryName(seat) : "Territory no longer in the organogram",
+      line: seat?.lineName ?? null,
+      region: seat?.regionName ?? null,
       customerName: String(customer.name ?? "Unknown customer"),
       listType: String(customer.list_type ?? ""),
       speciality: text(customer.speciality),
@@ -405,6 +410,9 @@ export type ValidatedPlaceRow = {
   isTest: boolean;
   repName: string;
   territory: string;
+  /** The seat's line and region, carried apart from `territory` so the page can filter by each. */
+  line: string | null;
+  region: string | null;
   validatedAt: string;
   validatedAtText: string;
   placeLabel: string | null;
@@ -482,6 +490,8 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         isTest: row.is_test === true,
         repName: nameOf(names, text(row.created_by_hr_id), "A rep"),
         territory: seat ? territoryName(seat) : "Territory no longer in the organogram",
+        line: seat?.lineName ?? null,
+        region: seat?.regionName ?? null,
         validatedAt: String(row.created_at),
         validatedAtText: formatPhoenixDateTime(String(row.created_at)),
         placeLabel: text(row.label),

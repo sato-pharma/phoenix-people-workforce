@@ -172,7 +172,14 @@ function checkScreens(): void {
   const page = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
   assert.match(page, /canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\)/, "the page stays the Super Admin's alone");
   assert.match(page, /loadValidatedPlaces\(viewer\)/, "and now also loads the validations the system did not question");
-  assert.match(page, /<ValidatedPlaceList rows=\{validated\} \/>/, "which it draws under the queue");
+  assert.match(
+    page,
+    /<ValidationReviewsBoard pending=\{waiting\} decided=\{decided\} validated=\{validated\} \/>/,
+    "which it hands to the Place checks board, with the queue and the validated list",
+  );
+
+  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  assert.match(board, /<ValidatedPlaceList key=\{validatedKey\} rows=\{filteredValidated\} showSearch=\{false\} \/>/, "the board draws the validated list under the filters and owns the search");
 
   const list = read("src/components/phoenix-crm/validated-place-list.tsx");
   assert.match(list, /"\/api\/phoenix-crm\/validation-reviews\/refuse"/, "the button posts to the refusal route");
