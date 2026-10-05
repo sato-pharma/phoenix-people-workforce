@@ -28,7 +28,11 @@
  *  3. THE VENDOR CLOCK IS ALREADY CAIRO. `saveDate`/`checkDate` arrive zone-less and Postgres tags
  *     them `+00`, so the stored reading is the wall clock. Converting it to Africa/Cairo adds the
  *     offset a second time and reports every call two to three hours late. Nothing here shifts a
- *     vendor time; `crm_save_date` and `check_date` are read as written.
+ *     vendor time; `crm_save_date` and `check_date` are read as written. That holds for a Phoenix
+ *     CRM visit too: `crm_visits_unified` hands its `captured_at` over already converted, in the
+ *     vendor's own shape. The one value on this report that is a REAL instant — the outstation
+ *     claim's own GPS fix — is converted ONCE at the loader ({@link cairoWallClockIso}), so every
+ *     clock in the document speaks the same convention and none of them is shifted twice.
  *
  *  4. AM · PM · PHARMACIES, THREE FIGURES APART. Never averaged, never joined, and a pharmacy is
  *     never counted inside PM whatever period the vendor tagged. There is one bucket helper in this
@@ -46,6 +50,7 @@ import {
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { cairoWallClock } from "@/lib/format/cairo-zone";
 
 /** A visit row as the unified CRM view serves it. Vendor times are wall-clock strings (rule 3). */
 export type FieldActivityVisitRow = {
@@ -106,6 +111,7 @@ export type FieldActivityTripRow = {
   evidenceGate: string | null;
   workloadGate: string | null;
   workload: { am: number | null; pm: number | null; pharmacies: number | null };
+  /** The claim's own GPS fix, as a CAIRO WALL CLOCK — `cairoWallClockIso` of a real instant. */
   capturedAt: string | null;
   capturedLat: number | null;
   capturedLon: number | null;
@@ -255,6 +261,34 @@ export function wallClock(value: string | null | undefined): string | null {
   const match = /(\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(value));
   if (!match) return null;
   return `${match[1]}:${match[2]}:${match[3] ?? "00"}`;
+}
+
+/**
+ * A REAL instant, rewritten as the Cairo wall clock the rest of this report speaks in.
+ *
+ * Rule 3 says nothing shifts a vendor time, because a vendor time is already a Cairo wall clock
+ * wearing a `+00` label. The outstation claim's own GPS fix is the opposite kind of value: a true
+ * `timestamptz`, stamped when the rep opened the claim. Sliced like a wall clock it prints two or
+ * three hours early — measured on production 2026-10-04, B-1's 21:34 Cairo fix printed as 18:34 on
+ * a page whose CRM visit times were correct Cairo to the second, which is exactly the "the module
+ * and the CRM disagree about the time" the owner reported on 2026-10-05.
+ *
+ * Converted here, at the seam, and never again downstream: the result keeps the date (so the PDF
+ * route's `slice(11, 16)` and the document's `clock12` both still read it) and carries no zone, so
+ * nothing can take it for an instant and shift it a second time.
+ *
+ * The offset comes from `cairoWallClock`'s shipped table, not from `Intl`: Egypt abolished daylight
+ * saving in 2014 and reintroduced it in 2023, so an engine's own answer depends on how old its
+ * timezone data is (`src/lib/format/cairo-zone.ts`). This runs on the server, where that is not the
+ * hydration hazard it is in a client component — but there is one way to say "Cairo" in this
+ * repository and a second one is how the two drift apart.
+ */
+export function cairoWallClockIso(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const instant = new Date(value);
+  if (Number.isNaN(instant.getTime())) return null;
+  // A carrier for the digits, never a real instant — read its UTC fields and nothing else.
+  return cairoWallClock(instant).toISOString().slice(0, 19);
 }
 
 export function calendarDay(value: string | null | undefined): string | null {
