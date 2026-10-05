@@ -254,9 +254,9 @@ function districtSection(input: PackInput, months: readonly ReviewKpiMonth[]): P
     ],
     metric: "crm-kpis",
     note: [
-      `Each rep against his OWN plan, from the CRM KPIs board. Coverage = planned doctors visited at least once (the floor is ${COVERAGE_TARGET_FLOOR_PCT}%). Frequency = planned doctors visited exactly as often as planned; more often than planned is a deviation too, counted beside it. AM and PM are each scored against their own target and never averaged. "The team" is the average rep: its calls over its rep-days. A rep is listed for a month only when the board holds a plan or a call for him in it, so one hired after it has no row.${chart && last ? ` The chart is each rep's coverage in ${periodLabel(last.month)}, lowest first, with the floor drawn across.` : ""}`,
+      `Each rep against their OWN plan, from the CRM KPIs board. Coverage = planned doctors visited at least once (the floor is ${COVERAGE_TARGET_FLOOR_PCT}%). Frequency = planned doctors visited exactly as often as planned; more often than planned is a deviation too, counted beside it. AM and PM are each scored against their own target and never averaged. "The team" is the average rep: its calls over its rep-days. A rep is listed for a month only when the board holds a plan or a call for them in it, so one hired after it has no row.${chart && last ? ` The chart is each rep's coverage in ${periodLabel(last.month)}, lowest first, with the floor drawn across.` : ""}`,
       noFeed > 0
-        ? `${plural(noFeed, "rep reads", "reps read")} "No GPS feed": the CRM received no GPS check-in from ${noFeed === 1 ? "his account" : "their accounts"}, so ${noFeed === 1 ? "he is" : "they are"} out of the team's call rate and still in its coverage and frequency.`
+        ? `${plural(noFeed, "rep reads", "reps read")} "No GPS feed": the CRM received no GPS check-in from ${noFeed === 1 ? "their account" : "their accounts"}, so they are out of the team's call rate and still in its coverage and frequency.`
         : "",
       basisNote(months, false),
     ]
@@ -325,7 +325,7 @@ function teamsSection(months: readonly ReviewKpiMonth[]): PackSection | null {
     ],
     metric: "crm-kpis",
     note: [
-      `Each team is the reps the employee directory puts under that manager, scored against their OWN plans on the CRM KPIs board. Coverage = planned doctors visited at least once (the floor is ${COVERAGE_TARGET_FLOOR_PCT}%); frequency = planned doctors visited exactly as often as planned. The call rate is the average rep's — the team's calls over its rep-days — with AM and PM each against its own target, never averaged. A rep counts in a month only when the board holds a plan or a call for him in it.${chart && last ? ` The chart is each team's coverage in ${periodLabel(last.month)}, lowest first, with the floor drawn across.` : ""}`,
+      `Each team is the reps the employee directory puts under that manager, scored against their OWN plans on the CRM KPIs board. Coverage = planned doctors visited at least once (the floor is ${COVERAGE_TARGET_FLOOR_PCT}%); frequency = planned doctors visited exactly as often as planned. The call rate is the average rep's — the team's calls over its rep-days — with AM and PM each against its own target, never averaged. A rep counts in a month only when the board holds a plan or a call for them in it.${chart && last ? ` The chart is each team's coverage in ${periodLabel(last.month)}, lowest first, with the floor drawn across.` : ""}`,
       last && scored > 0
         ? `In ${periodLabel(last.month)}, ${plural(underFloor, "rep was", "reps were")} under the ${COVERAGE_TARGET_FLOOR_PCT}% floor, of ${count(scored)} with a plan.`
         : "",

@@ -147,7 +147,7 @@ export function CustomerScreen({
   // A customer the SFE loaded from a sheet has no iReports360 row at all, so those two lines would both
   // read "None recorded" on him. What he has instead is what the SFE wrote for the rep: which door.
   const intakeFacts = [
-    ...(customer.intake?.where ? [{ label: "Where to find him", value: customer.intake.where }] : []),
+    ...(customer.intake?.where ? [{ label: "Where to find them", value: customer.intake.where }] : []),
     ...(customer.intake?.note ? [{ label: "Note", value: customer.intake.note }] : []),
   ];
   const facts = pending
@@ -251,7 +251,7 @@ export function CustomerScreen({
         {outside ? (
           <CrmNote className="mt-3" title="Outside your list" tone="info">
             {proposedAdd
-              ? twoStepText(view, "add him to your list")
+              ? twoStepText(view, "add them to your list")
               : "Validated at the door and not on your list. Ask to add the customer to your list, or drop the customer to the Archive."}{" "}
             The visits saved here count once the customer is on your list, in the month they happened.
           </CrmNote>
@@ -501,7 +501,7 @@ function ListMoves({
       )}
       {moves.includes("ask_to_drop") || moves.includes("ask_to_bring_back") || moves.includes("request_add") ? (
         <p className="break-words text-xs font-semibold leading-5 text-slate-500">
-          {twoStepText(view, moves.includes("ask_to_drop") ? "take him off your list" : moves.includes("request_add") ? "add him to your list" : "bring him back to your list")}
+          {twoStepText(view, moves.includes("ask_to_drop") ? "take them off your list" : moves.includes("request_add") ? "add them to your list" : "bring them back to your list")}
         </p>
       ) : null}
       {problem ? <CrmNote tone="bad">{browserNamed(problem)}</CrmNote> : null}
@@ -549,7 +549,7 @@ function BringBackNow({
       {confirming ? (
         <div className="grid min-w-0 gap-2 border border-slate-200 px-3 py-3">
           <p className="break-words text-sm font-bold text-slate-800">
-            Bring {customer.name} back to the rep&apos;s list? The customer returns with his grade and his clinics.
+            Bring {customer.name} back to the rep&apos;s list? The customer returns with their grade and their clinics.
           </p>
           <div className="flex min-w-0 flex-wrap gap-2">
             <CrmButton busy={busy} onClick={() => void bringBack()} size="sm" variant="primary">

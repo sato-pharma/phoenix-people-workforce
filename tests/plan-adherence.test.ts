@@ -296,7 +296,7 @@ export function runPlanAdherenceTests(): void {
   assert.equal(planAdherenceTone(40), "text-rose-600");
   assert.equal(planAdherenceTone(null), "text-slate-400", "not measured is neutral, never red");
 
-  assert.equal(planAdherenceVerdictLabel("partner_alone"), "He went without you");
+  assert.equal(planAdherenceVerdictLabel("partner_alone"), "They went without you");
   assert.equal(planAdherenceVerdictLabel("not_checkable"), "Not tracked in CRM");
 
   // ── The four surfaces, and the links between them ───────────────────────────

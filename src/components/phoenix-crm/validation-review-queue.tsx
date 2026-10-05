@@ -24,9 +24,9 @@ import type { ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 const REASON_TEXT: Record<NonNullable<ValidationReviewRow["reason"]>, string> = {
   no_confident_listing: "Google has no listing the system is sure is this customer.",
   lookup_failed: "Google Maps could not be asked at the time (no answer).",
-  listing_far: "Google's pin for this customer is over 1 km from him: the hospital may have moved, or the pin is old.",
+  listing_far: "Google's pin for this customer is over 1 km from them: the hospital may have moved, or the pin is old.",
   listing_off:
-    "The rep was refused once for standing away from this customer's Google pin, and captured the same place again — so it is here instead of being refused a second time. Both his readings are precise; the distance to each listing is below.",
+    "The rep was refused once for standing away from this customer's Google pin, and captured the same place again — so it is here instead of being refused a second time. Both their readings are precise; the distance to each listing is below.",
   refused_by_admin: "The system did not question this one — it was refused here, by hand. The reason is the note.",
 };
 
@@ -73,7 +73,7 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
           </p>
         ))}
         <a className="text-xs font-black text-orange-700 underline underline-offset-2" href={row.mapsLink} rel="noreferrer" target="_blank">
-          Open where he stood in Google Maps
+          Open where they stood in Google Maps
         </a>
       </div>
       <div className="border-t border-slate-100 pt-2">
@@ -91,7 +91,7 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
             {row.listings.map((listing) => (
               <li key={listing.placeId || listing.name} className="break-words text-xs text-slate-700">
                 <span dir="auto">{listing.name}</span>
-                <span className="text-slate-500"> · {listing.distanceMeters.toLocaleString("en-GB")} m from him</span>
+                <span className="text-slate-500"> · {listing.distanceMeters.toLocaleString("en-GB")} m from them</span>
                 {listing.mapsUri ? (
                   <>
                     {" · "}
@@ -151,7 +151,7 @@ function Restore({ row }: { row: ValidationReviewRow }) {
         {saving ? "Bringing it back…" : "Approve it after all"}
       </CrmButton>
       <p className="break-words text-xs text-slate-500">
-        The place comes back and the customer is validated again in {row.repName}&rsquo;s own name. His visits are measured against it again.
+        The place comes back and the customer is validated again in {row.repName}&rsquo;s own name. Their visits are measured against it again.
       </p>
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
@@ -235,7 +235,7 @@ export function ValidationReviewQueue({ rows }: { rows: ValidationReviewRow[] })
           <tr>
             <th className={crmThClassName}>Photo</th>
             <th className={crmThClassName}>Customer and rep</th>
-            <th className={crmThClassName}>Where he stood, and Google</th>
+            <th className={crmThClassName}>Where they stood, and Google</th>
             <th className={crmThClassName}>Decision</th>
           </tr>
         </thead>

@@ -39,7 +39,7 @@ export default async function ReturnedCvsPage() {
       <div className="mb-4">
         <h1 className="text-lg font-semibold text-slate-900">Returned CVs</h1>
         <p className="text-sm text-slate-500">
-          CVs a district manager handed back — grouped by the manager who returned them and the reason he gave. Re-route
+          CVs a district manager handed back — grouped by the manager who returned them and the reason they gave. Re-route
           each one, then mark it handled to clear it from the queue.
         </p>
       </div>

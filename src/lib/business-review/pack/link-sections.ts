@@ -725,7 +725,7 @@ export function dvFocusSections(input: PackInput, ctx: LinkContext | null): Pack
               unit: "count",
             }
           : null,
-      columns: ["Rep", ...monthLabels, "Ride days", "Share of his ride days", "Fair share (days)", "What it says"],
+      columns: ["Rep", ...monthLabels, "Ride days", "Share of their ride days", "Fair share (days)", "What it says"],
       metric: "dv-focus",
       note: `${dvPatternSentence(manager)} ${
         manager.outsideRideDays > 0 ? `${plural(manager.outsideRideDays, "further day was", "further days were")} spent riding with people outside this team. ` : ""
@@ -788,7 +788,7 @@ export function dvFocusSections(input: PackInput, ctx: LinkContext | null): Pack
           align: ["left", "left", "right", "right", "left"],
           columns: ["District manager", "Rep", "Ride days", "Fair share (days)", "What it says"],
           metric: "dv-focus",
-          note: "Only the reps a manager never or rarely rode with, or rode with most — every other rep had about his fair share.",
+          note: "Only the reps a manager never or rarely rode with, or rode with most — every other rep had about their fair share.",
           rows: flagged.map(({ manager, rep }) => [
             manager.managerName,
             rep.name,
@@ -841,7 +841,7 @@ export function teamScorecardSection(input: PackInput, ctx: LinkContext | null):
       "Per field day",
     ],
     metric: "team-scorecard",
-    note: `Achievement is the AREA's, shared by everyone standing in it — targets are set per area, never per rep. Reached = at least one regular visit in the period to a customer on his own list. Ride days count every manager who rode with him. Per field day = outstation claimed over his field days.${LIST_NOTE_TAIL(ctx)}`,
+    note: `Achievement is the AREA's, shared by everyone standing in it — targets are set per area, never per rep. Reached = at least one regular visit in the period to a customer on their own list. Ride days count every manager who rode with them. Per field day = outstation claimed over their field days.${LIST_NOTE_TAIL(ctx)}`,
     rows: rows.map((row) => {
       const per = costPerWork(row.claimed, row.field);
       return [
@@ -1026,7 +1026,7 @@ export function costToServeSection(input: PackInput, ctx: LinkContext | null): P
       metric: "cost-to-serve",
       note: ctx.isRep
         ? "What your outstation trips cost against the days and visits you worked."
-        : "Outstation claimed (not rejected) against each rep's own field days and visits in the period. Only reps who claimed are listed — a rep with no trips is not a saving, he is a territory that needs none.",
+        : "Outstation claimed (not rejected) against each rep's own field days and visits in the period. Only reps who claimed are listed — a rep with no trips is not a saving, they are a territory that needs none.",
       rows: rows.map((row) => [
         nameOf(ctx, row.rep),
         row.field.fieldDays,

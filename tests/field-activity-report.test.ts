@@ -565,8 +565,15 @@ export function runFieldActivityReportTests() {
     // The map caption is assembled in the PDF route, which no unit test can execute, and the day
     // notes are assembled in the model. Both are scanned at the source so a NEW label is caught
     // where it is written rather than only on the one branch a fixture happens to reach.
+    //
+    // 🔴 THE ON-SCREEN VIEW IS IN THIS LIST BECAUSE IT WAS MISSED. The first fix (#5335) covered
+    // the printable document and the PDF and shipped while `field-activity-view.tsx` — the SAME
+    // report as a page — still read "Where he was" and "in the order his phone recorded it". The
+    // document and the screen are two renderers of one report, and a sweep that names only
+    // `src/lib/field-activity/**` sees one of them.
     for (const file of [
       "app/api/admin/field-activity/pdf/route.ts",
+      "src/components/field-activity/field-activity-view.tsx",
       "src/lib/field-activity/document.ts",
       "src/lib/field-activity/model.ts",
     ]) {

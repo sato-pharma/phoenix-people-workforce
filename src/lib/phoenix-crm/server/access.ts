@@ -217,7 +217,7 @@ export function territoryForRead(viewer: PhoenixCrmViewer, seatId: unknown, test
 export function territoryForRepWrite(viewer: PhoenixCrmViewer, seatId: unknown, test: boolean): TerritoryAccess {
   const seat = territory(viewer, seatId);
   void test;
-  if (viewer.isSuperAdmin) throw superAdminHasNoFieldWrite("change a rep's customer list or his plan");
+  if (viewer.isSuperAdmin) throw superAdminHasNoFieldWrite("change a rep's customer list or their plan");
   if (!viewer.canCreate) throw forbiddenError("Your role cannot change a customer list or a plan.");
   // A test account's own territory is the mirrored rep's, and what it changes there is a test entry.
   if (viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId)) return { seat, isTest: viewer.isTestPersona };
@@ -796,6 +796,6 @@ export function territoryForMissedRecord(
  * capture_source 'admin', and entered by him), so a rep's own visit can never be removed through here.
  */
 export function territoryForMissedRecordRemoval(viewer: PhoenixCrmViewer, seatId: unknown, test: boolean): TerritoryAccess {
-  if (!canEnterMissedRecords(viewer)) throw forbiddenError("Only the Super Admin removes a visit he entered.");
+  if (!canEnterMissedRecords(viewer)) throw forbiddenError("Only the Super Admin removes a visit they entered.");
   return { seat: territory(viewer, seatId), isTest: test };
 }

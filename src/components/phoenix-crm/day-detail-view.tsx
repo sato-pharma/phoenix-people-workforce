@@ -263,7 +263,7 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
         ) : null}
 
         {pharmacies.length > 0 ? (
-          <CrmBlock title="Pharmacies he took feedback from">
+          <CrmBlock title="Pharmacies they took feedback from">
             {/* Each one once, whatever the spelling, and beside the visits rather than inside them.
                 🔴 EVERY pharmacy is listed — the feedback was really taken — while the FIGURE above
                 counts the ones a scored visit named, which is what the calendar cell counts. The

@@ -267,7 +267,7 @@ const HRBP_SECTIONS: readonly WorkbookSection[] = [
           "When something is stuck, raise it in HR Support Requests. Then the delay has a name and a date on it.",
         ],
         evidence:
-          "An offer saves three separate facts: sent, opened, accepted. So 'no reply' and 'he never even opened it' stop looking like the same thing.",
+          "An offer saves three separate facts: sent, opened, accepted. So 'no reply' and 'they never even opened it' stop looking like the same thing.",
         fn: "recruiting",
       },
       {
@@ -430,7 +430,7 @@ const HRBP_SECTIONS: readonly WorkbookSection[] = [
         screens: [S.probation, S.overview],
         steps: [
           "Read the case list: who is due, who is late, and which manager each case is waiting for.",
-          "Chase that manager. Awaiting Decision on HR Overview is the same number he is being judged on.",
+          "Chase that manager. Awaiting Decision on HR Overview is the same number they are being judged on.",
         ],
         evidence:
           "Late is worked out from each case's own dates, not from anyone's memory. So a cycle cannot be called on time just because nobody kept a list.",
@@ -542,7 +542,7 @@ const HRBP_SECTIONS: readonly WorkbookSection[] = [
           "If a candidate has gone quiet, check Missing Contact Details before deciding they lost interest.",
         ],
         evidence:
-          "The incomplete-record counts come from the directory itself. So 'his manager is wrong' is settled with one click instead of an argument.",
+          "The incomplete-record counts come from the directory itself. So 'their manager is wrong' is settled with one click instead of an argument.",
         fn: "workforce_insight",
       },
     ],
@@ -885,7 +885,7 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
           "The handover is simply the candidate's documents becoming the employee's. Check the set is complete before the start date, not on it.",
         ],
         evidence:
-          "Every upload is dated, so 'it was ready before he started' is a fact anyone can check rather than a claim.",
+          "Every upload is dated, so 'it was ready before they started' is a fact anyone can check rather than a claim.",
         fn: "people_records",
       },
       {
@@ -956,7 +956,7 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
           "Company mail is the one station Phoenix does track. Record the revocation there, because a password reset does not close a leaver's mailbox on its own.",
         ],
         evidence:
-          "The mailbox revocation carries who did it and when, so 'IT cleared him' is a record for the station that is hardest to verify by looking.",
+          "The mailbox revocation carries who did it and when, so 'IT cleared them' is a record for the station that is hardest to verify by looking.",
         fn: "people_records",
       },
       {

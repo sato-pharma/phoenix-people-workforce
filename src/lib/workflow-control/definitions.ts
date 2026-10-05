@@ -207,7 +207,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             routesTo: "Super Admin approver",
             notificationRecipients: [],
             emailRecipients: [],
-            sideEffects: "Creates request capturing amount, eligibility and fraud flags, and leaves it PENDING — nothing reaches payroll until a Super Admin approves it in the queue (owner decision 2026-08-08; it used to auto-approve into payroll staging on submit). Raises the awaiting-approval alert: To the employee, Cc his manager and skip-level, Bcc active Super Admins.",
+            sideEffects: "Creates request capturing amount, eligibility and fraud flags, and leaves it PENDING — nothing reaches payroll until a Super Admin approves it in the queue (owner decision 2026-08-08; it used to auto-approve into payroll staging on submit). Raises the awaiting-approval alert: To the employee, Cc their manager and skip-level, Bcc active Super Admins.",
           },
           {
             id: "decision",
@@ -244,7 +244,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             routesTo: "Super Admin approver (after validation)",
             notificationRecipients: [],
             emailRecipients: [],
-            sideEffects: "Uploads car evidence / tickets; writes location audit with fraud flags, and leaves the request PENDING — nothing reaches payroll until a Super Admin approves it in the queue (owner decision 2026-08-08; it used to auto-approve into payroll staging on submit). Raises the awaiting-approval alert: To the employee, Cc his manager and skip-level, Bcc active Super Admins.",
+            sideEffects: "Uploads car evidence / tickets; writes location audit with fraud flags, and leaves the request PENDING — nothing reaches payroll until a Super Admin approves it in the queue (owner decision 2026-08-08; it used to auto-approve into payroll staging on submit). Raises the awaiting-approval alert: To the employee, Cc their manager and skip-level, Bcc active Super Admins.",
           },
           {
             id: "admin_review",
@@ -997,7 +997,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
         // notification therefore carries the full facts and no link, rather than a button leading
         // somewhere that cannot show the thing it is about. Granting him that page is an access
         // decision and belongs to the owner, so it is recorded here rather than assumed.
-        gaps: ["Finance is told about an overdue invoice but has no screen showing one: the Finance Manager is not in marketingAdminWorkflowRoles, so /admin/marketing-requests (the only page with the Invoice due column) redirects him away and the marketing inbox he can open excludes approved requests. His alert carries the facts and no link. Granting him that page needs the owner's decision."],
+        gaps: ["Finance is told about an overdue invoice but has no screen showing one: the Finance Manager is not in marketingAdminWorkflowRoles, so /admin/marketing-requests (the only page with the Invoice due column) redirects them away and the marketing inbox they can open excludes approved requests. Their alert carries the facts and no link. Granting them that page needs the owner's decision."],
       },
       {
         key: "finance-hold",
@@ -1013,8 +1013,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             notificationRecipients: [],
             emailRecipients: [],
             sideEffects:
-              "Read-only. loadMarketingFinanceHoldQueue asks resolveMarketingInvoiceObligation — the same module the Approved Requests tab and the export read — whether each obligation is late today in Africa/Cairo, and writes nothing. Lateness is defined in one place only, so the queue an admin acts on can never disagree with the screen he read it on. An invoice already submitted or cleared is never flagged: flagging one would freeze a request that owes nothing.",
-            routesTo: "Super Admin, who decides whether to hold. Nothing happens without him.",
+              "Read-only. loadMarketingFinanceHoldQueue asks resolveMarketingInvoiceObligation — the same module the Approved Requests tab and the export read — whether each obligation is late today in Africa/Cairo, and writes nothing. Lateness is defined in one place only, so the queue an admin acts on can never disagree with the screen they read it on. An invoice already submitted or cleared is never flagged: flagging one would freeze a request that owes nothing.",
+            routesTo: "Super Admin, who decides whether to hold. Nothing happens without them.",
           },
           {
             id: "hold_release",

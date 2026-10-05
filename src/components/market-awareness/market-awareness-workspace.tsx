@@ -823,7 +823,7 @@ function RequestTab({
           <SkeletonRows />
         ) : activities.length === 0 ? (
           <EmptyState
-            body="Raise one and it goes to the marketing manager and the national sales manager of each line you target, all at the same time. Once every one of them has approved, it goes to the CEO. Once he approves, every district manager in that region, the national sales manager, the SFE manager, the area's rep and Finance are told."
+            body="Raise one and it goes to the marketing manager and the national sales manager of each line you target, all at the same time. Once every one of them has approved, it goes to the CEO. Once the CEO approves, every district manager in that region, the national sales manager, the SFE manager, the area's rep and Finance are told."
             icon={Sparkles}
             title="No awareness activities yet"
           />

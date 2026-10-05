@@ -96,7 +96,7 @@ function contactText(row: RepVisitRow): string {
  *
  * Desktop, mobile and the export all read this, because the owner's standing rule is that an export
  * must MATCH the screen — and because the three of them saying slightly different things about the
- * same row is exactly how "Prospect · not on his list" survived on 3,126 visits where it was false.
+ * same row is exactly how "Prospect · not on their list" survived on 3,126 visits where it was false.
  *
  * Returns null when the row carries a real CRM contact, which needs no explanation at all.
  */
@@ -107,10 +107,10 @@ function campaignContactNote(row: RepVisitRow): { text: string; tone: string } |
     // CRM's own spelling of the name is what lets them see at a glance why it matched, which matters
     // most when it matched WRONGLY. Never an ellipsis, never a wrap — owner's standing rule.
     return match.scope === "own"
-      ? { text: `Already his contact · ${match.contactName}`, tone: "text-orange-600" }
+      ? { text: `Already their contact · ${match.contactName}`, tone: "text-orange-600" }
       : { text: `On a colleague's list · ${match.contactName}`, tone: "text-violet-600" };
   }
-  if (isProspectRow(row)) return { text: "Prospect · not on his list", tone: "text-amber-600" };
+  if (isProspectRow(row)) return { text: "Prospect · not on their list", tone: "text-amber-600" };
   return null;
 }
 
@@ -143,7 +143,7 @@ function SummaryStrip({ summary }: { summary: RepVisitsSummary }) {
     // Of those campaign calls, the ones on a doctor he already visits normally. It sits beside
     // "Campaign" because it is a SUBSET of it, and reading the two apart is the point: a rep with 40
     // campaign calls and 2 of these is prospecting; one with 40 and 35 is mis-coding his day.
-    { label: "Already his", tone: "text-orange-600", value: summary.campaignAlreadyKnown },
+    { label: "Already theirs", tone: "text-orange-600", value: summary.campaignAlreadyKnown },
     { label: "AM", tone: "text-slate-700", value: summary.am },
     { label: "PM", tone: "text-slate-700", value: summary.pm },
     // Separate from AM/PM entirely (owner, 2026-09-05) — see crm/call-rate.ts.

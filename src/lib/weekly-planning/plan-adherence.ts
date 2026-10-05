@@ -199,7 +199,7 @@ function adviceFor(verdict: PlanAdherenceVerdict, plannedName: string | null, ac
         ? `Counted as kept — you were in the field that day, with ${actualNames.join(" and ")} rather than ${planned}. Revising the plan keeps the record straight, but it does not change your score.`
         : `Counted as kept — you were in the field that day, with somebody other than ${planned}. Revising the plan keeps the record straight, but it does not change your score.`;
     case "partner_alone":
-      return `${planned} worked that day without you. Join him as planned, or move the double visit to a day you can make.`;
+      return `${planned} worked that day without you. Join them as planned, or move the double visit to a day you can make.`;
     case "no_trace":
       return `Nothing was logged that day, by you or by ${planned}. If the day moved, revise the plan before the week closes.`;
     default:
@@ -322,7 +322,7 @@ export const PLAN_ADHERENCE_VERDICT_LABELS: ReadonlyMap<PlanAdherenceVerdict, st
   // Leads with "Kept" because it now scores as kept — a label reading like a fault beside a number
   // that does not deduct for it is the kind of mismatch that makes people distrust the whole score.
   ["wrong_partner", "Kept — went with someone else"],
-  ["partner_alone", "He went without you"],
+  ["partner_alone", "They went without you"],
   ["no_trace", "Nothing logged"],
   ["not_yet_due", "Still to come"],
   ["not_checkable", "Not tracked in CRM"],

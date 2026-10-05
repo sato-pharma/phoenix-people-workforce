@@ -421,7 +421,7 @@ export function DailyPlanSection({
       <CrmBlock className="border-t border-slate-100" title={territory.name}>
         <p className="break-words text-sm font-semibold leading-6 text-slate-700">{territory.repName ?? "No rep in this territory"}</p>
         <p className="mt-1 break-words text-sm font-medium leading-6 text-slate-600">
-          Each day as it was planned: its start times and other activities, then the AM and the PM customers. A day that has passed shows the plan as it stood when that day ended; today and the days ahead show it as it is now. Visited means a visit to him was saved that day. On a day HR approved the rep&apos;s leave, a customer not seen reads On leave, never Not visited.
+          Each day as it was planned: its start times and other activities, then the AM and the PM customers. A day that has passed shows the plan as it stood when that day ended; today and the days ahead show it as it is now. Visited means a visit to them was saved that day. On a day HR approved the rep&apos;s leave, a customer not seen reads On leave, never Not visited.
         </p>
       </CrmBlock>
       {report.days.length === 0 ? (

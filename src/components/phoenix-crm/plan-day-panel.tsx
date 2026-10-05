@@ -596,7 +596,7 @@ export function PlanDayPanel({
             : `${countText(counts.AM)} of ${countText(caps.amDailyCap)} AM and ${countText(counts.PM)} of ${countText(caps.pmDailyCap)} PM placed.`}{" "}
           {filtering
             ? `${countText(shownUnplaced)} more match the filter. Ticked customers always show.`
-            : `Tick a customer to place him on ${dayName}.`}
+            : `Tick a customer to place them on ${dayName}.`}
         </p>
       </CrmBlock>
 

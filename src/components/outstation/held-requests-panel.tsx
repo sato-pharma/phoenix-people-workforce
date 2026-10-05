@@ -215,7 +215,7 @@ export function HeldRequestsPanel() {
                   ) : (
                     <Mail className="h-3.5 w-3.5" />
                   )}
-                  Ask him again for the photo
+                  Ask again for the photo
                 </button>
                 <p className="mt-1.5 text-phx-xs font-semibold text-slate-500">
                   Email and push. Once a day — pressing it twice today sends one message.

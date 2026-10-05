@@ -125,7 +125,7 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     // carrying it, and a pharmacy is on this sheet too, so "doctor name" would be wrong anyway.
     aliases: ["customer name", "name", "customer"],
     width: 34,
-    hint: "As it should appear on his list",
+    hint: "As it should appear on their list",
   },
   {
     key: "speciality",
@@ -157,8 +157,8 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
   },
   {
     key: "whereToFind",
-    label: "Where to find him",
-    aliases: ["where to find him", "where to find", "address", "clinic"],
+    label: "Where to find them",
+    aliases: ["where to find them", "where to find him", "where to find", "address", "clinic"],
     width: 38,
     hint: "A note for the rep — the real location is captured at the door",
   },

@@ -1824,7 +1824,7 @@ function OffListContactCell({ row }: { row: PlanDoctorRow }) {
       </span>
       <span className="mt-0.5 block text-phx-2xs font-semibold">
         <span className={gradeClass(row.entry.grade)}>{row.entry.grade ?? NO_GRADE}</span>
-        <span className="text-slate-400"> · not on his list</span>
+        <span className="text-slate-400"> · not on their list</span>
       </span>
       <ShiftLine ampm={row.ampm} />
     </div>
@@ -1865,7 +1865,7 @@ function PlanDayTable({
               status={
                 <span className="flex flex-col items-end gap-1">
                   <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
-                    Not on his list
+                    Not on their list
                   </span>
                   <VerdictChip verdict={row.verdict} />
                 </span>
@@ -1880,7 +1880,7 @@ function PlanDayTable({
               />
               <p className="mt-2 text-xs text-amber-700">
                 This doctor is not on the rep&apos;s current contact list, so Phoenix holds no address, brick
-                or check-in history for him.
+                or check-in history for them.
               </p>
             </PortalRecordCard>
           );
@@ -1977,7 +1977,7 @@ function PlanDayTable({
                     <td
                       className={`break-words px-3 py-2 ${contact ? "text-slate-400" : "font-semibold text-amber-700"}`}
                     >
-                      {contact ? LIST_LABEL[contact.listType] : "Not on his list"}
+                      {contact ? LIST_LABEL[contact.listType] : "Not on their list"}
                     </td>
                     <td
                       className={`break-words px-3 py-2 font-semibold ${
@@ -1999,7 +1999,7 @@ function PlanDayTable({
                         <AddressCell locality={contact.region} row={contact} />
                       ) : (
                         <span className="font-semibold text-amber-700">
-                          Not on his list, so no address is recorded
+                          Not on their list, so no address is recorded
                         </span>
                       )}
                     </td>

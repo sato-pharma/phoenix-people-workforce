@@ -75,7 +75,7 @@ function Place({ row }: { row: ValidatedPlaceRow }) {
         </p>
       ))}
       <a className="inline-block text-xs font-black text-orange-700 underline underline-offset-2" href={row.mapsLink} rel="noreferrer" target="_blank">
-        Open where he stood in Google Maps
+        Open where they stood in Google Maps
       </a>
     </div>
   );
@@ -85,8 +85,8 @@ function Place({ row }: { row: ValidatedPlaceRow }) {
 function Cost({ row }: { row: ValidatedPlaceRow }) {
   const lines = [
     row.otherPlaces === 0
-      ? "He goes back to To validate — this is the customer's only place."
-      : `The customer keeps ${row.otherPlaces === 1 ? "his other place" : `his other ${row.otherPlaces} places`}, so he stays validated.`,
+      ? "They go back to To validate — this is the customer's only place."
+      : `The customer keeps ${row.otherPlaces === 1 ? "their other place" : `their other ${row.otherPlaces} places`}, so they stay validated.`,
     row.visits === 0 ? "No visit is measured against it yet." : `${row.visits} ${row.visits === 1 ? "visit is" : "visits are"} measured against it, and ${row.visits === 1 ? "it loses its distance" : "they lose their distances"}.`,
   ];
   return (
@@ -141,7 +141,7 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
       />
       {armed ? (
         <div className="space-y-2">
-          <CrmNote tone="warn">This retires the place and cannot be undone — he validates the customer again from his own list.</CrmNote>
+          <CrmNote tone="warn">This retires the place and cannot be undone — they validate the customer again from their own list.</CrmNote>
           <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
             <CrmButton disabled={saving} onClick={() => void refuse()} variant="danger">
               {saving ? "Refusing…" : "Yes, refuse it"}
@@ -215,7 +215,7 @@ export function ValidatedPlaceList({ rows }: { rows: ValidatedPlaceRow[] }) {
               <tr>
                 <th className={crmThClassName}>Photo</th>
                 <th className={crmThClassName}>Customer and rep</th>
-                <th className={crmThClassName}>The place he saved</th>
+                <th className={crmThClassName}>The place they saved</th>
                 <th className={crmThClassName}>Refuse it</th>
               </tr>
             </thead>

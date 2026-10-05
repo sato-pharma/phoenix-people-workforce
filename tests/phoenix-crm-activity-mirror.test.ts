@@ -195,7 +195,7 @@ export function runPhoenixCrmActivityMirrorTests() {
     assert.equal(formatPhoenixDateTime(STARTED_AT), "7:42 PM, Saturday, 3 October 2026");
     assert.equal(
       d?.message,
-      "Aya Ibrahim confirmed he started working at 7:42 PM, Saturday, 3 October 2026 (Cairo), Tanta · Pedia.",
+      "Aya Ibrahim confirmed they started working at 7:42 PM, Saturday, 3 October 2026 (Cairo), Tanta · Pedia.",
       "the time and the territory, and nothing else",
     );
     assert.doesNotMatch(d!.message, /maps|https?:|30\.|31\./, "the place never travels here — that is the DM's and SFE's alone");

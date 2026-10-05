@@ -292,7 +292,7 @@ function callRateBasisAndWording() {
   );
   assert.match(repsPlans, /totalsOf\([\s\S]{0,80}report\.workingDays, rateBasis\)/, "the totals are given the report's basis");
 
-  assert.equal(kpiFlagLabel("perfect-frequency", "phoenix"), "Every graded doctor at his grade norm", "frequency passes at the grade norm, not exactly as planned");
+  assert.equal(kpiFlagLabel("perfect-frequency", "phoenix"), "Every graded doctor at their grade norm", "frequency passes at the grade norm, not exactly as planned");
   assert.notEqual(kpiFlagLabel("perfect-frequency"), kpiFlagLabel("perfect-frequency", "phoenix"), "before the cutover the old label stays");
   assert.match(kpiFlagHint("below-pm-target", "phoenix"), /Submitted/, "the PM hint names submitted visits under the Phoenix rules");
 }

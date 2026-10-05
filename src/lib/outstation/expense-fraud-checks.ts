@@ -176,7 +176,7 @@ export function checkDoubleVisitPartner(input: FraudCheckInput): FraudCheckResul
   if (named.length === 0) {
     return {
       detail:
-        "No double visit was recorded for this day, so there is no colleague's route to compare against. A manager does not check in himself — the rep he is with does.",
+        "No double visit was recorded for this day, so there is no colleague's route to compare against. A manager does not check in themselves — the rep they are with does.",
       facts: [],
       id: "partner",
       title: "Who confirms this day",

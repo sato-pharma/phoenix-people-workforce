@@ -37,7 +37,7 @@ import {
 import type { CallPrepLine } from "@/lib/phoenix-crm/call-prep";
 import type { CallPrepView } from "@/lib/phoenix-crm/view-types";
 
-const FIRST_TIME = "You have not seen him yet.";
+const FIRST_TIME = "You have not seen them yet.";
 
 /** When he last saw him. Absent, never a zero — "never seen" and "not read" are different sentences. */
 function lastSeenText(line: CallPrepLine): string {
@@ -66,7 +66,7 @@ function PrepCards({ lines }: { lines: ReadonlyArray<CallPrepLine> }) {
             <div className="grid min-w-0 gap-1.5 text-xs font-semibold leading-5 text-slate-600">
               {line.objectionLabel ? (
                 <p className="break-words">
-                  <span className="font-black text-slate-800">He pushed back on: </span>
+                  <span className="font-black text-slate-800">They pushed back on: </span>
                   {line.objectionLabel}
                 </p>
               ) : null}
@@ -121,7 +121,7 @@ function PrepTable({ lines }: { lines: ReadonlyArray<CallPrepLine> }) {
               </td>
               <td className={crmTdClassName}>{lastSeenText(line)}</td>
               <td className={crmTdClassName}>
-                {line.objectionLabel ? <span className="block">He pushed back on: {line.objectionLabel}</span> : null}
+                {line.objectionLabel ? <span className="block">They pushed back on: {line.objectionLabel}</span> : null}
                 {next ? <span className="mt-1 block">You said you would: {next}</span> : null}
                 {!line.objectionLabel && !next ? <span className="block text-slate-500">—</span> : null}
               </td>

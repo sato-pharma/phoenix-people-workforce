@@ -319,8 +319,8 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
     assert.equal(own.managerHrId, "B-12", "he reads his own plan");
     assert.equal(resolveDoubleVisitPlanReader(dm, false, "b-12").managerHrId, "B-12", "named by himself, in any case");
     assert.equal(assertDoubleVisitPlanWriter(dm, false, null), "B-12", "he writes his own plan");
-    refused(() => resolveDoubleVisitPlanReader(dm, false, "B-76"), 403, /his own/, "never another district manager's plan");
-    refused(() => assertDoubleVisitPlanWriter(dm, false, "B-76"), 403, /his own/, "and never writes one");
+    refused(() => resolveDoubleVisitPlanReader(dm, false, "B-76"), 403, /their own/, "never another district manager's plan");
+    refused(() => assertDoubleVisitPlanWriter(dm, false, "B-76"), 403, /their own/, "and never writes one");
     // Retired 2026-10-03: a `test` flag from anyone but a TEST- login is READ AND DROPPED, not
     // refused — a 403 here would blank a tab that was open across the deploy.
     assert.equal(testModeFor(dm, "true"), false, "the test world is nobody's now");
@@ -331,12 +331,12 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
     );
 
     // Another district manager is refused the first one's plan, and reads his own.
-    refused(() => resolveDoubleVisitPlanReader(otherDm, false, "B-12"), 403, /his own/, "another district manager is refused");
+    refused(() => resolveDoubleVisitPlanReader(otherDm, false, "B-12"), 403, /their own/, "another district manager is refused");
     assert.equal(resolveDoubleVisitPlanReader(otherDm, false, null).managerHrId, "B-76", "and reads his own");
     assert.deepEqual(doubleVisitTeam(org, "B-76", otherDm.scopeTerritories).map((entry) => entry.seatId), [D21.seatId]);
 
     // The acting district manager: app role District Manager on an acting seat — a planner too.
-    assert.deepEqual(doubleVisitPlanReach(actingDm, false), { mode: "own", canWrite: true }, "an acting district manager plans his own");
+    assert.deepEqual(doubleVisitPlanReach(actingDm, false), { mode: "own", canWrite: true }, "an acting district manager plans their own");
     assert.deepEqual(
       doubleVisitTeam(org, "B-1", testReadSeats(actingDm, false, actingDm.scopeTerritories)).map((entry) => entry.seatId),
       [UE9.seatId],
@@ -359,7 +359,7 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
     assert.equal(resolveDoubleVisitPlanReader(sfe, false, "B-12").managerHrId, "B-12", "SFE reads a district manager's plan");
     refused(() => resolveDoubleVisitPlanReader(sfe, false, "B-120"), 404, /organogram/, "never one on a line that has not opened");
     refused(() => resolveDoubleVisitPlanReader(sfe, false, "B-900"), 404, /organogram/, "and never a national manager's, who has none");
-    refused(() => assertDoubleVisitPlanWriter(sfe, false, "B-12"), 403, /Each district manager plans his own/, "SFE never writes one");
+    refused(() => assertDoubleVisitPlanWriter(sfe, false, "B-12"), 403, /Each district manager plans their own/, "SFE never writes one");
     assert.equal(testModeFor(sfe, "true"), false, "and has no test world either");
 
     // The Super Admin reads every one and writes none — his test mode is RETIRED (owner, 2026-10-03:
@@ -387,7 +387,7 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
     assert.deepEqual(doubleVisitPlanReach(testDm, true), { mode: "own", canWrite: true }, "it plans as the district manager it mirrors");
     assert.equal(doubleVisitPlanReach(testDm, false), null, "and never in the real world");
     assert.equal(assertDoubleVisitPlanWriter(testDm, true, null), "B-12", "his own plan, in the test world");
-    refused(() => assertDoubleVisitPlanWriter(testDm, true, "B-76"), 403, /his own/, "never another district manager's");
+    refused(() => assertDoubleVisitPlanWriter(testDm, true, "B-76"), 403, /their own/, "never another district manager's");
   }
 
   // ── 3. The database half ──────────────────────────────────────────────────────────────────────

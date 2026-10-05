@@ -600,7 +600,7 @@ export function ValidateScreen({
               {subjectReference ? <Detail label="Last visit in iReports360">{referenceLastVisitText(subjectReference)}</Detail> : null}
               {/* What the SFE wrote for him when the list was loaded. The place is still captured here;
                   this is how he knows which door to stand at. */}
-              {intake?.where ? <Detail label="Where to find him">{intake.where}</Detail> : null}
+              {intake?.where ? <Detail label="Where to find them">{intake.where}</Detail> : null}
               {intake?.note ? <Detail label="Note">{intake.note}</Detail> : null}
             </div>
           </CustomerHeading>
@@ -609,7 +609,7 @@ export function ValidateScreen({
               did caused it, and both doors below still work. */}
           {carriedOverOnly ? (
             <CrmNote className="mt-3" tone="info">
-              iReports360 no longer has this customer on your list. He is still on yours: validate him here, or ask to drop him below.
+              iReports360 no longer has this customer on your list. They are still on yours: validate them here, or ask to drop them below.
             </CrmNote>
           ) : null}
           {subjectState === "drop_pending" ? (
@@ -745,7 +745,7 @@ export function ValidateScreen({
       >
         {subject.mode === "new" ? (
           <p className="mb-3 text-sm font-medium leading-6 text-slate-600">
-            {twoStepText(view, "add him to your list")} Until then the customer waits under Outside the list, and the visits you
+            {twoStepText(view, "add them to your list")} Until then the customer waits under Outside the list, and the visits you
             save count once the customer is on your list.
           </p>
         ) : null}
@@ -852,7 +852,7 @@ export function SavedScreen({
         </CrmNote>
         {saved.kind === "waiting" ? (
           <CrmNote className="mt-3" title="Waiting outside your list" tone="info">
-            {twoStepText(view, "add him to your list")} You find the customer under Outside the list.
+            {twoStepText(view, "add them to your list")} You find the customer under Outside the list.
           </CrmNote>
         ) : null}
         {saved.kind === "validated" ? (
@@ -1461,7 +1461,7 @@ export function DropScreen({
   const waitingStage = customer?.waiting.find((entry) => entry.kind === "drop")?.stageLabel ?? null;
   const noteLength = note.trim().length;
   const until = customer ? "Until then the customer stays on your list." : "Until then the customer stays under To validate.";
-  const steps = twoStepText(view, "take him off your list");
+  const steps = twoStepText(view, "take them off your list");
 
   async function save() {
     if (saving || !subject) return;
@@ -1628,7 +1628,7 @@ export function AddRequestScreen({
   if (!customer || gone) {
     return <ListGone backLabel="Customer" message={gone ?? NOT_ON_LIST} onBack={onBack} refreshing={refreshing} title="Ask to add to your list" />;
   }
-  const steps = twoStepText(view, "add him to your list");
+  const steps = twoStepText(view, "add them to your list");
 
   async function save() {
     if (saving || !customer) return;
@@ -1728,7 +1728,7 @@ export function RestoreRequestScreen({
   if (!customer || gone) {
     return <ListGone backLabel="Customer" message={gone ?? NOT_ON_LIST} onBack={onBack} refreshing={refreshing} title="Ask to bring back" />;
   }
-  const steps = twoStepText(view, "bring him back to your list");
+  const steps = twoStepText(view, "bring them back to your list");
 
   async function save() {
     if (saving || !customer) return;

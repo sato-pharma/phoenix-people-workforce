@@ -348,7 +348,7 @@ export function performanceCardHtml(data: PerformanceCardData): string {
   .labs { display: flex; gap: 36px; padding: 11px 0 0 52px; }
   .labs .micro { flex: 1 1 0; min-width: 0; text-align: center; }
 
-  /* ── 3. His footer, carrying the rank ── */
+  /* ── 3. The footer, carrying the rank ── */
   .foot { position: absolute; left: 0; right: 0; bottom: 0; height: ${FOOT_HEIGHT}px; background-color: #ffffff;
     background-image: linear-gradient(to right, #ebeef1 1px, transparent 1px), linear-gradient(to bottom, #ebeef1 1px, transparent 1px);
     background-size: ${CELL}px ${CELL}px; background-position: calc(50% + ${CELL / 2}px) calc(50% + ${CELL / 2}px); }

@@ -410,7 +410,7 @@ export function runPhoenixCrmOffplanDayTests(): void {
     assert.match(card, /const plannedFor = plannedForText\(visit\.plannedFor\);/, "the card prints the server's days");
     assert.doesNotMatch(card, /plannedForText\(visit\.clarification|movedDayReason/, "and never re-reads them out of the reason");
     assert.match(card, /<CrmPill>\{listText\(visit\.customerListType\)\}<\/CrmPill>/, "each visit says AM or PM");
-    assert.match(card, /<span className="font-black text-slate-800">Why he went: <\/span>/, "and what he wrote");
+    assert.match(card, /<span className="font-black text-slate-800">Why they went: <\/span>/, "and what they wrote");
     assert.doesNotMatch(card, /rounded-(?!none)/, "square corners");
     assert.doesNotMatch(card, /\btruncate\b|line-clamp|text-ellipsis/, "nothing cut short");
   }

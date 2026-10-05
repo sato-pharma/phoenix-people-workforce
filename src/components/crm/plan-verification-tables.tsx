@@ -409,7 +409,7 @@ export function PlanMissingRepsTable({
         <ExportXlsxButton
           columns={[
             { key: "rep", label: "Medical rep" },
-            { key: "doctors", label: "Doctors on his list" },
+            { key: "doctors", label: "Doctors on their list" },
             { key: "status", label: "Status" },
           ]}
           rows={exportRows}
@@ -429,7 +429,7 @@ export function PlanMissingRepsTable({
         renderCard={(rep) => (
           <PortalRecordCard
             accent="rose"
-            meta={`${rep.pmCount} doctors on his list`}
+            meta={`${rep.pmCount} doctors on their list`}
             status={
               <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-rose-700">No plan filed</span>
             }
@@ -454,7 +454,7 @@ export function PlanMissingRepsTable({
                 <SortableTh className={THEAD} label="Medical rep" onSort={table.toggleSort} sort={table.sort} sortKey="name" />
                 <SortableTh
                   className={THEAD}
-                  label="Doctors on his list"
+                  label="Doctors on their list"
                   onSort={table.toggleSort}
                   sort={table.sort}
                   sortKey="pmCount"
@@ -502,7 +502,7 @@ export function PlanMissingRepsTable({
  */
 function addressText(row: PlanEntryRow): string {
   if (row.address) return row.address;
-  return row.onRepList ? "No address recorded" : "Not on his list";
+  return row.onRepList ? "No address recorded" : "Not on their list";
 }
 
 const ENTRY_COLS = [

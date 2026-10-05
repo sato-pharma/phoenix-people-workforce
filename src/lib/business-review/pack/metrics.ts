@@ -339,7 +339,7 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
   {
     defaultAt: MANAGER,
     group: "link",
-    hint: "Ride days per rep against his fair share: never ridden, rarely ridden, or most of the rides.",
+    hint: "Ride days per rep against their fair share: never ridden, rarely ridden, or most of the rides.",
     id: "dv-focus",
     label: "Double visits: who gets the manager's days",
     levels: MANAGER,
@@ -420,7 +420,7 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
   {
     defaultAt: ALL,
     group: "people",
-    hint: "Each rep's activity beside the achievement of the area he stands in.",
+    hint: "Each rep's activity beside the achievement of the area they stand in.",
     id: "rep-rows",
     label: "Rep by rep",
     levels: ALL,

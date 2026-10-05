@@ -644,7 +644,7 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
               >
                 {board.entries.length === 0 ? (
                   <p className="py-6 text-center text-sm text-slate-600">
-                    Nobody on this line can be ranked in this window — a rep with no target is not ranked, because his
+                    Nobody on this line can be ranked in this window — a rep with no target is not ranked, because their
                     achievement would be arithmetic, not performance.
                   </p>
                 ) : (
@@ -663,11 +663,11 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
               ? `${data.boards.ranked} ranked of ${data.boards.seats} rep seats · ${data.boards.vacant ?? 0} vacant · ${data.window.rangeLabel}`
               : `${data.boards.ranked} ranked · ${data.window.rangeLabel}`
           }
-          title={focus ? `${focus.entry.name} — where the filters place him` : `Full ranking — ${scopeLabel}`}
+          title={focus ? `${focus.entry.name} — where the filters place them` : `Full ranking — ${scopeLabel}`}
         >
           {data.boards.overall.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-600">
-              Nobody in this window matches those filters. A rep with no target in the window is not ranked — his
+              Nobody in this window matches those filters. A rep with no target in the window is not ranked — their
               achievement would be arithmetic, not performance.
             </p>
           ) : (

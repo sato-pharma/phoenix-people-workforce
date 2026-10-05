@@ -97,7 +97,7 @@ const STATUS_COPY: Record<
 > = {
   all: {
     description:
-      "Pick a rep to open the plan he filed for this week. Narrow with the filters above first if the list is long.",
+      "Pick a rep to open the plan they filed for this week. Narrow with the filters above first if the list is long.",
     emptyDetail:
       "Clear a level of the cascade to widen it. An empty result here means no seated rep works that combination — not that nobody filed a plan.",
     emptyTitle: "No reps match these filters.",
@@ -198,7 +198,7 @@ function PlanPanel({
         />
         <Tile label="Doctors" sub="distinct on this plan" value={String(plan.contacts)} />
         <Tile label="Planned calls" sub="rows on the plan" value={String(plan.entries)} />
-        <Tile label="Days" sub="days he planned to work" value={String(days)} />
+        <Tile label="Days" sub="days they planned to work" value={String(days)} />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
@@ -215,7 +215,7 @@ function PlanPanel({
                 : "This plan is waiting for the rep's district or regional manager to verify it."
               : undoable
                 ? canVerify
-                  ? "Verified in the CRM. Unverifying writes that back too and tells the rep his plan is waiting for him again — the plan itself is not changed."
+                  ? "Verified in the CRM. Unverifying writes that back too and tells the rep their plan is waiting for them again — the plan itself is not changed."
                   : "Verified in the CRM by the rep's district or regional manager."
                 : "An area manager verified this plan. Phoenix never wrote that signature, so it cannot take it back either."}
           </p>
@@ -296,7 +296,7 @@ export function RepsWeeklyPlansBoardView({
   }
 
   const description = [
-    "Pick a rep and a week, then read the plan he filed and verify it",
+    "Pick a rep and a week, then read the plan they filed and verify it",
     "verifying writes the status into the CRM itself",
     `your reach: ${scopeLabel}`,
     syncedAt ? `last refreshed ${cairoStamp(syncedAt)} Cairo` : "never refreshed",
@@ -370,7 +370,7 @@ export function RepsWeeklyPlansBoardView({
                     which, rather than printing one sentence that is wrong half the time. */}
                 {week.offset > 0
                   ? "This week has not started yet, so there may be nothing to file. Reps normally file the coming week towards the end of the current one."
-                  : "There is nothing to verify. A plan the rep never filed is not a plan awaiting your signature — it is a week he did not plan."}
+                  : "There is nothing to verify. A plan the rep never filed is not a plan awaiting your signature — it is a week they did not plan."}
               </p>
             </div>
           ) : (

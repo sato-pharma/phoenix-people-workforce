@@ -995,7 +995,7 @@ function AttributionStrip({
           hand credits that area&rsquo;s rep exactly. Any other branch has its money spread evenly across the
           governorates its name states, then evenly again across that governorate&rsquo;s areas on that line —
           so a rep&rsquo;s figure here is an allocation of branch shipments, not a record of visits or of sales
-          observed in his territory.
+          observed in their territory.
         </p>
       </div>
     </div>

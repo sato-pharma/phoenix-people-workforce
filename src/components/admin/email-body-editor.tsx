@@ -843,7 +843,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
           uploaded policy: "it should be premium polished designed perfectly zebra tabled". The mail
           itself already gets the house look stamped onto every cell inline by styleSenderTables()
           in src/lib/sato-email/render.ts — Outlook has no stylesheet and no :nth-child — but the
-          composer showed a grey grid until this rule, so the sender could not see what he was
+          composer showed a grey grid until this rule, so the sender could not see what they were
           about to send. Same grid (#CFDCE7), same head rule, same Brand Blue at 6% (#F2F6FA), which
           is the ONE fill the house identity allows.
 

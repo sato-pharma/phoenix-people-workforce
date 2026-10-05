@@ -134,7 +134,7 @@ export function ReturnedDayNote({
           ? day < today
             ? `${name} has passed, so it can no longer change. Send the week again as it is.`
             : `Change that day, then send the week again. The other days stay as you sent them, and your visits on them still count as planned. Until you send the week again, your visits on ${name} count as off-plan.`
-          : "Only that day is open for the rep. Every other day stays as he sent it, and his visits on those days still count as planned."}
+          : "Only that day is open for the rep. Every other day stays as they sent it, and their visits on those days still count as planned."}
       </span>
     </CrmNote>
   );

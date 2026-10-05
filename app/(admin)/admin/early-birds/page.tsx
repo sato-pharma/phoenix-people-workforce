@@ -127,7 +127,7 @@ export default async function AdminEarlyBirdsPage({ searchParams }: PageProps) {
             That rep is not in {district.name}&apos;s ranking for {period.label}.
           </p>
           <p className="mt-1 break-words text-sm text-amber-800">
-            Switch district, or pick the fortnight he was ranked in. The board below is unaffected.
+            Switch district, or pick the fortnight they were ranked in. The board below is unaffected.
           </p>
         </div>
       ) : null}

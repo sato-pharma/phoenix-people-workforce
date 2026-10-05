@@ -354,7 +354,7 @@ export function RepRowsTable({
               </span>
               <span className="shrink-0 text-right text-sm font-bold tabular-nums">
                 {ach(area?.allProducts.ach ?? null)}
-                <span className="block text-phx-xs font-normal text-muted-foreground">his area</span>
+                <span className="block text-phx-xs font-normal text-muted-foreground">their area</span>
               </span>
             </div>
             <p className="mt-1 break-words text-phx-xs text-muted-foreground">
@@ -387,7 +387,7 @@ export function RepRowsTable({
             <thead>
               <tr className="border-b border-border">
                 <th className={TH}>Rep</th>
-                <th className={TH}>Area he stands in</th>
+                <th className={TH}>Area they stand in</th>
                 <th className={THR}>Area achievement</th>
                 <th className={THR}>Visits</th>
                 <th className={THR}>AM · PM · Pharmacies</th>

@@ -172,7 +172,7 @@ function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
         ) : null}
         {day.leave ? (
           <Fact
-            label="Where he was"
+            label="Where they were"
             value={
               <>
                 On approved leave
@@ -220,7 +220,7 @@ function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
       {day.stops.length > 0 ? (
         <div className="px-4 py-3">
           <h4 className="mb-2 text-phx-2xs font-black uppercase tracking-wide text-slate-500">
-            Every stop, in the order his phone recorded it
+            Every stop, in the order their phone recorded it
           </h4>
 
           {/* Desktop: the full table. */}

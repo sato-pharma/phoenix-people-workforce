@@ -5984,7 +5984,7 @@ export async function resendOutstationDeparturePhotoReminder(
     });
     if (gate.blocker !== "departure_photo") {
       throw new Error(
-        "This request is not waiting on its departure photo, so there is nothing to remind him about.",
+        "This request is not waiting on its departure photo, so there is nothing to remind them about.",
       );
     }
 
@@ -5995,7 +5995,7 @@ export async function resendOutstationDeparturePhotoReminder(
       // him to capture the wrong place or ignore the mail. Point at the release instead.
       throw new Error(
         `The trip ended on ${lastDay}, so the departure photo can no longer be taken at the destination — ` +
-          "there is nothing left to ask him for. Release the request without the photo instead.",
+          "there is nothing left to ask them for. Release the request without the photo instead.",
       );
     }
     throw new Error(

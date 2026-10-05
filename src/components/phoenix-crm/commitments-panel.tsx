@@ -94,7 +94,7 @@ export function CommitmentsPanel({ seatId, test }: { seatId: string; test: boole
 
   return (
     <CrmPanel
-      description="What you told a customer you would do, until you are next with him. Nothing here is a score."
+      description="What you told a customer you would do, until you are next with them. Nothing here is a score."
       eyebrow="Your own notes"
       title="What you said you would do"
     >

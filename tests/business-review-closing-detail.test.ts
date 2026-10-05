@@ -77,7 +77,7 @@ export function runBusinessReviewClosingDetailTests() {
         `achievement in this system to back it — targets are keyed per area.`,
     );
     assert.ok(
-      panels.includes("Area he stands in"),
+      panels.includes("Area they stand in"),
       `${PANELS}: the rep table must name the area the person was placed in, or the percentage ` +
         `beside him has no stated subject.`,
     );

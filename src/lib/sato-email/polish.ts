@@ -353,14 +353,14 @@ export function buildPolishPrompt(input: SatoPolishRequest): string {
     return [
       `The document the sender uploaded: ${source?.fileName ?? "the file"}`,
       sourceText
-        ? `What the document says — this, and his request below, are the ONLY facts you may state:\n${sourceText}`
+        ? `What the document says — this, and the sender's request below, are the ONLY facts you may state:\n${sourceText}`
         : "The document carries no text of its own — it is attached to this request as a file. Read it, and state nothing it does not say.",
       instruction
-        ? `What he asked you to do with it:\n${instruction}`
-        : "He did not say what to do with it — write the email that tells colleagues what this document says.",
+        ? `What the sender asked you to do with it:\n${instruction}`
+        : "The sender did not say what to do with it — write the email that tells colleagues what this document says.",
       subject
-        ? `Subject he has already typed (keep it unless it no longer fits):\n${subject}`
-        : "Subject: he has not typed one — write it.",
+        ? `Subject the sender has already typed (keep it unless it no longer fits):\n${subject}`
+        : "Subject: the sender has not typed one — write it.",
       emailPlainText(body) ? `What is already in the body (build on it, do not throw it away):\n${body}` : "",
     ]
       .filter(Boolean)
@@ -370,10 +370,10 @@ export function buildPolishPrompt(input: SatoPolishRequest): string {
   if (mode === "write") {
     return [
       `What the sender asked you to write:\n${instruction}`,
-      subject ? `Subject he has already typed (keep it unless he asked otherwise):\n${subject}` : "Subject: he has not typed one — write it.",
+      subject ? `Subject the sender has already typed (keep it unless they asked otherwise):\n${subject}` : "Subject: the sender has not typed one — write it.",
       emailPlainText(body)
         ? `What is already in the body (build on it, do not throw it away):\n${body}`
-        : "The body is empty — this email is yours to write from his request above.",
+        : "The body is empty — this email is yours to write from the sender's request above.",
     ].join("\n\n");
   }
 
@@ -395,7 +395,7 @@ const TOOLBOX_BLOCK = [
   "The sender writes in an editor with a Gmail-style toolbar. You cannot click it, so you press a button by writing the markup that button produces. This is the whole list, and nothing outside it survives:",
   ...toolboxPromptLines(),
   "",
-  "When the sender asks for one of these in his own words, do it. \"Bold the deadline\", \"put the dates in a table\", \"make it a list\", \"right-align the Arabic\" are instructions to use that tool.",
+  "When the sender asks for one of these in their own words, do it. \"Bold the deadline\", \"put the dates in a table\", \"make it a list\", \"right-align the Arabic\" are instructions to use that tool.",
 ].join("\n");
 
 /**
@@ -433,13 +433,13 @@ export const SATO_POLISH_INSTRUCTIONS = [
   ].join("\n"),
   [
     "WHAT YOU NEVER DO — this is the part that matters:",
-    "- Never add a fact. No date, no deadline, no figure, no percentage, no policy number, no department, no name, no link that the sender did not write. If his draft is vague, it stays vague.",
+    "- Never add a fact. No date, no deadline, no figure, no percentage, no policy number, no department, no name, no link that the sender did not write. If their draft is vague, it stays vague.",
     "- Never keep a figure and change it, and never convert one into different units.",
-    "- Never fill in anything inside [square brackets]. Those are gaps the sender fills himself: copy each one through exactly as it is.",
-    "- Never add a next step, a condition, a consequence or a contact that he did not write.",
+    "- Never fill in anything inside [square brackets]. Those are gaps the sender fills in themselves: copy each one through exactly as it is.",
+    "- Never add a next step, a condition, a consequence or a contact that the sender did not write.",
     "- Never add a greeting or a sign-off. The email design prints the company's own frame around your text, and the sender signs it in a separate field.",
     "- Never mention that this text was generated, rewritten or assisted in any way, and never refer to yourself.",
-    "- Never soften or harden the decision he is announcing. You change how it reads, never what it says.",
+    "- Never soften or harden the decision the sender is announcing. You change how it reads, never what it says.",
   ].join("\n"),
   TOOLBOX_BLOCK,
   TOOLBOX_USE_BLOCK,
@@ -464,25 +464,25 @@ export const SATO_POLISH_INSTRUCTIONS = [
  * job offer without inventing the salary.
  */
 export const SATO_WRITE_INSTRUCTIONS = [
-  "You write an internal email for Sato Pharma, an Egyptian pharmaceutical company, inside its HR system. A named colleague has told you what he wants the email to say, in his own words, and you write it for him. It will be emailed to employees, a candidate or a distribution list under the company's own identity, after he has read it.",
+  "You write an internal email for Sato Pharma, an Egyptian pharmaceutical company, inside its HR system. A named colleague has told you what they want the email to say, in their own words, and you write it for them. It will be emailed to employees, a candidate or a distribution list under the company's own identity, after they have read it.",
   [
     "WHAT YOU PRODUCE:",
-    "- The complete email he asked for — subject and body — ready to read and send, not an outline and not a single thin paragraph.",
-    "- The KIND of email he names: a job offer reads as a job offer, an announcement as an announcement, a warning letter as a warning letter, an invitation as an invitation. Use the structure that kind of letter normally has.",
+    "- The complete email the sender asked for — subject and body — ready to read and send, not an outline and not a single thin paragraph.",
+    "- The KIND of email the sender names: a job offer reads as a job offer, an announcement as an announcement, a warning letter as a warning letter, an invitation as an invitation. Use the structure that kind of letter normally has.",
     "- Formal corporate register: measured, impersonal, confident. No slang, no exclamation marks, no emoji, no hype, no marketing language.",
-    "- Write in the language he used. If he writes Arabic, the email is Arabic; if he asks for both languages, give each its own paragraph.",
+    "- Write in the language the sender used. If they write Arabic, the email is Arabic; if they ask for both languages, give each its own paragraph.",
     "- A subject that says what the email is about in a few words. Sentence case, never Title Case. Never a teaser, never a question, no Important or Urgent prefix.",
-    "- When he has already typed part of the email, build on what is there rather than replacing it.",
+    "- When the sender has already typed part of the email, build on what is there rather than replacing it.",
   ].join("\n"),
   [
     "🔴 THE ONE RULE THAT MATTERS — YOU NEVER INVENT A FACT:",
-    "- Every fact you state must come from what he wrote: his request, or the draft already in the body.",
-    "- A fact he did NOT give you — a date, a salary, a figure, a percentage, a deadline, a name, a job title, an area, a phone number, an address, a policy number — is written as a [square bracket] gap in the place it belongs: [start date], [basic salary], [line manager]. He fills it in before sending. A gap he has to fill is useful; a plausible number nobody decided is dangerous.",
-    "- Never mint a link or an image address. Use a URL only if he wrote it himself.",
-    "- Never promise anything on the company's behalf that he did not say — no benefit, no bonus, no allowance, no guarantee, no deadline.",
-    "- Never add a greeting or a sign-off. The email design prints the company's own frame around your text, and he signs it in a separate field.",
+    "- Every fact you state must come from what the sender wrote: their request, or the draft already in the body.",
+    "- A fact the sender did NOT give you — a date, a salary, a figure, a percentage, a deadline, a name, a job title, an area, a phone number, an address, a policy number — is written as a [square bracket] gap in the place it belongs: [start date], [basic salary], [line manager]. The sender fills it in before sending. A gap they have to fill is useful; a plausible number nobody decided is dangerous.",
+    "- Never mint a link or an image address. Use a URL only if the sender wrote it themselves.",
+    "- Never promise anything on the company's behalf that the sender did not say — no benefit, no bonus, no allowance, no guarantee, no deadline.",
+    "- Never add a greeting or a sign-off. The email design prints the company's own frame around your text, and the sender signs it in a separate field.",
     "- Never mention that this text was written, generated or assisted by anything, and never refer to yourself.",
-    "- If his request is too thin to write from, still write the email he asked for and leave every unknown as a [square bracket] gap. Say what is missing in the change list.",
+    "- If the sender's request is too thin to write from, still write the email they asked for and leave every unknown as a [square bracket] gap. Say what is missing in the change list.",
   ].join("\n"),
   TOOLBOX_BLOCK,
   TOOLBOX_USE_BLOCK,
@@ -492,7 +492,7 @@ export const SATO_WRITE_INSTRUCTIONS = [
     "- Left [basic salary] and [start date] as gaps for you to fill.",
     "- Put the three terms in a two-column table, as you asked.",
     "- Wrote it in Arabic, right to left.",
-    "Name every gap you left, so he knows what is still his to decide.",
+    "Name every gap you left, so the sender knows what is still theirs to decide.",
   ].join("\n"),
 ].join("\n\n");
 
@@ -506,7 +506,7 @@ export const SATO_WRITE_INSTRUCTIONS = [
  * pharmaceutical company's incentive policy: a rounded percentage is a wrong percentage.
  */
 export const SATO_DOCUMENT_INSTRUCTIONS = [
-  "You write an internal email for Sato Pharma, an Egyptian pharmaceutical company, inside its HR system. A named colleague has uploaded a document and wants the email that carries it to colleagues who have not read it. It will be emailed under the company's own identity, after he has read it.",
+  "You write an internal email for Sato Pharma, an Egyptian pharmaceutical company, inside its HR system. A named colleague has uploaded a document and wants the email that carries it to colleagues who have not read it. It will be emailed under the company's own identity, after the sender has read it.",
   [
     "WHAT YOU PRODUCE:",
     "- The complete email — subject and body — that says what this document decides and what it means for the reader.",
@@ -516,11 +516,11 @@ export const SATO_DOCUMENT_INSTRUCTIONS = [
     "- Where the document has no table, do not invent one. Prose stays prose.",
     "- A subject taken from what the document is, in a few words. Sentence case, never Title Case, never a teaser.",
     "- Formal corporate register: measured, impersonal, confident. No slang, no exclamation marks, no emoji, no hype.",
-    "🔴 - THE EMAIL IS BILINGUAL, WHATEVER LANGUAGE THE DOCUMENT IS IN — English and Arabic, every time. An English policy gives an English AND an Arabic email; so does an Arabic one. The reader is an Egyptian colleague who may read either, and a document email that arrives in one language only is half delivered. The one exception is a language he names in his own request — then write that one alone.",
+    "🔴 - THE EMAIL IS BILINGUAL, WHATEVER LANGUAGE THE DOCUMENT IS IN — English and Arabic, every time. An English policy gives an English AND an Arabic email; so does an Arabic one. The reader is an Egyptian colleague who may read either, and a document email that arrives in one language only is half delivered. The one exception is a language the sender names in their own request — then write that one alone.",
   ].join("\n"),
   [
     "HOW THE TWO LANGUAGES SIT TOGETHER:",
-    "- Paragraph by paragraph, never two halves. Each English paragraph is followed immediately by the same paragraph in Arabic, then the next English paragraph, and so on. A reader of either language then meets the email in the same order, and neither has to scroll past the other's whole letter to reach his own.",
+    "- Paragraph by paragraph, never two halves. Each English paragraph is followed immediately by the same paragraph in Arabic, then the next English paragraph, and so on. A reader of either language then meets the email in the same order, and neither has to scroll past the other's whole letter to reach their own.",
     "- The Arabic is a translation of the paragraph above it — not a summary of it, and not extra material. Same facts, same figures, same order, and the same [square bracket] gaps in the same places.",
     "- English paragraphs carry dir=\"ltr\". Arabic paragraphs carry dir=\"rtl\", which already right-aligns them — never add text-align as well. Put the direction on every paragraph, the English ones included: one direction around the whole body renders the other language backwards.",
     "- A list is written twice the same way: the English <ul> in full, then the Arabic <ul> in full beneath it, each list carrying its own direction.",
@@ -533,11 +533,11 @@ export const SATO_DOCUMENT_INSTRUCTIONS = [
   ].join("\n"),
   [
     "🔴 THE ONE RULE THAT MATTERS — EVERYTHING YOU SAY COMES FROM THE DOCUMENT:",
-    "- Every fact, figure, date, name, percentage and condition must be in the document he uploaded or in his own request. Nothing else exists.",
+    "- Every fact, figure, date, name, percentage and condition must be in the document the sender uploaded or in their own request. Nothing else exists.",
     "- Something the document leaves open — who it applies to, when it starts, who to ask — is written as a [square bracket] gap in the place it belongs, never as a guess.",
-    "- Never say the document is attached, enclosed or linked. He decides separately whether to attach it, and an email promising an attachment he did not add is wrong.",
-    "- Never mint a link or an image address. Use a URL only if it is printed in the document or he wrote it himself.",
-    "- Never add a greeting or a sign-off. The email design prints the company's own frame around your text, and he signs it in a separate field.",
+    "- Never say the document is attached, enclosed or linked. The sender decides separately whether to attach it, and an email promising an attachment they did not add is wrong.",
+    "- Never mint a link or an image address. Use a URL only if it is printed in the document or the sender wrote it themselves.",
+    "- Never add a greeting or a sign-off. The email design prints the company's own frame around your text, and the sender signs it in a separate field.",
     "- Never carry over the document's header, footer, page numbers or the note saying who published it. Those belong to the paper, not to the email.",
     "- Never mention that this text was written, generated or assisted by anything, and never refer to yourself.",
   ].join("\n"),
@@ -706,7 +706,7 @@ export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<Sa
 
   // A document that turned out to be a picture goes to the model whole, exactly as the CV intake
   // sends a scanned CV: `input_file` for a PDF so the model renders the pages itself, `input_image`
-  // for a photograph. The prompt above still travels with it — it carries his request, his subject
+  // for a photograph. The prompt above still travels with it — it carries the sender's request, their subject
   // and whatever is already in the body.
   const modelInput =
     source?.file && source.route === "picture"
@@ -770,7 +770,7 @@ export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<Sa
   const parsed = parsePolish(outputText);
   const candidate = {
     bodyHtml: cleanPolishedBody(parsed.bodyHtml, bodyHtml),
-    // A sender who has not written a subject yet gets the one the model proposes; otherwise his own
+    // A sender who has not written a subject yet gets the one the model proposes; otherwise their own
     // subject is rewritten like everything else.
     subject: cleanPolishedSubject(parsed.subject),
   };
@@ -791,7 +791,7 @@ export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<Sa
     changes: parsed.changes.map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean),
     // Rewrite mode refuses an invented figure outright, so by here it has none to report. The other
     // two name them instead — a bare list of digits would tell the sender nothing, so each one
-    // arrives as the sentence he needs to act on.
+    // arrives as the sentence the sender needs to act on.
     //
     // 🔴 A DOCUMENT WITH NO TEXT IN IT CANNOT BE CHECKED AT ALL. Nothing was read out of the file,
     // so every figure in the draft is unverifiable and listing them one by one would say the same

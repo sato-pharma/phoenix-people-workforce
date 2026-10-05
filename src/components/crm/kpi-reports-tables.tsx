@@ -122,7 +122,7 @@ function ListTable({ caption, rateHeading, rows }: { caption: string; rateHeadin
           <th className={TH} scope="col">
             Coverage
             <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
-              Seen at least once ÷ his list
+              Seen at least once ÷ their list
             </span>
           </th>
           <th className={TH} scope="col">
@@ -140,7 +140,7 @@ function ListTable({ caption, rateHeading, rows }: { caption: string; rateHeadin
               <span className="block break-words font-semibold text-slate-900">{row.repName}</span>
               <span className={`mt-0.5 block ${CAPTION}`}>
                 {row.block.applicable
-                  ? `${row.block.coverage.panel} on his list`
+                  ? `${row.block.coverage.panel} on their list`
                   : "No list of this kind"}
               </span>
             </td>
@@ -164,7 +164,7 @@ function ListCards({ caption, rows }: { caption: string; rows: ReportRow[] }) {
           <div className="px-4 py-3" key={row.repKey ?? `${row.repName}-${index}`}>
             <p className="break-words text-sm font-semibold text-slate-900">{row.repName}</p>
             <p className={`mt-0.5 ${CAPTION}`}>
-              {row.block.applicable ? `${row.block.coverage.panel} on his list` : "No list of this kind"}
+              {row.block.applicable ? `${row.block.coverage.panel} on their list` : "No list of this kind"}
             </p>
             <dl className="mt-2 grid grid-cols-3 gap-2">
               <div>

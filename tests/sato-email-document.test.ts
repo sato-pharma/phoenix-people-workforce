@@ -251,7 +251,7 @@ export function runSatoEmailDocumentTests() {
 
   for (const line of [
     "Never say the document is attached",
-    "must be in the document he uploaded",
+    "must be in the document the sender uploaded",
     "[square bracket] gap",
     "Never mint a link",
   ]) {

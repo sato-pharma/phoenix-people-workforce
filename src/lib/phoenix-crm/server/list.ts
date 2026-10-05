@@ -1923,7 +1923,7 @@ export async function decideListRequest(
   // Super Admin approves or rejects a place the Google check could not confirm (owner, 2026-10-03).
   const customerId = text(request.customer_id);
   if (decision === "approve" && rowStage === "sfe" && (kind === "add" || kind === "restore") && customerId && (await pendingLocationReview(customerId))) {
-    throw validationError("This customer's location is still being checked against Google Maps. He can be added once the check is finished.");
+    throw validationError("This customer's location is still being checked against Google Maps. They can be added once the check is finished.");
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_request", {

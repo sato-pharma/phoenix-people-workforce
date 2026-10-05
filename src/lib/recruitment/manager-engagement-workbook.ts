@@ -75,8 +75,8 @@ const DATE_FMT = "dd mmm yyyy";
  * band the screen shows above the same table.
  */
 export const ENGAGEMENT_READING_NOTE =
-  "“Received” is every CV in the manager’s My Candidates folder — the ones in his areas plus " +
-  "anything sent straight to him — not only what was hand-pushed. A CV counts as “Opened” once he " +
+  "“Received” is every CV in the manager’s My Candidates folder — the ones in their areas plus " +
+  "anything sent straight to them — not only what was hand-pushed. A CV counts as “Opened” once they " +
   "opens it in the app from this feature’s launch onward, so the large “Not opened” on older CVs is " +
   "real: nothing recorded a manager opening a CV before tracking began. “Answered” has full history — " +
   "it reads the candidate’s recorded decision — so an older CV can show not opened yet answered.";

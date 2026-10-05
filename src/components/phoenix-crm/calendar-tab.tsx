@@ -126,7 +126,7 @@ function dayTitle(person: string, day: TeamCalendarDay, opens: boolean): string 
     parts.push(
       opensTheDay(day)
         ? "Opens the day in full, in a new tab"
-        : "Opens the day in a new tab, to enter a record he missed",
+        : "Opens the day in a new tab, to enter a record they missed",
     );
   }
   return parts.join(" — ");

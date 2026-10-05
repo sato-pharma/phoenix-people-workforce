@@ -257,9 +257,9 @@ export function RetentionRiskBand({ view }: { view: RetentionRiskView }) {
       )}
 
       <p className="border-t border-slate-200 px-5 py-3 break-words text-phx-3xs text-slate-500">
-        Medical Reps only, on both rules (owner, 2026-09-07). A manager has no contact list of his
-        own — a rep logs the visit and tags him — so his CRM silence measures the rep&rsquo;s data
-        entry, and his approved leave is a holiday rather than a retention signal. CRM activity is
+        Medical Reps only, on both rules (owner, 2026-09-07). A manager has no contact list of their
+        own — a rep logs the visit and tags them — so their CRM silence measures the rep&rsquo;s data
+        entry, and their approved leave is a holiday rather than a retention signal. CRM activity is
         read up to {formatRetentionRiskDate(view.measurableThrough)}, never today, because reps
         enter visits through and after the working day.
       </p>

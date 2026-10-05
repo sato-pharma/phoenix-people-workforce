@@ -95,13 +95,13 @@ const REFUSALS: Record<string, Refusal> = {
   // The rep's flow rebuilt, 2026-09-29 (supabase/migrations/20260929235106_phoenix_crm_list_admission.sql).
   archived: {
     status: 409,
-    message: "This customer is in the Archive. Open him there and ask to bring him back to your list.",
+    message: "This customer is in the Archive. Open them there and ask to bring them back to your list.",
   },
   request_wrong_stage: { status: 409, message: "This request has moved on to the next step. Reload the page." },
   potential_grade_required: { status: 400, message: "Choose the customer's potential (AA to BC) before approving." },
   not_outside: { status: 409, message: "This customer is no longer waiting outside the list. Reload the page." },
   not_archived: { status: 409, message: "This customer is not in the Archive. Reload the page." },
-  not_on_list: { status: 409, message: "This customer is not on your list yet. Ask to add him to your list first." },
+  not_on_list: { status: 409, message: "This customer is not on your list yet. Ask to add them to your list first." },
   move_reason_required: { status: 400, message: "Write why the place is moved (at least 10 characters)." },
   // The daily forecast (owner, 2026-10-01): CNS only, and the database refuses any other line itself.
   not_forecast_line: { status: 403, message: "The daily forecast is for the CNS line only." },
@@ -109,7 +109,7 @@ const REFUSALS: Record<string, Refusal> = {
   future_day: { status: 400, message: "That day has not begun yet. Choose today or an earlier day." },
   // ...and taken back by him when entered by mistake: his own entry only.
   visit_not_found: { status: 404, message: "This visit is no longer there. Reload the page." },
-  not_entered_by_you: { status: 403, message: "Only a visit you entered for a rep can be removed. A rep's own visit stays his record." },
+  not_entered_by_you: { status: 403, message: "Only a visit you entered for a rep can be removed. A rep's own visit stays their record." },
   // The district manager's double-visit plan (owner, 2026-10-02): one half-day at a time.
   double_visit_not_field_time: {
     status: 400,

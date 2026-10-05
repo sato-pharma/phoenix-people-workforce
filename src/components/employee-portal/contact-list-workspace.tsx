@@ -187,7 +187,7 @@ export function ContactListWorkspace() {
       } else {
         await post({ action: "request", change }, "Could not send your request.");
       }
-      setFormNote(direct ? "The list is changed." : "Sent to your manager. The list changes once he approves.");
+      setFormNote(direct ? "The list is changed." : "Sent to your manager. The list changes once they approve.");
       return true;
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Could not save that.");

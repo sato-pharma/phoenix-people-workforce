@@ -73,7 +73,7 @@ export function reminderMessage(tasks: ReadonlyArray<CrmAccountSetupTaskRow>, ca
     "",
     ...lines,
     "",
-    "A medical rep with no iReports360 account has no customer list in Phoenix CRM, so he can neither plan a visit nor record one. Once the account exists the contacts sync and the list appears by itself.",
+    "A medical rep with no iReports360 account has no customer list in Phoenix CRM, so they can neither plan a visit nor record one. Once the account exists the contacts sync and the list appears by itself.",
     "",
     "Open Phoenix CRM admin and enter each person's CRM username and code.",
   ].join("\n");

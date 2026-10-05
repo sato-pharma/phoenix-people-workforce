@@ -841,7 +841,7 @@ export function PlanBoard({
         message: view.isTest
           ? "This is a test plan, so nobody is notified."
           : day
-            ? "Only that day is open for the rep. The other days stay as he sent them. The rep is notified."
+            ? "Only that day is open for the rep. The other days stay as they sent them. The rep is notified."
             : "The rep is notified.",
       });
       onChanged?.();

@@ -138,7 +138,7 @@ const CONTENT: Record<StartGuideLanguage, GuideContent> = {
       ],
       [
         "Someone not on your list",
-        `With ${ui("Out of list")} choose ${ui("AM")} or ${ui("PM")} yourself, write the name, the speciality and his ${ui("Phone")} if you have it, then photograph the clinic sign, press ${ui("Capture location")} and set the days and hours — once, for good. After the visit, ask on the ${ui("List")} to add him to your list.`,
+        `With ${ui("Out of list")} choose ${ui("AM")} or ${ui("PM")} yourself, write the name, the speciality and their ${ui("Phone")} if you have it, then photograph the clinic sign, press ${ui("Capture location")} and set the days and hours — once, for good. After the visit, ask on the ${ui("List")} to add them to your list.`,
       ],
       [
         "Fill in the visit",
@@ -156,7 +156,7 @@ const CONTENT: Record<StartGuideLanguage, GuideContent> = {
     notes: [
       [
         "Validating a customer",
-        `On the ${ui("List")}, a customer not validated yet has ${ui("Validate")}: one live photo of the clinic sign (it keeps its own location), ${ui("Capture location")} for the location once more, his ${ui("Phone")} if you have it, and the days and hours — once, for good. A validated customer has ${ui("Open")}. The phone is optional: add or correct it any time with ${ui("Change the details")}.`,
+        `On the ${ui("List")}, a customer not validated yet has ${ui("Validate")}: one live photo of the clinic sign (it keeps its own location), ${ui("Capture location")} for the location once more, their ${ui("Phone")} if you have it, and the days and hours — once, for good. A validated customer has ${ui("Open")}. The phone is optional: add or correct it any time with ${ui("Change the details")}.`,
       ],
       [
         "Your plan",

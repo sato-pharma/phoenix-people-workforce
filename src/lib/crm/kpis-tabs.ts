@@ -60,8 +60,8 @@ export const KPI_TAB_HINT: Record<KpiTab, string> = {
   // PLAN; these measure against the whole panel the CRM assigned him, which is what the owner meant
   // by "whole panel visisted one is the coverage". Two different denominators, so the wording has
   // to make clear which one a number came from.
-  "am-pm": "All three KPIs against his AM and PM lists, reported apart and never averaged.",
-  pharmacies: "All three KPIs against his pharmacy list. A rep with no pharmacies is not applicable, not a zero.",
+  "am-pm": "All three KPIs against their AM and PM lists, reported apart and never averaged.",
+  pharmacies: "All three KPIs against their pharmacy list. A rep with no pharmacies is not applicable, not a zero.",
   weekly:
     "Call rate, coverage and frequency week by week, beside the month those weeks add up to — or month by month beside the quarter or semester.",
 };
@@ -71,7 +71,7 @@ export const KPI_TAB_HINT_PHOENIX: Partial<Record<KpiTab, string>> = {
   "call-rate":
     "Every submitted regular visit per working day, Saturday to Wednesday minus national holidays. GPS is evidence only.",
   coverage: "Planned doctors in the period with at least one visit, out of the planned doctors in it.",
-  frequency: "Whether each graded doctor got the visits his grade asks for: A 3, B 2, C 1. Extra visits are fine.",
+  frequency: "Whether each graded doctor got the visits their grade asks for: A 3, B 2, C 1. Extra visits are fine.",
 };
 
 /**

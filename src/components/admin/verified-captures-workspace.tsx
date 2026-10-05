@@ -675,7 +675,7 @@ function MarketingTab({ rows }: { rows: VerifiedMarketingCaptureRow[] }) {
         <PortalResponsiveDataList
           empty={
             <PortalEmptyState
-              message="No verified marketing customers match these filters yet — a customer appears here once his live photo and every linked pharmacy's photo and location are captured."
+              message="No verified marketing customers match these filters yet — a customer appears here once their live photo and every linked pharmacy's photo and location are captured."
               title="Nothing to show"
             />
           }

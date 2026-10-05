@@ -132,8 +132,8 @@ export async function captureOutstationTripWorkload(input: {
       pmWorkload: rolled.pmWorkload,
       sourceLabel:
         hops === 0
-          ? "Live iReports360 visits for this employee (his own visits, and the ones where he is the double-visit partner)."
-          : `Live iReports360 visits, rolled up ${hops} level(s): his own, plus the visits of the people he was actually in the field with on each day.`,
+          ? "Live iReports360 visits for this employee (their own visits, and the ones where they are the double-visit partner)."
+          : `Live iReports360 visits, rolled up ${hops} level(s): their own, plus the visits of the people they were actually in the field with on each day.`,
     };
   } catch (error) {
     return {

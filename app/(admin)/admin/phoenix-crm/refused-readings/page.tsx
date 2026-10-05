@@ -127,7 +127,7 @@ export default async function PhoenixCrmRefusedReadingsPage() {
       <AdminPageHero
         eyebrow="CRM"
         title="Refused readings"
-        description={`Captures Phoenix CRM turned away because the phone sent no position, or one too rough to trust — the last ${board.windowDays} days. It is where to see who is stuck and whether they got through afterwards. Nothing here is a flag and nobody is accused: the rep read the refusal on his own screen at the time, and this page adds nothing he is told.`}
+        description={`Captures Phoenix CRM turned away because the phone sent no position, or one too rough to trust — the last ${board.windowDays} days. It is where to see who is stuck and whether they got through afterwards. Nothing here is a flag and nobody is accused: the rep read the refusal on their own screen at the time, and this page adds nothing they are told.`}
         icon={<MapPinOff className="h-3.5 w-3.5" />}
       />
 
@@ -177,7 +177,7 @@ export default async function PhoenixCrmRefusedReadingsPage() {
       {board.reps.length > 0 ? (
         <AdminTableShell
           title="By rep"
-          description="Reps still blocked come first. A rep refused many times who always gets through is listed too — a phone that needs eleven tries is worth knowing about — but below the one who cannot do his work."
+          description="Reps still blocked come first. A rep refused many times who always gets through is listed too — a phone that needs eleven tries is worth knowing about — but below the one who cannot do their work."
         >
           {/* Desktop: the full table. `table-fixed` with a colgroup, never a min-width in a scroller. */}
           <div className="hidden lg:block">

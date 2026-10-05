@@ -117,7 +117,7 @@ export function ReturnedCvsQueue({ groups: initialGroups }: { groups: ReturnedCv
   if (initialGroups.length === 0) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
-        No CVs have been returned. When a district manager hands a CV back — because it is not for one of his areas, or
+        No CVs have been returned. When a district manager hands a CV back — because it is not for one of their areas, or
         for any other reason — it will appear here, grouped by the manager who returned it.
       </div>
     );

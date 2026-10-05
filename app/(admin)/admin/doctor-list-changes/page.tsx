@@ -26,7 +26,7 @@ export default async function AdminDoctorListChangesPage() {
       <AdminPageHero
         eyebrow="CRM"
         title="Doctor List Changes"
-        description="Add a doctor to a rep's AM or PM list, remove one or change a grade. Your change applies at once; a rep's own request waits for his manager."
+        description="Add a doctor to a rep's AM or PM list, remove one or change a grade. Your change applies at once; a rep's own request waits for their manager."
         icon={<ListChecks className="h-3.5 w-3.5" />}
       />
       <ContactListWorkspace />

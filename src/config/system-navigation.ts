@@ -4168,7 +4168,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     icon: MapPinned,
     label: "Brick Coverage",
     description:
-      "Which Source-of-Sales bricks each rep actually reaches, against the bricks that carry his sales — weighted by selling units, with the blind spots named.",
+      "Which Source-of-Sales bricks each rep actually reaches, against the bricks that carry their sales — weighted by selling units, with the blind spots named.",
     roles: ["Super Admin", "SFE Manager", "CEO"],
   },
   {
@@ -4194,7 +4194,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     icon: BookUser,
     label: "Reps List",
     description:
-      "Filter to a line, region and area, then open a rep to see his whole CRM contact list grouped by the brick each contact sits in, his weekly plans, and his call rate against two AM and ten PM a day.",
+      "Filter to a line, region and area, then open a rep to see their whole CRM contact list grouped by the brick each contact sits in, their weekly plans, and their call rate against two AM and ten PM a day.",
     roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager", "Regional Manager", "District Manager"],
   },
   {
@@ -4214,7 +4214,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     icon: TrendingUp,
     label: "KPIs",
     description:
-      "Call rate, coverage and frequency per rep for any month or week — the visits each rep made over his own working days, how much of his monthly plan he has reached, and whether he hit the visit count he planned per doctor.",
+      "Call rate, coverage and frequency per rep for any month or week — the visits each rep made over their own working days, how much of their monthly plan they have reached, and whether they hit the visit count they planned per doctor.",
     roles: ["Super Admin", "SFE Manager", "CEO"],
   },
   {
@@ -4372,7 +4372,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     href: "/admin/phoenix-crm/list-template",
     icon: ClipboardList,
     label: "Load a Customer List",
-    description: "Send a rep a sheet for his territory and load his list back from it. Each customer lands under To validate for him to validate at the clinic — the one part no sheet can carry.",
+    description: "Send a rep a sheet for their territory and load their list back from it. Each customer lands under To validate for them to validate at the clinic — the one part no sheet can carry.",
     permissions: [{ resource: "phoenix_crm", action: "approve" }],
     roles: ["Super Admin", "SFE Manager"],
   },

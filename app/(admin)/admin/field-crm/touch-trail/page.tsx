@@ -50,7 +50,7 @@ export default async function PhoenixCrmTouchTrailPage({
   return (
     <div className="space-y-5">
       <AdminPageHero
-        description="Every tap, press, keystroke and screen change on Phoenix CRM, as the browser reported it — including what a rep typed and then deleted. A day is grouped into the page loads that made it; open one to read it event by event. The rep is never shown that this exists, and nothing on this page writes to his work."
+        description="Every tap, press, keystroke and screen change on Phoenix CRM, as the browser reported it — including what a rep typed and then deleted. A day is grouped into the page loads that made it; open one to read it event by event. The rep is never shown that this exists, and nothing on this page writes to their work."
         eyebrow="CRM"
         icon={<Fingerprint className="h-3.5 w-3.5" />}
         title="Touch trail"
