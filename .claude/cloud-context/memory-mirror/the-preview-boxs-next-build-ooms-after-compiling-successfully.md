@@ -1,36 +1,51 @@
 ---
 name: the-preview-boxs-next-build-ooms-after-compiling-successfully
-description: "remote-check.mjs build on the Hetzner box now dies `Killed` with exit 137 — an OOM during \"Collecting page data using 3 workers\", AFTER `✓ Compiled successfully`, in ~300s where the measured figure was 112s. Exit 137 is not a code error and must not be read as one; the GitHub runner's own Build step is green, and `remote-check all` is lint+typecheck+test only, so the build is the one PR-invisible stage with no local proof."
+description: "CORRECTED 2026-10-05 — `remote-check.mjs build` is NOT broken and never needed a cap. The exit-137 kill of 2026-10-04 was CONTENTION: uncapped it passes in ~118s on an idle box, but it needs ~7.4 GB of the 7.7 GB box however it is invoked, so it dies beside anything substantial. Capping is measurably inert — the \"3 workers\" are threads inside ONE `next-build` process holding ~6.4 GB of native Turbopack memory, so `--max-old-space-size` bounds the wrong thing and 2 workers to 1 returned 2 MB for 5 extra seconds. The fix is the `/tmp/phx-typecheck.lock` the build now takes. Exit 137 is never a code error."
 metadata:
   node_type: memory
   type: reference
   originSessionId: 369b9c60-2032-48eb-8853-ad2148939e4f
-  modified: 2026-10-03T22:51:46.821Z
+  modified: 2026-10-05T08:14:39.512Z
 ---
 
-`node scripts/remote-check.mjs build` on the preview box (`phx@46.225.184.142`) now **fails with
-`Killed` and exit code 137** — SIGKILL, i.e. the kernel's OOM killer. Measured twice on 2026-10-04,
-at 301s and 310s.
+🔴 **CORRECTED 2026-10-05. The earlier version of this note said the build "now fails" on the box
+and left the stage uncovered. That was true of one reading and false as a standing fact** — the
+build runs fine here; it has no headroom, which is a different problem with a different fix.
 
-**Read the stage it died in, not the exit code.** Both runs printed `✓ Compiled successfully in
-4.7min` and then died in `Collecting page data using 3 workers`. So:
+**What was actually measured** (`phx@46.225.184.142`, 7740 MB RAM, 4 CPUs, 8 GB swap), four runs,
+sampled every 10s for `free -m` and per-process RSS:
 
-- **Compilation succeeded**, which is the stage that catches a client/server boundary violation — a
-  client component importing server-only code fails Turbopack, not page-data collection. A build
-  that OOMs after compiling therefore still carries real information.
-- **The measured figure in `CLAUDE.md` is 112s for a full `next build`** (2026-09-30). It is now
-  ~300s to the OOM, so the box's build has degraded with repo growth, independently of any branch.
+| workers (`PHX_BUILD_CPUS`) | heap cap | result | peak available | peak `next-build` RSS |
+| --- | --- | --- | --- | --- |
+| 2 | 3072 MB | PASS 113s | 307 MB | — |
+| 2 | 2048 MB | PASS 118s | 213 MB | — |
+| 1 | 2048 MB | PASS 123s | 215 MB | 6455 MB |
+| 3 (uncapped control) | none | PASS 118s | 295 MB | 6458 MB |
 
-**It is not the repo and not your change.** `main`'s own CI run executes a `Build` step inside
-`validate`, and it was **green on `365b120e9`** the same night. Check that before spending a
-minute on a build failure from the box.
+**The uncapped control passes**, so no cap was ever the fix. Both knobs are inert because the
+"workers" are **threads inside a single `next-build` process** — `next-server` and `node` sit
+beside it at 5 MB and 2 MB — and its ~6.4 GB is Turbopack's **native Rust** allocation, which
+`--max-old-space-size` does not bound and `experimental.cpus` barely moves.
 
-**The coverage gap this leaves.** `remote-check all` is **lint + typecheck + test** — it does not
-include `build`. And a PR's CI does not run the build either (`validate` builds only on non-PR
-events). So the build is the one stage with no proof until the commit is on `main`, where a failure
-does not go red loudly — it makes Railway **withhold the deploy**, which looks exactly like a
-successful one until `/api/healthz` `revision` is read. Verify the revision after every merge; see
-[[a-merge-is-not-a-deploy-read-healthz-revision]].
+**The real constraint: ~7.4 GB of a 7.7 GB box, whatever you pass it.** It survives alone and dies
+beside anything substantial — which is exactly the 2026-10-04 reading, ~300s to die against ~118s
+to finish, and three concurrent checks have left this box at 250 MB available on their own.
 
-Related: [[four-module-guards-a-new-phoenix-crm-screen-must-pass]] — the `test` stage of the same
-script is the cheap way to find those, and it does finish.
+**So the protection is a lock, not a number.** `remote-check`'s `build` entry takes the same
+`/tmp/phx-typecheck.lock` as its typecheck and ci.yml's, so a build waits for a typecheck instead
+of racing it into the OOM killer. Pinned by `tests/remote-check.test.ts`. 🔴 **Do not add
+`PHX_BUILD_CPUS` or `NODE_OPTIONS` back** — ci.yml's `PHX_BUILD_CPUS: 4` is a different host with a
+different failure (47 visible CPUs, a thread-spawn abort), not a precedent for this one.
+
+🔴 **Exit 137 is SIGKILL and is never a code error.** The build prints `✓ Compiled successfully`
+first and is killed after, so a 137 says nothing about the branch — compilation, the stage that
+catches a client/server boundary violation, had already passed. Read `main`'s own `Build` step
+before spending a minute on it.
+
+**The coverage gap is real and unchanged.** A PR's CI does not build (`validate` builds only on
+non-PR events) and `remote-check all` is lint + typecheck + test, so `remote-check build` run by
+hand is the only pre-merge proof. A build failure on `main` does not go red loudly — it makes
+Railway **withhold the deploy**, which looks like a successful one until `/api/healthz` `revision`
+is read; see [[a-merge-is-not-a-deploy-read-healthz-revision]].
+
+Account: `docs/ci-self-hosted-runner.md`, "The build OOM was contention, not size".

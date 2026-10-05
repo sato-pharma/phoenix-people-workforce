@@ -102,7 +102,41 @@ const CHECKS = {
   typecheck:
     "flock -w 1200 /tmp/phx-typecheck.lock sh -c './node_modules/.bin/next typegen >/dev/null && env NODE_OPTIONS=--max-old-space-size=6144 ./node_modules/.bin/tsc --noEmit --incremental false --pretty false'",
   test: "corepack pnpm run test",
-  build: "corepack pnpm run build",
+  // 🔴 THE BUILD TAKES THE TYPECHECK LOCK, BECAUSE CONTENTION IS WHAT KILLED IT — NOT ITS SIZE.
+  //
+  // It died `Killed` with exit 137 on 2026-10-04 — the kernel OOM killer, not a code error — during
+  // "Collecting page data using 3 workers", AFTER `✓ Compiled successfully`, taking ~300s to die
+  // where the measured figure was 112s. Exit 137 must never be read as a compile failure: the build
+  // had already succeeded when it was killed.
+  //
+  // 🔴 THE OBVIOUS FIX WAS WRONG, AND IT IS WRITTEN DOWN HERE SO NOBODY PAYS FOR IT TWICE.
+  // Capping `next build` looks like the answer and is not. Measured on the box 2026-10-05, four
+  // runs, each sampled every 10s:
+  //
+  //     workers  heap cap   result        peak available  peak next-build RSS
+  //     2        3072 MB    PASS 113s     307 MB          --
+  //     2        2048 MB    PASS 118s     213 MB          --
+  //     1        2048 MB    PASS 123s     215 MB          6455 MB
+  //     3        none       PASS 118s     295 MB          6458 MB   <- the UNCAPPED control
+  //
+  // The uncapped control passes on an idle box, so neither cap was ever the fix. Both knobs are
+  // inert here for the same reason: the "workers" are THREADS inside ONE `next-build` process
+  // (`next-server` and `node` beside it read 5 MB and 2 MB), and its ~6.4 GB is Turbopack's native
+  // Rust allocation, which `--max-old-space-size` does not bound at all and `experimental.cpus`
+  // barely moves — 2 workers to 1 returned 2 MB and cost 5 seconds.
+  //
+  // What the numbers do say is that this build needs ~7.4 GB of a 7.7 GB box whatever you pass it.
+  // It has no headroom, so it survives alone and dies beside anything substantial — which is
+  // exactly the 2026-10-04 reading, ~300s to die against ~118s to finish. Three concurrent checks
+  // have left this box at 250 MB available on their own.
+  //
+  // So the protection is the lock, not a number: the same `/tmp/phx-typecheck.lock` that ci.yml's
+  // typecheck step and the typecheck above take. A build now WAITS for a typecheck instead of
+  // racing it into the OOM killer. Do not "improve" this by adding PHX_BUILD_CPUS or NODE_OPTIONS
+  // back — the table above is what happens, and ci.yml's `PHX_BUILD_CPUS: 4` is a different host
+  // with a different failure (47 visible CPUs and a thread-spawn abort), not a precedent for this
+  // one. Account: docs/ci-self-hosted-runner.md, "The build OOM was contention, not size".
+  build: "flock -w 1200 /tmp/phx-typecheck.lock corepack pnpm run build",
 };
 const ALL = ["lint", "typecheck", "test"];
 
