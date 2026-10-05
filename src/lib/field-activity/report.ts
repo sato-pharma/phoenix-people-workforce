@@ -25,6 +25,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildFieldActivityReport,
+  cairoWallClockIso,
   type FieldActivityCheckinRow,
   type FieldActivityLeaveRow,
   type FieldActivityReport,
@@ -254,7 +255,9 @@ export async function loadFieldActivityReport(input: {
           pm: nullableNumber(record.pm_workload),
           pharmacies: nullableNumber(record.pharmacy_workload),
         },
-        capturedAt: (record.captured_at as string | null) ?? null,
+        // A REAL instant, unlike every CRM clock on this report — converted once, here, so the
+        // document never slices a UTC string as though it were Cairo (model.ts rule 3).
+        capturedAt: cairoWallClockIso(record.captured_at as string | null),
         capturedLat: nullableNumber(record.captured_latitude),
         capturedLon: nullableNumber(record.captured_longitude),
         capturedAccuracyMeters: nullableNumber(record.captured_accuracy_meters),

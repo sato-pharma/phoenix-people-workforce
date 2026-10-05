@@ -72,7 +72,11 @@ import { stripComments } from "./support/comment-strip.ts";
 // bug was the en-GB month abbreviation, which this ratchet does not measure.
 // Lowered 11 -> 9 in the Medical Rep portal polish (2026-09-25): two unzoned client stamps in the
 // rep's deductions and ROI screens now format in Africa/Cairo, as every time the owner reads is.
-const CLIENT_BASELINE = 9;
+// Lowered 9 -> 7 in the field-activity clock sweep (2026-10-05). Re-measured, not earned: this
+// branch re-formatted no client site, so the two went with work done between 09-25 and now and
+// nobody lowered the number. That is exactly what the warning below exists to catch, and leaving
+// it at 9 would have left two sites' worth of slack for a new one to be added into unnoticed.
+const CLIENT_BASELINE = 7;
 
 /**
  * Not a baseline — a rule. A server-rendered instant with no zone is wrong in
@@ -308,6 +312,74 @@ export function runInstantFormatTimezoneRatchetTests() {
       `These are only correct because every Phoenix user's browser is in Cairo. Pass ` +
       `timeZone: PHOENIX_BUSINESS_TIME_ZONE and the site stops depending on that.\n` +
       `Sites now present:\n  ${clientSites.join("\n  ")}`,
+  );
+
+  // ARM 3 — the clocks this file cannot see at all.
+  //
+  // Both arms above look for an Intl call. The defect the owner reported on 2026-10-05 used none:
+  // `/admin/field-activity` read the outstation claim's own GPS fix — a real timestamptz — by
+  // SLICING "HH:MM" out of its string, which prints the UTC reading. B-1's 21:34 Cairo fix on
+  // 2026-10-04 rendered as 18:34, beside CRM visit times that were correct to the second, and
+  // nothing in this file would ever have noticed.
+  //
+  // String surgery on a timestamp is not itself wrong — it is how this repository reads a VENDOR
+  // stamp, which is already Cairo wearing a `+00` label and must never be re-zoned. It is wrong
+  // only when the value is a real instant. That is a judgement about the DATA, which no regex can
+  // make, so this arm does the one thing it can: it pins the set of files allowed to do it, each
+  // with the reason it is safe. A new file reading a clock by hand has to be classified here
+  // first — which is the review that was missing.
+  const HAND_ROLLED_CLOCK_READERS = new Map<string, string>([
+    [
+      "app/api/admin/field-activity/pdf/route.ts",
+      "the route map's `Own GPS` label — the LOADER converts that instant first (cairoWallClockIso), so the slice reads a Cairo wall clock",
+    ],
+    ["src/lib/crm/dates.ts", "hasRealVendorTime — inspects a vendor stamp's time-of-day to reject the midnight placeholder"],
+    ["src/lib/crm/sfe-field-analytics.ts", "crmMinutesPastMidnight — vendor check_date/crm_save_date, read as written"],
+    ["src/lib/double-visit-analytics/audit-export.ts", "the coaching sheet's check-in span — vendor check_date"],
+    ["src/lib/field-activity/document.ts", "clock12 — every value the field-activity model hands it is already a Cairo wall clock"],
+    ["src/lib/field-activity/model.ts", "wallClock (vendor) and minutesOfDay (an already-extracted HH:MM, not a timestamp)"],
+    ["src/lib/field-workforce-compliance/ireports360-source.ts", "clockStringToMinutes — parses an HH:MM this module formatted itself"],
+    ["src/lib/outstation/expense-fraud-checks.ts", "vendorClockMinutes — the vendor half of the pair whose other half, cairoClockMinutes, converts a real instant"],
+    ["src/lib/sales/offline-lookup-workbook.ts", "the workbook's build stamp, whose own text says UTC"],
+  ]);
+
+  /** A clock read out of a timestamp by hand, with no formatter and therefore no zone to state. */
+  const HAND_ROLLED = [
+    /\.(?:slice|substring|substr)\(\s*11\s*,/,
+    /\(\\d\{2\}\)\s*:\s*\(\\d\{2\}\)/,
+    /split\(\s*["']T["']\s*\)\s*\[\s*1\s*\]/,
+  ];
+  const readsClockByHand = (source: string): boolean => HAND_ROLLED.some((pattern) => pattern.test(source));
+
+  // The detector, before it is trusted on the tree — same discipline as the two arms above.
+  assert.equal(readsClockByHand('const t = value.slice(11, 16);'), true, "slicing at 11 is reading a clock out of a timestamp");
+  assert.equal(readsClockByHand('const d = value.slice(0, 10);'), false, "slicing the DATE half states no clock and is not this defect");
+  assert.equal(readsClockByHand('/[T ](\\d{2}):(\\d{2})/.exec(value)'), true, "a hand-rolled HH:MM regex is the same read wearing a different shape");
+  assert.equal(readsClockByHand('const [, time] = iso.split("T")[1];'), true, "taking the half after the T is the same read again");
+  assert.equal(readsClockByHand('formatStableEnGb(d, { hour: "2-digit", timeZone: "Africa/Cairo" })'), false, "a real formatter is arms 1 and 2's business, not this one");
+
+  const handRolled = files
+    .map((file) => file.replace(/\\/g, "/"))
+    .filter((file) => readsClockByHand(stripComments(cachedReadFile(file))))
+    .sort();
+  const unclassified = handRolled.filter((file) => !HAND_ROLLED_CLOCK_READERS.has(file));
+  assert.deepEqual(
+    unclassified,
+    [],
+    `${unclassified.length} file(s) read a clock out of a timestamp by hand without being classified here.\n` +
+      `That is correct ONLY for a vendor stamp (already Cairo, tagged +00) or a value something upstream has ` +
+      `already converted. For a real timestamptz it prints the UTC reading — 2-3 hours early, and on the wrong ` +
+      `DAY after 21:00 Cairo. Decide which it is, convert it at the seam if it is an instant, then add the file ` +
+      `to HAND_ROLLED_CLOCK_READERS with the reason.\n` +
+      `Unclassified:\n  ${unclassified.join("\n  ")}`,
+  );
+  const retired = [...HAND_ROLLED_CLOCK_READERS.keys()].filter((file) => !handRolled.includes(file)).sort();
+  assert.deepEqual(
+    retired,
+    [],
+    `${retired.length} file(s) are listed as hand-rolled clock readers but no longer read one. Remove them from ` +
+      `HAND_ROLLED_CLOCK_READERS — a stale entry is a standing exemption for a file nobody has looked at since.\n` +
+      `Retired:\n  ${retired.join("\n  ")}`,
   );
 
   // Improvement direction: fewer unzoned client formats than the baseline is a win, not a failure — a

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   buildFieldActivityReport,
+  cairoWallClockIso,
   eachDateIso,
   haversineMetres,
   isWeekendIso,
@@ -103,6 +104,42 @@ export function runFieldActivityReportTests() {
     assert.equal(wallClock("2026-09-20 14:03:52+00"), "14:03:52", "a +00 vendor stamp keeps its clock reading");
     assert.equal(wallClock("2026-09-20T14:03:52"), "14:03:52", "a zone-less vendor stamp keeps its clock reading");
     assert.equal(minutesOfDay("14:03:52"), 843, "minutes come off the same unshifted reading");
+  }
+
+  // ── …AND THE ONE REAL INSTANT ON THE PAGE IS CONVERTED, EXACTLY ONCE ─────────────────────────
+  {
+    // The outstation claim's own GPS fix is a true timestamptz, not a vendor wall clock. Read like
+    // one it prints 2-3 hours early beside correct Cairo visit times on the same page — the owner's
+    // 2026-10-05 report. Measured on production: B-1's 2026-10-04 fix, 18:34:51Z, is 21:34 Cairo.
+    assert.equal(
+      cairoWallClockIso("2026-10-04T18:34:51.014+00:00"),
+      "2026-10-04T21:34:51",
+      "summer time: a real instant becomes the Cairo wall clock, +03:00",
+    );
+    assert.equal(
+      cairoWallClockIso("2026-01-15T18:34:51+00:00"),
+      "2026-01-15T20:34:51",
+      "winter: the offset is read per instant, never hardcoded — Egypt observes DST",
+    );
+    assert.equal(
+      cairoWallClockIso("2026-10-04T22:30:00+00:00"),
+      "2026-10-05T01:30:00",
+      "the Cairo calendar day comes with it, so a late fix cannot land on the wrong day",
+    );
+    assert.equal(cairoWallClockIso(null), null, "no fix stays no fix");
+    assert.equal(cairoWallClockIso("not a time"), null, "an unparseable value is refused, never rendered");
+    // It carries no zone, so nothing downstream can mistake it for an instant and shift it twice.
+    assert.doesNotMatch(String(cairoWallClockIso("2026-10-04T18:34:51Z")), /[Z+]/, "the result is zone-less by construction");
+    // The two places that render it, both reading the one convention.
+    assert.equal(clock12(cairoWallClockIso("2026-10-04T18:34:51+00:00")), "9:34 PM", "the document prints the Cairo clock");
+    assert.equal(String(cairoWallClockIso("2026-10-04T18:34:51+00:00")).slice(11, 16), "21:34", "so does the PDF map label");
+    // The loader must keep doing the conversion — the defect was a raw passthrough here.
+    const loaderSource = readFileSync("src/lib/field-activity/report.ts", "utf8");
+    assert.match(
+      loaderSource,
+      /capturedAt: cairoWallClockIso\(record\.captured_at as string \| null\)/,
+      "the outstation GPS fix is converted at the loader, never handed on as a raw instant",
+    );
   }
 
   // ── a call logged the NEXT morning is a positive lag, never a negative one ───────────────────
