@@ -22,7 +22,16 @@
  * attempt prints both readings and why the summary leads with whether he got through afterwards.
  */
 
-export type RefusedReason = "no_fix" | "rough";
+/**
+ * 🔴 `off_listing` IS NOT ABOUT THE POSITION'S QUALITY, AND THE BOARD MUST NOT READ IT AS ONE. The two
+ * original reasons are the phone's own fault — no fix, or a fix too rough for the line — and both
+ * readings are precise on an `off_listing` row. What refused it is the ACCOUNT: Google's pin for the
+ * customer sits 150 m - 1 km from where the rep stood (google-place-rules.ts). It is the one refusal a
+ * rep may be unable to pass by moving at all, which is why the second one is HELD for the Super Admin
+ * rather than refused again, and why the metres that matter are the distance to the listing, never the
+ * accuracy radius.
+ */
+export type RefusedReason = "no_fix" | "rough" | "off_listing";
 export type RefusedSubject = "visit" | "place";
 
 /** One refused capture, as the reader hands it over. Numbers are already numbers; nothing is a code. */
@@ -82,6 +91,13 @@ function metres(value: number | null): string {
 export function refusalSentence(attempt: Pick<RefusedAttempt, "subjectKind" | "reason" | "accuracyMeters" | "photoAccuracyMeters" | "maxAccuracyMeters">): string {
   if (attempt.reason === "no_fix") {
     return "The phone sent no usable position at all — location permission off, or no fix yet.";
+  }
+  if (attempt.reason === "off_listing") {
+    // Never the accuracy radius here: both readings were precise, and printing them would read as a
+    // phone problem when the account is what did not match.
+    // "the place", never "the account": Phoenix CRM says AM and PM and nothing else on a screen
+    // (owner, 2026-09-23), and tests/phoenix-crm-am-pm-words.test.ts enforces it on this very line.
+    return "The position was precise, but it was not at this customer's own Google Maps pin — the place may have moved, or the pin is old. A second refusal on the same customer is held for the Super Admin to decide.";
   }
   const line = attempt.maxAccuracyMeters !== null && Number.isFinite(attempt.maxAccuracyMeters) ? Math.round(attempt.maxAccuracyMeters) : null;
   const needs = line === null ? "" : attempt.subjectKind === "place" ? ` A place needs both within ${line} m.` : ` A visit needs the position within ${line} m.`;

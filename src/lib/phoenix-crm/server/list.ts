@@ -85,14 +85,14 @@ import {
 } from "@/lib/phoenix-crm/server/access";
 import { blindTerritoryList } from "@/lib/phoenix-crm/server/blind-payloads";
 import { callPhoenixCrm, chunk, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { googleMismatchMessage, type LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
+import { googleMismatchMessage, mismatchIsHeld, type LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
 import { checkPlaceOnGoogle, googleCheckRecord, type GooglePlaceCheck } from "@/lib/phoenix-crm/server/google-place-check";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { loadLocationChecks, notifyValidationReviewWaiting, pendingLocationReview } from "@/lib/phoenix-crm/server/validation-reviews";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
-import { recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
+import { countOffListingRefusals, recordOffListingRefusal, recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
@@ -1263,40 +1263,90 @@ export type ValidateResult = {
 
 /**
  * The customer a validation names, as the Google check needs him: the name ON THE LIST (never the
- * place label the rep typed — google-place-rules.ts) and AM, PM or pharmacy.
+ * place label the rep typed — google-place-rules.ts), AM / PM / pharmacy, and his own row id where he
+ * has one — `null` for "Add new customer" and for someone met outside the list, who has no row yet and
+ * so nothing a refusal can be counted against.
  */
-async function validationSubject(seatId: string, isTest: boolean, mode: string, body: Row): Promise<{ name: string; listType: PhoenixCrmListType } | null> {
+type ValidationSubject = { name: string; listType: PhoenixCrmListType; customerId: string | null };
+
+/** Resolves that subject for the mode the rep is saving in. */
+async function validationSubject(seatId: string, isTest: boolean, mode: string, body: Row): Promise<ValidationSubject | null> {
   if (mode === "reference") {
     const contact = Number(body.referenceContactCrmId);
     const entry = (await loadReference(seatId, isTest)).find((row) => Number(row.contact_crm_id) === contact);
-    return entry ? { name: String(entry.name), listType: parseListType(entry.list_type) } : null;
+    if (!entry) return null;
+    // 🔴 The customer's OWN row id, which the carried-over list does not carry: a refusal is counted
+    // against it (`countOffListingRefusals`), and without it a rep refused on an account whose pin has
+    // moved would be refused again for ever. A carried-over customer HAS a row — status `pending`
+    // until he is validated — so this finds one for every entry the seat is still to validate.
+    const customerId = await customerIdForReference(seatId, isTest, contact);
+    return { name: String(entry.name), listType: parseListType(entry.list_type), customerId };
   }
   if (mode === "listed") {
     const { data, error } = await getSupabaseAdmin()
       .from("phoenix_crm_customers")
-      .select("name, list_type")
+      .select("id, name, list_type")
       .eq("id", String(body.customerId))
       .eq("seat_id", seatId)
       .eq("is_test", isTest)
       .maybeSingle();
     throwIfError(error);
     const row = data as Row | null;
-    return row ? { name: String(row.name), listType: parseListType(row.list_type) } : null;
+    return row ? { name: String(row.name), listType: parseListType(row.list_type), customerId: String(row.id) } : null;
   }
   return null;
+}
+
+/** The seat's own row for a carried-over contact, if it has one yet. Null is never an error here. */
+async function customerIdForReference(seatId: string, isTest: boolean, contactCrmId: number): Promise<string | null> {
+  if (!Number.isFinite(contactCrmId)) return null;
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_customers")
+    .select("id")
+    .eq("seat_id", seatId)
+    .eq("is_test", isTest)
+    .eq("reference_contact_crm_id", contactCrmId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error("[phoenix-crm] reference customer id not read", { seatId, message: error.message });
+    return null;
+  }
+  const row = (data ?? null) as Row | null;
+  return row ? String(row.id) : null;
 }
 
 /**
  * The Google Maps check, before anything is written (owner, 2026-10-03). A mismatch is REFUSED here, at
  * the door; a match or a hold is handed to the database with its evidence. Null for a customer the check
  * does not cover (a doctor's clinic, a pharmacy) or one this read could not name.
+ *
+ * 🔴 THE FIRST MISMATCH IS REFUSED AND RECORDED; THE SECOND ON THE SAME ACCOUNT IS HELD, NOT REFUSED
+ * AGAIN (`mismatchIsHeld`). A rep at the wrong door walks to the right one and passes on his next
+ * capture, so he never reaches the Super Admin's board; a rep standing at an account that MOVED cannot
+ * pass by standing anywhere, and before this his only ways out were a duplicate add request — refused
+ * by this same gate — or an out-of-list visit that scores in nothing. A hold is not a pass: the place
+ * is saved and NOT validated until the Super Admin decides it himself.
  */
-async function googleCheckForSave(subject: { name: string; listType: PhoenixCrmListType } | null, place: PlaceDraft): Promise<{ check: GooglePlaceCheck; record: Row } | null> {
+async function googleCheckForSave(
+  subject: ValidationSubject | null,
+  place: PlaceDraft,
+  who: { seatId: string; repHrId: string; isTest: boolean },
+): Promise<{ check: GooglePlaceCheck; record: Row } | null> {
   if (!subject) return null;
   const point = placePoint(place);
   const check = await checkPlaceOnGoogle({ customerName: subject.name, listType: subject.listType, point });
   if (!check) return null;
-  if (check.verdict.kind === "mismatch") throw validationError(googleMismatchMessage(subject.name));
+  if (check.verdict.kind === "mismatch") {
+    const priorRefusals = await countOffListingRefusals({ ...who, customerId: subject.customerId });
+    if (!mismatchIsHeld(priorRefusals)) {
+      // Recorded BEFORE the refusal is thrown, and awaited: an unawaited insert can die with the
+      // serverless invocation, and this row is what lets his next attempt through.
+      await recordOffListingRefusal({ ...who, customerId: subject.customerId, place });
+      throw validationError(googleMismatchMessage(subject.name));
+    }
+  }
   return { check, record: googleCheckRecord(check, point) };
 }
 
@@ -1417,9 +1467,9 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   // and did he stand at it. A mismatch throws here; a hold is saved but not validated.
   const subject =
     mode === "new" || mode === "outside"
-      ? { name: String(payload.name), listType: parseListType(payload.list_type) }
+      ? { name: String(payload.name), listType: parseListType(payload.list_type), customerId: null }
       : await validationSubject(seat.seatId, isTest, mode, body);
-  const google = await googleCheckForSave(subject, place.value);
+  const google = await googleCheckForSave(subject, place.value, { seatId: seat.seatId, repHrId: viewer.hrId, isTest });
   if (google?.check.verdict.kind === "match") payload.google = google.record;
   else if (google) payload.hold_review = google.record;
   payload.place = await placePayload(place.value);
@@ -1633,7 +1683,7 @@ export async function addPlace(
   // Another clinic is checked against Google exactly as the first one is (owner, 2026-10-03). Held, it
   // is saved and waits for the Super Admin; the customer, already validated, is not touched.
   const subject = await validationSubject(seat.seatId, isTest, "listed", { customerId: String(body.customerId).toLowerCase() });
-  const google = await googleCheckForSave(subject, place.value);
+  const google = await googleCheckForSave(subject, place.value, { seatId: seat.seatId, repHrId: viewer.hrId, isTest });
   const result = await callPhoenixCrm<Row>("phoenix_crm_add_place", {
     p: {
       seat_id: seat.seatId,

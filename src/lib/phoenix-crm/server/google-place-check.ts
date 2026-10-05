@@ -4,7 +4,8 @@
  * The rules are in ../google-place-rules.ts (owner, 2026-10-03); this file only asks Google and records
  * what it said, so the Super Admin reads the same evidence the system judged on. Four outcomes:
  *   match       → the validation is saved as before, the listing kept on the audit event;
- *   mismatch    → refused at the door, nothing saved;
+ *   mismatch    → refused at the door, nothing saved — AND the refusal is recorded, so a SECOND
+ *                 mismatch on the same account is held instead of refused again (`mismatchIsHeld`);
  *   no_listing  → saved, NOT validated, and held for the Super Admin (`phoenix_crm_validation_reviews`);
  *   far_listing → the same hold: the account's pin is over 1 km off, so it moved or the pin is old.
  *
@@ -68,7 +69,16 @@ export function googleCheckRecord(check: GooglePlaceCheck, point: PlacePoint): R
   const verdict = check.verdict;
   return {
     verdict: verdict.kind,
-    reason: verdict.kind === "no_listing" ? verdict.reason : verdict.kind === "far_listing" ? "listing_far" : null,
+    // A `mismatch` only ever reaches this record when it is being HELD rather than refused again
+    // (`mismatchIsHeld`), so its reason is the one the Super Admin's board prints for it.
+    reason:
+      verdict.kind === "no_listing"
+        ? verdict.reason
+        : verdict.kind === "far_listing"
+          ? "listing_far"
+          : verdict.kind === "mismatch"
+            ? "listing_off"
+            : null,
     query: check.query,
     checkedAt: check.checkedAt,
     point: { lat: point.lat, lon: point.lon, accuracyMeters: point.accuracyMeters, source: point.source },

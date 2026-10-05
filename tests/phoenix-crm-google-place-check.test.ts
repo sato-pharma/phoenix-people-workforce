@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   GOOGLE_MATCH_METERS,
   GOOGLE_STALE_PIN_METERS,
+  MISMATCH_REFUSALS_BEFORE_HOLD,
   LOCATION_CHECKING_PILL,
   LOCATION_CHECKING_TEXT,
   LOCATION_CHECKING_TITLE,
@@ -12,6 +13,7 @@ import {
   googleMismatchMessage,
   judgeGooglePlace,
   listingIsAccount,
+  mismatchIsHeld,
   type GoogleListing,
 } from "../src/lib/phoenix-crm/google-place-rules.ts";
 import { listRowAction } from "../src/lib/phoenix-crm/list-request-rules.ts";
@@ -150,19 +152,30 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   // ── The wiring: every save goes through the check, before anything is written ─
   const list = stripComments(readFileSync("src/lib/phoenix-crm/server/list.ts", "utf8"));
   const validate = /export async function validateCustomer\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
-  assert.ok(validate.includes("const google = await googleCheckForSave(subject, place.value);"), "validating checks the place on Google");
+  assert.ok(
+    validate.includes("const google = await googleCheckForSave(subject, place.value, { seatId: seat.seatId, repHrId: viewer.hrId, isTest });"),
+    "validating checks the place on Google, and hands over who is asking so a repeat refusal can be counted",
+  );
   assert.ok(
     validate.indexOf("googleCheckForSave(") < validate.indexOf('callPhoenixCrm<Row>("phoenix_crm_validate_customer"'),
     "and does it BEFORE the save, so a mismatch writes nothing",
   );
   assert.ok(validate.includes("else if (google) payload.hold_review = google.record;"), "an unsure account is saved as a hold");
   const helper = /async function googleCheckForSave\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
-  assert.ok(helper.includes('if (check.verdict.kind === "mismatch") throw validationError(googleMismatchMessage(subject.name));'), "a mismatch is refused at the door");
+  assert.ok(helper.includes('if (check.verdict.kind === "mismatch") {'), "a mismatch is the only verdict that can refuse");
+  assert.ok(helper.includes("throw validationError(googleMismatchMessage(subject.name));"), "and it is refused at the door with his own message");
   assert.equal((helper.match(/throw /g) ?? []).length, 1, "and nothing else is — a far pin, no listing and a failed lookup are all held");
+  // The second mismatch on the same account is HELD, so the refusal is reachable only through the count.
+  assert.ok(helper.includes("const priorRefusals = await countOffListingRefusals({ ...who, customerId: subject.customerId });"), "the count comes first");
+  assert.ok(helper.includes("if (!mismatchIsHeld(priorRefusals)) {"), "and only a mismatch that is NOT held refuses");
+  assert.ok(
+    helper.indexOf("await recordOffListingRefusal(") < helper.indexOf("throw validationError(googleMismatchMessage("),
+    "the refusal is recorded BEFORE it is thrown, and awaited — an unawaited insert can die with the invocation",
+  );
   const subject = /async function validationSubject\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
   assert.doesNotMatch(subject, /label/, "the account is judged on the customer's name on the list — never the place label the rep typed");
   const addPlace = /export async function addPlace\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
-  assert.ok(addPlace.includes("googleCheckForSave(subject, place.value)"), "another clinic is checked the same way");
+  assert.ok(addPlace.includes("googleCheckForSave(subject, place.value, { seatId: seat.seatId, repHrId: viewer.hrId, isTest })"), "another clinic is checked the same way");
   const decide = /export async function decideListRequest\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
   assert.ok(decide.includes("await pendingLocationReview(customerId)"), "SFE cannot admit a customer whose place the Super Admin has not decided");
 
@@ -172,6 +185,45 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   assert.match(reviews, /export async function decideValidationReview\([\s\S]*?if \(!canDecideValidationReviews\(viewer\)\) throw forbiddenError/, "the decision refuses everyone else");
   const page = stripComments(readFileSync("app/(admin)/admin/field-crm/validation-reviews/page.tsx", "utf8"));
   assert.match(page, /if \(!viewer \|\| !canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\);/, "and so does the page");
+
+  // ── §11. A refusal nobody can pass by standing anywhere is not a dead end ────
+  //
+  // The owner's reason for holding past 1 km was "a refusal there could never be passed by standing
+  // anywhere, so it would lock the hospital out" (2026-10-03). Inside the band the same thing happens
+  // at 300 m when an account moves and Google keeps its old pin. Measured 2026-10-05: a rep was
+  // refused twice on مستوصف صدر باجور, tried "Add new customer" as a way round — refused by the same
+  // gate, nothing written at all — and logged the call out-of-list, where it scores in nothing.
+  assert.equal(MISMATCH_REFUSALS_BEFORE_HOLD, 1, "one refusal, then a hold");
+  assert.equal(mismatchIsHeld(0), false, "the FIRST mismatch is refused — this is what keeps the wrong-door catch");
+  assert.equal(mismatchIsHeld(1), true, "the second on the same account is held for the Super Admin instead");
+  assert.equal(mismatchIsHeld(9), true, "and so is every one after it");
+
+  const check = stripComments(readFileSync("src/lib/phoenix-crm/server/google-place-check.ts", "utf8"));
+  assert.match(
+    check.replace(/\s+/g, " "),
+    /verdict\.kind === "mismatch" \? "listing_off"/,
+    "a held mismatch reaches the board as listing_off",
+  );
+  const queue = readFileSync("src/components/phoenix-crm/validation-review-queue.tsx", "utf8");
+  assert.match(queue, /listing_off:/, "and the board has words for it");
+  assert.doesNotMatch(queue, /listing_off:[\s\S]{0,400}?(lying|fraud|suspicious)/i, "which never accuse the rep of anything");
+
+  // The recorder and the count are the whole mechanism, and neither may cost the rep his refusal.
+  const refused = stripComments(readFileSync("src/lib/phoenix-crm/server/refused-readings.ts", "utf8"));
+  const record = /export async function recordOffListingRefusal\([\s\S]*?\n\}/.exec(refused)?.[0] ?? "";
+  assert.ok(record.includes('reason: "off_listing"'), "the refusal is filed under its own reason");
+  assert.ok(record.includes("catch"), "and never throws — a rep being refused must not then hit a 500");
+  const counted = /export async function countOffListingRefusals\([\s\S]*?\n\}/.exec(refused)?.[0] ?? "";
+  assert.ok(counted.includes("return 0;"), "a failed count answers zero, so the rep is refused as before rather than held on a number nobody has");
+  assert.ok(counted.includes('.eq("reason", "off_listing")') && counted.includes('.eq("subject_kind", "place")'), "and it counts only this kind of refusal");
+  assert.ok(counted.includes("input.repHrId.toUpperCase()"), "HR ids are mixed case in this database; the recorder upper-cases what it writes");
+
+  // The rep learns nothing new: a hold reads as the system checking, exactly as a no-listing hold does.
+  assert.equal(LOCATION_CHECKING_TITLE.includes("system"), true, "the hold is the system's, never a person's");
+
+  // The reason is a closed union, so the CHECK constraint has to know it too.
+  const offListing = readFileSync("supabase/migrations/20261005093000_phoenix_crm_refused_reading_off_listing.sql", "utf8");
+  assert.match(offListing, /check \(reason = any \(array\['no_fix'::text, 'rough'::text, 'off_listing'::text\]\)\)/, "the third reason is allowed by the table");
 
   // ── The migration holds the place without validating the customer ────────────
   const migration = readFileSync("supabase/migrations/20261003130536_phoenix_crm_google_place_check.sql", "utf8");

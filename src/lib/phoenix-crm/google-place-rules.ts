@@ -42,6 +42,33 @@ export const GOOGLE_MATCH_METERS = 150;
  */
 export const GOOGLE_STALE_PIN_METERS = 1000;
 
+/**
+ * 🔴 A REFUSAL THE REP CANNOT PASS BY STANDING ANYWHERE MUST NOT BE A DEAD END — so the SECOND
+ * mismatch on the same account is HELD for the Super Admin instead of refused again.
+ *
+ * The owner's reason for holding past GOOGLE_STALE_PIN_METERS was exactly this: "a refusal there could
+ * never be passed by standing anywhere, so it would lock the hospital out" (2026-10-03, Al-Menshawy).
+ * Inside the band the same thing happens at 300 m when an account moves down the road and Google keeps
+ * its old pin, and until this rule there was no way through it at all — measured 2026-10-05, when a rep
+ * was refused twice on مستوصف صدر باجور, tried "Add new customer" as a way round (refused by this same
+ * gate), and logged the call out-of-list, where it scores in nothing.
+ *
+ * 🔴 THE FIRST REFUSAL STILL STANDS, AND THAT IS WHAT KEEPS THE OWNER'S CATCH. A rep genuinely at the
+ * wrong door reads the refusal, walks to the right one and passes on his next capture — he never
+ * reaches the Super Admin's board. Only a rep refused again from the same place does, which is the one
+ * case a human has to look at. 🔴 AND A HOLD IS NOT AN APPROVAL: the place is saved and NOT validated
+ * until the Super Admin decides it himself.
+ */
+export const MISMATCH_REFUSALS_BEFORE_HOLD = 1;
+
+/**
+ * Whether this mismatch is held rather than refused again, from how many times this rep has already
+ * been refused on this account for standing off its listing.
+ */
+export function mismatchIsHeld(priorOffListingRefusals: number): boolean {
+  return priorOffListingRefusals >= MISMATCH_REFUSALS_BEFORE_HOLD;
+}
+
 /** Which customers get the check. */
 export function googleCheckApplies(listType: PhoenixCrmListType): boolean {
   return listType === "AM";

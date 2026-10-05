@@ -155,7 +155,7 @@ export type ValidationReviewRow = {
   /** The signboard photo, signed on the page by the CRM's own photo link (the Super Admin reads all). */
   photoPath: string | null;
   /** Why the system held it, and every listing Google returned for the name. */
-  reason: "no_confident_listing" | "lookup_failed" | "listing_far" | "refused_by_admin" | null;
+  reason: "no_confident_listing" | "lookup_failed" | "listing_far" | "listing_off" | "refused_by_admin" | null;
   query: string | null;
   listings: Array<GoogleListing & { distanceMeters: number }>;
   decidedByName: string | null;
@@ -231,7 +231,11 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
     const photoPath = text(place.photo_path);
     const status = row.status === "approved" || row.status === "rejected" ? row.status : "pending";
     const reason =
-      google.reason === "no_confident_listing" || google.reason === "lookup_failed" || google.reason === "listing_far" || google.reason === "refused_by_admin"
+      google.reason === "no_confident_listing" ||
+      google.reason === "lookup_failed" ||
+      google.reason === "listing_far" ||
+      google.reason === "listing_off" ||
+      google.reason === "refused_by_admin"
         ? google.reason
         : null;
     return {
