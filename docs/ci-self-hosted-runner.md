@@ -909,7 +909,9 @@ from another process and proves the step waits.
 SIGKILL, the kernel's OOM killer — during `Collecting page data using 3 workers`, **after**
 `✓ Compiled successfully`, taking ~300s to die where the measured figure for a whole build was 112s.
 That left the build as the one stage with no proof before `main`: a PR's CI does not build
-(`validate` builds only on non-PR events) and `remote-check all` is lint + typecheck + test.
+(`validate` builds only on non-PR events), so until 2026-10-05 the build first ran on the `main`
+commit itself. `remote-check all` now INCLUDES it — that omission is why this regression went
+unnoticed: `all` was what sessions ran, and it could not see the broken stage.
 
 🔴 **THE OBVIOUS FIX IS WRONG, AND THIS SECTION EXISTS SO NOBODY PAYS FOR IT TWICE.** Capping
 `next build` is the natural reading of "3 workers" plus "out of memory", and it does nothing. Four
@@ -935,16 +937,155 @@ invoked. It has no headroom at all, so it survives alone and dies beside anythin
 which is exactly what ~300s-to-die against ~118s-to-finish describes, and three concurrent checks
 have left this box at 250 MB available on their own.
 
-So the protection is the lock, not a number. The `build` entry now takes the same
-`/tmp/phx-typecheck.lock` as the section above, so a build waits for a typecheck instead of racing
-it into the OOM killer. Pinned by `tests/remote-check.test.ts`, watched failing with the lock
-removed and with a different lock path. 🔴 **Do not "improve" it by adding `PHX_BUILD_CPUS` or
+So the protection is a lock, not a number. 🔴 **Do not "improve" it by adding `PHX_BUILD_CPUS` or
 `NODE_OPTIONS` back** — and `ci.yml`'s `PHX_BUILD_CPUS: 4` is not a precedent: that is a different
 host with a different failure (47 visible CPUs and a thread-spawn abort, above), not this one.
 
-🔴 **And exit 137 is not a code error.** It reads like a compile failure and is not one — the build
-had already succeeded when it was killed, so a 137 here says nothing about the branch. Check `main`'s
-own `Build` step before spending a minute on it.
+#### The per-stage lock was not enough — corrected the same day
+
+The first fix gave the `build` entry the same `/tmp/phx-typecheck.lock` as the typecheck. **That was
+necessary and insufficient, and the very next build proved it**: on 2026-10-05 a build on a tree
+carrying that lock was OOM-killed at `Collecting page data using 3 workers` again, in 210s. Sampling
+the box immediately afterwards found two unrelated node processes holding **~4.7 GB** of the 7,740 MB,
+and minutes later a second `remote-check` running there — a `tsc --noEmit` at **5,499 MB**.
+
+The hole is plain once stated: **`lint` and `test` take no lock at all.** The typecheck lock
+serialises a build against a typecheck and against `ci.yml`'s Typecheck step, and against nothing
+else — so a second session running `all` collides on its two unguarded stages. The box is shared
+between concurrent sessions, and it also carries a standing preview dev server.
+
+**So the unit of exclusion is the RUN, not the stage.** `buildRunScript` now opens
+`/tmp/phx-remote-check.lock` on fd 9 and takes it for the whole run, releasing it when the SSH
+shell exits. Two details are load-bearing:
+
+- **A different lock file on purpose.** `flock(2)` locks an open file *description*, so taking
+  `/tmp/phx-typecheck.lock` at run level and again inside the typecheck would deadlock the run
+  against itself. The per-stage locks stay where they are, so `ci.yml`'s Typecheck step still
+  interlocks with them.
+- **It can never fail the run.** If the 30-minute wait elapses it prints why and proceeds, exactly
+  as `ci.yml`'s Typecheck step does. A lock that can turn a check red is a check people learn to
+  skip.
+
+🔴 **And exit 137 no longer reads as FAIL — it is NO VERDICT, exit 4.** It is SIGKILL from the OOM
+killer; the build had already printed `✓ Compiled successfully` when it was killed, so it says
+nothing about the branch. Reporting it as a failure is the cry-wolf shape: it blocks a push for a
+reason that is not true, and the standing pre-push step (AGENTS.md §7) is exactly the kind of gate
+that stops being read once it lies. A genuine failure still outranks a kill, so a run that both
+fails and is killed reports FAIL.
+
+#### And a lock cannot bind a branch that never heard of it — so the box is asked first
+
+The run-level lock closes the hole for runs launched from a branch that carries it. `remote-check`
+runs **the committed sha of whatever branch you invoke it from**, so every session still on a branch
+cut from `main` takes no lock at all. Measured 2026-10-05, with that change sitting unmerged on its
+own branch: **two `pnpm run test` runs on the box at once**, 1313s and 208s, and this session's suite
+took 1313s against the 463s it takes alone.
+
+So before anything is pushed, the existing one-round-trip state call also asks whether a run is
+already there, and `remote-check` **refuses** rather than queueing:
+
+```
+remote-check: the box is ALREADY running 1 remote-check run(s):
+    runs/932c1350f6e1-muv1a2b3-9xk2
+not starting a second one. … Wait for the run above to finish, or set PHX_CHECK_FORCE=1 …
+```
+
+Three things about it are deliberate:
+
+- **It refuses, it does not wait.** A lock makes the second run sit silently for up to thirty
+  minutes, which is indistinguishable from a hang — and it does nothing at all about an older
+  branch. A refusal naming the run already there is immediately actionable.
+- **It reads `/proc/*/cwd`, not a lock file and not `pgrep`.** Every version of this script, back to
+  before any of this existed, `cd`s into `runs/<id>` — so a process whose working directory is under
+  `runs/` **is** a live run, whatever branch launched it. A stale directory left by `kill -9` has no
+  process and is invisible here, which matters because `STALE_RUN_MINUTES` keeps such directories
+  for six hours.
+- 🔴 **It fails CLOSED.** The probe ends with `PROBE_OK`; without that marker the answer is
+  *unknown*, and unknown refuses. Reading "no output" as an idle box would turn every failed ssh
+  into a green light, which is the one direction this must never fail in.
+
+`PHX_CHECK_FORCE=1` overrides it for one command. Pinned by `tests/remote-check.test.ts`, which
+exercises `parseBusyProbe` directly rather than reading the source — including that two processes of
+one run are one run, and that four shapes of unreadable output each come back `known: false`.
+
+All of these behaviours are pinned in `tests/remote-check.test.ts` and were watched failing one at a
+time, each on its own named assertion: the run lock removed, the run lock pointed at the per-stage
+file, a second `exec 9>>` added to force the deadlock, the fall-through turned into `&&`, the 137
+branch collapsed to `R=FAIL`, the `exit 4` line dropped, and the caller's `status === 4` arm
+disabled. 🔴 **Run them through `tests/run-tests.ts`** — the file exports `runRemoteCheckTests` and
+`node tests/remote-check.test.ts` executes nothing, exits 0, and prints nothing at all, which is
+indistinguishable from a pass.
+
+#### A run can contain another run, so the lock path is an argument
+
+The run-level lock's first version hard-coded `/tmp/phx-remote-check.lock`. **That deadlocked the
+suite against itself.** `tests/remote-check.test.ts` section 9 launches two generated box scripts at
+once to prove each sees its own tree — and the suite itself runs **inside** a `remote-check` run that
+already holds that lock, so both inner scripts blocked on their own parent and waited out the full
+`flock -w 1800` fall-through. Measured 2026-10-05: the `test` stage sat at **31 minutes** with
+`flock -w 1800 9` waiting and fd 9 on `/tmp/phx-remote-check.lock` held by the outer run's bash.
+
+It does not hang — the fall-through is deliberate, so it eventually warns and proceeds — which is
+worse, because a 30-minute stall reads as contention rather than as a bug in the lock.
+
+`buildRunScript` now takes `lockFile`, defaulting to `BOX_LOCK_FILE` (the real path). A nested or
+test run passes its own file, which keeps the lock mechanism exercised without self-blocking, and
+the path is validated before it is spliced into bash. Pinned three ways: the argument is honoured,
+the **default** is still the real lock, and an unsafe path throws.
+
+#### A dropped ssh connection is not a failed branch — measured the same day
+
+The first run after the busy refusal shipped got as far as `--- lint PASS in 181s ---` and
+`--- typecheck PASS in 124s ---`, then printed
+
+```
+client_loop: send disconnect: Connection reset by peer
+remote-check: FAIL — 64ad8cbcd
+exit=255
+```
+
+and the shipping chain halted without pushing. **Nothing had failed.** 255 is ssh's own code for a
+connection that died; the generated box script only ever exits 0, 1, 3 or 4, so 255 can only have
+come from the transport. This is the same cry-wolf failure as the OOM kill, arriving from the other
+end of the pipe, and it is fixed in both directions:
+
+- **The cause.** `SSH_OPTS` now carries `ServerAliveInterval=30`, `ServerAliveCountMax=10` and
+  `TCPKeepAlive=yes`. `next build` prints nothing between "Collecting page data" and its summary, so
+  a run goes genuinely silent for minutes — exactly what a NAT or firewall idle timer reaps.
+  `CountMax 10` tolerates five minutes of an unreachable box before giving up, longer than any blip
+  seen here and far short of hanging for ever.
+- **The report.** `status === 255` exits **5** with `NO VERDICT` and says plainly that any stage
+  which printed `PASS` above really did pass — so a re-run can skip nothing but need not distrust
+  what it already saw.
+
+A test asserts the box script never emits `exit 255` itself: if it could, a real failure would read
+as a dropped connection, which is the inverse mistake and the more dangerous one.
+
+🔴 **AND THE STRANDED RUN KEEPS GOING, AND KEEPS THE LOCK — so "run it again" was the wrong
+advice.** Measured on the very run this arm was written for: after the client died, **four processes
+were still working under the run directory**, with a **live `sshd-session` ancestor** — the box had
+not noticed the client was gone. So neither "the connection died" nor "the sshd is gone" is a usable
+abandonment test from the box, and the only honest reading is that an abandoned run is
+indistinguishable from a live one *from the box side*. A plain re-run therefore meets its own
+predecessor and is refused by the busy probe.
+
+The session that launched it, though, knows its own run id — so the refusal now prints how to reap
+**one** run by its own directory, and says explicitly not to use a blanket `pkill`, which would take
+another session's live run with it:
+
+```
+ssh -i <key> phx@46.225.184.142   'for p in /proc/[0-9]*; do d=$(readlink "$p/cwd" 2>/dev/null) || continue;
+   case "$d" in */runs/<RUN_ID>*) kill -KILL ${p#/proc/};; esac; done'
+```
+
+The server-side fix — `ClientAliveInterval` in the box's `sshd_config`, which would make sshd notice
+and reap the session itself — is **not available to a session here**: `phx` has no passwordless
+sudo (`sudo -n` fails), so the box's sshd config cannot be changed from a check run.
+
+🔴 **A weak break reads as a missing test.** Changing `status === 255` to `status === 2550` did
+*not* fire the assertion — `255` is a substring of `2550`, so the regex still matched. The arm had
+to be removed outright, and `process.exit(5)` changed to `process.exit(1)`, before it fired. A break
+that does not fire is not evidence; it is a break that did not land.
 
 ### remote-check: one tree per invocation — 2026-10-01
 

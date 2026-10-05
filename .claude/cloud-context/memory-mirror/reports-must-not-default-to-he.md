@@ -141,5 +141,7 @@ minutes) **and re-run the guard on the merged tree.** It also surfaced the one r
 would otherwise have opened the PR `DIRTY`. Cross-check fingerprint tests too — `git grep -l
 createHash -- tests/` against the changed file list — though none pinned a changed file here.
 
+🟢 **THE DATABASE SURFACE WAS SWEPT TOO, AND IS CLEAN — do not re-sweep it.** The guard only reads `src/` and `app/`, so stored copy is structurally invisible to it. Measured on production 2026-10-05 across `email_templates`, `email_notification_policies`, `notification_templates`, `sato_email_templates` and `ats_whatsapp_message_templates`: **49 rows, all carrying text, ZERO masculine words**, with a neutral control firing on 6 rows so the regex is proven to match when the words are there. A zero with no positive control would have proved nothing.
+
 Related: [[a-green-test-run-carries-no-type-signal-at-all]],
 [[never-horizontal-scroll-always-mobile-and-desktop-friendly]], [[the-house-document-identity-standard]].

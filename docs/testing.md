@@ -138,7 +138,7 @@ gate hard-coded to a count from a doc does not merely wait — it waits for chec
 
 `node scripts/remote-check.mjs test` runs the unit suite on the preview box against the **committed**
 sha — about 133 s, nothing on the laptop, no Actions minutes — and a push follows only a final
-`remote-check: PASS — <sha>` for that exact sha. `all` (lint, typecheck, suite) replaces it when the
+`remote-check: PASS — <sha>` for that exact sha. `all` (lint, typecheck, suite, build — ~7 min) replaces it when the
 change adds a route, a file or a member of a closed union, because the suite runs with
 `--experimental-strip-types` and cannot see a type error. A docs-only push is not exempt: the module
 memory check and the AGENTS.md/CLAUDE.md size budgets run in the suite, and a docs-only PR has broken
