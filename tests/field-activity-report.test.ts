@@ -11,10 +11,18 @@ import {
   wallClock,
   weekdayOf,
   type FieldActivityCheckinRow,
+  type FieldActivityLeaveRow,
   type FieldActivitySubject,
+  type FieldActivityTripRow,
   type FieldActivityVisitRow,
 } from "../src/lib/field-activity/model.ts";
-import { bidi, clock12, tidyAddress } from "../src/lib/field-activity/document.ts";
+import {
+  bidi,
+  buildFieldActivityDocument,
+  clock12,
+  tidyAddress,
+} from "../src/lib/field-activity/document.ts";
+import { stripComments } from "./support/comment-strip.ts";
 import { defaultPeriod, resolvePeriod, MAX_PERIOD_DAYS } from "../src/lib/field-activity/period.ts";
 import { FIELD_ACTIVITY_ROLES, isFieldActivityRole } from "../src/lib/field-activity/access.ts";
 import { getNavigationSections } from "../src/config/system-navigation.ts";
@@ -461,5 +469,109 @@ export function runFieldActivityReportTests() {
       3,
       "every CRM read states its resigned-agent position explicitly rather than inheriting one",
     );
+  }
+
+  // ── the report speaks about anyone, so no masculine default ──────────────────────────────────
+  // Found on 2026-10-05 on a District Sales Manager's own page: the report called her "he" in six
+  // places and her outstation claim "His own phone fix". Measured on production the same day, the
+  // people this report can be run on are 88 women, 87 men and 31 with no gender recorded — so the
+  // masculine default was wrong for a MAJORITY of its own subjects, and reading the recorded
+  // gender instead would still have no answer for 31 of them. Neutral wording is the only form
+  // that is correct for every subject, which is why this is a ban and not a lookup.
+  {
+    const MASCULINE = /\b(?:he|his|him|himself)\b/i;
+
+    /** The match plus the prose around it, so a failure names the sentence and not just the word. */
+    function offence(haystack: string): string | null {
+      const hit = MASCULINE.exec(haystack);
+      if (!hit) return null;
+      const from = Math.max(0, hit.index - 70);
+      return `"${hit[0]}" in: …${haystack.slice(from, hit.index + 70).replace(/\s+/g, " ")}…`;
+    }
+
+    // The stripper itself must be able to see an offence, or both arms below pass by being blind.
+    assert.equal(offence("Where his phone put him"), `"his" in: …Where his phone put him…`);
+    assert.equal(offence("Where their phone put them"), null, "neutral prose is not flagged");
+    assert.equal(offence("the theme of the shepherd"), null, "a word merely CONTAINING 'he' is not a pronoun");
+
+    const trip: FieldActivityTripRow = {
+      allowance: 125,
+      approvedTotal: null,
+      capturedAccuracyMeters: 2.1,
+      capturedAt: "2026-09-20T13:02:02",
+      capturedLat: 30.9759767,
+      capturedLon: 31.1745033,
+      claimedTotal: 342.26,
+      destination: "A city",
+      distanceKm: 60.35,
+      durationMinutes: 104.8,
+      eligibility: "eligible",
+      evidenceGate: "complete",
+      fuel: 217.26,
+      meeting: 0,
+      minimumKm: 60,
+      other: 0,
+      recommendation: "auto_approve",
+      reference: "OUTSTATION-1",
+      status: "submitted",
+      submittedAt: "2026-09-20T10:03:19.171+00:00",
+      tickets: 0,
+      transport: "car",
+      tripDate: "2026-09-20",
+      workload: { am: 4, pm: 10, pharmacies: 0 },
+      workloadGate: "complete",
+    };
+    const leave: FieldActivityLeaveRow = {
+      balanceAfter: 9,
+      balanceBefore: 10,
+      dayPart: "Full day",
+      endDate: "2026-09-20",
+      hrDecisionAt: null,
+      managerDecisionAt: null,
+      managerName: "A Manager",
+      paymentStatus: "Paid",
+      reference: "LEAVE-1",
+      startDate: "2026-09-20",
+      status: "Approved",
+      submittedAt: null,
+      type: "Annual",
+    };
+
+    // One document per branch that carries prose. A single report cannot be both a field day and
+    // an approved-leave day, so the gendered sentences live on pages that never render together.
+    const pages: Array<[string, ReturnType<typeof run>]> = [
+      // stops + a map + the trip's own GPS fix: the three day headings and the fix label.
+      ["a field day with a trip", run({ visits: [visit()], checkins: [checkin()], trips: [trip] })],
+      // approved leave with a call against it: the "Where they were" fact and the contradiction note.
+      ["a leave day with a call on it", run({ visits: [visit()], leave: [leave] })],
+      // a logged call with no fix behind it: the "where they stood cannot be shown" note.
+      ["a day logged with no GPS", run({ visits: [visit()] })],
+    ];
+
+    for (const [label, report] of pages) {
+      const html = buildFieldActivityDocument({
+        generatedOn: "5 October 2026",
+        maps: report.days
+          .filter((day) => day.stops.length > 0)
+          .map((day) => ({ caption: "A caption.", dateIso: day.dateIso, svg: "<g></g>" })),
+        report,
+      });
+      // The house mark is a base64 data URI, and base64 uses "+" and "/" — so it can spell a
+      // word boundary around "his" by pure chance. That is not prose and must not fail this.
+      const found = offence(html.replace(/data:[^"')]+/g, ""));
+      assert.equal(found, null, `${label}: the rendered report must not assume the subject is a man — ${found}`);
+    }
+
+    // The map caption is assembled in the PDF route, which no unit test can execute, and the day
+    // notes are assembled in the model. Both are scanned at the source so a NEW label is caught
+    // where it is written rather than only on the one branch a fixture happens to reach.
+    for (const file of [
+      "app/api/admin/field-activity/pdf/route.ts",
+      "src/lib/field-activity/document.ts",
+      "src/lib/field-activity/model.ts",
+    ]) {
+      const found = offence(stripComments(readFileSync(file, "utf8")));
+      assert.equal(found, null, `${file}: user-visible prose must not assume the subject is a man — ${found}`);
+    }
   }
 }

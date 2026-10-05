@@ -85,8 +85,8 @@ export async function GET(request: Request) {
       });
       maps.push({
         caption:
-          `The ${day.stops.length} stop${day.stops.length === 1 ? "" : "s"} he was tagged on, numbered in check-in order.` +
-          (capture ? " The crosshair is his own phone fix when he opened the outstation claim." : "") +
+          `The ${day.stops.length} stop${day.stops.length === 1 ? "" : "s"} they were tagged on, numbered in check-in order.` +
+          (capture ? " The crosshair is their own phone fix when they opened the outstation claim." : "") +
           " Stops sharing a building are fanned out on leader lines back to the exact fix.",
         dateIso: day.dateIso,
         svg: renderRouteSvg({ basemap, height: MAP_HEIGHT, points, width: MAP_WIDTH, zoom }),

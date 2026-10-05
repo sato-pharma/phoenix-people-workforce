@@ -225,8 +225,11 @@ export function runPhoenixCrmRefusedReadingsTests() {
       assert.match(call[1], /\n      repHrId: viewer\.hrId,/, `${file}: and whose phone it was`);
       assert.match(call[1], /\n      isTest,/, `${file}: a test-world refusal is filed as one`);
     }
-    assert.ok(
-      source.includes('import { recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";'),
+    // The import may name the module's other entry points beside it (the off-listing refusal and its
+    // count, added 2026-10-05); what this pins is that the WRITE comes from the shared module.
+    assert.match(
+      source,
+      /import \{[^}]*\brecordRefusedReading\b[^}]*\} from "@\/lib\/phoenix-crm\/server\/refused-readings";/,
       `${file}: it is the shared recorder, never a second copy of the write`,
     );
     assert.equal(
