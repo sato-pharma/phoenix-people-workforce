@@ -1,0 +1,156 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Cairo:wght@400;600;700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{--roya:#d20000;--sag:#0384db;--ink:#0a1322;--soft:#69757e;--hair:#dde4e8;}
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{width:2480px;height:2552px;background:#000a26;
+       font-family:Inter,'Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;}
+  .sheet{position:relative;width:2480px;height:2552px;overflow:hidden;}
+
+  /* ---- the same navy field, depth and grain the cards themselves carry ---- */
+  .field{position:absolute;inset:0 0 670px 0;overflow:hidden;
+        background:radial-gradient(2600px 1900px at 50% 22%,#0b3685,#052462 36%,#001641 70%,#000a26 100%);}
+  .grain{position:absolute;inset:0;opacity:.055;mix-blend-mode:overlay;pointer-events:none;}
+  .vig{position:absolute;inset:0;pointer-events:none;
+        background:radial-gradient(1700px 1500px at 50% 30%,rgba(0,0,0,0) 42%,rgba(0,0,0,.44) 100%);}
+  .fr1{position:absolute;inset:49px;border:1px solid rgba(255,255,255,.15);pointer-events:none;}
+  .fr2{position:absolute;inset:63px;border:1px solid rgba(255,255,255,.055);pointer-events:none;}
+
+  .logo{position:absolute;left:97px;top:106px;height:110px;}
+  .seal{position:absolute;right:97px;top:99px;width:224px;height:224px;
+        border:1px solid rgba(255,255,255,.26);background:rgba(0,8,34,.46);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:17px;}
+  .seal b{font-family:'Playfair Display',serif;font-size:84px;font-weight:500;color:#fff;line-height:1;}
+  .seal i{width:64px;height:3px;background:linear-gradient(90deg,var(--roya),var(--sag));display:block;}
+  .seal span{font-size:17px;font-weight:700;letter-spacing:.22em;color:rgba(255,255,255,.66);}
+
+  .head{position:absolute;left:0;right:0;top:108px;text-align:center;}
+  .eyebrow{color:#67c2f6;font-size:22px;font-weight:600;letter-spacing:.36em;text-transform:uppercase;}
+  .sato{margin-top:36px;font-family:'Playfair Display',serif;font-size:51px;font-weight:400;
+        letter-spacing:.62em;text-indent:.62em;color:rgba(255,255,255,.80);}
+  .evt{margin-top:4px;font-family:'Playfair Display',serif;font-size:175px;font-weight:500;
+        letter-spacing:.03em;color:#fff;line-height:1.02;text-shadow:0 3px 30px rgba(0,0,0,.40);}
+  .ruleset{margin:34px auto 0;display:flex;align-items:center;justify-content:center;width:570px;}
+  .ruleset s{display:block;height:2px;flex:1;}
+  .ruleset s.r{background:linear-gradient(90deg,rgba(210,0,0,0),var(--roya));}
+  .ruleset s.b{background:linear-gradient(90deg,var(--sag),rgba(3,132,219,0));}
+  .ruleset em{width:15px;height:15px;background:#fff;transform:rotate(45deg);margin:0 21px;}
+  .where{margin-top:38px;color:rgba(255,255,255,.66);font-size:20px;font-weight:600;
+        letter-spacing:.34em;text-transform:uppercase;}
+
+  /* ---- the roster label: a rule measured to the words it carries ---- */
+  .glabel{position:absolute;left:0;right:0;top:566px;display:flex;align-items:center;
+        justify-content:center;gap:34px;color:rgba(255,255,255,.72);font-size:19px;
+        font-weight:700;letter-spacing:.34em;text-transform:uppercase;}
+  .glabel s{display:block;width:150px;height:1px;}
+  .glabel s:first-child{background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.46));}
+  .glabel s:last-child{background:linear-gradient(90deg,rgba(255,255,255,.46),rgba(255,255,255,0));}
+
+  .grid{position:absolute;left:97px;top:636px;display:grid;
+        grid-template-columns:repeat(5,430px);gap:34px;}
+  .grid img{display:block;width:430px;height:566px;
+        box-shadow:0 0 0 1px rgba(255,255,255,.16), 0 20px 46px rgba(0,0,0,.52);}
+
+  .seam{position:absolute;left:0;right:0;bottom:670px;height:12px;display:flex;z-index:4;}
+  .seam u{flex:1;display:block;background:var(--roya);}
+  .seam u+u{background:var(--sag);}
+
+  .foot{position:absolute;left:0;right:0;top:1882px;height:580px;background:#fff;}
+  .wm{position:absolute;left:1832px;top:-8px;width:640px;opacity:.15;pointer-events:none;}
+  .fcol{position:absolute;left:97px;top:42px;width:563px;}
+  .fcol dt{color:#8c98a4;font-size:15px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;}
+  .fcol dd{margin-top:14px;color:var(--ink);font-size:40px;font-weight:600;line-height:1.22;
+        letter-spacing:-.01em;}
+  .fcol .arf{margin-top:11px;font-family:Cairo,sans-serif;font-size:29px;color:var(--soft);}
+  .fcol hr{border:0;border-top:1px solid var(--hair);margin:21px 0;}
+  /* the two products, named - a rule measured to the word it underlines */
+  .vrule{position:absolute;left:700px;top:64px;bottom:64px;width:1px;background:var(--hair);}
+  .combo{position:absolute;left:760px;top:186px;}
+  .combo dt{color:#8c98a4;font-size:15px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;}
+  .combo .cn{display:inline-block;margin-top:18px;color:var(--ink);font-size:34px;font-weight:600;
+        letter-spacing:-.01em;}
+  .combo .cn b{font-weight:600;color:var(--soft);}
+  .combo .cn s{display:block;height:3px;margin-top:9px;}
+  .combo .cn.a s{background:var(--roya);}
+  .combo .cn.b s{background:var(--sag);}
+  .combo .plus{margin:15px 0 0;color:#9fabb4;font-size:27px;font-weight:500;line-height:1;}
+
+  .plock{position:absolute;right:246px;top:77px;height:480px;display:flex;align-items:flex-end;}
+  .plock img{display:block;
+        -webkit-box-reflect:below 1px linear-gradient(to bottom,rgba(255,255,255,.34),transparent 46%);}
+  .plock .p1{height:368px;margin-right:54px;position:relative;z-index:2;}
+  .plock .p2{height:350px;position:relative;z-index:1;}
+
+  .base{position:absolute;left:0;right:0;bottom:0;height:90px;background:#000a26;
+        display:flex;align-items:center;justify-content:space-between;padding:0 97px;}
+  .base span{color:rgba(255,255,255,.62);font-size:17px;font-weight:600;
+        letter-spacing:.3em;text-transform:uppercase;}
+</style></head><body>
+<div class="sheet">
+  <div class="field">
+    <svg class="grain" xmlns="http://www.w3.org/2000/svg"><filter id="gr"><feTurbulence
+      type="fractalNoise" baseFrequency="0.9" numOctaves="4" stitchTiles="stitch"/></filter>
+      <rect width="100%" height="100%" filter="url(#gr)"/></svg>
+    <div class="vig"></div>
+  </div>
+  <div class="fr1"></div><div class="fr2"></div>
+
+  <img class="logo" src="src/sato-pharma-reverse.png" alt="Sato Pharma">
+  <div class="seal"><b>06</b><i></i><span>OCT&nbsp;26</span></div>
+
+  <div class="head">
+    <div class="eyebrow">Round&nbsp;table&nbsp;discussion &nbsp;&middot;&nbsp; Otorhinolaryngology</div>
+    <div class="sato">SATO</div>
+    <div class="evt">ENT CIRCLE</div>
+    <div class="ruleset"><s class="r"></s><em></em><s class="b"></s></div>
+    <div class="where">Sharkia &nbsp;&middot;&nbsp; Zagazig &nbsp;&middot;&nbsp; 2026</div>
+  </div>
+
+  <div class="glabel"><s></s>Ten guests of honour<s></s></div>
+
+  <div class="grid"><img src="cards-D/SATO-ENT-CIRCLE-Sherif-Metwally.png" alt="Dr. Sherif Metwally">
+    <img src="cards-D/SATO-ENT-CIRCLE-Mohamed-Saeed-El-Gendy.png" alt="Dr. Mohamed Saeed El-Gendy">
+    <img src="cards-D/SATO-ENT-CIRCLE-Mohamed-Helmy.png" alt="Dr. Mohamed Helmy">
+    <img src="cards-D/SATO-ENT-CIRCLE-Sayed-El-Herbety.png" alt="Dr. Sayed El-Herbety">
+    <img src="cards-D/SATO-ENT-CIRCLE-Mohamed-Ezzat.png" alt="Dr. Mohamed Ezzat">
+    <img src="cards-D/SATO-ENT-CIRCLE-Mohamed-Zakaria.png" alt="Dr. Mohamed Zakaria">
+    <img src="cards-D/SATO-ENT-CIRCLE-Shady-Hendawy.png" alt="Dr. Shady Hendawy">
+    <img src="cards-D/SATO-ENT-CIRCLE-Ibrahim-Osman.png" alt="Dr. Ibrahim Osman">
+    <img src="cards-D/SATO-ENT-CIRCLE-Hassan-Mohamed.png" alt="Dr. Hassan Mohamed">
+    <img src="cards-D/SATO-ENT-CIRCLE-Wael-Afifi.png" alt="Dr. Wael Afifi"></div>
+
+  <div class="seam"><u></u><u></u></div>
+
+  <div class="foot">
+    <img class="wm" src="wm/sato-arabic-navy.png" alt="">
+    <div class="fcol">
+      <dt>Date</dt><dd>Tuesday 6 October 2026</dd>
+      <div class="arf">يوم الثلاثاء ٦ أكتوبر</div>
+      <hr>
+      <dt>Time</dt><dd>10:30 PM</dd>
+      <div class="arf">الساعة ١٠:٣٠ مساءً</div>
+      <hr>
+      <dt>Venue</dt><dd>Oriental Restaurant, Zagazig</dd>
+      <div class="arf">مطعم أورينتال – الزقازيق</div>
+    </div>
+    <div class="vrule"></div>
+    <div class="combo">
+      <dt>In combination</dt>
+      <div><span class="cn a">Royafloxacin <b>500&nbsp;mg</b><s></s></span></div>
+      <div class="plus">+</div>
+      <div><span class="cn b">Saginkgo <b>120&nbsp;mg</b><s></s></span></div>
+    </div>
+    <div class="plock">
+      <img class="p1" src="packshots/royafloxacin-carton.png" alt="Royafloxacin 500 mg">
+      <img class="p2" src="packshots/saginkgo-carton.png" alt="Saginkgo 120 mg">
+    </div>
+  </div>
+
+  <div class="base">
+    <span>Sato Pharma &nbsp;&middot;&nbsp; Delta&nbsp;3</span>
+    <span>www.satopharma.com</span>
+  </div>
+</div>
+</body></html>
