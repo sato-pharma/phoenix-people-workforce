@@ -162,7 +162,12 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
   );
 }
 
-export function ValidatedPlaceList({ rows }: { rows: ValidatedPlaceRow[] }) {
+/**
+ * `showSearch` is false when the board above owns the filtering (the Place checks page) — the list is
+ * then handed rows that are already narrowed, and its own search box would be a second, confusing one.
+ * It stays true by default so the component keeps its own search anywhere it is used on its own.
+ */
+export function ValidatedPlaceList({ rows, showSearch = true }: { rows: ValidatedPlaceRow[]; showSearch?: boolean }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
 
@@ -179,22 +184,24 @@ export function ValidatedPlaceList({ rows }: { rows: ValidatedPlaceRow[] }) {
 
   return (
     <div className="min-w-0 space-y-3">
-      <div className="px-4 pt-4 md:max-w-md">
-        <CrmSearchField
-          id="validated-place-search"
-          label="Find a customer, a rep or a territory"
-          onChange={(next) => {
-            setQuery(next);
-            setPage(1);
-          }}
-          placeholder="Name, rep, brick or area"
-          value={query}
-        />
-      </div>
+      {showSearch ? (
+        <div className="px-4 pt-4 md:max-w-md">
+          <CrmSearchField
+            id="validated-place-search"
+            label="Find a customer, a rep or a territory"
+            onChange={(next) => {
+              setQuery(next);
+              setPage(1);
+            }}
+            placeholder="Name, rep, brick or area"
+            value={query}
+          />
+        </div>
+      ) : null}
 
       {found.length === 0 ? (
         <div className="px-4 pb-4">
-          <CrmEmpty message="Nothing here matches what you typed." title="No validation found" />
+          <CrmEmpty message={showSearch ? "Nothing here matches what you typed." : "Nothing here matches these filters."} title="No validation found" />
         </div>
       ) : (
         <>
