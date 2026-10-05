@@ -473,7 +473,15 @@ export function normalizeRows(
       }
     }
 
-    const customerCode = firstValue(row, header, profile.customerCodeColumns);
+    // Customer key: the code column, falling back to the NAME when the code is blank and the profile
+    // opts in (El Qema — owner 2026-10-05, "map by id if not available fall back to name"). The name
+    // then feeds everything below exactly as a code would: the crosswalk lookup, the self-heal check,
+    // and the exception's rawCustomerCode (so an unmapped name is a mappable customer unknown, not a
+    // silently-dropped footer). A row with neither a code nor a name stays a blank-customer footer.
+    let customerCode = firstValue(row, header, profile.customerCodeColumns);
+    if (!customerCode && profile.customerKeyNameFallback) {
+      customerCode = firstValue(row, header, profile.customerNameColumns);
+    }
     const distKey = normalizeCodeKey(profile.distributorCode);
     const customerKey = customerCode ? `${distKey} ${normalizeCodeKey(customerCode)}` : null;
     const customerCanon = customerCode ? numericCanonicalKey(customerCode) : null;

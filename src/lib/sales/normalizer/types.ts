@@ -69,6 +69,15 @@ export type DistributorProfile = {
   blankCustomerBehavior?: "skip" | "error";
   customerCodeColumns?: string[];
   customerNameColumns?: string[];
+  // Owner rule 2026-10-05, El Qema only: "map by id if not available fall back to name". When true and
+  // a row's customer-CODE cell is blank, the engine uses the customer NAME as the customer key — so the
+  // row resolves through the SAME customer→brick crosswalk and surfaces in the SAME mapping UI as a
+  // code would. El Qema's distributor stopped filling ACCOUNT_ID in some monthly exports (the Sept file
+  // left it and رقم الصنف blank on every row), leaving the name as the sole customer identity; without
+  // this, every such row was treated as a locationless footer and silently skipped. The crosswalk is
+  // keyed by `${distributor} ${normalizeCodeKey(customer_code)}`, stable for an Arabic name. Other
+  // distributors keep the strict default (a blank code is a footer row), so nothing else changes.
+  customerKeyNameFallback?: boolean;
   customerAddressColumns?: string[];
   // When set, bypasses detectDayFirst() entirely. All Egyptian distributors use DD-MM-YYYY.
   // ISO dates (YYYY-MM-*) and real Excel Date objects are unaffected regardless of this setting.

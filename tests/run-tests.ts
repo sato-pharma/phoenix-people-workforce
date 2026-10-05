@@ -2236,6 +2236,7 @@ import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone
 import { runNormalizerInvoiceDayImpossibleYearTests } from "./normalizer-invoice-day-never-an-impossible-year.test.ts";
 import { runNormalizerSoficoExcelSerialDateTests } from "./normalizer-reads-sofico-excel-serial-billing-dates.test.ts";
 import { runNormalizerBonusNeverDropsPaidUnitsTests } from "./normalizer-bonus-never-drops-paid-units.test.ts";
+import { runNormalizerQemaNameFallbackTests } from "./normalizer-qema-name-fallback.test.ts";
 import { runVisualAidsTests } from "./visual-aids.test.ts";
 import { runProfileFreeGoodsFlagLabelTests } from "./profile-free-goods-flag-label.test.ts";
 import { runNormalizerMecMonthColumnTests } from "./normalizer-reads-mec-month-column.test.ts";
@@ -8482,6 +8483,11 @@ await runTest(
 await runTest(
   "a bonus never drops paid units: an El Qema line carrying paid packs (الكمية) and a bonus count (بونص), even a bonus of 1, imports at its paid packs, valued at units times factory price with nothing added for the bonus, while EPDA's is_bonus flag still skips a free-goods line, and no profile maps a bonus count as a free-goods flag",
   runNormalizerBonusNeverDropsPaidUnitsTests,
+);
+
+await runTest(
+  "El Qema name fallback (owner 2026-10-05, 'map by id if not available fall back to name'): a blank-ACCOUNT_ID row with a mapped customer NAME imports onto the mapped brick; a code still wins when present; an UNMAPPED name surfaces as a mappable customer unknown (not a silently-dropped footer); a row with neither code nor name stays a footer; and a profile WITHOUT the flag skips the named-but-codeless row, so no other distributor is affected",
+  runNormalizerQemaNameFallbackTests,
 );
 
 await runTest(
