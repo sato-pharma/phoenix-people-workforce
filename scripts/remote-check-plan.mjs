@@ -48,6 +48,56 @@ export function runPaths(remoteRoot, runId) {
   };
 }
 
+// 🔴 A LOCK CANNOT BIND A BRANCH THAT HAS NEVER HEARD OF IT, SO THE BOX IS ASKED BEFORE ANYTHING
+// STARTS. `remote-check` runs the committed sha of whatever branch it is invoked from, so the
+// run-level lock in buildRunScript only protects runs launched from a branch that already carries
+// it. Measured 2026-10-05, while that very change sat unmerged: two `pnpm run test` runs on the box
+// at once, 1313s and 208s, and this session's suite took 1313s against the 463s it takes alone.
+//
+// Refusing beats waiting. A lock makes the second run sit silently for up to thirty minutes, which
+// is indistinguishable from a hang, and it does nothing at all about an older branch. A refusal
+// that names what is already running is immediately actionable and works against every branch.
+//
+// The probe reads /proc rather than a lock file or `pgrep`, because it must see runs that predate
+// this code: every version of this script `cd`s into its own run directory, so a process whose CWD
+// is under runs/ IS a live run. A stale directory left by `kill -9` has no process and is invisible
+// here — which is the point, since STALE_RUN_MINUTES keeps such directories around for six hours.
+export function buildBusyProbeScript(remoteRoot) {
+  const runs = runPaths(remoteRoot, "x").runsDir;
+  return [
+    "set -u",
+    'for p in /proc/[0-9]*; do',
+    '  c=$(readlink "$p/cwd" 2>/dev/null) || continue',
+    '  case "$c" in',
+    '    ' + runs + '/*)',
+    '      r=${c#' + runs + '/}; r=${r%%/*}',
+    '      echo "RUN $r $(cat "$p/stat" 2>/dev/null | awk \'{print $22}\')"',
+    "      ;;",
+    "  esac",
+    "done",
+    "echo PROBE_OK",
+  ].join("\n") + "\n";
+}
+
+/**
+ * Turn the probe's output into the distinct run ids currently live on the box.
+ *
+ * 🔴 ABSENT OUTPUT IS NOT AN IDLE BOX. The probe ends with PROBE_OK, and without that marker the
+ * answer is "unknown" — an ssh that failed, a box with no /proc, a truncated read. Reporting
+ * unknown as idle would turn every probe failure into a green light, which is the one direction
+ * this must never fail in.
+ */
+export function parseBusyProbe(output) {
+  const text = typeof output === "string" ? output : "";
+  if (!text.split("\n").some((line) => line.trim() === "PROBE_OK")) return { known: false, runs: [] };
+  const runs = new Set();
+  for (const line of text.split("\n")) {
+    const m = /^RUN ([0-9a-z][0-9a-z-]{7,80})(?:\s|$)/.exec(line.trim());
+    if (m) runs.add(m[1]);
+  }
+  return { known: true, runs: [...runs].sort() };
+}
+
 function assertInputs(sha, runId) {
   if (!SHA_RE.test(sha)) throw new Error("remote-check: not a full 40-character sha: " + sha);
   if (!RUN_ID_RE.test(runId)) throw new Error("remote-check: unsafe run id: " + runId);
@@ -89,20 +139,67 @@ function privateTree({ remoteRoot, runId, sha, prelude }) {
   ];
 }
 
+// How long a run waits for exclusive use of the box before giving up and running anyway.
+export const BOX_LOCK_WAIT_SECONDS = 1800;
+
 // `steps` is [{ name, command }]; `install` is the bash that installs dependencies.
-export function buildRunScript({ remoteRoot, runId, sha, steps, install, prelude = [] }) {
+// 🔴 THE LOCK PATH IS AN ARGUMENT, BECAUSE A RUN CAN CONTAIN ANOTHER RUN. The unit suite's own
+// section 9 launches two generated scripts at once to prove each sees its own tree — and the suite
+// itself runs INSIDE a run that already holds this lock, so with one hard-coded path the inner
+// scripts blocked on their own parent and waited out the whole 1800s fall-through, twice. Measured
+// 2026-10-05: the `test` stage sat at 31 minutes with `flock -w 1800 9` waiting and fd 9 on
+// /tmp/phx-remote-check.lock held by the outer run. The default is what a real run uses; a nested
+// or test run passes its own file, which keeps the lock mechanism exercised without self-blocking.
+export const BOX_LOCK_FILE = "/tmp/phx-remote-check.lock";
+
+export function buildRunScript({ remoteRoot, runId, sha, steps, install, prelude = [], lockFile = BOX_LOCK_FILE }) {
+  if (typeof lockFile !== "string" || !/^[A-Za-z0-9._\/-]+$/.test(lockFile)) {
+    throw new Error("unsafe lock file path: " + String(lockFile));
+  }
   const lines = privateTree({ remoteRoot, runId, sha, prelude });
+
+  // 🔴 ONE RUN OWNS THE BOX, BECAUSE PER-STAGE LOCKING LEFT TWO STAGES UNGUARDED AND THAT IS WHAT
+  // KILLED A BUILD. The box is 7,740 MB and `next build` needs about 7.4 GB of it, so it survives
+  // alone and dies beside anything substantial. #5333 put the build behind the typecheck lock,
+  // which serialises it against a typecheck and against ci.yml's Typecheck step — but NOT against
+  // another session's `lint` or `test`, which take no lock at all. Measured 2026-10-05: a build on
+  // an otherwise-identical tree was OOM-killed at "Collecting page data using 3 workers" while two
+  // other node processes on the box held ~4.7 GB, and a second remote-check (a 5.5 GB
+  // `tsc --noEmit`) was running there minutes later. Four earlier runs on an idle box all passed.
+  //
+  // So the unit of exclusion is the RUN, not the stage. The lock file differs from the per-stage
+  // one on purpose: flock(2) locks an open file DESCRIPTION, so taking /tmp/phx-typecheck.lock
+  // here and again inside the typecheck would deadlock this run against itself.
+  //
+  // It never fails the run. If the wait elapses it says so and proceeds, exactly as ci.yml's
+  // Typecheck step does — a lock that can turn a check red teaches people to skip the check.
+  lines.push("exec 9>>" + lockFile);
+  lines.push(
+    "flock -w " + BOX_LOCK_WAIT_SECONDS + " 9 || " +
+      'echo "remote-check: waited ' + BOX_LOCK_WAIT_SECONDS / 60 +
+      ' minutes for the box lock — running anyway, so a slow stage here may be contention" >&2',
+  );
+
   lines.push("FAILED=0");
+  lines.push("KILLED=0");
   lines.push(install + " || { echo 'install failed'; exit 1; }");
   lines.push("same_tree install");
   for (const { name, command } of steps) {
     if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error("remote-check: unsafe check name: " + name);
+    // 🔴 EXIT 137 IS THE KERNEL OOM KILLER AND SAYS NOTHING ABOUT THE CODE — it must not read as
+    // FAIL. A build prints `✓ Compiled successfully` and is killed after, so reporting that as a
+    // failure sends a session hunting an error that does not exist, and makes the standing
+    // pre-push step cry wolf — which is how a gate stops being read at all.
     lines.push(
       'echo ""; echo "=== ' + name + ' ==="; S=$(date +%s); ' +
-        "if " + command + "; then R=PASS; else R=FAIL; FAILED=1; fi; " +
+        "if " + command + "; then R=PASS; else RC=$?; " +
+        'if [ "$RC" = 137 ]; then R=OOM-KILLED; KILLED=1; else R=FAIL; FAILED=1; fi; fi; ' +
         'E=$(date +%s); same_tree ' + name + '; echo "--- ' + name + ' $R in $((E-S))s ---"',
     );
   }
+  // A real failure outranks a kill. Otherwise a kill is NO VERDICT (4), never PASS: nothing was
+  // learned about this sha, and the caller must not read silence as a green light.
+  lines.push('if [ "$FAILED" = 0 ] && [ "$KILLED" = 1 ]; then exit 4; fi');
   lines.push("exit $FAILED");
   return lines.join("\n") + "\n";
 }

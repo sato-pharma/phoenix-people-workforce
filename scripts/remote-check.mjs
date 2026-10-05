@@ -20,7 +20,7 @@
 //
 //   node scripts/remote-check.mjs typecheck
 //   node scripts/remote-check.mjs lint test
-//   node scripts/remote-check.mjs all          # lint, typecheck, unit suite
+//   node scripts/remote-check.mjs all          # lint, typecheck, unit suite, build (~7 min)
 //   node scripts/remote-check.mjs lockfile     # regenerate pnpm-lock.yaml and bring it back
 //
 // 🔴 WHY `lockfile` IS HERE, AND WHY IT IS NOT A CHECK. Until 2026-09-30 there was no sanctioned place
@@ -69,7 +69,14 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { buildLockfileScript, buildRunScript, newRunId, runPaths } from "./remote-check-plan.mjs";
+import {
+  buildBusyProbeScript,
+  buildLockfileScript,
+  buildRunScript,
+  newRunId,
+  parseBusyProbe,
+  runPaths,
+} from "./remote-check-plan.mjs";
 
 const HOST = process.env.PHX_CHECK_HOST || "46.225.184.142";
 const USER = process.env.PHX_CHECK_USER || "phx";
@@ -138,12 +145,33 @@ const CHECKS = {
   // one. Account: docs/ci-self-hosted-runner.md, "The build OOM was contention, not size".
   build: "flock -w 1200 /tmp/phx-typecheck.lock corepack pnpm run build",
 };
-const ALL = ["lint", "typecheck", "test"];
+// 🔴 `build` IS IN `all` BECAUSE IT IS THE ONE STAGE NOTHING ELSE EVER RUNS BEFORE `main`.
+//
+// A PR's CI does not build — ci.yml's Build step is gated off pull requests — so until this, the
+// build first ran on the `main` commit itself, where a failure does not go red loudly: it makes
+// Railway WITHHOLD the production deploy (AGENTS.md §2.3), which looks exactly like a successful
+// one until `/api/healthz` `revision` is read. `all` leaving it out is how the exit-137 regression
+// sat unnoticed: `all` was the thing sessions ran, and it could not see the broken stage.
+//
+// It goes LAST so the cheap verdicts print first; the runner does not stop at a failure, so this
+// costs reading order only. Measured 2026-10-05 on the box: ~118s, taking `all` from roughly five
+// minutes to seven. That is the price of the only pre-merge proof this stage has.
+const ALL = ["lint", "typecheck", "test", "build"];
 
+// 🔴 KEEPALIVES, BECAUSE A STAGE CAN BE SILENT FOR MINUTES AND A DROPPED CONNECTION LOOKS LIKE A
+// FAILED BRANCH. `next build` prints nothing between "Collecting page data" and its summary, and a
+// run that goes quiet is what a NAT or firewall idle timer reaps: measured 2026-10-05,
+// `client_loop: send disconnect: Connection reset by peer` arrived after two stages had already
+// passed, ssh exited 255, and the run was reported FAIL. ServerAliveInterval keeps the channel warm
+// without any output of its own; CountMax 10 tolerates five minutes of a genuinely unreachable box
+// before giving up, which is longer than any blip measured here and far short of hanging for ever.
 const SSH_OPTS = [
   "-o", "StrictHostKeyChecking=accept-new",
   "-o", "BatchMode=yes",
   "-o", "ConnectTimeout=20",
+  "-o", "ServerAliveInterval=30",
+  "-o", "ServerAliveCountMax=10",
+  "-o", "TCPKeepAlive=yes",
   "-i", KEY,
 ];
 
@@ -254,16 +282,53 @@ console.log("             " + branch + " @ " + sha.slice(0, 9));
 const runId = newRunId(sha);
 const paths = runPaths(REMOTE_ROOT, runId);
 
-// One round trip: create the bare repo if this is the first run, and report whether CI is busy.
+// One round trip: create the bare repo if this is the first run, report whether CI is busy, and
+// ask whether another remote-check run is already on the box.
 const state = ssh(
   "set -e\n" +
     "mkdir -p " + REMOTE_ROOT + "\n" +
     "[ -d " + BARE + " ] || git init -q --bare " + BARE + "\n" +
-    "if pgrep -f Runner.Worker >/dev/null 2>&1; then echo BUSY; else echo IDLE; fi\n",
+    "if pgrep -f Runner.Worker >/dev/null 2>&1; then echo BUSY; else echo IDLE; fi\n" +
+    buildBusyProbeScript(REMOTE_ROOT),
   { capture: true },
 );
 if (state.includes("BUSY")) {
   console.log("             ⚠ a CI job is running on the box — 4 vCPU shared, both will be slower");
+}
+
+// 🔴 REFUSE RATHER THAN QUEUE. The run-level lock inside the box script only binds runs launched
+// from a branch that carries it, and `remote-check` runs the committed sha of whatever branch you
+// invoke it from — so every session still on `main` takes no lock at all. Measured 2026-10-05: two
+// unit suites on the box at once, this session's taking 1313s against 463s alone, and a build that
+// wants ~7.4 GB of a 7,740 MB box was OOM-killed beside exactly that kind of company.
+//
+// A refusal, not a wait: a lock makes the second run sit silently for up to half an hour, which
+// reads as a hang, and it cannot reach an older branch at all. Nothing has been pushed yet at this
+// point, so refusing here costs the box nothing.
+const busy = parseBusyProbe(state);
+if (!busy.known) {
+  // The probe is the one place this must not fail open: "no output" is an ssh that failed or a box
+  // that answered oddly, never proof that the box is idle.
+  die("could not tell whether the box is busy — the probe did not finish. Nothing was pushed.");
+}
+if (busy.runs.length > 0 && process.env.PHX_CHECK_FORCE !== "1") {
+  console.error("remote-check: the box is ALREADY running " + busy.runs.length + " remote-check run(s):");
+  for (const run of busy.runs) console.error("    runs/" + run);
+  console.error("");
+  console.error("    A run whose ssh connection DIED keeps going on the box and keeps the lock — its");
+  console.error("    sshd session stays alive, so nothing on the box can tell it is abandoned. If one of");
+  console.error("    the runs above is yours and you know it was stranded, reap that one by its own");
+  console.error("    directory (never a blanket pkill, which would take another session's live run):");
+  console.error("");
+  console.error("      ssh -i " + KEY + " " + USER + "@" + HOST + " \\");
+  console.error("        'for p in /proc/[0-9]*; do d=$(readlink \"$p/cwd\" 2>/dev/null) || continue;" +
+    " case \"$d\" in */runs/<RUN_ID>*) kill -KILL ${p#/proc/};; esac; done'");
+  console.error("");
+  die(
+    "not starting a second one. This box is 7,740 MB and a build alone wants ~7.4 GB of it, so a " +
+      "concurrent run is how a check gets OOM-killed or reports a time that is really contention. " +
+      "Wait for the run above to finish, or set PHX_CHECK_FORCE=1 if you know it is harmless.",
+  );
 }
 
 try {
@@ -343,6 +408,33 @@ if (status === 3) {
   // some other commit, so this must never read as either a pass or a fail of this one.
   console.log("remote-check: NO VERDICT — the box's tree changed during the run; nothing above is about " + sha.slice(0, 9));
   process.exit(3);
+}
+if (status === 4) {
+  // 🔴 A STAGE WAS OOM-KILLED (exit 137), AND THAT IS NOT A FAILURE OF THE CODE. The box is
+  // 7,740 MB and the build alone wants about 7.4 GB of it, so a stage can be killed by whatever
+  // else happens to be running there — another session's check, or the standing preview server.
+  // Calling that FAIL is the cry-wolf failure: it blocks a push for a reason that is not true, and
+  // a step people learn to override stops protecting anything. Nothing is claimed about this sha.
+  console.log("remote-check: NO VERDICT — a stage was OOM-killed on the box (exit 137), so nothing above is a verdict on " + sha.slice(0, 9));
+  console.log("             The box is shared. Run it again; this run already held the box lock, so something outside remote-check was using it.");
+  process.exit(4);
+}
+if (status === 255) {
+  // 🔴 255 IS SSH'S OWN "THE CONNECTION DIED" CODE, NOT A VERDICT ABOUT THE BRANCH. The generated
+  // box script only ever exits 0, 1, 3 or 4, so 255 can only have come from the transport — measured
+  // 2026-10-05: `client_loop: send disconnect: Connection reset by peer` arrived after `lint PASS`
+  // and `typecheck PASS`, and the run was reported as FAIL, which halted a push for a dropped TCP
+  // connection. Same cry-wolf failure as the OOM kill, from the other end of the pipe.
+  console.log("remote-check: NO VERDICT — the ssh connection to the box dropped (exit 255), so nothing above is a verdict on " + sha.slice(0, 9));
+  console.log("             Any stage that printed PASS above really did pass.");
+  // 🔴 THE REMOTE RUN SURVIVES THE DROP, AND SO DOES ITS LOCK. Measured 2026-10-05 on the run this
+  // arm was written for: after the client died, four processes were still working under the run
+  // directory with a LIVE `sshd-session` ancestor — the box had not noticed the client was gone, so
+  // "the sshd is gone" is not a usable abandonment test either. A plain re-run therefore meets its
+  // own predecessor and is refused by the busy probe above, which prints how to reap it.
+  console.log("             The run is STILL GOING on the box and still holds the lock — a re-run will be refused");
+  console.log("             by the busy probe, which prints how to reap that one run by its directory.");
+  process.exit(5);
 }
 console.log(status === 0 ? "remote-check: PASS — " + sha.slice(0, 9) : "remote-check: FAIL — " + sha.slice(0, 9));
 process.exit(status);

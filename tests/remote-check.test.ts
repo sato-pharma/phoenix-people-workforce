@@ -4,7 +4,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import os from "node:os";
 import path from "node:path";
 
-import { buildRunScript, newRunId, runPaths } from "../scripts/remote-check-plan.mjs";
+import {
+  buildBusyProbeScript,
+  buildRunScript,
+  newRunId,
+  parseBusyProbe,
+  runPaths,
+} from "../scripts/remote-check-plan.mjs";
 
 // scripts/remote-check.mjs runs the heavy checks on the self-hosted CI box instead of this laptop.
 // Its whole value is that NOTHING heavy executes locally, so the invariants worth pinning are about
@@ -74,6 +80,26 @@ export async function runRemoteCheckTests(): Promise<void> {
       JSON.stringify(buildCmd),
   );
 
+  // 2e — and `all` must INCLUDE the build. This is the one stage nothing else runs before `main`:
+  // ci.yml's Build step is gated off pull requests, so without it here the build first executes on
+  // the `main` commit, where a failure does not go red loudly — it makes Railway WITHHOLD the
+  // production deploy (AGENTS.md §2.3), which is indistinguishable from a successful one until
+  // `/api/healthz` `revision` is read. `all` omitting it is how the exit-137 regression went
+  // unnoticed: `all` was what sessions ran, and it could not see the broken stage.
+  const allList = SRC.match(/^const ALL = \[([^\]]*)\]/m)?.[1] ?? "";
+  assert.ok(
+    /"build"/.test(allList),
+    "`all` no longer includes the build. A PR's CI never builds, so dropping it here leaves the "
+      + "stage with NO pre-merge proof at all, and a failure first appears as a withheld production "
+      + "deploy rather than as a red check. ALL read: [" + allList + "]",
+  );
+  for (const name of ["lint", "typecheck", "test"]) {
+    assert.ok(
+      new RegExp('"' + name + '"').test(allList),
+      "`all` no longer includes " + name + " — ALL read: [" + allList + "]",
+    );
+  }
+
   // 3 — it must not use the runner's own working directory. A CI job owns ~/actions-runner/_work
   // and cleans it between runs; sharing it makes a real CI run fail for reasons nobody can
   // reproduce, and a persistent runner already has stale-state hazards of its own.
@@ -134,6 +160,61 @@ export async function runRemoteCheckTests(): Promise<void> {
       "print PASS or FAIL for a commit it never checked.",
   );
 
+  // 7b — THE BOX IS ASKED WHETHER IT IS BUSY, AND THE ANSWER FAILS CLOSED.
+  //
+  // The run-level lock cannot bind a branch cut before it existed, because remote-check runs the
+  // committed sha of whatever branch you invoke it from. The probe is what reaches those runs: it
+  // resolves /proc/*/cwd, so it sees ANY version of this script, which all `cd` into runs/<id>.
+  {
+    const probe = buildBusyProbeScript("/home/phx/remote-check");
+    assert.match(probe, /\/proc\/\[0-9\]\*/, "the probe must read /proc, so it sees runs older than this code");
+    assert.match(probe, /\/home\/phx\/remote-check\/runs\//, "the probe must look under this box's runs directory");
+    assert.match(probe, /echo PROBE_OK/, "the probe must mark its own completion, or a failed ssh reads as an idle box");
+    assert.ok(
+      !/pgrep|lsof|fuser/.test(probe),
+      "the probe must not depend on a lock file or a process-name match — neither sees a run from an older branch",
+    );
+
+    // An idle box: the marker, no runs.
+    assert.deepEqual(parseBusyProbe("PROBE_OK\n"), { known: true, runs: [] });
+    // Two processes of ONE run are one run, not two.
+    assert.deepEqual(
+      parseBusyProbe("RUN abc12345-aaa-bbbb 100\nRUN abc12345-aaa-bbbb 220\nPROBE_OK\n"),
+      { known: true, runs: ["abc12345-aaa-bbbb"] },
+    );
+    assert.deepEqual(
+      parseBusyProbe("RUN bbb12345-aaa-bbbb 1\nRUN aaa12345-aaa-bbbb 2\nPROBE_OK\n").runs,
+      ["aaa12345-aaa-bbbb", "bbb12345-aaa-bbbb"],
+    );
+    // 🔴 FAIL CLOSED. Every one of these is "I could not tell", never "the box is free".
+    for (const [label, text] of [
+      ["empty output", ""],
+      ["ssh wrote nothing but an error", "ssh: connect to host ... port 22: Connection timed out"],
+      ["runs listed but the probe never finished", "RUN abc12345-aaa-bbbb 100\n"],
+      ["not a string at all", null],
+    ] as ReadonlyArray<readonly [string, unknown]>) {
+      assert.equal(
+        parseBusyProbe(text as string).known,
+        false,
+        label + " must read as UNKNOWN, never as an idle box",
+      );
+    }
+  }
+  assert.match(
+    SRC,
+    /parseBusyProbe\(state\)[\s\S]{0,600}?!busy\.known[\s\S]{0,400}?die\(/,
+    "remote-check.mjs does not refuse on an unreadable probe, so a failed ssh would read as a free box",
+  );
+  assert.match(
+    SRC,
+    /busy\.runs\.length > 0 && process\.env\.PHX_CHECK_FORCE !== "1"[\s\S]{0,2500}?die\(/,
+    "remote-check.mjs does not refuse when the box already has a run, or has lost its override",
+  );
+  assert.ok(
+    SRC.indexOf("parseBusyProbe(state)") < SRC.indexOf("git\",\n    [\"push\""),
+    "the busy check must run BEFORE the sha is pushed, so a refusal costs the box nothing",
+  );
+
   // 8 — the generated script re-reads HEAD after EVERY check, and two runs never share a path.
   const sha = "a".repeat(40);
   const runA = newRunId(sha, 1_000, "aaaa");
@@ -160,6 +241,108 @@ export async function runRemoteCheckTests(): Promise<void> {
     const line = script.split("\n").find((l) => l.includes("=== " + name + " ===")) ?? "";
     assert.match(line, new RegExp("fi; .*same_tree " + name + ";"), "the " + name + " step does not verify the tree after it ran");
   }
+  // 8b — ONE RUN OWNS THE BOX. Per-stage locking left `lint` and `test` taking no lock at all, and
+  // a build was OOM-killed beside another session's node processes on 2026-10-05. The run-level
+  // lock must be a DIFFERENT file from the per-stage one: flock(2) locks an open file description,
+  // so re-taking /tmp/phx-typecheck.lock inside the typecheck would deadlock the run against itself.
+  assert.match(
+    script,
+    /exec 9>>\/tmp\/phx-remote-check\.lock/,
+    "the generated box script no longer takes a run-level lock, so two sessions' checks can collide on a 7.7 GB box",
+  );
+  assert.match(
+    script,
+    /flock -w \d+ 9 \|\| echo/,
+    "the run-level lock must fall through to a warning: a lock that can fail the run teaches people to skip the check",
+  );
+  assert.ok(
+    !/exec 9>>\/tmp\/phx-typecheck\.lock/.test(script),
+    "the run-level lock uses the per-stage lock file, which deadlocks the run against its own typecheck",
+  );
+
+  // 8c — EXIT 137 IS THE OOM KILLER, NEVER A FAILURE OF THE CODE. It must report NO VERDICT (4),
+  // and a real failure must still outrank it.
+  assert.match(
+    script,
+    /if \[ "\$RC" = 137 \]; then R=OOM-KILLED; KILLED=1; else R=FAIL; FAILED=1; fi/,
+    "an OOM-killed stage is being reported as FAIL, which blocks a push for a reason that is not true",
+  );
+  assert.match(
+    script,
+    /if \[ "\$FAILED" = 0 \] && \[ "\$KILLED" = 1 \]; then exit 4; fi/,
+    "a killed run must exit 4 (NO VERDICT) and must never outrank a genuine failure",
+  );
+  assert.match(
+    SRC,
+    /status === 4[\s\S]{0,900}?NO VERDICT[\s\S]{0,400}?process\.exit\(4\)/,
+    "remote-check.mjs does not turn the box script's exit 4 into a NO VERDICT, so a kill still reads as FAIL",
+  );
+
+  // 8b-2 — THE LOCK PATH IS AN ARGUMENT, AND ITS DEFAULT IS THE REAL ONE. A run can contain
+  // another run: section 9 below launches two generated scripts while the suite itself is executing
+  // inside a run that already holds the real lock. With one hard-coded path those inner scripts
+  // blocked on their own parent and waited out the whole 1800s fall-through — measured 2026-10-05,
+  // the `test` stage sitting at 31 minutes with `flock -w 1800 9` waiting.
+  assert.match(
+    buildRunScript({ remoteRoot: "/r", runId: runA, sha, install: "true", steps: [], lockFile: "/tmp/other.lock" }),
+    /exec 9>>\/tmp\/other\.lock/,
+    "buildRunScript ignores the lockFile argument, so a nested run cannot avoid blocking on its parent",
+  );
+  assert.match(
+    script,
+    /exec 9>>\/tmp\/phx-remote-check\.lock/,
+    "the DEFAULT lock file is no longer the real one — a real run would stop excluding other runs",
+  );
+  assert.throws(
+    () => buildRunScript({ remoteRoot: "/r", runId: runA, sha, install: "true", steps: [], lockFile: "/tmp/x; rm -rf ~" }),
+    /unsafe lock file path/,
+    "the lock path is spliced into bash and must be refused unless it is plain",
+  );
+
+  // 8d — A DROPPED SSH CONNECTION IS NOT A FAILED BRANCH. The box script only ever exits 0, 1, 3 or
+  // 4, so 255 can only be the transport. Measured 2026-10-05: `Connection reset by peer` arrived
+  // after `lint PASS` and `typecheck PASS`, and the run reported FAIL, halting a push over a dropped
+  // TCP connection. Keepalives stop the common cause; the 255 arm stops the misreport either way.
+  assert.ok(
+    !/\bexit 255\b/.test(script),
+    "the box script must never exit 255 itself — the 255 arm in remote-check.mjs reads that code as " +
+      "the ssh transport dying, and a box script that could produce it would make a real failure read as a drop",
+  );
+  assert.match(
+    SRC,
+    /status === 255[\s\S]{0,900}?NO VERDICT[\s\S]{0,1500}?process\.exit\(5\)/,
+    "remote-check.mjs reports a dropped ssh connection (exit 255) as FAIL — it must be NO VERDICT, " +
+      "or a halted push gets blamed on the branch",
+  );
+  // 8e — THE 255 ARM MUST NOT CLAIM THE LOCK IS RELEASED. Measured 2026-10-05: after the client
+  // died, four processes were still working under the run directory with a LIVE sshd-session
+  // ancestor, so the run keeps the box lock and a plain re-run meets its own predecessor. Telling
+  // someone to "just run it again" is the one wrong instruction here.
+  assert.ok(
+    !/lock is released when the connection dies/.test(SRC),
+    "the 255 arm claims the box lock is released on a dropped connection — it is not: the remote run " +
+      "survives the drop and keeps the lock, so a re-run is refused by the busy probe",
+  );
+  assert.match(
+    SRC,
+    /STILL GOING on the box and still holds the lock/,
+    "the 255 arm must say the stranded run is still holding the box, not imply a re-run will just work",
+  );
+  assert.match(
+    SRC,
+    /reap that one by its own/,
+    "the busy refusal must print how to reap ONE stranded run by its own directory — a blanket pkill " +
+      "would take another session's live run with it",
+  );
+
+  for (const opt of ["ServerAliveInterval=30", "ServerAliveCountMax=10"]) {
+    assert.ok(
+      SRC.includes('"' + opt + '"'),
+      "SSH_OPTS lost " + opt + " — `next build` is silent for minutes between stages, and a quiet " +
+        "channel is exactly what a NAT or firewall idle timer reaps mid-run",
+    );
+  }
+
   assert.throws(
     () => buildRunScript({ remoteRoot: "/r", runId: runA, sha: "19442c382", install: "true", steps: [] }),
     /40-character/,
@@ -210,7 +393,19 @@ export async function runRemoteCheckTests(): Promise<void> {
         child.stdout.on("data", (d) => (out += d));
         child.stderr.on("data", (d) => (out += d));
         child.on("close", (status) => resolve({ status, out }));
-        child.stdin.end(buildRunScript({ remoteRoot, runId, sha: want, install: "true", steps: [{ name: "probe", command }] }));
+        // Its OWN lock file. These runs are nested inside the run executing this suite, which
+        // already holds the real one, so sharing it would make each wait out the full 1800s
+        // fall-through against its own parent — and 9a's whole point is that they OVERLAP.
+        child.stdin.end(
+          buildRunScript({
+            remoteRoot,
+            runId,
+            sha: want,
+            install: "true",
+            steps: [{ name: "probe", command }],
+            lockFile: path.join(remoteRoot, "lock-" + runId),
+          }),
+        );
       });
 
     // 9a — THE 2026-10-01 SHAPE: two invocations at once on two commits, each sleeping mid-check so
