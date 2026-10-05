@@ -152,7 +152,7 @@ function dayFacts(day: FieldActivityDay): string[] {
   if (day.leave) {
     facts.push(
       fact(
-        "Where he was",
+        "Where they were",
         `On approved leave<br><span class="thin">${escapeHtml(day.leave.type ?? "leave")} &middot; ${escapeHtml(day.leave.dayPart ?? "")} &middot; ${escapeHtml(day.leave.status ?? "")}</span>`,
       ),
     );
@@ -190,7 +190,7 @@ function dayFacts(day: FieldActivityDay): string[] {
   if (day.trip?.capturedAt && day.trip.capturedLat != null && day.trip.capturedLon != null) {
     facts.push(
       fact(
-        "His own phone fix",
+        "Their own phone fix",
         `${clock12(day.trip.capturedAt)}${day.trip.capturedAccuracyMeters != null ? ` &middot; accuracy ${Math.round(day.trip.capturedAccuracyMeters)} m` : ""}` +
           `<br><span class="thin">${day.trip.capturedLat.toFixed(6)}, ${day.trip.capturedLon.toFixed(6)}</span>`,
       ),
@@ -339,9 +339,9 @@ export function buildFieldActivityDocument(input: {
 
   <h2 class="h2">How to read this report</h2>
   <div class="note">
-    <p><strong>A GPS check-in is where he stood. A logged time is when the call was typed in.</strong>
-    They are different clocks and both are shown on every stop, with the gap between them.</p>
-    <p><strong>A manager records no visits of his own.</strong> On a double visit the medical
+    <p><strong>A GPS check-in is where they stood. A logged time is when the call was typed in.</strong>
+    Those are different clocks and both are shown on every stop, with the gap between them.</p>
+    <p><strong>A manager records no visits of their own.</strong> On a double visit the medical
     representative enters the call and tags the manager on it, so the GPS fix is the
     representative's. Every stop here is a call the subject was tagged on, and the map plots those
     stops only &mdash; never the representative's own later rounds.</p>
@@ -367,7 +367,7 @@ export function buildFieldActivityDocument(input: {
       const map = mapsByDay.get(day.dateIso);
       const dense = day.stops.length > DENSE_STOPS;
       const mapBlock = map
-        ? `<h2 class="h2">Where his phone put him</h2><figure class="map">${map.svg}<figcaption>${escapeHtml(map.caption)}</figcaption></figure>`
+        ? `<h2 class="h2">Where their phone put them</h2><figure class="map">${map.svg}<figcaption>${escapeHtml(map.caption)}</figcaption></figure>`
         : "";
       const unlocated =
         day.unlocated.length > 0
@@ -384,7 +384,7 @@ export function buildFieldActivityDocument(input: {
           ? `<p class="tail">The medical representative recorded a further <strong>${day.partnerSoloCalls} call${day.partnerSoloCalls === 1 ? "" : "s"}</strong> on this day that ${escapeHtml(report.subject.name.split(" ")[0])} is not tagged on. They are the representative's own work, they are not on the map above, and they are counted nowhere in this report.</p>`
           : "";
 
-      const stopsBlock = day.stops.length > 0 ? `<h2 class="h2">Every stop, in the order his phone recorded it</h2>${stopsTable(day, dense)}` : "";
+      const stopsBlock = day.stops.length > 0 ? `<h2 class="h2">Every stop, in the order their phone recorded it</h2>${stopsTable(day, dense)}` : "";
       const body = dense
         ? `<div class="cols cols--even"><div>${mapBlock}</div><div>${tripBlock(day)}${unlocated}</div></div>`
         : `<div class="cols"><div>${stopsBlock}${unlocated}</div><div>${mapBlock}${tripBlock(day)}</div></div>`;

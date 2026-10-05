@@ -335,7 +335,7 @@ const EXIT_PARTY_FIELDS: readonly ExitFieldDef[] = [
   },
   {
     key: "employerRepTitleAr",
-    labelEn: "His title",
+    labelEn: "Their title",
     labelAr: "الصفة",
     kind: "text",
   },
@@ -356,7 +356,7 @@ const EXIT_ROUTES: readonly { value: ExitRoute; labelEn: string; labelAr: string
       value: "resignation",
       labelEn: "Resignation",
       labelAr: "طلب استقالة",
-      note: "The employee asked to leave, under مادة 167. He signs; the company accepts; the labour office endorses it.",
+      note: "The employee asked to leave, under مادة 167. They sign; the company accepts; the labour office endorses it.",
     },
     {
       value: "mutualTermination",
@@ -1931,7 +1931,7 @@ export function HiringPackManager({
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
-                    printingNote="Two copies — one handed over, one filed with the employee's acknowledgment on it. Serve it before the term ends. If he will not sign, the witness block at the foot is the record."
+                    printingNote="Two copies — one handed over, one filed with the employee's acknowledgment on it. Serve it before the term ends. If they will not sign, the witness block at the foot is the record."
                     signDate=""
                     signedDate={null}
                     signable={false}
@@ -2026,7 +2026,7 @@ export function HiringPackManager({
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
-                    printingNote="Two copies. Serve it and take his signature; if he refuses, the witness block at the foot is the record."
+                    printingNote="Two copies. Serve it and take their signature; if they refuse, the witness block at the foot is the record."
                     signDate=""
                     signedDate={null}
                     signable={false}
@@ -2356,7 +2356,7 @@ export function HiringPackManager({
                     copies={copies.appointmentDocsReturn}
                     gaps={gapsFor(pack.gaps, "appointmentDocsReturn")}
                     onCopiesChange={(value) => setCopiesFor("appointmentDocsReturn", value)}
-                    footnote="The employee's receipt for his own original certificates coming back. It carries the last working day, and says in terms that it covers the papers only — it is not a release of any statutory or financial entitlement."
+                    footnote="The employee's receipt for their own original certificates coming back. It carries the last working day, and says in terms that it covers the papers only — it is not a release of any statutory or financial entitlement."
                     onPreview={() => openPreview("appointmentDocsReturn")}
                     onPrint={() => requestPrint("appointmentDocsReturn")}
                     onSign={() => undefined}
@@ -2385,15 +2385,15 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("experienceCertificate", value)}
                     footnote={
                       pack.employee.departed
-                        ? "Issued on request, to be read by his next employer. It will state that his service ENDED — check the last working day above. No salary, no reason for leaving and no statement of conduct: each is left out on purpose."
-                        : "Issued on request — for a visa, a bank or an application. This employee has not left, so it will state that he is STILL EMPLOYED and close the period at today's date. No salary, no statement of conduct: each is left out on purpose."
+                        ? "Issued on request, to be read by their next employer. It will state that their service ENDED — check the last working day above. No salary, no reason for leaving and no statement of conduct: each is left out on purpose."
+                        : "Issued on request — for a visa, a bank or an application. This employee has not left, so it will state that they are STILL EMPLOYED and close the period at today's date. No salary, no statement of conduct: each is left out on purpose."
                     }
                     onPreview={() => openPreview("experienceCertificate")}
                     onPrint={() => requestPrint("experienceCertificate")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
-                    printingNote="Two copies. Nobody signs it back — one is handed over, one is the company's record of what it certified about him."
+                    printingNote="Two copies. Nobody signs it back — one is handed over, one is the company's record of what it certified about them."
                     signDate=""
                     signedDate={null}
                     signable={false}
@@ -2415,7 +2415,7 @@ export function HiringPackManager({
                     footnote={
                       pack.employee.departed
                         ? "For an embassy, a foreign employer or a bank. It will state that this employee's service ENDED. Same three omissions as the Arabic copy — no salary, no reason for leaving, no statement of conduct."
-                        : "For an embassy, a foreign employer or a bank. This employee has not left, so it will state that he is STILL EMPLOYED and close the period at today's date."
+                        : "For an embassy, a foreign employer or a bank. This employee has not left, so it will state that they are STILL EMPLOYED and close the period at today's date."
                     }
                     onPreview={() => openPreview("experienceCertificateEn")}
                     onPrint={() => requestPrint("experienceCertificateEn")}

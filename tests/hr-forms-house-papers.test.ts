@@ -1,5 +1,7 @@
 import { strict as assert } from "node:assert";
+import { readFileSync, readdirSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
 import { COMPANY_DETAILS_DEFAULT } from "../src/lib/hiring-pack/company-details.ts";
 import {
   HOUSE_BAND_HEIGHT_MM,
@@ -1574,4 +1576,74 @@ export function runHrFormsHousePapersTests(): void {
   testTheEnglishSpanCountsTheLastDay();
   testTheEnglishCertificateStaysImportable();
   testEveryHouseColourSurvivesABrowserPrint();
+  testNoPaperAssumesTheEmployeeIsAMan();
+}
+
+/**
+ * The papers and their desk guidance speak about anyone.
+ *
+ * Found 2026-10-05, after the same defect was fixed on the field activity report: thirteen strings
+ * here called the employee "he" — a field label, the resignation route's own description, six
+ * printing notes and footnotes on the Hiring Pack screen, and the certificate and non-renewal
+ * banners. Measured on production that day the workforce is 88 women, 87 men and 31 with no gender
+ * recorded, so the masculine default was wrong for most of the people these papers are printed for.
+ *
+ * TWO FILES ARE EXEMPT, and both exemptions are the point rather than an oversight.
+ */
+function testNoPaperAssumesTheEmployeeIsAMan(): void {
+  const MASCULINE = /\b(?:he|his|him|himself)\b/i;
+
+  const EXEMPT = new Map([
+    [
+      "src/lib/hiring-pack/experience-certificate-en.ts",
+      // `pronounsFor` resolves he/she/they from the SAME value as the honorific, so the page cannot
+      // say "Ms. … he held the position". A certificate read at an embassy names a person, and the
+      // recorded gender is the right source there. Neutralising this would be the regression.
+      "pronouns are derived from the honorific, deliberately",
+    ],
+    [
+      "src/lib/hiring-pack/template-registry.ts",
+      // Dated provenance notes. Most of their "he" is the OWNER — "he re-sent it", "his draft" —
+      // and rewriting a dated record to make a sweep clean destroys the account it exists to keep.
+      "dated provenance notes, whose subject is usually the owner himself",
+    ],
+  ]);
+
+  /** The match plus the prose around it, so a failure names the sentence and not just the word. */
+  function offence(haystack: string): string | null {
+    const hit = MASCULINE.exec(haystack);
+    if (!hit) return null;
+    const from = Math.max(0, hit.index - 70);
+    return `"${hit[0]}" in: …${haystack.slice(from, hit.index + 70).replace(/\s+/g, " ")}…`;
+  }
+
+  // The detector must be able to SEE an offence, or the sweep below passes by being blind.
+  assert.equal(offence("take his signature"), `"his" in: …take his signature…`);
+  assert.equal(offence("take their signature"), null, "neutral prose is not flagged");
+  assert.equal(offence("the theme of the shepherd"), null, "a word merely CONTAINING 'he' is not a pronoun");
+
+  function walk(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) return walk(path);
+      return /\.tsx?$/.test(entry.name) ? [path] : [];
+    });
+  }
+
+  const files = [...walk("src/lib/hiring-pack"), ...walk("src/components/hiring-pack")];
+  assert.ok(files.length > 50, `the sweep must actually reach the module — it found ${files.length} files`);
+
+  let swept = 0;
+  for (const file of files) {
+    if (EXEMPT.has(file)) continue;
+    swept += 1;
+    const found = offence(stripComments(readFileSync(file, "utf8")));
+    assert.equal(found, null, `${file}: a paper's own wording must not assume the employee is a man — ${found}`);
+  }
+  assert.ok(swept > 50, `every non-exempt file is swept — only ${swept} were`);
+
+  // An exemption that no longer names a real file is an exemption nobody is checking.
+  for (const [file, why] of EXEMPT) {
+    assert.ok(readFileSync(file, "utf8").length > 0, `${file} is exempt because ${why}, and must still exist`);
+  }
 }
