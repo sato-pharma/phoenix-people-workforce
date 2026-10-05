@@ -517,13 +517,13 @@ export function buildFieldActivityReport(input: {
     if (leave && dayVisits.length > 0) {
       kind = "leave";
       const message =
-        `A customer call is recorded against him on a day of approved ` +
+        `A customer call is recorded against them on a day of approved ` +
         `${(leave.type ?? "leave").toLowerCase()} leave.`;
       notes.push(message);
       flags.push({ dateIso, message });
     }
     if (kind === "field-no-gps" && !leave) {
-      notes.push("The day's call carries no GPS check-in, so where he stood cannot be shown.");
+      notes.push("The day's call carries no GPS check-in, so where they stood cannot be shown.");
     }
     if (stops.length > 0 && stops.every((stop) => stop.savedOn)) {
       notes.push("Every call on this day was logged the following day, not at the door.");

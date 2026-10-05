@@ -516,7 +516,7 @@ function renderRenewal(
         ]
       : [
           `${employeeName} — non-renewal notice, ${total} ${total === 1 ? "copy" : "copies"}.`,
-          "Hand it over before the term ends and take the employee's signature on the company's copy. If he will not sign, the witness block at the foot is the record.",
+          "Hand it over before the term ends and take the employee's signature on the company's copy. If they will not sign, the witness block at the foot is the record.",
           "This is not a dismissal and the notice says so — the contract simply expires on the date it always named.",
         ];
 

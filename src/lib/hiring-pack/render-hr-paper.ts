@@ -560,7 +560,7 @@ export function renderHrPaperHtml(
     banner.push(
       template.checklist.columnsAr.includes("متوفر")
         ? "Every verdict box prints blank by design — Phoenix holds no register of which certificates were handed over, and a ticked box on a signed form asserts that a document was seen."
-        : "Every rating box prints blank — the answers are the employee's own, marked with the paper in front of him.",
+        : "Every rating box prints blank — the answers are the employee's own, marked with the paper in front of them.",
     );
   }
   if (template.openTable) {
@@ -583,8 +583,8 @@ export function renderHrPaperHtml(
   if (template.kind === "certificate") {
     banner.push(
       data.employee.departed
-        ? "It states that his service ENDED. Check the last working day above before it leaves the desk — this paper goes to his next employer."
-        : "It states that he is STILL EMPLOYED here, and closes the period at today's date. That is read from his employee record, not from the exit form.",
+        ? "It states that their service ENDED. Check the last working day above before it leaves the desk — this paper goes to their next employer."
+        : "It states that they are STILL EMPLOYED here, and closes the period at today's date. That is read from their employee record, not from the exit form.",
     );
     banner.push(
       "No salary, no reason for leaving, and no statement of conduct — each left out on purpose, not pending. A recommendation is written and signed by a person, never printed from a button.",
