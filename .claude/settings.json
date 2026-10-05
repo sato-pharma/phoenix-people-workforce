@@ -224,7 +224,6 @@
     ],
     "ask": [],
     "deny": [
-      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087",
       "mcp__45bb6356-8105-4482-9464-25bfd754baec",
       "Bash(gh pr merge *--auto*)",
       "PowerShell(gh pr merge *--auto*)",
