@@ -1745,6 +1745,7 @@ import { runPhoenixCrmListTemplateTests } from "./phoenix-crm-list-template.test
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmRefuseValidationTests } from "./phoenix-crm-refuse-validation.test.ts";
+import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
 import { runPhoenixCrmPlanCapOnSendTests } from "./phoenix-crm-plan-cap-on-send.test.ts";
@@ -6375,6 +6376,11 @@ await runTest(
 await runTest(
   "Phoenix CRM lets the Super Admin refuse a validation the Google check never held (2026-10-03, after one had to be undone in SQL): the check covers AM customers only, so a doctor's validation is never held and the page now lists every place validated in the last 30 days that is still in use and not already waiting in the queue; the service asks who before it reads anything, demands a written reason, refuses a place already retired, writes the SAME review row the automatic check would have written — in the rep's name, reason refused_by_admin — runs the SAME reject RPC so there is one audit shape, and measures every visit to that customer again; the screen arms the button only after the reason is typed, fits the screen as a fixed table and phone cards with no scroller, ellipsis or round corner, and nothing the rep receives says a person refused him",
   runPhoenixCrmRefuseValidationTests,
+);
+
+await runTest(
+  "Phoenix CRM Place checks filter bar (owner, 2026-10-05: filter by rep, line, region, period, list and any single thing): the pure filter module dedupes and sorts the dropdown options, cuts by period against each section's own date, matches rep/line/region/list exactly and searches the customer name, rep, territory, speciality, place, brick, area and address — a row with no line or region fails a line/region filter rather than passing as a wildcard, a whitespace search is no search, and the outcome selector alone is not a narrowing filter; the board wires that one module, declares the admin surface its combo-box dropdowns need, owns the search so the validated list's own box is off, and the page hands it all three sets",
+  runPhoenixCrmValidationReviewFiltersTests,
 );
 
 await runTest(
