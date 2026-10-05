@@ -1,0 +1,50 @@
+// The rank insignia on screen. The drawing itself lives in `@/lib/rep-ranks/insignia-svg` — ONE
+// geometry for the board and the printed certificate, so the badge on paper is the badge on the
+// page. Why each rank looks as it does (the owner's "real Egyptian insignia", every rank distinct,
+// on a transparent ground, square-edged): the head of that file.
+
+import { insigniaSvgInner } from "@/lib/rep-ranks/insignia-svg";
+import type { MilitaryRank } from "@/lib/rep-ranks/ladder";
+
+/** The insignia alone, on a transparent ground. `size` is the rendered width in pixels; the box is 2:1. */
+export function RankInsigniaBadge({ rank, size = 48 }: { rank: MilitaryRank; size?: number }) {
+  return (
+    <svg
+      aria-label={`${rank.english} insignia`}
+      className="shrink-0"
+      // The markup is built from the ladder's own constants, never from user input.
+      dangerouslySetInnerHTML={{ __html: insigniaSvgInner(rank.insignia) }}
+      height={size / 2}
+      role="img"
+      viewBox="0 0 64 32"
+      width={size}
+    />
+  );
+}
+
+/** The rank's name: Arabic first (the owner's choice), English beside it for every reader. */
+export function RankName({ rank, className = "" }: { rank: MilitaryRank; className?: string }) {
+  return (
+    <span className={`break-words ${className}`}>
+      <span dir="rtl" lang="ar">{rank.arabic}</span>
+      <span className="text-slate-400"> · </span>
+      <span>{rank.english}</span>
+    </span>
+  );
+}
+
+/** Stars earned: ★ per title, the count beside them once there are many. */
+export function StarRow({ stars }: { stars: number }) {
+  if (stars <= 0) return null;
+  const shown = Math.min(stars, 5);
+  return (
+    <span aria-label={`${stars} ${stars === 1 ? "star" : "stars"}`} className="inline-flex flex-wrap items-center gap-0.5 text-amber-500">
+      {Array.from({ length: shown }, (_, index) => (
+        <span aria-hidden="true" key={index}>
+          ★
+        </span>
+      ))}
+      {stars > shown ? <span className="text-phx-3xs font-black text-amber-600">×{stars}</span> : null}
+    </span>
+  );
+}

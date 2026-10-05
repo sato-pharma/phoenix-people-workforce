@@ -210,8 +210,14 @@ export const MODULES = [
       "tests/*{crm,ireports,visit,reps-list,reps-plans,kpi,double-visit,doctor-list,coverage}*",
       "tests/dm-plan*",
       "supabase/migrations/*{crm,ireports,visit}*",
+      // Phoenix Ranks (owner, 2026-10-05) — the shared rep board built on the KPIs board.
+      "src/lib/rep-ranks/**",
+      "src/components/rep-ranks/**",
+      "app/**/ranks/**",
+      "tests/*rep-ranks*",
+      "supabase/migrations/*rep_ranks*",
     ],
-    keywords: ["ireports360", "ireports", "call rate", "reps list", "reps plans", "double visit", "doctor list", "coverage", "frequency", "kpis board", "crm sync", "visit type"],
+    keywords: ["phoenix ranks", "rep ranks", "leaderboard", "ireports360", "ireports", "call rate", "reps list", "reps plans", "double visit", "doctor list", "coverage", "frequency", "kpis board", "crm sync", "visit type"],
     tables: ["crm_", "ireports", "visit"],
   },
   {

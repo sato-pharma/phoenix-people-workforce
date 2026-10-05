@@ -137,6 +137,9 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // Hourly on :49 (owner, 2026-10-05): the batched routine-visit rollup to the NSM and the SFE
   // Managers. On :49, an odd minute no other hourly job holds. Must match scripts/cronjob-sync.mjs
   // exactly, and lands in the SAME sitting as its cron job (see the digest's note above).
+  // 04:17 Cairo nightly (owner, 2026-10-05): Phoenix Ranks rebuilds every window holding yesterday.
+  // Must match scripts/cronjob-sync.mjs exactly, and lands in the SAME sitting as its cron job.
+  { slug: "phoenix-rep-ranks", kind: "cron", schedule: "17 4 * * *", graceSeconds: 3 * HOUR },
   { slug: "phoenix-crm-visit-rollup", kind: "cron", schedule: "49 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
   // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,

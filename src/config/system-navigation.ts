@@ -1208,6 +1208,8 @@ export const adminNavigationSectionSeeds = [
     id: "early-birds",
     items: [
       { href: "/admin/early-birds", icon: Sunrise, label: "Early Birds", permissions: [{ resource: "early_birds", action: "read" }], roles: ["Super Admin", "CEO", "SFE Manager"] },
+      // Phoenix Ranks (owner, 2026-10-05): the shared rep board, with the counts behind every score.
+      { href: "/admin/ranks", icon: Award, label: "Phoenix Ranks", permissions: [{ resource: "early_birds", action: "read" }], roles: ["Super Admin", "CEO", "SFE Manager"] },
     ],
     label: "Early Birds",
   },
@@ -1598,6 +1600,7 @@ const employeePortalNavigationSectionSeeds = [
       // by href, and a portal page missing from it is silently always-visible. This entry is what
       // employee-portal-nav-catalog-sync.test.ts checks for.
       { href: "/employee-portals/early-birds", icon: Sunrise, label: "Early Birds", permissions: [{ resource: "early_birds", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
+      { href: "/employee-portals/ranks", icon: Award, label: "Phoenix Ranks", permissions: [{ resource: "early_birds", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
     ],
     label: "Medical Rep Portal",
   },

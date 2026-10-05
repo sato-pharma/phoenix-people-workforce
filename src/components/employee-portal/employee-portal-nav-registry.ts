@@ -155,6 +155,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // machine-readable gate (resolveEarlyBirdsScope decides what it shows from the reporting chain),
   // and employee-portal-nav-permission-matches-page.test.ts requires the field to be absent then.
   { label: "Early Birds", fullLabel: "Early Birds", href: "/employee-portals/early-birds", icon: Sunrise, flags: ["showEarlyBirdsTab"] },
+  // Phoenix Ranks (owner, 2026-10-05) — one gate, the page's own: canAccess(access, "early_birds", "read").
+  { label: "Ranks", fullLabel: "Phoenix Ranks", href: "/employee-portals/ranks", icon: Award, flags: ["showRanksTab"], permission: { resource: "early_birds", action: "read" } },
   // Reps Plans had an entry here until 2026-09-21, when the owner merged it into Reps List — its board
   // is the Call rate tab there, and /employee-portals/reps-plans forwards to it.
   { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "territory", action: "read" } },

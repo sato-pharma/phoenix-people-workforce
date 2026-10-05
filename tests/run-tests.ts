@@ -1818,6 +1818,7 @@ import { runNsmCrmComplianceTests } from "./nsm-crm-compliance.test.ts";
 import { runCrmCampaignAccountTests } from "./crm-campaign-account.test.ts";
 import { runEarlyBirdsPeriodTests } from "./early-birds-period.test.ts";
 import { runEarlyBirdsScoringTests } from "./early-birds-scoring.test.ts";
+import { runRepRanksTests } from "./rep-ranks.test.ts";
 import { runEarlyBirdsDecisionTests } from "./early-birds-decisions.test.ts";
 import { runEarlyBirdsScopeTests } from "./early-birds-scope.test.ts";
 import { runEarlyBirdsLineStarsTests } from "./early-birds-line-stars.test.ts";
@@ -6660,6 +6661,10 @@ await runTest(
 await runTest(
   "early birds scoring (only a real GPS check-in is a start time, an after-midnight save is paperwork not a 02:25 start, and two brilliant mornings is not a fortnight)",
   runEarlyBirdsScoringTests,
+);
+await runTest(
+  "phoenix ranks (eight equal pillars with AM and PM apart, no plan is a zero not a pass, the day board never shows a Thursday, the explanation is checkable arithmetic, and the portal never selects the metrics)",
+  runRepRanksTests,
 );
 await runTest(
   "early birds decisions (reject falls through by rank, a rejected rep can never be offered again, and an unanswered fortnight auto-approves on day five)",
