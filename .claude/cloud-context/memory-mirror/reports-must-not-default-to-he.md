@@ -95,11 +95,22 @@ content, and it SHIPS in the generated card) and four ordinary `//` lines in two
 read differently. Neutralising those five words cost nothing and kept the exemption list short;
 exempting the files would have blinded the sweep to their real strings.
 
-🔴 **SEVEN TESTS PINNED THE OLD WORDING, AND A NARROW GREP FINDS ONLY SOME OF THEM.** One run went
-red on the box for an eighth assertion the first grep missed. The reliable way: take every `old`
-string from the replacement tables and search `tests/`, `scripts/` and `docs/` for it as a LITERAL.
-One fixture read `"Aya Ibrahim confirmed he started working at…"` — the defect itself, sitting in a
-test.
+🔴 **SIXTEEN TESTS PINNED THE OLD WORDING, AND IT TOOK THREE RED BOX RUNS (~10 MIN EACH) TO FIND THEM ALL,
+BECAUSE A LITERAL SCAN CANNOT SEE A PARTIAL ASSERTION.** `refused(..., /his own/, ...)` and
+`.includes("his visits on those days still count as")` assert production text without containing
+any whole string from the replacement table. 🔴 **THE ONE SCAN THAT FINDS THEM ALL IS BUILT FROM THE DIFF, NOT FROM THE REPLACEMENT TABLE.**
+Take the OLD side of `git diff origin/main...HEAD -- src app`, pull out every quoted literal AND
+every plain-text run between a template literal's `${…}` holes, keep the fragments of 10+ chars
+carrying the word, and search `tests/` and `scripts/` for each as a LITERAL. A table entry is often
+a code EXPRESSION (`` `He would like ${fmt(d)}.` : "Any day suits him." ``) while the test asserts
+the RENDERED sentence (`"… Any day suits him. Accept it …"`), which contains neither the entry nor
+anything a lookup of the entry matches — only the fragment. Add one pass over REGEX literals in
+`tests/` for `/his own/`-style partials. **Do NOT try a sliding neutralised-window scan**: at a
+22-char window it misses the rendered sentences, and at 8 it returns 185 hits that are almost all
+assertion messages. 387 fragments → 11 live references → 3 real, in one pass. Self-check fixtures inside a guard ("the detector must
+be able to SEE an offence") legitimately keep the word; assertion MESSAGES are not production copy.
+One real fixture read `"Aya Ibrahim confirmed he started working at…"` — the defect itself, sitting
+in a test.
 
 Related: [[a-green-test-run-carries-no-type-signal-at-all]],
 [[never-horizontal-scroll-always-mobile-and-desktop-friendly]], [[the-house-document-identity-standard]].
