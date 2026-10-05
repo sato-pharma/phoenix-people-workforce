@@ -239,6 +239,11 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // the phone and the Telegram-failure email fallback are both shut; this row is the intent, that guard
   // is the enforcement. Recipients are passed explicitly by the notifier, hence "cc".
   "phoenix_crm.activity_mirror": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  // The hourly routine-visit rollup (owner, 2026-10-05): the batched half of the mirror — routine
+  // planned visits gathered into one message an hour to the NSM and the SFE Managers. In-app and
+  // Telegram ONLY, and on PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES so the phone and the Telegram-failure
+  // email fallback are both shut; this row is the intent, that guard is the enforcement.
+  "phoenix_crm.crm_visit_rollup": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // Phoenix CRM (owner rule 2026-09-16): a grade or drop request and a weekly plan waiting for the
   // reviewing manager, and the decision back to the rep — in-app, Telegram and (since 2026-10-02) the
   // phone, never email.

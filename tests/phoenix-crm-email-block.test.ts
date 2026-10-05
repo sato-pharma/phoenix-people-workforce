@@ -134,8 +134,11 @@ export function runPhoenixCrmEmailBlockTests() {
   );
   assert.deepEqual(
     [...PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES].sort(),
-    ["crm_daily_digest", ...PUSH_BLOCKED_EVENT_TYPES].sort(),
-    "and exactly these are barred from the phone too — the 06:55 digest and the plan-edit expiry",
+    // crm_daily_digest and crm_visit_rollup are the two cron-only notices here — they call
+    // createSystemNotificationForRecipients directly, so neither comes through the notifier and
+    // neither is harvested into EVENT_TYPES; both are in-app and Telegram only.
+    ["crm_daily_digest", "crm_visit_rollup", ...PUSH_BLOCKED_EVENT_TYPES].sort(),
+    "and exactly these are barred from the phone too — the 06:55 digest, the hourly visit rollup, the plan-edit expiry, the SFE day-start copy and the activity mirror",
   );
   for (const eventType of EMAIL_EVENT_TYPES) {
     const policy = resolveNotificationPolicy({ module: "phoenix_crm", eventType });
