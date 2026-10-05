@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sato ENT Circle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Cairo:wght@400;600;700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* Royafloxacin and Saginkgo share one deep navy and own one accent each.
+     That pair is the combination identity, so it drives the whole sheet:
+     red left, blue right, meeting at the centre. */
+  :root{
+    --roya:#d20000; --roya-lo:#8e0000; --roya-hi:#ff5c5c;
+    --sag:#0384db;  --sag-lo:#0253a6;  --sag-hi:#63bcf4;
+    --ink:#0a1322; --body:#45515a; --soft:#6b7782; --hair:#e4e9ee;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{width:1200px;height:1580px;overflow:hidden;background:#fff;
+       font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  .card{position:relative;width:1200px;height:1580px;overflow:hidden;}
+
+  /* ====== the navy field ====== */
+  .field{position:absolute;inset:0 0 430px 0;overflow:hidden;
+    background:
+      radial-gradient(1180px 820px at 50% 33%, #0b3685 0%, #052462 36%, #001641 70%, #000a26 100%);}
+  .field>svg.arcs{position:absolute;inset:0;width:100%;height:100%;}
+  .grain{position:absolute;inset:0;opacity:.055;mix-blend-mode:overlay;pointer-events:none;}
+  .vig{position:absolute;inset:0;pointer-events:none;
+       background:radial-gradient(1000px 900px at 50% 46%, rgba(0,0,0,0) 40%, rgba(0,0,0,.42) 100%);}
+  .fr1{position:absolute;inset:26px;border:1px solid rgba(255,255,255,.15);pointer-events:none;}
+  .fr2{position:absolute;inset:33px;border:1px solid rgba(255,255,255,.055);pointer-events:none;}
+
+  .logo{position:absolute;left:84px;top:56px;height:58px;
+        filter:drop-shadow(0 2px 6px rgba(0,0,0,.45));}
+  .seal{position:absolute;right:84px;top:52px;width:118px;height:118px;
+        border:1px solid rgba(255,255,255,.3);background:rgba(0,0,0,.26);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+        box-shadow:inset 0 0 0 5px rgba(255,255,255,.045), 0 10px 26px rgba(0,0,0,.38);}
+  .seal b{font-family:'Playfair Display',serif;font-size:44px;font-weight:500;color:#fff;line-height:1;}
+  .seal i{width:34px;height:2px;background:linear-gradient(90deg,var(--roya),var(--sag));display:block;}
+  .seal span{font-size:9px;font-weight:700;letter-spacing:.22em;color:rgba(255,255,255,.66);}
+
+  /* ====== title ====== */
+  .head{position:absolute;left:0;right:0;top:108px;text-align:center;}
+  .eyebrow{color:#67c2f6;font-size:11.5px;font-weight:600;letter-spacing:.36em;text-transform:uppercase;}
+  .sato{margin-top:19px;font-family:'Playfair Display',serif;font-size:27px;font-weight:400;
+        letter-spacing:.66em;text-indent:.66em;color:rgba(255,255,255,.78);}
+  .evt{margin-top:2px;font-family:'Playfair Display',serif;font-size:92px;font-weight:500;
+       letter-spacing:.04em;color:#fff;line-height:1.02;text-shadow:0 2px 16px rgba(0,0,0,.38);}
+  .ruleset{margin:18px auto 0;display:flex;align-items:center;justify-content:center;width:300px;}
+  .ruleset s{display:block;height:2px;flex:1;}
+  .ruleset s.r{background:linear-gradient(90deg,rgba(210,0,0,0),var(--roya));}
+  .ruleset s.b{background:linear-gradient(90deg,var(--sag),rgba(3,132,219,0));}
+  .ruleset em{width:8px;height:8px;background:#fff;transform:rotate(45deg);margin:0 11px;}
+  .where{margin-top:20px;color:rgba(255,255,255,.66);font-size:10.5px;font-weight:600;
+         letter-spacing:.32em;text-transform:uppercase;}
+
+  /* ====== the guest ====== */
+  .frame{position:absolute;left:50%;transform:translateX(-50%);top:346px;
+         width:452px;height:566px;background:#fff;padding:13px;
+         box-shadow:0 46px 92px rgba(0,0,0,.62), 0 0 0 1px rgba(255,255,255,.10);}
+  .frame img{width:100%;height:100%;object-fit:cover;display:block;
+        outline:1px solid rgba(0,0,0,.17);outline-offset:-1px;}
+  .frame::before,.frame::after{content:'';position:absolute;width:58px;height:58px;}
+  .frame::before{left:-17px;top:-17px;border-left:3px solid var(--roya);border-top:3px solid var(--roya);}
+  .frame::after{right:-17px;bottom:-17px;border-right:3px solid var(--sag);border-bottom:3px solid var(--sag);}
+
+
+
+
+
+
+
+
+
+
+  /* ====== name-only: the navy runs straight through, the name is the subject ====== */
+  .nameonly{position:absolute;left:50%;transform:translateX(-50%);top:400px;
+        width:680px;height:500px;display:flex;flex-direction:column;
+        align-items:center;justify-content:center;text-align:center;}
+  .nameonly::before,.nameonly::after{content:'';position:absolute;width:58px;height:58px;}
+  .nameonly::before{left:-17px;top:-17px;border-left:3px solid var(--roya);border-top:3px solid var(--roya);}
+  .nameonly::after{right:-17px;bottom:-17px;border-right:3px solid var(--sag);border-bottom:3px solid var(--sag);}
+  .nameonly .nwm{position:absolute;left:50%;top:-45px;transform:translateX(-50%);
+        width:680px;opacity:.05;pointer-events:none;filter:brightness(0) invert(1);}
+  .nameonly .nk{position:relative;font-size:11px;font-weight:700;letter-spacing:.34em;
+        text-transform:uppercase;color:#7fcdf8;margin-bottom:123px;}
+  .nameonly .nn{position:relative;font-family:Amiri,serif;font-weight:700;color:#fff;
+        direction:rtl;line-height:1.26;letter-spacing:0;white-space:nowrap;
+        text-shadow:0 10px 36px rgba(0,0,0,.45);}
+  .nameonly .nr{position:relative;margin-top:123px;display:flex;}
+  .nameonly .nr u{display:block;width:56px;height:3px;}
+  .nameonly .nr u:first-child{background:var(--roya);}
+  .nameonly .nr u:last-child{background:var(--sag);}
+  .flank{position:absolute;top:346px;height:566px;display:flex;align-items:center;
+         justify-content:center;font-size:11.5px;font-weight:700;letter-spacing:.46em;
+         text-transform:uppercase;white-space:nowrap;}
+  .flank.l{left:150px;color:var(--roya-hi);writing-mode:vertical-rl;transform:rotate(180deg);}
+  .flank.r{right:150px;color:var(--sag-hi);writing-mode:vertical-rl;}
+
+  .guest{position:absolute;left:0;right:0;top:944px;text-align:center;}
+  .guest .lbl{display:flex;align-items:center;justify-content:center;gap:20px;
+        color:rgba(255,255,255,.80);font-size:13px;font-weight:600;
+              letter-spacing:.32em;text-transform:uppercase;}
+  .guest .ar{margin-top:20px;font-family:Amiri,serif;font-size:52px;font-weight:700;color:#fff;
+             direction:rtl;line-height:1.24;text-shadow:0 2px 14px rgba(0,0,0,.42);}
+  .guest .lbl::before,.guest .lbl::after{content:'';width:62px;height:1px;flex:none;}
+  .guest .lbl::before{background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.45));}
+  .guest .lbl::after{background:linear-gradient(90deg,rgba(255,255,255,.45),rgba(255,255,255,0));}
+  .guest .lat{margin-top:16px;font-family:'Playfair Display',serif;font-size:22px;font-weight:400;
+              letter-spacing:.17em;color:rgba(255,255,255,.90);}
+  .guest .rl{margin-top:20px;color:#67c2f6;font-size:11.5px;font-weight:700;
+             letter-spacing:.28em;text-transform:uppercase;}
+
+  /* ====== the seam: red half, blue half ====== */
+  .seam{position:absolute;left:0;right:0;bottom:430px;height:8px;display:flex;z-index:4;}
+  .seam u{flex:1;display:block;background:var(--roya);}
+  .seam u+u{background:var(--sag);}
+
+  /* ====== facts ====== */
+  .facts{position:absolute;left:84px;right:84px;top:1212px;display:grid;
+         grid-template-columns:1fr 1fr;}
+  .facts div.col{padding:0 30px;border-left:1px solid var(--hair);}
+  .facts div.col:first-child{padding-left:0;border-left:0;}
+  .facts dt{color:#a3aeb7;font-size:9.5px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;}
+  .facts dd{margin-top:10px;color:var(--ink);font-size:23px;font-weight:600;line-height:1.24;letter-spacing:-.008em;}
+  .facts .arf{margin-top:7px;font-family:Cairo,sans-serif;font-size:15px;color:var(--soft);direction:rtl;}
+
+
+
+  /* ====== one footer band: facts left, packs right ====== */
+  .foot{position:absolute;left:0;right:0;top:1150px;bottom:56px;background:#fff;}
+  .wm{position:absolute;left:796px;top:-5px;width:400px;opacity:.15;pointer-events:none;}
+  .fcol{position:absolute;left:84px;top:26px;width:352px;}
+  .fcol dt{color:#8c98a4;font-size:9.5px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;}
+  .fcol dd{margin-top:9px;color:var(--ink);font-size:25px;font-weight:600;line-height:1.22;letter-spacing:-.01em;}
+  .fcol .arf{margin-top:7px;font-family:Cairo,sans-serif;font-size:18px;color:var(--soft);}
+  .fcol .gap{height:30px;}
+  .fcol hr{border:0;border-top:1px solid var(--hair);margin:13px 0;}
+  .plock{position:absolute;right:154px;top:48px;height:300px;display:flex;align-items:flex-end;}
+  .plock img{display:block;
+        -webkit-box-reflect:below 1px linear-gradient(to bottom,rgba(255,255,255,.34),transparent 46%);}
+  .plock .p1{height:230px;margin-right:34px;position:relative;z-index:2;}
+  .plock .p2{height:219px;position:relative;z-index:1;}
+
+  /* ====== base ====== */
+  .base{position:absolute;left:0;right:0;bottom:0;height:56px;background:#000a26;
+        display:flex;align-items:center;justify-content:space-between;padding:0 84px;}
+  .base span{color:rgba(255,255,255,.62);font-size:10.5px;font-weight:600;
+             letter-spacing:.28em;text-transform:uppercase;}
+</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="field">
+    <svg class="arcs" viewBox="0 0 1200 1200" preserveAspectRatio="none" fill="none">
+      <g stroke="#d20000" stroke-width="1.7">
+        <circle cx="-60" cy="1250" r="330" opacity=".40"/><circle cx="-60" cy="1250" r="415" opacity=".35"/>
+        <circle cx="-60" cy="1250" r="500" opacity=".30"/><circle cx="-60" cy="1250" r="585" opacity=".25"/>
+        <circle cx="-60" cy="1250" r="670" opacity=".20"/><circle cx="-60" cy="1250" r="755" opacity=".15"/>
+        <circle cx="-60" cy="1250" r="840" opacity=".11"/><circle cx="-60" cy="1250" r="925" opacity=".07"/>
+      </g>
+      <g stroke="#0384db" stroke-width="1.7">
+        <circle cx="1260" cy="1250" r="330" opacity=".44"/><circle cx="1260" cy="1250" r="415" opacity=".38"/>
+        <circle cx="1260" cy="1250" r="500" opacity=".33"/><circle cx="1260" cy="1250" r="585" opacity=".27"/>
+        <circle cx="1260" cy="1250" r="670" opacity=".22"/><circle cx="1260" cy="1250" r="755" opacity=".17"/>
+        <circle cx="1260" cy="1250" r="840" opacity=".12"/><circle cx="1260" cy="1250" r="925" opacity=".08"/>
+      </g>
+    </svg>
+    <svg class="grain"><filter id="gr"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="4" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(#gr)"/></svg>
+    <div class="vig"></div>
+    <div class="fr1"></div><div class="fr2"></div>
+
+    <img class="logo" src="src/sato-pharma-reverse.png" alt="Sato Pharma">
+    <div class="seal"><b>06</b><i></i><span>OCT&nbsp;26</span></div>
+
+    <div class="head">
+      <div class="eyebrow">Round&nbsp;table&nbsp;discussion &nbsp;&middot;&nbsp; Otorhinolaryngology</div>
+      <div class="sato">SATO</div>
+      <div class="evt">ENT CIRCLE</div>
+      <div class="ruleset"><s class="r"></s><em></em><s class="b"></s></div>
+      <div class="where">Sharkia &nbsp;&middot;&nbsp; Zagazig &nbsp;&middot;&nbsp; 2026</div>
+    </div>
+
+    <div class="flank l">Royafloxacin 500&nbsp;mg</div>
+    <div class="flank r">Saginkgo 120&nbsp;mg</div>
+    <div class="frame"><img id="portrait" src="portraits/metwally-duo.png" alt=""></div>
+
+    <div class="guest">
+      <div class="lbl">Sato Pharma cordially invites</div>
+      <div class="ar" id="arname">د. شريف متولي</div>
+      <div class="lat" id="latname">Dr. Sherif Metwally</div>
+      <div class="rl" id="drrole">Consultant of otorhinolaryngology</div>
+    </div>
+  </div>
+
+  <div class="seam"><u></u><u></u></div>
+
+  <div class="foot">
+    <img class="wm" src="wm/sato-arabic-navy.png" alt="">
+    <div class="fcol">
+      <dt>Date</dt><dd>Tuesday 6 October 2026</dd>
+      <div class="arf">يوم الثلاثاء ٦ أكتوبر</div>
+      <hr>
+      <dt>Time</dt><dd>10:30 PM</dd>
+      <div class="arf">الساعة ١٠:٣٠ مساءً</div>
+      <hr>
+      <dt>Venue</dt><dd>Oriental Restaurant, Zagazig</dd>
+      <div class="arf">مطعم أورينتال – الزقازيق</div>
+    </div>
+    <div class="plock">
+      <img class="p1" src="packshots/royafloxacin-carton.png" alt="Royafloxacin 500 mg">
+      <img class="p2" src="packshots/saginkgo-carton.png" alt="Saginkgo 120 mg">
+    </div>
+  </div>
+
+  <div class="base">
+    <span>Sato Pharma &nbsp;&middot;&nbsp; Delta&nbsp;3</span>
+    <span>www.satopharma.com</span>
+  </div>
+</div>
+</body>
+</html>
