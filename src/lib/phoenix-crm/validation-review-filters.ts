@@ -18,6 +18,7 @@ export type ValidationReviewFilters = {
   rep: string;
   line: string;
   region: string;
+  area: string;
   list: string;
   period: ValidationReviewPeriod;
   text: string;
@@ -28,6 +29,7 @@ export const EMPTY_VALIDATION_REVIEW_FILTERS: ValidationReviewFilters = {
   rep: "",
   line: "",
   region: "",
+  area: "",
   list: "",
   period: "all",
   text: "",
@@ -76,13 +78,14 @@ export function withinValidationReviewPeriod(when: string, cutoff: number | null
 }
 
 /**
- * Whether a row passes the shared filters — rep, line, region, list and the free-text search. The
+ * Whether a row passes the shared filters — rep, line, region, area, list and the free-text search. The
  * outcome and the period are applied by the board, which knows each section's status and date field.
  */
 export function matchesValidationReviewFilters(row: ValidationReviewFilterable, filters: ValidationReviewFilters): boolean {
   if (filters.rep && row.repName !== filters.rep) return false;
   if (filters.line && (row.line ?? "") !== filters.line) return false;
   if (filters.region && (row.region ?? "") !== filters.region) return false;
+  if (filters.area && (row.areaName ?? "") !== filters.area) return false;
   if (filters.list && row.listType !== filters.list) return false;
   const wanted = filters.text.trim().toLowerCase();
   if (wanted) {
@@ -98,6 +101,7 @@ export function hasActiveValidationReviewFilter(filters: ValidationReviewFilters
     filters.rep !== "" ||
     filters.line !== "" ||
     filters.region !== "" ||
+    filters.area !== "" ||
     filters.list !== "" ||
     filters.period !== "all" ||
     filters.text.trim() !== ""

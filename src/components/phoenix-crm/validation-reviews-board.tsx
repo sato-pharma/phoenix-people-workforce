@@ -7,9 +7,10 @@
  *
  * The page hands this board all three sets at once — the places waiting for a decision, the ones
  * decided in the last two weeks, and the validations the system never questioned. The filter bar is
- * shared: rep, line, region, list and period narrow whichever sections are shown, a free-text box
+ * shared: rep, line, region, area, list and period narrow whichever sections are shown, a free-text box
  * searches the names, and an outcome selector narrows to just the waiting / approved / rejected / in-use
- * rows. Every count in a section heading is the filtered count.
+ * rows. Region is the top-level region (Alex-BHR, Cairo, Delta, …); Area is the governorate-level seat
+ * below it (Qalubeya, Gharbia 2, …). Every count in a section heading is the filtered count.
  *
  * It is an admin screen, so the dropdowns are combo boxes the Super Admin types into (the module's
  * surface rule): the board declares `surface="admin"` around itself, which is what turns `CrmSelect`
@@ -70,6 +71,7 @@ export function ValidationReviewsBoard({
   const reps = useMemo(() => distinctValues(everyRow.map((row) => row.repName)), [everyRow]);
   const lines = useMemo(() => distinctValues(everyRow.map((row) => row.line)), [everyRow]);
   const regions = useMemo(() => distinctValues(everyRow.map((row) => row.region)), [everyRow]);
+  const areas = useMemo(() => distinctValues(everyRow.map((row) => row.areaName)), [everyRow]);
   const lists = useMemo(() => distinctValues(everyRow.map((row) => row.listType)), [everyRow]);
 
   const cutoff = validationReviewPeriodCutoff(filters.period);
@@ -99,7 +101,7 @@ export function ValidationReviewsBoard({
 
   // The filter signature remounts the paged validated list so "Show more" starts over when a filter
   // changes, rather than keeping a page offset from the wider set.
-  const validatedKey = `${filters.outcome}|${filters.rep}|${filters.line}|${filters.region}|${filters.list}|${filters.period}|${filters.text}`;
+  const validatedKey = `${filters.outcome}|${filters.rep}|${filters.line}|${filters.region}|${filters.area}|${filters.list}|${filters.period}|${filters.text}`;
 
   return (
     <CrmSurfaceProvider surface="admin">
@@ -152,6 +154,17 @@ export function ValidationReviewsBoard({
                 {regions.map((region) => (
                   <option key={region} value={region}>
                     {region}
+                  </option>
+                ))}
+              </CrmSelect>
+            </CrmField>
+
+            <CrmField htmlFor="vr-area" label="Area">
+              <CrmSelect id="vr-area" onChange={(event) => set("area", event.target.value)} value={filters.area}>
+                <option value="">Every area</option>
+                {areas.map((area) => (
+                  <option key={area} value={area}>
+                    {area}
                   </option>
                 ))}
               </CrmSelect>

@@ -88,13 +88,18 @@ export function runPhoenixCrmValidationReviewFiltersTests(): void {
   assert.equal(matchesValidationReviewFilters(base, filtersFor({ region: "Delta (1)" })), true, "the region matches");
   assert.equal(matchesValidationReviewFilters(base, filtersFor({ region: "Upper Egypt" })), false, "another region does not");
 
+  const seated = rowFor({ areaName: "Tanta 2" });
+  assert.equal(matchesValidationReviewFilters(seated, filtersFor({ area: "Tanta 2" })), true, "the area matches");
+  assert.equal(matchesValidationReviewFilters(seated, filtersFor({ area: "Qalubeya" })), false, "another area does not");
+
   assert.equal(matchesValidationReviewFilters(base, filtersFor({ list: "AM" })), true, "the AM list matches");
   assert.equal(matchesValidationReviewFilters(base, filtersFor({ list: "PM" })), false, "the PM list does not");
 
-  // A row with no line/region is excluded by a line/region filter, never treated as a wildcard.
-  const unseated = rowFor({ line: null, region: null });
+  // A row with no line/region/area is excluded by that filter, never treated as a wildcard.
+  const unseated = rowFor({ line: null, region: null, areaName: null });
   assert.equal(matchesValidationReviewFilters(unseated, filtersFor({ line: "Pedia" })), false, "a row with no line fails a line filter");
   assert.equal(matchesValidationReviewFilters(unseated, filtersFor({ region: "Delta (1)" })), false, "a row with no region fails a region filter");
+  assert.equal(matchesValidationReviewFilters(unseated, filtersFor({ area: "Tanta 2" })), false, "a row with no area fails an area filter");
   assert.equal(matchesValidationReviewFilters(unseated, EMPTY_VALIDATION_REVIEW_FILTERS), true, "but is shown when nothing filters it");
 
   // Free text searches name, rep, territory, speciality, place label, brick, area and address.
@@ -114,7 +119,7 @@ export function runPhoenixCrmValidationReviewFiltersTests(): void {
   // ── hasActiveValidationReviewFilter: the outcome alone does not count ─────────────────────────────
   assert.equal(hasActiveValidationReviewFilter(EMPTY_VALIDATION_REVIEW_FILTERS), false, "nothing set is not an active filter");
   assert.equal(hasActiveValidationReviewFilter(filtersFor({ outcome: "approved" })), false, "the outcome selector alone is not a narrowing filter");
-  for (const active of [{ rep: "x" }, { line: "x" }, { region: "x" }, { list: "x" }, { period: "7" as const }, { text: "x" }]) {
+  for (const active of [{ rep: "x" }, { line: "x" }, { region: "x" }, { area: "x" }, { list: "x" }, { period: "7" as const }, { text: "x" }]) {
     assert.equal(hasActiveValidationReviewFilter(filtersFor(active)), true, `a set ${Object.keys(active)[0]} is an active filter`);
   }
   assert.equal(hasActiveValidationReviewFilter(filtersFor({ text: "   " })), false, "a whitespace-only search is not an active filter");
@@ -124,7 +129,7 @@ export function runPhoenixCrmValidationReviewFiltersTests(): void {
   assert.match(board, /from "@\/lib\/phoenix-crm\/validation-review-filters"/, "the board reads its logic from the pure module, never a second copy");
   assert.match(board, /<CrmSurfaceProvider surface="admin">/, "the admin surface turns the filter dropdowns into combo boxes the Super Admin types into");
   assert.match(board, /showSearch=\{false\}/, "the board owns the search, so the validated list's own box is turned off");
-  for (const key of ["vr-outcome", "vr-rep", "vr-line", "vr-region", "vr-list", "vr-period", "vr-search"]) {
+  for (const key of ["vr-outcome", "vr-rep", "vr-line", "vr-region", "vr-area", "vr-list", "vr-period", "vr-search"]) {
     assert.ok(board.includes(`"${key}"`), `the board offers the ${key} control`);
   }
 
