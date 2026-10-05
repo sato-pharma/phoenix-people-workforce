@@ -16,6 +16,7 @@
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { withdrawInAppNotificationsByEventKeyPrefix } from "@/lib/notifications/in-app";
+import { phoenixCrmChannels } from "@/lib/notifications/phoenix-crm-channel-guard";
 import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
@@ -95,9 +96,18 @@ function reviewNoticeKey(reviewId: string): string {
 }
 
 /**
- * A held place is waiting. In-app, Telegram and the phone — the module's guard strips email whatever is
- * asked for — to every Super Admin. Never throws: the place is already saved, and a notice that cannot
- * be sent must not turn the rep's save into an error.
+ * A held place is waiting, to every Super Admin — which in practice is the owner alone.
+ *
+ * 🔴 EMAIL, IN-APP AND TELEGRAM (and the phone), BY HIS OWN ORDER (owner, 2026-10-05, naming the page:
+ * "when an update here /admin/field-crm/validation-reviews I must be notified by email, in app and
+ * telegram"). This is the module's one email that goes nowhere but to him, so the volume argument that
+ * keeps the rest of Phoenix CRM email-free does not apply. The channels are NOT written out here: they
+ * come from `phoenixCrmChannels`, whose allowlist is the single place the module's email exception is
+ * declared and the only place the guard will honour — naming them here would be a second truth that
+ * the guard silently overrules.
+ *
+ * Never throws: the place is already saved, and a notice that cannot be sent must not turn the rep's
+ * save into an error.
  */
 export async function notifyValidationReviewWaiting(input: { customerName: string; seat: OrgSeat; repHrId: string; reviewId: string | null }): Promise<void> {
   if (!input.reviewId) return;
@@ -110,7 +120,7 @@ export async function notifyValidationReviewWaiting(input: { customerName: strin
       {
         actionUrl: VALIDATION_REVIEWS_PATH,
         category: PHOENIX_CRM_NOTIFICATION_CATEGORY,
-        channels: ["in_app", "telegram", "push"],
+        channels: phoenixCrmChannels("validation_review_waiting"),
         eventType: "validation_review_waiting",
         message: `${rep} validated ${input.customerName} (${territoryName(input.seat)}), and the system could not confirm it against Google Maps. It waits for your decision.`,
         metadata: { idempotencyKey: reviewNoticeKey(input.reviewId), seatId: input.seat.seatId },

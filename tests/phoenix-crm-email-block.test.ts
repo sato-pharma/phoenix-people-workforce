@@ -69,9 +69,7 @@ const EVENT_TYPES = [
   // `day_start_confirmed` and emails; this one is the same news to the person who reads every line, so
   // it is in-app and Telegram only — about 74 a morning at full rollout is a burial, not a notice.
   "day_start_seen",
-  // A place the Google Maps check could not confirm, waiting for the Super Admin (owner, 2026-10-03:
-  // "only system admin can approve or reject"). In-app, Telegram and the phone — never by email.
-  "validation_review_waiting",
+  // 🔴 The place check MOVED to the emailing list on 2026-10-05 — see EMAIL_EVENT_TYPES below.
   // The activity mirror (owner, 2026-10-05): every Phoenix CRM action, to the national sales manager
   // above the rep and to the SFE Managers — "in nsm and sfe i want every single action … sent to
   // telegram to them". In-app and Telegram only, never email and never the phone (push-blocked below),
@@ -96,9 +94,9 @@ const PUSH_BLOCKED_EVENT_TYPES = [
 ];
 
 /**
- * 🔴 THE TWO EXCEPTIONS, EACH BY THE OWNER'S OWN ORDER. These five, and ONLY these five, keep their email
- * — the list is pinned exactly, so widening it is a change this test makes visible rather than one that
- * slips through.
+ * 🔴 THE FOUR EXCEPTIONS, EACH BY THE OWNER'S OWN ORDER. These seven event types, and ONLY these seven,
+ * keep their email — the list is pinned exactly, so widening it is a change this test makes visible
+ * rather than one that slips through.
  *
  * (2026-10-01) A rep's request to edit a week he already sent runs the district manager → SFE → HR,
  * "with emails, in-app and Telegram for every step". 🔴 IT WAS FIVE OF THOSE UNTIL 2026-10-02:
@@ -116,6 +114,13 @@ const PUSH_BLOCKED_EVENT_TYPES = [
  * event type (`day_start_seen`, push-blocked), because channels are decided per event type and never
  * per recipient, and one shared type would mail him once per rep — about 74 every morning once the
  * module is company-wide. Who is told, and that split, are pinned in tests/phoenix-crm-day-start.test.ts.
+ *
+ * (2026-10-05) A place the Google Maps check could not confirm, waiting on the Super Admin's own page —
+ * the owner, naming it: "when an update here /admin/field-crm/validation-reviews I must be notified by
+ * email, in app and telegram". 🔴 THE ONLY ONE OF THE FOUR WHOSE RECIPIENT IS HIM AND NOBODY ELSE, which
+ * is why the volume argument that narrowed `day_start_confirmed` does not reach it: `resolveHrIdsForRole`
+ * answers one Super Admin, test logins filtered, and nothing is sent unless a decision is actually
+ * waiting. The rep's side is untouched — he reads only "the system is checking" (Golden Rule #1).
  */
 const EMAIL_EVENT_TYPES = [
   "plan_edit_waiting",
@@ -124,13 +129,14 @@ const EMAIL_EVENT_TYPES = [
   "plan_edit_reopened",
   "first_visit_submitted",
   "day_start_confirmed",
+  "validation_review_waiting",
 ];
 
 export function runPhoenixCrmEmailBlockTests() {
   assert.deepEqual(
     [...PHOENIX_CRM_EMAIL_EVENT_TYPES].sort(),
     [...EMAIL_EVENT_TYPES].sort(),
-    "exactly the four person-taken steps of a plan edit, a rep's first visit, and his daily start to his district manager, may email",
+    "exactly the four person-taken steps of a plan edit, a rep's first visit, his daily start to his district manager, and a place waiting on the Super Admin, may email",
   );
   assert.deepEqual(
     [...PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES].sort(),
@@ -242,9 +248,18 @@ export function runPhoenixCrmEmailBlockTests() {
     const reminder = readFileSync("src/lib/phoenix-crm/server/plan-reminder.ts", "utf8");
     const nudge = readFileSync("src/lib/phoenix-crm/server/approval-nudge.ts", "utf8");
     assert.doesNotMatch(nudge, /"email"/, "the approval nudge never names email");
-    // The Super Admin's alert for a place the Google Maps check could not confirm (2026-10-03).
+    // The Super Admin's alert for a place the Google Maps check could not confirm (2026-10-03), which
+    // emails him since 2026-10-05. 🔴 IT STILL MUST NOT NAME EMAIL ITSELF: it asks the guard, whose
+    // allowlist is the one place the module's exception is declared. A hardcoded `["in_app","email",…]`
+    // here would be a second truth — and the one the guard silently overrules, so the day he narrows
+    // this notice again it would read as sent and arrive stripped.
     const placeCheck = readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8");
-    assert.doesNotMatch(placeCheck, /"email"/, "the place-check alert never names email");
+    assert.doesNotMatch(placeCheck, /"email"/, "the place-check alert must never name email itself — it asks the guard");
+    assert.match(
+      placeCheck,
+      /channels: phoenixCrmChannels\("validation_review_waiting"\),/,
+      "the place-check alert takes its channels from the guard's allowlist, so email cannot drift apart from it",
+    );
     const sent = new Set<string>();
     for (const line of `${notify}\n${reminder}\n${nudge}\n${placeCheck}`.split("\n").filter((text) => /^\s*eventType: /.test(text))) {
       for (const match of line.matchAll(/"([a-z_]+)"/g)) sent.add(match[1]);
