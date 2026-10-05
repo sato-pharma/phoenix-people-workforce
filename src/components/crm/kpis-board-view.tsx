@@ -2327,7 +2327,7 @@ export function KpisBoardView({
                       board.range.todayLeftOut ? " — today is not scored until it is over" : ""
                     }.`}{" "}
               {phoenix
-                ? "Every submitted regular visit counts toward the call rate; GPS is evidence only. PM passes at 10 a day and AM at 2, judged apart. Frequency passes when a doctor gets the visits his grade asks for (A 3, B 2, C 1) — extra visits are fine and ungraded doctors are left out."
+                ? "Every submitted regular visit counts toward the call rate; GPS is evidence only. PM passes at 10 a day and AM at 2, judged apart. Frequency passes when a doctor gets the visits their grade asks for (A 3, B 2, C 1) — extra visits are fine and ungraded doctors are left out."
                 : "Exact is the only frequency pass — visiting a doctor more often than the plan asked for is a deviation, not a win."}{" "}
               The bands below are these same three measures cut into ranges; nothing on this board blends
               them into a single score.

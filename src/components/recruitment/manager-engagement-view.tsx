@@ -290,7 +290,7 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatTile label="Managers" value={String(totals.managers)} hint={report.scoped ? "on your line" : "all lines"} />
-        <StatTile label="CVs received" value={String(totals.received)} hint="in his My Candidates" />
+        <StatTile label="CVs received" value={String(totals.received)} hint="in their My Candidates" />
         <StatTile label="Opened" value={String(totals.opened)} hint="manager opened the CV" />
         <StatTile label="Not opened" value={String(totals.notOpened)} hint="still unopened" tone={totals.notOpened > 0 ? "warn" : "plain"} />
         <StatTile label="Answered" value={String(totals.answered)} hint="a decision recorded" />
@@ -301,8 +301,8 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
           reads as not-opened until he opens it in the app. Say so, once, at the top. */}
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
         <span className="font-semibold">Reading these numbers:</span> &ldquo;Received&rdquo; is every CV in the
-        manager&rsquo;s <em>My Candidates</em> folder — the ones in his areas plus anything sent straight to him —
-        not only what was hand-pushed. A CV counts as &ldquo;Opened&rdquo; once he opens it in the app from this
+        manager&rsquo;s <em>My Candidates</em> folder — the ones in their areas plus anything sent straight to them —
+        not only what was hand-pushed. A CV counts as &ldquo;Opened&rdquo; once they open it in the app from this
         feature&rsquo;s launch onward, so the large &ldquo;Not opened&rdquo; on older CVs is real: nothing recorded a
         manager opening a CV before tracking began. &ldquo;Answered&rdquo; has full history — it reads the
         candidate&rsquo;s recorded decision — so an older CV can show <em>not opened</em> yet <em>answered</em>.
@@ -331,7 +331,7 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
       {report.rows.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
           No CVs have been sent to any manager{report.scoped ? " on your line" : ""} yet. As the recruitment team pushes
-          CVs to managers, each manager and what he does with them will appear here.
+          CVs to managers, each manager and what they do with them will appear here.
         </div>
       ) : rows.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">

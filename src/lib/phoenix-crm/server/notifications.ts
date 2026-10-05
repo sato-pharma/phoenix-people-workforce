@@ -375,7 +375,7 @@ async function describePlanEdit(notice: Extract<PhoenixCrmNotice, { kind: "plan_
   const message = raised
     ? `${rep} asks to edit the ${territory} plan for the week starting ${week}, which is already sent. ${nextStep}`
     : reopened
-      ? `HR acknowledged ${rep}'s request. The ${territory} plan for the week starting ${week} is open again for him to change and send again.`
+      ? `HR acknowledged ${rep}'s request. The ${territory} plan for the week starting ${week} is open again for them to change and send again.`
       : refused
         ? `${actor} refused ${rep}'s request to edit the ${territory} plan for the week starting ${week}. The week stays as it was sent.${note}`
         : expired
@@ -542,11 +542,11 @@ export function dayStartDeliveries(
   const where = `https://www.google.com/maps/search/?api=1&query=${notice.lat},${notice.lon}`;
   const planned =
     notice.plannedAmMinute === null
-      ? "He had no sent plan for today."
-      : `His plan said he would start the morning at ${minuteClock(notice.plannedAmMinute)}.`;
+      ? "They had no sent plan for today."
+      : `Their plan said they would start the morning at ${minuteClock(notice.plannedAmMinute)}.`;
   const message =
-    `${rep} confirmed he started working at ${clock} (Cairo), ${territory}. ${planned} ` +
-    `Where he was when he pressed it: ${where}`;
+    `${rep} confirmed they started working at ${clock} (Cairo), ${territory}. ${planned} ` +
+    `Where they were when they pressed it: ${where}`;
   const title = `Started working: ${rep}`;
   // Keyed on the rep and the DAY, not on the row: one start per rep per day, so a retried save or two
   // presses landing together upsert the same event instead of telling anybody twice.
@@ -616,9 +616,9 @@ export function visitAskDeliveries(notice: Extract<PhoenixCrmNotice, { kind: "vi
   const deliveries: Delivery[] = [];
 
   if (raised) {
-    const wish = notice.wishedOn ? `He would like ${formatPhoenixLongDate(notice.wishedOn)}.` : "Any day suits him.";
+    const wish = notice.wishedOn ? `They would like ${formatPhoenixLongDate(notice.wishedOn)}.` : "Any day suits them.";
     const what = chain
-      ? `a chain visit to ${customer} on ${territory}: you, ${told ?? "the manager above"} and him`
+      ? `a chain visit to ${customer} on ${territory}: you, ${told ?? "the manager above"} and them`
       : productManager
         ? `a visit with you to ${customer} on ${territory}`
         : `a double visit with you to ${customer} on ${territory}`;
@@ -867,7 +867,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
       title: `Off-plan visit to approve: ${notice.customerName}`,
       message: notice.enteredByAdmin
         ? `The Super Admin entered a visit ${rep} missed logging: ${notice.customerName} on ${territory}, off the plan, on ${day}. The reason given: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until ${steps} approve it.`
-        : `${rep} visited ${notice.customerName} on ${territory} off his plan on ${day}. He wrote: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until ${steps} approve it.`,
+        : `${rep} visited ${notice.customerName} on ${territory} off their plan on ${day}. They wrote: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until ${steps} approve it.`,
       tab: "team",
       recordId: notice.visitId,
       // Per visit per STEP: `raised` is the manager's, `sfe_pending` the SFE step's — the same key the
@@ -919,7 +919,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
           eventType: "unplanned_visit_waiting",
           title: `Off-plan visit to approve: ${notice.customerName}`,
           message: `${decider} approved ${rep}'s off-plan visit to ${notice.customerName} on ${territory}, on ${day}, and it now waits for SFE.${
-            notice.clarification ? ` He wrote: ${notice.clarification}` : ""
+            notice.clarification ? ` They wrote: ${notice.clarification}` : ""
           } Approve it or refuse it in Phoenix CRM — it counts in nothing until you do.${note}`,
           tab: "team",
           recordId: notice.visitId,
@@ -1209,7 +1209,7 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
       return {
         title: `Activity · started working: ${rep}`,
         // Time only — the place is the district manager's and the SFE Manager's alone (dayStartDeliveries).
-        message: `${rep} confirmed he started working at ${formatPhoenixDateTime(notice.startedAt)} (Cairo), ${territory}.`,
+        message: `${rep} confirmed they started working at ${formatPhoenixDateTime(notice.startedAt)} (Cairo), ${territory}.`,
         tab: "team",
         recordId: notice.seat.seatId,
         subjectHrId: notice.repHrId,

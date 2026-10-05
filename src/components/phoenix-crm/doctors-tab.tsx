@@ -173,7 +173,7 @@ export function DoctorsTab({
           <CrmStat label="Territories" note="Open lines only" value={countText(view.territoryCount)} />
         </CrmStatGrid>
         <p className="mt-3 break-words text-sm font-medium leading-6 text-slate-600">
-          A customer appears here once his rep has validated him at the door. One still waiting to be validated stays on his own rep&apos;s
+          A customer appears here once their rep has validated them at the door. One still waiting to be validated stays on their own rep&apos;s
           list.
         </p>
         <div className={searchable ? "mt-3 grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:items-end" : "mt-3 grid min-w-0 gap-3"}>
@@ -195,7 +195,7 @@ export function DoctorsTab({
       {all.length === 0 ? (
         <div className="border-t border-slate-100">
           <CrmEmpty
-            message="A customer appears here once his rep has validated him at the door."
+            message="A customer appears here once their rep has validated them at the door."
             title="No validated customer to show yet"
           />
         </div>

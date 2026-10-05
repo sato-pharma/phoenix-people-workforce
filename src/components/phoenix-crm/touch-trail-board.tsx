@@ -196,7 +196,7 @@ function SessionList({ view }: { view: TouchTrailDayView }) {
                 { label: "Events", value: session.events },
                 { label: "Screens", value: session.screens.length > 0 ? session.screens.join(" → ") : "—" },
                 { label: "Viewport", value: session.viewports.length > 0 ? session.viewports.join(", ") : "—" },
-                { label: "What he did", value: kindsText(session.kinds) },
+                { label: "What they did", value: kindsText(session.kinds) },
               ]}
             />
           </CrmCard>

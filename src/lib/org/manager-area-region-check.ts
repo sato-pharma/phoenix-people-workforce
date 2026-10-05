@@ -126,7 +126,7 @@ export async function findManagerAreaDrift(): Promise<{
 
     return { ran: true, findings: detectManagerAreaDrift(managers, areas, teams) };
   } catch (error) {
-    logError("Could not check whether every sales manager is recorded against his region", {
+    logError("Could not check whether every sales manager is recorded against their region", {
       error,
       labels: { event: "manager_area_region_check_failed", job: "territory-restamp" },
     });

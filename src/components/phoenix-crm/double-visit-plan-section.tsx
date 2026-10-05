@@ -73,9 +73,9 @@ function introText(view: DoubleVisitPlanView): string {
       : `${done} Your reps do not see this plan.`;
   }
   const done =
-    "A planned half-day reads Done once a visit he made with that rep that half-day is saved, counted the way Reports counts double visits.";
+    "A planned half-day reads Done once a visit they made with that rep that half-day is saved, counted the way Reports counts double visits.";
   if (view.canWrite) return `Test mode: you plan as this district manager, on test entries only. Nobody is notified. ${done}`;
-  return `Read only: each district manager plans his own double visits. ${done} The reps do not see these plans.`;
+  return `Read only: each district manager plans their own double visits. ${done} The reps do not see these plans.`;
 }
 
 export function DoubleVisitPlanSection({ cairoToday, test }: { cairoToday: string; test: boolean }) {
@@ -185,13 +185,13 @@ export function DoubleVisitPlanSection({ cairoToday, test }: { cairoToday: strin
         {plan.error ? <CrmLoadError message={plan.error} onRetry={plan.reload} /> : null}
         <CrmBlock className="border-t border-slate-100" title={`District managers · ${countText(managers.length)}`}>
           <p className="break-words text-sm font-medium leading-6 text-slate-600">
-            Each district manager plans which of his reps he joins, on which day, AM or PM. Open one to read his week against what happened.
+            Each district manager plans which of their reps they join, on which day, AM or PM. Open one to read their week against what happened.
             The reps do not see these plans.
           </p>
         </CrmBlock>
         {managers.length === 0 ? (
           <div className="border-t border-slate-100">
-            <CrmEmpty message="A district manager shows here once his line opens in Phoenix CRM." title="No district managers to show" />
+            <CrmEmpty message="A district manager shows here once their line opens in Phoenix CRM." title="No district managers to show" />
           </div>
         ) : (
           <div className="divide-y divide-slate-100 border-t border-slate-100">

@@ -223,13 +223,13 @@ export const KPI_FLAG_HINT: Record<KpiFlag, string> = {
  * would describe a rule that no longer exists.
  */
 export const KPI_FLAG_LABEL_PHOENIX: Partial<Record<KpiFlag, string>> = {
-  "perfect-frequency": "Every graded doctor at his grade norm",
+  "perfect-frequency": "Every graded doctor at their grade norm",
   "under-visiting": "Doctors below their grade norm",
 };
 
 export const KPI_FLAG_HINT_PHOENIX: Partial<Record<KpiFlag, string>> = {
-  "perfect-frequency": "100% frequency: every graded doctor got the visits his grade asks for. Extra visits are fine.",
-  "under-visiting": "At least one graded doctor got fewer visits than his grade asks for.",
+  "perfect-frequency": "100% frequency: every graded doctor got the visits their grade asks for. Extra visits are fine.",
+  "under-visiting": "At least one graded doctor got fewer visits than their grade asks for.",
   "below-am-target": "Submitted morning visits came in under the AM target, judged on its own.",
   "below-pm-target": "Submitted afternoon visits came in under the PM target, judged on its own.",
 };

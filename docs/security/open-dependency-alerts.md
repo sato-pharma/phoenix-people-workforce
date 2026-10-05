@@ -113,9 +113,60 @@ together, and all three are:
 - `shadcn` stops being a `devDependency`
 
 🔴 **This row is not a precedent for the other open alerts.** It accepts *this* advisory on *these*
-three facts. The alerts that sit in a manifest the root audit never reads are a different situation
-entirely: they are not accepted here, they belong to that application's own scanning, and nothing in
-this file should be read as judging them.
+three facts. The two that sit in `mobile/package-lock.json` are a different situation entirely, and
+they are judged separately below — on different facts, and on a narrower acceptance.
+
+### `braces` — GHSA-vfj7-8cjw-p6xm · CVE-2026-93687 · HIGH (CVSS 7.5)
+
+| | |
+| --- | --- |
+| **Decision** | **Accepted for this repository's audit gate only.** Recorded 2026-10-05 at the owner's instruction. |
+| Alert | #111, opened 2026-10-03, `mobile/package-lock.json` |
+| Scope | **`runtime`** — but in a manifest `pnpm audit` never reads at the root, so it still cannot turn `validate` red |
+| Patched version | **none exists** |
+| What it is | Stack-exhaustion denial of service through deeply nested patterns |
+| Impact vector | `C:N/I:N/A:H` — availability only |
+
+**This is a narrower acceptance than `#112` above, and the difference matters.** `#112` is
+`development` scope, so nothing vulnerable is in a shipped graph at all — that is a scope fact.
+This one is `runtime` scope within its own lockfile. What makes it unable to gate is only that the
+root audit never walks that manifest, which is a statement about **this repo's CI**, not about the
+package being harmless wherever that lockfile is built. There is no patched version to move to, so
+there is no action this repository can take either way.
+
+### `node-forge` — GHSA-86w9-cpqp-85rv · CVE-2026-85393 · HIGH
+
+| | |
+| --- | --- |
+| **Decision** | **Accepted for this repository's audit gate only.** Recorded 2026-10-05 at the owner's instruction. |
+| Alert | #110, opened 2026-10-03, `mobile/package-lock.json` |
+| Scope | **`runtime`**, in a manifest the root audit never reads |
+| Patched version | **none exists** |
+| What it is | RSA PKCS#1 v1.5 signature verification accepts extra nested `DigestAlgorithm` elements |
+| Impact vector | `C:N/I:H/A:N` — **integrity**, not availability |
+
+🔴 **This one is not the same kind of finding as the two `braces` rows, and the record should not
+flatten them together.** A signature-verification bypass is an integrity defect: it lets a crafted
+signature verify as valid. The reasons the other rows lean on — "availability only", "a developer
+hanging their own terminal" — **do not apply here** and must not be borrowed for it.
+
+What this acceptance does and does not say:
+
+- **It does say** the alert cannot turn `validate` red, because the root audit does not read that
+  manifest; verified the same way as the rows above, by the gate command exiting 0 with it open.
+- **It does say** there is nothing to bump to — `first_patched_version` is null — so no PR in this
+  repository could clear it today.
+- 🔴 **It does NOT say the package is safe in whatever is built from that lockfile.** That artifact
+  has its own scanning and its own judgement, and this file has no standing over it.
+
+**What would reverse this** — any one of these, for either row:
+
+- a patched version is published → bump it and delete the row
+- the advisory appears in the **root** `pnpm-lock.yaml` graph → it is then a reachable HIGH, it
+  blocks `validate`, and AGENTS.md §2.3 applies
+- **anything is next built or distributed from `mobile/package-lock.json`** → the `node-forge`
+  integrity finding is re-judged first, on its own merits, by whoever owns that artifact. An
+  acceptance recorded against a CI gate is not a clearance for a shipped binary.
 
 ## Reading it
 

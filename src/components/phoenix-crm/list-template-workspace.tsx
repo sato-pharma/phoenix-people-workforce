@@ -147,9 +147,9 @@ export function PhoenixCrmListTemplateWorkspace({ territories }: { territories: 
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="text-sm font-black uppercase tracking-wide text-slate-900">3 · Load it back</h2>
           <p className="mt-1 text-sm font-medium leading-6 text-slate-600">
-            Every customer on the sheet appears on the rep&rsquo;s list under <strong>To validate</strong>. He validates each one at the
-            clinic with a live photo and the location, as he does a customer carried over from iReports360 — that part cannot come from a
-            sheet, and the grades you set here are not his to change.
+            Every customer on the sheet appears on the rep&rsquo;s list under <strong>To validate</strong>. They validate each one at the
+            clinic with a live photo and the location, as they do a customer carried over from iReports360 — that part cannot come from a
+            sheet, and the grades you set here are not theirs to change.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 px-5 py-4">

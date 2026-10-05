@@ -230,7 +230,7 @@ export function detectManagerAreaDrift(
         detail:
           `${manager.fullName ?? manager.hrId} runs ${regionName} but is recorded against `
           + `${manager.areaName ?? "(no area)"}. A manager owns a region; that area belongs to a rep, `
-          + `and every screen that groups by area now shows him occupying it.`,
+          + `and every screen that groups by area now shows them occupying it.`,
       });
     }
 
@@ -258,7 +258,7 @@ export function detectManagerAreaDrift(
       detail:
         `${manager.fullName ?? manager.hrId} runs ${regionName} but sits on team `
         + `${manager.teamName ?? "(no team)"}, which hangs off ${manager.teamAreaName ?? "no area"}. `
-        + `A manager's team belongs on his region's own area. The team NAME can read correctly while `
+        + `A manager's team belongs on their region's own area. The team NAME can read correctly while `
         + `this is wrong, so the screen shows nothing amiss.`,
     });
   }
@@ -270,7 +270,7 @@ export function detectManagerAreaDrift(
       managers: bucket.managers.slice().sort(),
       detail:
         `${bucket.regionName} has no area row of its own, so a manager there has nothing to point `
-        + `at and will be pinned to one of his rep areas instead. Create a region-shaped area row `
+        + `at and will be pinned to one of their rep areas instead. Create a region-shaped area row `
         + `named "${bucket.regionName}" before recording a manager against it.`,
     });
   }

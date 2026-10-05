@@ -186,7 +186,7 @@ export function EarlyBirdsRepHistoryPanel({
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
           <p className="break-words text-sm text-amber-900">
             This rep&apos;s past fortnights could not be read just now. That is a data-read problem on
-            our side — it is not a statement that he has no record. The fortnight below is still live
+            our side — it is not a statement that they have no record. The fortnight below is still live
             and correct.
           </p>
         </div>
@@ -196,14 +196,14 @@ export function EarlyBirdsRepHistoryPanel({
             accent="bg-slate-900"
             icon={Clock}
             label="Typical start"
-            sub="median of his fortnight medians"
+            sub="median of their fortnight medians"
             value={formatStartClock(history.typicalMedianStartMinutes)}
           />
           <Stat
             accent="bg-emerald-500"
             icon={Sunrise}
             label="Earliest fortnight"
-            sub="his best median start"
+            sub="their best median start"
             value={formatStartClock(history.earliestMedianStartMinutes)}
           />
           <Stat
@@ -217,7 +217,7 @@ export function EarlyBirdsRepHistoryPanel({
             accent="bg-orange-500"
             icon={CalendarRange}
             label="Best rank"
-            sub="highest he has finished"
+            sub="highest they have finished"
             value={history.bestRank === null ? "—" : `#${history.bestRank}`}
           />
         </div>
@@ -233,7 +233,7 @@ export function EarlyBirdsRepHistoryPanel({
         <DayTimeline period={period} score={score} />
       ) : (
         <p className="bg-white px-4 py-4 text-sm text-slate-500 sm:px-5">
-          This rep is not in the ranking for {period.label} — he was not one of the district&apos;s
+          This rep is not in the ranking for {period.label} — they were not one of the district&apos;s
           active medical reps in that fortnight.
         </p>
       )}
@@ -248,7 +248,7 @@ export function EarlyBirdsRepHistoryPanel({
       {entries.length === 0 ? (
         <p className="bg-white px-4 py-5 text-sm text-slate-500 sm:px-5">
           {history.error
-            ? "His record could not be read — see the note above."
+            ? "Their record could not be read — see the note above."
             : "No closed fortnight has this rep in it yet. A fortnight joins this record the day after it ends, once its ranking is frozen."}
         </p>
       ) : (

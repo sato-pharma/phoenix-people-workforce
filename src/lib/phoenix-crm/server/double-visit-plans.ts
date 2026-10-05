@@ -117,7 +117,7 @@ export function resolveDoubleVisitPlanReader(viewer: PhoenixCrmViewer, isTest: b
   if (!reach) throw forbiddenError(NOT_FOR_YOU);
   const asked = personKey(typeof managerParam === "string" ? managerParam : null);
   if (reach.mode === "own") {
-    if (asked && asked !== viewer.hrId) throw forbiddenError("A district manager opens his own double visit plan only.");
+    if (asked && asked !== viewer.hrId) throw forbiddenError("A district manager opens their own double visit plan only.");
     return { ...reach, managerHrId: viewer.hrId, managers: null };
   }
   const managers = reachableManagers(viewer);
@@ -141,12 +141,12 @@ export function assertDoubleVisitPlanWriter(viewer: PhoenixCrmViewer, isTest: bo
     throw superAdminHasNoFieldWrite("plan a district manager's double visits");
   }
   if (viewer.isSfeManager && !viewer.isTestPersona) {
-    throw forbiddenError("SFE reads the district managers' double visit plans. Each district manager plans his own.");
+    throw forbiddenError("SFE reads the district managers' double visit plans. Each district manager plans their own.");
   }
   const reach = doubleVisitPlanReach(viewer, isTest);
   if (!reach || reach.mode !== "own") throw forbiddenError(NOT_FOR_YOU);
   if (!reach.canWrite) throw forbiddenError("Your role cannot plan double visits.");
-  if (asked && asked !== viewer.hrId) throw forbiddenError("A district manager plans his own double visits only.");
+  if (asked && asked !== viewer.hrId) throw forbiddenError("A district manager plans their own double visits only.");
   return viewer.hrId;
 }
 

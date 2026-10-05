@@ -962,9 +962,9 @@ function runStillPlannedTests(): void {
     assert.ok(note.includes("The other days stay as you sent them, and your visits on them still count as planned."), "the rep reads that his other days still count as planned");
     assert.ok(note.includes("Until you send the week again, your visits on ${name} count as off-plan."), "and that only the returned day's visits wait");
     assert.doesNotMatch(note, /visits this week count as off-plan/, "never the whole week's, after one day went back");
-    assert.ok(note.includes("his visits on those days still count as planned."), "the reviewer reads it too");
+    assert.ok(note.includes("their visits on those days still count as planned."), "the reviewer reads it too");
     assert.ok(
-      source("src/components/phoenix-crm/plan-decision.tsx").includes("his visits on those days still count as"),
+      source("src/components/phoenix-crm/plan-decision.tsx").includes("their visits on those days still count as"),
       "and is told before he presses Return",
     );
   }

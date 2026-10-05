@@ -1014,7 +1014,7 @@ function PlanEditsSection({
           message={
             test
               ? "Test requests to edit a sent week show here while they wait."
-              : "When a rep asks to change a week he already sent, the request shows here until the district manager, SFE and HR have each taken their step."
+              : "When a rep asks to change a week they already sent, the request shows here until the district manager, SFE and HR have each taken their step."
           }
           title="No request to edit a plan waiting"
         />
@@ -1118,7 +1118,7 @@ function UnplannedSection({
           message={
             test
               ? "Test off-plan visits show here while they wait for a decision."
-              : "A visit to a customer who was not on the rep’s sent plan for that day shows here, with what he wrote, until it is decided. Until then it counts in nothing."
+              : "A visit to a customer who was not on the rep’s sent plan for that day shows here, with what they wrote, until it is decided. Until then it counts in nothing."
           }
           title="No off-plan visit waiting"
         />
@@ -1166,8 +1166,8 @@ function UnplannedSection({
         <>
           <CrmBlock className="border-t border-slate-100" title={`Waiting for your decision · ${countText(forYouVisits)}`}>
             <p className="break-words text-sm font-medium leading-6 text-slate-600">
-              One card for each rep’s day, the oldest first. Each visit shows what he wrote and, when it was moved from another day of his sent
-              plan, the day it was planned for. Approve or refuse each visit — a refusal needs a note he reads — or approve the whole day at once.
+              One card for each rep’s day, the oldest first. Each visit shows what they wrote and, when it was moved from another day of their sent
+              plan, the day it was planned for. Approve or refuse each visit — a refusal needs a note they read — or approve the whole day at once.
               It counts in nothing until both steps approve it.
             </p>
           </CrmBlock>
@@ -1357,7 +1357,7 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
     <>
       <CrmBlock className="border-t border-slate-100" title="Customer lists">
         <p className="break-words text-sm font-medium leading-6 text-slate-600">
-          Every customer a rep carried over from iReports360 is on his list from the first day, and he plans and visits on all of them
+          Every customer a rep carried over from iReports360 is on their list from the first day, and they plan and visit on all of them
           from the first day. Validating each one at the door is what makes those visits count. Nothing here is waiting on you.
         </p>
         <div className={cn("mt-3 grid min-w-0 gap-3", searchable ? "md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:items-end" : undefined)}>

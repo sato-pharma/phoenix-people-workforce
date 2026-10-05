@@ -122,7 +122,7 @@ export async function notifyEarlyBirdsRecommendation(candidate: EarlyBirdsPendin
         message:
           `${candidate.employeeName} is your recommended Early Bird for ${candidate.periodLabel}.\n\n` +
           `${earlyBirdsReasonSummary(candidate)}.\n\n` +
-          `The full evidence is below. Confirm him, or reject with a reason and the next-ranked rep ` +
+          `The full evidence is below. Confirm them, or reject with a reason and the next-ranked rep ` +
           `is offered instead.`,
         // Renders as the house zebra-striped details table.
         email: { metrics: buildEarlyBirdsEmailMetrics(candidate) },

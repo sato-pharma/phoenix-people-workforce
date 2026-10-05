@@ -175,7 +175,7 @@ const VOICE_RULES: ReadonlyArray<{ label: string; pattern: RegExp }> = [
  * Why a rewritten note must not be used. Empty means it is safe to hand back to the approver.
  *
  * `allowedSource` is the exact text the model was shown; any number in the note that is not in it
- * was invented. That is the one failure that could quietly change what an employee is told he is
+ * was invented. That is the one failure that could quietly change what an employee is told they are
  * owed, so it is checked against the prompt itself rather than a hand-kept list of fields.
  */
 export function findExpenseNoteViolations(note: string, allowedSource: string): string[] {
@@ -197,7 +197,7 @@ export function findExpenseNoteViolations(note: string, allowedSource: string): 
 // ── I/O ───────────────────────────────────────────────────────────────────────
 
 const noteInstructions = [
-  "You rewrite an approver's rough note into the single sentence an employee reads on his own outstation expense submission inside Phoenix Workforce, the HR system of an Egyptian pharmaceutical company.",
+  "You rewrite an approver's rough note into the single sentence an employee reads on their own outstation expense submission inside Phoenix Workforce, the HR system of an Egyptian pharmaceutical company.",
   [
     "VOICE — this is the entire point of the task:",
     "- The note reads as the system stating an outcome, never as a person addressing an employee.",
@@ -216,10 +216,10 @@ const noteInstructions = [
   ].join("\n"),
   [
     "FACTS — do not invent any:",
-    "- Use only the figures and dates listed in the request, or ones the approver already wrote himself.",
+    "- Use only the figures and dates listed in the request, or ones the approver already wrote themselves.",
     "- Never introduce a number that was not given to you: no invented amounts, distances, dates, percentages or counts.",
     "- If the approver's reason is vague, keep it vague. Never guess a specific cause.",
-    "- Preserve his meaning exactly. Never add a condition, a deadline or a next step he did not write.",
+    "- Preserve the approver's meaning exactly. Never add a condition, a deadline or a next step they did not write.",
   ].join("\n"),
   [
     "The required voice, for reference:",

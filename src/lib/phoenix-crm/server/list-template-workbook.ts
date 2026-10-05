@@ -150,7 +150,7 @@ function writeCustomersSheet(
   rule.value =
     "The clinic's photo and its location are NOT on this sheet: the rep captures them at the door, once, "
     + "and Phoenix resolves the address, brick, area and region from that. Every customer loaded from here "
-    + "appears under To validate for him to validate on the spot.";
+    + "appears under To validate for them to validate on the spot.";
   houseCalloutStyle(rule, { emphasis: true });
   sheet.getRow(3).height = 30;
 
@@ -216,7 +216,7 @@ function writeExistingSheet(workbook: ExcelJS.Workbook, input: ListTemplateInput
   const sheet = workbook.addWorksheet(TEMPLATE_EXISTING_SHEET);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(sheet, 1, {
-    columns: [column("List", 14), column("Customer name", 34), column("Speciality", 22), column("Grade", 10), column("Where he stands", 20)],
+    columns: [column("List", 14), column("Customer name", 34), column("Speciality", 22), column("Grade", 10), column("Where they stand", 20)],
     note:
       input.existing.length === 0
         ? "This territory holds no customers yet, which is why the whole list is being loaded."

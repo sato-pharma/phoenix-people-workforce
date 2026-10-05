@@ -123,7 +123,7 @@ export function BrickCoverageBoard({
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               <Tile
                 label="Sales covered"
-                sub="units in bricks he stood in"
+                sub="units in bricks they stood in"
                 tone={toneFor(totals.salesCoveragePct)}
                 value={`${totals.salesCoveragePct}%`}
               />
@@ -152,7 +152,7 @@ export function BrickCoverageBoard({
         </Section>
 
         <Section
-          description="Lowest sales coverage first — the reps whose selling bricks they are least present in · click a name for his contact list"
+          description="Lowest sales coverage first — the reps whose selling bricks they are least present in · click a name for their contact list"
           title="By rep"
         >
           <BrickCoverageRepTable month={board.month} monthLabel={board.monthLabel} rows={board.repRows} />

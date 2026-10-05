@@ -94,7 +94,7 @@ export function PlanDecision({
           : approved
             ? `${subject === "month" ? "The month" : "This week"} is approved. You can still return it to the rep with a note on what to change.`
             : `Return ${what} to the rep with a note on what to change.`}
-        {days.length > 0 ? " You can also return one day only: the rep changes that day, and every other day stays as he sent it." : ""}
+        {days.length > 0 ? " You can also return one day only: the rep changes that day, and every other day stays as they sent it." : ""}
       </p>
       <div className="mt-3 grid min-w-0 gap-2">
         <CrmField hint={canApprove ? `Needed to return ${what} or one of its days. The rep reads it.` : "The rep reads it."} htmlFor={noteId} label="Note for the rep">
@@ -141,8 +141,8 @@ export function PlanDecision({
           <div className="grid min-w-0 gap-2 border border-rose-200 bg-rose-50/40 px-3.5 py-3">
             <p className="text-sm font-black text-slate-950">Which day goes back to the rep?</p>
             <p className="break-words text-sm font-medium leading-6 text-slate-600">
-              Only that day opens for him to change. Every other day stays exactly as he sent it, and his visits on those days still count as
-              planned. He sends the week again once the day is changed.
+              Only that day opens for them to change. Every other day stays exactly as they sent it, and their visits on those days still count as
+              planned. They send the week again once the day is changed.
             </p>
             <CrmChoice
               columns={3}

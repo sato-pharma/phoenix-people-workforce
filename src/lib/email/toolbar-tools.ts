@@ -202,7 +202,7 @@ export const EMAIL_TOOLBAR_TOOLS: readonly EmailToolbarTool[] = [
       `<tr><td style="border: 1px solid #CFDCE7; padding: 8px 11px">Name</td>` +
       `<td style="border: 1px solid #CFDCE7; padding: 8px 11px">[value]</td></tr></tbody></table>`,
     note:
-      "however many rows and columns the sender names — rewrite the whole table to the shape he " +
+      "however many rows and columns the sender names — rewrite the whole table to the shape they " +
       "asked for, and put a [square bracket] gap in any cell whose value nobody has given you",
     survivesAs: "<th",
   },

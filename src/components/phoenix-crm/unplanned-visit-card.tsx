@@ -159,7 +159,7 @@ function OffPlanVisitRow({
             </p>
           ) : null}
           <p className="whitespace-pre-line break-words font-medium text-slate-700">
-            <span className="font-black text-slate-800">Why he went: </span>
+            <span className="font-black text-slate-800">Why they went: </span>
             <span dir="auto">{visit.clarification}</span>
           </p>
           {visit.speciality ? <p className="break-words text-xs font-semibold text-slate-500">{visit.speciality}</p> : null}

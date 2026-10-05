@@ -715,7 +715,7 @@ const EMPTY_COPY: Record<Exclude<PortalWeeklyRepStatus, "ok">, { title: string; 
   no_seat: {
     title: "No area is assigned to you yet",
     message:
-      "Weekly sales reach a rep through his seat in the organogram, and no filled rep seat lists you on your line. If you have just joined or moved, the organogram may not be updated yet.",
+      "Weekly sales reach a rep through their seat in the organogram, and no filled rep seat lists you on your line. If you have just joined or moved, the organogram may not be updated yet.",
   },
   no_data: {
     title: "No weekly sheet uploaded yet",

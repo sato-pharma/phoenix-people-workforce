@@ -170,7 +170,7 @@ export async function RepVisitsPageBody({
           </p>
           <p className="mt-1 text-xs text-amber-800">
             Widen the period or pick a different month on the board — one week can be genuinely empty for a rep who was
-            on leave, and a rep who joined or left mid-year is absent from the months either side of his own.
+            on leave, and a rep who joined or left mid-year is absent from the months either side of their own.
           </p>
         </div>
       </div>

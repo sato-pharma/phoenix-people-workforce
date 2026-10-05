@@ -2003,7 +2003,7 @@ function DeviceActions({
           ) : null}
           {(draft.markStatus === "lost" || draft.markStatus === "stolen") && device.assignmentId ? (
             <p className="mt-2 break-words text-[10px] font-bold leading-relaxed text-amber-800">
-              {device.holderName} keeps this on his custody record. البند (10) leaves an unreturned
+              {device.holderName} keeps this on their custody record. البند (10) leaves an unreturned
               device owed until it comes back or the custody is written off.
             </p>
           ) : null}

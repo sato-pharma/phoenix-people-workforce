@@ -1022,7 +1022,7 @@ function LocationsSection({
       ) : (
         <ReportList
           columns={["18%", "18%", "24%", "26%", "14%"]}
-          explain="The farthest first. Distance is between where the rep stood when he saved the visit and the place saved for that customer, which is fixed at capture and never edited."
+          explain="The farthest first. Distance is between where the rep stood when they saved the visit and the place saved for that customer, which is fixed at capture and never edited."
           hasData={(row) => row.locationFlag === "far" || row.locationFlag === "weak_gps"}
           headers={["Day", "Rep", "Customer", "Place saved", "Apart"]}
           idPrefix={`${idPrefix}-locations`}
@@ -1047,7 +1047,7 @@ function LocationsSection({
                 </p>
                 {row.placeWhere ? <p className="break-words">{row.placeWhere}</p> : null}
                 <p className="break-words">
-                  <span className="font-black text-slate-800">He stood at: </span>
+                  <span className="font-black text-slate-800">They stood at: </span>
                   {row.visitLat.toFixed(5)}, {row.visitLon.toFixed(5)}
                   {typeof row.accuracyMeters === "number" ? ` (accuracy ${countText(Math.round(row.accuracyMeters))} m)` : ""}
                 </p>
@@ -1529,7 +1529,7 @@ function FrequencySection({ idPrefix, resource }: { idPrefix: string; resource: 
       {report.month.inProgress ? (
         <div className="px-4 pt-4 sm:px-5">
           <CrmNote title={`${monthLabel(report.month.month)} is still running`} tone="info">
-            A customer under his grade can still be caught up before the month ends.
+            A customer under their grade can still be caught up before the month ends.
           </CrmNote>
         </div>
       ) : null}
@@ -1554,7 +1554,7 @@ function FrequencySection({ idPrefix, resource }: { idPrefix: string; resource: 
       </CrmBlock>
       <ReportList
         columns={["34%", null, null, null]}
-        explain="Each customer against TWO things, kept apart: his grade's monthly number from Phoenix CRM's own settings, and how often he was placed on a plan that was actually sent. A draft plan is not counted, and nor is a planning on a day HR approved the rep's leave when the customer was not seen that day."
+        explain="Each customer against TWO things, kept apart: their grade's monthly number from Phoenix CRM's own settings, and how often they were placed on a plan that was actually sent. A draft plan is not counted, and nor is a planning on a day HR approved the rep's leave when the customer was not seen that day."
         hasData={(row: CustomerFrequencyRow) => row.visits > 0}
         headers={["Customer", "Visits", "Against the grade", "Against the plan"]}
         idPrefix={`${idPrefix}-frequency`}

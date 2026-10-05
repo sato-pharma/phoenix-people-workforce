@@ -263,7 +263,7 @@ export function BrickCoverageBlindSpotTable({ monthLabel, rows }: { monthLabel: 
             { key: "brickName", label: "Brick never visited", width: 28 },
             { key: "areaName", label: "Area", width: 24 },
             { key: "units", label: "Units sold there", numeric: true },
-            { key: "pctOfRepSales", label: "% of his sales", numeric: true },
+            { key: "pctOfRepSales", label: "% of their sales", numeric: true },
           ]}
           rows={rows}
           sheetName="Blind spots"
@@ -290,7 +290,7 @@ export function BrickCoverageBlindSpotTable({ monthLabel, rows }: { monthLabel: 
               fields={[
                 { label: "Units sold there", value: row.units.toLocaleString() },
                 {
-                  label: "Of his sales",
+                  label: "Of their sales",
                   value: (
                     <span className={row.pctOfRepSales >= 25 ? "text-rose-700" : "text-slate-600"}>
                       {row.pctOfRepSales}%
@@ -320,7 +320,7 @@ export function BrickCoverageBlindSpotTable({ monthLabel, rows }: { monthLabel: 
                 <SortableTh className={THEAD} label="Brick never visited" onSort={table.toggleSort} sort={table.sort} sortKey="brickName" />
                 <SortableTh className={THEAD} label="Area" onSort={table.toggleSort} sort={table.sort} sortKey="areaName" />
                 <SortableTh align="right" className={`${THEAD} text-right`} label="Units sold" onSort={table.toggleSort} sort={table.sort} sortKey="units" />
-                <SortableTh align="right" className={`${THEAD} text-right text-rose-300`} label="Of his sales" onSort={table.toggleSort} sort={table.sort} sortKey="pctOfRepSales" />
+                <SortableTh align="right" className={`${THEAD} text-right text-rose-300`} label="Of their sales" onSort={table.toggleSort} sort={table.sort} sortKey="pctOfRepSales" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

@@ -40,7 +40,7 @@ export default async function PhoenixCrmListTemplatePage() {
   return (
     <div className="space-y-5">
       <AdminPageHero
-        description="Send a territory's medical representative a sheet, and load his list back from it. Each customer appears under To validate on his own list, with the grade and the potential you set here — and he validates each one at the clinic, which is the part no sheet can carry."
+        description="Send a territory's medical representative a sheet, and load their list back from it. Each customer appears under To validate on their own list, with the grade and the potential you set here — and the rep validates each one at the clinic, which is the part no sheet can carry."
         eyebrow="CRM"
         icon={<ClipboardList className="h-3.5 w-3.5" />}
         title="Load a customer list"
@@ -48,9 +48,9 @@ export default async function PhoenixCrmListTemplatePage() {
 
       <AdminCallout tone="neutral">
         <span>
-          The ordinary way onto a list is unchanged: the rep asks, his district manager confirms the grade and sets the potential, then SFE
+          The ordinary way onto a list is unchanged: the rep asks, their district manager confirms the grade and sets the potential, then SFE
           approves. Use this where that cannot run — a territory with no district manager, or a seat whose whole list has to be loaded at
-          once. Either way a rep never sets his own grades.
+          once. Either way a rep never sets their own grades.
         </span>
       </AdminCallout>
 

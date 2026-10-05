@@ -99,5 +99,5 @@ export function venueTooFarMessage(input: {
 }): string {
   const km = input.distanceMeters / 1000;
   const distance = km >= 10 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
-  return `${input.pharmacyName} is ${distance} away from ${input.customerName}, so it cannot be linked to him. Please check you picked the right pharmacy.`;
+  return `${input.pharmacyName} is ${distance} away from ${input.customerName}, so it cannot be linked to them. Please check you picked the right pharmacy.`;
 }

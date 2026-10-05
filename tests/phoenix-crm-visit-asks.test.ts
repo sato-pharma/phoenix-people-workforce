@@ -570,11 +570,11 @@ export async function runPhoenixCrmVisitAsksTests(): Promise<void> {
     );
     assert.equal(
       double[0].message,
-      "Mostafa Adel asks for a double visit with you to Ahmed Fathy (PM) on Tanta · Pedia. Any day suits him. Accept it and pick the day, or decline it, in Phoenix CRM.",
+      "Mostafa Adel asks for a double visit with you to Ahmed Fathy (PM) on Tanta · Pedia. Any day suits them. Accept it and pick the day, or decline it, in Phoenix CRM.",
       "he reads the rep, the customer and the territory — and nothing about where anybody stood",
     );
     const wished = visitAskDeliveries(notice({ wishedOn: "2026-10-05" }), NAMES);
-    assert.ok(wished[0].message.includes(`He would like ${formatPhoenixLongDate("2026-10-05")}.`), "the day the rep wished for, when he named one");
+    assert.ok(wished[0].message.includes(`They would like ${formatPhoenixLongDate("2026-10-05")}.`), "the day the rep wished for, when he named one");
 
     assert.deepEqual(
       shape(visitAskDeliveries(notice({ askKind: "chain", toldHrId: "A-12" }), NAMES)),
@@ -645,7 +645,7 @@ export async function runPhoenixCrmVisitAsksTests(): Promise<void> {
     );
     assert.equal(
       cns[0].message,
-      "Omar Saeed asks for a visit with you to Ahmed Fathy (PM) on Nasr City · CNS. Any day suits him. Accept it and pick the day, or decline it, in Phoenix CRM.",
+      "Omar Saeed asks for a visit with you to Ahmed Fathy (PM) on Nasr City · CNS. Any day suits them. Accept it and pick the day, or decline it, in Phoenix CRM.",
     );
     assert.equal(
       cns[1].message,

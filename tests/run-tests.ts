@@ -1716,6 +1716,7 @@ import { runCrmAccountSetupReminderTests } from "./crm-account-setup-reminder.te
 import { runPhoenixCrmStuckLoadingTests } from "./phoenix-crm-stuck-loading.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
+import { runNeutralWordingTests } from "./neutral-wording.test.ts";
 import { runPhoenixCrmDoctorPharmaciesTests } from "./phoenix-crm-doctor-pharmacies.test.ts";
 import { runPhoenixCrmLineProductsTests } from "./phoenix-crm-line-products.test.ts";
 import { runPhoenixCrmVoiceNoteTests } from "./phoenix-crm-voice-note.test.ts";
@@ -6154,6 +6155,11 @@ await runTest(
 await runTest(
   "Phoenix CRM says AM and PM, never Doctors or Accounts (owner, 2026-09-23: \"make it ALL AM PM not doctors and accounts\" — the two label maps that turned the codes into words are deleted so nothing can restore them, no screen string in the module carries either word, no label names a list type twice as \"Doctors · PM\", and the directory tab is called Directory because it holds AM customers too)",
   runPhoenixCrmAmPmWordTests,
+);
+
+await runTest(
+  "Nothing this app shows anybody assumes its subject is a man (owner, 2026-10-05, after the field activity report called a woman \"he\" in six places; 88 of the 206 active employees are female, 87 male and 31 have no gender recorded, so there is no pronoun to look up and the wording is neutral instead — every non-comment line of src/ and app/ is swept, comments are out of scope the way the AM/PM sweep has them, the Arabic on the HR papers is settled separately, and five files plus seven lines are exempt because their \"he\" is the owner's own recorded words or a pronoun already derived correctly)",
+  runNeutralWordingTests,
 );
 
 await runTest(

@@ -184,12 +184,12 @@ export function runPhoenixCrmDayStartTests(): void {
   {
     const [dm] = dayStartDeliveries(notice(REP1, "B-7"), NAMES, SFE);
     assert.match(dm.title, /^Started working: Aya Ibrahim$/, "the title names the person, never an id");
-    assert.match(dm.message, /Aya Ibrahim confirmed he started working at .+ \(Cairo\)/, "the time, in Cairo");
-    assert.match(dm.message, /His plan said he would start the morning at 08:00\./, "and what his plan said, so the manager reads planned against actual");
+    assert.match(dm.message, /Aya Ibrahim confirmed they started working at .+ \(Cairo\)/, "the time, in Cairo");
+    assert.match(dm.message, /Their plan said they would start the morning at 08:00\./, "and what his plan said, so the manager reads planned against actual");
     assert.match(dm.message, /google\.com\/maps\/search\/\?api=1&query=30\.7865,31\.0004/, "and where he was — the owner's ruling that the location travels");
 
     const noPlan = dayStartDeliveries(notice(REP1, "B-7", null), NAMES, SFE)[0];
-    assert.match(noPlan.message, /He had no sent plan for today\./, "a rep who started a day he never planned says so, rather than hiding the gap");
+    assert.match(noPlan.message, /They had no sent plan for today\./, "a rep who started a day he never planned says so, rather than hiding the gap");
 
     assert.equal(minuteClock(8 * 60), "08:00");
     assert.equal(minuteClock(9 * 60 + 5), "09:05");
@@ -247,12 +247,12 @@ export function runPhoenixCrmDayStartTests(): void {
     assert.equal(DAY_START_READ_LABEL, "Started working", "the managers' screens call it what the button called it");
     assert.equal(
       dayStartReadLine({ startedAt: STARTED_AT, plannedAmMinute: 8 * 60 }, "08:42"),
-      "08:42 · his plan said 08:00",
+      "08:42 · their plan said 08:00",
       "the day in full prints the clock beside what his own sent plan had said",
     );
     assert.equal(
       dayStartReadLine({ startedAt: STARTED_AT, plannedAmMinute: null }, "08:42"),
-      "08:42 · he had no sent plan for this day",
+      "08:42 · they had no sent plan for this day",
       "a rep who started a day he never planned says so on the manager's screen, exactly as the notice does",
     );
 

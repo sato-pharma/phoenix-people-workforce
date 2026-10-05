@@ -184,7 +184,7 @@ export type VisitAskAddresseeRefusal = "no_manager" | "no_senior" | "no_product_
 export type VisitAskAddresseeResult = { ok: true; value: VisitAskAddressees } | { ok: false; kind: VisitAskAddresseeRefusal; error: string };
 
 const NO_MANAGER = "Your territory has no manager above it in the organogram, so there is nobody to ask yet.";
-const NO_SENIOR = "A chain visit needs your district manager and the manager above him, and your territory has only one manager above it.";
+const NO_SENIOR = "A chain visit needs your district manager and the manager above them, and your territory has only one manager above it.";
 const NO_PRODUCT_MANAGER = "No product manager covers your line's products yet.";
 const NOT_LINE_PRODUCT_MANAGER = "Choose one of your line's product managers. Reload the page.";
 

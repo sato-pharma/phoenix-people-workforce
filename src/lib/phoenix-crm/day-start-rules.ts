@@ -98,6 +98,6 @@ export const DAY_START_READ_LABEL = "Started working";
  */
 export function dayStartReadLine(dayStart: DayStartView, clock: string): string {
   return dayStart.plannedAmMinute === null
-    ? `${clock} · he had no sent plan for this day`
-    : `${clock} · his plan said ${minuteClock(dayStart.plannedAmMinute)}`;
+    ? `${clock} · they had no sent plan for this day`
+    : `${clock} · their plan said ${minuteClock(dayStart.plannedAmMinute)}`;
 }

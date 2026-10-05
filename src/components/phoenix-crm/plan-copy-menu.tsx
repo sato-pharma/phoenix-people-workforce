@@ -322,7 +322,7 @@ function suggestReport(result: SuggestResult, morningOnly: boolean, scope: Sugge
     return {
       tone: "info",
       title: "Nothing to suggest",
-      message: `Every customer who receives ${days} is already at his grade this month, or already planned.`,
+      message: `Every customer who receives ${days} is already at their grade this month, or already planned.`,
     };
   }
   const noHours = result.summary.noHours;
@@ -377,7 +377,7 @@ export function PlanSuggestMenu({
   const explain =
     scope.kind === "day"
       ? `The customers furthest behind their grade this month who receive on ${dayLabel(scope.date)}, one brick at a time, up to the day's ${morningOnly ? "AM" : "AM and PM"} room.`
-      : "Every day you can still change, the same way. A customer is never placed beyond his grade, and is spread over the weeks left.";
+      : "Every day you can still change, the same way. A customer is never placed beyond their grade, and is spread over the weeks left.";
 
   return (
     <div className="grid min-w-0 content-start gap-2">

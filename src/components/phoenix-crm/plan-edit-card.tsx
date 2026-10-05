@@ -74,7 +74,7 @@ export function PlanEditCard({
         decision === "refuse"
           ? `Refused: ${edit.repName}'s request to edit a weekly plan.`
           : decision === "acknowledge"
-            ? `Acknowledged: ${edit.repName}'s week is open again for him to change.`
+            ? `Acknowledged: ${edit.repName}'s week is open again for them to change.`
             : `Approved: ${edit.repName}'s request to edit a weekly plan.`,
       );
     } catch (error) {
@@ -97,7 +97,7 @@ export function PlanEditCard({
     >
       <div className="grid min-w-0 gap-1.5 text-sm leading-6">
         <p className="break-words font-medium text-slate-700">
-          Asks to edit his plan for this week, which is already sent. Asked {cairoStamp(edit.raisedAt)}.
+          Asks to edit their plan for this week, which is already sent. Asked {cairoStamp(edit.raisedAt)}.
         </p>
         <p className="break-words text-xs font-semibold text-slate-600">The week now: {edit.planStatusLabel}</p>
         {/* The steps already passed. Each step reads who already said yes before saying it too. */}

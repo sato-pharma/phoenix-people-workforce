@@ -433,7 +433,7 @@ function writeFrequency(workbook: ExcelJS.Workbook, view: CustomerFrequencyRepor
       counted("Against the plan", 17),
     ],
     note: [
-      "Two comparisons, kept apart: the grade's monthly number from Phoenix CRM's own settings, and how often he was "
+      "Two comparisons, kept apart: the grade's monthly number from Phoenix CRM's own settings, and how often they were "
         + "placed on a plan that was actually sent. Over the grade is a deviation too, never a bonus.",
       // The screen's own rule, written into the file that leaves the building without the screen.
       "A planning on a day HR approved the rep's leave, when the customer was not seen that day, is Planned on leave and never counted against the plan.",

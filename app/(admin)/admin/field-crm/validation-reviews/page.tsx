@@ -41,7 +41,7 @@ export default async function PhoenixCrmValidationReviewsPage() {
       <AdminPageHero
         eyebrow="CRM"
         title="Place checks"
-        description={`Every AM customer a rep validates is checked against its own Google Maps listing: the listing must be that customer, and he must have stood within ${GOOGLE_MATCH_METERS} m of it. A place that does not match is refused at the door. These are the ones the system could not settle — Google had no listing for the customer, or its pin is over ${GOOGLE_STALE_PIN_METERS.toLocaleString("en-GB")} m away — and each waits for you. The rep is told only that the system is checking.`}
+        description={`Every AM customer a rep validates is checked against its own Google Maps listing: the listing must be that customer, and they must have stood within ${GOOGLE_MATCH_METERS} m of it. A place that does not match is refused at the door. These are the ones the system could not settle — Google had no listing for the customer, or its pin is over ${GOOGLE_STALE_PIN_METERS.toLocaleString("en-GB")} m away — and each waits for you. The rep is told only that the system is checking.`}
         icon={<MapPinCheck className="h-3.5 w-3.5" />}
       />
 
@@ -80,7 +80,7 @@ export default async function PhoenixCrmValidationReviewsPage() {
       ) : (
         <AdminTableShell
           title="Waiting for your decision"
-          description="Approve validates the customer in the rep's name and his visits start counting. Reject retires the place; when it was his only one, the customer goes back to To validate. The rep reads either as the system's answer."
+          description="Approve validates the customer in the rep's name and their visits start counting. Reject retires the place; when it was their only one, the customer goes back to To validate. The rep reads either as the system's answer."
         >
           <ValidationReviewQueue rows={waiting} />
         </AdminTableShell>
@@ -94,7 +94,7 @@ export default async function PhoenixCrmValidationReviewsPage() {
 
       <AdminTableShell
         title="Validations the system did not question"
-        description="Only AM customers are checked against Google, so a doctor's validation is never held — and an AM one that matched its listing is not either. These are the places validated in the last 30 days and still in use. Refusing one retires the place and, when it is the customer's only place, sends him back to To validate; he reads the system's own wording and never that a person looked at him."
+        description="Only AM customers are checked against Google, so a doctor's validation is never held — and an AM one that matched its listing is not either. These are the places validated in the last 30 days and still in use. Refusing one retires the place and, when it is the customer's only place, sends them back to To validate; the rep reads the system's own wording and never that a person looked at them."
       >
         {validated.length === 0 ? (
           <AdminCallout tone="neutral">

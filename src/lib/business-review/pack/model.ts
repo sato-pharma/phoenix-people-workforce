@@ -511,8 +511,8 @@ function repRows({ areas, people, visitsAvailable }: PackInput): PackSection {
         ? {
             capNote:
               visited.length > plottedReps.length
-                ? `Field visits — the ${plottedReps.length} busiest of ${visited.length} reps. This section's table holds every one, and the percentage beside a rep is his area's.`
-                : "Field visits. The percentage beside a rep in the table is his AREA's, not his own.",
+                ? `Field visits — the ${plottedReps.length} busiest of ${visited.length} reps. This section's table holds every one, and the percentage beside a rep is their area's.`
+                : "Field visits. The percentage beside a rep in the table is their AREA's, not their own.",
             countSuffix: "visits",
             items: plottedReps.map((person) => ({
               label: personName(person),
@@ -525,7 +525,7 @@ function repRows({ areas, people, visitsAvailable }: PackInput): PackSection {
           }
         : null,
     align: ["left", "left", "right", "right", "right"],
-    columns: ["Rep", "Area he stands in", "Area achievement", "Visits", "AM · PM · Pharmacies"],
+    columns: ["Rep", "Area they stand in", "Area achievement", "Visits", "AM · PM · Pharmacies"],
     metric: "rep-rows",
     // The single most important sentence in the pack. See the module header.
     note: "The percentage is the AREA's, shared by everyone standing in it — targets are set per area, never per rep.",
@@ -962,7 +962,7 @@ function doubleVisitsByManager({ people }: PackInput): PackSection | null {
     align: ["left", "left", "right", "right"],
     columns: ["Manager", "Role", "Rides led", "Reps ridden with"],
     metric: "double-visits",
-    note: "Rides each manager LED, and how many different reps he rode with in the window.",
+    note: "Rides each manager LED, and how many different reps they rode with in the window.",
     rows: riders.map((person) => [
       personName(person),
       person.jobTitle || person.role || "—",
@@ -1030,7 +1030,7 @@ function roleActivity({ people, visitsAvailable }: PackInput): PackSection | nul
     align: ["left", "right", "right", "left", "right", "right", "right"],
     columns: ["Role", "People", "Field visits", "AM · PM · Pharmacies", "Rides led", "Outstation claimed", "Marketing requests"],
     metric: "role-activity",
-    note: "Everything here adds — a visit, a ride or a claim belongs to one person. Customers are left out on purpose: the same doctor seen by a rep and by his manager is one customer, so a total per role would count him twice.",
+    note: "Everything here adds — a visit, a ride or a claim belongs to one person. Customers are left out on purpose: the same doctor seen by a rep and by their manager is one customer, so a total per role would count them twice.",
     rows: roles.map(([role, tally]) => [
       role,
       tally.people,

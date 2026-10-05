@@ -398,7 +398,7 @@ function SentChangesBlock({ changes, onOpenDay }: { changes: PlanSentChanges | n
     return (
       <CrmBlock className="border-t border-slate-100" title="What changed">
         <CrmNote title="Nothing changed since the last send" tone="good">
-          The rep sent the same customers and activities as he sent{since}.
+          The rep sent the same customers and activities as they sent{since}.
         </CrmNote>
       </CrmBlock>
     );

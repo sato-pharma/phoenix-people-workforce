@@ -183,7 +183,7 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
     return (
       <EmployeePortalPageShell
         badge="CRM"
-        description="Pick one of your reps and a week to read the plan he filed, and verify it. Verifying writes the status into the CRM itself."
+        description="Pick one of your reps and a week to read the plan they filed, and verify it. Verifying writes the status into the CRM itself."
         title="Reps List"
       >
         <RepsListTabs
@@ -219,7 +219,7 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
   return (
     <EmployeePortalPageShell
       badge="CRM"
-      description="Filter to a line, region and area, then open a rep to see his own CRM contact list grouped by the brick each contact sits in."
+      description="Filter to a line, region and area, then open a rep to see their own CRM contact list grouped by the brick each contact sits in."
       title="Reps List"
     >
       <RepsListTabs

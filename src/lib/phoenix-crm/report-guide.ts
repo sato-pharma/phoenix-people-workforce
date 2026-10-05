@@ -133,7 +133,7 @@ export const REPORT_GUIDE: Record<ReportSection, ReportEntry> = {
   daily: {
     family: "work",
     note: "Each day's customers",
-    answers: "One rep's plan for the days you choose, customer by customer — who he is due to see, and who he saw.",
+    answers: "One rep's plan for the days you choose, customer by customer — who they are due to see, and who they saw.",
   },
   coverage: {
     family: "list",
@@ -143,7 +143,7 @@ export const REPORT_GUIDE: Record<ReportSection, ReportEntry> = {
   frequency: {
     family: "list",
     note: "Grade and plan, apart",
-    answers: "Customer by customer: the grade he carries, how often his grade says he should be seen, and how often he actually was.",
+    answers: "Customer by customer: the grade they carry, how often their grade says they should be seen, and how often they actually were.",
   },
   tracking: {
     family: "list",
@@ -153,7 +153,7 @@ export const REPORT_GUIDE: Record<ReportSection, ReportEntry> = {
   capacity: {
     family: "list",
     note: "The list against the month",
-    answers: "Whether a rep's list can even fit into the working days of the month at the frequency his customers' grades ask for.",
+    answers: "Whether a rep's list can even fit into the working days of the month at the frequency their customers' grades ask for.",
   },
   bricks: {
     family: "ground",
@@ -174,7 +174,7 @@ export const REPORT_GUIDE: Record<ReportSection, ReportEntry> = {
   managers: {
     family: "rollout",
     note: "Per manager",
-    answers: "How many double visits and chain visits each manager made with his reps over the days you choose.",
+    answers: "How many double visits and chain visits each manager made with their reps over the days you choose.",
   },
   heard: {
     family: "heard",

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 5a498a53-4b49-4b18-819a-15881fd7d758
-  modified: 2026-10-05T10:00:48.860Z
+  modified: 2026-10-05T11:18:00.596Z
 ---
 
 Found 2026-10-05 on the field activity report: it called a District Sales Manager "he" in six
@@ -95,8 +95,16 @@ content, and it SHIPS in the generated card) and four ordinary `//` lines in two
 read differently. Neutralising those five words cost nothing and kept the exemption list short;
 exempting the files would have blinded the sweep to their real strings.
 
-🔴 **SIXTEEN TESTS PINNED THE OLD WORDING, AND IT TOOK THREE RED BOX RUNS (~10 MIN EACH) TO FIND THEM ALL,
-BECAUSE A LITERAL SCAN CANNOT SEE A PARTIAL ASSERTION.** `refused(..., /his own/, ...)` and
+🔒 **THE CODE COMMENTS ARE SETTLED TOO — "leave the code comments as they are"** (owner,
+2026-10-05, asked with the count in front of him: about **6,200** lines). That covers a test's own
+NAME and its assertion MESSAGES, which are the same developer-facing family and are what every
+residual scan hit turns out to be. **Never propose it, never ask again, and never widen
+`tests/neutral-wording.test.ts` past `stripComments` to reach them.** Recorded in the guard's own
+header beside the Arabic ruling, so a later sweep cannot re-open either.
+
+🔴 **FIFTEEN TESTS PINNED THE OLD WORDING, AND IT TOOK FOUR RED BOX RUNS (~10 MIN EACH), BECAUSE A
+TEST CAN ASSERT PRODUCTION COPY IN FIVE SHAPES AND EACH DEFEATS THE SCAN THAT CAUGHT THE LAST.**
+`refused(..., /his own/, ...)` and
 `.includes("his visits on those days still count as")` assert production text without containing
 any whole string from the replacement table. 🔴 **THE ONE SCAN THAT FINDS THEM ALL IS BUILT FROM THE DIFF, NOT FROM THE REPLACEMENT TABLE.**
 Take the OLD side of `git diff origin/main...HEAD -- src app`, pull out every quoted literal AND
@@ -111,6 +119,27 @@ assertion messages. 387 fragments → 11 live references → 3 real, in one pass
 be able to SEE an offence") legitimately keep the word; assertion MESSAGES are not production copy.
 One real fixture read `"Aya Ibrahim confirmed he started working at…"` — the defect itself, sitting
 in a test.
+
+🔴 **THAT DIFF SCAN STILL MISSES SHAPE 4 — RUN IT IN BOTH DIRECTIONS.** Direction A (old fragment
+found inside a test) cannot see a test that asserts a **SUBSTRING** of the changed string: src held
+`"…must be in the document he uploaded or in his own request."`, the test asserted only
+`"must be in the document he uploaded"`. **Direction B is the inverse — take every quoted literal
+in `tests/` and `scripts/` carrying the word, split it on its own `${…}` holes, and ask whether it
+appears in the OLD side of the diff.** Neutralising the test string and looking for it in the NEW
+source does NOT work, because a good rewrite is not a mechanical pronoun swap: `he uploaded` became
+`the sender uploaded`. Only the diff knows what the string used to be. **Write these scans with the
+Write tool** — a *quoted* bash heredoc in MSYS still collapses the backslash PAIRS in a regex
+literal (`\\.` → `\.`), so the file will not parse; see
+[[a-python-heredoc-writes-real-control-chars-into-regex-literals]].
+
+🔴 **SHAPE 5 IS NOT IN YOUR BRANCH AT ALL — `main` MOVES UNDER A WIDE COPY SWEEP, AND A PR'S CHECKS
+RUN AGAINST THE MERGE.** Three commits landed while this one was being fixed, and one added a brand
+new refusal reason reading *"Both **his** readings are precise"* to a file the sweep edits — it
+would have failed the sweep's OWN guard on the PR. **Before pushing a wide sweep, `git merge
+origin/main` LOCALLY** (free; `gh pr update-branch` is the server-side one that costs ~16 Actions
+minutes) **and re-run the guard on the merged tree.** It also surfaced the one real conflict, which
+would otherwise have opened the PR `DIRTY`. Cross-check fingerprint tests too — `git grep -l
+createHash -- tests/` against the changed file list — though none pinned a changed file here.
 
 Related: [[a-green-test-run-carries-no-type-signal-at-all]],
 [[never-horizontal-scroll-always-mobile-and-desktop-friendly]], [[the-house-document-identity-standard]].
