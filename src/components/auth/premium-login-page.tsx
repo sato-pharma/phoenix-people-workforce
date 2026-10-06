@@ -23,14 +23,14 @@ import {
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 
 const rememberedLoginIdKey = "phoenix_remembered_login_id";
-const loginIdRequiredMessage = "Enter your HR_ID or login ID.";
+const loginIdRequiredMessage = "Enter your HR ID, login ID or Sato email.";
 const maxLoginIdLength = 120;
 const maxPasswordLength = 1024;
 const passwordRequiredMessage = "Enter your password.";
 
 const loginErrorMessages: Record<string, string> = {
-  invalid_credentials: "Invalid login ID or password.",
-  password_setup_required: "Your password must be set or reset from the admin link before you can sign in.",
+  invalid_credentials: "Invalid login or password.",
+  password_setup_required: "Set your password first using “Set or reset my password” below, then sign in.",
   rate_limited: "Too many failed login attempts. Please try again later.",
 };
 
@@ -481,7 +481,7 @@ function AccessPanel({
 
         <div className="mt-5 space-y-4">
           <label className="block" htmlFor="login-id">
-            <span className="mb-2 block text-base font-semibold text-white">HR_ID or Login ID</span>
+            <span className="mb-2 block text-base font-semibold text-white">HR ID, Login ID or Sato email</span>
             <span className="relative block">
               <input
                 aria-describedby={error ? "login-error" : undefined}
@@ -492,7 +492,7 @@ function AccessPanel({
                 maxLength={maxLoginIdLength}
                 name="loginId"
                 onChange={(event) => onLoginIdChange(event.target.value)}
-                placeholder="Enter HR_ID or login ID"
+                placeholder="HR ID or name@satopharma.com"
                 required
                 type="text"
                 value={loginId}
@@ -530,7 +530,7 @@ function AccessPanel({
           </div>
         </div>
 
-        <div className="mt-4 text-sm">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
           <label className="flex cursor-pointer items-center gap-3 text-white/82" htmlFor="remember-login">
             <input
               checked={remember}
@@ -550,6 +550,12 @@ function AccessPanel({
             </span>
             Remember login ID
           </label>
+          <a
+            className="font-semibold text-[#ff9a2f] underline-offset-4 transition hover:text-[#ffb366] hover:underline"
+            href="/password-reset"
+          >
+            Set or reset my password
+          </a>
         </div>
 
         {error && (

@@ -51,16 +51,77 @@ export function normalizeLoginId(value: string | null | undefined) {
   return String(value ?? "").trim();
 }
 
+/**
+ * A typed identifier is treated as an email only when it has the `local@domain.tld` shape. HR_IDs
+ * (`B-10`) and login IDs never contain an `@`, so this never misroutes them; and refusing anything
+ * without a dot after the `@` keeps a half-typed `name@` out of the email branch.
+ */
+export function looksLikeEmail(value: string | null | undefined): boolean {
+  const v = normalizeLoginId(value).toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+}
+
+const authUserBaseQuery =
+  "login_id, password_hash, role, hr_id, is_active, auth_user_id, auth_email, email, line, manager_hr_id, name, session_version, force_password_reset, is_test_persona, test_persona_of_hr_id";
+
+// Resolve the Sato email an employee typed to their active auth row. The work mailbox lives on
+// employees.work_email (unique), NOT on app_auth_users, so this first tries the optional
+// app_auth_users.email override, then the real employees.work_email -> hr_id -> auth row. Every
+// path returns the SAME app_auth_users row the HR_ID/login paths return, so authenticateLoginId's
+// password check and the terminal-employment gate apply identically — email is a new DOOR to the
+// same account, never a new, weaker way in.
+async function findActiveAuthUserRowByEmail(email: string): Promise<AppAuthUserDbRow | null> {
+  const supabase = getSupabaseAdmin();
+
+  const overrideLookup = await supabase
+    .from("app_auth_users")
+    .select(authUserBaseQuery)
+    .ilike("email", email)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (overrideLookup.error) {
+    throw overrideLookup.error;
+  }
+
+  if (overrideLookup.data) {
+    return overrideLookup.data as AppAuthUserDbRow;
+  }
+
+  const employeeLookup = await supabase
+    .from("employees")
+    .select("hr_id")
+    .ilike("work_email", email)
+    .maybeSingle();
+
+  if (employeeLookup.error) {
+    throw employeeLookup.error;
+  }
+
+  const linkedHrId = String((employeeLookup.data as { hr_id?: string | null } | null)?.hr_id ?? "").trim();
+  if (!linkedHrId) return null;
+
+  const linkedLookup = await supabase
+    .from("app_auth_users")
+    .select(authUserBaseQuery)
+    .eq("hr_id", linkedHrId.toUpperCase())
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (linkedLookup.error) {
+    throw linkedLookup.error;
+  }
+
+  return (linkedLookup.data as AppAuthUserDbRow | null) ?? null;
+}
+
 async function findActiveAuthUserRow(identifierInput: string): Promise<AppAuthUserDbRow | null> {
   const identifier = normalizeLoginId(identifierInput);
   if (!identifier) return null;
 
-  const supabase = getSupabaseAdmin();
-  const baseQuery = "login_id, password_hash, role, hr_id, is_active, auth_user_id, auth_email, email, line, manager_hr_id, name, session_version, force_password_reset, is_test_persona, test_persona_of_hr_id";
-
-  const loginLookup = await supabase
+  const loginLookup = await getSupabaseAdmin()
     .from("app_auth_users")
-    .select(baseQuery)
+    .select(authUserBaseQuery)
     .ilike("login_id", identifier)
     .eq("is_active", true)
     .maybeSingle();
@@ -73,9 +134,9 @@ async function findActiveAuthUserRow(identifierInput: string): Promise<AppAuthUs
     return loginLookup.data as AppAuthUserDbRow;
   }
 
-  const hrLookup = await supabase
+  const hrLookup = await getSupabaseAdmin()
     .from("app_auth_users")
-    .select(baseQuery)
+    .select(authUserBaseQuery)
     .eq("hr_id", identifier.toUpperCase())
     .eq("is_active", true)
     .maybeSingle();
@@ -84,7 +145,16 @@ async function findActiveAuthUserRow(identifierInput: string): Promise<AppAuthUs
     throw hrLookup.error;
   }
 
-  return (hrLookup.data as AppAuthUserDbRow | null) ?? null;
+  if (hrLookup.data) {
+    return hrLookup.data as AppAuthUserDbRow;
+  }
+
+  // Sign in with the Sato work email as well as the HR_ID / login ID (owner, 2026-10-06).
+  if (looksLikeEmail(identifier)) {
+    return findActiveAuthUserRowByEmail(identifier);
+  }
+
+  return null;
 }
 
 export async function resolveStoredLoginId(identifierInput: string): Promise<string | null> {

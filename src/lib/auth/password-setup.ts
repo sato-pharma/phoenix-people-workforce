@@ -4,12 +4,26 @@ import bcrypt from "bcryptjs";
 
 import { systemAuthEmailText } from "@/config/system-settings";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { resolveStoredLoginId } from "@/lib/auth/credentials";
+import {
+  evaluatePasswordResetCode,
+  generatePasswordResetCode,
+  hashPasswordResetCode,
+  normalizePasswordResetCode,
+  passwordResetCodeExpiryMs,
+  passwordResetCodeLength,
+  passwordResetCodeMaxAttempts,
+  type ResetCodeRow,
+} from "@/lib/auth/password-reset-code";
 import { persistSupabaseAuthIdentityLink, provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const passwordSetupExpiryMs = 48 * 60 * 60 * 1000;
+// The token minted after a SELF-SERVICE code is accepted lives only as long as the code did — the
+// person is standing on the set-password screen the instant it is issued, so it never needs 48h.
+const codeVerifiedTokenExpiryMs = passwordResetCodeExpiryMs;
 
 type PasswordSetupTokenRow = {
   created_at: string;
@@ -487,4 +501,225 @@ export async function completePasswordSetup(input: { password: string; token: st
   });
 
   return { bridgeWarning };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Self-service reset-by-code (owner, 2026-10-06). An employee types their Sato email (or HR_ID /
+// login ID) on /password-reset, receives a 6-digit code in their inbox, enters it, and is handed a
+// short-lived password_setup_tokens token that drives the EXISTING /password-setup/[token] screen.
+// So this layer only adds the "prove the inbox" step; bcrypt, the session bump, the Supabase bridge
+// and the audit trail all stay in completePasswordSetup, unchanged.
+// ---------------------------------------------------------------------------------------------------
+
+// Mint a fresh password_setup_tokens row for a login WITHOUT emailing a link (the code already
+// proved the inbox). Same insert + single-live-token invariant sendPasswordSetupLink relies on, but
+// with a caller-chosen expiry so the code-verified token lives only as long as the code did.
+async function mintPasswordSetupTokenForLogin(
+  loginId: string,
+  purpose: "reset" | "setup",
+  expiryMs: number,
+): Promise<string> {
+  const user = await getAuthUser(loginId);
+  if (!user.is_active) {
+    throw new Error(`User ${loginId} is inactive.`);
+  }
+
+  const token = createToken();
+  const tokenHash = hashToken(token);
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + expiryMs).toISOString();
+  const supabase = getSupabaseAdmin();
+
+  await invalidateOutstandingTokens(loginId);
+
+  const { error } = await supabase
+    .from("password_setup_tokens")
+    .insert({
+      expires_at: expiresAt,
+      login_id: loginId,
+      purpose,
+      token_hash: tokenHash,
+      updated_at: now,
+    });
+
+  if (error) {
+    throw error;
+  }
+
+  return token;
+}
+
+/**
+ * Email a one-time 6-digit reset code to the Sato mailbox of whoever a person typed on the reset
+ * page. ENUMERATION-SAFE: it resolves silently and returns nothing whether the identifier is
+ * unknown, inactive, or has no deliverable address — the caller (route) always answers the same
+ * "if that account exists, a code was sent". Only the newest code for a login is ever live.
+ */
+export async function requestPasswordResetCode(input: {
+  identifier: string;
+  requestIp?: string | null;
+}): Promise<void> {
+  const loginId = await resolveStoredLoginId(input.identifier).catch(() => null);
+  if (!loginId) return;
+
+  let user: Awaited<ReturnType<typeof getAuthUser>>;
+  try {
+    user = await getAuthUser(loginId);
+  } catch {
+    return;
+  }
+  if (!user.is_active) return;
+
+  // Same mailbox resolution the admin link uses: app_auth_users.email override, else the real
+  // employees.work_email. No real mailbox -> nothing to send (and nothing to leak).
+  const deliverableEmail = await resolveDeliverableEmail(user);
+  if (!deliverableEmail) return;
+
+  const code = generatePasswordResetCode();
+  const codeHash = hashPasswordResetCode(loginId, code);
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const expiresAt = new Date(now.getTime() + passwordResetCodeExpiryMs);
+  const supabase = getSupabaseAdmin();
+
+  // Supersede any still-live code so only the one just emailed can be used.
+  await supabase
+    .from("password_reset_codes")
+    .update({ consumed_at: nowIso, updated_at: nowIso })
+    .eq("login_id", loginId)
+    .is("consumed_at", null);
+
+  const { error: insertError } = await supabase
+    .from("password_reset_codes")
+    .insert({
+      code_hash: codeHash,
+      expires_at: expiresAt.toISOString(),
+      login_id: loginId,
+      max_attempts: passwordResetCodeMaxAttempts,
+      request_ip: input.requestIp ?? null,
+      sent_to_email: deliverableEmail,
+    });
+
+  if (insertError) {
+    throw insertError;
+  }
+
+  await createSystemNotification({
+    actionUrl: "/password-reset",
+    actorId: "system",
+    channels: ["email"],
+    email: {
+      candidateEmail: deliverableEmail,
+      recipientName: user.name?.trim() || undefined,
+      ctaHref: "/password-reset",
+      ctaLabel: "Open the password page",
+      metrics: [
+        { label: "Your code", value: code },
+        {
+          label: "Expires",
+          value: `${expiresAt.toLocaleString("en-US", { timeZone: "Africa/Cairo" })} (Cairo)`,
+        },
+      ],
+      notificationType: "password_reset",
+      recipientMode: "candidate",
+      recipients: [deliverableEmail],
+      subject: systemAuthEmailText.passwordResetSubject,
+      summary:
+        "Enter this 6-digit code on the Phoenix password page to set a new password. It expires in 15 minutes. If you did not ask for this, ignore this email — your password stays unchanged.",
+      title: systemAuthEmailText.passwordResetTitle,
+      tone: "warning",
+    },
+    eventType: "password_reset_code_created",
+    message:
+      "A one-time password-reset code was requested for your Phoenix account.",
+    metadata: {
+      idempotencyKey: `password-reset-code:${loginId}:${codeHash}`,
+      loginId,
+      purpose: "reset_code",
+    },
+    module: "password_reset",
+    priority: "high",
+    recipientHrId: user.hr_id,
+    recipientUserId: loginId,
+    title: systemAuthEmailText.passwordResetTitle,
+  });
+
+  await writeRequiredAuditLog({
+    actorLoginId: loginId,
+    entityId: loginId,
+    entityType: "user",
+    newValues: {
+      action: "password_reset_code_sent",
+      code: "[redacted]",
+      expiresAt: expiresAt.toISOString(),
+      sentTo: deliverableEmail,
+    },
+    oldValues: null,
+    summary: `Sent self-service password reset code to ${loginId}`,
+  });
+}
+
+/**
+ * Check a submitted code against the newest live code for whoever a person typed, enforcing the
+ * attempt cap and expiry. On success it consumes the code and returns a short-lived
+ * password_setup_tokens token for the /password-setup/[token] screen. Every failure throws the SAME
+ * generic error (never revealing whether the account, or the code, was the problem).
+ */
+export async function verifyPasswordResetCode(input: {
+  code: string;
+  identifier: string;
+  requestIp?: string | null;
+}): Promise<{ token: string }> {
+  const genericError = new Error("That code is invalid or has expired. Request a new one.");
+
+  const loginId = await resolveStoredLoginId(input.identifier).catch(() => null);
+  if (!loginId) throw genericError;
+
+  // Cheap shape gate, same generic error — never spend a real compare on a non-6-digit string.
+  if (normalizePasswordResetCode(input.code).length !== passwordResetCodeLength) {
+    throw genericError;
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("password_reset_codes")
+    .select("id, login_id, code_hash, attempts, max_attempts, expires_at, consumed_at")
+    .eq("login_id", loginId)
+    .is("consumed_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const row = (data as (ResetCodeRow & { id: string }) | null) ?? null;
+  const outcome = evaluatePasswordResetCode({ code: input.code, row });
+
+  if (outcome.status === "ok" && row) {
+    const now = new Date().toISOString();
+    const { error: consumeError } = await supabase
+      .from("password_reset_codes")
+      .update({ consumed_at: now, updated_at: now })
+      .eq("id", row.id);
+    if (consumeError) throw consumeError;
+
+    const token = await mintPasswordSetupTokenForLogin(loginId, "reset", codeVerifiedTokenExpiryMs);
+    return { token };
+  }
+
+  if (outcome.status === "mismatch" && row) {
+    const now = new Date().toISOString();
+    await supabase
+      .from("password_reset_codes")
+      .update({
+        attempts: outcome.nextAttempts,
+        updated_at: now,
+        // A code that has just exhausted its attempts is dead — retire it so the next request mints
+        // a fresh one rather than hammering a locked row.
+        ...(outcome.locked ? { consumed_at: now } : {}),
+      })
+      .eq("id", row.id);
+  }
+
+  throw genericError;
 }

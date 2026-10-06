@@ -137,6 +137,13 @@ export const accessRegistry = [
     permission: { resource: "employee_profile", action: "read" },
   }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/password-setup/:token", reason: "Password setup/reset is protected by a one-time token." }),
+  // Self-service reset-by-code (owner, 2026-10-06). No Phoenix session exists yet — the person is
+  // signed out and resetting. request-code emails a one-time 6-digit code and reveals nothing about
+  // which identifiers are real (identical response for unknown/inactive/sent); verify-code trades a
+  // correct code for a short-lived password-setup token and returns ONE generic error for every
+  // failure. Both are rate-limited per IP and per identifier.
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/password-reset/request-code", reason: "Credential bootstrap endpoint; the signed-out person proves their Sato inbox. Enumeration-safe: unknown identifier, inactive account, missing mailbox and a successful send all return the same response. Rate-limited per IP and per identifier." }),
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/password-reset/verify-code", reason: "Credential bootstrap endpoint; the emailed 6-digit code IS the credential and no Phoenix session exists yet. Enforces an attempt cap and expiry, returns one generic error for every failure, and on success mints a short-lived one-time password-setup token. Rate-limited per IP and per identifier." }),
   // Live Direct Orders report links (owner request, 2026-08-05). Unauthenticated ON PURPOSE: the
   // recipient has no Phoenix account, and a Google Sheet's IMPORTDATA formula cannot log in.
   // The 32-byte token is the credential, and resolveDirectOrderReportShareLink checks revocation,
