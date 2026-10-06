@@ -169,3 +169,28 @@ cabinet-build.log
 # history. The readable record is committed as `docs/recovery-2026-09-21.md`; the payload is not,
 # and must not be: 237 MB of per-session JSON would sit in this repository's history forever.
 claude-recovery-2026-09-21/
+
+# One-off deliverables that sessions write to the repo ROOT and nobody ever commits: the
+# per-line field-day sheets (`field-day-CNS.html`, `field-day-Summary-for-the-CEO.html`, …) and
+# the per-person day cards (`nada-abdullah-day-card-2026-10-05.html` and its rendered `.pdf`).
+# Seven of them sat untracked in the primary on 2026-10-06, which is what the app's diff pane was
+# reporting as pending work on `main` when there were no tracked changes at all. They are NOT
+# repository content: they are generated for one person or one line on one day, and a copy of
+# every one already lives outside any git tree in `F:\Claude Scratchpad Archive\html\<date>\` and
+# `…\pdf\<date>\` (the owner's never-delete rule covers HTML and PDF, so ignoring them here loses
+# nothing). The leading `/` is deliberate — it scopes each pattern to the repo root, so a
+# genuinely tracked sheet under `docs/` or `public/` is untouched; verified on 2026-10-06 that no
+# tracked file in this repository matches either pattern.
+/field-day-*.html
+/field-day-*.pdf
+/*-day-card-*.html
+/*-day-card-*.pdf
+
+# The session hand-off notes sessions drop at the root (`_handoff-crm-batch-2.md`,
+# `_handoff-turbify-mailbox-ops.md`, …). Added at the owner's instruction on 2026-10-06, in the
+# same breath as the two patterns above. They are one session's notes to the next, never
+# repository documentation — anything that belongs to the repo goes in `docs/`, which this
+# pattern cannot reach because of the leading `/`. Unlike the deliverables above these are
+# Markdown, so the never-delete rule does not cover them and nothing archives them: they simply
+# stay on disk, untracked and unlisted. Verified on 2026-10-06 that no tracked file matches.
+/_handoff-*.md
