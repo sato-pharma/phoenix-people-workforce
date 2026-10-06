@@ -51,7 +51,8 @@
 | [Observability](observability.md) | Error capture, monitoring, alerting |
 | [Development Workflow](development-workflow.md) | Engineering operating rules and contributor governance |
 | [Sato Email Composer](sato-email-composer.md) | Manual company email at `/admin/sato-email` — fixed Sato templates or free-typed, sent to distribution lists in the company identity |
-| [Distribution Lists](distribution-lists.md) | Named recipient groups at `/admin/distribution-lists` — read by the Sato Email Composer and nothing else |
+| [CEO Email Composer](ceo-email-composer.md) | A letter from the chief executive at `/admin/ceo-email` — typed, dictated in any language or built from a document, on his letterhead and over a signature resolved from the directory |
+| [Distribution Lists](distribution-lists.md) | Named recipient groups at `/admin/distribution-lists` — read by the two email composers and nothing else |
 
 ## Planning & Audits
 

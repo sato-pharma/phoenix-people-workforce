@@ -998,6 +998,14 @@ import { runSatoEmailPolishTests } from "./sato-email-polish.test.ts";
 import { runSatoEmailToolboxTests } from "./sato-email-toolbox.test.ts";
 import { runSatoEmailAttachmentTests } from "./sato-email-attachments.test.ts";
 import { runSatoEmailDocumentTests } from "./sato-email-document.test.ts";
+import {
+  runCeoComposerVariantTests,
+  runCeoEmailAssistTests,
+  runCeoEmailDictationTests,
+  runCeoEmailSendIdentityTests,
+  runCeoEmailSignatureTests,
+  runCeoEmailTemplateTests,
+} from "./ceo-email-composer.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
@@ -8086,6 +8094,36 @@ await runTest(
 await runTest(
   "the distribution lists reach the Sato Email Composer and nothing else — the closing Cc names its roles in code, the older HR reply composer is untouched, and a composer send passes no origin and never bypasses the confidence gate",
   runSatoEmailListsOnlyComposerTests,
+);
+
+await runTest(
+  "the CEO assistant has no mode buttons, so a STRUCTURAL floor sits under the model's own report of what it was doing — a 'write' that silently dropped figures he had written is judged strictly anyway, losing one of his figures is refused under either guard, and an unknown intent falls back to the strict one",
+  runCeoEmailAssistTests,
+);
+
+await runTest(
+  "the CEO's signature is resolved from the employee directory on the server and can never arrive on a posted draft — the sender controls the closing line and nothing else, a seat that cannot be read reports itself as a fallback, and the field cannot carry markup onto the letterhead",
+  runCeoEmailSignatureTests,
+);
+
+await runTest(
+  "the CEO letterhead wears SATO-DIS-2026-01 with no filled area and no rounded corner — a highlight he pasted in is stripped, the signature is a 1px ink rule rather than a tinted card, the Arabic office stays at the margin it belongs to, and the letter is dated in Cairo not UTC",
+  runCeoEmailTemplateTests,
+);
+
+await runTest(
+  "the CEO mic takes any language because it sends no language field to Whisper — the container list is an allowlist, a codec parameter does not defeat it, the CRM's own Arabic path is untouched, and the browser's one-language engine is never used",
+  runCeoEmailDictationTests,
+);
+
+await runTest(
+  "a CEO letter goes out as the chief executive from the send. subdomain with replies and the visible To on a real apex mailbox, recipients hidden from each other, the confidence gate still running, its own idempotency scope, and an over-budget attachment refusing the whole send rather than being dropped",
+  runCeoEmailSendIdentityTests,
+);
+
+await runTest(
+  "the CEO composer IS the Sato composer with a variant rather than a fork — it renders that component, points at its own routes, reads its caps from the pure limits modules so no API-key reader reaches the browser bundle, and every one of its eight routes is declared in the access registry",
+  runCeoComposerVariantTests,
 );
 
 await runTest(

@@ -3,12 +3,19 @@
 Shipped 2026-09-11. Named, reusable email recipient groups, resolved fresh from the live employee
 directory at send time.
 
-🔴 **One consumer, by the owner's decision.** On 2026-09-12 the lists were unhooked from everything
-else: *"I don't want this distribution list to be linked with anything except the email composer
-that you will build."* The [Sato Email Composer](sato-email-composer.md) is the only thing in the
-system that reads a list. Nothing sends to one automatically, and nothing else may be wired to one
-without the owner saying so — pinned by `tests/sato-email-lists-only-composer.test.ts`, which fails
-if any file outside its allowlist calls a resolver.
+🔴 **The composers, and nothing else, by the owner's decision.** On 2026-09-12 the lists were
+unhooked from everything else: *"I don't want this distribution list to be linked with anything
+except the email composer that you will build."* The
+[Sato Email Composer](sato-email-composer.md) and the
+[CEO Email Composer](ceo-email-composer.md) are the only things in the system that read a list.
+Nothing sends to one automatically, and nothing else may be wired to one without the owner saying
+so — pinned by `tests/sato-email-lists-only-composer.test.ts`, which fails if any file outside its
+allowlist calls a resolver.
+
+**There is still exactly ONE place where a picked list becomes an audience**, which is the point of
+that allowlist: the CEO composer (added 2026-10-06, at the owner's request for a second composer)
+calls `resolveSatoEmailAudience` in `src/lib/sato-email/service.ts` rather than resolving a list
+itself. So one file is still the whole answer to "what does a send actually reach".
 
 ## Where to use it
 
@@ -29,7 +36,10 @@ this section exists to prevent.
 | | Super Admin | HR Advisory (HR Business Partner) | Everyone else |
 |---|---|---|---|
 | **Edit a list's rules** (this screen) | every list | `hr_team` only | no access |
-| **Send to a list** ([the composer](sato-email-composer.md)) | any switched-on list | any switched-on list | no access |
+| **Send to a list** ([the composers](sato-email-composer.md)) | any switched-on list | any switched-on list | no access |
+
+The **CEO** is the one addition to that bottom row: he may address any switched-on list from the
+[CEO Email Composer](ceo-email-composer.md), and he cannot edit a list's rules.
 
 Editing is narrow because a list's rule decides who receives company mail thereafter; sending is
 wide because the owner said so on 2026-09-11 — both seats may address any list that is switched on,

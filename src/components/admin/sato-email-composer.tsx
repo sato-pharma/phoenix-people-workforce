@@ -21,6 +21,7 @@ import {
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 import { AdminSectionHeader } from "@/components/admin/admin-design-system";
+import { AssistDictation } from "@/components/admin/assist-dictation";
 import { EmailBodyEditor } from "@/components/admin/email-body-editor";
 import { SatoEmailListPicker } from "@/components/admin/sato-email-list-picker";
 import { attachablesFromTransfer } from "@/lib/email/transfer-files";
@@ -98,8 +99,6 @@ const SEARCH_MATCH_CAP = 25;
  * route is the authority; anything else it receives is read as a rewrite.
  */
 type AssistMode = "rewrite" | "write" | "document";
-/** Mirrors SATO_ASSIST_MAX_INSTRUCTION_CHARS, which the route slices at. Pinned by the polish test. */
-const ASSIST_INSTRUCTION_MAX_CHARS = 4_000;
 
 type SendResultView = {
   emailCount: number;
@@ -116,8 +115,60 @@ const DARK_BUTTON =
 const PALE_BUTTON =
   "inline-flex h-[42px] items-center justify-center gap-1.5 border border-phx-line bg-white px-4 text-phx-xs font-black text-phx-ink transition hover:bg-phx-paper disabled:opacity-50";
 
-function newRequestId() {
-  return `sato-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+/**
+ * Which composer this screen is, as data.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * 🔴 WHY THE CEO COMPOSER IS THIS FILE WITH A VARIANT, AND NOT A SECOND COPY OF IT.
+ *
+ * Owner 2026-10-06 asked for a CEO composer "exactly as sato email composer copy paste". This file
+ * is 1,500 lines, and every one of them is a rule somebody learned the hard way: Send never being
+ * the first press, the preview being cleared by any edit so the recipient count can never describe an
+ * older draft, the attachment budget disabling Send rather than warning beside it, a typed outside
+ * address needing a reason, Insert image opening the file picker instead of asking for an address.
+ * A literal copy would start identical and drift on the first fix applied to one of them, with
+ * nothing reporting which screen had been left behind — and the screen left behind would be the one
+ * that mails the whole company over the chief executive's signature.
+ *
+ * So "exactly as" is implemented by being the same screen. What differs is listed here, nowhere
+ * else: the API it posts to, the label on the signature field, and whether the assistant shows three
+ * mode buttons or one box with a microphone.
+ * ───────────────────────────────────────────────────────────────────────────────────────────── */
+export type ComposerVariant = {
+  /** Where every fetch on this screen goes. No trailing slash. */
+  apiBase: string;
+  /**
+   * The assistant's shape. `modes` is the Sato composer's three buttons; `understood` is the CEO's
+   * one box, where the assistant reads the intent itself and the server decides the guard set — see
+   * `src/lib/ceo-email/assist.ts`.
+   */
+  assist: "modes" | "understood";
+  /** True on the variant whose instruction box carries a microphone. */
+  dictation: boolean;
+  /** How long one instruction may be, mirroring the cap the route slices at. */
+  instructionMaxChars: number;
+  /** The prefix on the idempotency `clientRequestId`, so a key names the screen it came from. */
+  requestIdPrefix: string;
+  /** What the signature field is called, and the hint under it. */
+  signOffDefault: string;
+  signOffHint: string;
+  signOffLabel: string;
+};
+
+export const SATO_COMPOSER_VARIANT: ComposerVariant = {
+  apiBase: "/api/admin/sato-email",
+  assist: "modes",
+  dictation: false,
+  // Mirrors SATO_ASSIST_MAX_INSTRUCTION_CHARS, which the route slices at. Pinned by the polish test.
+  instructionMaxChars: 4_000,
+  requestIdPrefix: "sato",
+  signOffDefault: "Human Resources",
+  signOffHint: "Printed under the message as the sender. Leave it as it is unless this email is from a named person.",
+  signOffLabel: "Signed",
+};
+
+function newRequestId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 /**
@@ -134,20 +185,37 @@ function newRequestId() {
  * on screen is never describing an older email than the one about to go.
  */
 export function SatoEmailComposer({
+  dictationAvailable = false,
   initialLists,
   initialTemplates,
   loadWarnings,
+  variant = SATO_COMPOSER_VARIANT,
 }: {
+  /**
+   * Whether the server can turn speech into words at all, read server-side on the page.
+   *
+   * 🔴 THE BROWSER CANNOT SEE WHETHER THE KEY IS CONFIGURED, and the microphone is a promise: a
+   * control that offers "the words appear when you stop" with nothing behind it is a bug the person
+   * only discovers after speaking a paragraph. So the page asks, and the answer is a boolean and
+   * nothing else — never which service, never why it is missing.
+   */
+  dictationAvailable?: boolean;
   initialLists: SatoListView[];
   initialTemplates: SatoTemplateView[];
   loadWarnings: string[];
+  /**
+   * Which composer this is. Defaults to the Sato one, so every existing caller is byte-identical.
+   * See `ComposerVariant` above for why this is a parameter and not a second copy of this file.
+   */
+  variant?: ComposerVariant;
 }) {
+  const api = variant.apiBase;
   const [templates, setTemplates] = useState(initialTemplates);
   const [mode, setMode] = useState<"template" | "free">(initialTemplates.length > 0 ? "template" : "free");
   const [templateKey, setTemplateKey] = useState<string>("");
   const [subject, setSubject] = useState("");
   const [bodyHtml, setBodyHtml] = useState("");
-  const [signOff, setSignOff] = useState("Human Resources");
+  const [signOff, setSignOff] = useState(variant.signOffDefault);
   // Files clipped to the mail. A body PICTURE is not here: it lives in bodyHtml as an <img>, which
   // is the whole difference between the two halves of what the owner asked for.
   const [attachments, setAttachments] = useState<Array<{ byteSize: number; filename: string; id: string }>>([]);
@@ -201,6 +269,13 @@ export function SatoEmailComposer({
       bodyHtml: string;
       changes: string[];
       checks: string[];
+      /**
+       * The understood variant only: what the assistant worked out he was asking for, and the
+       * language it answered in. Shown so he can see it read him correctly — he picked no mode, so
+       * the screen owes him the one it chose. Null on the Sato composer, where he pressed a button.
+       */
+      intent: "write" | "polish" | "translate" | "document" | null;
+      language: string | null;
       mode: AssistMode;
       /** Document mode: what the server actually read out of the file, named, in one line. */
       source: string | null;
@@ -218,7 +293,7 @@ export function SatoEmailComposer({
   // would light both frames and tell the sender the drop does either.
   const [documentDrop, setDocumentDrop] = useState(false);
 
-  const [clientRequestId, setClientRequestId] = useState(newRequestId);
+  const [clientRequestId, setClientRequestId] = useState(() => newRequestId(variant.requestIdPrefix));
   const [preview, setPreview] = useState<PreviewView | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState<"preview" | "send" | null>(null);
@@ -266,7 +341,7 @@ export function SatoEmailComposer({
       const form = new FormData();
       form.append("file", file);
       form.append("kind", kind);
-      const response = await fetch("/api/admin/sato-email/media", { body: form, method: "POST" });
+      const response = await fetch(`${api}/media`, { body: form, method: "POST" });
       const payload = (await response.json().catch(() => ({}))) as {
         file?: { byteSize: number; filename: string; id: string; url: string | null };
         message?: string;
@@ -274,7 +349,10 @@ export function SatoEmailComposer({
       if (!response.ok || !payload.file) throw new Error(payload.message ?? "The file could not be uploaded.");
       return payload.file;
     },
-    [],
+    // 🔴 `api` BELONGS HERE NOW THAT THE COMPOSER SERVES TWO MODULES. An empty list was harmless while
+    // there was one endpoint; with the CEO variant beside the Sato one, a closure holding a stale
+    // `api` would post one module's attachment into the other module's store.
+    [api],
   );
 
   /**
@@ -353,14 +431,27 @@ export function SatoEmailComposer({
     setPolishing(assistMode);
     setError(null);
     try {
-      const response = await fetch("/api/admin/sato-email/polish", {
-        body: JSON.stringify({ bodyHtml, instruction, mode: assistMode, subject }),
+      const understood = variant.assist === "understood";
+      const response = await fetch(`${api}/${understood ? "assist" : "polish"}`, {
+        // 🔴 NO `mode` ON THE UNDERSTOOD VARIANT, and not merely because the route ignores one: a
+        // mode on the wire is the browser choosing which guard set judges the answer, which is the
+        // hole `src/lib/ceo-email/assist.ts` is written against. The server reads the intent.
+        body: JSON.stringify(understood ? { bodyHtml, instruction, subject } : { bodyHtml, instruction, mode: assistMode, subject }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
       const payload = (await response.json()) as {
         message?: string;
-        result?: { bodyHtml: string; changes: string[]; checks?: string[]; mode?: AssistMode; subject: string };
+        result?: {
+          bodyHtml: string;
+          changes: string[];
+          checks?: string[];
+          /** The understood variant answers with what it WORKED OUT, which is not a mode he picked. */
+          intent?: "write" | "polish" | "translate" | "document";
+          language?: string;
+          mode?: AssistMode;
+          subject: string;
+        };
       };
       if (!response.ok || !payload.result) {
         setError(payload.message ?? "The assistant could not answer.");
@@ -371,7 +462,20 @@ export function SatoEmailComposer({
         bodyHtml,
         changes: payload.result.changes,
         checks: payload.result.checks ?? [],
-        mode: payload.result.mode ?? assistMode,
+        // What it worked out, reported honestly: "translate" and "polish" both land as a rewrite
+        // heading, "write" as a written one. He never chose either, so the screen says which it read.
+        intent: payload.result.intent ?? null,
+        language: payload.result.language ?? null,
+        // 🔴 ON THE UNDERSTOOD VARIANT THE MODE IS DERIVED FROM THE INTENT, NEVER FROM `assistMode`.
+        // That variant has ONE button and it passes "write" always, so falling back to it labelled a
+        // tightening of his own words "Read as: write it" — the exact misreading the heading below
+        // exists to surface. The assist route answers with `intent` and no `mode`; the Sato variant,
+        // which really does have two buttons, keeps reading the mode it asked for.
+        mode: understood
+          ? payload.result.intent === "write"
+            ? "write"
+            : "rewrite"
+          : (payload.result.mode ?? assistMode),
         source: null,
         subject,
         verbatim: false,
@@ -407,7 +511,7 @@ export function SatoEmailComposer({
       form.append("bodyHtml", bodyHtml);
       form.append("instruction", instruction);
       form.append("subject", subject);
-      const response = await fetch("/api/admin/sato-email/document", { body: form, method: "POST" });
+      const response = await fetch(`${api}/document`, { body: form, method: "POST" });
       const payload = (await response.json()) as {
         message?: string;
         result?: { bodyHtml: string; changes: string[]; checks?: string[]; mode?: AssistMode; subject: string };
@@ -421,6 +525,8 @@ export function SatoEmailComposer({
         bodyHtml,
         changes: payload.result.changes,
         checks: payload.result.checks ?? [],
+        intent: "document",
+        language: null,
         mode: "document",
         source: payload.source?.note ?? null,
         subject,
@@ -452,7 +558,7 @@ export function SatoEmailComposer({
     }
     setSearching(true);
     try {
-      const response = await fetch(`/api/admin/sato-email/employees?q=${encodeURIComponent(value.trim())}`);
+      const response = await fetch(`${api}/employees?q=${encodeURIComponent(value.trim())}`);
       const payload = (await response.json()) as { employees?: SatoPersonView[] };
       setMatches(response.ok ? (payload.employees ?? []) : []);
     } catch {
@@ -518,7 +624,7 @@ export function SatoEmailComposer({
     setBusy("preview");
     setError(null);
     try {
-      const response = await fetch("/api/admin/sato-email/preview", {
+      const response = await fetch(`${api}/preview`, {
         body: JSON.stringify(draft),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -542,7 +648,7 @@ export function SatoEmailComposer({
     setBusy("send");
     setError(null);
     try {
-      const response = await fetch("/api/admin/sato-email/send", {
+      const response = await fetch(`${api}/send`, {
         body: JSON.stringify(draft),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -557,7 +663,7 @@ export function SatoEmailComposer({
       setConfirming(false);
       // A fresh key, so the next email is a new send rather than a silent no-op against the last
       // one's idempotency key.
-      setClientRequestId(newRequestId());
+      setClientRequestId(newRequestId(variant.requestIdPrefix));
     } catch {
       setError("The email could not be sent.");
     } finally {
@@ -755,18 +861,43 @@ export function SatoEmailComposer({
           </div>
 
           <div className="mt-3 rounded-xl border border-phx-line bg-phx-paper p-3">
-            <label className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2" htmlFor="sato-assist">
-              Tell the assistant what you want
-            </label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2" htmlFor="sato-assist">
+                {variant.assist === "understood" ? "Say what you want, in any language" : "Tell the assistant what you want"}
+              </label>
+              {/*
+                The microphone sits ON the label row rather than with the buttons below, because what
+                it does is FILL THIS BOX — it is another way of typing, not another thing to press
+                after typing. Only rendered where the server can actually turn speech into words:
+                `dictationAvailable` is read server-side, and an inert microphone reads as a bug.
+              */}
+              {variant.dictation && dictationAvailable ? (
+                <AssistDictation
+                  busy={polishing !== null}
+                  endpoint={`${api}/transcribe`}
+                  onText={(spoken) =>
+                    setInstruction((current) => {
+                      const joined = `${current.trim()} ${spoken.trim()}`.trim();
+                      // The cap is enforced here as well as on the textarea, because `maxLength`
+                      // constrains TYPING and does nothing to a programmatic append.
+                      return joined.slice(0, variant.instructionMaxChars);
+                    })
+                  }
+                />
+              ) : null}
+            </div>
             <textarea
               className={`mt-2 ${FIELD} min-h-[88px]`}
               id="sato-assist"
-              maxLength={ASSIST_INSTRUCTION_MAX_CHARS}
+              maxLength={variant.instructionMaxChars}
               onChange={(event) => setInstruction(event.target.value)}
               placeholder={
-                "Write a job offer for Ahmed Samir, medical representative, Giza area, reporting to the Cairo district " +
-                "manager — or, on a draft you already wrote: shorter, lead with the deadline, put the branches in a " +
-                "table of two columns"
+                variant.assist === "understood"
+                  ? "Tell the company we are moving the head office on 1 November — or, on a letter you already wrote: "
+                    + "shorter and firmer, put the three dates in a table, اكتبها بالعربي كمان"
+                  : "Write a job offer for Ahmed Samir, medical representative, Giza area, reporting to the Cairo district "
+                    + "manager — or, on a draft you already wrote: shorter, lead with the deadline, put the branches in a "
+                    + "table of two columns"
               }
               rows={3}
               value={instruction}
@@ -801,32 +932,62 @@ export function SatoEmailComposer({
               }}
             >
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                className={DARK_BUTTON}
-                disabled={polishing !== null || !instruction.trim()}
-                onClick={() => void polish("write")}
-                type="button"
-              >
-                {polishing === "write" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                {polishing === "write" ? counted("Writing") : "Write it"}
-              </button>
-              <button
-                className={PALE_BUTTON}
-                disabled={polishing !== null || !bodyHtml.trim()}
-                onClick={() => void polish("rewrite")}
-                type="button"
-              >
-                {polishing === "rewrite" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                {polishing === "rewrite" ? counted("Rewriting") : "Rewrite what I wrote"}
-              </button>
+              {/*
+                🔴 ONE BUTTON ON THE CEO COMPOSER, AND THAT IS THE OWNER'S INSTRUCTION, NOT A TIDY-UP.
+                2026-10-06: "the assist is perfectly able to understand the ceo if the ceo asked to
+                type he understand if asked to polish he understand". So nothing here chooses a mode,
+                and nothing here POSTS one — the route takes no `mode` at all, because a mode on the
+                wire would hand the browser the choice of which guard set judges the answer. The
+                server reads the intent and decides; `src/lib/ceo-email/assist.ts` holds the floor
+                that makes that safe.
+
+                It is enabled on an instruction OR on a body: "polish this" is a press with an empty
+                box and a letter already written, which is a real way to use it.
+              */}
+              {variant.assist === "understood" ? (
+                <button
+                  className={DARK_BUTTON}
+                  disabled={polishing !== null || (!instruction.trim() && !bodyHtml.trim())}
+                  onClick={() => void polish("write")}
+                  type="button"
+                >
+                  {polishing !== null && polishing !== "document" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {polishing !== null && polishing !== "document" ? counted("Working on it") : "Do it"}
+                </button>
+              ) : (
+                <>
+                  <button
+                    className={DARK_BUTTON}
+                    disabled={polishing !== null || !instruction.trim()}
+                    onClick={() => void polish("write")}
+                    type="button"
+                  >
+                    {polishing === "write" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4" />
+                    )}
+                    {polishing === "write" ? counted("Writing") : "Write it"}
+                  </button>
+                  <button
+                    className={PALE_BUTTON}
+                    disabled={polishing !== null || !bodyHtml.trim()}
+                    onClick={() => void polish("rewrite")}
+                    type="button"
+                  >
+                    {polishing === "rewrite" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4" />
+                    )}
+                    {polishing === "rewrite" ? counted("Rewriting") : "Rewrite what I wrote"}
+                  </button>
+                </>
+              )}
               <label className={`${PALE_BUTTON} cursor-pointer ${polishing !== null ? "pointer-events-none opacity-50" : ""}`}>
                 {polishing === "document" ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -849,30 +1010,57 @@ export function SatoEmailComposer({
               </label>
             </div>
             </div>
-            <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
-              <strong>Write it</strong> composes the whole email from what you asked for, even on an empty page, and
-              uses every button in the toolbar above — including a table of the shape you name. <strong>Rewrite what
-              I wrote</strong> keeps your draft and only changes how it reads. <strong>Build it from a document</strong>
-              reads a PDF, a Word file, a text file or a picture of one — click the button or drag it onto
-              this row — and writes the email that carries what it says, in its own figures, in English and Arabic
-              together. An <strong>HTML file is loaded exactly as it is</strong>, with its own wording, layout and
-              tables kept and nothing rewritten. The document is read and thrown away:
-              if the reader should also receive it, attach it above. None of the three invents a fact: anything you did
-              not give it comes back as a [square bracket] gap for you to fill, and a link it did not get from you is
-              refused outright.
-            </p>
+            {variant.assist === "understood" ? (
+              <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
+                Type it or dictate it, in any language, and press <strong>Do it</strong> — there is nothing to choose.
+                Ask for a letter and it writes one, on an empty page; ask for your own letter to read better and it only
+                changes how it reads; ask for it in another language and it translates it, keeping every figure and
+                every gap. <strong>Build it from a document</strong> reads a PDF, a Word file, a text file or a picture
+                of one — click the button or drag it onto this row — and writes the letter that carries what it says, in
+                its own figures. An <strong>HTML file is loaded exactly as it is</strong>, with its wording, layout and
+                tables kept and nothing rewritten. The document is read and thrown away: if the reader should also
+                receive it, attach it above. It never invents a fact — anything you did not give it comes back as a
+                [square bracket] gap for you to fill, a figure you had written going missing is refused outright, and so
+                is a link it did not get from you.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
+                <strong>Write it</strong> composes the whole email from what you asked for, even on an empty page, and
+                uses every button in the toolbar above — including a table of the shape you name. <strong>Rewrite what
+                I wrote</strong> keeps your draft and only changes how it reads. <strong>Build it from a document</strong>
+                reads a PDF, a Word file, a text file or a picture of one — click the button or drag it onto
+                this row — and writes the email that carries what it says, in its own figures, in English and Arabic
+                together. An <strong>HTML file is loaded exactly as it is</strong>, with its own wording, layout and
+                tables kept and nothing rewritten. The document is read and thrown away:
+                if the reader should also receive it, attach it above. None of the three invents a fact: anything you did
+                not give it comes back as a [square bracket] gap for you to fill, and a link it did not get from you is
+                refused outright.
+              </p>
+            )}
 
             {polished ? (
               <div className="mt-3 border border-phx-line bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
+                  {/*
+                    🔴 ON THE UNDERSTOOD VARIANT THIS HEADING IS THE ONLY PLACE HE LEARNS HOW HE WAS
+                    READ. He pressed one button, so if the assistant took "make it firmer" as a
+                    request to write a new letter, nothing else on screen would say so — the words
+                    look plausible either way. It names the reading, and the language it answered in.
+                  */}
                   <span className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2">
                     {polished.verbatim
                       ? "Loaded from your file, as it is"
-                      : polished.mode === "document"
-                        ? "What it wrote from your document"
+                      : polished.intent === "translate"
+                        ? `Translated${polished.language ? ` into ${polished.language}` : ""}, your figures unchanged`
+                        : polished.mode === "document"
+                          ? "What it wrote from your document"
                           : polished.mode === "write"
-                          ? "What it wrote"
-                          : "What changed"}
+                            ? variant.assist === "understood"
+                              ? `Read as: write it${polished.language ? ` · ${polished.language}` : ""}`
+                              : "What it wrote"
+                            : variant.assist === "understood"
+                              ? `Read as: your own words, tightened${polished.language ? ` · ${polished.language}` : ""}`
+                              : "What changed"}
                   </span>
                   <button className={PALE_BUTTON} onClick={undoPolish} type="button">
                     <Undo2 className="h-4 w-4" />
@@ -929,7 +1117,7 @@ export function SatoEmailComposer({
 
           <div className="mt-4">
             <label className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2" htmlFor="sato-signoff">
-              Signed
+              {variant.signOffLabel}
             </label>
             <input
               className={`mt-2 ${FIELD}`}
@@ -938,9 +1126,10 @@ export function SatoEmailComposer({
                 setSignOff(event.target.value);
                 invalidate();
               }}
-              placeholder="Human Resources"
+              placeholder={variant.signOffDefault}
               value={signOff}
             />
+            <p className="mt-2 text-xs font-semibold text-phx-ink-faint">{variant.signOffHint}</p>
           </div>
           </div>
         </section>
@@ -1351,7 +1540,11 @@ export function SatoEmailComposer({
       </section>
       </div>
 
-      <SatoTemplateManager onSaved={(template) => setTemplates(mergeTemplate(templates, template))} templates={templates} />
+      <SatoTemplateManager
+        api={api}
+        onSaved={(template) => setTemplates(mergeTemplate(templates, template))}
+        templates={templates}
+      />
     </div>
   );
 }
@@ -1405,9 +1598,14 @@ function mergeTemplate(templates: SatoTemplateView[], saved: SatoTemplateView): 
 
 /** Editing the fixed wording. Changing a template sends nothing — it changes what a future send says. */
 function SatoTemplateManager({
+  api,
   onSaved,
   templates,
 }: {
+  // 🔴 PASSED IN, NEVER THE SATO DEFAULT. This component saves a template, and the two composers
+  // have two tables: without the variant's own base a CEO letter template would be written into
+  // `sato_email_templates`, where it would appear in the HR composer's picker and nowhere else.
+  api: string;
   onSaved: (template: SatoTemplateView) => void;
   templates: SatoTemplateView[];
 }) {
@@ -1442,7 +1640,7 @@ function SatoTemplateManager({
     setMessage(null);
     try {
       const key = editingKey || name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-      const response = await fetch("/api/admin/sato-email/templates", {
+      const response = await fetch(`${api}/templates`, {
         body: JSON.stringify({ bodyHtml, isActive, name, subject, templateKey: key }),
         headers: { "Content-Type": "application/json" },
         method: "POST",

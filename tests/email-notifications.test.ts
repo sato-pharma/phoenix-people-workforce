@@ -81,6 +81,13 @@ export function runEmailNotificationTests() {
   assert.deepEqual(directSendPhoenixEmailFiles(), [
     "app/api/admin/email-reply/send/route.ts",
     "app/api/notifications/test/route.ts",
+    // The CEO Email Composer, added 2026-10-06. Same reason as the Sato composer below, plus one
+    // of its own: its body is a LETTERHEAD, not wording. The frame — masthead, date line and the
+    // signature block resolved from the directory at render time — is the document identity, so it
+    // cannot live in the admin email-template catalogue where a seat could edit the signature. What
+    // the sender writes is the letter inside it. A manual human send: no origin, no bypass of the
+    // confidence gate; see tests/ceo-email-composer.test.ts.
+    "src/lib/ceo-email/service.ts",
     "src/lib/email-templates/service.ts",
     "src/lib/email/send-phoenix-email.ts",
     // A Super Admin's manual approval of a held item re-sends the EXACT held content,
