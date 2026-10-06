@@ -2044,6 +2044,7 @@ import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
 import { runDeltaLandedVerdictTests, runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
 import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-age.test.ts";
+import { runSupabaseAdminClientEnvCacheTests } from "./supabase-admin-client-env-cache.test.ts";
 import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
 import { runRepoDoctorXlsxSnapshotTests } from "./repo-doctor-xlsx-snapshot.test.ts";
 import { runRepoDoctorSessionHoldTests } from "./repo-doctor-session-hold.test.ts";
@@ -7530,6 +7531,17 @@ await runTest(
     + "task believed that rule and had been deleting live sessions' locks); a live session's heartbeat "
     + "keeps its lock fresh past two hours, never takes another's fresh lock, and the lock is per folder",
   runSessionLockStalenessIsAgeTests,
+);
+await runTest(
+  "the memoized admin Supabase client is keyed on the URL and key it was built from, so one test "
+    + "pointing the environment at a stand-in project cannot leave the whole suite talking to it "
+    + "(the memo was keyed on NOTHING while its comment claimed otherwise; restoring process.env in "
+    + "a finally cannot rebuild an object that already exists, so after 4 October every canAccess "
+    + "spent a request abort — ~7s on the runner — failing against example.supabase.co, and because "
+    + "resolvePermissionMatrix deliberately never caches a failed load, every call paid it again: "
+    + "three tests went from 64ms to 252s and the suite from 145s to 419s). Memoization is kept, "
+    + "because one request calls getSupabaseAdmin dozens of times",
+  runSupabaseAdminClientEnvCacheTests,
 );
 await runTest(
   "a deregistered worktree folder holding files is REPORTED, by name and by content, and is never "

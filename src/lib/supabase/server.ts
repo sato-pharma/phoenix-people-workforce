@@ -131,7 +131,23 @@ function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequest
 // `.auth.setSession(...)`, and signInWithLoginId() in supabase-identity.ts, which calls
 // `.auth.signInWithPassword(...)`). Sharing one instance across concurrent requests would
 // let one user's session overwrite another's mid-flight — always construct those fresh.
+//
+// THE MEMO IS KEYED ON THE URL AND KEY IT WAS BUILT FROM, which the paragraph above always
+// claimed ("keyed on the fixed service-role key") and did not do. In production neither value
+// ever changes, so this is identical behaviour there; it matters in the test suite, where all
+// 2,200 tests share ONE node process. A test that points the environment at a stand-in project,
+// builds the client, then restores `process.env` in a `finally` could not undo the client: the
+// memo already held the stand-in URL, so from that moment every getSupabaseAdmin() caller in
+// the process talked to it. Measured 2026-10-06, after
+// tests/phoenix-crm-refused-readings-board.test.ts set `https://example.supabase.co`: each
+// canAccess() then spent a whole request abort failing against that host instead of throwing
+// instantly on the absent key — 14.2s locally, ~7s on the runner — and because
+// resolvePermissionMatrix() deliberately does NOT cache a failed load (fail-observable, see
+// auth/permissions.ts), every call paid it again. Three permission-heavy tests downstream paid
+// it ~36 times: the suite went from 145s to 419s on 4 October. Pinned by
+// tests/supabase-admin-client-env-cache.test.ts.
 let cachedAdminClient: SupabaseClient | null = null;
+let cachedAdminClientFor: string | null = null;
 
 /**
  * Admin client using service role key.
@@ -145,8 +161,12 @@ export function getSupabaseAdmin(options?: { requestTimeoutMs?: number }): Supab
   if (options?.requestTimeoutMs) {
     return createSupabaseClient(getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"), options.requestTimeoutMs);
   }
-  if (!cachedAdminClient) {
-    cachedAdminClient = createSupabaseClient(getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const url = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const builtFor = `${url}\u0000${serviceRoleKey}`;
+  if (!cachedAdminClient || cachedAdminClientFor !== builtFor) {
+    cachedAdminClient = createSupabaseClient(serviceRoleKey);
+    cachedAdminClientFor = builtFor;
   }
   return cachedAdminClient;
 }
