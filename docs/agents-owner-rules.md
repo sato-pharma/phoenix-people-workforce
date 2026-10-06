@@ -495,7 +495,7 @@ dense table or filter control STAY, like the icon padding below — **never "bri
 later, and never raise it with him again.** Everything at `h-10` or taller became exactly the
 design's 40px.
 
-**Fourteen things the codemod got wrong, and every one is a trap worth keeping.**
+**Fifteen things the codemod got wrong, and every one is a trap worth keeping.**
 
 1. 🔴 **Dropping a field's `pl-9` puts the magnifier on top of the text.** Side padding *larger*
    than the token's own `px-3` is icon clearance, not skin — the first pass treated every `p*-`
@@ -593,6 +593,18 @@ design's 40px.
     directly whether the front door should wear the form design too, he answered *"keep the login
     screen out of the form design"* (2026-10-06) — so `src/components/auth/` is never brought into
     line later, and he is never asked again.
+
+    🔴 **AND EVERY OTHER DARK GROUND IS HIS RULING TOO, NOT THE SWEEP'S.** Five more
+    controls had been handed the light token on a dark panel and were restored byte for byte on the
+    sweep's own judgement: the two admin layout menus, the black admin sidebar's search box
+    (`ADMIN_SIDEBAR_BG` is a bare `bg-[#000000]`), the weekly Field Force band, and the weekly
+    distributor column editor's near-black select (`bg-[#020617]`). Told plainly that those five
+    were a session's call rather than his, he answered *"keep the dark menus and bands out of the
+    form design too"* (2026-10-06). **So a dark ground is exempt BY HIS DECISION: the light token is
+    never prepended to a control sitting on one, no dark control is converted later, and he is never
+    asked again.** The practical trap underneath it is that two of those grounds are arbitrary hex,
+    so a sweep looking for colour NAMES (`bg-slate-900`, `bg-black`) cannot see them at all — read
+    the ground a control sits on from its container, never from its own class string.
 12. 🔴 **FILTERING A SCAN'S GENERIC MATCHES TO KILL FALSE POSITIVES KILLS THE REAL ONE TOO.**
     After the first box failure, the cheap way to find the rest was to list every test that reads a
     file this branch changed and names a class literal the branch removed. The first pass returned
@@ -632,6 +644,29 @@ on a tree with 376 painted controls in it. It also asserts its own scan still FI
 and that ~1,171 still reach a token, because a cap of zero would otherwise pass on a scan that had
 quietly stopped finding anything. **Never raise the cap** — a number above zero is a form that did
 not use the kit, which is the only thing this guard exists to catch.
+
+15. 🔴 **AN `EXEMPT` LIST STOPS A RATCHET COUNTING A FILE — IT DOES NOT KEEP THE FILE'S
+    CONTROL DARK, AND THE SHIPPED BRANCH PROVED IT.** The five dark grounds were restored and
+    their files added to `EXEMPT` in `tests/form-design-system.test.ts`; four of them survived,
+    and the admin sidebar's module search did not. It shipped in #5382 as
+    `cn(phxFieldClassName, "pl-9 pr-8")` — a lit white box inside a bare `bg-[#000000]` sidebar,
+    on the chrome of every admin page — because exempting the FILE made the guard look away from
+    exactly the control that needed watching. Restored to its pre-sweep string verbatim
+    (`border-white/10 bg-white/5 … text-slate-100`, `h-9`) and now pinned by `DARK_GROUND_KEEPS`,
+    which asserts the fragment that MAKES each of the six dark controls dark. **An exemption is
+    the absence of a rule; his ruling needed the presence of one.**
+
+    **And the audit that found it is the one to repeat, because a file list cannot answer this.**
+    All 283 files that import a form token were scanned for a control whose enclosing container
+    carries a dark ground: 33 candidates, of which 23 re-declare a light ground below a dark
+    HEADER STRIP (the Phoenix card identity — dark title band, white body) and were resolved
+    mechanically, and 10 were read by hand. Nine were light bodies or a dark BUTTON caught by the
+    same pattern. The tenth, the payroll copilot's sheet search, does sit inside a `bg-slate-900`
+    band — and was a deliberate white box there BEFORE the sweep too, so it is his design, not a
+    dark ground the sweep lost. **The sidebar was the only real loss.** The lesson for the next
+    sweep: a dark ground 40 lines up is usually a header strip, so resolve on whether a LIGHT
+    ground is re-declared between it and the control — and compare against the pre-sweep file
+    before calling a white control on a dark band a defect.
 
 ### 🔒 The square-edge golden rule — why `globals.css`'s own sweep is not coverage
 

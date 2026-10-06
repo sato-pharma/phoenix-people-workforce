@@ -218,7 +218,12 @@ const SELF_SKINNED_CAP = 0;
  * *"keep the login screen out of the form design"* (2026-10-06). Never bring `src/components/auth/`
  * into line later, and never ask him again.
  *
- * 🔴 Three more DARK grounds the first pass turned white, each restored byte for byte: the
+ * 🔴 EVERY DARK GROUND IS EXEMPT BY HIS OWN RULING, 2026-10-06. Told that the dark ones below
+ * had been kept dark on the SWEEP'S judgement rather than his, he answered *"keep the dark menus and
+ * bands out of the form design too"*. So this is a decision, not a session's taste: never convert one
+ * later, and never ask him again.
+ *
+ * 🔴 Three DARK grounds the first pass turned white, each restored byte for byte: the
  * ADMIN SIDEBAR's module search (the sidebar is `bg-[#000000]`, so a white field was a lit box in
  * the chrome of every admin page), the weekly Field Force header band (`bg-slate-900`), and the
  * weekly column editor's header-row select (`bg-[#020617]`). A dark ground is NOT always spelled
@@ -711,10 +716,65 @@ function sixteenPixelKeepTests(): void {
   }
 }
 
+/**
+ * 🔴 HIS RULING, 2026-10-06: *"keep the dark menus and bands out of the form design too"*.
+ * Listing a file in EXEMPT only stops the ratchet counting it — nothing stopped the next sweep
+ * handing it the light token again, which is exactly what happened to the admin sidebar's module
+ * search: it shipped as `cn(phxFieldClassName, "pl-9 pr-8")`, a lit white box inside a bare
+ * `bg-[#000000]` sidebar, on the chrome of every admin page. So each dark ground is pinned by the
+ * fragment that MAKES it dark. A control sitting on a dark ground either names its own dark
+ * classes or overrides the token through cn() — it is never left on the bare light token.
+ */
+const DARK_GROUND_KEEPS: Array<{ file: string; keep: string; why: string }> = [
+  {
+    file: "src/components/layout/sidebar.tsx",
+    keep: "bg-white/5 pl-9 pr-8",
+    why: "the admin sidebar's module search, inside a bare bg-[#000000] sidebar",
+  },
+  {
+    file: "src/components/sales/weekly/weekly-distributor-column-editor.tsx",
+    keep: "border border-white/20 bg-[#020617]",
+    why: "the weekly column editor's header-row select, on a near-black band",
+  },
+  {
+    file: "src/components/sales/weekly/portal-weekly-field-force-view.tsx",
+    keep: "border border-slate-700 bg-slate-800",
+    why: "the Field Force band's rep search, on bg-slate-900",
+  },
+  {
+    file: "src/components/layout/internal-messages-menu.tsx",
+    keep: 'isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white',
+    why: "the internal messages composer, whose admin mode is near-black",
+  },
+  {
+    file: "src/components/auth/premium-login-page.tsx",
+    keep: "border border-white/14 bg-white/[0.045]",
+    why: "the login fields — the screen every employee meets first",
+  },
+  {
+    file: "src/components/auth/password-setup-form.tsx",
+    keep: "border border-white/14 bg-white/[0.045]",
+    why: "the password-setup fields, same dark glass identity",
+  },
+];
+
+function darkGroundKeepTests(): void {
+  for (const { file, keep, why } of DARK_GROUND_KEEPS) {
+    const src = readFileSync(file, "utf8");
+    assert.ok(
+      src.includes(keep),
+      `${file}: ${why} — it lost the dark ground \`${keep}\`. The owner ruled on 2026-10-06 ` +
+        `"keep the dark menus and bands out of the form design too", so a control on a dark ground ` +
+        `is never handed the light form token. Restore the dark classes; do not relax this.`,
+    );
+  }
+}
+
 export async function runFormDesignSystemTests(): Promise<void> {
   identityTests();
   singleSourceTests();
   ratchetTests();
   mergeSemanticsTests();
   sixteenPixelKeepTests();
+  darkGroundKeepTests();
 }
