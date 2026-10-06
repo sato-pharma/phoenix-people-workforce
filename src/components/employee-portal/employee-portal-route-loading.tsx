@@ -35,8 +35,8 @@ export function EmployeePortalRouteLoading() {
 
       {!portal ? (
         <section className="relative isolate overflow-hidden rounded border border-white/80 bg-white/86 p-5 shadow-[0_22px_54px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:p-6">
-          <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-orange-200/45 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-24 left-1/4 h-52 w-52 rounded-full bg-sky-200/35 blur-3xl" />
+          <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-md bg-orange-200/45 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-24 left-1/4 h-52 w-52 rounded-md bg-sky-200/35 blur-3xl" />
           <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="space-y-3">
               <div className="employee-portal-skeleton h-4 w-32 rounded" />

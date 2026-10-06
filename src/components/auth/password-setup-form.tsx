@@ -143,7 +143,7 @@ export function PasswordSetupForm({ expiryLabel, hrId, loginId, name, purpose, t
             disabled={isSaving}
             type="submit"
           >
-            {isSaving ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/35 border-t-white" /> : <Lock className="h-5 w-5" />}
+            {isSaving ? <span className="h-5 w-5 animate-spin border-2 border-white/35 border-t-white" /> : <Lock className="h-5 w-5" />}
             {isSaving ? "Saving..." : purpose === "setup" ? "Create password" : "Reset password"}
           </button>
         </form>

@@ -2342,6 +2342,7 @@ import { runProductionPlanningStockDeliveryTests } from "./production-planning-s
 import { runFieldActivityMapClockTests } from "./field-activity-map-clock.test.ts";
 import { runNavHrefsResolveTests } from "./nav-hrefs-resolve.test.ts";
 import { runDeleteGuardStandDownTests } from "./delete-guard-stand-down.test.ts";
+import { runSquareEdgeUnshelledRoutesTests } from "./square-edge-unshelled-routes.test.ts";
 import { runNextStepGuardDecisionsTests } from "./next-step-guard-decisions.test.ts";
 import { runRiskyAllowGuardPinTests } from "./risky-allow-guard-pin.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -9008,6 +9009,10 @@ await runTest(
 await runTest(
   "the owner's never-delete guard cannot quietly loosen: the pinned copy of ~/.claude/hooks/scratchpad-guard.mjs still refuses every blanket `PHX_DELETE_OK` (1, 0, yes, true, all, any, *, empty, under five characters), still honours a marker that NAMES the file in all four spellings, still voids a yes when a second unnamed protected file rides along, still refuses to count the marker's own `.pdf` token as one of the files it covers, still has no hatch at all for F:/Claude Scratchpad Archive or F:/Hiring Posts, and still DENIES when the archive copy that must precede an approved delete fails",
   runDeleteGuardStandDownTests,
+);
+await runTest(
+  "the square-edge rule on routes no shell wraps: `rounded-full` is the one radius class no --phx-radius-* token reaches, so it renders as a real pill wherever globals.css RULE 1 does not sweep — a ratchet over every .tsx reachable from an unshelled route, stopping at the two components that stamp a shell",
+  runSquareEdgeUnshelledRoutesTests,
 );
 await runTest(
   "the Stop hook enforcing the owner's `Next step:` line cannot quietly weaken: the pinned copy of ~/.claude/hooks/next-step-capture.mjs still runs its own 31-case decision table to `0 failed`, the case count never falls, and the six cases that took a real incident each are still there by name — a GUI verb hiding behind a conjunction, a money move offered to OK from chat, a message only he can send to a person, the stop_hook_active loop guard, a merely QUOTED merge claim, and an opening line with no quoted words at all",

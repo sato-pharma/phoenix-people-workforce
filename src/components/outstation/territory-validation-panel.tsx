@@ -28,7 +28,15 @@ export function TerritoryValidationPanel({
         Territory Validation
       </p>
       <div className="mt-3">
-        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] ring-1 ${tone(status)}`}>
+        {/* `rounded-md` and not `rounded-full`, and the difference is not cosmetic: every
+            `rounded-*` step resolves through the --phx-radius scale, which tokens.css sets to 0,
+            but `rounded-full` is a Tailwind literal that no token reaches. It was square here only
+            because globals.css RULE 1 zeroes `[class*="rounded"]` inside `.admin-shell` — so the
+            pill was one mount outside the admin shell away from rendering, with nothing to catch
+            it. On `rounded-md` the badge is square by token, like its sibling
+            `ApprovalRecommendationBadge`. (The Card's `rounded-3xl` is deliberate and stays:
+            globals.css pins --radius-3xl to 0 and keeps the name for its 33 call sites.) */}
+        <span className={`inline-flex rounded-md px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] ring-1 ${tone(status)}`}>
           {status.replace(/_/g, " ")}
         </span>
       </div>
