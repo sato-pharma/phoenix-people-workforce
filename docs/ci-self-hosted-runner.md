@@ -599,8 +599,8 @@ parked, and the session had no sanctioned way out.
 | Invocation | What happens | Cost |
 | --- | --- | --- |
 | *(no flag)* — the default | waits **10 minutes**, printing a line each 30 s, then dispatches `ci.yml` | nothing, then ~14 billable minutes |
-| `--urgent` | the same, escalating after **4 minutes** instead of 10 | ~14 billable minutes, sooner |
-| `--wait <minutes>` | that wait with your own budget, then escalates | nothing, then ~14 billable minutes |
+| `--urgent` | **no wait at all** — dispatches `ci.yml` immediately | ~14 billable minutes, at once |
+| `--wait <minutes>` | that wait with your own budget, then escalates — **wins over `--urgent`'s zero, in either order** | nothing, then ~14 billable minutes |
 | `--no-actions` (alias `--free`) | waits but **never bills** — refuses at the end of the wait | nothing, ever |
 | `--no-wait --no-actions` | the pre-2026-10-06 behaviour: refuses at once | nothing, ever |
 
@@ -609,6 +609,16 @@ the box queue is over 10 minutes"*. What produced it, the same evening: the box 
 deep for over 25 minutes**; a 10-minute wait expired and refused; the second attempt was still waiting
 when opening the PR overtook it. So a bare invocation now waits visibly and then pays, because a session
 idling is the expensive outcome. `DEFAULT_WAIT_MINUTES` in `scripts/remote-check-plan.mjs` is the knob.
+
+🔴 **AND `--urgent` NO LONGER QUEUES AT ALL, AS OF THE THIRD RULING OF THE SAME DAY** — *"make
+`--urgent` escalate immediately instead of after 4 minutes"*. Four minutes was the right number for one
+evening, while the **default** still refused instantly and any wait was the new thing on offer. Once the
+default became wait-ten-then-escalate, the only thing `--urgent` bought was six minutes, which is not
+what the word means: urgent is *do not queue me*. So the two tiers now differ in kind rather than by a
+margin — the default waits for the free box and pays only if it stays busy, `--urgent` pays at once.
+`URGENT_WAIT_MINUTES` is **0**, and **an explicit `--wait <minutes>` still wins over it in either
+order**, so `--wait 6 --urgent` waits six minutes and then escalates: this zero may never *shorten* a
+budget the caller asked for. Both halves are pinned in `tests/remote-check.test.ts` section 10b.
 
 🔴 **AND THAT IS WHY `--no-actions` IS LOAD-BEARING RATHER THAN A NICETY.**
 `.claude/hooks/push-typecheck-guard.mjs` runs `remote-check typecheck` on **every push**. Under the new

@@ -253,8 +253,17 @@ export function buildLockfileScript({ remoteRoot, runId, sha, prelude = [] }) {
 /** How long between asking the box again whether it is free. */
 export const BUSY_POLL_SECONDS = 30;
 
-/** `--urgent` is this wait plus `--actions` — long enough for a typecheck to clear, short enough to matter. */
-export const URGENT_WAIT_MINUTES = 4;
+/**
+ * 🔴 `--urgent` NOW ESCALATES AT ONCE — owner ruling, 2026-10-06: *"make --urgent escalate
+ * immediately instead of after 4 minutes"*. It was 4 minutes when the default refused instantly and a
+ * wait was the new thing on offer. Once the DEFAULT became wait-10-then-escalate, the only difference
+ * `--urgent` made was six minutes, which is not what the word means: urgent is "do not queue me at all".
+ *
+ * So the two tiers are now honestly different — the default waits for the free box and pays only if it
+ * stays busy; `--urgent` pays immediately. An explicit `--wait <minutes>` still WINS over this zero, so
+ * `--wait 6 --urgent` waits six minutes and then escalates: the caller's own budget is never shortened.
+ */
+export const URGENT_WAIT_MINUTES = 0;
 
 /**
  * 🔴 THE DEFAULT IS NOW WAIT-THEN-ESCALATE — owner ruling, 2026-10-06: *"make --urgent the default
@@ -315,8 +324,9 @@ export function parseEscalation(argv) {
     if (arg === "--urgent") {
       urgent = true;
       actions = true;
-      // `--urgent` escalates SOONER than the default, so it sets its own shorter wait unless the
-      // caller named a longer one. `Math.max(null, 4)` is 4, but the null is read explicitly here.
+      // `--urgent` escalates IMMEDIATELY (URGENT_WAIT_MINUTES is 0), so it sets that zero only when the
+      // caller named no budget of their own: `Math.max` then keeps an explicit `--wait 6` in EITHER
+      // order, because this zero must never SHORTEN a wait somebody asked for.
       waitMinutes = waitMinutes === null ? URGENT_WAIT_MINUTES : Math.max(waitMinutes, URGENT_WAIT_MINUTES);
       continue;
     }
