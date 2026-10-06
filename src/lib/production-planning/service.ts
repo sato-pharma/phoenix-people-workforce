@@ -1568,7 +1568,17 @@ export async function savePlan(access: AccessContext, body: Record<string, unkno
     );
   }
 
-  const title = asText(body.title) ?? storedPlanTitle(result.productNameAr, result.runs);
+  // The stored title is ALWAYS the Arabic one, and a `title` on the request body is ignored rather
+  // than honoured (owner, 2026-10-06: "drop the body.title override so the stored plan title is
+  // always Arabic"). Until then this read `asText(body.title) ?? storedPlanTitle(…)`, so the
+  // ruling — Arabic whoever saves it — held only because no caller happens to send the field: the
+  // planner's commit POST carries productId, mode, requestedQty, sampleUnits, overridePct,
+  // willSendByMaterialId and commit. Anyone holding `production_planning:create` could store a
+  // title in any language, and a future screen with a title box would have broken the rule with
+  // every test still green. Ignoring the field IS the ruling; rejecting it with an error would
+  // invent a failure mode for something nothing sends. Pinned by
+  // `tests/production-planning-strings.test.ts`.
+  const title = storedPlanTitle(result.productNameAr, result.runs);
   const db = getSupabaseAdmin();
   const product = data.products.find((candidate) => candidate.id === result.productId)!;
 
