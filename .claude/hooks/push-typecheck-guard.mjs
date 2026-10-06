@@ -418,7 +418,12 @@ function main() {
   if (!typecheckRelevant(root, false)) return allow();
 
   const started = Date.now();
-  const run = spawnSync(process.execPath, [script, 'typecheck'], {
+  // 🔴 `--no-wait --no-actions` IS LOAD-BEARING, NOT TIDINESS. Since 2026-10-06 a bare
+  // `remote-check` waits ten minutes on a busy box and then pays for a GitHub Actions run (the owner's
+  // ruling, `DEFAULT_WAIT_MINUTES`). This hook runs on EVERY push, so the default here would delay each
+  // one by ten minutes and bill ~14 Actions minutes for a verdict the PR's own `checks` job produces
+  // for free. A push must stay instant: a busy box gives NO VERDICT and the push is allowed.
+  const run = spawnSync(process.execPath, [script, 'typecheck', '--no-wait', '--no-actions'], {
     cwd: root,
     encoding: 'utf8',
     timeout: RUN_TIMEOUT_MS,
