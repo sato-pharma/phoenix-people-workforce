@@ -163,9 +163,13 @@ and do not hand back manual steps or theory.
   (`PHX_DEV_RUNAWAY_STOP=0` disarms both). A server you started in your own terminal is no session's child,
   so that one is still yours to stop by port. `node ~/.claude/hooks/dev-server-reaper.mjs status` lists
   what it holds; `PHX_DEV_REAPER_OFF=1` turns it off for a session.
-- **Never stop a dev server yourself until he says so** (owner rule, 2026-09-21 — "NEVER CLOSE THE DEV
-  UNTIL I TELL U"). Not after your own verification, not to free RAM: he may be using it in the pane —
-  a session stopped one mid-test and he had to ask for it back. Leave a stop to the reaper and watchdog.
+- **Never stop a dev server HE or another session started, until he says so** (owner rule, 2026-09-21 —
+  "NEVER CLOSE THE DEV UNTIL I TELL U"). Not after your own verification, not to free RAM: he may be
+  using it in the pane — a session stopped one mid-test and he had to ask for it back. Leave that stop
+  to the reaper and watchdog. 🔴 **SCOPED, not repealed, on 2026-09-28** (owner — *"allow me to stop dev
+  servers I start myself"*): **one YOUR OWN session started is yours to stop**, by PORT, once the look
+  is done — check the PID's start time matches when you started it. Both halves hold in every folder;
+  the repo-side account is `phoenix-workforce` AGENTS.md §5.
 - **Claude desktop app slow? Read `~/.claude/scripts/ram-meter/claude-app-watch.txt` first** (found
   2026-09-21). App 2.2553.1 keeps watching a session's worktree after archiving it while still warm; once
   the app deletes that worktree, the watch spins its main thread at a full core (8 of them: 99%). The RAM
@@ -201,10 +205,21 @@ and do not hand back manual steps or theory.
   `promptSuggestionEnabled`: only the variable keeps suggestions on near the usage limit and in the first
   session after an update. An audit removed it on 2026-09-15 and he ordered it back. Never remove either copy.
 
-## Never delete documents (owner rule, 2026-09-14; narrowed 2026-09-20)
+## Never delete documents (owner rule, 2026-09-14; narrowed 2026-09-20; stand-down added 2026-10-06)
 
 - **Never delete an HTML, PDF, XLSX/XLSM/XLS, DOCX/DOC or SVG file**, in any folder, scratchpad
-  included. Leave it or move it aside; if a delete is truly needed, ask him first. **Amended 2026-09-20
+  included. Leave it or move it aside; **do not look for another way to delete it.** 🔴 **HIS YES NOW
+  REACHES THE MACHINE, and it is the ONLY thing that does** (he ordered the hatch built 2026-10-06 —
+  "add a stand-down to the delete guard so my own yes can go through" — after he told a session to
+  delete a duplicate PDF and the hook refused him). Once he has named that file in chat, and only
+  then, run `PHX_DELETE_OK=<filename> <the same command>` (`$env:PHX_DELETE_OK='<filename>';` in
+  PowerShell). **The marker must NAME the file: `=1`, `=yes`, `=all`, `=*` and anything under five
+  characters are all still DENIED**, the name must appear in the command, and every protected file
+  the command names must match it — one yes, one file, one command, and it archives the file before
+  letting the delete run. **`F:\Claude Scratchpad Archive` and `F:\Hiring Posts` have NO hatch at
+  all.** Never reach for the marker on your own reading that a delete is obviously fine; without his
+  words for that file it is the thing this guard exists to stop. Pinned by
+  `node ~/.claude/hooks/scratchpad-guard.mjs selftest` — expect `0 failed`. **Amended 2026-09-20
   at his instruction: screenshots/images (PNG, JPG, JPEG, WebP, GIF, BMP), CSV, CSS, JSON and patch
   files are NO LONGER protected or archived** — he had them deleted from both F: archives, with
   duplicate copies of the protected types removed (backups: `~/.claude/backups/hook-backups/*.pre-2026-09-20`).
