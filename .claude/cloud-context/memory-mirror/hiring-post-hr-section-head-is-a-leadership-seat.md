@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: dfa82d4c-dd68-4121-80ac-a345740c658c
-  modified: 2026-10-06T19:23:00.925Z
+  modified: 2026-10-06T19:35:16.467Z
 ---
 
 The owner rejected page 2 of the HR team hiring post (2026-10-06) in strong words because the HR Section Head panel listed personnel work: running the employee lifecycle, contracts, social insurance, closing attendance and keeping HR data accurate. In his words these are "personal [personnel] things" the Section Head will not do, and a description like that makes nobody want to apply. He also rejected "Strong Excel" as a requirement: "what strong Excel when we have a system".
@@ -27,5 +27,7 @@ The owner rejected page 2 of the HR team hiring post (2026-10-06) in strong word
   - Reuse that copy verbatim for these roles. When he hands over copy, it is final, like a design he hands over: fit the layout to the words, never trim the words.
 - On a multi-page post, the "how to apply" band (WhatsApp number and careers link) appears on page 1 only and is never duplicated.
 - The October 3 HR Section Head JD brief in `F:\Hiring Posts\2026-10-03 HR Section Head\` describes the operational load the seat oversees through its team. It is not the poster copy.
+
+- **A single-role post to be BOOSTED names no other vacancy** (owner, 2026-10-06: "only HR section head, don't mention other positions"). So no team strip listing Talent Acquisition, Personnel or the Office Coordinator: "Leads a team of three" is enough. The WhatsApp line says "choose HR Section Head", not "choose your role". The file is `HR-Section-Head-poster-v7`.
 
 Related: [[ask-business-questions-as-in-chat-multiple-choice]]
