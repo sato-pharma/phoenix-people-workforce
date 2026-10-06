@@ -89,6 +89,7 @@ import {
   gradeActionsRun,
   newRunId,
   parseBusyProbe,
+  DEFAULT_WAIT_MINUTES,
   parseEscalation,
   runPaths,
 } from "./remote-check-plan.mjs";
@@ -477,10 +478,13 @@ if (!busy.known) {
   // that answered oddly, never proof that the box is idle.
   die("could not tell whether the box is busy — the probe did not finish. Nothing was pushed.");
 }
-// 🔴 AND SINCE 2026-10-06 THE REFUSAL IS NO LONGER THE ONLY WAY OUT (owner's policy: the box by
-// default because it is free, GitHub Actions when the work cannot wait). `--wait <minutes>` polls
-// VISIBLY — the objection above is to a SILENT wait, not to waiting — and `--urgent` adds the Actions
-// fallback at the end of it. Default behaviour with no flags is unchanged: refuse immediately.
+// 🔴 AND SINCE 2026-10-06 THE REFUSAL IS NO LONGER THE DEFAULT AT ALL (owner's policy: the box by
+// default because it is free, GitHub Actions when the work cannot wait — then, the same evening,
+// *"make --urgent the default when the box queue is over 10 minutes"*). A bare invocation polls
+// VISIBLY for `DEFAULT_WAIT_MINUTES` — the objection was always to a SILENT wait, never to waiting —
+// and then runs ci.yml on GitHub Actions rather than handing the caller nothing. `--urgent` escalates
+// sooner (4 min). `--no-actions` (alias `--free`) waits but never bills; `--no-wait` does not wait;
+// the two together are the old instant refusal, which is what the push guard asks for.
 const FORCED = process.env.PHX_CHECK_FORCE === "1";
 let waitedSeconds = 0;
 let plan = FORCED
@@ -524,17 +528,18 @@ if (busy.runs.length > 0 && plan.action !== "run" && !FORCED) {
   console.error("        'for p in /proc/[0-9]*; do d=$(readlink \"$p/cwd\" 2>/dev/null) || continue;" +
     " case \"$d\" in */runs/<RUN_ID>*) kill -KILL ${p#/proc/};; esac; done'");
   console.error("");
-  console.error("    Three ways forward, cheapest first:");
-  console.error("      --wait <minutes>   ask the box again every " + BUSY_POLL_SECONDS +
-    "s until it frees. Free, and it prints a line each time.");
-  console.error("      --urgent           that wait (" + URGENT_WAIT_MINUTES +
-    " min), then run ci.yml on GitHub Actions instead — ~14 billable minutes.");
+  console.error("    You asked NOT to escalate, so this is the end of the road for this invocation:");
+  console.error("      (default)          wait " + DEFAULT_WAIT_MINUTES +
+    " min, then run ci.yml on GitHub Actions — ~14 billable minutes. You passed --no-actions/--free.");
+  console.error("      --urgent           escalate after " + URGENT_WAIT_MINUTES + " min instead of " +
+    DEFAULT_WAIT_MINUTES + ".");
+  console.error("      --wait <minutes>   keep asking the box, a line every " + BUSY_POLL_SECONDS + "s.");
   console.error("      PHX_CHECK_FORCE=1  start beside the other run anyway (this is what OOM-kills a build).");
   console.error("");
   die(
     "not starting a second one. This box is 7,740 MB and a build alone wants ~7.4 GB of it, so a " +
       "concurrent run is how a check gets OOM-killed or reports a time that is really contention. " +
-      "Re-run with --wait <minutes> or --urgent rather than hand-rolling a retry loop.",
+      "Drop --no-actions/--free to let the default escalate, rather than hand-rolling a retry loop.",
   );
 }
 

@@ -257,6 +257,20 @@ export const BUSY_POLL_SECONDS = 30;
 export const URGENT_WAIT_MINUTES = 4;
 
 /**
+ * 🔴 THE DEFAULT IS NOW WAIT-THEN-ESCALATE — owner ruling, 2026-10-06: *"make --urgent the default
+ * when the box queue is over 10 minutes"*. Measured the same evening: the box queued THREE sessions
+ * deep for over 25 minutes, a 10-minute wait expired and refused, and the second attempt was still
+ * waiting when a PR overtook it. So a bare invocation now waits VISIBLY for this long and then pays
+ * for GitHub Actions rather than leaving the caller with nothing.
+ *
+ * 🔴 AND THAT IS WHY `--no-actions` EXISTS, NOT AS A NICETY. A caller that must never bill — above
+ * all `.claude/hooks/push-typecheck-guard.mjs`, which runs on EVERY push — passes `--no-wait
+ * --no-actions` and keeps the old instant "no verdict". Without that, a busy box would delay every
+ * push by ten minutes and then spend ~14 billable minutes on it.
+ */
+export const DEFAULT_WAIT_MINUTES = 10;
+
+/**
  * Flags are parsed, never filtered away.
  *
  * 🔴 THIS FILE USED TO IGNORE EVERY `-` ARGUMENT SILENTLY (`argv.filter((a) => !a.startsWith("-"))`),
@@ -272,8 +286,11 @@ export const URGENT_WAIT_MINUTES = 4;
  * @returns {{ positional: string[], waitMinutes: number, actions: boolean, unknown: string[], urgent: boolean }}
  */
 export function parseEscalation(argv) {
-  let waitMinutes = 0;
-  let actions = false;
+  // null means "the caller did not say", which is what the defaults below fill in. A plain `0`/`false`
+  // could not be told apart from an explicit `--no-wait`/`--no-actions`, and the whole point of those
+  // two flags is that they are louder than the default.
+  let waitMinutes = null;
+  let actions = null;
   let urgent = false;
   const unknown = [];
   const positional = [];
@@ -287,10 +304,20 @@ export function parseEscalation(argv) {
       actions = true;
       continue;
     }
+    if (arg === "--no-actions" || arg === "--free") {
+      actions = false;
+      continue;
+    }
+    if (arg === "--no-wait") {
+      waitMinutes = 0;
+      continue;
+    }
     if (arg === "--urgent") {
       urgent = true;
       actions = true;
-      waitMinutes = Math.max(waitMinutes, URGENT_WAIT_MINUTES);
+      // `--urgent` escalates SOONER than the default, so it sets its own shorter wait unless the
+      // caller named a longer one. `Math.max(null, 4)` is 4, but the null is read explicitly here.
+      waitMinutes = waitMinutes === null ? URGENT_WAIT_MINUTES : Math.max(waitMinutes, URGENT_WAIT_MINUTES);
       continue;
     }
     const inline = /^--wait=(.*)$/.exec(arg);
@@ -307,7 +334,13 @@ export function parseEscalation(argv) {
     }
     unknown.push(arg);
   }
-  return { positional, waitMinutes, actions, unknown, urgent };
+  return {
+    positional,
+    waitMinutes: waitMinutes === null ? DEFAULT_WAIT_MINUTES : waitMinutes,
+    actions: actions === null ? true : actions,
+    unknown,
+    urgent,
+  };
 }
 
 /**

@@ -8,6 +8,7 @@ import { stripComments } from "./support/comment-strip.ts";
 
 import {
   BUSY_POLL_SECONDS,
+  DEFAULT_WAIT_MINUTES,
   URGENT_WAIT_MINUTES,
   buildBusyProbeScript,
   buildRunScript,
@@ -425,9 +426,33 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.equal(urgent.actions, true, "--urgent must arm the Actions fallback, not only the wait");
     assert.deepEqual(urgent.positional, ["all"]);
 
-    // 10b — the default is UNCHANGED: a busy box with no flag refuses at once, and nothing waits
-    // silently. Waiting is opt-in because a silent queue reads as a hang (the reason the refusal
-    // exists at all), and the Actions escalation is opt-in because it bills ~14 minutes.
+    // 10b — THE DEFAULT IS WAIT-THEN-ESCALATE since the owner's ruling of 2026-10-06 ("make --urgent
+    // the default when the box queue is over 10 minutes"). A bare invocation must never leave the
+    // caller with nothing, and it must never wait SILENTLY — the poll prints a line each time.
+    const bare = parseEscalation(["all"]);
+    assert.equal(bare.waitMinutes, DEFAULT_WAIT_MINUTES, "a bare invocation must wait, not refuse at once");
+    assert.equal(bare.actions, true, "a bare invocation must escalate once the wait is spent");
+    assert.ok(DEFAULT_WAIT_MINUTES > URGENT_WAIT_MINUTES, "--urgent must escalate SOONER than the default");
+
+    // And the opt-out is what keeps a per-push hook free: `--no-wait --no-actions` is the old instant
+    // "no verdict". Without it, push-typecheck-guard would delay EVERY push by ten minutes and bill
+    // ~14 Actions minutes for a verdict the PR's own `checks` job produces anyway.
+    const free = parseEscalation(["typecheck", "--no-wait", "--no-actions"]);
+    assert.equal(free.waitMinutes, 0, "--no-wait must mean no wait");
+    assert.equal(free.actions, false, "--no-actions must mean never bill");
+    assert.deepEqual(free.positional, ["typecheck"], "a negation flag must not leak into the check names");
+    assert.equal(parseEscalation(["all", "--free"]).actions, false, "--free is the documented alias");
+    assert.equal(parseEscalation(["all", "--free"]).waitMinutes, DEFAULT_WAIT_MINUTES, "--free waits, it just never pays");
+
+    const GUARD = stripComments(
+      readFileSync(path.join(ROOT, ".claude", "hooks", "push-typecheck-guard.mjs"), "utf8"),
+    );
+    assert.match(
+      GUARD,
+      /spawnSync\([\s\S]{0,80}?'typecheck',\s*'--no-wait',\s*'--no-actions'/,
+      "push-typecheck-guard must pass --no-wait --no-actions: the default now waits 10 min and then bills, on EVERY push",
+    );
+
     const busy = { busyRuns: ["run-a"] };
     assert.equal(decideBusyAction({ ...busy, waitedSeconds: 0, waitMinutes: 0, actions: false }).action, "refuse");
     assert.equal(decideBusyAction({ ...busy, waitedSeconds: 0, waitMinutes: 0, actions: true }).action, "actions");

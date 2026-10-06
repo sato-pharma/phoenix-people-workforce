@@ -598,14 +598,31 @@ parked, and the session had no sanctioned way out.
 
 | Invocation | What happens | Cost |
 | --- | --- | --- |
-| *(no flag)* — the default | refuses at once, and now PRINTS the two routes below | nothing |
-| `--wait <minutes>` | asks the box again every 30 s, **printing a line each time**, then runs | nothing |
-| `--urgent` (= `--wait 4 --actions`) | that wait, then dispatches `ci.yml` on GitHub Actions | ~14 billable minutes |
+| *(no flag)* — the default | waits **10 minutes**, printing a line each 30 s, then dispatches `ci.yml` | nothing, then ~14 billable minutes |
+| `--urgent` | the same, escalating after **4 minutes** instead of 10 | ~14 billable minutes, sooner |
+| `--wait <minutes>` | that wait with your own budget, then escalates | nothing, then ~14 billable minutes |
+| `--no-actions` (alias `--free`) | waits but **never bills** — refuses at the end of the wait | nothing, ever |
+| `--no-wait --no-actions` | the pre-2026-10-06 behaviour: refuses at once | nothing, ever |
+
+🔴 **THE DEFAULT ESCALATES, AS OF THE SECOND RULING OF 2026-10-06** — *"make `--urgent` the default when
+the box queue is over 10 minutes"*. What produced it, the same evening: the box queued **three sessions
+deep for over 25 minutes**; a 10-minute wait expired and refused; the second attempt was still waiting
+when opening the PR overtook it. So a bare invocation now waits visibly and then pays, because a session
+idling is the expensive outcome. `DEFAULT_WAIT_MINUTES` in `scripts/remote-check-plan.mjs` is the knob.
+
+🔴 **AND THAT IS WHY `--no-actions` IS LOAD-BEARING RATHER THAN A NICETY.**
+`.claude/hooks/push-typecheck-guard.mjs` runs `remote-check typecheck` on **every push**. Under the new
+default a busy box would delay each push by ten minutes and then spend ~14 billable minutes on a verdict
+the PR's own `checks` job produces anyway — so the guard passes `--no-wait --no-actions` and keeps its
+instant "NO VERDICT, push allowed". `tests/remote-check.test.ts` section 10b asserts that exact argument
+list in the hook's source; it was watched firing on its own break. **Any other per-push or per-commit
+caller added later must opt out the same way.**
 
 **Why the wait is allowed now when the refusal's own comment argued against queueing.** The objection
 was never to waiting — it was to waiting *silently*: a 30-minute `flock` on the box reads as a hang.
 Every poll here prints the runs it is waiting for and how much budget is left, so a quiet terminal
-still means something is wrong. And the wait is opt-in, so no existing caller changed behaviour.
+still means something is wrong. The wait was opt-in for one evening; the owner's second ruling made it
+the default, and the opt-out above is what protects the callers that must stay instant and free.
 
 **Why the Actions fallback verifies the sha twice.** `gh workflow run` takes a **ref**, not a commit, so
 it checks whatever origin holds for that branch. The script compares `git ls-remote origin
