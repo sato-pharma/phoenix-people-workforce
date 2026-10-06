@@ -294,7 +294,21 @@ export function readRecordedDecisions(markdown) {
 export function describeAlert(row, decisions) {
   const decided = row.number === null ? undefined : decisions?.get(row.number);
   const fix = row.patchedVersion
-    ? `bump to ${row.patchedVersion}`
+    ? // 🔴 A PATCHED VERSION AND A RECORDED DECISION TOGETHER IS A REAL COMBINATION, and until
+      // 2026-10-06 the bump instruction swallowed the decision whole. #113 (source-map-js, patched at
+      // 1.2.2, in `mobile/package-lock.json`) printed as a bare `bump to 1.2.2` with nothing saying the
+      // bump had already been judged and deliberately not taken — so the next session reads an
+      // instruction the owner has answered, and the one before it reached for a path the mobile freeze
+      // guard refuses. The same cry-wolf shape this file has now corrected three times. Both halves are
+      // printed because both are true: the version exists AND somebody decided against taking it here.
+      //
+      // 🔴 ONLY FOR AN ALERT THAT CANNOT REACH THE GATE. A reachable one keeps the bare bump
+      // instruction however recent its decision: a recorded acceptance must never read as a reason to
+      // leave something that will turn `validate` red — and through it withhold a production deploy
+      // (AGENTS.md §2.3). Fails closed in the same direction as every other grading here.
+      row.outOfAuditReach && decided
+      ? `bump to ${row.patchedVersion} — but risk ACCEPTED, recorded ${decided.recorded} in ${DECISIONS_DOC}`
+      : `bump to ${row.patchedVersion}`
     : decided
       // Not "nothing to do" — the decision is a standing one with its own reversal conditions, and the
       // row names them. This says WHERE it is written so a reader can disagree with it on the evidence.

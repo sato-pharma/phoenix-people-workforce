@@ -197,6 +197,47 @@ What this acceptance does and does not say:
   integrity finding is re-judged first, on its own merits, by whoever owns that artifact. An
   acceptance recorded against a CI gate is not a clearance for a shipped binary.
 
+### `source-map-js` — GHSA-68fv-2mgg-jv7q · CVE-2026-93749 · HIGH (CVSS 7.5)
+
+| | |
+| --- | --- |
+| **Decision** | **Accepted for this repository's audit gate only.** Recorded 2026-10-06 at the owner's instruction. |
+| Alert | #113, opened 2026-10-06 05:56 Cairo, `mobile/package-lock.json` |
+| Scope | **`runtime`**, in a manifest the root audit never reads |
+| Patched version | **1.2.2 exists** — and that is what makes this row different from the three above |
+| How it arrives | `source-map-js@1.2.1` ← `postcss`, which declares `^1.2.1` |
+| What it is | Event-loop denial of service through indexed source-map section offsets |
+| Impact vector | `C:N/I:N/A:H` — availability only |
+
+🔴 **THIS IS THE FIRST ROW HERE WHERE A FIX EXISTS, SO THE USUAL SENTENCE CANNOT BE USED.** Every
+acceptance above rests partly on `first_patched_version` being null — *"there is nothing to bump to"*.
+That is **not true here**: 1.2.2 is published, and `postcss`'s own `^1.2.1` already permits it, so the
+change would be a one-line lockfile resolution. What makes this one unable to gate is **only** that
+`pnpm audit --prod` never walks `mobile/package-lock.json` at the root — the same narrow ground as
+`#111`, and nothing more.
+
+**Why it is accepted rather than bumped.** The file is under `mobile/`, which AGENTS.md §4's first
+bullet freezes until the owner lifts it in his own words — and that freeze is enforced, not merely
+written down, by `.claude/hooks/mobile-freeze-guard.mjs`. So no session here can make that one-line
+change, and nothing is built or distributed from that lockfile while the freeze stands. The
+acceptance is therefore about **where the fix has to happen**, never about the finding being small.
+
+- **It does say** the alert cannot turn `validate` red: the root audit does not read that manifest,
+  verified the same way as the rows above.
+- 🔴 **It does NOT say there is nothing to do** — there is, and it is a one-line bump. It is simply
+  not this repository's to make today.
+- 🔴 **It does NOT say the package is safe in whatever is built from that lockfile.**
+
+**What would reverse this.** Any one of these, and it stops being accepted:
+
+- **the freeze is lifted** → bump to 1.2.2 in the first dependency PR after it, and delete this row.
+  🔴 Unlike the rows above, this one has no "wait for upstream" condition left to satisfy: the only
+  thing standing between the alert and its fix is the freeze.
+- the advisory appears in the **root** `pnpm-lock.yaml` graph → it is then a reachable HIGH, it blocks
+  `validate`, and AGENTS.md §2.3 applies
+- anything is built or distributed from `mobile/package-lock.json` → re-judged first, by whoever owns
+  that artifact, and with a published patch available the answer is very unlikely to be this one
+
 ### `sprintf-js` — GHSA-hp3w-g68c-fv3c · MEDIUM (CVSS 5.3)
 
 | | |
