@@ -1188,6 +1188,19 @@ export function StockTab({
   const locationName = (id: string) =>
     data.locations.find((location) => location.id === id)?.nameAr ?? id;
 
+  // A delivery is the amount SENT and is added to what is already held, so the field asks for a
+  // different number from the other three sources and says which balance it lands on. The sum
+  // itself is never computed here: the service owns that arithmetic in base units, and a second
+  // implementation in floats is how the screen and the stored figure start to disagree.
+  const isDelivery = source === "delivery";
+  const formMaterial = data.materials.find((candidate) => candidate.id === materialId) ?? null;
+  const standingHere = formMaterial?.stock.find((row) => row.locationId === locationId) ?? null;
+  const qtyHint = isDelivery
+    ? standingHere
+      ? `${t.stockDeliveryAdds}: ${standingHere.qtyDisplay} ${formMaterial?.displayUnit ?? ""}`.trim()
+      : t.stockDeliveryAdds
+    : t.stockBalanceAfter;
+
   return (
     <>
       {canWrite ? (
@@ -1222,7 +1235,7 @@ export function StockTab({
                 ))}
               </select>
             </Field>
-            <Field label={t.stockQty}>
+            <Field hint={qtyHint} label={isDelivery ? t.stockDeliveredQty : t.stockQty}>
               <input
                 className={INPUT}
                 dir="ltr"

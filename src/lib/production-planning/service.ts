@@ -74,6 +74,7 @@ import {
   type ProductionPlanningErrorKey,
   productionPlanningStrings,
 } from "./strings";
+import { isStockMovement, isStockSource, storedStockQty, type StockSource } from "./stock";
 
 const T = {
   products: "prodplan_products",
@@ -1065,7 +1066,14 @@ async function assertWrite(access: AccessContext): Promise<ProductionPlanningLev
   return level;
 }
 
-/** Append a stock report. Nothing is ever overwritten — the newest row IS the current figure. */
+/**
+ * Append a stock report. Nothing is ever overwritten — the newest row IS the current figure.
+ *
+ * A **delivery** is the one movement source (owner, 2026-10-06): he types what he SENT and the
+ * balance goes up by it, because "Delivery: 100" plainly means 100 arrived, not that 100 is all
+ * there is. Every other source is a balance somebody counted and is stored exactly as typed. The
+ * ruling, the reason and the arithmetic live in `stock.ts`.
+ */
 export async function addStockEntry(access: AccessContext, body: Record<string, unknown>) {
   await assertWrite(access);
   const who = actor(access);
@@ -1078,15 +1086,62 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
   if (!unitKind) throw new ProductionPlanningInputError(errorsFor(body).unknownUnitKind, "unitKind");
   const qty = parseNonNegativeQty(asScalar(body.qty), "qty");
   const asOfDate = asText(body.asOfDate) ?? todayCairo();
-  const source = asText(body.source) ?? "factory_report";
+  // Validated here rather than left to the table's CHECK: a rejected CHECK surfaces as a raw
+  // PostgREST message, which is not a sentence anybody should read on a form.
+  const sourceText = asText(body.source) ?? "factory_report";
+  if (!isStockSource(sourceText)) {
+    throw new ProductionPlanningInputError(errorsFor(body).unknownStockSource, "source");
+  }
+  const source: StockSource = sourceText;
 
-  const { data, error } = await getSupabaseAdmin()
+  const db = getSupabaseAdmin();
+
+  // A delivery adds to the balance standing on its OWN date. It refuses to guess when a LATER
+  // report already exists, because that report has either counted this delivery already or
+  // superseded it — adding underneath it would invent a figure nobody reported.
+  let previousQty = BigInt(0);
+  if (isStockMovement(source)) {
+    const [standing, newer] = await Promise.all([
+      db
+        .from(T.stock)
+        .select("qty::text")
+        .eq("material_id", materialId)
+        .eq("location_id", locationId)
+        .lte("as_of_date", asOfDate)
+        .order("as_of_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      db
+        .from(T.stock)
+        .select("as_of_date")
+        .eq("material_id", materialId)
+        .eq("location_id", locationId)
+        .gt("as_of_date", asOfDate)
+        .order("as_of_date", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (standing.error) failure(standing.error, "read the balance this delivery adds to");
+    if (newer.error) failure(newer.error, "check for a newer stock report");
+    if (newer.data?.as_of_date) {
+      throw new ProductionPlanningInputError(
+        stringsFor(body).refusals.deliveryBehindANewerReport(String(newer.data.as_of_date)),
+        "asOfDate",
+      );
+    }
+    previousQty = standing.data?.qty ? parseNonNegativeQty(standing.data.qty, "qty") : BigInt(0);
+  }
+
+  const storedQty = storedStockQty({ previousQty, source, typedQty: qty });
+
+  const { data, error } = await db
     .from(T.stock)
     .insert({
       material_id: materialId,
       unit_kind: unitKind,
       location_id: locationId,
-      qty: formatQty(qty),
+      qty: formatQty(storedQty),
       as_of_date: asOfDate,
       source,
       note: asText(body.note),
@@ -1101,11 +1156,26 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
     actorLoginId: who.login,
     entityType: "production_stock_entry",
     entityId: data?.id ? String(data.id) : null,
-    newValues: { materialId, locationId, qty: formatQty(qty), asOfDate, source },
-    summary: `Production planner: stock report for material ${materialId} at ${locationId} — ${formatQty(qty)} as of ${asOfDate}`,
+    newValues: {
+      materialId,
+      locationId,
+      qty: formatQty(storedQty),
+      typedQty: formatQty(qty),
+      previousQty: formatQty(previousQty),
+      asOfDate,
+      source,
+    },
+    summary: isStockMovement(source)
+      ? `Production planner: delivery of ${formatQty(qty)} for material ${materialId} at ${locationId} — balance ${formatQty(previousQty)} → ${formatQty(storedQty)} as of ${asOfDate}`
+      : `Production planner: stock report for material ${materialId} at ${locationId} — ${formatQty(storedQty)} as of ${asOfDate}`,
   });
 
-  return { id: data?.id ? String(data.id) : null };
+  return {
+    id: data?.id ? String(data.id) : null,
+    previousQty: formatQty(previousQty),
+    storedQty: formatQty(storedQty),
+    typedQty: formatQty(qty),
+  };
 }
 
 /**

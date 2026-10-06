@@ -163,6 +163,9 @@ export const PP = {
   stockSourceOwnCount: "جرد ساتو",
   stockSourceDelivery: "تسليم",
   stockSourceAdjustment: "تسوية",
+  stockDeliveredQty: "الكمية المُسلّمة",
+  stockDeliveryAdds: "تُضاف على الرصيد الحالي",
+  stockBalanceAfter: "الرصيد بعد التسجيل",
   stockNote: "ملاحظة",
   stockAdd: "إضافة تقرير مخزون",
   stockHistory: "سجل التقارير",
@@ -411,6 +414,9 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   stockSourceOwnCount: "Sato count",
   stockSourceDelivery: "Delivery",
   stockSourceAdjustment: "Adjustment",
+  stockDeliveredQty: "Amount delivered",
+  stockDeliveryAdds: "Added to the current balance",
+  stockBalanceAfter: "Balance after this report",
   stockNote: "Note",
   stockAdd: "Add a stock report",
   stockHistory: "Report history",
@@ -810,6 +816,7 @@ export type ProductionPlanningErrorKey =
   | "rowMaterialMissingId"
   | "rowMaterialNotFound"
   | "unknownAccessLevel"
+  | "unknownStockSource"
   | "unknownSupplier"
   | "unknownUnitKind";
 
@@ -830,6 +837,7 @@ export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, stri
   rowMaterialMissingId: "مادة بدون معرِّف في أحد السطور.",
   rowMaterialNotFound: "مادة غير موجودة في أحد السطور.",
   unknownAccessLevel: "مستوى الصلاحية غير معروف.",
+  unknownStockSource: "مصدر تقرير المخزون غير معروف.",
   unknownSupplier: "مورد المادة غير معروف.",
   unknownUnitKind: "نوع الوحدة غير معروف.",
 };
@@ -851,6 +859,7 @@ export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, s
   rowMaterialMissingId: "One of the rows has a material with no id.",
   rowMaterialNotFound: "One of the rows names a material that does not exist.",
   unknownAccessLevel: "Unknown access level.",
+  unknownStockSource: "Unknown stock report source.",
   unknownSupplier: "Unknown material supplier.",
   unknownUnitKind: "Unknown unit kind.",
 };
@@ -872,6 +881,8 @@ export const PRODUCTION_PLANNING_REFUSALS = {
     `${materialName}: رصيد آخر المدة أكبر من رصيد أول المدة زائد المُسلَّم.`,
   unsettledSuppliers: (materialNames: readonly string[]) =>
     `لا يمكن اعتماد الخطة قبل تحديد من يورد: ${materialNames.join("، ")}`,
+  deliveryBehindANewerReport: (newestDate: string) =>
+    `يوجد تقرير مخزون أحدث (${newestDate}) من تاريخ هذا التسليم، فلا تُضاف الكمية تلقائيًا — تُسجّل كتسوية بالرصيد النهائي.`,
 } as const;
 
 export const PRODUCTION_PLANNING_REFUSALS_EN: typeof PRODUCTION_PLANNING_REFUSALS = {
@@ -879,6 +890,8 @@ export const PRODUCTION_PLANNING_REFUSALS_EN: typeof PRODUCTION_PLANNING_REFUSAL
     `${materialName}: the closing balance is larger than the opening balance plus what was delivered.`,
   unsettledSuppliers: (materialNames: readonly string[]) =>
     `The plan cannot be committed until somebody says who supplies: ${materialNames.join(", ")}`,
+  deliveryBehindANewerReport: (newestDate: string) =>
+    `A newer stock report (${newestDate}) already stands after this delivery’s date, so the amount is not added automatically — record it as an adjustment carrying the final balance.`,
 };
 
 export type ProductionPlanningStrings = {

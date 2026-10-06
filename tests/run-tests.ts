@@ -2337,6 +2337,8 @@ import { runProductionPlanningStringsTests } from "./production-planning-strings
 import { runProductionPlanningFitsTheScreenTests } from "./production-planning-fits-the-screen.test.ts";
 import { runProductionPlanningWorkbookTests } from "./production-planning-workbook.test.ts";
 import { runProductionPlanningSilentUntilArmedTests } from "./production-planning-silent-until-armed.test.ts";
+import { runProductionPlanningLeafletSplitTests } from "./production-planning-leaflet-split.test.ts";
+import { runProductionPlanningStockDeliveryTests } from "./production-planning-stock-delivery.test.ts";
 import { runFieldActivityMapClockTests } from "./field-activity-map-clock.test.ts";
 import { runNavHrefsResolveTests } from "./nav-hrefs-resolve.test.ts";
 import { runDeleteGuardStandDownTests } from "./delete-guard-stand-down.test.ts";
@@ -8986,6 +8988,14 @@ await runTest(
 await runTest(
   "the Production Planner's reorder email is built and SILENT: the template ships isActive false, its recipients are the four addresses the owner named rather than any role (routing by role would reach every Manager, the QPPV included), the sweep returns skipped \"disabled\" instead of a zero when it is not armed - because \"0 sent\" and \"switched off\" were indistinguishable through a 13-day outbox freeze - the dry-run gate sits BEFORE sendTemplatedEmail and every alarm row records which mode wrote it, while the table's own CHECK refuses a dry-run row marked as sent, which is the one gate a code change cannot talk past; both crons authorise with their own job name and report a heartbeat slug that JOB_SCHEDULES declares; and the FX sweep's failure path writes fetch_ok false WITHOUT touching fetched_usd_to_egp, because overwriting a good rate with null is the only thing a failed fetch must never do - a zero, a negative, a word and a null are each refused as a rate",
   runProductionPlanningSilentUntilArmedTests,
+);
+await runTest(
+  "a DELIVERY adds to the stock balance while every other source replaces it: the owner had 43 kg of ivy extract at EGPI, supplied 100 kg and recorded a Delivery of 100, and the planner then read 100 kg instead of 143 - because a stock report stores the BALANCE after it and the one source whose plain meaning is \"how much I sent\" was being stored as \"what there is now\", which is a silent wrong number that makes the reorder alarm under-read its cover; so delivery is now the single movement source, factory_report, own_count and adjustment still store exactly what was typed, a delivery into an empty location stores what arrived and a delivery of nothing leaves the balance alone, the writer resolves what to store through storedStockQty rather than inserting the typed figure, a delivery dated BEHIND a newer report is refused rather than folded in under it, an unknown source answers a sentence instead of the table's raw CHECK, and the form asks for the delivered amount while leaving the arithmetic to the service rather than re-adding it in floats",
+  runProductionPlanningStockDeliveryTests,
+);
+await runTest(
+  "the leaflet is TWO materials and only the new artwork carries a formula line: EGPI reported one figure of 78,250 leaflets that its own note already described as 68,250 old across two lots plus 10,000 new, so two artworks were counted as one item with no composition row at all - and because an old-artwork leaflet cannot go into a new box, splitting them is only meaningful if the requirement lands on LEAFLET_NEW at one per packaging set from Sato, the same line the carton and the sticker carry, while LEAFLET_OLD stays tracked stock with NO formula line; the migration must therefore add exactly one composition row, never name LEAFLET_OLD in it (two leaflet lines would double the requirement on every plan and 68,250 pieces of superseded artwork would start covering new production, with every figure on the row still looking ordinary), never use shared_unsettled (which would make prodplan_plan_lines refuse every commit, the wall potassium sorbate hit), deactivate the combined material rather than deleting anything, close it at zero so a reactivation cannot double-count the same pieces, and carry halves that add up to exactly the 78,250 reported",
+  runProductionPlanningLeafletSplitTests,
 );
 await runTest(
   "the Field Activity route map prints a GPS stop at the time it was stored: a Cairo wall clock carrying no zone is tagged UTC BEFORE new Date reads it, because a zone-less date-time is parsed as the browser's own local time and `timeZone: \"UTC\"` then prints it three hours early - all ten of B-148's 1 September 2026 stops were off by exactly -3:00 - while a value PostgREST already zoned comes back byte-identical and a non-date is left for the caller's own guard",
