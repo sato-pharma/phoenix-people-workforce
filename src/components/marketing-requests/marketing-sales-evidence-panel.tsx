@@ -42,9 +42,9 @@ function BreakdownTable({
                 <span className="text-phx-sm font-bold text-phx-ink">{row.label}</span>
                 <span className="shrink-0 text-phx-sm font-black text-phx-ink">{egp(row.value)}</span>
               </div>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-phx-paper-2">
+              <div className="mt-1 h-1.5 overflow-hidden rounded-md bg-phx-paper-2">
                 <div
-                  className="h-full rounded-full bg-phx-accent-line"
+                  className="h-full rounded-md bg-phx-accent-line"
                   style={{ width: max > 0 ? `${Math.max(3, (row.value / max) * 100)}%` : "0%" }}
                 />
               </div>
@@ -124,7 +124,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
           <p className="mt-1 text-phx-lg font-black text-phx-ink">{data.customerName}</p>
         </div>
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-phx-xs font-black ${
+          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-phx-xs font-black ${
             verdict.hasHistory ? "bg-[#DCFCE7] text-[#166534]" : "bg-[#FEF3C7] text-[#92400E]"
           }`}
         >

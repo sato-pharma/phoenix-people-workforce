@@ -69,8 +69,8 @@ function AggregateTable({ title, rows, max }: { title: string; rows: MarketingRo
           rows.map((row) => (
             <div key={row.key} className="flex items-center gap-2 border-b border-phx-paper-2 px-4 py-2 last:border-b-0">
               <span className="min-w-0 flex-1 truncate text-phx-sm font-semibold text-phx-ink-2" title={row.label}>{row.label}</span>
-              <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-phx-paper-2">
-                <div className="h-full rounded-full bg-phx-accent" style={{ width: `${max > 0 ? Math.max(3, Math.round((row.value / max) * 100)) : 0}%` }} />
+              <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-md bg-phx-paper-2">
+                <div className="h-full rounded-md bg-phx-accent" style={{ width: `${max > 0 ? Math.max(3, Math.round((row.value / max) * 100)) : 0}%` }} />
               </div>
               <span className="w-20 shrink-0 text-right text-phx-sm font-bold text-phx-ink">{money(row.value)}</span>
             </div>

@@ -172,7 +172,7 @@ export default function WhatsAppConnectPage() {
     <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
       <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 text-card-foreground shadow-sm">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
             <MessageCircle className="h-5 w-5" aria-hidden />
           </span>
           <h1 className="text-lg font-semibold">Connect your WhatsApp Business app</h1>
@@ -187,7 +187,7 @@ export default function WhatsAppConnectPage() {
         <ol className="mt-5 space-y-2 text-sm text-muted-foreground">
           {PHONE_STEPS.map((step, index) => (
             <li key={step} className="flex gap-3">
-              <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground">
+              <span className="flex h-5 w-5 flex-none items-center justify-center rounded-md bg-muted text-xs font-medium text-foreground">
                 {index + 1}
               </span>
               <span>{step}</span>

@@ -372,7 +372,14 @@ const UNSWEPT_SURFACE_ROUNDING: Record<string, string[]> = {
   // `rounded-[32px]` compiles the number straight into the utility and never reads
   // `--phx-radius-*`. So the token decision squares `rounded-2xl` here for free and leaves the
   // arbitrary ones exactly as rounded as they were. Both kinds are squared now.
-  "src/components/auth/password-setup-form.tsx": ["rounded-full"],
+  //
+  // The last one — the submit button's spinner — went on 2026-10-06, and it was the only
+  // `rounded-full` this inventory still allowed anywhere. It is now byte-identical to the two
+  // spinners on the sign-in screen above (`h-5 w-5 animate-spin border-2 border-white/35
+  // border-t-white`), which were squared on 2026-09-05 under the reasoning recorded there: a
+  // spinner reads as spinning because it ROTATES, not because it is round. Keeping this one round
+  // made the same control square on one unswept screen and a circle on its twin.
+  "src/components/auth/password-setup-form.tsx": [],
   "app/password-setup/[token]/page.tsx": [],
 };
 

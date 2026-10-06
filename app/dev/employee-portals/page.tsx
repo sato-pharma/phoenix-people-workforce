@@ -53,7 +53,7 @@ export default async function EmployeePortalDevPreviewPage() {
         <EmployeePortalActionBar
           actions={
             <>
-              <span className="inline-flex items-center justify-center rounded-full border border-phx-info-line bg-phx-info-bg px-3 py-1.5 text-xs font-bold text-phx-info shadow-[0_8px_20px_rgba(14,165,233,0.07)]">
+              <span className="inline-flex items-center justify-center rounded-md border border-phx-info-line bg-phx-info-bg px-3 py-1.5 text-xs font-bold text-phx-info shadow-[0_8px_20px_rgba(14,165,233,0.07)]">
                 Local fixture data
               </span>
               <EmployeePortalActionLink href="/employee-portals" label="Open Protected Portal" />
