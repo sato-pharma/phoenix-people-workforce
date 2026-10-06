@@ -829,3 +829,15 @@ export function territoryForMissedRecordRemoval(viewer: PhoenixCrmViewer, seatId
   if (!canEnterMissedRecords(viewer)) throw forbiddenError("Only the Super Admin removes a visit they entered.");
   return { seat: territory(viewer, seatId), isTest: test };
 }
+
+/**
+ * The territory a rep's visit is CORRECTED on (owner, 2026-10-06: "make the admin able to edit a visit
+ * submitted by an employee"). The Super Admin alone, on the same footing as removing a visit: no
+ * open-line or rep conditions, because correcting a record that already exists must stay possible after
+ * the rep has left the seat or the line has closed. Which visit, and which of its fields, is the
+ * database's and `visit-edit-rules.ts`'s to decide from the row itself.
+ */
+export function territoryForVisitEdit(viewer: PhoenixCrmViewer, seatId: unknown, test: boolean): TerritoryAccess {
+  if (!canEnterMissedRecords(viewer)) throw forbiddenError("Only the Super Admin corrects a rep's visit.");
+  return { seat: territory(viewer, seatId), isTest: test };
+}

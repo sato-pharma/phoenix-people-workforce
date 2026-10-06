@@ -618,11 +618,10 @@ export type VisitFormView = {
   /** Entering as a manager: the viewer's own position in `managers` (they are the visit's manager). */
   viewerPosition: number | null;
   /**
-   * The product managers of the territory's LINE, for "A product manager" on "Who was on the visit"
-   * (owner, 2026-10-02) — the same list the rep's own ask offers (`loadLineProductManagers`). Empty
-   * where the line has none, and the choice is then offered DISABLED with the reason on it, exactly as
-   * "Double visit" is above a territory with no manager — the module's own idiom, and the same shape
-   * the ask already uses for a CNS rep before the Marketing Manager ruling.
+   * The product managers of the territory's LINE, listed beside the managers under "Double visit" and
+   * "Chain visit" on "Who was on the visit" (owner, 2026-10-02; one list since 2026-10-06, so the rep
+   * ticks one person for a double and two for a chain) — the same list the rep's own ask offers
+   * (`loadLineProductManagers`). Empty where the line has none, and the list then holds managers only.
    */
   productManagers: VisitProductManager[];
   /** The line's discussed choices — the family names — for "Products discussed". */
@@ -1062,8 +1061,9 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     seniorHrId: visit.seniorHrId,
     productManagerHrId: visit.productManagerHrId,
     // Read here rather than trusted from the form: a product manager holds no seat, so the organogram
-    // cannot check him, and this list is the only thing that can say he is one of HIS line's.
-    productManagers: visit.kind === "product_manager" ? await loadLineProductManagers(seat) : [],
+    // cannot check him, and this list is the only thing that can say he is one of HIS line's. Needed
+    // whenever one is named — on a `product_manager` visit, or as the second person of a chain.
+    productManagers: visit.productManagerHrId ? await loadLineProductManagers(seat) : [],
   });
   if (!participants.ok) throw validationError(participants.error);
 

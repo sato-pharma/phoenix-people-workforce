@@ -13,6 +13,7 @@ import {
   CrmStat,
   CrmStatGrid,
 } from "@/components/phoenix-crm/ui";
+import { EditVisit } from "@/components/phoenix-crm/visit-edit-panel";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import { DAY_START_READ_LABEL, dayStartReadLine } from "@/lib/phoenix-crm/day-start-rules";
@@ -143,14 +144,21 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                   accent="border-l-orange-500"
                   // The Super Admin takes back a visit HE entered by mistake (owner, 2026-10-01) — drawn
                   // only on his own entries; the database refuses every other visit anyway.
+                  // And corrects one a rep submitted (owner, 2026-10-06) — who was on it, its products, its
+                  // comment — on any visit of the day, his own entries included.
                   actions={
-                    view.removesEnteredVisits && visit.enteredByAdmin ? (
-                      <RemoveEnteredVisit
-                        customerName={visit.customerName}
-                        isTest={view.isTest}
-                        seatId={territory.seatId}
-                        visitId={visit.visitId}
-                      />
+                    view.editsVisits || (view.removesEnteredVisits && visit.enteredByAdmin) ? (
+                      <>
+                        {view.editsVisits ? <EditVisit isTest={view.isTest} seatId={territory.seatId} visitId={visit.visitId} /> : null}
+                        {view.removesEnteredVisits && visit.enteredByAdmin ? (
+                          <RemoveEnteredVisit
+                            customerName={visit.customerName}
+                            isTest={view.isTest}
+                            seatId={territory.seatId}
+                            visitId={visit.visitId}
+                          />
+                        ) : null}
+                      </>
                     ) : undefined
                   }
                   key={visit.visitId}

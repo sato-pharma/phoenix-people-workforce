@@ -38,14 +38,16 @@ export type PhoenixCrmGrade = "A" | "B" | "C";
 export type PhoenixCrmSeason = "normal" | "ramadan";
 
 /**
- * Who was on the visit. Single: the rep alone. Double: rep + district manager. Chain: rep + district
- * manager + a senior manager. Product manager: the rep with one of HIS LINE's product managers
- * (owner, 2026-10-02) — the same four words a visit ASK uses, so the request and the visit it became
- * read alike (`VisitAskKind` in visit-ask-rules.ts).
+ * Who was on the visit. Single: the rep alone. Double: rep + ONE manager above the territory. Chain: rep
+ * + a manager + ONE more (a senior manager above him, or — since 2026-10-06 — one of the line's product
+ * managers). Product manager: the rep with one of HIS LINE's product managers (owner, 2026-10-02) — the
+ * same four words a visit ASK uses, so the request and the visit it became read alike (`VisitAskKind`
+ * in visit-ask-rules.ts). The rep never picks that last kind by name: he ticks one person under "Double
+ * visit" and `visit-company.ts` files it as `product_manager` when that person is one.
  *
  * 🔴 A PRODUCT MANAGER IS NOT A DOUBLE VISIT AND MUST NEVER BE FILED AS ONE. He holds no seat in the
  * organogram at all (`au.v_org_tree` is sales-only), so he is not in the territory's manager chain and
- * cannot be checked against it; and a double visit means the rep with his DISTRICT MANAGER, which
+ * cannot be checked against it; and a double visit means the rep with a MANAGER of the territory, which
  * `double_visits` is counted from on every board. He rides in his own column,
  * `phoenix_crm_visits.product_manager_hr_id`, and in no other.
  */
