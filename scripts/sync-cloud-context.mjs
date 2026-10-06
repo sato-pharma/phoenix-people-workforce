@@ -8,7 +8,18 @@
 // Copies, into <repo>/.claude/cloud-context/ :
 //   memory-mirror/           <- ~/.claude/projects/<slug>/memory/   (index + every file)
 //   global-standing-rules.md <- ~/.claude/CLAUDE.md                 (verbatim, but LF)
+//   laptop-hooks/            <- the ~/.claude/hooks/*.mjs a REPO TEST pins (see below)
 //   README.md                <- generated metadata (counts, bytes, when)
+//
+// 🔴 `laptop-hooks/` IS NOT FOR CLOUD TO READ — it is here so CI can test a guard that does not live
+// in this repository. `~/.claude/hooks/scratchpad-guard.mjs` enforces the owner's never-delete rule in
+// EVERY folder on the laptop, so it cannot move into one repo; but that also meant nothing anywhere
+// could go red when it weakened, and on 2026-10-06 it gained its first stand-down
+// (`PHX_DELETE_OK=<filename>`), which is exactly the kind of code that must not quietly loosen.
+// `tests/delete-guard-stand-down.test.ts` imports THIS COPY and pins its decision table.
+// 🔴 So the copy is only worth what its freshness is worth: a weakening of the LIVE hook that is
+// never mirrored leaves CI green about a file nobody runs. The laptop side is what closes that —
+// `claude-scripts-backup.mjs` runs the hook's own `selftest` hourly where the real hook lives.
 //
 // Every file is written with LF line endings (crlfToLf), whatever the laptop holds: git commits the
 // mirror as LF anyway, and a CRLF working copy lists as modified in `git status`, which made
@@ -26,7 +37,7 @@
 // Cloud sees the mirror as of the last commit on the branch it clones (usually
 // main), so the mirror is only as fresh as its last merged refresh.
 //
-// Env overrides: PHX_MEMORY_DIR, PHX_GLOBAL_RULES (absolute paths).
+// Env overrides: PHX_MEMORY_DIR, PHX_GLOBAL_RULES, PHX_HOOKS_DIR (absolute paths).
 // ---------------------------------------------------------------------------
 
 import { fileURLToPath } from 'node:url';
@@ -39,6 +50,12 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
 const OUT_DIR = path.join(REPO_ROOT, '.claude', 'cloud-context');
 const OUT_MEMORY = path.join(OUT_DIR, 'memory-mirror');
+const OUT_HOOKS = path.join(OUT_DIR, 'laptop-hooks');
+
+// The laptop hooks a repo test pins. Only hooks that live OUTSIDE this repo belong here — a hook in
+// `.claude/hooks/` is already testable where it sits and must never be duplicated into this folder.
+const PINNED_HOOKS = ['scratchpad-guard.mjs'];
+const HOOKS_DIR = process.env.PHX_HOOKS_DIR || path.join(os.homedir(), '.claude', 'hooks');
 
 const MEMORY_SLUG = 'F--Phoenix-Workforce-phoenix-workforce';
 const MEMORY_DIR =
@@ -88,6 +105,20 @@ if (fs.existsSync(GLOBAL_RULES)) {
   console.warn(`sync-cloud-context: WARN global rules not found: ${GLOBAL_RULES}`);
 }
 
+// 2b) The laptop hooks a repo test pins. A MISSING one is FATAL, unlike the rules above: the test
+//     imports this copy, so a refresh that silently stopped producing it is exactly how CI would come
+//     to test a file that is no longer there — and a guard nobody tests is the shape of the problem
+//     this folder exists to fix. Mirrored whether or not the rules were found: the two are unrelated.
+let hookBytes = 0;
+for (const name of PINNED_HOOKS) {
+  const src = path.join(HOOKS_DIR, name);
+  if (!fs.existsSync(src)) fail(`pinned hook not found: ${src} (set PHX_HOOKS_DIR, or drop it from PINNED_HOOKS)`);
+  fs.mkdirSync(OUT_HOOKS, { recursive: true });
+  const buf = crlfToLf(fs.readFileSync(src));
+  fs.writeFileSync(path.join(OUT_HOOKS, name), buf);
+  hookBytes += buf.length;
+}
+
 // 3) A generated README so the mirror is self-explaining and reproducible.
 const whenCairo = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Africa/Cairo',
@@ -113,6 +144,13 @@ repo so a cloud session can read them, giving it the same two-tier recall a loca
 ## What is here (generated ${whenCairo} Cairo)
 - Memory files: **${memFiles.length}** (${(bytes / 1024 / 1024).toFixed(2)} MB)
 - Global standing rules: ${rulesBytes ? `${(rulesBytes / 1024).toFixed(1)} KB` : 'MISSING at generation time'}
+- Pinned laptop hooks: **${PINNED_HOOKS.length}** in \`laptop-hooks/\` (${(hookBytes / 1024).toFixed(1)} KB) — ${PINNED_HOOKS.join(', ')}
+
+\`laptop-hooks/\` is **not for a cloud session to read or run.** Those hooks guard every folder on the
+laptop, so they cannot live in one repository — which also meant nothing could go red when one
+weakened. \`tests/delete-guard-stand-down.test.ts\` imports the pinned copy and pins its decision
+table in the required \`validate\` job. The copy is only worth its freshness, so the live hook also
+runs its own \`selftest\` hourly on the laptop, where the real file is.
 
 ## Refreshing
 Run from a **local** checkout (it needs \`~/.claude/\`):
@@ -128,7 +166,8 @@ fs.writeFileSync(path.join(OUT_DIR, 'README.md'), readme);
 console.log(
   `sync-cloud-context: mirrored ${memFiles.length} memory files ` +
     `(${(bytes / 1024 / 1024).toFixed(2)} MB) + ` +
-    `${rulesBytes ? 'global rules' : 'NO global rules'} -> ${path.relative(REPO_ROOT, OUT_DIR)}`,
+    `${rulesBytes ? 'global rules' : 'NO global rules'} + ` +
+    `${PINNED_HOOKS.length} pinned hook(s) -> ${path.relative(REPO_ROOT, OUT_DIR)}`,
 );
 
 // 4) Module memory moves WITH the mirror (docs/module-memory.md): file any note the refresh brought
