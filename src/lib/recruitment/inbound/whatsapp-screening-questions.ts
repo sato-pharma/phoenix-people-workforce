@@ -71,6 +71,26 @@ export type ScreeningQuestionShowIf = { questionKey: string; values: string[] };
 export type ScreeningQuestionEndOn = { values: string[]; message: string };
 
 /**
+ * The `show_if` column as the database stores it: `{"question_key": "...", "values": [...]}`. Every
+ * reader goes through `showIfFromRow` - a row used raw has no `questionKey`, so the rule never matches
+ * and the follow-up is never asked (it shipped that way on 2026-10-06: the three HR Section Head
+ * follow-ups were invisible on WhatsApp and the careers form while every unit test, written in the
+ * camelCase shape, stayed green).
+ */
+export type ScreeningQuestionShowIfRow = { question_key: string; values: string[] };
+
+/** A stored `show_if` as the rule the bot and the form run. Reads either spelling of the key, and a
+ *  malformed value reads as "no rule" rather than as a rule that can never match. */
+export function showIfFromRow(raw: unknown): ScreeningQuestionShowIf | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as { question_key?: unknown; questionKey?: unknown; values?: unknown };
+  const questionKey = typeof row.question_key === "string" ? row.question_key : row.questionKey;
+  if (typeof questionKey !== "string" || questionKey.length === 0) return null;
+  if (!Array.isArray(row.values) || !row.values.every((value) => typeof value === "string")) return null;
+  return { questionKey, values: row.values as string[] };
+}
+
+/**
  * What a tappable extra question's list says when the admin has not worded it. Named rather than
  * inlined so the admin screen can show them as the placeholder an empty box falls back to, instead
  * of a second copy that drifts.

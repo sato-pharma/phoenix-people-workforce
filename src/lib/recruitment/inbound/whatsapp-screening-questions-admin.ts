@@ -13,11 +13,13 @@ import { recruitmentDb } from "@/lib/recruitment/db";
 import { invalidateScreeningQuestionCache } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
 import {
   screeningQuestionViolations,
+  showIfFromRow,
   type ScreeningQuestion,
   type ScreeningQuestionEndOn,
   type ScreeningQuestionKind,
   type ScreeningQuestionOption,
   type ScreeningQuestionShowIf,
+  type ScreeningQuestionShowIfRow,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions";
 
 /**
@@ -86,7 +88,7 @@ type QuestionDbRow = {
    *  "use the generic default", so the list still works during the deploy-before-migration window. */
   button_label?: string | null;
   section_title?: string | null;
-  show_if?: ScreeningQuestionShowIf | null;
+  show_if?: ScreeningQuestionShowIfRow | null;
   end_on?: ScreeningQuestionEndOn | null;
 };
 
@@ -108,7 +110,7 @@ function mapQuestionRow(row: QuestionDbRow): ScreeningQuestion {
     options: row.options,
     questionKey: row.question_key,
     sectionTitle: row.section_title ?? null,
-    showIf: row.show_if ?? null,
+    showIf: showIfFromRow(row.show_if),
     sortOrder: row.sort_order,
   };
 }
@@ -207,10 +209,10 @@ export async function saveScreeningQuestionSet(input: {
   for (const row of (existingRows ?? []) as {
     id: string;
     question_key: string;
-    show_if: ScreeningQuestionShowIf | null;
+    show_if: ScreeningQuestionShowIfRow | null;
     end_on: ScreeningQuestionEndOn | null;
   }[]) {
-    existingRulesById.set(row.id, { endOn: row.end_on ?? null, showIf: row.show_if ?? null });
+    existingRulesById.set(row.id, { endOn: row.end_on ?? null, showIf: showIfFromRow(row.show_if) });
     existingKeyById.set(row.id, row.question_key);
     takenKeys.add(row.question_key);
   }

@@ -27,12 +27,13 @@ import {
   nextActiveQuestion,
   parseExtraQuestionRowId,
   questionsForRole,
+  showIfFromRow,
   type ExtraAnswerOutcome,
   type ScreeningQuestion,
   type ScreeningQuestionEndOn,
   type ScreeningQuestionKind,
   type ScreeningQuestionOption,
-  type ScreeningQuestionShowIf,
+  type ScreeningQuestionShowIfRow,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions";
 
 const QUESTIONS_TABLE = "ats_whatsapp_screening_questions";
@@ -67,7 +68,7 @@ type QuestionRow = {
   sort_order: number;
   is_active: boolean;
   applies_to_role_families: string[] | null;
-  show_if: ScreeningQuestionShowIf | null;
+  show_if: ScreeningQuestionShowIfRow | null;
   end_on: ScreeningQuestionEndOn | null;
 };
 
@@ -81,7 +82,7 @@ function mapQuestionRow(row: QuestionRow): ScreeningQuestion {
     kind: row.kind,
     options: row.options,
     questionKey: row.question_key,
-    showIf: row.show_if ?? null,
+    showIf: showIfFromRow(row.show_if),
     sortOrder: row.sort_order,
   };
 }
