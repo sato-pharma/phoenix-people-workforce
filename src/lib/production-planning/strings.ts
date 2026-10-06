@@ -80,7 +80,7 @@ export const PP = {
   requestModeRuns: "عدد التشغيلات",
   requestedQtyLabel: "الكمية المطلوبة",
   sampleUnitsLabel: "عدد العينات المجانية",
-  sampleUnitsHint: "العينة ٤٠ مل من نفس حجم التشغيلة — تقلل عدد العلب ١٠٠ مل وتستهلك عبوة كاملة",
+  sampleUnitsHint: "العينة 40 مل من نفس حجم التشغيلة — تقلل عدد العلب 100 مل وتستهلك عبوة كاملة",
   overageLabel: "نسبة الفاقد",
   overageHintDefault: "النسبة الافتراضية من الإعدادات",
   overageHintMeasured: "نسبة مقيسة من التشغيلات المسجلة",
@@ -317,7 +317,7 @@ export function buildAlarmRowValue(parts: {
   readonly leadTimeDays: string | null;
 }): string {
   const head = `${parts.severityLabel} — ${PP.alarmEmailCover} ${parts.coverRuns} ${PP.unitRun}`;
-  const held = `${PP.alarmEmailHeld} ${parts.heldText} ${parts.displayUnit}`;
+  const held = `${PP.alarmEmailHeld} ${parts.heldText} ${unitLabelAr(parts.displayUnit)}`;
   const lead =
     parts.leadTimeDays === null ? null : `${PP.alarmLeadTimeNote} ${parts.leadTimeDays} ${PP.unitDay}`;
   return [head, held, lead].filter((part) => part !== null).join(" · ");
@@ -331,7 +331,7 @@ export const SUPPLIER_LABELS = {
 } as const;
 
 export const BASIS_LABELS = {
-  per_dose: "لكل جرعة ٥ مل",
+  per_dose: "لكل جرعة 5 مل",
   per_packaging_set: "لكل عبوة كاملة",
   per_good_unit: "لكل علبة قابلة للبيع",
   per_sample_unit: "لكل عينة",
@@ -397,4 +397,33 @@ export function formatNumberLatin(value: string | number | bigint): string {
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const out = fraction ? `${grouped}.${fraction}` : grouped;
   return negative ? `-${out}` : out;
+}
+
+/**
+ * A stored unit code rendered as the Arabic word for it.
+ *
+ * `prodplan_materials.display_unit` holds `kg` and `piece`, which is right for a database column
+ * and wrong on the screen: measured in the browser on 2026-10-06, the live planner read
+ * `109,180 piece` and `72.1 kg` an inch below a tile saying `106,000 علبة`, so every quantity in
+ * the result table was labelled in English on a page that is Arabic everywhere else.
+ *
+ * A MAP and not a rename, deliberately. The stored code is what the engine, the composite
+ * `unit_kind` foreign key and the price-per-unit arithmetic all key on, so it stays exactly as it
+ * is; only the label a reader sees is translated. An unmapped code falls through to itself rather
+ * than to an empty string: a unit a Settings edit introduces next year shows up untranslated, which
+ * is a legible gap, where a blank would silently drop the unit off a buy quantity.
+ */
+const UNIT_LABELS_AR: Record<string, string> = {
+  g: "جم",
+  kg: "كجم",
+  l: "لتر",
+  litre: "لتر",
+  ml: "مل",
+  piece: "قطعة",
+  ton: "طن",
+};
+
+export function unitLabelAr(unit: string | null | undefined): string {
+  if (!unit) return "";
+  return UNIT_LABELS_AR[unit.trim().toLowerCase()] ?? unit;
 }
