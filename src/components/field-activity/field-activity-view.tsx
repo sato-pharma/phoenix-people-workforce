@@ -152,6 +152,10 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
 function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
   const checkins: RouteCheckin[] = day.stops.map((stop) => ({
     address: stop.address,
+    // A CAIRO WALL CLOCK carrying no zone, deliberately — `stop.checkedAt` is "HH:MM:SS" sliced from
+    // a vendor time that is already Cairo (field-activity/model.ts rule 3). The route map tags it
+    // UTC before parsing it (`utcTaggedWallClock`); without that the browser read it as LOCAL time
+    // and printed every stop three hours early. Do not "fix" this by shifting the value here.
     checkDate: `${day.dateIso}T${stop.checkedAt}`,
     contactName: stop.customerName,
     id: stop.contactCrmId ?? stop.index,

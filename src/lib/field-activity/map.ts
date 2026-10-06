@@ -75,10 +75,23 @@ function centreOf(points: RouteMapPoint[]): { lat: number; lon: number } {
 }
 
 /**
- * The basemap as a data URI, or null when no key is configured.
+ * The basemap as a data URI, or null when it could not be fetched.
  *
  * `scale=2` doubles the pixel density for print without changing the coordinate frame, so the
  * geometry below is unaffected — the image is simply sharper on paper.
+ *
+ * 🔴 A REFUSAL IS LOGGED, NOT ONLY SWALLOWED — THAT SILENCE IS WHY THE PDF LOST ITS STREETS FOR
+ * WEEKS AND NOBODY COULD SAY WHY. Returning null on any failure is right: a map is worth having and
+ * never worth failing an export for (see the module docstring). But null was the ONLY signal, so
+ * "no key configured", "key refused", "API not enabled on the project" and "Google timed out" were
+ * one indistinguishable outcome, and the sheet's own caption could say nothing more useful than
+ * "unavailable". Measured 2026-10-06: the production server key answers Geocoding and Routes with
+ * 200 and the Maps Static API with **403, "This API is not activated on your API project"** — a
+ * one-click Cloud Console omission that cost every exported route map its streets and left no trace
+ * anywhere to find it by.
+ *
+ * The key is stripped from anything logged: it is a URL parameter here, so a bare `url` or a
+ * verbatim Google error would put a live credential in the log.
  */
 export async function fetchBasemap(input: {
   centre: { lat: number; lon: number };
@@ -88,7 +101,10 @@ export async function fetchBasemap(input: {
   apiKey: string | null;
   fetchImpl?: typeof fetch;
 }): Promise<string | null> {
-  if (!input.apiKey) return null;
+  if (!input.apiKey) {
+    console.warn("field-activity basemap: GOOGLE_MAPS_SERVER_KEY is not set — the route map prints without streets");
+    return null;
+  }
   const url =
     "https://maps.googleapis.com/maps/api/staticmap" +
     `?center=${input.centre.lat},${input.centre.lon}` +
@@ -97,13 +113,26 @@ export async function fetchBasemap(input: {
     // interest and transit clutter compete with numbered stops at this size.
     "&style=feature:poi|visibility:simplified&style=feature:transit|visibility:off" +
     `&key=${encodeURIComponent(input.apiKey)}`;
+  const withoutKey = (text: string) => text.split(input.apiKey ?? "").join("<key>");
   try {
     const response = await (input.fetchImpl ?? fetch)(url, { signal: AbortSignal.timeout(12_000) });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      // Google answers a refused static map in plain text and names the cause exactly — which API is
+      // off, which restriction bit, whether billing lapsed. That sentence is the whole diagnosis, so
+      // it is logged rather than discarded.
+      const reason = await response.text().catch(() => "");
+      console.warn(
+        `field-activity basemap: Google refused the Maps Static API with HTTP ${response.status} — ` +
+          `${withoutKey(reason).replace(/\s+/g, " ").trim().slice(0, 300)}`,
+      );
+      return null;
+    }
     const buffer = Buffer.from(await response.arrayBuffer());
     return `data:image/png;base64,${buffer.toString("base64")}`;
-  } catch {
-    // A map is worth having and never worth failing an export for.
+  } catch (error) {
+    // A map is worth having and never worth failing an export for — but a timeout that leaves no
+    // trace is how this stayed unexplained, so the throw is recorded on its way to the same null.
+    console.warn(`field-activity basemap: the Maps Static API request failed — ${withoutKey(error instanceof Error ? error.message : String(error))}`);
     return null;
   }
 }

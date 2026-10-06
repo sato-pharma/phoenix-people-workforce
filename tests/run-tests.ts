@@ -2336,6 +2336,7 @@ import { runProductionPlanningStringsTests } from "./production-planning-strings
 import { runProductionPlanningFitsTheScreenTests } from "./production-planning-fits-the-screen.test.ts";
 import { runProductionPlanningWorkbookTests } from "./production-planning-workbook.test.ts";
 import { runProductionPlanningSilentUntilArmedTests } from "./production-planning-silent-until-armed.test.ts";
+import { runFieldActivityMapClockTests } from "./field-activity-map-clock.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -8979,6 +8980,10 @@ await runTest(
 await runTest(
   "the Production Planner's reorder email is built and SILENT: the template ships isActive false, its recipients are the four addresses the owner named rather than any role (routing by role would reach every Manager, the QPPV included), the sweep returns skipped \"disabled\" instead of a zero when it is not armed - because \"0 sent\" and \"switched off\" were indistinguishable through a 13-day outbox freeze - the dry-run gate sits BEFORE sendTemplatedEmail and every alarm row records which mode wrote it, while the table's own CHECK refuses a dry-run row marked as sent, which is the one gate a code change cannot talk past; both crons authorise with their own job name and report a heartbeat slug that JOB_SCHEDULES declares; and the FX sweep's failure path writes fetch_ok false WITHOUT touching fetched_usd_to_egp, because overwriting a good rate with null is the only thing a failed fetch must never do - a zero, a negative, a word and a null are each refused as a rate",
   runProductionPlanningSilentUntilArmedTests,
+);
+await runTest(
+  "the Field Activity route map prints a GPS stop at the time it was stored: a Cairo wall clock carrying no zone is tagged UTC BEFORE new Date reads it, because a zone-less date-time is parsed as the browser's own local time and `timeZone: \"UTC\"` then prints it three hours early - all ten of B-148's 1 September 2026 stops were off by exactly -3:00 - while a value PostgREST already zoned comes back byte-identical and a non-date is left for the caller's own guard",
+  runFieldActivityMapClockTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

@@ -28,7 +28,7 @@ import { FIELD_ACTIVITY_ROLES, isFieldActivityRole } from "../src/lib/field-acti
 import { getNavigationSections } from "../src/config/system-navigation.ts";
 import { isPortalShellRole } from "../src/lib/auth/portal-shell-roles.ts";
 import { resolvePortalTwin } from "../src/lib/navigation/portal-twins.ts";
-import { fitZoom, renderRouteSvg } from "../src/lib/field-activity/map.ts";
+import { fetchBasemap, fitZoom, renderRouteSvg } from "../src/lib/field-activity/map.ts";
 
 const SUBJECT: FieldActivitySubject = {
   areaName: null,
@@ -94,7 +94,7 @@ function run(input: Partial<Parameters<typeof buildFieldActivityReport>[0]> = {}
  * Every assertion below stands for a wrong answer that was produced by hand on production data
  * while the first report was assembled, on 2026-09-28.
  */
-export function runFieldActivityReportTests() {
+export async function runFieldActivityReportTests() {
   // ── a check-in is not a log, and the gap is carried ──────────────────────────────────────────
   {
     const report = run({ visits: [visit()], checkins: [checkin()] });
@@ -376,6 +376,79 @@ export function runFieldActivityReportTests() {
     assert.ok(svg.includes("<rect"), "and the markers are SQUARE — the house rule has no round corners");
     assert.ok(!svg.includes("<circle cx") || svg.includes("leader"), "a circle appears only as a leader-line anchor");
     assert.ok(svg.includes("Street basemap unavailable"), "without a maps key the sheet says so rather than pretending");
+  }
+
+  // ── a refused basemap is RECORDED, not only swallowed ────────────────────────────────────────
+  //
+  // 🔴 THE DEFECT. `fetchBasemap` returns null on every failure, which is correct — a map is worth
+  // having and never worth failing an export for. But null was the ONLY signal it produced, so "no
+  // key configured", "key refused", "API not enabled" and "Google timed out" were one
+  // indistinguishable outcome and nothing anywhere said which. Measured on production 2026-10-06:
+  // the server key answers Geocoding and Routes with 200 and the Maps Static API with 403, "This
+  // API is not activated on your API project" — so every exported route map printed without
+  // streets, and the only trace of the reason was a sentence Google sent that the code threw away.
+  //
+  // Pinned on BOTH failure paths, because the catch swallowed just as silently as the status check.
+  {
+    const refusal = "This API is not activated on your API project.";
+    const warnings: string[] = [];
+    const realWarn = console.warn;
+    console.warn = (...args: unknown[]) => void warnings.push(args.map(String).join(" "));
+    try {
+      const refused = await fetchBasemap({
+        apiKey: "test-key-not-a-real-credential",
+        centre: { lat: 30.47, lon: 31.18 },
+        fetchImpl: (async () => new Response(refusal, { status: 403 })) as unknown as typeof fetch,
+        height: 640,
+        width: 1500,
+        zoom: 14,
+      });
+      assert.equal(refused, null, "a refused basemap still returns null — the export must not fail for a map");
+      assert.ok(
+        warnings.some((line) => line.includes("403") && line.includes("not activated")),
+        "the refusal names the HTTP status AND Google's own reason, which is the whole diagnosis",
+      );
+
+      // The key travels as a URL parameter, so a verbatim log of the url or of Google's echo would
+      // put a live credential in the log. Nothing logged may contain it.
+      assert.ok(
+        !warnings.some((line) => line.includes("test-key-not-a-real-credential")),
+        "the api key is stripped from everything logged — a basemap failure must never leak a credential",
+      );
+
+      warnings.length = 0;
+      const threw = await fetchBasemap({
+        apiKey: "test-key-not-a-real-credential",
+        centre: { lat: 30.47, lon: 31.18 },
+        fetchImpl: (async () => {
+          throw new Error("fetch failed");
+        }) as unknown as typeof fetch,
+        height: 640,
+        width: 1500,
+        zoom: 14,
+      });
+      assert.equal(threw, null, "a thrown request returns null too");
+      assert.ok(
+        warnings.some((line) => line.includes("fetch failed")),
+        "a timeout that leaves no trace is how this stayed unexplained — the throw is recorded on its way to null",
+      );
+
+      warnings.length = 0;
+      const noKey = await fetchBasemap({
+        apiKey: null,
+        centre: { lat: 30.47, lon: 31.18 },
+        height: 640,
+        width: 1500,
+        zoom: 14,
+      });
+      assert.equal(noKey, null, "no key still returns null");
+      assert.ok(
+        warnings.some((line) => line.includes("GOOGLE_MAPS_SERVER_KEY")),
+        "an unset key names the variable, so it is never confused with a key the platform refused",
+      );
+    } finally {
+      console.warn = realWarn;
+    }
   }
 
   // ── EVERY ROLE IT NAMES CAN ACTUALLY REACH IT ────────────────────────────────────────────────

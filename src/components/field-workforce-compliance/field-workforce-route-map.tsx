@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card } from "@/components/ui/card";
+import { utcTaggedWallClock } from "@/lib/format/cairo-zone";
 import {
   importGoogleLibrary,
   loadGoogleMaps,
@@ -74,11 +75,30 @@ function hasCoords(checkin: RouteCheckin): checkin is RouteCheckin & { lat: numb
   return Number.isFinite(checkin.lat) && Number.isFinite(checkin.lon);
 }
 
+/**
+ * A check-in clock, rendered exactly as it is stored.
+ *
+ * 🔴 BOTH HALVES ARE LOAD-BEARING, AND THE SECOND ONE IS WHY THIS PAGE WAS THREE HOURS OUT.
+ * Every clock that reaches this component is a CAIRO WALL CLOCK (`field-activity/model.ts` rule 3),
+ * so the digits must be printed as written — hence `timeZone: "UTC"`, which stops the browser's own
+ * Cairo zone adding the offset a second time.
+ *
+ * But `timeZone: "UTC"` only prints the digits as written when `new Date` also READ them as UTC, and
+ * that depends on something the caller controls: a date-time string WITHOUT an offset is parsed as
+ * the browser's LOCAL time, never as UTC. Field Activity builds its value by hand —
+ * `${dateIso}T${clock}`, with no `+00` — so the two halves cancelled the wrong way and every stop
+ * printed exactly three hours early: B-148's 10:08:38 door on 1 September 2026 rendered as 07:08 AM,
+ * on a card whose own "GPS window" fact (a plain string slice) read that same check-in correctly.
+ * Measured on production 2026-10-06 across all ten of that day's stops — each one off by −3:00 to
+ * the second.
+ *
+ * Normalising here rather than at the one caller is deliberate: this function owns the "as written"
+ * contract, and no caller can be expected to know that the contract was conditional on its input
+ * carrying a zone. The other two callers pass PostgREST's own `+00:00` strings and are unaffected.
+ */
 function formatTime(value: string) {
-  const date = new Date(value);
+  const date = new Date(utcTaggedWallClock(value));
   if (Number.isNaN(date.getTime())) return value;
-  // check_date is a zone-less Cairo wall-clock stored as +00 — render as-is with timeZone "UTC".
-  // Without it this client component uses the browser zone (Cairo) and shows stop times 2–3h late.
   return new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(date);
 }
 
@@ -237,9 +257,17 @@ export function FieldWorkforceRouteMap({ checkins, route }: { checkins: RouteChe
           <div className="h-[360px] rounded-md border border-slate-100 bg-slate-50 sm:h-[420px]" ref={mapRef} />
           {!ready ? <p className="text-phx-md text-slate-500">Loading Google Maps&hellip;</p> : null}
           {error ? <p className="text-phx-md text-amber-700">{error}</p> : null}
+          {/*
+            This line used to read "once the Maps key is allowed to use the Routes API", which named
+            a cause that is not the cause. `route` is a PROP: Field Activity passes `null` for it
+            unconditionally and never asks for legs at all, so the message appeared on every day of
+            that report and accused a key that answers the Routes API with 200 (measured against the
+            production server key, 2026-10-06). Misdiagnosing in the UI is worse than saying less —
+            it sends the reader to the wrong setting.
+          */}
           {!hasRoute && points.length > 1 ? (
             <p className="text-phx-md text-slate-500">
-              Driving distance and time between stops will appear here once the Maps key is allowed to use the Routes API.
+              Driving distance and time between stops are not available for this day.
             </p>
           ) : null}
           <ol className="space-y-1">
