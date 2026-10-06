@@ -201,10 +201,21 @@ and do not hand back manual steps or theory.
   `promptSuggestionEnabled`: only the variable keeps suggestions on near the usage limit and in the first
   session after an update. An audit removed it on 2026-09-15 and he ordered it back. Never remove either copy.
 
-## Never delete documents (owner rule, 2026-09-14; narrowed 2026-09-20)
+## Never delete documents (owner rule, 2026-09-14; narrowed 2026-09-20; stand-down added 2026-10-06)
 
 - **Never delete an HTML, PDF, XLSX/XLSM/XLS, DOCX/DOC or SVG file**, in any folder, scratchpad
-  included. Leave it or move it aside; if a delete is truly needed, ask him first. **Amended 2026-09-20
+  included. Leave it or move it aside; **do not look for another way to delete it.** 🔴 **HIS YES NOW
+  REACHES THE MACHINE, and it is the ONLY thing that does** (he ordered the hatch built 2026-10-06 —
+  "add a stand-down to the delete guard so my own yes can go through" — after he told a session to
+  delete a duplicate PDF and the hook refused him). Once he has named that file in chat, and only
+  then, run `PHX_DELETE_OK=<filename> <the same command>` (`$env:PHX_DELETE_OK='<filename>';` in
+  PowerShell). **The marker must NAME the file: `=1`, `=yes`, `=all`, `=*` and anything under five
+  characters are all still DENIED**, the name must appear in the command, and every protected file
+  the command names must match it — one yes, one file, one command, and it archives the file before
+  letting the delete run. **`F:\Claude Scratchpad Archive` and `F:\Hiring Posts` have NO hatch at
+  all.** Never reach for the marker on your own reading that a delete is obviously fine; without his
+  words for that file it is the thing this guard exists to stop. Pinned by
+  `node ~/.claude/hooks/scratchpad-guard.mjs selftest` — expect `0 failed`. **Amended 2026-09-20
   at his instruction: screenshots/images (PNG, JPG, JPEG, WebP, GIF, BMP), CSV, CSS, JSON and patch
   files are NO LONGER protected or archived** — he had them deleted from both F: archives, with
   duplicate copies of the protected types removed (backups: `~/.claude/backups/hook-backups/*.pre-2026-09-20`).
