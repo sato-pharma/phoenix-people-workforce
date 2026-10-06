@@ -27,6 +27,7 @@ import {
   formatQty,
   parsePct,
   parseQty,
+  parseWholeCount,
   ProductionPlanningInputError,
   QTY_SCALE,
   roundQtyUpToPurchasable,
@@ -593,5 +594,37 @@ export function runProductionPlanningEngineTests() {
       migration.includes("fx_fetch_enabled boolean not null default false") &&
       migration.includes("fx_fetch_dry_run boolean not null default true"),
     "all four arming flags ship OFF and in dry run",
+  );
+
+  // ── The first read of the screen must never be a refusal ───────────────────────────────────
+  //
+  // Measured against the running app on 2026-10-06, the day after this module shipped: the
+  // workspace GET answers the WHOLE screen, and `GET /api/production-planning` with no query
+  // string came back `400 {"message":"A count below 1 is not allowed here.","field":"requestedQty"}`
+  // — so the module opened on its own error message for all five people who can see it, with every
+  // figure behind it correct. Two halves, and this pins both.
+  const service = readFileSync("src/lib/production-planning/service.ts", "utf8");
+  const workspaceFn = service.slice(service.indexOf("export async function getProductionPlanningWorkspace"));
+  assert.ok(
+    /asScalar\(body\.requestedQty\) !== null/.test(workspaceFn.slice(0, 1800)),
+    "getProductionPlanningWorkspace must compute a plan only when a quantity was asked for — a read " +
+      "with no query string returns the screen with no plan, never a 400",
+  );
+  const workspaceComponent = readFileSync(
+    "src/components/production-planning/production-planning-workspace.tsx",
+    "utf8",
+  );
+  assert.ok(
+    workspaceComponent.includes("requestedQty: DEFAULT_REQUESTED_QTY"),
+    "and the client's own first read sends the form's defaults, so the first paint shows the plan the " +
+      "filled-in form describes rather than an empty table under it",
+  );
+
+  // The strictness itself is CORRECT and must stay: the workbook route has to refuse a request for a
+  // plan of nothing. Only the bare screen read is exempt, which is why the fix went in the caller.
+  assert.throws(
+    () => parseWholeCount(0, "requestedQty", { min: BigInt(1), max: BigInt(100) }),
+    ProductionPlanningInputError,
+    "a plan actually asked for still cannot be for zero boxes",
   );
 }

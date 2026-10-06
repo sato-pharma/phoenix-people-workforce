@@ -84,6 +84,7 @@ import {
   PRODUCTION_PLANNING_FONT_STACK,
   PRODUCTION_PLANNING_TABS,
   SUPPLIER_LABELS,
+  unitLabelAr,
   type ProductionPlanningTabKey,
 } from "@/lib/production-planning/strings";
 import type {
@@ -139,12 +140,23 @@ function Num({ children, className }: { children: ReactNode; className?: string 
 }
 
 /** A quantity with its unit, isolated together, so "72.1 kg" never arrives as "kg 72.1". */
+/**
+ * A quantity: the FIGURE inside its own `dir="ltr"` isolate, the Arabic unit OUTSIDE it.
+ *
+ * Both halves matter and for different reasons. The isolate is the house rule — without it bidi
+ * reorders a digit group that sits next to Arabic text. Leaving the unit outside it is what puts
+ * the two in Arabic order: inside one LTR isolate the reader gets `109,180 كجم` laid out
+ * left-to-right, with the figure on the LEFT, which is backwards on an RTL line; outside it the
+ * line's own direction places the figure on the right and its unit to the left, the way the unit
+ * reads in the tiles above the table and in the sentence beside them.
+ */
 function Qty({ value, unit }: { value: string; unit?: string | null }) {
+  const label = unitLabelAr(unit);
   return (
-    <Num>
-      {formatNumberLatin(value)}
-      {unit ? ` ${unit}` : ""}
-    </Num>
+    <>
+      <Num>{formatNumberLatin(value)}</Num>
+      {label ? <> {label}</> : null}
+    </>
   );
 }
 
@@ -284,6 +296,16 @@ const STOCK_SOURCE_LABELS: Record<string, string> = {
   adjustment: PP.stockSourceAdjustment,
 };
 
+/**
+ * The planner opens on the owner's own headline shape — a TOTAL of 100,000 boxes with 10,000 of them
+ * samples. Named constants rather than two string literals because the FIRST READ sends them too: a
+ * bare `GET /api/production-planning` computes no plan, so without them the screen would open with
+ * the form filled in and the table beneath it empty, which reads as a module that cannot calculate.
+ */
+const DEFAULT_REQUESTED_QTY = "100000";
+const DEFAULT_SAMPLE_UNITS = "10000";
+const DEFAULT_MODE: WireRequestMode = "total_boxes";
+
 export function ProductionPlanningWorkspace() {
   const [data, setData] = useState<WireWorkspace | null>(null);
   const [loading, setLoading] = useState(true);
@@ -296,9 +318,9 @@ export function ProductionPlanningWorkspace() {
   // samples coming out of it rather than sitting on top — "انا 100 الف اقول لك 100 الف وعايز 10000
   // فده معناه انك هتديني 90 و100".
   const [productId, setProductId] = useState<string>("");
-  const [mode, setMode] = useState<WireRequestMode>("total_boxes");
-  const [requestedQty, setRequestedQty] = useState("100000");
-  const [sampleUnits, setSampleUnits] = useState("10000");
+  const [mode, setMode] = useState<WireRequestMode>(DEFAULT_MODE);
+  const [requestedQty, setRequestedQty] = useState(DEFAULT_REQUESTED_QTY);
+  const [sampleUnits, setSampleUnits] = useState(DEFAULT_SAMPLE_UNITS);
   const [overridePct, setOverridePct] = useState("");
   const [willSend, setWillSend] = useState<Record<string, string>>({});
   const [plan, setPlan] = useState<WirePlan | null>(null);
@@ -307,7 +329,12 @@ export function ProductionPlanningWorkspace() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/production-planning", { cache: "no-store" });
+      const params = new URLSearchParams({
+        mode: DEFAULT_MODE,
+        requestedQty: DEFAULT_REQUESTED_QTY,
+        sampleUnits: DEFAULT_SAMPLE_UNITS,
+      });
+      const response = await fetch(`/api/production-planning?${params.toString()}`, { cache: "no-store" });
       const payload = (await response.json().catch(() => null)) as WireWorkspace | { message?: string } | null;
       if (!response.ok) {
         setError((payload as { message?: string })?.message ?? PP.loadFailed);
@@ -676,7 +703,13 @@ function PlannerResult({
         {/* The rounding leads. A plan asked for 100,000 that silently answers for 106,000 is the
             worst way to be wrong on this screen, so the surplus is a tile and the sentence repeats
             it in words. */}
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {/* One column at 375px, not two. MEASURED in the browser on 2026-10-06: at two columns the
+            admin shell gives each tile a 105px content box, and `106,000` at `text-3xl` needs 124px
+            — so the headline total, the one figure this screen exists to produce, was clipped by
+            19px, and a seven-digit total clips in the portal shell too. Fixed by merging the
+            columns, never by shrinking the type (AGENTS.md §4), and it is now the same
+            `grid-cols-1 sm:grid-cols-2` ladder every other grid in this file already used. */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Tile label={PP.tileRuns} unit={PP.unitRuns} value={plan.runs} />
           <Tile label={PP.tileRunVolume} unit={PP.unitLitre} value={plan.runVolumeLitres} />
           <Tile label={PP.tileYield} unit={PP.unitBox} value={plan.totalBoxes} />
@@ -1321,7 +1354,7 @@ function CostTab({
                         <Num>{formatNumberLatin(material.price.pricePerDisplayUnit)}</Num>{" "}
                         {material.price.currency === "USD" ? PP.currencyUsd : PP.currencyEgp}{" "}
                         <span className="text-[11px] text-slate-500">
-                          {PP.pricePerUnit} {material.displayUnit}
+                          {PP.pricePerUnit} {unitLabelAr(material.displayUnit)}
                         </span>
                       </>
                     ) : (
@@ -1363,7 +1396,7 @@ function CostTab({
                   <>
                     <Num>{formatNumberLatin(material.price.pricePerDisplayUnit)}</Num>{" "}
                     {material.price.currency === "USD" ? PP.currencyUsd : PP.currencyEgp} {PP.pricePerUnit}{" "}
-                    {material.displayUnit}
+                    {unitLabelAr(material.displayUnit)}
                   </>
                 ) : (
                   <span className="text-[11px] text-slate-500">{PP.priceNoneYet}</span>
@@ -1505,7 +1538,7 @@ function RunTab({
                 <tr className="border-b border-slate-200 last:border-b-0" key={material.id}>
                   <td className={TD}>
                     <p className="font-bold text-slate-900 break-words">{material.nameAr}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">{material.displayUnit}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">{unitLabelAr(material.displayUnit)}</p>
                   </td>
                   {(["opening", "delivered", "closing"] as const).map((field) => (
                     <td className={TD} key={field}>

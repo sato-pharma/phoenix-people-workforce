@@ -22,6 +22,7 @@ import {
   PP,
   PRODUCTION_PLANNING_WORKBOOK_FONT,
   SUPPLIER_LABELS,
+  unitLabelAr,
 } from "./strings";
 import type { WirePlan, WirePlanRow, WireWorkspace } from "./wire";
 
@@ -367,11 +368,11 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
     const willSend = num(planRow.willSend);
 
     const basisText = planRow.basis
-      ? `${BASIS_LABELS[planRow.basis]} (${material?.baseUnit ?? ""})`.trim()
+      ? `${BASIS_LABELS[planRow.basis]} (${unitLabelAr(material?.baseUnit)})`.trim()
       : PP.chipNoComposition;
 
     return [
-      `${planRow.nameAr} (${planRow.displayUnit})`,
+      `${planRow.nameAr} (${unitLabelAr(planRow.displayUnit)})`,
       planRow.supplier ? SUPPLIER_LABELS[planRow.supplier] : PP.chipNoComposition,
       basisText,
       qtyPerBasis,
@@ -451,7 +452,7 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
     const egpFormula =
       currency === "EGP" ? `B${excelRow}*C${excelRow}` : `B${excelRow}*C${excelRow}*${FX}`;
     return [
-      `${entry.planRow.nameAr} (${entry.planRow.displayUnit})`,
+      `${entry.planRow.nameAr} (${unitLabelAr(entry.planRow.displayUnit)})`,
       F(`K${entry.excelRow}`, num(entry.planRow.toBuy)),
       price,
       currency === "EGP" ? PP.currencyEgp : currency === "USD" ? PP.currencyUsd : "—",

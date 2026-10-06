@@ -12,18 +12,22 @@ import { stripComments } from "./support/comment-strip.ts";
  * that has broken the rule twice in this repo: a wide table of per-row figures with an editable
  * control in its last column.
  *
- * 🔴 THE WIDTH THAT MATTERS IS 669px, NOT 1280. The admin shell's sidebar is `hidden lg:flex` at
- * 292px, so the content box NARROWS as the viewport crosses 1024px — 991px at 1023, 669px at 1024.
- * Four columns at 669px give the planner's delivery input ~154px, which is about what a decimal
- * quantity field needs. A fifth column takes it under, and the fix is to merge into an existing
- * column, which is how the planner's "available" column came to carry BOTH locations.
+ * 🔴 THE WIDTH THAT MATTERS IS THE ONE AT 1024px, AND IT IS THE PORTAL'S, NOT THE ADMIN'S.
+ * Measured in the browser on 2026-10-06, which corrected the figure this file was born with: `main`
+ * carries `phx-zoom-surface`, whose `zoom: 0.8` makes the LAYOUT box wider than the visual one, so
+ * at a 1024px viewport the admin box is **928 layout px** (742 visual) and not the 669 this comment
+ * used to claim. The portal box is the tight one — **776 layout px**, because that shell pads more,
+ * not because its sidebar overlays — and the planner's four cells measure 192/143/143/143 there at
+ * zero overflow each. A fifth column is what takes the editable quantity field under its natural
+ * width, and the fix is to merge into an existing column, which is how the "available" column came
+ * to carry BOTH locations. The breakpoint stays `lg` and not `md`: the box narrows as the viewport
+ * CROSSES 1024px, which is the same reason whatever the exact pixel count.
  *
- * 🔴 AND THIS MODULE IS DUAL-SURFACE, so there are TWO boxes, not one. The portal shell's sidebar
- * is an overlay rather than a column, so the same component renders at near-full width there. No
- * existing fit test in this repo has had to measure a component in two shells; that measurement is
- * a browser's job (`scrollWidth > clientWidth` over `main` at 1024px, 1280px and 375px, in both
- * surfaces) and this file cannot do it. What it CAN do is pin the construct that lets the overflow
- * happen at all, across every one of the four tables at once.
+ * 🔴 AND THIS MODULE IS DUAL-SURFACE, so there are TWO boxes, not one, and the narrower one is
+ * the portal's. No existing fit test in this repo has had to measure a component in two shells;
+ * that measurement is a browser's job (`scrollWidth > clientWidth` over `main` at 1024px, 1280px
+ * and 375px, in both surfaces) and this file cannot do it. What it CAN do is pin the constructs
+ * that let an overflow happen at all — across all four tables, and across every grid.
  *
  * 🔴 THE TAB STRIP IS THE RTL-SPECIFIC HAZARD. `inline-flex min-w-max` under a scroller is the
  * usual way a five-tab strip is written, and on a right-to-left page a horizontal scroller opens at
@@ -113,8 +117,9 @@ export function runProductionPlanningFitsTheScreenTests() {
     assert.ok(
       tokens.includes("hidden") && tokens.includes("lg:table"),
       `${WORKSPACE}: table ${index + 1} is "${table}". Each table must be "hidden … lg:table" with ` +
-        `a "lg:hidden" card list beside it — the breakpoint is lg, not md, because the admin box ` +
-        `narrows to 669px as the viewport crosses 1024px.`,
+        `a "lg:hidden" card list beside it — the breakpoint is lg, not md, because the content box ` +
+        `narrows as the viewport crosses 1024px, to 928 layout px in the admin shell and 776 in the ` +
+        `portal.`,
     );
   }
 
@@ -137,8 +142,9 @@ export function runProductionPlanningFitsTheScreenTests() {
       widths.length,
       4,
       `${WORKSPACE}: colgroup ${index + 1} declares ${widths.length} percentage columns, expected ` +
-        `4. At a 1024px viewport the admin content box is 669px, so a fifth column takes the ` +
-        `editable quantity fields under their natural width. Merge into an existing column.`,
+        `4. At a 1024px viewport the tighter of the two boxes — the portal's — is 776 layout px, so a ` +
+        `fifth column takes the editable quantity fields under their natural width. Merge into an ` +
+        `existing column.`,
     );
     assert.equal(
       widths.reduce((sum, width) => sum + width, 0),
@@ -246,7 +252,27 @@ export function runProductionPlanningFitsTheScreenTests() {
       `plain two-place string beside a separate currency label.`,
   );
 
-  // 13. Read-only is a real state, not a failed save. Two of the five named people are read-only.
+  // 13. EVERY GRID STARTS AT ONE COLUMN. Measured on 2026-10-06, the morning after this module
+  //     shipped: the four headline tiles were the one `grid-cols-2` in the file, and at 375px that
+  //     gave each tile a 105px content box while `106,000` at `text-3xl` needs 124px — so the one
+  //     figure this screen exists to produce was clipped by 19px in the admin shell, with 5px to
+  //     spare in the portal, which a seven-digit total would have taken too. Nothing caught it,
+  //     because every guard above is about TABLES and the tiles are a grid.
+  //
+  //     The rule is the golden rule's own: fit by MERGING columns, never by shrinking type. So a
+  //     two-up grid at phone width is refused outright — a figure in a 130px cell either clips or
+  //     gets smaller, and both are the defect. `sm:grid-cols-2` and up is where columns belong.
+  const gridClasses = [...classTokens].filter((token) => /^grid-cols-\d+$/.test(token)).sort();
+  assert.deepEqual(
+    gridClasses,
+    ["grid-cols-1"],
+    `${WORKSPACE}: unprefixed grid columns ${JSON.stringify(gridClasses)}. Every grid in this file ` +
+      `must start at "grid-cols-1" and add columns only behind a breakpoint ("sm:grid-cols-2", ` +
+      `"lg:grid-cols-4"). A bare "grid-cols-2" is two columns AT 375px, where the admin shell gives ` +
+      `each cell 105px and the planner's own total needs 124px — measured, not predicted.`,
+  );
+
+  // 14. Read-only is a real state, not a failed save. Two of the five named people are read-only.
   assert.ok(
     /canWrite/.test(code),
     `${WORKSPACE}: nothing reads canWrite. Mr. Ahmed Al Maraghi and Reham Elwiy are read-only — ` +

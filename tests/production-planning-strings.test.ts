@@ -127,17 +127,24 @@ export function runProductionPlanningStringsTests() {
     !code.includes('"ar-EG"'),
     'the ar-EG locale emits Arabic-Indic digits (٠١٢٣) and ج.م., and the owner chose Latin digits — so it may appear only in a comment',
   );
-  // Arabic-Indic digits must not be hard-coded into a label either. The two hints that spell a
-  // measurement in words are the deliberate exception: the sample size and the dose read as prose
-  // there, not as data, and no number the engine produces passes through them.
-  const DIGIT_WORD_EXCEPTIONS = new Set(["PP.sampleUnitsHint", "basis.per_dose"]);
+  // Arabic-Indic digits must not be hard-coded into a label either, and there is NO exception to
+  // that. There used to be two — the sample-size hint and the per-dose basis, carved out on the
+  // reasoning that a measurement spelled inside a sentence reads as prose rather than as data. The
+  // browser disagreed: on 2026-10-06 the live planner showed `العينة ٤٠ مل` and `لكل جرعة ٥ مل` an inch from
+  // `106,000` and `1,250`, so one screen carried both numeral systems at once, which is the whole
+  // thing the owner's Latin-digit ruling exists to stop. A reader cannot tell which digits are
+  // "prose" and does not care. The carve-out is gone; every string is swept.
   for (const { key, value } of all) {
-    if (DIGIT_WORD_EXCEPTIONS.has(key)) continue;
     assert.ok(
-      !/[٠-٩]/.test(value),
+      !/[٠-٩۰-۹]/.test(value),
       `${key} must not hard-code Arabic-Indic digits: the owner chose Latin digits — ${JSON.stringify(value)}`,
     );
   }
+  assert.ok(
+    PP.sampleUnitsHint.includes("40") && PP.sampleUnitsHint.includes("100"),
+    "the sample hint states its sizes in Latin digits, beside the Latin figures the engine prints",
+  );
+  assert.ok(BASIS_LABELS.per_dose.includes("5"), "and so does the per-dose basis label");
 
   // ── The number formatter ──────────────────────────────────────────────────────────────────────
   assert.equal(formatNumberLatin("109180"), "109,180");

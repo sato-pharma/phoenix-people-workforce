@@ -891,7 +891,15 @@ export async function getProductionPlanningWorkspace(
   body: PlanRequestInput = {},
 ): Promise<WireWorkspace> {
   const data = await loadProductionPlanningData(access);
-  const plan = data.products.length > 0 ? computePlan(data, body) : null;
+  // 🔴 A BARE READ MUST NOT 400. `parsePlanRequest` requires `requestedQty >= 1`, which is right for
+  // a plan the screen asked for and wrong for the first load: the workspace GET answers the whole
+  // screen, and a request with no query string was answering
+  // `{"message":"A count below 1 is not allowed here.","field":"requestedQty"}` — so the module
+  // opened on its own error message for every one of the five people who can see it, with every
+  // figure in it correct. Measured against the running app on 2026-10-06. No quantity asked for means
+  // no plan computed, never a refusal to load.
+  const askedForAPlan = asScalar(body.requestedQty) !== null;
+  const plan = data.products.length > 0 && askedForAPlan ? computePlan(data, body) : null;
   const [runs, plans] = await Promise.all([listRuns(access), listPlans(access)]);
 
   return {
