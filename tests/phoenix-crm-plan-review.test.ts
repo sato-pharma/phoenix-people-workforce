@@ -839,10 +839,17 @@ function runStillPlannedTests(): void {
   // 🔴 The header of 20261002125244 says replacing this report "would change nothing". It is right
   // about the one-day return's OTHER days and wrong about the two cases above.
   {
+    // 🔴 THE LAST DEFINER IS THE ONLY BODY THE DATABASE RUNS, which is why this section reads it and
+    // not the file that first wrote the rule. 20261006121846 took that place from
+    // 20261002221947_phoenix_crm_plan_vs_actual_sent_days.sql on 2026-10-06: it carries that body
+    // forward VERBATIM and adds one thing — a customer handed to another rep is out of the old seat's
+    // denominator from the day he moved, which is the dropped-customer refusal below in its other
+    // shape. Every assertion that follows is about text 20261002221947 wrote and this file kept, so a
+    // later definer that quietly dropped any of it fails here. That is the point of reading the last.
     const definers = definersOf("phoenix_crm_report_plan_vs_actual");
     assert.equal(
       definers[definers.length - 1],
-      "20261002221947_phoenix_crm_plan_vs_actual_sent_days.sql",
+      "20261006121846_phoenix_crm_move_customer.sql",
       "the fix is the LAST definer, so it is the body the database runs",
     );
     const report = functionSql(sqlOf(`supabase/migrations/${definers[definers.length - 1]}`), "phoenix_crm_report_plan_vs_actual");
@@ -879,14 +886,20 @@ function runStillPlannedTests(): void {
     assert.match(report, /full join visited vd/, "the full join stands");
     assert.match(report, /as unplanned_refused/, "and every column it returned before");
 
-    // Out of the browser's reach, like every other reporting function.
-    const fixSql = sqlOf("supabase/migrations/20261002221947_phoenix_crm_plan_vs_actual_sent_days.sql");
-    assert.match(
-      fixSql,
-      /^revoke execute on function public\.phoenix_crm_report_plan_vs_actual\(text\[\], date, date, boolean\) from public, anon, authenticated;$/m,
-      "revoked from PUBLIC, which is what anon and authenticated inherit through",
-    );
-    assert.match(fixSql, /^grant execute on function public\.phoenix_crm_report_plan_vs_actual\(text\[\], date, date, boolean\) to service_role;$/m);
+    // Out of the browser's reach, like every other reporting function. Asked of the file that wrote
+    // this rule AND of the one that is the last definer today — `create or replace` keeps whatever
+    // privileges the function already had, so a later definer that left these two lines out would
+    // pass a check made on the first file alone while being the body that actually runs. (Only these
+    // two: the definers OLDER than the fix predate the rule and are not re-litigated here.)
+    for (const definer of new Set(["20261002221947_phoenix_crm_plan_vs_actual_sent_days.sql", definers[definers.length - 1]])) {
+      const fixSql = sqlOf(`supabase/migrations/${definer}`);
+      assert.match(
+        fixSql,
+        /^revoke execute on function public\.phoenix_crm_report_plan_vs_actual\(text\[\], date, date, boolean\) from public, anon, authenticated;$/m,
+        `${definer}: revoked from PUBLIC, which is what anon and authenticated inherit through`,
+      );
+      assert.match(fixSql, /^grant execute on function public\.phoenix_crm_report_plan_vs_actual\(text\[\], date, date, boolean\) to service_role;$/m, definer);
+    }
   }
 
   // ── 5f. Every reader asks the one rule ────────────────────────────────────────────────────────────

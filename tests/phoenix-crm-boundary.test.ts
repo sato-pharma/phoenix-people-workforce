@@ -167,6 +167,14 @@ const ROUTE_GATES: RouteGate[] = [
   // The rep drops a customer met outside his list; the SFE Manager brings one back from the Archive.
   post("list/outside/drop", "create"),
   post("list/archive/bring-back", "approve"),
+  // The SFE Manager curates a rep's list from OUTSIDE it (owner, 2026-10-06): he drops an irrelevant
+  // customer himself, and hands one to a rep he chooses. `approve`, because both are the SFE step's own
+  // authority rather than a rep's ask — then narrowed again in the service to `canCurateList`, which is
+  // the place-movers' set of people: the SFE Manager in scope and the Super Admin, never a test
+  // persona. The drop is still FILED and decided as a `drop` request, so the Archive's history reads
+  // the same whoever took the customer off; a rep's own ask keeps its two steps at `list/requests`.
+  post("list/curate/drop", "approve"),
+  post("list/curate/move", "approve"),
   post("list/requests", "create"),
   post("list/requests/withdraw", "create"),
   post("list/requests/decide", "approve"),
@@ -692,6 +700,13 @@ const LATER_MIGRATIONS = [
   // phoenix_crm_add_pharmacy (plus its list event), so it is now the LAST entry that replaces either and
   // must stay last among them. No table, no column, no new function.
   "supabase/migrations/20261004005543_phoenix_crm_one_lock_for_a_new_pharmacy.sql",
+  // The SFE Manager hands a customer to another rep (owner, 2026-10-06). ONE brand-new table (the
+  // record of every move) and ONE brand-new function; it REPLACES phoenix_crm_report_plan_vs_actual
+  // with 20261002221947's body plus the `held_by` lateral, so it is now the LAST entry that replaces
+  // that function and must stay last among them — liveMigrationSql applies each replacement in order
+  // and the last one wins. It touches no save_visit and alters nothing that exists, so it cannot
+  // disturb the replacement ordering above.
+  "supabase/migrations/20261006121846_phoenix_crm_move_customer.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

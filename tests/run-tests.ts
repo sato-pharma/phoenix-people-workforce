@@ -1750,6 +1750,7 @@ import { runPhoenixCrmListEdgeTests } from "./phoenix-crm-list-edges.test.ts";
 import { runPhoenixCrmListSheetHoursTests } from "./phoenix-crm-list-sheet-hours.test.ts";
 import { runPhoenixCrmListTemplateTests } from "./phoenix-crm-list-template.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
+import { runPhoenixCrmListCurationTests } from "./phoenix-crm-list-curation.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmRefuseValidationTests } from "./phoenix-crm-refuse-validation.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
@@ -6416,6 +6417,11 @@ await runTest(
 await runTest(
   "Phoenix CRM moves a validated place only for the Super Admin and the SFE Manager (owner, 2026-09-29: the location is fixed forever): the service checks the mover before it reads anything, a move needs a written reason of ten characters or more, the new point is resolved by the same function a validation uses, every visit to the customer is measured again, a test account never moves one, and the database writes an audited place_moved event with the point before and after",
   runPhoenixCrmPlaceMoveTests,
+);
+
+await runTest(
+  "Phoenix CRM lets the SFE Manager curate any rep's list from outside it (owner, 2026-10-06): the drop is filed and decided as a drop request at the SFE step, so the Archive reads a reason and a decider whoever took the customer off — and a rep's own ask still starts with his district manager; the move hands the customer over WHOLE, his grade, his validation and his clinics travelling with him rather than being re-captured, refuses the rep he is already with, a reason under ten characters, an archived customer and a namesake or a reference row already on the destination, locks both seats in a fixed order so two moves cannot deadlock, withdraws what was still waiting and writes moved_out and moved_in on the two lists; the plan report then counts him on ONE seat per Cairo day, so the rep he left keeps no permanent miss for a visit the save would refuse; the destination is resolved in the organogram and never taken from the phone, curating is the place-movers' set of people by delegation, and the two buttons are drawn only where the server says so, the picker reading by the rep's name with his line in the label because the admin combo box flattens an optgroup",
+  runPhoenixCrmListCurationTests,
 );
 
 await runTest(

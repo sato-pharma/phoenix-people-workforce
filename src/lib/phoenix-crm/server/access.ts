@@ -744,6 +744,36 @@ export function assertPlaceMover(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest
   }
 }
 
+// ── Curating a rep's list: the SFE Manager drops a customer, or hands him to another rep ───────
+
+/**
+ * Whether the viewer may CURATE any rep's list — drop a customer off it himself, or move him to
+ * another rep's list (owner, 2026-10-06: "make the sfe able to enter on any med rep list and delete or
+ * drop from it any irrelevant customer or move this customer to and choose where").
+ *
+ * 🔴 IT IS NOT A SHORTCUT ROUND THE TWO-STEP DROP, it is the other end of it. A REP asking to drop a
+ * customer still goes to his district manager and then to SFE (`canDecideListRequest`), because that
+ * ask is about the rep's own work. This is the SFE going into the list himself, which is the same
+ * authority he already holds over the Archive (`sfeBringBack`, owner 2026-09-29) — and the drop is
+ * filed and decided as a `drop` request at his own step, so the list's history reads the same whoever
+ * took the customer off it.
+ *
+ * The set of people is `canMovePlaces`'s, deliberately: moving a clinic and moving a customer are the
+ * two acts that rewrite a validated record somebody else captured, both carry a written reason, and
+ * both are audited. So the Super Admin is included — this is one of the handful of real-data writes
+ * that are his (`canMovePlaces`, `territoryForMissedRecord`, `canAcknowledgePlanEdits`) — and a test
+ * account never curates a real list.
+ */
+export function canCurateList(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
+  return canMovePlaces(viewer, seat, isTest);
+}
+
+export function assertListCurator(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): void {
+  if (!canCurateList(viewer, seat, isTest)) {
+    throw forbiddenError("Only the SFE Manager and the Super Admin change a rep's list from outside it.");
+  }
+}
+
 // ── A record a rep missed: the Super Admin enters it for him ───────────────────────────────────
 
 /**
