@@ -1,6 +1,6 @@
 ---
 name: a-python-heredoc-writes-real-control-chars-into-regex-literals
-description: "editing a source file with a `python - <<'PY'` heredoc and a NON-raw string turns every \\b \\n \\f \\v inside a regex literal into a real control character, so the written regex can never match and the failure reads as 'my regex is wrong' — python's own SyntaxWarning is the only warning you get, and it names the line it is on, not the file it corrupts"
+description: "editing a source file with a `python - <<'PY'` heredoc and a NON-raw string turns every \\b \\n \\f \\v inside a regex literal into a real control character, so the written regex can never match and the failure reads as 'my regex is wrong' — python's own SyntaxWarning is the only warning you get, and it names the line it is on, not the file it corrupts. It also collapses a DOUBLED escape you wrote deliberately: a backslash-backslash-u0600 lands as the real character and a doubled backslash-n as a real newline inside a template literal, which is valid JS that reads nothing like what you wrote - so write the replacement text as a RAW string and re-read the bytes, whichever escape you meant"
 metadata:
   node_type: memory
   type: feedback
@@ -22,6 +22,15 @@ statement expected` or `Unterminated regexp literal`), `\f` and `\v`.
 preceding character over itself), `grep` finds the token, and `git diff` shows nothing odd. So the
 assertion failing reads as *the thing I asserted is not true* — which sends you to re-check the
 production code that is in fact perfectly correct.
+
+**It also eats a DOUBLED escape you wrote on purpose** (2026-10-06, the Production Planner's
+language toggle). A doubled backslash-u0600 in a non-raw replacement string is meant to put the
+five characters of the escape in the file; it puts the real U+0600 there instead, and a doubled
+backslash-n inside a JS template literal becomes a real newline. Neither BREAKS anything - a
+literal character range and a multi-line template literal are both valid JS - so nothing warns
+and nothing fails. The file just carries invisible bytes where you wrote readable escapes, which
+the next reader cannot see at all. `grep -c 'u0600' <file>` returning 0 immediately after you
+wrote that escape is the tell, and it cost four rewrites of one test file.
 
 **The three habits that stop it:**
 

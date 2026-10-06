@@ -29,6 +29,18 @@ import { stripComments } from "./support/comment-strip.ts";
  * and 375px, in both surfaces) and this file cannot do it. What it CAN do is pin the constructs
  * that let an overflow happen at all — across all four tables, and across every grid.
  *
+ * 🔴 THAT BROWSER HALF NOW EXISTS: `scripts/measure-production-planning-fit.mjs`
+ * (`pnpm run ui:measure-production-planning-fit -- --fixture <file>`). It renders these same
+ * components inside each shell's own container chain and measures 375/768/1024/1280/1920 at BOTH
+ * display scales, with three positive controls per row. Measured 2026-10-06 against the real
+ * production payload: 20 rows, zero overflow, zero clipped cells, zero radii, the tab strip on two
+ * rows at 375px and one above it. The tightest box in the whole sweep is the PORTAL's at 1024px and
+ * display scale 1 - **636 layout px**, columns 196/146/146/146 - which is why the figures in the
+ * paragraph above (928 admin / 776 portal) are not contradicted by it: those were read at the
+ * owner's own 0.8 scale, where the same portal box is 795px. A rect is VISUAL px under `zoom` and
+ * `clientWidth` is LAYOUT px; mixing the two is what made one box look 20% narrower than the
+ * columns it had laid out.
+ *
  * 🔴 THE TAB STRIP IS THE RTL-SPECIFIC HAZARD. `inline-flex min-w-max` under a scroller is the
  * usual way a five-tab strip is written, and on a right-to-left page a horizontal scroller opens at
  * the LEFT — which is the END of every line, so the first tab is the one off screen. `flex
@@ -96,6 +108,29 @@ export function runProductionPlanningFitsTheScreenTests() {
   assert.ok(
     !tablistTokens.includes("min-w-max") && !tablistTokens.includes("inline-flex"),
     `${WORKSPACE}: the tab strip carries "${tablist[1]}", which pins it wider than its box.`,
+  );
+
+  // 3b. The language toggle, which sits in the header's own row beside the title block. It wraps for
+  //     the same reason the tab strip does — at 375px the title and two buttons do not share a line —
+  //     and it says WHICH language is on, since two buttons with no state read as two links.
+  const toggle = source.match(/className="([^"]*)" dir="ltr" role="group"/);
+  assert.ok(toggle, `${WORKSPACE}: the language toggle's own row was not found. The owner chose the module's language with a toggle.`);
+  const toggleTokens = toggle[1].split(/\s+/);
+  assert.ok(
+    toggleTokens.includes("flex-wrap"),
+    `${WORKSPACE}: the toggle row is "${toggle[1]}" — it needs flex-wrap, because "shrink-0" beside ` +
+      `a title block is what pushes a header past 375px.`,
+  );
+  assert.ok(
+    source.includes("aria-pressed={lang === option.key}"),
+    `${WORKSPACE}: the toggle does not say which language is on. aria-pressed is the state a screen ` +
+      `reader and the styling both read.`,
+  );
+  // Each language named in its OWN script, so the one being offered is legible to somebody who
+  // cannot read the one currently showing. Translating either label defeats the whole control.
+  assert.ok(
+    source.includes('label: "العربية"') && source.includes('label: "English"'),
+    `${WORKSPACE}: the toggle's two labels must be العربية and English, each in its own script.`,
   );
 
   // 4. Every table is fixed-layout, and every one is paired with a card list for a phone. The
@@ -166,14 +201,18 @@ export function runProductionPlanningFitsTheScreenTests() {
 
   // 7. One <col> per heading, in every table. They must agree, or every column after a mismatch is
   //    sized by the wrong <col>.
-  const headingGroups = [...source.matchAll(/\{\[((?:PP\.[A-Za-z]+(?:,\s*)?)+)\]\.map\(\(heading\) => \(/g)].map(
-    (match) => [...match[1].matchAll(/PP\.[A-Za-z]+/g)].length,
+  // `t.`, not `PP.`: since the language toggle (2026-10-06) every string in this file comes from the
+  // bundle in force (`const S = useProductionPlanningStrings(); const t = S.t;`), which is the same
+  // catalogue reached through the chosen language instead of the Arabic one by name. A heading
+  // written as a literal is still the defect this counts.
+  const headingGroups = [...source.matchAll(/\{\[((?:t\.[A-Za-z]+(?:,\s*)?)+)\]\.map\(\(heading\) => \(/g)].map(
+    (match) => [...match[1].matchAll(/t\.[A-Za-z]+/g)].length,
   );
   assert.equal(
     headingGroups.length,
     tables.length,
     `${WORKSPACE}: ${headingGroups.length} mapped heading rows against ${tables.length} tables. ` +
-      `Every table's headings come from the PP catalogue so the screen and the workbook cannot drift.`,
+      `Every table's headings come from the string bundle so the screen and the workbook cannot drift.`,
   );
   for (const [index, count] of headingGroups.entries()) {
     assert.equal(
@@ -222,17 +261,29 @@ export function runProductionPlanningFitsTheScreenTests() {
     /dir="ltr"/.test(code),
     `${WORKSPACE}: no dir="ltr" anywhere. See the note on Num above.`,
   );
+  // The direction and the language come from the BUNDLE, not from a literal. The owner chose the
+  // language with a toggle on 2026-10-06, so `dir="rtl"` written into the markup is now the defect
+  // — it leaves the English half of the module facing the wrong way while every string is right,
+  // which is what a hard-coded loading state did until it was caught by the browser harness.
+  // `productionPlanningStrings("ar").dir` is where "rtl" lives, and the strings test pins it there.
   assert.ok(
-    /dir="rtl"/.test(code) && /lang="ar"/.test(code),
-    `${WORKSPACE}: the root must carry dir="rtl" and lang="ar" — the owner asked for this module in ` +
-      `Egyptian Arabic, and nothing in tokens.css or globals.css is RTL-aware.`,
+    /dir=\{S\.dir\}/.test(code) && /lang=\{S\.lang\}/.test(code),
+    `${WORKSPACE}: the root must carry dir={S.dir} and lang={S.lang} — Arabic is the DEFAULT, not ` +
+      `the only language, and nothing in tokens.css or globals.css is RTL-aware either way.`,
+  );
+  assert.ok(
+    !/dir="rtl"/.test(code) && !/lang="ar"/.test(code),
+    `${WORKSPACE}: a hard-coded dir="rtl" or lang="ar" survives. Every one of them is a place the ` +
+      `language toggle cannot reach, so the English screen renders right-to-left there.`,
   );
 
-  // 11. The module's own face stack, not the app's Latin one.
+  // 11. The face stack comes from the bundle too: the Arabic faces in Arabic, and the app's own
+  //     type in English, because an English page on an Arabic-first stack reads as a different app.
   assert.ok(
-    code.includes("PRODUCTION_PLANNING_FONT_STACK"),
-    `${WORKSPACE}: the Arabic face stack is not applied. The app's default stack has no Arabic ` +
-      `shaping face, so the text falls back to whatever the reader's browser picks.`,
+    /fontFamily: S\.fontStack/.test(code),
+    `${WORKSPACE}: the face stack is not taken from the bundle. The app's default stack has no ` +
+      `Arabic shaping face, so Arabic text falls back to whatever the reader's browser picks — and ` +
+      `the Arabic stack in English is the same mistake the other way round.`,
   );
 
   // 12. Latin digits: the formatter is the only path, and the ar-EG locale never appears.

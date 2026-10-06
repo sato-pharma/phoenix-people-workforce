@@ -201,7 +201,7 @@ What this acceptance does and does not say:
 
 | | |
 | --- | --- |
-| **Decision** | **Not yet made — this row is the basis for it, not the decision itself.** The findings below are measured; whether to remove the dependency is the owner's call. |
+| **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-10-06 at the owner's instruction — asked directly, he answered *"leave sprintf-js as it is — it never loads"*. |
 | Alert | #116, opened 2026-10-06 05:56 Cairo, root `pnpm-lock.yaml` |
 | Scope | **`runtime`** — it IS in the production graph, so scope is not what makes this quiet |
 | Severity | **MEDIUM**, so `--audit-level=high` does not fail on it. This is the alert that exposed the `medium`/`moderate` spelling bug above |
@@ -225,6 +225,18 @@ to the .docx reader, since argparse 2 dropped APIs its CLI uses. That is a live 
 cost, **not an impossibility**: an earlier draft of this page's sibling note called this dependency
 "permanently unfixable" and that was wrong on both counts — see the 2026-10-06 section above, and
 `proxy-addr`, which was called the same thing and was bumped by hand the same day.
+
+**What would reverse this.** Any one of these, and it stops being accepted:
+
+1. **Something in this repository starts running the `mammoth` binary**, or calls `sprintf` with a
+   format string it did not write itself. The acceptance rests on reachability, not on severity, so
+   this is the condition that actually matters — re-walk the require graph from
+   `mammoth/lib/index.js` if the .docx path is reworked.
+2. **A patched `sprintf-js` is published.** There is then something to bump to, and the reason for
+   accepting disappears; take it in the next dependency PR.
+3. **The advisory is re-scored above MEDIUM**, which would make it able to fail
+   `--audit-level=high --prod` on a `runtime`-scope package — the one combination this page treats
+   as blocking.
 
 **Why it is worth a row despite being below the gate.** The alert's own creation, at 05:56:00, is
 what triggered the Dependabot updater runs four seconds later; those runs failed

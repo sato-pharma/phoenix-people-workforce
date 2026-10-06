@@ -5,7 +5,7 @@ import ExcelJS from "exceljs";
 
 import { computePlan, type LoadedMaterial, type ProductionPlanningData } from "../src/lib/production-planning/service.ts";
 import { parsePct, parseQty, QTY_SCALE } from "../src/lib/production-planning/rules.ts";
-import { PRODUCTION_PLANNING_WORKBOOK_FONT } from "../src/lib/production-planning/strings.ts";
+import { PP, PP_EN, PRODUCTION_PLANNING_WORKBOOK_FONT } from "../src/lib/production-planning/strings.ts";
 import type { WireMaterial, WirePlan, WireWorkspace } from "../src/lib/production-planning/wire.ts";
 import { buildProductionPlanningWorkbook } from "../src/lib/production-planning/workbook.ts";
 
@@ -498,5 +498,57 @@ export async function runProductionPlanningWorkbookTests() {
   assert.ok(
     !code.includes("outlineProperties"),
     "outlineProperties beside fitToPage makes Excel repair the workbook silently — neither belongs here",
+  );
+
+  // ── The export follows the language toggle, direction included ────────────────────────────────
+  //
+  // The owner chose the module's language with a toggle (2026-10-06) and the download carries that
+  // choice as `?lang=`. A sheet whose STRINGS are English while its view is still right-to-left is
+  // the half-done version of this: Excel then lays column A on the right of an English sheet, which
+  // reads as a corrupt file rather than as a language. So both halves are asserted together.
+  const { buffer: englishBuffer } = await buildProductionPlanningWorkbook(workspaceFor(plan), {
+    actorName: "B-10",
+    lang: "en",
+  });
+  const englishBook = new ExcelJS.Workbook();
+  await englishBook.xlsx.load(englishBuffer as unknown as ArrayBuffer);
+  const englishSheet = englishBook.worksheets[0];
+  assert.ok(englishSheet, "the English workbook should carry its plan sheet too");
+  assert.ok(
+    (englishSheet!.views as { rightToLeft?: boolean }[]).every((view) => view.rightToLeft !== true),
+    "an English sheet must NOT be right-to-left — the direction follows the language, not the module",
+  );
+  let englishText = "";
+  englishSheet!.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      if (typeof cell.value === "string") englishText += `${cell.value}\n`;
+    });
+  });
+  assert.ok(englishText.length > 0, "the English sheet should carry text at all");
+  // Named LABELS, not a sweep for Arabic characters: the product and material NAMES are data and
+  // stay Arabic in either language - آيفيرونك is what the material is called. So the assertion is
+  // that the sheet's own four section titles came from the English catalogue and that their Arabic
+  // counterparts are nowhere in it, which is the thing a half-applied language leaves behind.
+  for (const key of ["sheetInputsTitle", "sheetOutputsTitle", "sheetMaterialsTitle", "sheetCostTitle"] as const) {
+    assert.ok(
+      englishText.includes(PP_EN[key]),
+      `the English sheet is missing ${key} (${JSON.stringify(PP_EN[key])}) — the language did not reach the labels`,
+    );
+    assert.ok(
+      !englishText.includes(PP[key]),
+      `the English sheet still carries the ARABIC ${key} (${JSON.stringify(PP[key])})`,
+    );
+  }
+  // An unreadable `?lang=` falls back to Arabic rather than to a blank sheet, the same way the
+  // screen does — the value arrives off a query string and anything can put anything there.
+  const { buffer: junkBuffer } = await buildProductionPlanningWorkbook(workspaceFor(plan), {
+    actorName: "B-10",
+    lang: "klingon",
+  });
+  const junkBook = new ExcelJS.Workbook();
+  await junkBook.xlsx.load(junkBuffer as unknown as ArrayBuffer);
+  assert.ok(
+    (junkBook.worksheets[0]!.views as { rightToLeft?: boolean }[]).some((view) => view.rightToLeft === true),
+    "an unreadable lang falls back to the Arabic sheet, right-to-left and all",
   );
 }

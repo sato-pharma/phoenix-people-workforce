@@ -56,6 +56,21 @@ export const PRODUCTION_PLANNING_WORKBOOK_FONT = "Tahoma";
 
 export type ProductionPlanningTabKey = "planner" | "stock" | "cost" | "run" | "settings";
 
+/**
+ * Which language the module is showing, chosen by the owner with a TOGGLE (his instruction,
+ * 2026-10-06). Arabic stays the DEFAULT, because that is the language he specified the module in
+ * and the one its two daily users read; the toggle is a per-reader choice over it, not a
+ * replacement for it.
+ */
+export type ProductionPlanningLanguage = "ar" | "en";
+
+/** Arabic is the default. A stored value that is neither reads as Arabic rather than as nothing. */
+export const PRODUCTION_PLANNING_DEFAULT_LANGUAGE: ProductionPlanningLanguage = "ar";
+
+export function coerceProductionPlanningLanguage(value: unknown): ProductionPlanningLanguage {
+  return value === "en" ? "en" : "ar";
+}
+
 export const PRODUCTION_PLANNING_TABS: readonly { key: ProductionPlanningTabKey; label: string }[] = [
   { key: "planner", label: "المُخطِّط" },
   { key: "stock", label: "المخزون" },
@@ -299,6 +314,257 @@ export const PP = {
 export type ProductionPlanningStringKey = keyof typeof PP;
 
 /**
+ * The same catalogue in English, because the owner chose the language with a TOGGLE (2026-10-06).
+ *
+ * A `Record<ProductionPlanningStringKey, string>` and not another object literal: the key type is
+ * `keyof typeof PP`, so a key added to the Arabic catalogue and forgotten here is a COMPILE error
+ * rather than a screen with one Arabic word on it. `tests/production-planning-strings.test.ts`
+ * asserts the parity in both directions and that no Arabic letter appears in this half.
+ *
+ * Neutral by construction, same as the Arabic: no second person, no "his" or "her", nouns for
+ * headings and impersonal outcomes ("Saved", "Could not save"), which is the app-wide ruling of
+ * 2026-10-05 and not a choice re-made here. Numbers stay Latin in both languages.
+ *
+ * The REORDER EMAIL stays Arabic whichever way the toggle is set. It is not a screen: four named
+ * people were given an Arabic notification, and nothing has been said about changing what lands in
+ * their inbox — so `buildAlarmEmailSummary` and the sweep keep reading `PP` directly.
+ */
+export const PP_EN: Record<ProductionPlanningStringKey, string> = {
+  // ── The module itself ──────────────────────────────────────────────────────────────────────────
+  moduleKicker: "Toll manufacturing",
+  moduleTitle: "Production and raw-material planning",
+  moduleSubtitle:
+    "What each run needs in raw materials, what is already held, and what to buy and deliver",
+  readOnlyNotice: "This access is read-only — no change can be saved",
+
+  // ── The planner tab ───────────────────────────────────────────────────────────────────────────
+  plannerTitle: "Requirement",
+  productLabel: "Product",
+  requestModeLabel: "Request mode",
+  requestModeTotalBoxes: "Total boxes (samples come out of it)",
+  requestModeGoodUnits: "Saleable boxes only (samples on top)",
+  requestModeRuns: "Number of runs",
+  requestedQtyLabel: "Quantity requested",
+  sampleUnitsLabel: "Free samples",
+  sampleUnitsHint:
+    "A 40 ml sample comes out of the same run volume — it reduces the 100 ml box count and still uses a full packaging set",
+  overageLabel: "Overage",
+  overageHintDefault: "The default from Settings",
+  overageHintMeasured: "Measured from the recorded runs",
+  overageHintMaterial: "Set for this material",
+  calculate: "Calculate the requirement",
+  saveDraft: "Save as a draft",
+  commitPlan: "Commit the plan",
+
+  tileRuns: "Runs",
+  tileRunVolume: "Run volume",
+  tileYield: "Actual yield",
+  tileSurplus: "Surplus over the request",
+  tileShortfall: "Shortfall against the request",
+  unitRun: "run",
+  unitRuns: "runs",
+  unitLitre: "L",
+  unitMl: "ml",
+  unitBox: "box",
+  unitBottle: "bottle",
+  unitSample: "sample",
+  roundedUpNote: "Runs are whole, so this is rounded up",
+  exactRunsNote: "Exact requirement",
+  oneRunFewerNote: "One run fewer",
+  leftoverNote: "A remainder too small for a box or a sample",
+
+  // ── The result table — four columns, 31/23/23/23 ──────────────────────────────────────────────
+  colMaterial: "Material",
+  colNeeded: "Needed",
+  colAvailable: "Available",
+  colAction: "Action",
+  atFactory: "At the factory",
+  atOwnStore: "Sato store",
+  totalHeld: "Total",
+  beforeOverage: "Before overage",
+  toBuy: "To buy",
+  toDeliver: "To deliver",
+  willSend: "Will deliver",
+  balanceAfter: "Left after the run",
+  shortAfter: "Short after the run",
+  coverRuns: "Covers",
+  noActionNeeded: "No action needed",
+
+  chipSato: "Sato",
+  chipFactory: "The factory",
+  chipUnsettled: "To settle with the factory",
+  chipNoComposition: "No composition entered",
+  chipImported: "Imported",
+  excludedFactory: "The factory supplies it — not counted in the buy list",
+  excludedUnsettled: "Who supplies it is not settled — not counted in the buy list",
+  excludedNoComposition: "No composition is entered for this material",
+
+  // ── The stock tab ─────────────────────────────────────────────────────────────────────────────
+  stockTitle: "Stock",
+  stockSubtitle:
+    "Every stock report is added, never replaced — the current balance is the most recent report",
+  stockLocation: "Location",
+  stockQty: "Quantity",
+  stockAsOf: "Balance date",
+  stockSource: "Source",
+  stockSourceFactoryReport: "Factory report",
+  stockSourceOwnCount: "Sato count",
+  stockSourceDelivery: "Delivery",
+  stockSourceAdjustment: "Adjustment",
+  stockNote: "Note",
+  stockAdd: "Add a stock report",
+  stockHistory: "Report history",
+  stockNoneYet: "No stock report for this material yet",
+
+  // ── The cost tab ──────────────────────────────────────────────────────────────────────────────
+  costTitle: "Cost",
+  costSubtitle:
+    "A price is stored in one currency exactly as typed, and the other currency is derived at the rate in force",
+  priceLabel: "Price",
+  priceCurrency: "Currency",
+  currencyUsd: "US dollar",
+  currencyEgp: "Egyptian pound",
+  pricePerUnit: "per",
+  priceEffectiveFrom: "Effective from",
+  priceAdd: "Add a price",
+  priceNoneYet: "No price entered for this material",
+  fxRate: "Exchange rate",
+  fxRateDate: "Rate date",
+  fxSourceManual: "Entered by hand",
+  fxSourceFetched: "Read automatically",
+  fxSourceFallback: "The fallback rate from Settings",
+  fxSourceNone: "No exchange rate — the other currency is not derived",
+  fxManualOverride: "Set the exchange rate by hand",
+  costTotal: "Total cost",
+  costUnpriced: "Materials with no price",
+  costIncomplete: "Materials whose other currency could not be derived",
+  costNotWholeNotice: "The total leaves out every material with no price",
+
+  // ── The run tab ───────────────────────────────────────────────────────────────────────────────
+  runTitle: "Record a run",
+  runSubtitle:
+    "Recording what a run actually consumed is what turns the overage from an estimate into a measurement",
+  runLabel: "Run name",
+  runCount: "Runs in this report",
+  runProducedOn: "Production date",
+  runActualGoodUnits: "Boxes actually produced",
+  runActualSamples: "Samples actually produced",
+  runOpening: "Opening balance",
+  runDelivered: "Delivered",
+  runClosing: "Closing balance",
+  runConsumed: "Consumed",
+  runTheoretical: "Expected",
+  runGap: "Difference",
+  runExclude: "Exclude from the measurement",
+  runExcludeReason: "Reason for excluding it",
+  runExcludeHint:
+    "The row stays recorded exactly as the factory reported it, and is left out of the overage calculation",
+  runSave: "Save the run",
+  runNoneYet: "No run recorded yet",
+  runHistory: "Run history",
+  learnedOverage: "Measured overage",
+  learnedNotEnoughRuns: "One run is not enough to measure — the default is still in force",
+  learnedNoTheoretical: "There is no expected figure to compare against",
+
+  // ── The settings tab ──────────────────────────────────────────────────────────────────────────
+  settingsTitle: "Settings",
+  settingsDefaultOverage: "Default overage",
+  settingsReorderCover: "Alarm threshold (runs)",
+  settingsReorderCoverHint:
+    "A reorder alarm is sent when what is held covers fewer runs than this",
+  settingsAlarmEnabled: "Reorder alarm on",
+  settingsAlarmDryRun: "Dry run — recorded, not sent",
+  settingsAlarmOffNotice: "The alarm is off — no email is sent",
+  settingsAlarmDryRunNotice:
+    "Dry run is on — what would have been sent is recorded and nothing is sent",
+  settingsFxEnabled: "Daily exchange-rate read on",
+  settingsFxDryRun: "Dry run for the exchange rate",
+  settingsFxFallback: "Fallback exchange rate",
+  settingsMaterials: "Materials",
+  settingsComposition: "Composition",
+  settingsGeometry: "Run volume and packaging",
+  settingsAccess: "Access",
+  settingsAccessHint:
+    "The people the owner named are fixed in the code — extra access is added here by name",
+  settingsLeadTime: "Lead time (days)",
+  settingsMinOrder: "Minimum order quantity",
+  settingsPurchaseIncrement: "Purchase increment",
+  settingsLastUpdatedBy: "Last change",
+  alarmSwitchOn: "Switch the alarm on",
+  alarmSwitchOff: "Switch the alarm off",
+  dryRunSwitchOn: "Switch dry run on",
+  dryRunSwitchOff: "Switch dry run off",
+  accessHrId: "Employee id",
+  accessLevel: "Access level",
+  accessLevelRead: "Read only",
+  accessLevelFull: "Full control",
+  accessRemove: "Remove the access",
+  accessNoneYet: "No extra access recorded",
+  accessNamedInCode: "Fixed in the code",
+
+  // ── Outcomes, impersonal throughout ───────────────────────────────────────────────────────────
+  saved: "Saved",
+  saveFailed: "Could not save",
+  loadFailed: "Could not load the data",
+  notLoaded: "The data is not loaded",
+  yes: "Yes",
+  no: "No",
+  stateOn: "On",
+  stateOff: "Off",
+  save: "Save",
+  cancel: "Cancel",
+  close: "Close",
+  exportWorkbook: "Export to Excel",
+  exportFailed: "Could not export",
+  exportHint:
+    "The file carries the formulas themselves — changing any yellow cell recalculates it inside Excel",
+  loading: "Loading",
+  nothingToShow: "Nothing to show",
+
+  // ── The Excel export ──────────────────────────────────────────────────────────────────────────
+  sheetName: "Plan",
+  sheetInputsTitle: "Inputs — the yellow cells",
+  sheetOutputsTitle: "Calculated result",
+  sheetMaterialsTitle: "Raw materials",
+  sheetCostTitle: "Purchase cost",
+  sheetRequestedBoxes: "Total boxes requested",
+  sheetRunVolumeMl: "Run volume (ml)",
+  sheetGoodUnitMl: "Saleable box size (ml)",
+  sheetSampleUnitMl: "Sample size (ml)",
+  sheetDoseMl: "Dose (ml)",
+  sheetUnitsPerBox: "Units per box",
+  sheetGoodUnitsRequested: "Saleable boxes requested",
+  sheetNeededVolumeMl: "Required volume (ml)",
+  sheetTotalVolumeLitres: "Total volume (L)",
+  sheetTotalDoses: "Total doses",
+  sheetTotalBoxes: "Total boxes (full packaging sets)",
+  sheetColBasisLabel: "Basis",
+  sheetColQtyPerBasis: "Quantity per basis",
+  sheetColBasisCount: "Basis count",
+  sheetColSupplier: "Supplied by",
+  sheetColPrice: "Unit price",
+  sheetColCostUsd: "Cost in dollars",
+  sheetColCostEgp: "Cost in pounds",
+  sheetUnpricedNote: "The total leaves out every material with no price entered",
+  sheetGeneratedOn: "Exported on",
+  sheetGeneratedBy: "Exported by",
+
+  // ── The reorder email ─────────────────────────────────────────────────────────────────────────
+  // Present for key parity and for the screen's own severity chips. The EMAIL itself stays Arabic.
+  alarmEmailSubject: "Raw-material reorder alarm",
+  alarmSeverityOutOfStock: "No balance",
+  alarmSeverityBelow: "Below the threshold",
+  alarmSeverityApproaching: "Approaching the threshold",
+  alarmLeadTimeNote: "Lead time",
+  alarmNoneToday: "No material is below the threshold",
+  alarmEmailStatus:
+    "The figures are for one run with no samples, which is the basis cover is measured on.",
+  alarmEmailCover: "Cover",
+  alarmEmailHeld: "Held",
+  unitDay: "day",
+};
+
+/**
  * The reorder email's opening sentence, and one line per material.
  *
  * Here rather than in the sweep for the same reason the planner sentence is: the catalogue is the
@@ -426,4 +692,254 @@ const UNIT_LABELS_AR: Record<string, string> = {
 export function unitLabelAr(unit: string | null | undefined): string {
   if (!unit) return "";
   return UNIT_LABELS_AR[unit.trim().toLowerCase()] ?? unit;
+}
+
+// ── The toggle: one bundle per language, and the ONLY thing the screen reads ─────────────────────
+
+/**
+ * The English half of the three label maps and the two sentences.
+ *
+ * Kept beside their Arabic originals rather than inside the bundle factory so each pair can be read
+ * as a pair — a label that drifts in one language and not the other is the whole failure mode of a
+ * second catalogue.
+ */
+export const PRODUCTION_PLANNING_TABS_EN: readonly { key: ProductionPlanningTabKey; label: string }[] = [
+  { key: "planner", label: "Planner" },
+  { key: "stock", label: "Stock" },
+  { key: "cost", label: "Cost" },
+  { key: "run", label: "Record a run" },
+  { key: "settings", label: "Settings" },
+] as const;
+
+export const BASIS_LABELS_EN = {
+  per_dose: "per 5 ml dose",
+  per_packaging_set: "per full packaging set",
+  per_good_unit: "per saleable box",
+  per_sample_unit: "per sample",
+} as const;
+
+/**
+ * The stored unit codes are already English (`kg`, `piece`), so this maps them to the words a
+ * reader expects rather than translating them — `piece` reads as a column name, `pieces` as a
+ * quantity. An unmapped code falls through to itself, same as the Arabic map, so a unit a Settings
+ * edit introduces next year shows up untranslated instead of silently vanishing off a quantity.
+ */
+const UNIT_LABELS_EN: Record<string, string> = {
+  g: "g",
+  kg: "kg",
+  l: "L",
+  litre: "L",
+  ml: "ml",
+  piece: "pieces",
+  ton: "t",
+};
+
+export function unitLabelEn(unit: string | null | undefined): string {
+  if (!unit) return "";
+  return UNIT_LABELS_EN[unit.trim().toLowerCase()] ?? unit;
+}
+
+/** The sentence under the four tiles, in English. Same inputs, same order, same three branches. */
+export function buildPlannerSentenceEn(parts: {
+  readonly runs: string;
+  readonly runVolumeLitres: string;
+  readonly totalVolumeLitres: string;
+  readonly goodUnits: string;
+  readonly goodUnitMl: string;
+  readonly sampleUnits: string;
+  readonly sampleUnitMl: string;
+  readonly surplusBoxes: string | null;
+  readonly shortfallBoxes: string | null;
+}): string {
+  const head =
+    `${parts.runs} ${parts.runs === "1" ? PP_EN.unitRun : PP_EN.unitRuns} × ${parts.runVolumeLitres} ` +
+    `${PP_EN.unitLitre} = ${parts.totalVolumeLitres} ${PP_EN.unitLitre}`;
+  const yieldText =
+    parts.sampleUnits === "0"
+      ? `${parts.goodUnits} boxes of ${parts.goodUnitMl} ${PP_EN.unitMl}`
+      : `${parts.goodUnits} boxes of ${parts.goodUnitMl} ${PP_EN.unitMl} and ${parts.sampleUnits} ` +
+        `samples of ${parts.sampleUnitMl} ${PP_EN.unitMl}`;
+  const tail =
+    parts.surplusBoxes && parts.surplusBoxes !== "0"
+      ? `, ${parts.surplusBoxes} boxes over the request`
+      : parts.shortfallBoxes && parts.shortfallBoxes !== "0"
+        ? `, ${parts.shortfallBoxes} boxes short of the request`
+        : "";
+  return `${head} — ${yieldText}${tail}`;
+}
+
+export const SUPPLIER_LABELS_EN = {
+  sato: PP_EN.chipSato,
+  factory: PP_EN.chipFactory,
+  shared_unsettled: PP_EN.chipUnsettled,
+} as const;
+
+export const ALARM_SEVERITY_LABELS_EN = {
+  out_of_stock: PP_EN.alarmSeverityOutOfStock,
+  below_threshold: PP_EN.alarmSeverityBelow,
+  approaching: PP_EN.alarmSeverityApproaching,
+} as const;
+
+/**
+ * The validation messages the SERVER throws, in both languages.
+ *
+ * They are in here and not written at each throw site because the owner chose the module's
+ * language with a toggle (2026-10-06), and a message is the one piece of the module a reader only
+ * ever sees when something has already gone wrong — an Arabic sentence landing on an English
+ * screen at exactly that moment reads as a broken page rather than as a language. The request
+ * carries its `lang`, so `errorsFor(body)` in `service.ts` resolves them per request.
+ *
+ * Each one names what is wrong with the INPUT and nothing about the database behind it: a column
+ * name or a constraint reaching a screen is a different defect, which `clientSafeErrorMessage`
+ * covers for everything that is not one of these.
+ */
+export type ProductionPlanningErrorKey =
+  | "unknownBasis"
+  | "runLabelRequired"
+  | "priceMustBePositive"
+  | "unknownCurrency"
+  | "qtyMustBePositive"
+  | "materialNotFound"
+  | "materialRequired"
+  | "materialAndLocationRequired"
+  | "productNotFound"
+  | "hrIdRequired"
+  | "exclusionReasonRequired"
+  | "fxRateMustBePositive"
+  | "noProductToPlan"
+  | "rowMaterialMissingId"
+  | "rowMaterialNotFound"
+  | "unknownAccessLevel"
+  | "unknownSupplier"
+  | "unknownUnitKind";
+
+export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, string> = {
+  unknownBasis: "أساس الحساب غير معروف.",
+  runLabelRequired: "اسم التشغيلة مطلوب.",
+  priceMustBePositive: "السعر يجب أن يكون أكبر من صفر.",
+  unknownCurrency: "العملة غير معروفة.",
+  qtyMustBePositive: "الكمية يجب أن تكون أكبر من صفر.",
+  materialNotFound: "المادة غير موجودة.",
+  materialRequired: "المادة مطلوبة.",
+  materialAndLocationRequired: "المادة والموقع مطلوبان.",
+  productNotFound: "المنتج غير موجود.",
+  hrIdRequired: "رقم الموظف مطلوب.",
+  exclusionReasonRequired: "سبب الاستثناء مطلوب.",
+  fxRateMustBePositive: "سعر الصرف يجب أن يكون أكبر من صفر.",
+  noProductToPlan: "لا يوجد منتج لحساب احتياجه.",
+  rowMaterialMissingId: "مادة بدون معرِّف في أحد السطور.",
+  rowMaterialNotFound: "مادة غير موجودة في أحد السطور.",
+  unknownAccessLevel: "مستوى الصلاحية غير معروف.",
+  unknownSupplier: "مورد المادة غير معروف.",
+  unknownUnitKind: "نوع الوحدة غير معروف.",
+};
+
+export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, string> = {
+  unknownBasis: "Unknown calculation basis.",
+  runLabelRequired: "A run name is required.",
+  priceMustBePositive: "A price must be greater than zero.",
+  unknownCurrency: "Unknown currency.",
+  qtyMustBePositive: "A quantity must be greater than zero.",
+  materialNotFound: "No such material.",
+  materialRequired: "A material is required.",
+  materialAndLocationRequired: "A material and a location are both required.",
+  productNotFound: "No such product.",
+  hrIdRequired: "An employee id is required.",
+  exclusionReasonRequired: "A reason for excluding the run is required.",
+  fxRateMustBePositive: "An exchange rate must be greater than zero.",
+  noProductToPlan: "There is no product to plan for.",
+  rowMaterialMissingId: "One of the rows has a material with no id.",
+  rowMaterialNotFound: "One of the rows names a material that does not exist.",
+  unknownAccessLevel: "Unknown access level.",
+  unknownSupplier: "Unknown material supplier.",
+  unknownUnitKind: "Unknown unit kind.",
+};
+
+/**
+ * The two refusals that NAME A MATERIAL, so they cannot live in the flat `errors` map.
+ *
+ * They are kept here with every other string for the reason the whole catalogue exists: both were
+ * written as Arabic template literals inside `service.ts`, where the double-quote guard in
+ * `tests/production-planning-strings.test.ts` could not see them, so an English reader hit a wall of
+ * Arabic on the two refusals that matter most — the only two that tell somebody what to go and fix.
+ * Found by the access sweep on 2026-10-06; the guard now reads backticks too.
+ *
+ * The list separator belongs to the language and not to the caller: Arabic joins on `، `, English on
+ * `, `. That is exactly the kind of detail a call site gets wrong once and nobody ever notices.
+ */
+export const PRODUCTION_PLANNING_REFUSALS = {
+  closingOverOpening: (materialName: string) =>
+    `${materialName}: رصيد آخر المدة أكبر من رصيد أول المدة زائد المُسلَّم.`,
+  unsettledSuppliers: (materialNames: readonly string[]) =>
+    `لا يمكن اعتماد الخطة قبل تحديد من يورد: ${materialNames.join("، ")}`,
+} as const;
+
+export const PRODUCTION_PLANNING_REFUSALS_EN: typeof PRODUCTION_PLANNING_REFUSALS = {
+  closingOverOpening: (materialName: string) =>
+    `${materialName}: the closing balance is larger than the opening balance plus what was delivered.`,
+  unsettledSuppliers: (materialNames: readonly string[]) =>
+    `The plan cannot be committed until somebody says who supplies: ${materialNames.join(", ")}`,
+};
+
+export type ProductionPlanningStrings = {
+  readonly lang: ProductionPlanningLanguage;
+  /** What the workspace root sets. The whole module flips direction, not just its text. */
+  readonly dir: "rtl" | "ltr";
+  /**
+   * The Arabic face stack, or `undefined` in English so the page's own type is used. A Latin page
+   * forced onto an Arabic-first stack reads as a different app from every other English screen.
+   */
+  readonly fontStack: string | undefined;
+  readonly t: Record<ProductionPlanningStringKey, string>;
+  readonly errors: Record<ProductionPlanningErrorKey, string>;
+  /** The refusals that name a material, and so own their own list separator. */
+  readonly refusals: typeof PRODUCTION_PLANNING_REFUSALS;
+  readonly tabs: readonly { key: ProductionPlanningTabKey; label: string }[];
+  readonly supplierLabels: Record<"sato" | "factory" | "shared_unsettled", string>;
+  readonly basisLabels: Record<"per_dose" | "per_packaging_set" | "per_good_unit" | "per_sample_unit", string>;
+  readonly severityLabels: Record<"out_of_stock" | "below_threshold" | "approaching", string>;
+  readonly unitLabel: (unit: string | null | undefined) => string;
+  readonly plannerSentence: typeof buildPlannerSentence;
+};
+
+const AR_BUNDLE: ProductionPlanningStrings = {
+  basisLabels: BASIS_LABELS,
+  dir: "rtl",
+  errors: PRODUCTION_PLANNING_ERRORS,
+  fontStack: PRODUCTION_PLANNING_FONT_STACK,
+  lang: "ar",
+  plannerSentence: buildPlannerSentence,
+  refusals: PRODUCTION_PLANNING_REFUSALS,
+  severityLabels: ALARM_SEVERITY_LABELS,
+  supplierLabels: SUPPLIER_LABELS,
+  t: PP,
+  tabs: PRODUCTION_PLANNING_TABS,
+  unitLabel: unitLabelAr,
+};
+
+const EN_BUNDLE: ProductionPlanningStrings = {
+  basisLabels: BASIS_LABELS_EN,
+  dir: "ltr",
+  errors: PRODUCTION_PLANNING_ERRORS_EN,
+  fontStack: undefined,
+  lang: "en",
+  plannerSentence: buildPlannerSentenceEn,
+  refusals: PRODUCTION_PLANNING_REFUSALS_EN,
+  severityLabels: ALARM_SEVERITY_LABELS_EN,
+  supplierLabels: SUPPLIER_LABELS_EN,
+  t: PP_EN,
+  tabs: PRODUCTION_PLANNING_TABS_EN,
+  unitLabel: unitLabelEn,
+};
+
+/**
+ * Everything the screen and the workbook read, for one language.
+ *
+ * ONE accessor and not two imports per call site: the whole point of the toggle is that nothing can
+ * render half the module in the other language, and the way that happens is a component reaching
+ * for `PP` directly because it only needed one word. Both bundles are module-level constants, so
+ * this allocates nothing per render and is safe to call inside one.
+ */
+export function productionPlanningStrings(lang: ProductionPlanningLanguage): ProductionPlanningStrings {
+  return lang === "en" ? EN_BUNDLE : AR_BUNDLE;
 }
