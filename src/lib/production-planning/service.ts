@@ -67,7 +67,13 @@ import {
   type PlanRequestMode,
   type UnitKind,
 } from "./rules";
-import { buildPlannerSentence, formatNumberLatin, PP } from "./strings";
+import {
+  coerceProductionPlanningLanguage,
+  formatNumberLatin,
+  PP,
+  type ProductionPlanningErrorKey,
+  productionPlanningStrings,
+} from "./strings";
 
 const T = {
   products: "prodplan_products",
@@ -492,6 +498,35 @@ async function loadLearning(): Promise<Map<string, MaterialLearning>> {
 
 // ── Computing one plan ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The validation messages for THIS request's language.
+ *
+ * Every write body carries `lang` (the workspace's own `post` puts it there), and an unreadable
+ * or missing value is Arabic — the language the module was specified in. Taking it off the body
+ * rather than threading a parameter through keeps every throw site one expression long.
+ */
+function stringsFor(body: { readonly lang?: unknown } | Record<string, unknown>) {
+  return productionPlanningStrings(coerceProductionPlanningLanguage((body as { lang?: unknown }).lang));
+}
+
+function errorsFor(body: { readonly lang?: unknown } | Record<string, unknown>): Record<ProductionPlanningErrorKey, string> {
+  return stringsFor(body).errors;
+}
+
+/**
+ * The material's name in the reader's own language.
+ *
+ * Both names are stored on every material, so nothing is translated here — and an English name that
+ * was never filled in falls back to the Arabic rather than leaving the sentence naming nothing,
+ * which is the one outcome that makes a refusal useless.
+ */
+function materialNameFor(
+  body: { readonly lang?: unknown } | Record<string, unknown>,
+  material: { readonly nameAr: string; readonly nameEn: string },
+): string {
+  return stringsFor(body).lang === "en" ? material.nameEn || material.nameAr : material.nameAr;
+}
+
 export type PlanRequestInput = {
   readonly productId?: unknown;
   readonly mode?: unknown;
@@ -501,13 +536,25 @@ export type PlanRequestInput = {
   readonly overridePct?: unknown;
   /** Per material, what he has decided to deliver — keyed by material id, as a decimal string. */
   readonly willSendByMaterialId?: unknown;
+  /**
+   * Which language the SENTENCE under the tiles is built in, since the owner chose the module's
+   * language with a toggle (2026-10-06). Anything other than `"en"` is Arabic, which keeps a
+   * missing or unknown value on the language the module was specified in.
+   *
+   * Only the sentence: every other word in this payload is either data (an Arabic material name,
+   * which is the material's actual name and not a translation) or a key the screen looks up in its
+   * own catalogue. The screen builds its own copy of this sentence from the bundle it is rendering
+   * in; this one is what the WORKBOOK's header line reads, so the sheet cannot be in one language
+   * and its title in the other.
+   */
+  readonly lang?: unknown;
 };
 
 export function parsePlanRequest(body: PlanRequestInput, data: ProductionPlanningData) {
   const productId = asText(body.productId) ?? data.products[0]?.id ?? null;
-  if (!productId) throw new ProductionPlanningInputError("لا يوجد منتج لحساب احتياجه.", "productId");
+  if (!productId) throw new ProductionPlanningInputError(errorsFor(body).noProductToPlan, "productId");
   const product = data.products.find((candidate) => candidate.id === productId);
-  if (!product) throw new ProductionPlanningInputError("المنتج غير موجود.", "productId");
+  if (!product) throw new ProductionPlanningInputError(errorsFor(body).productNotFound, "productId");
 
   const mode = (PLAN_REQUEST_MODES.find((candidate) => candidate === body.mode) ?? "total_boxes") as PlanRequestMode;
   const requestedQty = parseWholeCount(asScalar(body.requestedQty) ?? 0, "requestedQty", { min: BigInt(1), max: BigInt(100_000_000) });
@@ -735,7 +782,7 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
 
   // Grouped Latin digits, built here rather than in the component, so the sentence under the tiles
   // and the workbook's own header line read identically.
-  const sentence = buildPlannerSentence({
+  const sentence = productionPlanningStrings(coerceProductionPlanningLanguage(asScalar(body.lang))).plannerSentence({
     runs: formatNumberLatin(run.runs),
     runVolumeLitres: formatNumberLatin(litres(product.geometry.runVolumeMl)),
     totalVolumeLitres: formatNumberLatin(litres(run.totalVolumeMl)),
@@ -1025,10 +1072,10 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
   const materialId = asText(body.materialId);
   const locationId = asText(body.locationId);
   if (!materialId || !locationId) {
-    throw new ProductionPlanningInputError("المادة والموقع مطلوبان.", "materialId");
+    throw new ProductionPlanningInputError(errorsFor(body).materialAndLocationRequired, "materialId");
   }
   const unitKind = UNIT_KINDS.find((candidate) => candidate === body.unitKind);
-  if (!unitKind) throw new ProductionPlanningInputError("نوع الوحدة غير معروف.", "unitKind");
+  if (!unitKind) throw new ProductionPlanningInputError(errorsFor(body).unknownUnitKind, "unitKind");
   const qty = parseNonNegativeQty(asScalar(body.qty), "qty");
   const asOfDate = asText(body.asOfDate) ?? todayCairo();
   const source = asText(body.source) ?? "factory_report";
@@ -1071,13 +1118,13 @@ export async function addMaterialPrice(access: AccessContext, body: Record<strin
   await assertWrite(access);
   const who = actor(access);
   const materialId = asText(body.materialId);
-  if (!materialId) throw new ProductionPlanningInputError("المادة مطلوبة.", "materialId");
+  if (!materialId) throw new ProductionPlanningInputError(errorsFor(body).materialRequired, "materialId");
   const unitKind = UNIT_KINDS.find((candidate) => candidate === body.unitKind);
-  if (!unitKind) throw new ProductionPlanningInputError("نوع الوحدة غير معروف.", "unitKind");
+  if (!unitKind) throw new ProductionPlanningInputError(errorsFor(body).unknownUnitKind, "unitKind");
   const currency: Currency | undefined = body.currency === "USD" ? "USD" : body.currency === "EGP" ? "EGP" : undefined;
-  if (!currency) throw new ProductionPlanningInputError("العملة غير معروفة.", "currency");
+  if (!currency) throw new ProductionPlanningInputError(errorsFor(body).unknownCurrency, "currency");
   const price = parseNonNegativeQty(asScalar(body.pricePerDisplayUnit), "pricePerDisplayUnit");
-  if (price <= BigInt(0)) throw new ProductionPlanningInputError("السعر يجب أن يكون أكبر من صفر.", "pricePerDisplayUnit");
+  if (price <= BigInt(0)) throw new ProductionPlanningInputError(errorsFor(body).priceMustBePositive, "pricePerDisplayUnit");
   const effectiveFrom = asText(body.effectiveFrom) ?? todayCairo();
 
   const db = getSupabaseAdmin();
@@ -1136,10 +1183,10 @@ export async function recordRun(access: AccessContext, body: Record<string, unkn
 
   const productId = asText(body.productId) ?? data.products[0]?.id ?? null;
   const product = data.products.find((candidate) => candidate.id === productId);
-  if (!product) throw new ProductionPlanningInputError("المنتج غير موجود.", "productId");
+  if (!product) throw new ProductionPlanningInputError(errorsFor(body).productNotFound, "productId");
 
   const runLabel = asText(body.runLabel);
-  if (!runLabel) throw new ProductionPlanningInputError("اسم التشغيلة مطلوب.", "runLabel");
+  if (!runLabel) throw new ProductionPlanningInputError(errorsFor(body).runLabelRequired, "runLabel");
   const runsCount = parseWholeCount(asScalar(body.runsCount) ?? 1, "runsCount", { min: BigInt(1), max: BigInt(1000) });
   const actualGoodUnits = parseWholeCount(asScalar(body.actualGoodUnits) ?? 0, "actualGoodUnits", { min: BigInt(0) });
   const actualSampleUnits = parseWholeCount(asScalar(body.actualSampleUnits) ?? 0, "actualSampleUnits", { min: BigInt(0) });
@@ -1147,7 +1194,7 @@ export async function recordRun(access: AccessContext, body: Record<string, unkn
   const isExcluded = body.isExcludedFromLearning === true;
   const exclusionReason = asText(body.exclusionReason);
   if (isExcluded && !exclusionReason) {
-    throw new ProductionPlanningInputError("سبب الاستثناء مطلوب.", "exclusionReason");
+    throw new ProductionPlanningInputError(errorsFor(body).exclusionReasonRequired, "exclusionReason");
   }
 
   // The theory this run is compared against, computed from the geometry it actually ran at.
@@ -1189,15 +1236,15 @@ export async function recordRun(access: AccessContext, body: Record<string, unkn
   const lines = Array.isArray(body.materials) ? (body.materials as Record<string, unknown>[]) : [];
   const rows = lines.map((line) => {
     const materialId = asText(line.materialId);
-    if (!materialId) throw new ProductionPlanningInputError("مادة بدون معرِّف في أحد السطور.", "materials");
+    if (!materialId) throw new ProductionPlanningInputError(errorsFor(body).rowMaterialMissingId, "materials");
     const material = data.materials.find((candidate) => candidate.id === materialId);
-    if (!material) throw new ProductionPlanningInputError("مادة غير موجودة في أحد السطور.", "materials");
+    if (!material) throw new ProductionPlanningInputError(errorsFor(body).rowMaterialNotFound, "materials");
     const opening = parseNonNegativeQty(asScalar(line.openingQty) ?? "0", "openingQty");
     const delivered = parseNonNegativeQty(asScalar(line.deliveredQty) ?? "0", "deliveredQty");
     const closing = parseNonNegativeQty(asScalar(line.closingQty) ?? "0", "closingQty");
     if (closing > opening + delivered) {
       throw new ProductionPlanningInputError(
-        `${material.nameAr}: رصيد آخر المدة أكبر من رصيد أول المدة زائد المُسلَّم.`,
+        stringsFor(body).refusals.closingOverOpening(materialNameFor(body, material)),
         "closingQty",
       );
     }
@@ -1304,7 +1351,7 @@ export async function setManualFxRate(access: AccessContext, body: Record<string
   const who = actor(access);
   const rateDate = asText(body.rateDate) ?? todayCairo();
   const rate = parseNonNegativeQty(asScalar(body.usdToEgp), "usdToEgp");
-  if (rate <= BigInt(0)) throw new ProductionPlanningInputError("سعر الصرف يجب أن يكون أكبر من صفر.", "usdToEgp");
+  if (rate <= BigInt(0)) throw new ProductionPlanningInputError(errorsFor(body).fxRateMustBePositive, "usdToEgp");
 
   const { error } = await getSupabaseAdmin()
     .from(T.fx)
@@ -1339,10 +1386,10 @@ export async function saveMaterialAndComposition(access: AccessContext, body: Re
   const who = actor(access);
   const db = getSupabaseAdmin();
   const materialId = asText(body.materialId);
-  if (!materialId) throw new ProductionPlanningInputError("المادة مطلوبة.", "materialId");
+  if (!materialId) throw new ProductionPlanningInputError(errorsFor(body).materialRequired, "materialId");
 
   const previous = await db.from(T.materials).select(MATERIAL_COLUMNS).eq("id", materialId).maybeSingle();
-  if (!previous.data) throw new ProductionPlanningInputError("المادة غير موجودة.", "materialId");
+  if (!previous.data) throw new ProductionPlanningInputError(errorsFor(body).materialNotFound, "materialId");
 
   const materialPatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (typeof body.isImported === "boolean") materialPatch.is_imported = body.isImported;
@@ -1372,10 +1419,10 @@ export async function saveMaterialAndComposition(access: AccessContext, body: Re
   if (productId && asText(body.qtyPerBasis) !== null) {
     const basis = COMPOSITION_BASES.find((candidate) => candidate === body.basis);
     const supplier = MATERIAL_SUPPLIERS.find((candidate) => candidate === body.supplier);
-    if (!basis) throw new ProductionPlanningInputError("أساس الحساب غير معروف.", "basis");
-    if (!supplier) throw new ProductionPlanningInputError("مورد المادة غير معروف.", "supplier");
+    if (!basis) throw new ProductionPlanningInputError(errorsFor(body).unknownBasis, "basis");
+    if (!supplier) throw new ProductionPlanningInputError(errorsFor(body).unknownSupplier, "supplier");
     const qtyPerBasis = parseNonNegativeQty(asScalar(body.qtyPerBasis), "qtyPerBasis");
-    if (qtyPerBasis <= BigInt(0)) throw new ProductionPlanningInputError("الكمية يجب أن تكون أكبر من صفر.", "qtyPerBasis");
+    if (qtyPerBasis <= BigInt(0)) throw new ProductionPlanningInputError(errorsFor(body).qtyMustBePositive, "qtyPerBasis");
     const effectiveFrom = asText(body.effectiveFrom) ?? todayCairo();
 
     const { error: closeError } = await db
@@ -1444,7 +1491,9 @@ export async function savePlan(access: AccessContext, body: Record<string, unkno
     // The database refuses `shared_unsettled` on a committed line, so catch it here with a sentence
     // somebody can act on rather than letting a constraint produce a 500.
     throw new ProductionPlanningInputError(
-      `لا يمكن اعتماد الخطة قبل تحديد من يورد: ${unsettledInBuyList.map((row) => row.nameAr).join("، ")}`,
+      stringsFor(body).refusals.unsettledSuppliers(
+        unsettledInBuyList.map((row) => materialNameFor(body, row)),
+      ),
       "supplier",
     );
   }
@@ -1556,7 +1605,7 @@ export async function saveAccessGrant(access: AccessContext, body: Record<string
   await assertWrite(access);
   const who = actor(access);
   const hrId = asText(body.hrId)?.toUpperCase() ?? null;
-  if (!hrId) throw new ProductionPlanningInputError("رقم الموظف مطلوب.", "hrId");
+  if (!hrId) throw new ProductionPlanningInputError(errorsFor(body).hrIdRequired, "hrId");
   const db = getSupabaseAdmin();
   const previous = await db.from(T.grants).select("id, hr_id, level, note").eq("hr_id", hrId).maybeSingle();
 
@@ -1575,7 +1624,7 @@ export async function saveAccessGrant(access: AccessContext, body: Record<string
   }
 
   const level = body.level === "full" ? "full" : body.level === "read" ? "read" : null;
-  if (!level) throw new ProductionPlanningInputError("مستوى الصلاحية غير معروف.", "level");
+  if (!level) throw new ProductionPlanningInputError(errorsFor(body).unknownAccessLevel, "level");
 
   const { error } = await db
     .from(T.grants)

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import {
   ProductionPlanningHeader,
+  ProductionPlanningLanguageProvider,
   ProductionPlanningWorkspace,
 } from "@/components/production-planning/production-planning-workspace";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
@@ -40,9 +41,11 @@ export default async function AdminProductionPlanningPage() {
   }
 
   return (
-    <div className="space-y-6 p-6 sm:p-8">
-      <ProductionPlanningHeader />
-      <ProductionPlanningWorkspace />
-    </div>
+    <ProductionPlanningLanguageProvider>
+      <div className="space-y-6 p-6 sm:p-8">
+        <ProductionPlanningHeader />
+        <ProductionPlanningWorkspace />
+      </div>
+    </ProductionPlanningLanguageProvider>
   );
 }

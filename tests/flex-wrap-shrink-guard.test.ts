@@ -67,6 +67,18 @@ const REVIEWED_UNRESOLVABLE: ReadonlyArray<{ file: string; marks: string; verdic
     marks: "border-b border-phx-line bg-white",
     verdict: "C — a full-width bar inside the page's `flex flex-col` shell.",
   },
+  {
+    file: "src/components/production-planning/production-planning-workspace.tsx",
+    marks: "shrink-0 flex-wrap items-center gap-1",
+    verdict:
+      "C — the language toggle is the root of its own component, rendered by "
+      + "ProductionPlanningHeader inside `flex flex-col gap-3 pb-4 sm:flex-row …`. At the width "
+      + "this rule is about the `sm:` prefix is inactive, so the parent is a COLUMN and shrink-0 "
+      + "governs the toggle's HEIGHT, not its width. Above 640px the parent is a row whose other "
+      + "child is `min-w-0`, so the row shrinks there instead of overflowing — measured in a "
+      + "browser at 375px, 1024px and 1280px in both shells and both languages, 40 rows, no "
+      + "horizontal scroll (`scripts/measure-production-planning-fit.mjs`).",
+  },
 ];
 
 type Site = { file: string; line: number; own: string; parent: string | null };

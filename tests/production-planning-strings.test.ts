@@ -3,13 +3,27 @@ import { readFileSync } from "node:fs";
 
 import {
   ALARM_SEVERITY_LABELS,
+  ALARM_SEVERITY_LABELS_EN,
   BASIS_LABELS,
+  BASIS_LABELS_EN,
+  buildAlarmEmailSummary,
   buildPlannerSentence,
+  buildPlannerSentenceEn,
+  coerceProductionPlanningLanguage,
   formatNumberLatin,
   PP,
+  PP_EN,
+  PRODUCTION_PLANNING_ERRORS,
+  PRODUCTION_PLANNING_ERRORS_EN,
+  PRODUCTION_PLANNING_DEFAULT_LANGUAGE,
   PRODUCTION_PLANNING_NUMBER_LOCALE,
+  PRODUCTION_PLANNING_REFUSALS,
+  PRODUCTION_PLANNING_REFUSALS_EN,
   PRODUCTION_PLANNING_TABS,
+  PRODUCTION_PLANNING_TABS_EN,
+  productionPlanningStrings,
   SUPPLIER_LABELS,
+  SUPPLIER_LABELS_EN,
 } from "../src/lib/production-planning/strings.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -72,6 +86,18 @@ const GENDERED_FORMS: readonly { form: string; why: string }[] = [
   { form: "اخترت", why: "second person, past" },
 ];
 
+/** Every renderable ENGLISH string, with the key it came from. */
+function everyEnglishString(): { key: string; value: string }[] {
+  const out: { key: string; value: string }[] = [];
+  for (const [key, value] of Object.entries(PP_EN)) out.push({ key: `PP_EN.${key}`, value });
+  for (const tab of PRODUCTION_PLANNING_TABS_EN) out.push({ key: `tabEn.${tab.key}`, value: tab.label });
+  for (const [key, value] of Object.entries(SUPPLIER_LABELS_EN)) out.push({ key: `supplierEn.${key}`, value });
+  for (const [key, value] of Object.entries(BASIS_LABELS_EN)) out.push({ key: `basisEn.${key}`, value });
+  for (const [key, value] of Object.entries(ALARM_SEVERITY_LABELS_EN)) out.push({ key: `severityEn.${key}`, value });
+  for (const [key, value] of Object.entries(PRODUCTION_PLANNING_ERRORS_EN)) out.push({ key: `errEn.${key}`, value });
+  return out;
+}
+
 /** Every renderable string in the module, with the key it came from. */
 function everyString(): { key: string; value: string }[] {
   const out: { key: string; value: string }[] = [];
@@ -80,6 +106,7 @@ function everyString(): { key: string; value: string }[] {
   for (const [key, value] of Object.entries(SUPPLIER_LABELS)) out.push({ key: `supplier.${key}`, value });
   for (const [key, value] of Object.entries(BASIS_LABELS)) out.push({ key: `basis.${key}`, value });
   for (const [key, value] of Object.entries(ALARM_SEVERITY_LABELS)) out.push({ key: `severity.${key}`, value });
+  for (const [key, value] of Object.entries(PRODUCTION_PLANNING_ERRORS)) out.push({ key: `err.${key}`, value });
   return out;
 }
 
@@ -247,5 +274,194 @@ export function runProductionPlanningStringsTests() {
   assert.ok(
     PP.exportHint.includes("المعادلات"),
     "the export says it carries the formulas — the thing the owner actually asked for",
+  );
+
+  // ── The toggle: two languages, and the English half is a FULL catalogue ───────────────────────
+  //
+  // The owner chose the language with a toggle (2026-10-06, his own words: he wants the module in
+  // English or Arabic and chooses by switching one). So English is not a courtesy translation of a
+  // few headings — it is a second complete screen, and a key present in one catalogue and missing
+  // from the other renders one Arabic word in the middle of an English page. The type already makes
+  // that a compile error; this asserts it at run time too, because a `Record` can be satisfied with
+  // an empty string.
+  const english = everyEnglishString();
+  const arabicKeys = Object.keys(PP).sort();
+  const englishKeys = Object.keys(PP_EN).sort();
+  assert.deepEqual(englishKeys, arabicKeys, "every Arabic key has an English string and the reverse");
+  // The SERVER's validation messages are the same promise: a refusal is the one thing a reader only
+  // ever sees when something has already gone wrong, and an Arabic sentence arriving on an English
+  // screen at that moment reads as a broken page. Every message the service can throw is in both.
+  assert.deepEqual(
+    Object.keys(PRODUCTION_PLANNING_ERRORS_EN).sort(),
+    Object.keys(PRODUCTION_PLANNING_ERRORS).sort(),
+    "every server validation message exists in both languages",
+  );
+  assert.ok(
+    Object.keys(PRODUCTION_PLANNING_ERRORS).length >= 18,
+    `the service throws more messages than this catalogue holds — found ${Object.keys(PRODUCTION_PLANNING_ERRORS).length}`,
+  );
+  // And the count is not the guard — the SOURCE is. A new throw site written as a literal would
+  // pass every assertion above while being the exact defect they exist to stop, so the service is
+  // scanned for one: `errorsFor(body).<key>` is the only way a message reaches a reader from there.
+  //
+  // IT READS BACKTICKS AS WELL AS QUOTES, and that is not tidiness. The first version matched only
+  // `"..."`, and the two refusals that NAME A MATERIAL were written as template literals — so they
+  // sailed through every assertion above and shipped Arabic to an English reader on the exact two
+  // refusals that tell somebody what to go and fix. Found by the access sweep, 2026-10-06. A
+  // sentence that interpolates belongs in `refusals`, which is why that half of the bundle exists.
+  const serviceCode = stripComments(readFileSync("src/lib/production-planning/service.ts", "utf8"));
+  const literalThrows = [
+    ...serviceCode.matchAll(/new ProductionPlanningInputError\(\s*"([^"]*)"/g),
+    ...serviceCode.matchAll(/new ProductionPlanningInputError\(\s*`([^`]*)`/g),
+  ]
+    .map((match) => match[1] ?? "")
+    .filter((message) => /[\u0600-\u06FF]/.test(message));
+  assert.deepEqual(
+    literalThrows,
+    [],
+    `every server message comes from the catalogue, so it exists in both languages — found ${literalThrows.length} written as an Arabic literal`,
+  );
+  // The refusals that name a material: present in both languages, different in both, and each owning
+  // its own list separator — Arabic joins on the Arabic comma, English on a plain one.
+  const twoMaterials = ["Ivy extract", "Sorbitol"] as const;
+  assert.notEqual(
+    PRODUCTION_PLANNING_REFUSALS.unsettledSuppliers(twoMaterials),
+    PRODUCTION_PLANNING_REFUSALS_EN.unsettledSuppliers(twoMaterials),
+    "the unsettled-supplier refusal must differ between the languages",
+  );
+  assert.ok(
+    PRODUCTION_PLANNING_REFUSALS.unsettledSuppliers(twoMaterials).includes("\u060C "),
+    "the Arabic refusal joins its material list on the Arabic comma",
+  );
+  for (const built of [
+    PRODUCTION_PLANNING_REFUSALS_EN.unsettledSuppliers(["Sorbitol"]),
+    PRODUCTION_PLANNING_REFUSALS_EN.closingOverOpening("Sorbitol"),
+  ]) {
+    assert.ok(!/[\u0600-\u06FF]/.test(built), `the English refusal carries no Arabic: ${built}`);
+  }
+  for (const lang of ["ar", "en"] as const) {
+    assert.equal(
+      typeof productionPlanningStrings(lang).refusals.closingOverOpening,
+      "function",
+      `the ${lang} bundle must carry the refusals, or a call site reaches for the other language`,
+    );
+  }
+
+  assert.ok(arabicKeys.length > 150, `the catalogue should be the whole module, found ${arabicKeys.length} keys`);
+  for (const { key, value } of english) {
+    assert.ok(value.trim().length > 0, `${key} is empty — a blank label is a hole in the English screen`);
+  }
+
+  // No Arabic in the English half. This is the one that catches a key copied across and left
+  // untranslated, which the key-parity check above cannot see.
+  for (const { key, value } of english) {
+    assert.ok(
+      !/[\u0600-\u06FF]/.test(value),
+      `${key} still carries Arabic text: ${JSON.stringify(value)}`,
+    );
+  }
+
+  // And the two rules that hold whatever language is showing.
+  for (const { key, value } of english) {
+    for (const bad of ["…", "..."]) {
+      assert.ok(!value.includes(bad), `${key} must not truncate with an ellipsis: ${JSON.stringify(value)}`);
+    }
+    assert.ok(!/[٠-٩۰-۹]/.test(value), `${key} must not carry Arabic-Indic digits: ${JSON.stringify(value)}`);
+  }
+
+  // ── The bundle a surface actually reads ───────────────────────────────────────────────────────
+  assert.equal(PRODUCTION_PLANNING_DEFAULT_LANGUAGE, "ar", "Arabic is the language the owner specified the module in");
+  const ar = productionPlanningStrings("ar");
+  const en = productionPlanningStrings("en");
+  assert.equal(ar.lang, "ar");
+  assert.equal(ar.dir, "rtl");
+  assert.equal(ar.t, PP, "the Arabic bundle serves the Arabic catalogue itself, never a copy that can drift");
+  assert.equal(en.lang, "en");
+  assert.equal(en.dir, "ltr", "English is a LEFT-TO-RIGHT layout, not Arabic with English words in it");
+  assert.equal(en.t, PP_EN);
+  assert.equal(
+    en.fontStack,
+    undefined,
+    "an English page uses the app's own type — an Arabic-first face stack would make it read as a different app",
+  );
+  assert.ok(ar.fontStack && ar.fontStack.length > 0, "and the Arabic one names its own faces");
+  assert.equal(ar.unitLabel("litre"), ar.t.unitLitre);
+  assert.equal(en.unitLabel("litre"), en.t.unitLitre);
+  assert.equal(ar.errors, PRODUCTION_PLANNING_ERRORS);
+  assert.equal(en.errors, PRODUCTION_PLANNING_ERRORS_EN);
+
+  // An unknown stored value falls back to Arabic rather than to a blank screen: the choice lives in
+  // `localStorage`, which anything can write, and `?lang=` on the export route is a query string.
+  assert.equal(coerceProductionPlanningLanguage("en"), "en");
+  assert.equal(coerceProductionPlanningLanguage("ar"), "ar");
+  for (const junk of [null, undefined, "", "EN", "fr", "ar-EG", 7, {}, []]) {
+    assert.equal(
+      coerceProductionPlanningLanguage(junk),
+      "ar",
+      `an unreadable language must fall back to Arabic, not render nothing: ${JSON.stringify(junk)}`,
+    );
+  }
+
+  // ── The English tabs and the English sentence ────────────────────────────────────────────────
+  assert.deepEqual(
+    PRODUCTION_PLANNING_TABS_EN.map((tab) => tab.key),
+    PRODUCTION_PLANNING_TABS.map((tab) => tab.key),
+    "the same five tabs in the same order — the toggle changes the words, never the module",
+  );
+  for (const tab of PRODUCTION_PLANNING_TABS_EN) {
+    assert.ok(tab.label.trim().length > 0 && tab.label.length <= 24, `${tab.key} needs a short English label`);
+  }
+
+  const sentenceEn = buildPlannerSentenceEn({
+    runs: "8",
+    runVolumeLitres: "1,250",
+    totalVolumeLitres: "10,000",
+    goodUnits: "96,000",
+    goodUnitMl: "100",
+    sampleUnits: "10,000",
+    sampleUnitMl: "40",
+    surplusBoxes: "6,000",
+    shortfallBoxes: null,
+  });
+  assert.ok(!/[\u0600-\u06FF]/.test(sentenceEn), `the English sentence carries no Arabic: ${sentenceEn}`);
+  assert.ok(sentenceEn.includes("8") && sentenceEn.includes("96,000") && sentenceEn.includes("10,000"));
+  assert.ok(
+    sentenceEn.includes("6,000"),
+    `the surplus over the ask is SAID in English too, for the same reason: ${sentenceEn}`,
+  );
+  const shortEn = buildPlannerSentenceEn({
+    runs: "7",
+    runVolumeLitres: "1,250",
+    totalVolumeLitres: "8,750",
+    goodUnits: "83,500",
+    goodUnitMl: "100",
+    sampleUnits: "10,000",
+    sampleUnitMl: "40",
+    surplusBoxes: null,
+    shortfallBoxes: "6,500",
+  });
+  assert.ok(shortEn.includes("6,500"), `and one run fewer says what it leaves short: ${shortEn}`);
+  const noSamplesEn = buildPlannerSentenceEn({
+    runs: "9",
+    runVolumeLitres: "1,250",
+    totalVolumeLitres: "11,250",
+    goodUnits: "112,500",
+    goodUnitMl: "100",
+    sampleUnits: "0",
+    sampleUnitMl: "40",
+    surplusBoxes: "0",
+    shortfallBoxes: null,
+  });
+  assert.ok(!noSamplesEn.includes("sample"), `with no samples the English sentence does not mention them: ${noSamplesEn}`);
+
+  // ── The reorder EMAIL stays Arabic, whichever way the toggle is set ───────────────────────────
+  //
+  // Deliberate, and not an oversight the toggle forgot: four named people were given an Arabic
+  // notification, nothing has been said about changing what lands in their inbox, and a screen
+  // preference on one reader's browser must not decide the language of somebody else's email.
+  const emailSummary = buildAlarmEmailSummary({ productNameAr: PP.moduleTitle, count: "3" });
+  assert.ok(
+    /[\u0600-\u06FF]/.test(emailSummary),
+    `the reorder email is Arabic by decision — the toggle is a screen preference: ${emailSummary}`,
   );
 }

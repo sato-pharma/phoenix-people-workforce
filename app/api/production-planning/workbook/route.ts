@@ -5,6 +5,10 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { productionPlanningErrorResponse } from "@/lib/production-planning/http";
 import { getProductionPlanningWorkspace } from "@/lib/production-planning/service";
 import {
+  coerceProductionPlanningLanguage,
+  productionPlanningStrings,
+} from "@/lib/production-planning/strings";
+import {
   buildProductionPlanningWorkbook,
   PRODUCTION_PLANNING_WORKBOOK_MEDIA_TYPE,
   productionPlanningWorkbookFilename,
@@ -36,9 +40,14 @@ export async function GET(request: Request) {
       requestedQty: url.searchParams.get("requestedQty") ?? undefined,
       sampleUnits: url.searchParams.get("sampleUnits") ?? undefined,
       overridePct: url.searchParams.get("overridePct") ?? undefined,
+      // The sheet's header sentence is built server-side, so the language has to arrive with the
+      // request — otherwise an English screen offers an Arabic-titled file.
+      lang: url.searchParams.get("lang") ?? undefined,
     });
     if (!workspace.plan) {
-      return NextResponse.json({ message: "لا يوجد منتج لحساب احتياجه." }, { status: 400 });
+      // In the language the download was asked for, like every other message this module shows.
+      const strings = productionPlanningStrings(coerceProductionPlanningLanguage(url.searchParams.get("lang")));
+      return NextResponse.json({ message: strings.errors.noProductToPlan }, { status: 400 });
     }
     await assertExportRateLimit({
       actor: access.loginId ?? access.hrId,
@@ -48,6 +57,7 @@ export async function GET(request: Request) {
 
     const { buffer, stats } = await buildProductionPlanningWorkbook(workspace, {
       actorName: access.loginId ?? access.hrId ?? null,
+      lang: url.searchParams.get("lang") ?? undefined,
     });
     return new NextResponse(buffer as unknown as BodyInit, {
       headers: {

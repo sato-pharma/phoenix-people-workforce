@@ -17,12 +17,10 @@ import {
 } from "@/lib/sales/sales-workbook-kit";
 
 import {
-  BASIS_LABELS,
+  coerceProductionPlanningLanguage,
   formatNumberLatin,
-  PP,
   PRODUCTION_PLANNING_WORKBOOK_FONT,
-  SUPPLIER_LABELS,
-  unitLabelAr,
+  productionPlanningStrings,
 } from "./strings";
 import type { WirePlan, WirePlanRow, WireWorkspace } from "./wire";
 
@@ -182,10 +180,20 @@ export type ProductionPlanningWorkbookStats = {
   readonly runs: string;
 };
 
-export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, options: { actorName?: string | null } = {}): Promise<{
+/**
+ * The language comes in as an option rather than being read from the catalogue at import time: the
+ * owner picks the module's language with a toggle, and a sheet in the other language from the screen
+ * that produced it is the one thing this export must not be.
+ */
+export async function buildProductionPlanningWorkbook(
+  workspace: WireWorkspace,
+  options: { actorName?: string | null; lang?: unknown } = {},
+): Promise<{
   buffer: Buffer;
   stats: ProductionPlanningWorkbookStats;
 }> {
+  const S = productionPlanningStrings(coerceProductionPlanningLanguage(options.lang));
+  const PPL = S.t;
   const plan: WirePlan | null = workspace.plan;
   if (!plan) throw new Error("No plan to export.");
   const product = workspace.products.find((candidate) => candidate.id === plan.productId) ?? workspace.products[0];
@@ -194,15 +202,15 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = systemIdentity.appName;
   workbook.created = new Date();
-  const sheet = workbook.addWorksheet(PP.sheetName);
+  const sheet = workbook.addWorksheet(PPL.sheetName);
 
-  bandHeader(sheet, COLUMN_COUNT, `${PP.moduleTitle} — ${product?.nameAr ?? ""}`.trim(), plan.sentence);
+  bandHeader(sheet, COLUMN_COUNT, `${PPL.moduleTitle} — ${product?.nameAr ?? ""}`.trim(), plan.sentence);
 
   // ── The typed inputs ───────────────────────────────────────────────────────────────────────────
   let row = 5;
-  sectionTitle(sheet, row, PP.sheetInputsTitle);
+  sectionTitle(sheet, row, PPL.sheetInputsTitle);
   row += 1;
-  labelCell(sheet, row, PP.productLabel);
+  labelCell(sheet, row, PPL.productLabel);
   const productCell = sheet.getCell(row, 2);
   productCell.value = product?.nameAr ?? "";
   productCell.font = { bold: true, color: { argb: BLACK }, size: 10.5 };
@@ -210,32 +218,32 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
   row += 1;
 
   const requestedRow = row;
-  labelCell(sheet, requestedRow, PP.sheetRequestedBoxes);
+  labelCell(sheet, requestedRow, PPL.sheetRequestedBoxes);
   inputCell(sheet, requestedRow, num(plan.requestedBoxes), UNITS_FMT);
   row += 1;
 
   const samplesRow = row;
-  labelCell(sheet, samplesRow, PP.sampleUnitsLabel);
+  labelCell(sheet, samplesRow, PPL.sampleUnitsLabel);
   inputCell(sheet, samplesRow, num(plan.sampleUnits), UNITS_FMT);
   row += 1;
 
   const runVolumeRow = row;
-  labelCell(sheet, runVolumeRow, PP.sheetRunVolumeMl);
+  labelCell(sheet, runVolumeRow, PPL.sheetRunVolumeMl);
   inputCell(sheet, runVolumeRow, num(product?.runVolumeMl), UNITS_FMT);
   row += 1;
 
   const goodMlRow = row;
-  labelCell(sheet, goodMlRow, PP.sheetGoodUnitMl);
+  labelCell(sheet, goodMlRow, PPL.sheetGoodUnitMl);
   inputCell(sheet, goodMlRow, num(product?.goodUnitMl), UNITS_FMT);
   row += 1;
 
   const sampleMlRow = row;
-  labelCell(sheet, sampleMlRow, PP.sheetSampleUnitMl);
+  labelCell(sheet, sampleMlRow, PPL.sheetSampleUnitMl);
   inputCell(sheet, sampleMlRow, num(product?.sampleUnitMl), UNITS_FMT);
   row += 1;
 
   const doseMlRow = row;
-  labelCell(sheet, doseMlRow, PP.sheetDoseMl);
+  labelCell(sheet, doseMlRow, PPL.sheetDoseMl);
   inputCell(sheet, doseMlRow, num(product?.doseMl), VALUE_FMT);
   row += 1;
 
@@ -243,12 +251,12 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
   // this sheet, because a model that assumed a box is one bottle would silently disagree with the
   // screen the day that changes.
   const unitsPerBoxRow = row;
-  labelCell(sheet, unitsPerBoxRow, PP.sheetUnitsPerBox);
+  labelCell(sheet, unitsPerBoxRow, PPL.sheetUnitsPerBox);
   inputCell(sheet, unitsPerBoxRow, Math.max(1, num(product?.unitsPerBox, 1)), UNITS_FMT);
   row += 1;
 
   const fxRow = row;
-  labelCell(sheet, fxRow, PP.fxRate);
+  labelCell(sheet, fxRow, PPL.fxRate);
   inputCell(sheet, fxRow, num(plan.totals.fxRate), VALUE_FMT);
   row += 2;
 
@@ -262,11 +270,11 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
   const FX = `$B$${fxRow}`;
 
   // ── What the module derives from them ──────────────────────────────────────────────────────────
-  sectionTitle(sheet, row, PP.sheetOutputsTitle);
+  sectionTitle(sheet, row, PPL.sheetOutputsTitle);
   row += 1;
 
   const goodRequestedRow = row;
-  labelCell(sheet, goodRequestedRow, PP.sheetGoodUnitsRequested);
+  labelCell(sheet, goodRequestedRow, PPL.sheetGoodUnitsRequested);
   formulaCell(
     sheet,
     goodRequestedRow,
@@ -277,7 +285,7 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
   row += 1;
 
   const neededVolumeRow = row;
-  labelCell(sheet, neededVolumeRow, PP.sheetNeededVolumeMl);
+  labelCell(sheet, neededVolumeRow, PPL.sheetNeededVolumeMl);
   formulaCell(
     sheet,
     neededVolumeRow,
@@ -293,12 +301,12 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
   // a run is whole, and 7.52 runs is eight runs — which is where the surplus two rows down comes
   // from and why the planner reports it rather than quietly answering for a different order.
   const runsRow = row;
-  labelCell(sheet, runsRow, PP.tileRuns);
+  labelCell(sheet, runsRow, PPL.tileRuns);
   formulaCell(sheet, runsRow, `ROUNDUP($B$${neededVolumeRow}/${RUN_VOLUME},0)`, num(plan.runs), UNITS_FMT);
   row += 1;
 
   const yieldRow = row;
-  labelCell(sheet, yieldRow, PP.tileYield);
+  labelCell(sheet, yieldRow, PPL.tileYield);
   formulaCell(
     sheet,
     yieldRow,
@@ -309,7 +317,7 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
   row += 1;
 
   const boxesRow = row;
-  labelCell(sheet, boxesRow, PP.sheetTotalBoxes);
+  labelCell(sheet, boxesRow, PPL.sheetTotalBoxes);
   formulaCell(
     sheet,
     boxesRow,
@@ -320,7 +328,7 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
   row += 1;
 
   const surplusRow = row;
-  labelCell(sheet, surplusRow, PP.tileSurplus);
+  labelCell(sheet, surplusRow, PPL.tileSurplus);
   formulaCell(
     sheet,
     surplusRow,
@@ -331,12 +339,12 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
   row += 1;
 
   const litresRow = row;
-  labelCell(sheet, litresRow, PP.sheetTotalVolumeLitres);
+  labelCell(sheet, litresRow, PPL.sheetTotalVolumeLitres);
   formulaCell(sheet, litresRow, `$B$${runsRow}*${RUN_VOLUME}/1000`, num(plan.totalVolumeLitres), VALUE_FMT);
   row += 1;
 
   const dosesRow = row;
-  labelCell(sheet, dosesRow, PP.sheetTotalDoses);
+  labelCell(sheet, dosesRow, PPL.sheetTotalDoses);
   formulaCell(sheet, dosesRow, `$B$${runsRow}*${RUN_VOLUME}/${DOSE_ML}`, num(plan.totalDoses), UNITS_FMT);
   row += 2;
 
@@ -368,12 +376,12 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
     const willSend = num(planRow.willSend);
 
     const basisText = planRow.basis
-      ? `${BASIS_LABELS[planRow.basis]} (${unitLabelAr(material?.baseUnit)})`.trim()
-      : PP.chipNoComposition;
+      ? `${S.basisLabels[planRow.basis]} (${S.unitLabel(material?.baseUnit)})`.trim()
+      : PPL.chipNoComposition;
 
     return [
-      `${planRow.nameAr} (${unitLabelAr(planRow.displayUnit)})`,
-      planRow.supplier ? SUPPLIER_LABELS[planRow.supplier] : PP.chipNoComposition,
+      `${planRow.nameAr} (${S.unitLabel(planRow.displayUnit)})`,
+      planRow.supplier ? S.supplierLabels[planRow.supplier] : PPL.chipNoComposition,
       basisText,
       qtyPerBasis,
       countRef ? F(countRef, basisCount) : 0,
@@ -406,24 +414,24 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
 
   const afterMaterials = writeTable(sheet, row, {
     columns: [
-      { label: PP.colMaterial, width: 30 },
-      { label: PP.sheetColSupplier, width: 16 },
-      { label: PP.sheetColBasisLabel, width: 22 },
-      { label: PP.sheetColQtyPerBasis, numFmt: "#,##0.000000", width: 15 },
-      { label: PP.sheetColBasisCount, numFmt: UNITS_FMT, width: 14 },
-      { label: PP.beforeOverage, numFmt: VALUE_FMT, width: 14 },
-      { label: PP.overageLabel, numFmt: PCT_FMT, width: 11 },
-      { label: PP.colNeeded, numFmt: VALUE_FMT, width: 14 },
-      { label: `${PP.colAvailable} — ${PP.atFactory}`, numFmt: VALUE_FMT, width: 14 },
-      { label: `${PP.colAvailable} — ${PP.atOwnStore}`, numFmt: VALUE_FMT, width: 14 },
-      { label: PP.toBuy, numFmt: VALUE_FMT, width: 14 },
-      { label: PP.willSend, numFmt: VALUE_FMT, width: 14 },
-      { label: PP.balanceAfter, numFmt: VALUE_FMT, width: 16 },
-      { label: PP.coverRuns, numFmt: VALUE_FMT, width: 12 },
+      { label: PPL.colMaterial, width: 30 },
+      { label: PPL.sheetColSupplier, width: 16 },
+      { label: PPL.sheetColBasisLabel, width: 22 },
+      { label: PPL.sheetColQtyPerBasis, numFmt: "#,##0.000000", width: 15 },
+      { label: PPL.sheetColBasisCount, numFmt: UNITS_FMT, width: 14 },
+      { label: PPL.beforeOverage, numFmt: VALUE_FMT, width: 14 },
+      { label: PPL.overageLabel, numFmt: PCT_FMT, width: 11 },
+      { label: PPL.colNeeded, numFmt: VALUE_FMT, width: 14 },
+      { label: `${PPL.colAvailable} — ${PPL.atFactory}`, numFmt: VALUE_FMT, width: 14 },
+      { label: `${PPL.colAvailable} — ${PPL.atOwnStore}`, numFmt: VALUE_FMT, width: 14 },
+      { label: PPL.toBuy, numFmt: VALUE_FMT, width: 14 },
+      { label: PPL.willSend, numFmt: VALUE_FMT, width: 14 },
+      { label: PPL.balanceAfter, numFmt: VALUE_FMT, width: 16 },
+      { label: PPL.coverRuns, numFmt: VALUE_FMT, width: 12 },
     ],
-    note: PP.exportHint,
+    note: PPL.exportHint,
     rows: tableRows,
-    title: PP.sheetMaterialsTitle,
+    title: PPL.sheetMaterialsTitle,
   });
 
   // D the recipe · G the overage · I and J the stock at each location · L what he decides to deliver.
@@ -452,10 +460,10 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
     const egpFormula =
       currency === "EGP" ? `B${excelRow}*C${excelRow}` : `B${excelRow}*C${excelRow}*${FX}`;
     return [
-      `${entry.planRow.nameAr} (${unitLabelAr(entry.planRow.displayUnit)})`,
+      `${entry.planRow.nameAr} (${S.unitLabel(entry.planRow.displayUnit)})`,
       F(`K${entry.excelRow}`, num(entry.planRow.toBuy)),
       price,
-      currency === "EGP" ? PP.currencyEgp : currency === "USD" ? PP.currencyUsd : "—",
+      currency === "EGP" ? PPL.currencyEgp : currency === "USD" ? PPL.currencyUsd : "—",
       F(usdFormula, num(entry.planRow.costUsd)),
       F(egpFormula, num(entry.planRow.costEgp)),
     ];
@@ -464,20 +472,20 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
   const costLastRow = costFirstRow + Math.max(0, costRows.length - 1);
   const afterCost = writeTable(sheet, afterMaterials, {
     columns: [
-      { label: PP.colMaterial, width: 30 },
-      { label: PP.toBuy, numFmt: VALUE_FMT, width: 14 },
-      { label: PP.sheetColPrice, numFmt: VALUE_FMT, width: 14 },
-      { label: PP.priceCurrency, width: 12 },
-      { label: PP.sheetColCostUsd, numFmt: VALUE_FMT, width: 16 },
-      { label: PP.sheetColCostEgp, numFmt: VALUE_FMT, width: 16 },
+      { label: PPL.colMaterial, width: 30 },
+      { label: PPL.toBuy, numFmt: VALUE_FMT, width: 14 },
+      { label: PPL.sheetColPrice, numFmt: VALUE_FMT, width: 14 },
+      { label: PPL.priceCurrency, width: 12 },
+      { label: PPL.sheetColCostUsd, numFmt: VALUE_FMT, width: 16 },
+      { label: PPL.sheetColCostEgp, numFmt: VALUE_FMT, width: 16 },
     ],
-    note: PP.sheetUnpricedNote,
+    note: PPL.sheetUnpricedNote,
     rows: costRows,
-    title: PP.sheetCostTitle,
+    title: PPL.sheetCostTitle,
     totals:
       costRows.length > 0
         ? [
-            PP.costTotal,
+            PPL.costTotal,
             null,
             null,
             null,
@@ -495,12 +503,21 @@ export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, 
   noteRow(
     sheet,
     stampRow,
-    `${PP.sheetGeneratedOn}: ${new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date())}` +
-      ` — ${PP.sheetGeneratedBy}: ${options.actorName ?? systemIdentity.appName}`,
+    `${PPL.sheetGeneratedOn}: ${new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date())}` +
+      ` — ${PPL.sheetGeneratedBy}: ${options.actorName ?? systemIdentity.appName}`,
   );
 
   // The direction and the face LAST, so every cell written above is covered by the one pass.
+  //
+  // The kit's helper is used for BOTH languages and then the view is flipped for English, rather
+  // than skipped: its other half is what normalises every cell's font to one family and strips the
+  // physical `left`/`right` alignments that fight a sheet's own direction, and an English sheet needs
+  // that pass just as much. Tahoma stays the face in both — it is the one family in the browser
+  // stack that ships with Excel everywhere, and Excel has no fallback list.
   applyRightToLeftSheet(sheet, { fontFace: PRODUCTION_PLANNING_WORKBOOK_FONT });
+  if (S.dir === "ltr") {
+    sheet.views = (sheet.views as ExcelJS.WorksheetView[]).map((view) => ({ ...view, rightToLeft: false }));
+  }
   sheet.getColumn(1).width = 34;
   sheet.getColumn(2).width = 18;
 

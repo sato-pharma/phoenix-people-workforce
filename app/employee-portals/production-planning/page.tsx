@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import {
   ProductionPlanningHeader,
+  ProductionPlanningLanguageProvider,
   ProductionPlanningWorkspace,
 } from "@/components/production-planning/production-planning-workspace";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
@@ -41,13 +42,24 @@ export default async function EmployeePortalProductionPlanningPage() {
     redirect("/employee-portals");
   }
 
+  // The provider wraps the SHELL, not its children: the header goes in the `hero` slot and the
+  // workspace in the children slot, so they are siblings in different props — and context resolves
+  // where an element is rendered, which for both of them is inside the shell. Wrapped any tighter,
+  // the toggle would move the workspace's language and leave the header in the other one.
   return (
-    <EmployeePortalPageShell
-      errorBoundaryTitle={PP.moduleTitle}
-      hero={<ProductionPlanningHeader />}
-      title={PP.moduleTitle}
-    >
-      <ProductionPlanningWorkspace />
-    </EmployeePortalPageShell>
+    <ProductionPlanningLanguageProvider>
+      {/* The SHELL's own two titles stay on the Arabic catalogue by name. They are server props on a
+          server component, so the toggle's context cannot reach them - and they are page chrome
+          rather than module text: the title the reader sees INSIDE the module is the header's, which
+          does follow the toggle. Left as the owner has had it rather than switched to English on
+          nobody's instruction. */}
+      <EmployeePortalPageShell
+        errorBoundaryTitle={PP.moduleTitle}
+        hero={<ProductionPlanningHeader />}
+        title={PP.moduleTitle}
+      >
+        <ProductionPlanningWorkspace />
+      </EmployeePortalPageShell>
+    </ProductionPlanningLanguageProvider>
   );
 }

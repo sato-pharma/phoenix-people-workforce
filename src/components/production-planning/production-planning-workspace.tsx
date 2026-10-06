@@ -37,6 +37,12 @@
  *
  * ── IT FITS THE SCREEN (AGENTS.md §4) ───────────────────────────────────────────────────────────
  *
+ * The five tab components are EXPORTED for `scripts/measure-production-planning-fit.mjs`, which
+ * renders them inside each shell's own container chain to measure the fit in the portal surface -
+ * the one the owner's own Super Admin session can never render, because each twin redirects the
+ * other shell's viewer to its sibling. Nothing else imports them, and nothing should: the workspace
+ * owns their state.
+ *
  * Four tables, every one `table-fixed` with a `<colgroup>` totalling exactly 100%, each paired with
  * a `lg:hidden` card list. No `overflow-x-*` anywhere in this file and no `min-w-[…]` floor: that
  * pairing IS the bug the golden rule names, because a scrolling wrapper absorbs the overflow and
@@ -67,7 +73,7 @@
  * will not break on its own.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -78,13 +84,13 @@ import {
 } from "@/components/admin/admin-design-tokens";
 import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 import {
-  BASIS_LABELS,
+  coerceProductionPlanningLanguage,
   formatNumberLatin,
-  PP,
-  PRODUCTION_PLANNING_FONT_STACK,
-  PRODUCTION_PLANNING_TABS,
-  SUPPLIER_LABELS,
-  unitLabelAr,
+  PRODUCTION_PLANNING_DEFAULT_LANGUAGE,
+  productionPlanningStrings,
+  type ProductionPlanningLanguage,
+  type ProductionPlanningStrings,
+  type ProductionPlanningStringKey,
   type ProductionPlanningTabKey,
 } from "@/lib/production-planning/strings";
 import type {
@@ -106,6 +112,18 @@ import type {
  */
 const RTL_HEADER_RAIL =
   "pointer-events-none absolute right-0 top-[0.3rem] bottom-[0.3rem] w-[3px] " +
+  "bg-[linear-gradient(180deg,#F97316_0%,#FB923C_45%,rgba(251,146,60,0.12)_100%)]";
+
+/**
+ * The same rail on the other side, for English.
+ *
+ * Two literals rather than a logical property: the shared primitives in this app are styled with
+ * PHYSICAL properties (`pr-*`, `border-l`) and `tokens.css` has no RTL awareness at all, so a
+ * `start-0` here would be the only logical property on the page and would not match anything
+ * around it. The gradient is identical; only the edge moves.
+ */
+const LTR_HEADER_RAIL =
+  "pointer-events-none absolute left-0 top-[0.3rem] bottom-[0.3rem] w-[3px] " +
   "bg-[linear-gradient(180deg,#F97316_0%,#FB923C_45%,rgba(251,146,60,0.12)_100%)]";
 
 const PANEL = "border border-slate-300 bg-white px-4 py-4";
@@ -151,7 +169,9 @@ function Num({ children, className }: { children: ReactNode; className?: string 
  * reads in the tiles above the table and in the sentence beside them.
  */
 function Qty({ value, unit }: { value: string; unit?: string | null }) {
-  const label = unitLabelAr(unit);
+  const S = useProductionPlanningStrings();
+
+  const label = S.unitLabel(unit);
   return (
     <>
       <Num>{formatNumberLatin(value)}</Num>
@@ -234,16 +254,142 @@ function Field({
  * square edge are the shared token's; only the side moves. The portal shell takes this as its
  * `hero`, which replaces its Latin badge/title banner rather than stacking a second header above it.
  */
-export function ProductionPlanningHeader() {
+/**
+ * Which language the module is in, shared by the header and the workspace.
+ *
+ * A CONTEXT and not a prop, for one structural reason: the portal page passes the header to
+ * `EmployeePortalPageShell` as its `hero` and the workspace as its children, so the two are
+ * siblings in different prop slots and no prop could reach both from one piece of state. Context
+ * resolves where an element is RENDERED, which for both of them is inside the shell — so a provider
+ * wrapped around the shell covers the header and the workspace together, and the toggle cannot
+ * leave one of them in the other language.
+ *
+ * The default is ARABIC, which is the language the owner specified the module in; the toggle is a
+ * per-reader choice over that, never a replacement for it.
+ */
+const ProductionPlanningLanguageContext = createContext<{
+  lang: ProductionPlanningLanguage;
+  setLang: (lang: ProductionPlanningLanguage) => void;
+}>({ lang: PRODUCTION_PLANNING_DEFAULT_LANGUAGE, setLang: () => {} });
+
+/**
+ * Remembered per browser, not per account.
+ *
+ * `localStorage` on purpose: the choice is a reading preference, it is worth nothing to anybody
+ * else, and storing it in `prodplan_settings` would make one reader's toggle change the language
+ * for all five of them. Every access is wrapped — a private window, cleared site data or a blocked
+ * store all throw rather than returning null, and the module must render in Arabic in that case
+ * instead of not rendering at all.
+ */
+const LANGUAGE_STORAGE_KEY = "phoenix.production-planning.language";
+
+export function ProductionPlanningLanguageProvider({
+  children,
+  initialLang = PRODUCTION_PLANNING_DEFAULT_LANGUAGE,
+}: {
+  children: ReactNode;
+  /**
+   * The language rendered before the stored choice is read. Both pages leave it alone, because
+   * Arabic is the language the owner specified the module in. It exists so
+   * `scripts/measure-production-planning-fit.mjs` can render the module in each language and
+   * measure the fit of BOTH — the English layout is left-to-right, so it is a different layout
+   * and not a translation of a measured one.
+   */
+  initialLang?: ProductionPlanningLanguage;
+}) {
+  const [lang, setLang] = useState<ProductionPlanningLanguage>(initialLang);
+
+  // Read AFTER mount, never during render: the server has no localStorage, so reading it in the
+  // initial state would make the server and the client disagree on the first paint, which is a
+  // hydration error rather than a language.
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+      // The remembered language IS an external system being read into React, which is what this
+      // rule exempts in prose and flags in code. The alternative - resolving it during render -
+      // is the hydration error this comment above describes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (stored !== null) setLang(coerceProductionPlanningLanguage(stored));
+    } catch {
+      // A blocked or cleared store leaves the Arabic default standing, which is the right answer.
+    }
+  }, []);
+
+  const choose = useCallback((next: ProductionPlanningLanguage) => {
+    setLang(next);
+    try {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, next);
+    } catch {
+      // The toggle still works for this visit; only remembering it fails.
+    }
+  }, []);
+
+  const value = useMemo(() => ({ lang, setLang: choose }), [choose, lang]);
   return (
-    <section className="min-w-0" dir="rtl" lang="ar" style={{ fontFamily: PRODUCTION_PLANNING_FONT_STACK }}>
+    <ProductionPlanningLanguageContext.Provider value={value}>
+      {children}
+    </ProductionPlanningLanguageContext.Provider>
+  );
+}
+
+/** The bundle in force. Every string, label map and sentence in this file comes from here. */
+function useProductionPlanningStrings(): ProductionPlanningStrings {
+  const { lang } = useContext(ProductionPlanningLanguageContext);
+  return productionPlanningStrings(lang);
+}
+
+/**
+ * The toggle itself — two buttons, not a `<select>`, because the choice is binary and a reader
+ * should see both options and which one is on without opening anything.
+ *
+ * The labels are each language's own name in its own script (`العربية` / `English`), so the one
+ * being offered is legible to someone who cannot read the one currently showing — which is the
+ * whole point of a language switch and the reason it is not translated.
+ */
+function ProductionPlanningLanguageToggle() {
+  const { lang, setLang } = useContext(ProductionPlanningLanguageContext);
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-1" dir="ltr" role="group">
+      {(
+        [
+          { key: "ar", label: "العربية" },
+          { key: "en", label: "English" },
+        ] as const
+      ).map((option) => (
+        <button
+          aria-pressed={lang === option.key}
+          className={`border px-2.5 py-1 text-[12px] font-bold ${
+            lang === option.key
+              ? "border-slate-900 bg-slate-900 text-white"
+              : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+          }`}
+          key={option.key}
+          onClick={() => setLang(option.key)}
+          type="button"
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function ProductionPlanningHeader() {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+
+  return (
+    <section className="min-w-0" dir={S.dir} lang={S.lang} style={{ fontFamily: S.fontStack }}>
       <div className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-        <div className="relative min-w-0 space-y-1.5 pr-3.5">
-          <span aria-hidden="true" className={RTL_HEADER_RAIL} />
-          <p className={pageHeaderKickerClassName}>{PP.moduleKicker}</p>
-          <h1 className={pageHeaderTitleClassName}>{PP.moduleTitle}</h1>
-          <p className={`${pageHeaderDescriptionClassName} break-words`}>{PP.moduleSubtitle}</p>
+        {/* The rail is a right-hand accent, which only means "the start of the line" in Arabic. In
+            English the line starts on the left, so the rail and its padding move with it. */}
+        <div className={`relative min-w-0 space-y-1.5 ${S.dir === "rtl" ? "pr-3.5" : "pl-3.5"}`}>
+          <span aria-hidden="true" className={S.dir === "rtl" ? RTL_HEADER_RAIL : LTR_HEADER_RAIL} />
+          <p className={pageHeaderKickerClassName}>{t.moduleKicker}</p>
+          <h1 className={pageHeaderTitleClassName}>{t.moduleTitle}</h1>
+          <p className={`${pageHeaderDescriptionClassName} break-words`}>{t.moduleSubtitle}</p>
         </div>
+        <ProductionPlanningLanguageToggle />
       </div>
       <div aria-hidden="true" className={pageHeaderRuleClassName} />
     </section>
@@ -262,39 +408,50 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle?: string })
 }
 
 /** The owner chip for a material: who brings it, and whether it counts toward the buy list. */
-function supplierChip(row: WirePlanRow) {
-  if (row.supplier === null) return <Chip tone="slate">{PP.chipNoComposition}</Chip>;
-  if (row.supplier === "shared_unsettled") return <Chip tone="amber">{PP.chipUnsettled}</Chip>;
-  if (row.supplier === "factory") return <Chip tone="slate">{PP.chipFactory}</Chip>;
-  return <Chip tone="emerald">{PP.chipSato}</Chip>;
+function supplierChip(row: WirePlanRow, t: Record<ProductionPlanningStringKey, string>) {
+  if (row.supplier === null) return <Chip tone="slate">{t.chipNoComposition}</Chip>;
+  if (row.supplier === "shared_unsettled") return <Chip tone="amber">{t.chipUnsettled}</Chip>;
+  if (row.supplier === "factory") return <Chip tone="slate">{t.chipFactory}</Chip>;
+  return <Chip tone="emerald">{t.chipSato}</Chip>;
 }
 
-function excludedNote(row: WirePlanRow): string | null {
-  if (row.excludedReason === "factory_supplies") return PP.excludedFactory;
-  if (row.excludedReason === "supplier_unsettled") return PP.excludedUnsettled;
-  if (row.excludedReason === "no_composition") return PP.excludedNoComposition;
+function excludedNote(row: WirePlanRow, t: Record<ProductionPlanningStringKey, string>): string | null {
+  if (row.excludedReason === "factory_supplies") return t.excludedFactory;
+  if (row.excludedReason === "supplier_unsettled") return t.excludedUnsettled;
+  if (row.excludedReason === "no_composition") return t.excludedNoComposition;
   return null;
 }
 
-function overageHint(row: WirePlanRow): string {
-  if (row.overageSource === "measured") return PP.overageHintMeasured;
-  if (row.overageSource === "material") return PP.overageHintMaterial;
-  return PP.overageHintDefault;
+function overageHint(row: WirePlanRow, t: Record<ProductionPlanningStringKey, string>): string {
+  if (row.overageSource === "measured") return t.overageHintMeasured;
+  if (row.overageSource === "material") return t.overageHintMaterial;
+  return t.overageHintDefault;
 }
 
-const FX_SOURCE_LABELS = {
-  manual: PP.fxSourceManual,
-  fetched: PP.fxSourceFetched,
-  fallback: PP.fxSourceFallback,
-  none: PP.fxSourceNone,
-} as const;
+/**
+ * Built from the catalogue IN FORCE, not at import time.
+ *
+ * These two were module-level constants over the Arabic catalogue, which a language toggle cannot
+ * have: the module object is evaluated once, so the first language to load would have been frozen
+ * into every later render in the other one.
+ */
+function fxSourceLabels(t: Record<ProductionPlanningStringKey, string>): Record<"manual" | "fetched" | "fallback" | "none", string> {
+  return {
+    fallback: t.fxSourceFallback,
+    fetched: t.fxSourceFetched,
+    manual: t.fxSourceManual,
+    none: t.fxSourceNone,
+  };
+}
 
-const STOCK_SOURCE_LABELS: Record<string, string> = {
-  factory_report: PP.stockSourceFactoryReport,
-  own_count: PP.stockSourceOwnCount,
-  delivery: PP.stockSourceDelivery,
-  adjustment: PP.stockSourceAdjustment,
-};
+function stockSourceLabels(t: Record<ProductionPlanningStringKey, string>): Record<string, string> {
+  return {
+    adjustment: t.stockSourceAdjustment,
+    delivery: t.stockSourceDelivery,
+    factory_report: t.stockSourceFactoryReport,
+    own_count: t.stockSourceOwnCount,
+  };
+}
 
 /**
  * The planner opens on the owner's own headline shape — a TOTAL of 100,000 boxes with 10,000 of them
@@ -307,6 +464,9 @@ const DEFAULT_SAMPLE_UNITS = "10000";
 const DEFAULT_MODE: WireRequestMode = "total_boxes";
 
 export function ProductionPlanningWorkspace() {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+
   const [data, setData] = useState<WireWorkspace | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -337,7 +497,7 @@ export function ProductionPlanningWorkspace() {
       const response = await fetch(`/api/production-planning?${params.toString()}`, { cache: "no-store" });
       const payload = (await response.json().catch(() => null)) as WireWorkspace | { message?: string } | null;
       if (!response.ok) {
-        setError((payload as { message?: string })?.message ?? PP.loadFailed);
+        setError((payload as { message?: string })?.message ?? t.loadFailed);
         setData(null);
         return;
       }
@@ -346,16 +506,20 @@ export function ProductionPlanningWorkspace() {
       setPlan(workspace.plan);
       if (workspace.products.length > 0) setProductId((current) => current || workspace.products[0].id);
     } catch {
-      setError(PP.loadFailed);
+      setError(t.loadFailed);
       setData(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+    // The failure MESSAGE is language-dependent, so it is a real dependency: without it a reader who
+    // flips the toggle and then loses the network would be shown the message in the language they
+    // just left. The refetch a language change now triggers costs one request and returns the same
+    // payload - the query carries no language - so it is a message correctness fix, not a reload.
+  }, [t.loadFailed]);
 
   useEffect(() => {
-    // The repo's `react-hooks/set-state-in-effect` is an error, and a fetch-on-mount effect trips it
-    // because `load` sets the loading flag before its first await. Disabled here, as the other
+    // The repo's `react-hooks/set-state-in-effect` is an error, and a fetch-on-mount effect trips
+    // it because `load` sets the loading flag before its first await. Disabled here, as the other
     // workspaces do, rather than deferring the fetch behind a timeout nobody needs.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
@@ -370,22 +534,26 @@ export function ProductionPlanningWorkspace() {
         const response = await fetch(`/api/production-planning${path}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
+          // The language rides on EVERY write, in one place rather than at each call site: the
+          // server's validation messages come from the same catalogue the screen is reading, so a
+          // refusal lands in the language the reader is in rather than in the module's default.
+          body: JSON.stringify({ lang: S.lang, ...body }),
         });
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
         if (!response.ok) {
-          setError(payload?.message ?? PP.saveFailed);
+          setError(payload?.message ?? t.saveFailed);
           return null;
         }
         return payload;
       } catch {
-        setError(PP.saveFailed);
+        setError(t.saveFailed);
         return null;
       } finally {
         setBusy(false);
       }
     },
-    [],
+    // `S.lang` is in the body now, so a toggle must give back a new `post`.
+    [S.lang, t.saveFailed],
   );
 
   const calculate = useCallback(async () => {
@@ -404,11 +572,11 @@ export function ProductionPlanningWorkspace() {
     async (path: string, body: Record<string, unknown>) => {
       const result = await post(path, body);
       if (result) {
-        setNotice(PP.saved);
+        setNotice(t.saved);
         await load();
       }
     },
-    [post, load],
+    [post, load, t.saved],
   );
 
   const materialsById = useMemo(() => {
@@ -421,22 +589,22 @@ export function ProductionPlanningWorkspace() {
 
   if (loading && !data) {
     return (
-      <div className="min-w-0 px-1 py-8 text-center text-[13px] text-slate-500" dir="rtl" lang="ar">
-        {PP.loading}
+      <div
+        className="min-w-0 px-1 py-8 text-center text-[13px] text-slate-500"
+        dir={S.dir}
+        lang={S.lang}
+        style={{ fontFamily: S.fontStack }}
+      >
+        {t.loading}
       </div>
     );
   }
 
   return (
-    <div
-      className="min-w-0"
-      dir="rtl"
-      lang="ar"
-      style={{ fontFamily: PRODUCTION_PLANNING_FONT_STACK }}
-    >
+    <div className="min-w-0" dir={S.dir} lang={S.lang} style={{ fontFamily: S.fontStack }}>
       {!canWrite && data ? (
         <p className="border border-slate-300 bg-slate-50 px-3 py-2 text-[12px] font-bold text-slate-700">
-          {PP.readOnlyNotice}
+          {t.readOnlyNotice}
         </p>
       ) : null}
 
@@ -454,7 +622,7 @@ export function ProductionPlanningWorkspace() {
 
       {/* flex-wrap, never a scroller: on an RTL page a horizontal scroller opens at the line's end. */}
       <div className="mt-4 flex flex-wrap gap-2" role="tablist">
-        {PRODUCTION_PLANNING_TABS.map((entry) => (
+        {S.tabs.map((entry) => (
           <button
             aria-selected={tab === entry.key}
             className={`border px-3 py-1.5 text-[12px] font-bold ${
@@ -557,7 +725,11 @@ type PlannerTabProps = {
   willSend: Record<string, string>;
 };
 
-function PlannerTab(props: PlannerTabProps) {
+/** Exported for scripts/measure-production-planning-fit.mjs - see the note at the top of this file. */
+export function PlannerTab(props: PlannerTabProps) {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+
   const { data, plan } = props;
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -570,6 +742,8 @@ function PlannerTab(props: PlannerTabProps) {
     setExportError(null);
     try {
       const params = new URLSearchParams({
+        // The language the screen is in, so the file matches the page that offered it.
+        lang: S.lang,
         mode: props.mode,
         productId: props.productId,
         requestedQty: props.requestedQty,
@@ -578,20 +752,20 @@ function PlannerTab(props: PlannerTabProps) {
       if (props.overridePct.trim() !== "") params.set("overridePct", props.overridePct.trim());
       await downloadXlsxFrom(`/api/production-planning/workbook?${params.toString()}`, "production-plan.xlsx");
     } catch {
-      setExportError(PP.exportFailed);
+      setExportError(t.exportFailed);
     } finally {
       setExporting(false);
     }
-  }, [props.mode, props.productId, props.requestedQty, props.sampleUnits, props.overridePct]);
+  }, [props.mode, props.productId, props.requestedQty, props.sampleUnits, props.overridePct, S.lang, t.exportFailed]);
 
-  if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{PP.notLoaded}</p>;
+  if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{t.notLoaded}</p>;
 
   return (
     <>
       <section className={PANEL}>
-        <SectionTitle subtitle={PP.moduleSubtitle} title={PP.plannerTitle} />
+        <SectionTitle subtitle={t.moduleSubtitle} title={t.plannerTitle} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label={PP.productLabel}>
+          <Field label={t.productLabel}>
             <select
               className={INPUT}
               onChange={(event) => props.onProductChange(event.target.value)}
@@ -605,19 +779,19 @@ function PlannerTab(props: PlannerTabProps) {
             </select>
           </Field>
 
-          <Field label={PP.requestModeLabel}>
+          <Field label={t.requestModeLabel}>
             <select
               className={INPUT}
               onChange={(event) => props.onModeChange(event.target.value as WireRequestMode)}
               value={props.mode}
             >
-              <option value="total_boxes">{PP.requestModeTotalBoxes}</option>
-              <option value="good_units">{PP.requestModeGoodUnits}</option>
-              <option value="runs">{PP.requestModeRuns}</option>
+              <option value="total_boxes">{t.requestModeTotalBoxes}</option>
+              <option value="good_units">{t.requestModeGoodUnits}</option>
+              <option value="runs">{t.requestModeRuns}</option>
             </select>
           </Field>
 
-          <Field label={PP.requestedQtyLabel}>
+          <Field label={t.requestedQtyLabel}>
             <input
               className={INPUT}
               dir="ltr"
@@ -627,7 +801,7 @@ function PlannerTab(props: PlannerTabProps) {
             />
           </Field>
 
-          <Field hint={PP.sampleUnitsHint} label={PP.sampleUnitsLabel}>
+          <Field hint={t.sampleUnitsHint} label={t.sampleUnitsLabel}>
             <input
               className={INPUT}
               dir="ltr"
@@ -638,8 +812,8 @@ function PlannerTab(props: PlannerTabProps) {
           </Field>
 
           <Field
-            hint={`${PP.overageHintDefault}: ${formatNumberLatin(data.settings.defaultOveragePct)}%`}
-            label={PP.overageLabel}
+            hint={`${t.overageHintDefault}: ${formatNumberLatin(data.settings.defaultOveragePct)}%`}
+            label={t.overageLabel}
           >
             <input
               className={INPUT}
@@ -653,7 +827,7 @@ function PlannerTab(props: PlannerTabProps) {
 
           <div className="flex flex-wrap items-end gap-2">
             <button className={BUTTON} disabled={props.busy} onClick={props.onCalculate} type="button">
-              {PP.calculate}
+              {t.calculate}
             </button>
             {props.canWrite ? (
               <>
@@ -663,7 +837,7 @@ function PlannerTab(props: PlannerTabProps) {
                   onClick={() => props.onCommit(false)}
                   type="button"
                 >
-                  {PP.saveDraft}
+                  {t.saveDraft}
                 </button>
                 <button
                   className={BUTTON_QUIET}
@@ -671,16 +845,16 @@ function PlannerTab(props: PlannerTabProps) {
                   onClick={() => props.onCommit(true)}
                   type="button"
                 >
-                  {PP.commitPlan}
+                  {t.commitPlan}
                 </button>
               </>
             ) : null}
             <button className={BUTTON_QUIET} disabled={exporting} onClick={() => void exportWorkbook()} type="button">
-              {PP.exportWorkbook}
+              {t.exportWorkbook}
             </button>
           </div>
         </div>
-        <p className="mt-2 text-[12px] leading-relaxed text-slate-500">{PP.exportHint}</p>
+        <p className="mt-2 text-[12px] leading-relaxed text-slate-500">{t.exportHint}</p>
         {exportError ? <p className="mt-1 text-[12px] text-rose-700">{exportError}</p> : null}
       </section>
 
@@ -690,12 +864,42 @@ function PlannerTab(props: PlannerTabProps) {
 }
 
 function PlannerResult({
+  data,
   plan,
   canWrite,
   onWillSendChange,
   willSend,
 }: PlannerTabProps & { plan: WirePlan }) {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
   const shortfall = plan.oneRunFewer;
+
+  // The sentence is rebuilt HERE from the plan's own figures, rather than rendering the
+  // `plan.sentence` the server sent: the request carries no language, so the server's copy is in
+  // whichever language this payload was asked for, and the toggle would leave an Arabic sentence
+  // sitting under four English tiles until the next calculate. The server's copy still exists and
+  // is what the WORKBOOK's header line reads - the sheet is built server-side - and it stays the
+  // fallback here for a plan whose product is somehow not in the list.
+  // `data` is nullable on these props (the tab renders before the first load answers), and a plan
+  // cannot exist without it - but the compiler cannot know that, so it is narrowed rather than
+  // asserted: the fallback below is the server's own sentence, which is a correct sentence in the
+  // language the payload was asked for.
+  const sentenceProduct = data
+    ? (data.products.find((candidate) => candidate.id === plan.productId) ?? data.products[0])
+    : undefined;
+  const sentence = sentenceProduct
+    ? S.plannerSentence({
+        runs: formatNumberLatin(plan.runs),
+        runVolumeLitres: formatNumberLatin(plan.runVolumeLitres),
+        totalVolumeLitres: formatNumberLatin(plan.totalVolumeLitres),
+        goodUnits: formatNumberLatin(plan.goodUnits),
+        goodUnitMl: formatNumberLatin(sentenceProduct.goodUnitMl),
+        sampleUnits: formatNumberLatin(plan.sampleUnits),
+        sampleUnitMl: formatNumberLatin(sentenceProduct.sampleUnitMl),
+        surplusBoxes: formatNumberLatin(plan.surplusBoxes),
+        shortfallBoxes: null,
+      })
+    : plan.sentence;
 
   return (
     <>
@@ -710,41 +914,41 @@ function PlannerResult({
             columns, never by shrinking the type (AGENTS.md §4), and it is now the same
             `grid-cols-1 sm:grid-cols-2` ladder every other grid in this file already used. */}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <Tile label={PP.tileRuns} unit={PP.unitRuns} value={plan.runs} />
-          <Tile label={PP.tileRunVolume} unit={PP.unitLitre} value={plan.runVolumeLitres} />
-          <Tile label={PP.tileYield} unit={PP.unitBox} value={plan.totalBoxes} />
+          <Tile label={t.tileRuns} unit={t.unitRuns} value={plan.runs} />
+          <Tile label={t.tileRunVolume} unit={t.unitLitre} value={plan.runVolumeLitres} />
+          <Tile label={t.tileYield} unit={t.unitBox} value={plan.totalBoxes} />
           {plan.surplusBoxes !== "0" ? (
-            <Tile label={PP.tileSurplus} tone="warn" unit={PP.unitBox} value={plan.surplusBoxes} />
+            <Tile label={t.tileSurplus} tone="warn" unit={t.unitBox} value={plan.surplusBoxes} />
           ) : (
-            <Tile label={PP.tileSurplus} unit={PP.unitBox} value="0" />
+            <Tile label={t.tileSurplus} unit={t.unitBox} value="0" />
           )}
         </div>
 
         <p className="mt-3 text-[13px] font-semibold leading-6 text-slate-800 break-words">
-          {plan.sentence}
+          {sentence}
         </p>
 
         <ul className="mt-2 space-y-1 text-[11px] leading-5 text-slate-500">
           {plan.rounded ? (
             <li>
-              {PP.roundedUpNote} — {PP.exactRunsNote} <Num>{formatNumberLatin(plan.exactRuns)}</Num>
+              {t.roundedUpNote} — {t.exactRunsNote} <Num>{formatNumberLatin(plan.exactRuns)}</Num>
             </li>
           ) : null}
           {shortfall ? (
             <li>
-              {PP.oneRunFewerNote}: <Num>{formatNumberLatin(shortfall.runs)}</Num> {PP.unitRuns} —{" "}
-              <Num>{formatNumberLatin(shortfall.totalBoxes)}</Num> {PP.unitBox}
+              {t.oneRunFewerNote}: <Num>{formatNumberLatin(shortfall.runs)}</Num> {t.unitRuns} —{" "}
+              <Num>{formatNumberLatin(shortfall.totalBoxes)}</Num> {t.unitBox}
               {shortfall.shortfallBoxes !== "0" ? (
                 <>
                   {" "}
-                  ({PP.tileShortfall} <Num>{formatNumberLatin(shortfall.shortfallBoxes)}</Num>)
+                  ({t.tileShortfall} <Num>{formatNumberLatin(shortfall.shortfallBoxes)}</Num>)
                 </>
               ) : null}
             </li>
           ) : null}
           {plan.leftoverMl !== "0" ? (
             <li>
-              {PP.leftoverNote}: <Qty unit={PP.unitMl} value={plan.leftoverMl} />
+              {t.leftoverNote}: <Qty unit={t.unitMl} value={plan.leftoverMl} />
             </li>
           ) : null}
         </ul>
@@ -762,7 +966,7 @@ function PlannerResult({
           </colgroup>
           <thead>
             <tr className="border-b border-slate-300 bg-slate-50">
-              {[PP.colMaterial, PP.colNeeded, PP.colAvailable, PP.colAction].map((heading) => (
+              {[t.colMaterial, t.colNeeded, t.colAvailable, t.colAction].map((heading) => (
                 <th className={TH} key={heading} scope="col">
                   {heading}
                 </th>
@@ -778,8 +982,8 @@ function PlannerResult({
                     <Num>{row.code}</Num>
                   </p>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {supplierChip(row)}
-                    {row.isImported ? <Chip tone="amber">{PP.chipImported}</Chip> : null}
+                    {supplierChip(row, t)}
+                    {row.isImported ? <Chip tone="amber">{t.chipImported}</Chip> : null}
                   </div>
                 </td>
                 <td className={TD}>
@@ -787,29 +991,29 @@ function PlannerResult({
                     <Qty unit={row.displayUnit} value={row.needed} />
                   </p>
                   <p className="mt-0.5 text-[11px] text-slate-500">
-                    {PP.beforeOverage} <Qty unit={row.displayUnit} value={row.rawNeeded} /> +{" "}
+                    {t.beforeOverage} <Qty unit={row.displayUnit} value={row.rawNeeded} /> +{" "}
                     <Num>{formatNumberLatin(row.overagePct)}%</Num>
                   </p>
-                  <p className="mt-0.5 break-words text-[11px] text-slate-500">{overageHint(row)}</p>
+                  <p className="mt-0.5 break-words text-[11px] text-slate-500">{overageHint(row, t)}</p>
                   {row.basis ? (
                     <p className="mt-0.5 break-words text-[11px] text-slate-500">
-                      {BASIS_LABELS[row.basis]}
+                      {S.basisLabels[row.basis]}
                     </p>
                   ) : null}
                 </td>
                 <td className={TD}>
                   <p>
-                    {PP.atFactory} <Qty unit={row.displayUnit} value={row.heldAtFactory} />
+                    {t.atFactory} <Qty unit={row.displayUnit} value={row.heldAtFactory} />
                   </p>
                   <p className="mt-0.5">
-                    {PP.atOwnStore} <Qty unit={row.displayUnit} value={row.heldElsewhere} />
+                    {t.atOwnStore} <Qty unit={row.displayUnit} value={row.heldElsewhere} />
                   </p>
                   <p className="mt-0.5 font-bold text-slate-900">
-                    {PP.totalHeld} <Qty unit={row.displayUnit} value={row.heldTotal} />
+                    {t.totalHeld} <Qty unit={row.displayUnit} value={row.heldTotal} />
                   </p>
                   {row.coverRuns ? (
                     <p className="mt-0.5 text-[11px] text-slate-500">
-                      {PP.coverRuns} <Num>{formatNumberLatin(row.coverRuns)}</Num> {PP.unitRuns}
+                      {t.coverRuns} <Num>{formatNumberLatin(row.coverRuns)}</Num> {t.unitRuns}
                     </p>
                   ) : null}
                 </td>
@@ -831,18 +1035,18 @@ function PlannerResult({
             <article className={CARD} key={row.materialId}>
               <p className="font-bold text-slate-900 break-words">{row.nameAr}</p>
               <div className="mt-1 flex flex-wrap gap-1">
-                {supplierChip(row)}
-                {row.isImported ? <Chip tone="amber">{PP.chipImported}</Chip> : null}
+                {supplierChip(row, t)}
+                {row.isImported ? <Chip tone="amber">{t.chipImported}</Chip> : null}
               </div>
               <dl className="mt-2 space-y-1 text-[12px] text-slate-700">
                 <div className="flex flex-wrap justify-between gap-2">
-                  <dt className="font-bold">{PP.colNeeded}</dt>
+                  <dt className="font-bold">{t.colNeeded}</dt>
                   <dd>
                     <Qty unit={row.displayUnit} value={row.needed} />
                   </dd>
                 </div>
                 <div className="flex flex-wrap justify-between gap-2">
-                  <dt className="font-bold">{PP.totalHeld}</dt>
+                  <dt className="font-bold">{t.totalHeld}</dt>
                   <dd>
                     <Qty unit={row.displayUnit} value={row.heldTotal} />
                   </dd>
@@ -862,18 +1066,18 @@ function PlannerResult({
       </section>
 
       <section className={PANEL}>
-        <SectionTitle title={PP.costTotal} />
+        <SectionTitle title={t.costTotal} />
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <p className="text-[13px] text-slate-800">
-            {PP.currencyUsd} <Num className="font-bold">{formatNumberLatin(plan.totals.costUsd)}</Num>
+            {t.currencyUsd} <Num className="font-bold">{formatNumberLatin(plan.totals.costUsd)}</Num>
           </p>
           <p className="text-[13px] text-slate-800">
-            {PP.currencyEgp} <Num className="font-bold">{formatNumberLatin(plan.totals.costEgp)}</Num>
+            {t.currencyEgp} <Num className="font-bold">{formatNumberLatin(plan.totals.costEgp)}</Num>
           </p>
         </div>
         <ul className="mt-2 space-y-1 text-[11px] leading-5 text-slate-500">
           <li>
-            {PP.fxRate}: {FX_SOURCE_LABELS[plan.totals.fxSource]}
+            {t.fxRate}: {fxSourceLabels(t)[plan.totals.fxSource]}
             {plan.totals.fxRate ? (
               <>
                 {" "}
@@ -883,12 +1087,12 @@ function PlannerResult({
           </li>
           {plan.totals.unpricedMaterials > 0 ? (
             <li>
-              {PP.costUnpriced}: <Num>{plan.totals.unpricedMaterials}</Num> — {PP.costNotWholeNotice}
+              {t.costUnpriced}: <Num>{plan.totals.unpricedMaterials}</Num> — {t.costNotWholeNotice}
             </li>
           ) : null}
           {plan.totals.incompleteMaterials > 0 ? (
             <li>
-              {PP.costIncomplete}: <Num>{plan.totals.incompleteMaterials}</Num>
+              {t.costIncomplete}: <Num>{plan.totals.incompleteMaterials}</Num>
             </li>
           ) : null}
         </ul>
@@ -908,24 +1112,26 @@ function PlannerAction({
   willSend: Record<string, string>;
   onWillSendChange: (materialId: string, value: string) => void;
 }) {
-  const note = excludedNote(row);
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+  const note = excludedNote(row, t);
   if (!row.contributesToBuyList) {
-    return <p className="break-words text-[11px] text-slate-500">{note ?? PP.noActionNeeded}</p>;
+    return <p className="break-words text-[11px] text-slate-500">{note ?? t.noActionNeeded}</p>;
   }
   const short = row.balanceAfter.startsWith("-");
   return (
     <div className="min-w-0 space-y-1">
       {row.toBuy !== "0" ? (
         <p className="font-bold text-slate-900">
-          {PP.toBuy} <Qty unit={row.displayUnit} value={row.toBuy} />
+          {t.toBuy} <Qty unit={row.displayUnit} value={row.toBuy} />
         </p>
       ) : null}
       <p>
-        {PP.toDeliver} <Qty unit={row.displayUnit} value={row.minToDeliver} />
+        {t.toDeliver} <Qty unit={row.displayUnit} value={row.minToDeliver} />
       </p>
       {canWrite ? (
         <label className="block">
-          <span className="text-[10px] font-bold text-slate-500">{PP.willSend}</span>
+          <span className="text-[10px] font-bold text-slate-500">{t.willSend}</span>
           <input
             className={INPUT}
             dir="ltr"
@@ -937,13 +1143,13 @@ function PlannerAction({
         </label>
       ) : null}
       <p className={short ? "font-bold text-rose-700" : "text-slate-700"}>
-        {short ? PP.shortAfter : PP.balanceAfter}{" "}
+        {short ? t.shortAfter : t.balanceAfter}{" "}
         <Qty unit={row.displayUnit} value={row.balanceAfter} />
         {row.balanceAfterRuns ? (
           <>
             {" "}
             <span className="text-[11px] text-slate-500">
-              ({PP.coverRuns} <Num>{formatNumberLatin(row.balanceAfterRuns)}</Num> {PP.unitRuns})
+              ({t.coverRuns} <Num>{formatNumberLatin(row.balanceAfterRuns)}</Num> {t.unitRuns})
             </span>
           </>
         ) : null}
@@ -956,7 +1162,8 @@ function PlannerAction({
 
 type SaveFn = (path: string, body: Record<string, unknown>) => Promise<void>;
 
-function StockTab({
+/** Exported for scripts/measure-production-planning-fit.mjs - see the note at the top of this file. */
+export function StockTab({
   data,
   canWrite,
   busy,
@@ -967,6 +1174,9 @@ function StockTab({
   busy: boolean;
   onSave: SaveFn;
 }) {
+
+  const S = useProductionPlanningStrings();
+  const t = S.t;
   const [materialId, setMaterialId] = useState("");
   const [locationId, setLocationId] = useState("");
   const [qty, setQty] = useState("");
@@ -974,7 +1184,7 @@ function StockTab({
   const [source, setSource] = useState("factory_report");
   const [note, setNote] = useState("");
 
-  if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{PP.notLoaded}</p>;
+  if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{t.notLoaded}</p>;
   const locationName = (id: string) =>
     data.locations.find((location) => location.id === id)?.nameAr ?? id;
 
@@ -982,15 +1192,15 @@ function StockTab({
     <>
       {canWrite ? (
         <section className={PANEL}>
-          <SectionTitle subtitle={PP.stockSubtitle} title={PP.stockAdd} />
+          <SectionTitle subtitle={t.stockSubtitle} title={t.stockAdd} />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label={PP.colMaterial}>
+            <Field label={t.colMaterial}>
               <select
                 className={INPUT}
                 onChange={(event) => setMaterialId(event.target.value)}
                 value={materialId}
               >
-                <option value="">{PP.colMaterial}</option>
+                <option value="">{t.colMaterial}</option>
                 {data.materials.map((material) => (
                   <option key={material.id} value={material.id}>
                     {material.nameAr}
@@ -998,13 +1208,13 @@ function StockTab({
                 ))}
               </select>
             </Field>
-            <Field label={PP.stockLocation}>
+            <Field label={t.stockLocation}>
               <select
                 className={INPUT}
                 onChange={(event) => setLocationId(event.target.value)}
                 value={locationId}
               >
-                <option value="">{PP.stockLocation}</option>
+                <option value="">{t.stockLocation}</option>
                 {data.locations.map((location) => (
                   <option key={location.id} value={location.id}>
                     {location.nameAr}
@@ -1012,7 +1222,7 @@ function StockTab({
                 ))}
               </select>
             </Field>
-            <Field label={PP.stockQty}>
+            <Field label={t.stockQty}>
               <input
                 className={INPUT}
                 dir="ltr"
@@ -1021,7 +1231,7 @@ function StockTab({
                 value={qty}
               />
             </Field>
-            <Field label={PP.stockAsOf}>
+            <Field label={t.stockAsOf}>
               <input
                 className={INPUT}
                 dir="ltr"
@@ -1030,20 +1240,20 @@ function StockTab({
                 value={asOfDate}
               />
             </Field>
-            <Field label={PP.stockSource}>
+            <Field label={t.stockSource}>
               <select
                 className={INPUT}
                 onChange={(event) => setSource(event.target.value)}
                 value={source}
               >
-                {Object.entries(STOCK_SOURCE_LABELS).map(([key, label]) => (
+                {Object.entries(stockSourceLabels(t)).map(([key, label]) => (
                   <option key={key} value={key}>
                     {label}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label={PP.stockNote}>
+            <Field label={t.stockNote}>
               <input className={INPUT} onChange={(event) => setNote(event.target.value)} value={note} />
             </Field>
           </div>
@@ -1066,7 +1276,7 @@ function StockTab({
               }}
               type="button"
             >
-              {PP.save}
+              {t.save}
             </button>
           </div>
         </section>
@@ -1082,7 +1292,7 @@ function StockTab({
           </colgroup>
           <thead>
             <tr className="border-b border-slate-300 bg-slate-50">
-              {[PP.colMaterial, PP.atFactory, PP.atOwnStore, PP.stockAsOf].map((heading) => (
+              {[t.colMaterial, t.atFactory, t.atOwnStore, t.stockAsOf].map((heading) => (
                 <th className={TH} key={heading} scope="col">
                   {heading}
                 </th>
@@ -1113,14 +1323,14 @@ function StockTab({
                     {factory ? (
                       <Qty unit={material.displayUnit} value={factory.qtyDisplay} />
                     ) : (
-                      <span className="text-[11px] text-slate-500">{PP.stockNoneYet}</span>
+                      <span className="text-[11px] text-slate-500">{t.stockNoneYet}</span>
                     )}
                   </td>
                   <td className={TD}>
                     {own ? (
                       <Qty unit={material.displayUnit} value={own.qtyDisplay} />
                     ) : (
-                      <span className="text-[11px] text-slate-500">{PP.stockNoneYet}</span>
+                      <span className="text-[11px] text-slate-500">{t.stockNoneYet}</span>
                     )}
                   </td>
                   <td className={TD}>
@@ -1138,7 +1348,7 @@ function StockTab({
               <p className="font-bold text-slate-900 break-words">{material.nameAr}</p>
               <dl className="mt-2 space-y-1 text-[12px] text-slate-700">
                 {material.stock.length === 0 ? (
-                  <p className="text-[11px] text-slate-500">{PP.stockNoneYet}</p>
+                  <p className="text-[11px] text-slate-500">{t.stockNoneYet}</p>
                 ) : (
                   material.stock.map((row) => (
                     <div
@@ -1187,7 +1397,8 @@ function toBaseUnits(typed: string, material: WireMaterial | undefined): string 
 
 // ── The cost tab ─────────────────────────────────────────────────────────────────────────────────
 
-function CostTab({
+/** Exported for scripts/measure-production-planning-fit.mjs - see the note at the top of this file. */
+export function CostTab({
   data,
   canWrite,
   busy,
@@ -1200,20 +1411,23 @@ function CostTab({
   onSave: SaveFn;
   plan: WirePlan | null;
 }) {
+
+  const S = useProductionPlanningStrings();
+  const t = S.t;
   const [materialId, setMaterialId] = useState("");
   const [currency, setCurrency] = useState<"USD" | "EGP">("EGP");
   const [price, setPrice] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState("");
   const [fxRate, setFxRate] = useState("");
 
-  if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{PP.notLoaded}</p>;
+  if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{t.notLoaded}</p>;
 
   return (
     <>
       <section className={PANEL}>
-        <SectionTitle subtitle={PP.costSubtitle} title={PP.costTitle} />
+        <SectionTitle subtitle={t.costSubtitle} title={t.costTitle} />
         <p className="text-[13px] text-slate-800">
-          {PP.fxRate}: {FX_SOURCE_LABELS[data.fx.source]}
+          {t.fxRate}: {fxSourceLabels(t)[data.fx.source]}
           {data.fx.rate ? (
             <>
               {" "}
@@ -1224,7 +1438,7 @@ function CostTab({
             <>
               {" "}
               <span className="text-[11px] text-slate-500">
-                {PP.fxRateDate} <Num>{data.fx.rateDate}</Num>
+                {t.fxRateDate} <Num>{data.fx.rateDate}</Num>
               </span>
             </>
           ) : null}
@@ -1232,7 +1446,7 @@ function CostTab({
         {canWrite ? (
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <div className="min-w-0 grow sm:max-w-xs">
-              <Field label={PP.fxManualOverride}>
+              <Field label={t.fxManualOverride}>
                 <input
                   className={INPUT}
                   dir="ltr"
@@ -1248,7 +1462,7 @@ function CostTab({
               onClick={() => void onSave("/fx", { usdToEgp: fxRate.trim() })}
               type="button"
             >
-              {PP.save}
+              {t.save}
             </button>
           </div>
         ) : null}
@@ -1256,15 +1470,15 @@ function CostTab({
 
       {canWrite ? (
         <section className={PANEL}>
-          <SectionTitle title={PP.priceAdd} />
+          <SectionTitle title={t.priceAdd} />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label={PP.colMaterial}>
+            <Field label={t.colMaterial}>
               <select
                 className={INPUT}
                 onChange={(event) => setMaterialId(event.target.value)}
                 value={materialId}
               >
-                <option value="">{PP.colMaterial}</option>
+                <option value="">{t.colMaterial}</option>
                 {data.materials.map((material) => (
                   <option key={material.id} value={material.id}>
                     {material.nameAr}
@@ -1272,17 +1486,17 @@ function CostTab({
                 ))}
               </select>
             </Field>
-            <Field label={PP.priceCurrency}>
+            <Field label={t.priceCurrency}>
               <select
                 className={INPUT}
                 onChange={(event) => setCurrency(event.target.value as "USD" | "EGP")}
                 value={currency}
               >
-                <option value="EGP">{PP.currencyEgp}</option>
-                <option value="USD">{PP.currencyUsd}</option>
+                <option value="EGP">{t.currencyEgp}</option>
+                <option value="USD">{t.currencyUsd}</option>
               </select>
             </Field>
-            <Field label={PP.priceLabel}>
+            <Field label={t.priceLabel}>
               <input
                 className={INPUT}
                 dir="ltr"
@@ -1291,7 +1505,7 @@ function CostTab({
                 value={price}
               />
             </Field>
-            <Field label={PP.priceEffectiveFrom}>
+            <Field label={t.priceEffectiveFrom}>
               <input
                 className={INPUT}
                 dir="ltr"
@@ -1317,7 +1531,7 @@ function CostTab({
               }}
               type="button"
             >
-              {PP.save}
+              {t.save}
             </button>
           </div>
         </section>
@@ -1333,7 +1547,7 @@ function CostTab({
           </colgroup>
           <thead>
             <tr className="border-b border-slate-300 bg-slate-50">
-              {[PP.colMaterial, PP.priceLabel, PP.priceEffectiveFrom, PP.costTotal].map((heading) => (
+              {[t.colMaterial, t.priceLabel, t.priceEffectiveFrom, t.costTotal].map((heading) => (
                 <th className={TH} key={heading} scope="col">
                   {heading}
                 </th>
@@ -1352,13 +1566,13 @@ function CostTab({
                     {material.price ? (
                       <>
                         <Num>{formatNumberLatin(material.price.pricePerDisplayUnit)}</Num>{" "}
-                        {material.price.currency === "USD" ? PP.currencyUsd : PP.currencyEgp}{" "}
+                        {material.price.currency === "USD" ? t.currencyUsd : t.currencyEgp}{" "}
                         <span className="text-[11px] text-slate-500">
-                          {PP.pricePerUnit} {unitLabelAr(material.displayUnit)}
+                          {t.pricePerUnit} {S.unitLabel(material.displayUnit)}
                         </span>
                       </>
                     ) : (
-                      <span className="text-[11px] text-slate-500">{PP.priceNoneYet}</span>
+                      <span className="text-[11px] text-slate-500">{t.priceNoneYet}</span>
                     )}
                   </td>
                   <td className={TD}>
@@ -1367,17 +1581,17 @@ function CostTab({
                   <td className={TD}>
                     {row && row.costEgp ? (
                       <p>
-                        <Num>{formatNumberLatin(row.costEgp)}</Num> {PP.currencyEgp}
+                        <Num>{formatNumberLatin(row.costEgp)}</Num> {t.currencyEgp}
                       </p>
                     ) : null}
                     {row && row.costUsd ? (
                       <p className="mt-0.5">
-                        <Num>{formatNumberLatin(row.costUsd)}</Num> {PP.currencyUsd}
+                        <Num>{formatNumberLatin(row.costUsd)}</Num> {t.currencyUsd}
                       </p>
                     ) : null}
                     {row?.costDerivedMissing ? (
                       <p className="mt-0.5 break-words text-[11px] text-amber-800">
-                        {PP.fxSourceNone}
+                        {t.fxSourceNone}
                       </p>
                     ) : null}
                   </td>
@@ -1395,11 +1609,11 @@ function CostTab({
                 {material.price ? (
                   <>
                     <Num>{formatNumberLatin(material.price.pricePerDisplayUnit)}</Num>{" "}
-                    {material.price.currency === "USD" ? PP.currencyUsd : PP.currencyEgp} {PP.pricePerUnit}{" "}
-                    {unitLabelAr(material.displayUnit)}
+                    {material.price.currency === "USD" ? t.currencyUsd : t.currencyEgp} {t.pricePerUnit}{" "}
+                    {S.unitLabel(material.displayUnit)}
                   </>
                 ) : (
-                  <span className="text-[11px] text-slate-500">{PP.priceNoneYet}</span>
+                  <span className="text-[11px] text-slate-500">{t.priceNoneYet}</span>
                 )}
               </p>
             </article>
@@ -1412,7 +1626,8 @@ function CostTab({
 
 // ── The run tab ──────────────────────────────────────────────────────────────────────────────────
 
-function RunTab({
+/** Exported for scripts/measure-production-planning-fit.mjs - see the note at the top of this file. */
+export function RunTab({
   data,
   canWrite,
   busy,
@@ -1425,6 +1640,9 @@ function RunTab({
   onSave: SaveFn;
   materialsById: Map<string, WireMaterial>;
 }) {
+
+  const S = useProductionPlanningStrings();
+  const t = S.t;
   const [runLabel, setRunLabel] = useState("");
   const [runsCount, setRunsCount] = useState("1");
   const [producedOn, setProducedOn] = useState("");
@@ -1434,7 +1652,7 @@ function RunTab({
   const [exclusionReason, setExclusionReason] = useState("");
   const [lines, setLines] = useState<Record<string, { opening: string; delivered: string; closing: string }>>({});
 
-  if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{PP.notLoaded}</p>;
+  if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{t.notLoaded}</p>;
 
   const setLine = (materialId: string, field: "opening" | "delivered" | "closing", value: string) =>
     setLines((current) => ({
@@ -1451,12 +1669,12 @@ function RunTab({
     <>
       {canWrite ? (
         <section className={PANEL}>
-          <SectionTitle subtitle={PP.runSubtitle} title={PP.runTitle} />
+          <SectionTitle subtitle={t.runSubtitle} title={t.runTitle} />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label={PP.runLabel}>
+            <Field label={t.runLabel}>
               <input className={INPUT} onChange={(event) => setRunLabel(event.target.value)} value={runLabel} />
             </Field>
-            <Field label={PP.runCount}>
+            <Field label={t.runCount}>
               <input
                 className={INPUT}
                 dir="ltr"
@@ -1465,7 +1683,7 @@ function RunTab({
                 value={runsCount}
               />
             </Field>
-            <Field label={PP.runProducedOn}>
+            <Field label={t.runProducedOn}>
               <input
                 className={INPUT}
                 dir="ltr"
@@ -1474,7 +1692,7 @@ function RunTab({
                 value={producedOn}
               />
             </Field>
-            <Field label={PP.runActualGoodUnits}>
+            <Field label={t.runActualGoodUnits}>
               <input
                 className={INPUT}
                 dir="ltr"
@@ -1483,7 +1701,7 @@ function RunTab({
                 value={goodUnits}
               />
             </Field>
-            <Field label={PP.runActualSamples}>
+            <Field label={t.runActualSamples}>
               <input
                 className={INPUT}
                 dir="ltr"
@@ -1492,19 +1710,19 @@ function RunTab({
                 value={samples}
               />
             </Field>
-            <Field hint={excluded ? PP.runExcludeHint : null} label={PP.runExclude}>
+            <Field hint={excluded ? t.runExcludeHint : null} label={t.runExclude}>
               <select
                 className={INPUT}
                 onChange={(event) => setExcluded(event.target.value === "yes")}
                 value={excluded ? "yes" : "no"}
               >
-                <option value="no">{PP.no}</option>
-                <option value="yes">{PP.yes}</option>
+                <option value="no">{t.no}</option>
+                <option value="yes">{t.yes}</option>
               </select>
             </Field>
             {excluded ? (
               <div className="sm:col-span-2 lg:col-span-3">
-                <Field label={PP.runExcludeReason}>
+                <Field label={t.runExcludeReason}>
                   <input
                     className={INPUT}
                     onChange={(event) => setExclusionReason(event.target.value)}
@@ -1526,7 +1744,7 @@ function RunTab({
             </colgroup>
             <thead>
               <tr className="border-b border-slate-300 bg-slate-50">
-                {[PP.colMaterial, PP.runOpening, PP.runDelivered, PP.runClosing].map((heading) => (
+                {[t.colMaterial, t.runOpening, t.runDelivered, t.runClosing].map((heading) => (
                   <th className={TH} key={heading} scope="col">
                     {heading}
                   </th>
@@ -1538,7 +1756,7 @@ function RunTab({
                 <tr className="border-b border-slate-200 last:border-b-0" key={material.id}>
                   <td className={TD}>
                     <p className="font-bold text-slate-900 break-words">{material.nameAr}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">{unitLabelAr(material.displayUnit)}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">{S.unitLabel(material.displayUnit)}</p>
                   </td>
                   {(["opening", "delivered", "closing"] as const).map((field) => (
                     <td className={TD} key={field}>
@@ -1566,10 +1784,10 @@ function RunTab({
                       key={field}
                       label={
                         field === "opening"
-                          ? PP.runOpening
+                          ? t.runOpening
                           : field === "delivered"
-                            ? PP.runDelivered
-                            : PP.runClosing
+                            ? t.runDelivered
+                            : t.runClosing
                       }
                     >
                       <input
@@ -1615,16 +1833,16 @@ function RunTab({
               }
               type="button"
             >
-              {PP.runSave}
+              {t.runSave}
             </button>
           </div>
         </section>
       ) : null}
 
       <section className={PANEL}>
-        <SectionTitle title={PP.runHistory} />
+        <SectionTitle title={t.runHistory} />
         {data.runs.length === 0 ? (
-          <p className="text-[12px] text-slate-500">{PP.runNoneYet}</p>
+          <p className="text-[12px] text-slate-500">{t.runNoneYet}</p>
         ) : (
           <ul className="space-y-2">
             {data.runs.map((run) => (
@@ -1632,12 +1850,12 @@ function RunTab({
                 <p className="font-bold text-slate-900 break-words">{run.runLabel}</p>
                 <p className="mt-0.5 text-[12px] text-slate-700">
                   <Num>{run.producedOn}</Num> — <Num>{formatNumberLatin(run.runsCount)}</Num>{" "}
-                  {PP.unitRuns}, <Num>{formatNumberLatin(run.actualGoodUnits)}</Num> {PP.unitBox},{" "}
-                  <Num>{formatNumberLatin(run.actualSampleUnits)}</Num> {PP.unitSample}
+                  {t.unitRuns}, <Num>{formatNumberLatin(run.actualGoodUnits)}</Num> {t.unitBox},{" "}
+                  <Num>{formatNumberLatin(run.actualSampleUnits)}</Num> {t.unitSample}
                 </p>
                 {run.isExcludedFromLearning ? (
                   <p className="mt-1 break-words text-[11px] text-amber-800">
-                    {PP.runExclude}: {run.exclusionReason}
+                    {t.runExclude}: {run.exclusionReason}
                   </p>
                 ) : null}
               </li>
@@ -1647,7 +1865,7 @@ function RunTab({
       </section>
 
       <section className={PANEL}>
-        <SectionTitle title={PP.learnedOverage} />
+        <SectionTitle title={t.learnedOverage} />
         <ul className="space-y-1 text-[12px] text-slate-700">
           {data.materials
             .filter((material) => material.learning !== null)
@@ -1657,14 +1875,14 @@ function RunTab({
                 {material.learning?.recommendedOveragePct ? (
                   <Num>{formatNumberLatin(material.learning.recommendedOveragePct)}%</Num>
                 ) : material.learning?.withheldReason === "not_enough_runs" ? (
-                  PP.learnedNotEnoughRuns
+                  t.learnedNotEnoughRuns
                 ) : (
-                  PP.learnedNoTheoretical
+                  t.learnedNoTheoretical
                 )}
               </li>
             ))}
           {data.materials.every((material) => material.learning === null) ? (
-            <li className="text-slate-500">{PP.runNoneYet}</li>
+            <li className="text-slate-500">{t.runNoneYet}</li>
           ) : null}
         </ul>
       </section>
@@ -1674,7 +1892,8 @@ function RunTab({
 
 // ── The settings tab ─────────────────────────────────────────────────────────────────────────────
 
-function SettingsTab({
+/** Exported for scripts/measure-production-planning-fit.mjs - see the note at the top of this file. */
+export function SettingsTab({
   data,
   canWrite,
   busy,
@@ -1685,6 +1904,9 @@ function SettingsTab({
   busy: boolean;
   onSave: SaveFn;
 }) {
+
+  const S = useProductionPlanningStrings();
+  const t = S.t;
   const [defaultOverage, setDefaultOverage] = useState("");
   const [reorderCover, setReorderCover] = useState("");
   const [grantHrId, setGrantHrId] = useState("");
@@ -1709,17 +1931,17 @@ function SettingsTab({
     void loadGrants();
   }, [loadGrants]);
 
-  if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{PP.notLoaded}</p>;
+  if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{t.notLoaded}</p>;
   const settings = data.settings;
 
   return (
     <>
       <section className={PANEL}>
-        <SectionTitle title={PP.settingsTitle} />
+        <SectionTitle title={t.settingsTitle} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field
-            hint={`${PP.settingsLastUpdatedBy}: ${settings.updatedByLogin ?? "—"}`}
-            label={PP.settingsDefaultOverage}
+            hint={`${t.settingsLastUpdatedBy}: ${settings.updatedByLogin ?? "—"}`}
+            label={t.settingsDefaultOverage}
           >
             <input
               className={INPUT}
@@ -1731,7 +1953,7 @@ function SettingsTab({
               value={defaultOverage}
             />
           </Field>
-          <Field hint={PP.settingsReorderCoverHint} label={PP.settingsReorderCover}>
+          <Field hint={t.settingsReorderCoverHint} label={t.settingsReorderCover}>
             <input
               className={INPUT}
               dir="ltr"
@@ -1756,14 +1978,14 @@ function SettingsTab({
               }
               type="button"
             >
-              {PP.save}
+              {t.save}
             </button>
           </div>
         ) : null}
       </section>
 
       <section className={PANEL}>
-        <SectionTitle title={PP.settingsAlarmEnabled} />
+        <SectionTitle title={t.settingsAlarmEnabled} />
         {/* "Nothing sent" and "switched off" are different answers, so the screen says which one
             this is rather than showing a zero. */}
         <p
@@ -1776,19 +1998,19 @@ function SettingsTab({
           }`}
         >
           {!settings.alarmEnabled
-            ? PP.settingsAlarmOffNotice
+            ? t.settingsAlarmOffNotice
             : settings.alarmDryRun
-              ? PP.settingsAlarmDryRunNotice
-              : PP.settingsAlarmEnabled}
+              ? t.settingsAlarmDryRunNotice
+              : t.settingsAlarmEnabled}
         </p>
         <ul className="mt-2 space-y-1 text-[11px] text-slate-500">
           {settings.alarmLastEvaluatedOn ? (
             <li>
-              {PP.stockAsOf} <Num>{settings.alarmLastEvaluatedOn}</Num>
+              {t.stockAsOf} <Num>{settings.alarmLastEvaluatedOn}</Num>
             </li>
           ) : null}
           <li>
-            {PP.settingsFxEnabled}: {settings.fxFetchEnabled ? PP.stateOn : PP.stateOff}
+            {t.settingsFxEnabled}: {settings.fxFetchEnabled ? t.stateOn : t.stateOff}
           </li>
         </ul>
         {canWrite ? (
@@ -1799,7 +2021,7 @@ function SettingsTab({
               onClick={() => void onSave("/settings", { alarmEnabled: !settings.alarmEnabled })}
               type="button"
             >
-              {settings.alarmEnabled ? PP.alarmSwitchOff : PP.alarmSwitchOn}
+              {settings.alarmEnabled ? t.alarmSwitchOff : t.alarmSwitchOn}
             </button>
             <button
               className={BUTTON_QUIET}
@@ -1807,19 +2029,19 @@ function SettingsTab({
               onClick={() => void onSave("/settings", { alarmDryRun: !settings.alarmDryRun })}
               type="button"
             >
-              {settings.alarmDryRun ? PP.dryRunSwitchOff : PP.dryRunSwitchOn}
+              {settings.alarmDryRun ? t.dryRunSwitchOff : t.dryRunSwitchOn}
             </button>
           </div>
         ) : null}
       </section>
 
       <section className={PANEL}>
-        <SectionTitle subtitle={PP.settingsAccessHint} title={PP.settingsAccess} />
+        <SectionTitle subtitle={t.settingsAccessHint} title={t.settingsAccess} />
         {canWrite ? (
           <>
             <div className="flex flex-wrap items-end gap-2">
               <div className="min-w-0 grow sm:max-w-xs">
-                <Field label={PP.accessHrId}>
+                <Field label={t.accessHrId}>
                   <input
                     className={INPUT}
                     dir="ltr"
@@ -1829,14 +2051,14 @@ function SettingsTab({
                 </Field>
               </div>
               <div className="min-w-0 grow sm:max-w-[12rem]">
-                <Field label={PP.accessLevel}>
+                <Field label={t.accessLevel}>
                   <select
                     className={INPUT}
                     onChange={(event) => setGrantLevel(event.target.value as "read" | "full")}
                     value={grantLevel}
                   >
-                    <option value="read">{PP.accessLevelRead}</option>
-                    <option value="full">{PP.accessLevelFull}</option>
+                    <option value="read">{t.accessLevelRead}</option>
+                    <option value="full">{t.accessLevelFull}</option>
                   </select>
                 </Field>
               </div>
@@ -1850,7 +2072,7 @@ function SettingsTab({
                 }}
                 type="button"
               >
-                {PP.save}
+                {t.save}
               </button>
             </div>
 
@@ -1858,7 +2080,7 @@ function SettingsTab({
                 design: a row in this table can admit a SIXTH person and can never demote one of
                 them. So an empty list is the correct and expected state. */}
             {grants.length === 0 ? (
-              <p className="mt-3 text-[12px] text-slate-500">{PP.accessNoneYet}</p>
+              <p className="mt-3 text-[12px] text-slate-500">{t.accessNoneYet}</p>
             ) : (
               <ul className="mt-3 space-y-1">
                 {grants.map((grant) => (
@@ -1868,7 +2090,7 @@ function SettingsTab({
                   >
                     <span className="min-w-0 break-words">
                       <Num className="font-bold">{grant.hrId}</Num>{" "}
-                      {grant.level === "full" ? PP.accessLevelFull : PP.accessLevelRead}
+                      {grant.level === "full" ? t.accessLevelFull : t.accessLevelRead}
                       {grant.note ? <span className="text-slate-500"> — {grant.note}</span> : null}
                     </span>
                     <button
@@ -1880,7 +2102,7 @@ function SettingsTab({
                       }}
                       type="button"
                     >
-                      {PP.accessRemove}
+                      {t.accessRemove}
                     </button>
                   </li>
                 ))}
@@ -1888,12 +2110,12 @@ function SettingsTab({
             )}
           </>
         ) : (
-          <p className="text-[12px] text-slate-500">{PP.readOnlyNotice}</p>
+          <p className="text-[12px] text-slate-500">{t.readOnlyNotice}</p>
         )}
       </section>
 
       <section className={PANEL}>
-        <SectionTitle title={PP.settingsComposition} />
+        <SectionTitle title={t.settingsComposition} />
         <ul className="space-y-1 text-[12px] text-slate-700">
           {data.materials.map((material) => (
             <li className="break-words" key={material.id}>
@@ -1901,11 +2123,11 @@ function SettingsTab({
               {material.composition ? (
                 <>
                   <Qty unit={material.baseUnit} value={material.composition.qtyPerBasis} />{" "}
-                  {BASIS_LABELS[material.composition.basis]} —{" "}
-                  {SUPPLIER_LABELS[material.composition.supplier]}
+                  {S.basisLabels[material.composition.basis]} —{" "}
+                  {S.supplierLabels[material.composition.supplier]}
                 </>
               ) : (
-                <span className="text-slate-500">{PP.excludedNoComposition}</span>
+                <span className="text-slate-500">{t.excludedNoComposition}</span>
               )}
             </li>
           ))}

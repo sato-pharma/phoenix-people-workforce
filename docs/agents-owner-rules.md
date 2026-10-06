@@ -6326,6 +6326,93 @@ staging and the migration file).
 
 ---
 
+## The Production Planner is English OR Arabic, chosen with a toggle — owner, 2026-10-06
+
+His words: **"U WANT THE MODULE TO BE ENGLISH OR AARABIC AND I CHOSE BY SWITCHING A TOGGLE"**. It
+amends — it does not contradict — his original ruling for this module,
+*"طبعا اللغه دي عربي عربي عربيك ايجيبشن عربيك"*: **Arabic stays the default**, and the toggle is a
+per-reader choice over it.
+
+**What that means in the code**, and why each half is the way it is:
+
+- **English is a full second catalogue, not translated headings.** `PP_EN` in
+  `src/lib/production-planning/strings.ts` is a `Record<ProductionPlanningStringKey, string>` over
+  the Arabic catalogue's own key type, so all **199** keys exist on both sides and a key added to one
+  and forgotten on the other is a COMPILE error rather than one Arabic word in the middle of an
+  English screen. `tests/production-planning-strings.test.ts` asserts the parity in both directions
+  at run time too, because a `Record` can be satisfied with an empty string, and sweeps the English
+  half for any Arabic character left in it.
+- **The whole module flips, not only its text.** `productionPlanningStrings(lang)` carries the
+  direction, the face stack, the five tab labels, the three label maps and the planner sentence
+  together. English is **left-to-right on the app's own type**: an English page forced onto an
+  Arabic-first face stack reads as a different application from every other English screen.
+- **It is a CONTEXT, not a prop.** The portal page passes the header to `EmployeePortalPageShell` as
+  its `hero` and the workspace as its children, so the two are siblings in different prop slots and
+  no prop could reach both from one piece of state. Context resolves where an element is RENDERED,
+  which for both of them is inside the shell — so the provider wraps the shell.
+- **Remembered per BROWSER**, in `localStorage`, never in `prodplan_settings`: the choice is worth
+  nothing to anybody else, and a stored setting would make one reader's toggle change the language
+  for the other four. It is read AFTER mount, because the server has no `localStorage` and resolving
+  it during render is a hydration error rather than a language.
+- **The Excel export follows it** through `?lang=`, which flips the sheet's `rightToLeft` with the
+  strings — an English sheet laid out from the right reads as a corrupt file, not as a language. An
+  unreadable value falls back to Arabic rather than to a blank sheet.
+- **The server's refusals follow it too.** The 18 validation messages the service can throw are a
+  catalogue in both languages (`PRODUCTION_PLANNING_ERRORS` / `_EN`), resolved per request from the
+  `lang` every write carries — the workspace's own `post` puts it on the body in one place. A
+  refusal is the one part of this module a reader only ever sees once something has already gone
+  wrong, and an Arabic sentence landing on an English screen at that moment reads as a broken page.
+- 🔴 **The REORDER EMAIL stays Arabic whichever way the toggle is set.** Four named people were given
+  an Arabic notification, nothing has been said about changing what lands in their inbox, and a
+  screen preference held in one browser must not decide the language of somebody else's email.
+- **Latin digits and the genderless Arabic are untouched**, and now swept in both halves.
+
+**The two things the toggle cannot reach**, both deliberate: the portal shell's `title` and
+`errorBoundaryTitle` are server props on a server component, so the client context cannot see them —
+they are page chrome, and the title a reader sees INSIDE the module is the header's, which does
+follow. And the sidebar entry, which has always read "Production Planner" in English like the rest
+of the app's navigation.
+
+## The planner's fit is measured in a browser, in both shells and both languages
+
+🔴 **The portal shell is unreachable from an admin account, so "look at it on production" cannot
+answer the portal question.** Each twin redirects the other shell's viewer to its sibling —
+`app/(admin)/admin/production-planning` sends a portal-mode viewer to
+`/employee-portals/production-planning`, and that page sends an admin-mode viewer back — so one
+account sees exactly ONE surface for ever. The owner is Super Admin, i.e. admin mode, so his own
+signed-in session can never render the surface the module's MAIN USER opens, and production accepts
+no dev-auth headers.
+
+`scripts/measure-production-planning-fit.mjs` is the answer
+(`pnpm run ui:measure-production-planning-fit -- --fixture <file>`; `--capture` writes the real
+payload first, and it holds prices, so it is never committed). It renders the real tab components
+inside each shell's own container chain, serves them over HTTP — a `file://` tab loads as a static
+snapshot and Tailwind never applies — and reads the browser.
+
+**Measured 2026-10-06 against the real production payload: 40 rows** — two shells × two display
+scales × two languages × five widths (375/768/1024/1280/1920). Zero overflow, zero clipped cells,
+zero corner radii, zero Arabic-Indic numerals rendered; the tab strip wraps onto two rows at 375px
+and one above it. **The tightest box in the whole sweep is the PORTAL's at 1024px and display scale
+1 — 636 layout px, columns 196/146/146/146.** Both languages are measured and neither is derived
+from the other: English is a left-to-right layout of different strings, so its columns, its header
+rail and its wrap points are a second layout rather than a translation of a measured one.
+
+🔴 **A rect is VISUAL px under `phx-zoom-surface` and `clientWidth` is LAYOUT px — never compare the
+two.** `.phx-zoom-surface { zoom: var(--phx-display-scale, 1) }` sits on `<main>` in both shells, so
+`getBoundingClientRect()` returns the zoomed width while `clientWidth` returns the width the columns
+were actually laid out in. Mixing them reported a content box 20% narrower than its own table and
+made two correct measurements look like a contradiction. The zoom is also gated to
+`@media screen and (min-width: 1024px)`, so BELOW 1024px zoom 1 is the correct reading and asserting
+the chosen scale there asserts the opposite of the rule. Sweep both scales: 1 is every user's
+default and the tight case; 0.8 is the owner's own session, where the same portal box is 795px.
+
+**Every control in it was broken and watched to fire**, which is the only reason its zeros mean
+anything: an over-wide child, a per-cell clip (sized to the cell, because at 1920px a column is
+485px wide and a fixed repeat count stops overflowing exactly where the page is widest), an inline
+`border-radius: 9px` probe (`rounded-lg` computes to 0px here, so a class probe would certify a
+deleted sweep), an injected Arabic-Indic numeral, and a hard-coded direction surviving the toggle —
+which is how the loading state's own `dir="rtl"` was caught.
+
 ## The objection and the next step are UNFOLDED — owner, 2026-10-06
 
 *"unfold objection and next step in Phoenix CRM"*. This **amends his own 2026-10-02 ruling**, which
