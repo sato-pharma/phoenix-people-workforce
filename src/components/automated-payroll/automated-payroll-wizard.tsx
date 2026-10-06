@@ -843,17 +843,20 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       ) : null}
 
       {/* The Deductions module has moved since a step was confirmed.
-          Warning, never danger, and never a gate: a stale figure is a decision to
-          revisit, not proof of an error — the module may have been corrected for a
-          good reason, and the run may be right to keep what it has. Re-open the step
-          and re-enter the figure to take the new one. */}
+          DANGER once a STALE charge is present, because Part 2 confirm now refuses it (owner
+          decision 2026-10-06) — under the push gate a figure goes stale by the ordinary order of
+          work, not only because somebody changed their mind, so the old "warning, never a gate"
+          reading let a run pay a number the module had already replaced.
+          A row carrying a figure somebody entered BY HAND is their decision, still wins, and never
+          blocks — those keep the warning tone they always had. Re-confirm the step to take the
+          module's current figure; a Part 1 step stays confirmable while the run is in Part 2. */}
       {moduleDrift && moduleDrift.rows.length > 0 ? (
-        <AdminCallout tone="warning">
+        <AdminCallout tone={moduleDrift.staleCharges > 0 ? "danger" : "warning"}>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
               <div className="font-black">
                 {moduleDrift.staleCharges > 0
-                  ? `${people(moduleDrift.staleCharges)} carrying a deduction the Deductions module no longer proposes`
+                  ? `${people(moduleDrift.staleCharges)} carrying a deduction the Deductions module no longer proposes — Part 2 cannot be confirmed until you re-confirm their step`
                   : `${people(moduleDrift.overriddenButMoved)} whose module figure moved after you confirmed`}
               </div>
               <button
@@ -876,8 +879,9 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                   </div>
                 ))}
                 <div className="opacity-80">
-                  Nothing here is wrong on its own. Re-open the step and re-enter a figure to take the module&apos;s
-                  new one.
+                  {moduleDrift.staleCharges > 0
+                    ? "Re-confirm the step above to take the module's current figures. A figure somebody entered by hand still stands and is not blocking anything."
+                    : "Nothing here is wrong on its own. Re-open the step and re-enter a figure to take the module's new one."}
                 </div>
               </div>
             ) : null}

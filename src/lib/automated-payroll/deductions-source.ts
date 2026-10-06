@@ -2,6 +2,7 @@ import {
   resolveAppliedDeductionDates,
   scaleDeductionAmountToDays,
 } from "@/lib/deductions/calculations";
+import { DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY as PUSH_FROM } from "@/lib/deductions/push-cutover";
 import { loadActivePushedCandidateIds } from "@/lib/deductions/pushed-lines";
 import { listCandidatesForMonth } from "@/lib/deductions/service";
 import type { DeductionsCandidateWithDecision, DeductionsCategory } from "@/lib/deductions/types";
@@ -60,21 +61,11 @@ import type { PayrollPeriod } from "./types.ts";
 export const PAYROLL_APPROVED_STATUS = "Approved for Payroll";
 
 /**
- * The month from which PUSH is the single gate for pay (owner rule 2026-09-22:
- * "push is the single gate for pay too"). From here on nothing is deducted until
- * the Super Admin pushes that specific line, so payroll counts a candidate iff it
- * has an ACTIVE pushed line — not merely a decision of "Approved for Payroll".
- *
- * Deliberately LATER than the module's own `DEDUCTIONS_CUTOVER_MONTH_KEY`
- * (2026-07, when the module became the system of record). July and August 2026
- * were already published and their batches approved and closed under the old
- * "approved reaches payroll" rule — a published-and-announced month is never
- * re-gated (owner). September 2026 is provably clean: no salary batch and no
- * candidates exist for it yet, and production holds zero publication rows, so no
- * pay figure moves the instant this ships. Compared lexically — `YYYY-MM` is
- * zero-padded, so string order is chronological.
+ * Re-exported so every existing importer of this module keeps working; the constant itself moved to
+ * `@/lib/deductions/push-cutover` because the Deductions workspace (a client component) has to read
+ * it too, and this file reaches the Supabase admin client. One answer, two readers.
  */
-export const DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY = "2026-09";
+export { DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY } from "@/lib/deductions/push-cutover";
 
 /**
  * Whether a candidate is confirmed for payroll. Deliberately explicit rather
@@ -405,7 +396,7 @@ export async function loadConfirmedDeductions(
     // count only candidates with an ACTIVE pushed line. Before it, the legacy
     // "Approved for Payroll" gate stands — those months already paid under it.
     const pushedCandidateIds =
-      monthKey >= DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY
+      monthKey >= PUSH_FROM
         ? await loadActivePushedCandidateIds(monthKey)
         : null;
     return buildDeductionBuckets(candidates, { pushedCandidateIds });
