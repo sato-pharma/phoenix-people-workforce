@@ -130,11 +130,33 @@ waits while an earlier fold PR is still open.
 
 ### The cadence: three times a day, not weekly
 
-🔴 **The fold runs at 09:00, 15:00 and 21:00 Cairo** — the owner's instruction on 2026-10-03 ("this
-report needs to run twice or 3 times a day"), replacing the Sunday-only schedule it launched with on
-2026-10-02. The laptop scheduled task `module-memory-fold` (`0 9,15,21 * * *`, local time) runs it
-from the dedicated detached worktree `_wt-memory-fold-runner`, which it re-points at `origin/main`
-on every run, and reports to the owner.
+🔴 **The fold runs at 09:00, 15:00 and 21:00 Cairo, Monday to Saturday** — the owner's instruction
+on 2026-10-03 ("this report needs to run twice or 3 times a day", and not on Sundays), replacing the
+Sunday-only schedule it launched with on 2026-10-02.
+
+The Windows task is **`Phoenix memory fold`**, installed by
+`scripts/module-memory/install-fold-task.ps1`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\module-memory\install-fold-task.ps1
+powershell -ExecutionPolicy Bypass -File scripts\module-memory\install-fold-task.ps1 -Remove
+```
+
+Three **weekly** triggers over Monday–Saturday, not one `-Daily` trigger: a daily trigger fires on
+the Sunday he excluded and has no "except". It executes `node` directly against
+`~/.claude/scripts/memory-fold-run.mjs`, a copy of `scripts/module-memory/run-fold.mjs` deployed
+outside every checkout, which fetches and runs `origin/main`'s own `fold.mjs` in a throwaway
+worktree and writes `~/.claude/scripts/memory-fold-task.log`. It sends no email and notifies nobody.
+`tests/memory-fold-task.test.ts` pins both files in the required `validate` job.
+
+🔴 **Until 2026-10-06 this section described a task called `module-memory-fold` running from a
+worktree `_wt-memory-fold-runner`, and NEITHER EXISTED.** Nothing on the laptop was scheduled to run
+the fold — no Windows task, no Claude scheduled task, no workflow cron; the only 21:00 task was the
+CRM field day report, which names `fold.mjs` in a comment and does not run it. So from 2026-10-03 to
+2026-10-06 every new note sat in the `MEMORY.md` inbox, re-charging every request in every session,
+and reached its module only when a session happened to run the fold by hand. **A documented cadence
+is not an installed job**, and nothing anywhere said otherwise — which is why the schedule now lives
+in a committed installer with a test, rather than in a sentence.
 
 **Why three runs a day cost no extra CI.** Two things in the script make the cadence free:
 

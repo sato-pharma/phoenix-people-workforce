@@ -2128,6 +2128,7 @@ import { runHrbpTerritoryManagementAccessTests } from "./hrbp-territory-manageme
 
 import { runAgentsLongHooksCiteDocsTests } from "./agents-long-hooks-cite-docs.test.ts";
 import { runModuleMemoryTests } from "./module-memory.test.ts";
+import { runMemoryFoldTaskTests } from "./memory-fold-task.test.ts";
 
 import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-cancel-rule.test.ts";
 
@@ -7823,6 +7824,10 @@ await runTest(
 await runTest(
   "Module memory (owner, 2026-10-02): every memory note is filed under a module, global or history (no orphan); every module's globs match real files and its rules file loads only on demand (paths:, never at startup); generated blocks are current and each file is under its cap; the hook brings a module's memory to a question, a SQL query, a shell read or a new file, records a Read without injecting, and stays under the 2 KB hook-preview cliff; a rule citing one business module's files cannot grow back into AGENTS.md",
   runModuleMemoryTests,
+);
+await runTest(
+  "the memory fold is actually SCHEDULED three times a day (09:00/15:00/21:00 Cairo, Monday-Saturday — never -Daily, which fires on the Sunday he excluded): the task executes node directly because a cmd wrapper returns 0x1 and writes no log, it names the launcher deployed OUTSIDE every checkout rather than a file in the shared primary, the launcher imports node builtins only and copies no .env.local, it fetches and runs origin/main's own fold.mjs from a throwaway worktree so a stale fold can never run, a failure lands in the log with its reason, and wake/catch-up/IgnoreNew keep a shut lid from being a silent miss and two folds from racing for the one fold PR",
+  runMemoryFoldTaskTests,
 );
 await runTest(
   "new hire CRM account setup (the notice carries all seven facts, states a blank instead of dropping it, is email + in-app only, and fires on the CREATE path alone)",
