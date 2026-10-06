@@ -32,3 +32,9 @@ The page renders the schema from `GET /api/public/apply?role=hr_section_head` an
 - An ended application is **recorded** (the CV stays on file) and the response carries `{ ok: true, message }`; **no confirmation e-mail is sent**, because "we received your application" would contradict the message just shown. Only the WhatsApp Cairo thank-you was approved to go out on its own.
 - Experience and salary are required only where the role's own form carries them, so every other position is unchanged.
 - Counts: `app/api/public/apply/counts/route.ts` recognises the seat by title through its own matcher.
+
+## The stored rule's key spelling — a defect found 2026-10-06
+
+The `show_if` column holds `{"question_key": "...", "values": [...]}` (its CHECK requires `question_key`), but the code's rule is `{questionKey, values}`. The loaders passed the raw column through, so `rule.questionKey` was `undefined`, the rule never matched, and **the three follow-ups (residence, medical-rep hiring, recruitment system) were never asked on WhatsApp or the careers form** — and the Screening Questions screen's save would have refused, because validation read the same missing key. Every unit test had been written in the camelCase shape, so all stayed green; the live form schema (`showIf.fieldKey` read `extra:undefined`) is what showed it.
+
+Every reader now goes through `showIfFromRow` (`whatsapp-screening-questions.ts`), which reads either spelling and treats a malformed rule as no rule. `tests/whatsapp-screening-conditional-flow.test.ts` runs the migration's own `show_if` literals through it and checks both loaders call it. A new reader of the column must do the same.

@@ -6,6 +6,7 @@ import {
   nextActiveQuestion,
   questionIsVisible,
   screeningQuestionViolations,
+  showIfFromRow,
   type ScreeningQuestion,
 } from "../src/lib/recruitment/inbound/whatsapp-screening-questions.ts";
 
@@ -190,4 +191,37 @@ export function runWhatsAppScreeningConditionalFlowTests() {
     classify.includes("options?.closingText"),
     "finishSession must send the ending message when it is given one, and the usual summary otherwise",
   );
+
+  // THE ROW SHAPE. The column holds {"question_key": ..., "values": [...]} - the code's rule is
+  // {questionKey, values}. Used raw, the stored rule had no questionKey and the three HR Section Head
+  // follow-ups were never asked on WhatsApp or the careers form, while every test above - written in the
+  // camelCase shape - stayed green. So read the migration's own literals and run each through the same
+  // converter the loaders use.
+  const migration = readFileSync("supabase/migrations/20261006120000_ats_screening_questions_conditional_flow.sql", "utf8");
+  const stored = [...migration.matchAll(/'(\{"question_key":"[a-z_]+","values":\[[^\]]*\]\})'::jsonb/g)].map((m) => m[1]);
+  assert.equal(stored.length, 3, "the migration seeds three conditional follow-ups");
+  for (const literal of stored) {
+    const rule = showIfFromRow(JSON.parse(literal));
+    assert.ok(rule, `a stored rule must convert to a rule the bot can run: ${literal}`);
+    assert.equal(typeof rule?.questionKey, "string");
+    assert.deepEqual(rule?.values, ["yes"]);
+  }
+  const fromRow = showIfFromRow({ question_key: "hrsh_cairo", values: ["yes"] });
+  assert.deepEqual(fromRow, { questionKey: "hrsh_cairo", values: ["yes"] });
+  assert.deepEqual(showIfFromRow({ questionKey: "hrsh_cairo", values: ["yes"] }), fromRow, "either spelling reads");
+  assert.equal(showIfFromRow(null), null);
+  assert.equal(showIfFromRow({ values: ["yes"] }), null, "a rule with no key is no rule, never one that cannot match");
+  assert.equal(showIfFromRow({ question_key: "hrsh_cairo", values: "yes" }), null);
+  // And end to end: the stored residence rule shows after a Cairo "Yes" and not after "No".
+  const cairoQ = q({ options: yesNo, questionKey: "hrsh_cairo" });
+  const storedResidence = q({ questionKey: "hrsh_residence", showIf: showIfFromRow({ question_key: "hrsh_cairo", values: ["yes"] }) });
+  assert.equal(questionIsVisible(storedResidence, { hrsh_cairo: "Yes" }, [cairoQ, storedResidence]), true);
+  assert.equal(questionIsVisible(storedResidence, { hrsh_cairo: "No" }, [cairoQ, storedResidence]), false);
+  for (const file of ["session", "admin"]) {
+    const source = readFileSync(`src/lib/recruitment/inbound/whatsapp-screening-questions-${file}.ts`, "utf8");
+    assert.ok(
+      source.includes("showIfFromRow(row.show_if)"),
+      `the ${file} loader must convert the stored show_if through showIfFromRow, never pass the raw column`,
+    );
+  }
 }
