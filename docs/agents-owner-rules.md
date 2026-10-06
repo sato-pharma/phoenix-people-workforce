@@ -6682,3 +6682,50 @@ mentions neither `objection` nor `nextStep`, and the break that adds one goes re
 **The press count moves the right way.** A rep who answers now taps 2 instead of 3; a rep who skips
 taps nothing either way and pays only the scroll. Nothing was asked twice and no step was added —
 which is the 2026-10-02 ruling's own standard, met with the step open.
+
+## The reset code goes to the work email — owner, 2026-10-07
+
+The self-service password reset was being built on `codex/email-login` (sign in with a Sato email,
+reset by an emailed code) and had not been pushed. AGENTS.md §4 says to ask who receives an email
+before it is wired, so he was asked, and answered:
+
+> yes, Sato work email only, never a personal address
+
+**The rule.** A reset code is sent only to the employee's `work_email` as stored on their row. Never
+a personal address, and never an address taken from the request body — a flow that mails whatever
+the form submitted would let anyone redirect another person's reset code to themselves.
+
+### What it costs, measured on production the same night
+
+`public.employees` has exactly one email column, `work_email` (`text`, **nullable**). There is no
+`personal_email` column on the table, so there was nothing to prefer it over.
+
+| | |
+| --- | --- |
+| Employees | 208 |
+| With a `work_email` | 188 |
+| Of those, on `@satopharma.com` | **188 — all of them** |
+| On any other domain | **0** |
+| With no `work_email` at all | 20 |
+
+So the ruling excludes nothing that exists today: every address on record is already a Sato one. Its
+real cost is the 20 rows with no address, and almost all of those are not login-bearing people:
+
+| `employment_status` | missing `work_email` |
+| --- | --- |
+| `historical_payroll_record` | 15 |
+| `system_placeholder` | 2 |
+| `resigned` | 1 |
+| **`active`** | **2** |
+
+**Two active employees, both Medical Representatives, therefore cannot self-reset** and need an
+admin reset until HR fills their address. They are named in the session where this was measured, not
+here — a tracked file is the wrong place for two people's records.
+
+### Why the nullable column is the part that bites
+
+The obvious reading of "Sato work email only" is a domain check, and a domain check would have passed
+188 of 188 and told you nothing. The failure mode is the **absent** address: a reset flow that
+resolves `work_email` and sends to `null` either throws for the user or, worse, quietly succeeds
+against an empty recipient. Treat "no address on record" as an explicit branch with its own message
+pointing the employee at an admin reset — not as an error state to discover in production.
