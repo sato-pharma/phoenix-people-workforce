@@ -332,10 +332,22 @@ function runSatoEmailWriteTests() {
   // -- the screen and the route agree on the briefing length ------------------------------------
 
   const composer = readFileSync("src/components/admin/sato-email-composer.tsx", "utf8");
+  // The cap moved into SATO_COMPOSER_VARIANT on 2026-10-06, when the CEO composer started rendering
+  // this same component with a larger one of its own (its box is also a microphone). The guarantee is
+  // unchanged and so is this assertion's reason: the route SLICES the instruction at the server's
+  // figure, so a smaller number here stops him mid-sentence and a larger one drops the second half of
+  // a briefing on the way, with nothing on screen saying so.
   assert.match(
     composer,
-    new RegExp(`ASSIST_INSTRUCTION_MAX_CHARS = ${SATO_ASSIST_MAX_INSTRUCTION_CHARS.toLocaleString("en-US").replace(",", "_")}`),
+    new RegExp(
+      `instructionMaxChars: ${SATO_ASSIST_MAX_INSTRUCTION_CHARS.toLocaleString("en-US").replace(",", "_")}`,
+    ),
     "the composer's own cap must match the server's, or he types words the route silently cuts",
+  );
+  assert.match(
+    composer,
+    /maxLength=\{variant\.instructionMaxChars\}/,
+    "and the textarea must read it from the variant, so the two composers cannot share one cap by accident",
   );
   assert.match(composer, /mode: assistMode/, "the mode must actually reach the route — without it every press rewrites");
   assert.match(

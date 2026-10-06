@@ -365,16 +365,16 @@ export const MODULES = [
   {
     id: "notifications",
     title: "Email, notifications and messaging",
-    scope: "Outbound email and templates, the notification outbox and recipients, Telegram mirrors, distribution lists, Sato mailboxes and mailbox offboarding, internal messages.",
+    scope: "Outbound email and templates, the notification outbox and recipients, Telegram mirrors, distribution lists, the two composers (Sato and CEO), Sato mailboxes and mailbox offboarding, internal messages.",
     globs: [
-      "src/lib/{email,email-templates,notifications,communication,internal-messages,distribution-lists,sato-email,personal-mailbox,mailbox-offboarding,conversations,whatsapp-videos}/**",
+      "src/lib/{email,email-templates,notifications,communication,internal-messages,distribution-lists,sato-email,ceo-email,personal-mailbox,mailbox-offboarding,conversations,whatsapp-videos}/**",
       "src/components/{notifications,conversations,mailbox-offboarding}/**",
       "src/emails/**",
-      "app/**/{email-control-center,email-notifications,email-reply-composer,email-templates,notifications,notification-confidence,notification-recipients,distribution-lists,sato-email,mailbox-offboarding,messages,access-communication}/**",
+      "app/**/{email-control-center,email-notifications,email-reply-composer,email-templates,notifications,notification-confidence,notification-recipients,distribution-lists,sato-email,ceo-email,mailbox-offboarding,messages,access-communication}/**",
       "tests/*{email,notification,telegram,outbox,mailbox,distribution-list,digest}*",
       "supabase/migrations/*{email,notification,outbox,mailbox}*",
     ],
-    keywords: ["email", "emails", "notification", "notifications", "telegram", "outbox", "mailbox", "distribution list", "resend", "turbify"],
+    keywords: ["email", "emails", "notification", "notifications", "telegram", "outbox", "mailbox", "distribution list", "resend", "turbify", "email composer", "ceo email"],
     tables: ["notification", "email", "outbox", "mailbox"],
   },
   // ── The Turbify console is ONE console driven by TWO robots, so it gets its own module ──

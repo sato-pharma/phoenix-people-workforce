@@ -74,9 +74,19 @@ export type VoiceRecorder = {
 
 /**
  * Starts recording and resolves with a controller. The caller decides when to stop;
- * it also stops itself at MAX_SECONDS.
+ * it also stops itself at `maxSeconds`, which defaults to MAX_SECONDS.
+ *
+ * The CAP IS A PARAMETER because the two callers are bounded by different things. A CRM voice note
+ * is stored, so its cap is the storage budget (MAX_SECONDS, one minute). The CEO composer's
+ * dictation is transcribed and thrown away, so its cap is how long a person dictating a letter
+ * speaks — see CEO_DICTATION_MAX_SECONDS. A single constant would either fill the bucket or cut him
+ * off mid-paragraph.
  */
-export async function startRecording(onTick?: (seconds: number) => void): Promise<VoiceRecorder> {
+export async function startRecording(
+  onTick?: (seconds: number) => void,
+  options: { maxSeconds?: number } = {},
+): Promise<VoiceRecorder> {
+  const maxSeconds = Math.max(1, Math.floor(options.maxSeconds ?? MAX_SECONDS));
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
   });
@@ -128,7 +138,7 @@ export async function startRecording(onTick?: (seconds: number) => void): Promis
   // Hard cap. Without this, one forgotten recording is the storage budget.
   const limit = window.setTimeout(() => {
     if (recorder.state === "recording") recorder.stop();
-  }, MAX_SECONDS * 1000);
+  }, maxSeconds * 1000);
 
   // getUserMedia has already granted the microphone, so a recorder that refuses to
   // start would otherwise leave it granted to nobody — open, with no controller in

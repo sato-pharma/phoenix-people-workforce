@@ -58,6 +58,7 @@ import {
   MessageCircle,
   MessageSquareText,
   Network,
+  PenLine,
   PlusCircle,
   Presentation,
   Radar,
@@ -2887,6 +2888,17 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "HR Advisory"],
   },
   {
+    href: "/admin/ceo-email",
+    icon: PenLine,
+    label: "CEO Email Composer",
+    description:
+      "Write a letter from the chief executive to a distribution list or to named colleagues — typed, dictated in any language, or built from a document — on the chief executive's own letterhead and signature.",
+    // The CEO and the Super Admin, gated by @/lib/ceo-email/access. Unlike the Sato composer's row
+    // above, this one is INERT FOR NOBODY: resolveNavigationMode pins the CEO to the admin shell, so
+    // both seats render this exact address and there is no /hr twin to keep in step.
+    roles: ["Super Admin", "CEO"],
+  },
+  {
     href: "/admin/email-control-center",
     icon: SlidersHorizontal,
     label: "Email Control Center",
@@ -5099,6 +5111,10 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           // Beside the lists it sends to, deliberately: it is the only surface under this heading
           // that puts mail in somebody's inbox, and it reads the list directly above it.
           "/admin/sato-email",
+          // Beside its older sibling: the same lists, the same send flow, a different letterhead
+          // and a different seat. Keeping them adjacent is how somebody looking for "the composer"
+          // sees that there are two and which one signs.
+          "/admin/ceo-email",
           "/admin/notification-confidence",
           "/admin/notifications/email",
           "/admin/notifications/email-tracking",

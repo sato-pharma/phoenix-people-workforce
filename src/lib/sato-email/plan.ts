@@ -73,9 +73,18 @@ export function buildSatoEmailIdempotencyKey(input: {
   batchIndex: number;
   clientRequestId: string;
   html: string;
+  /**
+   * Which composer this send came from, so one screen's key never reads as another's at the provider.
+   *
+   * Defaults to the Sato composer, the only caller that existed when this was written. The CEO
+   * composer passes its own. It is a LABEL and not a collision guard: the hashed payload already
+   * differs between the two, because a different letterhead gives a different `html`.
+   */
+  scope?: string;
   senderId: string;
   subject: string;
 }): string {
+  const scope = input.scope?.trim() || "sato-email";
   const hash = crypto
     .createHash("sha256")
     .update(
@@ -90,5 +99,5 @@ export function buildSatoEmailIdempotencyKey(input: {
       }),
     )
     .digest("hex");
-  return `sato-email-${hash}`;
+  return `${scope}-${hash}`;
 }

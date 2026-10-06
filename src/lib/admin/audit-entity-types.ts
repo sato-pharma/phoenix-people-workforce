@@ -59,6 +59,8 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   business_review_pack: true,
   business_review_s1_export: true,
   calendar_event: true,
+  ceo_email_send: true,
+  ceo_email_template: true,
   company_activity_report_export: true,
   company_device: true,
   company_email_alias: true,

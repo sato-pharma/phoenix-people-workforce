@@ -172,6 +172,14 @@ export type AuditEntityType =
   // permanent public address at that moment, before any mail exists to attach it to, so the record of
   // who minted it cannot live on the send row, which may never be written.
   | "sato_email_media"
+  // The CEO Email Composer, the same two shapes for the same two reasons. They are SEPARATE types
+  // rather than a `composer` field on the pair above, because the whole point of reading one of
+  // these trails is to answer "who sent a letter over the chief executive's name" — a question a
+  // filter nobody remembers to apply would answer wrongly. The media type is deliberately NOT
+  // duplicated: both composers upload into one store and keep `sato_email_media`, so the one
+  // public token route stays the only anonymous address in that area.
+  | "ceo_email_template"
+  | "ceo_email_send"
   // Minting or revoking a bearer link to the live CV-lifecycle Google Sheet. The link outlives the
   // session that created it and copies candidate names and phone numbers out of Phoenix, so who
   // made one — and who killed it — is recorded. The token itself is never written here: an audit

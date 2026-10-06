@@ -68,6 +68,10 @@ export const GROQ_TRANSCRIPTION_MODEL = "whisper-large-v3";
  * stops it guessing Persian or Urdu from the first seconds and stops it silently translating to English,
  * which it does when the field is left off.
  *
+ * It is the DEFAULT now rather than the only value: the CEO composer's mic names a language of its own
+ * (`CEO_DICTATION_LANGUAGES`). What has not changed is that a language is always named — see the
+ * `language` field on `GroqTranscriptionRequest` for why omitting it is not an option here.
+ *
  * 🔴 IT IS NOT A DIALECT SELECTOR AND THERE IS NO SUCH FIELD — `ar-EG`, `arz` and `egy` are all refused,
  * so an Egyptian answer cannot be asked for here however the string is spelled. Trying is the obvious
  * first move when a rep reports Gulf Arabic back and it ends in a rejected request, not a better one.
@@ -285,6 +289,21 @@ export type GroqTranscriptionRequest = {
   filename: string;
   contentType: string;
   /**
+   * Which language to decode as, as an ISO-639-1 code. Left off, it is `ar` — the CRM is this
+   * module's original caller and the reason it exists.
+   *
+   * 🔴 A LANGUAGE IS ALWAYS NAMED, AND THERE IS DELIBERATELY NO WAY TO ASK FOR AUTO-DETECT. Leaving
+   * the field off the request makes Whisper translate the speech into fluent ENGLISH, which reads as
+   * a working feature — measured here on Egyptian Arabic, and the reason the CRM names `ar`. The CEO
+   * composer may dictate in any of several languages (owner, 2026-10-06), and it does that by
+   * NAMING the one he picked on the screen rather than by omitting this field: a named language is
+   * also what stops the decoder guessing Persian or Urdu off the first seconds.
+   *
+   * It is NOT a dialect selector and there is no such field — `ar-EG`, `arz` and `egy` are all
+   * refused. Dialect is steered by `prompt`.
+   */
+  language?: string;
+  /**
    * Domain words to bias the decoder towards, as a plain phrase. Whisper takes this as preceding
    * context, not as a command — it cannot be instructed, and an instruction written here is transcribed
    * into the answer. Capped by the model at 224 tokens; anything past that is silently dropped.
@@ -308,7 +327,11 @@ export async function transcribeWithGroq(request: GroqTranscriptionRequest): Pro
   const form = new FormData();
   form.set("file", new Blob([request.audio as unknown as BlobPart], { type: request.contentType }), request.filename);
   form.set("model", GROQ_TRANSCRIPTION_MODEL);
-  form.set("language", GROQ_TRANSCRIPTION_LANGUAGE);
+  // 🔴 UNCONDITIONAL. A caller may choose WHICH language (the CEO composer's mic does), and no caller
+  // can choose to send none: with the field off, Whisper translates the speech into English. `||`,
+  // not `??`, so a blank or whitespace code falls back rather than reaching the API empty.
+  const language = request.language?.trim() || GROQ_TRANSCRIPTION_LANGUAGE;
+  form.set("language", language);
   form.set("temperature", TEMPERATURE);
   form.set("response_format", "json");
   if (request.prompt) form.set("prompt", request.prompt);

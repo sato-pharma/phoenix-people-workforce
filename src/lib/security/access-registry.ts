@@ -342,6 +342,36 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/send", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/sato-email/templates", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/templates", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // The CEO Email Composer: the chief executive and the Super Admin, gated by canUseCeoEmail in
+  // @/lib/ceo-email/access. Owner 2026-10-06: "a module thats called ceo email composr exactly as
+  // sato email composer copy paste but a more corporate templete".
+  //
+  // 🔴 THE SECOND SURFACE THAT PUTS MAIL IN SOMEBODY'S INBOX, and it signs with the chief
+  // executive's name — so `send` carries the same 5-per-minute limit and the same required audit row
+  // as its Sato sibling above. The signature itself is NOT in the posted draft: it is resolved
+  // server-side from the employee directory on every render (@/lib/ceo-email/identity), because the
+  // Super Admin seat can open this screen too and a name on the wire would be a name that seat
+  // could set.
+  //
+  // Every classification here is the Sato block's, for the reasons stated there: `preview`, `assist`
+  // and `document` are POSTs because a draft is a whole email with no business in a URL, and reads
+  // because they write no row and send no mail.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/ceo-email/assist", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/ceo-email/document", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/ceo-email/employees", permission: null, guard: "domain-helper" }),
+  // Writes into the SAME object store as the Sato composer's upload, so the one public token route
+  // registered above stays the only anonymous address in this area — a second one would be a second
+  // thing to reason about. A mutation for the same reason as its sibling: an `inline` upload mints a
+  // permanent public address for that picture.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/ceo-email/media", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/ceo-email/preview", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/ceo-email/send", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/ceo-email/templates", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/ceo-email/templates", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // `transcribe` turns one spoken clip into text and hands it straight back to his own screen. A
+  // read: the audio is held in memory for the length of the call, nothing is stored, no row is
+  // written and no mail leaves. Multipart, so the same-origin check matters here as on `document`.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/ceo-email/transcribe", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Email Control Center: a read-only rollup over the 3 systems above plus email-templates —
   // view = CEO + Super Admin, edit = Super Admin only (matches
   // notification-recipients), since every write here dispatches straight into those systems'

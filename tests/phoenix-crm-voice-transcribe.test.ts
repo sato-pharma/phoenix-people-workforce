@@ -91,7 +91,25 @@ export function runPhoenixCrmVoiceTranscribeTests() {
     DICTATION_LANG,
     "it is NOT the browser engine's ar-EG: that is a BCP-47 locale and this API rejects it, so sharing one constant between the two engines would break whichever one was changed second",
   );
-  assert.match(client, /form\.set\("language", GROQ_TRANSCRIPTION_LANGUAGE\)/, `${CLIENT} always names the language — omitted, Whisper translates Arabic speech into fluent ENGLISH text, which reads as a working feature`);
+  // 🔴 THE INVARIANT IS "A LANGUAGE IS ALWAYS NAMED", NOT "THE LANGUAGE IS ALWAYS `ar`". On
+  // 2026-10-06 the CEO Email Composer's microphone became a second caller and names a language of its
+  // own, so `ar` is now the DEFAULT rather than the only value. What must never come back is a code
+  // path that sends no `language` field: with it omitted, Whisper translates the speech into fluent
+  // ENGLISH text, which reads as a working feature. These three assertions pin that, in both halves —
+  // the `set` is unconditional, and the fallback is this constant.
+  assert.match(client, /form\.set\("language", language\)/, `${CLIENT} names the language on every path`);
+  assert.match(
+    client,
+    /const language = request\.language\?\.trim\(\) \|\| GROQ_TRANSCRIPTION_LANGUAGE/,
+    `${CLIENT} falls back to ${GROQ_TRANSCRIPTION_LANGUAGE} — and uses || so a blank code cannot reach the API empty`,
+  );
+  assert.doesNotMatch(
+    client,
+    /if \([^)]*language[^)]*\) form\.set\("language"/,
+    `${CLIENT} must not make the language field conditional — omitted, Whisper translates the speech into English`,
+  );
+  // And the CRM's own caller passes none, which is how it keeps getting `ar`.
+  assert.doesNotMatch(service, /language:/, `${SERVICE} names no language, so the client's ${GROQ_TRANSCRIPTION_LANGUAGE} default applies`);
   // 🔴 The FULL model, and the owner's own finding is why. Turbo shipped here first on the reasoning that
   // its accuracy cost was small next to "some text vs no text" — true about the PRESENCE of text and wrong
   // about its KIND. Turbo is the same weights with the decoder distilled 32 layers to 4, and the decoder is

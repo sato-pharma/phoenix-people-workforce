@@ -109,6 +109,41 @@ export const systemEmail = {
    */
   satoComposerReplyToEmail: "omar.anwar@satopharma.com",
   /**
+   * The From address of every letter the CEO Email Composer sends.
+   *
+   * 🔴 ON THE `send.` SUBDOMAIN, AND IT MUST STAY THERE — for the measured reason written out above
+   * `satoComposerFromEmail`. An apex `@satopharma.com` From is where the recipients' own mailboxes
+   * live (MX → Yahoo Business Mail), so a message claiming that identity while arriving via Resend
+   * matches the shape of a spoofed sender and is filed as bulk: 0% opens across 36 sends, with SPF,
+   * DKIM and DMARC all passing. `send.satopharma.com` carries no mailbox of its own by design and
+   * has the proven delivery record. The DISPLAY name is what a recipient reads in their inbox list,
+   * and `ceoEmailFrom` puts the chief executive's name and office there.
+   */
+  ceoComposerFromEmail: "ceo@send.satopharma.com",
+  /**
+   * The visible To of a multi-recipient CEO fan-out — real recipients ride in Bcc, and this is the
+   * address every one of them reads in the To line instead.
+   *
+   * 🔴 IT MUST BE A REAL, ACCEPTING MAILBOX, because Resend actually attempts delivery to it: it is
+   * a genuine SMTP envelope recipient, unlike a Bcc'd name a client only renders. So it is NOT
+   * `ceoComposerFromEmail` — `send.satopharma.com` has no inbox (its only MX is Amazon SES's
+   * bounce-feedback address), and pointing this at it would hard-bounce one recipient on every
+   * batch and erode the reputation the From-address rule above depends on.
+   *
+   * The chief executive's own apex mailbox is used, which also means he receives a copy of his own
+   * letter. Verified live against `email_delivery_events` on 2026-10-06 before it was wired here:
+   * 632 delivered, 2,119 opens, 1 failure — a healthy, unsuppressed inbox.
+   */
+  ceoComposerFanoutVisibleTo: "anwar.gaweesh@satopharma.com",
+  /**
+   * Where a reply to a CEO letter lands — his own mailbox.
+   *
+   * Deliberately NOT `satoComposerReplyToEmail`. A reply to a letter signed by the chief executive
+   * belongs to him; routing it to the HR or admin mailbox would answer his correspondence on his
+   * behalf. Same verified inbox as the visible To above.
+   */
+  ceoComposerReplyToEmail: "anwar.gaweesh@satopharma.com",
+  /**
    * Reply-To for mail a particular SEAT sends by hand, keyed on the SENDER's role.
    *
    * Owner 2026-09-11, refined when asked: a mail carries the HR Business Partner's address when
