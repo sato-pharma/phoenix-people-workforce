@@ -103,6 +103,14 @@ const REFUSALS: Record<string, Refusal> = {
   not_archived: { status: 409, message: "This customer is not in the Archive. Reload the page." },
   not_on_list: { status: 409, message: "This customer is not on your list yet. Ask to add them to your list first." },
   move_reason_required: { status: 400, message: "Write why the place is moved (at least 10 characters)." },
+  // Moving a customer from one rep's list to another's (owner, 2026-10-06). The reason's own refusal is
+  // `note_required` above, in the same words a place move uses.
+  same_seat: { status: 400, message: "That is the rep this customer is with already. Choose a different rep." },
+  duplicate_at_destination: {
+    status: 409,
+    message:
+      "That rep already has this customer on the same list. Drop whichever of the two is wrong instead of moving a second copy onto it.",
+  },
   // The daily forecast (owner, 2026-10-01): CNS only, and the database refuses any other line itself.
   not_forecast_line: { status: 403, message: "The daily forecast is for the CNS line only." },
   // A record a rep missed, entered by the Super Admin (owner, 2026-10-01): any day that has begun.

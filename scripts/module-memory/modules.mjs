@@ -186,10 +186,10 @@ export const MODULES = [
       "src/lib/phoenix-crm/server/{adoption,approval-nudge,awaiting-decisions,decision-queues,refused-readings}.ts",
       "app/api/phoenix-crm/list/**",
       "app/**/phoenix-crm/list-template/**",
-      "tests/phoenix-crm-{adoption,approval-notices,approval-nudge,customer-list-board,list-admission,list-edges,list-row-facts,list-sheet-hours,list-template,manager-validates,refused-readings}*",
+      "tests/phoenix-crm-{adoption,approval-notices,approval-nudge,customer-list-board,list-admission,list-curation,list-edges,list-row-facts,list-sheet-hours,list-template,manager-validates,refused-readings}*",
     ],
-    keywords: ["list admission", "off-plan", "off plan", "bring back", "bring-back", "plan review", "decision queue", "awaiting decision", "validated at the door", "refused reading", "rough location"],
-    tables: ["phoenix_crm_refused_readings"],
+    keywords: ["list admission", "off-plan", "off plan", "bring back", "bring-back", "plan review", "decision queue", "awaiting decision", "validated at the door", "refused reading", "rough location", "drop from the list", "move the customer", "another rep", "curate"],
+    tables: ["phoenix_crm_refused_readings", "phoenix_crm_customer_moves"],
   },
   // 🔴 SPLIT AGAIN, 2026-10-04, FOR THE SAME REASON AS THE ONE ABOVE: `phoenix-crm` reached 33 rules and its
   // injected pointer measured 4,019 bytes against the 4,000 margin `tests/module-memory.test.ts` holds, the

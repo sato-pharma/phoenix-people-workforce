@@ -68,9 +68,11 @@ import {
 } from "@/lib/phoenix-crm/list-request-rules";
 import { planWeekdays, type PlanWeekday } from "@/lib/phoenix-crm/plan-pattern";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { territoryName, territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
+  assertListCurator,
   assertListRequestApprover,
+  canCurateList,
   canDecideListRequest,
   canMovePlaces,
   canReviewTerritory,
@@ -380,6 +382,20 @@ export type ListRequest = {
   canDecide: boolean;
 };
 
+/**
+ * One rep seat a curated customer can be handed to. Named, never coded: `seatId` is the picker's
+ * value and is never printed, and a seat nobody holds today still reads by its territory — a list
+ * belongs to the SEAT, not to the person on it (owner's pick, 2026-10-02).
+ */
+export type ListMoveTarget = {
+  seatId: string;
+  lineCode: string;
+  lineName: string | null;
+  territoryName: string;
+  /** Null for a vacant seat. */
+  repName: string | null;
+};
+
 export type TerritoryListView = {
   territory: TerritorySummary;
   isTest: boolean;
@@ -406,6 +422,18 @@ export type TerritoryListView = {
    * the Archive, owner 2026-09-29): the SFE Manager in scope, the Super Admin in test mode.
    */
   canBringBack: boolean;
+  /**
+   * The viewer may curate this rep's list from outside it — drop a customer himself, or hand him to
+   * another rep (owner, 2026-10-06; `canCurateList`): the SFE Manager and the Super Admin. A rep's own
+   * ask to drop still takes its two steps.
+   */
+  canCurateList: boolean;
+  /**
+   * Where a curated customer may be moved: every OTHER rep seat the viewer reaches, by the rep's own
+   * name. Empty for everybody else, so an ordinary viewer's List payload is exactly what it was and
+   * costs no extra read.
+   */
+  moveTargets: ListMoveTarget[];
   readiness: ReadinessSummary & { readyAt: string | null };
   /** Whose iReports360 list the reference is; the name is null when that person is not on record. */
   referenceSource: { name: string | null; isCurrent: boolean } | null;
@@ -424,6 +452,14 @@ export type TerritoryListView = {
 
 /** The database refuses a sixth active place (phoenix_crm_add_place, too_many_places). */
 export const PHOENIX_CRM_PLACES_MAX = 5;
+
+/**
+ * The written reason moving a customer to another rep needs — the same bounds a place move has
+ * (place-move.ts), because it is the same kind of act: rewriting a validated record somebody else
+ * captured. `phoenix_crm_move_customer` repeats both bounds, so a phone cannot get round them.
+ */
+export const CUSTOMER_MOVE_REASON_MIN = 10;
+export const CUSTOMER_MOVE_REASON_MAX = 500;
 
 export function mapTimings(raw: unknown): PhoenixCrmTiming[] {
   if (!Array.isArray(raw)) return [];
@@ -952,11 +988,21 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   // and logs it exactly as before.
   mirrorReads?.catch(() => undefined);
 
+  // 🔴 WHERE A CURATED CUSTOMER COULD GO (owner, 2026-10-06). Resolved only for the SFE Manager and
+  // the Super Admin, and the occupants' names ride in the SAME batched read as this seat's own people:
+  // one query for ~74 names rather than a second round trip, and nothing at all for every other
+  // viewer, whose payload stays byte-for-byte what it was.
+  const canCurate = canCurateList(viewer, seat, isTest);
+  const targetSeats = canCurate
+    ? viewer.scopeTerritories.filter((entry) => entry.seatId !== seat.seatId && Boolean(entry.lineCode))
+    : [];
+
   const [names, referenceBrickMeta] = await Promise.all([
     loadPeopleNames([
       ...territoryPeople(viewer.org, [seat]),
       ...requestPeople(requestRows),
       ...customers.map((row) => text(row.validated_by_hr_id)),
+      ...targetSeats.map((entry) => entry.occupantHrId),
       reference[0]?.source_hr_id ?? null,
     ]),
     // The name and area of every brick iReports360 carries a reference customer in — so a pending
@@ -1117,6 +1163,22 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     canMovePlaces: canMovePlaces(viewer, seat, isTest),
     seesMeasurements: readsLocationDetail(viewer),
     canBringBack: canDecideListRequest(viewer, seat, isTest, "sfe"),
+    canCurateList: canCurate,
+    moveTargets: targetSeats
+      .map((entry) => ({
+        seatId: entry.seatId,
+        lineCode: entry.lineCode as string,
+        lineName: entry.lineName,
+        territoryName: territoryName(entry),
+        repName: entry.occupantHrId ? nameOf(names, entry.occupantHrId) || null : null,
+      }))
+      // The line first, then the rep: the picker is read down a line, and a vacant seat sorts by its
+      // own territory rather than to the top of the list.
+      .sort(
+        (left, right) =>
+          (left.lineName ?? "").localeCompare(right.lineName ?? "") ||
+          (left.repName ?? left.territoryName).localeCompare(right.repName ?? right.territoryName),
+      ),
     readiness: { ...summary, ready: summary.ready || Boolean(stored?.readyAt), readyAt: stored?.readyAt ?? null },
     referenceSource: source ? { name: nameOf(names, source.source_hr_id, "") || null, isCurrent: source.source_is_current } : null,
     reference: referenceEntries,
@@ -1868,6 +1930,119 @@ export async function sfeBringBack(viewer: PhoenixCrmViewer, raw: unknown): Prom
     p: { request_id: requestId, actor_hr_id: viewer.hrId, is_test: isTest, decision: "approve", note, stage: "sfe" },
   });
   return { requestId, customerId };
+}
+
+/**
+ * The SFE Manager drops an irrelevant customer off a rep's list himself (owner, 2026-10-06: "make the
+ * sfe able to enter on any med rep list and delete or drop from it any irrelevant customer").
+ *
+ * Filed as a `drop` request at the SFE step and decided in the same breath — exactly as `sfeBringBack`
+ * does, and for the same reason: the Archive then reads the same whoever took the customer off the
+ * list, with a reason, a decider and a time, rather than a customer who silently disappeared. So this
+ * needed no database function of its own, and no new way for a customer to leave a list.
+ *
+ * 🔴 IT DOES NOT SHORTEN THE REP'S OWN PATH. A rep asking to drop a customer still goes to his
+ * district manager and then to SFE (`createListRequest`): that ask is about the rep's own work, and the
+ * two steps are the owner's rule of 2026-09-29. This is the SFE reaching into the list from outside it.
+ *
+ * The rep is not notified. A decided request notifies whoever ASKED, which here is the SFE himself, and
+ * the rep asked for nothing; a notice invented for him would be the module telling him his list was
+ * inspected (Golden Rule #1). What protects his figures instead is the plan report, which takes the
+ * days after a customer leaves out of his denominator.
+ */
+export async function sfeDropFromList(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ requestId: string; customerId: string; customerName: string }> {
+  const body = record(raw);
+  const { seat, isTest } = territoryForRead(viewer, body.seatId, readTestFlag(body.test));
+  assertListCurator(viewer, seat, isTest);
+  if (!isUuid(body.customerId)) throw validationError("Choose the customer to drop.");
+  const customerId = String(body.customerId).toLowerCase();
+  const drop = parseDropDraft(body);
+  if (!drop.ok) throw validationError(drop.error);
+
+  const created = await callPhoenixCrm<Row>("phoenix_crm_create_request", {
+    p: {
+      seat_id: seat.seatId,
+      line_code: lineCodeOf(seat),
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      kind: "drop",
+      customer_id: customerId,
+      first_stage: "sfe",
+      drop_reason: drop.value.reason,
+      note: drop.value.note,
+    },
+  });
+  const requestId = String(created.request_id);
+  await callPhoenixCrm<Row>("phoenix_crm_decide_request", {
+    p: {
+      request_id: requestId,
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      decision: "approve",
+      note: drop.value.note,
+      stage: "sfe",
+    },
+  });
+  return { requestId, customerId, customerName: String(created.customer_name) };
+}
+
+/**
+ * The SFE Manager hands a customer from one rep's list to another's, choosing where (owner,
+ * 2026-10-06: "or move this customer to and choose where").
+ *
+ * The customer TRAVELS — same row, same grade and potential, same validation, same clinics, a new seat
+ * and that seat's line (`phoenix_crm_move_customer`). He is not dropped here and re-added there: a
+ * validated place is fixed forever and is keyed on the customer, so re-adding would make the new rep
+ * capture a second place for one doorway — the duplicate the duplicates board exists to catch.
+ *
+ * The destination is a rep SEAT the viewer reaches, which is also how a list is owned (owner's pick,
+ * 2026-10-02: a seat's list belongs to the seat, not to the person), so a seat nobody holds today is a
+ * legitimate destination and its line is read from the organogram rather than from the phone.
+ */
+export async function moveCustomerToSeat(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ customerId: string; customerName: string; toSeatId: string; places: number }> {
+  const body = record(raw);
+  const { seat, isTest } = territoryForRead(viewer, body.seatId, readTestFlag(body.test));
+  assertListCurator(viewer, seat, isTest);
+  if (!isUuid(body.customerId)) throw validationError("Choose the customer to move.");
+  const toSeatId = String(body.toSeatId ?? "").trim();
+  if (!toSeatId) throw validationError("Choose the rep to move this customer to.");
+  if (toSeatId === seat.seatId) throw validationError("That is the rep this customer is with already. Choose a different rep.");
+  // The destination is resolved in the organogram and checked against the viewer's own reach — a seat
+  // id arriving from a phone is never trusted, and a picker is never wider than its viewer.
+  const target = viewer.scopeTerritories.find((entry) => entry.seatId === toSeatId);
+  if (!target) throw forbiddenError("That rep is not one you can move a customer to.");
+  const toLineCode = lineCodeOf(target);
+  // The destination must be one he could curate too: moving a customer onto a list is a change to that
+  // list, and the same people may make it.
+  assertListCurator(viewer, target, isTest);
+  const reason = cleanText(body.reason, CUSTOMER_MOVE_REASON_MAX);
+  if (!reason || reason.length < CUSTOMER_MOVE_REASON_MIN) {
+    throw validationError(`Write why the customer is moving (at least ${CUSTOMER_MOVE_REASON_MIN} characters).`);
+  }
+
+  const result = await callPhoenixCrm<Row>("phoenix_crm_move_customer", {
+    p: {
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      customer_id: String(body.customerId).toLowerCase(),
+      from_seat_id: seat.seatId,
+      to_seat_id: toSeatId,
+      to_line_code: toLineCode,
+      reason,
+    },
+  });
+  return {
+    customerId: String(result.customer_id),
+    customerName: String(result.customer_name),
+    toSeatId: String(result.to_seat_id),
+    places: Number(result.places ?? 0),
+  };
 }
 
 export async function withdrawListRequest(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ requestId: string }> {

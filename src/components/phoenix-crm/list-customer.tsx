@@ -52,7 +52,19 @@ import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { pointSourceText } from "@/components/phoenix-crm/place-move-screen";
 import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card";
 import { TimingsReadout } from "@/components/phoenix-crm/timings-editor";
-import { CrmBackBar, CrmBlock, CrmButton, CrmFacts, CrmField, CrmNote, CrmPanel, CrmPill, crmTextareaClassName } from "@/components/phoenix-crm/ui";
+import {
+  CrmBackBar,
+  CrmBlock,
+  CrmButton,
+  CrmFacts,
+  CrmField,
+  CrmNote,
+  CrmPanel,
+  CrmPill,
+  CrmSelect,
+  crmTextareaClassName,
+} from "@/components/phoenix-crm/ui";
+import { DROP_REASONS } from "@/lib/phoenix-crm/entry-rules";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE, LOCATION_NOT_CONFIRMED_TEXT } from "@/lib/phoenix-crm/google-place-rules";
 import { awaitsValidation, neverAdmitted, onTheList, requestKindLabel, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
@@ -64,6 +76,10 @@ const PLACE_RELOAD = new Set(["phoenix_crm_last_place", "phoenix_crm_place_not_f
 const PLACE_REASON_MIN = 10;
 const PLACE_REASON_MAX = 500;
 const MOVE_RELOAD = new Set(["phoenix_crm_not_outside", "phoenix_crm_customer_not_found"]);
+/** The written reason moving a customer to another rep needs — the same bounds the server holds it to
+ * (CUSTOMER_MOVE_REASON_MIN/MAX, server/list.ts) and the database repeats (phoenix_crm_move_customer). */
+const MOVE_CUSTOMER_REASON_MIN = 10;
+const MOVE_CUSTOMER_REASON_MAX = 500;
 
 /**
  * Whether this viewer may see a clinic's measurements (its coordinates, their accuracy, the phone's
@@ -297,6 +313,12 @@ export function CustomerScreen({
             comes back through "Request to add" instead, where his grade and potential are set. */}
         {archived && view.canBringBack && !neverAdmitted(customer) && !customer.waiting.some((entry) => entry.kind === "restore" || entry.kind === "add") ? (
           <BringBackNow customer={customer} onNotice={onNotice} seatId={seatId} test={test} />
+        ) : null}
+        {/* The SFE Manager reaches into the list from outside it (owner, 2026-10-06): he drops an
+            irrelevant customer himself, or hands him to another rep. On the list only — a customer in
+            the Archive has already left it, and one waiting outside it is on nobody's list to hand on. */}
+        {view.canCurateList && (active || pending) ? (
+          <CurateFromList customer={customer} onLeave={onLeave ?? onNotice} seatId={seatId} test={test} view={view} />
         ) : null}
       </CrmBlock>
 
@@ -567,6 +589,202 @@ function BringBackNow({
           </CrmButton>
         </div>
       )}
+      {problem ? <CrmNote tone="bad">{browserNamed(problem)}</CrmNote> : null}
+    </div>
+  );
+}
+
+/**
+ * The SFE Manager's own two acts on a rep's list, from outside it (owner, 2026-10-06: "make the sfe
+ * able to enter on any med rep list and delete or drop from it any irrelevant customer or move this
+ * customer to and choose where").
+ *
+ * Both are shown only when the SERVER says so (`view.canCurateList`) and both carry what they are
+ * written down with: the drop its reason from the module's own list, the move the rep it goes to and a
+ * sentence saying why. Neither replaces the rep's own path — a rep still asks, and his district manager
+ * and then SFE answer — which is why this sits apart from `ListMoves` above rather than inside it.
+ */
+function CurateFromList({
+  customer,
+  onLeave,
+  seatId,
+  test,
+  view,
+}: {
+  customer: ListCustomer;
+  /**
+   * Both acts take the customer off THIS list, so both end on the list behind it with the notice —
+   * there is no card left to show. The caller passes its own `onNotice` where it has no `onLeave`.
+   */
+  onLeave: (notice: ListNotice) => void;
+  seatId: string;
+  test: boolean;
+  view: TerritoryListView;
+}) {
+  const [open, setOpen] = useState<"drop" | "move" | null>(null);
+  const [dropReason, setDropReason] = useState("");
+  const [dropNote, setDropNote] = useState("");
+  const [toSeatId, setToSeatId] = useState("");
+  const [moveReason, setMoveReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  // A location refusal names HIS browser, never "Phoenix" (use-browser-name.ts); anything else is untouched.
+  const browserNamed = useBrowserNamed();
+
+  function close() {
+    setOpen(null);
+    setProblem(null);
+    setDropReason("");
+    setDropNote("");
+    setToSeatId("");
+    setMoveReason("");
+  }
+
+  async function drop() {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await crmPost<unknown>(
+        "/api/phoenix-crm/list/curate/drop",
+        { seatId, test, customerId: customer.customerId, reason: dropReason, note: dropNote },
+        "dropped",
+      );
+      onLeave({
+        tone: "good",
+        title: `Off the list: ${customer.name}`,
+        message: `In the Archive, with your reason on the record. ${view.territory.repName ?? "The rep"} no longer plans or visits this customer.`,
+      });
+    } catch (error) {
+      setProblem(messageOf(error));
+      setBusy(false);
+    }
+  }
+
+  async function move() {
+    setBusy(true);
+    setProblem(null);
+    const target = view.moveTargets.find((entry) => entry.seatId === toSeatId) ?? null;
+    try {
+      await crmPost<unknown>(
+        "/api/phoenix-crm/list/curate/move",
+        { seatId, test, customerId: customer.customerId, toSeatId, reason: moveReason },
+        "moved",
+      );
+      onLeave({
+        tone: "good",
+        title: `Moved: ${customer.name}`,
+        message: `Now on ${target?.repName ?? target?.territoryName ?? "the chosen rep"}'s list, with the grade, the clinics and the validation they already had.`,
+      });
+    } catch (error) {
+      setProblem(messageOf(error));
+      setBusy(false);
+    }
+  }
+
+  const moveReady = toSeatId !== "" && moveReason.trim().length >= MOVE_CUSTOMER_REASON_MIN;
+
+  return (
+    <div className="mt-3 grid min-w-0 gap-2 border-t border-slate-100 pt-3">
+      <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">SFE · this rep&apos;s list</p>
+      {open === null ? (
+        <div className="grid gap-2 sm:flex sm:flex-wrap">
+          <CrmButton onClick={() => setOpen("move")}>Move to another rep</CrmButton>
+          <CrmButton onClick={() => setOpen("drop")} variant="danger">
+            Drop from this list
+          </CrmButton>
+        </div>
+      ) : null}
+      {open === "drop" ? (
+        <div className="grid min-w-0 gap-2 border border-rose-200 bg-rose-50 px-3 py-3">
+          <p className="break-words text-sm font-bold text-rose-900">
+            Take {customer.name} off {view.territory.repName ?? "this rep"}&apos;s list and put them in the Archive?
+          </p>
+          <CrmField htmlFor="curate-drop-reason" label="Why this customer leaves the list">
+            <CrmSelect id="curate-drop-reason" onChange={(event) => setDropReason(event.target.value)} value={dropReason}>
+              <option value="">Choose a reason</option>
+              {DROP_REASONS.map((reason) => (
+                <option key={reason.key} value={reason.key}>
+                  {reason.label}
+                </option>
+              ))}
+            </CrmSelect>
+          </CrmField>
+          <CrmField
+            hint={dropReason === "other" ? "Required for “Other”." : "Optional."}
+            htmlFor="curate-drop-note"
+            label="Note"
+          >
+            <textarea
+              className={crmTextareaClassName}
+              id="curate-drop-note"
+              maxLength={500}
+              onChange={(event) => setDropNote(event.target.value)}
+              value={dropNote}
+            />
+          </CrmField>
+          <div className="flex min-w-0 flex-wrap gap-2">
+            <CrmButton
+              busy={busy}
+              disabled={!dropReason || (dropReason === "other" && !dropNote.trim())}
+              onClick={() => void drop()}
+              size="sm"
+              variant="danger"
+            >
+              Drop from the list
+            </CrmButton>
+            <CrmButton disabled={busy} onClick={close} size="sm">
+              Keep on the list
+            </CrmButton>
+          </div>
+        </div>
+      ) : null}
+      {open === "move" ? (
+        <div className="grid min-w-0 gap-2 border border-slate-200 px-3 py-3">
+          <p className="break-words text-sm font-bold text-slate-800">
+            Move {customer.name} to another rep&apos;s list. The grade, the potential, the clinics and the validation go with them; every
+            visit already recorded stays with {view.territory.repName ?? "this rep"}.
+          </p>
+          {view.moveTargets.length === 0 ? (
+            <CrmNote tone="warn">There is no other rep seat you can move this customer to.</CrmNote>
+          ) : (
+            <>
+              <CrmField htmlFor="curate-move-to" label="Move to">
+                <CrmSelect id="curate-move-to" onChange={(event) => setToSeatId(event.target.value)} value={toSeatId}>
+                  <option value="">Choose a rep</option>
+                  {/* The line is written INTO each label, never an optgroup: the admin combo box flattens
+                      groups, so a grouped picker loses its headings silently (CrmSelect). */}
+                  {view.moveTargets.map((target) => (
+                    <option key={target.seatId} value={target.seatId}>
+                      {[target.repName ?? "Seat with no rep today", target.lineName, target.territoryName].filter(Boolean).join(" · ")}
+                    </option>
+                  ))}
+                </CrmSelect>
+              </CrmField>
+              <CrmField
+                hint={`At least ${MOVE_CUSTOMER_REASON_MIN} characters. It stays on the record of the move.`}
+                htmlFor="curate-move-reason"
+                label="Why the customer is moving"
+              >
+                <textarea
+                  className={crmTextareaClassName}
+                  id="curate-move-reason"
+                  maxLength={MOVE_CUSTOMER_REASON_MAX}
+                  onChange={(event) => setMoveReason(event.target.value)}
+                  value={moveReason}
+                />
+              </CrmField>
+              <div className="flex min-w-0 flex-wrap gap-2">
+                <CrmButton busy={busy} disabled={!moveReady} onClick={() => void move()} size="sm" variant="primary">
+                  Move the customer
+                </CrmButton>
+                <CrmButton disabled={busy} onClick={close} size="sm">
+                  Leave on this list
+                </CrmButton>
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
       {problem ? <CrmNote tone="bad">{browserNamed(problem)}</CrmNote> : null}
     </div>
   );

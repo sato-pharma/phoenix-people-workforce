@@ -22,6 +22,7 @@ export type {
 export type {
   CustomerPharmacy,
   ListCustomer,
+  ListMoveTarget,
   ListPlace,
   ListReferenceEntry,
   ListRequest,
