@@ -9,7 +9,7 @@ import {
   hrNavigationSections,
   hubPageItemGroups,
 } from "../src/config/system-navigation.ts";
-import { hrNamespaceRemainder, isHrNamespacePath } from "../src/lib/navigation/shell-headers.ts";
+import { hrNamespaceRemainder, isHrRewritablePath } from "../src/lib/navigation/shell-headers.ts";
 
 /**
  * Every row the sidebar renders, and every hub card behind it, must point at a page that exists.
@@ -39,8 +39,17 @@ import { hrNamespaceRemainder, isHrNamespacePath } from "../src/lib/navigation/s
  * HR seat off a bare admin address back into the namespace (`toHrNamespacePath`), and
  * `hr-url-namespace.test.ts` requires every HR row to be authored under the prefix.
  *
- * This test therefore strips the prefix with the namespace's OWN helper before resolving, rather
+ * This test therefore strips the prefix with the namespace's OWN helpers before resolving, rather
  * than re-deriving the rule. A second spelling of it is the defect the helper exists to prevent.
+ *
+ * 🔴 And the helper it asks is `isHrRewritablePath`, NEVER the broader `isHrNamespacePath`. The two
+ * disagree on exactly one thing, and it is a security boundary rather than a detail: `proxy.ts`
+ * REFUSES to rewrite `/hr/api/**`, because the CSRF guard there is scoped to paths beginning
+ * `/api/` and a rewritten `/hr/api/x` would reach every API route with that guard never running. So
+ * an address under `/hr/api/` is served by nothing, and stripping its prefix would resolve it as if
+ * the rewrite applied — this check would then call a genuinely dead row healthy, which is the one
+ * thing it exists to refuse. Asking the narrower predicate means the exclusion list can grow in
+ * `shell-headers.ts` without this file having to learn about it.
  *
  * ## What it deliberately cannot check
  *
@@ -82,9 +91,16 @@ function pageRoutes(): Set<string> {
 }
 
 function resolvesToPage(href: string, routes: Set<string>): boolean {
-  // `/hr/employees` is served by `/employees` — see the namespace note above.
-  const address = isHrNamespacePath(href) ? hrNamespaceRemainder(href) : href;
-  const segments = address.split("?")[0].split("#")[0].replace(/\/+$/, "").split("/").filter(Boolean);
+  // The query and the fragment come off FIRST, and not for tidiness: `isHrRewritablePath("/hr?x=1")`
+  // is false — that address equals neither `/hr` nor anything starting `/hr/` — so testing the raw
+  // href would read a namespace row as an ordinary one and report it dead. The router matches the
+  // pathname alone; `?view=` is read by the page.
+  const pathname = href.split("?")[0].split("#")[0];
+  // `/hr/employees` is served by `/employees` — see the namespace note above. The predicate is
+  // `isHrRewritablePath`, never `isHrNamespacePath`: `/hr/api/**` is deliberately NOT rewritten, so
+  // stripping its prefix would resolve an address nothing serves.
+  const address = isHrRewritablePath(pathname) ? hrNamespaceRemainder(pathname) : pathname;
+  const segments = address.replace(/\/+$/, "").split("/").filter(Boolean);
   if (segments.length === 0) return routes.has("/");
   for (const candidate of routes) {
     const parts = candidate.split("/").filter(Boolean);
@@ -159,5 +175,26 @@ export function runNavHrefsResolveTests() {
   assert.ok(
     !routes.has("/hr/employees"),
     "there must be no app/ folder at /hr/employees — the namespace is a proxy.ts rewrite, and a real page there would be a second copy of the register",
+  );
+
+  // The resolver itself, against route sets written here rather than read from `app/`. Both cases
+  // below PASS the real tree today whichever predicate the resolver asks, because no nav row sits
+  // under `/hr/api/` and no page.tsx sits under `app/api/` — so a catalogue sweep cannot tell the
+  // two apart and the mistake would survive until one of those became true. A synthetic route set
+  // makes the difference observable now: with `isHrNamespacePath` in place of `isHrRewritablePath`
+  // the first assertion fails, because the prefix comes off an address proxy.ts refuses to rewrite.
+  assert.ok(
+    !resolvesToPage("/hr/api/x", new Set(["/api/x"])),
+    "/hr/api/** is NOT rewritten (the CSRF guard in proxy.ts is scoped to /api/), so a row there is served by nothing and must not resolve through /api/x",
+  );
+  assert.ok(
+    resolvesToPage("/hr/x", new Set(["/x"])),
+    "an ordinary /hr address IS rewritten, so /hr/x must resolve through the page at /x",
+  );
+  // A query string must not hide the namespace. `/hr?tab=x` is inside it, yet equals neither `/hr`
+  // nor anything starting `/hr/`, so a resolver that tests the raw href calls the HR landing dead.
+  assert.ok(
+    resolvesToPage("/hr?tab=x", new Set(["/"])),
+    "/hr?tab=x is the namespace root with a query: the pathname is stripped before the namespace test, so it resolves to /",
   );
 }
