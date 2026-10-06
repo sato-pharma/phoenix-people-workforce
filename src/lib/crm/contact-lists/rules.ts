@@ -6,14 +6,16 @@
  * approves or refuses it with his own click. The SFE Manager and the administrator apply a change
  * directly. Nothing here decides for anyone.
  *
- * In force from the CRM cutover date: before it, iReports360 still owns every list and the nightly
- * scrape would undo a change the next morning.
+ * IN FORCE PER REP, FROM HIS OWN TEAM'S PHOENIX CRM START (the live rule since 2026-10-04), or from a
+ * global CRM cutover date if one is ever set. Before that, iReports360 still owns that rep's list and
+ * the hourly contact refresh would undo a change the next morning — so the rule is not a formality.
  *
  * Pure: no database, no clock. The service is contact-lists/service.ts.
  */
 
 import { isOnOrAfterCrmCutover, type CrmCutoverSetting } from "@/lib/crm/cutover";
 import { KNOWN_SP_SPECIALITIES, isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
+import { startedWindowCovers, type StartedRepWindow } from "@/lib/crm/phoenix-team-starts";
 
 export const CONTACT_LIST_REASON_MAX = 1000;
 export const CONTACT_LIST_NOTE_MAX = 500;
@@ -32,6 +34,17 @@ export const CONTACT_LIST_GRADES: readonly ContactListGrade[] = ["A", "B", "C"];
 
 export const CONTACT_LIST_NOT_IN_FORCE_MESSAGE =
   "Doctor lists still come from iReports360 until the CRM cutover date. Changes open on that day.";
+
+/**
+ * What someone is told about a rep whose team is still counted from iReports360. The sentence the
+ * DATABASE raises verbatim, so the screen and the refusal behind it can never say different things.
+ *
+ * NEUTRAL, like everything this app shows anybody (tests/neutral-wording.test.ts). The database's own
+ * copy said "his team" until 2026-10-06, and it reaches the screen as a conflict message — it was
+ * unreachable only because the service refused first, which is the gate this change removed.
+ */
+export const CONTACT_LIST_TEAM_NOT_STARTED_MESSAGE =
+  "Doctor lists for this rep still come from iReports360 — their team has not started in Phoenix CRM yet.";
 
 export function parseContactListAction(value: unknown): ContactListAction | null {
   return value === "add" || value === "remove" || value === "regrade" ? value : null;
@@ -53,6 +66,46 @@ export function parseContactListDecision(value: unknown): ContactListDecision | 
 /** Changes open on the cutover date itself, and never while no date is set. */
 export function contactListChangesInForce(setting: CrmCutoverSetting, cairoToday: string): boolean {
   return isOnOrAfterCrmCutover(setting, cairoToday);
+}
+
+export type DoctorListOwnership = {
+  cairoToday: string;
+  cutover: CrmCutoverSetting;
+  rep: { crmId: number | null | undefined; hrId: string | null | undefined };
+  windows: readonly StartedRepWindow[];
+};
+
+/**
+ * Whether ONE rep's doctor list is Phoenix's today. THE rule — the rep's request, the manager's
+ * approval, the SFE Manager's direct edit and the screen all ask this one function, and it is the same
+ * rule `crm_contact_list_change_apply` applies in SQL as `v_phoenix_owns`.
+ *
+ * TWO PATHS, either enough: his own TEAM has started in Phoenix CRM (the live one — Delta (1) from
+ * Saturday 3 October 2026), or a global CRM cutover date has passed (kept so a future global cutover
+ * still works). The team path is what the database learned on 2026-10-04; until 2026-10-06 this file
+ * asked only the global one, and with `crm_cutover.cutover_date` NULL on production that refused every
+ * change for everyone — `crm_contact_list_changes` held 0 rows and had never held one. The SFE
+ * Manager's direct edit, the owner's rule since 2026-09-14, could not be made at all.
+ *
+ * The rep is matched on his HR id, falling back to his CRM account only when he has no HR id on the
+ * row — the same two legs, in the same order, as the SQL.
+ */
+export function doctorListOwnedByPhoenix(ownership: DoctorListOwnership): boolean {
+  return (
+    startedWindowCovers(ownership.windows, ownership.rep, ownership.cairoToday) ||
+    contactListChangesInForce(ownership.cutover, ownership.cairoToday)
+  );
+}
+
+/** Why this rep's list cannot be changed today, in his own words, or null when it can. */
+export function doctorListRefusal(ownership: DoctorListOwnership): string | null {
+  if (doctorListOwnedByPhoenix(ownership)) return null;
+  return ownership.cutover.cutoverDate ? CONTACT_LIST_NOT_IN_FORCE_MESSAGE : CONTACT_LIST_TEAM_NOT_STARTED_MESSAGE;
+}
+
+/** Whether ANY team is counted from Phoenix CRM today — what decides if the page is linked at all. */
+export function anyDoctorListLive(windows: readonly StartedRepWindow[], cairoToday: string): boolean {
+  return windows.some((window) => cairoToday >= window.from && (window.until === null || cairoToday < window.until));
 }
 
 /** The doctor specialities offered for a doctor first added in Phoenix, as people write them. */

@@ -9,9 +9,11 @@
  * (crm_contact_lists update) apply a change to any rep in their scope directly. Nothing here answers
  * for anyone, and the system never approves a request.
  *
- * WHEN. From the CRM cutover date. Before it the vendor scrape owns every list and would undo a change
- * the next morning, so the page shows the list and says when changes open. The database function
- * crm_contact_list_change_apply() refuses before the date as well.
+ * WHEN. PER REP, from his own team's Phoenix CRM start — or from a global CRM cutover date if one is ever
+ * set. Before that the vendor refresh owns that rep's list and would undo a change the next hour, so the
+ * page shows the list and says whose team has not started. The database function
+ * crm_contact_list_change_apply() applies the same two-path rule, and since 2026-10-04
+ * crm_contact_master_refresh() freezes a started rep's rows so the edit sticks.
  *
  * WHAT IT WRITES. crm_contact_list_changes and its events here; crm_contact_assignments and, for a new
  * doctor, crm_contacts only through that function, in one transaction. The pure rules are rules.ts.
@@ -24,12 +26,14 @@ import { CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG } from "@/lib/crm/contact-lists";
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import {
   CONTACT_LIST_NOTE_MAX,
-  CONTACT_LIST_NOT_IN_FORCE_MESSAGE,
+  anyDoctorListLive,
   contactListChangeRefusal,
   contactListChangesInForce,
   contactListDecisionRefusal,
   contactListSpecialityOptions,
   contactListStateRefusal,
+  doctorListOwnedByPhoenix,
+  doctorListRefusal,
   parseContactListAction,
   parseContactListDecision,
   parseContactListGrade,
@@ -38,6 +42,7 @@ import {
   type ContactListChangeInput,
   type ContactListChangeStatus,
   type ContactListShift,
+  type DoctorListOwnership,
 } from "@/lib/crm/contact-lists/rules";
 import {
   CRM_CONTACT_LIST_CHANGE_APPLY_FUNCTION,
@@ -56,6 +61,7 @@ import { getCrmCutoverSetting } from "@/lib/crm/cutover";
 import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
 import { isAgentInScope, type DoctorCoverageScope } from "@/lib/crm/doctor-coverage-roles";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
+import { loadStartedRepWindows } from "@/lib/crm/phoenix-started-reps";
 import {
   chunk,
   employeeName,
@@ -168,10 +174,25 @@ export async function assertContactListAccess(access: AccessContext): Promise<Vi
   return viewer;
 }
 
-async function assertInForce(): Promise<void> {
-  if (!contactListChangesInForce(await getCrmCutoverSetting(), cairoTodayIso())) {
-    throw validationError(CONTACT_LIST_NOT_IN_FORCE_MESSAGE);
-  }
+/**
+ * Who owns a doctor list today: every started team's window, plus the global cutover setting. Read
+ * together, once, because every caller needs both halves of the rule.
+ */
+async function listOwnership(): Promise<Omit<DoctorListOwnership, "rep">> {
+  const [windows, cutover] = await Promise.all([loadStartedRepWindows(), getCrmCutoverSetting()]);
+  return { cairoToday: cairoTodayIso(), cutover, windows };
+}
+
+/** A directory row as the ownership rule wants it: his HR id, and his CRM account as a number. */
+function ownershipRep(row: { crmId: string | null; hrId: string }): DoctorListOwnership["rep"] {
+  const crmId = row.crmId == null || row.crmId.trim() === "" ? null : Number(row.crmId);
+  return { crmId: crmId != null && Number.isFinite(crmId) ? crmId : null, hrId: row.hrId };
+}
+
+/** Refuses a change to a list iReports360 still owns — the TypeScript half of the database's own rule. */
+async function assertPhoenixOwnsList(rep: { crmId: string | null; hrId: string }): Promise<void> {
+  const refusal = doctorListRefusal({ ...(await listOwnership()), rep: ownershipRep(rep) });
+  if (refusal) throw validationError(refusal);
 }
 
 // ── Loading ─────────────────────────────────────────────────────────────────────────────────────
@@ -290,15 +311,27 @@ function personName(directory: Directory, hrId: string | null): string {
   return employeeName(directory.byKey.get(canonicalHrIdKey(hrId) ?? ""));
 }
 
-function repOptionsFor(directory: Directory, scope: DoctorCoverageScope): ContactListRepOption[] {
+/**
+ * Every rep the editor may open, the ones whose list he can actually CHANGE first. The rest stay on the
+ * picker and stay readable — their list is still iReports360's, and the option says so rather than
+ * letting him pick one and meet a refusal.
+ */
+function repOptionsFor(
+  directory: Directory,
+  scope: DoctorCoverageScope,
+  ownership: Omit<DoctorListOwnership, "rep">,
+): ContactListRepOption[] {
   return directory.rows
     .filter((row) => isActiveDirectoryEmployee(row) && LIST_HOLDER_TITLE.test(row.jobTitle ?? "") && isAgentInScope(scope, row.hrId))
     .map((row) => ({
       hrId: row.hrId,
       name: employeeName(row),
       detail: [row.jobTitle, row.lineName, row.areaName].filter(Boolean).join(" · "),
+      listOpen: doctorListOwnedByPhoenix({ ...ownership, rep: ownershipRep(row) }),
     }))
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .sort((left, right) =>
+      left.listOpen === right.listOpen ? left.name.localeCompare(right.name) : left.listOpen ? -1 : 1,
+    );
 }
 
 // ── Checking one change ─────────────────────────────────────────────────────────────────────────
@@ -367,13 +400,26 @@ async function prepareChange(input: ContactListChangeInput, repHrId: string): Pr
 
 // ── Availability (the link) ─────────────────────────────────────────────────────────────────────
 
-/** Whether to link the page, and how many requests wait for this viewer. Never throws; hidden until a cutover date is set. */
+/**
+ * Whether to link the page, and how many requests wait for this viewer. Never throws.
+ *
+ * Hidden until SOME team is counted from Phoenix CRM (or a global cutover date is set) — and, for a rep,
+ * until his OWN team has started, because his link would otherwise open a page that refuses every change
+ * he could make there.
+ */
 export async function getContactListAvailability(access: AccessContext): Promise<ContactListAvailability> {
   const none: ContactListAvailability = { show: false, canRequest: false, waitingForYou: 0 };
   try {
     const viewer = await viewerCapabilities(access);
     if (!viewer.canRequest && !viewer.canDecide) return none;
-    if ((await getCrmCutoverSetting()).cutoverDate == null) return none;
+    const ownership = await listOwnership();
+    const liveSomewhere =
+      anyDoctorListLive(ownership.windows, ownership.cairoToday) ||
+      contactListChangesInForce(ownership.cutover, ownership.cairoToday);
+    if (!liveSomewhere) return none;
+    if (viewer.canRequest && !doctorListOwnedByPhoenix({ ...ownership, rep: { crmId: null, hrId: access.hrId } })) {
+      return none;
+    }
     let waitingForYou = 0;
     if (viewer.canDecide && access.hrId) {
       const { count, error } = await getSupabaseAdmin()
@@ -393,10 +439,13 @@ export async function getContactListAvailability(access: AccessContext): Promise
 
 export async function getContactListView(access: AccessContext, input: { repHrId?: unknown }): Promise<ContactListView> {
   const viewer = await assertContactListAccess(access);
-  const setting = await getCrmCutoverSetting();
+  const ownership = await listOwnership();
   const view: ContactListView = {
-    inForce: contactListChangesInForce(setting, cairoTodayIso()),
-    cutoverDate: setting.cutoverDate,
+    // No rep shown yet: whether the feature is open for ANYBODY. Narrowed to the shown rep below.
+    inForce:
+      anyDoctorListLive(ownership.windows, ownership.cairoToday) ||
+      contactListChangesInForce(ownership.cutover, ownership.cairoToday),
+    cutoverDate: ownership.cutover.cutoverDate,
     ...viewer,
     rep: null,
     entries: [],
@@ -417,13 +466,16 @@ export async function getContactListView(access: AccessContext, input: { repHrId
 
   let shownRep: EmployeeDirectoryRow | null = null;
   if (viewer.canEditDirectly && scope) {
-    view.repOptions = repOptionsFor(directory, scope);
+    view.repOptions = repOptionsFor(directory, scope, ownership);
     const wanted = canonicalHrIdKey(String(input.repHrId ?? ""));
     const row = wanted ? directory.byKey.get(wanted) : undefined;
     if (row && isActiveDirectoryEmployee(row) && isAgentInScope(scope, row.hrId)) shownRep = row;
   } else if (viewer.canRequest) {
     shownRep = requireActiveSelf(access, directory);
   }
+
+  // The rule is per rep, so once his row is known it is HIS team's start that decides, never a date.
+  if (shownRep) view.inForce = doctorListOwnedByPhoenix({ ...ownership, rep: ownershipRep(shownRep) });
 
   const [entries, repChanges, managed, waiting] = await Promise.all([
     shownRep ? loadRepList(shownRep.hrId) : Promise.resolve([]),
@@ -538,9 +590,10 @@ export async function requestContactListChange(
   input: Record<string, unknown>,
 ): Promise<{ changeId: string }> {
   await assertPermission(access, "crm_contact_lists", "create");
-  await assertInForce();
   const directory = await loadDirectory();
   const rep = requireActiveSelf(access, directory);
+  // After his row, never before it: the rule is about HIS team's start, not a company-wide date.
+  await assertPhoenixOwnsList(rep);
   const prepared = await prepareChange(readChangeInput(input), rep.hrId);
 
   const manager = managementChain(rep, directory)[0];
@@ -584,7 +637,6 @@ export async function applyContactListChangeDirectly(
   input: Record<string, unknown>,
 ): Promise<{ changeId: string }> {
   await assertPermission(access, "crm_contact_lists", "update");
-  await assertInForce();
   const directory = await loadDirectory();
   const editor = requireActiveSelf(access, directory);
   const repKey = canonicalHrIdKey(String(input.repHrId ?? ""));
@@ -592,6 +644,7 @@ export async function applyContactListChangeDirectly(
   if (!rep || !isActiveDirectoryEmployee(rep)) throw validationError("Choose an active rep.");
   const scope = await getDoctorCoverageScope(access);
   if (!isAgentInScope(scope, rep.hrId)) throw forbiddenError("Forbidden: that rep is outside your scope.");
+  await assertPhoenixOwnsList(rep);
   const prepared = await prepareChange(readChangeInput(input), rep.hrId);
 
   const supabase = getSupabaseAdmin();
@@ -658,7 +711,8 @@ export async function decideContactListChange(
 
   const supabase = getSupabaseAdmin();
   if (decision === "approved") {
-    await assertInForce();
+    const repRow = (await loadDirectory()).byKey.get(canonicalHrIdKey(record.repHrId) ?? "");
+    await assertPhoenixOwnsList({ crmId: repRow?.crmId ?? null, hrId: record.repHrId });
     // The stored manager id itself — the database refuses an approval by anyone else, and applies the
     // change to the list in the same transaction.
     const applied = await supabase.rpc(CRM_CONTACT_LIST_CHANGE_APPLY_FUNCTION, {

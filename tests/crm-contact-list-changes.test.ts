@@ -19,8 +19,10 @@ import {
 //   · THE OWNER'S RULE (2026-09-14): "Rep asks, DM approves, SFE and system admin can edit, add or
 //     delete." A rep only asks, for his OWN list; only the stored manager answers, for a rep beneath
 //     him; the SFE Manager and the administrator apply a change directly.
-//   · NOT BEFORE THE CUTOVER. Until the CRM cutover date iReports360 owns every list; the service and
-//     the database both refuse a change, and the nightly scrape stops touching lists only from that date.
+//   · NOT BEFORE A REP'S TEAM HAS STARTED in Phoenix CRM (or a global CRM cutover date, if one is ever
+//     set): until then iReports360 owns HIS list, the service and the database both refuse a change, and
+//     the hourly refresh keeps re-deriving it. The per-rep half of that rule, and the measured reason the
+//     global-date-only version refused everyone, are pinned in tests/doctor-lists-follow-team-starts.test.ts.
 //   · A PHARMACY IS NOT A CONTACT. No pharmacy goes on a doctor list; AM and PM only.
 //   · NOBODY DECIDES FOR ANYONE. The approval is applied by the database function with the stored
 //     manager's id, which it re-checks; the service never writes a decision literal.
@@ -47,7 +49,7 @@ const addExisting: ContactListChangeInput = {
 };
 
 export function runCrmContactListChangesTests() {
-  // ── 1. In force from the cutover date only ────────────────────────────────────────────────────
+  // ── 1. In force from a global cutover date, or from the rep's own team start ───────────────────
   const setting = (cutoverDate: string | null) => ({ cutoverDate }) as Parameters<typeof contactListChangesInForce>[0];
   assert.equal(contactListChangesInForce(setting(null), "2026-10-01"), false, "no cutover date: lists stay iReports360's");
   assert.equal(contactListChangesInForce(setting("2026-10-01"), "2026-09-30"), false, "the day before the cutover");
@@ -145,7 +147,11 @@ export function runCrmContactListChangesTests() {
     assert.match(functionBody(service, name), guard, `${name} must check the viewer's access itself, not trust its caller`);
   }
   for (const name of ["requestContactListChange", "applyContactListChangeDirectly"]) {
-    assert.match(functionBody(service, name), /await assertInForce\(\)/, `${name} is refused before the cutover`);
+    assert.match(
+      functionBody(service, name),
+      /await assertPhoenixOwnsList\(rep\)/,
+      `${name} is refused while iReports360 still owns that rep's list`,
+    );
   }
 
   const requestBody = functionBody(service, "requestContactListChange");
@@ -160,7 +166,11 @@ export function runCrmContactListChangesTests() {
   assert.match(applyBody, /p_decided_by: editor\.hrId/, "a direct change is decided by the editor himself");
 
   const decideBody = functionBody(service, "decideContactListChange");
-  assert.match(decideBody, /if \(decision === "approved"\) \{\s*await assertInForce\(\)/, "an approval is refused before the cutover");
+  assert.match(
+    decideBody,
+    /if \(decision === "approved"\) \{[\s\S]{0,200}await assertPhoenixOwnsList\(/,
+    "an approval is refused while iReports360 still owns that rep's list",
+  );
   assert.match(decideBody, /contactListDecisionRefusal\(/);
   assert.match(decideBody, /p_decided_by: record\.managerHrId/, "the approval is the stored manager's own");
   assert.match(decideBody, /decided_by: record\.managerHrId/, "the refusal is the stored manager's own");

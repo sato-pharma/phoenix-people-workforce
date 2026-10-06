@@ -232,7 +232,7 @@ export const MODULES = [
       "tests/*rep-ranks*",
       "supabase/migrations/*rep_ranks*",
     ],
-    keywords: ["phoenix ranks", "rep ranks", "leaderboard", "ireports360", "ireports", "call rate", "reps list", "reps plans", "double visit", "doctor list", "coverage", "frequency", "kpis board", "crm sync", "visit type"],
+    keywords: ["phoenix ranks", "rep ranks", "leaderboard", "ireports360", "ireports", "call rate", "reps list", "reps plans", "double visit", "doctor list", "coverage", "frequency", "kpis board", "crm sync", "visit type", "doctor list changes", "drop a doctor", "contact list"],
     tables: ["crm_", "ireports", "visit"],
   },
   {
