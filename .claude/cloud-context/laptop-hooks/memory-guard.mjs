@@ -36,8 +36,8 @@ const CACHE = path.join(os.tmpdir(), 'claude-statusline-sessions.json');
 const CACHE_TTL_MS = 20_000;
 const COUNT_TIMEOUT_MS = 2500;
 const COMMIT_WARN_PCT = 85;
-// Only used when commit could not be read at all — never as a primary signal.
-const FALLBACK_LOW_FREE_RAM_GB = 1.0;
+// `FALLBACK_LOW_FREE_RAM_GB = 1.0` stood here until 2026-10-06. It gated a branch that was dead by
+// arithmetic — see the note at the end of decideMessage — and nothing else read it.
 
 // Deliberately contains NO double quotes: it is passed as a single argv entry to powershell.exe,
 // and mixing JS + PS quoting here is how this breaks silently. Returns "n|usedGB|limitGB".
@@ -48,7 +48,7 @@ const PS_STATS =
   "[math]::Round($o.TotalVirtualMemorySize/1MB,1)) -join '|'";
 
 // MODE: `node ~/.claude/hooks/memory-guard.mjs selftest` runs the decision table and the session
-// stamping against the REAL hook and prints `0 failed` - 18 cases as of 2026-10-06, COUNTED by the
+// stamping against the REAL hook and prints `0 failed` - 19 cases as of 2026-10-06, COUNTED by the
 // runner rather than written here, because a hand-kept total is the one number CI ratchets on. It sits HERE,
 // above the stdin read, deliberately: the read below is `readFileSync(0)`, which BLOCKS when
 // nothing is piped in, so a selftest placed any lower could never be invoked by hand.
@@ -126,17 +126,25 @@ if (process.argv[2] === 'selftest') {
     decide({ pct: 35, used: 11, lim: 31.8, freeBytes: 9 * GB }) === null,
     'quiet when healthy is the whole design',
   );
-  // \uD83D\uDD34 This case pins a DEFECT, not an intention. See the note below the selftest.
   check(
-    'the commit-unreadable fallback is UNREACHABLE, and that is the current behaviour',
-    /only 921 MB of physical RAM/.test(decide({ pct: null, freeBytes: 921 * MB }) || ''),
-    'any freeBytes under its 1.0 GB floor is also under the 1800 MB RAM floor, so the RAM branch ' +
-      'returns first and the fallback can never be reached',
+    'low RAM with an UNREADABLE commit charge says so, and names how to read it',
+    (() => {
+      const m = decide({ pct: null, freeBytes: 921 * MB }) || '';
+      return /only 921 MB of physical RAM/.test(m) && /RAM-ONLY reading/.test(m) && /TotalVirtualMemorySize/.test(m);
+    })(),
+    'until 2026-10-06 this fact had nowhere to go: the branch meant to carry it was dead by arithmetic, ' +
+      'so a session read a RAM-only warning never knowing the usually binding half was unavailable',
   );
   check(
-    'commit unreadable with healthy RAM is SILENT (not the fallback either)',
+    'low RAM with a READ commit charge does NOT claim it was unreadable',
+    !/RAM-ONLY reading/.test(decide({ pct: 40, used: 12, lim: 31.8, freeBytes: 921 * MB }) || ''),
+    'the clause is conditional \u2014 appending it always would make the common case say something false',
+  );
+  check(
+    'an unreadable commit charge on a HEALTHY machine stays SILENT',
     decide({ pct: null, freeBytes: 8 * GB }) === null,
-    'the fallback needs free RAM under 1.0 GB, which the branch above always claims first',
+    'deliberately not restored: nothing is wrong, and a guard that speaks when nothing is wrong is the ' +
+      'failure the 2026-08-25 rewrite existed to end',
   );
   check(
     'every message is prefixed MEMORY GUARD: so a reader can grep one line',
@@ -314,6 +322,16 @@ function decideMessage({ pct, used, lim, freeBytes, count }) {
     // 1,800 MB is mem-watchdog.ps1's floor, where Windows starts evicting working sets. On Windows
     // os.freemem() is AVAILABLE memory (standby cache included), so file caching does not trip this.
     const freeMB = Math.round(freeBytes / 1048576);
+    // 2026-10-06: say so when the commit charge is MISSING rather than merely healthy. Until today
+    // that fact had nowhere to go — see the note below this function — so a session read a RAM-only
+    // warning without knowing that the other, usually binding, half of the picture was unavailable.
+    const unreadable =
+      pct === null
+        ? ' The commit charge could not be read at all this time, so this is a RAM-ONLY reading and the' +
+          ' usually binding limit is unknown: check it before judging headroom —' +
+          ' Win32_OperatingSystem.TotalVirtualMemorySize is the limit and FreeVirtualMemory the' +
+          ' headroom, both in KB.'
+        : '';
     return (
       `MEMORY GUARD: only ${freeMB} MB of physical RAM is available with ${count} Claude Code sessions ` +
       `running (floor 1,800 MB). On 2026-09-11 this 16 GB laptop bluescreened twice when heavy node jobs ` +
@@ -322,23 +340,21 @@ function decideMessage({ pct, used, lim, freeBytes, count }) {
       `2026-09-17 (owner instruction) because they burned 33 h of waiting in under 3 days and ran ` +
       `nothing for 20 h of it, so nothing will stop you - this is a judgement call, not a gate. Prefer ` +
       `pushing the branch and letting CI answer, or a cloud session, and tell the owner which idle ` +
-      `sessions or windows are worth closing.`
+      `sessions or windows are worth closing.${unreadable}`
     );
   }
-  if (pct === null) {
-    // Commit unreadable — this is the ONLY situation where free RAM is worth reporting, and the
-    // floor is deliberately far lower than the old 2.5 GB so it stays a genuine last resort.
-    const freeGB = freeBytes / 1073741824;
-    if (freeGB < FALLBACK_LOW_FREE_RAM_GB) {
-      return (
-        `MEMORY GUARD: commit charge could not be read, and only ${freeGB.toFixed(1)} GB of ` +
-        `physical RAM is free with ${count} Claude Code sessions running. Treat this as unverified ` +
-        `— free RAM is a poor proxy for the real ceiling. Check commit before acting: ` +
-        `Win32_OperatingSystem.TotalVirtualMemorySize is the limit and FreeVirtualMemory the ` +
-        `headroom, both in KB.`
-      );
-    }
-  }
+  // 🔴 REMOVED 2026-10-06: a third branch used to sit here, for "commit unreadable AND free RAM under
+  // 1.0 GB". It was DEAD CODE from the moment the RAM branch above it was added on 2026-09-11: any
+  // machine with under 1.0 GB free is also under that branch's 1800 MB floor, so the RAM branch
+  // always returned first and this one could never be reached. It was not a dormant edge case — it
+  // was unreachable by arithmetic, and the one thing it existed to say (commit is unavailable, treat
+  // free RAM as a poor proxy, go read it yourself) therefore never reached anybody. That sentence is
+  // now the `unreadable` clause above, where it is reachable on exactly the inputs it was written for.
+  // Its `FALLBACK_LOW_FREE_RAM_GB` constant went with it; nothing else referenced it.
+  //
+  // What is deliberately NOT restored: a warning for an unreadable commit charge on a machine with
+  // HEALTHY free RAM. Nothing is wrong in that case, and a guard that speaks when nothing is wrong is
+  // the exact failure this hook was rewritten to end on 2026-08-25 — sessions learn to ignore it.
   return null;
 }
 
