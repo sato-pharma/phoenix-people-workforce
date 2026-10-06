@@ -217,6 +217,16 @@ export function runWhatsAppScreeningConditionalFlowTests() {
   const storedResidence = q({ questionKey: "hrsh_residence", showIf: showIfFromRow({ question_key: "hrsh_cairo", values: ["yes"] }) });
   assert.equal(questionIsVisible(storedResidence, { hrsh_cairo: "Yes" }, [cairoQ, storedResidence]), true);
   assert.equal(questionIsVisible(storedResidence, { hrsh_cairo: "No" }, [cairoQ, storedResidence]), false);
+  // The Office Coordinator Cairo question (owner, 2026-10-06): the FIRST extra (sort_order 0, ahead of the
+  // age question at 1), scoped to that role alone, and a "No" ends the application with the Cairo-office
+  // thank-you — the same words the HR Section Head hears, so the two seats never say different things.
+  const ocCairo = readFileSync("supabase/migrations/20261006201500_ats_office_coordinator_cairo_question.sql", "utf8");
+  assert.ok(ocCairo.includes("'oc_cairo'") && ocCairo.includes("array['office_coordinator']"), "oc_cairo is scoped to office_coordinator only");
+  assert.ok(/\n  0,\n  true,\n/.test(ocCairo), "oc_cairo sorts first among the extras (sort_order 0), so it is the 4th question on the careers form");
+  assert.ok(ocCairo.includes("jsonb_build_array('no')"), "only a No answer ends the application");
+  const hrshMigration = readFileSync("supabase/migrations/20261006120000_ats_screening_questions_conditional_flow.sql", "utf8");
+  const stopWords = "This role is based at our Cairo office and we need the successful candidate to live in Cairo, so we are unable to take your application further at the moment.";
+  assert.ok(ocCairo.includes(stopWords) && hrshMigration.includes(stopWords), "the two seats send the same Cairo thank-you, word for word");
   for (const file of ["session", "admin"]) {
     const source = readFileSync(`src/lib/recruitment/inbound/whatsapp-screening-questions-${file}.ts`, "utf8");
     assert.ok(
