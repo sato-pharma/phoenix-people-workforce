@@ -616,6 +616,32 @@ export const ALARM_SEVERITY_LABELS = {
 } as const;
 
 /**
+ * The title a committed plan is STORED under, and the one reader-visible string in this module
+ * that does not follow the language toggle (owner, 2026-10-06, asked directly: "pin the stored
+ * plan title as Arabic").
+ *
+ * The reason is that a stored title is not a screen — it is a row, and both readers meet the same
+ * rows later in the same Plans list, so a title following whoever saved it would mix Arabic and
+ * English entries there with nothing to explain the pattern.
+ *
+ * It lives here, beside the bundles, for one reason: it is the only way the ruling can be pinned by
+ * the VALUE it produces. `savePlan` builds the row with Supabase in hand, so a test cannot call it;
+ * reading the service's source text instead pins the expression and not the string, and an
+ * expression can be rewritten into something that still matches while producing English. A pure
+ * function here is callable from the test, so the assertion is on `"… — 3 تشغيلة"` itself.
+ *
+ * `runs` arrives ALREADY FORMATTED and is passed through verbatim. `savePlan` reads it off a
+ * result whose `runs` is a `string` (`service.ts`: `formatNumberLatin(run.runs)`), so this takes a
+ * string and must NOT re-format it — a second formatting step here is the one way the module's
+ * Latin-digit rule gets broken, because `toLocaleString` under an Arabic locale emits ٠١٢٣. This
+ * was typed `number` when first written on 2026-10-06, which the template literal it replaced had
+ * accepted silently: the inline `${result.runs}` interpolated exactly this string.
+ */
+export function storedPlanTitle(productNameAr: string, runs: string): string {
+  return `${productNameAr} — ${runs} ${PP.unitRuns}`;
+}
+
+/**
  * The sentence under the four tiles.
  *
  * Built here rather than in the component so the workbook's own header row says exactly the same

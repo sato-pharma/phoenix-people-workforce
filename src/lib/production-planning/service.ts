@@ -70,9 +70,9 @@ import {
 import {
   coerceProductionPlanningLanguage,
   formatNumberLatin,
-  PP,
   type ProductionPlanningErrorKey,
   productionPlanningStrings,
+  storedPlanTitle,
 } from "./strings";
 import { isStockMovement, isStockSource, storedStockQty, type StockSource } from "./stock";
 
@@ -1568,7 +1568,7 @@ export async function savePlan(access: AccessContext, body: Record<string, unkno
     );
   }
 
-  const title = asText(body.title) ?? `${result.productNameAr} — ${result.runs} ${PP.unitRuns}`;
+  const title = asText(body.title) ?? storedPlanTitle(result.productNameAr, result.runs);
   const db = getSupabaseAdmin();
   const product = data.products.find((candidate) => candidate.id === result.productId)!;
 
