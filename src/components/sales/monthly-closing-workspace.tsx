@@ -27,6 +27,7 @@ import { closingPeriodGateMessage, closingPeriodOpensOn, isClosingPeriodComplete
 import { describePeriodSelection, periodLabel } from "@/lib/sales/monthly-closing-period-merge";
 import type { MonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 
 type Props = {
@@ -434,8 +435,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
     );
   }
 
-  const selectClassName =
-    "h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
+  const selectClassName  = phxSelectClassName;
 
   return (
     <div className="min-h-[calc(100vh-7rem)] space-y-7">

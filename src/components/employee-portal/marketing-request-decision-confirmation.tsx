@@ -11,6 +11,8 @@ import type {
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * One labelled field. An absent value renders "Not captured" rather than an empty cell — a blank
@@ -447,7 +449,7 @@ export function MarketingRequestDecisionConfirmation({
             </p>
 
             <textarea
-              className="mt-3 min-h-24 w-full border border-slate-300 px-3 py-2 text-sm outline-none focus:border-orange-500"
+              className={cn(phxTextareaClassName, "mt-3 min-h-24")}
               disabled={isPending || decided}
               onChange={(event) => setComment(event.target.value)}
               placeholder="Add a note — required to return or reject (saved to audit history)…"

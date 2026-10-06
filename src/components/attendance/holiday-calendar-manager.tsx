@@ -6,6 +6,7 @@ import { CalendarClock, Check, ChevronLeft, ChevronRight, Save } from "lucide-re
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import type { HolidayCalendarYearRow } from "@/lib/attendance/holiday-overrides";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type YearView = { rows: HolidayCalendarYearRow[]; sourceConnected: boolean };
 
@@ -219,7 +220,7 @@ export function HolidayCalendarManager({ initialYear, initialView, initialError,
                     <label className="block space-y-1">
                       <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Name</span>
                       <input
-                        className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
+                        className={phxFieldClassName}
                         disabled={!canEdit}
                         value={row.holidayName}
                         onChange={(event) => updateRow(row.officialDate, { holidayName: event.target.value })}
@@ -230,7 +231,7 @@ export function HolidayCalendarManager({ initialYear, initialView, initialError,
                     <label className="block w-36 space-y-1">
                       <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Observed from</span>
                       <input
-                        className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
+                        className={phxFieldClassName}
                         disabled={!canEdit}
                         type="date"
                         value={row.observedDate}
@@ -240,7 +241,7 @@ export function HolidayCalendarManager({ initialYear, initialView, initialError,
                     <label className="block w-36 space-y-1">
                       <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Observed to</span>
                       <input
-                        className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
+                        className={phxFieldClassName}
                         disabled={!canEdit}
                         min={row.observedDate}
                         type="date"
@@ -253,7 +254,7 @@ export function HolidayCalendarManager({ initialYear, initialView, initialError,
                     <label className="block space-y-1">
                       <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Notes</span>
                       <input
-                        className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-medium text-slate-700 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
+                        className={phxFieldClassName}
                         disabled={!canEdit}
                         value={row.notes ?? ""}
                         onChange={(event) => updateRow(row.officialDate, { notes: event.target.value })}

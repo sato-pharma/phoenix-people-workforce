@@ -6,6 +6,7 @@ import { CheckCircle2, CornerUpLeft, Flag, ListChecks, MessageSquarePlus, XCircl
 
 import type { PlanReturnableActivity } from "@/lib/approvals-hub/service";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 export type PlanDecisionActionsProps = {
   planId: string;
@@ -218,7 +219,7 @@ export function PlanDecisionActions({
               rows={2}
               autoFocus
               placeholder="Why is this plan coming back? The employee sees this."
-              className="w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+              className={phxTextareaClassName}
             />
           </div>
 
@@ -268,7 +269,7 @@ export function PlanDecisionActions({
                                   onChange={(e) => setNoteText((t) => ({ ...t, [a.id]: e.target.value }))}
                                   rows={2}
                                   placeholder="What should change on this day?"
-                                  className="w-full border border-orange-200 bg-white px-2.5 py-1.5 text-sm focus:border-orange-500 focus:outline-none"
+                                  className={phxTextareaClassName}
                                 />
                               </div>
                             ) : null}
@@ -331,7 +332,7 @@ export function PlanDecisionActions({
               rows={3}
               autoFocus
               placeholder="Type the reason the employee will see…"
-              className="w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+              className={phxTextareaClassName}
             />
           ) : null}
           {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}

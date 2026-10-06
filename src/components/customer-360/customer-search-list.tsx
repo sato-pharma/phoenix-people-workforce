@@ -5,6 +5,11 @@ import { Building2, MapPin, Search, ShoppingCart, Sparkles, X } from "lucide-rea
 import { useMemo, useState } from "react";
 
 import type { CustomerRegister } from "@/lib/customer-360/subject";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 export type Customer360ListItem = {
   areaCode: string | null;
@@ -100,7 +105,7 @@ export function CustomerSearchList({ customers }: { customers: Customer360ListIt
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search by pharmacy, area, region or owner"
-            className="w-full rounded-[14px] border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] font-medium text-slate-900 outline-none placeholder:text-slate-400 focus:border-orange-300"
+            className={cn(phxFieldClassName, "pl-9")}
           />
         </label>
         <label className="sm:w-56">
@@ -108,7 +113,7 @@ export function CustomerSearchList({ customers }: { customers: Customer360ListIt
           <select
             value={area}
             onChange={(event) => setArea(event.target.value)}
-            className="w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-[13px] font-semibold text-slate-700 outline-none focus:border-orange-300"
+            className={phxSelectClassName}
           >
             <option value="">All areas</option>
             {areas.map((entry) => (

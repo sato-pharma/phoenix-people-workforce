@@ -74,6 +74,7 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { ExpenseTripRecord } from "@/lib/payroll/types";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type LoadedRecord = ExpenseTripRecord & {
   approvedAmount?: number | null;
@@ -171,8 +172,7 @@ function egp(value: number) {
 
 // The admin shell zeroes every border-radius (globals.css RULE 1 — the deliberately "shredded"
 // look), so these are written square at source: what you read here is what renders.
-const FIELD_CLASS =
-  "h-11 w-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20";
+const FIELD_CLASS = cn(phxFieldClassName, "w-full px-3");
 // `pr-9` keeps the selected value clear of SearchableSelect's own search icon.
 const FILTER_CONTROL_CLASS = `${FIELD_CLASS} pr-9`;
 const MICRO_LABEL_CLASS = "mb-1.5 block text-phx-xs font-black uppercase tracking-wide text-slate-500";
@@ -1009,7 +1009,7 @@ export function ExpenseApprovalsWorkspace({
             <span className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
-                className={cn(FIELD_CLASS, "pl-9 font-medium")}
+                className={cn(FIELD_CLASS, "pl-9")}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Employee, HR ID, trip, destination…"
                 ref={searchRef}
@@ -1856,10 +1856,10 @@ function ExpenseDecisionPanel({
               </label>
               <input
                 className={cn(
-                  "mt-1 h-11 w-32 border bg-white px-3 text-right font-mono text-sm font-bold outline-none transition focus:ring-2 focus:ring-orange-500/20",
+                  phxFieldClassName, "mt-1 w-32 text-right font-mono",
                   deduction > 0
                     ? "border-orange-400 text-orange-700"
-                    : "border-slate-300 text-slate-900 focus:border-orange-500",
+                    : "",
                 )}
                 disabled={valuesOnly}
                 id={`deduct-${record.tripId}`}
@@ -1880,8 +1880,8 @@ function ExpenseDecisionPanel({
               </label>
               <input
                 className={cn(
-                  "mt-1 h-11 w-36 border bg-white px-3 text-right font-mono text-sm font-bold text-slate-900 outline-none transition focus:ring-2 focus:ring-orange-500/20",
-                  adjusted ? "border-orange-400" : "border-slate-300 focus:border-orange-500",
+                  phxFieldClassName, "mt-1 w-36 text-right font-mono",
+                  adjusted ? "border-orange-400" : "",
                 )}
                 disabled={valuesOnly}
                 id={`amt-${record.tripId}`}
@@ -1936,8 +1936,8 @@ function ExpenseDecisionPanel({
             </div>
             <input
               className={cn(
-                "mt-1 h-11 w-full border bg-white px-3 text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-orange-500/20",
-                reasonMissing ? "border-rose-400" : "border-slate-300 focus:border-orange-500",
+                phxFieldClassName, "mt-1 w-full",
+                reasonMissing ? "border-rose-400" : "",
               )}
               disabled={valuesOnly}
               id={`reason-${record.tripId}`}

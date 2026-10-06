@@ -64,6 +64,8 @@ import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { canonicalHrIdKey, formatHrIdForDisplay } from "@/lib/hr-id";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 export { PayrollPayslipsSection } from "@/components/employee-portal/dashboard/payroll-payslips-section";
@@ -2855,9 +2857,9 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <div className="flex items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2">
             <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
-            <input className="w-28 text-sm text-slate-700 outline-none sm:w-32" placeholder="From" type="date" />
+            <input className={cn(phxFieldClassName, "w-28 sm:w-32")} placeholder="From" type="date" />
             <span className="text-slate-400">-</span>
-            <input className="w-28 text-sm text-slate-700 outline-none sm:w-32" placeholder="To" type="date" />
+            <input className={cn(phxFieldClassName, "w-28 sm:w-32")} placeholder="To" type="date" />
           </div>
           <Button className="rounded" disabled={isRefreshing} onClick={handleRefresh} variant="secondary">
             <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
@@ -2871,7 +2873,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">View By</label>
             <SearchableSelect
-              className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
+              className="h-9 px-3"
               value={viewBy}
               onChange={(e) => setViewBy(e.target.value)}
             >
@@ -2883,7 +2885,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Employee</label>
             <SearchableSelect
-              className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
+              className="h-9 px-3"
               value={selectedEmployee}
               onChange={(e) => setSelectedEmployee(e.target.value)}
             >
@@ -2896,7 +2898,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Role</label>
             <SearchableSelect
-              className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
+              className="h-9 px-3"
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
             >
@@ -2908,7 +2910,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Territory</label>
             <SearchableSelect
-              className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
+              className="h-9 px-3"
               value={selectedTerritory}
               onChange={(e) => setSelectedTerritory(e.target.value)}
             >
@@ -2921,7 +2923,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Trip Type</label>
             <SearchableSelect
-              className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
+              className="h-9 px-3"
               value={tripType}
               onChange={(e) => setTripType(e.target.value)}
             >

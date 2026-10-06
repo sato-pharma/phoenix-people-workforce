@@ -124,8 +124,7 @@ function lateMinutesOf(value: string | null | undefined) {
 // ─── Shared chrome ────────────────────────────────────────────────────────────
 
 const CARD = "border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
-const FIELD =
-  "min-h-10 border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100";
+const FIELD = "px-3";
 
 // ─── Main component ───────────────────────────────────────────────────────────
 

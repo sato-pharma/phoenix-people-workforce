@@ -5,6 +5,8 @@ import { useState } from "react";
 
 import type { CoverageFilterSelection } from "@/lib/crm/coverage-filters";
 import type { PlanWeek } from "@/lib/crm/plan-week";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * The week picker on Reps Weekly Plans.
@@ -26,8 +28,7 @@ const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] t
  * a smaller class computes to 16px anyway — and if it ever did apply it would reintroduce the iOS
  * Safari focus-zoom that rule exists to kill.
  */
-const SELECT_CLASS =
-  "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 disabled:bg-slate-50 disabled:text-slate-400";
+const SELECT_CLASS = cn(phxSelectClassName, "h-9 w-full px-2 disabled:text-slate-400");
 
 /** "This week" / "Next week" / "Last week" beside the dates, so the common cases need no arithmetic. */
 function weekSuffix(offset: number): string {

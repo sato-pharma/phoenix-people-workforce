@@ -13,6 +13,7 @@ import {
   employeeCvHref,
   type EmployeeCvSource,
 } from "@/lib/employees/employee-cv-limits";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 /**
  * The CV on the employee master record — the two places a person touches it.
@@ -282,7 +283,7 @@ function CarryFromRecruitment({
           a phone's width on mobile, and the FITS-THE-SCREEN rule is fit by wrapping. */}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <input
-          className="h-9 min-w-0 flex-1 border border-phx-line bg-white px-2 text-xs text-phx-ink-2"
+          className={`${phxFieldClassName} min-w-0 flex-1`}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {

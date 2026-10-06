@@ -30,6 +30,10 @@ import {
 import { cn } from "@/lib/utils";
 
 import { CopyLinkSection } from "./copy-link-section";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 function AccessSelect({
   disabled,
@@ -45,7 +49,7 @@ function AccessSelect({
   return (
     <select
       aria-label="Access"
-      className="h-9 w-full border border-slate-200 bg-white px-2 text-[13px] font-semibold text-slate-800 focus:border-orange-500 focus:outline-none disabled:opacity-50"
+      className={phxSelectClassName}
       disabled={disabled}
       id={id}
       onChange={(event) => onChange(event.target.value as InterviewCalendarAccessLevel)}
@@ -204,7 +208,7 @@ export function InterviewShareDialog({ onClose, weekStart }: { onClose: () => vo
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
                     autoComplete="off"
-                    className="h-9 w-full border border-slate-200 pl-8 pr-2 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+                    className={cn(phxFieldClassName, "pl-8")}
                     id="interview-share-search"
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Name or job title"

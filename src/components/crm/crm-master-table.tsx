@@ -19,6 +19,11 @@ import type {
   CrmMasterMappingStatus,
   CrmMasterRow,
 } from "@/lib/crm/master";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // renderCell / formatVendorLocal / formatVendorTimeOnly / recognitionLabel — and the export-only
 // renderExportCell — now live in the shared, server-safe @/lib/crm/master-cell-format, so the
@@ -646,7 +651,7 @@ function PortalMasterRow({
 }
 
 const FILTER_FIELD = "flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500";
-const FILTER_INPUT = "border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none";
+const FILTER_INPUT = cn(phxFieldClassName, "px-2 py-1.5");
 
 export function CrmMasterTable({
   data,
@@ -925,7 +930,7 @@ export function CrmMasterTable({
             <div className="flex items-center gap-2 border border-slate-200 px-2 py-1.5 focus-within:border-orange-400">
               <Search aria-hidden="true" className="h-4 w-4 text-slate-400" />
               <input
-                className="w-full text-sm text-slate-800 focus:outline-none"
+                className={cn(phxFieldClassName, "w-full")}
                 onChange={(event) => setSearchText(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") applyFilters();
@@ -952,7 +957,7 @@ export function CrmMasterTable({
           <label className={FILTER_FIELD}>
             Line
             <select
-              className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+              className={phxSelectClassName}
               onChange={(event) => setLineValue(event.target.value)}
               value={lineValue}
             >
@@ -970,7 +975,7 @@ export function CrmMasterTable({
           <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
             Hired from
             <input
-              className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+              className={phxFieldClassName}
               onChange={(event) => setHireFromText(event.target.value)}
               type="date"
               value={hireFromText}
@@ -979,7 +984,7 @@ export function CrmMasterTable({
           <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
             Hired to
             <input
-              className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+              className={phxFieldClassName}
               onChange={(event) => setHireToText(event.target.value)}
               type="date"
               value={hireToText}
@@ -991,7 +996,7 @@ export function CrmMasterTable({
             <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
               AM/PM
               <select
-                className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+                className={phxSelectClassName}
                 onChange={(event) => setAmpmValue(event.target.value as CrmMasterAmpm)}
                 value={ampmValue}
               >
@@ -1005,7 +1010,7 @@ export function CrmMasterTable({
             <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
               Visit Type
               <select
-                className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+                className={phxSelectClassName}
                 onChange={(event) => setVisitTypeText(event.target.value)}
                 value={visitTypeText}
               >
@@ -1022,7 +1027,7 @@ export function CrmMasterTable({
             <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
               Mapping
               <select
-                className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+                className={phxSelectClassName}
                 onChange={(event) => setMappingValue(event.target.value as CrmMasterMappingStatus)}
                 value={mappingValue}
               >
@@ -1037,7 +1042,7 @@ export function CrmMasterTable({
               <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
                 Min Duration (days)
                 <input
-                  className="w-28 border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+                  className={cn(phxFieldClassName, "w-28")}
                   min="0"
                   onChange={(event) => setMinDurationText(event.target.value)}
                   onKeyDown={(event) => {
@@ -1142,7 +1147,7 @@ export function CrmMasterTable({
           <label className="flex items-center gap-1.5 text-slate-500">
             Rows
             <select
-              className="border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 focus:border-orange-400 focus:outline-none"
+              className={phxSelectClassName}
               onChange={(event) => navigate({ page: null, pageSize: event.target.value })}
               value={data.pageSize}
             >

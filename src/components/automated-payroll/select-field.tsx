@@ -2,11 +2,16 @@
 
 import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /** Shared select recipe — dense, hairline border, orange focus ring (see [[premium-design-language]]). Native arrow
  * hidden via appearance-none; ChevronDown is layered on top for a consistent custom look across the module. */
 export const selectFieldClassName =
-  "h-10 w-full cursor-pointer appearance-none border border-slate-300 bg-white px-3 pr-8 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-400 focus-visible:border-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/20";
+  // `appearance-none` is NOT part of the shared select token — the token keeps the
+  // browser's own arrow. This module layers its own ChevronDown on top, so it must
+  // hide the native one or both arrows show.
+  cn(phxSelectClassName, "appearance-none pr-8");
 
 /** A labeled <select> with a custom chevron, so every dropdown in Automated Payroll looks identical
  * regardless of the browser's native arrow style. */

@@ -50,6 +50,11 @@ import type {
   HiringDocumentStatus,
 } from "@/lib/hiring-documents/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 type Props = {
@@ -74,10 +79,8 @@ const frozenHeaderClassName =
 // and the line under the header vanishes while you scroll. An inset shadow travels with the cell.
 const frozenHeaderStyle: React.CSSProperties = { boxShadow: "inset 0 -1px 0 var(--phx-line)" };
 const tableCellClassName = "border-b border-phx-line px-3 py-4 align-top";
-const inputClassName =
-  "h-10 rounded-xl border-phx-line bg-white/95 text-sm shadow-sm focus:border-phx-accent-line focus:ring-phx-accent/15";
-const selectClassName =
-  "h-10 w-full rounded-xl border border-phx-line bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
+const inputClassName = "";
+const selectClassName  = phxSelectClassName;
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "-";
@@ -819,7 +822,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                     <label className="block">
                                       <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">Deadline</span>
                                       <Input
-                                        className="h-9 rounded-lg border-[#FCA5A5] text-xs"
+                                        className="h-9 text-xs"
                                         disabled={!canManage || busy}
                                         onBlur={(event) => {
                                           const previous = deadlineOnFocusRef.current;
@@ -864,7 +867,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                           })}
                           <td className={tableCellClassName}>
                             <textarea
-                              className="min-h-24 w-full resize-y rounded-xl border border-phx-line bg-white px-3 py-2 text-sm text-phx-ink shadow-sm outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15"
+                              className={cn(phxTextareaClassName, "min-h-24")}
                               disabled={!canManage || busyKey === `${employee.hrId}:notes`}
                               onBlur={(event) => {
                                 const currentValue = event.target.value;
@@ -1023,7 +1026,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                     <label className="mt-2 block">
                                       <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">Deadline</span>
                                       <Input
-                                        className="h-9 rounded-lg border-[#FCA5A5] text-xs"
+                                        className="h-9 text-xs"
                                         disabled={!canManage || busy}
                                         onBlur={(event) => {
                                           const previous = deadlineOnFocusRef.current;
@@ -1072,7 +1075,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                       <div className="mt-3">
                         <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Notes</span>
                         <textarea
-                          className="min-h-20 w-full resize-y rounded-xl border border-phx-line bg-white px-3 py-2 text-sm text-phx-ink shadow-sm outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15"
+                          className={cn(phxTextareaClassName, "min-h-20")}
                           disabled={!canManage || busyKey === `${employee.hrId}:notes`}
                           onBlur={(event) => {
                             const currentValue = event.target.value;

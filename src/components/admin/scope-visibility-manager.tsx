@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { ProductOption, UserScopeOverride } from "@/lib/auth/scope-visibility";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 const PRODUCT_LINES = ["Pedia", "CNS", "Anti Infective"] as const;
 
@@ -308,7 +309,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
           </div>
           <select
             aria-label="Filter by line"
-            className="rounded border border-slate-200 bg-white px-2 py-2 text-sm text-slate-600 outline-none focus:border-orange-300"
+            className={phxSelectClassName}
             onChange={(e) => setFilterLine(e.target.value)}
             value={filterLine}
           >
@@ -321,7 +322,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
           </select>
           <select
             aria-label="Filter by role"
-            className="rounded border border-slate-200 bg-white px-2 py-2 text-sm text-slate-600 outline-none focus:border-orange-300"
+            className={phxSelectClassName}
             onChange={(e) => setFilterRole(e.target.value)}
             value={filterRole}
           >
@@ -399,7 +400,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                         <td className="py-3 pr-4">
                           <select
                             aria-label={`Sales scope override for ${row.displayName ?? row.fullName ?? row.loginId}`}
-                            className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-orange-300"
+                            className={phxSelectClassName}
                             onChange={(e) =>
                               setEditState({ ...editState, salesScopeOverride: e.target.value })
                             }

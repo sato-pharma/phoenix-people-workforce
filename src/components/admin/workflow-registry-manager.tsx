@@ -33,6 +33,8 @@ import type {
   WorkflowRegistryStatus,
 } from "@/lib/workflow-registry/service";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 type WorkflowRegistryManagerProps = {
@@ -634,7 +636,7 @@ export function WorkflowRegistryManager({
           <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
             What this workflow controls
             <textarea
-              className="mt-2 min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
+              className={cn(phxTextareaClassName, "mt-2 min-h-20 normal-case tracking-normal")}
               disabled={!canManage}
               onChange={(event) => updateForm("description", event.target.value)}
               value={form.description}
@@ -741,7 +743,7 @@ export function WorkflowRegistryManager({
                       <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
                         Next box
                         <SearchableSelect
-                          className="mt-2 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
+                          className="mt-2 w-full px-3"
                           disabled={!canManage}
                           onChange={(event) => updateAction(index, { to: event.target.value })}
                           value={action.to}
@@ -809,7 +811,7 @@ export function WorkflowRegistryManager({
                       <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
                         Side effects
                         <textarea
-                          className="mt-2 min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
+                          className={cn(phxTextareaClassName, "mt-2 min-h-20 normal-case tracking-normal")}
                           disabled={!canManage}
                           onChange={(event) => updateAction(index, { sideEffects: textToList(event.target.value) })}
                           value={listToText(action.sideEffects)}
@@ -818,7 +820,7 @@ export function WorkflowRegistryManager({
                       <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
                         Notifications
                         <textarea
-                          className="mt-2 min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
+                          className={cn(phxTextareaClassName, "mt-2 min-h-20 normal-case tracking-normal")}
                           disabled={!canManage}
                           onChange={(event) => updateAction(index, { notifications: textToList(event.target.value) })}
                           value={listToText(action.notifications)}
@@ -836,7 +838,7 @@ export function WorkflowRegistryManager({
                       <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
                         Required tests
                         <textarea
-                          className="mt-2 min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
+                          className={cn(phxTextareaClassName, "mt-2 min-h-20 normal-case tracking-normal")}
                           disabled={!canManage}
                           onChange={(event) => updateAction(index, { tests: textToList(event.target.value) })}
                           value={listToText(action.tests)}

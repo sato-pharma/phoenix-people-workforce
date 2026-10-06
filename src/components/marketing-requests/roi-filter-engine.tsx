@@ -53,6 +53,7 @@ import {
   ROI_RESULT_STATUS_LABEL,
 } from "@/lib/marketing-requests/roi-labels";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -467,7 +468,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                           placeholder={String(durationDim.min ?? "")}
                           value={filters.durationMin ?? ""}
                           onChange={(event) => patchFilters({ durationMin: event.target.value === "" ? null : Number(event.target.value) })}
-                          className="h-8 w-full rounded-[5px] border border-phx-line px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+                          className={phxFieldClassName}
                         />
                         <span className="text-phx-ink-faint">–</span>
                         <input
@@ -477,7 +478,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                           placeholder={String(durationDim.max ?? "")}
                           value={filters.durationMax ?? ""}
                           onChange={(event) => patchFilters({ durationMax: event.target.value === "" ? null : Number(event.target.value) })}
-                          className="h-8 w-full rounded-[5px] border border-phx-line px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+                          className={phxFieldClassName}
                         />
                       </div>
                     </div>
@@ -492,14 +493,14 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                           type="date"
                           value={filters.payDateFrom ?? ""}
                           onChange={(event) => patchFilters({ payDateFrom: event.target.value || null })}
-                          className="h-8 w-full rounded-[5px] border border-phx-line px-2 text-phx-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+                          className={phxFieldClassName}
                         />
                         <span className="text-phx-ink-faint">–</span>
                         <input
                           type="date"
                           value={filters.payDateTo ?? ""}
                           onChange={(event) => patchFilters({ payDateTo: event.target.value || null })}
-                          className="h-8 w-full rounded-[5px] border border-phx-line px-2 text-phx-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+                          className={phxFieldClassName}
                         />
                       </div>
                     </div>
@@ -609,7 +610,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                       value={presetName}
                       onChange={(event) => setPresetName(event.target.value)}
                       placeholder="Name this view…"
-                      className="h-8 w-40 rounded-[5px] border border-phx-line px-2 text-phx-sm font-medium text-phx-ink outline-none focus:border-phx-accent-line"
+                      className={cn(phxFieldClassName, "w-40")}
                     />
                     <button
                       type="button"

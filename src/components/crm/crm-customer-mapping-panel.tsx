@@ -12,6 +12,11 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import type { CrmCustomerResolutionAction, UnmappedCrmCustomerRow } from "@/lib/crm/customer-brick";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type ImportSummary = {
   blockedRows: Array<{ reason: string; row: number }>;
@@ -167,7 +172,7 @@ function ResolutionCell({
             setAction(event.target.value as CrmCustomerResolutionAction);
             setError(null);
           }}
-          className="h-8 border border-phx-line bg-white px-2 text-xs text-slate-700"
+          className={phxSelectClassName}
         >
           {RESOLUTION_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
@@ -179,7 +184,7 @@ function ResolutionCell({
             value={brickIdInput}
             onChange={(event) => setBrickIdInput(event.target.value)}
             placeholder="e.g. B100-11"
-            className="h-8 w-28 border border-phx-line bg-white px-2 text-xs text-slate-800"
+            className={cn(phxFieldClassName, "w-28")}
           />
         )}
         <button
@@ -292,7 +297,7 @@ export function CrmCustomerMappingPanel({
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search by CRM contact name or ID…"
-            className="h-9 w-full border border-phx-line bg-white pl-8 pr-2 text-sm text-slate-800"
+            className={cn(phxFieldClassName, "pl-8")}
           />
         </div>
       </div>

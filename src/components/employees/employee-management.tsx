@@ -76,6 +76,7 @@ import { COMPANY_MAIL_DOMAIN } from "@/lib/new-hire-mailbox/address";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 
 type EmployeeManagementProps = {
@@ -460,46 +461,41 @@ function SelectField({
 }) {
   const isSelected = value !== "";
 
+  // The FIELD's box is the shared token now (form-tokens.ts), so a tone no longer carries a
+  // border, a ground or a focus outline: five accent focus rings in one form were five
+  // disagreements with the one design. What a tone still carries is the SELECTED state — a
+  // tint on the box and the ink on the label, value and chevron — because that is a state
+  // indicator rather than the skin.
   const toneStyles = {
     blue: {
-      border: isSelected ? "border-blue-200" : "border-[#D7E0EA]",
-      bg: isSelected ? "bg-blue-50/50" : "bg-white",
+      selected: "border-blue-200 bg-blue-50/50",
       text: isSelected ? "text-blue-700" : "text-text",
       label: isSelected ? "text-blue-600" : "text-text-secondary",
       icon: "text-blue-500",
-      focus: "focus-visible:outline-blue-500",
     },
     emerald: {
-      border: isSelected ? "border-emerald-200" : "border-[#D7E0EA]",
-      bg: isSelected ? "bg-emerald-50/50" : "bg-white",
+      selected: "border-emerald-200 bg-emerald-50/50",
       text: isSelected ? "text-emerald-700" : "text-text",
       label: isSelected ? "text-emerald-600" : "text-text-secondary",
       icon: "text-emerald-500",
-      focus: "focus-visible:outline-emerald-500",
     },
     orange: {
-      border: isSelected ? "border-orange-200" : "border-[#D7E0EA]",
-      bg: isSelected ? "bg-orange-50/50" : "bg-white",
+      selected: "border-orange-200 bg-orange-50/50",
       text: isSelected ? "text-orange-700" : "text-text",
       label: isSelected ? "text-orange-600" : "text-text-secondary",
       icon: "text-orange-500",
-      focus: "focus-visible:outline-orange-500",
     },
     violet: {
-      border: isSelected ? "border-violet-200" : "border-[#D7E0EA]",
-      bg: isSelected ? "bg-violet-50/50" : "bg-white",
+      selected: "border-violet-200 bg-violet-50/50",
       text: isSelected ? "text-violet-700" : "text-text",
       label: isSelected ? "text-violet-600" : "text-text-secondary",
       icon: "text-violet-500",
-      focus: "focus-visible:outline-violet-500",
     },
     slate: {
-      border: isSelected ? "border-slate-300" : "border-[#D7E0EA]",
-      bg: isSelected ? "bg-slate-50/50" : "bg-white",
+      selected: "border-slate-300 bg-slate-50/50",
       text: isSelected ? "text-slate-700" : "text-text",
       label: isSelected ? "text-slate-600" : "text-text-secondary",
       icon: "text-slate-500",
-      focus: "focus-visible:outline-slate-500",
     },
   }[tone];
 
@@ -513,7 +509,7 @@ function SelectField({
       <div className="relative">
         <SearchableSelect
           className={cn(
-            "h-11 w-full rounded-2xl border bg-white/95 px-3 text-xs font-semibold shadow-sm transition-all duration-200",
+            "w-full px-3 text-xs",
             // SearchableSelect renders an <input> (searchable-select.tsx:295). An input is a
             // single-line control that cannot wrap whatever we do to it, so dropping `truncate`
             // here would not give the text room — it would only swap the ellipsis for a silent
@@ -521,11 +517,9 @@ function SelectField({
             // fits-the-screen rule already makes for a native <select>. Left deliberately, and it
             // stays counted by tests/no-ellipsis-truncation-ratchet.test.ts rather than hidden.
             "appearance-none hover:shadow-md cursor-pointer whitespace-nowrap truncate pr-8",
-            toneStyles.border,
-            toneStyles.bg,
+            isSelected && toneStyles.selected,
             toneStyles.text,
-            toneStyles.focus,
-            disabled && "opacity-50 cursor-not-allowed bg-phx-paper"
+            disabled && "opacity-50 cursor-not-allowed"
           )}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
@@ -569,7 +563,6 @@ function TextField({
         {label}
       </span>
       <Input
-        className={cn("h-11 rounded-2xl border-[#D7E0EA] bg-white/95 shadow-sm", disabled && "bg-phx-paper text-phx-ink-soft")}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
@@ -2527,7 +2520,7 @@ export function EmployeeManagement({
                   <span className="sr-only">Search employees</span>
                   <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
                   <Input
-                    className="h-12 w-full rounded-2xl border-phx-line bg-white pl-11 text-sm shadow-sm transition-all focus:border-phx-accent focus:ring-2 focus:ring-phx-accent/20 focus:shadow-[0_0_0_4px_rgba(249,115,22,0.1)]"
+                    className="w-full pl-11"
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Search by name, ID, email, or manager..."
                     value={query}
@@ -4133,7 +4126,7 @@ export function EmployeeManagement({
                   workflow_notes
                 </span>
                 <textarea
-                  className="min-h-28 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 py-2 text-sm text-text shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  className={cn(phxTextareaClassName, "min-h-28")}
                   onChange={(event) => updateResignationForm("workflowNotes", event.target.value)}
                   placeholder="Optional workflow note for the resignation report."
                   value={resignationForm.workflowNotes}
@@ -4219,7 +4212,7 @@ export function EmployeeManagement({
                   note (optional)
                 </span>
                 <textarea
-                  className="min-h-20 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 py-2 text-sm text-text shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  className={cn(phxTextareaClassName, "min-h-20")}
                   onChange={(event) => updateDeclineOfferForm("note", event.target.value)}
                   placeholder="Why the offer was declined (optional)."
                   value={declineOfferForm.note}

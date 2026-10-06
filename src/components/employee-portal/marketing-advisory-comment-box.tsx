@@ -4,6 +4,8 @@ import { useCallback, useState } from "react";
 import { CheckCircle2, Send } from "lucide-react";
 
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * Non-blocking advisory comment for a CC reviewer (e.g. the line Product Manager on an Anti Inf
@@ -64,7 +66,7 @@ export function MarketingAdvisoryCommentBox({
         Your comment is shared with the reviewer and does not affect the approval — it cannot approve or reject the request.
       </p>
       <textarea
-        className="min-h-[72px] w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-phx-md text-slate-800 shadow-sm outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+        className={cn(phxTextareaClassName, "min-h-[72px]")}
         dir="auto"
         onChange={(event) => setComment(event.target.value)}
         placeholder="Add a comment for the reviewer…"

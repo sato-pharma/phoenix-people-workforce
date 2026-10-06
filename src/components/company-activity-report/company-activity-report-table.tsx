@@ -37,6 +37,10 @@ import {
   COMPANY_ACTIVITY_REPORT_EARLIEST_DATE,
 } from "@/lib/company-activity-report/range";
 import type { CompanyActivityEmployeeSummary, CompanyActivityFilters, CompanyActivityReport } from "@/lib/company-activity-report/types";
+import {
+  phxLabelTextClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Constants ────────────────────────────────────────────────────── */
@@ -55,10 +59,9 @@ const DATE_PRESETS = [
 
 type DatePreset = (typeof DATE_PRESETS)[number]["value"];
 
-const selectClass =
-  "h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
+const selectClass  = phxSelectClassName;
 
-const labelClass = "text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500";
+const labelClass = phxLabelTextClassName;
 
 type SortDirection = "asc" | "desc";
 type SortKey =

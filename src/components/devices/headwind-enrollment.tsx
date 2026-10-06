@@ -27,6 +27,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { QrImage, saveQrImage } from "@/components/devices/qr-image";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { encodeQrText, type QrCode as QrSymbol } from "@/lib/qr/qr-code";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
 const PRIMARY_BUTTON =
@@ -299,7 +304,7 @@ export function HeadwindEnrollment() {
           <label className="block min-w-0">
             <span className={`block ${MICRO_LABEL}`}>A name for it</span>
             <input
-              className="mt-1 w-full min-w-0 border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-900"
+              className={`${phxFieldClassName} mt-1 min-w-0`}
               onChange={(event) => setTemplateName(event.target.value)}
               placeholder="Rep tablets"
               type="text"
@@ -312,7 +317,7 @@ export function HeadwindEnrollment() {
           <label className="block min-w-0">
             <span className={`block ${MICRO_LABEL}`}>QR payload from the Headwind console</span>
             <textarea
-              className="mt-1 h-40 w-full min-w-0 border border-slate-300 bg-white px-2 py-1.5 font-mono text-[11px] text-slate-900"
+              className={cn(phxTextareaClassName, "mt-1 min-h-40 min-w-0 font-mono")}
               onChange={(event) => setRaw(event.target.value)}
               placeholder='{"android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.hmdm.launcher/.AdminReceiver", …}'
               value={raw}

@@ -56,6 +56,7 @@ import type { RoiFilterState } from "@/lib/marketing-requests/roi-report-types";
 import { emptyRoiFilterState } from "@/lib/marketing-requests/roi-report-types";
 import type { RoiTrackerReport, RoiTrackerRow } from "@/lib/marketing-requests/roi-tracker-service";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 const money = (value: number) => `EGP ${Math.round(value).toLocaleString("en-US")}`;
 const compact = (value: number) =>
@@ -1069,7 +1070,7 @@ export function MarketingRoiLiveTracker({
                     <Search aria-hidden="true" className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-slate-400" />
                     <input
                       aria-label="Search requests"
-                      className="w-full rounded-sm border border-slate-200 py-1 pl-7 pr-2 text-xs lg:w-56"
+                      className={cn(phxFieldClassName, "pl-7 lg:w-56")}
                       onChange={(event) => setSearch(event.target.value)}
                       placeholder="Request, customer, requester…"
                       type="search"

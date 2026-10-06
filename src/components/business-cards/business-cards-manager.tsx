@@ -13,6 +13,10 @@ import type { EditableCardField } from "@/lib/business-cards/card-content";
 import { formatHireDate, hireMonthKey, hireMonthLabel, hireMonthOptions, NO_HIRE_MONTH } from "@/lib/business-cards/hire-month";
 import type { BusinessCardEmployee } from "@/lib/business-cards/service";
 import { cn } from "@/lib/utils";
+import {
+  phxLabelClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 // Choose people, correct anything the record has wrong, and download print-ready cards — every card
 // in one PDF, or a PDF per person. What each box shows is exactly what the card prints: the values
@@ -30,9 +34,8 @@ const FIELD_LABELS: Record<EditableCardField, string> = {
 };
 
 // Square edges everywhere — the golden rule — so every control here states `rounded-none`.
-const inputClassName =
-  "h-10 rounded-none border-phx-line bg-white/95 text-sm shadow-sm focus:border-phx-accent-line focus:ring-phx-accent/15";
-const labelClassName = "mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
+const inputClassName = "";
+const labelClassName = phxLabelClassName;
 
 function cardsBody(mode: Mode, hrIds: string[], edits: Edits) {
   return { cards: hrIds.map((hrId) => ({ edits: edits[hrId], hrId })), mode };
@@ -246,7 +249,7 @@ export function BusinessCardsManager({
               <CalendarDays aria-hidden className="h-4 w-4 shrink-0 text-phx-accent-press" />
               <select
                 aria-label="Filter by hiring month"
-                className="h-10 w-full min-w-0 rounded-none lg:w-auto border border-phx-line bg-white/95 px-2 text-sm font-semibold text-phx-ink shadow-sm focus:border-phx-accent-line focus:outline-none focus:ring-2 focus:ring-phx-accent/15"
+                className={cn(phxSelectClassName, "min-w-0 lg:w-auto")}
                 onChange={(event) => setHireMonth(event.target.value)}
                 value={hireMonth}
               >

@@ -53,6 +53,7 @@ import { cn } from "@/lib/utils";
 import { handlePossibleSessionDeath } from "@/lib/auth/client-session";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { HeadOfficeAttendancePanel } from "@/components/field-workforce-compliance/head-office-attendance-panel";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 
 type LiveMonthsListResponse = {
@@ -361,7 +362,7 @@ function HierarchyFilters<T extends HierarchyItem>({
         if (options.length === 0) return null;
         return (
           <SearchableSelect
-            className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            className="h-9 px-3 text-xs"
             key={key}
             value={filters[key]}
             onChange={(event) => onChange({
@@ -685,14 +686,14 @@ function EmployeePicker({
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
-            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            className={cn(phxFieldClassName, "pl-9")}
             placeholder="Search employee or HR ID"
             value={employeeSearch}
             onChange={(event) => onEmployeeSearchChange(event.target.value)}
           />
         </div>
         <SearchableSelect
-          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          className="px-3"
           value={selectedEmployee?.hrId ?? ""}
           onChange={(event) => onSelectEmployee(event.target.value)}
         >
@@ -987,7 +988,7 @@ function TeamCalendarPanel({ employees }: { employees: FieldWorkforceEmployeeSum
         <div className="relative mt-3">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
-            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            className={cn(phxFieldClassName, "pl-9")}
             placeholder="Search employee or HR ID"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -1059,7 +1060,7 @@ function ReviewQueue({
     return (
       <input
         className={cn(
-          "h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100",
+          phxFieldClassName,
           widthClassName,
         )}
         placeholder="Temporary note, not saved"
@@ -1079,7 +1080,7 @@ function ReviewQueue({
     >
       <div className="grid gap-3 border-b border-slate-100 p-4 lg:grid-cols-[180px_180px_minmax(0,1fr)_180px]">
         <SearchableSelect
-          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          className="px-3"
           value={severity}
           onChange={(event) => {
             setSeverity(event.target.value as typeof severity);
@@ -1089,7 +1090,7 @@ function ReviewQueue({
           {severityOptions.map((option) => <option key={option} value={option}>{option} severity</option>)}
         </SearchableSelect>
         <SearchableSelect
-          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          className="px-3"
           value={status}
           onChange={(event) => {
             setStatus(event.target.value as typeof status);
@@ -1101,7 +1102,7 @@ function ReviewQueue({
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
-            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            className={cn(phxFieldClassName, "pl-9")}
             placeholder="Filter employee or HR ID"
             value={employeeQuery}
             onChange={(event) => {
@@ -1111,7 +1112,7 @@ function ReviewQueue({
           />
         </div>
         <SearchableSelect
-          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          className="px-3"
           value={pageSize}
           onChange={(event) => {
             setPageSize(Number(event.target.value));
@@ -1308,7 +1309,7 @@ function MonthlySummaryTable({
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
-            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            className={cn(phxFieldClassName, "pl-9")}
             placeholder="Search employee or HR ID"
             value={query}
             onChange={(event) => {
@@ -1318,7 +1319,7 @@ function MonthlySummaryTable({
           />
         </div>
         <SearchableSelect
-          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          className="px-3"
           value={pageSize}
           onChange={(event) => {
             setPageSize(Number(event.target.value));
@@ -1772,7 +1773,7 @@ function RecommendationRows({
         {decisionBadge(recommendation.decisionStatus)}
         <SearchableSelect
           className={cn(
-            "h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100",
+            "h-9 px-3 text-xs",
             widthClassName,
           )}
           value={status}
@@ -1798,7 +1799,7 @@ function RecommendationRows({
       <div>
         <SearchableSelect
           className={cn(
-            "h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100",
+            "h-9 px-3 text-xs",
             widthClassName,
           )}
           value={reason}
@@ -1821,7 +1822,7 @@ function RecommendationRows({
     return (
       <input
         className={cn(
-          "h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100",
+          phxFieldClassName,
           widthClassName,
         )}
         placeholder="HR decision note"
@@ -1869,7 +1870,7 @@ function RecommendationRows({
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
-            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            className={cn(phxFieldClassName, "pl-9")}
             placeholder="Filter employee, code, or source"
             value={query}
             onChange={(event) => {
@@ -1879,7 +1880,7 @@ function RecommendationRows({
           />
         </div>
         <SearchableSelect
-          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          className="px-3"
           value={severity}
           onChange={(event) => {
             setSeverity(event.target.value as typeof severity);
@@ -1889,7 +1890,7 @@ function RecommendationRows({
           {severityOptions.map((option) => <option key={option} value={option}>{option} severity</option>)}
         </SearchableSelect>
         <SearchableSelect
-          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          className="px-3"
           value={decisionStatus}
           onChange={(event) => {
             setDecisionStatus(event.target.value as typeof decisionStatus);
@@ -1900,7 +1901,7 @@ function RecommendationRows({
           {decisionStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </SearchableSelect>
         <SearchableSelect
-          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          className="px-3"
           value={pageSize}
           onChange={(event) => {
             setPageSize(Number(event.target.value));
@@ -2459,7 +2460,7 @@ export function FieldWorkforceComplianceWorkspace({ showPayrollRecommendations =
               <label className="flex flex-col gap-1 text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400">
                 Month
                 <SearchableSelect
-                  className="h-10 min-w-[220px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
+                  className="min-w-[220px] px-3"
                   value={selectedMonthKey}
                   onChange={(event) => void handleSelectLiveMonth(event.target.value)}
                 >

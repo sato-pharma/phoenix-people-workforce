@@ -32,13 +32,14 @@ import {
   type WhatsAppApplicantRow,
   type WhatsAppApplicantsView,
 } from "@/lib/recruitment/whatsapp-applicant-filters";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 /** Rows drawn at once. A longer list shows a button for the next lot. */
 const ROWS_PER_STEP = 100;
 
 const labelClass = "block text-xs font-semibold uppercase tracking-wide text-slate-500";
 const selectClass =
-  "mt-1 h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs text-slate-900 focus:border-orange-500 focus:outline-none";
+  `${phxSelectClassName} mt-1 min-w-0`;
 
 function FilterSelect({
   filter,

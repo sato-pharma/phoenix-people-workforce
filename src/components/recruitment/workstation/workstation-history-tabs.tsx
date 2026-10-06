@@ -23,6 +23,7 @@ import { CANDIDATE_COMMENT_MAX_LENGTH, type CandidateComment } from "@/lib/recru
 import { cairoStamp, EmptyNote } from "@/components/recruitment/workstation/workstation-ui";
 import type { CandidateTimelineEvent, CandidateTimelineKind } from "@/lib/recruitment/candidate-timeline";
 import { cn } from "@/lib/utils";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 /** The dot beside each line. Colour is the only thing carrying the kind, so it stays semantic. */
 const kindTone: Record<CandidateTimelineKind, string> = {
@@ -194,7 +195,7 @@ export function WorkstationNotesTab({
         <div className="shrink-0 border-b border-phx-line bg-phx-paper p-2">
           <textarea
             aria-label="Add a note"
-            className="w-full resize-y border border-phx-line bg-white px-2 py-1.5 text-[13px] leading-relaxed text-phx-ink outline-none focus:border-phx-accent-line"
+            className={`${phxTextareaClassName} leading-relaxed`}
             maxLength={CANDIDATE_COMMENT_MAX_LENGTH}
             onChange={(event) => setTyped({ id: candidateId, text: event.target.value })}
             /* Said in the placeholder because it is true and people assume otherwise: a note on a

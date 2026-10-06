@@ -6,6 +6,7 @@ import { Search, Store } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import type { SalesDistributorEntry } from "@/lib/sales/distributor-registry";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 // ── D1: shared distributor-first shell ─────────────────────────────────────────────────────────
 // Reusable left-rail distributor navigator (searchable) + a content area for the selected
@@ -44,7 +45,7 @@ export function DistributorWorkspaceShell({ distributors, children, weeklyOnly =
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
             <input
-              className="h-9 w-full rounded-[6px] border border-phx-line bg-white pl-8 pr-2 text-sm outline-none focus:border-phx-accent-line"
+              className={cn(phxFieldClassName, "pl-8")}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search distributor"
               value={query}

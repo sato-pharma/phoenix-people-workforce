@@ -47,6 +47,7 @@ import {
   type CandidateRoleFamily,
 } from "@/lib/recruitment/candidate-role-family";
 import { cn } from "@/lib/utils";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 /**
  * CV Database — rebuilt from scratch on 2026-08-30, at the owner's instruction.
@@ -286,7 +287,7 @@ function filterButtonClassName(active: boolean) {
 }
 
 const selectClassName =
-  "h-10 rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-xs font-bold text-phx-ink-soft shadow-sm";
+  phxSelectClassName;
 
 export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
   const [query, setQuery] = React.useState("");
@@ -483,7 +484,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
             <span className="sr-only">Search the CV database</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-soft" />
             <Input
-              className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 pl-9 shadow-sm"
+              className="pl-9"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, role, employer, university, area..."
               value={query}

@@ -13,6 +13,8 @@
 
 import { periodLabel } from "@/lib/business-review/period-format";
 import { hiddenEntries, type HiddenFields } from "./hidden-fields";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type Props = {
   /** Where the form submits — the page's own path. */
@@ -25,9 +27,7 @@ type Props = {
   hidden?: HiddenFields;
 };
 
-const FIELD =
-  "h-9 rounded-lg border border-border bg-card px-2 text-sm font-semibold text-foreground " +
-  "outline-none focus:border-primary";
+const FIELD = cn(phxSelectClassName, "h-9 px-2");
 
 export function ReviewPeriodFilter({ action, available, from, to, hidden }: Props) {
   // Nothing to pick from means the engine returned no validated closing at all. Say that here

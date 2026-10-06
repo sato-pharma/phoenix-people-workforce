@@ -11,14 +11,14 @@ import type {
   RecurringNonEmployeeRow,
 } from "@/lib/automated-payroll/types";
 import { cn } from "@/lib/utils";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   /** Refreshed after a change so the caller can offer a re-sync. Must be referentially stable. */
   onChanged?: () => void;
 };
 
-const fieldClassName =
-  "h-9 border-slate-300 bg-white text-sm transition focus-visible:border-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/20";
+const fieldClassName = cn(phxSelectClassName, "h-9");
 
 function money(value: number): string {
   return value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });

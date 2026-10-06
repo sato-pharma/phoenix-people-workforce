@@ -36,6 +36,7 @@ import { MessageCircle } from "lucide-react";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { getJson, postJson } from "@/components/recruitment/recruitment-fetch";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 type WindowState =
   | { kind: "idle" }
@@ -161,7 +162,7 @@ export function WhatsAppReplyBox({ candidateId }: { candidateId: string }) {
             {formatRemaining(state.minutesLeft)} left to reply in your own words.
           </p>
           <textarea
-            className="w-full resize-y border border-phx-line bg-white p-2 text-[13px] leading-relaxed text-phx-ink outline-none focus:border-phx-accent"
+            className={`${phxTextareaClassName} leading-relaxed`}
             disabled={sending}
             onChange={(event) => setText(event.target.value)}
             placeholder="Write your reply…"

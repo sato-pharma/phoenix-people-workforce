@@ -10,6 +10,8 @@ import {
 } from "@/lib/direct-orders/report-filters";
 import { showsAwaitingFinanceMonth } from "@/lib/direct-orders/types";
 import type { DirectOrderReportRow, DirectOrderReportScope } from "@/lib/direct-orders/types";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // The shell this report was opened in, so a row's link stays inside it.
 //
@@ -271,7 +273,7 @@ export function DirectOrderReportWorkspace({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search requester, product, pharmacy, area…"
-          className="w-72 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          className={cn(phxFieldClassName, "w-72")}
         />
         {/* Finance's own slice, and the reason this control exists: booking approved orders into a
             sales month is one person's entire job here, and until now it was the one question this

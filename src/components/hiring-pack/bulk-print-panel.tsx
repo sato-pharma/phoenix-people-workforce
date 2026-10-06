@@ -246,7 +246,7 @@ export function BulkPrintPanel({
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
           <Input
             aria-label="Search employees"
-            className="h-10 rounded-none pl-9"
+            className="h-10 pl-9"
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search by HR ID, name or job title"
             value={query}

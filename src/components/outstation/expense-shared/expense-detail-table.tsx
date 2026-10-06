@@ -15,6 +15,7 @@ import type {
   ExpenseCommandRow,
   ExpenseDashboardVariant,
 } from "@/components/outstation/expense-shared/types";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 const RENDER_CAP = 250;
 
@@ -183,7 +184,7 @@ export function ExpenseDetailTable({
           Sort
         </label>
         <select
-          className="min-w-0 flex-1 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-700"
+          className={`${phxSelectClassName} min-w-0 flex-1`}
           id="expense-sort"
           onChange={(event) => setSortKey(event.target.value as ColumnKey)}
           value={sortKey}

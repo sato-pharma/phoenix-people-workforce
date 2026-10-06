@@ -19,6 +19,10 @@ import {
   type MapOption,
   type MonthlyUploadHandle,
 } from "@/components/sales/sales-upload-workspace";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 // ── Bulk Import mode ────────────────────────────────────────────────────────────────────────────
 // One shared month, every monthly distributor listed as a horizontal card. Clicking a card opens
@@ -156,11 +160,11 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
       <Card className="space-y-2 rounded-[6px] border border-phx-line bg-white p-4">
         <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Month for this bulk import</span>
         <div className="flex gap-2">
-          <select className="h-10 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold" onChange={(e) => applyPeriod(e.target.value, periodYear)} value={periodMonth}>
+          <select className={phxSelectClassName} onChange={(e) => applyPeriod(e.target.value, periodYear)} value={periodMonth}>
             <option value="">Month</option>
             {MONTHS.map((m, i) => <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>)}
           </select>
-          <select className="h-10 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold" onChange={(e) => applyPeriod(periodMonth, e.target.value)} value={periodYear}>
+          <select className={phxSelectClassName} onChange={(e) => applyPeriod(periodMonth, e.target.value)} value={periodYear}>
             <option value="">Year</option>
             {UPLOAD_YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
           </select>
@@ -174,7 +178,7 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
           <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributors ({filtered.length})</span>
           <div className="relative w-56">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
-            <input className="h-9 w-full rounded-[6px] border border-phx-line bg-white pl-8 pr-2 text-sm outline-none focus:border-phx-accent-line" onChange={(e) => setQuery(e.target.value)} placeholder="Search distributor" value={query} />
+            <input className={cn(phxFieldClassName, "pl-8")} onChange={(e) => setQuery(e.target.value)} placeholder="Search distributor" value={query} />
           </div>
         </div>
         <div className="flex flex-wrap gap-2">

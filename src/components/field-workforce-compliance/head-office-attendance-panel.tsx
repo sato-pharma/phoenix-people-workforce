@@ -10,6 +10,7 @@ import type {
   HeadOfficeDayCell,
   HeadOfficeDayStatus,
 } from "@/lib/field-workforce-compliance/head-office-attendance";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type ApiResponse = {
   data?: HeadOfficeAttendanceCalendarResult;
@@ -247,7 +248,7 @@ export function HeadOfficeAttendancePanel() {
           </div>
         </div>
         <input
-          className="mt-3 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 sm:max-w-xs"
+          className={`${phxFieldClassName} mt-3 sm:max-w-xs`}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search employee or HR ID"
           value={query}

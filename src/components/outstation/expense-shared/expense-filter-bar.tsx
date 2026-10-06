@@ -15,12 +15,12 @@ import type {
   ExpenseSource,
 } from "@/components/outstation/expense-shared/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 
 const PRESETS: ExpenseDatePreset[] = ["all", "today", "7d", "30d", "90d", "month", "custom"];
 
-const selectClass =
-  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100";
+const selectClass  = phxSelectClassName;
 
 function FilterSelect({
   label,

@@ -14,6 +14,8 @@ import {
 } from "@/lib/crm/account-setup-messages";
 import type { CrmAccountSetupTaskRow } from "@/lib/crm/account-setup";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * New Hire CRM Setup — the screen the "an employee was added" notice sends you to.
@@ -173,7 +175,7 @@ function PendingCard({
           <label className="flex min-w-0 flex-col gap-1">
             <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">CRM username</span>
             <input
-              className="h-9 w-full border border-slate-300 bg-white px-2.5 text-sm text-slate-900"
+              className={phxFieldClassName}
               onChange={(event) => setCrmUsername(event.target.value)}
               placeholder="The login name in iReports360"
               type="text"
@@ -183,7 +185,7 @@ function PendingCard({
           <label className="flex min-w-0 flex-col gap-1">
             <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">CRM code</span>
             <input
-              className="h-9 w-full border border-slate-300 bg-white px-2.5 text-sm text-slate-900"
+              className={phxFieldClassName}
               onChange={(event) => setCrmCode(event.target.value)}
               placeholder="The agent id in iReports360"
               type="text"
@@ -203,7 +205,7 @@ function PendingCard({
               Why this person needs no CRM account
             </span>
             <input
-              className="h-9 w-full border border-slate-300 bg-white px-2.5 text-sm text-slate-900"
+              className={phxFieldClassName}
               onChange={(event) => setNote(event.target.value)}
               placeholder="e.g. Head office finance role — never visits customers"
               type="text"
@@ -318,7 +320,7 @@ export function CrmAccountSetupPanel({
         <div className="relative w-full sm:w-64">
           <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input
-            className="h-9 w-full border border-slate-300 bg-white pl-8 pr-2 text-sm text-slate-800"
+            className={cn(phxFieldClassName, "pl-8")}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search by name, HR ID, line or area"
             type="text"

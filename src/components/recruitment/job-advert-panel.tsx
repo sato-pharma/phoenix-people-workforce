@@ -22,6 +22,11 @@ import {
 } from "@/lib/recruitment/outreach/job-advert";
 import type { ApplyChannelKind } from "@/lib/recruitment/outreach/job-advert";
 import type { ChannelAttribution, JobPostChannel } from "@/lib/recruitment/outreach/job-post-channels";
+import {
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type Destinations = { whatsappNumber: string | null; email: string | null };
 
@@ -283,7 +288,7 @@ export function JobAdvertPanel() {
     })),
   );
   const relaySelectClass =
-    "h-9 w-full max-w-[16rem] rounded-none border border-slate-300 bg-white px-2 text-sm text-slate-900";
+    `${phxSelectClassName} max-w-[16rem]`;
 
   return (
     <div className="space-y-6">
@@ -322,7 +327,7 @@ export function JobAdvertPanel() {
         <label className="block space-y-1 text-sm">
           <span className="font-medium text-slate-700">Requirements — one per line</span>
           <textarea
-            className="min-h-20 w-full rounded-md border border-slate-200 p-2 text-sm"
+            className={cn(phxTextareaClassName, "min-h-20")}
             onChange={(event) => setRequirements(event.target.value)}
             placeholder={"2+ years in pharmaceutical sales\nOwn car preferred"}
             value={requirements}
@@ -331,7 +336,7 @@ export function JobAdvertPanel() {
         <label className="block space-y-1 text-sm">
           <span className="font-medium text-slate-700">The post as it will be pasted — edit freely</span>
           <textarea
-            className="min-h-40 w-full rounded-md border border-slate-200 p-2 font-mono text-xs"
+            className={cn(phxTextareaClassName, "min-h-40 font-mono")}
             onChange={(event) => setBodyOverride(event.target.value)}
             value={body}
           />
@@ -405,7 +410,7 @@ export function JobAdvertPanel() {
           title="Where you post it"
         />
         <textarea
-          className="min-h-24 w-full rounded-md border border-slate-200 p-2 font-mono text-xs"
+          className={cn(phxTextareaClassName, "min-h-24 font-mono")}
           onChange={(event) => setPaste(event.target.value)}
           placeholder={"https://facebook.com/groups/medical.reps.egypt\nMedical Reps Cairo | https://chat.whatsapp.com/EF1I33PPgEF3b9XJ7k4pDG\nhttps://t.me/Recruitmentblogs"}
           value={paste}
@@ -440,7 +445,7 @@ export function JobAdvertPanel() {
                   Apply line
                 </label>
                 <Input
-                  className="mt-1 h-9 rounded-none font-mono text-xs"
+                  className="mt-1 h-9 font-mono text-xs"
                   defaultValue={channel.applyWhatsAppNumber ?? ""}
                   disabled={busy}
                   id={`apply-${channel.id}`}
@@ -495,7 +500,7 @@ export function JobAdvertPanel() {
                       <td className="whitespace-nowrap p-2">
                         <Input
                           aria-label={`Apply line for ${channel.name}`}
-                          className="h-9 max-w-[11rem] rounded-none font-mono text-xs"
+                          className="h-9 max-w-[11rem] font-mono text-xs"
                           defaultValue={channel.applyWhatsAppNumber ?? ""}
                           disabled={busy}
                           key={`apply-${channel.id}-${channel.applyWhatsAppNumber ?? ""}`}

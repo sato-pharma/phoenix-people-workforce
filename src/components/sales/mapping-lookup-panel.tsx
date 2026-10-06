@@ -14,10 +14,14 @@ import { Download, Loader2, Search } from "lucide-react";
 
 import type { CodeLookupResult, TerritoryLookupResult } from "@/lib/sales/mapping-lookup";
 import { cn } from "@/lib/utils";
+import {
+  phxFieldClassName,
+  phxLabelTextClassName,
+} from "@/components/ui/form-tokens";
 
 const panel = "border border-phx-line bg-white/95";
-const label = "text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint";
-const field = "h-9 w-full min-w-0 border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line";
+const label = phxLabelTextClassName;
+const field = `${phxFieldClassName} min-w-0`;
 const goBtn = "inline-flex h-9 shrink-0 items-center gap-1.5 border border-phx-line bg-[#0B0B0B] px-3 text-xs font-black text-white transition hover:opacity-90 disabled:opacity-60";
 
 type CodePayload = { success?: boolean; error?: string; result?: CodeLookupResult };

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import type { HeldDirectOrderRow } from "@/lib/direct-orders/service";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 type Props = { rows: HeldDirectOrderRow[] };
 
@@ -368,7 +369,7 @@ export function HeldDesk({ rows }: Props) {
                 onChange={(event) => setReasons((prev) => ({ ...prev, [head.pharmacyId]: event.target.value }))}
                 rows={2}
                 placeholder="Reason (required for both buttons below)…"
-                className="mt-2 w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+                className={`${phxTextareaClassName} mt-2`}
                 dir="auto"
               />
               <div className="mt-2 flex flex-wrap gap-2">

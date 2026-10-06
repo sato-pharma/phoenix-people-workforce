@@ -31,11 +31,14 @@ import {
   type AttendanceWorkingWeekday,
 } from "@/lib/attendance/work-schedule";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  phxFieldClassName,
+  phxLabelTextClassName,
+} from "@/components/ui/form-tokens";
 
 
-const fieldClassName =
-  "h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-inner shadow-slate-100/60 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
-const labelClassName = "text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500";
+const fieldClassName  = phxFieldClassName;
+const labelClassName = phxLabelTextClassName;
 const mutedPanelClassName = "rounded-xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/70 to-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]";
 const sectionTitleClassName = "text-sm font-black tracking-tight text-slate-950";
 

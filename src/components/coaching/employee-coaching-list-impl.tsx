@@ -48,6 +48,7 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 
 /* ━━━━━━━━━━━━━━━━━━ Types ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
@@ -585,14 +586,14 @@ function PeriodFilterPanel({
           <div className="space-y-3">
             <label className="block">
               <span className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">Year</span>
-              <SearchableSelect className="mt-1 h-9 w-full border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200" onChange={(e) => onChange({ ...filter, year: e.target.value })} value={filter.year}>
+              <SearchableSelect className="mt-1 h-9 w-full px-2" onChange={(e) => onChange({ ...filter, year: e.target.value })} value={filter.year}>
                 <option value="">All years</option>
                 {years.map((y) => <option key={y} value={String(y)}>{y}</option>)}
               </SearchableSelect>
             </label>
             <label className="block">
               <span className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">Quarter</span>
-              <SearchableSelect className="mt-1 h-9 w-full border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200" onChange={(e) => onChange({ ...filter, quarter: e.target.value })} value={filter.quarter}>
+              <SearchableSelect className="mt-1 h-9 w-full px-2" onChange={(e) => onChange({ ...filter, quarter: e.target.value })} value={filter.quarter}>
                 <option value="">All quarters</option>
                 <option value="1">Q1 (Jan–Mar)</option>
                 <option value="2">Q2 (Apr–Jun)</option>
@@ -602,7 +603,7 @@ function PeriodFilterPanel({
             </label>
             <label className="block">
               <span className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">Month</span>
-              <SearchableSelect className="mt-1 h-9 w-full border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200" onChange={(e) => onChange({ ...filter, month: e.target.value })} value={filter.month}>
+              <SearchableSelect className="mt-1 h-9 w-full px-2" onChange={(e) => onChange({ ...filter, month: e.target.value })} value={filter.month}>
                 <option value="">All months</option>
                 {monthNames.map((name, i) => <option key={name} value={String(i + 1)}>{name}</option>)}
               </SearchableSelect>
@@ -1041,7 +1042,7 @@ export function EmployeeCoachingList({ mode = "self", reports }: EmployeeCoachin
         {isTeamMode ? (
           <div className="relative w-full sm:max-w-xs">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <input className="h-9 w-full border border-slate-200 bg-white pl-8 pr-8 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:border-orange-300 focus:ring-1 focus:ring-orange-200" onChange={(e) => setSearch(e.target.value)} placeholder="Search rep, coach, team..." type="text" value={search} />
+            <input className={cn(phxFieldClassName, "pl-8 pr-8")} onChange={(e) => setSearch(e.target.value)} placeholder="Search rep, coach, team..." type="text" value={search} />
             {search ? <button className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" onClick={() => setSearch("")} type="button"><X className="h-3.5 w-3.5" /></button> : null}
           </div>
         ) : null}

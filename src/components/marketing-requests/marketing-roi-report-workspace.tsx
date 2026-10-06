@@ -16,6 +16,7 @@ import {
 } from "@/lib/marketing-requests/roi-business-report";
 import type { MarketingRoiExplain } from "@/lib/marketing-requests/roi-explain";
 import { cn } from "@/lib/utils";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 function money(value: number) {
@@ -473,7 +474,7 @@ export function MarketingRoiReportWorkspace() {
                   void loadRows("requester", event.target.value);
                 }}
                 disabled={optionsLoading}
-                className="mt-1 block w-full max-w-md rounded-[5px] border border-phx-line bg-white px-2.5 py-2 text-phx-md font-semibold text-phx-ink"
+                className={`${phxSelectClassName} mt-1 block max-w-md`}
               >
                 <option value="">{optionsLoading ? "Loading requesters…" : "Select a requester…"}</option>
                 {options.requesters.map((requester) => (
@@ -493,7 +494,7 @@ export function MarketingRoiReportWorkspace() {
                   void loadRows("customer", event.target.value);
                 }}
                 disabled={optionsLoading}
-                className="mt-1 block w-full max-w-md rounded-[5px] border border-phx-line bg-white px-2.5 py-2 text-phx-md font-semibold text-phx-ink"
+                className={`${phxSelectClassName} mt-1 block max-w-md`}
               >
                 <option value="">{optionsLoading ? "Loading customers…" : "Select a customer…"}</option>
                 {options.customers.map((customer) => (

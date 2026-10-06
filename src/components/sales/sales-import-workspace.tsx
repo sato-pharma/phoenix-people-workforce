@@ -65,6 +65,7 @@ import type { SalesHistoryRow } from "@/lib/sales/types";
 import type { MappingReferences } from "@/lib/sales/normalizer/service";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 
 type Props = {
@@ -467,7 +468,7 @@ function SummaryTable({
         <div className="flex flex-wrap items-center gap-2 border-b border-phx-line bg-phx-paper px-3 py-2">
           <span className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-phx-ink-faint">Sort by</span>
           <SearchableSelect
-            className="h-8 border border-phx-line bg-white px-2 text-xs font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+            className="h-8 px-2 text-xs"
             onChange={(event) => table.toggleSort(event.target.value)}
             value={table.sort ? table.sort.key : ""}
           >
@@ -711,7 +712,7 @@ function UploadedSheetsTable({
             <label className="flex items-center gap-2">
               <span className="text-xs font-bold uppercase tracking-[0.12em] text-phx-ink-soft">Distributor</span>
               <SearchableSelect
-                className="h-9 rounded-xl border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+                className="h-9 px-3"
                 onChange={(event) => setDistributorFilter(event.target.value)}
                 value={distributorFilter}
               >
@@ -887,7 +888,7 @@ function SourceOfSalesDashboardPanel({
         action={(
           <div className="flex flex-col gap-2 sm:flex-row">
             <SearchableSelect
-              className="h-10 rounded-xl border border-phx-line bg-phx-paper px-3 text-sm font-semibold text-phx-ink outline-none"
+              className="px-3"
               disabled={dashboard.availablePeriods.length === 0 || refreshing}
               onChange={(event) => onPeriodChange(event.target.value)}
               value={dashboard.period ?? ""}
@@ -999,7 +1000,7 @@ function UploadStatusPanel({
         </div>
         {periodOptions.length > 0 ? (
           <SearchableSelect
-            className="h-9 rounded-xl border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+            className="h-9 px-3"
             onChange={(e) => setSelectedPeriod(e.target.value)}
             value={selectedPeriod}
           >
@@ -1577,7 +1578,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
                     <label className="block space-y-1.5">
                       <span className="text-xs font-bold uppercase tracking-[0.16em] text-phx-ink-soft">Distributor</span>
                       <SearchableSelect
-                        className="h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+                        className="w-full px-3.5"
                         onChange={(event) => { setSelectedDistributorCode(event.target.value); setDetection(null); setResult(null); }}
                         value={selectedDistributorCode}
                       >
@@ -1593,7 +1594,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
                         Period <span className="font-medium normal-case tracking-normal text-phx-ink-faint">— only if the sheet has no date</span>
                       </span>
                       <input
-                        className="h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+                        className={phxFieldClassName}
                         onChange={(event) => setSelectedPeriod(event.target.value)}
                         type="month"
                         value={selectedPeriod}

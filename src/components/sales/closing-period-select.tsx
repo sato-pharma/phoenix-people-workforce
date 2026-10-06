@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { describePeriodSelection, periodLabel } from "@/lib/sales/monthly-closing-period-merge";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 // The month picker shared by Monthly Closing and its Performance Review.
 //
@@ -155,7 +156,7 @@ export function ClosingPeriodSelect({
               >
                 <input
                   checked={selected.has(period)}
-                  className="h-4 w-4 accent-phx-accent"
+                  className={cn(phxFieldClassName, "h-4 w-4 accent-phx-accent")}
                   name={multi ? undefined : "closing-period"}
                   onChange={() => (multi ? toggle(period) : pickOne(period))}
                   type={multi ? "checkbox" : "radio"}

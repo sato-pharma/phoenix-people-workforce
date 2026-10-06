@@ -33,6 +33,7 @@ import {
   managerInactiveText,
 } from "@/lib/recruitment/manager-engagement-presentation";
 import { managerLabel } from "@/lib/recruitment/person-labels";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 /** One row of the report's own file-list response — the CV file is the one whose kind is "cv". */
 type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeType: string | null };
@@ -317,7 +318,7 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
             Filter managers
           </label>
           <input
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none"
+            className={phxFieldClassName}
             id="manager-engagement-search"
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Filter by manager, area or line…"

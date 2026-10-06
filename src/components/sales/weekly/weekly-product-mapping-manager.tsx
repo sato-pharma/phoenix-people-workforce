@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { WeeklyAliasKind, WeeklyProductAliasAdmin } from "@/lib/sales/weekly/product-aliases";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 type Draft = { alias: string; aliasKind: WeeklyAliasKind; productCode: string };
@@ -220,7 +222,7 @@ export function WeeklyProductMappingManager({
           <>
             <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
             <SearchableSelect
-              className="h-9 min-w-[14rem] border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+              className="h-9 min-w-[14rem] px-2"
               disabled={busy}
               value={distributor}
               onChange={(event) => {
@@ -259,7 +261,7 @@ export function WeeklyProductMappingManager({
       <div className="flex flex-wrap items-end gap-2 rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
         <Field label="Distributor alias (code or name)">
           <input
-            className="h-9 w-64 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line"
+            className={cn(phxFieldClassName, "w-64")}
             disabled={busy}
             onChange={(event) => setDraft((prev) => ({ ...prev, alias: event.target.value }))}
             placeholder="e.g. 607294 or ROYAFLOXACIN 500 TAB"
@@ -268,7 +270,7 @@ export function WeeklyProductMappingManager({
         </Field>
         <Field label="Kind">
           <SearchableSelect
-            className="h-9 w-28 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line"
+            className="h-9 w-28 px-2"
             disabled={busy}
             onChange={(event) => setDraft((prev) => ({ ...prev, aliasKind: event.target.value === "name" ? "name" : "code" }))}
             value={draft.aliasKind}
@@ -279,7 +281,7 @@ export function WeeklyProductMappingManager({
         </Field>
         <Field label="Master product">
           <SearchableSelect
-            className="h-9 w-72 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line"
+            className="h-9 w-72 px-2"
             disabled={busy}
             onChange={(event) => {
               setDraft((prev) => ({ ...prev, productCode: event.target.value }));

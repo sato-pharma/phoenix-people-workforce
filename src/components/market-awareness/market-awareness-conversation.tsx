@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { MessageSquare } from "lucide-react";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * Market Awareness — the conversation on an activity, shared by both screens that need it.
@@ -18,8 +20,7 @@ import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 const BTN_QUIET =
   "inline-flex items-center justify-center gap-2 border border-phx-line bg-phx-paper px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.10em] text-phx-ink-soft transition hover:border-phx-line-strong hover:text-phx-ink";
-const TEXTAREA =
-  "min-h-20 w-full border border-phx-line bg-phx-paper px-3 py-2 text-phx-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent-soft";
+const TEXTAREA = cn(phxTextareaClassName, "min-h-20 w-full px-3 py-2 text-phx-sm");
 
 /**
  * When a message was sent, in Cairo.

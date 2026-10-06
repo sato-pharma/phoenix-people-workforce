@@ -5,6 +5,7 @@ import * as React from "react";
 
 import { useDropdownPanelPlacement } from "@/hooks/use-dropdown-panel-placement";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 // Reusable multi-select filter with an include / exclude mode. A `<details>`-based dropdown that
 // matches the Weekly `WeekDropdown` and the MonthlyClosing `MultiSelect` visual language (58px field,
@@ -174,7 +175,7 @@ export function MultiSelectFilter({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={searchPlaceholder ?? `Search ${label.toLowerCase()}…`}
-                className="h-8 w-full border border-phx-line bg-white pl-8 pr-7 text-sm font-medium text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/10"
+                className={cn(phxFieldClassName, "h-8 w-full pl-8 pr-7")}
               />
               {query ? (
                 <button

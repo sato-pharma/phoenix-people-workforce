@@ -2,6 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 // Development-actions "mark improvement" control (module completion C5). The report already lists
 // development actions read-only; this adds the write control to advance an action's status and record a
@@ -77,7 +81,7 @@ function ActionRow({ action }: { action: DevAction }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <select value={status} onChange={(e) => setStatus(e.target.value as DevAction["status"])} className="h-8 rounded border border-slate-200 px-2 text-xs">
+          <select value={status} onChange={(e) => setStatus(e.target.value as DevAction["status"])} className={phxSelectClassName}>
             {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
           <button disabled={busy || !dirty} onClick={save} className="rounded bg-slate-800 px-3 py-1 text-xs font-medium text-white disabled:opacity-40">
@@ -89,7 +93,7 @@ function ActionRow({ action }: { action: DevAction }) {
         value={outcome}
         onChange={(e) => setOutcome(e.target.value)}
         placeholder="Follow-up outcome (e.g. 'objection handling improved on next DV')…"
-        className="mt-2 w-full rounded border border-slate-200 px-3 py-1.5 text-sm"
+        className={`${phxFieldClassName} mt-2`}
       />
       {saved && <p className="mt-1 text-phx-xs text-emerald-600">Saved.</p>}
       {error && <p className="mt-1 text-phx-xs text-rose-600">{error}</p>}

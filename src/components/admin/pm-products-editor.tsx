@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 export type PmRowData = {
   hrId: string;
@@ -134,7 +135,7 @@ function PmRow({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search products…"
-            className="mb-2 h-9 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+            className={`${phxFieldClassName} mb-2`}
           />
           <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
             {byLine.map(([line, opts]) => (

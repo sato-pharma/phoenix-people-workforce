@@ -25,6 +25,10 @@ import {
   REGION_TOKEN,
   type OptionLabel,
 } from "@/lib/recruitment/inbound/whatsapp-question-prompts";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 /**
  * The six questions the WhatsApp CV bot has always asked — the question itself, the answers the
@@ -445,7 +449,7 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                 What the applicant reads
               </label>
               <textarea
-                className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-orange-300 disabled:bg-slate-50 disabled:text-slate-400"
+                className={`${phxTextareaClassName} mt-1`}
                 disabled={busy}
                 id={`prompt-${prompt.key}`}
                 onChange={(event) =>
@@ -487,7 +491,7 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                       The button that opens the answers
                     </label>
                     <input
-                      className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-orange-300 disabled:bg-slate-50 disabled:text-slate-400"
+                      className={`${phxFieldClassName} mt-1`}
                       disabled={busy}
                       id={`button-${prompt.key}`}
                       onChange={(event) =>
@@ -515,7 +519,7 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                       The heading above the answers
                     </label>
                     <input
-                      className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-orange-300 disabled:bg-slate-50 disabled:text-slate-400"
+                      className={`${phxFieldClassName} mt-1`}
                       disabled={busy}
                       id={`section-${prompt.key}`}
                       onChange={(event) =>
@@ -626,7 +630,7 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                                 What they see
                               </label>
                               <input
-                                className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-orange-300 disabled:bg-slate-50 disabled:text-slate-400"
+                                className={`${phxFieldClassName} mt-1`}
                                 disabled={busy}
                                 id={`opt-${prompt.key}-${value}-title`}
                                 onChange={(event) =>
@@ -651,7 +655,7 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                                 Second line, if any
                               </label>
                               <input
-                                className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-orange-300 disabled:bg-slate-50 disabled:text-slate-400"
+                                className={`${phxFieldClassName} mt-1`}
                                 disabled={busy}
                                 id={`opt-${prompt.key}-${value}-desc`}
                                 onChange={(event) =>

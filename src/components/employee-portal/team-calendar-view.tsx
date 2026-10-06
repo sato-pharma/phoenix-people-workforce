@@ -18,6 +18,7 @@ import {
   weekIndexForDate,
 } from "@/lib/employee-portal/team-calendar-weeks";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 const ALL_FILTER = "All";
 
@@ -479,14 +480,14 @@ export function TeamCalendarView({
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <input
-            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 xl:col-span-1"
+            className={`${phxFieldClassName} xl:col-span-1`}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search rep name or HR ID"
             value={query}
           />
           {teamOptions.length > 0 ? (
             <SearchableSelect
-              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className="px-3"
               value={teamFilter}
               onChange={(event) => setTeamFilter(event.target.value)}
             >
@@ -496,7 +497,7 @@ export function TeamCalendarView({
           ) : null}
           {regionOptions.length > 0 ? (
             <SearchableSelect
-              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className="px-3"
               value={regionFilter}
               onChange={(event) => setRegionFilter(event.target.value)}
             >
@@ -506,7 +507,7 @@ export function TeamCalendarView({
           ) : null}
           {areaOptions.length > 0 ? (
             <SearchableSelect
-              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className="px-3"
               value={areaFilter}
               onChange={(event) => setAreaFilter(event.target.value)}
             >

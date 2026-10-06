@@ -35,6 +35,7 @@ import { todayInCairo } from "@/lib/date-only";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { cn } from "@/lib/utils";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 
 type ActiveTab = "submit" | "history";
@@ -440,7 +441,6 @@ export function MedicalRepExpensesWorkspace({
               <div className="md:col-span-3">
                 <Field label="From Date">
                   <Input
-                    className="h-12 rounded-none border-slate-200 bg-white"
                     onChange={(event) => setTripStartDate(event.target.value)}
                     required
                     type="date"
@@ -452,7 +452,6 @@ export function MedicalRepExpensesWorkspace({
               <div className="md:col-span-3">
                 <Field label="To Date">
                   <Input
-                    className="h-12 rounded-none border-slate-200 bg-white"
                     min={tripStartDate || undefined}
                     onChange={(event) => setTripEndDate(event.target.value)}
                     required
@@ -465,7 +464,6 @@ export function MedicalRepExpensesWorkspace({
               <div className="md:col-span-3">
                 <Field label="Go Ticket Amount">
                   <Input
-                    className="h-12 rounded-none border-slate-200 bg-white"
                     min="0"
                     onChange={(event) => setGoTicketAmount(event.target.value)}
                     placeholder="EGP"
@@ -479,7 +477,6 @@ export function MedicalRepExpensesWorkspace({
               <div className="md:col-span-3">
                 <Field label="Return Ticket Amount">
                   <Input
-                    className="h-12 rounded-none border-slate-200 bg-white"
                     min="0"
                     onChange={(event) => setReturnTicketAmount(event.target.value)}
                     placeholder="EGP"
@@ -512,7 +509,7 @@ export function MedicalRepExpensesWorkspace({
               <div className="md:col-span-6">
                 <Field label="Note">
                   <textarea
-                    className="min-h-40 w-full rounded-none border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+                    className={cn(phxTextareaClassName, "min-h-40")}
                     onChange={(event) => setNotes(event.target.value)}
                     placeholder="Reason for this expense"
                     required
@@ -527,7 +524,6 @@ export function MedicalRepExpensesWorkspace({
               <div className="md:col-span-2">
                 <Field label="AM Visits">
                   <Input
-                    className="h-12 rounded-none border-slate-200 bg-slate-50"
                     disabled
                     placeholder="Filled automatically"
                     readOnly
@@ -539,7 +535,6 @@ export function MedicalRepExpensesWorkspace({
               <div className="md:col-span-2">
                 <Field label="PM Visits">
                   <Input
-                    className="h-12 rounded-none border-slate-200 bg-slate-50"
                     disabled
                     placeholder="Filled automatically"
                     readOnly
@@ -551,7 +546,6 @@ export function MedicalRepExpensesWorkspace({
               <div className="md:col-span-2">
                 <Field label="Pharmacy Visits">
                   <Input
-                    className="h-12 rounded-none border-slate-200 bg-slate-50"
                     disabled
                     placeholder="Filled automatically"
                     readOnly
@@ -617,7 +611,7 @@ export function MedicalRepExpensesWorkspace({
                 <span className="sr-only">Search claims</span>
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
-                  className="h-11 rounded-none border-slate-200 bg-white pl-9"
+                  className="pl-9"
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search by request, destination or note"
                   value={query}
@@ -628,7 +622,7 @@ export function MedicalRepExpensesWorkspace({
                 <span className="sr-only">Status filter</span>
                 <ListFilter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <SearchableSelect
-                  className="h-11 w-full appearance-none rounded-none border border-slate-200 bg-white px-9 text-sm font-bold text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+                  className="w-full appearance-none px-9"
                   onChange={(event) => setStatusFilter(event.target.value as ExpenseStatusFilter)}
                   value={statusFilter}
                 >
@@ -643,7 +637,7 @@ export function MedicalRepExpensesWorkspace({
                 <span className="sr-only">Order claims</span>
                 <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <SearchableSelect
-                  className="h-11 w-full appearance-none rounded-none border border-slate-200 bg-white px-9 text-sm font-bold text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+                  className="w-full appearance-none px-9"
                   onChange={(event) => setOrderBy(event.target.value as ExpenseOrder)}
                   value={orderBy}
                 >

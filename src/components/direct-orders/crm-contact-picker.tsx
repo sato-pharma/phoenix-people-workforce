@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { VenueContactOption } from "@/lib/direct-orders/venue-contact-options";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 /**
  * Declare which CRM contact this venue IS, when registering it.
@@ -124,7 +125,7 @@ export function CrmContactPicker({
       ) : (
         <div>
           <input
-            className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+            className={`${phxFieldClassName} mt-1`}
             disabled={disabled}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search your CRM contacts by name…"

@@ -8,6 +8,10 @@ import { MappingAuditHistory } from "@/components/sales/mapping-audit-history";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { WeeklyContractSheet, WeeklyDistributorContract } from "@/lib/sales/weekly/column-contract";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 // The editor edits an in-memory copy of the resolved contract. Only column indices and the header-row
 // number are editable; sheet role / file slot / field set / field semantics / the PS matrix blocks are
@@ -162,7 +166,7 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
-            <select className="h-9 min-w-64 rounded-[6px] border border-phx-line px-2 text-sm" onChange={(e) => pick(e.target.value)} value={selected}>
+            <select className={cn(phxSelectClassName, "h-9 min-w-64")} onChange={(e) => pick(e.target.value)} value={selected}>
               {contracts.map((c) => (
                 <option key={c.code} value={c.code}>{c.name} ({c.code}){c.isCustom ? " · edited" : ""}</option>
               ))}
@@ -290,7 +294,7 @@ function SheetEditor({
             <label className="flex shrink-0 flex-col items-end gap-0.5">
               <span className="text-phx-3xs font-black uppercase tracking-[0.1em] text-phx-ink-faint">Col</span>
               <input
-                className="h-8 w-16 rounded-[6px] border border-phx-line px-2 text-right text-xs font-mono"
+                className={cn(phxFieldClassName, "h-8 w-16 text-right font-mono")}
                 inputMode="numeric"
                 min={1}
                 onChange={(e) => onColumnIndex(fieldIdx, e.target.value)}

@@ -12,6 +12,10 @@ import {
   isDirectOrderInvoiceContentType,
   type DirectOrderInvoiceSlotCount,
 } from "@/lib/direct-orders/invoice-evidence";
+import {
+  phxFieldClassName,
+  phxLabelClassName,
+} from "@/components/ui/form-tokens";
 
 type Props = {
   pharmacyId: string;
@@ -124,8 +128,8 @@ export function PharmacyInvoiceValidationCapture({ pharmacyId, pharmacyName, req
     }
   }
 
-  const inputClass = "mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none";
-  const labelClass = "block text-phx-xs font-black uppercase tracking-wider text-slate-500";
+  const inputClass = `${phxFieldClassName} mt-1`;
+  const labelClass = phxLabelClassName;
 
   return (
     <div className="space-y-3 px-4 py-4">

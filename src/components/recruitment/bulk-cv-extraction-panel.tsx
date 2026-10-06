@@ -13,6 +13,7 @@ import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-
 import { Button } from "@/components/ui/button";
 import type { ExtractedCandidateFields } from "@/lib/recruitment/cv-extraction";
 import { defaultCvPositionKey, getCvPositionSchema, listCvPositionSchemas } from "@/lib/recruitment/cv-field-schemas";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 type QueueItemStatus = "pending" | "processing" | "done" | "error";
 
@@ -134,7 +135,7 @@ export function BulkCvExtractionPanel({ onCreated }: { onCreated: (candidateId: 
             force one template onto all of them. */}
         {positionOptions.length > 1 ? (
           <select
-            className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
+            className={phxSelectClassName}
             disabled={running}
             onChange={(event) => setPositionKey(event.target.value)}
             value={positionKey}

@@ -12,6 +12,7 @@ import {
   isOrganogramVisibleRow,
 } from "@/lib/reports/organogram-view-model";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
+import { phxLabelTextClassName } from "@/components/ui/form-tokens";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -35,7 +36,7 @@ type EmployeeOrganogramDashboardProps = {
 /* ------------------------------------------------------------------ */
 
 const labelClassName =
-  "text-phx-xs font-semibold uppercase tracking-wider text-slate-400";
+  phxLabelTextClassName;
 
 const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.08)]";
 

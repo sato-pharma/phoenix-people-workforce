@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * The month picker over a Medical Rep's landing keycards.
@@ -59,7 +61,10 @@ export function RepKpiMonthPicker({
     <label className="flex flex-wrap items-center gap-2 border border-slate-200 bg-white px-3 py-2">
       <span className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-500">KPI month</span>
       <select
-        className="ml-auto w-full min-w-0 border border-slate-300 bg-white px-3 py-1.5 text-base font-semibold text-slate-900 disabled:opacity-60 sm:w-56"
+        // `text-base` and `font-semibold` are this screen's own, kept through `cn()` so
+        // tailwind-merge drops the token's `text-sm`: a native select under 16px makes iOS
+        // zoom the whole page on focus, which the fits-the-screen rule forbids.
+        className={cn(phxSelectClassName, "ml-auto min-w-0 text-base font-semibold sm:w-56")}
         disabled={pending}
         onChange={(event) =>
           startTransition(() =>

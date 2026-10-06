@@ -2801,7 +2801,7 @@ function SelectionEditor({
         </label>
         <Input
           autoFocus
-          className="h-9 rounded-lg border-phx-line bg-white text-sm"
+          className="h-9 border-phx-line bg-white text-sm"
           disabled={busy}
           id="hp-selected-value"
           onChange={(event) => setValue(event.target.value)}
@@ -2857,7 +2857,7 @@ function NumberField({
         {label}
       </label>
       <Input
-        className="h-9 rounded-lg border-phx-line bg-white text-sm"
+        className="h-9 border-phx-line bg-white text-sm"
         onChange={(event) => {
           const parsed = Number.parseFloat(event.target.value);
           onChange(Number.isFinite(parsed) ? parsed : 0);
@@ -2954,7 +2954,7 @@ function LayoutFieldEditor({
 
       {draft.source.kind === "mark" ? null : draft.source.kind === "literal" ? (
         <Input
-          className="h-9 rounded-lg border-phx-line bg-white text-sm"
+          className="h-9 border-phx-line bg-white text-sm"
           onChange={(event) => setSource({ kind: "literal", text: event.target.value })}
           placeholder="The exact text to print"
           value={draft.source.text}
@@ -2962,7 +2962,7 @@ function LayoutFieldEditor({
       ) : (
         <>
           <Input
-            className="h-9 rounded-lg border-phx-line bg-white text-sm"
+            className="h-9 border-phx-line bg-white text-sm"
             list="hp-layout-value-keys"
             onChange={(event) => setSource({ kind: "value", key: event.target.value })}
             placeholder="e.g. insuredName — the same key another document already prints"

@@ -448,6 +448,191 @@ the rule. So **`overflow-x-auto` over a `min-width` floor IS the bug, not the fi
 
 `never-horizontal-scroll-always-mobile-and-desktop-friendly`
 
+### 🔒 The one form design — every form in the system wears the ADR wizard's skin
+
+Owner rule, **2026-10-06**: *"sweep the system wide everywhere admin or emp any form or any thing
+applicable make it follow this form design"*, sent with a screenshot of the **Adverse Drug Reaction
+Report** wizard in the admin shell. The hook is in [AGENTS.md](../AGENTS.md) §4, "How to build".
+This is the account.
+
+**The design he pointed at.** `src/components/report-it/report-it-form.tsx` — square corners, a
+hairline `slate-300` border on white, a 40px field with `px-3`, an orange focus border and ring,
+micro-caps `text-phx-xs font-black uppercase` labels in `slate-500`, a rose required star, a
+numbered left rail with an orange marker, a thin orange progress bar, a near-black **Next** and an
+orange **Submit**. Orange is the only accent; rose means a problem; nothing else appears.
+
+**Why it was a sweep and not a restyle.** Before this, the look lived nowhere, and the spread is
+measurable from the branch's own diff: **234 files painted their own box, in 621 class strings**, and
+no two agreed — **five field heights** (`h-8` through `h-12`), **twelve corner radii** (`rounded`,
+`-sm`, `-md`, `-lg`, `-xl`, `-2xl`, `-full`, `-r`, and the hand-written `[5px]`, `[6px]`, `[8px]`,
+`[14px]`), **twenty different focus border colours** and **thirty-one different focus rings**. Every
+new form copied whichever neighbour the session happened to open. A restyle of one screen would have
+changed one screen; **282 files now import the tokens instead.**
+
+**Where it lives now.** `src/components/ui/form-tokens.ts` holds the class strings (plain strings,
+no `cn()`, no `"use client"` — so a server component can import them) and
+`src/components/ui/form-kit.tsx` holds the components built from them: `FormField`, `FieldLabel`,
+`FormGrid`, `FormBlock`, `CheckTile`, `FormError`, `FormActions`, `FormStepHeading`, `FormProgress`
+and `FormWizard` — the whole multi-step shell, header and rail and footer, lifted out of the ADR
+form so every wizard renders the shell he approved. **The ADR form now consumes the kit**, which is
+what makes "change the token and the system follows" true rather than aspirational.
+
+**The measured reach of the sweep.** 1,485 real form controls in `src/components` and `app`
+(checkboxes, radios, file pickers and hidden inputs excluded — they are not fields), counting the
+wrapper components (`<Input>`, `<Textarea>`, `<SearchableSelect>`) as the controls they render.
+After it: **1,171 reach a shared token** — directly, through a local constant now pointed at one, or
+through an imported alias — and **none paint a box of their own.** The remaining ~314 paint nothing
+at all: they are chromeless inline editors (`bg-transparent`, no real border — the command palette,
+the grouped combobox, the in-table name editors, the email template designer's title, the company
+e-mail field inside its own bordered wrapper) that take their box from a parent, plus the
+printed-document editors under `src/components/hiring-pack/` and `src/components/offers/`, which
+follow the **house document identity** instead and are exempt by that rule, not by neglect.
+
+**Two heights are kept on purpose — and that is HIS ruling, not the sweep's judgement.** Asked
+directly on 2026-10-06 whether the ~200 dense table and filter controls should be forced to the
+design's 40px, he answered *"keep h-8 and h-9 on the dense table filters"*. So `h-8` and `h-9` on a
+dense table or filter control STAY, like the icon padding below — **never "bring them into line"
+later, and never raise it with him again.** Everything at `h-10` or taller became exactly the
+design's 40px.
+
+**Fourteen things the codemod got wrong, and every one is a trap worth keeping.**
+
+1. 🔴 **Dropping a field's `pl-9` puts the magnifier on top of the text.** Side padding *larger*
+   than the token's own `px-3` is icon clearance, not skin — the first pass treated every `p*-`
+   utility as paint and silently broke ~45 search boxes. The rule now keeps `p[lrse]-4` and above
+   and drops only what the token already provides.
+2. 🔴 **A regex that ends a JSX tag at the first `>` ends it inside `(e) => …`.** That truncates the
+   attribute list before `className` on exactly the controls that carry a handler — i.e. most of
+   them — so the sweep skipped them *and* the audit afterwards reported them as "built at runtime",
+   which reads as "nothing more to do". It cost a full re-run: 362 controls on the broken scan
+   against 466 on a brace-aware one. The same shape as every other fail-open in this repo — an
+   ABSENT answer arriving dressed as a NEGATIVE one.
+3. 🔴 **The first ratchet passed with 376 painted controls still in the tree.** It read only
+   bare `<input>`/`<select>`/`<textarea>` tags with a STATIC className, so it missed the wrapper
+   components entirely, missed constants named in another style (`FIELD_CLASS`, `SELECT_CLASS`,
+   `CONTROL`, `cell`), and counted any className that was a *reference* as on-design without ever
+   following it. 376 of 1,485 controls were still painting, and `ui/searchable-select.tsx` sat
+   inside that blind spot: its own
+   `rounded-[6px] border-phx-line h-9` was a square-edge breach in a primitive the whole app
+   renders, and every one of its ~150 call sites inherited it outside the admin shell, which does
+   not reset a radius in the employee portal. A guard that resolves the reference is the only kind
+   worth having.
+4. 🔴 **This repo's comments quote JSX, and a codemod that cannot see a comment writes into the
+   prose.** `select-field.tsx` says *"A labeled `<select>` with a custom chevron"*;
+   `kpis-period-picker.tsx` says *"a native `<select>` is the one control it names as
+   unshrinkable"*; `device-register-workspace.tsx` says it inside a `{/* … */}` block. An unmasked
+   scan read 26 of those as controls carrying no className — which is exactly the shape that
+   invites a codemod to ADD one. A per-character comment mask comes first, always.
+5. 🔴 **An inserted import above `"use client"` is a BUILD failure that lint and typecheck both
+   pass.** The import inserter's "this file has no imports yet" fallback wrote at line 1, and
+   `interview-calendar/org-fields.tsx` has nothing above the directive. `remote-check all` reported
+   `lint PASS`, `typecheck PASS`, the whole unit suite green, and then
+   `Ecmascript file had an error … org-fields.tsx:2:1` — so two of the three cheap gates said the
+   change was fine. **Only the build catches it, which is why the standing step is `remote-check
+   all` and not `test` whenever a sweep adds a file or an import.**
+6. 🔴 **A chromeless control must not be GIVEN the token.** 24 controls paint no box by design —
+   `border-0`/`bg-transparent` inside a wrapper that carries the border and the `focus-within`
+   ring. The sweep's keep-list held `bg-transparent` but still *prepended* the token, which paints
+   a second border inside the first. Detectable afterwards precisely because `bg-transparent`
+   survives the strip; reverted by that signal.
+7. 🔴 **A TEMPLATE LITERAL GETS NO TAILWIND-MERGE, SO THE OVERRIDE SILENTLY LOSES.** 177 of the
+   constants the sweep wrote were `` `${phxSelectClassName} h-9 px-2` `` — which puts BOTH the token's
+   `h-10` and the caller's `h-9` into one class attribute with nothing to resolve them, because
+   `cn()` is tailwind-merge and a template is string concatenation. The winner is then whichever
+   utility Tailwind emitted later in the stylesheet, which on a numeric scale is the LARGER one: a
+   caller asking for a 36px dense field rendered a 40px one. **It is the same shape as the
+   `text-phx-*` defect of 2026-08-28** — present in the source, absent from the DOM, invisible to
+   lint, to typecheck and to any test that reads classes. `cn(token, "h-9 px-2")` resolves it, and
+   part 4 of the guard now refuses the template form outright. A tail that conflicts with nothing
+   the token sets (`cursor-pointer`, `font-mono`, `tabular-nums`) may stay a template.
+8. 🔴 **A GUARD THAT MANDATES `cn()` MUST ALSO RESOLVE `cn()`.** Converting those 177 made the
+   resolver stop following exactly the form it had just required, and the measured reach fell from
+   1,171 to 668 with nothing having changed on screen — a number that, left unread, would have gone
+   into the PR as the truth.
+
+9. 🔴 **THE TOKEN'S `text-sm` IS 14px, AND iOS SAFARI ZOOMS THE WHOLE VIEWPORT WHEN IT
+   FOCUSES A FIELD UNDER 16px.** One screen had already been fixed for that — the approvals-hub
+   decision box, `src/components/approvals-hub/decision-actions.tsx`, the screen where money moves
+   — carrying `text-base … md:text-sm` so it is 16px on a phone and the design's 14px from `md`
+   up. The sweep flattened it to the bare token and the iOS guard went with it. **The whole unit
+   suite on the box is what caught it**, by its own named assertion in
+   `tests/direct-orders-approval-window-mobile.test.ts` — *"the reason box must be 16px on mobile,
+   or iOS Safari zooms the viewport when it is focused"* — and lint, typecheck and the build all
+   passed the same commit. It is now `cn(phxTextareaClassName, "text-base md:text-sm")`, and the
+   assertion pins the composition instead of the old contiguous literal, in both halves, so
+   removing either the 16px step or the token's orange focus pair still fires. **Measured across
+   the whole branch: exactly ONE call site had that pair, so this is a one-screen exception and not
+   a reason to change the token** — the design he pointed at is 14px, and changing it system-wide
+   would be a redesign of his own screen.
+
+10. 🔴 **LIFTING A SHELL INTO A SHARED KIT MOVES THE REFERENCE A SIBLING'S TEST MEASURES
+    AGAINST.** `tests/phoenix-crm-step-form.test.ts` pins the Phoenix CRM step form to Report It's
+    own five class strings — the progress bar, the orange step bar, the 244px rail column, the
+    large step number, the eyebrow — by asserting BOTH files carry them, with the message *"the
+    reference moved"* on the first half. Making Report It consume `form-kit.tsx` moved all five out
+    of it, byte-identical, so the first half fired exactly as designed while the screen itself did
+    not change by a pixel. The reference is now the kit, and a second assertion requires Report It
+    to still RENDER `<FormWizard` — otherwise the kit this test measures against could drift away
+    from the screen the owner pointed at. Both halves verified by breaking them. **The lesson is
+    the general one: a sweep that centralises a look has to re-point every test that pinned the old
+    home, and the test that says "the reference moved" is doing its job, not blocking you.** The
+    whole-suite consequence is real — `run-tests.ts` stops at the first throw, so each box round
+    buys exactly one of these; the cheap way to find the rest is to list every test that reads a
+    file the branch changed and name a literal the branch removed (that sweep returned 0 after
+    these two, which is what let the branch go out).
+
+11. 🔴 **THE DARK AUTH SCREENS ARE NOT THE FORM DESIGN, AND HALF-CONVERTING THE FRONT DOOR
+    IS WORSE THAN EITHER ANSWER.** `auth/premium-login-page.tsx` and `auth/password-setup-form.tsx`
+    are a deliberate dark glass identity — `border-white/14`, `bg-white/[0.045]`, white text, the
+    brand's own `#ff7900` focus ring, at `h-12`/`h-14` and `text-base`. The sweep handed them the
+    light token, so the login fields became white boxes on a dark panel — **on the screen every
+    employee meets first** — and inconsistently: one of the login page's two fields kept its dark
+    overrides and the other did not. Both files are restored byte for byte and
+    `src/components/auth/` joins the guard's exemption list beside the printed-document editors.
+    🔴 **And the login screen staying out is HIS OWN RULING, not the sweep's judgement.** Asked
+    directly whether the front door should wear the form design too, he answered *"keep the login
+    screen out of the form design"* (2026-10-06) — so `src/components/auth/` is never brought into
+    line later, and he is never asked again.
+12. 🔴 **FILTERING A SCAN'S GENERIC MATCHES TO KILL FALSE POSITIVES KILLS THE REAL ONE TOO.**
+    After the first box failure, the cheap way to find the rest was to list every test that reads a
+    file this branch changed and names a class literal the branch removed. The first pass returned
+    21 hits, nearly all noise like `border-slate-200`, so the generic fragments were filtered out
+    — and `text-base` is generic. The scan then reported **0 remaining** while
+    `tests/portal-rep-kpi-month.test.ts` was already red on the box. What actually finds this class
+    of defect is a diff, not a scan of assertions: for every swept file, count a functional class in
+    `origin/main`'s copy and in the branch's, and read every file where the count went DOWN. Four
+    files had dropped a deliberate `text-base`; three of them mattered.
+
+13. 🔴 **A DENSE SIZE CAN BE PINNED BY A TEST THAT EXISTS BECAUSE MONEY IS APPROVED THERE.**
+    The outstation expense review's approved-amount field is `h-8 w-28 … text-xs`, and
+    `tests/expense-review-row-height.test.ts` pins that exact string with the words *"the controls
+    are moved, never reshaped"* — it was written after an earlier attempt to shorten that row
+    reached for the controls themselves. The sweep took it to the design's 40px and the guard fired
+    on its own message, *"no size reduction on a money field"*. **Restore the string, exempt the
+    file — never relax the assertion to let a sweep through**, which is the one move that would
+    have turned a red test into a shipped change on an approvals screen.
+14. 🔴 **A SHORT className ON A WRAPPER COMPONENT IS NOT A HALF-STRIP, AND READING IT AS ONE
+    COSTS A REAL REGRESSION.** Two portal planning-calendar controls read
+    `className="w-full px-3 ring-1 ring-transparent"` where `origin/main` had a full grey-filled
+    skin, which looks exactly like a control the codemod stripped and never gave the token. They
+    are `<SearchableSelect>`, and the primitive does `cn(cn(phxSelectClassName, "pr-9"), className)`
+    — so the token IS there and the caller's classes merge over it. "Restoring" the fill painted a
+    grey box over the design, and a guard was half-built on the misreading before the element was
+    read. **Read the TAG before judging a className: `<Input>`, `<Textarea>` and
+    `<SearchableSelect>` carry the token themselves, and a raw `<input>`/`<select>`/`<textarea>`
+    is the only one that must name its own ground.**
+
+**What holds it.** `tests/form-design-system.test.ts`, in the required `validate` job. It pins the
+identity (no radius on any token, `h-10`, the orange focus pair, the micro-caps label, and a palette
+assertion that allows exactly slate + orange + rose), it asserts the ADR form still imports the kit
+and renders `FormWizard`, and it carries a **ratchet at ZERO**: no control anywhere may paint its
+own box. The ratchet masks comments, resolves a className through the file's own constants and
+through an imported alias, and counts the wrappers — the three gaps that let its first version pass
+on a tree with 376 painted controls in it. It also asserts its own scan still FINDS ~1,485 controls
+and that ~1,171 still reach a token, because a cap of zero would otherwise pass on a scan that had
+quietly stopped finding anything. **Never raise the cap** — a number above zero is a form that did
+not use the kit, which is the only thing this guard exists to catch.
+
 ### 🔒 The square-edge golden rule — why `globals.css`'s own sweep is not coverage
 
 Owner rule 2026-09-04, *"no round or semi-round corners, anywhere"*. The hook is in

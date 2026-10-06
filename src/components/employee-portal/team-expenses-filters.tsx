@@ -120,7 +120,7 @@ export function TeamExpensesFilters({
           DSM
         </label>
         <SearchableSelect
-          className="w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
+          className="w-full px-3 py-2.5"
           id="team-expenses-dsm"
           onChange={(event) => setDsm(event.target.value)}
           value={dsm}
@@ -143,7 +143,7 @@ export function TeamExpensesFilters({
             Request Type
           </label>
           <SearchableSelect
-            className="w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
+            className="w-full px-3 py-2.5"
             id="team-expenses-request-type"
             onChange={(event) => setRequestType(event.target.value)}
             value={requestType}

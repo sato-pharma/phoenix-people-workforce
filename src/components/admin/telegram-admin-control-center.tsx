@@ -502,7 +502,7 @@ export function TelegramAdminControlCenter({ canGovern, canUpdate, initialData }
             <p className="text-sm text-slate-600">Connected, pending, disabled, and failed Telegram user links.</p>
           </div>
           <SearchableSelect
-            className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 sm:w-48"
+            className="w-full px-3 py-2 sm:w-48"
             onChange={(event) => setStatusFilter(event.target.value)}
             value={statusFilter}
           >

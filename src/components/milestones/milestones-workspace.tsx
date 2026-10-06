@@ -23,6 +23,11 @@ import {
 } from "@/lib/milestones/periods";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import type { MilestoneCandidate, MilestoneDueEntry, MilestonePrintHistoryEntry } from "@/lib/milestones/service";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 /**
  * Milestones — the workspace.
@@ -1170,7 +1175,7 @@ export function MilestonesWorkspace({
           <label className="block text-[12px] font-semibold text-slate-600">
             From
             <input
-              className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
+              className={`${phxFieldClassName} mt-1 block`}
               onChange={(event) => setFrom(event.target.value)}
               type="date"
               value={from}
@@ -1179,7 +1184,7 @@ export function MilestonesWorkspace({
           <label className="block text-[12px] font-semibold text-slate-600">
             To
             <input
-              className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
+              className={`${phxFieldClassName} mt-1 block`}
               onChange={(event) => setTo(event.target.value)}
               type="date"
               value={to}
@@ -1296,7 +1301,7 @@ export function MilestonesWorkspace({
                   <label className="block w-full text-[12px] font-semibold text-slate-600">
                     What the picture says
                     <textarea
-                      className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] font-normal leading-relaxed text-slate-900"
+                      className={`${phxTextareaClassName} mt-1 block leading-relaxed`}
                       onChange={(event) => setGroupCitationEdit(event.target.value)}
                       rows={2}
                       value={groupCitationValue}
@@ -1431,7 +1436,7 @@ export function MilestonesWorkspace({
             <label className="block text-[12px] font-semibold text-slate-600" htmlFor="milestone-person">
               Who it is for
               <SearchableSelect
-                className="mt-1 h-auto rounded-none border-slate-300 py-2 text-[13px] text-slate-900"
+                className="mt-1 h-auto py-2 text-[13px]"
                 id="milestone-person"
                 noResultsText="No active employee by that name."
                 onValueChange={pickPerson}
@@ -1481,7 +1486,7 @@ export function MilestonesWorkspace({
             <label className="block text-[12px] font-semibold text-slate-600">
               Period
               <select
-                className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
+                className={`${phxSelectClassName} mt-1 block`}
                 onChange={(event) => {
                   setPreset(event.target.value);
                   resetFields();
@@ -1498,7 +1503,7 @@ export function MilestonesWorkspace({
               <label className="block text-[12px] font-semibold text-slate-600">
                 How long
                 <input
-                  className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
+                  className={`${phxFieldClassName} mt-1 block`}
                   onChange={(event) => {
                     setCustom(event.target.value);
                     resetFields();
@@ -1512,7 +1517,7 @@ export function MilestonesWorkspace({
             <label className="block text-[12px] font-semibold text-slate-600">
               The date on the card
               <input
-                className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
+                className={`${phxFieldClassName} mt-1 block`}
                 onChange={(event) => setDateEdit(event.target.value)}
                 type="date"
                 value={dateValue}
@@ -1526,7 +1531,7 @@ export function MilestonesWorkspace({
             <label className="block text-[12px] font-semibold text-slate-600">
               The name on the card
               <input
-                className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
+                className={`${phxFieldClassName} mt-1 block`}
                 onChange={(event) => editName(selectedHrId, event.target.value)}
                 value={nameValue}
               />
@@ -1539,7 +1544,7 @@ export function MilestonesWorkspace({
             <label className="block text-[12px] font-semibold text-slate-600">
               The sentence under the name
               <textarea
-                className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
+                className={`${phxTextareaClassName} mt-1 block`}
                 onChange={(event) => setCitationEdit(event.target.value)}
                 rows={3}
                 value={citationValue}
@@ -1863,7 +1868,7 @@ export function MilestonesWorkspace({
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                 From
                 <input
-                  className="rounded-none border border-slate-300 px-2 py-1 text-[13px] text-slate-900"
+                  className={phxFieldClassName}
                   max={historyTo || undefined}
                   onChange={(event) => setHistoryFrom(event.target.value)}
                   type="date"
@@ -1873,7 +1878,7 @@ export function MilestonesWorkspace({
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                 To
                 <input
-                  className="rounded-none border border-slate-300 px-2 py-1 text-[13px] text-slate-900"
+                  className={phxFieldClassName}
                   min={historyFrom || undefined}
                   onChange={(event) => setHistoryTo(event.target.value)}
                   type="date"

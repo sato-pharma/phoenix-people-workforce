@@ -47,6 +47,11 @@ import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker"
 import { OrgFields } from "./org-fields";
 import { PanelPicker } from "./panel-picker";
 import { PersonPicker, initialPersonChoice, personLabel, personProblem, submitBooking, type PersonChoice } from "./person-picker";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 const QUARTER = 15;
 const SHORTEST = 30;
@@ -69,7 +74,7 @@ function fits(start: number, minutes: number): boolean {
   return start + minutes <= WORKDAY_END_MINUTES;
 }
 
-const selectClass = "h-9 w-full border border-slate-200 bg-white px-2 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none";
+const selectClass  = phxSelectClassName;
 
 export function PlatformChoice({
   onChange,
@@ -460,7 +465,7 @@ export function CellDialog({
               <label className="block">
                 <FieldLabel>Note (optional)</FieldLabel>
                 <textarea
-                  className="block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+                  className={`${phxTextareaClassName} block`}
                   maxLength={2000}
                   onChange={(event) => setNotes(event.target.value)}
                   placeholder="Who interviews, what to bring, anything the panel should know"
@@ -476,7 +481,7 @@ export function CellDialog({
               <label className="block">
                 <FieldLabel>Name (optional)</FieldLabel>
                 <input
-                  className="block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+                  className={`${phxFieldClassName} block`}
                   maxLength={120}
                   onChange={(event) => setTitle(event.target.value)}
                   placeholder="For example: Medical Rep interviews, Cairo"
@@ -521,7 +526,7 @@ export function CellDialog({
               <label className="block">
                 <FieldLabel>Note (optional)</FieldLabel>
                 <textarea
-                  className="block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+                  className={`${phxTextareaClassName} block`}
                   maxLength={2000}
                   onChange={(event) => setNotes(event.target.value)}
                   placeholder="Who is on the panel, what the session is for"

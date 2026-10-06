@@ -16,6 +16,7 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const unitFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -244,11 +245,11 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
               </div>
               <label className="flex flex-col gap-1">
                 <span className="text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">From</span>
-                <input type="month" value={from} onChange={(event) => setFrom(event.target.value)} className="h-8 rounded-[5px] border border-phx-line px-2 text-phx-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line" />
+                <input type="month" value={from} onChange={(event) => setFrom(event.target.value)} className={phxFieldClassName} />
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">To</span>
-                <input type="month" value={to} onChange={(event) => setTo(event.target.value)} className="h-8 rounded-[5px] border border-phx-line px-2 text-phx-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line" />
+                <input type="month" value={to} onChange={(event) => setTo(event.target.value)} className={phxFieldClassName} />
               </label>
               <button
                 type="button"

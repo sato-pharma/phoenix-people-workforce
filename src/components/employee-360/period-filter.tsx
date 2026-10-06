@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { cn } from "@/lib/utils";
 import { PERIOD_PRESETS, type PeriodKey } from "@/lib/employee-360/period";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 // A 40px tap target on a phone (the field force's device), back to the compact chip from md up.
 function chip(active: boolean): string {
@@ -54,7 +55,7 @@ export function PeriodFilter({
           name="from"
           defaultValue={from}
           aria-label="From date"
-          className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 sm:w-auto"
+          className={cn(phxFieldClassName, "min-w-0 sm:w-auto")}
         />
         <span aria-hidden className="font-bold text-slate-300">→</span>
         <input
@@ -62,7 +63,7 @@ export function PeriodFilter({
           name="to"
           defaultValue={to}
           aria-label="To date"
-          className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 sm:w-auto"
+          className={cn(phxFieldClassName, "min-w-0 sm:w-auto")}
         />
         <button type="submit" className={cn(chip(activeKey === "custom"), "col-span-3 cursor-pointer sm:col-span-1")}>
           Apply

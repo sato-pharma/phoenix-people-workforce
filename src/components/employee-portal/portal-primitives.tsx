@@ -6,6 +6,7 @@ import { CircleDashed } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 export const portalPanelClassName =
   "rounded border border-slate-200/90 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.07)]";
@@ -13,8 +14,7 @@ export const portalPanelClassName =
 export const portalSubtlePanelClassName =
   "rounded border border-slate-200/80 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.05)]";
 
-export const portalInputClassName =
-  "h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-500/10";
+export const portalInputClassName  = phxFieldClassName;
 
 export function PortalSection({
   actions,

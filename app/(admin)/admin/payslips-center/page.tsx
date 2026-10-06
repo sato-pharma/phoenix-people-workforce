@@ -19,6 +19,7 @@ import { canExportPayslipDocument } from "@/lib/payroll/payslip-center";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getPayslipCenterEmployeeOptions, resolvePayslipCenterAudience, searchPayslipCenter } from "@/lib/payroll/payslip-center";
 import { formatEmployeeDisplayName } from "@/lib/utils";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -95,7 +96,7 @@ export default async function AdminPayslipsCenterPage(
                 Employee
               </span>
               <select
-                className="h-11 w-full rounded-xl border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/12"
+                className={phxSelectClassName}
                 defaultValue={data.query}
                 name="employee"
               >

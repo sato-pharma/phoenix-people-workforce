@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { CrmIntegrityData, CrmIntegrityRow } from "@/lib/crm-integrity/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 // Both formatters below render with timeZone "UTC", for two DIFFERENT reasons — neither is a
 // missed Cairo conversion, and "fixing" either one shifts a real number.
@@ -129,11 +130,11 @@ export function CrmIntegrityWorkspace({
           <div className="flex flex-wrap items-end gap-3 border border-slate-200 bg-white px-4 py-3">
             <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
               From
-              <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm" />
+              <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className={phxFieldClassName} />
             </label>
             <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
               To
-              <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm" />
+              <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className={phxFieldClassName} />
             </label>
             <label className="flex w-56 flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
               Agent

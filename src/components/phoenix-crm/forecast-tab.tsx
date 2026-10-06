@@ -129,7 +129,7 @@ function ProductRow({
           <Minus aria-hidden className="h-4 w-4" />
         </CrmButton>
         <input
-          className={cn(crmInputClassName, "w-20 text-center text-base font-black", changed && "border-orange-400 bg-orange-50")}
+          className={cn(crmInputClassName, "w-20 text-center text-base", changed && "border-orange-400 bg-orange-50")}
           disabled={disabled}
           id={inputId}
           inputMode="numeric"

@@ -7,6 +7,8 @@ import {
   parseVacationDecision,
   vacationErrorMessage,
 } from "@/lib/vacation/service";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -90,7 +92,7 @@ export default async function VacationDecisionPage({
             <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
               Decision comment
               <textarea
-                className="min-h-24 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-950 outline-none focus:border-orange-500"
+                className={cn(phxTextareaClassName, "min-h-24")}
                 name="decisionComment"
                 placeholder={decision === "reject" ? "Rejection reason is recommended." : "Optional approval note."}
               />

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 /**
  * Call off a marketing request that entered the chain but is no longer wanted.
@@ -64,7 +65,7 @@ export function MarketingCancelControl({ requestId }: { requestId: string }) {
         Reason
       </label>
       <textarea
-        className="mt-1 w-full border border-slate-300 px-3 py-2 text-phx-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+        className={`${phxTextareaClassName} mt-1`}
         disabled={busy}
         id="marketing-cancel-reason"
         onChange={(event) => setReason(event.target.value)}

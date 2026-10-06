@@ -23,9 +23,10 @@ import { simulateWorkflow, type WorkflowSimulationResult } from "@/lib/workflow-
 
 import { WorkflowMap } from "./workflow-map";
 import { PersistenceStatusPanel } from "./persistence-status-panel";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
-const inputBase = "w-full rounded-lg border bg-white px-2.5 py-1.5 text-phx-md text-phx-ink outline-none focus:border-phx-accent";
-const label = "text-phx-2xs font-black uppercase tracking-[0.10em] text-phx-ink-soft";
+const inputBase  = phxFieldClassName;
+const label = cn(phxFieldClassName, "text-phx-2xs uppercase tracking-[0.10em]");
 const currentNote = "mt-0.5 text-phx-xs text-phx-ink-faint";
 
 /**
@@ -258,11 +259,11 @@ export function WorkflowDraftEditor({
         <div className="grid grid-cols-1 gap-3 px-5 pt-3 sm:grid-cols-2">
           <label className="block">
             <span className={label}>Employee HR_ID (for draft simulation)</span>
-            <input className={cn(inputBase, "border-phx-line")} value={employeeHrId} onChange={(e) => setEmployeeHrId(e.target.value)} placeholder="e.g. B-52" />
+            <input className={cn(inputBase, "")} value={employeeHrId} onChange={(e) => setEmployeeHrId(e.target.value)} placeholder="e.g. B-52" />
           </label>
           <label className="block">
             <span className={label}>Direct manager HR_ID</span>
-            <input className={cn(inputBase, "border-phx-line")} value={managerHrId} onChange={(e) => setManagerHrId(e.target.value)} placeholder="blank = test missing manager" />
+            <input className={cn(inputBase, "")} value={managerHrId} onChange={(e) => setManagerHrId(e.target.value)} placeholder="blank = test missing manager" />
           </label>
         </div>
 

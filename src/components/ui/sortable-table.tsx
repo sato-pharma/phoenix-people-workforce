@@ -5,6 +5,7 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 import type { SortState } from "@/components/ui/use-sortable-table";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 export { useSortableTable, visibleMax } from "@/components/ui/use-sortable-table";
 export type {
@@ -156,8 +157,11 @@ export function TableSearchInput({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         className={cn(
-          "w-full border border-phx-line bg-white pl-8 pr-7 text-sm font-medium text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/10",
-          size === "sm" ? "h-8" : "h-10",
+          phxFieldClassName,
+          "pl-8 pr-7",
+          // The compact table keeps a shorter box; everything else is the
+          // shared field's own 40px.
+          size === "sm" && "h-8",
         )}
       />
       {value ? (

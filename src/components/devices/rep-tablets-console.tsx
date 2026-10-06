@@ -58,6 +58,8 @@ import type { EnrollmentValidity } from "@/lib/devices/tablet-enrollment";
 import type { OwnerAppInstallType } from "@/lib/devices/tablet-policy";
 import { cairoDate, cairoDateTime } from "@/lib/format/cairo-datetime";
 import { encodeQrText } from "@/lib/qr/qr-code";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
 const PRIMARY_BUTTON =
@@ -66,8 +68,7 @@ const SECONDARY_BUTTON =
   "inline-flex items-center gap-2 border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60";
 const DANGER_BUTTON =
   "inline-flex items-center gap-2 border border-rose-700 bg-rose-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-800 disabled:opacity-60";
-const INPUT_CLASS =
-  "mt-1 w-full min-w-0 border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-900";
+const INPUT_CLASS = cn(phxFieldClassName, "mt-1 w-full min-w-0 px-2 py-1.5 text-[12px]");
 
 // ---------------------------------------------------------------------------------------------
 // WebUSB — only the few members this page reads. The DOM lib does not declare `navigator.usb`.

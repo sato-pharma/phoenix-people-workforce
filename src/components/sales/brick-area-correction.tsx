@@ -12,6 +12,7 @@ import {
   brickCorrectionSubject,
   type BrickMasterRows,
 } from "@/lib/sales/master-data/brick-correction";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 // "Correct in database" lands here: the Source Normalizer shows each mapped brick's area read-only and
 // links a wrong one to this panel (owner request, 2026-09-18). A brick's area is always its block's,
@@ -201,7 +202,7 @@ export function BrickAreaCorrection({
           <label className="flex min-w-0 flex-col gap-1">
             <span className={labelClass}>Brick name</span>
             <input
-              className="h-9 w-full min-w-0 border border-slate-300 bg-white px-2 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50 disabled:text-slate-400"
+              className={`${phxFieldClassName} min-w-0`}
               disabled={moving}
               onChange={(event) => setName(event.target.value)}
               value={brickName}

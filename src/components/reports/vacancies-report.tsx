@@ -189,7 +189,7 @@ function SelectFilter({
         {label}
       </span>
       <SearchableSelect
-        className="h-11 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/12"
+        className="w-full px-3"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -465,7 +465,7 @@ export function VacanciesReport({
             <span className="sr-only">Search vacancies</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-soft" />
             <Input
-              className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 pl-9 shadow-sm"
+              className="pl-9"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search vacancy, area, line, position..."
               value={query}

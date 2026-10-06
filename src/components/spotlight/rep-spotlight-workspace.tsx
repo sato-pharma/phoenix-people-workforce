@@ -7,6 +7,7 @@ import { ShareCardBar } from "@/components/employee-portal/share-card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { spotlightShareCaption } from "@/lib/share/social-share";
 import { repSpotlightPresets } from "@/lib/spotlight/rep-period-presets";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 /**
  * Spotlight — one person's own sheet.
@@ -35,8 +36,7 @@ import { repSpotlightPresets } from "@/lib/spotlight/rep-period-presets";
 
 // ─── Primitives, copied from the Report It form so the two cannot drift ───────────────────────────
 
-const fieldClass =
-  "h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition placeholder:text-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/15 disabled:cursor-not-allowed disabled:opacity-50";
+const fieldClass  = phxFieldClassName;
 const selectClass = `${fieldClass} cursor-pointer`;
 
 // Orange is the portal's single accent, and its controls lift on hover exactly as

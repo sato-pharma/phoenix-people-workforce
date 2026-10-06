@@ -26,6 +26,10 @@ import { cn } from "@/lib/utils";
 
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, Segmented } from "./calendar-dialog";
+import {
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 const DURATION_OPTIONS = [30, 45, 60] as const;
 
@@ -108,7 +112,7 @@ function BookTimeDialog({
           <p className="mb-1 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">Time</p>
           <select
             aria-label="Interview time"
-            className="block w-full border border-slate-200 bg-white px-2 py-2 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+            className={`${phxSelectClassName} block`}
             onChange={(event) => setStart(event.target.value === "" ? null : Number(event.target.value))}
             value={start ?? ""}
           >
@@ -148,7 +152,7 @@ function BookTimeDialog({
           <p className="mb-1 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">A note (optional)</p>
           <textarea
             aria-label="A note on the interview"
-            className="block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+            className={`${phxTextareaClassName} block`}
             maxLength={2000}
             onChange={(event) => setNotes(event.target.value)}
             rows={2}

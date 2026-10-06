@@ -52,6 +52,7 @@ import type {
 } from "@/lib/double-visit-analytics/types";
 import { entryCountBucket, entryPeriodLabel } from "@/lib/double-visit-analytics/count-bucket";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 type Tab = "summary" | "managers" | "mr-status" | "trends";
 type PeriodFilter = "ALL" | "AM" | "PM" | "Pharmacies";
@@ -1014,11 +1015,11 @@ export function DoubleVisitAnalyticsWorkspace({
           <div className="flex flex-wrap items-end gap-2">
             <label className="block">
               <span className="mb-1 block text-phx-2xs font-black uppercase tracking-wide text-slate-500">From</span>
-              <Input className="min-h-10" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
             </label>
             <label className="block">
               <span className="mb-1 block text-phx-2xs font-black uppercase tracking-wide text-slate-500">To</span>
-              <Input className="min-h-10" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             </label>
             <Button className="min-h-10 gap-2 rounded border border-slate-200 bg-white px-3 text-slate-700 hover:bg-slate-50" onClick={() => applyDateRange(dateFrom, dateTo)} type="button">
               <RefreshCcw className="h-4 w-4" /> Apply
@@ -1034,7 +1035,7 @@ export function DoubleVisitAnalyticsWorkspace({
                 aria-label="Period for the coaching audit export"
                 value={periodFilter}
                 onChange={(e) => setPeriodFilter(e.target.value as PeriodFilter)}
-                className="min-h-10 rounded border border-slate-300 bg-white px-2 text-sm font-semibold text-slate-700"
+                className={`${phxSelectClassName}`}
               >
                 <option value="ALL">All periods</option>
                 <option value="AM">AM</option>
@@ -1065,7 +1066,7 @@ export function DoubleVisitAnalyticsWorkspace({
                 aria-label="Period for the coaching audit export"
                 value={periodFilter}
                 onChange={(e) => setPeriodFilter(e.target.value as PeriodFilter)}
-                className="min-h-11 rounded border border-slate-300 bg-white px-2 text-sm font-semibold text-slate-700"
+                className={`${phxSelectClassName}`}
               >
                 <option value="ALL">All periods</option>
                 <option value="AM">AM</option>
@@ -1121,7 +1122,7 @@ export function DoubleVisitAnalyticsWorkspace({
           </div>
           {activeTab === "mr-status" && (
             <Input
-              className="min-w-[220px] flex-1 rounded border-slate-200 text-sm"
+              className="min-w-[220px] flex-1"
               placeholder="Search MR name, HR ID, or manager…"
               value={mrSearch}
               onChange={(e) => setMrSearch(e.target.value)}

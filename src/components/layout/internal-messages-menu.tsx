@@ -11,6 +11,10 @@ import { cn } from "@/lib/utils";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 import { askForDesktopMailAlerts, usePersonalMailboxAlerts } from "@/hooks/use-personal-mailbox-alerts";
 import { useRepositionOnViewportChange } from "@/hooks/use-reposition-on-viewport-change";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 type InternalEmailStatus = "failed" | "not_requested" | "pending" | "sent" | "skipped";
 
@@ -420,7 +424,7 @@ export function InternalMessagesMenu({
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
                     <input
                       className={cn(
-                        "h-10 w-full rounded border pl-9 pr-3 text-sm font-semibold outline-none",
+                        phxFieldClassName, "w-full pl-9",
                         isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line",
                       )}
                       onChange={(event) => {
@@ -452,7 +456,7 @@ export function InternalMessagesMenu({
                 <label className="block">
                   <span className={cn("mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Subject</span>
                   <input
-                    className={cn("h-10 w-full rounded border px-3 text-sm font-semibold outline-none", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line")}
+                    className={cn(phxFieldClassName, "w-full", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line")}
                     onChange={(event) => setForm((current) => ({ ...current, subject: event.target.value }))}
                     placeholder="Message subject"
                     value={form.subject}
@@ -462,7 +466,7 @@ export function InternalMessagesMenu({
                 <label className="block">
                   <span className={cn("mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Message</span>
                   <textarea
-                    className={cn("min-h-28 w-full resize-y rounded border px-3 py-2.5 text-sm font-medium leading-6 outline-none", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line")}
+                    className={cn(phxTextareaClassName, "min-h-28 w-full leading-6", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line")}
                     onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))}
                     placeholder="Write the internal message..."
                     value={form.body}

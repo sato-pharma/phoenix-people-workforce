@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 /**
  * Finance's sales-month control.
@@ -82,7 +83,7 @@ export function DirectOrderSalesMonthControl({
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="month"
-              className="border border-slate-300 px-2 py-1 text-sm"
+              className={phxFieldClassName}
               value={value}
               onChange={(event) => setValue(event.target.value)}
               disabled={busy}

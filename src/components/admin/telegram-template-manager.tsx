@@ -8,6 +8,11 @@ import type { TelegramTemplateView } from "@/lib/notifications/telegram-template
 import { insertTelegramPlaceholder } from "@/lib/notifications/telegram-template-placeholders";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 type Props = {
@@ -355,7 +360,7 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
               <label className="block">
                 <span className="text-sm font-bold text-slate-800">Template title</span>
                 <input
-                  className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900"
+                  className={`${phxFieldClassName} mt-1`}
                   disabled={!canUpdate}
                   onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
                   onDragOver={allowPlaceholderDrop}
@@ -432,7 +437,7 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                             {button.enabled ? "Enabled" : "Disabled"}
                           </button>
                           <SearchableSelect
-                            className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-700"
+                            className="px-2 py-1.5 text-xs"
                             disabled={!canUpdate}
                             onChange={(event) => {
                               const type = event.target.value as TemplateButtonDraft["type"];
@@ -462,7 +467,7 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                         <label className="block">
                           <span className="text-xs font-bold text-slate-700">Button label</span>
                           <input
-                            className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
+                            className={`${phxFieldClassName} mt-1`}
                             disabled={!canUpdate || !button.enabled}
                             onChange={(event) => updateButton(index, { label: event.target.value })}
                             placeholder="Open Phoenix"
@@ -472,7 +477,7 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                         <label className="block">
                           <span className="text-xs font-bold text-slate-700">Button URL or placeholder</span>
                           <input
-                            className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
+                            className={`${phxFieldClassName} mt-1`}
                             disabled={!canUpdate || !button.enabled}
                             onChange={(event) => updateButton(index, { url: event.target.value })}
                             onDragOver={allowPlaceholderDrop}
@@ -540,7 +545,7 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                   <span className={`text-xs font-bold ${tooLong ? "text-amber-700" : "text-slate-500"}`}>{characterCount} characters</span>
                 </div>
                 <textarea
-                  className="mt-1 min-h-64 w-full resize-y rounded border border-slate-200 px-3 py-2 font-mono text-sm leading-6 text-slate-900"
+                  className={cn(phxTextareaClassName, "mt-1 min-h-64 font-mono leading-6")}
                   disabled={!canUpdate}
                   onChange={(event) => setDraft((current) => ({ ...current, message: event.target.value }))}
                   onDragOver={allowPlaceholderDrop}

@@ -1227,6 +1227,7 @@ import { runOfficialNumbersExcludeWeeklyTests } from "./official-numbers-exclude
 import { runLactoLineFamilyGroupingTests } from "./lacto-line-family-grouping.test.ts";
 import { runIdentityCardSignatureLockTests } from "./identity-card-signature-lock.test.ts";
 import { runAdminShellPaletteScopeTests } from "./admin-shell-palette-scope.test.ts";
+import { runFormDesignSystemTests } from "./form-design-system.test.ts";
 import { runCrmMasterWideReportNowrapTests } from "./crm-master-wide-report-nowrap.test.ts";
 import { runCrmSyncRunGroupsTests } from "./crm-sync-run-groups.test.ts";
 import { runSquareEdgeGoldenRuleTests } from "./square-edge-golden-rule.test.ts";
@@ -4877,6 +4878,7 @@ await runTest('Lacto (line, family) key (family_code LA is shared across Pedia +
 await runTest('identity-card DESIGN LOCK (the portal identity banner always renders PhoenixSignatureCard)', runIdentityCardSignatureLockTests);
 await runTest('design tokens contract (--phx- prefix, no globals.css collision, full dark coverage)', runDesignTokensContractTests);
 await runTest('admin shell palette scope (warm ramp stays inside .admin-shell, lightness pinned to Tailwind slate)', runAdminShellPaletteScopeTests);
+await runTest('form design system (one field/label/button token set, the ADR wizard is the reference, self-skinned controls ratcheted)', runFormDesignSystemTests);
 await runTest('CRM Master report keeps its nowrap cells (the global portal-table wrap rule stays opt-outable)', runCrmMasterWideReportNowrapTests);
 await runTest('CRM sync panel folds only ROUTINE runs (a failure, a backfill or a skipped row keeps its own line)', runCrmSyncRunGroupsTests);
 await runTest("the square-edge golden rule (hand-written corners the two CSS sweeps cannot see)", runSquareEdgeGoldenRuleTests);

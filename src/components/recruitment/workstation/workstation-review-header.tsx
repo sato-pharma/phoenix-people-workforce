@@ -76,6 +76,7 @@ import { FREE_POSITION, NO_POSITION, VacancyPicker } from "@/components/recruitm
 import { CandidateStars } from "@/components/recruitment/workstation/candidate-stars";
 import type { CandidateRating } from "@/lib/recruitment/candidate-rating";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 export type SendState = {
   managerHrIds: string[];
@@ -754,7 +755,7 @@ function RejectPanel({
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <input
           aria-label="Note"
-          className="min-w-0 flex-1 border border-phx-line bg-white px-2 py-1.5 text-[13px] text-phx-ink outline-none focus:border-phx-accent-line"
+          className={`${phxFieldClassName} min-w-0 flex-1`}
           maxLength={CANDIDATE_STATUS_NOTE_MAX_LENGTH}
           onChange={(event) => setDetail(event.target.value)}
           placeholder="Note — optional, kept in the candidate's history"
@@ -876,7 +877,7 @@ function SendPanel({
               other's name. Carried over from the screen this replaced rather than reinvented. */}
           <input
             aria-label="Job title"
-            className="min-w-[180px] flex-1 border border-phx-line bg-white px-2 py-1.5 text-[13px] outline-none focus:border-phx-accent-line"
+            className={`${phxFieldClassName} min-w-[180px] flex-1`}
             list="workstation-position-titles"
             onChange={(event) => onChange({ ...state, freeJobTitle: event.target.value })}
             placeholder="Job title"
@@ -884,7 +885,7 @@ function SendPanel({
           />
           <input
             aria-label="Area"
-            className="min-w-[180px] flex-1 border border-phx-line bg-white px-2 py-1.5 text-[13px] outline-none focus:border-phx-accent-line"
+            className={`${phxFieldClassName} min-w-[180px] flex-1`}
             list="workstation-position-areas"
             onChange={(event) => onChange({ ...state, freeAreaName: event.target.value })}
             placeholder="Area"

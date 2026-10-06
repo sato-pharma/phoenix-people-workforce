@@ -15,6 +15,7 @@ import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-type
 
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { ErrorLine } from "./calendar-dialog";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 function whenText(iso: string): string {
   try {
@@ -129,7 +130,7 @@ export function InterviewExtrasPanel({
                 <div className="border border-slate-200 bg-white p-3">
                   <p className="text-[12px] font-bold text-slate-700">{"Why can't you conduct it? (optional)"}</p>
                   <textarea
-                    className="mt-1.5 block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+                    className={`${phxTextareaClassName} mt-1.5 block`}
                     maxLength={500}
                     onChange={(event) => setReason(event.target.value)}
                     placeholder="A short reason for whoever reassigns it (optional)"

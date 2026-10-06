@@ -1,6 +1,6 @@
 ---
 name: the-one-form-design-every-form-wears-the-adr-wizards-skin
-description: "Every form in the system wears the Adverse Drug Reaction wizard's skin — strings in src/components/ui/form-tokens.ts, components in form-kit.tsx, ratchet at ZERO, h-8/h-9 dense controls kept by his own 2026-10-06 ruling — and the twelve codemod traps, including a build failure that lint and typecheck both passed and 177 overrides a template literal silently threw away"
+description: "Every form in the system wears the Adverse Drug Reaction wizard's skin — strings in src/components/ui/form-tokens.ts, components in form-kit.tsx, ratchet at ZERO, h-8/h-9 dense controls AND the dark login screen kept out by his own 2026-10-06 rulings — and the fourteen codemod traps, including a build failure that lint and typecheck both passed and 177 overrides a template literal silently threw away"
 metadata:
   node_type: memory
   type: project
@@ -39,7 +39,7 @@ their box from a parent, plus the printed-document editors under `hiring-pack/` 
 exempt under the house document identity. The ADR form itself now CONSUMES the kit, which is what
 makes "change the token and the system follows" true.
 
-🔴 **Twelve codemod traps, every one of which cost a re-run:**
+🔴 **Fourteen codemod traps, every one of which cost a re-run:**
 1. **Dropping a field's `pl-9` puts the magnifier on top of the text.** Side padding *larger* than
    the token's own `px-3` is icon clearance, not skin; the first pass broke ~45 search boxes.
 2. **A regex that ends a JSX tag at the first `>` ends it inside `(e) => …`** — the attribute list
@@ -102,8 +102,9 @@ makes "change the token and the system follows" true.
     `bg-white/[0.045]`, white text, `#ff7900` focus, `h-12`/`h-14`, `text-base`). The light token
     turned the login fields into white boxes on a dark panel — the screen every employee meets
     first — and only half of them, because one of the two kept its overrides. Restored byte for
-    byte; `src/components/auth/` is in the guard's `EXEMPT` list. He pointed at a form in the admin
-    shell, not at the login door.
+    byte; `src/components/auth/` is in the guard's `EXEMPT` list. 🔴 **HIS OWN RULING, 2026-10-06** —
+    asked whether the front door should wear the design too he answered *"keep the login screen out of
+    the form design"*, so never bring `auth/` into line later and never ask him again.
 
 12. 🔴 **FILTERING A SCAN'S GENERIC MATCHES KILLS THE TRUE POSITIVE WITH THE NOISE.** The scan
     that looked for pinned literals the branch had removed returned 21 hits, nearly all noise
@@ -113,6 +114,21 @@ makes "change the token and the system follows" true.
     every swept file and in the branch's, and read every file whose count went DOWN. Four had
     dropped a deliberate `text-base`. The three that mattered are pinned together now by
     `SIXTEEN_PX_KEEPS` in `tests/form-design-system.test.ts`.
+
+13. 🔴 **A DENSE SIZE CAN BE PINNED BY A TEST THAT EXISTS BECAUSE MONEY IS APPROVED THERE.**
+    The outstation expense review's approved-amount input is `h-8 w-28 … text-xs`, pinned verbatim
+    by `tests/expense-review-row-height.test.ts` (*"the controls are moved, never reshaped"*, written
+    after an earlier row-shortening attempt reshaped them). The sweep took it to 40px and the guard
+    fired: *"no size reduction on a money field"*. Restore the string and exempt the file — **never
+    relax the assertion**, which would turn a red test into a shipped change on an approvals screen.
+
+14. 🔴 **A SHORT className ON A WRAPPER IS NOT A HALF-STRIP — READ THE TAG.** Two planning-calendar
+    controls read `className="w-full px-3 ring-1 ring-transparent"` where main had a full skin, which
+    looks precisely like a stripped control. They are `<SearchableSelect>`, whose own base is
+    `cn(phxSelectClassName, "pr-9")` and which merges the caller's classes over it — so they were
+    already on-design, and "restoring" the fill painted grey over the design. `<Input>`, `<Textarea>`
+    and `<SearchableSelect>` carry the token; only a RAW `<input>`/`<select>`/`<textarea>` must name
+    its own ground.
 
 🔴 **And a quoted bash heredoc on this machine HALVED the backslashes in a JS regex literal** —
 `/[^"\\]/` landed as `/[^"\]/`, which matched nothing and reported "0 controls" with no error at all.

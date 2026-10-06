@@ -7,6 +7,7 @@ import { AlertTriangle, CheckCircle2, Loader2, RefreshCcw } from "lucide-react";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { groupSyncRuns, type SyncRunGroup } from "@/lib/crm/sync-run-groups";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 /** A real INSTANT (started_at / completed_at), so it renders in Cairo like every other clock time
  * in this app. It rendered in UTC until 2026-09-02, which is how a sync that failed at 21:03 Cairo
@@ -142,11 +143,11 @@ export function CrmSyncStatusPanel({
       <div className="flex flex-wrap items-end gap-3 border-t border-slate-100 bg-slate-50 px-5 py-3">
         <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
           Backfill from
-          <input type="date" value={backfillFrom} onChange={(event) => setBackfillFrom(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm" />
+          <input type="date" value={backfillFrom} onChange={(event) => setBackfillFrom(event.target.value)} className={phxFieldClassName} />
         </label>
         <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
           to
-          <input type="date" value={backfillTo} onChange={(event) => setBackfillTo(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm" />
+          <input type="date" value={backfillTo} onChange={(event) => setBackfillTo(event.target.value)} className={phxFieldClassName} />
         </label>
         <button
           type="button"

@@ -18,6 +18,7 @@ import {
 
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { ErrorLine } from "./calendar-dialog";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 function Stars({ rating }: { rating: number }) {
   return (
@@ -108,7 +109,7 @@ export function ScorecardPanel({ api, booking, onChanged }: { api: CalendarApi; 
             </div>
           </div>
           <textarea
-            className="mt-2 block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+            className={`${phxTextareaClassName} mt-2 block`}
             maxLength={2000}
             onChange={(event) => setComment(event.target.value)}
             placeholder="A note on your rating (optional)"

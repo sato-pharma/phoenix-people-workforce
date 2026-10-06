@@ -51,6 +51,11 @@ import type {
   RetentionThemeSentiment,
 } from "@/lib/retention/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 type KindFilter = "all" | RetentionConversationKind;
 
@@ -427,7 +432,7 @@ export function RetentionWorkspace({
                 Kind of conversation
               </label>
               <select
-                className="mt-2 w-full border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                className={`${phxSelectClassName} mt-2`}
                 id="retention-kind"
                 onChange={(event) =>
                   setForm((c) => ({ ...c, kind: event.target.value as RetentionConversationKind }))
@@ -447,7 +452,7 @@ export function RetentionWorkspace({
                 Employee HR ID
               </label>
               <input
-                className="mt-2 w-full border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                className={`${phxFieldClassName} mt-2`}
                 id="retention-hr-id"
                 onChange={(event) => setForm((c) => ({ ...c, employeeHrId: event.target.value }))}
                 placeholder="A-1"
@@ -464,7 +469,7 @@ export function RetentionWorkspace({
                 Held on
               </label>
               <input
-                className="mt-2 w-full border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold tabular-nums text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                className={`${phxFieldClassName} mt-2 tabular-nums`}
                 id="retention-date"
                 onChange={(event) => setForm((c) => ({ ...c, conductedOn: event.target.value }))}
                 required
@@ -482,7 +487,7 @@ export function RetentionWorkspace({
                   Retention risk
                 </label>
                 <select
-                  className="mt-2 w-full border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                  className={`${phxSelectClassName} mt-2`}
                   id="retention-risk"
                   onChange={(event) =>
                     setForm((c) => ({ ...c, retentionRisk: event.target.value as RetentionRisk }))
@@ -504,7 +509,7 @@ export function RetentionWorkspace({
                     Regrettable?
                   </label>
                   <select
-                    className="mt-2 w-full border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                    className={`${phxSelectClassName} mt-2`}
                     id="retention-regrettable"
                     onChange={(event) =>
                       setForm((c) => ({ ...c, isRegrettable: event.target.value as "yes" | "no" }))
@@ -523,7 +528,7 @@ export function RetentionWorkspace({
                     Would they rejoin?
                   </label>
                   <select
-                    className="mt-2 w-full border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                    className={`${phxSelectClassName} mt-2`}
                     id="retention-rejoin"
                     onChange={(event) =>
                       setForm((c) => ({
@@ -550,7 +555,7 @@ export function RetentionWorkspace({
               What was said
             </label>
             <textarea
-              className="mt-2 w-full border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold leading-relaxed text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+              className={`${phxTextareaClassName} mt-2 leading-relaxed`}
               id="retention-summary"
               onChange={(event) => setForm((c) => ({ ...c, summary: event.target.value }))}
               required
@@ -576,7 +581,7 @@ export function RetentionWorkspace({
                     {theme.label}
                   </label>
                   <select
-                    className="shrink-0 border border-slate-300 bg-white px-1.5 py-1 text-[11px] font-bold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                    className={`${phxSelectClassName} shrink-0`}
                     id={`theme-${theme.themeKey}`}
                     onChange={(event) =>
                       setForm((c) => ({
@@ -607,7 +612,7 @@ export function RetentionWorkspace({
                 Follow-up action (optional)
               </label>
               <input
-                className="mt-2 w-full border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                className={`${phxFieldClassName} mt-2`}
                 id="retention-followup"
                 onChange={(event) => setForm((c) => ({ ...c, followUpAction: event.target.value }))}
                 value={form.followUpAction}
@@ -621,7 +626,7 @@ export function RetentionWorkspace({
                 Follow-up due (optional)
               </label>
               <input
-                className="mt-2 w-full border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold tabular-nums text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                className={`${phxFieldClassName} mt-2 tabular-nums`}
                 id="retention-followup-due"
                 onChange={(event) => setForm((c) => ({ ...c, followUpDue: event.target.value }))}
                 type="date"

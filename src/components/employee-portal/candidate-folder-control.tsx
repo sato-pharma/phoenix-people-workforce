@@ -16,6 +16,11 @@ import { suggestFolderFromDeclaredAnswers } from "@/lib/recruitment/candidate-fo
 import type { CandidateFolderAreaOption } from "@/lib/recruitment/candidate-folder-options";
 import { managerFolderKinds, type ManagerFolderFiling } from "@/lib/recruitment/manager-folder-shelf";
 import type { Candidate } from "@/lib/recruitment/types";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * "File this CV for later" — the manager's own shelf, on one candidate card.
@@ -144,7 +149,7 @@ export function CandidateFolderControl({
       </p>
       <div className="flex flex-col gap-2 sm:flex-row">
         <select
-          className="h-9 w-full min-w-0 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 sm:w-56"
+          className={cn(phxSelectClassName, "min-w-0 sm:w-56")}
           onChange={(event) => {
             setKind(event.target.value as CandidateFolderKind);
             // The key means a different thing on every shelf, so carrying "Nasr City" over to the
@@ -217,7 +222,7 @@ function FolderKeyInput({
   if (kind === "other") {
     return (
       <input
-        className="h-9 w-full min-w-0 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900"
+        className={`${phxFieldClassName} min-w-0`}
         id={`manager-folder-key-${candidateId}`}
         onChange={(event) => onChange(event.target.value)}
         placeholder={candidateFolderKeyLabels.other}
@@ -235,7 +240,7 @@ function FolderKeyInput({
 
   return (
     <select
-      className="h-9 w-full min-w-0 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900"
+      className={`${phxSelectClassName} min-w-0`}
       id={`manager-folder-key-${candidateId}`}
       onChange={(event) => onChange(event.target.value)}
       value={value}

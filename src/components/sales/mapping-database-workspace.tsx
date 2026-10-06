@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { SalesDistributorEntry } from "@/lib/sales/distributor-registry";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   distributors: SalesDistributorEntry[];
@@ -175,8 +176,8 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
       type="button" variant="secondary"><Trash2 className="h-3.5 w-3.5" /></Button>
   );
 
-  const addCodeInput = <input className="h-8 w-full rounded border border-phx-line px-2 text-xs" onChange={(e) => setAddCode(e.target.value)} placeholder="customer code" value={addCode} />;
-  const addNameInput = <input className="h-8 w-full rounded border border-phx-line px-2 text-xs" onChange={(e) => setAddName(e.target.value)} placeholder="name (optional)" value={addName} />;
+  const addCodeInput = <input className={phxFieldClassName} onChange={(e) => setAddCode(e.target.value)} placeholder="customer code" value={addCode} />;
+  const addNameInput = <input className={phxFieldClassName} onChange={(e) => setAddName(e.target.value)} placeholder="name (optional)" value={addName} />;
   const addBrickPicker = <MappingCombobox onChange={setAddBrick} options={brickOptions} placeholder="brick (B10…)" value={addBrick} />;
   const addButton = (
     <Button className="h-8 w-full gap-1 bg-phx-accent font-black text-white hover:bg-[#EA6A0C] md:w-auto" disabled={busyKey === "add" || !addCode.trim() || !addBrick}
@@ -188,7 +189,7 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
     <div className="space-y-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <input
-          className="h-9 w-full rounded-[6px] border border-phx-line px-3 text-sm outline-none focus:border-phx-accent-line sm:w-64"
+          className={cn(phxFieldClassName, "sm:w-64")}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") void load(0, search, sourceFilter); }}
           placeholder="Search code / name / address"
@@ -321,7 +322,7 @@ function AliasTab({ distributorCode, kind, options, codeLabel }: { distributorCo
   // input and the code combobox carried `w-56`; two of those plus an Add button cannot fit inside
   // 283px, so the table reached 561px and the wrapper's `overflow-auto` scrolled it sideways.
   const cardLabel = "mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint";
-  const addRawInput = <input className="h-8 w-full rounded border border-phx-line px-2 text-xs" onChange={(e) => setAddRaw(e.target.value)} placeholder={kind === "product" ? "item code or name" : "area text"} value={addRaw} />;
+  const addRawInput = <input className={phxFieldClassName} onChange={(e) => setAddRaw(e.target.value)} placeholder={kind === "product" ? "item code or name" : "area text"} value={addRaw} />;
   const addCodePicker = <MappingCombobox onChange={setAddCode} options={options} placeholder={codeLabel} value={addCode} />;
   const addButton = (
     <Button className="h-8 w-full gap-1 bg-phx-accent font-black text-white hover:bg-[#EA6A0C] md:w-auto" disabled={busyKey === "add" || !addRaw.trim() || !addCode}

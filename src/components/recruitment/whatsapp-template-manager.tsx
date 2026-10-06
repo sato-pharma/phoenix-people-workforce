@@ -17,6 +17,10 @@ import { deleteRequest, getJson, patchJson, postJson } from "@/components/recrui
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { WhatsAppSendDialog } from "@/components/recruitment/whatsapp-send-dialog";
 import { cn } from "@/lib/utils";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 type Template = {
   id: string;
@@ -267,7 +271,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
                   Name
                 </label>
                 <input
-                  className="w-full border border-slate-300 px-3 py-2 text-sm"
+                  className={phxFieldClassName}
                   id="tpl-name"
                   onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                   placeholder="Interview invitation"
@@ -279,7 +283,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
                   Category
                 </label>
                 <input
-                  className="w-full border border-slate-300 px-3 py-2 text-sm"
+                  className={phxFieldClassName}
                   id="tpl-category"
                   onChange={(event) => setDraft({ ...draft, category: event.target.value })}
                   placeholder="Interview"
@@ -293,7 +297,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
                 Message
               </label>
               <textarea
-                className="w-full border border-slate-300 px-3 py-2 font-mono text-[13px] leading-relaxed"
+                className={cn(phxTextareaClassName, "font-mono leading-relaxed")}
                 dir="auto"
                 id="tpl-body"
                 onChange={(event) => setDraft({ ...draft, body: event.target.value })}
@@ -331,7 +335,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
               <label className="flex items-center gap-2 text-sm text-slate-700" htmlFor="tpl-order">
                 Order
                 <input
-                  className="w-20 border border-slate-300 px-2 py-1 text-sm"
+                  className={cn(phxFieldClassName, "w-20")}
                   id="tpl-order"
                   onChange={(event) => setDraft({ ...draft, sortOrder: Number(event.target.value) || 0 })}
                   type="number"

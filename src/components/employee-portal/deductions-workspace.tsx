@@ -19,6 +19,7 @@ import type {
 import { cairoDate, utcDate } from "@/lib/format/cairo-datetime";
 import { cn } from "@/lib/utils";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 const DEDUCTION_LINES_PAGE_SIZE = 25;
 
@@ -265,7 +266,7 @@ export function DeductionsPortalWorkspace({
                   ) : null}
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                     <input
-                      className="h-10 flex-1 rounded border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                      className={`${phxFieldClassName} flex-1`}
                       maxLength={2000}
                       placeholder="Add a comment for HR"
                       value={commentDrafts[line.candidateId] ?? ""}

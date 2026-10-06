@@ -27,6 +27,10 @@ import type {
   EmployeeExcuseStatus,
   EmployeeExcuseWorkspaceData,
 } from "@/lib/excuses/service";
+import {
+  phxFieldClassName,
+  phxLabelTextClassName,
+} from "@/components/ui/form-tokens";
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Types ────────────────────────────────────────────────────────── */
@@ -199,10 +203,9 @@ function useOfflineQueue(onReplay: (payload: QueuedExcuseSubmission) => Promise<
 /* ─── Style Tokens ─────────────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-const inputClass =
-  "h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
+const inputClass  = phxFieldClassName;
 
-const labelClass = "text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500";
+const labelClass = phxLabelTextClassName;
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Metric Card ──────────────────────────────────────────────────── */
@@ -902,7 +905,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                     <Input
-                      className="rounded-sm pl-9 text-phx-sm"
+                      className="pl-9 text-phx-sm"
                       placeholder="Search by date, type, status, manager..."
                       value={historySearch}
                       onChange={(event) => setHistorySearch(event.target.value)}

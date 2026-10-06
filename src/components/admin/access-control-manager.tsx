@@ -53,6 +53,8 @@ import {
 } from "@/lib/auth/permissions";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 type EmployeeOption = {
@@ -1265,7 +1267,7 @@ export function AccessControlManager({
                   <div className="grid gap-3">
                     <Input
                       aria-label="Full name"
-                      className="h-9 rounded-lg border-slate-200 bg-white px-3 text-sm font-medium transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                      className="h-9 px-3"
                       disabled={!canManageUsers}
                       onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
                       placeholder="Full name"
@@ -1273,7 +1275,7 @@ export function AccessControlManager({
                     />
                     <Input
                       aria-label="HR ID"
-                      className="h-9 rounded-lg border-slate-200 bg-white px-3 text-sm font-medium transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                      className="h-9 px-3"
                       disabled={!canManageUsers}
                       onChange={(e) => {
                         const hrId = e.target.value;
@@ -1288,7 +1290,7 @@ export function AccessControlManager({
                     />
                     <Input
                       aria-label="Email address"
-                      className="h-9 rounded-lg border-slate-200 bg-white px-3 text-sm font-medium transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                      className="h-9 px-3"
                       disabled={!canManageUsers}
                       onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
                       placeholder="Email"
@@ -1305,7 +1307,7 @@ export function AccessControlManager({
                   <div className="grid gap-3">
                     <SearchableSelect
                       aria-label="Phoenix role"
-                      className="h-9 w-full rounded-lg border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                      className="h-9 w-full px-3"
                       disabled={!canManageUsers}
                       onChange={(e) => setForm((p) => ({ ...p, role: e.target.value as PhoenixRole }))}
                       value={form.role}
@@ -1319,7 +1321,7 @@ export function AccessControlManager({
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <SearchableSelect
                         aria-label="Phoenix line"
-                        className="h-9 w-full rounded-lg border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                        className="h-9 w-full px-3"
                         disabled={!canManageUsers}
                         onChange={(e) => setForm((p) => ({ ...p, line: e.target.value as PhoenixLine }))}
                         value={form.line}
@@ -1332,7 +1334,7 @@ export function AccessControlManager({
                       </SearchableSelect>
                       <Input
                         aria-label="Manager HR ID"
-                        className="h-9 rounded-lg border-slate-200 bg-white px-3 text-sm font-medium transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                        className="h-9 px-3"
                         disabled={!canManageUsers}
                         onChange={(e) => setForm((p) => ({ ...p, managerHrId: e.target.value }))}
                         placeholder="Manager HR_ID"
@@ -1349,7 +1351,7 @@ export function AccessControlManager({
                   <div className="grid gap-3">
                     <SearchableSelect
                       aria-label="Sales scope override"
-                      className="h-9 w-full rounded-lg border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                      className="h-9 w-full px-3"
                       disabled={!canManageUsers}
                       onChange={(e) =>
                         setForm((p) => ({ ...p, salesScopeOverride: e.target.value as BusinessScope | "" }))
@@ -1447,7 +1449,7 @@ export function AccessControlManager({
                   <div className="relative group">
                     <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400 transition-colors duration-160 ease-out group-focus-within:text-orange-500" />
                     <Input
-                      className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm font-medium transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] hover:border-slate-300 hover:shadow-sm placeholder:text-slate-400"
+                      className="h-9 pl-9"
                       onChange={(e) => {
                         setQuery(e.target.value);
                         setPage(1);
@@ -1457,7 +1459,7 @@ export function AccessControlManager({
                     />
                   </div>
                   <SearchableSelect
-                    className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                    className="h-9 w-full px-3"
                     onChange={(e) => {
                       setRoleFilter(e.target.value);
                       setPage(1);
@@ -1472,7 +1474,7 @@ export function AccessControlManager({
                     ))}
                   </SearchableSelect>
                   <SearchableSelect
-                    className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                    className="h-9 w-full px-3"
                     onChange={(e) => {
                       setLineFilter(e.target.value);
                       setPage(1);
@@ -1487,7 +1489,7 @@ export function AccessControlManager({
                     ))}
                   </SearchableSelect>
                   <SearchableSelect
-                    className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                    className="h-9 w-full px-3"
                     onChange={(e) => {
                       setPasswordFilter(e.target.value as "all" | "pending" | "ready");
                       setPage(1);
@@ -1951,7 +1953,7 @@ export function AccessControlManager({
             <label className="mt-5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
               Governance reason
               <textarea
-                className="mt-2 min-h-24 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-800 outline-none transition-all duration-160 ease-out placeholder:text-slate-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                className={cn(phxTextareaClassName, "mt-2 min-h-24 normal-case tracking-normal")}
                 maxLength={500}
                 onChange={(event) => setGovernanceReason(event.target.value)}
                 placeholder={pendingGovernanceAction.reasonPlaceholder}

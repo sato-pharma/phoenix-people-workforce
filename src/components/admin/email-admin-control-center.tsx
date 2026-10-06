@@ -83,7 +83,7 @@ export function EmailAdminControlCenterView({ initialData }: Props) {
             </p>
           </div>
           <SearchableSelect
-            className="h-9 w-full border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 sm:w-48"
+            className="h-9 w-full px-3 sm:w-48"
             onChange={(event) => setStatusFilter(event.target.value as (typeof STATUS_FILTERS)[number])}
             value={statusFilter}
           >

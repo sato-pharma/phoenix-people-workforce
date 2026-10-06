@@ -14,6 +14,7 @@ import {
 } from "@/lib/business-cards/request-types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { phxLabelClassName } from "@/components/ui/form-tokens";
 
 // The employee's own card — shown as the REAL Sato Pharma card (front and back, the same
 // print-ready PDF the HR generator produces), editable in the two lines that are theirs (name and
@@ -28,9 +29,8 @@ const STATUS_VARIANT: Record<BusinessCardRequestStatus, "neutral" | "success" | 
 };
 
 // Square edges everywhere — the golden rule.
-const inputClassName =
-  "h-10 rounded-none border-phx-line bg-white/95 text-sm shadow-sm focus:border-phx-accent-line focus:ring-phx-accent/15";
-const labelClassName = "mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
+const inputClassName = "";
+const labelClassName = phxLabelClassName;
 
 function formatDate(value: string): string {
   if (!value) return "—";
@@ -348,7 +348,7 @@ export function EmployeeBusinessCard({
               Email (not editable)
             </label>
             <Input
-              className={`${inputClassName} bg-slate-100 text-slate-500`}
+              className={`${inputClassName} `}
               disabled
               id="business-card-email"
               readOnly

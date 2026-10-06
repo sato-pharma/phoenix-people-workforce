@@ -329,7 +329,6 @@ export function OrganogramReport({
                     Search
                   </span>
                   <Input
-                    className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 text-sm font-semibold text-phx-ink shadow-[0_14px_35px_rgba(15,23,42,0.06)] focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15"
                     onChange={(event) => setOrganogramSearch(event.target.value)}
                     placeholder="HR ID, employee, manager"
                     value={organogramSearch}

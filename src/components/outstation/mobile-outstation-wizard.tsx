@@ -51,7 +51,7 @@ import type {
   OutstationExpenseType,
   OutstationTransportationType,
 } from "@/lib/outstation/types";
-import { formatEmployeeDisplayName } from "@/lib/utils";
+import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { ManagerAreaRepOption } from "@/lib/outstation/area-rep-options";
 import {
@@ -61,6 +61,7 @@ import {
 } from "@/components/outstation/evidence-watermark";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 
 type MedicalTripOption = {
@@ -1617,7 +1618,7 @@ export function MobileOutstationWizard({
           {isNonTravel ? null : (
           <Field label="Transportation Type">
             <SearchableSelect
-              className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+              className="w-full px-3"
               onChange={(event) =>
                 handleTransportationTypeChange(event.target.value as OutstationTransportationType)
               }
@@ -1634,7 +1635,7 @@ export function MobileOutstationWizard({
           {useAreaRepPicker ? (
             <Field label="Area">
               <SearchableSelect
-                className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 disabled:bg-slate-50 disabled:text-slate-400"
+                className="w-full px-3 disabled:text-slate-400"
                 onChange={(event) => handleAreaSelection(event.target.value)}
                 value={selectedAreaCode}
               >
@@ -1657,7 +1658,7 @@ export function MobileOutstationWizard({
           ) : (
             <Field label="Medical Representative">
               <SearchableSelect
-                className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 disabled:bg-slate-50 disabled:text-slate-400"
+                className="w-full px-3 disabled:text-slate-400"
                 disabled={medicalTripOptions.length === 0}
                 onChange={(event) => setMedicalTripHrId(event.target.value)}
                 value={medicalTripHrId}
@@ -1777,7 +1778,7 @@ export function MobileOutstationWizard({
 
           <Field label="Notes">
             <textarea
-              className="min-h-28 w-full rounded-md border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-orange-50"
+              className={cn(phxTextareaClassName, "min-h-28")}
               onChange={(event) => setNotes(event.target.value)}
               placeholder="Add any trip note or explanation"
               value={notes}

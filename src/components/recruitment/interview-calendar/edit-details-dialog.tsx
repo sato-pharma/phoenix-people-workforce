@@ -20,8 +20,9 @@ import { CalendarDialog } from "./calendar-dialog";
 import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
 import { OrgFields } from "./org-fields";
 import { PanelPicker } from "./panel-picker";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
-const inputClass = "mt-1 block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none";
+const inputClass = `${phxFieldClassName} mt-1 block`;
 
 export function EditInterviewDetailsDialog({
   api,

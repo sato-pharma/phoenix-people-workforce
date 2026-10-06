@@ -75,6 +75,8 @@ import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
 import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
 import { type HrFunctionKey } from "@/lib/auth/hr-functions";
 import type { HrCommandCenterData, HrCommandGroup, HrCommandTile } from "@/lib/hr/command-center";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
   // `cv_lookup` contributes no tiles and no charts (SOURCES_BY_FUNCTION.cv_lookup — a candidate
@@ -258,7 +260,7 @@ function HiredWindowPicker({ window: current }: { window: { fromIso: string; toI
       <label className="flex flex-col gap-1">
         <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">From</span>
         <input
-          className="border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-orange-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+          className={phxFieldClassName}
           onChange={(event) => setFrom(event.target.value)}
           type="date"
           value={from}
@@ -267,7 +269,7 @@ function HiredWindowPicker({ window: current }: { window: { fromIso: string; toI
       <label className="flex flex-col gap-1">
         <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">To</span>
         <input
-          className="border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-orange-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+          className={phxFieldClassName}
           onChange={(event) => setTo(event.target.value)}
           type="date"
           value={to}
@@ -483,7 +485,7 @@ export function HrCommandCenter({
             />
             <input
               aria-label="Filter figures on this page"
-              className="w-full border border-slate-200 bg-white py-2 pl-9 pr-16 text-[12px] font-semibold text-slate-900 placeholder:text-slate-400 focus:border-orange-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+              className={cn(phxFieldClassName, "pl-9 pr-16")}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Filter figures..."
               ref={searchRef}

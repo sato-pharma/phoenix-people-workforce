@@ -40,6 +40,7 @@ import type { HrCalendarEmployee, HrCalendarEvent, HrCalendarEventType } from "@
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 
 type Props = {
@@ -62,8 +63,7 @@ function cardHref(event: HrCalendarEvent): string | null {
 
 const allValue = "__all__";
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const selectClassName =
-  "h-11 w-full rounded-2xl border border-phx-line bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-[0_14px_35px_rgba(15,23,42,0.06)] outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
+const selectClassName  = phxSelectClassName;
 const panelClassName =
   "rounded-[28px] border border-white/75 bg-white/94 shadow-[0_28px_90px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/5";
 const months = [
@@ -424,7 +424,7 @@ export function HrCalendar({ canPrintCards, initialData, initialError }: Props) 
             <span className="sr-only">Search events</span>
             <Search className="pointer-events-none absolute left-3 top-9 h-4 w-4 text-phx-ink-soft" />
             <Input
-              className="h-11 rounded-2xl border-phx-line bg-white/95 pl-9 shadow-[0_14px_35px_rgba(15,23,42,0.06)]"
+              className="pl-9"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, HR ID, manager"
               value={query}

@@ -43,6 +43,11 @@ import {
 } from "@/lib/recruitment/manager-folder-shelf";
 import { groupCandidatesByPosition, shouldShowGroupHeadings } from "@/lib/recruitment/position-folder";
 import type { Candidate, Interview, TeamCandidateFile } from "@/lib/recruitment/types";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 type Props = {
   /**
@@ -354,19 +359,19 @@ function CandidateCard({
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Schedule your interview</p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <input
-              className="rounded-md border border-gray-200 px-3 py-2 text-sm"
+              className={phxFieldClassName}
               onChange={(event) => setScheduledAt(event.target.value)}
               type="datetime-local"
               value={scheduledAt}
             />
             <input
-              className="rounded-md border border-gray-200 px-3 py-2 text-sm"
+              className={phxFieldClassName}
               onChange={(event) => setLocation(event.target.value)}
               placeholder="Location (or phone/video)"
               value={location}
             />
             <input
-              className="rounded-md border border-gray-200 px-3 py-2 text-sm"
+              className={phxFieldClassName}
               onChange={(event) => setMeetingLink(event.target.value)}
               placeholder="Meeting link (optional)"
               value={meetingLink}
@@ -388,7 +393,7 @@ function CandidateCard({
               <label className="flex items-center justify-between gap-2 text-xs text-slate-600" key={criterion.key}>
                 {criterion.label}
                 <select
-                  className="rounded-md border border-gray-200 px-2 py-1 text-sm"
+                  className={phxSelectClassName}
                   onChange={(event) => setScores((prev) => ({ ...prev, [criterion.key]: event.target.value }))}
                   value={scores[criterion.key] ?? ""}
                 >
@@ -403,7 +408,7 @@ function CandidateCard({
             ))}
           </div>
           <textarea
-            className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+            className={phxTextareaClassName}
             onChange={(event) => setNotes(event.target.value)}
             placeholder="Feedback notes"
             rows={2}

@@ -2,6 +2,8 @@
 
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type TicketRow = { file: File | null; amount: string };
 
@@ -111,7 +113,7 @@ export function ExtraTicketRowEditor({
               type="file"
             />
             <input
-              className="h-9 w-28 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
+              className={cn(phxFieldClassName, "w-28")}
               min="0"
               onChange={(event) => updateRow(index, { amount: event.target.value })}
               placeholder="EGP"
@@ -143,7 +145,7 @@ export function ExtraTicketRowEditor({
       <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-slate-600">
         Destination:
         <input
-          className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
+          className={phxFieldClassName}
           onChange={(event) => setDestination(event.target.value)}
           type="text"
           value={destination}
@@ -153,7 +155,7 @@ export function ExtraTicketRowEditor({
       <label className="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-600">
         Note:
         <input
-          className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
+          className={phxFieldClassName}
           onChange={(event) => setReason(event.target.value)}
           type="text"
           value={reason}

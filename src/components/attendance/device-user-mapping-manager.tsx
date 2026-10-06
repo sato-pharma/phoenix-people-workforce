@@ -26,6 +26,7 @@ import type {
 } from "@/lib/attendance/device-user-mapping";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 
 // Called directly from the BROWSER, not proxied through the Next.js server - the server only
@@ -189,7 +190,7 @@ function MappingRow({
       </PortalStackingCell>
       <PortalStackingCell className="md:min-w-[260px]" label="Employee HR_ID">
         <SearchableSelect
-          className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50 disabled:text-slate-400"
+          className="h-9 w-full px-3 disabled:text-slate-400"
           disabled={!canUpdate || saving}
           value={nonEmployee ? NON_EMPLOYEE_OPTION : employeeHrId}
           onChange={(event) => {
@@ -217,7 +218,7 @@ function MappingRow({
       <PortalStackingCell className="text-sm text-slate-600 md:min-w-[180px]" label="Employee">
         {nonEmployee ? (
           <input
-            className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50 disabled:text-slate-400"
+            className={phxFieldClassName}
             disabled={!canUpdate || saving}
             maxLength={80}
             placeholder="Driver, guard, cleaner"
@@ -579,7 +580,7 @@ export function DeviceUserMappingManager({
       <AdminTableShell
         action={(
           <SearchableSelect
-            className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            className="h-9 px-3"
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
           >

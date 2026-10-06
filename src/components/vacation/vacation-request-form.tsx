@@ -47,6 +47,7 @@ import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES } from "@/lib/vacation/types
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -706,7 +707,7 @@ function VacationDatePicker({
         >
           <div className="grid grid-cols-2 gap-1.5">
             <SearchableSelect
-              className="h-9 rounded-sm border border-slate-200 bg-white px-2 text-phx-md font-bold text-slate-800 outline-none focus:border-orange-300"
+              className="h-9 px-2 text-phx-md"
               value={visibleMonth}
               onChange={(event) =>
                 setPanelDate({
@@ -721,7 +722,7 @@ function VacationDatePicker({
               ))}
             </SearchableSelect>
             <SearchableSelect
-              className="h-9 rounded-sm border border-slate-200 bg-white px-2 text-phx-md font-bold text-slate-800 outline-none focus:border-orange-300"
+              className="h-9 px-2 text-phx-md"
               value={visibleYear}
               onChange={(event) =>
                 setPanelDate({
@@ -1040,7 +1041,7 @@ function NationalEgyptianVacationPanel() {
 
         <SearchableSelect
           aria-label="National holidays month"
-          className="h-8 flex-1 min-w-[100px] rounded-sm border border-slate-200 bg-white px-2 text-phx-md font-bold text-slate-800 outline-none focus:border-orange-300"
+          className="h-8 flex-1 min-w-[100px] px-2 text-phx-md"
           value={month}
           onChange={(event) => setMonth(Number(event.target.value))}
         >
@@ -1053,7 +1054,7 @@ function NationalEgyptianVacationPanel() {
 
         <SearchableSelect
           aria-label="National holidays year"
-          className="h-8 w-[80px] shrink-0 rounded-sm border border-slate-200 bg-white px-2 text-phx-md font-bold text-slate-800 outline-none focus:border-orange-300"
+          className="h-8 w-[80px] shrink-0 px-2 text-phx-md"
           value={year}
           onChange={(event) => setYear(Number(event.target.value))}
         >
@@ -1802,7 +1803,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                   <label className="space-y-1.5 sm:col-span-2">
                     <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Other vacation explanation</span>
                     <textarea
-                      className="min-h-24 w-full rounded-sm border border-slate-200 bg-white px-3 py-2.5 text-phx-md font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                      className={cn(phxTextareaClassName, "min-h-24")}
                       placeholder="Explain what this Other vacation is for. HR will review whether it affects balance, does not affect balance, or will be unpaid."
                       required
                       value={otherReason}
@@ -1827,7 +1828,6 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                       <label className="space-y-1.5">
                         <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Event name</span>
                         <Input
-                          className="rounded-sm"
                           placeholder="Conference or event name"
                           required
                           value={compensatoryEventName}
@@ -1837,7 +1837,6 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                       <label className="space-y-1.5">
                         <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Event date</span>
                         <Input
-                          className="rounded-sm"
                           required
                           type="date"
                           value={compensatoryEventDate}
@@ -1852,7 +1851,6 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                       <label className="space-y-1.5 sm:col-span-2">
                         <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Event location</span>
                         <Input
-                          className="rounded-sm"
                           placeholder="Venue, city, or territory"
                           required
                           value={compensatoryEventLocation}
@@ -1862,7 +1860,6 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                       <label className="space-y-1.5">
                         <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Manager with you 1</span>
                         <Input
-                          className="rounded-sm"
                           placeholder="Manager name"
                           required
                           value={compensatoryManager1}
@@ -1872,7 +1869,6 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                       <label className="space-y-1.5">
                         <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Manager with you 2</span>
                         <Input
-                          className="rounded-sm"
                           placeholder="Manager name (optional)"
                           value={compensatoryManager2}
                           onChange={(event) => setCompensatoryManager2(event.target.value)}
@@ -1914,7 +1910,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 <label className="space-y-1.5 sm:col-span-2">
                   <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Note <span className="font-medium normal-case tracking-normal text-slate-400">(optional)</span></span>
                   <textarea
-                    className="min-h-16 w-full rounded-sm border border-slate-200 bg-white px-3 py-2.5 text-phx-md font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                    className={cn(phxTextareaClassName, "min-h-16")}
                     maxLength={500}
                     placeholder="Any context for your manager — travel plans, coverage arrangements, etc."
                     value={employeeNote}

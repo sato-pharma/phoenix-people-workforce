@@ -33,6 +33,10 @@ import { conversationTitle, formatListTime } from "./inbox-format";
 import { InboxAvatar, InboxEmptyState, LineChip, LineMark, lineToneFor } from "./inbox-look";
 import { InboxTemplateForm, type TemplateSendInput } from "./inbox-template-form";
 import { InboxThreadView } from "./inbox-thread";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 export type InboxLineOption = { phoneNumberId: string; label: string; displayNumber: string };
 
@@ -713,7 +717,7 @@ function NewChatForm({
         <label className="flex flex-col gap-1 text-[12px]">
           <span className="font-bold text-slate-700">Send from</span>
           <select
-            className="w-full border border-slate-200 bg-white px-2.5 py-2 text-[13px] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none focus:border-orange-400"
+            className={phxSelectClassName}
             disabled={busy}
             onChange={(event) => setLine(event.target.value)}
             value={line}
@@ -728,7 +732,7 @@ function NewChatForm({
         <label className="flex flex-col gap-1 text-[12px]">
           <span className="font-bold text-slate-700">Their WhatsApp number</span>
           <input
-            className="w-full border border-slate-200 bg-white px-2.5 py-2 text-[13px] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none focus:border-orange-400"
+            className={phxFieldClassName}
             disabled={busy}
             inputMode="tel"
             onChange={(event) => setPhone(event.target.value)}

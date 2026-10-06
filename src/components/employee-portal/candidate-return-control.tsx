@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 /**
  * "Return this CV to the administrator." One control, on a district manager's OWN folder cards.
@@ -133,7 +134,7 @@ export function CandidateReturnControl({
       </div>
 
       <textarea
-        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-amber-300 focus:outline-none"
+        className={phxTextareaClassName}
         dir="auto"
         onChange={(event) => setNote(event.target.value)}
         placeholder={

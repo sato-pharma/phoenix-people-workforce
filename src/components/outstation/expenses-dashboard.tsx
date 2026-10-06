@@ -215,7 +215,7 @@ function SelectFilter({
     <label className="block">
       <span className="mb-1 block text-phx-xs font-bold uppercase tracking-[0.14em] text-phx-ink-soft">{label}</span>
       <SearchableSelect
-        className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-[#FED7AA]"
+        className="w-full px-3"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >

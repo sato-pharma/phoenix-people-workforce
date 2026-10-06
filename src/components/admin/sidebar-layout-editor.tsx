@@ -49,6 +49,7 @@ import {
   type PersonalLayoutRowSet,
   type PersonalNavigationLayout,
 } from "@/lib/navigation/personal-layout";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 /** Everything a row needs to be moved without dragging it. */
 type RowControls = {
@@ -328,7 +329,7 @@ function DraggableRow({
         </button>
         <select
           aria-label={`Move ${label} to another row`}
-          className="cursor-pointer whitespace-nowrap border border-slate-200 bg-white px-1.5 py-1 text-phx-xs font-medium text-slate-600 outline-none hover:border-slate-400 focus:border-[#F8B56B]"
+          className={`${phxSelectClassName} whitespace-nowrap`}
           onChange={(event) => {
             const to = event.target.value;
             // Reset first: the control is a verb, not a value. Left showing the destination it

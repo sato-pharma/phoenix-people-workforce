@@ -103,7 +103,7 @@ export function UploadedSheetsPanel({
           <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Month</span>
           <SearchableSelect
             aria-label="Filter uploaded sheets by month"
-            className="h-10 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+            className="px-3"
             disabled={periods.length === 0}
             onChange={(event) => setPickedPeriod(event.target.value)}
             value={selectedPeriod}

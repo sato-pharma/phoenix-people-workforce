@@ -107,6 +107,7 @@ import { InterviewExtrasPanel } from "./interview-extras-panel";
 import { ScorecardPanel } from "./scorecard-panel";
 import { ZoomAutoOpen } from "./zoom-auto-open";
 import { ZoomMeetingPanels, type MeetingTarget } from "./zoom-panels";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 type CalendarFile = { id: string; kind: string; fileName: string; mimeType: string | null; createdAt: string };
 
@@ -1510,7 +1511,7 @@ function InterviewPanel({
           <div className="mt-3">
             <textarea
               aria-label="Add a note"
-              className="block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+              className={`${phxTextareaClassName} block`}
               maxLength={2000}
               onChange={(event) => setNote(event.target.value)}
               placeholder="Add a note for the panel"

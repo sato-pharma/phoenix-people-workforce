@@ -16,6 +16,7 @@ import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-
 import { Button } from "@/components/ui/button";
 import type { ExtractedCandidateFields } from "@/lib/recruitment/cv-extraction";
 import { defaultCvPositionKey, getCvPositionSchema, listCvPositionSchemas } from "@/lib/recruitment/cv-field-schemas";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 async function postJson(url: string, body: unknown): Promise<Record<string, unknown>> {
   const res = await fetch(url, {
@@ -125,7 +126,7 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
       <div className="flex flex-wrap items-center gap-2">
         {positionOptions.length > 1 ? (
           <select
-            className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
+            className={phxSelectClassName}
             disabled={busy}
             onChange={(event) => setPositionKey(event.target.value)}
             value={positionKey}

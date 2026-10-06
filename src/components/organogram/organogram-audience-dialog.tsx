@@ -37,6 +37,7 @@ import {
 import { fetchOrganogramMobileNumbers } from "@/lib/reports/organogram-contact-numbers-client";
 import type { OrganogramRow } from "@/lib/reports/organogram-view-model";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   onClose: () => void;
@@ -262,7 +263,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <input
               aria-label="Search people"
-              className="h-8 min-w-0 flex-1 border border-phx-line bg-white px-2.5 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40"
+              className={`${phxFieldClassName} min-w-0 flex-1`}
               onChange={(event) =>
                 setFilters((previous) => ({ ...previous, search: event.target.value }))
               }

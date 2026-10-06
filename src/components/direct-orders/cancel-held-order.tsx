@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  phxFieldClassName,
+  phxLabelClassName,
+} from "@/components/ui/form-tokens";
 
 type Props = {
   requestId: string;
@@ -11,9 +15,9 @@ type Props = {
   salesValue: number;
 };
 
-const labelClass = "block text-phx-xs font-black uppercase tracking-wider text-slate-500";
+const labelClass = phxLabelClassName;
 const inputClass =
-  "mt-1 w-full border border-phx-line px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400";
+  `${phxFieldClassName} mt-1`;
 
 /**
  * Withdraw a HELD direct order (audit finding F3).

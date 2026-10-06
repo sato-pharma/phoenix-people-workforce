@@ -2,6 +2,7 @@
 
 import { XCircle } from "lucide-react";
 import { useState } from "react";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 /**
  * Call off a marketing request straight from the Super-Admin oversight inbox.
@@ -81,7 +82,7 @@ export function MarketingInboxCancelButton({
     <div className="w-full max-w-xs rounded-sm border border-rose-200 bg-rose-50/40 p-2.5 text-left">
       <p className="text-phx-2xs font-black uppercase tracking-wide text-rose-700">Call off {requestCode}</p>
       <textarea
-        className="mt-1.5 w-full rounded-sm border border-slate-300 px-2.5 py-1.5 text-phx-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+        className={`${phxTextareaClassName} mt-1.5`}
         disabled={busy}
         onChange={(event) => setReason(event.target.value)}
         placeholder="Why is this being called off?"

@@ -36,6 +36,8 @@ import {
   isOutsideCompanyAddress,
   parseTypedEmailAddresses,
 } from "@/lib/sato-email/typed-recipients";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 export type SatoTemplateView = {
   bodyHtml: string;
@@ -108,7 +110,7 @@ type SendResultView = {
 };
 
 const CARD = "rounded-2xl border border-phx-line bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.06)]";
-const FIELD = "w-full border border-phx-line bg-phx-paper px-3 py-2.5 text-sm text-phx-ink";
+const FIELD = cn(phxSelectClassName, "w-full px-3 py-2.5");
 const DARK_BUTTON =
   "inline-flex h-[42px] items-center justify-center gap-1.5 bg-[#0B0B0B] px-4 text-phx-xs font-black text-white transition hover:bg-[#1E293B] disabled:opacity-50";
 const PALE_BUTTON =

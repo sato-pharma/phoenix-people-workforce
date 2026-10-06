@@ -22,6 +22,10 @@ import {
   EMPLOYEE_360_ROLE_ORDER,
   type Employee360RoleCategory,
 } from "@/lib/employee-360/roles";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 export type Employee360ListItem = {
   hrId: string;
@@ -266,7 +270,7 @@ export function EmployeeSearchList({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={`Search ${meta.label.toLowerCase()} by name, HR ID, line, area or manager…`}
-              className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+              className={cn(phxFieldClassName, "pl-9")}
               aria-label="Search employees"
             />
           </div>
@@ -300,7 +304,7 @@ export function EmployeeSearchList({
                 <select
                   value={filters[key]}
                   onChange={(event) => setFilters((prev) => ({ ...prev, [key]: event.target.value }))}
-                  className="h-10 w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+                  className={phxSelectClassName}
                 >
                   <option value="">All {label.toLowerCase()}s</option>
                   {options[key].map((value) => (

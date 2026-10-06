@@ -1,4 +1,9 @@
 import type { EmailActivityData } from "@/lib/email/engagement";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // Presentational, server-rendered. Filters use a plain GET form (no client JS): submitting
 // re-renders the page with new search params.
@@ -34,11 +39,11 @@ export function EmailEngagementView({ data, filters }: { data: EmailActivityData
       <form method="get" className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
         <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
           Search person, email or subject
-          <input className="h-9 w-72 rounded-md border border-slate-300 px-3 text-sm text-slate-900" defaultValue={filters.search} name="search" placeholder="e.g. Anwar, payslip…" type="text" />
+          <input className={cn(phxFieldClassName, "w-72")} defaultValue={filters.search} name="search" placeholder="e.g. Anwar, payslip…" type="text" />
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
           Provider
-          <select className="h-9 rounded-md border border-slate-300 px-2 text-sm text-slate-900" defaultValue={filters.provider} name="provider">
+          <select className={phxSelectClassName} defaultValue={filters.provider} name="provider">
             <option value="all">All</option>
             <option value="resend">Resend</option>
             <option value="brevo">Brevo</option>
@@ -46,7 +51,7 @@ export function EmailEngagementView({ data, filters }: { data: EmailActivityData
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
           Activity
-          <select className="h-9 rounded-md border border-slate-300 px-2 text-sm text-slate-900" defaultValue={filters.activity} name="activity">
+          <select className={phxSelectClassName} defaultValue={filters.activity} name="activity">
             <option value="all">All</option>
             <option value="opened">Opened</option>
             <option value="clicked">Clicked</option>
@@ -56,7 +61,7 @@ export function EmailEngagementView({ data, filters }: { data: EmailActivityData
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
           Window
-          <select className="h-9 rounded-md border border-slate-300 px-2 text-sm text-slate-900" defaultValue={String(filters.days)} name="days">
+          <select className={phxSelectClassName} defaultValue={String(filters.days)} name="days">
             <option value="1">Last 24h</option>
             <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>

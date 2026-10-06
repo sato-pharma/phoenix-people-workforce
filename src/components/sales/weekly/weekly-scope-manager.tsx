@@ -5,6 +5,8 @@ import { useMemo, useState } from "react";
 
 import type { WeeklyProductScopeAdmin, WeeklyScopeAssignment } from "@/lib/sales/weekly/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 export function WeeklyScopeManager({
@@ -74,7 +76,7 @@ export function WeeklyScopeManager({
       <div className="flex flex-wrap items-center gap-2 border border-phx-line bg-white p-3">
         <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Add product owner</span>
         <SearchableSelect
-          className="h-9 min-w-[16rem] border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+          className="h-9 min-w-[16rem] px-2"
           disabled={busy}
           value=""
           onChange={(event) => {
@@ -243,7 +245,7 @@ function EditDrawer({
           <div className="flex items-center gap-2 border border-phx-line px-2">
             <Search className="h-4 w-4 text-phx-ink-faint" />
             <input
-              className="h-9 w-full text-sm text-phx-ink outline-none"
+              className={cn(phxFieldClassName, "h-9 w-full")}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search products…"
               value={query}

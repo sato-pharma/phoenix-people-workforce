@@ -5,6 +5,11 @@ import Link from "next/link";
 
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import type { CompanyRequestItem, CompanyRequestStatusTone } from "@/lib/approvals-hub/service";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 const TONE_CLASSES: Record<CompanyRequestStatusTone, string> = {
   pending: "bg-amber-100 text-amber-700",
@@ -84,7 +89,7 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
             value={employee}
             onChange={(e) => setEmployee(e.target.value)}
             placeholder="Search…"
-            className="h-8 w-44 border border-slate-300 px-2 text-xs focus:border-orange-500 focus:outline-none"
+            className={cn(phxFieldClassName, "w-44")}
           />
         </label>
         <label className="flex flex-col gap-0.5">
@@ -92,7 +97,7 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as typeof status)}
-            className="h-8 border border-slate-300 px-2 text-xs focus:border-orange-500 focus:outline-none"
+            className={phxSelectClassName}
           >
             <option value="all">All</option>
             <option value="pending">Pending</option>
@@ -107,7 +112,7 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
             <select
               value={type}
               onChange={(e) => setType(e.target.value)}
-              className="h-8 border border-slate-300 px-2 text-xs focus:border-orange-500 focus:outline-none"
+              className={phxSelectClassName}
             >
               <option value="all">All</option>
               {types.map((t) => (
@@ -124,7 +129,7 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
-            className="h-8 border border-slate-300 px-2 text-xs focus:border-orange-500 focus:outline-none"
+            className={phxFieldClassName}
           />
         </label>
         <label className="flex flex-col gap-0.5">
@@ -133,7 +138,7 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
-            className="h-8 border border-slate-300 px-2 text-xs focus:border-orange-500 focus:outline-none"
+            className={phxFieldClassName}
           />
         </label>
         {hasFilters ? (

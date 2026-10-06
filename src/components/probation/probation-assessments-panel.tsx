@@ -2,6 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // SFE + HR assessment capture (module completion C3/C4). The report already DISPLAYS assessments; this
 // is the WRITE surface. SFE section is for the SFE Manager / probation admin; HR section for the
@@ -37,7 +42,7 @@ function AssessmentSection({
 
   const scoreNum = score === "" ? null : Number(score);
   const scoreValid = score === "" || (Number.isInteger(scoreNum) && (scoreNum as number) >= scale.min && (scoreNum as number) <= scale.max);
-  const area = "w-full rounded border border-slate-200 px-3 py-2 text-sm";
+  const area = cn(phxTextareaClassName, "w-full px-3 py-2");
 
   async function submit() {
     if (busy || !scoreValid) return;
@@ -86,7 +91,7 @@ function AssessmentSection({
       </div>
       <div className="mt-2 flex flex-wrap items-end gap-3">
         <label className="text-xs text-slate-500">Score ({scale.min}–{scale.max})
-          <input type="number" min={scale.min} max={scale.max} step={1} value={score} onChange={(e) => setScore(e.target.value)} className="mt-1 block h-9 w-24 rounded border border-slate-200 px-2 text-sm" />
+          <input type="number" min={scale.min} max={scale.max} step={1} value={score} onChange={(e) => setScore(e.target.value)} className={cn(phxFieldClassName, "mt-1 block w-24")} />
         </label>
         {!scoreValid && <span className="text-phx-xs text-amber-600">Whole number {scale.min}–{scale.max}, or blank.</span>}
       </div>

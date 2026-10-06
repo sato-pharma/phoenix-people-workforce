@@ -78,6 +78,12 @@ import type {
   PlanPrefillSource,
   VisitDetailInput,
 } from "@/lib/weekly-planning/service";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type PlansWorkspaceProps = {
   access: AccessContext;
@@ -188,11 +194,11 @@ function draftKey(hrId: string, kind: string, startDate: string) {
 
 // Premium field controls (square corners, slate-300 border, orange focus ring) -
 // matched to the Report It module's design language.
-const cin = "h-8 w-full border border-slate-300 bg-white px-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors duration-150 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed";
-const tableSelectClass = "h-10 w-full min-w-0 cursor-pointer rounded-sm border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800 shadow-inner transition-colors duration-150 hover:bg-white focus:border-orange-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
-const tableInputClass = "h-10 w-full min-w-0 rounded-sm border border-orange-200 bg-orange-50/50 px-3 text-sm font-semibold text-slate-800 placeholder:text-orange-400 shadow-inner transition-colors duration-150 focus:border-orange-500 focus:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-60";
+const cin = cn(phxFieldClassName, "h-8 w-full px-2 disabled:text-slate-400");
+const tableSelectClass = `${phxSelectClassName} min-w-0`;
+const tableInputClass = `${phxFieldClassName} min-w-0`;
 // Taller field controls for the touch-friendly mobile bottom-sheet editor.
-const mobileField = "h-11 w-full border border-slate-300 bg-white px-3 text-sm text-slate-800 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors duration-150 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed";
+const mobileField  = phxFieldClassName;
 
 // RowEditSheet's entrance motion. Scoped here (rendered inline by RowEditSheet
 // itself, see below) rather than enterprise-shell.tsx's shared <style> block,
@@ -1094,8 +1100,7 @@ function PlanPeriodControl({
   workweek: PlanWorkweek;
 }) {
   const period = buildEmployeePlanPeriod(activeKind, anchorDate, workweek);
-  const inputClass =
-    "h-10 w-full border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
+  const inputClass  = phxFieldClassName;
 
   if (activeKind === "weekly") {
     return (
@@ -3569,7 +3574,7 @@ function RowEditSheet({
 
           <Field label="Notes">
             <textarea
-              className="min-h-20 w-full border border-orange-200 bg-orange-50/50 p-2.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20 disabled:opacity-60"
+              className={cn(phxTextareaClassName, "min-h-20")}
               disabled={!canEdit}
               onChange={(e) => onDayNote(e.target.value)}
               placeholder="Notes for this day..."
@@ -4116,7 +4121,7 @@ function ReviewCard({
                 ) : null}
               </div>
               <textarea
-                className="mt-3 min-h-20 w-full border border-slate-300 bg-white p-2 text-sm text-slate-800 placeholder:text-slate-400 transition-colors duration-150 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                className={cn(phxTextareaClassName, "mt-3 min-h-20")}
                 onChange={(e) => onComment(e.target.value)}
                 placeholder={
                   type === "hr"

@@ -127,7 +127,7 @@ export function PayrollHistory({
           value={fileSearch}
         />
         <SearchableSelect
-          className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-phx-ink focus:outline-none"
+          className="px-3"
           onChange={(event) => setFileSort(event.target.value)}
           value={fileSort}
         >

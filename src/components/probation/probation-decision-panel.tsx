@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 // Final-decision panel (Phase 10). Rendered on the report only for authorized deciders
 // (CEO / Super Admin / in-scope NSM). Records Pass or Terminate via the decision route. The system
@@ -90,7 +91,7 @@ export function ProbationDecisionPanel({ caseId, employeeName, decisionReady, al
         onChange={(e) => setComment(e.target.value)}
         placeholder="Decision comment (required)…"
         rows={3}
-        className="mt-3 w-full rounded border border-slate-200 px-3 py-2 text-sm"
+        className={`${phxTextareaClassName} mt-3`}
       />
 
       {needsOverride && (
@@ -99,7 +100,7 @@ export function ProbationDecisionPanel({ caseId, employeeName, decisionReady, al
           onChange={(e) => setOverrideReason(e.target.value)}
           placeholder="Override reason — required because the case is not decision-ready…"
           rows={2}
-          className="mt-2 w-full rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm"
+          className={`${phxTextareaClassName} mt-2`}
         />
       )}
 

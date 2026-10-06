@@ -13,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AttendanceException, AttendanceExceptionStatus } from "@/lib/attendance/exceptions";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 type EmployeeOption = { fullName: string; hrId: string };
@@ -193,7 +195,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Employee</label>
               <SearchableSelect
-                className="w-full rounded border border-border bg-background px-3 py-2 text-sm"
+                className="w-full px-3 py-2"
                 value={form.employeeHrId}
                 onChange={(e) => handleFormChange("employeeHrId", e.target.value)}
               >
@@ -209,7 +211,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
               <label className="text-xs font-medium text-muted-foreground">Date</label>
               <input
                 type="date"
-                className="w-full rounded border border-border bg-background px-3 py-2 text-sm"
+                className={phxFieldClassName}
                 value={form.exceptionDate}
                 onChange={(e) => handleFormChange("exceptionDate", e.target.value)}
               />
@@ -219,7 +221,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
               <input
                 type="text"
                 placeholder="e.g. Official field visit, approved by manager"
-                className="w-full rounded border border-border bg-background px-3 py-2 text-sm"
+                className={phxFieldClassName}
                 value={form.reason}
                 onChange={(e) => handleFormChange("reason", e.target.value)}
               />
@@ -228,7 +230,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
               <label className="text-xs font-medium text-muted-foreground">Notes (optional)</label>
               <input
                 type="text"
-                className="w-full rounded border border-border bg-background px-3 py-2 text-sm"
+                className={phxFieldClassName}
                 value={form.notes}
                 onChange={(e) => handleFormChange("notes", e.target.value)}
               />
@@ -236,7 +238,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Status</label>
               <SearchableSelect
-                className="w-full rounded border border-border bg-background px-3 py-2 text-sm"
+                className="w-full px-3 py-2"
                 value={form.status}
                 onChange={(e) => handleFormChange("status", e.target.value)}
               >
@@ -321,7 +323,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
                           <input
                             type="text"
                             placeholder="Notes (optional)"
-                            className="w-28 rounded border border-border bg-background px-2 py-1 text-xs"
+                            className={cn(phxFieldClassName, "w-28")}
                             value={reviewNotes[exc.id] ?? ""}
                             onChange={(e) => setReviewNotes((prev) => ({ ...prev, [exc.id]: e.target.value }))}
                           />

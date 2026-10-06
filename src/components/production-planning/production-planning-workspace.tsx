@@ -101,6 +101,8 @@ import type {
   WireRequestMode,
   WireWorkspace,
 } from "@/lib/production-planning/wire";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * The header rail, mirrored for right-to-left.
@@ -128,9 +130,7 @@ const LTR_HEADER_RAIL =
 
 const PANEL = "border border-slate-300 bg-white px-4 py-4";
 const LABEL = "block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500";
-const INPUT =
-  "mt-1 w-full min-w-0 border border-slate-300 bg-white px-2 py-1.5 text-[13px] text-slate-900 " +
-  "tabular-nums outline-none focus:border-orange-500 disabled:bg-slate-50 disabled:text-slate-400";
+const INPUT = cn(phxSelectClassName, "mt-1 w-full min-w-0 px-2 py-1.5 text-[13px] tabular-nums disabled:text-slate-400");
 const BUTTON =
   "inline-flex items-center justify-center gap-1.5 border border-slate-900 bg-slate-900 px-3 py-1.5 " +
   "text-[12px] font-bold text-white hover:bg-slate-800 disabled:border-slate-300 " +

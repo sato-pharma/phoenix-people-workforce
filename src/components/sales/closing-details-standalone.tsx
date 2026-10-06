@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { ClosingDetailsPanel } from "@/components/sales/closing-details-panel";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 // Standalone mount of the Details tab for the Monthly Closing analytics module. Used by both the
 // admin route and the employee-portal route — the API scopes every read to the caller, so the
@@ -18,8 +19,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 // matching how the rest of Monthly Closing already treats a scoped viewer's line ("the viewer
 // NEVER picks a line — it is resolved from their HR_ID", see monthly-closing-portal.ts).
 
-const selectClassName =
-  "h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
+const selectClassName  = phxSelectClassName;
 
 function PickerOrLocked({
   label,

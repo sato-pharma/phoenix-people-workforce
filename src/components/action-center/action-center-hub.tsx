@@ -25,6 +25,7 @@ import {
 } from "@/lib/marketing-requests/decision-confirm-prompt";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 
 // ── Snooze helpers (localStorage, no backend) ────────────────────────────────
@@ -939,7 +940,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                       setViewAsItems(null);
                       setSelectedId(null);
                     }}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-medium text-slate-700 shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                    className="w-full px-2.5 py-1.5 text-phx-xs"
                   >
                     <option value="">My queue</option>
                     {managers.map((m) => (
@@ -1244,7 +1245,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                     e.target.value = "";
                                   }
                                 }}
-                                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 disabled:opacity-50"
+                                className="w-full px-3 py-2 text-xs"
                               >
                                 <option value="">— Select a template reason —</option>
                                 {REJECTION_TEMPLATES[selected.module].map((t) => (
@@ -1262,7 +1263,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               placeholder="Add a comment or rejection reason…"
                               rows={3}
                               disabled={busy}
-                              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 shadow-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100 disabled:opacity-50"
+                              className={phxTextareaClassName}
                             />
 
                             {error && (

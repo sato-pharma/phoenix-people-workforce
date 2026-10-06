@@ -122,7 +122,7 @@ export function SalaryUploadActions({
         type="file"
       />
       <SearchableSelect
-        className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text focus:outline-none"
+        className="px-3 text-text"
         onChange={(event) => onPayrollMonthChange(event.target.value)}
         value={payrollMonth}
       >
@@ -134,7 +134,7 @@ export function SalaryUploadActions({
         ))}
       </SearchableSelect>
       <SearchableSelect
-        className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text focus:outline-none"
+        className="px-3 text-text"
         onChange={(event) => onPayrollYearChange(event.target.value)}
         value={payrollYear}
       >

@@ -4,6 +4,10 @@ import { AlertTriangle, Loader2, Mail, RefreshCw, Send } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { formatDateValue, formatDateTimeValue } from "@/lib/i18n/format";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 type HeldRequest = {
   blocker: string;
@@ -240,7 +244,7 @@ export function HeldRequestsPanel() {
                       marks the request exempt from the workload check too.
                     </p>
                     <textarea
-                      className="mt-2 w-full rounded-md border border-amber-300 bg-white p-2 text-xs text-slate-900"
+                      className={`${phxTextareaClassName} mt-2`}
                       onChange={(event) => setWaiveReason(event.target.value)}
                       placeholder="Why can this photo never arrive? (required)"
                       rows={2}
@@ -328,21 +332,21 @@ export function HeldRequestsPanel() {
                 </p>
                 <div className="mt-2 grid gap-2 sm:grid-cols-3">
                   <input
-                    className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm"
+                    className={`${phxFieldClassName}`}
                     inputMode="numeric"
                     onChange={(event) => setManual((prev) => ({ ...prev, am: event.target.value }))}
                     placeholder="AM visits"
                     value={manual.am}
                   />
                   <input
-                    className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm"
+                    className={`${phxFieldClassName}`}
                     inputMode="numeric"
                     onChange={(event) => setManual((prev) => ({ ...prev, pm: event.target.value }))}
                     placeholder="PM visits"
                     value={manual.pm}
                   />
                   <input
-                    className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm sm:col-span-1"
+                    className={`${phxFieldClassName} sm:col-span-1`}
                     onChange={(event) => setManual((prev) => ({ ...prev, reason: event.target.value }))}
                     placeholder="Reason (required)"
                     value={manual.reason}

@@ -4,6 +4,8 @@ import * as React from "react";
 import { ChevronDown, Search, X } from "lucide-react";
 
 import { useDropdownPanelPlacement } from "@/hooks/use-dropdown-panel-placement";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // Include-only multiselect, matching the sales filter visual language. Extracted
 // out of roi-filter-engine.tsx so the Marketing Coverage Report's filter panel can
@@ -78,7 +80,7 @@ export function RoiMultiSelect({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={`Search ${label.toLowerCase()}…`}
-              className="h-8 w-full border border-phx-line bg-white pl-8 pr-7 text-sm font-medium text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/10"
+              className={cn(phxFieldClassName, "pl-8 pr-7")}
             />
             {query ? (
               <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-phx-ink-faint transition hover:text-phx-accent">

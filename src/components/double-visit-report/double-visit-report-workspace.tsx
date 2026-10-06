@@ -21,6 +21,10 @@ import type {
   DoubleVisitReportData,
   DoubleVisitReportRow,
 } from "@/lib/double-visit-analytics/types";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 type Tab = "log" | "neverVisited" | "probation";
 
@@ -197,7 +201,7 @@ function DateRangeForm({ dateFrom, dateTo, tab }: { dateFrom: string; dateTo: st
           type="date"
           value={from}
           onChange={(event) => setFrom(event.target.value)}
-          className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-800"
+          className={phxFieldClassName}
         />
       </label>
       <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
@@ -206,7 +210,7 @@ function DateRangeForm({ dateFrom, dateTo, tab }: { dateFrom: string; dateTo: st
           type="date"
           value={to}
           onChange={(event) => setTo(event.target.value)}
-          className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-800"
+          className={phxFieldClassName}
         />
       </label>
       <button
@@ -487,7 +491,7 @@ export function DoubleVisitReportWorkspace({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search name or HR ID…"
-              className="h-9 w-full border border-phx-line bg-white pl-8 pr-2 text-sm text-slate-800"
+              className={cn(phxFieldClassName, "pl-8")}
             />
           </div>
           <button
@@ -513,7 +517,7 @@ export function DoubleVisitReportWorkspace({
             {tab === "log" && (
               <>
                 <FilterField label="Area">
-                  <select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
+                  <select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)} className={phxSelectClassName}>
                     <option value={ALL}>All areas</option>
                     {data.filters.areas.map((area) => (
                       <option key={area} value={area}>{area}</option>
@@ -521,7 +525,7 @@ export function DoubleVisitReportWorkspace({
                   </select>
                 </FilterField>
                 <FilterField label="Region">
-                  <select value={regionFilter} onChange={(event) => setRegionFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
+                  <select value={regionFilter} onChange={(event) => setRegionFilter(event.target.value)} className={phxSelectClassName}>
                     <option value={ALL}>All regions</option>
                     {data.filters.regions.map((region) => (
                       <option key={region} value={region}>{region}</option>
@@ -529,7 +533,7 @@ export function DoubleVisitReportWorkspace({
                   </select>
                 </FilterField>
                 <FilterField label="Job Title">
-                  <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
+                  <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className={phxSelectClassName}>
                     <option value={ALL}>All job titles</option>
                     {data.filters.doubleVisitorRoles.map((role) => (
                       <option key={role} value={role}>{role}</option>
@@ -537,7 +541,7 @@ export function DoubleVisitReportWorkspace({
                   </select>
                 </FilterField>
                 <FilterField label="Double visitor">
-                  <select value={visitorFilter} onChange={(event) => setVisitorFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
+                  <select value={visitorFilter} onChange={(event) => setVisitorFilter(event.target.value)} className={phxSelectClassName}>
                     <option value={ALL}>All double visitors</option>
                     {data.filters.doubleVisitors.map((visitor) => (
                       <option key={visitor} value={visitor}>{visitor}</option>
@@ -545,7 +549,7 @@ export function DoubleVisitReportWorkspace({
                   </select>
                 </FilterField>
                 <FilterField label="Type">
-                  <select value={visitKindFilter} onChange={(event) => setVisitKindFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
+                  <select value={visitKindFilter} onChange={(event) => setVisitKindFilter(event.target.value)} className={phxSelectClassName}>
                     <option value={ALL}>Regular + Campaign</option>
                     {data.filters.visitKinds.map((kind) => (
                       <option key={kind} value={kind}>{kind}</option>
@@ -553,7 +557,7 @@ export function DoubleVisitReportWorkspace({
                   </select>
                 </FilterField>
                 <FilterField label="Time Period">
-                  <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
+                  <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} className={phxSelectClassName}>
                     <option value={ALL}>All periods</option>
                     {periodOptions.map((period) => (
                       <option key={period} value={period}>{period}</option>
@@ -565,7 +569,7 @@ export function DoubleVisitReportWorkspace({
             {tab === "neverVisited" && (
               <>
                 <FilterField label="Area">
-                  <select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
+                  <select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)} className={phxSelectClassName}>
                     <option value={ALL}>All areas</option>
                     {data.filters.areas.map((area) => (
                       <option key={area} value={area}>{area}</option>
@@ -580,7 +584,7 @@ export function DoubleVisitReportWorkspace({
             )}
             {tab === "probation" && (
               <FilterField label="DV status">
-                <select value={dvStatusFilter} onChange={(event) => setDvStatusFilter(event.target.value as typeof dvStatusFilter)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
+                <select value={dvStatusFilter} onChange={(event) => setDvStatusFilter(event.target.value as typeof dvStatusFilter)} className={phxSelectClassName}>
                   <option value={ALL}>All statuses</option>
                   <option value="done">Done</option>
                   <option value="pending">Pending</option>

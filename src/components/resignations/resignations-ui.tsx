@@ -25,6 +25,11 @@ import {
   pageHeaderTitleClassName,
 } from "@/components/admin/admin-design-tokens";
 import { createPortal } from "react-dom";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // ── Hero ─────────────────────────────────────────────────────────────────────
 
@@ -230,7 +235,7 @@ export function RgInput({
 }) {
   return (
     <input
-      className="h-8 w-full border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-400"
+      className={cn(phxFieldClassName, "h-8 w-full px-2.5 text-xs")}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
       type={type}
@@ -250,7 +255,7 @@ export function RgSelect({
 }) {
   return (
     <select
-      className="h-8 w-full border border-slate-200 bg-white px-2 text-xs font-medium text-slate-900 outline-none transition focus:border-orange-400"
+      className={phxSelectClassName}
       onChange={(event) => onChange(event.target.value)}
       value={value}
     >

@@ -20,6 +20,12 @@ import { ExpensesTab } from "./tabs/expenses-tab";
 import { HolidayBridgingTab } from "./tabs/holiday-bridging-tab";
 import { UnpaidVacationTab } from "./tabs/unpaid-vacation-tab";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * KPI-card accent recipe: gradient bg, glow, icon badge, hover lift.
@@ -451,7 +457,7 @@ export function PayrollCopilotWorkbench() {
               <label className="flex flex-col gap-1 text-sm">
                 <span className="text-slate-600">Month</span>
                 <select
-                  className="border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className={phxSelectClassName}
                   value={month}
                   onChange={(event) => setMonth(Number(event.target.value))}
                 >
@@ -465,7 +471,7 @@ export function PayrollCopilotWorkbench() {
               <label className="flex flex-col gap-1 text-sm">
                 <span className="text-slate-600">Year</span>
                 <input
-                  className="w-28 border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className={cn(phxFieldClassName, "w-28")}
                   type="number"
                   value={year}
                   onChange={(event) => setYear(Number(event.target.value))}
@@ -667,7 +673,7 @@ function RunWorkspace(props: {
           </p>
           <textarea
             id="copilot-chat"
-            className="mt-2 h-24 w-full border border-slate-300 px-3 py-2 text-sm"
+            className={cn(phxTextareaClassName, "mt-2 min-h-24")}
             value={chat}
             onChange={(event) => props.onChat(event.target.value)}
             disabled={view.run.status === "drafted"}
@@ -1015,7 +1021,7 @@ function PayrollSheetTable({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search name or HR ID…"
-            className="w-48 border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900 placeholder:text-slate-400"
+            className={cn(phxFieldClassName, "w-48")}
           />
           <div className="flex overflow-hidden border border-slate-600 text-xs font-semibold">
             {STATUS_FILTERS.map((filter) => (
@@ -1185,7 +1191,7 @@ function GroupedQuestionRow({
       {answering ? (
         <div className="mt-2 flex flex-col gap-2 border border-slate-300 bg-slate-50 p-2">
           <textarea
-            className="h-16 w-full border border-slate-300 px-2 py-1 text-xs"
+            className={cn(phxTextareaClassName, "min-h-16")}
             placeholder="One answer, applied to everyone in this group"
             value={text}
             onChange={(event) => setText(event.target.value)}
@@ -1274,7 +1280,7 @@ export function EmployeeRowActions({
           {isHold ? "Hold pay — comment shown on payslip" : "What's wrong?"}
         </p>
         <textarea
-          className="h-16 w-full border border-slate-300 px-2 py-1 text-xs"
+          className={cn(phxTextareaClassName, "min-h-16")}
           placeholder={isHold ? "Reason for the hold (required)" : "Describe the issue"}
           value={text}
           onChange={(event) => setText(event.target.value)}

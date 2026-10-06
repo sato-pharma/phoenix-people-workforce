@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type { CoverageFilterOptions, CoverageFilterSelection } from "@/lib/crm/reps-list-board";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // Client half of Reps List — the Line -> Region -> Area -> Rep cascade.
 //
@@ -40,8 +42,7 @@ const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] t
  * chosen rep's full name is printed in the section heading above it and on every rep card, so the
  * clipped text is a duplicate, never the only copy. Fix a future complaint there, not with a size.
  */
-const SELECT_CLASS =
-  "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 disabled:bg-slate-50 disabled:text-slate-400";
+const SELECT_CLASS = cn(phxSelectClassName, "h-9 w-full px-2 disabled:text-slate-400");
 
 /** The cascade order the owner specified. `clears` is every level below this one. */
 const LEVELS = [

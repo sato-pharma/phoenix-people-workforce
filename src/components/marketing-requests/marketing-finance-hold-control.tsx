@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 /**
  * Place or release the finance hold, from the one screen that reads a request whole.
@@ -75,7 +76,7 @@ export function MarketingFinanceHoldControl({
         Reason
       </label>
       <textarea
-        className="mt-1 w-full border border-slate-300 px-3 py-2 text-phx-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+        className={`${phxTextareaClassName} mt-1`}
         disabled={busy}
         id="finance-hold-reason"
         onChange={(event) => setReason(event.target.value)}

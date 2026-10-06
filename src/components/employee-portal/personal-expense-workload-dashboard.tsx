@@ -53,6 +53,7 @@ import { ExtraTicketRowEditor } from "@/components/outstation/extra-ticket-manag
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { formatOutstationDescriptionInline } from "@/lib/outstation/description-format";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 
 /** Inline relative-date helper for the pending-approval chip ("yesterday", "5 days ago"). */
@@ -153,8 +154,7 @@ type PeriodPreset = "7d" | "30d" | "90d" | "ytd" | "thismonth" | "lastmonth" | "
 
 const cardShadow = "shadow-sm";
 
-const inputClass =
-  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50";
+const inputClass  = phxFieldClassName;
 
 const labelClass =
   "text-phx-2xs font-bold uppercase tracking-wider text-slate-500";
@@ -1720,7 +1720,7 @@ export function PersonalExpenseWorkloadDashboard({
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-phx-xs">
             {categoryBreakdown.data.map((entry) => (
               <span className="inline-flex items-center gap-1.5 text-slate-600" key={entry.name}>
-                <span className="h-2 w-2 " style={{ backgroundColor: entry.color }} />
+                <span className="h-2 w-2" style={{ backgroundColor: entry.color }} />
                 {entry.name}: <strong className="text-slate-800">{formatMoney(entry.value)}</strong>
               </span>
             ))}
@@ -1745,7 +1745,7 @@ export function PersonalExpenseWorkloadDashboard({
                   <div key={status.name}>
                     <div className="flex items-center justify-between text-phx-sm">
                       <span className="inline-flex items-center gap-2 font-medium text-slate-700">
-                        <span className="h-2 w-2 " style={{ backgroundColor: status.color }} />
+                        <span className="h-2 w-2" style={{ backgroundColor: status.color }} />
                         {status.name}
                       </span>
                       <span className="font-bold text-slate-800">
@@ -1757,10 +1757,10 @@ export function PersonalExpenseWorkloadDashboard({
                       aria-valuemax={100}
                       aria-valuemin={0}
                       aria-valuenow={pct}
-                      className="mt-1 h-1.5 overflow-hidden  bg-slate-100"
+                      className="mt-1 h-1.5 overflow-hidden bg-slate-100"
                       role="progressbar"
                     >
-                      <div className="h-full " style={{ width: `${pct}%`, backgroundColor: status.color }} />
+                      <div className="h-full" style={{ width: `${pct}%`, backgroundColor: status.color }} />
                     </div>
                   </div>
                 );
@@ -2401,16 +2401,16 @@ export function PersonalExpenseWorkloadDashboard({
                         <StatusPill category={category} />
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-phx-xs text-slate-600">
-                        <span className=" bg-slate-100 px-1.5 py-0.5 font-semibold">
+                        <span className="bg-slate-100 px-1.5 py-0.5 font-semibold">
                           {trip.fromCity || "?"} → {trip.toCity || "?"}
                         </span>
                         {trip.requestType && (
-                          <span className=" bg-slate-100 px-1.5 py-0.5">
+                          <span className="bg-slate-100 px-1.5 py-0.5">
                             {trip.requestType}
                           </span>
                         )}
                         {trip.transportationType && (
-                          <span className=" bg-slate-100 px-1.5 py-0.5">
+                          <span className="bg-slate-100 px-1.5 py-0.5">
                             {trip.transportationType}
                           </span>
                         )}
@@ -2501,7 +2501,7 @@ export function PersonalExpenseWorkloadDashboard({
                 <span>Rows</span>
                 <SearchableSelect
                   aria-label="Rows per page"
-                  className="h-7 border border-slate-300 bg-white px-1.5 text-phx-xs font-semibold text-slate-700 outline-none focus:border-orange-300"
+                  className="h-7 px-1.5 text-phx-xs"
                   onChange={(event) => {
                     setPageSize(Number(event.target.value) as 10 | 25 | 50 | 100);
                     setPage(1);

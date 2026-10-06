@@ -13,6 +13,8 @@ import { Card } from "@/components/ui/card";
 import type { AdminMonitoringStats } from "@/lib/operations/events";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 function formatActivityTimestamp(value: string | null) {
   return value
@@ -338,7 +340,7 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
               <label className="relative block min-w-[220px]">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                  className={cn(phxFieldClassName, "pl-9")}
                   defaultValue={activitySearch}
                   name="search"
                   placeholder="Filter HR ID, name, event..."
@@ -346,7 +348,7 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
                 />
               </label>
               <SearchableSelect
-                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                className="px-3"
                 defaultValue={activityTypeFilter}
                 name="type"
               >
@@ -358,7 +360,7 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
                 ))}
               </SearchableSelect>
               <SearchableSelect
-                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                className="px-3"
                 defaultValue={activitySort}
                 name="sort"
               >
@@ -368,7 +370,7 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
               <label className="relative inline-flex h-10 min-w-[120px] items-center rounded-xl border border-slate-200 bg-white pr-3 text-sm font-medium text-slate-700">
                 <span className="px-2 text-xs text-slate-500">Page size</span>
                 <input
-                  className="h-full w-full rounded-r-xl border-l border-slate-200 bg-transparent pl-2 pr-2 text-sm font-semibold text-slate-700 outline-none"
+                  className="h-full w-full border-l border-slate-200 bg-transparent pl-2 pr-2 text-sm font-semibold text-slate-700 outline-none"
                   defaultValue={activityPageSize}
                   min={1}
                   name="pageSize"

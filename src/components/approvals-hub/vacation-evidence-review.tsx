@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { VacationEvidenceReview, VacationEvidenceReviewStatus, VacationEvidenceType } from "@/lib/vacation/types";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   evidenceType: VacationEvidenceType;
@@ -61,7 +62,7 @@ export function VacationEvidenceReviewActions({ evidenceType, existingReview, re
         Evidence review — <span className="text-slate-700">{STATUS_LABEL[status]}</span>
       </p>
       <textarea
-        className="w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+        className={phxTextareaClassName}
         onChange={(event) => setNote(event.target.value)}
         placeholder="HR review note"
         rows={2}

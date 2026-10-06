@@ -41,6 +41,10 @@ import {
 } from "@/lib/recruitment/cv-folder-tree";
 import type { Candidate } from "@/lib/recruitment/types";
 import { cn } from "@/lib/utils";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 /**
  * The rows and memberships, exactly as the page loaded them.
@@ -363,7 +367,7 @@ export function CvFolderCabinet({
                       {/* A native select, never shrunk — the owner's rule. `w-full sm:w-auto` lets it
                           take its own line on a phone instead of squeezing the label off screen. */}
                       <select
-                        className="w-full border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink sm:w-auto"
+                        className={cn(phxSelectClassName, "sm:w-auto")}
                         disabled={busy}
                         onChange={(event) => {
                           const value = event.target.value;
@@ -400,7 +404,7 @@ export function CvFolderCabinet({
                   {adding ? (
                     <div className="mt-2 space-y-2">
                       <input
-                        className="w-full border border-phx-line bg-white px-2 py-1 text-[12px] text-phx-ink"
+                        className={phxFieldClassName}
                         onChange={(event) => setSearch(event.target.value)}
                         placeholder="Search by name, phone or email"
                         type="search"
@@ -486,7 +490,7 @@ export function CvFolderCabinet({
                       <label className="flex flex-wrap items-center gap-1.5 text-[12px] font-semibold text-phx-ink-2">
                         Send to
                         <select
-                          className="w-full border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink sm:w-auto"
+                          className={cn(phxSelectClassName, "sm:w-auto")}
                           disabled={busy}
                           onChange={(event) => setDestination(event.target.value)}
                           value={destination}

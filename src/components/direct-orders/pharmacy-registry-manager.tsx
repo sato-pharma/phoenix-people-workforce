@@ -18,6 +18,8 @@ import {
   venueTypeLabel,
   type VenueTypeChoice,
 } from "@/lib/venues/venue-type";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type AreaOption = { areaCode: string; areaName: string; regionCode: string; regionName: string };
 type BrickOption = {
@@ -283,7 +285,7 @@ export function PharmacyRegistryManager({
     setNewContact(null);
   }
 
-  const inputClass = "w-full border border-slate-300 px-2 py-1.5 text-sm";
+  const inputClass  = phxFieldClassName;
   // One vocabulary for count AND filter, so a chip can never claim 37 while the list shows a
   // different 37.
   const gapCounts = countVenueGaps(rows);
@@ -331,7 +333,7 @@ export function PharmacyRegistryManager({
 
       <div className="flex flex-wrap items-center gap-3">
         <input
-          className="w-72 border border-slate-300 px-3 py-1.5 text-sm"
+          className={cn(phxFieldClassName, "w-72")}
           placeholder="Search by venue, Phoenix code, distributor or customer code…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}

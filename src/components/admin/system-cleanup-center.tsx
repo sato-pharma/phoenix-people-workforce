@@ -26,6 +26,7 @@ import type {
   SystemCleanupTarget,
 } from "@/lib/admin/system-cleanup";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 
 type FilterState = {
@@ -273,7 +274,7 @@ export function SystemCleanupCenter({
             <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
               Module
               <SearchableSelect
-                className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
+                className="mt-1 w-full px-3"
                 onChange={(event) => setFilters((current) => ({ ...current, moduleKey: event.target.value as FilterState["moduleKey"] }))}
                 value={filters.moduleKey}
               >
@@ -286,7 +287,7 @@ export function SystemCleanupCenter({
             <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
               Status
               <Input
-                className="mt-1 h-10"
+                className="mt-1"
                 onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value || "all" }))}
                 placeholder="all"
                 value={filters.status === "all" ? "" : filters.status}
@@ -295,7 +296,7 @@ export function SystemCleanupCenter({
             <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
               Safety
               <SearchableSelect
-                className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
+                className="mt-1 w-full px-3"
                 onChange={(event) => setFilters((current) => ({ ...current, safetyState: event.target.value as FilterState["safetyState"] }))}
                 value={filters.safetyState}
               >
@@ -308,7 +309,7 @@ export function SystemCleanupCenter({
             <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
               From
               <Input
-                className="mt-1 h-10"
+                className="mt-1"
                 onChange={(event) => setFilters((current) => ({ ...current, dateFrom: event.target.value }))}
                 type="date"
                 value={filters.dateFrom}
@@ -317,7 +318,7 @@ export function SystemCleanupCenter({
             <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
               To
               <Input
-                className="mt-1 h-10"
+                className="mt-1"
                 onChange={(event) => setFilters((current) => ({ ...current, dateTo: event.target.value }))}
                 type="date"
                 value={filters.dateTo}
@@ -498,7 +499,7 @@ export function SystemCleanupCenter({
                 <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                   Cleanup note (optional)
                   <textarea
-                    className="mt-2 min-h-28 w-full resize-y rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-900 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    className={cn(phxTextareaClassName, "mt-2 min-h-28")}
                     onChange={(event) => {
                       setReason(event.target.value);
                       setExecuteError(null);

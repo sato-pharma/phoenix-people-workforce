@@ -5,6 +5,8 @@ import { useState } from "react";
 
 import type { CoverageFilterSelection } from "@/lib/crm/coverage-filters";
 import { PLAN_STATUS_FILTERS, type PlanStatusCounts, type PlanStatusFilter } from "@/lib/crm/plan-status-filter";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * The status filter on Reps Weekly Plans.
@@ -31,8 +33,7 @@ const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] t
  * `max(16px, 1em)` below 768px, so a smaller class computes to 16px anyway — and if it ever did
  * apply it would reintroduce the iOS Safari focus-zoom that rule exists to kill.
  */
-const SELECT_CLASS =
-  "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 disabled:bg-slate-50 disabled:text-slate-400";
+const SELECT_CLASS = cn(phxSelectClassName, "h-9 w-full px-2 disabled:text-slate-400");
 
 /**
  * What each option is called.

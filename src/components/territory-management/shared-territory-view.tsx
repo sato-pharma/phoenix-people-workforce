@@ -15,6 +15,10 @@ import type {
   PreviewAreaBricks,
   PreviewRegion,
 } from "@/lib/territory-management/preview-links";
+import {
+  phxLabelClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 type Props = { browserKey: string | null; token: string };
 
@@ -177,8 +181,8 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
   }, [area, maps]);
 
   const selectClass =
-    "mt-1 w-full border border-slate-300 bg-white px-3 py-2 text-sm focus:border-orange-500 focus:outline-none";
-  const labelClass = "block text-phx-xs font-black uppercase tracking-wider text-slate-500";
+    `${phxSelectClassName} mt-1`;
+  const labelClass = phxLabelClassName;
 
   const chooseRegion = useCallback((next: string) => {
     setRegionCode(next);

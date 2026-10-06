@@ -534,7 +534,7 @@ export function PlanningCalendar({
             <span className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
-                className="h-10 w-full rounded-sm border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
+                className="h-10 w-full border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Employee, area, rep"
                 value={query}
@@ -544,7 +544,7 @@ export function PlanningCalendar({
           <label className="block">
             <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Activity</span>
             <SearchableSelect
-              className="h-10 w-full rounded-sm border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
+              className="w-full px-3 ring-1 ring-transparent"
               onChange={(event) => setActivityFilter(event.target.value)}
               value={activityFilter}
             >
@@ -559,7 +559,7 @@ export function PlanningCalendar({
           <label className="block">
             <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Region</span>
             <SearchableSelect
-              className="h-10 w-full rounded-sm border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
+              className="w-full px-3 ring-1 ring-transparent"
               onChange={(event) => setRegionFilter(event.target.value)}
               value={regionFilter}
             >

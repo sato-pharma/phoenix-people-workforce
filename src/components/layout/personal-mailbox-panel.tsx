@@ -41,6 +41,10 @@ import type {
   PersonalMailboxSummary,
 } from "@/lib/personal-mailbox/types";
 import { cn } from "@/lib/utils";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 /** What the person names the app password in Turbify — distinct from the monitor's `imap` entry, so
  *  deleting one can never be mistaken for the other. */
@@ -993,7 +997,7 @@ function Composer({
       {field(
         "To",
         <input
-          className={cn("h-10 w-full border px-3 text-sm font-semibold outline-none", colors.input)}
+          className={cn(phxFieldClassName, "w-full", colors.input)}
           dir="ltr"
           onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))}
           placeholder="name@example.com, another@example.com"
@@ -1003,7 +1007,7 @@ function Composer({
       {field(
         "Cc",
         <input
-          className={cn("h-10 w-full border px-3 text-sm font-semibold outline-none", colors.input)}
+          className={cn(phxFieldClassName, "w-full", colors.input)}
           dir="ltr"
           onChange={(event) => setDraft((current) => ({ ...current, cc: event.target.value }))}
           value={draft.cc}
@@ -1012,7 +1016,7 @@ function Composer({
       {field(
         "Subject",
         <input
-          className={cn("h-10 w-full border px-3 text-sm font-semibold outline-none", colors.input)}
+          className={cn(phxFieldClassName, "w-full", colors.input)}
           dir="auto"
           onChange={(event) => setDraft((current) => ({ ...current, subject: event.target.value }))}
           value={draft.subject}
@@ -1021,7 +1025,7 @@ function Composer({
       {field(
         "Message",
         <textarea
-          className={cn("min-h-40 w-full resize-y border px-3 py-2.5 text-sm font-medium leading-6 outline-none", colors.input)}
+          className={cn(phxTextareaClassName, "min-h-40 w-full leading-6", colors.input)}
           dir="auto"
           onChange={(event) => setDraft((current) => ({ ...current, body: event.target.value }))}
           value={draft.body}

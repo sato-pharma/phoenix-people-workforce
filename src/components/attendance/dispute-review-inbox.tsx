@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { disputeSalaryFallbackText } from "@/lib/attendance/digest-rules.ts";
 import type { PendingDispute } from "@/lib/attendance/digest-service.ts";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 // Square edges (owner rule 2026-09-04) and no horizontal scroll at any width: each
 // dispute is a stacked block rather than a table, so nothing needs a min-width and
@@ -157,7 +158,7 @@ export function DisputeReviewInbox({ initialDisputes, initialError }: Props) {
                 Note to the employee (optional, shown on their page)
               </label>
               <textarea
-                className="mt-2 w-full border border-slate-300 bg-white p-2 text-sm text-slate-800"
+                className={`${phxTextareaClassName} mt-2`}
                 dir="auto"
                 id={`note-${dispute.lineId}`}
                 onChange={(event) =>

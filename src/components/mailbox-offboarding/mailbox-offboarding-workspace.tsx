@@ -67,6 +67,11 @@ import type {
   MailboxOffboardingTask,
 } from "@/lib/mailbox-offboarding/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 type StatusFilter = "action" | "half" | "progress" | "revoked" | "all";
 
@@ -339,7 +344,7 @@ function StepPanel({
               <label className="block text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
                 What happened to it
                 <select
-                  className="mt-1 block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
+                  className={`${phxSelectClassName} mt-1 block`}
                   onChange={(event) =>
                     onDraftChange({ disposition: event.target.value as MailboxDisposition })
                   }
@@ -357,7 +362,7 @@ function StepPanel({
                   <label className="block text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
                     Forwarding to
                     <input
-                      className="mt-1 block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
+                      className={`${phxFieldClassName} mt-1 block`}
                       onChange={(event) => onDraftChange({ forwardingTo: event.target.value })}
                       placeholder="manager@satopharma.com"
                       type="email"
@@ -367,7 +372,7 @@ function StepPanel({
                   <label className="block text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
                     Remove forwarding on
                     <input
-                      className="mt-1 block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
+                      className={`${phxFieldClassName} mt-1 block`}
                       onChange={(event) => onDraftChange({ forwardingExpiresOn: event.target.value })}
                       type="date"
                       value={draft.forwardingExpiresOn}
@@ -380,7 +385,7 @@ function StepPanel({
             <label className="block text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
               {draft.kind === "reopen" ? "Why this is being reopened" : "Why there is nothing to revoke"}
               <textarea
-                className="mt-1 block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
+                className={`${phxTextareaClassName} mt-1 block`}
                 onChange={(event) => onDraftChange({ reason: event.target.value })}
                 rows={2}
                 value={draft.reason}
@@ -541,7 +546,7 @@ function DispositionCell({
     return (
       <div className="w-full min-w-0 space-y-1">
         <select
-          className="block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
+          className={`${phxSelectClassName} block`}
           onChange={(event) => onChange({ disposition: event.target.value as MailboxDisposition })}
           value={draft.disposition}
         >
@@ -554,14 +559,14 @@ function DispositionCell({
         {draft.disposition === "forwarding" ? (
           <div className="space-y-1">
             <input
-              className="block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
+              className={`${phxFieldClassName} block`}
               onChange={(event) => onChange({ forwardingTo: event.target.value })}
               placeholder="manager@satopharma.com"
               type="email"
               value={draft.forwardingTo}
             />
             <input
-              className="block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
+              className={`${phxFieldClassName} block`}
               onChange={(event) => onChange({ forwardingExpiresOn: event.target.value })}
               type="date"
               value={draft.forwardingExpiresOn}
@@ -652,7 +657,7 @@ function ReasonCell({
     return (
       <div className="w-full min-w-0 space-y-1 text-left">
         <textarea
-          className="block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
+          className={`${phxTextareaClassName} block`}
           onChange={(event) => onChange({ reason: event.target.value })}
           placeholder={
             draft.kind === "reopen" ? "Why this is being reopened" : "Why there is nothing to revoke"
@@ -749,7 +754,7 @@ function BulkBar({
       {step === "disposition" ? (
         <span className="flex flex-wrap items-center gap-1">
           <select
-            className="border border-white/30 bg-white px-2 py-1 text-[11px] font-bold text-slate-900"
+            className={phxSelectClassName}
             onChange={(event) => onDispositionChange(event.target.value as MailboxDisposition)}
             value={disposition}
           >

@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 /**
  * The requester's answer to a return: correct the order and send it back up the SAME chain.
@@ -125,7 +130,7 @@ export function DirectOrderCorrectResubmit({
                 min={1}
                 value={nextQty}
                 onChange={(event) => setNextQty(event.target.value)}
-                className="mt-1 w-full border border-[#d8dee3] px-2 py-1.5 text-sm font-semibold"
+                className={`${phxFieldClassName} mt-1`}
               />
             </label>
 
@@ -134,7 +139,7 @@ export function DirectOrderCorrectResubmit({
               <select
                 value={nextDeal}
                 onChange={(event) => setNextDeal(event.target.value === "discount" ? "discount" : "bonus")}
-                className="mt-1 w-full border border-[#d8dee3] px-2 py-1.5 text-sm font-semibold"
+                className={`${phxSelectClassName} mt-1`}
               >
                 <option value="bonus">Bonus</option>
                 <option value="discount">Discount</option>
@@ -149,7 +154,7 @@ export function DirectOrderCorrectResubmit({
                   min={0}
                   value={nextBonus}
                   onChange={(event) => setNextBonus(event.target.value)}
-                  className="mt-1 w-full border border-[#d8dee3] px-2 py-1.5 text-sm font-semibold"
+                  className={`${phxFieldClassName} mt-1`}
                 />
               </label>
             ) : (
@@ -161,7 +166,7 @@ export function DirectOrderCorrectResubmit({
                   max={100}
                   value={nextDiscount}
                   onChange={(event) => setNextDiscount(event.target.value)}
-                  className="mt-1 w-full border border-[#d8dee3] px-2 py-1.5 text-sm font-semibold"
+                  className={`${phxFieldClassName} mt-1`}
                 />
               </label>
             )}
@@ -174,7 +179,7 @@ export function DirectOrderCorrectResubmit({
                 type="date"
                 value={nextCollectionDate}
                 onChange={(event) => setNextCollectionDate(event.target.value)}
-                className="mt-1 w-full border border-[#d8dee3] px-2 py-1.5 text-sm font-semibold"
+                className={`${phxFieldClassName} mt-1`}
               />
             </label>
           </div>
@@ -187,7 +192,7 @@ export function DirectOrderCorrectResubmit({
               value={note}
               onChange={(event) => setNote(event.target.value)}
               rows={2}
-              className="mt-1 w-full border border-[#d8dee3] px-2 py-1.5 text-sm font-semibold"
+              className={`${phxTextareaClassName} mt-1`}
               placeholder="e.g. Reduced the bonus to 20 units as requested."
             />
           </label>
