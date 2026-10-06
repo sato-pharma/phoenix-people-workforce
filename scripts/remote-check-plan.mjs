@@ -227,3 +227,142 @@ export function buildLockfileScript({ remoteRoot, runId, sha, prelude = [] }) {
   );
   return lines.join("\n") + "\n";
 }
+
+// ---------------------------------------------------------------------------------------------
+// WHEN THE BOX IS BUSY: WAIT, OR PAY FOR GITHUB ACTIONS
+// ---------------------------------------------------------------------------------------------
+// 🔴 THE OWNER'S POLICY, 2026-10-06: THE BOX BY DEFAULT BECAUSE IT IS FREE, GITHUB ACTIONS WHEN THE
+// WORK CANNOT WAIT. The refusal above this (`not starting a second one`) is right about the box and
+// wrong about the session: it ends the run with no route forward, so a session invents its own retry
+// loop and the work stalls behind another session's check. Measured 2026-10-06: five consecutive
+// refusals over six minutes while one `all` run held the box, with a finished branch waiting to open
+// its PR. Nothing was wrong with the branch and nothing was wrong with the box — the work was simply
+// parked behind a 7.4 GB build on a 7,740 MB machine.
+//
+// So the decision is made HERE, as data, with three outcomes and no hidden fourth:
+//   run      — the box is free; nothing changes, and this is still the default path.
+//   poll     — the caller asked to wait (`--wait <minutes>`): sleep, print a line, ask again.
+//   actions  — the wait is spent (or none was asked for) and `--actions` is armed: dispatch ci.yml.
+//   refuse   — the wait is spent and nothing else is armed: exit 2 exactly as before.
+//
+// 🔴 WAITING IS VISIBLE OR IT IS A HANG. The comment on the refusal says a lock "makes the second run
+// sit silently for up to half an hour, which reads as a hang", and that is the real objection to
+// queueing — not the waiting itself. Every poll therefore prints the runs it is waiting for and how
+// much of the budget is left, so a quiet terminal always means something is wrong.
+
+/** How long between asking the box again whether it is free. */
+export const BUSY_POLL_SECONDS = 30;
+
+/** `--urgent` is this wait plus `--actions` — long enough for a typecheck to clear, short enough to matter. */
+export const URGENT_WAIT_MINUTES = 4;
+
+/**
+ * Flags are parsed, never filtered away.
+ *
+ * 🔴 THIS FILE USED TO IGNORE EVERY `-` ARGUMENT SILENTLY (`argv.filter((a) => !a.startsWith("-"))`),
+ * which is the same defect `scripts/rollup-prs.mjs` refuses by name: a misspelled flag runs the OLD
+ * behaviour and reports success, so the caller believes it got something it never asked for. An
+ * unknown flag is returned to the caller, which dies on it.
+ *
+ * @param {string[]} argv the arguments after the script name.
+ * It also returns the POSITIONAL arguments, because a flag's VALUE is positional and the check-name
+ * parser must never see it: `--wait 3` would otherwise leave a bare `3` behind, which reads as a
+ * check called "3" and dies with a message about check names.
+ *
+ * @returns {{ positional: string[], waitMinutes: number, actions: boolean, unknown: string[], urgent: boolean }}
+ */
+export function parseEscalation(argv) {
+  let waitMinutes = 0;
+  let actions = false;
+  let urgent = false;
+  const unknown = [];
+  const positional = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (!arg.startsWith("-")) {
+      positional.push(arg);
+      continue;
+    }
+    if (arg === "--actions" || arg === "--else-actions") {
+      actions = true;
+      continue;
+    }
+    if (arg === "--urgent") {
+      urgent = true;
+      actions = true;
+      waitMinutes = Math.max(waitMinutes, URGENT_WAIT_MINUTES);
+      continue;
+    }
+    const inline = /^--wait=(.*)$/.exec(arg);
+    const value = inline ? inline[1] : argv[i + 1];
+    if (arg === "--wait" || inline) {
+      const minutes = Number(value);
+      if (!Number.isFinite(minutes) || minutes < 0 || minutes > 60) {
+        unknown.push(arg + " " + String(value) + " (minutes, 0-60)");
+        continue;
+      }
+      waitMinutes = minutes;
+      if (!inline) i += 1;
+      continue;
+    }
+    unknown.push(arg);
+  }
+  return { positional, waitMinutes, actions, unknown, urgent };
+}
+
+/**
+ * What to do about a busy box, as a pure decision.
+ *
+ * @param {{ busyRuns: string[], waitedSeconds: number, waitMinutes: number, actions: boolean }} input
+ * @returns {{ action: "run"|"poll"|"actions"|"refuse", waitLeftSeconds: number }}
+ */
+export function decideBusyAction({ busyRuns, waitedSeconds, waitMinutes, actions }) {
+  if (!busyRuns || busyRuns.length === 0) return { action: "run", waitLeftSeconds: 0 };
+  const budget = Math.round((waitMinutes || 0) * 60);
+  const left = budget - (waitedSeconds || 0);
+  if (left > 0) return { action: "poll", waitLeftSeconds: left };
+  return { action: actions ? "actions" : "refuse", waitLeftSeconds: 0 };
+}
+
+/**
+ * Grade a dispatched GitHub Actions run — ALLOW-LISTING success, never deny-listing the unfinished
+ * states.
+ *
+ * 🔴 A WATCHER THAT `continue`s ON A LIST OF UNFINISHED STATES CALLS AN UNKNOWN STATE GREEN. That is a
+ * measured failure in this repository (`a-padded-short-sha-422s-and-a-fallthrough-watcher-calls-it-green`):
+ * a loop skipping `queued|in_progress|""` met a 422 error body, matched none of them, fell out of the
+ * loop and printed its success line. So the only verdicts here are an explicit `completed/success`
+ * (pass) and an explicit `completed/failure` (fail); `cancelled`, `timed_out`, `skipped`, `neutral`,
+ * `action_required` and `startup_failure` are NO VERDICT, which is a retry and never a green.
+ *
+ * 🔴 AND A RUN IS ONLY EVIDENCE ABOUT THE SHA IT RAN. `gh workflow run` takes a REF, so the run checks
+ * whatever that branch pointed at when it started — which is not the local commit if a push is
+ * missing or someone else pushed. A mismatch is NO VERDICT, with the shas named.
+ *
+ * `conclusion` is `null`, not absent, while a run is unfinished — the type says so, because a
+ * caller that cannot pass what GitHub actually returns would be typed into skipping that case.
+ *
+ * @param {{ headSha?: string | null, status?: string, conclusion?: string | null, url?: string } | null | undefined} run
+ * @param {string} wantSha the 40-char sha the caller actually asked about.
+ * @returns {{ settled: boolean, verdict: "pass"|"fail"|"no-verdict"|"pending", why: string }}
+ */
+export function gradeActionsRun(run, wantSha) {
+  if (!run) return { settled: false, verdict: "pending", why: "no dispatched run has appeared yet" };
+  if (run.headSha && run.headSha !== wantSha) {
+    return {
+      settled: true,
+      verdict: "no-verdict",
+      why: "the run is about " + String(run.headSha).slice(0, 9) + ", not " + wantSha.slice(0, 9),
+    };
+  }
+  if (run.status !== "completed") {
+    return { settled: false, verdict: "pending", why: "status " + String(run.status || "unknown") };
+  }
+  if (run.conclusion === "success") return { settled: true, verdict: "pass", why: "completed/success" };
+  if (run.conclusion === "failure") return { settled: true, verdict: "fail", why: "completed/failure" };
+  return {
+    settled: true,
+    verdict: "no-verdict",
+    why: "completed/" + String(run.conclusion || "unknown") + " — not a verdict about the code",
+  };
+}
