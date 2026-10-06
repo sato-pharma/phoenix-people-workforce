@@ -1,6 +1,7 @@
 {
   "a-403-on-a-phoenix-crm-route-proves-nothing": "platform",
   "a-background-poller-dies-with-the-worktree-it-runs-in": "git-worktrees",
+  "a-backtick-in-a-regex-literal-blinds-a-comment-only-guard": "sessions",
   "a-branch-behind-main-reads-as-unshipped-under-a-byte-test": "notifications",
   "a-break-that-passes-may-be-rescued-not-correct": "notifications",
   "a-broken-rsc-page-still-returns-http-200": "platform",
@@ -1048,6 +1049,7 @@
   "the-closing-functions-disagree-on-the-line-argument": "sales-closing",
   "the-delete-guard-now-has-a-named-file-stand-down": "sessions",
   "the-delete-guard-reads-a-variable-named-rm-as-rm": "sessions",
+  "the-edit-tool-resolves-a-unicode-escape-into-the-character": "notifications",
   "the-email-import-allowlist-holds-an-inbox-not-a-sender": "recruitment",
   "the-four-shapes-a-stale-citation-sweep-misreads": "sessions",
   "the-house-document-identity-standard": "hiring-documents",

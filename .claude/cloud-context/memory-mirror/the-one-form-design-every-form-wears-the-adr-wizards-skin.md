@@ -1,6 +1,6 @@
 ---
 name: the-one-form-design-every-form-wears-the-adr-wizards-skin
-description: "Every form in the system wears the Adverse Drug Reaction wizard's skin — strings in src/components/ui/form-tokens.ts, components in form-kit.tsx, ratchet at ZERO, h-8/h-9 dense controls AND the dark login screen kept out by his own 2026-10-06 rulings — and the fourteen codemod traps, including a build failure that lint and typecheck both passed and 177 overrides a template literal silently threw away"
+description: "Every form in the system wears the Adverse Drug Reaction wizard's skin — strings in src/components/ui/form-tokens.ts, components in form-kit.tsx, ratchet at ZERO, h-8/h-9 dense controls AND every dark ground kept out by his own 2026-10-06 rulings — and the fifteen codemod traps, including a build failure that lint and typecheck both passed and 177 overrides a template literal silently threw away"
 metadata:
   node_type: memory
   type: project
@@ -39,7 +39,7 @@ their box from a parent, plus the printed-document editors under `hiring-pack/` 
 exempt under the house document identity. The ADR form itself now CONSUMES the kit, which is what
 makes "change the token and the system follows" true.
 
-🔴 **Fourteen codemod traps, every one of which cost a re-run:**
+🔴 **Fifteen codemod traps, every one of which cost a re-run:**
 1. **Dropping a field's `pl-9` puts the magnifier on top of the text.** Side padding *larger* than
    the token's own `px-3` is icon clearance, not skin; the first pass broke ~45 search boxes.
 2. **A regex that ends a JSX tag at the first `>` ends it inside `(e) => …`** — the attribute list
@@ -102,9 +102,17 @@ makes "change the token and the system follows" true.
     `bg-white/[0.045]`, white text, `#ff7900` focus, `h-12`/`h-14`, `text-base`). The light token
     turned the login fields into white boxes on a dark panel — the screen every employee meets
     first — and only half of them, because one of the two kept its overrides. Restored byte for
-    byte; `src/components/auth/` is in the guard's `EXEMPT` list. 🔴 **HIS OWN RULING, 2026-10-06** —
-    asked whether the front door should wear the design too he answered *"keep the login screen out of
-    the form design"*, so never bring `auth/` into line later and never ask him again.
+    byte; `src/components/auth/` is in the guard's `EXEMPT` list. 🔴 **AND THE FRONT DOOR STAYING
+    OUT IS HIS OWN RULING, 2026-10-06** — asked whether the login screen should wear the design too he
+    answered *"keep the login screen out of the form design"*.
+    🔴 **THEN EVERY OTHER DARK GROUND BECAME HIS RULING TOO, the same day.** Told that the two admin
+    menus, the black sidebar's search (`bg-[#000000]`), the weekly Field Force band and the weekly
+    column editor's near-black select (`bg-[#020617]`) had been restored on the SWEEP's judgement
+    rather than his, he answered *"keep the dark menus and bands out of the form design too"*. So a
+    dark ground is exempt BY HIS DECISION, not a session's taste: the light token is never prepended
+    to a control sitting on one, none is converted later, and he is never asked again. Two of those
+    grounds are arbitrary hex, so a sweep looking for colour NAMES cannot see them — read the ground
+    from the container, never from the control's own class string.
 
 12. 🔴 **FILTERING A SCAN'S GENERIC MATCHES KILLS THE TRUE POSITIVE WITH THE NOISE.** The scan
     that looked for pinned literals the branch had removed returned 21 hits, nearly all noise
@@ -130,6 +138,22 @@ makes "change the token and the system follows" true.
     and `<SearchableSelect>` carry the token; only a RAW `<input>`/`<select>`/`<textarea>` must name
     its own ground.
 
+15. 🔴 **AN `EXEMPT` LIST STOPS THE RATCHET COUNTING A FILE — IT DOES NOT KEEP THAT FILE'S
+    CONTROL DARK.** Four of the five restored dark grounds survived the branch; the admin
+    sidebar's module search did not, and SHIPPED in #5382 as `cn(phxFieldClassName, "pl-9 pr-8")`
+    — a lit white box inside a bare `bg-[#000000]` sidebar, on every admin page — precisely
+    because exempting the FILE made the guard look away from the control that needed watching.
+    `DARK_GROUND_KEEPS` in `tests/form-design-system.test.ts` now asserts the fragment that
+    MAKES each of the six dark controls dark. **An exemption is the absence of a rule; his
+    ruling needed the presence of one.**
+    🔴 **The audit that found it is the one to repeat:** scan every file importing a token (283)
+    for a control whose CONTAINER is dark — 33 candidates, 23 of them a light body under a dark
+    HEADER STRIP (resolve those mechanically on whether a light ground is re-declared between the
+    two), 10 read by hand, 9 noise. The tenth, the payroll copilot's sheet search, sits in a
+    `bg-slate-900` band and was a deliberate WHITE box there before the sweep too — his design,
+    not a loss. **Always compare against the pre-sweep file before calling a white control on a
+    dark band a defect.**
+
 🔴 **And a quoted bash heredoc on this machine HALVED the backslashes in a JS regex literal** —
 `/[^"\\]/` landed as `/[^"\]/`, which matched nothing and reported "0 controls" with no error at all.
 Write a script with the file tool, or scan instead of matching.
@@ -140,5 +164,12 @@ ZERO**, refuses a template-literal override, and asserts its own scan still find
 with ~1,171 reaching a token — because a cap of zero would otherwise pass on a scan that had
 quietly stopped finding anything. Never raise it. Hook: `AGENTS.md` §4, "How to build". Account:
 `docs/agents-owner-rules.md`, "The one form design".
+
+**Shipped 2026-10-06** as PR **#5382**, squash `20c8cf573` — 346 files, and it took FOUR runs of
+`remote-check all` on the box: three found a real defect the design had broken (the approvals reason
+box's 16px, a moved reference after the shell was lifted into the kit, the expense review's money
+field), and the fourth was clean. The sweep also took the body-portal radius ratchet in
+`tests/square-edge-portal-ratchet.test.ts` from **173 to 156** — seventeen rounded corners in
+components that mount outside both shells, where no `globals.css` sweep reaches.
 
 Related: [[never-horizontal-scroll-always-mobile-and-desktop-friendly]], [[the-house-document-identity-standard]].

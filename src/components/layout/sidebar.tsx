@@ -75,7 +75,6 @@ import {
 } from "@/lib/navigation/active-path";
 import { applyPersonalLayout, type PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
 import { cn } from "@/lib/utils";
-import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 // ── Shared admin palette — matches the top navigation bar exactly ────────────
 const ADMIN_SIDEBAR_BG = "bg-[#000000]";
@@ -1181,7 +1180,10 @@ function SidebarNav({
             <input
               ref={searchInputRef}
               aria-label="Search modules"
-              className={cn(phxFieldClassName, "pl-9 pr-8")}
+              // 🔴 HIS RULING, 2026-10-06: "keep the dark menus and bands out of the form
+              // design too". The admin sidebar is a bare `bg-[#000000]`, so the light form token
+              // made this a lit white box in the chrome of every admin page. Dark, verbatim.
+              className="h-9 w-full border border-white/10 bg-white/5 pl-9 pr-8 text-phx-md font-semibold text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-phx-accent-line focus:bg-white/[0.08] focus:ring-2 focus:ring-phx-accent/25"
               onChange={(event) => setSearchQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
