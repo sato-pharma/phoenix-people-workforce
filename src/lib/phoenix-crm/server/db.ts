@@ -8,6 +8,7 @@
 
 import { ApiError } from "@/lib/http/api-errors";
 import { CUSTOMER_PHONE_ERROR } from "@/lib/phoenix-crm/entry-rules";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Refusal = { status: number; message: string };
@@ -177,6 +178,61 @@ export function chunk<T>(values: ReadonlyArray<T>, size = 200): T[][] {
   const chunks: T[][] = [];
   for (let index = 0; index < values.length; index += size) chunks.push(values.slice(index, index + size));
   return chunks;
+}
+
+/**
+ * The id list for a `.in()`, cleaned: nullish and empty ids dropped (a single `null` reaches Postgres
+ * as the text `"null"` and 22P02s the whole read) and the rest de-duplicated. `new Set(...)` alone does
+ * not save you — it keeps one copy of the null.
+ */
+export function dedupeIds(ids: ReadonlyArray<string | null | undefined>): string[] {
+  return [...new Set(ids.filter((id): id is string => typeof id === "string" && id.length > 0))];
+}
+
+/**
+ * The largest id chunk `selectByIds` sends in one `.in()`. The request URL is echoed back,
+ * percent-encoded, in the `Content-Location` response header, which crosses undici's 16 KB cap at
+ * ~395 uuid ids — so this stays well under it. (postgrest-in-with-hundreds-of-ids-silently-returns-nothing.)
+ */
+export const IN_ID_CHUNK = 150;
+
+/**
+ * Read every row of `table` whose `idColumn` is one of `ids` — safely, whatever the size of the field.
+ *
+ * A PostgREST `.in()` puts the id list in the request URL, which fails THREE ways and only one is
+ * quiet (see the memory note `postgrest-in-with-hundreds-of-ids-silently-returns-nothing`):
+ *   1. a few hundred ids make the URL — echoed back, percent-encoded, in the `Content-Location`
+ *      RESPONSE header — cross undici's 16 KB header cap, and node's `fetch` throws
+ *      `UND_ERR_HEADERS_OVERFLOW` ("fetch failed"), which reads as a network fault. The cliff is ~395
+ *      ids. This is what took the Place checks page down once the active-place list grew past it;
+ *   2. a single `null`/empty id reaches Postgres as the text `"null"` and 22P02s the WHOLE read;
+ *   3. an un-paged read stops dead at PostgREST's 1,000-row cap with no error and no marker.
+ *
+ * So the ids are de-duplicated and nullish ones dropped, each id chunk is kept well under the cliff,
+ * and every chunk is keyset-paged on `id`. `columns` MUST therefore include `id`.
+ */
+export async function selectByIds<T extends Record<string, unknown> = Record<string, unknown>>(
+  table: string,
+  columns: string,
+  idColumn: string,
+  ids: ReadonlyArray<string | null | undefined>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tune?: (query: any) => any,
+): Promise<T[]> {
+  const unique = dedupeIds(ids);
+  if (unique.length === 0) return [];
+  const rows: T[] = [];
+  for (const part of chunk(unique, IN_ID_CHUNK)) {
+    const page = await fetchAllRowsKeyset<T>(
+      () => {
+        const base = getSupabaseAdmin().from(table).select(columns).in(idColumn, part);
+        return tune ? tune(base) : base;
+      },
+      { cursorColumn: "id", cursorOf: (row) => (row.id == null ? null : String(row.id)) },
+    );
+    rows.push(...page);
+  }
+  return rows;
 }
 
 export function numberOrNull(value: unknown): number | null {

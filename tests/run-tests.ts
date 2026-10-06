@@ -1750,6 +1750,7 @@ import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
 import { runPhoenixCrmListCustomerFixtureTests } from "./phoenix-crm-list-customer-fixture.test.ts";
+import { runPhoenixCrmPlaceChecksInOverflowTests } from "./phoenix-crm-place-checks-in-overflow.test.ts";
 import { runPhoenixCrmPlanSuggestTests } from "./phoenix-crm-plan-suggest.test.ts";
 import { runPhoenixCrmPlanInsightTests } from "./phoenix-crm-plan-insight.test.ts";
 import { runCustomerIdentitySuggestionTests } from "./customer-identity-suggestions.test.ts";
@@ -6510,6 +6511,11 @@ await runTest(
 await runTest(
   "Phoenix CRM lets the Super Admin refuse a validation the Google check never held (2026-10-03, after one had to be undone in SQL): the check covers AM customers only, so a doctor's validation is never held and the page now lists every place validated in the last 30 days that is still in use and not already waiting in the queue; the service asks who before it reads anything, demands a written reason, refuses a place already retired, writes the SAME review row the automatic check would have written — in the rep's name, reason refused_by_admin — runs the SAME reject RPC so there is one audit shape, and measures every visit to that customer again; the screen arms the button only after the reason is typed, fits the screen as a fixed table and phone cards with no scroller, ellipsis or round corner, and nothing the rep receives says a person refused him",
   runPhoenixCrmRefuseValidationTests,
+);
+
+await runTest(
+  "Phoenix CRM Place checks survives a grown field (production outage 2026-10-07: the page crashed with UND_ERR_HEADERS_OVERFLOW once active places crossed ~395): the id-keyed reads go through selectByIds, which dedupes and drops nullish ids, keeps every .in() chunk (IN_ID_CHUNK) below the ~395 overflow cliff and keyset-pages each chunk on id so the 1,000-row cap cannot shorten it; dedupeIds drops nulls and empties and keeps order; and neither loadValidatedPlaces nor loadValidationReviews issues a bare .in() any more",
+  runPhoenixCrmPlaceChecksInOverflowTests,
 );
 
 await runTest(
