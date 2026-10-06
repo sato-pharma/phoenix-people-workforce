@@ -30,6 +30,7 @@ import {
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { chunkIds } from "@/lib/recruitment/db-batch";
+import { managerHoldCutoffIso } from "@/lib/recruitment/manager-hold-window";
 import {
   isAfter,
   listLatestSendByCandidate,
@@ -811,11 +812,17 @@ export async function getCandidate(id: string): Promise<Candidate | null> {
  * whatever the dropdown carried and the caller's is whatever their session carries — PostgREST eq
  * is case-sensitive, and a filter matching nothing is indistinguishable from "nothing was sent to
  * you". That exact mistake made the manager dropdown empty earlier today.
+ *
+ * NOTHING OLDER THAN 45 DAYS, from either source (manager-hold-window.ts). The owner, 2026-10-06:
+ * *"Never a CV stay at a district manager account or any manager account more than 45 days."* A CV
+ * the recruiter sends again is a new row timestamp, so it starts a fresh 45 days; one that is not
+ * re-sent drops off this list the second it is 45 days old, and the daily run takes its status back.
  */
 export async function listCandidatesSentToManager(managerHrId: string | null | undefined): Promise<Candidate[]> {
   const keys = hrIdLookupKeys(managerHrId);
   if (keys.length === 0) return [];
   const supabase = recruitmentDb();
+  const now = new Date();
 
   // TWO SOURCES, UNIONED — and the union is the safety, not indecision.
   //
@@ -829,12 +836,16 @@ export async function listCandidatesSentToManager(managerHrId: string | null | u
   // the migration being applied, and reading only the old column is the bug being fixed. Reading
   // BOTH means a send shows up if EITHER recorded it, which is the only combination with no window
   // where a manager is shown an empty page that means the opposite of what it says.
-  const sends = await listSendsForManager(managerHrId);
+  const sends = await listSendsForManager(managerHrId, now);
 
   const legacy = await supabase
     .from("ats_candidates")
     .select("*")
     .in("manager_notified_hr_id", keys)
+    // A stamp with no date is not provably inside the window, and `gte` drops a NULL — the same
+    // fail-closed answer manager-hold-window.ts gives. Every real send also has a row in the table
+    // above, so this costs a manager nothing he is entitled to.
+    .gte("manager_notified_at", managerHoldCutoffIso(now))
     .order("manager_notified_at", { ascending: false });
   if (legacy.error) {
     // 42703 = the column does not exist, which is the pre-migration state and NOT a fault of this

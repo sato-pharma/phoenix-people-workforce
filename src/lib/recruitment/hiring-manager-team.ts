@@ -35,12 +35,13 @@ import {
   type TeamManager,
   type TeamRosterEntry,
 } from "@/lib/recruitment/hiring-manager-team-scope";
+import { isWithinManagerHold, managerHoldCutoffIso } from "@/lib/recruitment/manager-hold-window";
 import type { TeamCandidateFile } from "@/lib/recruitment/types";
 import type { Candidate } from "@/lib/recruitment/types";
 
 /** A manager in the picker, with the one number that decides whether it is worth opening. */
 export type TeamManagerWithCounts = TeamManager & {
-  /** CVs a recruiter pushed to them, all time. */
+  /** CVs a recruiter pushed to them and that are still inside their 45 days with him. */
   cvCount: number;
   /** …of those, the ones still waiting for their answer. */
   awaitingCount: number;
@@ -104,7 +105,11 @@ async function countPushesByManager(managerHrIds: readonly string[]): Promise<Ma
     const { data, error } = await supabase
       .from("ats_candidates")
       .select("manager_notified_hr_id,status")
-      .in("manager_notified_hr_id", chunk);
+      .in("manager_notified_hr_id", chunk)
+      // The picker's number must be the number of CVs the list behind it will show, and that list
+      // holds a CV for 45 days at most (manager-hold-window.ts). A count that kept the expired ones
+      // would read "14 CVs" over a manager whose page opens empty.
+      .gte("manager_notified_at", managerHoldCutoffIso());
     if (error) {
       // 42703 = the column predates migration 20260815180000_candidate_manager_push. Absent counts
       // are a worse answer than zero counts, but they are not this caller's fault and must not take
@@ -218,8 +223,12 @@ export async function isCandidateWithinViewerTeam(access: AccessContext, candida
     .eq("id", candidateId)
     .maybeSingle();
   if (error) throw error;
-  const stamped = (data as { manager_notified_hr_id?: unknown } | null)?.manager_notified_hr_id;
+  const row = data as { manager_notified_hr_id?: unknown; manager_notified_at?: unknown } | null;
+  const stamped = row?.manager_notified_hr_id;
   if (!stamped) return false;
+  // Past its 45 days the CV is no longer "sitting with" that manager, so it is not in his viewer's
+  // team scope either (manager-hold-window.ts) — the same cutoff the list and the picker count use.
+  if (!isWithinManagerHold(String(row?.manager_notified_at ?? ""))) return false;
   const roster = await loadTeamRoster();
   return canViewerSeeManagerCandidates({
     managerHrId: String(stamped),

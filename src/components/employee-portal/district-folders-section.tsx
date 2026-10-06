@@ -7,6 +7,7 @@ import { CandidateReturnControl } from "@/components/employee-portal/candidate-r
 import { Card } from "@/components/ui/card";
 import type { CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
+import { MANAGER_HOLD_DAYS } from "@/lib/recruitment/manager-hold-window";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
 
 /**
@@ -38,7 +39,7 @@ export function DistrictFoldersSection({
   callClaims,
   files,
   heading = "Your areas",
-  subheading = "Every area you hold in the organogram, and the CVs of applicants who asked to work in it or whose CV places them there. Open a folder to read them.",
+  subheading = `Every area you hold in the organogram, and the CVs of applicants who asked to work in it or whose CV places them there. Open a folder to read them. A CV stays in a folder for ${MANAGER_HOLD_DAYS} days from the day it arrived, then goes back to the recruitment team.`,
   viewerHrId,
   ownFolders = false,
   rescreenBanner,
@@ -335,6 +336,10 @@ function RescreenBanner() {
             If a CV is not for one of your areas, open the card and use{" "}
             <span className="font-semibold text-amber-700">Return to administrator</span> with a reason. It goes
             straight back to the recruitment team and leaves your folder.
+          </p>
+          <p className="max-w-3xl text-sm leading-relaxed text-slate-600">
+            A CV stays in your folders for {MANAGER_HOLD_DAYS} days from the day it arrived. After that it goes back
+            to the recruitment team on its own, so please decide on each one before then.
           </p>
         </div>
       </div>

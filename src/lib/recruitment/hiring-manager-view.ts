@@ -40,6 +40,7 @@ import {
 } from "@/lib/recruitment/hiring-manager-team";
 import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
 import { recordManagerCvOpen } from "@/lib/recruitment/manager-cv-engagement";
+import { isWithinManagerHold } from "@/lib/recruitment/manager-hold-window";
 import { isCandidateSentToManager } from "@/lib/recruitment/manager-sends";
 import { getRequisition } from "@/lib/recruitment/requisitions";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
@@ -65,8 +66,18 @@ export async function isCandidateSentToCaller(access: AccessContext, candidateId
     .eq("id", candidateId)
     .maybeSingle();
   if (error) throw error;
-  const stamped = (data as { manager_notified_hr_id?: unknown } | null)?.manager_notified_hr_id;
-  if (Boolean(stamped) && hrIdsMatch(String(stamped), access.hrId)) return true;
+  const row = data as { manager_notified_hr_id?: unknown; manager_notified_at?: unknown } | null;
+  const stamped = row?.manager_notified_hr_id;
+  // THE STAMP COUNTS ONLY INSIDE ITS 45 DAYS (manager-hold-window.ts). The list this gate guards
+  // stops showing a CV the second it is 45 days old; a gate that kept answering yes would let a
+  // manager open, by id, a CV that is no longer in his account.
+  if (
+    Boolean(stamped) &&
+    hrIdsMatch(String(stamped), access.hrId) &&
+    isWithinManagerHold(String(row?.manager_notified_at ?? ""))
+  ) {
+    return true;
+  }
 
   // TWO SOURCES, for the same reason the manager's LIST reads two. This column holds only the LAST
   // manager a CV was sent to, so on its own it hands the file to the most recent recipient and

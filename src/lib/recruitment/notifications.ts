@@ -1,8 +1,10 @@
 // Recruitment / ATS — scheduled work. Composed into the single daily cron
 // (app/api/notifications/daily) — do NOT add a new Vercel cron (Hobby limit = 2).
 //
-// Three jobs run here:
+// Five jobs run here:
 //   - remind interviewers of interviews scheduled for the next day;
+//   - take back the CVs that have sat 45 days with their managers (`manager-hold-return.ts`) —
+//     FIRST, so the next job never chases a manager about a CV he no longer holds;
 //   - chase CVs that were sent to a hiring manager and never answered (`stale-send-check.ts`);
 //   - report CVs nobody has looked at yet (`triage-backlog-check.ts`);
 //   - warn before the owner's live CV-lifecycle sheet loses its feed token
@@ -21,6 +23,7 @@ import {
   runCvLifecycleLinkExpiryCheck,
   type CvLifecycleLinkExpiryRunResult,
 } from "@/lib/recruitment/cv-lifecycle-link-expiry-alert";
+import { runManagerHoldReturn, type ManagerHoldReturnResult } from "@/lib/recruitment/manager-hold-return";
 import { runStaleSendCheck, type StaleSendRunResult } from "@/lib/recruitment/stale-send-check";
 import { runTriageBacklogCheck, type TriageBacklogRunResult } from "@/lib/recruitment/triage-backlog-check";
 
@@ -29,6 +32,7 @@ export type RecruitmentDailyResult =
       ok: true;
       cvLifecycleLinkExpiry: CvLifecycleLinkExpiryRunResult;
       interviewReminders: number;
+      managerHoldReturn: ManagerHoldReturnResult;
       staleSends: StaleSendRunResult;
       triageBacklog: TriageBacklogRunResult;
     }
@@ -36,6 +40,7 @@ export type RecruitmentDailyResult =
       ok: false;
       cvLifecycleLinkExpiry: CvLifecycleLinkExpiryRunResult | null;
       interviewReminders: 0;
+      managerHoldReturn: ManagerHoldReturnResult | null;
       staleSends: StaleSendRunResult | null;
       triageBacklog: TriageBacklogRunResult | null;
       error: string;
@@ -76,7 +81,12 @@ async function sendInterviewReminders(): Promise<number> {
 }
 
 export async function runRecruitmentDailyNotifications(): Promise<RecruitmentDailyResult> {
-  // The stale-send check runs FIRST and independently of the reminders, because it swallows its own
+  // The 45-day return runs before everything else, and the order is the point: it moves a CV out of
+  // `sent_to_manager`, and the stale-send check below reads exactly that status. Run second, the
+  // check would nudge a manager about a CV this step had just taken back and escalate it to the desk
+  // as "stuck". Like its neighbours it swallows its own errors and returns a verdict.
+  const managerHoldReturn = await runManagerHoldReturn();
+  // The stale-send check runs next and independently of the reminders, because it swallows its own
   // errors and returns a verdict. If it ran second and the reminder loop threw, the check would be
   // skipped entirely on that day’s run — and the whole point of it is to notice silence.
   const staleSends = await runStaleSendCheck();
@@ -90,12 +100,13 @@ export async function runRecruitmentDailyNotifications(): Promise<RecruitmentDai
   const cvLifecycleLinkExpiry = await runCvLifecycleLinkExpiryCheck();
   try {
     const interviewReminders = await sendInterviewReminders();
-    return { ok: true, cvLifecycleLinkExpiry, interviewReminders, staleSends, triageBacklog };
+    return { ok: true, cvLifecycleLinkExpiry, interviewReminders, managerHoldReturn, staleSends, triageBacklog };
   } catch (error) {
     return {
       ok: false,
       cvLifecycleLinkExpiry,
       interviewReminders: 0,
+      managerHoldReturn,
       staleSends,
       triageBacklog,
       error: error instanceof Error ? error.message : "Recruitment daily processing failed.",
