@@ -22,6 +22,7 @@ import {
   PRODUCTION_PLANNING_TABS,
   PRODUCTION_PLANNING_TABS_EN,
   productionPlanningStrings,
+  storedPlanTitle,
   SUPPLIER_LABELS,
   SUPPLIER_LABELS_EN,
 } from "../src/lib/production-planning/strings.ts";
@@ -326,10 +327,46 @@ export function runProductionPlanningStringsTests() {
   // both readers meet later in the same Plans list, so following the saver would mix two languages
   // in one list. This pin is here so a later session cannot read it as a hole the guard above
   // missed and "fix" it onto the bundle — which is exactly how a settled ruling gets undone.
+  //
+  // 🔴 Pinned by the VALUE, not by the source text. Until 2026-10-06 this asserted that
+  // `service.ts` still CONTAINED a particular template literal, which is a weaker thing than it
+  // looks: a rewrite that reads the bundle can still satisfy a regex, prettier reflowing the line
+  // breaks the pin while the behaviour is untouched, and the assertion never once evaluated the
+  // string the database receives. `storedPlanTitle` exists so this can assert the string itself.
+  assert.equal(
+    storedPlanTitle("شراب أيفيرونك", "3"),
+    "شراب أيفيرونك — 3 تشغيلة",
+    "the stored plan title is <product> — <runs> تشغيلة, in Arabic, built without consulting any language",
+  );
+  // The ruling is "Arabic WHOEVER saves it", so the value must not vary with the toggle. The
+  // function takes no language and cannot, which is the point — this asserts the English unit word
+  // is absent rather than trusting the signature, because a later edit could thread one through.
+  assert.ok(
+    !storedPlanTitle("Ivyronc syrup", "3").includes(PP_EN.unitRuns),
+    `the stored title must never carry the English unit word "${PP_EN.unitRuns}" — the Plans list is one language for both readers`,
+  );
+  assert.equal(
+    storedPlanTitle("شراب أيفيرونك", "3"),
+    storedPlanTitle("شراب أيفيرونك", "3"),
+    "the stored title depends only on its arguments",
+  );
+  // The figure is passed through EXACTLY as savePlan formatted it. Its `runs` is already a
+  // `formatNumberLatin` string, so re-formatting here would be a second spelling of the module's
+  // Latin-digit rule — and that rule only ever breaks one way, a `toLocaleString` under an Arabic
+  // locale emitting ٠١٢٣. A separator-carrying figure makes a silent re-format visible.
+  assert.equal(
+    storedPlanTitle("شراب أيفيرونك", "1,200"),
+    "شراب أيفيرونك — 1,200 تشغيلة",
+    "the runs figure is stored exactly as savePlan formatted it — this function must not re-format it",
+  );
+  // And the row really is built from that function. Without this, `savePlan` could go back to
+  // interpolating the title inline and every value assertion above would still pass while the
+  // database received something else. This is the one fingerprint worth keeping, and it is short
+  // enough to survive a reflow of the line.
   assert.match(
     serviceCode,
-    /const title = asText\(body\.title\) \?\? `\$\{result\.productNameAr\} — \$\{result\.runs\} \$\{PP\.unitRuns\}`;/,
-    "the stored plan title must stay Arabic, built from PP and not from the language bundle",
+    /storedPlanTitle\(result\.productNameAr, result\.runs\)/,
+    "savePlan must store the title storedPlanTitle builds, not one it re-derives inline",
   );
 
   // The refusals that name a material: present in both languages, different in both, and each owning
