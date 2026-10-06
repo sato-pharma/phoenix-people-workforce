@@ -69,6 +69,35 @@ That mattered because the ship skill reads this check before every merge. A pre-
 wolf is one people learn to wave through, which is the same failure as not having it — and the
 2026-09-30 incident it was built for is the case where waving through costs three production deploys.
 
+## What this corrected (2026-10-06) — the two APIs spell MEDIUM differently
+
+The same cry-wolf failure returned from the opposite direction, and the fail-closed rule above is
+what let it: `KNOWN_SEVERITIES` listed `low, moderate, high, critical`. **The REST endpoint this
+tool reads — `repos/<repo>/dependabot/alerts` — answers `medium`.** `moderate` is the GraphQL and
+`npm audit` spelling. So every MEDIUM alert fell outside the known set, was graded urgent by the
+unreadable-severity rule, and printed as:
+
+```
+WILL FAIL CI: UNREADABLE-SEVERITY(medium) — graded urgent because it could not be graded
+```
+
+under a headline `2 open HIGH+ alert(s)`. Measured against the live endpoint on 2026-10-06:
+`postcss-selector-parser` (GHSA-rj75-hqrm-r3gf, CVSS **5.9**) and `sprintf-js`
+(GHSA-hp3w-g68c-fv3c, CVSS **5.3**) both answered `severity: "medium"`. Neither can fail
+`--audit-level=high`; `sprintf-js` has **no patched version at any version**, so once again the
+instruction the tool gave could not be followed by anyone.
+
+🔴 **The tell was in the message itself: a severity the line can PRINT is not a severity it could
+not READ.** `UNREADABLE-SEVERITY(medium)` names the value it claims to have failed to read. Any
+future report of that shape means a spelling is missing from the set, never that GitHub sent
+nothing — and the fix is to add the spelling, never to widen `AUDIT_FAILING_SEVERITIES`, which
+remains `high` and `critical` alone.
+
+This does not soften the fail-closed argument, it pays its known price. Grading an absent severity
+as urgent is still right; the bug was treating a *stated* severity as absent. Pinned by case **3b**
+in `tests/dependabot-alerts.test.ts`, which asserts both spellings land below the gate and that
+neither is described as unreadable.
+
 ## The standing decisions, per advisory
 
 The policy above says an unreachable alert is reported rather than bumped. That is the *rule*. This
@@ -167,6 +196,41 @@ What this acceptance does and does not say:
 - **anything is next built or distributed from `mobile/package-lock.json`** → the `node-forge`
   integrity finding is re-judged first, on its own merits, by whoever owns that artifact. An
   acceptance recorded against a CI gate is not a clearance for a shipped binary.
+
+### `sprintf-js` — GHSA-hp3w-g68c-fv3c · MEDIUM (CVSS 5.3)
+
+| | |
+| --- | --- |
+| **Decision** | **Not yet made — this row is the basis for it, not the decision itself.** The findings below are measured; whether to remove the dependency is the owner's call. |
+| Alert | #116, opened 2026-10-06 05:56 Cairo, root `pnpm-lock.yaml` |
+| Scope | **`runtime`** — it IS in the production graph, so scope is not what makes this quiet |
+| Severity | **MEDIUM**, so `--audit-level=high` does not fail on it. This is the alert that exposed the `medium`/`moderate` spelling bug above |
+| Patched version | **none at any version** — every published release, 0.0.7 through 1.1.3, is inside `<= 1.1.3` |
+| How it arrives | `sprintf-js@1.0.3` ← `argparse@1.0.10` ← **`mammoth@1.12.3`**, a production dependency (the .docx reader behind CV extraction) |
+| What it is | Denial of service through unbounded precision specifiers in `sprintf` |
+| Impact vector | `C:N/I:N/A:L` — **availability only, and LOW.** No confidentiality or integrity impact |
+
+**It is never loaded, and that is measured rather than assumed.** `argparse` is referenced in
+exactly one file of the installed `mammoth` package — `node_modules/mammoth/bin/mammoth`, the
+command-line tool — and in its `package.json`. A full require-graph walk from the library entry
+`mammoth/lib/index.js` visited **78 files and never reached `argparse`**. Phoenix only ever uses the
+library API (`import * as mammoth from "mammoth"` in `src/lib/recruitment/cv-extraction.ts`, calling
+`mammoth.extractRawText`), and nothing in this repository runs the `mammoth` binary. So the package
+is on disk and never required: the vulnerable `sprintf` is never called, by us or by mammoth.
+
+**What it would take to remove it.** `mammoth@1.12.3` and the current `1.13.0` both declare
+`argparse: ~1.0.3`, so bumping mammoth does not help. `argparse@2` has **no dependencies at all**,
+so a `pnpm.overrides` entry forcing it would delete the chain outright — at the cost of a real risk
+to the .docx reader, since argparse 2 dropped APIs its CLI uses. That is a live option with a live
+cost, **not an impossibility**: an earlier draft of this page's sibling note called this dependency
+"permanently unfixable" and that was wrong on both counts — see the 2026-10-06 section above, and
+`proxy-addr`, which was called the same thing and was bumped by hand the same day.
+
+**Why it is worth a row despite being below the gate.** The alert's own creation, at 05:56:00, is
+what triggered the Dependabot updater runs four seconds later; those runs failed
+`security_update_not_possible` — correctly, there is nothing to update to — and **that withheld the
+production deploy of the commit merged seconds earlier**. So an alert that cannot fail `validate`
+still cost a deploy. The mechanism is recorded in `docs/agents-session-traps-clusters.md`.
 
 ## Reading it
 

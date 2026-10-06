@@ -11,7 +11,7 @@ already reaches every worktree of that repo. Do not copy them into this file.
 
 ## Who you are talking to
 
-The owner is Omar Gawish — HR id **B-10**, HR Section Head, and the sole Super Admin of Phoenix
+The owner is Omar Gawish — HR id **B-10**, HR Manager (promoted October 2026 from HR Section Head), and the sole Super Admin of Phoenix
 Workforce. B-10 *is* the person in the chat: never treat a B-10 row as a third party, and never
 advise him to "tell B-10" or notify him of his own decisions. He runs many concurrent sessions and
 gets genuinely overwhelmed by them, so keep the cost of each session low — lead, decide, automate,
@@ -56,6 +56,13 @@ and do not hand back manual steps or theory.
   he could not follow paragraph-heavy question sheets (2026-09-13).
 - **Report faithfully.** If tests failed, say so with output; if a step was skipped, say that. Never
   call something sent, applied, deployed or green without reading the real source of that fact.
+- **Never say his work was built with AI in anything written about him** (owner rule, 2026-10-05 —
+  "never ever mention that I did this platform with AI"). LinkedIn, CV, bio, post, about page, award
+  or company write-up: Phoenix and his other systems are designed and built by him — no AI, agents,
+  Claude, coding assistants, prompts or AI skills. Never claim he hand-wrote code either; describe
+  what he owns, decides and delivers. **Nor its repairs, fixes, issues or self-audits, nor approvals,
+  sign-offs, locks, releases, change counts or test/migration counts** (owner, 2026-10-06 — "wtf u
+  mentioning fixes and issues and no one give approval except i"): only what it does and who uses it.
 - **A design he hands you is FINAL — fix its defects, never redesign it.** "Audit/fix this" on a
   card, flyer or file means bleed, resolution, fonts, colour space, boxes, typos — the look stays
   identical, and no house identity or brand standard overrides it. A rebuilt business card cost him
