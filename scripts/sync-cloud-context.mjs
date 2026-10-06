@@ -59,6 +59,14 @@ const PINNED_HOOKS = [
   'next-step-capture.mjs',
   'risky-allow-guard.mjs',
   'memory-guard.mjs',
+  // The fifth, and the one with the most teeth: it STOPS processes. Added 2026-10-06 at the owner's
+  // instruction, after a sweep found it already carried a 68-case suite that nothing anywhere ran —
+  // not this list, not `claude-scripts-backup.mjs`, not a repo test. It had been invisible for the
+  // identical reason the risky-allow guard's suite was: it dispatches on `--selftest`, so the bare
+  // word `selftest` prints nothing and exits 0, which is indistinguishable from a file that has no
+  // selftest at all. Its own suite is pure functions only — it starts and ends no process — so it is
+  // safe for CI to run.
+  'dev-server-reaper.mjs',
 ];
 const HOOKS_DIR = process.env.PHX_HOOKS_DIR || path.join(os.homedir(), '.claude', 'hooks');
 
