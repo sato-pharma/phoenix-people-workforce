@@ -176,4 +176,35 @@ export function runLoginFormLocatorContractTests() {
         `so the click resolves to two elements and fails strict mode.`,
     );
   }
+  // Each setup must keep its OWN stored session. That is the one property a copy-paste between
+  // these files destroys while every locator assertion above still passes — caught for real on
+  // 2026-10-07, when a rebase of this very change overwrote tests/e2e/auth.setup.ts with the
+  // synthetic setup's body: both files then stored state at tests/synthetic/.auth/admin.json and
+  // the e2e setup read SYNTHETIC_ADMIN_* env vars, which are unset in the job that runs the login
+  // smoke. The locators were correct in both copies; only the identity had moved, and the smoke
+  // would have failed on main — withholding a production deploy exactly as #5418 did.
+  const stateOwners = new Map();
+  for (const setupPath of SETUPS) {
+    // No escape sequences in this extraction on purpose: the declaration is found by index and
+    // the value by a quote-only pattern, so nothing here can be mangled by a shell heredoc.
+    const setupSource = read(setupPath);
+    const at = setupSource.indexOf("AUTH_STATE_PATH =");
+    const declared = at < 0 ? null : setupSource.slice(at, at + 240).match(/"([^"]+)"/);
+    assert.ok(
+      declared,
+      `${setupPath} no longer declares AUTH_STATE_PATH. Each login setup writes its own storage ` +
+        `state file, and this check is what proves two of them have not been collapsed into one.`,
+    );
+    const path = declared[1];
+    const owner = stateOwners.get(path);
+    assert.ok(
+      owner === undefined,
+      `${setupPath} stores its browser state at "${path}", which ${owner} already owns. Two login ` +
+        `setups sharing a state file means one was overwritten with the other's body — they then ` +
+        `log in as the wrong account, or with env vars the job does not set, and the failure lands ` +
+        `on main where it withholds the production deploy.`,
+    );
+    stateOwners.set(path, setupPath);
+  }
+
 }
