@@ -17,8 +17,19 @@ name: Arm newly-declared cron jobs
 # (same value as Railway). Until it is, a push that adds a new job fails this run loudly with that
 # message — a push that adds none stays green.
 #
-# NOT a required check and NOT the deploy gate: it runs after the merge, alongside the Railway deploy,
-# and a red run here never blocks anything. The route is already shipped; this only winds its clock.
+# NOT a required check: it runs after the merge, so it blocks no PR and gates no merge. The route is
+# already shipped; this only winds its clock.
+#
+# 🔴 BUT A RED RUN HERE IS NOT HARMLESS, AND THIS COMMENT SAID IT WAS UNTIL 2026-10-06. It triggers on
+# `push: main`, so its check SUITE lands on a commit Railway's "Wait for CI" is holding — and AGENTS.md
+# §2.3 is unambiguous that ANY failed suite on that commit makes Railway mark the production deploy
+# SKIPPED within minutes, permanently, with `ci.yml` itself green and nothing else to show for it.
+# This job has no `continue-on-error` and is DESIGNED to fail loudly (see SECRETS above), so the shapes
+# that fail it — CRONJOB_API_KEY unset, cron-job.org erroring, the 100-requests/day cap — each cost a
+# production deploy on the one merge that adds a cron job. `tests/scheduled-alarms-never-withhold.test.ts`
+# pins exactly this invariant, but its list covers `schedule:` workflows only, so nothing covers this
+# one. The trade-off (a loud red here against a withheld deploy) is the owner's to settle; it is
+# written down rather than quietly changed.
 
 on:
   push:

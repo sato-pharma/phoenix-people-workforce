@@ -2368,6 +2368,7 @@ import { runSecretDrift404MatcherTests } from "./secret-drift-404-matcher.test.t
 import { runTypecheckNativeCompilerTests } from "./typecheck-native-compiler.test.ts";
 import { runCiSuitePlacementTests } from "./ci-suite-placement.test.ts";
 import { runRecruitmentManagerHoldWindowTests } from "./recruitment-manager-hold-window.test.ts";
+import { runRunTestsShardedTests } from "./run-tests-sharded.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -9183,6 +9184,11 @@ await runTest(
 await runTest(
   "a CV never stays in a manager's account more than 45 days (owner, 2026-10-06): the window is one number and one `>=` comparison that fails CLOSED on an unreadable date, every route a CV reaches a manager by applies it (the pushed list and its gate, the single-manager stamp, the team picker's count and gate, the district folders and the gate behind them) while the whole-company report path and the engagement report deliberately do not, and the daily return takes a CV back as `shortlisted` under an `ops:` actor only when EVERY manager holding it is past 45 days, before the stale-send check reads the status",
   runRecruitmentManagerHoldWindowTests,
+);
+
+await runTest(
+  "the sharded CI runner REFUSES a run the shards did not cover between them — a shard that printed no `PHX_SHARD_RESULT` marker, a ran-sum short of the declared count, shards disagreeing about that count, and two shards handed the same index are each a named failure rather than a smaller suite reporting success; a shard that merely FAILED reports once, without a coverage complaint on top of it (run-tests.ts rethrows at the first red test, so its counts are legitimately short); and the shard count is bounded by free memory as well as by CPUs, because each shard holds the whole module graph and this repo's runners are 7 GB, not the public tier's 16",
+  runRunTestsShardedTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

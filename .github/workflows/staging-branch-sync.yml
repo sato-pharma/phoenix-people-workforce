@@ -168,9 +168,32 @@ jobs:
           printf '%s\n' "$PUSH_OUT"
 
           if [ "$PUSH_RC" -ne 0 ]; then
-            git fetch --quiet --no-tags origin "+refs/heads/staging:refs/remotes/origin/staging" 2>/dev/null || true
-            NOW_SHA="$(git ls-remote origin refs/heads/staging 2>/dev/null | cut -f1 || true)"
-            if [ -n "$NOW_SHA" ] && git cat-file -e "${NOW_SHA}^{commit}" 2>/dev/null && git merge-base --is-ancestor "$NEW_SHA" "$NOW_SHA"; then
+            # 🔴 ONE NETWORK READ, NOT TWO, AND THE FETCH IS WHAT MAKES THE ANSWER TRUSTWORTHY. The
+            # first version of this handler fetched the branch and then asked `git ls-remote` for its
+            # sha — two separate reads of a ref that three concurrent syncs are moving. A sha that
+            # arrived in the second read was by construction not in the object store from the first,
+            # so `git cat-file -e` failed and the handler fell through to `exit 1`; the same happened
+            # whenever the `|| true` fetch itself was swallowed by a network or auth blip. Either way
+            # the result is a RED check suite on the `main` commit whose CI triggered this run, which
+            # withholds that commit's production deploy (AGENTS.md §2.3) — the exact outcome the
+            # concurrency change was made to stop, arrived from the other side.
+            #
+            # So: fetch once, and read the ref that fetch wrote. Whatever sha comes back is current
+            # AND present locally, so `merge-base` can always answer.
+            FETCH_RC=0
+            git fetch --quiet --no-tags origin "+refs/heads/staging:refs/remotes/origin/staging" 2>/dev/null || FETCH_RC=$?
+            NOW_SHA=""
+            if [ "$FETCH_RC" -eq 0 ]; then
+              NOW_SHA="$(git rev-parse --verify -q refs/remotes/origin/staging || true)"
+            else
+              # 🔴 UNREADABLE IS NOT HOSTILE. We cannot see the remote, so we know nothing about why
+              # the push was rejected — and guessing "fault" here spends a production deploy on a
+              # dropped connection. Say so loudly and let the next commit's sync carry staging
+              # forward, exactly as the out-of-order guard above already does.
+              echo "::warning::the push to staging was rejected and the remote could not be re-read (git fetch exit $FETCH_RC), so this run cannot tell a lost race from a real fault. Not failing: a red suite here would withhold this commit's production deploy. Push output is above; the next commit's sync will carry staging forward."
+              exit 0
+            fi
+            if [ -n "$NOW_SHA" ] && git merge-base --is-ancestor "$NEW_SHA" "$NOW_SHA"; then
               echo "::notice::the push was rejected because staging is already at $NOW_SHA, a descendant of $NEW_SHA — a concurrent sync won the race and carried staging FURTHER FORWARD. Nothing was lost and nothing is stale, so this run is not failed."
               exit 0
             fi

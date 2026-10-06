@@ -461,11 +461,22 @@ export function isProtectedDispatchRef(branch) {
  * which REPORTS and never gates — AGENTS.md §7), the Build and the Playwright login smoke. Grading
  * the run as a whole therefore turned `remote-check typecheck` FAIL on a mobile lockfile break or a
  * smoke flake — a verdict about somebody else's code, printed under this sha, blocking this push.
+ *
+ * 🔴 AND THE EVENT DECIDES WHICH JOB RUNS THE SUITE, SO `test` IS GRADED IN `checks`, NOT
+ * `validate`. Since 2026-10-06 the unit suite has two homes in ci.yml, exact complements:
+ * `validate`'s `Test` step is `if: github.event_name == 'pull_request'` and `checks`'s is
+ * `if: github.event_name != 'pull_request'` (tests/ci-suite-placement.test.ts pins the pair).
+ * **The escalation here is always a `workflow_dispatch`**, so `validate`'s Test is SKIPPED on every
+ * run this script ever grades, and `gradeConclusion("skipped")` is `no-verdict`. Pointed at
+ * `validate` it made `remote-check test` — the owner's standing pre-push step (2026-10-04) — wait
+ * ten minutes for the box, bill a full ci.yml run, wait up to 25 minutes more, and then answer NO
+ * VERDICT, every single time, taking `all` and a bare `remote-check` down with it. Caught in review
+ * the same evening, before the arrangement that caused it had been relied on.
  */
 export const STAGE_JOBS = {
   lint: { job: "checks", step: "Lint" },
   typecheck: { job: "checks", step: "Typecheck" },
-  test: { job: "validate", step: "Test" },
+  test: { job: "checks", step: "Test" },
   build: { job: "validate", step: "Build" },
 };
 

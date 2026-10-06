@@ -23,14 +23,15 @@
 // the runner path — and a second copy of them is a thing to drift. If `test` ever stops being a
 // plain `node ...` invocation this script says so and exits rather than guessing.
 //
-// Usage:  node scripts/run-tests-sharded.mjs          (shards = availableParallelism, max 4)
+// Usage:  node scripts/run-tests-sharded.mjs          (shards = CPUs, capped by free memory, max 4)
 //         PHX_TEST_SHARDS=1 node scripts/run-tests-sharded.mjs   (one shard = the serial run)
 
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { availableParallelism } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { collectProblems, parseSlowest, ranTotal, shardCount } from "./run-tests-sharded-plan.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -60,33 +61,6 @@ function testScriptArgs() {
     );
   }
   return args.slice(1);
-}
-
-function shardCount() {
-  const override = process.env.PHX_TEST_SHARDS;
-  if (override !== undefined && override !== "") {
-    const n = Number(override);
-    if (!Number.isInteger(n) || n < 1) throw new Error(`PHX_TEST_SHARDS must be a positive integer, got ${override}`);
-    return n;
-  }
-  // More shards than CPUs is slower, not faster — each one re-pays the whole import. Capped at 4
-  // because every shard holds the full module graph (~1.7 GB resident, measured), and a hosted
-  // runner has 16 GB.
-  return Math.max(1, Math.min(4, availableParallelism()));
-}
-
-/** `PHX_SHARD_RESULT shard=i/n seen=S ran=R`, or null when the shard never printed one. */
-function parseResult(output) {
-  const line = /^PHX_SHARD_RESULT shard=(\d+)\/(\d+) seen=(\d+) ran=(\d+)$/m.exec(output);
-  if (!line) return null;
-  return { index: Number(line[1]), total: Number(line[2]), seen: Number(line[3]), ran: Number(line[4]) };
-}
-
-/** The "N test files passed in Mms. Slowest:" block each shard prints, as [ms, name] pairs. */
-function parseSlowest(output) {
-  const rows = [];
-  for (const match of output.matchAll(/^ {2}(\d+)ms {2}(.+)$/gm)) rows.push([Number(match[1]), match[2]]);
-  return rows;
 }
 
 async function runShard(args, index, total) {
@@ -122,7 +96,7 @@ async function runShard(args, index, total) {
 }
 
 const args = testScriptArgs();
-const total = shardCount();
+const total = shardCount(process.env.PHX_TEST_SHARDS);
 const startedAt = Date.now();
 console.log(
   `run-tests-sharded: ${total} shard(s) of \`${["node", ...args].join(" ")}\`` +
@@ -132,60 +106,18 @@ console.log(
 const results = await Promise.all(Array.from({ length: total }, (_, i) => runShard(args, i + 1, total)));
 const wallSeconds = ((Date.now() - startedAt) / 1000).toFixed(1);
 
-const problems = [];
-for (const result of results) {
-  if (result.spawnError) problems.push(`shard ${result.index} could not start: ${result.spawnError.message}`);
-  else if (result.signal) problems.push(`shard ${result.index} was killed by ${result.signal}`);
-  else if (result.code !== 0) problems.push(`shard ${result.index} exited ${result.code}`);
-}
+const problems = collectProblems(results, total);
 
-// Coverage: every shard reported, every shard saw the same call count, and the ran counts sum to it.
-//
-// 🔴 ONLY WHEN NOTHING ALREADY FAILED. `tests/run-tests.ts` rethrows on the first failing test, so a
-// shard with a red test stops there and its counts are legitimately short — reporting that as a
-// coverage breach too would bury the one line that matters (which test failed) under two that are
-// consequences of it, and would train a reader to discount this check. A failing shard is already
-// a failing run; coverage is the question you ask when every shard passed.
 if (problems.length === 0) {
-  const parsed = results.map((result) => ({ index: result.index, result: parseResult(result.out) }));
-  const missing = parsed.filter((entry) => entry.result === null).map((entry) => entry.index);
-  if (missing.length > 0) {
-    problems.push(
-      `shard(s) ${missing.join(", ")} printed no PHX_SHARD_RESULT line, so this run cannot prove which ` +
-        `tests executed. Treat it as a failure: a shard that dies between its last test and its exit ` +
-        `handler looks exactly like one that passed.`,
-    );
-  } else {
-    const reported = parsed.map((entry) => entry.result);
-    const seenValues = new Set(reported.map((entry) => entry.seen));
-    if (seenValues.size !== 1) {
-      problems.push(
-        `the shards disagree about how many tests the runner declares (${[...seenValues].join(", ")}). ` +
-          `Every shard imports and walks the whole of tests/run-tests.ts, so this can only mean they ` +
-          `ran different code — a stale worktree, or a shard reading a different checkout.`,
-      );
-    }
-    const indices = new Set(reported.map((entry) => entry.index));
-    if (indices.size !== total) problems.push(`expected shard indices 1..${total}, got ${[...indices].sort().join(", ")}`);
-    const seen = reported[0].seen;
-    const ran = reported.reduce((sum, entry) => sum + entry.ran, 0);
-    if (ran !== seen) {
-      problems.push(
-        `the shards ran ${ran} of ${seen} tests. Every test must run in exactly one shard; a gap here ` +
-          `is a suite that silently shrank, which is the whole reason this check exists.`,
-      );
-    }
-    if (problems.length === 0) {
-      console.log(`\n${ran} test files passed in ${wallSeconds}s wall clock across ${total} shard(s).`);
-      const slowest = results
-        .flatMap((result) => parseSlowest(result.out))
-        .sort((a, b) => b[0] - a[0])
-        .slice(0, 10);
-      if (slowest.length > 0) {
-        console.log("Slowest:");
-        for (const [ms, name] of slowest) console.log(`  ${ms}ms  ${name}`);
-      }
-    }
+  const ran = ranTotal(results);
+  console.log(`\n${ran} test files passed in ${wallSeconds}s wall clock across ${total} shard(s).`);
+  const slowest = results
+    .flatMap((result) => parseSlowest(result.out))
+    .sort((a, b) => b[0] - a[0])
+    .slice(0, 10);
+  if (slowest.length > 0) {
+    console.log("Slowest:");
+    for (const [ms, name] of slowest) console.log(`  ${ms}ms  ${name}`);
   }
 }
 

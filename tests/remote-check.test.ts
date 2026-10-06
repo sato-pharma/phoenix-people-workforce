@@ -700,18 +700,58 @@ export async function runRemoteCheckTests(): Promise<void> {
     // 🔴 AND THE NAMES IT GRADES BY MUST BE ci.yml's OWN. STAGE_JOBS is a map into another file: a
     // renamed job or step would make every stage read NO VERDICT for ever, which fails open and is
     // therefore silent. Read the workflow and check both halves still exist.
+    //
+    // 🔴 THE STEP IS LOOKED FOR INSIDE ITS OWN JOB, AND THIS IS NOT PEDANTRY — IT IS THE WHOLE
+    // ASSERTION. Until 2026-10-06 both halves were matched against the WHOLE FILE, so "ci.yml has a
+    // `validate` job" and "ci.yml has a step named `Test`" could both be true while `validate` had no
+    // `Test` step at all. That is exactly what happened the day the unit suite gained a second home:
+    // `test` still pointed at `validate`, the step it names moved to `checks` on every non-PR event,
+    // and this guard passed. Split the file into jobs first and ask the named job.
     const CI = readFileSync(path.join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
+    const ciJobs = new Map<string, string>();
+    {
+      const lines = CI.split("\n");
+      const start = lines.findIndex((line) => /^jobs:\s*$/.test(line));
+      assert.notEqual(start, -1, "ci.yml has no top-level `jobs:` block");
+      let name: string | null = null;
+      let body: string[] = [];
+      for (const line of lines.slice(start + 1)) {
+        const header = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line);
+        if (header) {
+          if (name) ciJobs.set(name, body.join("\n"));
+          name = header[1];
+          body = [];
+          continue;
+        }
+        if (name) body.push(line);
+      }
+      if (name) ciJobs.set(name, body.join("\n"));
+    }
     for (const [stage, spec] of Object.entries(STAGE_JOBS) as Array<[string, { job: string; step: string }]>) {
-      assert.match(
-        CI,
-        new RegExp("^  " + spec.job + ":$", "m"),
+      const jobBody = ciJobs.get(spec.job);
+      assert.ok(
+        jobBody !== undefined,
         "STAGE_JOBS says " + stage + " runs in the `" + spec.job + "` job, and ci.yml has no such job any more",
       );
-      assert.match(
-        CI,
-        new RegExp("^      - name: " + spec.step + "$", "m"),
-        "STAGE_JOBS grades " + stage + " by ci.yml's `" + spec.step + "` step, which no longer exists — every " +
-          stage + " dispatch would silently read NO VERDICT",
+      const stepAt = jobBody.indexOf("      - name: " + spec.step + "\n");
+      assert.notEqual(
+        stepAt,
+        -1,
+        "STAGE_JOBS grades " + stage + " by a `" + spec.step + "` step inside ci.yml's `" + spec.job + "` job, and " +
+          "that job has no such step — every " + stage + " dispatch would silently read NO VERDICT",
+      );
+
+      // 🔴 AND IT MUST RUN ON THE EVENT THIS SCRIPT CAUSES. The escalation is a `workflow_dispatch`,
+      // so a step gated on a pull request is SKIPPED on every run this script will ever grade, and
+      // `gradeConclusion("skipped")` is no-verdict — the same silent failure, one level down. There is
+      // no need to evaluate GitHub's expression language to catch it: a condition that REQUIRES a pull
+      // request can never hold for a dispatch, and that is the only shape ci.yml uses.
+      const ifLine = /^ {8}if: (.+)$/m.exec(jobBody.slice(stepAt, stepAt + 400));
+      assert.ok(
+        !ifLine || !/event_name\s*==\s*'pull_request'/.test(ifLine[1]),
+        "`" + spec.job + "` / " + spec.step + " only runs on a pull request (`" + (ifLine?.[1] ?? "") + "`), but " +
+          "remote-check escalates by dispatching ci.yml — so " + stage + " would be graded from a SKIPPED step and " +
+          "answer NO VERDICT on every run, after a ten-minute wait and a full billed workflow",
       );
     }
 

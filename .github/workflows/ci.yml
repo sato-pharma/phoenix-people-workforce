@@ -200,12 +200,21 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # depth 2, not 1: `scripts/check-migrations.mjs` compares against `origin/main` when it
-          # can reach it, and a depth-1 checkout has no second commit at all. It degrades rather
-          # than fails without one, which is precisely why this is worth keeping explicit — a
-          # shallower checkout would quietly turn one of this job's gates into a no-op. The
-          # per-job docs-only classifier that also used `HEAD^1..HEAD` was removed on 2026-10-06
-          # (see the header).
+          # depth 2, not 1 — and 🔴 NOT for the reason this comment gave until 2026-10-06, which
+          # was wrong in a way worth recording because it told its reader a gate runs that does not.
+          # It claimed depth 2 keeps `scripts/check-migrations.mjs`'s cross-branch timestamp-collision
+          # check alive. It does not, at any depth: on a `pull_request`, actions/checkout fetches the
+          # merge ref alone, so there is no `refs/remotes/origin/main` to compare against, and that
+          # script FAILS OPEN by design (check-migrations.mjs:101) — it says so itself, naming
+          # `fetch-depth: 2` as the case it degrades on. That check is therefore SKIPPED on every PR
+          # today, which is a real gap (it is the step behind 10 of 14 recent `validate` failures,
+          # and the collision it finds is one the branch cannot see), but closing it means fetching
+          # `origin/main` explicitly, not changing this number.
+          #
+          # What depth 2 is actually worth now: nothing in THIS job reads a second commit since the
+          # per-job docs-only classifier was removed on 2026-10-06, so it is kept only because the
+          # `mobile` job genuinely needs it (HEAD^1..HEAD, line ~793), one spelling across the file is
+          # cheaper to reason about than three, and the extra commit costs no measurable time.
           fetch-depth: 2
 
       # corepack must be enabled BEFORE setup-node runs: with `cache: pnpm`,
@@ -627,12 +636,21 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # depth 2, not 1: `scripts/check-migrations.mjs` compares against `origin/main` when it
-          # can reach it, and a depth-1 checkout has no second commit at all. It degrades rather
-          # than fails without one, which is precisely why this is worth keeping explicit — a
-          # shallower checkout would quietly turn one of this job's gates into a no-op. The
-          # per-job docs-only classifier that also used `HEAD^1..HEAD` was removed on 2026-10-06
-          # (see the header).
+          # depth 2, not 1 — and 🔴 NOT for the reason this comment gave until 2026-10-06, which
+          # was wrong in a way worth recording because it told its reader a gate runs that does not.
+          # It claimed depth 2 keeps `scripts/check-migrations.mjs`'s cross-branch timestamp-collision
+          # check alive. It does not, at any depth: on a `pull_request`, actions/checkout fetches the
+          # merge ref alone, so there is no `refs/remotes/origin/main` to compare against, and that
+          # script FAILS OPEN by design (check-migrations.mjs:101) — it says so itself, naming
+          # `fetch-depth: 2` as the case it degrades on. That check is therefore SKIPPED on every PR
+          # today, which is a real gap (it is the step behind 10 of 14 recent `validate` failures,
+          # and the collision it finds is one the branch cannot see), but closing it means fetching
+          # `origin/main` explicitly, not changing this number.
+          #
+          # What depth 2 is actually worth now: nothing in THIS job reads a second commit since the
+          # per-job docs-only classifier was removed on 2026-10-06, so it is kept only because the
+          # `mobile` job genuinely needs it (HEAD^1..HEAD, line ~793), one spelling across the file is
+          # cheaper to reason about than three, and the extra commit costs no measurable time.
           fetch-depth: 2
 
       # Answered inline, per job — see the note on this step in `validate`.
