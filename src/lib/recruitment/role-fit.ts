@@ -232,6 +232,16 @@ function dimensionsFor(family: CandidateRoleFamily | null, facts: CandidateScree
         currentRoleDimension(facts, "Current role"),
         placeDimension(facts),
       ];
+    case "hr_section_head":
+      // A section head LEADS people, so leadership is read here as it is for the field managers, with
+      // a higher years floor than the office seats below.
+      return [
+        currentRoleDimension(facts, "HR role"),
+        yearsDimension("HR experience", fact(facts.years), 5),
+        leadershipDimension(facts),
+        backgroundDimension(facts, "Education"),
+        placeDimension(facts),
+      ];
     case "office_coordinator":
     case "human_resources":
     case "talent_acquisition":

@@ -936,7 +936,15 @@ export async function handleClassifyText(input: {
 // Exported so the extra-question loop can call it directly once IT finishes — same thank-you text,
 // same six-column write, same owner Telegram mirror, same closeSession, for every session whether or
 // not it ever saw an admin-defined question.
-export async function finishSession(session: SessionRow, fallbackPhoneNumberId: string | null): Promise<void> {
+export async function finishSession(
+  session: SessionRow,
+  fallbackPhoneNumberId: string | null,
+  /** `closingText` replaces the usual summary — used when an answer ends the conversation early (an
+   *  admin-defined question's `endOn`), so the applicant is told why instead of being read a recap of
+   *  a form they did not finish. Everything else (the candidate write, the owner mirror, the Drive
+   *  move) still runs. */
+  options?: { closingText?: string },
+): Promise<void> {
   const roleLabel = sessionRoleLabel(session);
   const backgroundLabel = sessionBackgroundLabel(session);
   const regionLabel = sessionRegionLabel(session);
@@ -966,7 +974,13 @@ export async function finishSession(session: SessionRow, fallbackPhoneNumberId: 
   // the failure the previous comment here described and deliberately avoided for the AREA question;
   // narrowing the region question simply moved it one question up. Every other line was already
   // shown-when-present, so the summary reads correctly with any subset missing.
-  if (roleLabel) {
+  if (options?.closingText) {
+    await sendWhatsAppText({
+      phoneNumberId: session.phone_number_id ?? fallbackPhoneNumberId,
+      text: options.closingText,
+      toWaId: session.wa_id,
+    });
+  } else if (roleLabel) {
     await sendWhatsAppText({
       phoneNumberId: session.phone_number_id ?? fallbackPhoneNumberId,
       text: classifyThankYouText({

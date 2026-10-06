@@ -71,6 +71,15 @@ type EditableQuestion = {
    */
   buttonLabel: string;
   sectionTitle: string;
+  /** The words sent when an answer ends the conversation. Null on a question that never ends it. */
+  endMessage: string | null;
+  /** Which answers end it, as the applicant sees them - read-only, so the owner can see the rule the
+   *  message belongs to. */
+  endTitles: string[];
+  /** The option codes behind `endTitles`, kept so the live check sees the same rule the server holds. */
+  endValues: string[];
+  /** A plain-words description of the answer this question waits for, or null when always asked. */
+  showIfSummary: string | null;
 };
 
 function newOption(): EditableOption {
@@ -83,6 +92,11 @@ function fromServerRow(row: ScreeningQuestionAdminRow): EditableQuestion {
     bodyText: row.bodyText,
     buttonLabel: row.buttonLabel ?? "",
     clientKey: row.id,
+    endMessage: row.endOn ? row.endOn.message : null,
+    endTitles: row.endOn
+      ? (row.options ?? []).filter((option) => row.endOn?.values.includes(option.value)).map((option) => option.title)
+      : [],
+    endValues: row.endOn ? row.endOn.values : [],
     hasAnswers: row.hasAnswers,
     id: row.id,
     isActive: row.isActive,
@@ -95,6 +109,9 @@ function fromServerRow(row: ScreeningQuestionAdminRow): EditableQuestion {
     })),
     questionKey: row.questionKey,
     sectionTitle: row.sectionTitle ?? "",
+    showIfSummary: row.showIf
+      ? `Only asked after the answer to ${row.showIf.questionKey} is one of: ${row.showIf.values.join(", ")}`
+      : null,
   };
 }
 
@@ -112,6 +129,9 @@ function rowIssues(question: EditableQuestion): string[] {
     // A brand-new row has no question_key yet — the server generates and validates the real one at
     // save time. This placeholder only stands in so the OTHER checks (length, option shape) can run
     // live, without a spurious "key format" complaint on a question nobody has saved yet.
+    // Only a question that already carries the ending rule has an ending message here, so the rule is
+    // rebuilt around the words being typed and the validator sees what would be saved.
+    endOn: question.endMessage === null ? null : { message: question.endMessage, values: question.endValues },
     options: question.kind === "tappable" ? withStableOptionValues(question.options) : null,
     questionKey: question.questionKey ?? "draft_question",
     sectionTitle: question.kind === "tappable" ? question.sectionTitle : null,
@@ -142,6 +162,9 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
         bodyText: "",
         buttonLabel: "",
         clientKey: `new-${newRowCounter.current}`,
+        endMessage: null,
+        endTitles: [],
+        endValues: [],
         hasAnswers: false,
         id: null,
         isActive: true,
@@ -151,6 +174,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
         // Blank, like the button above it — a brand-new question starts on the generic defaults, so
         // nothing is stored until the owner actually words them.
         sectionTitle: "",
+        showIfSummary: null,
       },
     ]);
     setNotice(null);
@@ -224,6 +248,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
             appliesToRoleFamilies: row.appliesToRoleFamilies,
             bodyText: row.bodyText.trim(),
             buttonLabel: row.kind === "tappable" ? row.buttonLabel.trim() : null,
+            endMessage: row.endMessage === null ? undefined : row.endMessage.trim(),
             id: row.id,
             isActive: row.isActive,
             kind: row.kind,
@@ -443,6 +468,33 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                     value={row.appliesToRoleFamilies}
                   />
                 </div>
+
+                {row.showIfSummary ? (
+                  <p className="mt-3 text-phx-xs text-slate-500">{row.showIfSummary}</p>
+                ) : null}
+
+                {row.endMessage !== null ? (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between">
+                      <label
+                        className="text-phx-xs font-bold uppercase tracking-wider text-slate-400"
+                        htmlFor={`end-${row.clientKey}`}
+                      >
+                        {`Sent when the answer is ${row.endTitles.join(" or ")} - the conversation ends here`}
+                      </label>
+                      <span className={`text-phx-2xs ${counterClass((row.endMessage ?? "").length, WHATSAPP_BODY_MAX)}`}>
+                        {(row.endMessage ?? "").length} / {WHATSAPP_BODY_MAX}
+                      </span>
+                    </div>
+                    <textarea
+                      className="mt-1 w-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-orange-300"
+                      id={`end-${row.clientKey}`}
+                      onChange={(event) => updateRow(row.clientKey, { endMessage: event.target.value })}
+                      rows={4}
+                      value={row.endMessage ?? ""}
+                    />
+                  </div>
+                ) : null}
 
                 {row.kind === "tappable" ? (
                   <div className="mt-3 space-y-2">

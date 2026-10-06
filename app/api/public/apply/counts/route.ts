@@ -33,6 +33,7 @@ export const dynamic = "force-dynamic";
 // patterns ('%medical%rep%' → /medical.*rep/i), so this endpoint and a hand-run count agree.
 const ROLE_MATCHERS: Record<WebsiteApplyRoleKey, RegExp> = {
   district_manager: /district.*manager/i,
+  hr_section_head: /(\bhr\b|human\s*resources?).*section\s*(head|manager|lead|chief)/i,
   medical_representative: /medical.*rep/i,
   national_sales_manager: /national.*sales.*manager/i,
   quality_control_analyst: /quality.*control/i,

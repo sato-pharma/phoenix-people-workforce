@@ -174,10 +174,10 @@ export async function runWhatsAppQuestionPromptsTests() {
   );
   assert.deepEqual(
     jobTitleOptions.filter((o) => !o.offeredByDefault).map((o) => o.value),
-    ["sales", "pharmacist"],
-    "sales and pharmacist exist but are not offered — the owner's own list, and the only two addable answers anywhere",
+    ["sales", "pharmacist", "finance"],
+    "sales, pharmacist and finance exist but are not offered — finance gave up its row to HR Section Head on 2026-10-06 (the list is full at Meta's 10) and stays addable",
   );
-  for (const value of ["sales", "pharmacist"]) {
+  for (const value of ["sales", "pharmacist", "finance"]) {
     assert.equal(
       isOfferedRoleFamily(value),
       true,
@@ -438,10 +438,10 @@ export async function runWhatsAppQuestionPromptsTests() {
   const jobValues = valuesOf(jobs.rows);
 
   // Deleting an answer = hiding it.
-  const hidden = applyPromptOverride(jobs, new Map([["job_title", override(null, {}, { hiddenOptions: ["finance"] })]]));
+  const hidden = applyPromptOverride(jobs, new Map([["job_title", override(null, {}, { hiddenOptions: ["product_manager"] })]]));
   assert.deepEqual(
     valuesOf(hidden.rows),
-    jobValues.filter((v) => v !== "finance"),
+    jobValues.filter((v) => v !== "product_manager"),
     "hiding one answer removes exactly that answer and leaves the rest in their order",
   );
   assert.ok(
@@ -452,16 +452,16 @@ export async function runWhatsAppQuestionPromptsTests() {
 
   // Adding an answer = switching on one the code already understands. The offered menu is now full at
   // the ten-row cap (talent_acquisition took the last slot on 2026-09-22), so this save switches
-  // `finance` OFF and `sales` ON together — the net stays ten and sendable, while still proving a
+  // `product_manager` OFF and `sales` ON together — the net stays ten and sendable, while still proving a
   // not-offered answer is emitted the moment the saved order names it, carrying the code's own id.
-  const withoutFinance = jobValues.filter((v) => v !== "finance");
+  const withoutProductManager = jobValues.filter((v) => v !== "product_manager");
   const added = applyPromptOverride(
     jobs,
-    new Map([["job_title", override(null, {}, { hiddenOptions: ["finance"], optionOrder: [...withoutFinance, "sales"] })]]),
+    new Map([["job_title", override(null, {}, { hiddenOptions: ["product_manager"], optionOrder: [...withoutProductManager, "sales"] })]]),
   );
   assert.deepEqual(
     valuesOf(added.rows),
-    [...withoutFinance, "sales"],
+    [...withoutProductManager, "sales"],
     "an answer the code understands but does not offer appears only when the saved order names it",
   );
   assert.equal(
@@ -472,13 +472,13 @@ export async function runWhatsAppQuestionPromptsTests() {
   assert.deepEqual(
     menuViolations(added),
     [],
-    "the added answer must not break the send-time check — the menu is full, so switching finance off makes room for sales",
+    "the added answer must not break the send-time check — the menu is full, so switching product_manager off makes room for sales",
   );
 
   // An answer NOT offered by default stays off while nothing names it, even with other config saved.
   const stillOff = applyPromptOverride(
     jobs,
-    new Map([["job_title", override(null, {}, { hiddenOptions: ["finance"] })]]),
+    new Map([["job_title", override(null, {}, { hiddenOptions: ["product_manager"] })]]),
   );
   assert.ok(
     !valuesOf(stillOff.rows).includes("sales"),
@@ -501,11 +501,11 @@ export async function runWhatsAppQuestionPromptsTests() {
   // client silently deleting an answer it did not know about.
   const partial = applyPromptOverride(
     jobs,
-    new Map([["job_title", override(null, {}, { optionOrder: ["finance"] })]]),
+    new Map([["job_title", override(null, {}, { optionOrder: ["product_manager"] })]]),
   );
   assert.deepEqual(
     valuesOf(partial.rows),
-    ["finance", ...jobValues.filter((v) => v !== "finance")],
+    ["product_manager", ...jobValues.filter((v) => v !== "product_manager")],
     "an order naming one answer promotes it and keeps every other in its code order",
   );
 
@@ -515,11 +515,11 @@ export async function runWhatsAppQuestionPromptsTests() {
     new Map([
       [
         "job_title",
-        override(null, { finance: { title: "Finance team" }, medical_rep: { title: "Medical Rep" } }, { hiddenOptions: ["finance"] }),
+        override(null, { product_manager: { title: "Product team" }, medical_rep: { title: "Medical Rep" } }, { hiddenOptions: ["product_manager"] }),
       ],
     ]),
   );
-  assert.ok(!valuesOf(hiddenPlusLabel.rows).includes("finance"), "a label cannot resurrect a hidden answer");
+  assert.ok(!valuesOf(hiddenPlusLabel.rows).includes("product_manager"), "a label cannot resurrect a hidden answer");
   assert.equal(
     hiddenPlusLabel.rows.find((r) => parseClassifyRowId(r.id)!.value === "medical_rep")!.title,
     "Medical Rep",
@@ -568,11 +568,11 @@ export async function runWhatsAppQuestionPromptsTests() {
       key: "job_title",
       optionOrder,
     });
-  assert.deepEqual(configCheck(["finance"], []), [], "hiding one answer is saveable");
+  assert.deepEqual(configCheck(["product_manager"], []), [], "hiding one answer is saveable");
   assert.deepEqual(
-    configCheck(["finance"], ["sales"]),
+    configCheck(["product_manager"], ["sales"]),
     [],
-    "switching a known answer on is saveable — the offered menu is full at the ten-row cap, so this hides finance to make room for sales",
+    "switching a known answer on is saveable — the offered menu is full at the ten-row cap, so this hides product_manager to make room for sales",
   );
   assert.equal(
     configCheck([], ["marketing_manager"]).length,
@@ -581,7 +581,7 @@ export async function runWhatsAppQuestionPromptsTests() {
   );
   assert.equal(configCheck(["not_an_answer"], []).length, 1, "hiding something that does not exist is refused");
   assert.equal(
-    configCheck(["finance"], ["finance"]).length,
+    configCheck(["product_manager"], ["product_manager"]).length,
     1,
     "an answer cannot be both switched off and placed in the order",
   );
@@ -594,16 +594,17 @@ export async function runWhatsAppQuestionPromptsTests() {
   // Job title's answer POOL sits PAST Meta's ten-row list. office_coordinator made it eleven on
   // 2026-09-02 (the Sheraton opening); talent_acquisition made it twelve on 2026-09-22 (the paid TA
   // campaign), and unlike the earlier extras it is OFFERED, so jobTitleMenu() now sends exactly ten
-  // rows — full at the ceiling, with `sales` and `pharmacist` the only two still off it. A pool is
-  // allowed to be larger than a list, because a pool is not a message: what is pinned is the count,
-  // not the ceiling.
+  // rows — full at the ceiling. hr_section_head made it thirteen on 2026-10-06 and took the slot the
+  // Finance row held, so `finance`, `sales` and `pharmacist` are the three still off the menu. A pool
+  // is allowed to be larger than a list, because a pool is not a message: what is pinned is the
+  // count, not the ceiling.
   //
   // What must hold is that the save-time check is the thing standing between an admin and a 400:
-  // switching on all twelve is refused, and any ten still save.
-  assert.equal(jobAllowed.length, WHATSAPP_LIST_MAX_ROWS + 2, "twelve answers exist; one list holds ten");
+  // switching on all thirteen is refused, and any ten still save.
+  assert.equal(jobAllowed.length, WHATSAPP_LIST_MAX_ROWS + 3, "thirteen answers exist; one list holds ten");
   assert.ok(
     configCheck([], jobAllowed).some((problem) => problem.includes(String(WHATSAPP_LIST_MAX_ROWS))),
-    "switching on all twelve answers must be refused at save time — the message would 400",
+    "switching on all thirteen answers must be refused at save time — the message would 400",
   );
   assert.deepEqual(
     configCheck([], jobAllowed.slice(0, WHATSAPP_LIST_MAX_ROWS)),
@@ -1034,12 +1035,14 @@ export async function runWhatsAppQuestionPromptsTests() {
             "area_regional_manager",
             "product_manager",
             "national_sales_manager",
-            // Named here for the same reason office_coordinator is (2026-09-22, with the
-            // talent_acquisition family): it is offered by default, so leaving it out would not drop
-            // it from the wire — it would be APPENDED after "other", a different assertion than this
-            // fixture makes. The fixture is an admin's saved order, so it names every answer it covers.
+            // hr_section_head (2026-10-06) and talent_acquisition (2026-09-22) are named here for the
+            // same reason office_coordinator is: they are offered by default, so leaving one out
+            // would not drop it from the wire — it would be APPENDED after "other", a different
+            // assertion than this fixture makes. The fixture is an admin's saved order, so it names
+            // every answer it covers. `finance` is NOT named: it left the default menu on 2026-10-06,
+            // and naming it would make an eleventh row, which the send-time check refuses.
+            "hr_section_head",
             "talent_acquisition",
-            "finance",
             "sales",
             // Added to this saved order on 2026-09-02 with the office_coordinator family. It is
             // offered by default, so leaving it out would not have dropped it from the wire — it
@@ -1105,8 +1108,8 @@ export async function runWhatsAppQuestionPromptsTests() {
         "phx:job_title:area_regional_manager",
         "phx:job_title:product_manager",
         "phx:job_title:national_sales_manager",
+        "phx:job_title:hr_section_head",
         "phx:job_title:talent_acquisition",
-        "phx:job_title:finance",
         "phx:job_title:sales",
         "phx:job_title:office_coordinator",
         "phx:job_title:other",
