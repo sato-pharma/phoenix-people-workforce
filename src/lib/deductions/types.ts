@@ -254,6 +254,24 @@ export type DeductionsComment = {
   authorLoginId: string;
   authorHrId: string | null;
   authorRole: string | null;
+  /** The author's human-readable name, resolved from employees at read time. Null when it cannot
+   *  be resolved. Lets a thread label who wrote each line — the employee, or the HR person who
+   *  replied — now that a deduction dispute is a two-way conversation, not a one-sided note. */
+  authorName?: string | null;
   body: string;
   createdAt: string;
+};
+
+// One employee's dispute thread on a published deduction, as the ADMIN Deductions
+// screen reads it — the counterpart to the portal's per-line thread. A comment
+// mails HR with a link to /admin/deductions, so there has to be a place there that
+// actually shows it; this is the row that place renders. `line` is null when the
+// published line has since been withdrawn (the comment is still reachable — the
+// employee disputed something, and the fact it was later pulled is itself the answer).
+export type AdminDeductionCommentThread = {
+  candidateId: string;
+  line: DeductionsPortalLine | null;
+  comments: DeductionsComment[];
+  /** The newest comment's createdAt — threads sort by this, most recent first. */
+  latestCommentAt: string;
 };

@@ -40,11 +40,22 @@ export const dynamic = "force-dynamic";
 // message in full — and the owner was told the link bounces for her.
 const VIEW_ROLES = new Set(["Super Admin", "CEO", "HR Operations"]);
 
-export default async function AdminDeductionsPage() {
+export default async function AdminDeductionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
   if (!VIEW_ROLES.has(access.role)) {
     redirect("/employee-portals");
   }
+
+  // Deep link from a deduction-comment notification: ?tab=disputes&candidate=<id>. The workspace
+  // opens on that tab and scrolls the named thread into view. A single-value read only — a repeated
+  // query param arrives as an array, which is not a tab or a candidate id.
+  const params = await searchParams;
+  const tabParam = typeof params.tab === "string" ? params.tab : undefined;
+  const candidateParam = typeof params.candidate === "string" ? params.candidate.trim() || undefined : undefined;
 
   // Cairo, not UTC: this key seeds the workspace's state and is what the publish action files
   // deductions under. In the first 2-3 hours of a Cairo month a UTC key still reads the previous
@@ -67,7 +78,9 @@ export default async function AdminDeductionsPage() {
       <DeductionsWorkspace
         canDecide={access.role === "Super Admin"}
         currentCairoMonthKey={initialMonthKey}
+        highlightCandidateId={candidateParam}
         initialMonthKey={initialMonthKey}
+        initialTab={tabParam === "disputes" ? "disputes" : undefined}
       />
     </div>
   );

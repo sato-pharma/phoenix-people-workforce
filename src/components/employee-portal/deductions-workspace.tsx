@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { periodLabel } from "@/lib/business-review/period-format";
+import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
 import { deductionsCategoryLabel, deductionsUnitLabel } from "@/lib/deductions/calculations.ts";
 import type {
   DeductionsComment,
@@ -233,14 +234,33 @@ export function DeductionsPortalWorkspace({
                   </div>
                   {candidateComments.length > 0 ? (
                     <div className="mt-3 space-y-2">
-                      {candidateComments.map((comment) => (
-                        <div className="rounded border border-slate-100 bg-slate-50 p-3 text-sm" key={comment.id}>
-                          <p className="break-words text-slate-700">{comment.body}</p>
-                          <p className="mt-1 text-phx-xs font-semibold text-slate-400">
-                            {cairoDate(comment.createdAt)}
-                          </p>
-                        </div>
-                      ))}
+                      {candidateComments.map((comment) => {
+                        // Whose line is this — the employee's own, or HR's reply? A dispute is a
+                        // two-way conversation now, so each message says who sent it. HR replies
+                        // read in brand orange so they stand apart from the employee's own notes.
+                        const fromHr = !(
+                          ownCompactHrId &&
+                          comment.authorHrId &&
+                          compactDeductionsHrId(comment.authorHrId) === ownCompactHrId
+                        );
+                        return (
+                          <div
+                            className={cn(
+                              "rounded border p-3 text-sm",
+                              fromHr ? "border-orange-100 bg-orange-50" : "border-slate-100 bg-slate-50",
+                            )}
+                            key={comment.id}
+                          >
+                            <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                              {fromHr ? `${comment.authorName ?? "HR"} · HR` : "You"}
+                            </p>
+                            <p className="mt-1 break-words text-slate-700">{comment.body}</p>
+                            <p className="mt-1 text-phx-xs font-semibold text-slate-400">
+                              {cairoDate(comment.createdAt)}
+                            </p>
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : null}
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row">

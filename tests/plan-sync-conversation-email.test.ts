@@ -324,9 +324,14 @@ export function runPlanSyncConversationEmailTests() {
   // Both halves are asserted, because either alone is the offered-but-closed shape. The page is the
   // door; isDeductionsReadActor is the data behind it, checked separately by every company-wide
   // read route, so passing the door with the gate closed renders a screen whose every panel 403s.
+  //
+  // The link now deep-links to the Disputes tab on the exact candidate (2026-10-06): a bare
+  // /admin/deductions dropped the reader on the current-month collection workspace, where the
+  // comment is shown nowhere — "I can never reach it". It must still open the unified deductions
+  // screen, which the ?tab=disputes&candidate= form does.
   assert.ok(
-    /actionUrl: "\/admin\/deductions"/.test(deductionsComments),
-    "the deductions comment must link to the unified deductions screen",
+    /actionUrl: `\/admin\/deductions\?tab=disputes&candidate=/.test(deductionsComments),
+    "the deductions comment must deep-link to the Disputes tab on the unified deductions screen",
   );
   assert.ok(
     /const VIEW_ROLES = new Set\(\[[^\]]*"HR Operations"/.test(deductionsPage),

@@ -76,6 +76,7 @@ export function runDeductionsReadGateTests() {
     "app/api/admin/deductions/summary/company/route.ts",
     "app/api/admin/deductions/summary/employee/route.ts",
     "app/api/admin/deductions/publish/route.ts",
+    "app/api/admin/deductions/comments/route.ts",
   ];
   for (const route of guardedRoutes) {
     const source = readFileSync(new URL(`../${route}`, import.meta.url), "utf8");
