@@ -1707,6 +1707,7 @@ import { runPhoenixCrmSamplesTests } from "./phoenix-crm-samples.test.ts";
 import { runPhoenixCrmVisitDwellTests } from "./phoenix-crm-visit-dwell.test.ts";
 import { runPhoenixCrmExceptionsTests } from "./phoenix-crm-exceptions.test.ts";
 import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.ts";
+import { runPhoenixCrmFraudScanTests } from "./phoenix-crm-fraud-scan.test.ts";
 import { runPhoenixCrmVisitRollupTests } from "./phoenix-crm-visit-rollup.test.ts";
 import { runCronAutoarmTests } from "./cron-autoarm.test.ts";
 import { runPhoenixCrmAdoptionTests } from "./phoenix-crm-adoption.test.ts";
@@ -6096,6 +6097,11 @@ await runTest(
 await runTest(
   "Phoenix CRM tells a District Manager at 06:55 what needs him (B1 — owner, 2026-09-26: a CLEAN MANAGER IS TOLD NOTHING, because a digest that arrives every morning whatever happened is muted within a week and a muted one is worse than none; one message per manager, worst first, names and never HR codes; the key is per manager per DAY so a retry or a double fire reaches nobody twice; it judges nothing itself but calls the board's own gathering over ONE field day where the board reads six; email cannot escape, since the guard filters on the module key and not on any call site; and the cron expression matches cron-job.org exactly on a minute no other job uses)",
   runPhoenixCrmDailyDigestTests,
+);
+
+await runTest(
+  "Phoenix CRM runs a weekly visit-fraud scan (owner, 2026-10-07): Thursday 07:00 Cairo, the integrity board's GPS and photo flags for the completed Sat–Wed working week, to the Super Admin and the SFE Managers only and never the rep (Golden Rule #1); it judges nothing of its own, the GPS cases are the Super Admin's alone so the SFE copy is the photo cases only, a clean week is reported as clean, names and never HR codes, the line cap counts the rest with no ellipsis, and the five registration sites agree so the cron is watched, armed and cannot strand",
+  runPhoenixCrmFraudScanTests,
 );
 
 await runTest(
