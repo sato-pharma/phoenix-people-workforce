@@ -368,6 +368,18 @@ export function runProductionPlanningStringsTests() {
     /storedPlanTitle\(result\.productNameAr, result\.runs\)/,
     "savePlan must store the title storedPlanTitle builds, not one it re-derives inline",
   );
+  // 🔴 And it is UNCONDITIONAL. Until 2026-10-06 that line began with a fallback off the request
+  // body, so the ruling — Arabic whoever saves it — held only because no caller happens to send
+  // that field: anyone holding `production_planning:create` could store a title in any language,
+  // and a screen that later added a title box would have broken the rule with every assertion
+  // above still green. The owner dropped the override outright. This has to be a source check,
+  // because `savePlan` needs Supabase in hand and cannot be called from a test; it is safe against
+  // its own documentation because `serviceCode` is stripped of comments first, so this paragraph
+  // is not part of what is matched.
+  assert.ok(
+    !/body\.title/.test(serviceCode),
+    "savePlan must not read a title off the request body — the stored plan title is always the Arabic one, whoever saves it (owner, 2026-10-06)",
+  );
 
   // The refusals that name a material: present in both languages, different in both, and each owning
   // its own list separator — Arabic joins on the Arabic comma, English on a plain one.
