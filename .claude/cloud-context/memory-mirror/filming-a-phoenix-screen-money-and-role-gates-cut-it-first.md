@@ -1,6 +1,6 @@
 ---
 name: filming-a-phoenix-screen-money-and-role-gates-cut-it-first
-description: "before filming or demoing any Phoenix screen, read the source for THREE gates: a form that carries salary (the Employee Master's person form holds base/basic/gross/net); a report role-scoped to the field force (Employee 360 excludes HR, Finance, CEO, admin and office ENTIRELY, so a plain employee is absent even from their own copy); and 🔴 MONEY HIDING IN PROSE — a payroll alert reads 'Net salary differs from employee compensation (43,000)', so a sweep for EGP or a decimal pair returns 0 of 22 and calls the screen clean. Count a bare number in a sentence as money and read the actual rows. Conversely the portal payslip page masks every figure to ****** by default, which makes it the one payroll screen that IS filmable"
+description: "before filming or demoing any Phoenix screen, read the source for THREE gates: a form that carries salary (the Employee Master's person form holds base/basic/gross/net); a report role-scoped to the field force (Employee 360 excludes HR, Finance, CEO, admin and office ENTIRELY, so a plain employee is absent even from their own copy); and 🔴 MONEY HIDING IN PROSE — a payroll alert reads 'Net salary differs from employee compensation (43,000)', so a sweep for EGP or a decimal pair returns 0 of 22 and calls the screen clean. Count a bare number in a sentence as money and read the actual rows. Conversely the portal payslip page masks every figure to ****** by default, which makes it the one payroll screen that IS filmable. 🔴 GATE 4 — FREE-TEXT HUMAN REMARKS SURVIVE THE STAGING MASK: the mask renames PEOPLE, never a decision note, so an outstation approval_reason still reads 'No expense from Tanta To Mahalla Dr Rasha appreciate ur efforts' — a real manager's words naming a real doctor. A field clean in its TYPE can be dirty in its CONTENT; film an engine-written reason, never a stored one"
 metadata:
   node_type: memory
   type: project
@@ -52,6 +52,24 @@ untouched default state is filmable with nothing staged. 🔴 **But `PayrollSumm
 FILE, prints net salary at `text-3xl` with no mask and no toggle (`:137`)** — so "that file renders
 money" answers nothing about either component, and a per-file money count is the wrong unit. Check
 the component that the route actually renders.
+
+🔴 **Gate 4 — THE STAGING MASK RENAMES PEOPLE AND NOTHING ELSE, SO HUMAN REMARKS GO OUT
+UNMASKED** (added 6 Oct 2026, building video 06 — outstation expenses).
+`EligibilityResultCard` prints `result.approvalReason` as a paragraph. The column's TYPE is clean
+— no currency, no formatter — but on STORED rows staging's content reads *"No expense from Tanta
+To Mahalla Dr Rasha appreciate ur efforts"* (a real manager's own words, naming a real doctor) and
+*"Cancelled 2026-08-09 by the owner as a DUPLICATE of request #64 — the same Tanta trip on
+2026-08-09, filed two minutes later (10:30 vs 10:28)"* (narrates a cancellation, names a request by
+number). **So the card is filmable only in the WIZARD, where the engine composes the reason in front
+of you — never on a stored row and never in the admin queue.** The same component is safe or unsafe
+depending on which row feeds it. `eligibility_reason`, by contrast, is always engine-written and is
+the module's best sentence: *"Distance 58.39 KM is below official minimum (60 KM) but within
+tolerance (58 KM). This is accepted with warning."*
+
+**And a fourth kind of gate that is not about content at all: a panel can render its verdict in the
+WRONG COLOUR.** `territory-validation-panel.tsx` styles `outside_expected_territory` emerald and
+`matched` amber — inverted — so on camera a green badge says the opposite of what it means. Read the
+tone map, not just the text.
 
 **How to apply:** before promising a screen, open the page file and the service behind it. Ask
 (a) does this view, or anything it opens, render money? and (b) is the person I am filming inside

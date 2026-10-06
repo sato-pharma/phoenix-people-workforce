@@ -54,7 +54,7 @@ const OUT_HOOKS = path.join(OUT_DIR, 'laptop-hooks');
 
 // The laptop hooks a repo test pins. Only hooks that live OUTSIDE this repo belong here — a hook in
 // `.claude/hooks/` is already testable where it sits and must never be duplicated into this folder.
-const PINNED_HOOKS = ['scratchpad-guard.mjs'];
+const PINNED_HOOKS = ['scratchpad-guard.mjs', 'next-step-capture.mjs', 'risky-allow-guard.mjs'];
 const HOOKS_DIR = process.env.PHX_HOOKS_DIR || path.join(os.homedir(), '.claude', 'hooks');
 
 const MEMORY_SLUG = 'F--Phoenix-Workforce-phoenix-workforce';
