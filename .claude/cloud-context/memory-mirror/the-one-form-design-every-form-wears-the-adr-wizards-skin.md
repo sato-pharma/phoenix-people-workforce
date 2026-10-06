@@ -1,6 +1,6 @@
 ---
 name: the-one-form-design-every-form-wears-the-adr-wizards-skin
-description: "Every form in the system wears the Adverse Drug Reaction wizard's skin — strings in src/components/ui/form-tokens.ts, components in form-kit.tsx, ratchet at ZERO, h-8/h-9 dense controls kept by his own 2026-10-06 ruling — and the nine codemod traps, including a build failure that lint and typecheck both passed and 177 overrides a template literal silently threw away"
+description: "Every form in the system wears the Adverse Drug Reaction wizard's skin — strings in src/components/ui/form-tokens.ts, components in form-kit.tsx, ratchet at ZERO, h-8/h-9 dense controls kept by his own 2026-10-06 ruling — and the ten codemod traps, including a build failure that lint and typecheck both passed and 177 overrides a template literal silently threw away"
 metadata:
   node_type: memory
   type: project
@@ -39,7 +39,7 @@ their box from a parent, plus the printed-document editors under `hiring-pack/` 
 exempt under the house document identity. The ADR form itself now CONSUMES the kit, which is what
 makes "change the token and the system follows" true.
 
-🔴 **Nine codemod traps, every one of which cost a re-run:**
+🔴 **Ten codemod traps, every one of which cost a re-run:**
 1. **Dropping a field's `pl-9` puts the magnifier on top of the text.** Side padding *larger* than
    the token's own `px-3` is icon clearance, not skin; the first pass broke ~45 search boxes.
 2. **A regex that ends a JSX tag at the first `>` ends it inside `(e) => …`** — the attribute list
@@ -87,6 +87,15 @@ makes "change the token and the system follows" true.
    pinning the composition in BOTH halves rather than the old contiguous literal. Measured across
    the branch: exactly ONE call site carried that pair, so it is a one-screen exception — **never
    change the token to fix it**, which would redesign his own screen.
+
+10. 🔴 **LIFTING A SHELL INTO A SHARED KIT MOVES THE REFERENCE A SIBLING'S TEST MEASURES
+    AGAINST.** `tests/phoenix-crm-step-form.test.ts` pins the CRM step form to Report It's own five
+    class strings and says *"the reference moved"* when Report It stops carrying them — which is
+    exactly what happened when Report It began consuming `form-kit.tsx`, byte-identical, with the
+    screen unchanged. Re-point the reference to the kit AND assert Report It still renders
+    `<FormWizard`, or the kit can drift from the screen he pointed at. **`run-tests.ts` stops at the
+    first throw, so each box round buys ONE of these** — find the rest cheaply by listing every
+    test that reads a file the branch changed and names a literal the branch removed.
 
 🔴 **And a quoted bash heredoc on this machine HALVED the backslashes in a JS regex literal** —
 `/[^"\\]/` landed as `/[^"\]/`, which matched nothing and reported "0 controls" with no error at all.
