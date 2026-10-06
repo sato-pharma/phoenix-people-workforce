@@ -57,6 +57,31 @@ export function cairoWallClock(value: Date): Date {
   return new Date(value.getTime() + cairoOffsetMinutes(value) * 60000);
 }
 
+/**
+ * A wall-clock string, tagged UTC so that `new Date` keeps its digits.
+ *
+ * 🔴 THE HALF OF "RENDER IT AS WRITTEN" THAT `timeZone: "UTC"` DOES NOT COVER. A wall clock is
+ * printed unshifted by formatting it with `timeZone: "UTC"` — but only if `new Date` also READ it
+ * as UTC, and a date-time string carrying NO offset is parsed as the engine's LOCAL time instead
+ * (ECMA-262 date-time forms). So on a Cairo browser `new Date("2026-09-01T10:08:38")` is the
+ * instant `07:08:38Z`, and formatting that in UTC prints 07:08 — three hours early, with the two
+ * halves of the convention cancelling in the wrong direction and nothing throwing.
+ *
+ * That is the defect the owner reported on `/admin/field-activity` on 2026-10-06: the route map
+ * builds its clock by hand as `${dateIso}T${clock}`, with no `+00`, while the same card's "GPS
+ * window" fact slices the string and was right. Measured on production the same day — all ten of
+ * B-148's stops on 1 September 2026 were off by exactly −3:00, to the second.
+ *
+ * A value that already carries `Z` or an offset is returned untouched, so this is safe to apply to
+ * anything PostgREST hands back; a value that is not a date-time at all is returned untouched too.
+ */
+export function utcTaggedWallClock(value: string): string {
+  const text = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(text)) return text;
+  if (/(?:Z|[+-]\d{2}(?::?\d{2})?)$/.test(text)) return text;
+  return `${text.replace(" ", "T")}Z`;
+}
+
 /** True when these options ask for Cairo, and so must be served from the table instead. */
 export function isCairoZone(timeZone: string | undefined): boolean {
   return timeZone === "Africa/Cairo";
