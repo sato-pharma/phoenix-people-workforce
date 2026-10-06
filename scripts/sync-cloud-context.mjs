@@ -67,6 +67,12 @@ const PINNED_HOOKS = [
   // selftest at all. Its own suite is pure functions only — it starts and ends no process — so it is
   // safe for CI to run.
   'dev-server-reaper.mjs',
+  // The sixth, found by the same sweep that turned up the fifth, and the only one here that guards an
+  // UNATTENDED run rather than a session: a PreToolUse guard that holds the weekly config review to
+  // the read-only rule its own skill states in capitals. It exists because on 2026-09-21 that run
+  // rewrote a script and re-registered a scheduled task anyway, at 01:41-02:21 Cairo with nobody
+  // watching. Its 45-case suite was in neither list. Note the flag is `--selftest`, like the reaper's.
+  'weekly-review-readonly.mjs',
 ];
 const HOOKS_DIR = process.env.PHX_HOOKS_DIR || path.join(os.homedir(), '.claude', 'hooks');
 
