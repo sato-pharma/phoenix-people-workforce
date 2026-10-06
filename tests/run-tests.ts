@@ -1485,6 +1485,7 @@ import { runPayrollClosedMonthDeleteTests } from "./payroll-closed-month-delete.
 import { runDeductionsEmployeeSummaryPublishEligibilityTests } from "./deductions-employee-summary-publish-eligibility.test.ts";
 import { runDeductionsExportHouseIdentityTests } from "./deductions-export-house-identity.test.ts";
 import { runDeductionsExportAppliedAndMasterTests } from "./deductions-export-applied-and-master.test.ts";
+import { runDeductionsMasterFormulaTotalsTests } from "./deductions-master-formula-totals.test.ts";
 import { runDeductionsMasterExportLineRegionFilterTests } from "./deductions-master-export-line-region-filter.test.ts";
 import { runDeductionsVacationDayDoubleChargeTests } from "./deductions-vacation-day-double-charge.test.ts";
 import { runMarketingRoiSharedAttributionTests } from "./marketing-roi-shared-attribution.test.ts";
@@ -5118,6 +5119,7 @@ await runTest(
 await runTest("deductions By Employee total counts only what publish will actually take (pending shown separately, agrees with Overview)", runDeductionsEmployeeSummaryPublishEligibilityTests);
 
 await runTest("deductions export shows the applied value/amount publish will take for an approved-without-narrowing row (never blank), and the master workbook summarizes eligible-only with Line + Direct Manager columns", runDeductionsExportAppliedAndMasterTests);
+await runTest("the master deductions workbook carries live SUM formulas for every total — per-employee Final Deduction, the Summary and Detailed total rows, and the Cover's headline figures — each footing to the cells it names", runDeductionsMasterFormulaTotalsTests);
 await runTest("deductions exports (house identity, Will Be Deducted agrees with publish)", runDeductionsExportHouseIdentityTests);
 await runTest("the master deductions export narrows to one line and/or region, carries a Region column, and a filtered workbook says so on its cover and in its filename", runDeductionsMasterExportLineRegionFilterTests);
 
