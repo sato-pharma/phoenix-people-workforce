@@ -2338,6 +2338,7 @@ import { runProductionPlanningFitsTheScreenTests } from "./production-planning-f
 import { runProductionPlanningWorkbookTests } from "./production-planning-workbook.test.ts";
 import { runProductionPlanningSilentUntilArmedTests } from "./production-planning-silent-until-armed.test.ts";
 import { runFieldActivityMapClockTests } from "./field-activity-map-clock.test.ts";
+import { runNavHrefsResolveTests } from "./nav-hrefs-resolve.test.ts";
 import { runDeleteGuardStandDownTests } from "./delete-guard-stand-down.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -8987,6 +8988,10 @@ await runTest(
 await runTest(
   "the Field Activity route map prints a GPS stop at the time it was stored: a Cairo wall clock carrying no zone is tagged UTC BEFORE new Date reads it, because a zone-less date-time is parsed as the browser's own local time and `timeZone: \"UTC\"` then prints it three hours early - all ten of B-148's 1 September 2026 stops were off by exactly -3:00 - while a value PostgREST already zoned comes back byte-identical and a non-date is left for the caller's own guard",
   runFieldActivityMapClockTests,
+);
+await runTest(
+  "every sidebar row and hub card points at a page that exists - all four catalogues, with the /hr rows resolved through the proxy.ts rewrite that serves them (/hr/employees -> /employees), because a dead rail row is reported by a person rather than detected: nothing throws, the row renders, its permission gate is right, and the only symptom is a Not Found page for whoever clicks it",
+  runNavHrefsResolveTests,
 );
 await runTest(
   "the owner's never-delete guard cannot quietly loosen: the pinned copy of ~/.claude/hooks/scratchpad-guard.mjs still refuses every blanket `PHX_DELETE_OK` (1, 0, yes, true, all, any, *, empty, under five characters), still honours a marker that NAMES the file in all four spellings, still voids a yes when a second unnamed protected file rides along, still refuses to count the marker's own `.pdf` token as one of the files it covers, still has no hatch at all for F:/Claude Scratchpad Archive or F:/Hiring Posts, and still DENIES when the archive copy that must precede an approved delete fails",
