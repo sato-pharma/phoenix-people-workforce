@@ -9,9 +9,10 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionsHrId } from "./candidate-key.ts";
+import { assertDeductionsDecisionActor } from "./permissions.ts";
 import type { DeductionsComment } from "./types.ts";
-import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
-import { notifyHrConversationMessage } from "@/lib/conversations/notify";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import { notifyConversationMessage, notifyHrConversationMessage } from "@/lib/conversations/notify";
 import { logError } from "@/lib/observability/log";
 
 type CommentRow = {
@@ -31,9 +32,34 @@ function mapCommentRow(row: CommentRow): DeductionsComment {
     authorLoginId: row.author_login_id,
     authorHrId: row.author_hr_id,
     authorRole: row.author_role,
+    authorName: null,
     body: row.body,
     createdAt: row.created_at,
   };
+}
+
+/**
+ * Fill in each comment's authorName from the employees table. A deduction dispute is now a two-way
+ * conversation — the employee on one side, the HR person who replies on the other — so every line
+ * has to say who wrote it, by name and never by HR id (the owner's standing rule). Best-effort: an
+ * unresolved id leaves authorName null and the row still renders.
+ */
+async function attachAuthorNames(comments: DeductionsComment[]): Promise<DeductionsComment[]> {
+  const ids = Array.from(new Set(comments.map((comment) => comment.authorHrId).filter((id): id is string => Boolean(id))));
+  if (ids.length === 0) return comments;
+  const lookups = Array.from(new Set(ids.flatMap((id) => hrIdLookupKeys(id))));
+  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id, full_name").in("hr_id", lookups);
+  if (error) return comments;
+  const nameByKey = new Map<string, string>();
+  for (const row of (data ?? []) as Array<{ hr_id?: string | null; full_name?: string | null }>) {
+    const key = canonicalHrIdKey(row.hr_id);
+    const name = String(row.full_name ?? "").trim();
+    if (key && name) nameByKey.set(key, name);
+  }
+  return comments.map((comment) => {
+    const key = canonicalHrIdKey(comment.authorHrId);
+    return { ...comment, authorName: (key && nameByKey.get(key)) || null };
+  });
 }
 
 export async function listDeductionsComments(input: {
@@ -52,7 +78,30 @@ export async function listDeductionsComments(input: {
     rows.push(...((data ?? []) as CommentRow[]));
   }
   rows.sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")));
-  return rows.map(mapCommentRow);
+  return attachAuthorNames(rows.map(mapCommentRow));
+}
+
+/**
+ * Every deduction comment in the system, newest first, for the admin dispute inbox.
+ *
+ * Self-only authorship (assertEmployeeCanCommentOnCandidate) means every row here was
+ * written by the employee it belongs to — this is the company-wide read of those, and the
+ * route that calls it is gated on assertDeductionsReadActor, so it is never reached by a
+ * self-only viewer. Capped rather than paginated: disputes are rare (a few a month), so one
+ * bounded read is the whole history, and the cap only exists so an unbounded table can never
+ * stream megabytes into the page.
+ */
+export async function listRecentDeductionsComments(input?: {
+  limit?: number;
+}): Promise<DeductionsComment[]> {
+  const limit = Math.min(Math.max(Math.trunc(input?.limit ?? 500), 1), 1000);
+  const { data, error } = await getSupabaseAdmin()
+    .from("deductions_comments")
+    .select("id, candidate_id, author_login_id, author_hr_id, author_role, body, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return attachAuthorNames(((data ?? []) as CommentRow[]).map(mapCommentRow));
 }
 
 /** Returns the candidate's employee_hr_id_compact, or throws if this candidateId
@@ -67,13 +116,8 @@ export async function findDeductionsCandidateOwner(candidateId: string): Promise
   return (data as { employee_hr_id_compact: string } | null)?.employee_hr_id_compact ?? null;
 }
 
-async function assertEmployeeCanCommentOnCandidate(access: AccessContext, candidateId: string) {
-  const ownerCompactHrId = await findDeductionsCandidateOwner(candidateId);
-  if (!ownerCompactHrId) throw new Error("Deduction candidate not found.");
-  const actorHr = compactDeductionsHrId(access.hrId ?? access.loginId);
-  if (!actorHr || actorHr !== ownerCompactHrId) {
-    throw new Error("Forbidden: employees can comment only on their own published deductions.");
-  }
+/** A comment — from either side — is allowed only once the deduction is published to the employee. */
+async function assertCandidatePublished(candidateId: string) {
   const { data, error } = await getSupabaseAdmin()
     .from("deductions_publication_lines")
     .select("id, publication_id, deductions_publications!inner(status)")
@@ -84,6 +128,16 @@ async function assertEmployeeCanCommentOnCandidate(access: AccessContext, candid
   if (!Array.isArray(data) || data.length === 0) {
     throw new Error("Comments are available only after the deduction is finalized.");
   }
+}
+
+async function assertEmployeeCanCommentOnCandidate(access: AccessContext, candidateId: string) {
+  const ownerCompactHrId = await findDeductionsCandidateOwner(candidateId);
+  if (!ownerCompactHrId) throw new Error("Deduction candidate not found.");
+  const actorHr = compactDeductionsHrId(access.hrId ?? access.loginId);
+  if (!actorHr || actorHr !== ownerCompactHrId) {
+    throw new Error("Forbidden: employees can comment only on their own published deductions.");
+  }
+  await assertCandidatePublished(candidateId);
 }
 
 export async function addDeductionsComment(input: {
@@ -129,6 +183,131 @@ export async function addDeductionsComment(input: {
 }
 
 /**
+ * An HR / admin reply on a published deduction — the other side of the conversation.
+ *
+ * The thread began one-sided (only the employee could write, and HR read the email), but the owner
+ * asked for a reply box "to open conversation" (2026-10-06). So this is the admin's write path:
+ * same table, same "only after publication" gate, but the author is an admin and the message is
+ * sent TO the employee (their portal), opening a two-way thread. Super Admin ONLY — the owner's
+ * decision, 2026-10-06 ("keep replies super-admin only"): CEO and HR Operations read the dispute
+ * but cannot answer it, the same actor that decides and publishes a deduction.
+ */
+export async function addDeductionsReply(input: {
+  access: AccessContext;
+  body: string;
+  candidateId: string;
+}): Promise<DeductionsComment> {
+  assertDeductionsDecisionActor(input.access);
+  const ownerCompactHrId = await findDeductionsCandidateOwner(input.candidateId);
+  if (!ownerCompactHrId) throw new Error("Deduction candidate not found.");
+  await assertCandidatePublished(input.candidateId);
+
+  const body = String(input.body ?? "").replace(/\s+/g, " ").trim();
+  if (!body) throw new Error("Reply is required.");
+  if (body.length > 2000) throw new Error("Reply cannot exceed 2000 characters.");
+
+  const payload = {
+    author_hr_id: hrIdForStorage(input.access.hrId),
+    author_login_id: input.access.loginId ?? input.access.hrId ?? "admin",
+    author_role: input.access.role,
+    body,
+    candidate_id: input.candidateId,
+  };
+  const { data, error } = await getSupabaseAdmin()
+    .from("deductions_comments")
+    .insert(payload)
+    .select("id, candidate_id, author_login_id, author_hr_id, author_role, body, created_at")
+    .single();
+  if (error) throw error;
+
+  await writeAuditLog({
+    actorLoginId: payload.author_login_id,
+    entityId: input.candidateId,
+    entityType: "deductions_comment",
+    newValues: { bodyLength: body.length, reply: true },
+    summary: "HR reply added to a published deduction dispute (unified module).",
+  });
+
+  const row = data as CommentRow;
+  await notifyDeductionsReply({
+    authorHrId: input.access.hrId ?? null,
+    body,
+    candidateId: input.candidateId,
+    messageKey: row.id,
+  });
+
+  return (await attachAuthorNames([mapCommentRow(row)]))[0];
+}
+
+/**
+ * Deliver an HR reply TO the employee whose deduction it is — the counterpart to
+ * notifyDeductionsComment, which runs the other direction. To = the employee (submitter), CC = the
+ * HR author, landing on the employee's own portal deductions page. Best-effort: the reply row is
+ * already committed, so a delivery failure is logged and swallowed, never thrown back.
+ */
+async function notifyDeductionsReply(input: {
+  authorHrId: string | null;
+  body: string;
+  candidateId: string;
+  messageKey: string;
+}): Promise<void> {
+  try {
+    // The employee and their name come from the active published line — the same row the portal
+    // shows them, so the notification names the person the deduction belongs to, not an HR id.
+    const { data: lineRow } = await getSupabaseAdmin()
+      .from("deductions_publication_lines")
+      .select("employee_hr_id, employee_name")
+      .eq("candidate_id", input.candidateId)
+      .eq("line_status", "active")
+      .limit(1)
+      .maybeSingle();
+    const employeeHrId = (lineRow as { employee_hr_id?: string | null } | null)?.employee_hr_id ?? null;
+    const employeeName = String((lineRow as { employee_name?: string | null } | null)?.employee_name ?? "").trim() || null;
+    if (!employeeHrId) {
+      logError("Deductions reply has no published line to address", {
+        labels: { event: "deductions_reply_no_line", candidateId: input.candidateId },
+      });
+      return;
+    }
+
+    let authorName: string | null = null;
+    if (input.authorHrId) {
+      const { data } = await getSupabaseAdmin()
+        .from("employees")
+        .select("full_name")
+        .in("hr_id", hrIdLookupKeys(input.authorHrId))
+        .maybeSingle();
+      authorName = String((data as { full_name?: string | null } | null)?.full_name ?? "").trim() || null;
+    }
+
+    await notifyConversationMessage({
+      // The employee's OWN portal deductions page — where their published deductions and this
+      // thread live. (The HR side lands on /admin/deductions?tab=disputes; this is its mirror.)
+      actionUrl: "/employee-portals/deductions",
+      authorHrId: input.authorHrId,
+      authorName,
+      body: input.body,
+      eventType: "deductions_comment",
+      // Per-message key, so a second reply on one deduction is its own notification rather than
+      // collapsing onto the first — the same reason the employee→HR path carries one.
+      messageKey: input.messageKey,
+      metadata: { candidateId: input.candidateId, reply: true },
+      module: "deductions",
+      participantHrIds: [employeeHrId, input.authorHrId].filter((id): id is string => Boolean(id)),
+      recordId: input.candidateId,
+      submitterHrId: employeeHrId,
+      subjectLabel: employeeName ?? "your deduction",
+      threadLabel: "published deduction for",
+    });
+  } catch (error) {
+    logError("Deductions reply failed to notify the employee", {
+      labels: { event: "deductions_reply_notify_failed", candidateId: input.candidateId },
+      error,
+    });
+  }
+}
+
+/**
  * Send an employee's comment on their own published deduction to HR.
  *
  * "HR gets the deductions comment" - the owner's answer on 2026-09-03, asked before any recipient
@@ -162,20 +341,16 @@ async function notifyDeductionsComment(input: {
     }
 
     await notifyHrConversationMessage({
-      // The admin screen, not the portal one - the portal page shows the VIEWER's own deductions,
-      // which is the wrong record entirely for an HR reader.
+      // The admin screen's Disputes tab, deep-linked to the exact candidate — NOT the portal page,
+      // which shows the VIEWER's own deductions and is the wrong record for an HR reader.
       //
-      // Note that HR cannot open this page TODAY. app/(admin)/admin/deductions/page.tsx gates on
-      // `VIEW_ROLES = new Set(["Super Admin", "CEO"])` and redirects everyone else to
-      // /employee-portals, and the owner deliberately revoked the Finance Manager from that very
-      // set on 2026-08-11 ("hidden is not revoked"). So this stays the CORRECT destination - it is
-      // where the record lives, and it starts working the moment a seat is added - rather than a
-      // link somewhere HR can already reach but that shows the wrong thing.
-      //
-      // The EMAIL is unaffected and carries the comment in full, so HR reads the substance without
-      // clicking anything. Widening that page is an access decision for the owner, not a wiring
-      // detail, so it is flagged rather than taken.
-      actionUrl: "/admin/deductions",
+      // This URL used to be a bare "/admin/deductions", which landed the reader on the collection
+      // workspace for the CURRENT month with no comment anywhere on it — a dispute on any earlier
+      // month was unreachable in-app, and the owner reported exactly that ("I receive a comment on
+      // a deduction and I can never reach it"). The Disputes tab now lists every published-deduction
+      // comment, month-independent, and `?tab=disputes&candidate=<id>` opens it on this one and
+      // scrolls it into view. The EMAIL still carries the comment in full as the fallback.
+      actionUrl: `/admin/deductions?tab=disputes&candidate=${encodeURIComponent(input.candidateId)}`,
       authorHrId: input.authorHrId,
       authorName,
       body: input.body,

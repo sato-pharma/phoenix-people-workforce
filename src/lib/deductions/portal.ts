@@ -20,9 +20,14 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { salaryRecordsColumnForCategory } from "./calculations.ts";
-import { listDeductionsComments } from "./comments.ts";
+import { listDeductionsComments, listRecentDeductionsComments } from "./comments.ts";
 import { compactDeductionsHrId, normalizeMonthKey } from "./candidate-key.ts";
-import type { DeductionsCategory, DeductionsComment, DeductionsPortalLine } from "./types.ts";
+import type {
+  AdminDeductionCommentThread,
+  DeductionsCategory,
+  DeductionsComment,
+  DeductionsPortalLine,
+} from "./types.ts";
 
 function safeNormalizeMonthKey(input: string | undefined): string | undefined {
   if (typeof input !== "string" || !input.trim()) return undefined;
@@ -187,4 +192,79 @@ export async function getPortalDeductions(input: {
 
   const comments = await listDeductionsComments({ candidateIds: lines.map((line) => line.candidateId) });
   return { comments, lines };
+}
+
+// Fetch the active published line for each candidate, keyed by candidate id. Mirrors
+// loadNewModuleLines' column set and its line_status='active' filter (a withdrawn line
+// deducts nothing and must not be the one shown), but keyed on candidate rather than
+// publication — these candidates come from the comment table, not a month.
+async function loadPublishedLinesByCandidate(
+  candidateIds: string[],
+): Promise<Map<string, DeductionsPortalLine>> {
+  const byCandidate = new Map<string, DeductionsPortalLine>();
+  if (candidateIds.length === 0) return byCandidate;
+  const supabase = getSupabaseAdmin();
+  for (let i = 0; i < candidateIds.length; i += 100) {
+    const batch = candidateIds.slice(i, i + 100);
+    const { data, error } = await supabase
+      .from("deductions_publication_lines")
+      .select(
+        "id, publication_id, candidate_id, decision_id, employee_hr_id, employee_hr_id_compact, employee_name, month_key, category, unit, original_value, applied_value, applied_amount, dates, reason, hr_note, created_at",
+      )
+      .in("candidate_id", batch)
+      .eq("line_status", "active");
+    if (error) throw error;
+    for (const row of (data ?? []) as PublicationLineRow[]) {
+      // First active line per candidate wins; a candidate has at most one active line.
+      if (!byCandidate.has(row.candidate_id)) byCandidate.set(row.candidate_id, mapPublicationLine(row));
+    }
+  }
+  return byCandidate;
+}
+
+/**
+ * Group newest-first comments into per-candidate threads, attach each candidate's published line,
+ * and order the threads by their newest comment. Pure, so it is unit-tested without a database
+ * (tests/deductions-dispute-threads.test.ts). The incoming comments MUST already be newest-first —
+ * the first one seen for a candidate is taken as that thread's latest, which the sort keys on.
+ */
+export function groupDeductionCommentThreads(
+  comments: DeductionsComment[],
+  linesByCandidate: Map<string, DeductionsPortalLine>,
+): AdminDeductionCommentThread[] {
+  const threads = new Map<string, AdminDeductionCommentThread>();
+  for (const comment of comments) {
+    const existing = threads.get(comment.candidateId);
+    if (existing) {
+      existing.comments.push(comment);
+      continue;
+    }
+    threads.set(comment.candidateId, {
+      candidateId: comment.candidateId,
+      line: linesByCandidate.get(comment.candidateId) ?? null,
+      comments: [comment],
+      latestCommentAt: comment.createdAt,
+    });
+  }
+  return Array.from(threads.values()).sort((a, b) =>
+    String(b.latestCommentAt ?? "").localeCompare(String(a.latestCommentAt ?? "")),
+  );
+}
+
+/**
+ * Every employee dispute on a published deduction, newest thread first — the admin Disputes
+ * inbox. A deduction comment mails HR a link to /admin/deductions, so this is the read behind
+ * the screen that link has to open. Company-wide and month-independent by design: the owner
+ * could not reach a comment because the only in-app destination was the current-month workspace,
+ * which shows no comments at all. Callers gate this on assertDeductionsReadActor.
+ */
+export async function listPublishedDeductionCommentThreads(input?: {
+  limit?: number;
+}): Promise<AdminDeductionCommentThread[]> {
+  const comments = await listRecentDeductionsComments({ limit: input?.limit });
+  if (comments.length === 0) return [];
+
+  const candidateIds = Array.from(new Set(comments.map((comment) => comment.candidateId)));
+  const linesByCandidate = await loadPublishedLinesByCandidate(candidateIds);
+  return groupDeductionCommentThreads(comments, linesByCandidate);
 }
