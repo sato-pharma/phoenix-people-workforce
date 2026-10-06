@@ -35,6 +35,7 @@ import {
 } from "@/lib/recruitment/candidate-status";
 import type { CandidateFolderAreaOption } from "@/lib/recruitment/candidate-folder-options";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
+import { MANAGER_HOLD_DAYS } from "@/lib/recruitment/manager-hold-window";
 import {
   partitionManagerCandidates,
   withManagerFiling,
@@ -762,7 +763,10 @@ function RecruitmentCandidatesPortalBody({
         <section className="space-y-4">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Sent to you</h2>
-            <p className="text-xs text-slate-500">CVs the recruitment team asked you to look at.</p>
+            <p className="text-xs text-slate-500">
+              CVs the recruitment team asked you to look at. A CV stays here for {MANAGER_HOLD_DAYS} days, then goes
+              back to the recruitment team.
+            </p>
           </div>
           {/* ── One folder per position ───────────────────────────────────────────────────────
               The owner, 2026-08-28: "he goes to a folder called Nasr City Medical Reps ... he can

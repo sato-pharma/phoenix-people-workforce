@@ -2361,6 +2361,7 @@ import { runRiskyAllowGuardPinTests } from "./risky-allow-guard-pin.test.ts";
 import { runMemoryGuardPinTests } from "./memory-guard-pin.test.ts";
 import { runDevServerReaperPinTests } from "./dev-server-reaper-pin.test.ts";
 import { runWeeklyReviewReadonlyPinTests } from "./weekly-review-readonly-pin.test.ts";
+import { runRecruitmentManagerHoldWindowTests } from "./recruitment-manager-hold-window.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -9104,6 +9105,10 @@ await runTest(
 await runTest(
   "the guard that holds the UNATTENDED weekly config review to read-only cannot quietly stop holding it: the pinned copy of ~/.claude/hooks/weekly-review-readonly.mjs runs its own 45-case table to `0 failed`, the count never falls and must equal the ok lines it printed, all three predicates survive (`isWeeklyReviewFirstLine`, `isReadOnlyCommand` and the `isReadOnlyMcpTool` that covers the route around the shell), the mode is still `--selftest`, the summary still says `cases, … failed` because the hourly runner accepts a hook only on that wording, and the twelve load-bearing cases still RUN by name — the three writes the 2026-09-21 unattended run actually performed (Register-ScheduledTask, a node -e file rewrite, cp over a script), the bypasses of a verb allow-list (a redirect, a bad second segment of a chain, command substitution, git fetch, an MCP update_scheduled_task), the detection boundary that keeps it off human sessions, and a legitimate read that must keep passing",
   runWeeklyReviewReadonlyPinTests,
+);
+await runTest(
+  "a CV never stays in a manager's account more than 45 days (owner, 2026-10-06): the window is one number and one `>=` comparison that fails CLOSED on an unreadable date, every route a CV reaches a manager by applies it (the pushed list and its gate, the single-manager stamp, the team picker's count and gate, the district folders and the gate behind them) while the whole-company report path and the engagement report deliberately do not, and the daily return takes a CV back as `shortlisted` under an `ops:` actor only when EVERY manager holding it is past 45 days, before the stale-send check reads the status",
+  runRecruitmentManagerHoldWindowTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

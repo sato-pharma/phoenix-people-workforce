@@ -350,7 +350,7 @@ export async function loadActiveManagerHrIds(managerHrIds: readonly string[]): P
  * Measured in production that day, this resolves to exactly ONE reachable person (`B-10`) — the
  * second Super Admin row is the `admin-HR` canary, whose `hr_id` is deliberately NULL.
  */
-async function recruitmentDeskHrIds(): Promise<string[]> {
+export async function recruitmentDeskHrIds(): Promise<string[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("app_auth_users")

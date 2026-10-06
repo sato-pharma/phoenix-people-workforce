@@ -59,6 +59,7 @@ import {
   type UnplacedDeclaration,
 } from "@/lib/recruitment/district-manager-folders";
 import { isReturnSuppressed, loadManagerReturnSuppressions } from "@/lib/recruitment/district-returns";
+import { isWithinFolderHold } from "@/lib/recruitment/manager-hold-window";
 import type { Candidate } from "@/lib/recruitment/types";
 
 /** A board carrying whole candidate records, which is what every screen renders. */
@@ -212,11 +213,25 @@ export async function listDistrictBoardsForManager(
   // the CV in front of every other manager who can see it — so it feeds the SAME set through the
   // SAME key function and the pure placement rule never learns there are two. What differs is only
   // where they go: a return puts the CV in the administrator's queue, a skip tells nobody.
-  const [candidates, returnedByHim, skippedByHim] = await Promise.all([
+  const [routable, returnedByHim, skippedByHim] = await Promise.all([
     loadRoutableCandidates(),
     loadManagerReturnSuppressions(managerHrId),
     loadManagerSkipSuppressions(managerHrId),
   ]);
+  // ── THE 45-DAY WINDOW, APPLIED BEFORE PLACEMENT ──────────────────────────────────────────────
+  //
+  // The owner, 2026-10-06: *"collect all old CVs from the manager's accounts ... Never a CV stay at a
+  // district manager account or any manager account more than 45 days."* The folders are derived, so
+  // there is no row to expire — a CV simply stops being offered to a manager once it is more than 45
+  // days since it arrived (or since its applicant last said where they want to work).
+  //
+  // FILTERED HERE, ON THE LIST, rather than inside the pure placement rule, for two reasons. The
+  // report path (loadAllDistrictBoards) must keep seeing every CV — a CV that aged out of a manager's
+  // account was still received — and the rule's own signature is pinned by source tests that this
+  // manager-scoped call must keep matching. The window itself is manager-hold-window.ts, shared with
+  // every other route a CV reaches a manager by.
+  const now = new Date();
+  const candidates = routable.filter((candidate) => isWithinFolderHold(candidate, now));
   // ONE SET, and it keeps the name the placement rule knows it by. Both halves are the same fact —
   // this manager has finished with this CV — and the pure rule has no business learning that there
   // are two ways to reach it. Naming the variable anything else also breaks the source pin in
@@ -264,11 +279,17 @@ export async function districtBoardsHoldingCandidate(candidateId: string): Promi
   if (error) throw error;
   if (!data) return [];
 
+  const candidate = mapCandidate(data as CandidateDbRow);
+  // PAST ITS 45 DAYS A CV IS IN NOBODY'S FOLDER (manager-hold-window.ts). This is the gate behind both
+  // "may he open this CV" and "may his national manager", so it must answer exactly as the list does:
+  // a CV the folders stopped showing cannot be opened by guessing its id.
+  if (!isWithinFolderHold(candidate)) return [];
+
   const rows = await loadDistrictSeatRows();
   if (rows.length === 0) return [];
 
   const { boards } = placeCandidatesInDistrictFolders({
-    candidates: [mapCandidate(data as CandidateDbRow)],
+    candidates: [candidate],
     rows,
   });
   return boards.filter((board) => board.candidateCount > 0);

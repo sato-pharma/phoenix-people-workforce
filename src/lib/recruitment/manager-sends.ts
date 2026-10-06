@@ -17,6 +17,7 @@
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { managerHoldCutoffIso } from "@/lib/recruitment/manager-hold-window";
 import { managerLabel } from "@/lib/recruitment/person-labels";
 import type { SentForPosition } from "@/lib/recruitment/types";
 
@@ -241,8 +242,15 @@ export async function recordManagerSends(input: {
  * The HR_ID goes through hrIdLookupKeys rather than a bare .eq for the reason it does everywhere
  * else here: stored ids are MIXED CASE ('B-12', 'b-10', 'PD-0001'), PostgREST eq is case-sensitive,
  * and a filter matching nothing is indistinguishable from "nothing was sent to you".
+ *
+ * ONLY THE SENDS STILL INSIDE THEIR 45 DAYS (manager-hold-window.ts). A send older than that is not
+ * deleted — it stays on the trail, and the timeline and the screening queue still read it — it just
+ * stops being something this manager can see or open. `now` is a parameter so a test can pin it.
  */
-export async function listSendsForManager(managerHrId: string | null | undefined): Promise<ManagerSend[] | null> {
+export async function listSendsForManager(
+  managerHrId: string | null | undefined,
+  now: Date = new Date(),
+): Promise<ManagerSend[] | null> {
   const keys = hrIdLookupKeys(managerHrId);
   if (keys.length === 0) return [];
 
@@ -250,6 +258,7 @@ export async function listSendsForManager(managerHrId: string | null | undefined
     .from(MANAGER_SENDS_TABLE)
     .select(SEND_COLUMNS)
     .in("manager_hr_id", keys)
+    .gte("sent_at", managerHoldCutoffIso(now))
     .order("sent_at", { ascending: false });
 
   if (error) {
@@ -384,10 +393,14 @@ export function isAfter(candidate: string | null | undefined, than: string | nul
  *
  * Returns null when the table is not there yet — distinct from false — so a caller can keep the old
  * column's answer instead of turning a missing migration into a denied CV.
+ *
+ * A SEND OLDER THAN 45 DAYS ANSWERS FALSE, the same cutoff `listSendsForManager` applies, so the
+ * CV that fell off his list cannot still be opened by guessing its id (manager-hold-window.ts).
  */
 export async function isCandidateSentToManager(
   candidateId: string,
   managerHrId: string | null | undefined,
+  now: Date = new Date(),
 ): Promise<boolean | null> {
   const keys = hrIdLookupKeys(managerHrId);
   if (keys.length === 0 || !candidateId) return false;
@@ -397,6 +410,7 @@ export async function isCandidateSentToManager(
     .select("candidate_id")
     .eq("candidate_id", candidateId)
     .in("manager_hr_id", keys)
+    .gte("sent_at", managerHoldCutoffIso(now))
     .limit(1);
 
   if (error) {
