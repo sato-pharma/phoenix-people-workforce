@@ -2,9 +2,10 @@
 //
 // WHY THIS EXISTS. `memory-guard.mjs` is a **global** SessionStart hook — it lives in
 // `~/.claude/hooks/`, not in this repository — so nothing anywhere could go red when it weakened. It
-// is the fourth and last of the global hooks to be pinned (after the delete guard, the Next step
-// guard and the risky-allow guard), and the only one that had no selftest at all: the other three
-// were wirings, this one was a build.
+// is the fourth of the global hooks to be pinned (after the delete guard, the Next step guard and
+// the risky-allow guard), and the only one that had no selftest at all: the other three were
+// wirings, this one was a build. (This said "fourth and last" until a sweep on 2026-10-06 turned up
+// a fifth — the dev-server reaper, `tests/dev-server-reaper-pin.test.ts`. It was never last.)
 //
 // 🔴 ITS FAILURE MODE IS SILENCE, AND SILENCE IS ITS HEALTHY STATE TOO. Every block in the hook is
 // wrapped in `try {} catch {}` and it always exits 0 — deliberately, because a throw here would fail

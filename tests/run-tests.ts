@@ -2357,6 +2357,7 @@ import { runSquareEdgeUnshelledRoutesTests } from "./square-edge-unshelled-route
 import { runNextStepGuardDecisionsTests } from "./next-step-guard-decisions.test.ts";
 import { runRiskyAllowGuardPinTests } from "./risky-allow-guard-pin.test.ts";
 import { runMemoryGuardPinTests } from "./memory-guard-pin.test.ts";
+import { runDevServerReaperPinTests } from "./dev-server-reaper-pin.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -9077,6 +9078,10 @@ await runTest(
 await runTest(
   "the SessionStart hook that warns a session off a saturated 16 GB box cannot go quiet unnoticed: the pinned copy of ~/.claude/hooks/memory-guard.mjs runs its own 19-case table to `0 failed`, the count never falls and must equal the pass lines it printed, the mode is still the bare word `selftest` the hourly runner passes, the decision is still the pure `decideMessage` rather than reading os.freemem() inline, and the nine load-bearing cases still RUN by name — the >= 85 commit boundary, commit winning over low RAM, the < 1800 MB floor that must match mem-watchdog.ps1, the message printing the same figure that chose its branch, a resume keeping the original session clock, garbage on stdin failing OPEN, and the three that replaced the dead branch: the RAM warning saying so when the commit charge could NOT be read, not saying so when it could, and staying silent when commit is unreadable on a healthy machine",
   runMemoryGuardPinTests,
+);
+await runTest(
+  "the only hook on this machine that STOPS a running process cannot quietly start stopping the wrong one: the pinned copy of ~/.claude/hooks/dev-server-reaper.mjs runs its own 68-case table to `0 failed`, the count never falls and must equal the pass lines it printed, ownership is still proven by `chainTo` plus `verifyRoot` rather than guessed, the mode is still the exact flag `--selftest` the hourly runner passes (the bare word prints nothing and exits 0, which is how this suite went unrun), and the twelve load-bearing cases still RUN by name — every one a way of answering `that process is NOT this session's to stop`: another session's engine, a recycled PID breaking the chain walking up and walking down, a nested engine, a creation time or command line that changed between record and stop, never the engine itself, never a shell, never a build mistaken for a dev server, listeners only rather than client connections, another open session's borrow of the port, and the hint not waking on an ordinary command",
+  runDevServerReaperPinTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
