@@ -86,8 +86,13 @@ export function runWebsiteApplyFormTests() {
     "hr_section_head",
     "regulatory_affairs_specialist",
     "quality_control_analyst",
+    "office_coordinator",
   ]);
-  const role = resolveWebsiteApplyRole("talent_acquisition_specialist");
+  const ocRole = resolveWebsiteApplyRole("office_coordinator");
+  assert.ok(ocRole, "the Office Coordinator position must resolve on the careers form");
+  assert.equal(ocRole.roleFamily, "office_coordinator", "it is asked the office_coordinator family's own questions");
+  assert.equal(ocRole.jobTitle, "Office Coordinator");
+  const role =resolveWebsiteApplyRole("talent_acquisition_specialist");
   assert.ok(role, "the launch role must resolve");
   assert.equal(role.jobTitle, "Talent Acquisition Specialist");
   assert.equal(role.roleFamily, "human_resources");

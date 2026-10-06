@@ -36,6 +36,7 @@ const ROLE_MATCHERS: Record<WebsiteApplyRoleKey, RegExp> = {
   hr_section_head: /(\bhr\b|human\s*resources?).*section\s*(head|manager|lead|chief)/i,
   medical_representative: /medical.*rep/i,
   national_sales_manager: /national.*sales.*manager/i,
+  office_coordinator: /office.*coordinator/i,
   quality_control_analyst: /quality.*control/i,
   regulatory_affairs_specialist: /regulatory.*affairs/i,
   talent_acquisition_specialist: /talent.*acquisition/i,

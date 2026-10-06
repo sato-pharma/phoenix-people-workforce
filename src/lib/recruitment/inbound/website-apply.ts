@@ -78,7 +78,8 @@ export type WebsiteApplyRoleKey =
   | "district_manager"
   | "hr_section_head"
   | "regulatory_affairs_specialist"
-  | "quality_control_analyst";
+  | "quality_control_analyst"
+  | "office_coordinator";
 
 export type WebsiteApplyRole = {
   key: WebsiteApplyRoleKey;
@@ -140,6 +141,15 @@ const WEBSITE_APPLY_ROLES: Readonly<Record<WebsiteApplyRoleKey, WebsiteApplyRole
     key: "quality_control_analyst",
     roleFamily: "other",
     title: "Quality Control Analyst",
+  },
+  // The Office Coordinator seat (Sheraton, Cairo). Registered by family only, like every other row: the
+  // form is whatever the WhatsApp bot asks the office_coordinator family today, so nothing is listed
+  // twice and the bot's own question set is left exactly as the owner has it.
+  office_coordinator: {
+    jobTitle: "Office Coordinator",
+    key: "office_coordinator",
+    roleFamily: "office_coordinator",
+    title: "Office Coordinator",
   },
 };
 
