@@ -71,6 +71,7 @@
   "a-rollup-can-name-an-already-merged-pr-as-a-member": "engineering",
   "a-rollup-ships-a-members-stale-head-not-its-latest": "engineering",
   "a-router-refresh-after-a-one-shot-action-erases-its-only-account": "notifications",
+  "a-runtime-built-postgrest-select-loses-its-type": "database",
   "a-saved-plan-file-is-a-snapshot-not-a-backlog": "sessions",
   "a-selftest-probed-with-the-wrong-flag-reads-as-no-selftest": "sessions",
   "a-server-component-cannot-pass-a-function-to-a-client-one": "platform",
