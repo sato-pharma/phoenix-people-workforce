@@ -1,4 +1,4 @@
-import { defaultOfferTemplate, getOffer, getOfferTemplate, markOfferSent } from "@/lib/offers/service";
+import { defaultOfferTemplate, getOffer, getOfferTemplate, markOfferSent, setOfferStatus } from "@/lib/offers/service";
 import { isOfferPdfAvailable, offerPdfFilename, renderOfferPdf } from "@/lib/offers/pdf";
 import { renderOfferEmail } from "@/lib/offers/render-email";
 import { resolveOfferSender } from "@/lib/offers/identity";
@@ -9,6 +9,12 @@ import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email";
 import type { OfferFields, OfferRecord, OfferTemplate } from "@/lib/offers/types";
 import { offerResendIdempotencyKey, offerResendRefusal } from "@/lib/offers/resend-rules";
+import {
+  offerExpiryIdempotencyKey,
+  offerExpiryRefusal,
+  offerExpirySubject,
+  renderOfferExpiryNotice,
+} from "@/lib/offers/expiry-notice";
 
 /**
  * Sending an offer.
@@ -290,6 +296,83 @@ async function deliverOfferLetter(
     cc: copies.cc,
     copyNotes: copies.notes,
     from: sender.from,
+    senderConfigured: sender.isConfigured,
+    skipped,
+    skippedReason,
+    subject,
+  };
+}
+
+/**
+ * Tell a SENT offer's candidate it has expired, and withdraw the offer (owner, 2026-10-07).
+ *
+ * The candidate-facing half that Withdraw never had: `withdrawOffer` flips the row to `withdrawn`
+ * silently, and the person who was sent a letter is told nothing. This sends the short Sato-branded
+ * notice (`renderOfferExpiryNotice`, never the frozen offer letter) to the same address the offer
+ * went to, then — only when the notice actually left — marks the offer withdrawn so it can no longer
+ * be accepted or resent.
+ *
+ * ── Manual, one offer at a time ──
+ * Reached only from a confirmed button press on a single sent offer. It is deliberately NOT a batch,
+ * a planner or a cron, which is what keeps it inside the standing rule that a rejection-style notice
+ * is never sent automatically.
+ *
+ * The standing admin BCC and the Sato From/Reply-To come from the shared send path and
+ * `resolveOfferSender()`, exactly as the offer letter's do. The route writes the audit row.
+ */
+export async function expireOfferEmail(offerId: string): Promise<OfferSendOutcome> {
+  const offer = await getOffer(offerId);
+  const refusal = offerExpiryRefusal(offer);
+  if (refusal) throw new Error(refusal);
+
+  const sender = resolveOfferSender();
+  const subject = offerExpirySubject(offer);
+
+  // The Sato mark as an inline `cid:` part, exactly as the letter carries it — a remote image a
+  // reader's client declines to fetch leaves a torn-page placeholder (2026-09-17). The https URL is
+  // the fallback for the one case where the PNG cannot be read off disk.
+  const mark = satoLogoAttachment(systemDeployment.productionUrl);
+  const { html, text } = renderOfferExpiryNotice(offer, {
+    logoSrc: mark ? SATO_LOGO_CID_SRC : satoLogoUrl(systemDeployment.productionUrl),
+  });
+
+  const result = await sendPhoenixEmail({
+    attachments: mark ? [mark] : undefined,
+    // A candidate has no employee record, so their address is unknown to the Recipient Assurance
+    // Guard — it must be declared here or the notice is blocked as an unrecognised recipient, the
+    // same declaration the offer letter makes.
+    externalRecipients: [offer.candidateEmail],
+    from: sender.from,
+    html,
+    idempotencyKey: offerExpiryIdempotencyKey(offer.id),
+    origin: {
+      eventType: "offer_expired",
+      module: "offers",
+      notificationType: "offer_expired",
+    },
+    replyTo: sender.replyTo,
+    subject,
+    text,
+    to: [offer.candidateEmail],
+  });
+
+  const skipped = result.skipped === true;
+  const skippedReason = skipped ? (result as { reason: string }).reason : null;
+
+  // Only retire the offer when the notice actually left. A suppressed notice (testing mode,
+  // unsubscribe, confidence-gate hold) must not silently withdraw a live offer the candidate was
+  // never told about — the button is still there to try again.
+  const stamped = skipped ? offer : await setOfferStatus(offer.id, "withdrawn");
+
+  return {
+    attachmentIncluded: false,
+    attachmentWarning: null,
+    bcc: [],
+    cc: [],
+    copyNotes: [],
+    from: sender.from,
+    offer: stamped,
+    recipient: offer.candidateEmail,
     senderConfigured: sender.isConfigured,
     skipped,
     skippedReason,
