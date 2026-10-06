@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   describeModuleDrift,
+  describeModuleDriftBlock,
   detectModuleDrift,
   mergeModuleDrift,
   MODULE_SOURCED_STEP_KEYS,
@@ -87,6 +88,60 @@ export function runAutomatedPayrollModuleDriftTests() {
   assert.equal(approvedLate.staleCharges, 1);
   assert.equal(approvedLate.rows[0]?.charged, 0, "the run charges nothing while the module asks for 600");
 
+  // ---- HEADLINE 2: NOTHING -> SOMETHING, the direction the push gate made normal -----------------
+  //
+  // The step emits NO ROW at all for an employee worth 0.00 (recommendFingerprint's own
+  // "value === 0 && days === 0 && nothing saved -> continue"), so that employee is ABSENT from the
+  // snapshot rather than present with a zero. The first version of this check skipped an absent
+  // employee, which read as "nothing to compare" and was in fact "everything to compare".
+  //
+  // Under the push gate (owner rule 2026-09-22) that is the COMMON case, not an edge one: a step is
+  // confirmed, the Super Admin pushes a line days later, and the module starts proposing a figure
+  // for somebody it proposed nothing for. Measured on the live September 2026 run, 2026-10-06 —
+  // p1_fingerprint confirmed 2026-09-24 with an empty snapshot, eight lines worth 3,333.32 EGP
+  // pushed on 2026-10-06, and this report silent.
+  const pushedAfterConfirm = detectModuleDrift({
+    stepKey: "p1_fingerprint",
+    rows: [row({ hrId: "A-9", recommended: { fingerprintValue: 2133.33 }, values: { fingerprintValue: 2133.33 } })],
+    snapshot: {},
+    chargedByCompact: { a9: {} },
+  });
+  assert.equal(
+    pushedAfterConfirm.rows.length,
+    1,
+    "an employee the step proposed nothing for at confirm, and proposes real money for now, is " +
+      "the whole point of the check — skipping them is what let 3,333.32 EGP go unreported",
+  );
+  assert.equal(pushedAfterConfirm.rows[0]?.proposedAtConfirm, 0);
+  assert.equal(pushedAfterConfirm.rows[0]?.proposedNow, 2133.33);
+  assert.equal(
+    pushedAfterConfirm.rows[0]?.charged,
+    0,
+    "the DRAFT is what the sheet pays. `values` falls back to the live recommendation when the " +
+      "column is null, so reading it alone would report 2133.33 as the charge and call the row an " +
+      "override nobody made",
+  );
+  assert.equal(pushedAfterConfirm.staleCharges, 1, "and it is a stale charge, not a human's decision");
+
+  // The same row once HR has actually re-confirmed the step: the draft now carries the figure, so
+  // the module and the run agree and the report goes quiet again.
+  const reconfirmed = detectModuleDrift({
+    stepKey: "p1_fingerprint",
+    rows: [row({ hrId: "A-9", recommended: { fingerprintValue: 2133.33 }, values: { fingerprintValue: 2133.33 } })],
+    snapshot: { a9: { fingerprintValue: 2133.33 } },
+    chargedByCompact: { a9: { fingerprintValue: 2133.33 } },
+  });
+  assert.deepEqual(reconfirmed.rows, [], "re-confirming the step is what settles it");
+
+  // A snapshot that is present but empty is NOT the same as no snapshot: the first says the step
+  // proposed nothing for anybody, the second says the step predates snapshots entirely.
+  const absentAndUnchanged = detectModuleDrift({
+    stepKey: "p1_fingerprint",
+    rows: [row({ hrId: "A-9", recommended: { fingerprintValue: 0 }, values: { fingerprintValue: 0 } })],
+    snapshot: {},
+  });
+  assert.deepEqual(absentAndUnchanged.rows, [], "nothing then, nothing now — silence is correct");
+
   // ---- THE SIGNAL-QUALITY INVARIANT: an override is not a problem --------------------------------
   // This is the half that decides whether the warning is worth having. HR typed 700 over a proposed
   // 900; the module has since moved to 500. Their decision still stands and still wins, so this is
@@ -169,6 +224,45 @@ export function runAutomatedPayrollModuleDriftTests() {
     "Every confirmed figure still matches the Deductions module.",
   );
 
+  // ---- A STALE CHARGE BLOCKS THE PART 2 CONFIRM (owner decision 2026-10-06) ------------------------
+  // The banner alone was the right strength while a figure could only go stale because somebody
+  // changed their mind. Under the push gate it goes stale by the ORDINARY order of work, so the run
+  // was free to pay a number the module had already replaced.
+  const blocking = detectModuleDrift({
+    stepKey: "p1_fingerprint",
+    rows: [
+      row({ hrId: "A-9", fullName: "Nahed", recommended: { fingerprintValue: 2133.33 } }),
+      // A human's own figure moved too — reported, never blocking.
+      row({ hrId: "B-2", fullName: "Second", recommended: { crm: 500 }, values: { crm: 700 } }),
+    ],
+    snapshot: { b2: { crm: 900 } },
+    chargedByCompact: { a9: {}, b2: { crm: 700 } },
+  });
+  assert.equal(blocking.staleCharges, 1);
+  assert.equal(blocking.overriddenButMoved, 1);
+  const refusal = describeModuleDriftBlock(blocking);
+  assert.ok(refusal.includes("Nahed"), "the refusal names who, not a count");
+  assert.ok(refusal.includes("2133.33"), "and what the module says now");
+  assert.ok(
+    refusal.includes("Fingerprint"),
+    "and WHICH step to re-confirm — a block that does not say how to clear it is a dead end",
+  );
+  assert.ok(
+    refusal.includes("not blocking"),
+    "the hand-entered row is reported beside the refusal and explicitly said not to be the cause",
+  );
+
+  // Part 2 confirm must actually refuse. The whole decision is one call site.
+  const confirmSource = readFileSync("src/lib/automated-payroll/run-service.ts", "utf8");
+  const part2Start = confirmSource.indexOf("export async function confirmPart2");
+  assert.ok(part2Start > 0, "confirmPart2 must be found");
+  const part2Body = confirmSource.slice(part2Start, confirmSource.indexOf("export async function getReconciliation", part2Start));
+  assert.ok(part2Body.length > 500, "the slice must reach the body");
+  assert.ok(
+    part2Body.includes("describeModuleDriftBlock") && part2Body.includes("staleCharges > 0"),
+    "confirming Part 2 must refuse a run carrying a figure the Deductions module no longer proposes",
+  );
+
   // ---- The confirm must actually RECORD the snapshot ---------------------------------------------------
   // Everything above tests the comparison. None of it can tell whether anything is being recorded:
   // remove the write and the report simply says "nothing drifted" forever, which is the one failure
@@ -176,7 +270,12 @@ export function runAutomatedPayrollModuleDriftTests() {
   // bounded so it cannot quietly widen to the whole file.
   const runServiceSource = readFileSync("src/lib/automated-payroll/run-service.ts", "utf8");
   const confirmStart = runServiceSource.indexOf("export async function confirmStep");
-  const confirmEnd = runServiceSource.indexOf("function summarizeStep", confirmStart);
+  // The end marker is the function that DIRECTLY follows confirmStep. It used to be summarizeStep,
+  // three functions further down, so the slice silently swallowed getModuleDrift and
+  // getPayrollDayCollisions too — and tipped past the 8,000-char bound the moment getModuleDrift
+  // grew, failing with "the slice must stay bounded" on a change that had nothing to do with the
+  // confirm. A bound that fires on an unrelated edit is a bound nobody trusts.
+  const confirmEnd = runServiceSource.indexOf("export async function getModuleDrift", confirmStart);
   assert.ok(confirmStart > 0 && confirmEnd > confirmStart, "confirmStep and its end marker must both be found");
   const confirmBody = runServiceSource.slice(confirmStart, confirmEnd);
   assert.ok(confirmBody.length < 8000, "the slice must stay bounded to confirmStep");

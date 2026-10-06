@@ -51,6 +51,7 @@ import {
 } from "./part-split-conflict.ts";
 import {
   detectModuleDrift,
+  describeModuleDriftBlock,
   mergeModuleDrift,
   MODULE_SOURCED_STEP_KEYS,
   RECOMMENDED_AT_CONFIRM_KEY,
@@ -826,6 +827,20 @@ export async function getModuleDrift(access: AccessContext, runId: string): Prom
     states.filter((state) => state.status === "confirmed").map((state) => [state.stepKey, state]),
   );
 
+  // What each row is really FROZEN at, straight off the draft. A step field's key IS its DraftRow
+  // key (see step-definitions.ts — the generic persist loop relies on that), so no mapping table is
+  // needed. It matters only for an employee the step never persisted: `row.values` would then show
+  // the live recommendation, and a 0.00 the sheet is about to pay would be reported as an override
+  // somebody chose.
+  const chargedByCompact: Record<string, Record<string, number>> = {};
+  for (const draft of draftRows) {
+    const fields: Record<string, number> = {};
+    for (const [key, value] of Object.entries(draft as unknown as Record<string, unknown>)) {
+      if (typeof value === "number" && Number.isFinite(value)) fields[key] = value;
+    }
+    chargedByCompact[draft.employeeHrIdCompact] = fields;
+  }
+
   const reports: ModuleDriftReport[] = [];
   for (const stepKey of MODULE_SOURCED_STEP_KEYS) {
     const state = confirmed.get(stepKey);
@@ -833,7 +848,7 @@ export async function getModuleDrift(access: AccessContext, runId: string): Prom
     const snapshot = snapshotFromSummary(state.summary);
     if (!snapshot) continue;
     const rows = await recommendStep({ access, period, stepKey, members, sources, draftRows });
-    reports.push(detectModuleDrift({ stepKey, rows, snapshot }));
+    reports.push(detectModuleDrift({ stepKey, rows, snapshot, chargedByCompact }));
   }
   return mergeModuleDrift(reports);
 }
@@ -1244,6 +1259,26 @@ export async function confirmPart2(
   });
   if (dayCollisions.length > 0) {
     throw new Error(`Conflict: ${describePayrollDayCollisions(dayCollisions)}`);
+  }
+
+  // THE RUN MUST PAY WHAT THE DEDUCTIONS MODULE SAYS TODAY, NOT WHAT IT SAID AT CONFIRM.
+  //
+  // Owner decision, 2026-10-06: a stale deduction BLOCKS this confirm rather than only warning on
+  // the wizard. Confirming a module-sourced step copies the module's figure onto the run's own row
+  // and `assembleRows` reads that copy, so under the push gate a figure goes stale by the ORDINARY
+  // order of work — Part 1 confirmed, the lines pushed days later, the run still carrying the zero
+  // it froze. The September 2026 run was exactly that: all ten Part 1 steps confirmed 2026-09-24,
+  // every push on 2026-10-06, 3,333.32 EGP of fingerprint deductions listed in the step's own
+  // breakdown and charged nowhere. `deduction-resync.ts` prevents the state from here on; this is
+  // the gate for a run that reached Part 2 already in it.
+  //
+  // Only `staleCharges` blocks — a figure somebody typed by hand is their decision, still wins, and
+  // is reported beside the refusal without causing one. Not acknowledgeable: the remedy is to
+  // re-confirm the named step, which is an ordinary action (a Part 1 step stays confirmable while
+  // the run is in Part 2), not a judgement call to wave through.
+  const moduleDrift = await getModuleDrift(access, runId);
+  if (moduleDrift.staleCharges > 0) {
+    throw new Error(`Conflict: ${describeModuleDriftBlock(moduleDrift)}`);
   }
 
   // ONE DEDUCTION, IN ONE INSTALMENT.

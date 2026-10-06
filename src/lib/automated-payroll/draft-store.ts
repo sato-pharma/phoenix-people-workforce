@@ -462,6 +462,94 @@ export async function deleteRunDraftRows(runId: string): Promise<void> {
 }
 
 /**
+ * The draft columns a deduction resync is allowed to clear — every column a module-sourced step
+ * freezes a Deductions figure into, and nothing else.
+ *
+ * An allow-list rather than a trusting pass-through, because the column name reaches a bare
+ * PostgREST `update`: a typo clears nothing while reporting success, and a WRONG but real column
+ * name clears money no push ever touched. Kept beside `draftPatchToDb`, whose mapping it mirrors.
+ */
+export const CLEARABLE_DEDUCTION_COLUMNS = [
+  "fingerprint_days",
+  "fingerprint_value",
+  "crm",
+  "unpaid_vacations",
+  "resignation_crm_days",
+  "manual_other_deductions",
+  "p1od_crm_days",
+  "p1od_crm_value",
+  "p1od_vacation_days",
+  "p1od_vacation_value",
+  "p1od_loan_days",
+  "p1od_loan_value",
+  "p1od_other_days",
+  "p1od_other_value",
+] as const;
+
+/**
+ * The read-back select, spelled out as ONE LITERAL rather than joined from the list above.
+ *
+ * PostgREST's generated types parse the select STRING at compile time, so a select built with
+ * `columns.join(", ")` resolves to a ParserError and the whole read loses its type (TS2352 on the
+ * cast, which the box caught). A literal keeps the read narrow AND typed; the test below asserts
+ * it names exactly CLEARABLE_DEDUCTION_COLUMNS, so the two cannot drift apart in silence.
+ */
+export const CLEARABLE_DEDUCTION_SELECT =
+  "employee_hr_id, fingerprint_days, fingerprint_value, crm, unpaid_vacations, resignation_crm_days, manual_other_deductions, p1od_crm_days, p1od_crm_value, p1od_vacation_days, p1od_vacation_value, p1od_loan_days, p1od_loan_value, p1od_other_days, p1od_other_value";
+
+/**
+ * Drop the frozen deduction figures in `columns` for specific employees on a run, so the wizard
+ * falls back to the live recommendation. The deduction twin of `clearDraftExpenses`, and UPDATE
+ * for the same reason: an employee with no draft row has nothing frozen.
+ *
+ * Returns the HR ids of rows that were actually carrying a figure in at least one named column, so
+ * a caller reports how many people's payroll figure really moved rather than how many were looked
+ * at. That set is read BEFORE the clear: `clearDraftExpenses` gets its narrowing from a single
+ * `.not(...)`, which takes one column, and this takes a set. A column outside
+ * `CLEARABLE_DEDUCTION_COLUMNS` is refused rather than ignored.
+ */
+export async function clearDraftColumns(
+  runId: string,
+  hrIds: string[],
+  columns: string[],
+): Promise<string[]> {
+  const allowed = new Set<string>(CLEARABLE_DEDUCTION_COLUMNS);
+  const unknown = columns.filter((column) => !allowed.has(column));
+  if (unknown.length > 0) {
+    throw new Error(`Refusing to clear unknown draft column(s): ${unknown.join(", ")}`);
+  }
+  const compacts = Array.from(
+    new Set(hrIds.map((hrId) => compactHrKey(hrId)).filter((compact): compact is string => Boolean(compact))),
+  );
+  if (compacts.length === 0 || columns.length === 0) return [];
+
+  const client = getSupabaseAdmin();
+  const { data: before, error: readError } = await client
+    .from(DRAFT_ROWS)
+    .select(CLEARABLE_DEDUCTION_SELECT)
+    .eq("run_id", runId)
+    .in("employee_hr_id_compact", compacts);
+  if (readError) throw readError;
+
+  const carrying = ((before ?? []) as RunRow[]).filter((row) =>
+    columns.some((column) => row[column] !== null && row[column] !== undefined),
+  );
+  if (carrying.length === 0) return [];
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  for (const column of columns) patch[column] = null;
+
+  const { error } = await client
+    .from(DRAFT_ROWS)
+    .update(patch)
+    .eq("run_id", runId)
+    .in("employee_hr_id_compact", compacts);
+  if (error) throw error;
+
+  return carrying.map((row) => String(row.employee_hr_id ?? ""));
+}
+
+/**
  * Drop the frozen expense figure for specific employees on a run, so the wizard falls back to
  * the live recommendation (a null draft value is what `pick` in recommend.ts falls through on).
  *

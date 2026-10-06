@@ -10,6 +10,7 @@ import {
   resolveAppliedDeductionDates,
   scaleDeductionAmountToDays,
 } from "@/lib/deductions/calculations.ts";
+import { monthRequiresPush } from "@/lib/deductions/push-cutover.ts";
 import {
   visibleDeductionsCategories,
   type AdminDeductionCommentThread,
@@ -560,10 +561,35 @@ type CollectorRun = {
   error?: string;
 };
 
-function StatusBadge({ status }: { status: string | null }) {
-  const label = status ?? "Pending";
+/**
+ * The row's decision, and — from the push cutover — whether that decision has actually been released.
+ *
+ * APPROVED IS NOT PAID. From 2026-09 the single gate for pay is the PUSH (owner rule 2026-09-22), so
+ * an approved row that has not been pushed is worth 0.00 to payroll. Rendering it in the same
+ * confident green as a released one is what this badge used to do, and on 2026-10-06 that is exactly
+ * how it read: four unpaid-vacation rows approved, one pushed, and the Automated Payroll step
+ * correctly showing one person — which looked like payroll losing three deductions rather than three
+ * deductions never having left this page. The badge now says so itself.
+ *
+ * Months BEFORE the cutover are untouched: July and August 2026 were published under the old
+ * "approved reaches payroll" rule, so an approved row there really was released and still reads green.
+ */
+function StatusBadge({
+  status,
+  monthKey,
+  pushed,
+}: {
+  status: string | null;
+  monthKey?: string | null;
+  pushed?: boolean;
+}) {
+  const decision = status ?? "Pending";
+  const awaitingPush = decision === "Approved for Payroll" && monthRequiresPush(monthKey) && pushed === false;
+  const label = awaitingPush ? "Approved — not pushed" : decision;
   const tone =
-    label === "Approved for Payroll"
+    awaitingPush
+      ? "bg-amber-100 text-amber-800"
+      : label === "Approved for Payroll"
       ? "bg-emerald-100 text-emerald-700"
       : label === "Do Not Take Action"
         ? "bg-slate-200 text-slate-700"
@@ -1270,7 +1296,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                           {row.reason ?? "—"}
                         </td>
                         <td className="px-4 py-2.5">
-                          <StatusBadge status={row.decision?.decisionStatus ?? null} />
+                          <StatusBadge monthKey={row.monthKey} pushed={Boolean(row.pushedLineId)} status={row.decision?.decisionStatus ?? null} />
                         </td>
                         {canDecide ? (
                           <td className="px-4 py-2.5">
@@ -1317,7 +1343,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                 <div className={["px-4 py-3", index % 2 === 1 ? "bg-slate-50/60" : ""].join(" ")} key={row.id}>
                   <div className="flex items-center justify-between gap-2">
                     <p className="whitespace-nowrap font-semibold text-slate-900">{employeeLabel(row)}</p>
-                    <StatusBadge status={row.decision?.decisionStatus ?? null} />
+                    <StatusBadge monthKey={row.monthKey} pushed={Boolean(row.pushedLineId)} status={row.decision?.decisionStatus ?? null} />
                   </div>
                   <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">Hired {hireDateLabel(row.hireDate)}</p>
                   <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">

@@ -1,5 +1,7 @@
 import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 
+import { stepDefinition } from "./step-definitions.ts";
+
 import type { StepKey, StepRow } from "./types.ts";
 
 /**
@@ -133,6 +135,14 @@ export function detectModuleDrift(input: {
   stepKey: StepKey;
   rows: StepRow[];
   snapshot: RecommendationSnapshot | null;
+  /**
+   * compact HR id -> field key -> the figure FROZEN on the run's own draft row, where one exists.
+   *
+   * Optional, and only ever narrows what `charged` reports: a draft column that is null means
+   * nothing was persisted for that field, which is a real 0.00 on the sheet rather than the live
+   * recommendation `row.values` falls back to. Omitting it keeps the pre-2026-10-06 reading.
+   */
+  chargedByCompact?: Record<string, Record<string, number>>;
 }): ModuleDriftReport {
   const rows: ModuleDriftRow[] = [];
   if (!input.snapshot) return { rows, staleCharges: 0, overriddenButMoved: 0 };
@@ -140,15 +150,47 @@ export function detectModuleDrift(input: {
   for (const row of input.rows) {
     if (row.readOnly) continue;
     const compact = compactHrKey(row.hrId);
-    const proposedThen = compact ? input.snapshot[compact] : undefined;
-    if (!proposedThen) continue;
+    // AN EMPLOYEE ABSENT FROM THE SNAPSHOT PROPOSED NOTHING AT CONFIRM — WHICH IS A COMPARISON, NOT
+    // A REASON TO SKIP THEM. Skipping was the original reading, and under the push gate it blinded
+    // this check to the commonest direction of drift there is: nothing → something. A step is
+    // confirmed; the Super Admin pushes a line afterwards (owner rule 2026-09-22 — the PUSH, not the
+    // approval, is what releases money); the module now proposes a figure for somebody it proposed
+    // nothing for before, and the run is still charging the zero it froze.
+    //
+    // Measured on the live September 2026 run, 2026-10-06: `p1_fingerprint` was confirmed on
+    // 2026-09-24 carrying an EMPTY snapshot — correctly, because nothing was pushed yet and the step
+    // emits no row at all for an employee worth 0.00 — and the eight lines pushed on 2026-10-06
+    // (3,333.32 EGP across two one-part employees) moved the module's answer from nothing to a real
+    // figure while this report stayed silent.
+    //
+    // A `null` snapshot above still means something different and still returns silence: that step
+    // was confirmed before snapshots existed, so there is no record to compare against at all.
+    const proposedThen = (compact ? input.snapshot[compact] : undefined) ?? {};
+    const fields = new Set([...Object.keys(proposedThen), ...Object.keys(row.recommended ?? {})]);
 
-    for (const [field, atConfirm] of Object.entries(proposedThen)) {
+    for (const field of fields) {
+      const atConfirm = proposedThen[field] ?? 0;
       const now = row.recommended?.[field];
       if (typeof now !== "number" || !Number.isFinite(now)) continue;
       if (now === atConfirm) continue;
 
-      const charged = typeof row.values?.[field] === "number" ? (row.values[field] as number) : atConfirm;
+      // What the run will really charge. `row.values` falls back to the live recommendation when the
+      // draft column is null (`pick` in recommend.ts), and a row that was never persisted at confirm
+      // is exactly the absent-from-snapshot case — so reading `values` alone would report the figure
+      // the module wants rather than the zero the sheet will pay, and then label it an override
+      // because the two differ. `charged` is therefore the draft's own figure where the row carries
+      // one, and the confirm-time proposal otherwise.
+      // HAVING the employee's draft row is the authority, field by field: a column that carries no
+      // number is NULL, which the sheet pays as 0.00 — it is not an invitation to fall back to the
+      // recommendation. Without the draft (an older caller omits the map) the previous reading stands.
+      const draftFields = compact ? input.chargedByCompact?.[compact] : undefined;
+      const charged = draftFields
+        ? typeof draftFields[field] === "number" && Number.isFinite(draftFields[field])
+          ? draftFields[field]
+          : 0
+        : typeof row.values?.[field] === "number"
+          ? (row.values[field] as number)
+          : atConfirm;
       rows.push({
         hrId: row.hrId,
         fullName: row.fullName,
@@ -186,6 +228,46 @@ export function mergeModuleDrift(reports: ModuleDriftReport[]): ModuleDriftRepor
     staleCharges: rows.filter((row) => !row.overridden).length,
     overriddenButMoved: rows.filter((row) => row.overridden).length,
   };
+}
+
+/**
+ * The Part 2 confirm's refusal when the run is about to pay a figure the module no longer proposes.
+ *
+ * OWNER DECISION, 2026-10-06: a stale deduction BLOCKS the Part 2 confirm — it is no longer only a
+ * banner. The banner alone was the right strength while the gate was the decision, because a figure
+ * could only go stale if somebody changed their mind. Under the push gate it goes stale by the
+ * ordinary order of work: Part 1 is confirmed, the lines are pushed days later, and the run keeps
+ * the zero it froze. On the live September 2026 run that was 3,333.32 EGP of fingerprint deductions
+ * against two employees, with the step's own breakdown listing them.
+ *
+ * ONLY `staleCharges` BLOCKS. A figure somebody typed by hand is their decision and still wins — it
+ * is reported beside the block and never causes one. That distinction is the whole reason this check
+ * is worth having: a block that fires on every deliberate override would be on permanently, and a
+ * gate that is always on is one people learn to route around.
+ *
+ * NOT acknowledgeable, like the day-collision and part-split blocks beside it. There is nothing to
+ * weigh up: the remedy is to re-confirm the named step, which takes the module's current figure and
+ * is an ordinary action — a Part 1 step stays confirmable while the run is in Part 2.
+ */
+export function describeModuleDriftBlock(report: ModuleDriftReport): string {
+  const stale = report.rows.filter((row) => !row.overridden);
+  const steps = [...new Set(stale.map((row) => stepDefinition(row.stepKey).title))];
+  const sample = stale
+    .slice(0, 5)
+    .map(
+      (row) =>
+        `${row.fullName} (${row.hrId}) is set to ${row.charged.toFixed(2)} and the Deductions module now says ${row.proposedNow.toFixed(2)}`,
+    );
+  const more = stale.length > 5 ? ` …and ${stale.length - 5} more.` : "";
+  const overridden =
+    report.overriddenButMoved > 0
+      ? ` (${report.overriddenButMoved} more moved too, but carry a figure somebody entered by hand — those still stand and are not blocking.)`
+      : "";
+  return (
+    `${stale.length} figure(s) on this run no longer match the Deductions module, so confirming now ` +
+    `would pay the wrong amount. ${sample.join("; ")}${more} ` +
+    `Re-confirm ${steps.join(" and ")} to take the module's current figures, then confirm Part 2.${overridden}`
+  );
 }
 
 /** One line for a banner, an error message or the audit log. */
