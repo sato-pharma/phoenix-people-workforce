@@ -321,6 +321,17 @@ export function runProductionPlanningStringsTests() {
     [],
     `every server message comes from the catalogue, so it exists in both languages — found ${literalThrows.length} written as an Arabic literal`,
   );
+  // The stored plan TITLE is the one reader-visible string that stays Arabic whoever saves it
+  // (owner, 2026-10-06, asked directly: "pin the stored plan title as Arabic"). It is a stored row
+  // both readers meet later in the same Plans list, so following the saver would mix two languages
+  // in one list. This pin is here so a later session cannot read it as a hole the guard above
+  // missed and "fix" it onto the bundle — which is exactly how a settled ruling gets undone.
+  assert.match(
+    serviceCode,
+    /const title = asText\(body\.title\) \?\? `\$\{result\.productNameAr\} — \$\{result\.runs\} \$\{PP\.unitRuns\}`;/,
+    "the stored plan title must stay Arabic, built from PP and not from the language bundle",
+  );
+
   // The refusals that name a material: present in both languages, different in both, and each owning
   // its own list separator — Arabic joins on the Arabic comma, English on a plain one.
   const twoMaterials = ["Ivy extract", "Sorbitol"] as const;
