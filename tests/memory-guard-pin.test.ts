@@ -46,8 +46,10 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const HOOK = join(REPO_ROOT, ".claude", "cloud-context", "laptop-hooks", "memory-guard.mjs");
 
-// A ratchet, not an equality: cases may RISE and must never FALL.
-const MIN_CASES = 18;
+// A ratchet, not an equality: cases may RISE and must never FALL. Raised 18 -> 19 on 2026-10-06, in
+// the commit that fixed the dead branch: the one case pinning that defect became three — the clause
+// present when commit is unreadable, absent when it is not, and silence on a healthy machine.
+const MIN_CASES = 19;
 
 // Each of these covers a distinct way the hook can go quiet when it should speak, or speak the wrong
 // thing. Matched against the selftest's own pass lines, so they prove the case RAN, not merely that
@@ -59,7 +61,9 @@ const LOAD_BEARING = [
   "the RAM message prints the SAME figure that chose the branch", // the double-read fix
   "a resume keeps the ORIGINAL start time", // sessions here run 6.5h median and have hit 8.9 days
   "garbage on stdin does not crash it", // it must fail OPEN — this runs at every session start
-  "the commit-unreadable fallback is UNREACHABLE", // pins a known defect, see the note below
+  "low RAM with an UNREADABLE commit charge says so", // the fact that had nowhere to go until 2026-10-06
+  "low RAM with a READ commit charge does NOT claim it was unreadable", // the clause stays conditional
+  "an unreadable commit charge on a HEALTHY machine stays SILENT", // deliberately not warned about
 ];
 
 export function runMemoryGuardPinTests() {
