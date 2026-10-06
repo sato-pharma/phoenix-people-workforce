@@ -593,9 +593,11 @@ export async function runWhatsAppQuestionPromptsTests() {
   assert.equal(configCheck([], []).length, 0, "no change is not a violation");
   // Job title's answer POOL sits PAST Meta's ten-row list. office_coordinator made it eleven on
   // 2026-09-02 (the Sheraton opening); talent_acquisition made it twelve on 2026-09-22 (the paid TA
-  // campaign), and unlike the earlier extras it is OFFERED, so jobTitleMenu() now sends exactly ten
+  // campaign), and unlike the earlier extras it is OFFERED, so jobTitleMenu() then sent exactly ten
   // rows — full at the ceiling. hr_section_head made it thirteen on 2026-10-06 and took the slot the
-  // Finance row held, so `finance`, `sales` and `pharmacist` are the three still off the menu. A pool
+  // Finance row held; the Human Resources row was then taken off the menu the same day, so the menu
+  // sends nine and `human_resources`, `finance`, `sales` and `pharmacist` are the four still off it.
+  // The pool stays thirteen, because a removed row is still an answer the system understands. A pool
   // is allowed to be larger than a list, because a pool is not a message: what is pinned is the
   // count, not the ceiling.
   //
