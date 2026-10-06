@@ -20,14 +20,14 @@ setup("authenticate as synthetic admin", async ({ page }) => {
   await expect(hrIdInput).toBeVisible({ timeout: 15_000 });
 
   await hrIdInput.fill(hrId);
-  await page.getByRole("textbox", { name: /Password/i }).fill(password);
+  await page.locator("#login-password").fill(password);
 
   await Promise.all([
     page.waitForURL((url) => !url.pathname.includes("/login"), {
       timeout: 60_000,
       waitUntil: "domcontentloaded",
     }),
-    page.getByRole("button", { name: /Sign in/i }).click(),
+    page.getByRole("button", { name: /^Sign in$/i }).click(),
   ]);
 
   await expect(page.locator("body")).toBeVisible();

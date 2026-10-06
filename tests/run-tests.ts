@@ -1432,6 +1432,7 @@ import { runCiPrSkipsBuildAndSmokeTests } from "./ci-pr-skips-build-and-smoke.te
 import { runStagingBranchSyncGuardTests } from "./staging-branch-sync-guard.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
 import { runAuthPasswordResetCodeTests } from "./auth-password-reset-code.test.ts";
+import { runLoginFormLocatorContractTests } from "./login-form-locator-contract.test.ts";
 import { runSchemaShapeCheckTests } from "./schema-shape-check.test.ts";
 import { runSecretPinsCheckTests } from "./secret-pins-check.test.ts";
 import { runRailwaySecretShapeTests } from "./railway-secret-shape.test.ts";
@@ -5124,6 +5125,7 @@ await runTest(
 await runTest("CI docs-only classifier (AGENTS.md/CLAUDE.md/docs/agents-* must NOT skip the suite that polices them)", runCiDocsOnlyClassifierTests);
 await runTest("password setup email resolution (work_email fallback, never the synthetic auth address)", runPasswordSetupEmailResolutionTests);
 await runTest("self-service reset-by-code (6-digit format, login-bound HMAC, attempt cap, expiry, enumeration-safe mismatch)", runAuthPasswordResetCodeTests);
+await runTest("login form locator contract (the Playwright setups drive #login-id and #login-password, never label copy — a rename breaks a smoke no PR runs)", runLoginFormLocatorContractTests);
 await runTest("schema shape check (catches the 2026-07-31 grant wipe AND the skeleton-schema restore)", runSchemaShapeCheckTests);
 await runTest("secret pins check (catches the version pinning that 401'd every cron)", runSecretPinsCheckTests);
 await runTest("railway secret shape (catches the masked paste that 401'd every AI feature)", runRailwaySecretShapeTests);
