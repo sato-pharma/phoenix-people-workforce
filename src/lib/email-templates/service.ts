@@ -77,6 +77,7 @@ export const EMAIL_TEMPLATE_KEYS = {
   CV_INTAKE_DIGEST: "cv_intake_digest",
   TELEGRAM_CONNECT: "telegram_connect",
   WEEKLY_SALES_UPLOADED: "weekly_sales_uploaded",
+  PRODUCTION_PLANNING_REORDER: "production_planning_reorder",
 } as const satisfies Record<string, EmailTemplateKey>;
 
 export const emailTemplateRecipientRoleOptions = [
@@ -312,6 +313,7 @@ export type EmailTemplateCategory =
   | "Outstation & Expenses"
   | "Payroll"
   | "Probation"
+  | "Production"
   | "Recruitment"
   | "Resignations"
   | "Sales"
@@ -467,6 +469,22 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   cv_intake_digest: emptyRules(["hiring_manager"], ["recruiter"]),
   telegram_connect: emptyRules(["employee"], []),
   weekly_sales_uploaded: emptyRules(["district_manager"], ["regional_sales_manager"]),
+  // The ONLY routing in this file written as explicit ADDRESSES rather than roles (owner,
+  // 2026-10-05, naming each person): the Ivyronc reorder alarm goes to Dr. Sahar Khalil, who runs
+  // the module, with the CEO and the Finance and Admin Manager copied and the owner blind-copied.
+  // Roles cannot express this — Dr. Sahar's app role is `Manager`, which the QPPV also holds, so
+  // `toRoles: ["manager"]` would mail someone this is none of. All four addresses were read from
+  // the live employees table on 2026-10-06, not transcribed from the brief.
+  production_planning_reorder: {
+    bccRoles: [],
+    bccStaticEmails: ["omar.anwar@satopharma.com"],
+    ccRoles: [],
+    ccStaticEmails: ["anwar.gaweesh@satopharma.com", "ahmed.elmaraghy@satopharma.com"],
+    targetLines: [],
+    targetTitles: [],
+    toRoles: [],
+    toStaticEmails: ["sahar.khalil@satopharma.com"],
+  },
   contract_renewal: emptyRules(["manager_chain"], ["hr"]),
   general: emptyRules(["admin"], ["hr"]),
   marketing_request: emptyRules(["admin"], ["hr"]),
@@ -740,6 +758,25 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     subject: "{{subject}}",
     templateKey: "weekly_sales_uploaded",
     templateName: "Weekly Sales Uploaded",
+  },
+  // Arabic, right-to-left, and genderless: both of the people who read it daily are women, and
+  // `dir="rtl"` on each paragraph is what survives the editor's sanitiser (src/lib/email/toolbar-tools.ts).
+  // SHIPPED INACTIVE on purpose — `isActive: false` is one of the four independent switches that keep
+  // this silent until the owner arms it himself (the others are the module's own alarm_enabled /
+  // alarm_dry_run settings and EMAIL_NOTIFICATIONS_ENABLED).
+  production_planning_reorder: {
+    bodyHtml:
+      '<p dir="rtl">{{summary}}</p>{{detailsTable}}<p dir="rtl">{{status}}</p>',
+    bodyText: "{{summary}}\n\n{{detailsTable}}\n\n{{status}}",
+    closingText: "تُراجع الأرصدة من موديول تخطيط الإنتاج قبل إصدار أمر الشراء.",
+    description:
+      "Ivyronc raw-material reorder alarm: the materials whose stock cover has fallen to about one production run, each with the lead time it needs. Arabic, right-to-left. Ships INACTIVE — it sends nothing until the owner activates it here and arms the module's own alarm switch.",
+    greeting: "تحية طيبة إلى إدارة البحوث والتطوير،",
+    isActive: false,
+    previewText: "تنبيه إعادة طلب خامات — تخطيط الإنتاج.",
+    subject: "{{subject}}",
+    templateKey: "production_planning_reorder",
+    templateName: "Production Reorder Alarm",
   },
   general: {
     bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
@@ -1143,6 +1180,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   cv_intake_digest: "Recruitment",
   telegram_connect: "Account Access",
   weekly_sales_uploaded: "Sales",
+  production_planning_reorder: "Production",
 };
 
 export const emailTemplateCategories = [
@@ -1163,6 +1201,7 @@ export const emailTemplateCategories = [
   "Birthdays",
   "Direct Orders",
   "Sales",
+  "Production",
   "General",
 ] as const;
 

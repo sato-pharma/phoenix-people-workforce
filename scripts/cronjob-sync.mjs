@@ -292,6 +292,31 @@ const JOBS = {
     // apart from one that has silently stopped working. Same cold-start caveat as the sweep above.
     requestTimeout: 300,
   },
+  "production-planning-fx": {
+    title: "Phoenix — production planner daily dollar rate",
+    path: "/api/cron/production-planning-fx",
+    // 06:07 Cairo, and the minute matters: 06:07 is used by NOTHING else in this account, not even
+    // the every-two-minute and every-five-minute sweeps (both land on even or 5-divisible minutes),
+    // so a red execution here names this job and no other. Four minutes ahead of the reorder sweep,
+    // so a cost that email might carry is read off today's rate rather than yesterday's.
+    schedule: { hours: [6], minutes: [7], mdays: [-1], months: [-1], wdays: [-1] },
+    // One outbound GET with a 10s timeout and one upsert. It is gated by its own pair of settings
+    // switches and does nothing at all until the owner arms it. 300 matches the rest of the account;
+    // the platform still cuts at 30 regardless (see header).
+    requestTimeout: 300,
+  },
+  "production-planning-reorder": {
+    title: "Phoenix — production planner reorder alarm",
+    path: "/api/cron/production-planning-reorder",
+    // 06:11 Cairo — another minute nothing else in the account uses, for the same reason as the FX
+    // job above, and early enough that the answer is waiting before the office opens. The imported
+    // material needs about six months of lead time, so a day's delay is not neutral.
+    schedule: { hours: [6], minutes: [11], mdays: [-1], months: [-1], wdays: [-1] },
+    // The planner's own engine over one product's materials, then at most one email. SILENT until
+    // the owner arms it: `alarm_enabled`, `alarm_dry_run`, the template's `is_active` and
+    // EMAIL_NOTIFICATIONS_ENABLED are four independent switches and none of them is a default.
+    requestTimeout: 300,
+  },
 };
 
 // ── credentials ───────────────────────────────────────────────────────────────────────────────

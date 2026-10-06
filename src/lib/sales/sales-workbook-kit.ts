@@ -254,6 +254,47 @@ export function bandHeader(sheet: ExcelJS.Worksheet, cols: number, title: string
   sheet.getRow(3).height = 6;
 }
 
+// ── Right-to-left sheets ─────────────────────────────────────────────────────
+//
+// Everything above writes a LEFT-to-right, Latin-faced sheet: `horizontal: "left"`, an indent on the
+// left, "Calibri". An Arabic sheet needs all three undone, and doing it per cell at the call site
+// means every future table in this kit has to remember — the Production Planner's workbook was the
+// first Arabic one in this repo, with fourteen column headers and three blocks of labels.
+//
+// So it is ONE pass, run after the sheet is written, over the cells that exist:
+//
+//   · `rightToLeft` on the worksheet VIEW, which is what makes Excel put column A on the right and
+//     lay the whole grid out from there. No file in this repo set it before 2026-10-06.
+//   · the face, per cell, keeping bold, size and colour. `HOUSE_TYPE.body` ("Aptos") and "Calibri"
+//     are Latin-only; a cell left on either renders Arabic in a fallback face whose metrics the
+//     column widths were never measured for, and on a reader with no fallback it renders boxes.
+//   · the horizontal alignment, CLEARED rather than mirrored, along with the left indent that goes
+//     with it. `general` is the only setting that follows the sheet's own direction and the cell's
+//     own content, which is exactly what a mixed sheet of Arabic labels and Latin numbers wants:
+//     the label starts at the right edge where the reading starts, and the number sits where Excel
+//     puts a number. An explicit side is what pins a heading to the far end of every line it is
+//     supposed to introduce, and which side that is in a mirrored sheet is precisely the thing not
+//     worth asserting from here. `center` is deliberate wherever it appears, so it survives.
+export function applyRightToLeftSheet(sheet: ExcelJS.Worksheet, options: { fontFace: string }) {
+  const existingViews = sheet.views as ExcelJS.WorksheetView[];
+  sheet.views = existingViews.length > 0
+    ? existingViews.map((view) => ({ ...view, rightToLeft: true }))
+    : [{ rightToLeft: true, showGridLines: false }];
+
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      const font = (cell.font ?? {}) as ExcelJS.Font;
+      cell.font = { ...font, name: options.fontFace };
+      const alignment = cell.alignment as ExcelJS.Alignment | undefined;
+      if (!alignment) return;
+      if (alignment.horizontal === "left" || alignment.horizontal === "right") {
+        const { horizontal: _horizontal, indent: _indent, ...rest } = alignment;
+        cell.alignment = rest;
+      }
+    });
+  });
+}
+
 export function leaderText(leader: { distributorName: string; share: number } | null) {
   return leader ? `${leader.distributorName} (${(leader.share * 100).toFixed(0)}%)` : "—";
 }

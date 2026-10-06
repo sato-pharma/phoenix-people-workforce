@@ -234,7 +234,14 @@ export type PermissionResource =
   // NOBODY holds `delete`, because a flyer is never hard-deleted — retiring keeps the file and the
   // row, so the company can always say what was in front of doctors and when. `read` is narrowed
   // AGAIN below the matrix, to the active aids of the reader's OWN line (src/lib/visual-aids/).
-  | "visual_aids";
+  | "visual_aids"
+  // Production Planner (owner, 2026-10-05): the raw-material plan for the products EGPI
+  // toll-manufactures for us. `create`/`update` draft and commit a plan, record a run and edit the
+  // settings; `export` is the live-formula workbook. NOBODY holds `delete`, because a stock report
+  // and a recorded run are append-only facts about a date. 🔴 `Manager` and `Employee` hold NOTHING
+  // here even though the module's main user is a Manager: see productionPlanningLevel in
+  // src/lib/production-planning/access.ts for why the gate is named people, not a role.
+  | "production_planning";
 
 /**
  * The runtime twin of the `PermissionResource` union above. Both lists must hold exactly the same
@@ -347,6 +354,9 @@ export const permissionResources: PermissionResource[] = [
   // Visual Aids. Omitting this would offer the upload and retire buttons, and every line's flyers, to
   // every role. Mechanism at the head of this array.
   "visual_aids",
+  // Production Planner. Omitting this would offer the whole raw-material plan — and the prices and
+  // costs on it — to every role in the company. Mechanism at the head of this array.
+  "production_planning",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -913,6 +923,9 @@ function applyHardPermissionBoundaries<T extends PermissionMap>(matrix: T): T {
 const defaultPermissionMatrix: PermissionMap = {
   "Super Admin": {
     market_awareness: allActions,
+    // Production Planner. No `delete`: a stock report and a recorded run are append-only facts
+    // about a date, and a mistyped run is EXCLUDED from learning rather than removed.
+    production_planning: ["read", "create", "update", "export"],
     admin: allActions,
     attendance: allActions,
     // Reads the native-visit pilot. `update` (the owner, 2026-09-14): he enters a visit FOR a chosen
@@ -1000,6 +1013,10 @@ const defaultPermissionMatrix: PermissionMap = {
   CEO: {
     // Spotlight: read and export. The owner named him and the Super Admin as the only two holders.
     spotlight: ["read", "export"],
+    // Production Planner (owner, 2026-10-05): "the main controller is the R&D manager Dr. Sahar
+    // Khalil and the CEO Dr. Anwar" — so full control here, not the observational read the CEO
+    // account carries on the irreversible HR and finance workflows below.
+    production_planning: ["read", "create", "update", "export"],
     // 🔴 NO `milestones` HERE, AND NOT BY OVERSIGHT. The owner took it off the CEO on 2026-09-23
     // ("not approved. Make it only super admin. None either uh, CEO."), so the grant is DELETED
     // rather than emptied — `milestones: []` would still name him a holder to the union that
@@ -1122,6 +1139,10 @@ const defaultPermissionMatrix: PermissionMap = {
   //
   // (The comment that used to sit here described Financial Advisor, whose real block is below.)
   "Finance Manager": {
+    // Production Planner (owner, 2026-10-05): "and the finance manager, Mr. Ahmed El Maraghi, also
+    // open to him, read only, read only." He sees the costed plan and takes the workbook; he does
+    // not draft, commit or record anything.
+    production_planning: ["read", "export"],
     // Market Awareness: informed for execution, plus the paid / not-paid mark — `update`. This is
     // deliberately NOT the marketing invoice obligation (no hold, no overdue nudge).
     market_awareness: ["read", "update", "export"],

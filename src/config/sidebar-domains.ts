@@ -216,7 +216,7 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
   {
     id: "orders",
     name: "Orders & CRM",
-    desc: "Direct orders, the pharmacies behind them, and the CRM boards.",
+    desc: "Direct orders, the pharmacies behind them, the CRM boards and the production planner.",
     icon: ClipboardList,
     groups: [
       // "Order Desk", not "Direct Orders". This band leads with the workspace row, which IS called
@@ -233,6 +233,12 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
       // captures it reviews. "Field Evidence", not "Verified Captures": that is the one row inside
       // this band, and a heading repeating its own row is blanked by `groupAdminSections`.
       { heading: "Field Evidence", sectionIds: ["verified-captures"] },
+      // The Production Planner turns a production order for Ivyronc into a buy-and-deliver list for
+      // EGPI, which is why it sits in this domain rather than under Master Data or Payroll: what it
+      // produces is an order. "Toll Manufacturing" rather than "Production Planning" — the one row
+      // inside this band is called "Production Planner", and a heading repeating its own row is
+      // blanked by `groupAdminSections`, which is a fallback and not a layout.
+      { heading: "Toll Manufacturing", sectionIds: ["production-planning"] },
     ],
   },
   {

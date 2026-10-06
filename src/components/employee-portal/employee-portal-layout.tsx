@@ -51,6 +51,7 @@ import {
   FileText,
   FileSpreadsheet,
   Fingerprint,
+  FlaskConical,
   Gift,
   IdCard,
   CalendarDays,
@@ -392,6 +393,7 @@ function buildEmployeePortalSections({
   showDirectOrdersTab = false,
   showAreaDirectOrdersTab = false,
   showMilestonesTab = false,
+  showProductionPlanningTab = false,
   showVacationApprovalsTab = false,
   showExcuseApprovalsTab = false,
   showPlanApprovalsTab = false,
@@ -461,6 +463,10 @@ function buildEmployeePortalSections({
         ...(showPrivateCalendarTab ? [{ href: "/employee-portals/private-calendar", label: "Private Calendar", icon: CalendarDays }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
         ...(showPlanningCalendarTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
+        // Production Planner — Ivyronc's raw-material buy list, for the five people the owner named
+        // by HR id rather than by role (the R&D Manager and the R&D Supervisor are the two who sit
+        // in this shell). The flag carries the named list in; the page re-asks the database.
+        ...(showProductionPlanningTab ? [{ href: "/employee-portals/production-planning", label: "Production Planner", icon: FlaskConical }] : []),
       ],
     },
     {

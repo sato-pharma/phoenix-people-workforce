@@ -323,6 +323,8 @@ policy):
    | Check slug | Cron expression | Suggested grace | What actually pings it |
    |---|---|---|---|
    | `phoenix-notify-daily` | `36 6 * * *` | 1h | cron-job.org job `8200909` |
+   | `phoenix-production-planning-fx` | `7 6 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-production-planning-reorder` | `11 6 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-marketing-field-capture-nudge` | `50 6 * * *` | 1h | cron-job.org job `8348773` |
    | `phoenix-marketing-invoice-overdue-nudge` | `5 7 * * *` | 1h | cron-job.org job `8350529` |
    | `phoenix-distributor-upload-overdue-nudge` | `20 7 * * *` | 1h | cron-job.org job `8375333` |
