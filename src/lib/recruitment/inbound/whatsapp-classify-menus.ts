@@ -223,32 +223,36 @@ const ROLE_MENU_ORDER: CandidateRoleFamily[] = [
   "area_regional_manager",
   "product_manager",
   "national_sales_manager",
-  "human_resources",
+  // `human_resources` WAS HERE until 2026-10-06 — removed from the menu at the owner's instruction
+  // ("remove the human resources choice in whatsapp bot"), now that the two HR seats each have their
+  // own row below. It is not a deleted family: it stays in the pool (jobTitleMenuAllFamilies), so the
+  // Screening Questions screen still offers it as an answer to switch back on, a typed "Other" that
+  // reads as an HR job still lands in `human_resources` through the title classifier, and an old
+  // tapped row still resolves (isOfferedRoleFamily accepts every family).
   // HR Section Head, added 2026-10-06 at the owner's instruction for the HR Section Head opening —
-  // the seat under the HR Manager. It takes the slot the Finance row held, because the list was
-  // already FULL at Meta's 10-row cap (see below). Finance was the displaced row, not a removed
-  // family: a finance applicant types it under "Other" and still lands in the `finance` family
-  // through the title classifier, and the owner can put the Finance row back on the Screening
-  // Questions screen by switching another answer off. It sits directly under Human Resources
-  // because it is the seat that leads that function, and a tap (not a typed "Other") is what puts
-  // every Section Head applicant in one family the pool can filter and the extra questions can be
-  // scoped to.
+  // the seat under the HR Manager. It took the slot the Finance row held, because the list was then
+  // FULL at Meta's 10-row cap (see below). Finance was the displaced row, not a removed family: a
+  // finance applicant types it under "Other" and still lands in the `finance` family through the
+  // title classifier, and the owner can put the Finance row back on the Screening Questions screen.
+  // A tap (not a typed "Other") is what puts every Section Head applicant in one family the pool
+  // can filter and the extra questions can be scoped to.
   "hr_section_head",
-  // Talent Acquisition, added 2026-09-22 for the TA Specialist opening. It sits directly beside
-  // Human Resources because it is the recruiting seat inside HR, and the owner wants these CVs in
-  // their own bucket rather than folded into Human Resources. Making it a tap (not a typed "Other")
-  // is what puts every TA applicant in one family the pool can filter and the extra questions can be
-  // scoped to — the same reason Office Coordinator was made tappable below.
+  // Talent Acquisition, added 2026-09-22 for the TA Specialist opening. It sits beside the other HR
+  // seat because it is the recruiting seat inside HR, and the owner wants these CVs in their own
+  // bucket. Making it a tap (not a typed "Other") is what puts every TA applicant in one family the
+  // pool can filter and the extra questions can be scoped to — the same reason Office Coordinator
+  // was made tappable below.
   "talent_acquisition",
   // `finance` WAS HERE until 2026-10-06 — displaced by hr_section_head, not deleted. It stays in the
   // pool (jobTitleMenuAllFamilies), so the Screening Questions screen offers it as an answer to
   // switch back on.
   // Added 2026-09-02 for the Sheraton Office Coordinator opening. It sits with the other head-office
   // seats and above "Other" — which stays last, because it is the answer meaning "none of these" and
-  // offering it early invites it. The list is 10 rows — FULL against Metas 10-row cap (Talent
-  // Acquisition filled it on 2026-09-22; HR Section Head replaced Finance on 2026-10-06 rather than
-  // append). The NEXT role added has to displace something rather than append: an
-  // eleventh row is a 400 for the whole message, not merely a crowded list.
+  // offering it early invites it. The list is 9 rows against Metas 10-row cap (Talent Acquisition
+  // filled it on 2026-09-22; HR Section Head replaced Finance on 2026-10-06 rather than append; the
+  // Human Resources row was then removed the same day, which freed ONE slot). One more row fits; a
+  // role after that has to displace something rather than append: an eleventh row is a 400 for the
+  // whole message, not merely a crowded list.
   //
   // This row is what makes the position tappable instead of typed, which matters twice over: the
   // applicant lands in a real family (so the extra questions can be scoped to them), and the job

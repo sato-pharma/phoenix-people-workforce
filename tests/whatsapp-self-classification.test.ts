@@ -407,13 +407,20 @@ export function runWhatsAppSelfClassificationTests() {
       "area_regional_manager",
       "product_manager",
       "national_sales_manager",
-      "human_resources",
       "hr_section_head",
       "talent_acquisition",
       "office_coordinator",
       "other",
     ].map((family) => classifyRowId("job_title", family)),
-    "the role menu must offer exactly the owner's ten roles, in his order (eight stated 2026-08-28, Office Coordinator added 2026-09-02, Talent Acquisition added 2026-09-22, HR Section Head added 2026-10-06 in the slot Finance held — full at Meta's 10-row cap)",
+    "the role menu must offer exactly the owner's nine roles, in his order (eight stated 2026-08-28, Office Coordinator added 2026-09-02, Talent Acquisition added 2026-09-22, HR Section Head added 2026-10-06 in the slot Finance held, and the Human Resources row removed 2026-10-06 at his instruction)",
+  );
+  assert.ok(
+    !roleMenu.rows.some((row) => row.id === classifyRowId("job_title", "human_resources")),
+    'the "Human Resources" choice was removed from the bot on 2026-10-06 at the owner\'s instruction — do not restore it',
+  );
+  assert.ok(
+    jobTitleMenuAllFamilies().rows.some((row) => row.id === classifyRowId("job_title", "human_resources")),
+    "human_resources stays in the pool, so the Screening Questions screen can switch the answer back on and an old tapped row still resolves",
   );
   assert.ok(
     !roleMenu.rows.some((row) => row.id === classifyRowId("job_title", "finance")),
