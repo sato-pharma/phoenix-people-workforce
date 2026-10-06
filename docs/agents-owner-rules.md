@@ -6729,3 +6729,52 @@ The obvious reading of "Sato work email only" is a domain check, and a domain ch
 resolves `work_email` and sends to `null` either throws for the user or, worse, quietly succeeds
 against an empty recipient. Treat "no address on record" as an explicit branch with its own message
 pointing the employee at an admin reset — not as an error state to discover in production.
+
+## A merge approval names a PR that exists — 2026-10-07
+
+Not an owner ruling: a session defect, recorded here because it is the `Next step:` box turning his
+own rules against him, and because it put a live authentication change one word away from shipping
+unseen.
+
+### What happened, twice in one session
+
+The box rule says the line always ends in words he could send, and the suggestion is exactly those
+words. Twice within about forty minutes the session filled it with a merge for a PR that did not
+exist:
+
+| Time (Cairo) | What the box offered | What was actually open |
+| --- | --- | --- |
+| 00:07 | "merge the next PR those three sessions open, when green" | nothing — none of the three branches was pushed |
+| 00:46 | "merge the email login PR when it opens and is green" | nothing — `codex/email-login` still unpushed, no PR |
+
+He typed both, because that is what the box is for. Neither could be executed, so each cost him a
+turn and got an explanation back instead of work.
+
+### Why the second one was worse than a wasted turn
+
+`codex/email-login` is **12 files** of authentication: sign in with a Sato email, self-service reset
+by an emailed code, two new API routes under `app/api/auth/password-reset/`, changes to
+`src/lib/auth/credentials.ts`, `password-setup.ts`, the login page, `src/lib/security/access-registry.ts`,
+and a migration (`20261006214500_password_reset_codes.sql`).
+
+A merge to `main` is a production deploy at full traffic within minutes, with no smoke test between.
+So a pre-approval of that PR is a pre-approval to replace the sign-in path for **114 active
+employees** on a system real salaries are paid from, before anyone has read the diff. And the branch
+was still moving while the suggestion sat in his box — `e769d8408`, then `8906294cd`, then more.
+
+Green CI would not have covered it either. `validate` and `checks` prove lint, types, the contracts
+and the unit suite; the Playwright **login smoke test is skipped on pull requests** and runs only on
+`main` — i.e. after the merge, after the deploy. §7 puts auth in the band that needs a role sweep
+with denial paths and an explicit risk review, and the migration has to be applied by hand first,
+because the deploy applies none.
+
+### The rule
+
+**Quote a merge only with a real PR number that has been read.** When nothing is open, the box takes
+a real action instead, and the prose says plainly what will need approving once it exists. This is
+the merge-shaped form of the existing box rule — never a task Claude invented — and it is the worse
+form, because what gets invented is an approval rather than a chore.
+
+A standing pre-approval also cannot be carried forward: an approval given for one PR is spent on
+that PR, and leaving it somewhere a later session would act on it is laundering a permission
+decision out of the window it was given in.
