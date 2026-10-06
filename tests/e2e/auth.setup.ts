@@ -18,7 +18,16 @@ setup("authenticate", async ({ page }) => {
   await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded" });
 
   // Wait for hydration — the login form inputs appear after React hydration.
-  const hrIdInput = page.getByRole("textbox", { name: /HR_ID or Login ID/i });
+  // 🔴 LOCATED BY ITS INPUT ID, NEVER BY THE LABEL TEXT. This was
+  // `getByRole("textbox", { name: /HR_ID or Login ID/i })`, and on 2026-10-06 #5418 renamed the
+  // label to "HR ID, Login ID or Sato email" — `HR_ID` with an underscore stopped existing, the
+  // locator matched nothing, and the login smoke failed on `main`. That is the production deploy
+  // gate (AGENTS.md §2), so a copy change withheld the deploy of the very feature that made it.
+  // `id="login-id"` is what the field's own `<label htmlFor>` points at; it is the stable handle,
+  // and the one thing a wording change cannot move. Three files located this field by its label —
+  // this one, tests/e2e/auth.data-user.setup.ts and tests/synthetic/helpers/auth.setup.ts — and
+  // they must move together, or the next green run just relocates the failure.
+  const hrIdInput = page.locator("#login-id");
   await expect(hrIdInput).toBeVisible({ timeout: 15_000 });
   // No networkidle wait: in CI we run next start (production build, no HMR) so
   // there are no Turbopack pings to settle. In local dev, retries handle any
